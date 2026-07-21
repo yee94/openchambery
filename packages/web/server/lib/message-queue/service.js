@@ -19,6 +19,11 @@ const MAX_RECEIPTS_PER_RUNTIME = 16_384;
 const MAX_ATTACHMENTS = 64;
 const MAX_ATTACHMENT_BYTES = 25 * 1024 * 1024;
 const MAX_ITEM_ATTACHMENT_BYTES = 50 * 1024 * 1024;
+const MAX_COMPOSER_REFERENCES = 1_000;
+const MAX_COMPOSER_REFERENCE_DISPLAY = 512;
+const MAX_COMPOSER_SESSION_ID = 128;
+const MAX_COMPOSER_PASTE_LENGTH = 100_000;
+const MAX_COMPOSER_PASTE_TOTAL_LENGTH = 200_000;
 const ITEM_KEYS = new Set(['queueItemID', 'operationID', 'messageID', 'content', 'composerDocument', 'composerMentions', 'sendConfig', 'attachments', 'attachmentIssues', 'createdAt', 'dueAt', 'migrationImport', 'migrationState']);
 const EDIT_KEYS = new Set(['content', 'composerDocument', 'composerMentions', 'sendConfig', 'attachments', 'attachmentIssues', 'dueAt']);
 const ADMISSION_KEYS = new Set(['requestID', 'expectedRevision', 'scope', 'item']);
@@ -71,6 +76,9 @@ const canonical = (value) => {
 const parse = (value) => value == null ? undefined : JSON.parse(value);
 const optionalJson = (value) => value === undefined ? null : JSON.stringify(value);
 const nonEmptyString = (value, limit = MAX_STRING) => typeof value === 'string' && value.length > 0 && value.length <= limit;
+const nonNegativeInteger = (value) => Number.isSafeInteger(value) && value >= 0;
+const composerAttachmentIdentity = (reference) => reference.attachmentID ?? reference.uploadID ?? reference.serverPath;
+const countCodePoints = (value) => Array.from(value).length;
 
 export const createMessageQueueService = ({ dbPath, getRuntimeConfig = () => null, clock = () => Date.now(), isServerPathAllowed = () => false, onRevisionTip = null } = {}) => {
   if (typeof dbPath !== 'string' || !dbPath.trim()) return null;
@@ -185,9 +193,38 @@ export const createMessageQueueService = ({ dbPath, getRuntimeConfig = () => nul
     return (item.attachments ?? []).map((attachment) => attachmentDescriptor(attachment, { migrationImport: item.migrationImport === true }));
   };
   const validateComposer = (document, content) => {
-    if (document === undefined) return;
-    if (!plainObject(document) || Object.keys(document).some((key) => !COMPOSER_KEYS.has(key)) || document.text !== content || !Array.isArray(document.references)) fail('validation_error');
-    if (document.references.some((reference) => !plainObject(reference) || !nonEmptyString(reference.attachmentID ?? reference.uploadID ?? reference.serverPath))) fail('validation_error');
+    if (document === undefined) return [];
+    if (!plainObject(document) || Object.keys(document).some((key) => !COMPOSER_KEYS.has(key)) || typeof document.text !== 'string' || document.text.length > MAX_CONTENT || !Array.isArray(document.references) || document.references.length > MAX_COMPOSER_REFERENCES || document.references.some((reference) => !plainObject(reference))) fail('validation_error');
+
+    const legacyReferences = document.references.filter((reference) => reference.kind === undefined);
+    if (legacyReferences.length) {
+      if (legacyReferences.length !== document.references.length || document.text !== content) fail('validation_error');
+      const attachmentIdentities = legacyReferences.map(composerAttachmentIdentity);
+      if (attachmentIdentities.some((identity) => !nonEmptyString(identity))) fail('validation_error');
+      return attachmentIdentities;
+    }
+
+    const ids = new Set();
+    let previousEnd = 0;
+    let cursor = 0;
+    let canonical = '';
+    let totalPasteLength = 0;
+    for (const reference of document.references) {
+      if (!nonEmptyString(reference.id, MAX_COMPOSER_REFERENCE_DISPLAY) || !nonEmptyString(reference.display, MAX_COMPOSER_REFERENCE_DISPLAY) || !nonNegativeInteger(reference.start) || !nonNegativeInteger(reference.end) || reference.end <= reference.start || reference.start < previousEnd || reference.end > document.text.length || document.text.slice(reference.start, reference.end) !== reference.display || ids.has(reference.id)) fail('validation_error');
+      ids.add(reference.id);
+      canonical += document.text.slice(cursor, reference.start);
+      if (reference.kind === 'session' && Object.keys(reference).every((key) => ['id', 'kind', 'start', 'end', 'display', 'sessionId'].includes(key)) && nonEmptyString(reference.sessionId, MAX_COMPOSER_SESSION_ID) && /^[A-Za-z0-9_-]+$/.test(reference.sessionId)) canonical += `@session:${reference.sessionId}`;
+      else if (reference.kind === 'paste' && Object.keys(reference).every((key) => ['id', 'kind', 'start', 'end', 'display', 'text', 'characterCount', 'index'].includes(key)) && typeof reference.text === 'string' && reference.text.length <= MAX_COMPOSER_PASTE_LENGTH && nonNegativeInteger(reference.characterCount) && reference.characterCount === countCodePoints(reference.text) && nonNegativeInteger(reference.index) && reference.index >= 1) {
+        totalPasteLength += reference.text.length;
+        if (totalPasteLength > MAX_COMPOSER_PASTE_TOTAL_LENGTH) fail('validation_error');
+        canonical += reference.text;
+      } else fail('validation_error');
+      previousEnd = reference.end;
+      cursor = reference.end;
+    }
+    canonical += document.text.slice(cursor);
+    if (canonical !== content) fail('validation_error');
+    return [];
   };
   const validateSendConfig = (config) => {
     if (config === undefined) return;
@@ -197,7 +234,7 @@ export const createMessageQueueService = ({ dbPath, getRuntimeConfig = () => nul
     const item = input?.item;
     if (!plainObject(input) || Object.keys(input).some((key) => !ADMISSION_KEYS.has(key)) || !plainObject(input.scope) || Object.keys(input.scope).some((key) => !SCOPE_KEYS.has(key)) || !plainObject(item) || Object.keys(item).some((key) => !ITEM_KEYS.has(key))) fail('validation_error');
     if (!normalizeDirectory(input.scope.directory) || !nonEmptyString(input.scope.sessionID) || !nonEmptyString(item.queueItemID) || !nonEmptyString(item.operationID) || !nonEmptyString(item.messageID) || typeof item.content !== 'string' || item.content.length > MAX_CONTENT || !Number.isInteger(item.createdAt) || item.createdAt < 0) fail('validation_error');
-    const attachments = validateAttachments(item); validateComposer(item.composerDocument, item.content); validateSendConfig(item.sendConfig);
+    const attachments = validateAttachments(item); const composerAttachmentIdentities = validateComposer(item.composerDocument, item.content); validateSendConfig(item.sendConfig);
     if (item.composerMentions !== undefined && (!Array.isArray(item.composerMentions) || item.composerMentions.some((mention) => !plainObject(mention)))) fail('validation_error');
     if (item.dueAt !== undefined && (!Number.isSafeInteger(item.dueAt) || item.dueAt < 0)) fail('validation_error');
     if (item.migrationState !== undefined) {
@@ -206,7 +243,7 @@ export const createMessageQueueService = ({ dbPath, getRuntimeConfig = () => nul
     if (!item.migrationImport && item.attachmentIssues.length) fail('validation_error');
     if (new Set(attachments.map((attachment) => attachment.attachmentID)).size !== attachments.length || new Set(attachments.map((attachment) => JSON.stringify(attachment.occurrenceRefID))).size !== attachments.length || new Set(item.attachmentIssues.map((issue) => canonical(issue))).size !== item.attachmentIssues.length || (!item.migrationImport && item.attachmentIssues.length && attachments.length)) fail('validation_error');
     const identities = new Set(attachments.flatMap((attachment) => [attachment.attachmentID, attachment.occurrenceRefID]));
-    if (item.composerDocument?.references.some((reference) => !identities.has(reference.attachmentID ?? reference.uploadID ?? reference.serverPath))) fail('validation_error');
+    if (composerAttachmentIdentities.some((identity) => !identities.has(identity))) fail('validation_error');
   };
   const validateEdit = (input, currentContent) => {
     if (!plainObject(input) || Object.keys(input).some((key) => !EDIT_REQUEST_KEYS.has(key)) || !plainObject(input.item) || !Object.keys(input.item).length || Object.keys(input.item).some((key) => !EDIT_KEYS.has(key))) fail('validation_error');

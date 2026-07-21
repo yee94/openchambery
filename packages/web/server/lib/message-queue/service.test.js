@@ -147,7 +147,7 @@ describe('message queue service', () => {
     expect(raw.prepare("SELECT dflt_value FROM pragma_table_info('queue_item') WHERE name='manual_dispatch_requested'").get().dflt_value).toBe('0'); raw.close();
   });
 
-  it('uses the v4 text-only composer document and rejects unsupported payload shapes', () => {
+  it('accepts canonical Composer sidecars and rejects unsupported payload shapes', () => {
     const service = createService(dbPath());
     expect(() => service.admit({ ...admission(), item: { ...admission().item, composerDocument: { text: 'different', references: [] } } })).toThrow(expect.objectContaining({ code: 'validation_error' }));
     expect(() => service.admit({ ...admission('request-2'), item: { ...admission().item, composerDocument: { text: 'hello', references: [], extra: true } } })).toThrow(expect.objectContaining({ code: 'validation_error' }));
@@ -157,6 +157,23 @@ describe('message queue service', () => {
     expect(() => service.admit({ ...admission('request-model'), item: { ...admission().item, sendConfig: { providerID: 'openai' } } })).toThrow(expect.objectContaining({ code: 'validation_error' }));
     const accepted = service.admit({ ...admission('request-4'), item: { ...admission().item, queueItemID: 'item-4', operationID: 'operation-4', messageID: 'message-4', composerDocument: undefined, sendConfig: undefined } });
     expect(accepted).toMatchObject({ scopeID: expect.any(String), queueItemID: 'item-4', rowVersion: 1 });
+    const pastedText = 'https://trace.example.com/project/demo-project/users/1\n{"input":{"toolName":"controlAC"}}';
+    const display = '[Pasted text 1]';
+    const pasted = service.admit({
+      ...admission('request-paste', 'paste'),
+      item: {
+        ...admission().item,
+        queueItemID: 'item-paste',
+        operationID: 'operation-paste',
+        messageID: 'message-paste',
+        content: pastedText,
+        composerDocument: {
+          text: display,
+          references: [{ id: 'paste-1', kind: 'paste', display, start: 0, end: display.length, text: pastedText, characterCount: Array.from(pastedText).length, index: 1 }],
+        },
+      },
+    });
+    expect(service.getScope(pasted.scopeID).items.find((item) => item.queueItemID === pasted.queueItemID)).toMatchObject({ content: pastedText, composerDocument: { text: display } });
     service.close();
   });
 

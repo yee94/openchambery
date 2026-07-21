@@ -117,6 +117,26 @@ describe('Gate 2 UI production cutover E2E', () => {
     } finally { await f.close(); }
   }, 15_000);
 
+  it('经真实 HTTP 接纳 canonical Paste Composer sidecar', async () => {
+    const f = await fixture(); const client = new QueryClient(); const ui = surface(client, 'device-a');
+    try {
+      const content = 'https://trace.example.com/project/demo-project/users/1\n{"input":{"toolName":"controlAC"}}';
+      const display = '[Pasted text 1]';
+      await expect(ui.admit({
+        requestID: 'paste-admission',
+        scope: { directory: '/repo', sessionID: 'paste-session' },
+        item: {
+          queueItemID: 'paste-item', operationID: 'paste-operation', messageID: 'msg_paste', content,
+          composerDocument: { text: display, references: [{ id: 'paste-1', kind: 'paste', display, start: 0, end: display.length, text: content, characterCount: Array.from(content).length, index: 1 }] },
+          sendConfig: { providerID: 'openai', modelID: 'gpt' }, attachmentIssues: [], createdAt: Date.now(),
+        },
+      })).resolves.toMatchObject({ status: 'committed' });
+      expect(ui.getScope({ transportIdentity: 'device-a', directory: '/repo', sessionID: 'paste-session' })?.items).toEqual([
+        expect.objectContaining({ queueItemID: 'paste-item', content, composerDocument: expect.objectContaining({ text: display }) }),
+      ]);
+    } finally { await f.close(); }
+  }, 15_000);
+
   it('以真实 HTTP 分页保留完整 scope，并由成功 empty catalog 清理', async () => {
     let fail = false; const f = await fixture({ failScopePage: () => fail }); const client = new QueryClient(); const ui = surface(client, 'device-a');
     try {
