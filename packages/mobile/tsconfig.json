@@ -11,5 +11,5 @@
     "types": ["node"],
     "noEmit": true
   },
-  "include": ["capacitor.config.ts"]
+  "include": ["capacitor.config.ts", "src/**/*.ts"]
 }

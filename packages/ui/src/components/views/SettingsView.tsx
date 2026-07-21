@@ -17,6 +17,7 @@ import { Tooltip, TooltipContent, TooltipTrigger } from '@/components/ui/tooltip
 import { ErrorBoundary } from '@/components/ui/ErrorBoundary';
 import { AgentsSidebar } from '@/components/sections/agents/AgentsSidebar';
 import { AgentsPage } from '@/components/sections/agents/AgentsPage';
+import { AssistantsSettingsPage } from '@/components/sections/assistants/AssistantsSettingsPage';
 import { BehaviorPage } from '@/components/sections/behavior/BehaviorPage';
 import { CommandsSidebar } from '@/components/sections/commands/CommandsSidebar';
 import { CommandsPage } from '@/components/sections/commands/CommandsPage';
@@ -173,6 +174,8 @@ export function getSettingsNavIcon(slug: SettingsPageSlug): IconName | null {
       return 'cloud';
     case 'agents':
       return 'ai-agent';
+    case 'assistants':
+      return 'robot-2';
     case 'behavior':
       return 'brain';
     case 'commands':
@@ -485,6 +488,8 @@ export const SettingsView: React.FC<SettingsViewProps> = ({ onClose, forceMobile
         return t('settings.page.usage.title');
       case 'agents':
         return t('settings.page.agents.title');
+      case 'assistants':
+        return t('settings.page.assistants.title');
       case 'behavior':
         return t('settings.page.behavior.title');
       case 'commands':
@@ -781,6 +786,8 @@ export const SettingsView: React.FC<SettingsViewProps> = ({ onClose, forceMobile
         return <RemoteInstancesPage />;
       case 'agents':
         return <AgentsPage />;
+      case 'assistants':
+        return <AssistantsSettingsPage />;
       case 'behavior':
         return <BehaviorPage />;
       case 'commands':

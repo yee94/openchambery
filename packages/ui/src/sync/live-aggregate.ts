@@ -4,6 +4,11 @@ import type { State } from './types'
 
 type LiveStateSlice = Pick<State, 'session' | 'session_status'>
 
+const isAssistantSession = (session: Session): boolean => {
+  const metadata = (session as Session & { metadata?: { openchamber?: { assistant?: unknown } } }).metadata
+  return Boolean(metadata?.openchamber?.assistant)
+}
+
 const getSessionUpdatedAt = (session: Session): number => {
   const updatedAt = session.time?.updated
   if (typeof updatedAt === 'number' && Number.isFinite(updatedAt)) {
@@ -142,7 +147,7 @@ export function aggregateLiveSessions(
 
   for (const state of states) {
     for (const session of state.session) {
-      if (!session?.id || excludedSessionIds?.has(session.id)) {
+      if (!session?.id || excludedSessionIds?.has(session.id) || session.parentID || isAssistantSession(session)) {
         continue
       }
       const current = sessionsById.get(session.id)

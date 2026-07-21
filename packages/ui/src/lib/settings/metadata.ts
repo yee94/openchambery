@@ -7,6 +7,7 @@ export type SettingsPageSlug =
   | 'providers'
   | 'usage'
   | 'agents'
+  | 'assistants'
   | 'behavior'
   | 'commands'
   | 'mcp'
@@ -54,6 +55,7 @@ const SETTINGS_PAGE_ORDER: readonly SettingsPageSlug[] = [
   'remote-instances',
   'providers',
   'agents',
+  'assistants',
   'behavior',
   'commands',
   'mcp',
@@ -130,6 +132,13 @@ export const SETTINGS_PAGE_METADATA: readonly SettingsPageMeta[] = [
     group: 'opencode',
     kind: 'split',
     keywords: ['agent', 'agents', 'prompts', 'tools', 'permissions'],
+  },
+  {
+    slug: 'assistants',
+    title: 'Assistants',
+    group: 'opencode',
+    kind: 'single',
+    keywords: ['assistant', 'assistants', 'inbox', 'topics', 'sharing'],
   },
   {
     slug: 'behavior',

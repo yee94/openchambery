@@ -7,7 +7,7 @@ const SCHEMA_VERSION = 5;
 const MAX_ROOT_SESSIONS = 20;
 const HIDDEN_SESSION_TITLES = new Set(['smartfetch-secondary']);
 
-const isVisibleSession = (session) => !HIDDEN_SESSION_TITLES.has(session?.title);
+const isVisibleSession = (session) => !HIDDEN_SESSION_TITLES.has(session?.title) && session?.metadata?.openchamber?.assistant?.kind !== 'assistant';
 
 const normalizeDirectory = (value) => {
   if (typeof value !== 'string') return null;

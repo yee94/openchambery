@@ -239,6 +239,20 @@ describe('core-routes', () => {
       .expect(200, { body: payload });
   });
 
+  it('should parse JSON bodies for Assistant routes with the attachment payload parser', async () => {
+    const app = express();
+    registerCommonRequestMiddleware(app, { express });
+    app.post('/api/openchamber/assistants/topics/topic_1/messages', (req, res) => {
+      res.json({ body: req.body });
+    });
+
+    const payload = { operationID: 'operation_1', parts: [{ type: 'file', mime: 'image/heic', url: 'data:image/heic;base64,aGVsbG8=' }] };
+    await request(app)
+      .post('/api/openchamber/assistants/topics/topic_1/messages')
+      .send(payload)
+      .expect(200, { body: payload });
+  });
+
   it('should parse JSON bodies for message queue scope and worktree order updates', async () => {
     const app = express();
     const reorder = vi.fn(() => ({ updated: 'scope' }));

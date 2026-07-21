@@ -4,9 +4,15 @@ import android.os.Bundle;
 import com.getcapacitor.BridgeActivity;
 
 public class MainActivity extends BridgeActivity {
+    static final String ACTION_SHARE_READY = "com.openchamber.app.SHARE_READY";
     @Override
     protected void onCreate(Bundle savedInstanceState) {
         registerPlugin(OpenChamberHapticsPlugin.class);
+        registerPlugin(OpenChamberSharePlugin.class);
         super.onCreate(savedInstanceState);
+        dispatchShare(getIntent());
     }
+
+    @Override protected void onNewIntent(android.content.Intent intent) { super.onNewIntent(intent); setIntent(intent); dispatchShare(intent); }
+    private void dispatchShare(android.content.Intent intent) { if (ACTION_SHARE_READY.equals(intent.getAction())) { String id = intent.getStringExtra("operationID"); if (id != null && getBridge() != null) ((OpenChamberSharePlugin) getBridge().getPlugin("OpenChamberShare").getInstance()).emitReceived(id); } }
 }

@@ -19,7 +19,7 @@ export interface RouteState {
 /**
  * Valid main tab values for URL routing.
  */
-export const VALID_TABS: readonly MainTab[] = ['chat', 'git', 'diff', 'terminal', 'files', 'diagram', 'scheduled'] as const;
+export const VALID_TABS: readonly MainTab[] = ['chat', 'git', 'diff', 'terminal', 'files', 'diagram', 'scheduled', 'assistant'] as const;
 
 /**
  * Valid settings section values for URL routing.

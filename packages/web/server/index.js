@@ -1213,6 +1213,7 @@ const gracefulShutdownRuntime = createGracefulShutdownRuntime({
   },
   tunnelAuthController,
   scheduledTasksRuntime,
+  closeFeatureRoutes: () => featureRoutesRuntime.close(),
 });
 
 const gracefulShutdown = (...args) => gracefulShutdownRuntime.gracefulShutdown(...args);
@@ -1655,6 +1656,7 @@ async function main(options = {}) {
     permissionAutoAcceptRuntime,
     messageQueueService,
     messageQueueRuntime,
+    getServerId: () => relayService.getServerId(),
   });
 
   const previewProxyRuntime = createPreviewProxyRuntime({

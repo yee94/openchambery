@@ -222,6 +222,8 @@ const secureTokenKeyOf = (connection: { candidates: MobileTransportCandidate[] }
   return direct ? getConnectionStorageKey(direct.url) : '';
 };
 
+export const mobileConnectionKey = secureTokenKeyOf;
+
 // Two candidate sets are the same device if they share a relay serverId or a
 // normalized direct URL — used to dedupe saved connections on upsert.
 const candidateSetsMatch = (a: MobileTransportCandidate[], b: MobileTransportCandidate[]): boolean => {
@@ -738,6 +740,13 @@ export const deleteMobileConnection = async (id: string): Promise<MobileSavedCon
   const next = connections.filter((connection) => connection.id !== id);
   writeConnections(next);
   if (removed && isCapacitorApp()) await deleteSecureToken(secureTokenKeyOf(removed));
+  if (removed) {
+    const connectionKey = secureTokenKeyOf(removed);
+    const { useAssistantUIStore } = await import('@/stores/useAssistantUIStore');
+    useAssistantUIStore.getState().removeCatalogPartition(connectionKey);
+    const { publishNativeAssistantCatalog } = await import('./MobileShareBridge');
+    await publishNativeAssistantCatalog().catch(() => undefined);
+  }
   return next;
 };
 
@@ -953,6 +962,21 @@ export const autoConnectLastInstance = async (): Promise<boolean> => {
   await upsertMobileConnection({ id: candidate.id, label: candidate.label, candidates: candidate.candidates }); // bump lastUsedAt (keeps token)
   switchToTransport(result.transport, token, { runtimeKey: secureTokenKeyOf(candidate) });
   return true;
+};
+
+export type MobileShareConnectionResult = 'connected' | 'auth-required' | 'offline' | 'missing';
+
+/** Narrow headless entry point for native share delivery. Tokens stay inside this module. */
+export const connectMobileShareConnection = async (connectionKey: string): Promise<MobileShareConnectionResult> => {
+  const connection = (await loadMobileConnections()).find((item) => secureTokenKeyOf(item) === connectionKey);
+  if (!connection) return 'missing';
+  const token = isCapacitorApp() ? (connection.hasToken ? await readSecureToken(connectionKey) : undefined) : connection.clientToken;
+  if (!token) return 'auth-required';
+  const result = await probeConnectionCandidates(connection.candidates, token, { fast: true });
+  if (result.status === 'needs-login') return 'auth-required';
+  if (result.status !== 'ok') return 'offline';
+  switchToTransport(result.transport, token, { runtimeKey: connectionKey });
+  return 'connected';
 };
 
 export const validateMobileConnectionSession = async (input: {

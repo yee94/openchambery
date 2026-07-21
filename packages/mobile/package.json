@@ -25,6 +25,7 @@
     "open:ios": "cap open ios",
     "open:android": "cap open android",
     "type-check": "tsc --noEmit",
+    "test": "node --test test/share-inbox-contract.test.mjs",
     "lint": "eslint \"./**/*.{ts,tsx,js,mjs}\" --config ../../eslint.config.js --ignore-pattern dist --ignore-pattern ios --ignore-pattern android"
   },
   "dependencies": {

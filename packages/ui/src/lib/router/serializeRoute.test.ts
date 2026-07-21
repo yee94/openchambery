@@ -115,6 +115,16 @@ describe('scheduled tasks route', () => {
   });
 });
 
+describe('assistant route', () => {
+  test('round-trips as an independent main page', () => {
+    updateBrowserURL({ ...sessionState('ses_main'), tab: 'assistant' }, { replace: true, force: true });
+
+    expect(historyOf().lastURL).toContain('tab=assistant');
+    expect(historyOf().lastURL).not.toContain('session=');
+    expect(parseRoute(new URLSearchParams('tab=assistant')).tab).toBe('assistant');
+  });
+});
+
 describe('isEmbeddedSessionChat caching', () => {
   test('caches the first result so URL rewrites cannot flip it (mirrors VS Code stable global)', () => {
     // VS Code detects its webview via the stable `window.__VSCODE_CONFIG__`

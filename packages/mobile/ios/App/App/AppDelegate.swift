@@ -34,6 +34,7 @@ class AppDelegate: UIResponder, UIApplicationDelegate {
     }
 
     func application(_ app: UIApplication, open url: URL, options: [UIApplication.OpenURLOptionsKey: Any] = [:]) -> Bool {
+        if url.host == "share", let operationID = url.pathComponents.last { NotificationCenter.default.post(name: .openChamberShareReceived, object: operationID); return true }
         // Called when the app was launched with a url. Feel free to add additional processing here,
         // but if you want the App API to support tracking app url opens, make sure to keep this call
         return ApplicationDelegateProxy.shared.application(app, open: url, options: options)
@@ -160,6 +161,7 @@ class SceneDelegate: UIResponder, UIWindowSceneDelegate {
 
     func scene(_ scene: UIScene, openURLContexts URLContexts: Set<UIOpenURLContext>) {
         guard let urlContext = URLContexts.first else { return }
+        if urlContext.url.host == "share", let operationID = urlContext.url.pathComponents.last { NotificationCenter.default.post(name: .openChamberShareReceived, object: operationID); return }
         _ = ApplicationDelegateProxy.shared.application(UIApplication.shared, open: urlContext.url, options: [:])
     }
 
@@ -167,3 +169,5 @@ class SceneDelegate: UIResponder, UIWindowSceneDelegate {
         _ = ApplicationDelegateProxy.shared.application(UIApplication.shared, continue: userActivity) { _ in }
     }
 }
+
+extension Notification.Name { static let openChamberShareReceived = Notification.Name("openChamberShareReceived") }

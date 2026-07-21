@@ -9,6 +9,7 @@ import { isDesktopShell } from '@/lib/desktop';
 import { formatDirectoryName, cn } from '@/lib/utils';
 import { useSessionUIStore } from '@/sync/session-ui-store';
 import { useAllLiveSessions, useAllSessionStatuses } from '@/sync/sync-context';
+import { useAssistantCapabilityQuery } from '@/queries/assistantQueries';
 import { useGlobalSessionStatusStore } from '@/sync/global-session-status';
 import { useDirectoryStore } from '@/stores/useDirectoryStore';
 import { useProjectsStore } from '@/stores/useProjectsStore';
@@ -353,6 +354,7 @@ export const SessionSidebar: React.FC<SessionSidebarProps> = ({
 
   const setActiveMainTab = useUIStore((state) => state.setActiveMainTab);
   const activeMainTab = useUIStore((state) => state.activeMainTab);
+  const assistantCapability = useAssistantCapabilityQuery();
   const openContextPanelTab = useUIStore((state) => state.openContextPanelTab);
   const setSettingsDialogOpen = useUIStore(
     (state) => state.setSettingsDialogOpen,
@@ -805,6 +807,13 @@ export const SessionSidebar: React.FC<SessionSidebarProps> = ({
     setScheduledTasksDialogOpen,
     setSessionSwitcherOpen,
   ]);
+
+  const handleOpenAssistants = React.useCallback(() => {
+    setActiveMainTab("assistant");
+    if (mobileVariant) {
+      setSessionSwitcherOpen(false);
+    }
+  }, [mobileVariant, setActiveMainTab, setSessionSwitcherOpen]);
 
   const showSidebarUpdateButton =
     updateStore.available &&
@@ -2456,7 +2465,7 @@ export const SessionSidebar: React.FC<SessionSidebarProps> = ({
           )
         ) : null}
         <div className="space-y-0.5 py-1">
-          <Button
+          {assistantCapability.data?.supported ? <Button
             variant="ghost"
             size="sm"
             className={cn(
@@ -2469,6 +2478,19 @@ export const SessionSidebar: React.FC<SessionSidebarProps> = ({
             <span className="truncate">
               {t("sessions.scheduledTasks.dialog.actions.newTask")}
             </span>
+          </Button> : null}
+          <Button
+            variant="ghost"
+            size="sm"
+            className={cn(
+              "w-full justify-start font-normal",
+              activeMainTab === "assistant" && "bg-interactive-selection text-interactive-selection-foreground",
+              mobileVariant && "h-11",
+            )}
+            onClick={handleOpenAssistants}
+          >
+            <Icon name="ai-agent" className="size-4" />
+            <span className="truncate">{t("assistants.title")}</span>
           </Button>
           <Button
             variant="ghost"

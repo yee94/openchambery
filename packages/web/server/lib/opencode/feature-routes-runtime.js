@@ -13,6 +13,7 @@ import { registerProjectIconRoutes } from './project-icon-routes.js';
 import { registerScheduledTaskRoutes } from '../scheduled-tasks/routes.js';
 import { registerScheduledTaskToolRoute } from '../scheduled-tasks/managed-tool-route.js';
 import { registerConversationRoutes } from '../conversations/routes.js';
+import { registerAssistantRoutes } from '../assistants/routes.js';
 import { registerMessageQueueRoutes } from '../message-queue/routes.js';
 import { registerSkillRoutes } from './skill-routes.js';
 import { registerPluginRoutes } from './plugin-routes.js';
@@ -76,6 +77,7 @@ export const createFeatureRoutesRuntime = (dependencies) => {
   };
 
   let smallModelService = null;
+  let assistantRoutesRuntime = null;
   const getSmallModelService = async () => {
     if (!smallModelService) {
       smallModelService = await import('../small-model/index.js');
@@ -125,6 +127,7 @@ export const createFeatureRoutesRuntime = (dependencies) => {
       messageQueueService,
       messageQueueRuntime,
       broadcastGlobalUiEvent,
+      getServerId,
     } = routeDependencies;
 
     registerSettingsUtilityRoutes(app, {
@@ -193,6 +196,24 @@ export const createFeatureRoutesRuntime = (dependencies) => {
       getOpenCodeAuthHeaders,
       markUserMessageSent,
       waitForOpenCodeReady,
+    });
+
+    const assistantAllowedRoots = [];
+    const refreshAssistantAllowedRoots = async () => {
+      const settings = await readSettingsFromDiskMigrated();
+      assistantAllowedRoots.splice(0, assistantAllowedRoots.length, ...sanitizeProjects(settings?.projects ?? [])
+        .map((project) => project.path)
+        .filter((value) => typeof value === 'string'));
+    };
+    await refreshAssistantAllowedRoots();
+    assistantRoutesRuntime = registerAssistantRoutes(app, {
+      openchamberDataDir,
+      dbPath: path.join(openchamberDataDir, 'assistants.sqlite'),
+      buildOpenCodeUrl,
+      getOpenCodeAuthHeaders,
+      getServerId,
+      getAllowedRoots: () => assistantAllowedRoots,
+      refreshAllowedRoots: refreshAssistantAllowedRoots,
     });
 
     registerMessageQueueRoutes(app, { messageQueueService, messageQueueRuntime });
@@ -345,5 +366,6 @@ export const createFeatureRoutesRuntime = (dependencies) => {
 
   return {
     registerRoutes,
+    close: () => assistantRoutesRuntime?.close(),
   };
 };

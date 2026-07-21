@@ -44,6 +44,19 @@ describe('live aggregate', () => {
     expect(aggregateLiveSessions(states, new Set(['ses-2'])).map((item) => item.id)).toEqual(['ses-1'])
   })
 
+  it('filters assistant roots and child sessions from the authoritative live selector', () => {
+    const states = [{
+      session: [
+        session('root', '/a', 30),
+        session('child', '/a', 20, { parentID: 'root' }),
+        session('assistant', '/assistant', 40, { metadata: { openchamber: { assistant: { assistantID: 'a' } } } }),
+      ],
+      session_status: {},
+    }]
+
+    expect(aggregateLiveSessions(states).map((item) => item.id)).toEqual(['root'])
+  })
+
   it('prefers busy/retry statuses over stale idle snapshots', () => {
     const states = [
       {

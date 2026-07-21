@@ -20,6 +20,15 @@ The mobile package reuses the web build, then rewrites `mobile.html` to `index.h
 - Android registers the plugin before `BridgeActivity.onCreate`, then runs `WebView.performHapticFeedback(HapticFeedbackConstants.KEYBOARD_TAP)` on the UI thread.
 - Both native methods declare a `none` return type and leave the callback unresolved to keep this input-feedback path free of promise completion work.
 
+## Native Share Inbox
+
+- `OpenChamberShare` is the Capacitor bridge for `updateCatalog`, `listPending`, `ack`, and `releaseFiles`; it emits `shareReceived` after native content reaches the durable inbox.
+- The catalog stores assistant routing metadata only: `serverInstanceID`, `assistantID`, display fields, `connectionKey`, enabled state, and the default share target. Native code never stores server tokens or performs server requests.
+- Each `NativeShareEnvelope` v1 is committed as an operation directory with `envelope.json` and app-private image files. Envelopes persist relative attachment names and `listPending` resolves them to ready-directory paths for the WebView. `ack` records a durable consumed marker; `releaseFiles` deletes the complete operation directory after upload cleanup.
+- iOS Share Extension and Android `ShareReceiverActivity` accept text, URLs as text, and up to 10 images. The share contract limits each base64-decoded image to 8 MiB and each operation to 16 MiB; native stores enforce these limits from copied binary byte counts. Inbox records expire after 24 hours; startup and every bridge read remove expired, malformed, interrupted, and acknowledged writes after expiry.
+- iOS resolves every shared image to `image/jpeg`, `image/png`, `image/gif`, `image/webp`, or `image/heic` from the copied file extension and matching file signature. Android preserves the content resolver's concrete image MIME, including `image/heic`. Shares with an unrecognized iOS image format return an attachment error and clean up copied temporary files.
+- The share extension requires the existing `group.com.openchamber.app` App Group entitlement for the app and `OpenChamberShareExtension` target. The release signing profile must enable that App Group for `com.openchamber.app.OpenChamberShareExtension`.
+
 ## Commands
 
 Run these from `packages/mobile`, or use the root `mobile:*` aliases.

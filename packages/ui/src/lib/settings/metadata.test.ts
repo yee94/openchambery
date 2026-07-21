@@ -19,7 +19,7 @@ describe('settings navigation metadata', () => {
     expect(pagesByGroup).toEqual({
       personalization: ['appearance', 'chat', 'notifications', 'sessions', 'summary-ai', 'shortcuts'],
       workspace: ['projects', 'git', 'remote-instances'],
-      opencode: ['providers', 'agents', 'behavior', 'commands', 'mcp', 'plugins', 'global-config'],
+      opencode: ['providers', 'agents', 'assistants', 'behavior', 'commands', 'mcp', 'plugins', 'global-config'],
       content: ['magic-prompts', 'snippets', 'skills.installed', 'skills.catalog'],
       system: ['usage', 'voice', 'tunnel', 'about'],
     });

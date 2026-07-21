@@ -38,6 +38,7 @@ const DiagramView = lazyWithChunkRecovery(() => import('@/components/views/Diagr
 const SettingsView = lazyWithChunkRecovery(() => import('@/components/views/SettingsView').then(m => ({ default: m.SettingsView })));
 const SettingsWindow = lazyWithChunkRecovery(() => import('@/components/views/SettingsWindow').then(m => ({ default: m.SettingsWindow })));
 const MultiRunWindow = lazyWithChunkRecovery(() => import('@/components/views/MultiRunWindow').then(m => ({ default: m.MultiRunWindow })));
+const AssistantView = lazyWithChunkRecovery(() => import('@/components/assistants/AssistantView').then(m => ({ default: m.AssistantView })));
 
 export const MainLayout: React.FC = () => {
     const RIGHT_SIDEBAR_AUTO_CLOSE_WIDTH = 1140;
@@ -372,6 +373,8 @@ export const MainLayout: React.FC = () => {
                 return <React.Suspense fallback={null}><ProjectContextPanel /></React.Suspense>;
             case 'diagram':
                 return <React.Suspense fallback={null}><DiagramView /></React.Suspense>;
+            case 'assistant':
+                return <React.Suspense fallback={null}><AssistantView /></React.Suspense>;
             default:
                 return null;
         }
@@ -379,6 +382,7 @@ export const MainLayout: React.FC = () => {
 
     const isChatActive = activeMainTab === 'chat';
     const isScheduledTasksActive = activeMainTab === 'scheduled';
+    const isAssistantActive = activeMainTab === 'assistant';
 
     return (
         <DiffWorkerProvider>
@@ -524,11 +528,11 @@ export const MainLayout: React.FC = () => {
                             <SessionSidebar />
                         </Sidebar>
                         <div className="relative flex flex-1 min-w-0 flex-col overflow-hidden bg-background" data-page-scroll-lock="true">
-                            {isScheduledTasksActive ? (
+                            {isScheduledTasksActive || isAssistantActive ? (
                                 <main className="flex-1 overflow-hidden bg-background" data-page-scroll-lock="true">
                                     <ErrorBoundary>
                                         <React.Suspense fallback={null}>
-                                            <ScheduledTasksWorkspace />
+                                            {isAssistantActive ? <AssistantView /> : <ScheduledTasksWorkspace />}
                                         </React.Suspense>
                                     </ErrorBoundary>
                                 </main>

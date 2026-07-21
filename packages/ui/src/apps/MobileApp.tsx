@@ -13,6 +13,8 @@ import { Button } from '@/components/ui/button';
 import { OpenChamberLogo } from '@/components/ui/OpenChamberLogo';
 import { ProviderLogo } from '@/components/ui/ProviderLogo';
 import { ChatView } from '@/components/views/ChatView';
+import { AssistantView } from '@/components/assistants/AssistantView';
+import { useAssistantCapabilityQuery } from '@/queries/assistantQueries';
 import { DiffView } from '@/components/views/DiffView';
 import { SettingsView } from '@/components/views/SettingsView';
 import { ErrorBoundary } from '@/components/ui/ErrorBoundary';
@@ -79,6 +81,7 @@ import { useEdgeSwipeSessionSwitch, type SwipeProgress } from './useEdgeSwipeSes
 import { useHeaderSwipeToSessions } from './useHeaderSwipeToSessions';
 import { useMobilePressHaptics, useStreamingHaptics } from '@/hooks/streamingHaptics';
 import { useNativePushRegistration } from './useNativePushRegistration';
+import { MobileShareBridge } from './MobileShareBridge';
 
 const MOBILE_SETTINGS_PAGES = [
   'appearance',
@@ -93,6 +96,7 @@ const MOBILE_SETTINGS_PAGES = [
   'usage',
   'voice',
   'about',
+  'assistants',
 ] as const;
 const MOBILE_DIRECT_DIFF_WINDOW_ID = 'mobile-direct-diff';
 const MOBILE_TURN_DIFF_WINDOW_ID = 'mobile-turn-diff';
@@ -2101,6 +2105,9 @@ const MobileShell: React.FC<{ onActiveConnectionDeleted: () => void }> = ({ onAc
   const setMobileSessionPanelOpen = useUIStore((state) => state.setMobileSessionPanelOpen);
   const scheduledTasksDialogOpen = useUIStore((state) => state.isScheduledTasksDialogOpen);
   const setScheduledTasksDialogOpen = useUIStore((state) => state.setScheduledTasksDialogOpen);
+  const activeMainTab = useUIStore((state) => state.activeMainTab);
+  const assistantCapability = useAssistantCapabilityQuery();
+  const setActiveMainTab = useUIStore((state) => state.setActiveMainTab);
   const [filesOpen, setFilesOpen] = React.useState(false);
   const [changesOpen, setChangesOpen] = React.useState(false);
   const [turnDiffOpen, setTurnDiffOpen] = React.useState(false);
@@ -2491,7 +2498,10 @@ const MobileShell: React.FC<{ onActiveConnectionDeleted: () => void }> = ({ onAc
           key: 'new-session',
           icon: 'chat-new',
           label: t('mobile.menu.newSession'),
-          onSelect: () => openNewSessionDraft(),
+          onSelect: () => {
+            setActiveMainTab('chat');
+            openNewSessionDraft();
+          },
         },
       ];
       // iPad exposes Files/Changes as header shortcuts instead of menu items.
@@ -2517,6 +2527,12 @@ const MobileShell: React.FC<{ onActiveConnectionDeleted: () => void }> = ({ onAc
         icon: 'time',
         label: t('sessions.sidebar.header.actions.scheduledTasks'),
         onSelect: () => setScheduledTasksDialogOpen(true),
+      });
+      if (assistantCapability.data?.supported) items.push({
+        key: 'assistant',
+        icon: 'ai-agent',
+        label: t('assistants.title'),
+        onSelect: () => setActiveMainTab('assistant'),
       });
       items.push({
         key: 'mcp',
@@ -2551,7 +2567,7 @@ const MobileShell: React.FC<{ onActiveConnectionDeleted: () => void }> = ({ onAc
       });
       return items;
     },
-    [dirtyChangeCount, isIPad, openChangesSurface, openFilesSurface, openNewSessionDraft, setScheduledTasksDialogOpen, showCapacitorOnlyFeatures, showUpdateItem, t],
+    [dirtyChangeCount, isIPad, openChangesSurface, openFilesSurface, openNewSessionDraft, setActiveMainTab, setScheduledTasksDialogOpen, showCapacitorOnlyFeatures, showUpdateItem, t],
   );
 
   return (
@@ -2656,7 +2672,7 @@ const MobileShell: React.FC<{ onActiveConnectionDeleted: () => void }> = ({ onAc
             </div>
             <div ref={chatAnimRef} className="relative h-full w-full bg-background">
               <ErrorBoundary>
-                <ChatView />
+                {activeMainTab === 'assistant' ? <AssistantView /> : <ChatView />}
               </ErrorBoundary>
             </div>
           </main>
@@ -3435,6 +3451,7 @@ export function MobileApp({ apis }: MobileAppProps) {
           <TooltipProvider delayDuration={300} skipDelayDuration={150}>
             <div className="h-full bg-background text-foreground">
               <SessionStartupCoordinator />
+              <MobileShareBridge />
               <SyncAppEffects embeddedBackgroundWorkEnabled={isInitialized} />
               <OpenCodeUpdateToast />
               <MobileAppUpdateToast />

@@ -26,7 +26,7 @@ function serializeRoute(state: AppRouteState): URLSearchParams {
   const params = new URLSearchParams();
 
   // Session ID - always include if present
-  if (state.tab !== 'scheduled' && state.sessionId && state.sessionId.trim().length > 0) {
+  if (state.tab !== 'scheduled' && state.tab !== 'assistant' && state.sessionId && state.sessionId.trim().length > 0) {
     params.set(ROUTE_PARAMS.SESSION, state.sessionId);
   }
 

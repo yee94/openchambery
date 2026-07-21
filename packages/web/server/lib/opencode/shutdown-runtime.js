@@ -30,6 +30,7 @@ export const createGracefulShutdownRuntime = (dependencies) => {
     getActiveTunnelController,
     setActiveTunnelController,
     tunnelAuthController,
+    closeFeatureRoutes,
   } = dependencies;
 
   let shutdownPromise = null;
@@ -48,6 +49,7 @@ export const createGracefulShutdownRuntime = (dependencies) => {
     sessionTitleRuntime?.stop?.();
     sessionGoalRuntime?.stop?.();
     scheduledTasksRuntime?.stop?.();
+    closeFeatureRoutes?.();
 
     const healthCheckInterval = getHealthCheckInterval();
     if (healthCheckInterval) {
