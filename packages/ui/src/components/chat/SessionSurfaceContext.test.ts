@@ -23,6 +23,7 @@ describe('SessionSurfaceContext', () => {
                 openTimeline: true,
                 navigateNestedSession: true,
                 textSelectionActions: true,
+                forkSession: true,
             },
         });
     });
@@ -35,6 +36,7 @@ describe('SessionSurfaceContext', () => {
             openTimeline: false,
             navigateNestedSession: true,
             textSelectionActions: false,
+            forkSession: false,
         });
     });
 
@@ -108,5 +110,21 @@ describe('SessionSurfaceContext', () => {
             timeline: false,
             textSelectionMutation: false,
         });
+    });
+
+    test('allows hosted surfaces to carry a custom revert handler', () => {
+        const onRevertMessage = async () => {};
+        const surface: SessionSurfaceContextValue = {
+            kind: 'embedded',
+            surfaceId: 'assistant:test',
+            sessionId: 'ses_test',
+            directory: '/workspace',
+            active: true,
+            capabilities: PRIMARY_SESSION_SURFACE.capabilities,
+            onRevertMessage,
+        };
+
+        expect(surface.onRevertMessage).toBe(onRevertMessage);
+        expect(getSessionSurfaceActionAvailability(surface).revert).toBe(true);
     });
 });

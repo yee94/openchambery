@@ -488,27 +488,64 @@ describe('useConfigStore provider persistence', () => {
     expect(persisted.state.directoryScoped[DIRECTORY].selectedProviderId).toBe('');
   });
 
-  test('rehydrate and partialize remove provider secret sentinels from every catalog projection', async () => {
+  test('rehydrate and partialize never restore or write Provider/Agent catalogs to localStorage', async () => {
     const sentinel = '__provider_secret__';
     storage.set(STORAGE_KEY, JSON.stringify({
       state: {
         catalogTransportIdentity: getRuntimeTransportIdentity(),
         activeDirectoryKey: DIRECTORY,
         providers: [{ ...provider('unsafe'), key: sentinel }],
+        agents: [{ name: 'build', mode: 'primary' }],
         defaultProviders: { default: 'unsafe' },
         directoryScoped: {
           [DIRECTORY]: {
             providers: [{ ...provider('unsafe'), headers: { authorization: sentinel } }],
-            agents: [], currentProviderId: 'unsafe', currentModelId: 'unsafe-model', selectedProviderId: 'unsafe', agentModelSelections: {}, defaultProviders: { default: 'unsafe' },
+            agents: [{ name: 'build', mode: 'primary' }],
+            currentProviderId: 'unsafe',
+            currentModelId: 'unsafe-model',
+            selectedProviderId: 'unsafe',
+            agentModelSelections: {},
+            defaultProviders: { default: 'unsafe' },
           },
         },
       }, version: 0,
     }));
     await useConfigStore.persist.rehydrate();
     const state = useConfigStore.getState();
-    const partial = useConfigStore.persist.getOptions().partialize?.(state);
-    expect(JSON.stringify(state.providers)).not.toContain(sentinel);
-    expect(JSON.stringify(state.directoryScoped)).not.toContain(sentinel);
+    // Catalog SWR is memory/Query only — legacy localStorage catalogs are discarded.
+    expect(state.providers).toEqual([]);
+    expect(state.agents).toEqual([]);
+    expect(state.defaultProviders).toEqual({});
+    expect(state.directoryScoped[DIRECTORY]?.providers).toEqual([]);
+    expect(state.directoryScoped[DIRECTORY]?.agents).toEqual([]);
+    expect(state.directoryScoped[DIRECTORY]?.defaultProviders).toEqual({});
+    expect(state.directoryScoped[DIRECTORY]?.selectedProviderId).toBe('unsafe');
+
+    // Even if the in-memory store later holds a catalog, partialize must not persist it.
+    useConfigStore.setState({
+      providers: [{ ...provider('live'), key: sentinel }],
+      agents: [{ name: 'build', mode: 'primary' } as never],
+      defaultProviders: { default: 'live' },
+      directoryScoped: {
+        [DIRECTORY]: {
+          providers: [{ ...provider('live'), headers: { authorization: sentinel } }],
+          agents: [{ name: 'build', mode: 'primary' } as never],
+          currentProviderId: 'live',
+          currentModelId: 'live-model',
+          currentAgentName: undefined,
+          selectedProviderId: 'live',
+          agentModelSelections: {},
+          defaultProviders: { default: 'live' },
+        },
+      },
+    });
+    const partial = useConfigStore.persist.getOptions().partialize?.(useConfigStore.getState()) as Record<string, unknown>;
+    expect(partial).not.toHaveProperty('providers');
+    expect(partial).not.toHaveProperty('agents');
+    expect(partial).not.toHaveProperty('defaultProviders');
+    expect((partial.directoryScoped as Record<string, { providers: unknown[]; agents: unknown[]; defaultProviders: Record<string, string> }>)[DIRECTORY].providers).toEqual([]);
+    expect((partial.directoryScoped as Record<string, { providers: unknown[]; agents: unknown[]; defaultProviders: Record<string, string> }>)[DIRECTORY].agents).toEqual([]);
+    expect((partial.directoryScoped as Record<string, { providers: unknown[]; agents: unknown[]; defaultProviders: Record<string, string> }>)[DIRECTORY].defaultProviders).toEqual({});
     expect(JSON.stringify(partial)).not.toContain(sentinel);
   });
 

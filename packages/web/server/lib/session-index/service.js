@@ -3,11 +3,11 @@ import { createRequire } from 'node:module';
 
 const require = createRequire(import.meta.url);
 
-const SCHEMA_VERSION = 5;
+const SCHEMA_VERSION = 6;
 const MAX_ROOT_SESSIONS = 20;
 const HIDDEN_SESSION_TITLES = new Set(['smartfetch-secondary']);
 
-const isVisibleSession = (session) => !HIDDEN_SESSION_TITLES.has(session?.title) && session?.metadata?.openchamber?.assistant?.kind !== 'assistant';
+const isVisibleSession = (session) => !HIDDEN_SESSION_TITLES.has(session?.title);
 
 const normalizeDirectory = (value) => {
   if (typeof value !== 'string') return null;
@@ -35,6 +35,7 @@ const toSummary = (session, fallbackDirectory) => {
   if (!session || !isVisibleSession(session) || typeof session.id !== 'string' || !session.id) return null;
   const directory = normalizeDirectory(session.directory ?? session.project?.worktree ?? fallbackDirectory);
   if (!directory) return null;
+  const assistant = session.metadata?.openchamber?.assistant;
   return {
     id: session.id,
     directory,
@@ -45,6 +46,8 @@ const toSummary = (session, fallbackDirectory) => {
     archivedAt: toTimestamp(session.time?.archived),
     parentID: typeof session.parentID === 'string' ? session.parentID : null,
     hasChildren: typeof session.hasChildren === 'boolean' ? session.hasChildren : null,
+    assistantID: typeof assistant?.assistantID === 'string' ? assistant.assistantID : null,
+    assistantName: typeof assistant?.name === 'string' ? assistant.name : null,
   };
 };
 
@@ -101,6 +104,8 @@ export const createSessionIndexService = ({ dbPath, getRuntimeConfig = () => nul
       status_changed_at INTEGER NOT NULL DEFAULT 0,
       parent_id TEXT,
       has_children INTEGER NOT NULL DEFAULT 0,
+      assistant_id TEXT,
+      assistant_name TEXT,
       PRIMARY KEY (runtime_key, directory, session_id),
       FOREIGN KEY (runtime_key, directory)
         REFERENCES runtime_directory(runtime_key, directory)
@@ -162,12 +167,12 @@ export const createSessionIndexService = ({ dbPath, getRuntimeConfig = () => nul
     LIMIT 1 OFFSET ?
   `);
   const insertSummary = db.prepare(`
-    INSERT INTO session_summary(runtime_key, directory, session_id, title, created_at, updated_at, activity_updated_at, archived_at, status, status_changed_at, parent_id, has_children)
-    VALUES (@runtimeKey, @directory, @id, @title, @createdAt, @updatedAt, @activityUpdatedAt, @archivedAt, @status, @statusChangedAt, @parentID, @hasChildren)
+    INSERT INTO session_summary(runtime_key, directory, session_id, title, created_at, updated_at, activity_updated_at, archived_at, status, status_changed_at, parent_id, has_children, assistant_id, assistant_name)
+    VALUES (@runtimeKey, @directory, @id, @title, @createdAt, @updatedAt, @activityUpdatedAt, @archivedAt, @status, @statusChangedAt, @parentID, @hasChildren, @assistantID, @assistantName)
   `);
   const upsertSummary = db.prepare(`
-    INSERT INTO session_summary(runtime_key, directory, session_id, title, created_at, updated_at, activity_updated_at, archived_at, status, status_changed_at, parent_id, has_children)
-    VALUES (@runtimeKey, @directory, @id, @title, @createdAt, @updatedAt, @activityUpdatedAt, @archivedAt, NULL, 0, @parentID, @hasChildren)
+    INSERT INTO session_summary(runtime_key, directory, session_id, title, created_at, updated_at, activity_updated_at, archived_at, status, status_changed_at, parent_id, has_children, assistant_id, assistant_name)
+    VALUES (@runtimeKey, @directory, @id, @title, @createdAt, @updatedAt, @activityUpdatedAt, @archivedAt, NULL, 0, @parentID, @hasChildren, @assistantID, @assistantName)
     ON CONFLICT(runtime_key, directory, session_id) DO UPDATE SET
       title = excluded.title,
       created_at = excluded.created_at,
@@ -175,7 +180,9 @@ export const createSessionIndexService = ({ dbPath, getRuntimeConfig = () => nul
       activity_updated_at = MAX(session_summary.activity_updated_at, excluded.activity_updated_at),
       archived_at = excluded.archived_at,
       parent_id = excluded.parent_id,
-      has_children = excluded.has_children
+      has_children = excluded.has_children,
+      assistant_id = excluded.assistant_id,
+      assistant_name = excluded.assistant_name
   `);
   const setHasChildren = db.prepare(`
     UPDATE session_summary SET has_children = ?
@@ -342,7 +349,7 @@ export const createSessionIndexService = ({ dbPath, getRuntimeConfig = () => nul
         SELECT session_id AS id, title, created_at AS createdAt, updated_at AS updatedAt,
           activity_updated_at AS activityUpdatedAt, archived_at AS archivedAt,
           status, status_changed_at AS statusChangedAt, parent_id AS parentID,
-          has_children AS hasChildren
+          has_children AS hasChildren, assistant_id AS assistantID, assistant_name AS assistantName
         FROM session_summary WHERE runtime_key = ? AND directory = ?
         ORDER BY activity_updated_at DESC, id DESC
       `).all(key, directory.directory)
@@ -355,6 +362,7 @@ export const createSessionIndexService = ({ dbPath, getRuntimeConfig = () => nul
             openchamber: {
               titleRefresh: { activityUpdatedAt: session.activityUpdatedAt },
               sessionStatus: { type: session.status ?? 'idle', changedAt: session.statusChangedAt },
+              ...(session.assistantID ? { assistant: { assistantID: session.assistantID, ...(session.assistantName ? { name: session.assistantName } : {}) } } : {}),
             },
           },
           ...(session.parentID ? { parentID: session.parentID } : {}),

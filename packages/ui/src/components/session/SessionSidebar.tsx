@@ -2465,7 +2465,7 @@ export const SessionSidebar: React.FC<SessionSidebarProps> = ({
           )
         ) : null}
         <div className="space-y-0.5 py-1">
-          {assistantCapability.data?.supported ? <Button
+          <Button
             variant="ghost"
             size="sm"
             className={cn(
@@ -2478,19 +2478,6 @@ export const SessionSidebar: React.FC<SessionSidebarProps> = ({
             <span className="truncate">
               {t("sessions.scheduledTasks.dialog.actions.newTask")}
             </span>
-          </Button> : null}
-          <Button
-            variant="ghost"
-            size="sm"
-            className={cn(
-              "w-full justify-start font-normal",
-              activeMainTab === "assistant" && "bg-interactive-selection text-interactive-selection-foreground",
-              mobileVariant && "h-11",
-            )}
-            onClick={handleOpenAssistants}
-          >
-            <Icon name="ai-agent" className="size-4" />
-            <span className="truncate">{t("assistants.title")}</span>
           </Button>
           <Button
             variant="ghost"
@@ -2502,14 +2489,22 @@ export const SessionSidebar: React.FC<SessionSidebarProps> = ({
             )}
             onClick={handleOpenScheduledTasks}
           >
-            <Icon
-              name="time"
-              className="size-4"
-            />
-            <span className="truncate">
-              {t("sessions.sidebar.header.actions.scheduledTasks")}
-            </span>
+            <Icon name="time" className="size-4" />
+            <span className="truncate">{t("sessions.sidebar.header.actions.scheduledTasks")}</span>
           </Button>
+          {assistantCapability.data?.supported ? <Button
+            variant="ghost"
+            size="sm"
+            className={cn(
+              "w-full justify-start font-normal",
+              activeMainTab === "assistant" && "bg-interactive-selection text-interactive-selection-foreground",
+              mobileVariant && "h-11",
+            )}
+            onClick={handleOpenAssistants}
+          >
+            <Icon name="ai-agent" className="size-4" />
+            <span className="truncate">{t("assistants.title")}</span>
+          </Button> : null}
         </div>
         {pinnedItems.length > 0 ? (
           <SidebarPinnedSessions

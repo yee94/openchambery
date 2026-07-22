@@ -6,6 +6,8 @@ import { cn } from '@/lib/utils';
 type AgentAvatarProps = {
   /** Agent name seed — drives both pattern and theme color. */
   name: string | undefined;
+  /** Optional glyph used in place of the generated identicon. */
+  emoji?: string;
   size?: number;
   className?: string;
   /** Accessible name when the surrounding control no longer shows text. */
@@ -17,6 +19,7 @@ type AgentAvatarProps = {
  */
 export const AgentAvatar: React.FC<AgentAvatarProps> = ({
   name,
+  emoji,
   size = 16,
   className,
   label,
@@ -28,6 +31,7 @@ export const AgentAvatar: React.FC<AgentAvatarProps> = ({
     <span
       className={cn(
         'inline-flex shrink-0 overflow-hidden rounded-sm',
+        emoji && 'items-center justify-center select-none',
         color.class,
         className,
       )}
@@ -38,7 +42,11 @@ export const AgentAvatar: React.FC<AgentAvatarProps> = ({
       aria-label={label}
       aria-hidden={label ? undefined : true}
     >
-      <svg
+      {emoji ? (
+        <span aria-hidden="true" style={{ fontSize: size * 0.75, lineHeight: 1 }}>
+          {emoji}
+        </span>
+      ) : <svg
         width={size}
         height={size}
         viewBox="0 0 5 5"
@@ -61,7 +69,7 @@ export const AgentAvatar: React.FC<AgentAvatarProps> = ({
             ) : null,
           ),
         )}
-      </svg>
+      </svg>}
     </span>
   );
 };

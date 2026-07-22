@@ -1,299 +1,376 @@
 import React from 'react';
 import { useEvent } from '@reactuses/core';
 import { AgentAvatar } from '@/components/chat/AgentAvatar';
-import { SimpleMarkdownRenderer } from '@/components/chat/MarkdownRenderer';
+import { resolveModelVariantKeys, type ChatInputSecondarySurface, type ChatInputSurfaceResources } from '@/components/chat/chatInputSurface';
+import { resolveComposerVisibleAgents } from '@/components/chat/chatComposerCatalog';
+import { getCycledPrimaryAgentName, resolveAgentModelSelection } from '@/components/chat/mobileControlsUtils';
 import { Icon } from '@/components/icon/Icon';
 import { Button } from '@/components/ui/button';
-import { Input } from '@/components/ui/input';
-import { Textarea } from '@/components/ui/textarea';
+import { MobileSurfaceHeader } from '@/components/ui/MobileSurfaceHeader';
+import { MobileOverlayPanel } from '@/components/ui/MobileOverlayPanel';
+import { useMobileAppActions } from '@/apps/mobileAppContext';
+import { donateNativeAssistantInteraction } from '@/apps/MobileShareBridge';
 import { useDeviceInfo } from '@/lib/device';
 import { useI18n } from '@/lib/i18n';
 import { createUuid } from '@/lib/uuid';
 import { cn } from '@/lib/utils';
-import {
-  archiveAssistantTopic,
-  createAssistantTopic,
-  renameAssistantTopic,
-  runAssistantTopicOperation,
-  useAssistantSnapshotQuery,
-  useAssistantTopicsQuery,
-  useAssistantTurnsQuery,
-  type AssistantPart,
-  type AssistantTopicDTO,
-} from '@/queries/assistantQueries';
-import { getRuntimeTransportIdentity } from '@/lib/runtime-switch';
-import { useConfigStore } from '@/stores/useConfigStore';
+import { getRuntimeGeneration, getRuntimeTransportIdentity, subscribeRuntimeEndpointChanged } from '@/lib/runtime-switch';
+import { abortAssistantSession, compactAssistantSession, ensureAssistantSession, fetchAssistantSnapshot, newAssistantSession, readAssistantSnapshot, sendAssistantMessage, updateAssistant, useAssistantCapabilityQuery, useAssistantSnapshotQuery, type AssistantPart, type SessionBinding } from '@/queries/assistantQueries';
+import { fetchMessagesForSession } from '@/sync/session-actions';
+import { ascendingIdAfter } from '@/sync/message-id';
+import { getSyncMessages } from '@/sync/sync-refs';
+import { useSessionMessages, useSessionStatus, useUserMessageHistory } from '@/sync/sync-context';
+import { useSync } from '@/sync/use-sync';
+import { surfaceDraftKey, draftKeyString } from '@/sync/input-draft-types';
+import { useInputStore } from '@/sync/input-store';
+import { useScopedAgentsQuery, useScopedProvidersQuery } from '@/queries/agentQueries';
 import { useAssistantUIStore } from '@/stores/useAssistantUIStore';
 import { useUIStore } from '@/stores/useUIStore';
+import type { AttachedFile } from '@/stores/types/sessionTypes';
+import { AssistantConversationSurface } from './AssistantConversationSurface';
+import { toast } from 'sonner';
+import { revertToMessage as revertSessionToMessage } from '@/sync/session-actions';
+import { createAssistantRevertDraftSnapshot } from './assistantRevertDraft';
+import { AssistantSelectionCoordinator, AssistantSelectionStaleError, type AssistantSelection, type AssistantSelectionIdentity } from './assistantSelectionCoordinator';
+import { commitAssistantSelection } from './assistantSelectionBackend';
+import { getAssistantPresentation } from './assistantPresentation';
 
-type PendingSend = { operationID: string; operation: 'message' | 'new' | 'compact'; parts: AssistantPart[]; error: boolean };
-
-const readImage = (file: File): Promise<AssistantPart> => new Promise((resolve, reject) => {
-  const reader = new FileReader();
-  reader.onload = () => resolve({ type: 'file', mime: file.type, url: String(reader.result) });
-  reader.onerror = () => reject(reader.error);
-  reader.readAsDataURL(file);
-});
-
-const textFromParts = (parts: AssistantPart[]): string => parts.filter((part): part is Extract<AssistantPart, { type: 'text' }> => part.type === 'text').map((part) => part.text).join('\n');
+const EMPTY_ATTACHMENTS: Record<string, AttachedFile> = {};
+const assistantParts = (text: string | undefined, parts: readonly { text: string; attachments?: readonly AttachedFile[]; synthetic?: boolean }[] | undefined, attachments: readonly AttachedFile[] | undefined): AssistantPart[] => {
+  return [
+    ...(text === undefined ? [] : [{ type: 'text' as const, text }]),
+    ...(parts ?? []).flatMap((part) => [
+      { type: 'text' as const, text: part.text, ...(part.synthetic === true ? { synthetic: true as const } : {}) },
+      ...(part.attachments ?? []).map((attachment) => ({ type: 'file' as const, mime: attachment.mimeType, url: attachment.dataUrl })),
+    ]),
+    ...(attachments ?? []).map((attachment) => ({ type: 'file' as const, mime: attachment.mimeType, url: attachment.dataUrl })),
+  ];
+};
 
 export const AssistantView: React.FC = () => {
   const { t } = useI18n();
   const { isMobile } = useDeviceInfo();
-  const transport = getRuntimeTransportIdentity();
+  const mobileActions = useMobileAppActions();
+  const transport = React.useSyncExternalStore(subscribeRuntimeEndpointChanged, getRuntimeTransportIdentity, getRuntimeTransportIdentity);
+  const runtimeGeneration = getRuntimeGeneration();
+  const active = useUIStore((state) => state.activeMainTab === 'assistant');
+  const capabilityQuery = useAssistantCapabilityQuery();
   const snapshotQuery = useAssistantSnapshotQuery();
   const snapshot = snapshotQuery.data;
   const selectedAssistantID = useAssistantUIStore((state) => state.assistantByTransport[transport] ?? null);
-  const selectedTopicID = useAssistantUIStore((state) => state.topicByTransport[transport] ?? null);
   const selectAssistant = useAssistantUIStore((state) => state.selectAssistant);
-  const selectTopic = useAssistantUIStore((state) => state.selectTopic);
-  const topicsQuery = useAssistantTopicsQuery(selectedAssistantID);
-  const [pending, setPending] = React.useState<PendingSend | null>(null);
-  const turnsQuery = useAssistantTurnsQuery(selectedTopicID);
-  const [draft, setDraft] = React.useState('');
-  const [attachments, setAttachments] = React.useState<AssistantPart[]>([]);
-  const [topicDraft, setTopicDraft] = React.useState('');
-  const [editingTopic, setEditingTopic] = React.useState<AssistantTopicDTO | null>(null);
-  const [topicActionError, setTopicActionError] = React.useState(false);
-  const fileInputRef = React.useRef<HTMLInputElement>(null);
-  const messagesEndRef = React.useRef<HTMLDivElement>(null);
-  const providers = useConfigStore((state) => state.providers);
-
+  const requestCreate = useAssistantUIStore((state) => state.requestCreate);
   const assistant = snapshot?.assistants.find((item) => item.id === selectedAssistantID) ?? null;
-  const topics = topicsQuery.data ?? [];
-  const topic = topics.find((item) => item.id === selectedTopicID) ?? null;
-  const configured = assistant ? providers.length === 0 || providers.some((provider) => provider.id === assistant.providerID && provider.models?.some((model) => model.id === assistant.modelID)) : true;
-  const canSend = Boolean(snapshot?.enabled && assistant?.enabled && configured && topic && !pending);
+  const assistantID = assistant?.id ?? '';
+  const sessionID = assistant?.sessionID ?? '';
+  const directory = assistant?.effectiveWorkspacePath ?? '';
+  const draftKey = React.useMemo(() => surfaceDraftKey({ transportIdentity: transport }, `assistant:${assistantID}`), [assistantID, transport]);
+  const draftID = draftKeyString(draftKey);
+  const attachmentViews = useInputStore((state) => state.draftAttachmentViews[draftID] ?? EMPTY_ATTACHMENTS);
+  const attachments = React.useMemo(() => Object.values(attachmentViews), [attachmentViews]);
+  const providersQuery = useScopedProvidersQuery(directory || null, { enabled: Boolean(directory) && active });
+  const agentsQuery = useScopedAgentsQuery(directory || null, { enabled: Boolean(directory) && active });
+  const messages = useSessionMessages(sessionID, directory || undefined);
+  const status = useSessionStatus(sessionID, directory || undefined);
+  const history = useUserMessageHistory(sessionID);
+  const sync = useSync();
+  const [, setSelectionSaving] = React.useState(false);
+  const [mobileSelectorOpen, setMobileSelectorOpen] = React.useState(false);
+  const selectionErrorRef = React.useRef<(error: unknown) => void>(() => {});
+  selectionErrorRef.current = () => { toast.error(t('assistants.composer.selectionSaveFailed')); };
+  const selectionCoordinatorRef = React.useRef<AssistantSelectionCoordinator | null>(null);
+  if (!selectionCoordinatorRef.current) selectionCoordinatorRef.current = new AssistantSelectionCoordinator(setSelectionSaving, (error) => selectionErrorRef.current(error));
+  const selectionIdentity = React.useMemo<AssistantSelectionIdentity>(() => ({ assistantID, transportIdentity: transport, runtimeGeneration }), [assistantID, runtimeGeneration, transport]);
+  const selectionCoordinator = selectionCoordinatorRef.current;
+  const configured = assistant ? (providersQuery.data ?? []).some((provider) => provider.id === assistant.providerID && provider.models?.some((model) => model.id === assistant.modelID)) : false;
 
-  React.useEffect(() => {
-    if (!isMobile && !selectedAssistantID && snapshot?.assistants[0]) selectAssistant(snapshot.assistants[0].id);
-  }, [isMobile, selectAssistant, selectedAssistantID, snapshot?.assistants]);
+  React.useEffect(() => { if (!selectedAssistantID && snapshot?.assistants[0]) selectAssistant(snapshot.assistants[0].id); }, [selectAssistant, selectedAssistantID, snapshot?.assistants]);
+  React.useEffect(() => { if (snapshotQuery.isSuccess && selectedAssistantID && !assistant) selectAssistant(snapshot?.assistants[0]?.id ?? null); }, [assistant, selectAssistant, selectedAssistantID, snapshot?.assistants, snapshotQuery.isSuccess]);
+  React.useEffect(() => { if (assistantID) void ensureAssistantSession(assistantID); }, [assistantID]);
+  React.useEffect(() => { if (active && sessionID && directory) { void sync.ensureSessionRenderable(sessionID, { directory }); void fetchMessagesForSession(sessionID, directory); } }, [active, directory, sessionID, sync]);
+  React.useEffect(() => { selectionCoordinator.activate(selectionIdentity); }, [selectionCoordinator, selectionIdentity]);
+  React.useEffect(() => () => { selectionCoordinator.dispose(); }, [selectionCoordinator]);
 
-  React.useEffect(() => {
-    if (snapshotQuery.isSuccess && selectedAssistantID && !assistant) {
-      selectAssistant(isMobile ? null : (snapshot?.assistants[0]?.id ?? null));
-    }
-  }, [assistant, isMobile, selectAssistant, selectedAssistantID, snapshot?.assistants, snapshotQuery.isSuccess]);
-
-  React.useEffect(() => {
-    if (!isMobile && selectedAssistantID && topicsQuery.isSuccess && !selectedTopicID) {
-      const inbox = topics.find((item) => item.id === assistant?.inboxTopicID);
-      selectTopic(inbox?.id ?? topics[0]?.id ?? null);
-    }
-  }, [assistant?.inboxTopicID, isMobile, selectTopic, selectedAssistantID, selectedTopicID, topics, topicsQuery.isSuccess]);
-
-  React.useEffect(() => {
-    if (topicsQuery.isSuccess && selectedTopicID && !topic) {
-      selectTopic(isMobile ? null : (assistant?.inboxTopicID ?? topics[0]?.id ?? null));
-    }
-  }, [assistant?.inboxTopicID, isMobile, selectTopic, selectedTopicID, topic, topics, topicsQuery.isSuccess]);
-
-  React.useEffect(() => {
-    messagesEndRef.current?.scrollIntoView({ block: 'end' });
-  }, [pending, turnsQuery.data]);
-
-  const submit = useEvent(async (retry?: PendingSend) => {
-    if (!topic) return;
-    const trimmed = draft.trim();
-    let operation: 'message' | 'new' | 'compact' = retry?.operation ?? 'message';
-    if (!retry && trimmed.startsWith('/')) {
-      if (trimmed === '/new') operation = 'new';
-      else if (trimmed === '/compact') operation = 'compact';
-      else {
-        setPending({ operationID: '', operation: 'message', parts: [{ type: 'text', text: trimmed }], error: true });
-        return;
-      }
-    }
-    const parts = retry?.parts ?? [...(trimmed && operation === 'message' ? [{ type: 'text' as const, text: trimmed }] : []), ...attachments];
-    if (operation === 'message' && parts.length === 0) return;
-    const operationID = retry?.operationID || createUuid();
-    setPending({ operationID, operation, parts, error: false });
-    if (!retry) {
-      setDraft('');
-      setAttachments([]);
-    }
-    try {
-      await runAssistantTopicOperation(topic.id, operationID, operation, parts);
-      setPending(null);
-    } catch {
-      setPending({ operationID, operation, parts, error: true });
-    }
+  const changeSelection = useEvent((selection: AssistantSelection) => {
+    if (!selectionIdentity.assistantID) return Promise.reject(new Error('assistant_unavailable'));
+    return selectionCoordinator.enqueue(selectionIdentity, selection, async ({ identity, selection: desired, signal }) => {
+      await commitAssistantSelection(identity, desired, {
+        readSnapshot: () => readAssistantSnapshot(undefined, identity.transportIdentity),
+        ensureSnapshot: (snapshotSignal) => fetchAssistantSnapshot(snapshotSignal),
+        updateAssistant,
+        signal,
+        assertAuthoritative: () => {
+          selectionCoordinator.assertAuthoritative(identity);
+          if (getRuntimeTransportIdentity() !== identity.transportIdentity || getRuntimeGeneration() !== identity.runtimeGeneration) throw new AssistantSelectionStaleError();
+        },
+      });
+    });
   });
 
-  const addImages = useEvent(async (files: FileList | null) => {
-    if (!files) return;
-    const images = Array.from(files).filter((file) => file.type.startsWith('image/'));
-    const parts = await Promise.all(images.map(readImage));
-    setAttachments((current) => [...current, ...parts].slice(0, 8));
-  });
-
-  const createTopic = useEvent(async () => {
-    if (!assistant || !topicDraft.trim()) return;
-    setTopicActionError(false);
-    try {
-      const created = await createAssistantTopic(assistant.id, topicDraft.trim());
-      setTopicDraft('');
-      selectTopic(created.id);
-    } catch {
-      setTopicActionError(true);
-    }
-  });
-
-  const commitRename = useEvent(async () => {
-    if (!editingTopic || !topicDraft.trim()) return;
-    setTopicActionError(false);
-    try {
-      await renameAssistantTopic(editingTopic, topicDraft.trim());
-      setEditingTopic(null);
-      setTopicDraft('');
-    } catch {
-      setTopicActionError(true);
-    }
-  });
-
-  const archiveTopic = useEvent(async (target: AssistantTopicDTO) => {
-    setTopicActionError(false);
-    try {
-      await archiveAssistantTopic(target);
-      if (selectedTopicID === target.id) selectTopic(assistant?.inboxTopicID ?? null);
-    } catch {
-      setTopicActionError(true);
-    }
-  });
-
-  const assistantRail = (
-    <aside className="flex h-full min-h-0 flex-col bg-sidebar md:border-r md:border-border">
-      <div className="px-4 pb-2 pt-5">
-        <div className="flex items-center gap-2">
-          {isMobile ? <Button variant="ghost" size="icon" onClick={() => useUIStore.getState().setActiveMainTab('chat')} aria-label={t('assistants.actions.backToChat')}><Icon name="arrow-left-s" className="size-5" /></Button> : null}
-          <span className="flex size-8 items-center justify-center rounded-lg bg-interactive-selection"><Icon name="ai-agent" className="size-4" /></span>
-          <div>
-            <h1 className="typography-ui-header font-semibold">{t('assistants.title')}</h1>
-            <p className="typography-micro text-muted-foreground">{t('assistants.subtitle')}</p>
-          </div>
-        </div>
-      </div>
-      {snapshotQuery.isError && snapshot ? <div className="mx-3 my-2 rounded-md border border-[var(--status-warning)]/30 bg-[var(--status-warning)]/10 px-3 py-2 typography-meta text-[var(--status-warning)]">{t('assistants.state.staleSnapshot')}</div> : null}
-      <div className="min-h-0 flex-1 space-y-1 overflow-y-auto p-2">
-        {snapshot?.assistants.map((item) => (
-          <button key={item.id} type="button" onClick={() => selectAssistant(item.id)} className={cn('group flex w-full items-center gap-3 rounded-lg px-3 py-2.5 text-left transition-colors', item.id === selectedAssistantID ? 'bg-interactive-selection text-interactive-selection-foreground' : 'hover:bg-interactive-hover')}>
-            <AgentAvatar name={item.id} size={30} label={item.name} />
-            <span className="min-w-0 flex-1">
-              <span className="block truncate typography-ui-label font-medium">{item.name}</span>
-              <span className="block truncate typography-micro text-muted-foreground">{item.mode === 'continuous' ? t('assistants.mode.continuous') : t('assistants.mode.stateless')}</span>
-            </span>
-            {!item.enabled ? <Icon name="pause" className="size-4 text-[var(--status-warning)]" /> : <Icon name="arrow-right-s" className="size-4 text-muted-foreground opacity-0 transition-opacity group-hover:opacity-100" />}
-          </button>
-        ))}
-      </div>
-      {!snapshot?.assistants.length ? <div className="px-5 pb-8 text-center typography-ui text-muted-foreground">{t('assistants.empty')}</div> : null}
-    </aside>
+  const visibleAgents = React.useMemo(
+    () => resolveComposerVisibleAgents(agentsQuery.data),
+    [agentsQuery.data],
   );
+  const cycle = useEvent((direction: 1 | -1) => {
+    if (!assistant) return;
+    const next = getCycledPrimaryAgentName(visibleAgents, assistant.agent ?? undefined, direction);
+    if (next) {
+      const selection = resolveAgentModelSelection({ providerID: assistant.providerID, modelID: assistant.modelID, agent: assistant.agent }, next, visibleAgents, providersQuery.data ?? []);
+      const retainsModel = selection.providerID === assistant.providerID && selection.modelID === assistant.modelID;
+      void changeSelection({ ...selection, agent: selection.agent ?? undefined, variant: retainsModel ? assistant.variant ?? undefined : undefined });
+    }
+  });
+  const refreshBinding = useEvent(async (binding: SessionBinding, options?: { force?: boolean }) => {
+    if (!binding.sessionID) return;
+    // Soft ensure after ordinary sends so live sync/SSE can update the transcript in place.
+    // Force only when the binding itself changed (/new, compact) or the user retries a failed load.
+    await sync.ensureSessionRenderable(binding.sessionID, {
+      directory: binding.directory,
+      ...(options?.force ? { force: true } : {}),
+    });
+  });
+  const revertAssistantMessage = useEvent(async (messageID: string) => {
+    if (!sessionID || !directory) throw new Error('assistant_unavailable');
+    // History segments from prior bindings are read-only in the stitched transcript.
+    if (!getSyncMessages(sessionID, directory).some((message) => message?.id === messageID)) return;
+    const restoration = await revertSessionToMessage(sessionID, messageID, { directory, restorePrimaryInput: false });
+    const input = useInputStore.getState();
+    const current = input.getDraft(draftKey);
+    const restorationDraft = await createAssistantRevertDraftSnapshot(restoration, createUuid);
+    const result = await input.commitDraftSnapshot({
+      key: draftKey,
+      expectedRevision: current?.revision ?? 'absent',
+      runtime: input.captureDraftRuntime(),
+      snapshot: restorationDraft.snapshot,
+      values: restorationDraft.values,
+    });
+    if (!result.durable) throw new Error(`assistant-revert-draft-${result.status}`);
+  });
+  // selectionSaving must NOT drive composer busy/disabled. Primary Tab agent
+  // cycling never disables the textarea; mapping PATCH-in-flight onto resources.busy
+  // made Assistant Tab blur the input (browser drops focus from disabled fields).
+  const resources = React.useMemo<ChatInputSurfaceResources>(() => ({
+    busy: false,
+    attachments,
+    addAttachment: async (file) => { await useInputStore.getState().addDraftLocalAttachment(draftKey, file); },
+    removeAttachment: (id) => { void useInputStore.getState().removeDraftAttachment(draftKey, id); },
+    clearAttachments: () => { for (const attachment of useInputStore.getState().getDraftAttachmentViews(draftKey)) void useInputStore.getState().removeDraftAttachment(draftKey, attachment.id); },
+    setAttachments: (nextAttachments) => {
+      void (async () => {
+        for (const attachment of useInputStore.getState().getDraftAttachmentViews(draftKey)) await useInputStore.getState().removeDraftAttachment(draftKey, attachment.id);
+        for (const attachment of nextAttachments) await useInputStore.getState().addDraftLocalAttachment(draftKey, attachment.file, { filename: attachment.filename, source: attachment.source === 'vscode' ? 'vscode' : 'local', vscodePath: attachment.vscodePath, vscodeSource: attachment.vscodeSource === 'selection' ? 'selection' : undefined });
+      })();
+    },
+    pendingInput: null,
+    consumePendingInput: () => null,
+    pendingPreset: null,
+    consumePendingPreset: () => null,
+    consumeSyntheticParts: () => {
+      const input = useInputStore.getState();
+      const views = new Map(input.getDraftAttachmentViews(draftKey).map((attachment) => [attachment.id, attachment]));
+      return input.consumeDraftSyntheticParts(draftKey)?.map((part) => ({ partID: part.partID, text: part.text, synthetic: part.synthetic, attachments: part.attachments.flatMap((attachment) => views.get(attachment.attachmentID) ?? []) })) ?? null;
+    },
+    restoreSyntheticParts: (parts) => {
+      void (async () => {
+        const input = useInputStore.getState();
+        const restored = parts.map((part) => ({ partID: part.partID ?? createUuid(), text: part.text, attachments: [], ...(part.synthetic === true ? { synthetic: true } : {}) }));
+        input.setDraftSyntheticParts(draftKey, restored);
+        for (let index = 0; index < restored.length; index++) {
+          const partID = restored[index]!.partID;
+          for (const attachment of parts[index]?.attachments ?? []) {
+            if (attachment.source === 'server' && attachment.dataUrl) input.addDraftDurableAttachment(draftKey, { attachmentID: attachment.id, filename: attachment.filename, mimeType: attachment.mimeType, size: attachment.size, source: 'server', url: attachment.dataUrl, serverPath: attachment.serverPath, partID });
+            else await input.addDraftLocalAttachment(draftKey, attachment.file, { attachmentID: attachment.id, filename: attachment.filename, source: attachment.source === 'vscode' ? 'vscode' : 'local', vscodePath: attachment.vscodePath, vscodeSource: attachment.vscodeSource === 'selection' ? 'selection' : undefined, partID });
+          }
+        }
+      })();
+    },
+    inlineDrafts: [],
+    removeInlineDraft: () => {},
+    restoreInlineDrafts: () => {},
+    history,
+    captureRuntime: () => useInputStore.getState().captureDraftRuntime(),
+    getDraft: (key) => useInputStore.getState().getDraft(key),
+    abortPrompt: { sessionID: null, clear: () => {} },
+  }), [attachments, draftKey, history]);
 
-  const topicRail = (
-    <aside className="flex h-full min-h-0 flex-col border-r border-border bg-[var(--surface-muted)]">
-      <div className="flex items-center gap-2 border-b border-border px-3 py-3">
-        {isMobile ? <Button variant="ghost" size="icon" onClick={() => selectAssistant(null)} aria-label={t('assistants.actions.backToAssistants')}><Icon name="arrow-left-s" className="size-5" /></Button> : null}
-        <AgentAvatar name={assistant?.id} size={24} />
-        <span className="min-w-0 flex-1 truncate typography-ui-label font-medium">{assistant?.name}</span>
-      </div>
-      <div className="p-3">
-        <div className="flex gap-2">
-          <Input value={topicDraft} onChange={(event) => setTopicDraft(event.target.value)} onKeyDown={(event) => { if (event.key === 'Enter') { event.preventDefault(); void (editingTopic ? commitRename() : createTopic()); } }} placeholder={editingTopic ? t('assistants.topics.renamePlaceholder') : t('assistants.topics.newPlaceholder')} className="h-8" />
-          <Button size="icon" variant={editingTopic ? 'outline' : 'default'} onClick={() => void (editingTopic ? commitRename() : createTopic())} aria-label={editingTopic ? t('assistants.topics.rename') : t('assistants.topics.create')}><Icon name={editingTopic ? 'check' : 'add'} className="size-4" /></Button>
-        </div>
-        {topicActionError ? <p className="mt-2 typography-meta text-[var(--status-error)]">{t('assistants.topics.actionFailed')}</p> : null}
-      </div>
-      <div className="min-h-0 flex-1 space-y-1 overflow-y-auto px-2 pb-3">
-        {topicsQuery.isPending ? <div className="p-4 text-center text-muted-foreground"><Icon name="loader-4" className="mx-auto size-4 animate-spin" /></div> : null}
-        {topicsQuery.isError && topics.length === 0 ? <button type="button" onClick={() => void topicsQuery.refetch()} className="w-full p-4 text-center typography-meta text-[var(--status-error)]">{t('assistants.actions.retry')}</button> : null}
-        {topics.map((item) => {
-          const inbox = item.id === assistant?.inboxTopicID;
-          return (
-            <div key={item.id} className={cn('group flex items-center rounded-md transition-colors', item.id === selectedTopicID ? 'bg-interactive-selection text-interactive-selection-foreground' : 'hover:bg-interactive-hover')}>
-              <button type="button" onClick={() => selectTopic(item.id)} className="flex min-w-0 flex-1 items-center gap-2 px-3 py-2 text-left">
-                <Icon name={inbox ? 'inbox-archive' : 'chat-thread'} className="size-4 shrink-0 text-muted-foreground" />
-                <span className="truncate typography-ui-label">{inbox ? t('assistants.topics.inbox') : item.title}</span>
-              </button>
-              {!inbox ? (
-                <div className="flex pr-1 opacity-100 md:opacity-0 md:group-hover:opacity-100">
-                  <Button variant="ghost" size="icon" onClick={() => { setEditingTopic(item); setTopicDraft(item.title); }} aria-label={t('assistants.topics.rename')}><Icon name="edit" className="size-3.5" /></Button>
-                  <Button variant="ghost" size="icon" onClick={() => void archiveTopic(item)} aria-label={t('assistants.topics.archive')}><Icon name="archive" className="size-3.5" /></Button>
-                </div>
-              ) : null}
+  const variants = React.useMemo(() => {
+    const model = (providersQuery.data ?? []).find((provider) => provider.id === assistant?.providerID)?.models?.find((item) => item.id === assistant?.modelID) as { variants?: unknown } | undefined;
+    // Provider catalogs project variants as a Record of named configs, not a string[].
+    return resolveModelVariantKeys(model);
+  }, [assistant?.modelID, assistant?.providerID, providersQuery.data]);
+  const hasMessages = messages.length > 0;
+  const surface = React.useMemo<ChatInputSecondarySurface | null>(() => {
+    if (!assistant || !sessionID || !directory) return null;
+    const binding = { sessionID, directory, sessionGeneration: assistant.sessionGeneration };
+    return {
+      kind: 'secondary', surfaceID: `assistant:${assistant.id}`, active, sessionID, directory, draftKey, transportIdentity: transport, runtimeGeneration, deliveryTarget: { kind: 'assistant', assistantID: assistant.id }, resources,
+      selection: { value: { providerID: assistant.providerID, modelID: assistant.modelID, agent: assistant.agent ?? undefined, variant: assistant.variant ?? undefined }, catalog: { providers: providersQuery.data ?? [], agents: visibleAgents, variants, variantsReady: providersQuery.isSuccess, ready: providersQuery.isSuccess && agentsQuery.isSuccess, loading: providersQuery.isPending || agentsQuery.isPending, error: providersQuery.isError || agentsQuery.isError }, change: changeSelection, flush: () => selectionCoordinator.flush(selectionIdentity) },
+      // Mirror primary chat: missing status is idle, never `unknown`. Unknown was
+      // treated as "not idle" by composer queue/steer gates and diverted idle
+      // assistant sends into the queue path before session status hydrated.
+      activity: { phase: status?.type === 'busy' ? 'busy' : status?.type === 'retry' ? 'retry' : 'idle', canAbort: status?.type === 'busy' || status?.type === 'retry' },
+      commands: { sessionID, hasMessages, hasNewDraft: false },
+      commandPolicy: (command) => command.name !== 'fork' && command.name !== 'thread',
+      backend: {
+        send: async (request) => {
+          // OpenCode rejects non-ascending message IDs (`Expected a string starting with "msg"`).
+          // Mirror primary chat: generate msg_* above the latest synced message in this session.
+          let floor: string | undefined;
+          for (const message of getSyncMessages(binding.sessionID, binding.directory)) {
+            const id = typeof message?.id === 'string' ? message.id : '';
+            if (/^msg_[0-9a-f]{12}[0-9A-Za-z]{14}$/.test(id) && (!floor || id > floor)) floor = id;
+          }
+          const result = await sendAssistantMessage(assistant.id, binding, ascendingIdAfter('msg', floor), assistantParts(request.text, request.parts, request.attachments));
+          if (capabilityQuery.data?.serverInstanceID) {
+            void donateNativeAssistantInteraction({ serverInstanceID: capabilityQuery.data.serverInstanceID, assistantID: assistant.id, name: assistant.name, avatarSeed: assistant.id }).catch(() => undefined);
+          }
+          // Stateless mode replaces the binding each turn; force rematerializes onto the fresh session.
+          await refreshBinding(result.binding, { force: result.binding.sessionID !== binding.sessionID || result.binding.sessionGeneration !== binding.sessionGeneration });
+        },
+        sendQueued: async () => { throw new Error('assistant-server-queue-required'); },
+        create: async () => { await refreshBinding(await newAssistantSession(assistant.id), { force: true }); },
+        compact: async () => { await refreshBinding((await compactAssistantSession(assistant.id, binding)).binding, { force: true }); },
+        abort: async () => { await abortAssistantSession(assistant.id, binding); },
+      },
+      shortcuts: { cycle, new: async () => { await refreshBinding(await newAssistantSession(assistant.id), { force: true }); }, abort: async () => { await abortAssistantSession(assistant.id, binding); }, submit: () => {} },
+    };
+  }, [active, assistant, capabilityQuery.data?.serverInstanceID, changeSelection, cycle, directory, draftKey, hasMessages, providersQuery.data, providersQuery.isError, providersQuery.isPending, providersQuery.isSuccess, agentsQuery.isError, agentsQuery.isPending, agentsQuery.isSuccess, refreshBinding, resources, runtimeGeneration, selectionCoordinator, selectionIdentity, sessionID, status, transport, variants, visibleAgents]);
+
+  const openCreateSettings = useEvent(() => { requestCreate(); if (mobileActions) { mobileActions.openSettings(); return; } const ui = useUIStore.getState(); ui.setSettingsPage('assistants'); ui.setSettingsDialogOpen(true); });
+  const returnToChat = useEvent(() => { useUIStore.getState().setActiveMainTab('chat'); });
+  const renderState = (icon: 'cloud-off' | 'error-warning' | 'ai-agent', title: string, description?: string, action?: React.ReactNode) => <div className="flex h-full min-h-0 flex-col">{isMobile ? <MobileSurfaceHeader><Button variant="ghost" size="icon" onClick={returnToChat} aria-label={t('assistants.actions.backToChat')}><Icon name="arrow-left-s" className="size-5" /></Button></MobileSurfaceHeader> : null}<div className="flex min-h-0 flex-1 flex-col items-center justify-center px-6 text-center"><Icon name={icon} className="size-6 text-muted-foreground" /><h1 className="mt-4 typography-ui-header font-semibold">{title}</h1>{description ? <p className="mt-2 max-w-md typography-ui text-muted-foreground">{description}</p> : null}{action ? <div className="mt-5">{action}</div> : null}</div></div>;
+  if (capabilityQuery.isPending || snapshotQuery.isPending) return renderState('ai-agent', t('assistants.state.unavailable'));
+  if (capabilityQuery.isError || !capabilityQuery.data?.supported || !capabilityQuery.data.enabled || !snapshot?.enabled) return renderState('cloud-off', t('assistants.state.unavailable'));
+  if (!snapshot.assistants.length) return renderState('ai-agent', t('assistants.onboarding.title'), t('assistants.onboarding.description'), <Button onClick={openCreateSettings}>{t('assistants.onboarding.action')}</Button>);
+  if (!assistant || !surface) return null;
+  const presentation = getAssistantPresentation(assistant.name);
+  const warning = !assistant.enabled ? t('assistants.state.assistantDisabled') : !configured ? t('assistants.state.invalidConfiguration') : snapshotQuery.isError ? t('assistants.state.staleSnapshot') : null;
+  return (
+    <div className="relative flex h-full min-h-0 overflow-hidden bg-background" data-presentation="workspace">
+      {isMobile ? null : (
+        <section className="flex h-full min-h-0 w-[clamp(16rem,22vw,20rem)] shrink-0 flex-col overflow-hidden">
+          <header className="shrink-0 px-4 pb-3 pt-4 sm:px-5">
+            <h1 className="truncate typography-ui-label font-semibold text-foreground">{t('assistants.title')}</h1>
+          </header>
+          <div className="min-h-0 flex-1 overflow-y-auto px-3 pb-4 sm:px-4" role="listbox" aria-label={t('assistants.listAria')}>
+            <div className="flex flex-col gap-1 border-t border-border/40 pt-3">
+              {snapshot.assistants.map((item) => {
+                const selected = item.id === selectedAssistantID;
+                const itemPresentation = getAssistantPresentation(item.name);
+                return (
+                  <button
+                    key={item.id}
+                    type="button"
+                    role="option"
+                    aria-selected={selected}
+                    onClick={() => selectAssistant(item.id)}
+                    className={cn(
+                      'flex w-full min-h-11 items-center gap-3 rounded-xl border px-3 py-3 text-left outline-none transition-[background-color,border-color,transform,opacity] duration-150 ease-out active:scale-[0.995] focus-visible:ring-2 focus-visible:ring-[var(--interactive-focus-ring)] motion-reduce:transition-none',
+                      selected
+                        ? 'border-border/50 bg-[var(--surface-elevated)]'
+                        : 'border-transparent hover:bg-interactive-hover',
+                      !item.enabled && 'opacity-65',
+                    )}
+                  >
+                    <AgentAvatar name={item.id} emoji={itemPresentation.avatarEmoji} size={24} label={itemPresentation.displayName || item.name} />
+                    <span className="min-w-0 flex-1">
+                      <span className="block truncate typography-ui-label font-medium">{itemPresentation.displayName}</span>
+                      <span className="mt-0.5 block truncate typography-micro text-muted-foreground">
+                        {item.mode === 'stateless' ? t('assistants.mode.stateless') : t('assistants.mode.continuous')}
+                      </span>
+                    </span>
+                  </button>
+                );
+              })}
             </div>
-          );
-        })}
-      </div>
-    </aside>
-  );
-
-  const conversation = (
-    <section className="relative flex h-full min-h-0 flex-col overflow-hidden bg-background">
-      <header className="flex h-14 shrink-0 items-center gap-2 border-b border-border px-3 md:px-5">
-        {isMobile ? <Button variant="ghost" size="icon" onClick={() => selectTopic(null)} aria-label={t('assistants.actions.backToTopics')}><Icon name="arrow-left-s" className="size-5" /></Button> : null}
-        <div className="min-w-0 flex-1">
-          <div className="truncate typography-ui-label font-medium">{topic?.id === assistant?.inboxTopicID ? t('assistants.topics.inbox') : topic?.title}</div>
-          <div className="typography-micro text-muted-foreground">{assistant?.mode === 'stateless' ? t('assistants.conversation.statelessHint') : t('assistants.conversation.continuousHint')}</div>
-        </div>
-        {pending && !pending.error ? <span className="flex items-center gap-1.5 typography-meta text-muted-foreground"><Icon name="loader-4" className="size-3.5 animate-spin" />{t('assistants.state.sending')}</span> : null}
-      </header>
-
-      {!snapshot?.enabled || !assistant?.enabled || !configured ? (
-        <div className="border-b border-border bg-[var(--status-warning)]/10 px-4 py-2.5 typography-meta text-[var(--status-warning)]">
-          {!snapshot?.enabled ? t('assistants.state.instanceDisabled') : !assistant?.enabled ? t('assistants.state.assistantDisabled') : t('assistants.state.invalidConfiguration')}
-        </div>
-      ) : null}
-      {turnsQuery.isError && turnsQuery.data ? <div className="border-b border-border px-4 py-2 typography-meta text-[var(--status-warning)]">{t('assistants.state.staleSnapshot')}</div> : null}
-
-      <div className="min-h-0 flex-1 overflow-y-auto px-4 py-6 md:px-8">
-        <div className="mx-auto max-w-3xl space-y-8">
-          {turnsQuery.isPending ? <div className="flex justify-center py-12 text-muted-foreground"><Icon name="loader-4" className="size-5 animate-spin" /></div> : null}
-          {turnsQuery.isError && !turnsQuery.data ? <div className="py-12 text-center"><p className="typography-ui text-muted-foreground">{t('assistants.state.messagesFailed')}</p><Button className="mt-3" variant="outline" size="sm" onClick={() => void turnsQuery.refetch()}>{t('assistants.actions.retry')}</Button></div> : null}
-          {turnsQuery.data?.map((turn) => (
-            <article key={turn.id} className="group flex items-start gap-3">
-              {turn.role === 'assistant' ? <AgentAvatar name={assistant?.id} size={28} label={assistant?.name} /> : turn.kind === 'compact' ? <span className="flex size-7 shrink-0 items-center justify-center rounded-md bg-interactive-selection"><Icon name="contract-up-down" className="size-4" /></span> : <span className="flex size-7 shrink-0 items-center justify-center rounded-md bg-[var(--surface-elevated)]"><Icon name="user-3" className="size-4" /></span>}
-              <div className="min-w-0 flex-1 pt-0.5">
-                <div className="mb-1 flex items-center gap-2 typography-meta font-medium"><span>{turn.role === 'assistant' ? assistant?.name : t('assistants.conversation.you')}</span>{typeof turn.createdAt === 'number' ? <span className="font-normal text-muted-foreground">{new Date(turn.createdAt).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })}</span> : null}</div>
-                {textFromParts(turn.parts) ? <SimpleMarkdownRenderer content={textFromParts(turn.parts)} /> : null}
-                <div className="mt-2 flex flex-wrap gap-2">{turn.parts.filter((part): part is Extract<AssistantPart, { type: 'file' }> => part.type === 'file').map((part) => <img key={part.url} src={part.url} alt={t('assistants.composer.attachment')} className="max-h-64 max-w-full rounded-lg border border-border object-contain" />)}</div>
-                {turn.role === 'assistant' && turn.error ? <p className="mt-2 typography-meta text-[var(--status-error)]">{String(turn.error)}</p> : null}
+          </div>
+        </section>
+      )}
+      <div className={cn('flex min-h-0 min-w-0 flex-1 flex-col overflow-hidden bg-background', !isMobile && 'border-l border-border/60')}>
+        {isMobile ? (
+          <MobileSurfaceHeader contentClassName="gap-2 px-2">
+            <Button variant="ghost" size="icon" onClick={returnToChat} aria-label={t('assistants.actions.backToChat')}>
+              <Icon name="arrow-left-s" className="size-5" />
+            </Button>
+            <Button
+              variant="chip"
+              size="sm"
+              className="ml-auto min-w-0 max-w-[min(60vw,18rem)] border-transparent bg-transparent typography-micro font-normal shadow-none"
+              onClick={() => setMobileSelectorOpen(true)}
+              aria-expanded={mobileSelectorOpen}
+              aria-haspopup="dialog"
+              aria-label={t('assistants.selectorAria', { name: presentation.displayName || assistant.name })}
+            >
+              <AgentAvatar name={assistant.id} emoji={presentation.avatarEmoji} size={20} label={presentation.displayName || assistant.name} className="translate-y-0.5 self-center" />
+              <span className="h-5 min-w-0 truncate leading-5">{presentation.displayName}</span>
+              <Icon name="arrow-down-s" className="size-3.5 shrink-0 self-center" />
+            </Button>
+          </MobileSurfaceHeader>
+        ) : (
+          <header className="flex h-14 shrink-0 items-center gap-3 border-b border-border/40 px-4 sm:px-5">
+            <AgentAvatar name={assistant.id} emoji={presentation.avatarEmoji} size={24} label={presentation.displayName || assistant.name} />
+            <div className="min-w-0 flex-1">
+              <div className="truncate typography-ui-label font-medium">{presentation.displayName}</div>
+              <div className="mt-0.5 truncate typography-micro leading-none text-muted-foreground/70">
+                {assistant.mode === 'stateless'
+                  ? t('assistants.conversation.statelessHint')
+                  : t('assistants.conversation.continuousHint')}
               </div>
-            </article>
-          ))}
-          {!turnsQuery.isPending && !turnsQuery.data?.length ? <div className="py-16 text-center"><AgentAvatar name={assistant?.id} size={48} className="mx-auto" /><h2 className="mt-4 typography-ui-header font-medium">{t('assistants.conversation.emptyTitle', { name: assistant?.name ?? '' })}</h2><p className="mt-1 typography-ui text-muted-foreground">{t('assistants.conversation.emptyDescription')}</p></div> : null}
-          {pending ? (
-            <div className={cn('rounded-lg border px-4 py-3', pending.error ? 'border-[var(--status-error)]/40 bg-[var(--status-error)]/10' : 'border-border bg-[var(--surface-muted)]')}>
-              <div className="flex items-center gap-2 typography-meta"><Icon name={pending.error ? 'error-warning' : 'loader-4'} className={cn('size-4', !pending.error && 'animate-spin')} /><span>{pending.error ? (pending.operationID ? t('assistants.state.sendFailed') : t('assistants.composer.commandUnavailable')) : t('assistants.state.reconciling')}</span>{pending.error && pending.operationID ? <Button variant="outline" size="xs" className="ml-auto" onClick={() => void submit(pending)}>{t('assistants.actions.retry')}</Button> : null}</div>
             </div>
-          ) : null}
-          <div ref={messagesEndRef} />
-        </div>
+          </header>
+        )}
+        {isMobile ? (
+          <MobileOverlayPanel
+            open={mobileSelectorOpen}
+            onClose={() => setMobileSelectorOpen(false)}
+            title={t('assistants.title')}
+            closeAriaLabel={t('mobile.surface.closeAria')}
+            contentMaxHeightClassName="max-h-[min(52dvh,28rem)]"
+          >
+            <div className="flex flex-col gap-2" role="listbox" aria-label={t('assistants.listAria')}>
+              {snapshot.assistants.map((item) => {
+                const selected = item.id === assistant.id;
+                const itemPresentation = getAssistantPresentation(item.name);
+                return (
+                  <button
+                    key={item.id}
+                    type="button"
+                    role="option"
+                    aria-selected={selected}
+                    onClick={() => {
+                      selectAssistant(item.id);
+                      setMobileSelectorOpen(false);
+                    }}
+                    className={cn(
+                      'flex min-h-14 w-full items-center gap-3 rounded-xl border px-3 py-2.5 text-left outline-none transition-colors touch-manipulation focus-visible:ring-2 focus-visible:ring-[var(--interactive-focus-ring)]',
+                      selected
+                        ? 'border-border/60 bg-interactive-selection/20 text-interactive-selection-foreground'
+                        : 'border-border/40 bg-[var(--surface-elevated)] active:bg-interactive-hover',
+                      !item.enabled && 'opacity-65',
+                    )}
+                  >
+                    <AgentAvatar name={item.id} emoji={itemPresentation.avatarEmoji} size={28} label={itemPresentation.displayName || item.name} />
+                    <span className="min-w-0 flex-1">
+                      <span className="block truncate typography-ui-label font-medium text-foreground">{itemPresentation.displayName}</span>
+                      <span className="mt-0.5 block truncate typography-micro text-muted-foreground">
+                        {item.mode === 'stateless' ? t('assistants.mode.stateless') : t('assistants.mode.continuous')}
+                      </span>
+                    </span>
+                    {selected ? <Icon name="check" className="size-4 shrink-0 text-interactive-selection-foreground" /> : null}
+                  </button>
+                );
+              })}
+            </div>
+          </MobileOverlayPanel>
+        ) : null}
+        <AssistantConversationSurface
+          onRevertMessage={revertAssistantMessage}
+          assistant={assistant}
+          sessionID={sessionID}
+          warning={warning}
+          surface={surface}
+        />
       </div>
-
-      <div className="shrink-0 bg-gradient-to-t from-background via-background to-transparent px-3 pb-[max(12px,var(--oc-safe-area-bottom,0px))] pt-3 md:px-8 md:pb-5">
-        <div className="mx-auto max-w-3xl rounded-2xl border border-border bg-[var(--surface-elevated)] shadow-lg shadow-black/5 focus-within:ring-2 focus-within:ring-[var(--interactive-focus-ring)]">
-          {attachments.length ? <div className="flex gap-2 overflow-x-auto px-3 pt-3">{attachments.map((part, index) => part.type === 'file' ? <div key={`${part.url}-${index}`} className="group relative shrink-0"><img src={part.url} alt={t('assistants.composer.attachment')} className="size-16 rounded-lg border border-border object-cover" /><Button variant="secondary" size="icon" className="absolute -right-1 -top-1 size-6 opacity-90" onClick={() => setAttachments((current) => current.filter((_, itemIndex) => itemIndex !== index))} aria-label={t('assistants.composer.removeAttachment')}><Icon name="close" className="size-3" /></Button></div> : null)}</div> : null}
-          <Textarea simple value={draft} onChange={(event) => { setDraft(event.target.value); if (pending?.operationID === '') setPending(null); }} onKeyDown={(event) => { if (event.key === 'Enter' && !event.shiftKey) { event.preventDefault(); void submit(); } }} disabled={!canSend} placeholder={canSend ? t('assistants.composer.placeholder') : t('assistants.composer.disabledPlaceholder')} className="min-h-16 max-h-40 px-4 pt-3" />
-          <div className="flex items-center gap-2 px-3 pb-3">
-            <input ref={fileInputRef} type="file" accept="image/*" multiple className="hidden" onChange={(event) => { void addImages(event.target.files); event.target.value = ''; }} />
-            <Button variant="ghost" size="icon" onClick={() => fileInputRef.current?.click()} disabled={!canSend} aria-label={t('assistants.composer.addImage')}><Icon name="file-image" className="size-4" /></Button>
-            <span className="min-w-0 flex-1 truncate typography-micro text-muted-foreground">{t('assistants.composer.commandsHint')}</span>
-            <Button size="icon" onClick={() => void submit()} disabled={!canSend || (!draft.trim() && !attachments.length)} aria-label={t('assistants.composer.send')}><Icon name="arrow-up" className="size-4" /></Button>
-          </div>
-        </div>
-      </div>
-    </section>
+    </div>
   );
-
-  if (snapshotQuery.isPending) return <div className="flex h-full items-center justify-center text-muted-foreground"><Icon name="loader-4" className="size-5 animate-spin" /></div>;
-  if (snapshotQuery.isError && !snapshot) return <div className="flex h-full flex-col items-center justify-center gap-3 px-6 text-center"><Icon name="cloud-off" className="size-7 text-muted-foreground" /><p className="typography-ui text-muted-foreground">{t('assistants.state.unavailable')}</p><Button variant="outline" size="sm" onClick={() => void snapshotQuery.refetch()}>{t('assistants.actions.retry')}</Button></div>;
-
-  if (isMobile) {
-    if (selectedAssistantID && selectedTopicID) return conversation;
-    if (selectedAssistantID) return topicRail;
-    return assistantRail;
-  }
-
-  return <div className="grid h-full min-h-0 grid-cols-[220px_260px_minmax(0,1fr)] overflow-hidden">{assistantRail}{topicRail}{conversation}</div>;
 };

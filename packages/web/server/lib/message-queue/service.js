@@ -3,6 +3,7 @@ import fs from 'node:fs';
 import { createRequire } from 'node:module';
 import path from 'node:path';
 import { initializeMessageQueueSchema } from './schema.js';
+import { MAX_ASSISTANT_DELIVERY_FILE_PARTS, validAssistantDeliveryParts } from '../assistant-delivery-parts.js';
 
 const require = createRequire(import.meta.url);
 const MAX_CONTENT = 200_000;
@@ -16,15 +17,26 @@ const MAX_ORDER_PATHS_TOTAL = 4_096;
 const MAX_SCOPE_PAGE_ITEMS = 8;
 const RECEIPT_RETENTION_MS = 30 * 24 * 60 * 60 * 1000;
 const MAX_RECEIPTS_PER_RUNTIME = 16_384;
-const MAX_ATTACHMENTS = 64;
+const MAX_ATTACHMENTS = MAX_ASSISTANT_DELIVERY_FILE_PARTS;
 const MAX_ATTACHMENT_BYTES = 25 * 1024 * 1024;
 const MAX_ITEM_ATTACHMENT_BYTES = 50 * 1024 * 1024;
 const MAX_COMPOSER_REFERENCES = 1_000;
-const MAX_COMPOSER_REFERENCE_DISPLAY = 512;
+const MAX_COMPOSER_REFERENCE_ID = 512;
+const MAX_COMPOSER_REFERENCE_DISPLAY = 514;
 const MAX_COMPOSER_SESSION_ID = 128;
+const MAX_COMPOSER_SKILL_NAME = 511;
+const MAX_COMPOSER_COMMAND_NAME = 511;
+const MAX_COMPOSER_COMMAND_REFERENCE = 8_192;
 const MAX_COMPOSER_PASTE_LENGTH = 100_000;
 const MAX_COMPOSER_PASTE_TOTAL_LENGTH = 200_000;
-const ITEM_KEYS = new Set(['queueItemID', 'operationID', 'messageID', 'content', 'composerDocument', 'composerMentions', 'sendConfig', 'attachments', 'attachmentIssues', 'createdAt', 'dueAt', 'migrationImport', 'migrationState']);
+const MAX_COMPOSER_VISIBLE_TEXT = 100_000;
+const MAX_COMPOSER_MENTIONS = 1_000;
+const MAX_COMPOSER_MENTION_VALUE = 8_192;
+const MAX_COMPOSER_MENTION_PATH = 8_192;
+const MAX_COMPOSER_MENTION_LABEL = 512;
+export const MESSAGE_QUEUE_ADMISSION_MAX_BYTES = 70 * 1024 * 1024;
+export const MESSAGE_QUEUE_ADMISSION_HTTP_MAX_BYTES = MESSAGE_QUEUE_ADMISSION_MAX_BYTES + (2 * 1024 * 1024);
+const ITEM_KEYS = new Set(['queueItemID', 'operationID', 'messageID', 'content', 'composerDocument', 'composerMentions', 'sendConfig', 'deliveryTarget', 'deliveryParts', 'syntheticParts', 'attachments', 'attachmentIssues', 'createdAt', 'dueAt', 'migrationImport', 'migrationState']);
 const EDIT_KEYS = new Set(['content', 'composerDocument', 'composerMentions', 'sendConfig', 'attachments', 'attachmentIssues', 'dueAt']);
 const ADMISSION_KEYS = new Set(['requestID', 'expectedRevision', 'scope', 'item']);
 const SCOPE_KEYS = new Set(['directory', 'sessionID']);
@@ -79,6 +91,7 @@ const nonEmptyString = (value, limit = MAX_STRING) => typeof value === 'string' 
 const nonNegativeInteger = (value) => Number.isSafeInteger(value) && value >= 0;
 const composerAttachmentIdentity = (reference) => reference.attachmentID ?? reference.uploadID ?? reference.serverPath;
 const countCodePoints = (value) => Array.from(value).length;
+const isUtf16Boundary = (text, offset) => offset <= 0 || offset >= text.length || !(/^[\uD800-\uDBFF]$/.test(text[offset - 1]) && /^[\uDC00-\uDFFF]$/.test(text[offset]));
 
 export const createMessageQueueService = ({ dbPath, getRuntimeConfig = () => null, clock = () => Date.now(), isServerPathAllowed = () => false, onRevisionTip = null } = {}) => {
   if (typeof dbPath !== 'string' || !dbPath.trim()) return null;
@@ -87,6 +100,7 @@ export const createMessageQueueService = ({ dbPath, getRuntimeConfig = () => nul
   try { initializeMessageQueueSchema(db); } catch (error) { db.close(); throw error; }
 
   let closed = false;
+  let assistantDeliveryService = null;
   const waiters = new Set();
   const runtimeKey = () => runtimeKeyFor(getRuntimeConfig());
   const capturedRuntimeKey = (override) => {
@@ -112,14 +126,28 @@ export const createMessageQueueService = ({ dbPath, getRuntimeConfig = () => nul
     source: attachment.source,
     locator: attachment.locator_kind === 'server_path' ? { kind: 'server-path', path: attachment.locator_value } : { kind: 'upload', uploadID: attachment.upload_id, ...(attachment.storage_key ? { storageKey: attachment.storage_key } : {}) },
   }));
-  const itemOutput = (row) => {
+  const itemOutput = (row, { includeDeliveryConfig = false } = {}) => {
     const attempt = db.prepare('SELECT * FROM queue_attempt WHERE queue_item_id = ?').get(row.queue_item_id);
     if (!attempt) fail('internal_error');
+    const storedComposerDocument = row.composer_document ? parse(row.composer_document) : null;
+    const { composerMentions, ...composerDocument } = storedComposerDocument ?? {};
     return {
       queueItemID: row.queue_item_id, operationID: row.operation_id, messageID: attempt.message_id, content: row.content,
       scopeID: row.scope_id, directory: scopeRow(row.scope_id)?.directory, sessionID: scopeRow(row.scope_id)?.session_id,
-      ...(row.composer_document ? { composerDocument: parse(row.composer_document) } : {}),
+      ...(storedComposerDocument ? { composerDocument } : {}),
+      ...(composerMentions !== undefined ? { composerMentions } : {}),
       ...(row.send_config ? { sendConfig: parse(row.send_config) } : {}),
+      ...(() => {
+        let target;
+        try { target = parse(row.delivery_target); } catch { target = { kind: 'malformed' }; }
+        if (target?.kind === 'assistant') return {
+          deliveryTarget: { kind: 'assistant', assistantID: target.assistantID },
+          deliveryParts: target.deliveryParts,
+          ...(target.syntheticParts?.length ? { syntheticParts: target.syntheticParts } : {}),
+          ...(includeDeliveryConfig ? { deliveryConfig: target } : {}),
+        };
+        return { deliveryTarget: { kind: 'primary' } };
+      })(),
       status: row.status, manualDispatchRequested: row.manual_dispatch_requested === 1, attemptCount: attempt.attempt_count, position: row.position, rowVersion: row.row_version, createdAt: row.created_at,
       dueAt: row.due_at, ...(row.reconciliation_due_at != null ? { reconciliationDueAt: row.reconciliation_due_at } : {}),
       attachments: attachmentsFor(row.queue_item_id), attachmentIssues: parse(row.attachment_issues) ?? [],
@@ -194,7 +222,7 @@ export const createMessageQueueService = ({ dbPath, getRuntimeConfig = () => nul
   };
   const validateComposer = (document, content) => {
     if (document === undefined) return [];
-    if (!plainObject(document) || Object.keys(document).some((key) => !COMPOSER_KEYS.has(key)) || typeof document.text !== 'string' || document.text.length > MAX_CONTENT || !Array.isArray(document.references) || document.references.length > MAX_COMPOSER_REFERENCES || document.references.some((reference) => !plainObject(reference))) fail('validation_error');
+    if (!plainObject(document) || Object.keys(document).some((key) => !COMPOSER_KEYS.has(key)) || typeof document.text !== 'string' || document.text.length > MAX_COMPOSER_VISIBLE_TEXT || !Array.isArray(document.references) || document.references.length > MAX_COMPOSER_REFERENCES || document.references.some((reference) => !plainObject(reference))) fail('validation_error');
 
     const legacyReferences = document.references.filter((reference) => reference.kind === undefined);
     if (legacyReferences.length) {
@@ -210,7 +238,7 @@ export const createMessageQueueService = ({ dbPath, getRuntimeConfig = () => nul
     let canonical = '';
     let totalPasteLength = 0;
     for (const reference of document.references) {
-      if (!nonEmptyString(reference.id, MAX_COMPOSER_REFERENCE_DISPLAY) || !nonEmptyString(reference.display, MAX_COMPOSER_REFERENCE_DISPLAY) || !nonNegativeInteger(reference.start) || !nonNegativeInteger(reference.end) || reference.end <= reference.start || reference.start < previousEnd || reference.end > document.text.length || document.text.slice(reference.start, reference.end) !== reference.display || ids.has(reference.id)) fail('validation_error');
+      if (!nonEmptyString(reference.id, MAX_COMPOSER_REFERENCE_ID) || !nonEmptyString(reference.display, MAX_COMPOSER_REFERENCE_DISPLAY) || !nonNegativeInteger(reference.start) || !nonNegativeInteger(reference.end) || reference.end <= reference.start || reference.start < previousEnd || reference.end > document.text.length || !isUtf16Boundary(document.text, reference.start) || !isUtf16Boundary(document.text, reference.end) || document.text.slice(reference.start, reference.end) !== reference.display || ids.has(reference.id)) fail('validation_error');
       ids.add(reference.id);
       canonical += document.text.slice(cursor, reference.start);
       if (reference.kind === 'session' && Object.keys(reference).every((key) => ['id', 'kind', 'start', 'end', 'display', 'sessionId'].includes(key)) && nonEmptyString(reference.sessionId, MAX_COMPOSER_SESSION_ID) && /^[A-Za-z0-9_-]+$/.test(reference.sessionId)) canonical += `@session:${reference.sessionId}`;
@@ -218,7 +246,9 @@ export const createMessageQueueService = ({ dbPath, getRuntimeConfig = () => nul
         totalPasteLength += reference.text.length;
         if (totalPasteLength > MAX_COMPOSER_PASTE_TOTAL_LENGTH) fail('validation_error');
         canonical += reference.text;
-      } else fail('validation_error');
+      } else if (reference.kind === 'skill' && Object.keys(reference).every((key) => ['id', 'kind', 'start', 'end', 'display', 'skillName'].includes(key)) && nonEmptyString(reference.skillName, MAX_COMPOSER_SKILL_NAME) && /^[A-Za-z0-9][A-Za-z0-9_-]*$/.test(reference.skillName) && (reference.display === `/${reference.skillName}` || reference.display === `/\u2003${reference.skillName}`)) canonical += `[skill:${reference.skillName}]`;
+      else if (reference.kind === 'command' && Object.keys(reference).every((key) => ['id', 'kind', 'start', 'end', 'display', 'commandName', 'reference'].includes(key)) && nonEmptyString(reference.commandName, MAX_COMPOSER_COMMAND_NAME) && /^[\p{L}\p{N}._/-]+$/u.test(reference.commandName) && nonEmptyString(reference.reference, MAX_COMPOSER_COMMAND_REFERENCE) && !/[\]\r\n]/u.test(reference.reference) && (reference.display === `/${reference.commandName}` || reference.display === `/\u2003${reference.commandName}`)) canonical += `[command:${reference.reference}]`;
+      else fail('validation_error');
       previousEnd = reference.end;
       cursor = reference.end;
     }
@@ -226,16 +256,73 @@ export const createMessageQueueService = ({ dbPath, getRuntimeConfig = () => nul
     if (canonical !== content) fail('validation_error');
     return [];
   };
+  const validateComposerMentions = (mentions, document) => {
+    if (mentions === undefined) return;
+    if (!document || !Array.isArray(mentions) || mentions.length > MAX_COMPOSER_MENTIONS) fail('validation_error');
+    const occurrences = new Set(); let previousEnd = 0;
+    for (const mention of mentions) {
+      if (!plainObject(mention) || Object.keys(mention).some((key) => !['kind', 'value', 'path', 'label', 'range'].includes(key)) || !['file', 'directory', 'agent'].includes(mention.kind) || !nonEmptyString(mention.value, MAX_COMPOSER_MENTION_VALUE) || !nonEmptyString(mention.path, MAX_COMPOSER_MENTION_PATH) || !nonEmptyString(mention.label, MAX_COMPOSER_MENTION_LABEL) || !plainObject(mention.range) || Object.keys(mention.range).some((key) => key !== 'start' && key !== 'end') || !nonNegativeInteger(mention.range.start) || !nonNegativeInteger(mention.range.end) || mention.range.end <= mention.range.start || mention.range.start < previousEnd || mention.range.end > document.text.length || !isUtf16Boundary(document.text, mention.range.start) || !isUtf16Boundary(document.text, mention.range.end) || document.text.slice(mention.range.start, mention.range.end) !== `@${mention.value}` || document.references.some((reference) => mention.range.start < reference.end && reference.start < mention.range.end)) fail('validation_error');
+      const occurrence = canonical([mention.kind, mention.value, mention.path, mention.label, mention.range.start, mention.range.end]);
+      if (occurrences.has(occurrence)) fail('validation_error');
+      occurrences.add(occurrence); previousEnd = mention.range.end;
+    }
+  };
   const validateSendConfig = (config) => {
     if (config === undefined) return;
     if (!plainObject(config) || Object.keys(config).some((key) => !SEND_CONFIG_KEYS.has(key)) || !nonEmptyString(config.providerID) || !nonEmptyString(config.modelID) || ['agent', 'variant'].some((key) => config[key] !== undefined && !nonEmptyString(config[key]))) fail('validation_error');
+  };
+  const validateDeliveryParts = (parts, required, { migrationImport = false } = {}) => {
+    if (parts === undefined) { if (required) fail('validation_error'); return; }
+    if (!validAssistantDeliveryParts(parts, { allowAttachmentRefs: true }) || (!migrationImport && parts.some((part) => part.type === 'file' && typeof part.url === 'string'))) fail('validation_error');
+  };
+  const validateSyntheticParts = (parts, attachments, deliveryParts) => {
+    if (parts === undefined) return [];
+    if (!Array.isArray(parts) || parts.length > 64) fail('validation_error');
+    const partIDs = new Set(); const ownedAttachments = new Set(); const ownedDeliveryIndexes = new Set();
+    for (const part of parts) {
+      if (!plainObject(part) || Object.keys(part).some((key) => !['partID', 'text', 'synthetic', 'attachmentIDs', 'deliveryPartIndexes'].includes(key)) || !nonEmptyString(part.partID) || part.partID.length > 256 || partIDs.has(part.partID) || typeof part.text !== 'string' || part.text.length > MAX_CONTENT || (part.synthetic !== undefined && typeof part.synthetic !== 'boolean') || !Array.isArray(part.attachmentIDs) || new Set(part.attachmentIDs).size !== part.attachmentIDs.length || !Array.isArray(part.deliveryPartIndexes) || part.deliveryPartIndexes.length !== part.attachmentIDs.length + 1 || part.deliveryPartIndexes.some((index) => !Number.isSafeInteger(index) || index < 0) || new Set(part.deliveryPartIndexes).size !== part.deliveryPartIndexes.length) fail('validation_error');
+      partIDs.add(part.partID);
+      const [textIndex, ...fileIndexes] = part.deliveryPartIndexes;
+      if (ownedDeliveryIndexes.has(textIndex) || deliveryParts?.[textIndex]?.type !== 'text' || deliveryParts[textIndex].text !== part.text) fail('validation_error');
+      ownedDeliveryIndexes.add(textIndex);
+      for (let fileOffset = 0; fileOffset < fileIndexes.length; fileOffset++) { const index = fileIndexes[fileOffset]; if (ownedDeliveryIndexes.has(index) || deliveryParts?.[index]?.type !== 'file' || deliveryParts[index].attachmentID !== part.attachmentIDs[fileOffset]) fail('validation_error'); ownedDeliveryIndexes.add(index); }
+      for (const attachmentID of part.attachmentIDs) {
+        if (!nonEmptyString(attachmentID) || ownedAttachments.has(attachmentID)) fail('validation_error');
+        const attachment = attachments.find((candidate) => candidate.attachmentID === attachmentID);
+        if (!attachment || attachment.occurrenceRefID?.[0] !== 'part' || attachment.occurrenceRefID[1] !== part.partID || attachment.occurrenceRefID[2] !== attachmentID) fail('validation_error');
+        ownedAttachments.add(attachmentID);
+      }
+    }
+    for (const attachment of attachments) if (attachment.occurrenceRefID?.[0] === 'part' && (!partIDs.has(attachment.occurrenceRefID[1]) || !ownedAttachments.has(attachment.attachmentID))) fail('validation_error');
+    return parts.map((part) => ({ partID: part.partID, text: part.text, ...(part.synthetic === true ? { synthetic: true } : {}), attachmentIDs: [...part.attachmentIDs], deliveryPartIndexes: [...part.deliveryPartIndexes] }));
+  };
+  const validateAssistantAttachmentParts = (parts, attachments, { migrationImport = false } = {}) => {
+    if (!parts) return;
+    const byID = new Map(attachments.map((attachment) => [attachment.attachmentID, attachment]));
+    const seen = new Set();
+    for (const part of parts) {
+      if (part.type !== 'file') continue;
+      if (typeof part.url === 'string') { if (!migrationImport) fail('validation_error'); continue; }
+      if (!nonEmptyString(part.attachmentID) || seen.has(part.attachmentID) || !byID.has(part.attachmentID)) fail('validation_error');
+      seen.add(part.attachmentID);
+    }
+    if (!migrationImport && attachments.some((attachment) => !seen.has(attachment.attachmentID))) fail('validation_error');
+  };
+  const captureDeliveryTarget = (target, scope, item) => {
+    if (target === undefined) { if (item.deliveryParts !== undefined || item.syntheticParts !== undefined) fail('validation_error'); return { kind: 'primary' }; }
+    if (!plainObject(target) || typeof target.kind !== 'string') fail('validation_error');
+    if (target.kind === 'primary' && Object.keys(target).length === 1) { if (item.deliveryParts !== undefined || item.syntheticParts !== undefined) fail('validation_error'); return { kind: 'primary' }; }
+    if (target.kind !== 'assistant' || Object.keys(target).some((key) => key !== 'kind' && key !== 'assistantID') || !nonEmptyString(target.assistantID) || !assistantDeliveryService?.captureQueueDeliveryTarget) fail('validation_error');
+    validateDeliveryParts(item.deliveryParts, true, { migrationImport: item.migrationImport === true });
+    const captured = assistantDeliveryService.captureQueueDeliveryTarget({ assistantID: target.assistantID, scope, item });
+    if (!plainObject(captured) || captured.kind !== 'assistant' || captured.assistantID !== target.assistantID) fail('validation_error');
+    return { ...captured, deliveryParts: item.deliveryParts, syntheticParts: item.syntheticParts ?? [] };
   };
   const validateAdmission = (input) => {
     const item = input?.item;
     if (!plainObject(input) || Object.keys(input).some((key) => !ADMISSION_KEYS.has(key)) || !plainObject(input.scope) || Object.keys(input.scope).some((key) => !SCOPE_KEYS.has(key)) || !plainObject(item) || Object.keys(item).some((key) => !ITEM_KEYS.has(key))) fail('validation_error');
     if (!normalizeDirectory(input.scope.directory) || !nonEmptyString(input.scope.sessionID) || !nonEmptyString(item.queueItemID) || !nonEmptyString(item.operationID) || !nonEmptyString(item.messageID) || typeof item.content !== 'string' || item.content.length > MAX_CONTENT || !Number.isInteger(item.createdAt) || item.createdAt < 0) fail('validation_error');
-    const attachments = validateAttachments(item); const composerAttachmentIdentities = validateComposer(item.composerDocument, item.content); validateSendConfig(item.sendConfig);
-    if (item.composerMentions !== undefined && (!Array.isArray(item.composerMentions) || item.composerMentions.some((mention) => !plainObject(mention)))) fail('validation_error');
+    const attachments = validateAttachments(item); const composerAttachmentIdentities = validateComposer(item.composerDocument, item.content); validateComposerMentions(item.composerMentions, item.composerDocument); validateSendConfig(item.sendConfig); validateDeliveryParts(item.deliveryParts, false, { migrationImport: item.migrationImport === true }); validateAssistantAttachmentParts(item.deliveryParts, attachments, { migrationImport: item.migrationImport === true }); validateSyntheticParts(item.syntheticParts, attachments, item.deliveryParts); captureDeliveryTarget(item.deliveryTarget, input.scope, item);
     if (item.dueAt !== undefined && (!Number.isSafeInteger(item.dueAt) || item.dueAt < 0)) fail('validation_error');
     if (item.migrationState !== undefined) {
       if (!item.migrationImport || !plainObject(item.migrationState) || Object.keys(item.migrationState).some((key) => !['status', 'attemptCount', 'dueAt', 'reconciliationStartedAt', 'reconciliationDeadlineAt', 'reconciliationChecks', 'reconciliationNextCheckAt', 'failureKind'].includes(key)) || !['queued', 'retrying', 'reconciling', 'unresolved', 'failed', 'sending'].includes(item.migrationState.status) || ['attemptCount', 'dueAt', 'reconciliationStartedAt', 'reconciliationDeadlineAt', 'reconciliationChecks', 'reconciliationNextCheckAt'].some((key) => item.migrationState[key] !== undefined && (!Number.isSafeInteger(item.migrationState[key]) || item.migrationState[key] < 0)) || (item.migrationState.failureKind !== undefined && !nonEmptyString(item.migrationState.failureKind))) fail('validation_error');
@@ -249,7 +336,7 @@ export const createMessageQueueService = ({ dbPath, getRuntimeConfig = () => nul
     if (!plainObject(input) || Object.keys(input).some((key) => !EDIT_REQUEST_KEYS.has(key)) || !plainObject(input.item) || !Object.keys(input.item).length || Object.keys(input.item).some((key) => !EDIT_KEYS.has(key))) fail('validation_error');
     const content = input.item.content ?? currentContent;
     if (typeof content !== 'string' || content.length > MAX_CONTENT) fail('validation_error');
-    validateAttachments(input.item, false); validateComposer(input.item.composerDocument, content); validateSendConfig(input.item.sendConfig);
+    validateAttachments(input.item, false); validateComposer(input.item.composerDocument, content); validateComposerMentions(input.item.composerMentions, input.item.composerDocument); validateSendConfig(input.item.sendConfig);
   };
   const getReceipt = (key, requestID, payloadHash, operationType) => {
     validateRequestID(requestID);
@@ -355,10 +442,10 @@ export const createMessageQueueService = ({ dbPath, getRuntimeConfig = () => nul
       return { value: { recovered: ids.length }, scopeIDs: rows.map((row) => row.scope_id) };
     });
   };
-  const transaction = (requestID, input, operationType, mutate, key = runtimeKey()) => {
+  const transaction = (requestID, input, operationType, mutate, key = runtimeKey(), serializedInput) => {
     let jsonInput;
     try {
-      const encoded = JSON.stringify(input);
+      const encoded = serializedInput ?? JSON.stringify(input);
       if (encoded === undefined) fail('validation_error');
       jsonInput = JSON.parse(encoded);
     } catch {
@@ -388,19 +475,26 @@ export const createMessageQueueService = ({ dbPath, getRuntimeConfig = () => nul
     if (offset > 0 && (!Number.isSafeInteger(expectedRevision) || expectedRevision < 0)) fail('validation_error');
     const scope = scopeRow(scopeID); if (!scope || scope.runtime_key !== runtimeKey()) fail('not_found'); if (offset > 0 && scope.revision !== expectedRevision) fail('revision_conflict'); return scopePage(scope, offset, limit);
   };
-  const admit = (input) => transaction(input?.requestID, input, 'queue', (revision, key) => {
+  const admit = (input) => {
+    let admissionJson;
+    try { admissionJson = JSON.stringify(input); } catch { fail('validation_error'); }
+    if (typeof admissionJson !== 'string' || Buffer.byteLength(admissionJson, 'utf8') > MESSAGE_QUEUE_ADMISSION_MAX_BYTES) fail('admission_payload_limit');
+    return transaction(input?.requestID, input, 'queue', (revision, key) => {
     validateAdmission(input); const completed = completedAdmissionIdentity(input.item); if (completed) return { revision, queueItemID: completed.queue_item_id, operationID: completed.operation_id, messageID: completed.message_id, completed: true, duplicate: true }; const scope = ensureScope(input.scope, key); assertEditable(scope); if (input.expectedRevision !== undefined) assertScopeRevision(scope, input.expectedRevision);
     if (Number(db.prepare('SELECT COUNT(*) AS count FROM queue_item WHERE scope_id IN (SELECT scope_id FROM queue_scope WHERE runtime_key = ?)').get(key).count) >= MAX_ITEMS || itemRow(input.item.queueItemID) || db.prepare('SELECT 1 FROM queue_item WHERE operation_id = ?').get(input.item.operationID) || db.prepare('SELECT 1 FROM queue_attempt WHERE message_id = ?').get(input.item.messageID)) fail('validation_error');
     const position = db.prepare('SELECT COALESCE(MAX(position), -1) + 1 AS position FROM queue_item WHERE scope_id = ?').get(scope.scope_id).position;
     const admittedDocument = input.item.composerDocument && input.item.composerMentions !== undefined ? { ...input.item.composerDocument, composerMentions: input.item.composerMentions } : input.item.composerDocument;
     const imported = input.item.migrationState;
     const admittedStatus = input.item.migrationImport && input.item.attachmentIssues.length ? 'unresolved' : imported?.status === 'sending' ? 'unresolved' : imported?.status ?? 'queued';
-    db.prepare('INSERT INTO queue_item(queue_item_id,operation_id,scope_id,content,composer_document,send_config,position,status,row_version,created_at,updated_at,due_at,attachment_issues) VALUES (?,?,?,?,?,?,?,?,1,?,?,?,?)').run(input.item.queueItemID,input.item.operationID,scope.scope_id,input.item.content,optionalJson(admittedDocument),optionalJson(input.item.sendConfig),position,admittedStatus,input.item.createdAt,now(),input.item.dueAt ?? now(),JSON.stringify(input.item.attachmentIssues));
+    const deliveryTarget = captureDeliveryTarget(input.item.deliveryTarget, input.scope, input.item);
+    db.prepare('INSERT INTO queue_item(queue_item_id,operation_id,scope_id,content,composer_document,send_config,delivery_target,position,status,row_version,created_at,updated_at,due_at,attachment_issues) VALUES (?,?,?,?,?,?,?,?,?,1,?,?,?,?)').run(input.item.queueItemID,input.item.operationID,scope.scope_id,input.item.content,optionalJson(admittedDocument),optionalJson(input.item.sendConfig),JSON.stringify(deliveryTarget),position,admittedStatus,input.item.createdAt,now(),input.item.dueAt ?? now(),JSON.stringify(input.item.attachmentIssues));
     db.prepare('INSERT INTO queue_attempt(queue_item_id,message_id,attempt_count,reconciliation_state,reconciliation_started_at,reconciliation_deadline_at,reconciliation_checks,reconciliation_next_check_at,last_error_code) VALUES (?,?,?,?,?,?,?,?,?)').run(input.item.queueItemID,input.item.messageID,imported?.attemptCount ?? 0,admittedStatus === 'reconciling' ? 'reconciling' : null,imported?.reconciliationStartedAt ?? null,imported?.reconciliationDeadlineAt ?? null,imported?.reconciliationChecks ?? 0,imported?.reconciliationNextCheckAt ?? null,imported?.failureKind ?? null);
     if (imported?.dueAt !== undefined || admittedStatus === 'reconciling') db.prepare('UPDATE queue_item SET due_at=?,reconciliation_due_at=?,last_error_code=? WHERE queue_item_id=?').run(imported?.dueAt ?? now(), admittedStatus === 'reconciling' ? (imported?.reconciliationNextCheckAt ?? now()) : null, imported?.failureKind ?? null, input.item.queueItemID);
     bindAttachments(input.item.queueItemID, validateAttachments(input.item), key, scope);
+    db.prepare('UPDATE queue_item SET delivery_target=? WHERE queue_item_id=?').run(JSON.stringify(deliveryTarget), input.item.queueItemID);
     touchScopes([scope.scope_id], revision); return { revision, scopeID: scope.scope_id, queueItemID: input.item.queueItemID, rowVersion: itemRow(input.item.queueItemID).row_version };
-  });
+    }, runtimeKey(), admissionJson);
+  };
   const edit = (input) => transaction(input?.requestID, input, 'queue', (revision, key) => {
     const row = itemRow(input?.queueItemID); if (!row) fail('not_found'); validateEdit(input, row.content); const scope = scopeRow(row.scope_id); if (scope.runtime_key !== key) fail('not_found'); assertEditable(scope, row); assertScopeRevision(scope, input.expectedRevision); assertRowVersion(row, input.expectedRowVersion); assertUnreserved(row.queue_item_id);
     const editedDocument = input.item.composerDocument === undefined ? row.composer_document : optionalJson(input.item.composerDocument && input.item.composerMentions !== undefined ? { ...input.item.composerDocument, composerMentions: input.item.composerMentions } : input.item.composerDocument);
@@ -527,7 +621,7 @@ export const createMessageQueueService = ({ dbPath, getRuntimeConfig = () => nul
       const token = crypto.randomUUID(); const expires = timestamp + leaseMs;
       const reserved = db.prepare('UPDATE queue_attempt SET lease_owner=?,lease_token=?,lease_expires_at=?,lease_generation=?,fence_generation=? WHERE queue_item_id=? AND (lease_expires_at IS NULL OR lease_expires_at<=? OR lease_generation<>?)').run(owner, token, expires, authority.generation, authority.generation, row.queue_item_id, timestamp, authority.generation);
       if (!reserved.changes) return { value: null, scopeIDs: [] };
-      return { value: { item: itemOutput(itemRow(row.queue_item_id)), eligibilityToken: token, leaseExpiresAt: expires, fenceGeneration: authority.generation, dispatchMode: row.manual_dispatch_requested ? 'manual' : 'automatic' }, scopeIDs: [] };
+      return { value: { item: itemOutput(itemRow(row.queue_item_id), { includeDeliveryConfig: true }), eligibilityToken: token, leaseExpiresAt: expires, fenceGeneration: authority.generation, dispatchMode: row.manual_dispatch_requested ? 'manual' : 'automatic' }, scopeIDs: [] };
     });
   };
   const deferEligibilityCandidate = ({ queueItemID, eligibilityToken, fenceGeneration, delayMs = 1_000, runtimeKey: override } = {}) => {
@@ -561,7 +655,7 @@ export const createMessageQueueService = ({ dbPath, getRuntimeConfig = () => nul
       )`).run(authority.generation, timestamp, row.queue_item_id, row.scope_id, row.queue_item_id, timestamp, authority.generation);
       if (!updated.changes) return { value: null, scopeIDs: [] };
       db.prepare('UPDATE queue_attempt SET lease_owner=?,lease_token=?,lease_expires_at=?,lease_generation=?,fence_generation=?,reconciliation_state=NULL WHERE queue_item_id=?').run(owner, token, expires, authority.generation, authority.generation, row.queue_item_id);
-      return { scopeIDs: [row.scope_id], value: { item: itemOutput(itemRow(row.queue_item_id)), leaseToken: token, leaseExpiresAt: expires, fenceGeneration: authority.generation, dispatchMode: row.manual_dispatch_requested ? 'manual' : 'automatic' } };
+      return { scopeIDs: [row.scope_id], value: { item: itemOutput(itemRow(row.queue_item_id), { includeDeliveryConfig: true }), leaseToken: token, leaseExpiresAt: expires, fenceGeneration: authority.generation, dispatchMode: row.manual_dispatch_requested ? 'manual' : 'automatic' } };
     });
   };
   const leaseRow = (key, queueItemID, leaseToken, fenceGeneration) => db.prepare(`SELECT item.*, attempt.lease_token, attempt.fence_generation FROM queue_item AS item JOIN queue_attempt AS attempt ON attempt.queue_item_id=item.queue_item_id JOIN queue_scope AS scope ON scope.scope_id=item.scope_id JOIN queue_runtime AS runtime ON runtime.runtime_key=scope.runtime_key WHERE item.queue_item_id=? AND attempt.lease_token=? AND attempt.fence_generation=? AND attempt.lease_generation=? AND attempt.lease_expires_at>? AND item.dispatch_generation=? AND runtime.runtime_key=? AND runtime.authority='active' AND runtime.generation=? AND item.status IN ('sending','reconciling')`).get(queueItemID, leaseToken, fenceGeneration, fenceGeneration, now(), fenceGeneration, key, fenceGeneration);
@@ -704,7 +798,7 @@ export const createMessageQueueService = ({ dbPath, getRuntimeConfig = () => nul
     const additions=[]; for (const staged of rows) { const payload=JSON.parse(staged.payload_json); validateAdmission({ requestID:'import-validation',scope:payload.scope,item:payload.item }); const item=payload.item; const active=db.prepare('SELECT item.*,attempt.message_id FROM queue_item item JOIN queue_attempt attempt ON attempt.queue_item_id=item.queue_item_id JOIN queue_scope scope ON scope.scope_id=item.scope_id WHERE scope.runtime_key=? AND (item.queue_item_id=? OR item.operation_id=? OR attempt.message_id=?)').all(key,item.queueItemID,item.operationID,item.messageID); const complete=db.prepare('SELECT * FROM queue_completion WHERE runtime_key=? AND (queue_item_id=? OR operation_id=? OR message_id=?)').all(key,item.queueItemID,item.operationID,item.messageID); const exactActive=active.length && active.every((row)=>row.queue_item_id===item.queueItemID&&row.operation_id===item.operationID); const exactComplete=complete.length && complete.every((row)=>row.queue_item_id===item.queueItemID&&row.operation_id===item.operationID); if (active.length || complete.length) { if (exactActive || exactComplete) continue; fail('idempotency_conflict'); } additions.push({ payload, item }); }
     const currentItems=Number(db.prepare('SELECT COUNT(*) AS count FROM queue_item item JOIN queue_scope scope ON scope.scope_id=item.scope_id WHERE scope.runtime_key=?').get(key).count); if (currentItems + additions.length > MAX_ITEMS) fail('validation_error');
     const touched=[]; let added=0; for (const { payload, item } of additions) { const scope=ensureScope(payload.scope,key);
-      const position=db.prepare('SELECT COALESCE(MAX(position),-1)+1 AS position FROM queue_item WHERE scope_id=?').get(scope.scope_id).position; const importedState=item.migrationState; const status=item.migrationImport && item.attachmentIssues.length ? 'unresolved' : ['sending','reconciling'].includes(importedState?.status) ? 'reconciling' : importedState?.status ?? 'queued'; const reconcile=status === 'reconciling'; db.prepare('INSERT INTO queue_item(queue_item_id,operation_id,scope_id,content,composer_document,send_config,position,status,row_version,created_at,updated_at,due_at,reconciliation_due_at,last_error_code,attachment_issues) VALUES (?,?,?,?,?,?,?,?,1,?,?,?,?,?,?)').run(item.queueItemID,item.operationID,scope.scope_id,item.content,optionalJson(item.composerDocument),optionalJson(item.sendConfig),position,status,item.createdAt,now(),importedState?.dueAt ?? item.dueAt ?? now(),reconcile ? (importedState?.reconciliationNextCheckAt ?? now()) : null,importedState?.failureKind ?? null,JSON.stringify(item.attachmentIssues)); db.prepare('INSERT INTO queue_attempt(queue_item_id,message_id,attempt_count,reconciliation_state,reconciliation_started_at,reconciliation_deadline_at,reconciliation_checks,reconciliation_next_check_at,last_error_code) VALUES (?,?,?,?,?,?,?,?,?)').run(item.queueItemID,item.messageID,importedState?.attemptCount??0,reconcile ? 'reconciling' : null,reconcile ? (importedState?.reconciliationStartedAt ?? now()) : null,reconcile ? (importedState?.reconciliationDeadlineAt ?? now()+30_000) : null,importedState?.reconciliationChecks??0,reconcile ? (importedState?.reconciliationNextCheckAt ?? now()) : null,importedState?.failureKind??null); bindAttachments(item.queueItemID,validateAttachments(item),key,scope); touched.push(scope.scope_id); added++; }
+      const position=db.prepare('SELECT COALESCE(MAX(position),-1)+1 AS position FROM queue_item WHERE scope_id=?').get(scope.scope_id).position; const importedState=item.migrationState; const status=item.migrationImport && item.attachmentIssues.length ? 'unresolved' : ['sending','reconciling'].includes(importedState?.status) ? 'reconciling' : importedState?.status ?? 'queued'; const reconcile=status === 'reconciling'; const deliveryTarget=captureDeliveryTarget(item.deliveryTarget,payload.scope,item); db.prepare('INSERT INTO queue_item(queue_item_id,operation_id,scope_id,content,composer_document,send_config,delivery_target,position,status,row_version,created_at,updated_at,due_at,reconciliation_due_at,last_error_code,attachment_issues) VALUES (?,?,?,?,?,?,?,?,?,1,?,?,?,?,?,?)').run(item.queueItemID,item.operationID,scope.scope_id,item.content,optionalJson(item.composerDocument),optionalJson(item.sendConfig),JSON.stringify(deliveryTarget),position,status,item.createdAt,now(),importedState?.dueAt ?? item.dueAt ?? now(),reconcile ? (importedState?.reconciliationNextCheckAt ?? now()) : null,importedState?.failureKind ?? null,JSON.stringify(item.attachmentIssues)); db.prepare('INSERT INTO queue_attempt(queue_item_id,message_id,attempt_count,reconciliation_state,reconciliation_started_at,reconciliation_deadline_at,reconciliation_checks,reconciliation_next_check_at,last_error_code) VALUES (?,?,?,?,?,?,?,?,?)').run(item.queueItemID,item.messageID,importedState?.attemptCount??0,reconcile ? 'reconciling' : null,reconcile ? (importedState?.reconciliationStartedAt ?? now()) : null,reconcile ? (importedState?.reconciliationDeadlineAt ?? now()+30_000) : null,importedState?.reconciliationChecks??0,reconcile ? (importedState?.reconciliationNextCheckAt ?? now()) : null,importedState?.failureKind??null); bindAttachments(item.queueItemID,validateAttachments(item),key,scope); touched.push(scope.scope_id); added++; }
     const generation=kind==='activation' ? authority.generation+1 : authority.generation; const epoch=kind==='activation' ? authority.activation_epoch+1 : authority.activation_epoch; if (kind==='activation') db.prepare("INSERT INTO queue_runtime(runtime_key,authority,generation,activation_epoch,activated_at,manifest_hash,protocol,updated_at) VALUES (?,?,?,?,?,?,4,?) ON CONFLICT(runtime_key) DO UPDATE SET authority=excluded.authority,generation=excluded.generation,activation_epoch=excluded.activation_epoch,activated_at=COALESCE(queue_runtime.activated_at,excluded.activated_at),manifest_hash=excluded.manifest_hash,protocol=4,updated_at=excluded.updated_at").run(key,'active',generation,epoch,now(),imported.manifest_hash,now()); db.prepare("UPDATE queue_import SET state='committed',committed_at=?,commit_generation=?,commit_activation_epoch=?,commit_added=?,commit_manifest_hash=?,commit_revision=? WHERE import_id=?").run(now(),generation,epoch,added,imported.manifest_hash,revision,input.importID); touchScopes([...new Set(touched)],revision); return { revision, importID:input.importID, manifestHash:imported.manifest_hash, generation, activationEpoch:epoch, added };
   });
   const activateImport = (input) => commitImport(input, 'activation');
@@ -724,5 +818,10 @@ export const createMessageQueueService = ({ dbPath, getRuntimeConfig = () => nul
   const close = () => { if (closed) return; closed = true; for (const waiter of [...waiters]) waiter(); db.close(); };
   try { clearExpiredReceipts(); normalizeInterruptedSending(); } catch (error) { db.close(); throw error; }
   const getImportDetails = (importID, options = {}) => { const imported = importRow(importID, capturedRuntimeKey(options.runtimeKey)); if (!imported) fail('not_found'); return importDetails(imported); };
-  return { snapshot, changesSnapshot, getScope, getItemAttachment, admit, edit, remove, reservedRemove, manualSend, reserveForEdit, releaseEditReservation, renewEditReservation, reorder, waitForChange, getWorktreeOrder, getWorktreeLifecycle, setWorktreeOrder, prepareWorktreeDeletion: (input, options) => lifecycleMutation(input, 'deleting', options), commitWorktreeDeletion: (input, options) => lifecycleMutation(input, 'deleted', options), rollbackWorktreeDeletion: (input, options) => lifecycleMutation(input, 'active', options), markWorktreeActive, getAuthority, getQueueAuthority: getAuthority, setAuthority, setQueueAuthority: setAuthority, createImport, getImportDetails, stageImport, sealImport, abandonImport, activateImport, commitLateImport, pauseAuthority, resumeAuthority, recoverExpiredSending, reserveEligibilityCandidate, deferEligibilityCandidate, claimNext, claimDueReconcile, renewLease, releaseIneligible, beginAttempt, completeAttempt, confirmByMessage, scheduleRetry, markAmbiguous, recordReconcileUnavailable, recordReconcileMiss, recordReconcileConfirmed, markFailed, markUnresolved, listDueReconcile, createAttachmentUpload, getAttachmentUpload, markAttachmentReady, expireAttachmentUploads, expireAttachmentUploadsAll, listAttachmentObjectsForGC, listLiveAttachmentStorageKeys, isAttachmentStorageKeyLive, removeAttachmentObjectForGC, close, getRuntimeKey: runtimeKey };
+  const setAssistantDeliveryService = (service) => { assistantDeliveryService = service; };
+  const sendAssistantDelivery = (context) => {
+    if (!assistantDeliveryService?.sendWithCapturedConfig) fail('stale_target');
+    return assistantDeliveryService.sendWithCapturedConfig({ deliveryTarget: context.deliveryTarget, messageID: context.messageID, parts: context.parts });
+  };
+  return { snapshot, changesSnapshot, getScope, getItemAttachment, admit, edit, remove, reservedRemove, manualSend, reserveForEdit, releaseEditReservation, renewEditReservation, reorder, waitForChange, getWorktreeOrder, getWorktreeLifecycle, setWorktreeOrder, prepareWorktreeDeletion: (input, options) => lifecycleMutation(input, 'deleting', options), commitWorktreeDeletion: (input, options) => lifecycleMutation(input, 'deleted', options), rollbackWorktreeDeletion: (input, options) => lifecycleMutation(input, 'active', options), markWorktreeActive, getAuthority, getQueueAuthority: getAuthority, setAuthority, setQueueAuthority: setAuthority, createImport, getImportDetails, stageImport, sealImport, abandonImport, activateImport, commitLateImport, pauseAuthority, resumeAuthority, recoverExpiredSending, reserveEligibilityCandidate, deferEligibilityCandidate, claimNext, claimDueReconcile, renewLease, releaseIneligible, beginAttempt, completeAttempt, confirmByMessage, scheduleRetry, markAmbiguous, recordReconcileUnavailable, recordReconcileMiss, recordReconcileConfirmed, markFailed, markUnresolved, listDueReconcile, createAttachmentUpload, getAttachmentUpload, markAttachmentReady, expireAttachmentUploads, expireAttachmentUploadsAll, listAttachmentObjectsForGC, listLiveAttachmentStorageKeys, isAttachmentStorageKeyLive, removeAttachmentObjectForGC, setAssistantDeliveryService, sendAssistantDelivery, close, getRuntimeKey: runtimeKey };
 };

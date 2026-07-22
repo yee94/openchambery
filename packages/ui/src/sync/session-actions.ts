@@ -269,8 +269,8 @@ export function dirStoreForDirectory(directory: string) {
   return _childStores.ensureChild(directory)
 }
 
-function dirStoreForSession(sessionId: string): { store: DirectoryStoreApi; directory?: string } {
-  const directory = getSessionDirectory(sessionId)
+function dirStoreForSession(sessionId: string, directoryOverride?: string): { store: DirectoryStoreApi; directory?: string } {
+  const directory = directoryOverride ?? getSessionDirectory(sessionId)
   if (directory) {
     return { store: dirStoreForDirectory(directory), directory }
   }
@@ -1577,8 +1577,19 @@ export async function dismissOpenQuestionsForSession(sessionId: string): Promise
  * 4. Call the runtime revert endpoint and merge returned session
  * 5. Set pendingInputText so the reverted message text appears in the input
  */
-export async function revertToMessage(sessionId: string, messageId: string): Promise<void> {
-  const { store, directory } = dirStoreForSession(sessionId)
+export type RevertedComposerSnapshot = {
+  text: string
+  attachments: Array<{ url: string; mimeType: string; filename: string }>
+}
+
+export async function revertToMessage(
+  sessionId: string,
+  messageId: string,
+  options?: string | { directory?: string; restorePrimaryInput?: boolean },
+): Promise<RevertedComposerSnapshot> {
+  const directoryOverride = typeof options === "string" ? options : options?.directory
+  const restorePrimaryInput = typeof options === "string" || options?.restorePrimaryInput !== false
+  const { store, directory } = dirStoreForSession(sessionId, directoryOverride)
   const state = store.getState()
 
   // Abort if busy before mutating session state
@@ -1609,6 +1620,18 @@ export async function revertToMessage(sessionId: string, messageId: string): Pro
     // not be restored to the composer).
     submittedFileParts = parts.filter((p) => p.type === "file" && !isSyntheticPart(p)) as Array<Record<string, unknown>>
   }
+  const restoration: RevertedComposerSnapshot = {
+    text: messageText,
+    attachments: submittedFileParts.flatMap((part) => {
+      const url = typeof part.url === "string" ? part.url : ""
+      if (!url) return []
+      return [{
+        url,
+        mimeType: typeof part.mime === "string" ? part.mime : "application/octet-stream",
+        filename: typeof part.filename === "string" ? part.filename : "attachment",
+      }]
+    }),
+  }
 
   // Optimistically set only the revert marker. Keep messages and parts in the
   // local store; visible-message selectors derive the displayed timeline from
@@ -1637,7 +1660,7 @@ export async function revertToMessage(sessionId: string, messageId: string): Pro
   const prevInputMode = useInputStore.getState().pendingInputMode
 
   // Restore reverted message text and file attachments to input
-  if (messageText) {
+  if (restorePrimaryInput && messageText) {
     useInputStore.setState({
       pendingInputText: messageText,
       pendingInputMode: "replace" as const,
@@ -1647,7 +1670,7 @@ export async function revertToMessage(sessionId: string, messageId: string): Pro
   // Restore file/image attachments from the target message.
   // Clear existing attachments first — previous revert's attachments
   // must not carry over, even when the current message has no files.
-  restoreFilePartsToInput(submittedFileParts)
+  if (restorePrimaryInput) restoreFilePartsToInput(submittedFileParts)
 
   // Call SDK and merge authoritative result into store
   try {
@@ -1662,6 +1685,7 @@ export async function revertToMessage(sessionId: string, messageId: string): Pro
     if (directory) {
       sessionEvents.requestGitRefresh({ directory })
     }
+    return restoration
   } catch (err) {
     // Rollback: restore removed messages + revert marker
     const current = store.getState()
@@ -1674,11 +1698,13 @@ export async function revertToMessage(sessionId: string, messageId: string): Pro
       session: rollback,
     })
     // Rollback input store: restore previous text and attachments
-    useInputStore.setState({
-      pendingInputText: prevInputText,
-      pendingInputMode: prevInputMode,
-    })
-    useInputStore.getState().setAttachedFiles(prevInputAttachments)
+    if (restorePrimaryInput) {
+      useInputStore.setState({
+        pendingInputText: prevInputText,
+        pendingInputMode: prevInputMode,
+      })
+      useInputStore.getState().setAttachedFiles(prevInputAttachments)
+    }
     throw err
   }
 }
@@ -1778,8 +1804,8 @@ export async function commitMessageEdit(sessionId: string, messageId: string): P
   }
 }
 
-export async function refetchSessionMessages(sessionId: string): Promise<void> {
-  const { store, directory } = dirStoreForSession(sessionId)
+export async function refetchSessionMessages(sessionId: string, directoryOverride?: string): Promise<void> {
+  const { store, directory } = dirStoreForSession(sessionId, directoryOverride)
   const result = await sdk().session.messages({ sessionID: sessionId, directory, limit: MESSAGE_REFETCH_LIMIT })
   const records = (assertSdkSuccess(result, "session.messages") ?? [])
     .filter((record: { info?: { id?: string } }) => !!record?.info?.id)
@@ -1843,9 +1869,9 @@ export async function unrevertSession(sessionId: string): Promise<void> {
  * 3. Insert the new session into the child store (so sidebar updates immediately)
  * 4. Switch to new session and set pending input text
  */
-export async function forkSession(sessionId: string, operationId: number, messageId?: string): Promise<boolean> {
+export async function forkSession(sessionId: string, operationId: number, messageId?: string, directoryOverride?: string): Promise<boolean> {
   const forkRuntimeKey = getRuntimeKey()
-  const { store, directory } = dirStoreForSession(sessionId)
+  const { store, directory } = dirStoreForSession(sessionId, directoryOverride)
   if (!directory) throw new Error("Fork session directory is unavailable")
   const sourceSession = await ensureForkSourceSession(sessionId, store, directory)
   registerSessionDirectory(sessionId, directory)

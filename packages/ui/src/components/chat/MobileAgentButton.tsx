@@ -1,8 +1,6 @@
 import React from 'react';
+import type { Agent } from '@opencode-ai/sdk/v2';
 import { cn } from '@/lib/utils';
-import { useConfigStore } from '@/stores/useConfigStore';
-import { useSessionUIStore } from '@/sync/session-ui-store';
-import { useSelectionStore } from '@/sync/selection-store';
 import { getAgentDisplayName } from './mobileControlsUtils';
 import { AgentCycleLabel } from '@/components/chat/AgentCycleLabel';
 import { useAgentCycleLabelReveal } from '@/components/chat/useAgentCycleLabelReveal';
@@ -13,24 +11,19 @@ interface MobileAgentButtonProps {
     onCycleAgent: () => void;
     onOpenAgentPanel: () => void;
     className?: string;
+    agentName?: string | null;
+    agents?: Agent[];
+    disabled?: boolean;
 }
 
 const LONG_PRESS_MS = 500;
 
 // NOTE: Use pointer events instead of onClick to keep soft keyboard open on mobile
-export const MobileAgentButton: React.FC<MobileAgentButtonProps> = ({ onCycleAgent, onOpenAgentPanel, className }) => {
-    const currentAgentName = useConfigStore((state) => state.currentAgentName);
-    const getVisibleAgents = useConfigStore((state) => state.getVisibleAgents);
-    const currentSessionId = useSessionUIStore((state) => state.currentSessionId);
-    const sessionAgentName = useSelectionStore((state) =>
-        currentSessionId ? state.getSessionAgentSelection(currentSessionId) : null
-    );
-
-    const agents = getVisibleAgents();
-    const uiAgentName = currentSessionId ? (sessionAgentName || currentAgentName) : currentAgentName;
-    const agentLabel = getAgentDisplayName(agents, uiAgentName);
-    const showAgentCycleLabel = useAgentCycleLabelReveal(uiAgentName);
-    const agentColor = getAgentColor(uiAgentName);
+export const MobileAgentButton: React.FC<MobileAgentButtonProps> = ({ onCycleAgent, onOpenAgentPanel, className, agentName, agents = [], disabled = false }) => {
+    const normalizedAgentName = agentName ?? undefined;
+    const agentLabel = getAgentDisplayName(agents, normalizedAgentName);
+    const showAgentCycleLabel = useAgentCycleLabelReveal(normalizedAgentName);
+    const agentColor = getAgentColor(normalizedAgentName);
 
     const longPressTimerRef = React.useRef<ReturnType<typeof setTimeout> | null>(null);
     const isLongPressRef = React.useRef(false);
@@ -41,6 +34,7 @@ export const MobileAgentButton: React.FC<MobileAgentButtonProps> = ({ onCycleAge
         if (event.pointerType === 'touch') {
             event.preventDefault();
         }
+        if (disabled) return;
         isLongPressRef.current = false;
         longPressTimerRef.current = setTimeout(() => {
             isLongPressRef.current = true;
@@ -54,7 +48,7 @@ export const MobileAgentButton: React.FC<MobileAgentButtonProps> = ({ onCycleAge
             clearTimeout(longPressTimerRef.current);
             longPressTimerRef.current = null;
         }
-        if (!isLongPressRef.current) {
+        if (!disabled && !isLongPressRef.current) {
             onCycleAgent();
         }
     };
@@ -77,13 +71,14 @@ export const MobileAgentButton: React.FC<MobileAgentButtonProps> = ({ onCycleAge
     return (
         <button
             type="button"
+            disabled={disabled}
             onPointerDown={handlePointerDown}
             onPointerUp={handlePointerUp} // Don't use onClick - it closes mobile keyboard
             onPointerLeave={handlePointerLeave}
             onContextMenu={(e) => e.preventDefault()}
             onMouseDown={(e) => e.preventDefault()}
             className={cn(
-                'inline-flex flex-shrink-0 items-center select-none focus:outline-none touch-none',
+                'inline-flex flex-shrink-0 items-center select-none focus:outline-none touch-none disabled:cursor-not-allowed disabled:opacity-40',
                 COMPOSER_ICON_HOVER_CLASS,
                 className
             )}
@@ -91,7 +86,7 @@ export const MobileAgentButton: React.FC<MobileAgentButtonProps> = ({ onCycleAge
             aria-label={agentLabel}
         >
             <AgentCycleLabel
-                name={uiAgentName}
+                name={normalizedAgentName}
                 label={agentLabel}
                 revealed={showAgentCycleLabel}
                 avatarSize={16}

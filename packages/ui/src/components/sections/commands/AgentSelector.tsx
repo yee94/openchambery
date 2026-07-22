@@ -25,6 +25,7 @@ interface AgentSelectorProps {
     filter?: (agent: Agent) => boolean;
     dropdownPortalToBody?: boolean;
     showIcon?: boolean;
+    agents?: Agent[];
 }
 
 export const AgentSelector: React.FC<AgentSelectorProps> = ({
@@ -34,6 +35,7 @@ export const AgentSelector: React.FC<AgentSelectorProps> = ({
     filter,
     dropdownPortalToBody = false,
     showIcon = true,
+    agents: catalogAgents,
 }) => {
     const { t } = useI18n();
     const { isReady, isUnavailable } = useOpenCodeReadiness();
@@ -42,9 +44,10 @@ export const AgentSelector: React.FC<AgentSelectorProps> = ({
     const loadConfigAgents = useConfigStore((state) => state.loadAgents);
     const { data: queriedAgents = [] } = useAgentsQuery();
     const rawAgents = React.useMemo(() => {
+        if (catalogAgents) return catalogAgents;
         if (Array.isArray(configAgents) && configAgents.length > 0) return configAgents;
         return queriedAgents;
-    }, [configAgents, queriedAgents]);
+    }, [catalogAgents, configAgents, queriedAgents]);
     const agents = React.useMemo(() => {
         const visible = filterVisibleAgents(rawAgents);
         return filter ? visible.filter(filter) : visible;
@@ -56,10 +59,10 @@ export const AgentSelector: React.FC<AgentSelectorProps> = ({
     const [isMobilePanelOpen, setIsMobilePanelOpen] = React.useState(false);
 
     React.useEffect(() => {
-        if (rawAgents.length > 0) return;
+        if (catalogAgents || rawAgents.length > 0) return;
         void loadConfigAgents();
         void loadAgentsStore();
-    }, [rawAgents.length, loadConfigAgents, loadAgentsStore]);
+    }, [catalogAgents, rawAgents.length, loadConfigAgents, loadAgentsStore]);
 
     const closeMobilePanel = () => setIsMobilePanelOpen(false);
 

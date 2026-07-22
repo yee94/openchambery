@@ -12,6 +12,9 @@ export type MessageQueueSendConfig = {
   agent?: string;
   variant?: string;
 };
+export type MessageQueueDeliveryTarget = { kind: 'primary' } | { kind: 'assistant'; assistantID: string };
+export type MessageQueueDeliveryPart = { type: 'text'; text: string } | { type: 'file'; mime: string; attachmentID: string } | { type: 'file'; mime: string; url: string };
+export type MessageQueueSyntheticPart = { partID: string; text: string; synthetic?: boolean; attachmentIDs: string[]; deliveryPartIndexes: number[] };
 
 export type MessageQueueAttachment = {
   attachmentID: string;
@@ -31,6 +34,10 @@ export type MessageQueueAdmissionItem = {
   composerDocument?: MessageQueueComposerDocument;
   composerMentions?: MessageQueueComposerMention[];
   sendConfig?: MessageQueueSendConfig;
+  deliveryTarget?: MessageQueueDeliveryTarget;
+  /** Assistant queue items retain their fully compiled send payload. */
+  deliveryParts?: MessageQueueDeliveryPart[];
+  syntheticParts?: MessageQueueSyntheticPart[];
   attachments: MessageQueueAttachment[];
   attachmentIssues: MessageQueueAttachmentIssue[];
   createdAt: number;
@@ -52,6 +59,9 @@ export type MessageQueueItem = {
   composerDocument?: MessageQueueComposerDocument;
   composerMentions?: MessageQueueComposerMention[];
   sendConfig?: MessageQueueSendConfig;
+  deliveryTarget?: MessageQueueDeliveryTarget;
+  deliveryParts?: MessageQueueDeliveryPart[];
+  syntheticParts?: MessageQueueSyntheticPart[];
   attachments?: MessageQueueAttachment[];
   attachmentIssues?: MessageQueueAttachmentIssue[];
 };
@@ -174,6 +184,49 @@ const parseSendConfig = (value: unknown): MessageQueueSendConfig | undefined => 
   if ((value.agent !== undefined && typeof value.agent !== 'string') || (value.variant !== undefined && typeof value.variant !== 'string')) return undefined;
   return { providerID: value.providerID, modelID: value.modelID, ...(value.agent === undefined ? {} : { agent: value.agent }), ...(value.variant === undefined ? {} : { variant: value.variant }) };
 };
+const parseDeliveryTarget = (value: unknown): MessageQueueDeliveryTarget | null => {
+  if (!isRecord(value)) return null;
+  if (value.kind === 'primary' && Object.keys(value).length === 1) return { kind: 'primary' };
+  if (value.kind === 'assistant' && Object.keys(value).every((key) => key === 'kind' || key === 'assistantID') && typeof value.assistantID === 'string' && value.assistantID) return { kind: 'assistant', assistantID: value.assistantID };
+  return null;
+};
+const parseDeliveryParts = (value: unknown): MessageQueueDeliveryPart[] | null => {
+  if (!Array.isArray(value) || value.length === 0 || value.length > 129) return null;
+  const parts: MessageQueueDeliveryPart[] = [];
+  let files = 0;
+  for (const part of value) {
+    if (!plainObject(part)) return null;
+    if (part.type === 'text' && Object.keys(part).length === 2 && typeof part.text === 'string') {
+      parts.push({ type: 'text', text: part.text });
+      continue;
+    }
+    if (part.type === 'file' && Object.keys(part).length === 3 && typeof part.mime === 'string' && typeof part.attachmentID === 'string' && part.attachmentID) {
+      files += 1;
+      if (files > 64) return null;
+      parts.push({ type: 'file', mime: part.mime, attachmentID: part.attachmentID });
+      continue;
+    }
+    if (part.type === 'file' && Object.keys(part).length === 3 && typeof part.mime === 'string' && typeof part.url === 'string') {
+      files += 1;
+      if (files > 64) return null;
+      parts.push({ type: 'file', mime: part.mime, url: part.url });
+      continue;
+    }
+    return null;
+  }
+  return parts;
+};
+const parseSyntheticParts = (value: unknown): MessageQueueSyntheticPart[] | null => {
+  if (!Array.isArray(value) || value.length > 64) return null;
+  const seen = new Set<string>();
+  const parts: MessageQueueSyntheticPart[] = [];
+  for (const part of value) {
+    if (!plainObject(part) || Object.keys(part).some((key) => !['partID', 'text', 'synthetic', 'attachmentIDs', 'deliveryPartIndexes'].includes(key)) || typeof part.partID !== 'string' || !part.partID || seen.has(part.partID) || typeof part.text !== 'string' || (part.synthetic !== undefined && typeof part.synthetic !== 'boolean') || !Array.isArray(part.attachmentIDs) || part.attachmentIDs.some((id) => typeof id !== 'string' || !id) || new Set(part.attachmentIDs).size !== part.attachmentIDs.length || !Array.isArray(part.deliveryPartIndexes) || part.deliveryPartIndexes.length !== part.attachmentIDs.length + 1 || part.deliveryPartIndexes.some((index) => !Number.isSafeInteger(index) || index < 0) || new Set(part.deliveryPartIndexes).size !== part.deliveryPartIndexes.length) return null;
+    seen.add(part.partID);
+    parts.push({ partID: part.partID, text: part.text, ...(part.synthetic === true ? { synthetic: true } : {}), attachmentIDs: [...part.attachmentIDs], deliveryPartIndexes: [...part.deliveryPartIndexes] });
+  }
+  return parts;
+};
 
 const parseAttachment = (value: unknown): MessageQueueAttachment | null => {
   if (!plainObject(value) || Object.keys(value).some((key) => !['attachmentID', 'occurrenceRefID', 'filename', 'mimeType', 'size', 'source', 'locator'].includes(key)) || typeof value.attachmentID !== 'string' || !value.attachmentID || typeof value.filename !== 'string' || !value.filename || typeof value.mimeType !== 'string' || !value.mimeType || !isRevision(value.size) || !['local', 'vscode', 'server'].includes(String(value.source)) || !plainObject(value.locator)) return null;
@@ -192,11 +245,33 @@ const parseItem = (value: unknown): MessageQueueItem | null => {
   const composerDocument = value.composerDocument === undefined ? undefined : parseComposerDocument(value.composerDocument);
   const composerMentions = value.composerMentions === undefined ? undefined : parseObjectArray<MessageQueueComposerMention>(value.composerMentions);
   const sendConfig = value.sendConfig === undefined ? undefined : parseSendConfig(value.sendConfig);
+  const deliveryTarget = value.deliveryTarget === undefined ? { kind: 'primary' } as const : parseDeliveryTarget(value.deliveryTarget);
+  const deliveryParts = value.deliveryParts === undefined ? undefined : parseDeliveryParts(value.deliveryParts);
+  const syntheticParts = value.syntheticParts === undefined ? undefined : parseSyntheticParts(value.syntheticParts);
   const attachmentIssues = value.attachmentIssues === undefined ? undefined : parseObjectArray<MessageQueueAttachmentIssue>(value.attachmentIssues);
-  if ((value.composerDocument !== undefined && !composerDocument) || (value.composerMentions !== undefined && !composerMentions) || (value.sendConfig !== undefined && !sendConfig) || (value.attachmentIssues !== undefined && !attachmentIssues)) return null;
+  if ((value.composerDocument !== undefined && !composerDocument) || (value.composerMentions !== undefined && !composerMentions) || (value.sendConfig !== undefined && !sendConfig) || !deliveryTarget || (value.deliveryParts !== undefined && !deliveryParts) || (deliveryTarget.kind === 'assistant' && !deliveryParts) || (value.syntheticParts !== undefined && !syntheticParts) || (value.attachmentIssues !== undefined && !attachmentIssues)) return null;
   const attachments = value.attachments === undefined ? undefined : parseAttachments(value.attachments);
   if (value.attachments !== undefined && !attachments) return null;
-  return { queueItemID: value.queueItemID, operationID: value.operationID, messageID: value.messageID, content: value.content, status: value.status, attemptCount: value.attemptCount, position: value.position, rowVersion: value.rowVersion, createdAt: value.createdAt, ...(value.manualDispatchRequested === true ? { manualDispatchRequested: true } : {}), ...(composerDocument ? { composerDocument } : {}), ...(composerMentions ? { composerMentions } : {}), ...(sendConfig ? { sendConfig } : {}), ...(attachments ? { attachments } : {}), ...(attachmentIssues ? { attachmentIssues } : {}) };
+  if (syntheticParts && deliveryParts) {
+    const indexes = new Set<number>();
+    const ownedAttachments = new Set<string>();
+    for (const part of syntheticParts) {
+      const [textIndex, ...fileIndexes] = part.deliveryPartIndexes;
+      if (textIndex === undefined || indexes.has(textIndex) || deliveryParts[textIndex]?.type !== 'text' || deliveryParts[textIndex].text !== part.text) return null;
+      indexes.add(textIndex);
+      for (const index of fileIndexes) {
+        if (indexes.has(index) || deliveryParts[index]?.type !== 'file' || !('attachmentID' in deliveryParts[index]) || deliveryParts[index].attachmentID !== part.attachmentIDs[fileIndexes.indexOf(index)]) return null;
+        indexes.add(index);
+      }
+      for (const attachmentID of part.attachmentIDs) {
+        const attachment = attachments?.find((candidate) => candidate.attachmentID === attachmentID);
+        if (!attachment || ownedAttachments.has(attachmentID) || attachment.occurrenceRefID[0] !== 'part' || attachment.occurrenceRefID[1] !== part.partID || attachment.occurrenceRefID[2] !== attachmentID) return null;
+        ownedAttachments.add(attachmentID);
+      }
+    }
+    if (attachments?.some((attachment) => attachment.occurrenceRefID[0] === 'part' && !ownedAttachments.has(attachment.attachmentID))) return null;
+  }
+  return { queueItemID: value.queueItemID, operationID: value.operationID, messageID: value.messageID, content: value.content, status: value.status, attemptCount: value.attemptCount, position: value.position, rowVersion: value.rowVersion, createdAt: value.createdAt, deliveryTarget, ...(value.manualDispatchRequested === true ? { manualDispatchRequested: true } : {}), ...(composerDocument ? { composerDocument } : {}), ...(composerMentions ? { composerMentions } : {}), ...(sendConfig ? { sendConfig } : {}), ...(deliveryParts ? { deliveryParts } : {}), ...(syntheticParts ? { syntheticParts } : {}), ...(attachments ? { attachments } : {}), ...(attachmentIssues ? { attachmentIssues } : {}) };
 };
 
 const parseScope = (value: unknown): MessageQueueScope | null => {

@@ -1,3 +1,5 @@
+import { validAssistantDeliveryParts } from '../assistant-delivery-parts.js';
+
 const DEFAULT_LEASE_MS = 15_000;
 const ELIGIBILITY_TIMEOUT_MS = 10_000;
 const RECONCILE_TIMEOUT_MS = 10_000;
@@ -14,17 +16,25 @@ export const createMessageQueueWorker = ({ service, adapter, workerID, concurren
     const renew = () => { try { settle(service.renewLease({ ...args, leaseMs })).catch((error) => { if (error?.code === 'lease_lost') { leaseLost = true; controller.abort(); } }); } catch (error) { if (error?.code === 'lease_lost') { leaseLost = true; controller.abort(); } } };
     const heartbeat = setInterval(renew, Math.max(1, Math.floor(leaseMs / 3)));
     try {
+      const assistantDelivery = item.deliveryTarget?.kind === 'assistant';
+      if (assistantDelivery && (!item.deliveryTarget.assistantID || !item.deliveryConfig || !validAssistantDeliveryParts(item.deliveryParts, { allowAttachmentRefs: true }))) return settle(service.markFailed({ ...args, errorCode: 'malformed_target' }));
       const messageID = adapter.createMessageID(eligibility.latestMessageID);
       const preflight = { ...item, messageID, scope: { scopeID: item.scopeID, directory: item.directory, sessionID: item.sessionID }, runtime, runtimeKey };
       await settle(adapter.waitForReady?.({ signal: controller.signal }));
       if (leaseLost) return;
       if (paused || stopping || controller.signal.aborted) return settle(service.releaseIneligible({ ...args, dueAt: clock() + 1_000 }));
-      const parts = await settle(adapter.materializeAttachments(preflight, { signal: controller.signal }));
+      const deliveryPayload = preflight;
+      const parts = assistantDelivery
+        ? await settle(adapter.materializeAssistantDeliveryParts ? adapter.materializeAssistantDeliveryParts(preflight, { signal: controller.signal }) : item.deliveryParts)
+        : await settle(adapter.materializeAttachments(deliveryPayload, { signal: controller.signal }));
+      if (assistantDelivery && !validAssistantDeliveryParts(parts)) return settle(service.markFailed({ ...args, errorCode: 'malformed_target' }));
       if (leaseLost) return;
       if (paused || stopping || controller.signal.aborted) return settle(service.releaseIneligible({ ...args, dueAt: clock() + 1_000 }));
       const attempt = await settle(service.beginAttempt({ ...args, messageID })); begun = true;
-      const context = { ...preflight, messageID: attempt.messageID };
-      const result = await settle(adapter.send({ ...context, parts }, { signal: controller.signal })); const status = statusOf(result);
+      const context = { ...deliveryPayload, messageID: attempt.messageID };
+      const result = await settle(assistantDelivery
+        ? service.sendAssistantDelivery({ ...context, deliveryTarget: item.deliveryConfig, parts }, { signal: controller.signal })
+        : adapter.send({ ...context, parts }, { signal: controller.signal })); const status = statusOf(result);
       if (leaseLost) return;
       if (result?.ok || result?.accepted) return settle(service.markAmbiguous({ ...args, dueAt: clock() }));
       if (Number.isInteger(status) && status >= 400 && status < 500 && status !== 408 && status !== 429) return settle(service.markFailed({ ...args, errorCode: `http_${status}` }));
@@ -32,7 +42,7 @@ export const createMessageQueueWorker = ({ service, adapter, workerID, concurren
       return settle(service.scheduleRetry({ ...args, dueAt: clock() + retryDelay(attempt.attemptCount), errorCode: result?.code ?? 'pre_dispatch' }));
     } catch (error) {
       if (error?.code === 'lease_lost') return;
-      const action = begun ? service.markAmbiguous({ ...args, errorCode: 'transport', dueAt: clock() }) : paused || stopping || controller.signal.aborted ? service.releaseIneligible({ ...args, dueAt: clock() + 1_000 }) : service.scheduleRetry({ ...args, dueAt: clock() + retryDelay(item.attemptCount || 1), errorCode: 'pre_dispatch' });
+      const action = error?.code === 'stale_target' ? service.markFailed({ ...args, errorCode: 'stale_target' }) : begun ? service.markAmbiguous({ ...args, errorCode: 'transport', dueAt: clock() }) : paused || stopping || controller.signal.aborted ? service.releaseIneligible({ ...args, dueAt: clock() + 1_000 }) : service.scheduleRetry({ ...args, dueAt: clock() + retryDelay(item.attemptCount || 1), errorCode: 'pre_dispatch' });
       await settle(action).catch(() => {});
     } finally { clearInterval(heartbeat); controllers.delete(controller); }
   };

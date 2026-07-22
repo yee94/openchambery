@@ -13,6 +13,7 @@ import { WorkingPlaceholder } from "./message/parts/WorkingPlaceholder";
 import { isVSCodeRuntime } from "@/lib/desktop";
 import { Icon } from "@/components/icon/Icon";
 import { useI18n } from "@/lib/i18n";
+import { useSessionSurface } from "./SessionSurfaceContext";
 import {
   statusBarPopoverClassName,
   statusBarPopoverHeaderClassName,
@@ -66,7 +67,9 @@ export const StatusRow: React.FC<StatusRowProps> = ({
 }) => {
   const { t } = useI18n();
   const [isExpanded, setIsExpanded] = React.useState(false);
-  const currentSessionId = useSessionUIStore((state) => state.currentSessionId);
+  const sessionSurface = useSessionSurface();
+  const primarySessionId = useSessionUIStore((state) => state.currentSessionId);
+  const currentSessionId = sessionSurface.sessionId ?? primarySessionId;
   const liveTodos = useDirectorySync(
     React.useCallback(
       (state) => {
@@ -75,6 +78,7 @@ export const StatusRow: React.FC<StatusRowProps> = ({
       },
       [currentSessionId, showTodos],
     ),
+    sessionSurface.directory ?? undefined,
   );
   const persistedSessionTodos = useTodosPersistStore(
     React.useCallback(

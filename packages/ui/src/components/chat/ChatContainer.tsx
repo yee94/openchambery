@@ -4,6 +4,13 @@ import type { PermissionRequest } from '@/types/permission';
 import type { QuestionRequest } from '@/types/question';
 
 import { ChatInput } from './ChatInput';
+import type { ChatInputSurface } from './chatInputSurface';
+import {
+    resolveChatContainerHostFeatures,
+    type ChatContainerHost,
+    type ChatContainerHostFeatures,
+} from './chatContainerHost';
+import { SessionSurfaceContext } from './SessionSurfaceContext';
 import { ReadOnlyPromptBanner } from './ReadOnlyPromptBanner';
 import { DraftPresetChips } from './DraftPresetChips';
 import { useInputStore } from '@/sync/input-store';
@@ -21,6 +28,7 @@ import { PromptNavigatorRail } from './components/PromptNavigatorRail';
 import { ScrollShadow } from '@/components/ui/ScrollShadow';
 import { useChatAutoFollow, type AnimationHandlers, type ContentChangeReason } from '@/hooks/useChatAutoFollow';
 import { useChatTimelineController } from './hooks/useChatTimelineController';
+import { createAssistantSessionDivider, useHostedSessionHistoryPrefix } from './hostedSessionHistory';
 import { TimelineDialog } from './TimelineDialog';
 import { useChatTurnNavigation } from './hooks/useChatTurnNavigation';
 import { useChatSurfaceMode } from './useChatSurfaceMode';
@@ -524,13 +532,19 @@ const renderDraftTitle = (title: string, projectLabel: string | null): React.Rea
 type ChatContainerProps = {
     autoOpenDraft?: boolean;
     readOnly?: boolean;
+    host?: ChatContainerHost;
 };
 
-type ChatContainerContentProps = ChatContainerProps & {
+type ChatContainerContentProps = Omit<ChatContainerProps, 'host'> & {
     sessionId: string | null;
     sessionDirectory: string | null;
     sessionViewKey?: string;
     onSessionViewEstimateChange?: (key: string, estimatedBytes: number) => void;
+    composerSurface?: ChatInputSurface;
+    hostedFeatures?: Required<ChatContainerHostFeatures>;
+    historySessionIDs?: readonly string[];
+    onRevertMessage?: (messageId: string) => Promise<void>;
+    warning?: string | null;
 };
 
 const estimateSessionViewBytes = (messageCount: number): number => {
@@ -548,7 +562,13 @@ const ChatContainerContent: React.FC<ChatContainerContentProps> = ({
     sessionDirectory: currentSessionDirectory,
     sessionViewKey,
     onSessionViewEstimateChange,
+    composerSurface,
+    hostedFeatures,
+    historySessionIDs,
+    onRevertMessage,
+    warning = null,
 }) => {
+    const hostFeatures = hostedFeatures ?? resolveChatContainerHostFeatures(undefined);
     const { t } = useI18n();
     React.useLayoutEffect(() => {
         markSessionSwitchContentCommitted();
@@ -812,7 +832,7 @@ const ChatContainerContent: React.FC<ChatContainerContentProps> = ({
     }, [parentSessionTarget, setCurrentSession]);
 
     const parentSessionTitle = parentSessionTarget?.session?.title;
-    const returnToParentButton = parentSessionTarget && !hideReturnToParent ? (
+    const returnToParentButton = hostFeatures.returnToParent && parentSessionTarget && !hideReturnToParent ? (
         <Button
             type="button"
             variant="outline"
@@ -876,10 +896,10 @@ const ChatContainerContent: React.FC<ChatContainerContentProps> = ({
     }, []);
 
     React.useEffect(() => {
-        if (autoOpenDraft && !currentSessionId && !draftOpen) {
+        if (hostFeatures.newSessionDraft && autoOpenDraft && !currentSessionId && !draftOpen) {
             openNewSessionDraft();
         }
-    }, [autoOpenDraft, currentSessionId, draftOpen, openNewSessionDraft]);
+    }, [autoOpenDraft, currentSessionId, draftOpen, hostFeatures.newSessionDraft, openNewSessionDraft]);
 
     const activeTurnChangeRef = React.useRef<(turnId: string | null) => void>(() => {});
     const handleActiveTurnChange = React.useCallback((turnId: string | null) => {
@@ -899,6 +919,7 @@ const ChatContainerContent: React.FC<ChatContainerContentProps> = ({
         showScrollButton,
     } = useChatAutoFollow({
         currentSessionId,
+        viewportKey: sessionViewKey,
         sessionMessageCount,
         sessionIsWorking,
         isMobile,
@@ -908,9 +929,18 @@ const ChatContainerContent: React.FC<ChatContainerContentProps> = ({
         ? readOnlyPromptBanner
         : readOnly
             ? null
-            : <ChatInput scrollToBottom={scrollToBottomOnSend} submissionBlocked={promptAvailability.blockSubmission} />;
+            : <ChatInput surface={composerSurface} scrollToBottom={scrollToBottomOnSend} submissionBlocked={promptAvailability.blockSubmission} />;
 
-    const viewportMessages = sessionMessages;
+    const historyPrefix = useHostedSessionHistoryPrefix(historySessionIDs, currentSessionId, effectiveSessionDirectory);
+    const viewportMessages = React.useMemo(() => {
+        if (historyPrefix.length === 0) return sessionMessages;
+        if (!currentSessionId) return historyPrefix;
+        return [
+            ...historyPrefix,
+            createAssistantSessionDivider(currentSessionId),
+            ...sessionMessages,
+        ];
+    }, [currentSessionId, historyPrefix, sessionMessages]);
 
     const timelineController = useChatTimelineController({
         sessionId: currentSessionId,
@@ -959,7 +989,8 @@ const ChatContainerContent: React.FC<ChatContainerContentProps> = ({
         void navigation.scrollToTurnId(turnId, { behavior: 'smooth' });
     }, [navigation]);
     const canLoadEarlierPrompts = timelineController.historySignals.canLoadEarlier;
-    const showPromptNavigator = !isMobile
+    const showPromptNavigator = hostFeatures.promptNavigator
+        && !isMobile
         && !isVSCode
         && !isDesktopExpandedInput
         && promptNavigatorEnabled
@@ -1070,6 +1101,7 @@ const ChatContainerContent: React.FC<ChatContainerContentProps> = ({
     const isSessionHydrating =
         Boolean(currentSessionId)
         && !hasUserBoundary
+        && historyPrefix.length === 0
         && (
             !hasRenderableSessionSnapshot
             || sessionPrefetchInfo?.status === 'loading'
@@ -1374,7 +1406,7 @@ const ChatContainerContent: React.FC<ChatContainerContentProps> = ({
         );
     }
 
-	if (sessionMessages.length === 0 && !sessionIsWorking) {
+	if (sessionMessages.length === 0 && historyPrefix.length === 0 && !sessionIsWorking) {
 		return (
 			// No transform here either — same fixed-positioning constraint as the
 			// draft branch above.
@@ -1411,6 +1443,11 @@ const ChatContainerContent: React.FC<ChatContainerContentProps> = ({
 
 	return (
 		<div className="relative flex flex-col h-full bg-background">
+			{warning ? (
+				<div className="shrink-0 border-b border-border bg-[var(--status-warning-background)] px-4 py-2.5 typography-meta text-[var(--status-warning-foreground)]">
+					{warning}
+				</div>
+			) : null}
 			{returnToParentButton}
 			<ChatViewport
 				key={currentSessionId}
@@ -1455,7 +1492,7 @@ const ChatContainerContent: React.FC<ChatContainerContentProps> = ({
                         : 'bg-background'
                 )}
             >
-                {!isDesktopExpandedInput && sessionMessages.length > 0 && (
+                {!isDesktopExpandedInput && viewportMessages.length > 0 && (
                     <ScrollToBottomButton
                         visible={timelineController.showScrollToBottom}
                         onClick={navigation.resumeToLatest}
@@ -1467,6 +1504,9 @@ const ChatContainerContent: React.FC<ChatContainerContentProps> = ({
             <TimelineDialog
                 open={isTimelineDialogOpen}
                 onOpenChange={setTimelineDialogOpen}
+                sessionID={currentSessionId ?? undefined}
+                directory={effectiveSessionDirectory}
+                onRevertMessage={onRevertMessage}
                 onScrollToMessage={timelineController.scrollToMessage}
                 onScrollByTurnOffset={navigation.scrollByTurnOffset}
                 onResumeToLatest={resumeToLatestInstant}
@@ -1504,7 +1544,7 @@ const SessionViewLoadingPlaceholder: React.FC = () => (
     </div>
 );
 
-const RuntimeScopedChatContainer: React.FC<ChatContainerProps & { runtimeKey: string }> = ({ runtimeKey, ...props }) => {
+const RuntimeScopedChatContainer: React.FC<ChatContainerProps & { runtimeKey: string }> = ({ runtimeKey, host: _host, ...props }) => {
     const chatSurfaceMode = useChatSurfaceMode();
     const syncDirectory = useSyncDirectory();
     const selectedSession = useSessionUIStore(
@@ -1667,12 +1707,49 @@ const RuntimeScopedChatContainer: React.FC<ChatContainerProps & { runtimeKey: st
     );
 };
 
+const HostedChatContainer: React.FC<ChatContainerProps & { host: ChatContainerHost; runtimeKey: string }> = ({
+    host,
+    runtimeKey,
+    readOnly = false,
+}) => {
+    const hostedFeatures = React.useMemo(() => resolveChatContainerHostFeatures(host), [host]);
+    const sessionSurface = React.useMemo(() => ({
+        ...host.sessionSurface,
+        sessionId: host.sessionId,
+        directory: host.directory,
+        ...(host.onRevertMessage ? { onRevertMessage: host.onRevertMessage } : {}),
+    }), [host]);
+    const sessionViewKey = `host:${runtimeKey}:${sessionSurface.surfaceId}:${host.sessionId}`;
+    return (
+        <SessionSurfaceContext.Provider value={sessionSurface}>
+            <div className="h-full bg-background">
+                <MemoizedChatContainerContent
+                    autoOpenDraft={false}
+                    readOnly={readOnly}
+                    sessionId={host.sessionId}
+                    sessionDirectory={host.directory}
+                    sessionViewKey={sessionViewKey}
+                    composerSurface={host.composerSurface}
+                    hostedFeatures={hostedFeatures}
+                    historySessionIDs={host.historySessionIDs}
+                    onRevertMessage={host.onRevertMessage}
+                    warning={host.warning}
+                />
+            </div>
+        </SessionSurfaceContext.Provider>
+    );
+};
+
 export const ChatContainer: React.FC<ChatContainerProps> = (props) => {
     const runtimeKey = React.useSyncExternalStore(
         subscribeRuntimeKey,
         getRuntimeKey,
         getRuntimeKey,
     );
+
+    if (props.host) {
+        return <HostedChatContainer key={`${runtimeKey}:${props.host.sessionSurface.surfaceId}`} {...props} host={props.host} runtimeKey={runtimeKey} />;
+    }
 
     return <RuntimeScopedChatContainer key={runtimeKey} {...props} runtimeKey={runtimeKey} />;
 };

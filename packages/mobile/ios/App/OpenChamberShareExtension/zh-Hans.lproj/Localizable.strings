@@ -1,0 +1,13 @@
+"share.title" = "分享到 OpenChamber";
+"share.cancel" = "取消";
+"share.send" = "发送";
+"share.sending" = "正在发送…";
+"share.preparing" = "正在准备共享内容…";
+"share.message" = "消息";
+"share.message.placeholder" = "添加消息";
+"share.destination" = "助手";
+"share.missingTarget" = "请在 OpenChamber 中选择默认分享助手。";
+"share.images.single" = "1 张图片";
+"share.images.multiple" = "%d 张图片";
+"share.avatar.accessibility" = "%@的头像";
+"share.imagePreview.accessibility" = "共享图片第 %d 张，共 %d 张";

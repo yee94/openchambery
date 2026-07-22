@@ -33,4 +33,8 @@ describe('settings navigation metadata', () => {
       'workspace',
     ]);
   });
+
+  test('renders assistants through the standard split settings shell', () => {
+    expect(SETTINGS_PAGE_METADATA.find((page) => page.slug === 'assistants')?.kind).toBe('split');
+  });
 });

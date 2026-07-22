@@ -4,7 +4,9 @@ import type { Message, Part } from '@opencode-ai/sdk/v2';
 import {
     applyAuthoritativeTaskSessionIdToSubtaskParts,
     buildTaskSummaryEntriesFromSession,
+    formatTaskStructuredOutputForMarkdown,
     parseTaskMetadataBlock,
+    prepareTaskOutputForDisplay,
     readTaskSessionIdFromRecord,
     readTaskSessionIdFromOutput,
 } from './taskToolModel';
@@ -52,5 +54,46 @@ describe('taskToolModel', () => {
         expect(applyAuthoritativeTaskSessionIdToSubtaskParts(parts, 'child-bridge')).toEqual([
             { type: 'subtask', taskSessionID: 'child-bridge' },
         ]);
+    });
+
+    test('converts structured subagent output tags into markdown sections', () => {
+        const structured = [
+            '<summary>',
+            'Fixed the bug in `AssistantView.tsx`.',
+            '</summary>',
+            '',
+            '<changes>',
+            '- Updated `AssistantView.tsx`',
+            '- Added tests in `taskToolModel.test.ts`',
+            '</changes>',
+            '',
+            '<verification>',
+            '- `bun test packages/ui/src/components/chat/message/parts/taskToolModel.test.ts`',
+            '</verification>',
+        ].join('\n');
+
+        expect(formatTaskStructuredOutputForMarkdown(structured)).toBe([
+            '## Summary',
+            '',
+            'Fixed the bug in `AssistantView.tsx`.',
+            '',
+            '## Changes',
+            '',
+            '- Updated `AssistantView.tsx`',
+            '- Added tests in `taskToolModel.test.ts`',
+            '',
+            '## Verification',
+            '',
+            '- `bun test packages/ui/src/components/chat/message/parts/taskToolModel.test.ts`',
+        ].join('\n'));
+    });
+
+    test('prepareTaskOutputForDisplay strips metadata and formats structured sections', () => {
+        const output = [
+            '<summary>Done</summary>',
+            '<task_metadata>{"sessionID":"child-1"}</task_metadata>',
+        ].join('\n');
+
+        expect(prepareTaskOutputForDisplay(output)).toBe('## Summary\n\nDone');
     });
 });

@@ -37,6 +37,10 @@
 	<string>OpenChamber uses the camera to scan a server's pairing QR code.</string>
 	<key>NSMicrophoneUsageDescription</key>
 	<string>OpenChamber uses the microphone for voice dictation in the chat composer.</string>
+	<key>NSUserActivityTypes</key>
+	<array>
+		<string>INSendMessageIntent</string>
+	</array>
 	<key>CFBundleURLTypes</key>
 	<array>
 		<dict>

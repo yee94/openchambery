@@ -253,16 +253,16 @@ export const admitServerQueueMessageAndConsumeResources = async ({
     return { status: 'committed', bodyConsumed, attachmentIDsConsumed, inlineDraftIDsConsumed };
 };
 
-export const attachedFilesToQueueCandidates = (files: readonly AttachedFile[]): QueueAttachmentCandidate[] => files.map((file) => {
+export const attachedFilesToQueueCandidates = (files: readonly AttachedFile[], partID?: string): QueueAttachmentCandidate[] => files.map((file) => {
     const mimeType = file.mimeType || file.file.type || 'application/octet-stream';
     if (file.source === 'server') {
         if (!file.serverPath) throw new Error('message-queue-server-attachment-unavailable');
-        return { attachmentID: file.id, occurrenceRefID: ['root', file.id], filename: file.filename || file.file.name, mimeType, source: 'server', path: file.serverPath, size: file.size };
+        return { attachmentID: file.id, occurrenceRefID: partID ? ['part', partID, file.id] : ['root', file.id], filename: file.filename || file.file.name, mimeType, source: 'server', path: file.serverPath, size: file.size };
     }
     if (file.source === 'vscode') throw new Error('message-queue-vscode-attachment-unsupported');
     return {
         attachmentID: file.id,
-        occurrenceRefID: ['root', file.id],
+        occurrenceRefID: partID ? ['part', partID, file.id] : ['root', file.id],
         filename: file.filename || file.file.name,
         mimeType,
         source: 'local',

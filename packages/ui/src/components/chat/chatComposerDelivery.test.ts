@@ -1,4 +1,5 @@
 import { expect, mock, test } from 'bun:test';
+import type { AttachedFile } from '@/stores/types/sessionTypes';
 
 mock.module('@/sync/sync-refs', () => ({
     getSyncSessions: () => [{ id: 'ses_1', title: 'Prior work' }],
@@ -7,7 +8,7 @@ mock.module('@/sync/sync-refs', () => ({
     resolveMaterializedSessionDirectory: (_sessionId: string, directory?: string) => directory ?? null,
 }));
 
-const { compileChatComposerDelivery, legacyTextToAuthoredPlan } = await import('./chatComposerDelivery');
+const { buildAssistantQueueDeliveryParts, buildAssistantQueueSyntheticSidecar, buildSyntheticDeliveryParts, compileChatComposerDelivery, legacyTextToAuthoredPlan } = await import('./chatComposerDelivery');
 
 const agents = [{ name: 'worker', mode: 'subagent' }] as never;
 const citation = {
@@ -94,4 +95,55 @@ test('compiler preserves Paste payload bytes while resolving authored session to
 
     expect(compiled.text).toBe(`Before @Prior work\n${paste}\nAfter`);
     expect(compiled.semantics).toEqual([{ type: 'session', sessionId: 'ses_1' }]);
+});
+
+test('Assistant queue delivery serializes @session and /skill semantics as DTO text parts', () => {
+    const deliveryParts = buildAssistantQueueDeliveryParts({
+        text: '@Prior work /review',
+        attachments: [],
+        semanticParts: [
+            { text: '[skill:review]', synthetic: true },
+            { text: 'session context', synthetic: true },
+        ],
+        syntheticParts: [{ text: 'draft context' }],
+    });
+
+    expect(deliveryParts).toEqual([
+        { type: 'text', text: '@Prior work /review' },
+        { type: 'text', text: '[skill:review]', synthetic: true },
+        { type: 'text', text: 'session context', synthetic: true },
+        { type: 'text', text: 'draft context', synthetic: true },
+    ]);
+});
+
+test('Assistant synthetic edit sidecar binds text and attachments to delivery indexes', () => {
+    const attachment = { id: 'context-file', file: new File(['x'], 'context.bin'), dataUrl: 'data:application/octet-stream;base64,eA==', mimeType: 'application/octet-stream', filename: 'context.bin', size: 1, source: 'local' } as never;
+    const syntheticParts = [{ partID: 'context', text: 'draft context', synthetic: true, attachments: [attachment] }];
+    const deliveryParts = buildAssistantQueueDeliveryParts({ text: 'prompt', attachments: [], semanticParts: [{ text: 'session context', synthetic: true }], syntheticParts });
+    expect(buildAssistantQueueSyntheticSidecar(deliveryParts, syntheticParts)).toEqual([{ partID: 'context', text: 'draft context', synthetic: true, attachmentIDs: ['context-file'], deliveryPartIndexes: [2, 3] }]);
+});
+
+test('direct-send synthetic context keeps text, file URLs, part order, and deduped attachments for recovery', () => {
+    const shared: AttachedFile = { id: 'shared', file: new File(['x'], 'shared.txt'), dataUrl: 'file:///project/shared.txt', mimeType: 'text/plain', filename: 'shared.txt', size: 1, source: 'server', serverPath: '/project/shared.txt' };
+    const duplicate = { ...shared, id: 'duplicate' };
+    const unique: AttachedFile = { id: 'unique', file: new File(['y'], 'unique.txt'), dataUrl: 'file:///project/unique.txt', mimeType: 'text/plain', filename: 'unique.txt', size: 1, source: 'server', serverPath: '/project/unique.txt' };
+    const syntheticParts = [
+        { text: 'first synthetic text', attachments: [shared, duplicate] },
+        { text: 'second synthetic text', attachments: [unique] },
+    ];
+
+    const deliveryParts = buildSyntheticDeliveryParts(syntheticParts);
+
+    expect(deliveryParts).toEqual([
+        { text: 'first synthetic text', attachments: [shared], synthetic: true },
+        { text: 'second synthetic text', attachments: [unique], synthetic: true },
+    ]);
+    expect(deliveryParts.flatMap((part) => part.attachments ?? []).map((attachment) => attachment.dataUrl)).toEqual([
+        'file:///project/shared.txt',
+        'file:///project/unique.txt',
+    ]);
+    expect(syntheticParts).toEqual([
+        { text: 'first synthetic text', attachments: [shared, duplicate] },
+        { text: 'second synthetic text', attachments: [unique] },
+    ]);
 });

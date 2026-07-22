@@ -580,7 +580,7 @@ const SETTINGS_SEARCH_ITEMS: readonly SettingsSearchItem[] = [
     page: 'assistants',
     titleKey: 'assistants.settings.instanceEnabled',
     descriptionKey: 'assistants.settings.description',
-    keywords: ['assistant', 'enable', 'instance'],
+    keywords: ['assistant', 'enable', 'feature'],
   },
   {
     id: 'assistants.create',
@@ -622,19 +622,13 @@ const SETTINGS_SEARCH_ITEMS: readonly SettingsSearchItem[] = [
     id: 'assistants.mode',
     page: 'assistants',
     titleKey: 'assistants.settings.mode',
-    keywords: ['continuous', 'stateless'],
+    keywords: ['continuous', 'stateless', 'history', 'new'],
   },
   {
     id: 'assistants.workspace',
     page: 'assistants',
     titleKey: 'assistants.settings.workspace',
     keywords: ['path', 'directory', 'workspace'],
-  },
-  {
-    id: 'assistants.skills-roots',
-    page: 'assistants',
-    titleKey: 'assistants.settings.skillRoots',
-    keywords: ['skills', 'roots', 'paths'],
   },
   {
     id: 'agents.name',

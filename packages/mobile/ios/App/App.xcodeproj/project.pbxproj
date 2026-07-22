@@ -32,6 +32,8 @@
 		D0E2000000000000000000B1 /* ShareViewController.swift in Sources */ = {isa = PBXBuildFile; fileRef = D0E1000000000000000000A1 /* ShareViewController.swift */; };
 		D0E2000000000000000000B2 /* OpenChamberShareStore.swift in Sources */ = {isa = PBXBuildFile; fileRef = D0D1000000000000000000A1 /* OpenChamberShareStore.swift */; };
 		D0E2000000000000000000B3 /* OpenChamberShareExtension.appex in Embed App Extensions */ = {isa = PBXBuildFile; fileRef = D0E1000000000000000000A4 /* OpenChamberShareExtension.appex */; settings = {ATTRIBUTES = (RemoveHeadersOnCopy, ); }; };
+		D0E2000000000000000000B4 /* Localizable.strings in Resources */ = {isa = PBXBuildFile; fileRef = D0E1000000000000000000A7 /* Localizable.strings */; };
+		D0E2000000000000000000B5 /* InfoPlist.strings in Resources */ = {isa = PBXBuildFile; fileRef = D0E1000000000000000000AA /* InfoPlist.strings */; };
 /* End PBXBuildFile section */
 
 /* Begin PBXFileReference section */
@@ -68,6 +70,10 @@
 		D0E1000000000000000000A2 /* Info.plist */ = {isa = PBXFileReference; lastKnownFileType = text.plist.xml; path = Info.plist; sourceTree = "<group>"; };
 		D0E1000000000000000000A3 /* OpenChamberShareExtension.entitlements */ = {isa = PBXFileReference; lastKnownFileType = text.plist.entitlements; path = OpenChamberShareExtension.entitlements; sourceTree = "<group>"; };
 		D0E1000000000000000000A4 /* OpenChamberShareExtension.appex */ = {isa = PBXFileReference; explicitFileType = "wrapper.app-extension"; includeInIndex = 0; path = OpenChamberShareExtension.appex; sourceTree = BUILT_PRODUCTS_DIR; };
+		D0E1000000000000000000A5 /* en */ = {isa = PBXFileReference; lastKnownFileType = text.plist.strings; name = en; path = en.lproj/Localizable.strings; sourceTree = "<group>"; };
+		D0E1000000000000000000A6 /* zh-Hans */ = {isa = PBXFileReference; lastKnownFileType = text.plist.strings; name = "zh-Hans"; path = "zh-Hans.lproj/Localizable.strings"; sourceTree = "<group>"; };
+		D0E1000000000000000000A8 /* en */ = {isa = PBXFileReference; lastKnownFileType = text.plist.strings; name = en; path = en.lproj/InfoPlist.strings; sourceTree = "<group>"; };
+		D0E1000000000000000000A9 /* zh-Hans */ = {isa = PBXFileReference; lastKnownFileType = text.plist.strings; name = "zh-Hans"; path = "zh-Hans.lproj/InfoPlist.strings"; sourceTree = "<group>"; };
 /* End PBXFileReference section */
 
 /* Begin PBXFrameworksBuildPhase section */
@@ -186,7 +192,7 @@
 			path = OpenChamberNotificationService;
 			sourceTree = "<group>";
 		};
-		D0E6000000000000000000F1 /* OpenChamberShareExtension */ = { isa = PBXGroup; children = (D0E1000000000000000000A1 /* ShareViewController.swift */, D0E1000000000000000000A2 /* Info.plist */, D0E1000000000000000000A3 /* OpenChamberShareExtension.entitlements */, ); path = OpenChamberShareExtension; sourceTree = "<group>"; };
+		D0E6000000000000000000F1 /* OpenChamberShareExtension */ = { isa = PBXGroup; children = (D0E1000000000000000000A1 /* ShareViewController.swift */, D0E1000000000000000000A7 /* Localizable.strings */, D0E1000000000000000000AA /* InfoPlist.strings */, D0E1000000000000000000A2 /* Info.plist */, D0E1000000000000000000A3 /* OpenChamberShareExtension.entitlements */, ); path = OpenChamberShareExtension; sourceTree = "<group>"; };
 		504EC3061FED79650016851F /* App */ = {
 			isa = PBXGroup;
 			children = (
@@ -276,7 +282,7 @@
 			productReference = D0B1000000000000000000A7 /* OpenChamberNotificationService.appex */;
 			productType = "com.apple.product-type.app-extension";
 		};
-		D0E4000000000000000000D1 /* OpenChamberShareExtension */ = { isa = PBXNativeTarget; buildConfigurationList = D0E5000000000000000000E1 /* Build configuration list for PBXNativeTarget "OpenChamberShareExtension" */; buildPhases = (D0E3000000000000000000C1 /* Sources */, D0E3000000000000000000C2 /* Frameworks */, ); buildRules = (); dependencies = (); name = OpenChamberShareExtension; productName = OpenChamberShareExtension; productReference = D0E1000000000000000000A4 /* OpenChamberShareExtension.appex */; productType = "com.apple.product-type.app-extension"; };
+		D0E4000000000000000000D1 /* OpenChamberShareExtension */ = { isa = PBXNativeTarget; buildConfigurationList = D0E5000000000000000000E1 /* Build configuration list for PBXNativeTarget "OpenChamberShareExtension" */; buildPhases = (D0E3000000000000000000C1 /* Sources */, D0E3000000000000000000C2 /* Frameworks */, D0E3000000000000000000C3 /* Resources */, ); buildRules = (); dependencies = (); name = OpenChamberShareExtension; productName = OpenChamberShareExtension; productReference = D0E1000000000000000000A4 /* OpenChamberShareExtension.appex */; productType = "com.apple.product-type.app-extension"; };
 /* End PBXNativeTarget section */
 
 /* Begin PBXProject section */
@@ -309,6 +315,7 @@
 			hasScannedForEncodings = 0;
 			knownRegions = (
 				en,
+				"zh-Hans",
 				Base,
 			);
 			mainGroup = 504EC2FB1FED79650016851F;
@@ -347,6 +354,15 @@
 			buildActionMask = 2147483647;
 			files = (
 				D0A2000000000000000000B4 /* Assets.xcassets in Resources */,
+			);
+			runOnlyForDeploymentPostprocessing = 0;
+		};
+		D0E3000000000000000000C3 /* Resources */ = {
+			isa = PBXResourcesBuildPhase;
+			buildActionMask = 2147483647;
+			files = (
+				D0E2000000000000000000B4 /* Localizable.strings in Resources */,
+				D0E2000000000000000000B5 /* InfoPlist.strings in Resources */,
 			);
 			runOnlyForDeploymentPostprocessing = 0;
 		};
@@ -452,6 +468,24 @@
 				504EC3111FED79650016851F /* Base */,
 			);
 			name = LaunchScreen.storyboard;
+			sourceTree = "<group>";
+		};
+		D0E1000000000000000000A7 /* Localizable.strings */ = {
+			isa = PBXVariantGroup;
+			children = (
+				D0E1000000000000000000A5 /* en */,
+				D0E1000000000000000000A6 /* zh-Hans */,
+			);
+			name = Localizable.strings;
+			sourceTree = "<group>";
+		};
+		D0E1000000000000000000AA /* InfoPlist.strings */ = {
+			isa = PBXVariantGroup;
+			children = (
+				D0E1000000000000000000A8 /* en */,
+				D0E1000000000000000000A9 /* zh-Hans */,
+			);
+			name = InfoPlist.strings;
 			sourceTree = "<group>";
 		};
 /* End PBXVariantGroup section */

@@ -33,6 +33,7 @@ export type NativeShareEnvelope = {
 
 export interface OpenChamberSharePlugin {
   updateCatalog(options: { entries: NativeAssistantCatalogEntry[] }): Promise<void>;
+  donateAssistantInteraction(options: { serverInstanceID: string; assistantID: string; name: string; avatarSeed: string }): Promise<void>;
   listPending(): Promise<{ envelopes: NativeShareEnvelope[] }>;
   ack(options: { operationID: string }): Promise<void>;
   releaseFiles(options: { operationID: string }): Promise<void>;

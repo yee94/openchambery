@@ -19,6 +19,15 @@ describe('OpenCode message queue adapter', () => {
     await adapter.send({ scope, messageID: 'message', runtime, sendConfig: { providerID: 'p', modelID: 'm', agent: 'a', variant: 'v' }, parts }); expect(promptAsync).toHaveBeenCalledWith(expect.objectContaining({ sessionID: 'session', directory: '/repo', messageID: 'message', model: { providerID: 'p', modelID: 'm' }, agent: 'a', variant: 'v', parts }), expect.any(Object));
     generation = 2; expect(await adapter.send({ scope, runtime, sendConfig: { providerID: 'p', modelID: 'm' } })).toMatchObject({ code: 'runtime_stale' });
   });
+  it('materializes Assistant attachment IDs in delivery order', async () => {
+    const readAttachment = vi.fn((attachment) => ({ type: 'file', url: `file:///${attachment.attachmentID}`, filename: attachment.filename }));
+    const adapter = createOpenCodeMessageQueueAdapter({ buildOpenCodeUrl: () => 'http://open.code/', getOpenCodeAuthHeaders: () => ({}), readAttachment });
+    await expect(adapter.materializeAssistantDeliveryParts({
+      deliveryParts: [{ type: 'text', text: 'before' }, { type: 'file', mime: 'image/png', attachmentID: 'image' }, { type: 'text', text: 'after' }],
+      attachments: [{ attachmentID: 'image', filename: 'image.png' }],
+    })).resolves.toEqual([{ type: 'text', text: 'before' }, { type: 'file', mime: 'image/png', url: 'file:///image' }, { type: 'text', text: 'after' }]);
+    expect(readAttachment).toHaveBeenCalledWith({ attachmentID: 'image', filename: 'image.png' }, expect.any(Object), expect.any(Object));
+  });
   it('uses the injected upstream runtime URL and detects its changes', async () => {
     const promptAsync = vi.fn(() => ({ data: {} }));
     createOpencodeClient.mockReturnValue({ session: { promptAsync, messages: vi.fn(() => ({ data: [] })) } });

@@ -20,12 +20,27 @@ test('downloads canonical mixed attachments, retains sidecars, commits then remo
   const bridge = createMessageQueueServerEditBridge({
     queue: { captureRuntime: () => runtime, reserveEdit: async () => ({ revision: 4, scopeID: 'scope', queueItemID: 'queue', rowVersion: 3, token: 'token', expiresAt: 2, generation: 1 }), renewEdit: async () => ({ queueItemID: 'queue', token: 'token', generation: 1, expiresAt: Date.now() + 60_000 }), releaseEdit: async () => {}, removeReserved: async () => { removed++; return true; }, refresh: async () => {} },
     input: { captureDraftRuntime: () => runtime, commitDraftSnapshot: async (input: DraftCommitInput) => { snapshot = input.snapshot; return { status: 'committed', durable: true, current: true, errors: [], cleanupErrors: [] }; } },
-    download: async (_queue: string, attachment: Pick<MessageQueueAttachment, 'attachmentID' | 'size' | 'mimeType'>) => new Blob(['x'], { type: attachment.mimeType }), current: () => true,
+    download: async (_queue: string, attachment: Pick<MessageQueueAttachment, 'attachmentID' | 'size' | 'mimeType'>) => new Blob([new Uint8Array(attachment.size)], { type: attachment.mimeType }), current: () => true,
   } as never);
   const result = await bridge.editServerQueueItemIntoDraft({ scopeID: 'scope', scopeRevision: 4, item, targetKey: sessionDraftKey(runtime, 'session'), expectedRevision: 'absent' });
   expect(result.diagnostics).toEqual([]); expect(result.status).toBe('committed'); expect(removed).toBe(1);
   expect(snapshot?.attachments.map((attachment) => attachment.attachmentID)).toEqual(['one', 'two']);
   expect(snapshot?.composerReferences).toEqual([]); expect(snapshot?.mentions).toEqual(item.composerMentions);
+});
+
+test('restores Assistant synthetic parts with their attachment ownership', async () => {
+  let snapshot: DraftCommitInput['snapshot'] | undefined;
+  const syntheticItem = { ...item, deliveryTarget: { kind: 'assistant' as const, assistantID: 'assistant' }, deliveryParts: [{ type: 'text' as const, text: '@file' }, { type: 'text' as const, text: 'context' }, { type: 'file' as const, mime: 'application/octet-stream', url: 'data:application/octet-stream;base64,AA==' }], syntheticParts: [{ partID: 'part-1', text: 'context', synthetic: true, attachmentIDs: ['context-file'], deliveryPartIndexes: [1, 2] }], attachments: [...item.attachments, { attachmentID: 'context-file', occurrenceRefID: ['part', 'part-1', 'context-file'] as const, filename: 'context.bin', mimeType: 'application/octet-stream', size: 1, source: 'local' as const, locator: { kind: 'upload' as const, uploadID: 'context-upload' } }] };
+  const bridge = createMessageQueueServerEditBridge({
+    queue: { captureRuntime: () => runtime, reserveEdit: async () => ({ revision: 4, scopeID: 'scope', queueItemID: 'queue', rowVersion: 3, token: 'token', expiresAt: 2, generation: 1 }), renewEdit: async () => ({ queueItemID: 'queue', token: 'token', generation: 1, expiresAt: Date.now() + 60_000 }), releaseEdit: async () => {}, removeReserved: async () => true, refresh: async () => {} },
+    input: { captureDraftRuntime: () => runtime, commitDraftSnapshot: async (input: DraftCommitInput) => { snapshot = input.snapshot; return { status: 'committed', durable: true, current: true, errors: [], cleanupErrors: [] }; } },
+    download: async (_queue: string, attachment: Pick<MessageQueueAttachment, 'attachmentID' | 'size' | 'mimeType'>) => new Blob([new Uint8Array(attachment.size)], { type: attachment.mimeType }), current: () => true,
+  } as never);
+  const result = await bridge.editServerQueueItemIntoDraft({ scopeID: 'scope', scopeRevision: 4, item: syntheticItem, targetKey: sessionDraftKey(runtime, 'session'), expectedRevision: 'absent' });
+  expect(result.diagnostics).toEqual([]);
+  expect(result.status).toBe('committed');
+  expect(snapshot?.attachments.map((attachment) => attachment.attachmentID)).toEqual(['one', 'two']);
+  expect(snapshot?.syntheticParts).toEqual([{ partID: 'part-1', text: 'context', synthetic: true, attachments: [{ attachmentID: 'context-file', attachmentRefID: '["part","part-1","context-file"]', filename: 'context.bin', mimeType: 'application/octet-stream', size: 1, locator: { kind: 'blob', blobID: 'context-file' }, source: 'local' }] }]);
 });
 
 test('releases reservation after download failure and retains the queue', async () => {

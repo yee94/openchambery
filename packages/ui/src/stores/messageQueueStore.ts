@@ -12,14 +12,15 @@ import { describeComposerDocumentResources } from '@/composer/extensions';
 export type FollowUpBehavior = 'steer' | 'queue';
 export type QueueItemStatus = 'queued' | 'sending' | 'retrying' | 'reconciling' | 'unresolved' | 'failed';
 type QueueFailureKind = 'pre-dispatch' | 'ambiguous-dispatch' | 'definitive';
+export type QueueDeliveryTarget = { kind: 'primary' } | { kind: 'assistant'; assistantID: string };
 export type QueueScope =
-  | { state: 'bound'; transportIdentity: string; directory: string; sessionID: string }
+  | { state: 'bound'; transportIdentity: string; directory: string; sessionID: string; deliveryTarget?: QueueDeliveryTarget; runtimeGeneration?: number }
   | { state: 'unbound-legacy'; sessionID: string };
 export type QueueOwner = QueueScope;
 
 export const legacyQueueScope = (sessionID: string): QueueScope => ({ state: 'unbound-legacy', sessionID });
 export const queueScopeKey = (scope: QueueScope): string => scope.state === 'bound'
-  ? `bound:${JSON.stringify([scope.transportIdentity, scope.directory, scope.sessionID])}`
+  ? `bound:${JSON.stringify([scope.transportIdentity, scope.directory, scope.sessionID, scope.deliveryTarget ?? { kind: 'primary' }, scope.runtimeGeneration ?? 0])}`
   : `unbound-legacy:${JSON.stringify([scope.sessionID])}`;
 export const getQueueForScope = (state: { queuedMessages: Record<string, QueueItem[]> }, scope: QueueScope): QueueItem[] => state.queuedMessages[queueScopeKey(scope)] ?? EMPTY_QUEUE;
 const EMPTY_QUEUE: QueueItem[] = [];

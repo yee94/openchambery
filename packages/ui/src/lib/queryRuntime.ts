@@ -28,6 +28,9 @@ export const queryKeys = {
   configCatalog: {
     providers: (directory: string | null, transport = getRuntimeTransportIdentity()): readonly [string, 'configCatalog', 'providers', string | null] => [transport, 'configCatalog', 'providers', normalizeQueryDirectory(directory)],
   },
+  providers: {
+    list: (directory: string | null, transport = getRuntimeTransportIdentity()): readonly [string, 'providers', string | null] => [transport, 'providers', directory],
+  },
   skills: {
     list: (directory: string | null, transport = getRuntimeTransportIdentity()): readonly [string, 'skills', string | null] => [transport, 'skills', directory],
   },

@@ -1,4 +1,6 @@
-const MESSAGE_QUEUE_SCHEMA_VERSION = 3;
+import { validAssistantDeliveryParts } from '../assistant-delivery-parts.js';
+
+const MESSAGE_QUEUE_SCHEMA_VERSION = 5;
 
 const schemaError = (code) => Object.assign(new Error(code), { code });
 const tableNames = (db) => new Set(db.prepare("SELECT name FROM sqlite_master WHERE type = 'table'").all().map((row) => row.name));
@@ -87,6 +89,55 @@ const migrateV2ToV3 = (db) => {
   db.prepare("UPDATE queue_meta SET value = ? WHERE key = 'schema_version'").run(String(MESSAGE_QUEUE_SCHEMA_VERSION));
 };
 
+const migrateV3ToV4 = (db) => {
+  addColumn(db, 'queue_item', 'delivery_target', "TEXT NOT NULL DEFAULT '{\"kind\":\"primary\"}'");
+  db.prepare("UPDATE queue_item SET delivery_target='{\"kind\":\"primary\"}' WHERE delivery_target IS NULL OR delivery_target='' ").run();
+  db.prepare("UPDATE queue_meta SET value = ? WHERE key = 'schema_version'").run(String(MESSAGE_QUEUE_SCHEMA_VERSION));
+};
+
+const migrateV4ToV5 = (db) => {
+  const rows = db.prepare('SELECT queue_item_id,delivery_target FROM queue_item').all();
+  const primary = JSON.stringify({ kind: 'primary' });
+  const malformed = [];
+  const deliveryPart = (part) => {
+    if (part === null || typeof part !== 'object' || Array.isArray(part)) return null;
+    if (part.type === 'text' && Object.keys(part).every((key) => key === 'type' || key === 'text') && typeof part.text === 'string' && part.text.length <= 200_000) return part;
+    if (part.type === 'file' && Object.keys(part).every((key) => key === 'type' || key === 'mime' || key === 'url') && typeof part.mime === 'string' && part.mime.length > 0 && part.mime.length <= 512 && typeof part.url === 'string' && part.url.length > 0 && part.url.length <= 4_096) return part;
+    return null;
+  };
+  const attachmentPart = (attachment) => {
+    if (attachment === null || typeof attachment !== 'object' || Array.isArray(attachment)) return null;
+    const existingFile = deliveryPart(attachment);
+    if (existingFile?.type === 'file') return existingFile;
+    const keys = Object.keys(attachment);
+    const mime = typeof attachment.mime === 'string' ? attachment.mime : attachment.mimeType;
+    if (!keys.every((key) => ['mime', 'mimeType', 'url'].includes(key)) || typeof mime !== 'string' || mime.length === 0 || mime.length > 512 || typeof attachment.url !== 'string' || attachment.url.length === 0 || attachment.url.length > 4_096) return null;
+    return { type: 'file', mime, url: attachment.url };
+  };
+  for (const row of rows) {
+    let target;
+    try { target = row.delivery_target ? JSON.parse(row.delivery_target) : null; } catch { target = null; }
+    if (target == null) db.prepare('UPDATE queue_item SET delivery_target=? WHERE queue_item_id=?').run(primary, row.queue_item_id);
+    else if (target?.kind === 'assistant') {
+      const parts = Array.isArray(target.parts) ? target.parts.map(deliveryPart) : null;
+      const attachments = Array.isArray(target.attachments) ? target.attachments.map(attachmentPart) : null;
+      const deliveryParts = parts && attachments ? [...parts, ...attachments] : null;
+      if (typeof target.assistantID !== 'string' || !target.assistantID || !validAssistantDeliveryParts(deliveryParts)) malformed.push(row.queue_item_id);
+      else {
+        delete target.parts;
+        delete target.attachments;
+        target.deliveryParts = deliveryParts;
+        db.prepare('UPDATE queue_item SET delivery_target=? WHERE queue_item_id=?').run(JSON.stringify(target), row.queue_item_id);
+      }
+    }
+  }
+  if (malformed.length) {
+    const placeholders = malformed.map(() => '?').join(',');
+    db.prepare(`UPDATE queue_item SET status='failed',last_error_code='malformed_target',manual_dispatch_requested=0,updated_at=updated_at WHERE queue_item_id IN (${placeholders})`).run(...malformed);
+  }
+  db.prepare("UPDATE queue_meta SET value = ? WHERE key = 'schema_version'").run(String(MESSAGE_QUEUE_SCHEMA_VERSION));
+};
+
 export const initializeMessageQueueSchema = (db) => {
   db.pragma('journal_mode = WAL'); db.pragma('foreign_keys = ON'); db.pragma('busy_timeout = 5000'); db.pragma('synchronous = FULL');
   const tables = tableNames(db); const hasMeta = tables.has('queue_meta');
@@ -99,7 +150,7 @@ export const initializeMessageQueueSchema = (db) => {
   try {
     if (!hasMeta) { createV1(db); db.prepare("INSERT INTO queue_meta(key,value) VALUES ('schema_version','1'),('global_revision','0')").run(); }
     const current = hasMeta ? version : 1;
-    if (current !== 1 && current !== 2 && current !== 3) throw schemaError('message_queue_invalid_schema');
+    if (current !== 1 && current !== 2 && current !== 3 && current !== 4 && current !== 5) throw schemaError('message_queue_invalid_schema');
     if (!db.prepare("SELECT 1 FROM queue_meta WHERE key = 'global_revision'").get()) throw schemaError('message_queue_invalid_schema');
     if (current === 1) migrateV1ToV2(db);
     if (current === 2) {
@@ -136,10 +187,12 @@ export const initializeMessageQueueSchema = (db) => {
       addColumn(db, 'queue_attempt', 'edit_reservation_generation', 'INTEGER');
     }
     if (current <= 2) migrateV2ToV3(db);
+    if (current <= 3) migrateV3ToV4(db);
+    if (current <= 4) migrateV4ToV5(db);
     repairImportTable(db);
     addColumn(db, 'queue_item', 'manual_dispatch_requested', 'INTEGER NOT NULL DEFAULT 0 CHECK(manual_dispatch_requested IN (0,1))');
     const required = { queue_meta: ['key', 'value'], queue_runtime: ['runtime_key', 'authority', 'generation', 'updated_at'], worktree_lifecycle: ['runtime_key', 'directory', 'state', 'deletion_token', 'updated_at'], queue_scope: ['scope_id', 'runtime_key', 'directory', 'session_id', 'revision', 'worktree_state', 'created_at', 'updated_at'], queue_item: ['queue_item_id', 'operation_id', 'scope_id', 'content', 'composer_document', 'send_config', 'position', 'status', 'row_version', 'created_at', 'updated_at', 'due_at', 'reconciliation_due_at', 'dispatch_generation', 'attachment_issues', 'last_error_code', 'completed_at'], queue_attempt: ['queue_item_id', 'message_id', 'attempt_count', 'lease_owner', 'lease_token', 'lease_expires_at', 'reconciliation_state', 'reconciled_at', 'last_error_code', 'lease_generation', 'fence_generation', 'last_attempt_at', 'reconciliation_started_at', 'reconciliation_deadline_at', 'reconciliation_checks', 'reconciliation_unavailable_checks', 'reconciliation_next_check_at', 'edit_reservation_token', 'edit_reservation_owner', 'edit_reservation_expires_at', 'edit_reservation_generation'], queue_attempt_history: ['attempt_id', 'queue_item_id', 'operation_id', 'message_id', 'attempt_number', 'lease_owner', 'lease_token', 'fence_generation', 'started_at', 'finished_at', 'outcome', 'error_code'], queue_completion: ['operation_id', 'message_id', 'queue_item_id', 'runtime_key', 'source', 'attempt_number', 'completed_at', 'completion_json'], operation_receipt: ['runtime_key', 'request_id', 'operation_type', 'payload_hash', 'response_json', 'committed_revision', 'created_at'], worktree_order: ['runtime_key', 'project_directory', 'ordered_paths', 'revision', 'updated_at'], attachment_upload: ['upload_id', 'runtime_key', 'state', 'upload_token', 'object_hash', 'storage_key', 'size_bytes', 'expires_at', 'created_at', 'ready_at'], attachment_object: ['object_hash', 'storage_key', 'size_bytes', 'created_at', 'last_referenced_at'], queue_attachment: ['queue_item_id', 'ordinal', 'upload_id', 'object_hash', 'locator_kind', 'locator_value', 'name', 'media_type', 'size_bytes', 'attachment_id', 'occurrence_ref_id', 'filename', 'mime_type', 'source', 'locator'] };
-    required.queue_item.push('manual_dispatch_requested');
+    required.queue_item.push('manual_dispatch_requested', 'delivery_target');
     for (const [table, fields] of Object.entries(required)) if (!tableNames(db).has(table) || fields.some((field) => !columns(db, table).has(field))) throw schemaError('message_queue_invalid_schema');
     const importRequired = { queue_runtime: ['activation_epoch', 'activated_at', 'manifest_hash', 'protocol'], queue_import: ['import_id', 'runtime_key', 'kind', 'client_id', 'snapshot_hash', 'item_count', 'protocol', 'expected_generation', 'state', 'manifest_hash', 'created_at', 'sealed_at', 'committed_at', 'expires_at', 'commit_generation', 'commit_activation_epoch', 'commit_added', 'commit_manifest_hash', 'commit_revision'], queue_import_item: ['import_id', 'scope_ordinal', 'item_ordinal', 'queue_item_id', 'operation_id', 'message_id', 'payload_json', 'payload_hash'] };
     for (const [table, fields] of Object.entries(importRequired)) if (!tableNames(db).has(table) || fields.some((field) => !columns(db, table).has(field))) throw schemaError('message_queue_invalid_schema');

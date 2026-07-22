@@ -69,7 +69,7 @@ describe('ScheduledTasksDialog queries', () => {
     const content = await readFile(join(dirname(fileURLToPath(import.meta.url)), 'ScheduledTasksDialog.tsx'), 'utf8');
     expect(content).toContain('const deletedTaskIdentity = taskIdentityKey({ projectId, taskId: task.id });');
     expect(content).toContain('taskIdentityKey(selectedTaskIdentity) === deletedTaskIdentity');
-    expect(content).toContain('}, [deleteTaskMutation, selectedTaskIdentity, t]);');
+    expect(content).toContain('const handleDeleteTask = useEvent(async (entry: GlobalScheduledTask) =>');
   });
 
   test('keeps workspace controls and rows on shared axes with reduced-motion-aware transitions', async () => {

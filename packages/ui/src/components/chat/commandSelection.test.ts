@@ -1,5 +1,5 @@
 import { describe, expect, test } from 'bun:test';
-import { getSlashTokenRange, shouldSubmitCommandOnSelection } from './commandSelection';
+import { getSlashTokenRange, isCommandAllowedForSubmission, shouldSubmitCommandOnSelection } from './commandSelection';
 
 describe('shouldSubmitCommandOnSelection', () => {
   test('submits commands selected with an immediate-submit interaction', () => {
@@ -29,5 +29,20 @@ describe('getSlashTokenRange', () => {
   test('requires a slash at the current token boundary', () => {
     expect(getSlashTokenRange('path/to', 7)).toBeNull();
     expect(getSlashTokenRange('plain text', 10)).toBeNull();
+  });
+});
+
+describe('command policy', () => {
+  const policy = (command: { name: string }) => command.name !== 'fork' && command.name !== 'thread';
+
+  test('guards selected commands before insertion or execution', () => {
+    expect(isCommandAllowedForSubmission('fork', policy)).toBe(false);
+    expect(isCommandAllowedForSubmission('compact', policy)).toBe(true);
+  });
+
+  test('guards manual, pasted, and dictated final text through the same name check', () => {
+    expect(isCommandAllowedForSubmission('fork', policy)).toBe(false);
+    expect(isCommandAllowedForSubmission('thread', policy)).toBe(false);
+    expect(isCommandAllowedForSubmission('compact', policy)).toBe(true);
   });
 });

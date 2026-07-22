@@ -786,7 +786,20 @@ const resolveConfigDirectory = (directory: string | null | undefined): string | 
 const toConfigDirectoryKey = (directory: string | null | undefined): string =>
     toDirectoryKey(resolveConfigDirectory(directory));
 
+export const getConfigDirectoryKey = (directory: string | null | undefined): string => toConfigDirectoryKey(directory);
+
+// Runtime freshness tracking (NOT persisted) for the stale-while-revalidate
+// background refresh, keyed by config-directory key. Prevents re-fetching
+// project-scoped providers/agents we just loaded — e.g. initializeApp loading a
+// project, then activateDirectory firing for the same project moments later.
+const _providersLoadedAt = new Map<string, number>();
+const _agentsLoadedAt = new Map<string, number>();
+const CONFIG_REFRESH_TTL_MS = 30_000;
 const PROJECT_CONFIG_PREWARM_DELAY_MS = 1_000;
+const isConfigFresh = (loadedAt: Map<string, number>, key: string): boolean => {
+    const at = loadedAt.get(key);
+    return typeof at === 'number' && Date.now() - at < CONFIG_REFRESH_TTL_MS;
+};
 
 interface DirectoryScopedConfig {
 
@@ -809,6 +822,8 @@ interface DirectoryScopedConfig {
  * fields the pickers read (`providers`, `agents`, selections), so a cold start
  * paints instantly from persisted data. Falls back to whatever top-level data
  * was persisted; handles legacy persisted blobs that only stored directoryScoped.
+ * Catalog fields are memory-only (TanStack Query SWR) — persist rehydrate now
+ * supplies empty providers/agents, so this lift only helps in-session merges.
  */
 const hydrateActiveDirectorySnapshot = <T extends Partial<ConfigStore>>(merged: T): T => {
     const directoryScoped = merged.directoryScoped;
@@ -859,6 +874,9 @@ const sanitizePersistedCatalogState = (persistedState: unknown): Partial<ConfigS
         if (typeof persistedState[key] === 'number' && Number.isFinite(persistedState[key])) preferences[key] = persistedState[key];
     }
     const currentTransport = getRuntimeTransportIdentity();
+    // Catalog snapshots (providers/agents/defaultProviders) are TanStack Query
+    // memory-SWR only — never hydrate them from localStorage, even when the
+    // transport fingerprint matches. Selection/preference fields may restore.
     if (transportIdentity !== currentTransport) return { ...preferences, catalogTransportIdentity: currentTransport, directoryScoped: {}, providers: [], agents: [], defaultProviders: {}, currentProviderId: '', currentModelId: '', currentVariant: undefined, currentAgentName: undefined, selectedProviderId: '', agentModelSelections: {}, providerConfigLoadingByDirectory: {}, agentConfigLoadingByDirectory: {} };
     const directoryScoped: Record<string, DirectoryScopedConfig> = {};
     if (isRecord(persistedState.directoryScoped)) {
@@ -866,15 +884,15 @@ const sanitizePersistedCatalogState = (persistedState: unknown): Partial<ConfigS
             if (!isRecord(rawSnapshot)) continue;
             directoryScoped[directoryKey] = {
                 ...createEmptyDirectoryScopedConfig(),
-                providers: sanitizeProviderList(rawSnapshot.providers),
-                agents: Array.isArray(rawSnapshot.agents) ? rawSnapshot.agents as Agent[] : [],
+                providers: [],
+                agents: [],
                 currentProviderId: normalizeOptionalString(rawSnapshot.currentProviderId) ?? '',
                 currentModelId: normalizeOptionalString(rawSnapshot.currentModelId) ?? '',
                 currentVariant: normalizeOptionalString(rawSnapshot.currentVariant),
                 currentAgentName: normalizeOptionalString(rawSnapshot.currentAgentName),
                 selectedProviderId: sanitizePersistedSelectedProviderId(normalizeOptionalString(rawSnapshot.selectedProviderId)),
                 agentModelSelections: isRecord(rawSnapshot.agentModelSelections) ? rawSnapshot.agentModelSelections as DirectoryScopedConfig['agentModelSelections'] : {},
-                defaultProviders: sanitizeDefaultProviders(rawSnapshot.defaultProviders),
+                defaultProviders: {},
                 opencodeDefaultAgent: normalizeOptionalString(rawSnapshot.opencodeDefaultAgent),
                 opencodeDefaultModel: normalizeOptionalString(rawSnapshot.opencodeDefaultModel),
                 selectionSource: rawSnapshot.selectionSource === 'manual' ? 'manual' : 'auto',
@@ -885,9 +903,9 @@ const sanitizePersistedCatalogState = (persistedState: unknown): Partial<ConfigS
         ...preferences,
         catalogTransportIdentity: transportIdentity,
         directoryScoped,
-        providers: sanitizeProviderList(persistedState.providers),
-        agents: Array.isArray(persistedState.agents) ? persistedState.agents as Agent[] : [],
-        defaultProviders: sanitizeDefaultProviders(persistedState.defaultProviders),
+        providers: [],
+        agents: [],
+        defaultProviders: {},
         selectedProviderId: sanitizePersistedSelectedProviderId(normalizeOptionalString(persistedState.selectedProviderId)),
     };
 };
@@ -3330,6 +3348,10 @@ export const useConfigStore = create<ConfigStore>()(
                 // start. Freshness is guaranteed by the background refresh in
                 // initializeApp() / activateDirectory() (which overwrite these on
                 // success) and by the provider/agent config-change subscriptions.
+                // IMPORTANT: Provider/Agent catalogs are TanStack Query memory-SWR
+                // only — never write providers/agents/defaultProviders to
+                // localStorage. Persist selection + settings preferences only;
+                // Query retains the in-memory catalog across in-session reuse.
                 partialize: (state) => ({
                     activeDirectoryKey: state.activeDirectoryKey,
                     catalogTransportIdentity: getRuntimeTransportIdentity(),
@@ -3337,22 +3359,27 @@ export const useConfigStore = create<ConfigStore>()(
                         Object.entries(state.directoryScoped).map(([directoryKey, snapshot]) => [
                             directoryKey,
                             {
-                                ...snapshot,
-                                providers: sanitizeProviderList(snapshot.providers),
-                                defaultProviders: sanitizeDefaultProviders(snapshot.defaultProviders),
+                                providers: [],
+                                agents: [],
+                                currentProviderId: snapshot.currentProviderId,
+                                currentModelId: snapshot.currentModelId,
+                                currentVariant: snapshot.currentVariant,
+                                currentAgentName: snapshot.currentAgentName,
                                 selectedProviderId: sanitizePersistedSelectedProviderId(snapshot.selectedProviderId),
+                                agentModelSelections: snapshot.agentModelSelections,
+                                defaultProviders: {},
+                                opencodeDefaultAgent: snapshot.opencodeDefaultAgent,
+                                opencodeDefaultModel: snapshot.opencodeDefaultModel,
+                                selectionSource: snapshot.selectionSource,
                             },
                         ]),
                     ),
-                    providers: sanitizeProviderList(state.providers),
-                    agents: state.agents,
                     currentProviderId: state.currentProviderId,
                     currentModelId: state.currentModelId,
                     currentVariant: state.currentVariant,
                     currentAgentName: state.currentAgentName,
                     selectedProviderId: sanitizePersistedSelectedProviderId(state.selectedProviderId),
                     agentModelSelections: state.agentModelSelections,
-                    defaultProviders: sanitizeDefaultProviders(state.defaultProviders),
                     settingsDefaultModel: state.settingsDefaultModel,
                     settingsDefaultVariant: state.settingsDefaultVariant,
                     settingsDefaultAgent: state.settingsDefaultAgent,

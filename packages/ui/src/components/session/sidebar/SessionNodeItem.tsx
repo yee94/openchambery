@@ -387,6 +387,7 @@ function SessionNodeItemComponent(props: Props): React.ReactNode {
   // hasn't seen this id yet (sub-render latency between when a session
   // is created and when the SSE-driven aggregate picks it up).
   const resolvedSession = liveSessionById.get(session.id) ?? session;
+  const isAssistantSession = Boolean((resolvedSession as Session & { metadata?: { openchamber?: { assistant?: unknown } } }).metadata?.openchamber?.assistant);
 
   const sessionDirectory =
     normalizePath((session as Session & { directory?: string | null }).directory ?? null)
@@ -1243,6 +1244,7 @@ function SessionNodeItemComponent(props: Props): React.ReactNode {
                       >
                         {renderHighlightedText(sessionTitle, normalizedSessionSearchQuery)}
                       </div>
+                      {isAssistantSession ? <Icon name="ai-agent" className="size-3 shrink-0 text-muted-foreground" aria-label="Assistant" /> : null}
                       {pendingPermissionCount > 0 ? (
                         <span className="inline-flex items-center gap-1 rounded bg-destructive/10 px-1 py-0.5 text-[0.7rem] text-destructive flex-shrink-0" title={t('sessions.sidebar.session.status.permissionRequired')} aria-label={t('sessions.sidebar.session.status.permissionRequired')}>
                           <Icon name="shield" className="h-3 w-3" />

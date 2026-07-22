@@ -63,12 +63,48 @@ const sortCommands = (searchQuery: string) => (a: CommandInfo, b: CommandInfo) =
   return a.name.localeCompare(b.name);
 };
 
+/**
+ * Explicit command availability context. Callers (ChatInput, MultiRun, agent
+ * manager, scheduled task editor) supply these so CommandAutocomplete never
+ * reads the primary session store or session messages to decide which
+ * commands are eligible.
+ */
+export type CommandAutocompleteContext = {
+  sessionID: string | null;
+  hasMessages: boolean;
+  hasNewDraft: boolean;
+};
+
+/**
+ * Pure selector over command-availability context. Exported so isolation
+ * tests can exercise the real surface→autocomplete boundary without an
+ * isolated helper.
+ */
+export const resolveCommandAutocompleteAvailability = (
+  context: CommandAutocompleteContext,
+  isMobile: boolean,
+): {
+  hasSession: boolean;
+  canStartSessionCommand: boolean;
+  canUseReviewHandoffFlow: boolean;
+} => {
+  const hasSession = Boolean(context.sessionID);
+  return {
+    hasSession,
+    canStartSessionCommand: hasSession || context.hasNewDraft,
+    canUseReviewHandoffFlow: hasSession && !isMobile && !isVSCodeRuntime(),
+  };
+};
+
 interface CommandAutocompleteProps {
   searchQuery: string;
   onCommandSelect: (command: CommandInfo, submit?: boolean) => void;
   onClose: () => void;
   directory?: string | null;
   style?: React.CSSProperties;
+  commandPolicy?: (command: CommandInfo) => boolean;
+  /** Explicit command availability context; when omitted, no session-scoped commands are eligible. */
+  commandContext?: CommandAutocompleteContext;
 }
 
 export const CommandAutocomplete = React.forwardRef<CommandAutocompleteHandle, CommandAutocompleteProps>(({
@@ -77,16 +113,35 @@ export const CommandAutocomplete = React.forwardRef<CommandAutocompleteHandle, C
   onClose,
   directory,
   style,
+  commandPolicy,
+  commandContext,
 }, ref) => {
   const { t } = useI18n();
-  const currentSessionId = useSessionUIStore((state) => state.currentSessionId);
-  const sessionMessages = useSessionMessages(currentSessionId ?? '');
-  const hasMessagesInCurrentSession = sessionMessages.length > 0;
-  const hasSession = Boolean(currentSessionId);
-  const hasNewSessionDraft = useSessionUIStore((state) => Boolean(state.newSessionDraft?.open));
-  const canStartSessionCommand = hasSession || hasNewSessionDraft;
   const isMobile = useUIStore((state) => state.isMobile);
-  const canUseReviewHandoffFlow = hasSession && !isMobile && !isVSCodeRuntime();
+  // Composer surface callers (ChatInput) supply an explicit commandContext so
+  // the autocomplete never reads the primary session store to decide command
+  // eligibility. Non-surface editor callers (MultiRun, agent manager,
+  // scheduled task editor) omit it and fall back to workspace session state,
+  // preserving their previous behavior.
+  const fallbackSessionId = useSessionUIStore((state) => state.currentSessionId);
+  const fallbackHasNewDraft = useSessionUIStore((state) => Boolean(state.newSessionDraft?.open));
+  const fallbackSessionDirectory = useSessionUIStore(
+    React.useCallback((state) => (fallbackSessionId ? state.getDirectoryForSession(fallbackSessionId) : undefined), [fallbackSessionId]),
+  );
+  const fallbackMessages = useSessionMessages(fallbackSessionId ?? '', fallbackSessionDirectory ?? undefined);
+  const resolvedContext: CommandAutocompleteContext = React.useMemo(
+    () => commandContext ?? {
+      sessionID: fallbackSessionId ?? null,
+      hasMessages: fallbackMessages.length > 0,
+      hasNewDraft: fallbackHasNewDraft,
+    },
+    [commandContext, fallbackSessionId, fallbackMessages.length, fallbackHasNewDraft],
+  );
+  const { hasSession, canStartSessionCommand, canUseReviewHandoffFlow } = React.useMemo(
+    () => resolveCommandAutocompleteAvailability(resolvedContext, isMobile),
+    [resolvedContext, isMobile],
+  );
+  const hasMessagesInCurrentSession = resolvedContext.hasMessages;
 
   const [commands, setCommands] = React.useState<CommandInfo[]>([]);
   const [loading, setLoading] = React.useState(false);
@@ -214,7 +269,7 @@ export const CommandAutocomplete = React.forwardRef<CommandAutocompleteHandle, C
               fuzzyMatch(cmd.name, searchQuery) ||
               (cmd.description && fuzzyMatch(cmd.description, searchQuery))
             )
-          : allCommands).filter(cmd => allowInitCommand || cmd.name !== 'init');
+          : allCommands).filter(cmd => (allowInitCommand || cmd.name !== 'init') && (commandPolicy?.(cmd) ?? true));
 
         filtered.sort(sortCommands(searchQuery));
 
@@ -287,7 +342,7 @@ export const CommandAutocomplete = React.forwardRef<CommandAutocompleteHandle, C
               fuzzyMatch(cmd.name, searchQuery) ||
               (cmd.description && fuzzyMatch(cmd.description, searchQuery))
             )
-          : builtInCommands).filter(cmd => allowInitCommand || cmd.name !== 'init');
+          : builtInCommands).filter(cmd => (allowInitCommand || cmd.name !== 'init') && (commandPolicy?.(cmd) ?? true));
 
         setCommands(filtered);
       } finally {
@@ -296,7 +351,7 @@ export const CommandAutocomplete = React.forwardRef<CommandAutocompleteHandle, C
     };
 
     loadCommands();
-  }, [searchQuery, hasMessagesInCurrentSession, hasSession, canStartSessionCommand, canUseReviewHandoffFlow, commandsWithMetadata, isCommandsFetching, skills, t]);
+  }, [searchQuery, hasMessagesInCurrentSession, hasSession, canStartSessionCommand, canUseReviewHandoffFlow, commandsWithMetadata, isCommandsFetching, skills, t, commandPolicy]);
 
   React.useEffect(() => {
     setSelectedIndex(0);

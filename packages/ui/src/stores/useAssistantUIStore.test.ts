@@ -16,8 +16,9 @@ describe('Assistant catalog persistence contract', () => {
 
   test('persists catalog metadata and safely validates persisted composite defaults', async () => {
     const source = await readFile(join(directory, 'useAssistantUIStore.ts'), 'utf8');
-    expect(source).toContain('partialize: (state) => ({ defaultShareAssistant: state.defaultShareAssistant, assistantCatalogByConnection: state.assistantCatalogByConnection })');
-    expect(source).toContain('typeof (target as Record<string, unknown>).serverInstanceID === \'string\'');
+    expect(source).toContain('partialize: (state) => ({ assistantByTransport: state.assistantByTransport, defaultShareAssistant: state.defaultShareAssistant, assistantCatalogByConnection: state.assistantCatalogByConnection })');
+    expect(source).toContain('const parseCatalogPartitions');
+    expect(source).toContain('version: 4');
     expect(source).toContain('removeCatalogPartition: (connectionKey)');
   });
 });

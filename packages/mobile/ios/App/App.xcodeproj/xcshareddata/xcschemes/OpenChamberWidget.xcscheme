@@ -18,6 +18,7 @@
                BuildableIdentifier = "primary"
                BlueprintIdentifier = "D0A4000000000000000000D1"
                BuildableName = "OpenChamberWidget.appex"
+               BlueprintName = "OpenChamberWidget"
                ReferencedContainer = "container:App.xcodeproj">
             </BuildableReference>
          </BuildActionEntry>
@@ -64,6 +65,7 @@
             BuildableIdentifier = "primary"
             BlueprintIdentifier = "D0A4000000000000000000D1"
             BuildableName = "OpenChamberWidget.appex"
+            BlueprintName = "OpenChamberWidget"
             ReferencedContainer = "container:App.xcodeproj">
          </BuildableReference>
       </RemoteRunnable>

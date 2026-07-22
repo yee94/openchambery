@@ -3,12 +3,18 @@ import { beforeEach, describe, expect, mock, test } from 'bun:test';
 let activeProjectPath = '/workspace/project';
 let runtimeKey = 'runtime-a';
 let listCalls = 0;
+let listedDirectories: Array<string | null | undefined> = [];
 let listImpl: () => Promise<Array<{ name: string }>> = async () => [];
+let providerDirectories: Array<string | null | undefined> = [];
 let metadataCalls = 0;
 let metadataRequest: { path: string; init?: RequestInit } | null = null;
 let metadataImpl: () => Promise<Response> = async () => new Response(JSON.stringify({ agents: {} }));
 
-mock.module('@/lib/opencode/client', () => ({ opencodeClient: { getDirectory: () => '/fallback/project', listAgents: async () => { listCalls += 1; return listImpl(); } } }));
+mock.module('@/lib/opencode/client', () => ({ opencodeClient: {
+  getDirectory: () => '/fallback/project',
+  listAgents: async (directory?: string | null) => { listCalls += 1; listedDirectories.push(directory); return listImpl(); },
+  getProvidersForConfig: async (directory?: string | null) => { providerDirectories.push(directory); return { providers: [{ id: 'provider', models: { model: { id: 'model' } } }], default: {} }; },
+} }));
 mock.module('@/stores/useProjectsStore', () => ({ useProjectsStore: Object.assign(() => null, { getState: () => ({ getActiveProject: () => ({ path: activeProjectPath }) }) }) }));
 mock.module('@/lib/runtime-fetch', () => ({ runtimeFetch: async (path: string, init?: RequestInit) => {
   metadataCalls += 1;
@@ -17,7 +23,7 @@ mock.module('@/lib/runtime-fetch', () => ({ runtimeFetch: async (path: string, i
 } }));
 mock.module('@/lib/runtime-switch', () => ({ getRuntimeTransportIdentity: () => runtimeKey, isRuntimeEndpointIdentityChange: () => false, subscribeRuntimeEndpointChanged: () => () => undefined }));
 
-const { agentQueryOptions, readAgentsSnapshot, refreshAgentsQuery } = await import('./agentQueries');
+const { agentQueryOptions, providerQueryOptions, readAgentsSnapshot, readProvidersSnapshot, refreshAgentsQuery, refreshProvidersQuery } = await import('./agentQueries');
 const { ensureRawAgentsQuery } = await import('./configCatalogQueries');
 const { queryClient } = await import('@/lib/queryRuntime');
 
@@ -27,6 +33,8 @@ describe('agentQueries', () => {
     activeProjectPath = '/workspace/project';
     runtimeKey = 'runtime-a';
     listCalls = 0;
+    listedDirectories = [];
+    providerDirectories = [];
     metadataCalls = 0;
     metadataRequest = null;
     listImpl = async () => [];
@@ -67,5 +75,27 @@ describe('agentQueries', () => {
     await refreshAgentsQuery(queryClient, activeProjectPath, runtimeKey);
     expect(listCalls).toBe(1);
     expect(metadataCalls).toBe(1);
+  });
+
+  test('uses an explicit managed directory for unregistered workspace catalogs', async () => {
+    await Promise.all([
+      refreshAgentsQuery(queryClient, '/managed/unregistered', runtimeKey),
+      refreshProvidersQuery(queryClient, '/managed/unregistered', runtimeKey),
+    ]);
+    expect(listedDirectories).toEqual(['/managed/unregistered']);
+    expect(providerDirectories).toEqual(['/managed/unregistered']);
+    expect(agentQueryOptions(' /managed/unregistered ', runtimeKey).queryKey).toEqual(['runtime-a', 'agents', '/managed/unregistered']);
+    expect(providerQueryOptions(' /managed/unregistered ', runtimeKey).queryKey).toEqual(['runtime-a', 'providers', '/managed/unregistered']);
+    expect(readAgentsSnapshot('/managed/unregistered', runtimeKey)).toEqual([]);
+    expect(readProvidersSnapshot('/managed/unregistered', runtimeKey)[0]?.models[0]?.id).toBe('model');
+  });
+
+  test('queries the global catalog with an explicit null directory', async () => {
+    await Promise.all([
+      refreshAgentsQuery(queryClient, null, runtimeKey),
+      refreshProvidersQuery(queryClient, null, runtimeKey),
+    ]);
+    expect(listedDirectories).toEqual([null]);
+    expect(providerDirectories).toEqual([null]);
   });
 });

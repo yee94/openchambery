@@ -1,9 +1,10 @@
 import fs from 'node:fs';
 import os from 'node:os';
 import path from 'node:path';
+import crypto from 'node:crypto';
 import { createRequire } from 'node:module';
-import { afterEach, describe, expect, it } from 'vitest';
-import { createMessageQueueService } from './service.js';
+import { afterEach, describe, expect, it, vi } from 'vitest';
+import { createMessageQueueService, MESSAGE_QUEUE_ADMISSION_MAX_BYTES } from './service.js';
 
 const require = createRequire(import.meta.url);
 const Database = require('better-sqlite3');
@@ -57,6 +58,70 @@ describe('message queue service', () => {
     reopened.close();
   });
 
+  it('returns the public Assistant scope-page DTO consumed by the UI fixture', () => {
+    const pathname = dbPath(); const service = createService(pathname);
+    service.setAssistantDeliveryService({ captureQueueDeliveryTarget: ({ assistantID, scope }) => ({ kind: 'assistant', assistantID, binding: { sessionID: scope.sessionID, directory: scope.directory, sessionGeneration: 7 }, sessionID: scope.sessionID, directory: scope.directory, sessionGeneration: 7, providerID: 'provider', modelID: 'model', agent: 'agent', variant: 'fast', defaultPrompt: 'default', system: 'default' }) });
+    const deliveryParts = [{ type: 'text', text: 'first' }, { type: 'text', text: 'last' }];
+    const input = admission('assistant-request', 'assistant'); input.item.dueAt = 100; input.item.deliveryTarget = { kind: 'assistant', assistantID: 'assistant-1' }; input.item.deliveryParts = deliveryParts;
+    const result = service.admit(input);
+    expect(service.getScope(result.scopeID)).toEqual({
+      scopeID: result.scopeID, revision: result.revision, directory: '/repo', sessionID: 'session-1', worktreeState: 'active', itemCount: 1,
+      items: [{ queueItemID: 'item-assistant', operationID: 'operation-assistant', messageID: 'message-assistant', content: 'hello', scopeID: result.scopeID, directory: '/repo', sessionID: 'session-1', composerDocument: { text: 'hello', references: [] }, sendConfig: { providerID: 'openai', modelID: 'gpt' }, deliveryTarget: { kind: 'assistant', assistantID: 'assistant-1' }, deliveryParts, status: 'queued', manualDispatchRequested: false, attemptCount: 0, position: 0, rowVersion: 1, createdAt: 100, dueAt: 100, attachments: [], attachmentIssues: [] }],
+    });
+    service.close();
+    const raw = new Database(pathname); const target = JSON.parse(raw.prepare('SELECT delivery_target FROM queue_item WHERE queue_item_id=?').get('item-assistant').delivery_target); raw.close();
+    expect(target).toMatchObject({ assistantID: 'assistant-1', binding: { sessionID: 'session-1', directory: '/repo/', sessionGeneration: 7 }, providerID: 'provider', modelID: 'model', agent: 'agent', variant: 'fast', defaultPrompt: 'default', system: 'default' });
+    expect(target.deliveryParts).toEqual(input.item.deliveryParts);
+    const reopened = createService(pathname); const publicItem = reopened.getScope(result.scopeID).items[0]; expect(publicItem.deliveryTarget).toEqual({ kind: 'assistant', assistantID: 'assistant-1' }); expect(publicItem.deliveryParts).toEqual(deliveryParts); expect(Object.keys(publicItem.deliveryTarget)).toEqual(['kind', 'assistantID']); reopened.close();
+    const primary = createService(dbPath()); const primaryResult = primary.admit(admission('primary-request', 'primary')); expect(primary.getScope(primaryResult.scopeID).items[0].deliveryTarget).toEqual({ kind: 'primary' }); primary.close();
+  });
+
+  it('rejects malformed Assistant delivery parts', () => {
+    const service = createService(dbPath());
+    service.setAssistantDeliveryService({ captureQueueDeliveryTarget: () => ({ kind: 'assistant', assistantID: 'assistant-1' }) });
+    const missing = admission('missing-parts', 'missing'); missing.item.deliveryTarget = { kind: 'assistant', assistantID: 'assistant-1' };
+    expect(() => service.admit(missing)).toThrow(expect.objectContaining({ code: 'validation_error' }));
+    const primaryParts = admission('primary-parts', 'primary-parts'); primaryParts.item.deliveryParts = [{ type: 'text', text: 'ignored' }];
+    expect(() => service.admit(primaryParts)).toThrow(expect.objectContaining({ code: 'validation_error' }));
+    const malformed = admission('malformed-parts', 'malformed'); malformed.item.deliveryTarget = { kind: 'assistant', assistantID: 'assistant-1' }; malformed.item.deliveryParts = [{ type: 'file', mime: 'text/plain' }];
+    expect(() => service.admit(malformed)).toThrow(expect.objectContaining({ code: 'validation_error' }));
+    const legacyUrl = admission('legacy-url', 'legacy-url'); legacyUrl.item.deliveryTarget = { kind: 'assistant', assistantID: 'assistant-1' }; legacyUrl.item.deliveryParts = [{ type: 'text', text: 'caption' }, { type: 'file', mime: 'text/plain', url: 'https://files.example/legacy' }];
+    expect(() => service.admit(legacyUrl)).toThrow(expect.objectContaining({ code: 'validation_error' }));
+    const maxParts = admission('max-parts', 'max-parts'); maxParts.item.deliveryTarget = { kind: 'assistant', assistantID: 'assistant-1' }; maxParts.item.deliveryParts = Array.from({ length: 129 }, (_, index) => ({ type: 'text', text: String(index) }));
+    expect(service.admit(maxParts)).toMatchObject({ queueItemID: 'item-max-parts' });
+    const tooManyParts = admission('too-many-parts', 'too-many-parts'); tooManyParts.item.deliveryTarget = { kind: 'assistant', assistantID: 'assistant-1' }; tooManyParts.item.deliveryParts = Array.from({ length: 130 }, (_, index) => ({ type: 'text', text: String(index) }));
+    expect(() => service.admit(tooManyParts)).toThrow(expect.objectContaining({ code: 'validation_error' }));
+    service.close();
+  });
+
+  it('persists Assistant synthetic edit ownership and rejects mismatched part attachments', () => {
+    const pathname = dbPath(); const service = createService(pathname);
+    service.setAssistantDeliveryService({ captureQueueDeliveryTarget: ({ assistantID }) => ({ kind: 'assistant', assistantID }) });
+    const input = admission('synthetic', 'synthetic'); input.item.deliveryTarget = { kind: 'assistant', assistantID: 'assistant-1' }; input.item.deliveryParts = [{ type: 'text', text: 'hello' }, { type: 'text', text: 'context', synthetic: true }]; input.item.syntheticParts = [{ partID: 'part-1', text: 'context', synthetic: true, attachmentIDs: [], deliveryPartIndexes: [1] }];
+    const result = service.admit(input); service.close();
+    const reopened = createService(pathname); expect(reopened.getScope(result.scopeID).items[0]).toMatchObject({ deliveryParts: input.item.deliveryParts, syntheticParts: input.item.syntheticParts }); reopened.close();
+    const malformed = createService(dbPath()); malformed.setAssistantDeliveryService({ captureQueueDeliveryTarget: ({ assistantID }) => ({ kind: 'assistant', assistantID }) }); const bad = structuredClone(input); bad.requestID = 'bad'; bad.item.queueItemID = 'bad'; bad.item.operationID = 'bad'; bad.item.messageID = 'bad'; bad.item.syntheticParts[0].attachmentIDs = ['missing']; expect(() => malformed.admit(bad)).toThrow(expect.objectContaining({ code: 'validation_error' })); malformed.close();
+    const mismatched = createService(dbPath()); mismatched.setAssistantDeliveryService({ captureQueueDeliveryTarget: ({ assistantID }) => ({ kind: 'assistant', assistantID }) }); const wrongIndex = structuredClone(input); wrongIndex.requestID = 'wrong-index'; wrongIndex.item.queueItemID = 'wrong-index'; wrongIndex.item.operationID = 'wrong-index'; wrongIndex.item.messageID = 'wrong-index'; wrongIndex.item.syntheticParts[0].deliveryPartIndexes = [0]; expect(() => mismatched.admit(wrongIndex)).toThrow(expect.objectContaining({ code: 'validation_error' })); mismatched.close();
+  });
+
+  it('migrates legacy targets to primary and fails malformed Assistant targets', () => {
+    const pathname = dbPath(); const service = createService(pathname); const result = service.admit(admission()); service.close();
+    const raw = new Database(pathname); raw.prepare("UPDATE queue_meta SET value='4' WHERE key='schema_version'").run(); raw.prepare("UPDATE queue_item SET delivery_target=? WHERE queue_item_id=?").run(JSON.stringify({ kind: 'assistant' }), 'item-1'); raw.close();
+    const reopened = createService(pathname); expect(reopened.getScope(result.scopeID).items[0]).toMatchObject({ status: 'failed' }); reopened.close();
+    const primaryPath = dbPath(); const primary = createService(primaryPath); const primaryResult = primary.admit(admission()); primary.close(); const primaryRaw = new Database(primaryPath); primaryRaw.prepare("UPDATE queue_meta SET value='4' WHERE key='schema_version'").run(); primaryRaw.prepare("UPDATE queue_item SET delivery_target='' ").run(); primaryRaw.close(); const migrated = createService(primaryPath); expect(migrated.getScope(primaryResult.scopeID).items[0].deliveryTarget).toEqual({ kind: 'primary' }); migrated.close();
+  });
+
+  it('converts v4 Assistant parts and attachments into ordered deliveryParts', () => {
+    const pathname = dbPath(); const service = createService(pathname); const result = service.admit(admission()); service.close();
+    const legacyTarget = { kind: 'assistant', assistantID: 'assistant-1', providerID: 'provider', modelID: 'model', parts: [{ type: 'text', text: 'first' }, { type: 'file', mime: 'image/png', url: 'https://files.example/part.png' }, { type: 'text', text: 'last' }], attachments: [{ mime: 'text/plain', url: 'https://files.example/attachment.txt' }] };
+    const raw = new Database(pathname); raw.prepare("UPDATE queue_meta SET value='4' WHERE key='schema_version'").run(); raw.prepare('UPDATE queue_item SET delivery_target=? WHERE queue_item_id=?').run(JSON.stringify(legacyTarget), 'item-1'); raw.close();
+    const migrated = createService(pathname); const item = migrated.getScope(result.scopeID).items[0];
+    expect(item).toMatchObject({ deliveryTarget: { kind: 'assistant', assistantID: 'assistant-1' }, deliveryParts: [{ type: 'text', text: 'first' }, { type: 'file', mime: 'image/png', url: 'https://files.example/part.png' }, { type: 'text', text: 'last' }, { type: 'file', mime: 'text/plain', url: 'https://files.example/attachment.txt' }] });
+    migrated.close();
+    const check = new Database(pathname); const target = JSON.parse(check.prepare('SELECT delivery_target FROM queue_item WHERE queue_item_id=?').get('item-1').delivery_target); check.close();
+    expect(target).toMatchObject({ deliveryParts: item.deliveryParts }); expect(target).not.toHaveProperty('parts'); expect(target).not.toHaveProperty('attachments');
+  });
+
   it('migrates a hand-authored v1 fixture with lifecycle states, receipts, and worktree orders', () => {
     const pathname = dbPath();
     const raw = createV1Fixture(pathname);
@@ -73,7 +138,7 @@ describe('message queue service', () => {
     const reopened = createService(pathname);
     reopened.close();
     const check = new Database(pathname);
-    expect(check.prepare("SELECT value FROM queue_meta WHERE key='schema_version'").get().value).toBe('3');
+    expect(check.prepare("SELECT value FROM queue_meta WHERE key='schema_version'").get().value).toBe('5');
     expect(check.prepare("SELECT status FROM queue_item ORDER BY position").all().map((row) => row.status)).toEqual(['queued', 'reconciling', 'reconciling', 'failed']);
     expect(check.prepare("SELECT name FROM sqlite_master WHERE type='table' AND name IN ('queue_runtime','queue_attempt_history','queue_completion','queue_attachment')").all()).toHaveLength(4);
     expect(check.prepare("SELECT request_id FROM operation_receipt WHERE request_id='legacy-request'").get()).toBeTruthy();
@@ -174,6 +239,75 @@ describe('message queue service', () => {
       },
     });
     expect(service.getScope(pasted.scopeID).items.find((item) => item.queueItemID === pasted.queueItemID)).toMatchObject({ content: pastedText, composerDocument: { text: display } });
+    service.close();
+  });
+
+  it('canonicalizes durable Composer skill and command references with strict sidecar and mention validation', () => {
+    const service = createService(dbPath());
+    const text = '/review /run @README';
+    const input = admission('durable-composer', 'durable-composer');
+    input.item.content = '[skill:review] [command:tasks/run.md] @README';
+    input.item.composerDocument = {
+      text,
+      references: [
+        { id: 'skill', kind: 'skill', skillName: 'review', display: '/review', start: 0, end: 7 },
+        { id: 'command', kind: 'command', commandName: 'run', reference: 'tasks/run.md', display: '/run', start: 8, end: 12 },
+      ],
+    };
+    input.item.composerMentions = [{ kind: 'file', value: 'README', path: '/repo/README', label: 'README', range: { start: 13, end: 20 } }];
+    const admitted = service.admit(input);
+    expect(admitted).toMatchObject({ queueItemID: 'item-durable-composer' });
+    expect(service.getScope(admitted.scopeID).items[0]).toMatchObject({
+      composerDocument: { text, references: input.item.composerDocument.references },
+      composerMentions: input.item.composerMentions,
+    });
+    expect(service.getScope(admitted.scopeID).items[0].composerDocument).not.toHaveProperty('composerMentions');
+
+    const malformed = structuredClone(input);
+    malformed.requestID = 'durable-composer-malformed'; malformed.item.queueItemID = 'item-durable-composer-malformed'; malformed.item.operationID = 'operation-durable-composer-malformed'; malformed.item.messageID = 'message-durable-composer-malformed';
+    malformed.item.composerDocument.references[1].reference = 'tasks]\nrun';
+    expect(() => service.admit(malformed)).toThrow(expect.objectContaining({ code: 'validation_error' }));
+    service.close();
+  });
+
+  it('enforces the complete UTF-8 admission JSON budget before canonical hashing and transaction work', () => {
+    const service = createService(dbPath());
+    service.setAssistantDeliveryService({ captureQueueDeliveryTarget: ({ assistantID }) => ({ kind: 'assistant', assistantID }) });
+    const input = admission('admission-budget', 'admission-budget');
+    input.item.deliveryTarget = { kind: 'assistant', assistantID: 'assistant-1' };
+    input.item.migrationImport = true;
+    input.item.deliveryParts = [{ type: 'file', mime: 'application/octet-stream', url: '' }];
+    const remaining = MESSAGE_QUEUE_ADMISSION_MAX_BYTES - Buffer.byteLength(JSON.stringify(input), 'utf8');
+    input.item.deliveryParts[0].url = 'a'.repeat(remaining);
+    expect(Buffer.byteLength(JSON.stringify(input), 'utf8')).toBe(MESSAGE_QUEUE_ADMISSION_MAX_BYTES);
+    expect(service.admit(input)).toMatchObject({ queueItemID: 'item-admission-budget' });
+
+    const oversized = structuredClone(input);
+    oversized.requestID = 'admission-budget-over'; oversized.item.queueItemID = 'item-admission-budget-over'; oversized.item.operationID = 'operation-admission-budget-over'; oversized.item.messageID = 'message-admission-budget-over';
+    oversized.item.deliveryParts[0].url += '😀';
+    expect(Buffer.byteLength(JSON.stringify(oversized), 'utf8')).toBeGreaterThan(MESSAGE_QUEUE_ADMISSION_MAX_BYTES);
+    expect(() => service.admit(oversized)).toThrow(expect.objectContaining({ code: 'admission_payload_limit' }));
+    service.close();
+  });
+
+  it('rejects 71 MiB and 72 MiB service payloads before runtime hashing or transaction admission', () => {
+    const getRuntimeConfig = vi.fn(() => ({ apiBaseUrl: 'http://runtime' }));
+    const service = createMessageQueueService({ dbPath: dbPath(), getRuntimeConfig });
+    const createHash = vi.spyOn(crypto, 'createHash');
+    const oversized = (size, suffix) => {
+      const input = admission(`service-limit-${suffix}`, `service-limit-${suffix}`);
+      input.item.migrationImport = true;
+      input.item.deliveryTarget = { kind: 'assistant', assistantID: 'assistant-1' };
+      input.item.deliveryParts = [{ type: 'file', mime: 'application/octet-stream', url: '' }];
+      input.item.deliveryParts[0].url = 'a'.repeat(size - Buffer.byteLength(JSON.stringify(input), 'utf8'));
+      return input;
+    };
+    for (const [size, suffix] of [[71 * 1024 * 1024, '71'], [72 * 1024 * 1024, '72']]) {
+      expect(() => service.admit(oversized(size, suffix))).toThrow(expect.objectContaining({ code: 'admission_payload_limit' }));
+    }
+    expect(getRuntimeConfig).not.toHaveBeenCalled();
+    expect(createHash).not.toHaveBeenCalled();
+    createHash.mockRestore();
     service.close();
   });
 

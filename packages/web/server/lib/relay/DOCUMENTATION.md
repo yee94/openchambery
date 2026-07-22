@@ -98,6 +98,12 @@ The E2EE and framing logic exists twice: TypeScript in `packages/ui/src/lib/rela
 
 Relay mode plugs into the existing client transport layer rather than a parallel path: `runtime-switch` activates the tunnel singleton, `runtime-fetch` routes runtime requests and product SSE streamed responses through it, `runtime-url` builds browser-consumed URLs, `runtime-socket` opens tunneled WebSockets, and `runtime-auth` mints the URL-scoped token through the tunnel. Direct-URL connections and the Electron realtime-proxy path are unaffected.
 
+### Transport identity vs runtime key (do not mix)
+
+`runtimeKey` is the stable device/instance id. It stays the same across LAN⇄relay for one paired device. `getRuntimeTransportIdentity()` is the active transport fingerprint (`direct:…` / `relay:…`) and changes when the client switches transports.
+
+Catalog loaders (`loadProviders` / `loadAgents`) and assistant Query keys gate writes/caches on the **transport fingerprint**, not `runtimeKey`. On endpoint reset and same-device transport switch, `runtimeEndpointReset.ts` must set `useConfigStore.catalogTransportIdentity` to `getRuntimeTransportIdentity()`. Writing `detail.runtimeKey` there silently discards provider/agent catalog refreshes under Relay, which then hides capability-gated surfaces such as Assistants.
+
 ## Design invariants (do not regress)
 
 - The relay never sees plaintext application traffic; it sees only routing metadata (routing id, connection identifiers, timestamps, coarse counts).

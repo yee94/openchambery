@@ -75,6 +75,7 @@ const isSameVSCodeActiveEditorFile = (a: VSCodeActiveEditorFile | null, b: VSCod
 }
 
 export type SyntheticContextPart = {
+  partID?: string
   text: string
   attachments?: AttachedFile[]
   synthetic?: boolean

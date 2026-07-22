@@ -368,14 +368,13 @@ const VSCodeFileChip = memo(({ file, onRemove }: FileChipProps) => {
 VSCodeFileChip.displayName = 'VSCodeFileChip';
 
 interface AttachedFilesListProps {
+  attachments: readonly AttachedFile[];
   onShowPopup?: (content: ToolPopupContent) => void;
-  onRemoveAttachedFile?: (file: AttachedFile) => void;
+  onRemoveAttachedFile: (file: AttachedFile) => void;
 }
 
-export const AttachedVSCodeFileChips = memo(({ onShowPopup, onRemoveAttachedFile }: AttachedFilesListProps) => {
-  const attachedFiles = useInputStore((state) => state.attachedFiles);
-  const removeAttachedFile = useInputStore((state) => state.removeAttachedFile);
-
+export const AttachedVSCodeFileChips = memo(({ attachments, onShowPopup, onRemoveAttachedFile }: AttachedFilesListProps) => {
+  const attachedFiles = attachments;
   const vscodeFiles = attachedFiles.filter((file) => file.source === 'vscode' && file.vscodeSource === 'file');
 
   if (vscodeFiles.length === 0) return null;
@@ -392,10 +391,10 @@ export const AttachedVSCodeFileChips = memo(({ onShowPopup, onRemoveAttachedFile
   return (
     <div className="flex items-center gap-2 flex-wrap">
       {images.map((file, index) => (
-        <ImagePreview key={file.id} file={file} onRemove={() => onRemoveAttachedFile?.(file) ?? removeAttachedFile(file.id)} onShowPopup={onShowPopup} gallery={imageGallery} index={index} />
+        <ImagePreview key={file.id} file={file} onRemove={() => onRemoveAttachedFile(file)} onShowPopup={onShowPopup} gallery={imageGallery} index={index} />
       ))}
       {otherFiles.map((file) => (
-        <VSCodeFileChip key={file.id} file={file} onRemove={() => removeAttachedFile(file.id)} />
+        <VSCodeFileChip key={file.id} file={file} onRemove={() => onRemoveAttachedFile(file)} />
       ))}
     </div>
   );
@@ -403,10 +402,8 @@ export const AttachedVSCodeFileChips = memo(({ onShowPopup, onRemoveAttachedFile
 
 AttachedVSCodeFileChips.displayName = 'AttachedVSCodeFileChips';
 
-export const AttachedFilesList = memo(({ onShowPopup, onRemoveAttachedFile }: AttachedFilesListProps) => {
-  const attachedFiles = useInputStore((state) => state.attachedFiles);
-  const removeAttachedFile = useInputStore((state) => state.removeAttachedFile);
-
+export const AttachedFilesList = memo(({ attachments, onShowPopup, onRemoveAttachedFile }: AttachedFilesListProps) => {
+  const attachedFiles = attachments;
   const localFiles = attachedFiles.filter((file) => file.source !== 'server' && file.source !== 'vscode');
 
   if (localFiles.length === 0) return null;
@@ -429,7 +426,7 @@ export const AttachedFilesList = memo(({ onShowPopup, onRemoveAttachedFile }: At
             <ImagePreview
               key={file.id}
               file={file}
-              onRemove={() => onRemoveAttachedFile?.(file) ?? removeAttachedFile(file.id)}
+              onRemove={() => onRemoveAttachedFile(file)}
               onShowPopup={onShowPopup}
               gallery={imageGallery}
               index={index}
@@ -445,7 +442,7 @@ export const AttachedFilesList = memo(({ onShowPopup, onRemoveAttachedFile }: At
             <FileChip
               key={file.id}
               file={file}
-              onRemove={() => removeAttachedFile(file.id)}
+              onRemove={() => onRemoveAttachedFile(file)}
             />
           ))}
         </div>

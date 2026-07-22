@@ -1159,6 +1159,19 @@ describe("revertToMessage passes session directory", () => {
     expect(inputState.pendingInputText).toBe("edit this")
   })
 
+  test("returns a scoped restoration snapshot without mutating primary input", async () => {
+    const session = { id: "session-a", time: { created: 1 } } as Session
+    const targetMessage = { id: "msg_2", sessionID: "session-a", role: "user", time: { created: 2 } } as Message
+    const sessionStore = createStore({}, { session: [session], message: { "session-a": [targetMessage] }, part: { "msg_2": [{ id: "text", messageID: "msg_2", type: "text", text: "assistant draft" } as Part, { id: "file", messageID: "msg_2", type: "file", url: "https://files.example/a", mime: "text/plain", filename: "a.txt" } as Part] } })
+    sessionRevertResult = { data: { id: "session-a", time: { created: 1, updated: 2 }, revert: { messageID: "msg_2" } } }
+    const { setActionRefs, revertToMessage } = await import("./session-actions")
+    setActionRefs(mockSdk as unknown as OpencodeClient, createChildStores([["/test/project", sessionStore]]), () => "/current/project")
+    const snapshot = await revertToMessage("session-a", "msg_2", { directory: "/test/project", restorePrimaryInput: false })
+    expect(snapshot).toEqual({ text: "assistant draft", attachments: [{ url: "https://files.example/a", mimeType: "text/plain", filename: "a.txt" }] })
+    expect(inputState.pendingInputText).toBe("previous draft")
+    expect(inputState.attachedFiles).toEqual([])
+  })
+
   test("rolls back optimistic revert when the SDK returns an error", async () => {
     const session = { id: "session-a", time: { created: 1 } } as Session
     const targetMessage = { id: "msg_2", sessionID: "session-a", role: "user", time: { created: 2 } } as Message

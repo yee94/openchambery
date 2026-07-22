@@ -17,7 +17,9 @@ import { Tooltip, TooltipContent, TooltipTrigger } from '@/components/ui/tooltip
 import { ErrorBoundary } from '@/components/ui/ErrorBoundary';
 import { AgentsSidebar } from '@/components/sections/agents/AgentsSidebar';
 import { AgentsPage } from '@/components/sections/agents/AgentsPage';
-import { AssistantsSettingsPage } from '@/components/sections/assistants/AssistantsSettingsPage';
+import { AssistantsSettingsPage, AssistantsSettingsSidebar } from '@/components/sections/assistants/AssistantsSettingsPage';
+import { useAssistantUIStore } from '@/stores/useAssistantUIStore';
+import { readAssistantSnapshot } from '@/queries/assistantQueries';
 import { BehaviorPage } from '@/components/sections/behavior/BehaviorPage';
 import { CommandsSidebar } from '@/components/sections/commands/CommandsSidebar';
 import { CommandsPage } from '@/components/sections/commands/CommandsPage';
@@ -545,6 +547,19 @@ export const SettingsView: React.FC<SettingsViewProps> = ({ onClose, forceMobile
   }, [getPageTitle, isDesktopLocalOrigin, isMac, isWindows, runtimeCtx, settingsSearchQuery, t, visiblePageSlugs]);
 
   const prepareSettingsSearchTarget = React.useCallback((result: SettingsSearchResult): string => {
+    if (result.id.startsWith('assistants.')) {
+      if (result.id === 'assistants.instance-enabled') return result.id;
+      if (result.id === 'assistants.default-share') {
+        const assistantStore = useAssistantUIStore.getState();
+        const assistants = readAssistantSnapshot()?.assistants ?? [];
+        const selectedExists = assistants.some((assistant) => assistant.id === assistantStore.settingsSelectedAssistantID);
+        assistantStore.selectSettingsAssistant(selectedExists ? assistantStore.settingsSelectedAssistantID : assistants[0]?.id ?? null);
+        return result.id;
+      }
+      useAssistantUIStore.getState().requestCreate();
+      return result.id === 'assistants.create' ? 'assistants.name' : result.id;
+    }
+
     if (result.id.startsWith('agents.')) {
       const store = useAgentsStore.getState();
       const name = nextUniqueName('new-agent', readAgentsSnapshot().map((agent) => agent.name));
@@ -750,6 +765,8 @@ export const SettingsView: React.FC<SettingsViewProps> = ({ onClose, forceMobile
         return <ProjectsSidebar onItemSelect={opts.onItemSelect} />;
       case 'agents':
         return <AgentsSidebar onItemSelect={opts.onItemSelect} />;
+      case 'assistants':
+        return <AssistantsSettingsSidebar onItemSelect={opts.onItemSelect} />;
       case 'commands':
         return <CommandsSidebar onItemSelect={opts.onItemSelect} />;
       case 'mcp':

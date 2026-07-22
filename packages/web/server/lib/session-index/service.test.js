@@ -52,6 +52,21 @@ describe('Electron session index', () => {
     service.close();
   });
 
+  it('keeps Assistant-tagged OpenCode sessions in ordinary sidebar summaries', () => {
+    const runtimeRef = { value: 'http://runtime-a.test' };
+    const service = createService(runtimeRef);
+    const assistantSession = {
+      ...session('ses_assistant', 100),
+      metadata: { openchamber: { assistant: { assistantID: 'assistant_1', name: 'A' } } },
+    };
+
+    service.replaceDirectory({ directory: '/repo', sessions: [assistantSession], cursor: null, hasMore: false });
+    expect(service.snapshot().directories[0].sessions).toEqual(expect.arrayContaining([
+      expect.objectContaining({ id: 'ses_assistant' }),
+    ]));
+    service.close();
+  });
+
   it('keeps runtime targets isolated in one Electron database', () => {
     const runtimeRef = { value: 'http://runtime-a.test' };
     const service = createService(runtimeRef);

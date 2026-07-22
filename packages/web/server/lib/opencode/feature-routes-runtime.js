@@ -215,6 +215,7 @@ export const createFeatureRoutesRuntime = (dependencies) => {
       getAllowedRoots: () => assistantAllowedRoots,
       refreshAllowedRoots: refreshAssistantAllowedRoots,
     });
+    messageQueueRuntime?.setAssistantDeliveryService?.(assistantRoutesRuntime.service);
 
     registerMessageQueueRoutes(app, { messageQueueService, messageQueueRuntime });
 

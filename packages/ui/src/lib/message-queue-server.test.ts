@@ -26,6 +26,7 @@ mock.module('@/lib/openchamberEvents', () => ({
 import { configureRuntimeUrlResolver, getRuntimeUrlResolver, setRuntimeUrlResolver } from './runtime-url';
 
 const api = await import('./message-queue-server');
+const { buildAssistantQueueDeliveryParts } = await import('@/components/chat/chatComposerDelivery');
 
 const item = { queueItemID: 'item/a', operationID: 'operation/a', messageID: 'message/a', content: 'hello', status: 'queued', attemptCount: 0, position: 0, rowVersion: 2, createdAt: 1 };
 const scope = { scopeID: 'scope/a', revision: 4, directory: '/repo', sessionID: 'session/a', worktreeState: 'active', itemCount: 1, items: [item] };
@@ -197,6 +198,72 @@ describe('message queue server adapter', () => {
     expect(blob.size).toBe(1); expect(blob.type).toBe('text/plain'); expect(fetchCalls[1]?.signal).toBe(signal); expect(fetchCalls.map(pathnameOf)).toEqual([
       '/api/openchamber/message-queue/items/item%2Fa/reserve', '/api/openchamber/message-queue/items/item%2Fa/attachments/attachment%2Fa/content', '/api/openchamber/message-queue/items/item%2Fa/edit-reservations/token/renew', '/api/openchamber/message-queue/items/item%2Fa/release', '/api/openchamber/message-queue/items/item%2Fa/reserved-remove',
     ]);
+  });
+
+  test('admits and parses strict Assistant delivery DTOs with @session and /skill semantic text', async () => {
+    const syntheticParts = [{ partID: 'context-1', text: 'conflict context', synthetic: true, attachmentIDs: [], deliveryPartIndexes: [3] }];
+    const deliveryParts = buildAssistantQueueDeliveryParts({
+      text: '@Prior work /review',
+      attachments: [],
+      semanticParts: [{ text: '[session:ses_1]', synthetic: true }, { text: '[skill:review]', synthetic: true }],
+      syntheticParts: [{ text: 'conflict context' }],
+    });
+    responseImplementation = async (call) => pathnameOf(call).endsWith('/items')
+      ? new Response(JSON.stringify({ revision: 5, scopeID: 'scope/a', queueItemID: 'item/a', rowVersion: 2 }))
+      : new Response(JSON.stringify({ ...scope, items: [{ ...item, deliveryTarget: { kind: 'assistant', assistantID: 'assistant/a' }, deliveryParts, syntheticParts }] }));
+    await api.admitTextQueueItem({
+      requestID: 'assistant-request',
+      scope: { directory: '/repo', sessionID: 'session/a' },
+      item: {
+        queueItemID: 'item/a',
+        operationID: 'operation/a',
+        messageID: 'message/a',
+        content: 'queue display text',
+        deliveryTarget: { kind: 'assistant', assistantID: 'assistant/a' },
+        deliveryParts,
+        syntheticParts,
+        attachments: [],
+        attachmentIssues: [],
+        createdAt: 1,
+      },
+    });
+    expect(JSON.parse(String(fetchCalls[0]?.body))).toEqual({
+      requestID: 'assistant-request',
+      scope: { directory: '/repo', sessionID: 'session/a' },
+      item: {
+        queueItemID: 'item/a',
+        operationID: 'operation/a',
+        messageID: 'message/a',
+        content: 'queue display text',
+        deliveryTarget: { kind: 'assistant', assistantID: 'assistant/a' },
+        deliveryParts,
+        syntheticParts,
+        attachments: [],
+        attachmentIssues: [],
+        createdAt: 1,
+      },
+    });
+    const parsed = await api.fetchMessageQueueScope('scope/a');
+    expect(parsed.items[0]?.deliveryParts).toEqual(deliveryParts);
+    expect(parsed.items[0]?.syntheticParts).toEqual(syntheticParts);
+  });
+
+  test('requires and preserves compiled delivery parts on Assistant queue rows', async () => {
+    const assistantItem = { ...item, deliveryTarget: { kind: 'assistant', assistantID: 'assistant/a' } };
+    responseImplementation = async () => new Response(JSON.stringify({ ...scope, items: [assistantItem] }));
+    try {
+      await api.fetchMessageQueueScope('scope/a', { limit: 8 });
+      throw new Error('expected missing Assistant delivery parts to fail');
+    } catch (error) {
+      expect((error as { code?: string }).code).toBe('unavailable');
+    }
+
+    responseImplementation = async () => new Response(JSON.stringify({
+      ...scope,
+      items: [{ ...assistantItem, deliveryParts: [{ type: 'text', text: 'compiled text' }, { type: 'file', mime: 'text/plain', url: 'file:///repo/a.ts' }] }],
+    }));
+    const parsed = await api.fetchMessageQueueScope('scope/a', { limit: 8 });
+    expect(parsed.items[0]?.deliveryParts).toEqual([{ type: 'text', text: 'compiled text' }, { type: 'file', mime: 'text/plain', url: 'file:///repo/a.ts' }]);
   });
 
   test('requires the compact renew acknowledgement fields', async () => {

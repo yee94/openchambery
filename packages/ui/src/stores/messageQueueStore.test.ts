@@ -19,6 +19,14 @@ describe('messageQueueStore scoped ledger', () => {
     expect(state.getQueueForScope(a)[0]).toBe(first); expect(state.getQueueForScope(b)[0]).toBe(second);
     expect(/^msg_/.test(first.messageID)).toBe(true); expect(/^msg_/.test(second.messageID)).toBe(true);
   });
+  test('round-trips delivery target and runtime generation in the durable UI scope', () => {
+    const assistant = { ...a, deliveryTarget: { kind: 'assistant' as const, assistantID: 'assistant-a' }, runtimeGeneration: 7 };
+    const item = mustAdd(assistant);
+    const migrated = migrateMessageQueueState({ queuedMessages: useMessageQueueStore.getState().queuedMessages });
+    expect(queueScopeKey(assistant)).not.toBe(queueScopeKey(a));
+    expect(migrated.queuedMessages[queueScopeKey(assistant)]?.[0]?.owner).toEqual({ ...assistant });
+    expect(item.owner.state === 'bound' && item.owner.deliveryTarget).toEqual({ kind: 'assistant', assistantID: 'assistant-a' });
+  });
   test('fences user mutations while allowing an in-flight item to settle', () => {
     const item = mustAdd();
     const identity = { queueItemID: item.queueItemID, operationID: item.operationID, messageID: item.messageID };

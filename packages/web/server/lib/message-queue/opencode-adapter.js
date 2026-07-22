@@ -41,6 +41,17 @@ export const createOpenCodeMessageQueueAdapter = ({
     const files = await Promise.all(attachments.map((attachment) => readAttachment(attachment, item, { signal })));
     return [{ type: 'text', text: item.content ?? '' }, ...files.filter(Boolean)];
   };
+  const materializeAssistantDeliveryParts = async (item, { signal } = {}) => {
+    const attachments = new Map((Array.isArray(item.attachments) ? item.attachments : []).map((attachment) => [attachment.attachmentID, attachment]));
+    return Promise.all(item.deliveryParts.map(async (part) => {
+      if (part.type === 'text' || typeof part.url === 'string') return part;
+      const attachment = attachments.get(part.attachmentID);
+      if (!attachment) throw Object.assign(new Error('assistant_attachment_missing'), { code: 'assistant_attachment_missing' });
+      const file = await readAttachment(attachment, item, { signal });
+      if (!file || file.type !== 'file') throw Object.assign(new Error('assistant_attachment_unavailable'), { code: 'assistant_attachment_unavailable' });
+      return { type: 'file', mime: part.mime, url: file.url };
+    }));
+  };
   const send = async (context, { signal } = {}) => {
     if (!isCurrent(context.runtime)) return { ok: false, kind: 'retry', code: 'runtime_stale' };
     try {
@@ -77,5 +88,5 @@ export const createOpenCodeMessageQueueAdapter = ({
       return { found: false };
     } catch { return { unavailable: true }; }
   };
-  return { captureRuntime, isCurrent, checkEligibility, createMessageID, send, findMessage, materializeAttachments, waitForReady: typeof waitForReady === 'function' ? () => waitForReady() : undefined };
+  return { captureRuntime, isCurrent, checkEligibility, createMessageID, send, findMessage, materializeAttachments, materializeAssistantDeliveryParts, waitForReady: typeof waitForReady === 'function' ? () => waitForReady() : undefined };
 };

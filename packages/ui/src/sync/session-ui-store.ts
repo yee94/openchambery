@@ -433,9 +433,9 @@ export type SessionUIState = {
   updateSessionTitle: (sessionId: string, title: string) => Promise<void>
   shareSession: (sessionId: string) => Promise<Session | null>
   unshareSession: (sessionId: string) => Promise<Session | null>
-  revertToMessage: (sessionId: string, messageId: string, options?: { skipRedoPush?: boolean }) => Promise<void>
+  revertToMessage: (sessionId: string, messageId: string, options?: { skipRedoPush?: boolean; directory?: string }) => Promise<void>
   editMessagePreservingChanges: (sessionId: string, messageId: string, snapshot?: MessageEditSnapshot) => void
-  forkFromMessage: (sessionId: string, messageId: string) => Promise<void>
+  forkFromMessage: (sessionId: string, messageId: string, options?: { directory?: string }) => Promise<void>
   forkCurrentSession: (sessionId: string) => Promise<void>
   handleSlashUndo: (sessionId: string) => Promise<void>
   handleSlashRedo: (sessionId: string, options?: { fullUnrevert?: boolean }) => Promise<void>
@@ -1926,11 +1926,11 @@ export const useSessionUIStore = create<SessionUIState>()((set, get) => ({
   // ---------------------------------------------------------------------------
   // revertToMessage — delegates to session-actions (single implementation)
   // ---------------------------------------------------------------------------
-  revertToMessage: async (sessionId, messageId) => {
+  revertToMessage: async (sessionId, messageId, options) => {
     // Ensure the complete message range is present before applying the revert
     // marker. Reverted UI is derived from session.revert + stored messages.
-    await refetchSessionMessages(sessionId)
-    await revertToMessageAction(sessionId, messageId)
+    await refetchSessionMessages(sessionId, options?.directory)
+    await revertToMessageAction(sessionId, messageId, options?.directory)
   },
 
   editMessagePreservingChanges: (sessionId, messageId, snapshot) => {
@@ -2020,7 +2020,7 @@ export const useSessionUIStore = create<SessionUIState>()((set, get) => ({
   // ---------------------------------------------------------------------------
   // forkFromMessage — delegates to session-actions (handles text + sidebar)
   // ---------------------------------------------------------------------------
-  forkFromMessage: async (sessionId, messageId) => {
+  forkFromMessage: async (sessionId, messageId, options) => {
     const activeTransition = get().forkTransition
     console.info("[session-fork] forkFromMessage invoked", {
       sessionId,
@@ -2044,7 +2044,8 @@ export const useSessionUIStore = create<SessionUIState>()((set, get) => ({
     const operationId = ++nextForkOperationId
 
     try {
-      const directory = get().getDirectoryForSession(sessionId)
+      const directory = options?.directory
+        ?? get().getDirectoryForSession(sessionId)
         ?? opencodeClient.getDirectory()
         ?? ""
       if (!directory) {
@@ -2072,7 +2073,7 @@ export const useSessionUIStore = create<SessionUIState>()((set, get) => ({
         },
       })
       await new Promise<void>((resolve) => setTimeout(resolve, 0))
-      const completed = await forkSessionAction(sessionId, operationId, messageId)
+      const completed = await forkSessionAction(sessionId, operationId, messageId, directory)
       if (!completed) {
         console.warn("[session-fork] forkFromMessage ended before completion", {
           operationId,

@@ -6,6 +6,11 @@ export const shouldSubmitCommandOnSelection = (
   || (command.source === 'opencode' && command.isBuiltIn === true)
 );
 
+export const isCommandAllowedForSubmission = (
+  commandName: string | undefined,
+  policy: (command: { name: string }) => boolean,
+): boolean => !commandName || policy({ name: commandName });
+
 export const getSlashTokenRange = (
   text: string,
   cursorPosition: number,

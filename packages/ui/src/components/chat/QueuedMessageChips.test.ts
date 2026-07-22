@@ -5,12 +5,17 @@ import type { ServerQueueOperationIdentity } from './queuedMessageChipsState';
 import type { MessageQueueItem, MessageQueueScope } from '@/lib/message-queue-server';
 import { sessionDraftKey } from '@/sync/input-draft-types';
 import type { MessageQueuePendingAdmissionItem } from '@/sync/message-queue-server-runtime';
+import { queuedMessageItemScope, selectQueuedMessagesForScope } from './QueuedMessageChips';
 
-const scope: Extract<QueueScope, { state: 'bound' }> = {
+type CompleteScope = Extract<QueueScope, { state: 'bound' }> & { deliveryTarget: { kind: 'primary' } | { kind: 'assistant'; assistantID: string }; runtimeGeneration: number };
+
+const scope: CompleteScope = {
     state: 'bound',
     transportIdentity: 'runtime-a',
     directory: '/project',
     sessionID: 'session-a',
+    deliveryTarget: { kind: 'primary' },
+    runtimeGeneration: 1,
 };
 const add = (target: QueueScope, content: string): QueueItem => {
     const result = useMessageQueueStore.getState().addToQueue(target, { content });
@@ -41,6 +46,39 @@ describe('QueuedMessageChips production queue boundary', () => {
         expect(popQueuedMessageForEdit(visible[0]!, actions.popToInput)).toBe(legacy);
         expect(actions.getQueueForScope(legacyScope)).toEqual([]);
         expect(actions.getQueueForScope(scope)).toEqual([bound]);
+    });
+
+    test('selects rows only from the supplied complete surface scope', () => {
+        const secondaryScope: CompleteScope = {
+            ...scope,
+            deliveryTarget: { kind: 'assistant', assistantID: 'assistant-a' },
+            runtimeGeneration: 4,
+        };
+        const primaryScope: CompleteScope = {
+            ...scope,
+            deliveryTarget: { kind: 'primary' },
+            runtimeGeneration: 4,
+        };
+        const legacy = add(legacyQueueScope(scope.sessionID), 'legacy');
+        const secondary = add(secondaryScope, 'secondary');
+        add(primaryScope, 'primary');
+
+        expect(selectQueuedMessagesForScope(useMessageQueueStore.getState(), secondaryScope)).toEqual([legacy, secondary]);
+    });
+
+    test('resolves edit, remove, and reorder ownership from the supplied scope', () => {
+        const secondaryScope: CompleteScope = {
+            ...scope,
+            deliveryTarget: { kind: 'assistant', assistantID: 'assistant-b' },
+            runtimeGeneration: 6,
+        };
+        const item = add(secondaryScope, 'secondary');
+        const foreign = add({ ...secondaryScope, runtimeGeneration: 7 }, 'foreign');
+        const legacy = add(legacyQueueScope(scope.sessionID), 'legacy');
+
+        expect(queuedMessageItemScope(item, secondaryScope)).toBe(secondaryScope);
+        expect(queuedMessageItemScope(foreign, secondaryScope)).toBeNull();
+        expect(queuedMessageItemScope(legacy, secondaryScope)).toEqual(legacyQueueScope(scope.sessionID));
     });
     test('enables Send for each recoverable row and disables all rows for a visible dispatch lock', () => {
         const item = add(scope, 'queued');

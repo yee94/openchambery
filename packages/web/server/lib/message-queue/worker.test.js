@@ -30,6 +30,26 @@ describe('message queue worker', () => {
     await worker.stop();
   });
 
+  it('delivers an Assistant claim through its captured target and compiled payload', async () => {
+    const deliveryParts = [{ type: 'text', text: 'first' }, { type: 'file', mime: 'text/plain', url: 'https://files.example/one' }, { type: 'text', text: 'last' }];
+    const deliveryConfig = { kind: 'assistant', assistantID: 'assistant-1', providerID: 'provider', modelID: 'model', binding: { sessionID: 'session', directory: '/repo', sessionGeneration: 1 }, deliveryParts };
+    const assistantItem = { ...claim.item, deliveryTarget: { kind: 'assistant', assistantID: 'assistant-1' }, deliveryParts, deliveryConfig };
+    const { worker, service, adapter } = setup({ service: { reserveEligibilityCandidate: vi.fn().mockReturnValueOnce({ ...candidate, item: assistantItem }).mockReturnValue(null), claimNext: vi.fn().mockReturnValueOnce({ ...claim, item: assistantItem }).mockReturnValue(null), sendAssistantDelivery: vi.fn(() => ({ ok: true })) } });
+    worker.start(); await worker.wake();
+    expect(adapter.materializeAttachments).not.toHaveBeenCalled();
+    expect(service.sendAssistantDelivery).toHaveBeenCalledWith(expect.objectContaining({ deliveryTarget: deliveryConfig, parts: deliveryParts }), expect.any(Object));
+    await worker.stop();
+  });
+
+  it('settles stale and malformed Assistant targets as isolated failed items', async () => {
+    const staleItem = { ...claim.item, deliveryTarget: { kind: 'assistant', assistantID: 'assistant-1' }, deliveryParts: [{ type: 'text', text: 'captured' }], deliveryConfig: { kind: 'assistant', assistantID: 'assistant-1' } };
+    const { worker, service } = setup({ service: { reserveEligibilityCandidate: vi.fn().mockReturnValueOnce({ ...candidate, item: staleItem }).mockReturnValue(null), claimNext: vi.fn().mockReturnValueOnce({ ...claim, item: staleItem }).mockReturnValue(null), sendAssistantDelivery: vi.fn(() => { throw Object.assign(new Error('stale'), { code: 'stale_target' }); }) } });
+    worker.start(); await worker.wake(); expect(service.markFailed).toHaveBeenCalledWith(expect.objectContaining({ queueItemID: 'item', errorCode: 'stale_target' })); await worker.stop();
+    const malformedItem = { ...claim.item, deliveryTarget: { kind: 'assistant' } };
+    const malformed = setup({ service: { reserveEligibilityCandidate: vi.fn().mockReturnValueOnce({ ...candidate, item: malformedItem }).mockReturnValue(null), claimNext: vi.fn().mockReturnValueOnce({ ...claim, item: malformedItem }).mockReturnValue(null) } });
+    malformed.worker.start(); await malformed.worker.wake(); expect(malformed.service.markFailed).toHaveBeenCalledWith(expect.objectContaining({ queueItemID: 'item', errorCode: 'malformed_target' })); await malformed.worker.stop();
+  });
+
   it('returns status before a run flight settles and reports a background rejection', async () => {
     const diagnostic = vi.spyOn(console, 'error').mockImplementation(() => {});
     const { worker } = setup({ service: { claimDueReconcile: vi.fn(() => { throw new Error('claim failed'); }) } });

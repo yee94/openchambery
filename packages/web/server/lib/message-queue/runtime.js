@@ -21,5 +21,5 @@ export const createMessageQueueRuntime = ({ dbPath, attachmentRoot, service, att
     catch (error) { console.error('message_queue_runtime_wake_failed', error); return Promise.resolve(status()); }
   };
   const stop = async () => { if (stopped) return; stopped = true; clearInterval(gcTimer); await queueWorker.stop(); await gc(); await store.stop(); queue.close(); };
-  return { service: queue, attachmentStore: store, adapter: openCodeAdapter, worker: queueWorker, status, start, startPaused, startActive, wake, stop };
+  return { service: queue, attachmentStore: store, adapter: openCodeAdapter, worker: queueWorker, setAssistantDeliveryService: (assistantService) => queue.setAssistantDeliveryService?.(assistantService), status, start, startPaused, startActive, wake, stop };
 };

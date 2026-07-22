@@ -16,17 +16,14 @@ import {
 import { CSS } from '@dnd-kit/utilities';
 import { useEvent } from '@reactuses/core';
 import { useMutation, useMutationState } from '@tanstack/react-query';
-import { getQueueForScope, legacyQueueScope, queueScopeKey, useMessageQueueStore, type QueueItem, type QueueScope, type QueuedMessage } from '@/stores/messageQueueStore';
-import { useSessionUIStore } from '@/sync/session-ui-store';
-import { useInputStore } from '@/sync/input-store';
+import { getQueueForScope, legacyQueueScope, queueScopeKey, useMessageQueueStore, type QueueDeliveryTarget, type QueueItem, type QueueScope, type QueuedMessage } from '@/stores/messageQueueStore';
 import type { DraftKey } from '@/sync/input-draft-types';
 import { useMessageQueueServerScope } from '@/sync/use-message-queue-server';
 import type { MessageQueueItem } from '@/lib/message-queue-server';
 import { isMessageQueuePendingAdmissionItem, type MessageQueueServerDisplayItem, type MessageQueueServerMutationResult, type MessageQueueServerRuntimeCapture } from '@/sync/message-queue-server-runtime';
 import type { MessageQueueEditResult } from '@/sync/message-queue-edit-bridge';
+import type { ChatInputSurfaceResources } from './chatInputSurface';
 import { useI18n } from '@/lib/i18n';
-import { getRuntimeTransportIdentity, subscribeRuntimeEndpointChanged } from '@/lib/runtime-switch';
-import { useEffectiveDirectory } from '@/hooks/useEffectiveDirectory';
 import { useQueueScopeDispatchFlight } from '@/hooks/useQueuedMessageAutoSend';
 import { useUIStore } from '@/stores/useUIStore';
 import { Icon } from "@/components/icon/Icon";
@@ -34,10 +31,13 @@ import { Button } from '@/components/ui/button';
 import { cn } from '@/lib/utils';
 import { createUuid } from '@/lib/uuid';
 import { toast } from '@/components/ui';
-import { applyPendingServerQueueOperation, canSendQueuedMessage, canSendServerQueuedMessage, isServerQueueItemDispatchPending, mergeQueuedMessageScopes, popQueuedMessageForEdit, queueModeAllowsMutations, reorderServerQueueItems, selectPendingServerQueueOperation, serverQueueEditInput, serverQueueItemMutationInput, type ServerQueueOperationIdentity, type ServerQueueOperationKind } from './queuedMessageChipsState';
+import { applyPendingServerQueueOperation, canSendQueuedMessage, canSendServerQueuedMessage, isServerQueueItemDispatchPending, mergeQueuedMessageScopes, queueModeAllowsMutations, reorderServerQueueItems, selectPendingServerQueueOperation, serverQueueEditInput, serverQueueItemMutationInput, type ServerQueueOperationIdentity, type ServerQueueOperationKind } from './queuedMessageChipsState';
 import { startServerQueueScopeMutationFlight, type ServerQueueScopeMutationFlights } from './queueAdmission';
 
-type BoundQueueScope = Extract<QueueScope, { state: 'bound' }>;
+type BoundQueueScope = Extract<QueueScope, { state: 'bound' }> & {
+    deliveryTarget: QueueDeliveryTarget;
+    runtimeGeneration: number;
+};
 type ServerQueueEditInput = ReturnType<typeof serverQueueEditInput>;
 type ServerQueueItemInput = ReturnType<typeof serverQueueItemMutationInput>;
 type ServerQueueReorderInput = NonNullable<ReturnType<typeof reorderServerQueueItems>>;
@@ -251,45 +251,41 @@ interface QueuedMessageChipsProps {
     onEditMessage: (content: string, attachments?: QueuedMessage['attachments'], composerDocument?: QueuedMessage['composerDocument'], composerMentions?: QueuedMessage['composerMentions']) => void;
     onSendMessage: (messageId: string) => void;
     draftKey: DraftKey | null;
+    scope: BoundQueueScope | null;
+    draftResources: Pick<ChatInputSurfaceResources, 'attachments' | 'getDraft' | 'setAttachments'>;
 }
 
 const EMPTY_QUEUE: QueueItem[] = [];
-const subscribeRuntimeTransport = (notify: () => void) => subscribeRuntimeEndpointChanged(() => notify());
 
-export const QueuedMessageChips = memo(({ onEditMessage, onSendMessage, draftKey }: QueuedMessageChipsProps) => {
+export const selectQueuedMessagesForScope = (
+    state: Pick<ReturnType<typeof useMessageQueueStore.getState>, 'queuedMessages'>,
+    scope: BoundQueueScope | null,
+): QueuedMessage[] => {
+    if (!scope) return EMPTY_QUEUE;
+    const legacyMessages = getQueueForScope(state, legacyQueueScope(scope.sessionID));
+    const boundMessages = getQueueForScope(state, scope);
+    return mergeQueuedMessageScopes(legacyMessages, boundMessages);
+};
+
+export const queuedMessageItemScope = (message: QueuedMessage, scope: BoundQueueScope): QueueScope | null => {
+    const owner = message.owner;
+    if (!owner) return null;
+    if (owner.state === 'unbound-legacy') return owner.sessionID === scope.sessionID ? legacyQueueScope(scope.sessionID) : null;
+    return queueScopeKey(owner) === queueScopeKey(scope) ? scope : null;
+};
+
+export const QueuedMessageChips = memo(({ onEditMessage, onSendMessage, draftKey, scope: queueScope, draftResources }: QueuedMessageChipsProps) => {
     const { t } = useI18n();
     const isMobile = useUIStore((state) => state.isMobile);
-    const currentSessionId = useSessionUIStore((state) => state.currentSessionId);
-    const fallbackDirectory = useEffectiveDirectory();
-    const currentSessionDirectorySelector = React.useMemo(
-        () => (state: ReturnType<typeof useSessionUIStore.getState>) => currentSessionId ? state.getDirectoryForSession(currentSessionId) : null,
-        [currentSessionId],
-    );
-    const currentSessionDirectory = useSessionUIStore(currentSessionDirectorySelector);
-    const transportIdentity = React.useSyncExternalStore(
-        subscribeRuntimeTransport,
-        getRuntimeTransportIdentity,
-        getRuntimeTransportIdentity,
-    );
-    const queueScope = React.useMemo<BoundQueueScope | null>(() => {
-        const directory = currentSessionDirectory || fallbackDirectory;
-        if (!currentSessionId || !directory) return null;
-        return {
-            state: 'bound',
-            transportIdentity,
-            directory,
-            sessionID: currentSessionId,
-        };
-    }, [currentSessionDirectory, currentSessionId, fallbackDirectory, transportIdentity]);
     const serverQueue = useMessageQueueServerScope({
-        transportIdentity,
+        transportIdentity: queueScope?.transportIdentity ?? '',
         directory: queueScope?.directory ?? '',
         sessionID: queueScope?.sessionID ?? '',
     });
     const serverMutationFlightRef = React.useRef<ServerQueueScopeMutationFlights>(new Map());
     const serverMutationKey = React.useMemo(
-        () => [transportIdentity, 'messageQueue', 'scopeMutation', serverQueue.runtimeCapture.generation] as const,
-        [serverQueue.runtimeCapture.generation, transportIdentity],
+        () => [queueScope?.transportIdentity ?? '', 'messageQueue', 'scopeMutation', queueScope?.runtimeGeneration ?? -1] as const,
+        [queueScope?.runtimeGeneration, queueScope?.transportIdentity],
     );
     const serverMutation = useMutation<ServerQueueMutationResult, unknown, ServerQueueMutationVariables>({
         mutationKey: serverMutationKey,
@@ -334,31 +330,21 @@ export const QueuedMessageChips = memo(({ onEditMessage, onSendMessage, draftKey
     const pendingServerOperation = React.useMemo(() => {
         if (!queueScope || !serverQueue.scope) return undefined;
         const exactScope = {
-            transportIdentity,
+            transportIdentity: queueScope.transportIdentity,
             directory: queueScope.directory,
             sessionID: queueScope.sessionID,
             scopeID: serverQueue.scope.scopeID,
-            runtimeGeneration: serverQueue.runtimeCapture.generation,
+            runtimeGeneration: queueScope.runtimeGeneration ?? serverQueue.runtimeCapture.generation,
         };
         return selectPendingServerQueueOperation(pendingServerMutationVariables.filter((operation): operation is ServerQueueOperationIdentity => (
             isServerQueueOperationIdentity(operation) && operation.scopeID === serverQueue.scope?.scopeID
         )), exactScope);
-    }, [pendingServerMutationVariables, queueScope, serverQueue.runtimeCapture.generation, serverQueue.scope, transportIdentity]);
-    const legacyScope = React.useMemo(() => currentSessionId ? legacyQueueScope(currentSessionId) : null, [currentSessionId]);
-    const boundQueueSelector = React.useMemo(
-        () => (state: ReturnType<typeof useMessageQueueStore.getState>) => queueScope ? getQueueForScope(state, queueScope) : EMPTY_QUEUE,
+    }, [pendingServerMutationVariables, queueScope, serverQueue.runtimeCapture.generation, serverQueue.scope]);
+    const legacyQueueSelector = React.useMemo(
+        () => (state: ReturnType<typeof useMessageQueueStore.getState>) => selectQueuedMessagesForScope(state, queueScope),
         [queueScope],
     );
-    const boundQueuedMessages = useMessageQueueStore(boundQueueSelector);
-    const legacyQueueSelector = React.useMemo(
-        () => (state: ReturnType<typeof useMessageQueueStore.getState>) => legacyScope ? getQueueForScope(state, legacyScope) : EMPTY_QUEUE,
-        [legacyScope],
-    );
-    const legacyQueuedMessages = useMessageQueueStore(legacyQueueSelector);
-    const legacyMessages = React.useMemo(
-        () => mergeQueuedMessageScopes(legacyQueuedMessages, boundQueuedMessages),
-        [boundQueuedMessages, legacyQueuedMessages],
-    );
+    const legacyMessages = useMessageQueueStore(legacyQueueSelector);
     const queuedMessages = React.useMemo(() => serverQueue.mode === 'server'
         ? pendingServerOperation ? applyPendingServerQueueOperation(serverQueue.items, pendingServerOperation) : serverQueue.items
         : legacyMessages, [legacyMessages, pendingServerOperation, serverQueue.items, serverQueue.mode]);
@@ -391,13 +377,13 @@ export const QueuedMessageChips = memo(({ onEditMessage, onSendMessage, draftKey
         const { active, over } = event;
         if (!over || active.id === over.id) return;
         if (serverQueue.mode === 'server') {
-            if (!serverQueue.scope || scopeOperationPending || serverReorderDisabled) return;
+            if (!queueScope || !serverQueue.scope || scopeOperationPending || serverReorderDisabled) return;
             const activeMessage = serverQueue.items.find((message) => message.queueItemID === active.id);
             const overMessage = serverQueue.items.find((message) => message.queueItemID === over.id);
             if (!activeMessage || !overMessage || isMessageQueuePendingAdmissionItem(activeMessage) || isMessageQueuePendingAdmissionItem(overMessage)) return;
             const scope = serverQueue.scope;
             const runtime = serverQueue.actions.captureRuntime();
-            if (runtime.transportIdentity !== transportIdentity || runtime.generation !== serverQueue.runtimeCapture.generation) return;
+            if (runtime.transportIdentity !== queueScope.transportIdentity || runtime.generation !== queueScope.runtimeGeneration) return;
             const flight = startServerQueueScopeMutationFlight(
                 serverMutationFlightRef,
                 `${runtime.transportIdentity}\u0000${runtime.generation}\u0000${scope.directory}\u0000${scope.sessionID}\u0000${scope.scopeID}`,
@@ -427,21 +413,22 @@ export const QueuedMessageChips = memo(({ onEditMessage, onSendMessage, draftKey
         const activeMessage = legacyQueueMessages.find((message) => (message.queueItemID ?? message.id) === active.id);
         const overMessage = legacyQueueMessages.find((message) => (message.queueItemID ?? message.id) === over.id);
         if (!activeMessage || !overMessage) return;
-        const activeScope = activeMessage.owner;
-        const overScope = overMessage.owner;
-        if (activeScope?.state !== 'bound' || overScope?.state !== 'bound' || queueScopeKey(activeScope) !== queueScopeKey(overScope)) return;
+        if (!queueScope) return;
+        const activeScope = queuedMessageItemScope(activeMessage, queueScope);
+        const overScope = queuedMessageItemScope(overMessage, queueScope);
+        if (!activeScope || !overScope || queueScopeKey(activeScope) !== queueScopeKey(overScope)) return;
         reorderQueue(activeScope, String(active.id), String(over.id), activeMessage.operationID);
     });
 
     const handleEdit = useEvent((message: QueuedMessage | MessageQueueServerDisplayItem) => {
         if (frozen) return;
         if (serverQueue.mode === 'server') {
-            if (!serverQueue.scope || !draftKey || scopeOperationPending || isMessageQueuePendingAdmissionItem(message)) return;
+            if (!queueScope || !serverQueue.scope || !draftKey || scopeOperationPending || isMessageQueuePendingAdmissionItem(message)) return;
             const serverMessage = message as MessageQueueItem;
-            const currentDraft = useInputStore.getState().getDraft(draftKey);
+            const currentDraft = draftResources.getDraft(draftKey);
             const scope = serverQueue.scope;
             const runtime = serverQueue.actions.captureRuntime();
-            if (runtime.transportIdentity !== transportIdentity || runtime.generation !== serverQueue.runtimeCapture.generation) return;
+            if (runtime.transportIdentity !== queueScope.transportIdentity || runtime.generation !== queueScope.runtimeGeneration) return;
             const flight = startServerQueueScopeMutationFlight(
                 serverMutationFlightRef,
                 `${runtime.transportIdentity}\u0000${runtime.generation}\u0000${scope.directory}\u0000${scope.sessionID}\u0000${scope.scopeID}`,
@@ -462,14 +449,17 @@ export const QueuedMessageChips = memo(({ onEditMessage, onSendMessage, draftKey
             if (flight) void flight.catch(() => {});
             return;
         }
-        const popped = popQueuedMessageForEdit(message as QueuedMessage, popToInput);
+        if (!queueScope) return;
+        const legacyMessage = message as QueuedMessage;
+        const itemScope = queuedMessageItemScope(legacyMessage, queueScope);
+        if (!itemScope) return;
+        const popped = popToInput(itemScope, legacyMessage.queueItemID ?? legacyMessage.id, legacyMessage.operationID);
         if (popped) {
             const recovery = popped.failure?.recovery;
             const content = recovery?.content ?? popped.content;
             const attachments = recovery?.attachments ?? popped.attachments;
             if (attachments && attachments.length > 0) {
-                const currentAttachments = useInputStore.getState().attachedFiles;
-                useInputStore.getState().setAttachedFiles([...currentAttachments, ...attachments]);
+                draftResources.setAttachments([...draftResources.attachments, ...attachments]);
             }
             onEditMessage(content, attachments, recovery?.composerDocument ?? popped.composerDocument, recovery?.composerMentions ?? popped.composerMentions);
         }
@@ -478,11 +468,11 @@ export const QueuedMessageChips = memo(({ onEditMessage, onSendMessage, draftKey
     const handleSend = useEvent((message: QueuedMessage | MessageQueueServerDisplayItem) => {
         if (frozen) return;
         if (serverQueue.mode === 'server') {
-            if (!serverQueue.scope || scopeOperationPending || isMessageQueuePendingAdmissionItem(message)) return;
+            if (!queueScope || !serverQueue.scope || scopeOperationPending || isMessageQueuePendingAdmissionItem(message)) return;
             const serverMessage = message as MessageQueueItem;
             const scope = serverQueue.scope;
             const runtime = serverQueue.actions.captureRuntime();
-            if (runtime.transportIdentity !== transportIdentity || runtime.generation !== serverQueue.runtimeCapture.generation) return;
+            if (runtime.transportIdentity !== queueScope.transportIdentity || runtime.generation !== queueScope.runtimeGeneration) return;
             const flight = startServerQueueScopeMutationFlight(
                 serverMutationFlightRef,
                 `${runtime.transportIdentity}\u0000${runtime.generation}\u0000${scope.directory}\u0000${scope.sessionID}\u0000${scope.scopeID}`,
@@ -503,18 +493,20 @@ export const QueuedMessageChips = memo(({ onEditMessage, onSendMessage, draftKey
             if (flight) void flight.catch(() => {});
             return;
         }
+        if (!queueScope) return;
         const legacyMessage = message as QueuedMessage;
+        if (!queuedMessageItemScope(legacyMessage, queueScope)) return;
         onSendMessage(legacyMessage.queueItemID ?? legacyMessage.id);
     });
 
     const handleRemove = useEvent((message: QueuedMessage | MessageQueueServerDisplayItem) => {
         if (frozen) return;
         if (serverQueue.mode === 'server') {
-            if (!serverQueue.scope || scopeOperationPending || isMessageQueuePendingAdmissionItem(message)) return;
+            if (!queueScope || !serverQueue.scope || scopeOperationPending || isMessageQueuePendingAdmissionItem(message)) return;
             const serverMessage = message as MessageQueueItem;
             const scope = serverQueue.scope;
             const runtime = serverQueue.actions.captureRuntime();
-            if (runtime.transportIdentity !== transportIdentity || runtime.generation !== serverQueue.runtimeCapture.generation) return;
+            if (runtime.transportIdentity !== queueScope.transportIdentity || runtime.generation !== queueScope.runtimeGeneration) return;
             const flight = startServerQueueScopeMutationFlight(
                 serverMutationFlightRef,
                 `${runtime.transportIdentity}\u0000${runtime.generation}\u0000${scope.directory}\u0000${scope.sessionID}\u0000${scope.scopeID}`,
@@ -535,8 +527,10 @@ export const QueuedMessageChips = memo(({ onEditMessage, onSendMessage, draftKey
             if (flight) void flight.catch(() => {});
             return;
         }
+        if (!queueScope) return;
         const legacyMessage = message as QueuedMessage;
-        if (legacyMessage.owner) useMessageQueueStore.getState().removeFromQueue(legacyMessage.owner, legacyMessage.queueItemID ?? legacyMessage.id, legacyMessage.operationID);
+        const itemScope = queuedMessageItemScope(legacyMessage, queueScope);
+        if (itemScope) useMessageQueueStore.getState().removeFromQueue(itemScope, legacyMessage.queueItemID ?? legacyMessage.id, legacyMessage.operationID);
     });
 
     if (queuedMessages.length === 0 || !queueScope) {

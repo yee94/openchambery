@@ -10,6 +10,15 @@ const mainLayoutSource = readFileSync(
 );
 
 describe('MainLayout mobile SessionSidebar mount (issue #1695 regression guard)', () => {
+    test('mobile Assistant view unmounts the primary ChatView', () => {
+        const mobileLayoutStart = mainLayoutSource.indexOf('{isMobile ? (');
+        const desktopLayoutStart = mainLayoutSource.indexOf(') : (', mobileLayoutStart);
+        const mobileLayoutSource = mainLayoutSource.slice(mobileLayoutStart, desktopLayoutStart);
+
+        expect(mobileLayoutSource).toContain('{!isAssistantActive && (');
+        expect(mobileLayoutSource).toContain('<ErrorBoundary><ChatView /></ErrorBoundary>');
+    });
+
     test('mobile SessionSidebar is not conditionally mounted on mobileLeftDrawerVisible', () => {
         const mobileSidebarIndex = mainLayoutSource.indexOf('<SessionSidebar mobileVariant');
         expect(mobileSidebarIndex).toBeGreaterThan(-1);

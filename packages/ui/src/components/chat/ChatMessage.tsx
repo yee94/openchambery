@@ -740,12 +740,18 @@ const ChatMessage: React.FC<ChatMessageProps> = ({
         pendingMessageActionRef.current = 'revert';
         setPendingMessageAction('revert');
         try {
-            await revertToMessage(sessionId, message.info.id);
+            if (sessionSurface.onRevertMessage) {
+                await sessionSurface.onRevertMessage(message.info.id);
+            } else {
+                await revertToMessage(sessionId, message.info.id, {
+                    directory: sessionSurface.directory ?? undefined,
+                });
+            }
         } finally {
             pendingMessageActionRef.current = null;
             setPendingMessageAction(null);
         }
-    }, [sessionId, message.info.id, revertToMessage]);
+    }, [sessionId, message.info.id, revertToMessage, sessionSurface]);
 
     const handleEdit = useEvent(() => {
         if (!sessionId || !message.info.id || pendingMessageActionRef.current) return;

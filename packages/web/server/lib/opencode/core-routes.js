@@ -1,4 +1,5 @@
 import { MANAGED_SCHEDULED_TASK_TOOL_PATH } from '../scheduled-tasks/managed-tool-contract.js';
+import { MESSAGE_QUEUE_ADMISSION_HTTP_MAX_BYTES } from '../message-queue/service.js';
 
 const parseLoopbackUrl = (rawUrl) => {
   if (typeof rawUrl !== 'string') {
@@ -1080,7 +1081,7 @@ export const registerCommonRequestMiddleware = (app, dependencies) => {
       }
       express.json({ limit: '1mb' })(req, res, next);
     } else if (!(req.method === 'PUT' && req.path.match(/^\/api\/openchamber\/message-queue\/attachments\/uploads\/[^/]+\/?$/)) && req.path.startsWith('/api/openchamber/message-queue')) {
-      express.json({ limit: '1mb' })(req, res, next);
+      express.json({ limit: req.method === 'POST' && req.path === '/api/openchamber/message-queue/items' ? MESSAGE_QUEUE_ADMISSION_HTTP_MAX_BYTES : '1mb' })(req, res, next);
     } else if (
       req.path.startsWith('/api/openchamber/session-index') ||
       req.path.startsWith('/api/openchamber/conversations') ||
@@ -1088,8 +1089,8 @@ export const registerCommonRequestMiddleware = (app, dependencies) => {
     ) {
       // These OpenChamber-owned routes need parsed JSON before their handlers;
       // Conversation and Assistant file parts can contain data URLs, so they share
-      // the 50 MiB API attachment payload limit. The generic OpenCode proxy owns remaining paths.
-      express.json({ limit: '50mb' })(req, res, next);
+      // the 72 MiB HTTP envelope limit around the 70 MiB validated parts payload. The generic OpenCode proxy owns remaining paths.
+      express.json({ limit: '72mb' })(req, res, next);
     } else if (
       req.path.startsWith('/api/config/agents') ||
       req.path.startsWith('/api/config/commands') ||

@@ -210,6 +210,7 @@ export function dispatchQueuedMessage(sessionID: string, options: { delivery?: '
   }
   if (!located || located.scope.transportIdentity !== getRuntimeTransportIdentity()) return Promise.resolve();
   const scope = located.scope;
+  if (scope.deliveryTarget?.kind === 'assistant') return Promise.resolve();
   let item = located.item;
   const identity = { queueItemID: item.queueItemID, operationID: item.operationID, messageID: item.messageID };
   const key = dispatchFlightKey(scope, identity); const existing = dispatchFlights.get(key);

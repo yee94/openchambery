@@ -14,11 +14,13 @@ import { OpenChamberLogo } from '@/components/ui/OpenChamberLogo';
 import { ProviderLogo } from '@/components/ui/ProviderLogo';
 import { ChatView } from '@/components/views/ChatView';
 import { AssistantView } from '@/components/assistants/AssistantView';
+import { AssistantShareWelcome } from '@/components/assistants/AssistantShareWelcome';
 import { useAssistantCapabilityQuery } from '@/queries/assistantQueries';
 import { DiffView } from '@/components/views/DiffView';
 import { SettingsView } from '@/components/views/SettingsView';
 import { ErrorBoundary } from '@/components/ui/ErrorBoundary';
 import { MobileOverlayPanel } from '@/components/ui/MobileOverlayPanel';
+import { MobileSurfaceHeader } from '@/components/ui/MobileSurfaceHeader';
 import { MobileResizableSheet } from '@/components/ui/MobileResizableSheet';
 import { getMobileWindowMotionController, MOBILE_SESSIONS_WINDOW_ID } from '@/components/ui/MobileWindowMotionRegistry';
 import { MobileSessionStatusBar } from '@/components/chat/MobileSessionStatusBar';
@@ -680,7 +682,7 @@ const getProjectLabel = (path: string): string => {
 };
 
 type OverflowItem = {
-  key: 'new-session' | 'files' | 'changes' | 'scheduled' | 'mcp' | 'instances' | 'update' | 'settings';
+  key: 'new-session' | 'files' | 'changes' | 'scheduled' | 'assistant' | 'mcp' | 'instances' | 'update' | 'settings';
   icon?: IconName;
   iconNode?: React.ReactNode;
   label: string;
@@ -2011,11 +2013,7 @@ const MobileHeader: React.FC<{
 
   return (
     <>
-      <header
-        className="oc-mobile-header relative z-30 flex shrink-0 items-center gap-1 border-b border-border/30 bg-background/95 backdrop-blur supports-[backdrop-filter]:bg-background/80"
-        style={{ paddingTop: 'var(--oc-safe-area-top, 0px)' }}
-      >
-        <div className="flex h-[var(--oc-header-height,56px)] w-full items-center gap-1 px-2">
+      <MobileSurfaceHeader>
           <button
             type="button"
             className="flex size-10 shrink-0 items-center justify-center rounded-full text-muted-foreground transition-colors hover:bg-interactive-hover hover:text-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-primary"
@@ -2084,8 +2082,7 @@ const MobileHeader: React.FC<{
           >
             <Icon name="more-2" className="size-5" />
           </button>
-        </div>
-      </header>
+      </MobileSurfaceHeader>
     </>
   );
 };
@@ -2231,12 +2228,13 @@ const MobileShell: React.FC<{ onActiveConnectionDeleted: () => void }> = ({ onAc
       },
       openTurnDiff: openTurnDiffSurface,
       openFiles: () => openFilesSurface(),
-      openSettings: () => {
-        setSettingsInitialMobileStage('nav');
+      openSettings: (section?: string) => {
+        if (section) setSettingsPage(section as Parameters<typeof setSettingsPage>[0]);
+        setSettingsInitialMobileStage(section ? 'page-content' : 'nav');
         setSettingsOpen(true);
       },
     }),
-    [openChangesSurface, openFilesSurface, openTurnDiffSurface],
+    [openChangesSurface, openFilesSurface, openTurnDiffSurface, setSettingsPage],
   );
 
   const closeChanges = useEvent(() => {
@@ -2432,6 +2430,10 @@ const MobileShell: React.FC<{ onActiveConnectionDeleted: () => void }> = ({ onAc
       setUpdateOpen(false);
       return true;
     }
+    if (activeMainTab === 'assistant') {
+      setActiveMainTab('chat');
+      return true;
+    }
     if (parentSessionTarget) {
       setCurrentSession(parentSessionTarget.id, parentSessionTarget.directory);
       return true;
@@ -2567,7 +2569,7 @@ const MobileShell: React.FC<{ onActiveConnectionDeleted: () => void }> = ({ onAc
       });
       return items;
     },
-    [dirtyChangeCount, isIPad, openChangesSurface, openFilesSurface, openNewSessionDraft, setActiveMainTab, setScheduledTasksDialogOpen, showCapacitorOnlyFeatures, showUpdateItem, t],
+    [assistantCapability.data?.supported, dirtyChangeCount, isIPad, openChangesSurface, openFilesSurface, openNewSessionDraft, setActiveMainTab, setScheduledTasksDialogOpen, showCapacitorOnlyFeatures, showUpdateItem, t],
   );
 
   return (
@@ -2633,7 +2635,7 @@ const MobileShell: React.FC<{ onActiveConnectionDeleted: () => void }> = ({ onAc
         ) : null}
 
         <div className="flex h-full min-w-0 flex-1 flex-col" data-page-scroll-lock="true">
-          <div>
+          {activeMainTab !== 'assistant' ? <div>
             <MobileHeader
               onOpenSessions={() => (isIPad ? toggleIpadSidebar() : setMobileSessionPanelOpen(true))}
               onOpenMenu={() => setOverflowOpen(true)}
@@ -2644,7 +2646,7 @@ const MobileShell: React.FC<{ onActiveConnectionDeleted: () => void }> = ({ onAc
               onToggleChanges: () => toggleIpadRightPanel('changes'),
             } : undefined}
             />
-          </div>
+          </div> : null}
           <main ref={chatMainRef} className="relative min-h-0 flex-1 overflow-hidden" data-page-scroll-lock="true">
             <div
               ref={previousSessionHolderRef}
@@ -3005,6 +3007,12 @@ const MobileShell: React.FC<{ onActiveConnectionDeleted: () => void }> = ({ onAc
           </MobileSurfaceShell>
         ) : null}
       </div>
+      <AssistantShareWelcome
+        enabled={showCapacitorOnlyFeatures
+          && activeMainTab === 'assistant'
+          && assistantCapability.data?.supported === true
+          && assistantCapability.data?.enabled === true}
+      />
       <ErrorBoundary>
         <MobileSessionStatusBar />
       </ErrorBoundary>

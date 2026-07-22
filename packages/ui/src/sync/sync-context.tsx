@@ -51,7 +51,7 @@ import { getPermissionToastKey, showPermissionNeededToast } from "./permission-t
 import { getRuntimeLiveStatusSeed, LIVE_STATUS_TTL_MS } from "./runtime-live-memory"
 import { getRuntimeKey } from "@/lib/runtime-switch"
 import { getRegisteredRuntimeAPIs } from "@/contexts/runtimeAPIRegistry"
-import { setSessionPrefetch } from "./session-prefetch-cache"
+import { getSessionPrefetch, setSessionPrefetch, subscribeSessionPrefetch, type SessionPrefetchMeta } from "./session-prefetch-cache"
 import { useGlobalSessionsStore } from "@/stores/useGlobalSessionsStore"
 import { areRequestArraysReferentiallyEqual, collectScopedBlockingRequests } from "./scoped-blocking-requests"
 import { EMPTY_USER_MESSAGE_HISTORY_SNAPSHOT, buildUserMessageHistorySnapshot, type UserMessageHistorySnapshot } from "./user-message-history"
@@ -2332,6 +2332,22 @@ export function useSessionMessagesResolved(sessionID: string, directory?: string
     }, [sessionID]),
     directory,
   )
+}
+
+/** Subscribe to the standard session materialization lifecycle for one scoped transcript. */
+export function useSessionMessageLoadState(sessionID: string, directory?: string): SessionPrefetchMeta | undefined {
+  const system = useSyncSystem()
+  const targetDirectory = directory ?? system.directory
+  const runtimeKey = getRuntimeKey()
+  const subscribe = useCallback(
+    (notify: () => void) => sessionID ? subscribeSessionPrefetch(targetDirectory, sessionID, notify, runtimeKey) : () => undefined,
+    [runtimeKey, sessionID, targetDirectory],
+  )
+  const getSnapshot = useCallback(
+    () => sessionID ? getSessionPrefetch(targetDirectory, sessionID, runtimeKey) : undefined,
+    [runtimeKey, sessionID, targetDirectory],
+  )
+  return React.useSyncExternalStore(subscribe, getSnapshot, getSnapshot)
 }
 
 /** Get parts for a specific message */

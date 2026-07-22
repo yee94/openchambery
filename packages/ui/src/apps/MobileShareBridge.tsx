@@ -2,9 +2,9 @@ import React from 'react';
 import { Capacitor, registerPlugin } from '@capacitor/core';
 
 import { connectMobileShareConnection, loadMobileConnections, mobileConnectionKey } from './mobileConnections';
-import { getRuntimeGeneration, getRuntimeKey, subscribeRuntimeEndpointChanged } from '@/lib/runtime-switch';
+import { getRuntimeGeneration, getRuntimeKey, getRuntimeTransportIdentity, subscribeRuntimeEndpointChanged } from '@/lib/runtime-switch';
 import { runtimeFetch } from '@/lib/runtime-fetch';
-import { fetchAssistantCapability, ensureAssistantSnapshot, runAssistantTopicOperation, type AssistantPart } from '@/queries/assistantQueries';
+import { AssistantShareOperationError, fetchAssistantCapability, ensureAssistantSnapshot, sendAssistantShare, waitForAssistantShare, type AssistantPart } from '@/queries/assistantQueries';
 import { openAssistant, useAssistantUIStore, type AssistantCatalogEntry } from '@/stores/useAssistantUIStore';
 import { drainMobileShareItems, retryMobileShareCleanupStage, type MobileShareDrainItem } from './mobileShareDrain';
 
@@ -13,6 +13,7 @@ type NativeShareAttachment = { stagedPath: string; originalName: string; mime: s
 export type NativeShareEnvelope = { version: 1; operationID: string; serverInstanceID: string; assistantID: string; text?: string; attachments: NativeShareAttachment[]; source: 'ios-share' | 'android-share'; createdAt: number; expiresAt: number };
 type OpenChamberSharePlugin = {
   updateCatalog(options: { entries: NativeAssistantCatalogEntry[] }): Promise<void>;
+  donateAssistantInteraction(options: { serverInstanceID: string; assistantID: string; name: string; avatarSeed: string }): Promise<void>;
   listPending(): Promise<{ envelopes: NativeShareEnvelope[] }>;
   ack(options: { operationID: string }): Promise<void>;
   releaseFiles(options: { operationID: string }): Promise<void>;
@@ -82,8 +83,9 @@ export const refreshNativeAssistantCatalog = async (): Promise<void> => {
     const [capability, snapshot] = await Promise.all([fetchAssistantCapability(), ensureAssistantSnapshot()]);
     if (!current(connectionKey, generation)) return;
     if (!capability.supported || !capability.serverInstanceID) return;
+    const serverInstanceID = capability.serverInstanceID;
     const entries = snapshot.assistants.map((assistant) => ({
-      serverInstanceID: capability.serverInstanceID,
+      serverInstanceID,
       assistantID: assistant.id,
       name: assistant.name,
       avatarSeed: assistant.id,
@@ -92,7 +94,7 @@ export const refreshNativeAssistantCatalog = async (): Promise<void> => {
       enabled: capability.enabled && assistant.enabled,
       isDefaultShareTarget: false,
     }));
-    useAssistantUIStore.getState().replaceCatalogPartition({ serverInstanceID: capability.serverInstanceID, connectionKey, revision: snapshot.revision, lastLoadedAt: Date.now(), entries });
+    useAssistantUIStore.getState().replaceCatalogPartition({ serverInstanceID, connectionKey, revision: snapshot.revision, lastLoadedAt: Date.now(), entries });
     await publishNativeAssistantCatalog();
   } catch {
     // Failed authoritative reads preserve the last complete partition.
@@ -103,6 +105,11 @@ export const publishNativeAssistantCatalog = async (): Promise<void> => {
   if (!nativeAvailable()) return;
   const entries = Object.values(useAssistantUIStore.getState().assistantCatalogByConnection).flatMap((partition) => partition.entries);
   await OpenChamberShare.updateCatalog({ entries });
+};
+
+export const donateNativeAssistantInteraction = async (target: { serverInstanceID: string; assistantID: string; name: string; avatarSeed: string }): Promise<void> => {
+  if (Capacitor.getPlatform() !== 'ios') return;
+  await OpenChamberShare.donateAssistantInteraction(target);
 };
 
 const deliver = (envelope: NativeShareEnvelope): Promise<void> => {
@@ -130,7 +137,7 @@ const deliverOne = async (envelope: NativeShareEnvelope): Promise<void> => {
   const existing = readOutbox()[envelope.operationID];
   if (existing?.cleanupPhase) { await cleanupNativeDelivery(existing); return; }
   let item: OutboxItem = existing ?? { envelope, state: 'pending', updatedAt: Date.now() };
-  save(item); // Durable admission precedes every native inbox mutation.
+  save(item); // Durable admission precedes every native share mutation.
   item = { ...item, state: 'resolving-instance', updatedAt: Date.now() }; save(item);
   const partition = Object.values(useAssistantUIStore.getState().assistantCatalogByConnection).find((entry) => entry.serverInstanceID === envelope.serverInstanceID && entry.entries.some((candidate) => candidate.assistantID === envelope.assistantID));
   if (!partition) { save({ ...item, state: 'target-stale', updatedAt: Date.now() }); return; }
@@ -139,6 +146,7 @@ const deliverOne = async (envelope: NativeShareEnvelope): Promise<void> => {
   if (result === 'auth-required') { save({ ...item, state: 'auth-required', updatedAt: Date.now() }); return; }
   if (result !== 'connected') { save({ ...item, state: 'offline', updatedAt: Date.now() }); return; }
   const generation = getRuntimeGeneration();
+  let deliveredAssistantID: string | null = null;
   if (!current(partition.connectionKey, generation)) return;
   try {
     // Settings hydration confirms the newly switched runtime has completed its auth gate.
@@ -151,17 +159,22 @@ const deliverOne = async (envelope: NativeShareEnvelope): Promise<void> => {
     item = { ...item, state: 'dispatching', updatedAt: Date.now() }; save(item);
     const parts = await partsFor(envelope);
     if (!current(partition.connectionKey, generation)) return;
-    await runAssistantTopicOperation(assistant.inboxTopicID, envelope.operationID, 'message', parts, envelope.source, {
-      onReconcile: () => { item = { ...item, state: 'reconciling', updatedAt: Date.now() }; save(item); },
-    });
+    item = { ...item, state: 'reconciling', updatedAt: Date.now() }; save(item);
+    const operation = await sendAssistantShare(assistant.id, envelope.operationID, envelope.operationID, parts, envelope.source);
+    await waitForAssistantShare(operation, getRuntimeTransportIdentity(), generation);
+    deliveredAssistantID = assistant.id;
     if (!current(partition.connectionKey, generation)) return;
   } catch (error) {
-    // The existing mutation reconciles ambiguous POST outcomes by operationID.
+    const retainReconciliation = (error instanceof AssistantShareOperationError && error.code === 'share_unresolved') || (error instanceof Error && error.message === 'runtime_stale');
+    if (retainReconciliation) {
+      save({ ...item, state: 'reconciling', updatedAt: Date.now(), error: error instanceof Error ? error.message : 'share_unresolved' });
+      return;
+    }
     save({ ...item, state: 'failed', updatedAt: Date.now(), error: error instanceof Error ? error.message : 'dispatch_failed' });
     return;
   }
   item = { ...item, state: 'delivered', cleanupPhase: 'server-completed', updatedAt: Date.now() }; save(item);
-  openAssistant(assistant.id, assistant.inboxTopicID);
+  openAssistant(deliveredAssistantID);
   await cleanupNativeDelivery(item);
 };
 

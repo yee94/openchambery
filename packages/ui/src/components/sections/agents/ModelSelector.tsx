@@ -28,6 +28,7 @@ interface ModelSelectorProps {
     tooltipsEnabled?: boolean;
     dropdownPortalToBody?: boolean;
     showIcon?: boolean;
+    providers?: ModelPickerProvider[];
 }
 
 export const ModelSelector: React.FC<ModelSelectorProps> = ({
@@ -42,10 +43,12 @@ export const ModelSelector: React.FC<ModelSelectorProps> = ({
     tooltipsEnabled = true,
     dropdownPortalToBody = false,
     showIcon = true,
+    providers: catalogProviders,
 }) => {
     const { t } = useI18n();
     const { isReady, isUnavailable } = useOpenCodeReadiness();
-    const providers = useConfigStore((state) => state.providers) as ModelPickerProvider[];
+    const storedProviders = useConfigStore((state) => state.providers) as ModelPickerProvider[];
+    const providers = catalogProviders ?? storedProviders;
     const modelsMetadata = useConfigStore((state) => state.modelsMetadata);
     const isMobile = useUIStore((state) => state.isMobile);
     const hiddenModels = useUIStore((state) => state.hiddenModels);

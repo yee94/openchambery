@@ -1,4 +1,5 @@
 import React from 'react';
+import type { Agent } from '@opencode-ai/sdk/v2';
 import { createPortal } from 'react-dom';
 import type { EditPermissionMode } from '@/stores/types/sessionTypes';
 import type { ModelMetadata } from '@/types';
@@ -34,6 +35,7 @@ import { useAgentCycleLabelReveal } from '@/components/chat/useAgentCycleLabelRe
 import { COMPOSER_ICON_HOVER_CLASS, COMPOSER_TRIGGER_CHROME_CLASS } from '@/components/chat/message/parts/toolRowChrome';
 import { useContextStore } from '@/stores/contextStore';
 import { useConfigStore } from '@/stores/useConfigStore';
+import { resolveComposerVisibleAgents } from '@/components/chat/chatComposerCatalog';
 import { useSessionUIStore } from '@/sync/session-ui-store';
 import { useSelectionStore } from '@/sync/selection-store';
 import { useDirectorySync, useSessionMessages } from '@/sync/sync-context';
@@ -42,16 +44,27 @@ import { getSessionMaterializationStatus } from '@/sync/materialization';
 import { useUIStore } from '@/stores/useUIStore';
 import { useModelLists } from '@/hooks/useModelLists';
 import { useIsTextTruncated } from '@/hooks/useIsTextTruncated';
-import { getCycledPrimaryAgentName, isPrimaryMode, type MobileControlsPanel } from './mobileControlsUtils';
+import { getCycledPrimaryAgentName, isPrimaryMode, resolveAgentModelSelection, type ControlledModelSelection, type MobileControlsPanel } from './mobileControlsUtils';
 import { getCurrentIntlLocale, useI18n } from '@/lib/i18n';
 import { useOpenCodeReadiness } from '@/hooks/useOpenCodeReadiness';
 import { eventMatchesShortcut, getEffectiveShortcutCombo, normalizeCombo } from '@/lib/shortcuts';
 import { markStartupTrace } from '@/lib/startupTrace';
 import { focusComposerTextarea, resolveComposerTextarea } from './composerFocus';
+import { resolveChatInputSelectionVariantOptions, resolveModelVariantKeys } from './chatInputSurface';
 
 type IconComponent = IconName;
 
-type ProviderModel = Record<string, unknown> & { id?: string; name?: string };
+type ProviderModel = Record<string, unknown> & { id: string; name?: string };
+export type ModelControlsCatalog = {
+    providers: Array<{ id: string; name?: string; models: ProviderModel[] }>;
+    agents: Agent[];
+    /** Variants for the selection value's provider/model pair. */
+    variants?: readonly string[];
+    variantsReady?: boolean;
+    ready: boolean;
+    loading?: boolean;
+    error?: boolean;
+};
 
 type PermissionAction = 'allow' | 'ask' | 'deny';
 type PermissionRule = { permission: string; pattern: string; action: PermissionAction };
@@ -285,6 +298,15 @@ const formatDate = (value?: string) => {
     return formatReleaseDate(parsedDate);
 };
 
+export type ModelControlsSelection = ControlledModelSelection & { variant?: string };
+
+export type ModelControlsSelectionAdapter = {
+    selection: ModelControlsSelection;
+    onChange: (selection: ModelControlsSelection) => Promise<void>;
+    disabled?: boolean;
+    catalog?: ModelControlsCatalog;
+};
+
 interface ModelControlsProps {
     className?: string;
     composerTextareaRef: React.RefObject<HTMLTextAreaElement | null>;
@@ -296,6 +318,7 @@ interface ModelControlsProps {
      */
     relocateAgent?: boolean;
     agentPortalContainer?: HTMLElement | null;
+    selectionAdapter?: ModelControlsSelectionAdapter;
 }
 
 export const ModelControls: React.FC<ModelControlsProps> = ({
@@ -305,24 +328,31 @@ export const ModelControls: React.FC<ModelControlsProps> = ({
     onMobilePanelChange,
     relocateAgent = false,
     agentPortalContainer = null,
+    selectionAdapter,
 }) => {
     const { t } = useI18n();
     const { isReady, isUnavailable } = useOpenCodeReadiness();
-    const readinessLabel = isUnavailable ? t('common.unavailable') : t('common.loading');
+    const readinessLabel = isUnavailable || selectionAdapter?.catalog?.error ? t('common.unavailable') : t('common.loading');
     const isProviderConfigLoading = useConfigStore((state) => (
         state.providerConfigLoadingByDirectory[state.activeDirectoryKey] === true
     ));
     const isAgentConfigLoading = useConfigStore((state) => (
         state.agentConfigLoadingByDirectory[state.activeDirectoryKey] === true
     ));
-    const isModelControlReady = isReady && !isProviderConfigLoading;
-    const isAgentControlReady = isReady && !isAgentConfigLoading;
+    const selectionCatalog = selectionAdapter?.catalog;
+    const isModelControlReady = isReady && (selectionCatalog?.ready ?? !isProviderConfigLoading) && !selectionCatalog?.loading && !selectionCatalog?.error && !selectionAdapter?.disabled;
+    const isAgentControlReady = isReady && (selectionCatalog?.ready ?? !isAgentConfigLoading) && !selectionCatalog?.loading && !selectionCatalog?.error && !selectionAdapter?.disabled;
     const areModelControlsReady = isModelControlReady && isAgentControlReady;
-    const providers = useConfigStore((state) => state.providers);
-    const currentProviderId = useConfigStore((state) => state.currentProviderId);
-    const currentModelId = useConfigStore((state) => state.currentModelId);
-    const currentVariant = useConfigStore((state) => state.currentVariant);
-    const currentAgentName = useConfigStore((state) => state.currentAgentName);
+    const storedProviders = useConfigStore((state) => state.providers);
+    const providers = selectionCatalog?.providers ?? storedProviders;
+    const storedProviderId = useConfigStore((state) => state.currentProviderId);
+    const storedModelId = useConfigStore((state) => state.currentModelId);
+    const currentProviderId = selectionAdapter?.selection.providerID ?? storedProviderId;
+    const currentModelId = selectionAdapter?.selection.modelID ?? storedModelId;
+    const storedCurrentVariant = useConfigStore((state) => state.currentVariant);
+    const currentVariant = selectionAdapter ? selectionAdapter.selection.variant : storedCurrentVariant;
+    const storedAgentName = useConfigStore((state) => state.currentAgentName);
+    const currentAgentName = selectionAdapter ? selectionAdapter.selection.agent ?? undefined : storedAgentName;
     const settingsDefaultVariant = useConfigStore((state) => state.settingsDefaultVariant);
     const settingsDefaultAgent = useConfigStore((state) => state.settingsDefaultAgent);
     const setProvider = useConfigStore((state) => state.setProvider);
@@ -337,8 +367,9 @@ export const ModelControls: React.FC<ModelControlsProps> = ({
     const getCurrentAgent = useConfigStore((state) => state.getCurrentAgent);
     const getVisibleAgents = useConfigStore((state) => state.getVisibleAgents);
 
-    // Use visible agents (excludes hidden internal agents)
-    const agents = getVisibleAgents();
+    // Same visibility pipeline as primary chat: catalog or store, then drop
+    // hidden internals (title/summary/compaction) before mode filtering.
+    const agents = resolveComposerVisibleAgents(selectionCatalog?.agents ?? getVisibleAgents());
     const primaryAgents = React.useMemo(() => agents.filter((agent) => agent.mode === 'primary'), [agents]);
     const tracedReadyRef = React.useRef(false);
 
@@ -354,7 +385,7 @@ export const ModelControls: React.FC<ModelControlsProps> = ({
         });
     }, [agents.length, areModelControlsReady, currentAgentName, currentModelId, currentProviderId, providers.length]);
 
-    const currentSessionId = useSessionUIStore((s) => s.currentSessionId);
+    const currentSessionId = useSessionUIStore((s) => selectionAdapter ? null : s.currentSessionId);
     const getDirectoryForSession = useSessionUIStore((s) => s.getDirectoryForSession);
     const sync = useSync();
 
@@ -386,9 +417,10 @@ export const ModelControls: React.FC<ModelControlsProps> = ({
     const stickySessionAgentName = currentSessionId ? stickySessionAgentRef.current : null;
 
     // Prefer per-session selection over global config to avoid flicker during server-driven mode switches.
-    const uiAgentName = currentSessionId
+    const standardUIAgentName = currentSessionId
         ? (sessionSavedAgentName || stickySessionAgentName || currentAgentName)
         : currentAgentName;
+    const uiAgentName = selectionAdapter ? selectionAdapter.selection.agent ?? undefined : standardUIAgentName;
 
     const toggleFavoriteModel = useUIStore((state) => state.toggleFavoriteModel);
     const reorderFavoriteModel = useUIStore((state) => state.reorderFavoriteModel);
@@ -578,7 +610,9 @@ export const ModelControls: React.FC<ModelControlsProps> = ({
     const agentAvatarSize = sizeVariant === 'mobile' ? 18 : sizeVariant === 'vscode' ? 14 : 16;
     const showAgentCycleLabel = useAgentCycleLabelReveal(uiAgentName);
 
-    const currentProvider = getCurrentProvider();
+    const currentProvider = selectionAdapter
+        ? providers.find((provider) => provider.id === currentProviderId)
+        : getCurrentProvider();
     const models = Array.isArray(currentProvider?.models) ? currentProvider.models : [];
 
     const currentModelForMetadata = currentModelId
@@ -613,9 +647,24 @@ export const ModelControls: React.FC<ModelControlsProps> = ({
         [currentMetadata, localizeMetaLabel],
     );
 
-    // Compute from current model each render to avoid stale variants
-    // in draft/session transitions.
-    const availableVariants = getCurrentModelVariants();
+    // Compute from the selected model each render to avoid stale variants
+    // in draft/session transitions. Prefer an explicit surface catalog list;
+    // otherwise derive keys from the active provider/model entry (primary
+    // adapters often omit catalog.variants and only ship providers/store data).
+    const availableVariants = React.useMemo(() => {
+        if (selectionCatalog?.variantsReady === false) {
+            return [];
+        }
+        if (selectionCatalog?.variants) {
+            return [...selectionCatalog.variants];
+        }
+        if (currentProviderId && currentModelId) {
+            const provider = providers.find((entry) => entry.id === currentProviderId);
+            const model = provider?.models?.find((entry) => entry.id === currentModelId) as { variants?: unknown } | undefined;
+            return resolveModelVariantKeys(model);
+        }
+        return selectionAdapter ? [] : getCurrentModelVariants();
+    }, [currentModelId, currentProviderId, getCurrentModelVariants, providers, selectionAdapter, selectionCatalog?.variants, selectionCatalog?.variantsReady]);
     const hasVariants = availableVariants.length > 0;
 
     const costRows = [
@@ -714,13 +763,39 @@ export const ModelControls: React.FC<ModelControlsProps> = ({
     );
 
     const getModelVariantOptions = React.useCallback((providerId: string, modelId: string) => {
+        if (selectionAdapter) {
+            const fromCatalog = resolveChatInputSelectionVariantOptions(
+                selectionAdapter.selection,
+                selectionAdapter.catalog,
+                providerId,
+                modelId,
+            );
+            if (
+                fromCatalog.length > 0
+                || selectionAdapter.catalog?.variants
+                || selectionAdapter.catalog?.variantsReady === false
+                || selectionAdapter.selection.providerID !== providerId
+                || selectionAdapter.selection.modelID !== modelId
+            ) {
+                return fromCatalog;
+            }
+            // Primary adapters may omit catalog.variants; fall back to the
+            // provider list already resolved for this control (store or surface).
+            const provider = providers.find((entry) => entry.id === providerId);
+            const model = provider?.models?.find((entry) => entry.id === modelId) as { variants?: unknown } | undefined;
+            return resolveModelVariantKeys(model);
+        }
         const provider = providers.find((entry) => entry.id === providerId);
-        const model = provider?.models.find((entry) => entry.id === modelId) as { variants?: Record<string, unknown> } | undefined;
-        const variants = model?.variants;
-        return variants ? Object.keys(variants) : [];
-    }, [providers]);
+        const model = provider?.models?.find((entry) => entry.id === modelId) as { variants?: unknown } | undefined;
+        return resolveModelVariantKeys(model);
+    }, [currentModelId, currentProviderId, providers, selectionAdapter, selectionCatalog?.variants, selectionCatalog?.variantsReady]);
 
     const resolveModelVariantSelection = React.useCallback((providerId: string, modelId: string) => {
+        if (selectionAdapter) {
+            const variantOptions = resolveChatInputSelectionVariantOptions(selectionAdapter.selection, selectionAdapter.catalog, providerId, modelId);
+            const selectedVariant = selectionAdapter.selection.variant;
+            return selectedVariant && variantOptions.includes(selectedVariant) ? selectedVariant : undefined;
+        }
         const variantOptions = getModelVariantOptions(providerId, modelId);
         if (variantOptions.length === 0) {
             return undefined;
@@ -751,11 +826,15 @@ export const ModelControls: React.FC<ModelControlsProps> = ({
         currentVariant,
         getAgentModelVariantForSession,
         getModelVariantOptions,
+        selectionAdapter,
         settingsDefaultVariant,
         uiAgentName,
     ]);
 
     const resolveLiveAgentName = React.useCallback(() => {
+        if (selectionAdapter) {
+            return selectionAdapter.selection.agent ?? undefined;
+        }
         const liveConfigAgentName = useConfigStore.getState().currentAgentName;
         if (currentSessionId) {
             return useSelectionStore.getState().getSessionAgentSelection(currentSessionId)
@@ -764,9 +843,18 @@ export const ModelControls: React.FC<ModelControlsProps> = ({
                 || currentAgentName;
         }
         return liveConfigAgentName || currentAgentName;
-    }, [currentAgentName, currentSessionId]);
+    }, [currentAgentName, currentSessionId, selectionAdapter]);
 
     const commitVariantSelectionForModel = React.useCallback((providerId: string, modelId: string, variant: string | undefined, agentNameOverride?: string | null) => {
+        if (selectionAdapter) {
+            void selectionAdapter.onChange({
+                ...selectionAdapter.selection,
+                providerID: providerId,
+                modelID: modelId,
+                variant,
+            }).catch(() => undefined);
+            return;
+        }
         const variantOptions = getModelVariantOptions(providerId, modelId);
         if (variantOptions.length === 0) {
             manualVariantSelectionRef.current = false;
@@ -788,6 +876,7 @@ export const ModelControls: React.FC<ModelControlsProps> = ({
         getModelVariantOptions,
         resolveLiveAgentName,
         saveAgentModelVariantForSession,
+        selectionAdapter,
         setCurrentVariant,
     ]);
 
@@ -804,6 +893,7 @@ export const ModelControls: React.FC<ModelControlsProps> = ({
     }, [addRecentModel, commitVariantSelectionForModel, resolveLiveAgentName, tryApplyModelSelection]);
 
     React.useEffect(() => {
+        if (selectionAdapter) return;
         if (!currentSessionId) {
             latestLoadedUserChoiceRestoreRef.current = null;
             return;
@@ -858,6 +948,7 @@ export const ModelControls: React.FC<ModelControlsProps> = ({
         latestLoadedUserChoiceRestoreRef.current = restoreKey;
 
     }, [
+        selectionAdapter,
         currentSessionId,
         currentAgentName,
         contextHydrated,
@@ -873,6 +964,7 @@ export const ModelControls: React.FC<ModelControlsProps> = ({
     ]);
 
     React.useEffect(() => {
+        if (selectionAdapter) return;
         if (!currentSessionId) {
             latestLoadedUserChoiceRestoreRef.current = null;
             return;
@@ -999,6 +1091,7 @@ export const ModelControls: React.FC<ModelControlsProps> = ({
 
         applyFallbackAgent();
     }, [
+        selectionAdapter,
         currentSessionId,
         hasRenderableCurrentSessionSnapshot,
         latestLoadedUserChoice,
@@ -1016,6 +1109,7 @@ export const ModelControls: React.FC<ModelControlsProps> = ({
     ]);
 
     React.useEffect(() => {
+        if (selectionAdapter) return;
         if (!contextHydrated) {
             return;
         }
@@ -1131,6 +1225,7 @@ export const ModelControls: React.FC<ModelControlsProps> = ({
             abortController.abort();
         };
     }, [
+        selectionAdapter,
         agents,
         currentAgentName,
         currentSessionId,
@@ -1144,6 +1239,7 @@ export const ModelControls: React.FC<ModelControlsProps> = ({
     ]);
 
     React.useEffect(() => {
+        if (selectionAdapter) return;
         if (!contextHydrated || !currentAgentName) {
             manualVariantSelectionRef.current = false;
             setCurrentVariant(undefined);
@@ -1195,6 +1291,7 @@ export const ModelControls: React.FC<ModelControlsProps> = ({
         setCurrentVariant(resolvedSaved);
         manualVariantSelectionRef.current = false;
     }, [
+        selectionAdapter,
         availableVariants,
         contextHydrated,
         currentSessionId,
@@ -1212,6 +1309,18 @@ export const ModelControls: React.FC<ModelControlsProps> = ({
     }, [currentProviderId, currentModelId]);
 
     const handleVariantSelect = React.useCallback((variant: string | undefined) => {
+        if (selectionAdapter) {
+            if (!currentProviderId || !currentModelId) {
+                return;
+            }
+            void selectionAdapter.onChange({
+                providerID: currentProviderId,
+                modelID: currentModelId,
+                agent: selectionAdapter.selection.agent,
+                variant,
+            }).catch(() => undefined);
+            return;
+        }
         if (currentProviderId && currentModelId) {
             commitVariantSelectionForModel(currentProviderId, currentModelId, variant);
             const agentName = resolveLiveAgentName();
@@ -1224,9 +1333,23 @@ export const ModelControls: React.FC<ModelControlsProps> = ({
                 );
             }
         }
-    }, [commitVariantSelectionForModel, currentModelId, currentProviderId, resolveLiveAgentName]);
+    }, [commitVariantSelectionForModel, currentModelId, currentProviderId, resolveLiveAgentName, selectionAdapter]);
 
     const handleAgentChange = React.useCallback((agentName: string, options?: { closeModelSelector?: boolean }) => {
+        if (selectionAdapter) {
+            const nextSelection = resolveAgentModelSelection(selectionAdapter.selection, agentName, agents, providers);
+            const retainsModel = nextSelection.providerID === selectionAdapter.selection.providerID
+                && nextSelection.modelID === selectionAdapter.selection.modelID;
+            if (isCompact) closeMobilePanel();
+            void selectionAdapter.onChange({
+                ...nextSelection,
+                variant: retainsModel ? selectionAdapter.selection.variant : undefined,
+            }).then(() => {
+                addRecentAgent(agentName);
+                if (options?.closeModelSelector ?? true) setAgentMenuOpen(false);
+            }).catch(() => undefined);
+            return;
+        }
         try {
             explicitAgentSwitchRef.current = agentName;
             setAgent(agentName);
@@ -1246,10 +1369,13 @@ export const ModelControls: React.FC<ModelControlsProps> = ({
         }
     }, [
         addRecentAgent,
+        agents,
         closeMobilePanel,
         currentSessionId,
         isCompact,
+        providers,
         saveSessionAgentSelection,
+        selectionAdapter,
         setAgent,
         setAgentMenuOpen,
     ]);
@@ -1306,6 +1432,19 @@ export const ModelControls: React.FC<ModelControlsProps> = ({
         modelId: string,
         options?: { applyVariant?: boolean; variant?: string | undefined; agentName?: string | null },
     ) => {
+        if (selectionAdapter) {
+            if (isCompact) closeMobilePanel();
+            void selectionAdapter.onChange({
+                providerID: providerId,
+                modelID: modelId,
+                agent: options?.agentName ?? selectionAdapter.selection.agent,
+                variant: options?.applyVariant ? options.variant : undefined,
+            }).then(() => {
+                addRecentModel(providerId, modelId);
+                setAgentMenuOpen(false);
+            }).catch(() => undefined);
+            return;
+        }
         try {
             const effectiveAgentName = options?.agentName ?? resolveLiveAgentName() ?? undefined;
             const result = options?.applyVariant
@@ -1617,6 +1756,19 @@ export const ModelControls: React.FC<ModelControlsProps> = ({
         if (!isCompact) return null;
 
         const handleSelect = (providerId: string, modelId: string, variant: string | undefined) => {
+            if (selectionAdapter) {
+                closeMobilePanel();
+                void selectionAdapter.onChange({
+                    providerID: providerId,
+                    modelID: modelId,
+                    agent: selectionAdapter.selection.agent,
+                    variant,
+                }).then(() => {
+                    addRecentModel(providerId, modelId);
+                    requestAnimationFrame(() => focusComposerTextarea(composerTextareaRef));
+                }).catch(() => undefined);
+                return;
+            }
             const result = applyModelSelectionWithVariant(providerId, modelId, variant);
             if (result !== 'applied') {
                 if (result === 'provider-missing') {
@@ -1798,9 +1950,7 @@ export const ModelControls: React.FC<ModelControlsProps> = ({
             if (e.key !== 'ArrowLeft' && e.key !== 'ArrowRight') return false;
 
             const { providerID, modelID } = selectedItem;
-            const canonicalProvider = useConfigStore.getState().providers.find((provider) => provider.id === providerID);
-            const canonicalModel = canonicalProvider?.models.find((model) => model.id === modelID) as { variants?: Record<string, unknown> } | undefined;
-            const variantKeys = canonicalModel?.variants ? Object.keys(canonicalModel.variants) : getModelVariantOptions(providerID, modelID);
+            const variantKeys = getModelVariantOptions(providerID, modelID);
             if (variantKeys.length === 0) return false;
 
             e.preventDefault();

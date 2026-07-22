@@ -14,6 +14,8 @@ import { eventMatchesShortcut, eventMatchesZoomShortcut, getEffectiveShortcutCom
 import { readEmbeddedThemeSearchParams } from '@/contexts/theme-embedded-bootstrap';
 import { useDirectoryStore } from '@/stores/useDirectoryStore';
 import { useProjectsStore } from '@/stores/useProjectsStore';
+import { getActiveChatInputSurface, isChatComposerMainTab } from '@/components/chat/activeChatInputSurface';
+import { createChatInputControllerWiring } from '@/components/chat/chatInputSurfaceWiring';
 import { getCycledPrimaryAgentName } from '@/components/chat/mobileControlsUtils';
 import { navigateAdjacentSession } from '@/sync/session-navigation';
 import { resetWebviewZoom, zoomWebviewIn, zoomWebviewOut } from '@/lib/webviewZoom';
@@ -239,8 +241,25 @@ export const useKeyboardShortcuts = () => {
       return isSettingsDialogOpen || isCommandPaletteOpen || isHelpDialogOpen || isSessionSwitcherOpen || isAboutDialogOpen;
     };
 
-    // Compact the current session via the same path as `/compact`.
+    // Compact the active composer surface (primary session or Assistant) via
+    // the same backend port as `/compact`, so chords are not primary-only.
     const runLeaderCompact = async () => {
+      const surface = getActiveChatInputSurface();
+      const wiring = surface ? createChatInputControllerWiring(surface) : null;
+      if (wiring && surface) {
+        try {
+          await wiring.compact({
+            providerID: surface.selection.value.providerID,
+            modelID: surface.selection.value.modelID,
+            agent: surface.selection.value.agent,
+            variant: surface.selection.value.variant,
+          });
+        } catch (error) {
+          toast.error(error instanceof Error ? error.message : t('chat.chatInput.toast.compactFailed'));
+        }
+        return;
+      }
+
       const sessionId = useSessionUIStore.getState().currentSessionId;
       if (!sessionId) {
         return;
@@ -326,7 +345,7 @@ export const useKeyboardShortcuts = () => {
           isModelSelectorOpen,
           isAgentSelectorOpen,
         } = useUIStore.getState();
-        const canRunChatChord = activeMainTab === 'chat' && !hasBlockingOverlay();
+        const canRunChatChord = isChatComposerMainTab(activeMainTab) && !hasBlockingOverlay();
 
         if (key === 'm' && canRunChatChord) {
           e.preventDefault();
@@ -359,9 +378,15 @@ export const useKeyboardShortcuts = () => {
           e.stopImmediatePropagation();
           consumeLeaderTextInput();
           clearLeaderKey();
-          setActiveMainTab('chat');
-          setSessionSwitcherOpen(false);
-          openNewSessionDraft();
+          const surface = getActiveChatInputSurface();
+          const wiring = surface ? createChatInputControllerWiring(surface) : null;
+          if (wiring) {
+            void wiring.shortcut('new');
+          } else {
+            setActiveMainTab('chat');
+            setSessionSwitcherOpen(false);
+            openNewSessionDraft();
+          }
           return;
         }
 
@@ -395,7 +420,7 @@ export const useKeyboardShortcuts = () => {
       }
 
       const { activeMainTab } = useUIStore.getState();
-      if (activeMainTab !== 'chat') {
+      if (!isChatComposerMainTab(activeMainTab)) {
         return;
       }
 
@@ -536,8 +561,24 @@ export const useKeyboardShortcuts = () => {
       }
 
       const hasOverlay = isCommandPaletteOpen || isHelpDialogOpen || isSessionSwitcherOpen || isAboutDialogOpen;
-      if (hasOverlay || activeMainTab !== 'chat') {
+      if (hasOverlay || !isChatComposerMainTab(activeMainTab)) {
         return false;
+      }
+
+      const surface = getActiveChatInputSurface();
+      if (surface?.selection.change) {
+        const variants = surface.selection.catalog?.variants ?? [];
+        if (variants.length === 0) {
+          return false;
+        }
+        const currentVariant = surface.selection.value.variant;
+        const currentIndex = currentVariant ? variants.indexOf(currentVariant) : -1;
+        const nextVariant = variants[(currentIndex + 1) % variants.length];
+        void surface.selection.change({
+          ...surface.selection.value,
+          variant: nextVariant,
+        });
+        return true;
       }
 
       const configState = useConfigStore.getState();
@@ -779,7 +820,17 @@ export const useKeyboardShortcuts = () => {
         } = useUIStore.getState();
 
         const hasOverlay = isSettingsDialogOpen || isCommandPaletteOpen || isHelpDialogOpen || isSessionSwitcherOpen || isAboutDialogOpen;
-        if (hasOverlay || activeMainTab !== 'chat' || !isChatInputTarget(e.target)) {
+        if (hasOverlay || !isChatComposerMainTab(activeMainTab) || !isChatInputTarget(e.target)) {
+          return;
+        }
+
+        // Route through the mounted composer surface so Assistant and primary
+        // chat share one cycle path (including recent/session persistence).
+        const surface = getActiveChatInputSurface();
+        const wiring = surface ? createChatInputControllerWiring(surface) : null;
+        if (wiring) {
+          e.preventDefault();
+          void wiring.shortcut('cycle', cycleAgentDirection as 1 | -1);
           return;
         }
 
@@ -950,11 +1001,11 @@ export const useKeyboardShortcuts = () => {
           return;
         }
 
-        // Skip if any overlay open or not on chat tab
+        // Skip if any overlay open or not on a composer tab
         const hasOverlay = isCommandPaletteOpen || isHelpDialogOpen || isSessionSwitcherOpen || isAboutDialogOpen;
-        const isChatActive = activeMainTab === 'chat';
+        const isComposerActive = isChatComposerMainTab(activeMainTab);
 
-        if (hasOverlay || !isChatActive) {
+        if (hasOverlay || !isComposerActive) {
           return;
         }
 
@@ -992,20 +1043,38 @@ export const useKeyboardShortcuts = () => {
         }
 
         const hasOverlay = isCommandPaletteOpen || isHelpDialogOpen || isSessionSwitcherOpen || isAboutDialogOpen;
-        const isChatActive = activeMainTab === 'chat';
+        const isComposerActive = isChatComposerMainTab(activeMainTab);
 
-        if (hasOverlay || !isChatActive || favoriteModels.length === 0) {
+        if (hasOverlay || !isComposerActive || favoriteModels.length === 0) {
           return;
         }
 
         e.preventDefault();
 
-        const { currentProviderId, currentModelId, setProvider, setModel } = useConfigStore.getState();
         const len = favoriteModels.length;
+        const delta = eventMatchesShortcut(e, combo('cycle_favorite_model_forward')) ? 1 : -1;
+        const surface = getActiveChatInputSurface();
+        if (surface?.selection.change) {
+          const currentProviderId = surface.selection.value.providerID;
+          const currentModelId = surface.selection.value.modelID;
+          const currentIdx = favoriteModels.findIndex(
+            (f) => f.providerID === currentProviderId && f.modelID === currentModelId,
+          );
+          const next = favoriteModels[(currentIdx + delta + len) % len];
+          void surface.selection.change({
+            ...surface.selection.value,
+            providerID: next.providerID,
+            modelID: next.modelID,
+            variant: undefined,
+          });
+          addRecentModel(next.providerID, next.modelID);
+          return;
+        }
+
+        const { currentProviderId, currentModelId, setProvider, setModel } = useConfigStore.getState();
         const currentIdx = favoriteModels.findIndex(
           (f) => f.providerID === currentProviderId && f.modelID === currentModelId,
         );
-        const delta = eventMatchesShortcut(e, combo('cycle_favorite_model_forward')) ? 1 : -1;
         const next = favoriteModels[(currentIdx + delta + len) % len];
 
         setProvider(next.providerID);
@@ -1025,7 +1094,7 @@ export const useKeyboardShortcuts = () => {
 
       if (eventMatchesShortcut(e, combo('toggle_dictation'))) {
         const { activeMainTab, isCommandPaletteOpen, isHelpDialogOpen, isSessionSwitcherOpen, isSettingsDialogOpen } = useUIStore.getState();
-        if (activeMainTab !== 'chat' || isCommandPaletteOpen || isHelpDialogOpen || isSessionSwitcherOpen || isSettingsDialogOpen) {
+        if (!isChatComposerMainTab(activeMainTab) || isCommandPaletteOpen || isHelpDialogOpen || isSessionSwitcherOpen || isSettingsDialogOpen) {
           return;
         }
         e.preventDefault();
@@ -1082,18 +1151,22 @@ export const useKeyboardShortcuts = () => {
           return;
         }
 
-        // Check if any overlay is open or not on chat tab - don't process abort
+        // Check if any overlay is open or not on a composer tab - don't process abort
         const hasOverlay = isCommandPaletteOpen || isHelpDialogOpen || isSessionSwitcherOpen || isAboutDialogOpen || isMultiRunLauncherOpen || isImagePreviewOpen;
-        const isChatActive = activeMainTab === 'chat';
+        const isComposerActive = isChatComposerMainTab(activeMainTab);
 
-        if (hasOverlay || !isChatActive) {
+        if (hasOverlay || !isComposerActive) {
           resetAbortPriming();
           return;
         }
 
-        // Double-ESC abort logic - only when on chat tab with no overlays
-        const sessionId = currentSessionId;
-        const canAbortNow = working.canAbort && Boolean(sessionId);
+        // Double-ESC abort logic targets the active composer surface.
+        const surface = getActiveChatInputSurface();
+        const wiring = surface ? createChatInputControllerWiring(surface) : null;
+        const sessionId = surface?.sessionID ?? currentSessionId;
+        const canAbortNow = wiring
+          ? wiring.canAbort && Boolean(sessionId)
+          : working.canAbort && Boolean(sessionId);
         if (!canAbortNow) {
           resetAbortPriming();
           return;
@@ -1105,12 +1178,20 @@ export const useKeyboardShortcuts = () => {
         if (primedUntil && now < primedUntil) {
           e.preventDefault();
           resetAbortPriming();
-          void abortCurrentOperation(sessionId ?? '');
+          if (wiring) {
+            void wiring.abort();
+          } else {
+            void abortCurrentOperation(sessionId ?? '');
+          }
           return;
         }
 
         e.preventDefault();
-        const expiresAt = armAbortPrompt(3000) ?? now + 3000;
+        // Primary abort chip still uses the session UI store; Assistant keeps a
+        // local priming window when its surface abortPrompt is not session-bound.
+        const expiresAt = surface?.kind === 'secondary'
+          ? now + 3000
+          : (armAbortPrompt(3000) ?? now + 3000);
         abortPrimedUntilRef.current = expiresAt;
 
         if (abortPrimedTimeoutRef.current) {

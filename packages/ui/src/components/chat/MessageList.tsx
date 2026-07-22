@@ -1,6 +1,8 @@
 import React from 'react';
 import type { Part } from '@opencode-ai/sdk/v2';
 import { elementScroll, useVirtualizer as useTanstackVirtualizer, type ReactVirtualizer, type VirtualItem } from '@tanstack/react-virtual';
+import { isAssistantSessionDivider } from './hostedSessionHistory';
+import { useI18n } from '@/lib/i18n';
 
 import ChatMessage from './ChatMessage';
 import { areOptionalRenderRelevantMessagesEqual, areRelevantTurnGroupingContextsEqual, areRenderRelevantMessagesEqual } from './message/renderCompare';
@@ -824,6 +826,20 @@ const UngroupedMessageRow = React.memo(({
     activeStreamingPhase,
     reviewTransferDirection,
 }: UngroupedMessageRowProps) => {
+    const { t } = useI18n();
+    if (isAssistantSessionDivider(message)) {
+        return (
+            <div className="chat-message-column px-4 py-5" role="separator" aria-label={t('assistants.conversation.newSessionDivider')}>
+                <div className="flex items-center gap-3">
+                    <div className="min-w-0 flex-1 border-t" />
+                    <span className="shrink-0 typography-meta text-muted-foreground">
+                        {t('assistants.conversation.newSessionDivider')}
+                    </span>
+                    <div className="min-w-0 flex-1 border-t" />
+                </div>
+            </div>
+        );
+    }
     return (
         <MessageRow
             message={message}

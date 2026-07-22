@@ -15,7 +15,7 @@ export type MobileAppActions = {
   /** Open the Files surface as a modal. */
   openFiles: () => void;
   /** Open the Settings surface as a modal. */
-  openSettings: () => void;
+  openSettings: (section?: string) => void;
 };
 
 const DedicatedMobileAppContext = React.createContext<MobileAppActions | null>(null);

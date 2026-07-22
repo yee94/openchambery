@@ -1,5 +1,10 @@
 import { describe, expect, test } from 'bun:test';
 import { drainMobileShareItems, retryMobileShareCleanupStage } from './mobileShareDrain';
+import { readFile } from 'node:fs/promises';
+import { dirname, join } from 'node:path';
+import { fileURLToPath } from 'node:url';
+
+const directory = dirname(fileURLToPath(import.meta.url));
 
 describe('MobileShareBridge contract', () => {
   test('continues a fair drain after the first cleanup permanently fails', async () => {
@@ -37,5 +42,13 @@ describe('MobileShareBridge contract', () => {
 
     expect(events).toEqual(['switch:server-a', 'dispatch:server-a', 'switch:server-b', 'dispatch:server-b']);
     expect(staleAborts).toBe(0);
+  });
+
+  test('keeps unresolved share operations reconciling without native acknowledgement', async () => {
+    const source = await readFile(join(directory, 'MobileShareBridge.tsx'), 'utf8');
+    expect(source).toContain("error.code === 'share_unresolved'");
+    expect(source).toContain("state: 'reconciling'");
+    expect(source.indexOf("error.code === 'share_unresolved'")).toBeLessThan(source.indexOf("state: 'delivered', cleanupPhase: 'server-completed'"));
+    expect(source).not.toContain('operation.binding');
   });
 });

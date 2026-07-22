@@ -390,6 +390,28 @@ describe('core-routes', () => {
     expect(reached).not.toHaveBeenCalled();
   });
 
+  it('should allow a queue HTTP envelope in the explicit 70–72 MiB parser margin', async () => {
+    const app = express(); const reached = vi.fn((_req, res) => res.sendStatus(204));
+    registerCommonRequestMiddleware(app, { express });
+    app.post('/api/openchamber/message-queue/items', reached);
+    app.post('/api/openchamber/assistants/a/message', reached);
+    app.use((error, _req, res, _next) => res.status(error.status || 500).json({ error: error.type }));
+    const body = { content: 'a'.repeat(71 * 1024 * 1024) };
+    await request(app).post('/api/openchamber/message-queue/items').send(body).expect(204);
+    await request(app).post('/api/openchamber/assistants/a/message').send(body).expect(204);
+    expect(reached).toHaveBeenCalledTimes(2);
+  });
+
+  it('should reject message queue JSON beyond the 72 MiB HTTP envelope', async () => {
+    const app = express(); const reached = vi.fn((_req, res) => res.sendStatus(204));
+    registerCommonRequestMiddleware(app, { express });
+    app.post('/api/openchamber/message-queue/items', reached);
+    app.use((error, _req, res, _next) => res.status(error.status || 500).json({ error: error.type }));
+    const body = { content: 'a'.repeat((72 * 1024 * 1024) + 1) };
+    await request(app).post('/api/openchamber/message-queue/items').send(body).expect(413, { error: 'entity.too.large' });
+    expect(reached).not.toHaveBeenCalled();
+  });
+
   it('should parse JSON bodies for conversation creation', async () => {
     const app = express();
     registerCommonRequestMiddleware(app, { express });

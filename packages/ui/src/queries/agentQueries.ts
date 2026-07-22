@@ -1,5 +1,5 @@
 import { useQuery, type QueryClient } from '@tanstack/react-query';
-import type { Agent } from '@opencode-ai/sdk/v2';
+import type { Agent, Provider } from '@opencode-ai/sdk/v2';
 import { opencodeClient } from '@/lib/opencode/client';
 import { queryClient, queryKeys } from '@/lib/queryRuntime';
 import { runtimeFetch } from '@/lib/runtime-fetch';
@@ -20,10 +20,15 @@ export type AgentWithExtras = Agent & {
   group?: string;
 };
 
+export type ProviderWithModelList = Omit<Provider, 'models'> & { models: Array<Provider['models'][string]> };
+
 const normalizeDirectory = (directory: string | null | undefined): string | null => directory?.trim() || null;
 
 const agentQueryKey = (directory: string | null, transport = getRuntimeTransportIdentity()) =>
   queryKeys.agents.list(directory, transport);
+
+const providerQueryKey = (directory: string | null, transport = getRuntimeTransportIdentity()) =>
+  queryKeys.providers.list(directory, transport);
 
 function parseAgentGroup(path: string | null | undefined): string | undefined {
   if (!path) return undefined;
@@ -75,6 +80,24 @@ export const agentQueryOptions = (
   };
 };
 
+export const providerQueryOptions = (
+  directory: string | null,
+  transport = getRuntimeTransportIdentity(),
+) => {
+  const normalizedDirectory = normalizeDirectory(directory);
+  return {
+    queryKey: providerQueryKey(normalizedDirectory, transport),
+    queryFn: async (): Promise<ProviderWithModelList[]> => {
+      const result = await opencodeClient.getProvidersForConfig(normalizedDirectory);
+      return (Array.isArray(result.providers) ? result.providers : []).map((provider) => ({
+        ...provider,
+        models: Object.values(provider.models ?? {}),
+      }));
+    },
+    retry: 2,
+  };
+};
+
 export const useAgentsQuery = (options: { enabled?: boolean } = {}) => {
   const activeProjectPath = useProjectsStore((state) => state.getActiveProject?.()?.path ?? null);
   return useQuery({
@@ -83,10 +106,25 @@ export const useAgentsQuery = (options: { enabled?: boolean } = {}) => {
   });
 };
 
+export const useScopedAgentsQuery = (directory: string | null, options: { enabled?: boolean } = {}) => useQuery({
+  ...agentQueryOptions(directory),
+  enabled: options.enabled,
+});
+
+export const useScopedProvidersQuery = (directory: string | null, options: { enabled?: boolean } = {}) => useQuery({
+  ...providerQueryOptions(directory),
+  enabled: options.enabled,
+});
+
 export const readAgentsSnapshot = (
   directory: string | null = resolveDirectory(),
   transport = getRuntimeTransportIdentity(),
 ): Agent[] => queryClient.getQueryData<Agent[]>(agentQueryKey(normalizeDirectory(directory), transport)) ?? [];
+
+export const readProvidersSnapshot = (
+  directory: string | null,
+  transport = getRuntimeTransportIdentity(),
+): ProviderWithModelList[] => queryClient.getQueryData<ProviderWithModelList[]>(providerQueryKey(normalizeDirectory(directory), transport)) ?? [];
 
 export const refreshAgentsQuery = async (
   client: Pick<QueryClient, 'fetchQuery' | 'getQueryData' | 'invalidateQueries'>,
@@ -100,4 +138,16 @@ export const refreshAgentsQuery = async (
   const options = agentQueryOptions(normalizedDirectory, transport);
   await client.invalidateQueries({ queryKey: options.queryKey, exact: true });
   return client.fetchQuery(options);
+};
+
+export const refreshProvidersQuery = async (
+  client: Pick<QueryClient, 'fetchQuery' | 'getQueryData'>,
+  directory: string | null,
+  transport: string,
+): Promise<ProviderWithModelList[]> => {
+  const normalizedDirectory = normalizeDirectory(directory);
+  if (getRuntimeTransportIdentity() !== transport) {
+    return client.getQueryData<ProviderWithModelList[]>(providerQueryKey(normalizedDirectory, transport)) ?? [];
+  }
+  return client.fetchQuery({ ...providerQueryOptions(normalizedDirectory, transport), staleTime: 0 });
 };

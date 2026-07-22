@@ -137,8 +137,8 @@ export const SETTINGS_PAGE_METADATA: readonly SettingsPageMeta[] = [
     slug: 'assistants',
     title: 'Assistants',
     group: 'opencode',
-    kind: 'single',
-    keywords: ['assistant', 'assistants', 'inbox', 'topics', 'sharing'],
+    kind: 'split',
+    keywords: ['assistant', 'assistants', 'sharing'],
   },
   {
     slug: 'behavior',

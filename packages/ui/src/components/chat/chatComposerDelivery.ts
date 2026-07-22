@@ -1,7 +1,7 @@
 import type { AttachedFile } from '@/stores/types/sessionTypes';
 import { createUuid } from '@/lib/uuid';
 import { parseAgentMentions } from '@/lib/messages/agentMentions';
-import { compileAuthoredDeliveryPlan } from '@/composer/delivery';
+import { compileAuthoredDeliveryPlan, dedupeDeliveryAttachments } from '@/composer/delivery';
 import type { ComposerReferenceSemantic } from '@/composer/extensions';
 import type { ComposerSendPlan } from '@/composer/send-plan';
 import { getSyncSessions } from '@/sync/sync-refs';
@@ -97,5 +97,55 @@ export const compileChatComposerDelivery = ({ plan, agents, installedSkillNames,
             attachments,
             semantics,
         };
+    });
+};
+
+type AssistantQueueDeliveryPart = { type: 'text'; text: string; synthetic?: true } | { type: 'file'; mime: string; attachmentID: string };
+type AssistantQueueSyntheticPart = { partID: string; text: string; synthetic?: boolean; attachments?: readonly AttachedFile[] };
+
+/** Maps ephemeral synthetic context into direct-send parts without consuming their draft resources. */
+export const buildSyntheticDeliveryParts = (
+    syntheticParts: readonly { text: string; attachments?: readonly AttachedFile[] }[],
+): Array<{ text: string; attachments?: AttachedFile[]; synthetic: true }> => syntheticParts.map((part) => ({
+    text: part.text,
+    ...(part.attachments?.length ? { attachments: dedupeDeliveryAttachments(part.attachments) } : {}),
+    synthetic: true,
+}));
+
+/** Builds the durable Assistant queue payload from already-resolved delivery values. */
+export const buildAssistantQueueDeliveryParts = ({
+    text,
+    attachments,
+    semanticParts,
+    syntheticParts = [],
+}: {
+    text: string;
+    attachments: readonly AttachedFile[];
+    semanticParts: readonly { text: string; synthetic: true }[];
+    syntheticParts?: readonly { text: string; attachments?: readonly AttachedFile[] }[] | null;
+}): AssistantQueueDeliveryPart[] => [
+    { type: 'text', text },
+    ...dedupeDeliveryAttachments(attachments).map((attachment) => ({ type: 'file' as const, mime: attachment.mimeType, attachmentID: attachment.id })),
+    ...semanticParts.map((part) => ({ type: 'text' as const, text: part.text, synthetic: true as const })),
+    ...(syntheticParts ?? []).flatMap((part) => [
+        { type: 'text' as const, text: part.text, synthetic: true as const },
+        ...dedupeDeliveryAttachments(part.attachments ?? []).map((attachment) => ({ type: 'file' as const, mime: attachment.mimeType, attachmentID: attachment.id })),
+    ]),
+];
+
+export const buildAssistantQueueSyntheticSidecar = (
+    deliveryParts: readonly AssistantQueueDeliveryPart[],
+    syntheticParts: readonly AssistantQueueSyntheticPart[],
+) => {
+    const deduped = syntheticParts.map((part) => ({ ...part, attachments: dedupeDeliveryAttachments(part.attachments ?? []) }));
+    let index = deliveryParts.length - deduped.reduce((total, part) => total + 1 + part.attachments.length, 0);
+    if (index < 0) throw new Error('assistant-queue-synthetic-parts-mismatch');
+    return deduped.map((part) => {
+        const deliveryPartIndexes = [index++];
+        for (const attachment of part.attachments) {
+            void attachment;
+            deliveryPartIndexes.push(index++);
+        }
+        return { partID: part.partID, text: part.text, ...(part.synthetic === true ? { synthetic: true } : {}), attachmentIDs: part.attachments.map((attachment) => attachment.id), deliveryPartIndexes };
     });
 };

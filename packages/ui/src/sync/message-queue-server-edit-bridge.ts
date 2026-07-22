@@ -67,12 +67,14 @@ export const createMessageQueueServerEditBridge = (overrides: Partial<Dependenci
         };
         await Promise.all(Array.from({ length: Math.min(EDIT_DOWNLOAD_CONCURRENCY, attachments.length) }, downloadWorker));
         if (!deps.current(queueRuntime) || leaseLost) return diagnostic('materialize-failed', 'identity', leaseLost ? 'lease-lost' : 'runtime-stale');
-        const draftAttachments: DraftAttachmentMetadata[] = [], draftValues = new Map<string, Blob>();
+        const draftAttachments: DraftAttachmentMetadata[] = [], syntheticAttachments = new Map<string, DraftAttachmentMetadata[]>(), draftValues = new Map<string, Blob>();
         for (let index = 0; index < attachments.length; index++) {
           const attachment = attachments[index]!, value = values[index]!;
           if (value.attachment.attachmentID !== attachment.attachmentID || !sameOccurrence(value.attachment.occurrenceRefID, attachment.occurrenceRefID) || value.blob.size !== attachment.size || value.blob.type !== attachment.mimeType) return diagnostic('materialize-failed', 'attachments', 'attachment-mismatch');
           const attachmentRefID = occurrence(attachment.occurrenceRefID);
-          draftAttachments.push({ attachmentID: attachment.attachmentID, attachmentRefID, filename: attachment.filename, mimeType: attachment.mimeType, size: attachment.size, locator: { kind: 'blob', blobID: attachment.attachmentID }, source: attachment.source, ...(attachment.locator.kind === 'server-path' ? { serverPath: attachment.locator.path } : {}) });
+          const metadata: DraftAttachmentMetadata = { attachmentID: attachment.attachmentID, attachmentRefID, filename: attachment.filename, mimeType: attachment.mimeType, size: attachment.size, locator: { kind: 'blob', blobID: attachment.attachmentID }, source: attachment.source, ...(attachment.locator.kind === 'server-path' ? { serverPath: attachment.locator.path } : {}) };
+          if (attachment.occurrenceRefID[0] === 'part') syntheticAttachments.set(attachment.occurrenceRefID[1], [...(syntheticAttachments.get(attachment.occurrenceRefID[1]) ?? []), metadata]);
+          else draftAttachments.push(metadata);
           draftValues.set(attachmentRefID, value.blob);
         }
         if (!deps.current(queueRuntime)) return diagnostic('materialize-failed', 'identity', 'runtime-stale');
@@ -81,7 +83,8 @@ export const createMessageQueueServerEditBridge = (overrides: Partial<Dependenci
         if (!composer || !mentions) return diagnostic('draft-rejected', 'draft', 'invalid-sidecars');
         if (!await renew()) return diagnostic('materialize-failed', 'identity', 'lease-lost');
         let draft;
-        try { draft = await deps.input.commitDraftSnapshot({ key: input.targetKey, expectedRevision: input.expectedRevision, runtime: inputRuntime, values: draftValues, snapshot: { text, composerReferences: composer.references, attachments: draftAttachments, syntheticParts: [], mentions } }); } catch { return diagnostic('draft-rejected', 'draft', 'commit-threw'); }
+        const syntheticParts = (input.item.syntheticParts ?? []).map((part) => ({ partID: part.partID, text: part.text, attachments: syntheticAttachments.get(part.partID) ?? [], ...(part.synthetic === true ? { synthetic: true } : {}) }));
+        try { draft = await deps.input.commitDraftSnapshot({ key: input.targetKey, expectedRevision: input.expectedRevision, runtime: inputRuntime, values: draftValues, snapshot: { text, composerReferences: composer.references, attachments: draftAttachments, syntheticParts, mentions } }); } catch { return diagnostic('draft-rejected', 'draft', 'commit-threw'); }
         if (!draft.durable) return diagnostic('draft-rejected', 'draft', draft.status);
         if (!deps.current(queueRuntime) || leaseLost) return diagnostic('queue-retained', 'remove', leaseLost ? 'lease-lost' : 'runtime-stale', true);
         try {

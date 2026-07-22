@@ -3,6 +3,7 @@ import { countUnicodeCodePoints } from "@/lib/unicodeMetrics"
 export type DraftOwner =
   | { kind: "session"; ownerID: string }
   | { kind: "draft"; ownerID: string }
+  | { kind: "surface"; ownerID: string }
 
 export type DraftAttachmentOwner = DraftOwner
   | { kind: "queue"; ownerID: string }
@@ -28,6 +29,12 @@ export const sessionDraftKey = ({ transportIdentity }: Pick<DraftKey, "transport
 export const newSessionDraftKey = ({ transportIdentity }: Pick<DraftKey, "transportIdentity">, draftID: string): DraftKey => ({
   transportIdentity: requiredIdentity(transportIdentity, "transportIdentity"),
   owner: { kind: "draft", ownerID: requiredIdentity(draftID, "draftID") },
+})
+
+/** A non-primary chat surface owns a stable, transport-scoped draft partition. */
+export const surfaceDraftKey = ({ transportIdentity }: Pick<DraftKey, "transportIdentity">, surfaceID: string): DraftKey => ({
+  transportIdentity: requiredIdentity(transportIdentity, "transportIdentity"),
+  owner: { kind: "surface", ownerID: requiredIdentity(surfaceID, "surfaceID") },
 })
 
 export type DraftAttachmentReference = {
@@ -256,7 +263,7 @@ const isSafeValue = (value: unknown, seen: Set<object>): boolean => {
 
 const parseOwner = (value: unknown): DraftOwner | undefined => {
   if (!isPlainObject(value) || !hasOnlyKeys(value, ["kind", "ownerID"]) || !isString(value.ownerID)) return undefined
-  if (value.kind === "session" || value.kind === "draft") return { kind: value.kind, ownerID: value.ownerID }
+  if (value.kind === "session" || value.kind === "draft" || value.kind === "surface") return { kind: value.kind, ownerID: value.ownerID }
   return undefined
 }
 

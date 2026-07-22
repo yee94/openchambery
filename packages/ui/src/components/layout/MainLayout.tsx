@@ -419,7 +419,7 @@ export const MainLayout: React.FC = () => {
                     setRightSidebarOpen: setMobileRightSidebarOpen,
                 }}>
                     {/* Mobile: header + drawer mode */}
-                    {!isSettingsDialogOpen && <Header 
+                    {!isSettingsDialogOpen && !isAssistantActive && <Header 
                         onToggleLeftDrawer={() => {
                             const nextOpen = !mobileLeftDrawerOpen;
                             if (mobileRightSidebarOpen) {
@@ -443,9 +443,11 @@ export const MainLayout: React.FC = () => {
                         )}
                     >
                         <main className="w-full h-full overflow-hidden bg-background relative" data-page-scroll-lock="true">
-                            <div className={cn('absolute inset-0', !isChatActive && 'invisible')}>
-                                <ErrorBoundary><ChatView /></ErrorBoundary>
-                            </div>
+                            {!isAssistantActive && (
+                                <div className={cn('absolute inset-0', !isChatActive && 'invisible')}>
+                                    <ErrorBoundary><ChatView /></ErrorBoundary>
+                                </div>
+                            )}
                             {secondaryView && (
                                 <div className="absolute inset-0">
                                     <ErrorBoundary>{secondaryView}</ErrorBoundary>

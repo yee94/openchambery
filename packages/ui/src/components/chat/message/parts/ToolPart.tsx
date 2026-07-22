@@ -51,7 +51,7 @@ import {
     parseTaskMetadataBlock,
     readTaskSessionIdFromOutput,
     readTaskSessionIdFromRecord,
-    stripTaskMetadataFromOutput,
+    prepareTaskOutputForDisplay,
     type TaskToolSummaryEntry,
 } from './taskToolModel';
 import { shouldSuppressTaskLoading } from './shouldSuppressTaskLoading';
@@ -1267,7 +1267,7 @@ const TaskToolSummary: React.FC<{
     const sessionSurface = useSessionSurface();
 
     const trimmedOutput = typeof output === 'string'
-        ? stripTaskMetadataFromOutput(output)
+        ? prepareTaskOutputForDisplay(output)
         : '';
     const hasOutput = trimmedOutput.length > 0;
     const [isOutputExpanded, setIsOutputExpanded] = React.useState(false);

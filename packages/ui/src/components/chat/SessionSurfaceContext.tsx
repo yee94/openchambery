@@ -7,6 +7,7 @@ export interface SessionSurfaceCapabilities {
     openTimeline: boolean;
     navigateNestedSession: boolean;
     textSelectionActions: boolean;
+    forkSession: boolean;
 }
 
 export type SessionSurfaceKind = 'primary' | 'panel' | 'embedded';
@@ -19,6 +20,8 @@ export interface SessionSurfaceContextValue {
     active: boolean;
     capabilities: SessionSurfaceCapabilities;
     navigateSession?: (sessionId: string, directory: string) => void;
+    /** Hosted surfaces (Assistant) restore into their own draft partition. */
+    onRevertMessage?: (messageId: string) => Promise<void>;
 }
 
 export const PRIMARY_SESSION_SURFACE_CAPABILITIES: SessionSurfaceCapabilities = {
@@ -28,6 +31,7 @@ export const PRIMARY_SESSION_SURFACE_CAPABILITIES: SessionSurfaceCapabilities = 
     openTimeline: true,
     navigateNestedSession: true,
     textSelectionActions: true,
+    forkSession: true,
 };
 
 export const STRICT_READ_ONLY_SESSION_SURFACE_CAPABILITIES: SessionSurfaceCapabilities = {
@@ -37,6 +41,7 @@ export const STRICT_READ_ONLY_SESSION_SURFACE_CAPABILITIES: SessionSurfaceCapabi
     openTimeline: false,
     navigateNestedSession: true,
     textSelectionActions: false,
+    forkSession: false,
 };
 
 export const PRIMARY_SESSION_SURFACE: SessionSurfaceContextValue = {
@@ -53,7 +58,7 @@ export const SessionSurfaceContext = React.createContext<SessionSurfaceContextVa
 export const useSessionSurface = (): SessionSurfaceContextValue => React.useContext(SessionSurfaceContext);
 
 export const getSessionSurfaceActionAvailability = (surface: SessionSurfaceContextValue) => ({
-    fork: surface.capabilities.mutateSession,
+    fork: surface.capabilities.forkSession,
     revert: surface.capabilities.mutateSession,
     edit: surface.capabilities.mutateSession,
     reviewTransfer: surface.capabilities.mutateSession,

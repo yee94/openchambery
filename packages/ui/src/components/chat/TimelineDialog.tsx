@@ -16,33 +16,43 @@ import { getCurrentIntlLocale, useI18n } from '@/lib/i18n';
 import { getFullText, getMessagePreview } from './lib/messagePreview';
 import { useDeviceInfo } from '@/lib/device';
 import { cn } from '@/lib/utils';
+import { useSessionSurface } from './SessionSurfaceContext';
+import { getTimelineActionAvailability } from './timelineActions';
 
 interface TimelineDialogProps {
     open: boolean;
     onOpenChange: (open: boolean) => void;
+    sessionID?: string;
+    directory?: string;
     onScrollToMessage?: (messageId: string) => void | Promise<boolean>;
     onScrollByTurnOffset?: (offset: number) => void;
     onResumeToLatest?: () => void;
     canLoadEarlier?: boolean;
     isLoadingEarlier?: boolean;
     onLoadEarlier?: () => void;
+    onRevertMessage?: (messageId: string) => Promise<void>;
 }
 
 export const TimelineDialog: React.FC<TimelineDialogProps> = ({
     open,
     onOpenChange,
+    sessionID,
+    directory,
     onScrollToMessage,
     onScrollByTurnOffset,
     onResumeToLatest,
     canLoadEarlier = false,
     isLoadingEarlier = false,
     onLoadEarlier,
+    onRevertMessage,
 }) => {
     const { t } = useI18n();
-    const currentSessionId = useSessionUIStore((state) => state.currentSessionId);
-    const messages = useSessionMessageRecords(currentSessionId ?? '');
+    const sessionSurface = useSessionSurface();
+    const currentSessionId = sessionID;
+    const messages = useSessionMessageRecords(currentSessionId ?? '', directory);
     const revertToMessage = useSessionUIStore((state) => state.revertToMessage);
     const forkFromMessage = useSessionUIStore((state) => state.forkFromMessage);
+    const actionAvailability = getTimelineActionAvailability(sessionSurface.capabilities);
     const { isMobile, isTablet } = useDeviceInfo();
     const alwaysShowActions = isMobile || isTablet;
 
@@ -216,9 +226,10 @@ export const TimelineDialog: React.FC<TimelineDialogProps> = ({
         setPendingAction({ type, messageId });
         try {
             if (type === 'revert') {
-                await revertToMessage(currentSessionId, messageId);
+                if (onRevertMessage) await onRevertMessage(messageId);
+                else await revertToMessage(currentSessionId, messageId, { directory });
             } else {
-                await forkFromMessage(currentSessionId, messageId);
+                await forkFromMessage(currentSessionId, messageId, { directory });
             }
             onOpenChange(false);
         } finally {
@@ -333,7 +344,7 @@ export const TimelineDialog: React.FC<TimelineDialogProps> = ({
 
                                         <div className="flex-shrink-0 h-5 flex items-center mr-2">
                                             <div className={cn("gap-1", alwaysShowActions ? "flex" : "hidden group-hover:flex")}>
-                                                <Tooltip>
+                                                {actionAvailability.revert ? <Tooltip>
                                                     <TooltipTrigger asChild>
                                                         <Button
                                                             type="button"
@@ -354,9 +365,9 @@ export const TimelineDialog: React.FC<TimelineDialogProps> = ({
                                                         </Button>
                                                     </TooltipTrigger>
                                                     <TooltipContent sideOffset={6}>{t('chat.timeline.actions.revertFromHere')}</TooltipContent>
-                                                </Tooltip>
+                                                </Tooltip> : null}
 
-                                                <Tooltip>
+                                                {actionAvailability.fork ? <Tooltip>
                                                     <TooltipTrigger asChild>
                                                         <Button
                                                             type="button"
@@ -378,7 +389,7 @@ export const TimelineDialog: React.FC<TimelineDialogProps> = ({
                                                         </Button>
                                                     </TooltipTrigger>
                                                     <TooltipContent sideOffset={6}>{t('chat.timeline.actions.forkFromHere')}</TooltipContent>
-                                                </Tooltip>
+                                                </Tooltip> : null}
                                             </div>
                                         </div>
                                     </div>
@@ -421,10 +432,10 @@ export const TimelineDialog: React.FC<TimelineDialogProps> = ({
                             <Icon name="arrow-go-back" className="h-4 w-4 flex-shrink-0" />
                             <span>{t('chat.timeline.help.undoToPoint')}</span>
                         </div>
-                        <div className="flex items-center gap-2">
+                        {actionAvailability.fork ? <div className="flex items-center gap-2">
                             <Icon name="git-branch" className="h-4 w-4 flex-shrink-0" />
                             <span>{t('chat.timeline.help.createSessionFromHere')}</span>
-                        </div>
+                        </div> : null}
                     </div>
                 </div>
             </DialogContent>

@@ -2,6 +2,26 @@ import type { Agent } from '@opencode-ai/sdk/v2';
 import { getProviderModelDisplayName, type DisplayProvider } from '@/lib/modelDisplay';
 
 export type MobileControlsPanel = 'model' | 'agent' | 'variant' | null;
+export type ControlledModelSelection = { providerID: string; modelID: string; agent: string | null };
+
+export const resolveAgentModelSelection = (
+    selection: ControlledModelSelection,
+    agentName: string,
+    agents: Array<{ name: string; model?: { providerID?: string; modelID?: string } }>,
+    providers: Array<{ id: string; models?: Array<{ id: string }> }>,
+): ControlledModelSelection => {
+    const selectedAgent = agents.find((agent) => agent.name === agentName);
+    const pinnedProviderID = selectedAgent?.model?.providerID;
+    const pinnedModelID = selectedAgent?.model?.modelID;
+    const pinnedModelExists = Boolean(pinnedProviderID && pinnedModelID && providers.some((provider) => (
+        provider.id === pinnedProviderID && provider.models?.some((model) => model.id === pinnedModelID)
+    )));
+    return {
+        providerID: pinnedModelExists ? pinnedProviderID! : selection.providerID,
+        modelID: pinnedModelExists ? pinnedModelID! : selection.modelID,
+        agent: agentName,
+    };
+};
 
 export const isPrimaryMode = (mode?: string) => mode === 'primary' || mode === 'all' || mode === undefined || mode === null;
 

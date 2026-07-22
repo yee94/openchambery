@@ -9,6 +9,8 @@ export function useOpenCodeReadiness() {
   // models/agents while initializeApp() refreshes in the background. Without
   // this, the cache is invisible — the pickers stay on "Loading…" until the
   // full init round-trip completes even though the data is already in the store.
+  // Note: "cache" here means in-memory store/Query SWR only — Provider catalogs
+  // are never hydrated from localStorage.
   const hasCachedProviders = useConfigStore((s) => s.providers.length > 0);
   const isReady = isInitialized || hasCachedProviders;
   // Only surface "unavailable" when we have nothing to show AND init failed.

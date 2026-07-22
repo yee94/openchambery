@@ -1,0 +1,13 @@
+"share.title" = "Share with OpenChamber";
+"share.cancel" = "Cancel";
+"share.send" = "Send";
+"share.sending" = "Sending…";
+"share.preparing" = "Preparing shared content…";
+"share.message" = "Message";
+"share.message.placeholder" = "Add a message";
+"share.destination" = "Assistant";
+"share.missingTarget" = "Choose a default share assistant in OpenChamber.";
+"share.images.single" = "1 image";
+"share.images.multiple" = "%d images";
+"share.avatar.accessibility" = "%@ avatar";
+"share.imagePreview.accessibility" = "Shared image %d of %d";

@@ -153,3 +153,41 @@ export const buildTaskSummaryEntriesFromSession = (messages: MessageRecord[]): T
 export const stripTaskMetadataFromOutput = (output: string): string => {
     return output.replace(/\n*<task_metadata>[\s\S]*?<\/task_metadata>\s*$/i, '').trimEnd();
 };
+
+const TASK_STRUCTURED_SECTION_TAGS = ['summary', 'changes', 'verification'] as const;
+
+type TaskStructuredSectionTag = (typeof TASK_STRUCTURED_SECTION_TAGS)[number];
+
+const TASK_STRUCTURED_SECTION_HEADINGS: Record<TaskStructuredSectionTag, string> = {
+    summary: 'Summary',
+    changes: 'Changes',
+    verification: 'Verification',
+};
+
+const TASK_STRUCTURED_SECTION_DETECT_PATTERN = /<(summary|changes|verification)(?:\s[^>]*)?>/i;
+
+const createTaskStructuredSectionPattern = (): RegExp => new RegExp(
+    `<(${TASK_STRUCTURED_SECTION_TAGS.join('|')})(?:\\s[^>]*)?>\\s*([\\s\\S]*?)\\s*<\\/\\1>`,
+    'gi',
+);
+
+export const hasTaskStructuredOutputSections = (output: string): boolean => {
+    if (typeof output !== 'string' || output.length === 0) return false;
+    return TASK_STRUCTURED_SECTION_DETECT_PATTERN.test(output);
+};
+
+export const formatTaskStructuredOutputForMarkdown = (output: string): string => {
+    if (typeof output !== 'string' || output.length === 0 || !output.includes('<')) return output;
+    if (!hasTaskStructuredOutputSections(output)) return output;
+
+    return output.replace(createTaskStructuredSectionPattern(), (_match, rawTag: string, body: string) => {
+        const tag = rawTag.toLowerCase() as TaskStructuredSectionTag;
+        const heading = TASK_STRUCTURED_SECTION_HEADINGS[tag] ?? rawTag;
+        const trimmedBody = body.trim();
+        return trimmedBody.length > 0 ? `## ${heading}\n\n${trimmedBody}` : `## ${heading}`;
+    }).trimEnd();
+};
+
+export const prepareTaskOutputForDisplay = (output: string): string => {
+    return formatTaskStructuredOutputForMarkdown(stripTaskMetadataFromOutput(output));
+};

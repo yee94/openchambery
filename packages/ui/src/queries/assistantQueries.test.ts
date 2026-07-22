@@ -2,38 +2,44 @@ import { describe, expect, test } from 'bun:test';
 import { readFile } from 'node:fs/promises';
 import { dirname, join } from 'node:path';
 import { fileURLToPath } from 'node:url';
-
 const directory = dirname(fileURLToPath(import.meta.url));
-
-describe('Assistant current-instance query contract', () => {
-  test('scopes every resource key by transport identity', async () => {
+describe('Assistant query contract', () => {
+  test('uses runtime-scoped snapshots and assistant session routes', async () => {
     const source = await readFile(join(directory, 'assistantQueries.ts'), 'utf8');
     expect(source).toContain("[transport, 'assistants', 'snapshot']");
-    expect(source).toContain("[transport, 'assistants', assistantID, 'topics']");
-    expect(source).toContain("[transport, 'assistants', 'topics', topicID, 'turns']");
+    expect(source).toContain('/session/ensure');
+    expect(source).toContain('/session/new');
+    expect(source).toContain('/session/compact');
+    expect(source).toContain('/messages');
+    expect(source).toContain('/share');
+    expect(source).toContain("share-operations");
+    expect(source).toContain('payload: { messageID, parts, source }');
+    expect(source).toContain('{ sessionID: binding.sessionID, sessionGeneration: binding.sessionGeneration, messageID, parts, source }');
   });
 
-  test('uses the explicit Assistant routes and forwards query abort signals', async () => {
+  test('settles share delivery only from a completed operation in its captured runtime', async () => {
     const source = await readFile(join(directory, 'assistantQueries.ts'), 'utf8');
-    expect(source).toContain("'/api/openchamber/assistants/snapshot', { signal }");
-    expect(source).toContain('/api/openchamber/assistants/topics/${encodeURIComponent(topicID)}/messages');
-    expect(source).toContain('/api/openchamber/assistants/operations/${encodeURIComponent(operationID)}');
+    expect(source).toContain("current.state === 'running' || current.state === 'submitting'");
+    expect(source).toContain("if (current.state === 'completed') return current");
+    expect(source).toContain("new AssistantShareOperationError('share_unresolved', 408, current)");
+    expect(source).toContain('fetchAssistantShareOperation(current.operationID, transport, generation)');
   });
 
-  test('preserves revision and operation idempotency fields on writes', async () => {
+  test('updates the captured Assistant snapshot immediately after PATCH success', async () => {
     const source = await readFile(join(directory, 'assistantQueries.ts'), 'utf8');
-    expect(source).toContain('{ enabled, expectedRevision }');
-    expect(source).toContain('{ ...draft, expectedRevision: assistant.revision }');
-    expect(source).toContain('? { operationID, parts, source }');
-    expect(source).toContain("source: AssistantSource = 'composer'");
+    const update = source.slice(source.indexOf('export const updateAssistant'), source.indexOf('export const deleteAssistant'));
+    expect(update).toContain("jsonInit('PATCH'");
+    expect(update).toContain('expectedRevision: assistant.revision');
+    expect(update).toContain('applyAssistant(result, transport)');
   });
 
-  test('reconciles explicit admitted and running operation DTOs, including transport exceptions', async () => {
+  test('provides an abortable direct snapshot fetch without Query cache operations or retries', async () => {
     const source = await readFile(join(directory, 'assistantQueries.ts'), 'utf8');
-    expect(source).toContain('parseAssistantOperationDTO(payload, response.status)');
-    expect(source).toContain("result.state === 'admitted' || result.state === 'running'");
-    expect(source).toContain('await reconcileAssistantOperation(operationID, { transport, generation })');
-    expect(source).toContain('const operationFlights = new Map<string, Promise<AssistantOperationDTO>>()');
+    const directFetch = source.slice(source.indexOf('export const fetchAssistantSnapshot'), source.indexOf('export const assistantCapabilityQueryOptions'));
+    expect(directFetch).toContain('signal: AbortSignal');
+    expect(directFetch).toContain("requestJSON<unknown>('/api/openchamber/assistants/snapshot', { signal })");
+    expect(directFetch).toContain('parseAssistantSnapshotDTO');
+    expect(directFetch).not.toContain('queryClient');
+    expect(directFetch).not.toContain('retry');
   });
-
 });

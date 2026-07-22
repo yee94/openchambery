@@ -6,7 +6,7 @@ import { useSessionUIStore } from '@/sync/session-ui-store';
 import { useDirectorySync, useSessionPermissions, useSessionQuestions, useSessionStatus } from '@/sync/sync-context';
 import { isFullySyntheticMessage } from '@/lib/messages/synthetic';
 import { useI18n, type I18nKey, type I18nParams } from '@/lib/i18n';
-import { useCurrentSessionActivity } from './useSessionActivity';
+import { useSessionActivity } from './useSessionActivity';
 
 type AssistantActivity = 'idle' | 'streaming' | 'tooling' | 'cooldown' | 'permission';
 
@@ -254,10 +254,15 @@ const getToolDisplayName = (part: ToolPart): string => {
     return typeof candidate.name === 'string' ? candidate.name : 'tool';
 };
 
-export function useAssistantStatus(): AssistantStatusSnapshot {
+export function useAssistantStatus(
+    sessionId?: string | null,
+    directory?: string | null,
+): AssistantStatusSnapshot {
     const { t } = useI18n();
-    const currentSessionId = useSessionUIStore((state) => state.currentSessionId);
-    const currentSessionDirectory = useSessionUIStore((state) => state.currentSessionDirectory);
+    const primarySessionId = useSessionUIStore((state) => state.currentSessionId);
+    const primarySessionDirectory = useSessionUIStore((state) => state.currentSessionDirectory);
+    const currentSessionId = sessionId ?? primarySessionId;
+    const currentSessionDirectory = directory ?? primarySessionDirectory;
 
     const rawSessionMessages = useDirectorySync(
         React.useCallback((state) => {
@@ -299,7 +304,10 @@ export function useAssistantStatus(): AssistantStatusSnapshot {
         }, [currentSessionId])
     );
 
-    const { phase: activityPhase, isWorking: isPhaseWorking } = useCurrentSessionActivity();
+    const { phase: activityPhase, isWorking: isPhaseWorking } = useSessionActivity(
+        currentSessionId,
+        currentSessionDirectory ?? undefined,
+    );
 
     const currentSessionStatus = useSessionStatus(currentSessionId ?? '', currentSessionDirectory ?? undefined);
 
