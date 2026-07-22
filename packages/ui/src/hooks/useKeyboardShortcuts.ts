@@ -90,6 +90,28 @@ type LeaderCompactDependencies = {
   onCompactFailed: (error?: unknown) => void;
 };
 
+export const canAbortActiveComposerShortcut = ({
+  sessionId,
+  surfaceKind,
+  wiringCanAbort,
+  primaryCanAbort,
+}: {
+  sessionId: string | null | undefined;
+  surfaceKind: 'primary' | 'secondary' | null | undefined;
+  wiringCanAbort: boolean | null | undefined;
+  primaryCanAbort: boolean;
+}): boolean => {
+  if (!sessionId) {
+    return false;
+  }
+
+  if (wiringCanAbort) {
+    return true;
+  }
+
+  return surfaceKind === 'primary' && primaryCanAbort;
+};
+
 export const executeLeaderCompact = async ({
   sessionId,
   currentProviderId,
@@ -1164,9 +1186,12 @@ export const useKeyboardShortcuts = () => {
         const surface = getActiveChatInputSurface();
         const wiring = surface ? createChatInputControllerWiring(surface) : null;
         const sessionId = surface?.sessionID ?? currentSessionId;
-        const canAbortNow = wiring
-          ? wiring.canAbort && Boolean(sessionId)
-          : working.canAbort && Boolean(sessionId);
+        const canAbortNow = canAbortActiveComposerShortcut({
+          sessionId,
+          surfaceKind: surface?.kind,
+          wiringCanAbort: wiring?.canAbort,
+          primaryCanAbort: working.canAbort,
+        });
         if (!canAbortNow) {
           resetAbortPriming();
           return;

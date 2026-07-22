@@ -1,6 +1,42 @@
 import { describe, expect, test } from 'bun:test';
 
-import { executeLeaderCompact } from './useKeyboardShortcuts';
+import { canAbortActiveComposerShortcut, executeLeaderCompact } from './useKeyboardShortcuts';
+
+describe('canAbortActiveComposerShortcut', () => {
+  test('allows primary surface activity fallback', () => {
+    expect(canAbortActiveComposerShortcut({
+      sessionId: 'session-1',
+      surfaceKind: 'primary',
+      wiringCanAbort: false,
+      primaryCanAbort: true,
+    })).toBe(true);
+  });
+
+  test('uses secondary surface activity as authority', () => {
+    expect(canAbortActiveComposerShortcut({
+      sessionId: 'session-1',
+      surfaceKind: 'secondary',
+      wiringCanAbort: false,
+      primaryCanAbort: true,
+    })).toBe(false);
+
+    expect(canAbortActiveComposerShortcut({
+      sessionId: 'session-1',
+      surfaceKind: 'secondary',
+      wiringCanAbort: true,
+      primaryCanAbort: false,
+    })).toBe(true);
+  });
+
+  test('requires a session id', () => {
+    expect(canAbortActiveComposerShortcut({
+      sessionId: null,
+      surfaceKind: 'primary',
+      wiringCanAbort: true,
+      primaryCanAbort: true,
+    })).toBe(false);
+  });
+});
 
 describe('executeLeaderCompact', () => {
   test('keeps a current directory from compacting when the authoritative directory is missing', async () => {

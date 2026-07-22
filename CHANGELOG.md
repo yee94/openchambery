@@ -4,6 +4,10 @@ All notable changes to this project will be documented in this file.
 
 ## [Unreleased]
 
+## [1.16.56] - 2026-07-23
+
+- **Keyboard shortcuts:** restore the first Esc confirmation prompt and second Esc abort path from focused chat composer inputs while a session is running.
+
 ## [1.16.55] - 2026-07-23
 
 - **Android sharing:** hand shared text and links from the native Android share sheet into the Assistant composer after the app opens, with durable inbox storage and localized confirmation copy.
