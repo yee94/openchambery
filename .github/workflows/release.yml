@@ -577,6 +577,11 @@ jobs:
       DISCORD_WEBHOOK_URL: ${{ secrets.DISCORD_WEBHOOK_URL }}
       DISCORD_UPDATE_ROLE_ID: ${{ secrets.DISCORD_UPDATE_ROLE_ID }}
     steps:
+      - name: Checkout main for update manifest publication
+        uses: actions/checkout@df4cb1c069e1874edd31b4311f1884172cec0e10 # v6.0.3
+        with:
+          ref: main
+
       - name: Verify complete release asset inventory
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
@@ -646,6 +651,22 @@ jobs:
           draft: false
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: Publish EdgeOne update manifest
+        env:
+          VERSION: ${{ needs.create-release.outputs.version }}
+        run: |
+          set -euo pipefail
+          git pull --ff-only origin main
+          node deploy/update-service/scripts/write-release-manifest.mjs "$VERSION"
+          if git diff --quiet -- deploy/update-service/release-manifest.json; then
+            exit 0
+          fi
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git add deploy/update-service/release-manifest.json
+          git commit -m "chore: publish update manifest v${VERSION}"
+          git push origin HEAD:main
 
       - name: Send release to Discord
         if: ${{ env.DISCORD_WEBHOOK_URL != '' }}
