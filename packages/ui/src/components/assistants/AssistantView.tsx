@@ -10,6 +10,7 @@ import { MobileSurfaceHeader } from '@/components/ui/MobileSurfaceHeader';
 import { MobileOverlayPanel } from '@/components/ui/MobileOverlayPanel';
 import { useMobileAppActions } from '@/apps/mobileAppContext';
 import { donateNativeAssistantInteraction } from '@/apps/MobileShareBridge';
+import { isMobileShareHandoffMarkerPart } from '@/apps/mobileShareDraftHandoff';
 import { useDeviceInfo } from '@/lib/device';
 import { useI18n } from '@/lib/i18n';
 import { createUuid } from '@/lib/uuid';
@@ -168,7 +169,7 @@ export const AssistantView: React.FC = () => {
     consumeSyntheticParts: () => {
       const input = useInputStore.getState();
       const views = new Map(input.getDraftAttachmentViews(draftKey).map((attachment) => [attachment.id, attachment]));
-      return input.consumeDraftSyntheticParts(draftKey)?.map((part) => ({ partID: part.partID, text: part.text, synthetic: part.synthetic, attachments: part.attachments.flatMap((attachment) => views.get(attachment.attachmentID) ?? []) })) ?? null;
+      return input.consumeDraftSyntheticParts(draftKey, isMobileShareHandoffMarkerPart)?.map((part) => ({ partID: part.partID, text: part.text, synthetic: part.synthetic, attachments: part.attachments.flatMap((attachment) => views.get(attachment.attachmentID) ?? []) })) ?? null;
     },
     restoreSyntheticParts: (parts) => {
       void (async () => {

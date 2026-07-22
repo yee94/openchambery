@@ -4,6 +4,12 @@ All notable changes to this project will be documented in this file.
 
 ## [Unreleased]
 
+## [1.16.55] - 2026-07-23
+
+- **Android sharing:** hand shared text and links from the native Android share sheet into the Assistant composer after the app opens, with durable inbox storage and localized confirmation copy.
+- **Assistant composer:** add mobile share draft handoff so incoming shared content can populate Assistant conversations instead of staying in the native receiver screen.
+- **Relay mobile history:** reduce relay mobile session history pages to five messages to keep tunneled conversation loads smaller while preserving direct mobile and desktop page sizes.
+
 ## [1.16.54] - 2026-07-23
 
 - **Provider startup snapshots:** persist one bounded safe Provider catalog snapshot for the active configuration directory, seed the cold Provider TanStack Query from that complete snapshot on rehydrate, and keep partial and Agent catalogs memory-only.

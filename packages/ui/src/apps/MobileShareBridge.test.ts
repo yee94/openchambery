@@ -97,4 +97,38 @@ describe('MobileShareBridge contract', () => {
     expect(source).toContain("messageID: ascendingId('msg')");
     expect(source).toContain('sendAssistantShare(assistant.id, envelope.operationID, item.messageID, parts, envelope.source)');
   });
+
+  test('drains Android drafts independently in creation order', async () => {
+    const source = await readFile(join(directory, 'MobileShareBridge.tsx'), 'utf8');
+    expect(source).toContain("sort((left, right) => left.createdAt - right.createdAt)");
+    expect(source).toContain('for (const draft of drafts)');
+    expect(source).toContain('The native draft remains durable and subsequent drafts continue independently.');
+  });
+
+  test('validates each recovered journal target before opening and finalizing it', async () => {
+    const source = await readFile(join(directory, 'MobileShareBridge.tsx'), 'utf8');
+    const retry = source.indexOf('const recoveredTargets = await retryMobileShareDraftCancellations');
+    const connect = source.indexOf('const openRecoveredNativeDraftTarget');
+    const open = source.indexOf('openAssistant(target.assistantID)');
+    const finalize = source.indexOf('finalizeMobileShareDraftHandoff(target)');
+    expect(retry).toBeGreaterThan(-1);
+    expect(connect).toBeGreaterThan(-1);
+    expect(open).toBeGreaterThan(connect);
+    expect(finalize).toBeGreaterThan(retry);
+  });
+
+  test('hydrates the target draft metadata before handoff and drains a trailing native event', async () => {
+    const source = await readFile(join(directory, 'MobileShareBridge.tsx'), 'utf8');
+    expect(source.indexOf('await useInputStore.getState().hydrateDraftMetadata(transportIdentity)')).toBeLessThan(source.indexOf('await handoffMobileShareDraft(draft'));
+    expect(source).toContain('nativeDraftDrainRequested = true');
+    expect(source).toContain('} while (nativeDraftDrainRequested);');
+  });
+
+  test('clears the durable marker before finalizing cancelled handoff journals', async () => {
+    const source = await readFile(join(directory, 'MobileShareBridge.tsx'), 'utf8');
+    const clear = source.indexOf('await clearMobileShareDraftHandoffMarker(target, useInputStore.getState())');
+    const finalize = source.indexOf('finalizeMobileShareDraftHandoff(target)');
+    expect(clear).toBeGreaterThan(-1);
+    expect(finalize).toBeGreaterThan(clear);
+  });
 });

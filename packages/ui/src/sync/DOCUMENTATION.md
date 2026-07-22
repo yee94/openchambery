@@ -77,6 +77,8 @@ Text and Composer-state bursts use one per-store 40ms latest-wins persistence wi
 
 Committed draft snapshot and ownership actions use per-key CAS epochs plus a captured runtime generation. The durability lane validates candidate currentness before every blob, cleanup, or metadata operation and validates it again before metadata persistence. A metadata-committed action adopts its durable draft or tombstone keys independently after post-write epoch changes; runtime-stale completions clear attachment views, missing-ref IDs, hydration, and both persistence maps in one publication while preserving newer memory records. Ownership finalization evaluates source and destination epochs independently, so one durable source tombstone can coexist with a newer destination record. Revision increments require positive safe integers, including delete tombstones.
 
+Draft metadata hydration is single-flight per transport and returns an explicit success signal; external durable handoffs proceed only after that authoritative hydration succeeds. Android share handoff commits text, image blobs, and a hidden synthetic receipt in the same draft CAS. Composer submission atomically retains that receipt until native cancellation and runtime-correct Assistant navigation finish, then the bridge durably removes the receipt before finalizing its handoff journal.
+
 ## Session list rules
 
 ### Directory-scoped session list
@@ -208,8 +210,9 @@ becoming the cached startup result consumed by the session coordinator.
   runtime, directory, and session ids match an old in-flight request; transport
   single-flight can still share the HTTP response, but the new store must not
   reuse a promise that only commits into a detached store.
-- Initial history is a 16-message tail page on mobile surfaces and a 30-message
-  tail page on Web, Electron, and VS Code. The imperative selection path and
+- Initial history is a 5-message tail page on relay mobile surfaces, a 16-message
+  tail page on direct mobile surfaces, and a 30-message tail page on Web,
+  Electron, and VS Code. The imperative selection path and
   reactive sync path resolve the page size from one runtime-aware helper, so
   both share the same transport flight. A failed first load retains its requested
   page size; retries never degrade into an unbounded `limit=0` history read. An assistant-only
@@ -221,7 +224,7 @@ becoming the cached startup result consumed by the session coordinator.
   local to the owning directory-store lifecycle, so a remounted provider still
   commits a shared transport response into its own store.
 - Older history is user-driven pagination (`loadMore`) only. Each request loads
-  a 30-message page across all surfaces.
+  five messages on relay mobile surfaces and 30 messages on every other surface.
 - Composer session mention search filters every loaded global active-session
   summary across projects, while the empty menu keeps three recent suggestions.
   Opening the mention menu performs no referenced-session fetch. Selecting a
@@ -253,7 +256,7 @@ becoming the cached startup result consumed by the session coordinator.
 - A viewed `busy` or `retry` session records message and part domain activity.
   Fresh transport with no such activity for 60 seconds triggers one directory
   recovery per minute. Recovery reuses reconnect materialization, so only the
-  viewed session receives `session.get + session.messages(30)`.
+  viewed session receives `session.get` plus one runtime-sized message page.
 - Domain activity and recovery revisions resolve only from an event's explicit
   session identity or an indexed message identity. Orphan materialization keeps
   its active-session fallback without affecting domain health or recovery

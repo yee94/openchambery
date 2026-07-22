@@ -8,6 +8,8 @@ import { AssistantShareOperationError, fetchAssistantCapability, forceRefreshAss
 import { openAssistant, useAssistantUIStore, type AssistantCatalogEntry } from '@/stores/useAssistantUIStore';
 import { drainMobileShareItems, retryMobileShareCleanupStage, type MobileShareDrainItem } from './mobileShareDrain';
 import { ascendingId } from '@/sync/message-id';
+import { clearMobileShareDraftHandoffMarker, finalizeMobileShareDraftHandoff, handoffMobileShareDraft, retryMobileShareDraftCancellations, type MobileShareDraftHandoffTarget, type NativeShareDraft } from './mobileShareDraftHandoff';
+import { useInputStore } from '@/sync/input-store';
 
 type NativeAssistantCatalogEntry = AssistantCatalogEntry;
 type NativeShareAttachment = { stagedPath: string; originalName: string; mime: string; byteSize: number };
@@ -18,7 +20,10 @@ type OpenChamberSharePlugin = {
   listPending(): Promise<{ envelopes: NativeShareEnvelope[] }>;
   ack(options: { operationID: string }): Promise<void>;
   releaseFiles(options: { operationID: string }): Promise<void>;
+  listDrafts(): Promise<{ drafts: NativeShareDraft[] }>;
+  cancelDraft(options: { draftID: string }): Promise<void>;
   addListener(eventName: 'shareReceived', listener: (event: { operationID: string }) => void): Promise<{ remove: () => Promise<void> }>;
+  addListener(eventName: 'shareDraftReceived', listener: (event: { draftID: string }) => void): Promise<{ remove: () => Promise<void> }>;
 };
 
 const OpenChamberShare = registerPlugin<OpenChamberSharePlugin>('OpenChamberShare');
@@ -42,18 +47,24 @@ const save = (item: OutboxItem): void => {
 const current = (key: string, generation: number): boolean => getRuntimeKey() === key && getRuntimeGeneration() === generation;
 const deliveryFlights = new Map<string, Promise<void>>();
 let drainFlight: Promise<void> | null = null;
+let nativeDraftDrainFlight: Promise<void> | null = null;
+let nativeDraftDrainRequested = false;
 const DRAIN_CONCURRENCY = 1;
 
-const imageDataUrl = async (attachment: NativeShareAttachment): Promise<string> => {
+const stagedImageBlob = async (attachment: NativeShareAttachment): Promise<Blob> => {
   if (!attachment.mime.startsWith('image/')) throw new Error('unsupported_share_attachment');
   const stagedPath = attachment.stagedPath.trim();
   if (!stagedPath) throw new Error('staged_file_unavailable');
   const source = /^(?:data:|https?:|content:|file:)/i.test(stagedPath) ? stagedPath : `file://${stagedPath}`;
   const url = /^(?:data:|https?:)/i.test(source) ? source : Capacitor.convertFileSrc(source);
-  const blob = await fetch(url).then((response) => {
+  return await fetch(url).then((response) => {
     if (!response.ok) throw new Error('staged_file_unavailable');
     return response.blob();
   });
+};
+
+const imageDataUrl = async (attachment: NativeShareAttachment): Promise<string> => {
+  const blob = await stagedImageBlob(attachment);
   return await new Promise<string>((resolve, reject) => {
     const reader = new FileReader();
     reader.onerror = () => reject(new Error('staged_file_unavailable'));
@@ -206,18 +217,96 @@ const drainOne = async (): Promise<void> => {
   }, DRAIN_CONCURRENCY);
 };
 
+const drainNativeDrafts = async (): Promise<void> => {
+  nativeDraftDrainRequested = true;
+  if (nativeDraftDrainFlight) return nativeDraftDrainFlight;
+  nativeDraftDrainFlight = (async () => {
+    do {
+      nativeDraftDrainRequested = false;
+      await drainNativeDraftsOne();
+    } while (nativeDraftDrainRequested);
+  })().finally(() => {
+    nativeDraftDrainFlight = null;
+    if (nativeDraftDrainRequested) void drainNativeDrafts();
+  });
+  return nativeDraftDrainFlight;
+};
+
+const openRecoveredNativeDraftTarget = async (target: MobileShareDraftHandoffTarget): Promise<boolean> => {
+  const result = await connectMobileShareConnection(target.connectionKey);
+  if (result !== 'connected') return false;
+  const generation = getRuntimeGeneration();
+  if (!current(target.connectionKey, generation) || getRuntimeTransportIdentity() !== target.transportIdentity) return false;
+  await runtimeFetch('/api/config/settings').catch(() => undefined);
+  if (!current(target.connectionKey, generation) || getRuntimeTransportIdentity() !== target.transportIdentity) return false;
+  if (!await useInputStore.getState().hydrateDraftMetadata(target.transportIdentity)) return false;
+  if (!current(target.connectionKey, generation) || getRuntimeTransportIdentity() !== target.transportIdentity) return false;
+  const [capability, snapshot] = await Promise.all([fetchAssistantCapability(), forceRefreshAssistantSnapshot()]);
+  if (!current(target.connectionKey, generation) || getRuntimeTransportIdentity() !== target.transportIdentity || !capability.supported || !capability.enabled || capability.serverInstanceID !== target.serverInstanceID || !snapshot.assistants.some((assistant) => assistant.id === target.assistantID && assistant.enabled)) return false;
+  openAssistant(target.assistantID);
+  return true;
+};
+
+const drainNativeDraftsOne = async (): Promise<void> => {
+  if (Capacitor.getPlatform() !== 'android') return;
+  const recoveredTargets = await retryMobileShareDraftCancellations((draftID) => OpenChamberShare.cancelDraft({ draftID }));
+  for (const target of recoveredTargets) {
+    try {
+      if (await openRecoveredNativeDraftTarget(target) && await clearMobileShareDraftHandoffMarker(target, useInputStore.getState())) finalizeMobileShareDraftHandoff(target);
+    } catch {
+      // The cancelled journal remains available for the next runtime recovery.
+    }
+  }
+  const pending = await OpenChamberShare.listDrafts().catch(() => null);
+  const drafts = [...(pending?.drafts ?? [])].sort((left, right) => left.createdAt - right.createdAt);
+  for (const draft of drafts) {
+    try {
+      const partition = Object.values(useAssistantUIStore.getState().assistantCatalogByConnection).find((entry) => entry.serverInstanceID === draft.serverInstanceID && entry.connectionKey === draft.connectionKey && entry.entries.some((candidate) => candidate.assistantID === draft.assistantID));
+      if (!partition) continue;
+      const result = await connectMobileShareConnection(partition.connectionKey);
+      if (result !== 'connected') continue;
+      const generation = getRuntimeGeneration();
+      if (!current(partition.connectionKey, generation)) continue;
+      await runtimeFetch('/api/config/settings').catch(() => undefined);
+      if (!current(partition.connectionKey, generation)) continue;
+      const [capability, snapshot] = await Promise.all([fetchAssistantCapability(), forceRefreshAssistantSnapshot()]);
+      if (!current(partition.connectionKey, generation) || !capability.supported || !capability.enabled || capability.serverInstanceID !== draft.serverInstanceID || !snapshot.assistants.some((assistant) => assistant.id === draft.assistantID && assistant.enabled)) continue;
+      const transportIdentity = getRuntimeTransportIdentity();
+      const hydrated = await useInputStore.getState().hydrateDraftMetadata(transportIdentity);
+      if (!hydrated) continue;
+      if (!current(partition.connectionKey, generation) || getRuntimeTransportIdentity() !== transportIdentity) continue;
+      const handoff = await handoffMobileShareDraft(draft, {
+        input: useInputStore.getState(),
+        transportIdentity,
+        cancelDraft: (draftID) => OpenChamberShare.cancelDraft({ draftID }),
+        readAttachment: stagedImageBlob,
+      });
+      if (handoff.durable && handoff.cancelled && current(partition.connectionKey, generation) && getRuntimeTransportIdentity() === transportIdentity) {
+        const target = { draftID: draft.draftID, serverInstanceID: draft.serverInstanceID, connectionKey: draft.connectionKey, assistantID: draft.assistantID, transportIdentity };
+        openAssistant(draft.assistantID);
+        if (await clearMobileShareDraftHandoffMarker(target, useInputStore.getState())) finalizeMobileShareDraftHandoff(target);
+      }
+    } catch {
+      // The native draft remains durable and subsequent drafts continue independently.
+    }
+  }
+};
+
 export const MobileShareBridge: React.FC = () => {
   React.useEffect(() => {
     if (!nativeAvailable()) return;
     void refreshNativeAssistantCatalog();
     void drain();
-    const unsubscribe = subscribeRuntimeEndpointChanged(() => { void refreshNativeAssistantCatalog(); });
-    const resume = () => { void refreshNativeAssistantCatalog(); void drain(); };
+    void drainNativeDrafts();
+    const unsubscribe = subscribeRuntimeEndpointChanged(() => { void refreshNativeAssistantCatalog(); void drainNativeDrafts(); });
+    const resume = () => { void refreshNativeAssistantCatalog(); void drain(); void drainNativeDrafts(); };
     window.addEventListener('openchamber:system-resume', resume);
     let removed = false;
     let listener: { remove: () => Promise<void> } | null = null;
+    let draftListener: { remove: () => Promise<void> } | null = null;
     void OpenChamberShare.addListener('shareReceived', () => { void drain(); }).then((value) => { if (removed) void value.remove(); else listener = value; }).catch(() => undefined);
-    return () => { removed = true; unsubscribe(); window.removeEventListener('openchamber:system-resume', resume); if (listener) void listener.remove(); };
+    void OpenChamberShare.addListener('shareDraftReceived', () => { void drainNativeDrafts(); }).then((value) => { if (removed) void value.remove(); else draftListener = value; }).catch(() => undefined);
+    return () => { removed = true; unsubscribe(); window.removeEventListener('openchamber:system-resume', resume); if (listener) void listener.remove(); if (draftListener) void draftListener.remove(); };
   }, []);
   return null;
 };

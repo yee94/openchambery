@@ -28,10 +28,9 @@ import { sessionSyncCoordinator } from "./session-sync-coordinator"
 import { loadSessionChildrenOnDemand, mergeSessionChildren } from "./session-children"
 import { opencodeClient } from "@/lib/opencode/client"
 import { waitForSessionStartupBarrier } from "@/lib/session-startup-barrier"
-import { getInitialSessionMessagePageSize } from "./session-message-page-size"
+import { getInitialSessionMessagePageSize, getSessionHistoryMessagePageSize } from "./session-message-page-size"
 
 const SKIP_PARTS = new Set(["patch", "step-start", "step-finish"])
-const HISTORY_MESSAGE_PAGE_SIZE = 30
 const MAX_SEEN_DIRS = 30
 const VSCODE_SESSION_CACHE_LIMIT = 4
 const MOBILE_SESSION_CACHE_LIMIT = 4
@@ -133,7 +132,7 @@ export function getReactiveSessionMessageRequestLimit(input: {
   recordedLimit: number
   renderedMessageCount: number
 }): number {
-  if (input.before) return HISTORY_MESSAGE_PAGE_SIZE
+  if (input.before) return getSessionHistoryMessagePageSize()
   return Math.max(getInitialSessionMessagePageSize(), input.recordedLimit, input.renderedMessageCount)
 }
 
