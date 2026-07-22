@@ -41,6 +41,11 @@ const hasPotentialSkillToken = (textContent: string): boolean => {
     return SKILL_TOKEN_PATTERN.test(textContent) || textContent.includes('[skill:');
 };
 
+const hasPotentialSkillToken = (textContent: string): boolean => {
+    SKILL_TOKEN_PATTERN.lastIndex = 0;
+    return SKILL_TOKEN_PATTERN.test(textContent);
+};
+
 const normalizeUserMessageRenderingMode = (mode: unknown): 'markdown' | 'plain' => {
     return mode === 'markdown' ? 'markdown' : 'plain';
 };

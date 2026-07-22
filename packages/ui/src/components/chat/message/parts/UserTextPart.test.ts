@@ -72,3 +72,12 @@ describe('SKILL_TOKEN_PATTERN', () => {
         expect(SKILL_TOKEN_PATTERN.test('https://example.com/skills')).toBe(false);
     });
 });
+
+describe('SKILL_TOKEN_PATTERN', () => {
+    test('recognizes standalone slash skill tokens', () => {
+        SKILL_TOKEN_PATTERN.lastIndex = 0;
+        expect(SKILL_TOKEN_PATTERN.test('Use /code-review for this change')).toBe(true);
+        SKILL_TOKEN_PATTERN.lastIndex = 0;
+        expect(SKILL_TOKEN_PATTERN.test('https://example.com/skills')).toBe(false);
+    });
+});
