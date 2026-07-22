@@ -18,12 +18,16 @@ completion events advance the separate `activity_updated_at` ordering field,
 while session status transitions update `status` and `status_changed_at`.
 Renderer event handling never performs these index writes and assistant
 streaming events never change session ordering.
+Repeated session summary events whose bounded root summary or child membership
+is unchanged leave directory recency and the public revision unchanged. Root
+events that remain outside the newest-20 bound follow the same no-op path.
 
 `sync-runtime.js` owns cold-start synchronization. The renderer submits all
 known project directories once to `POST /api/openchamber/session-index/sync`.
 The runtime processes them sequentially, applies `start=lastSyncedAt` for recent
 indexes, performs a full reconciliation after 24 hours, and commits each result
-to SQLite. It publishes an in-memory revision after every state/SQLite change.
+to SQLite. It publishes an in-memory revision after every externally observable
+index or synchronization-state change.
 
 The renderer observes revisions through OpenChamber SSE tip events
 (`openchamber:session-index-changed`). Each tip carries the new revision and
@@ -32,7 +36,7 @@ optional sync progress flags; the renderer then GETs
 never needs an event replay log because the next tip or `event-stream-ready`
 triggers a fresh snapshot load. The renderer keeps this tip observer active
 after startup refresh work becomes idle, and successful event-driven index
-writes publish a new revision tip immediately.
+writes with a semantic snapshot change publish a new revision tip immediately.
 
 The OpenCode proxy calls `noteInteractiveRequest()` for selected-session reads
 and mutations. That aborts the current background list, yields for one second,

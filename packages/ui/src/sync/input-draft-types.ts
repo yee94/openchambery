@@ -125,8 +125,26 @@ type DraftPasteComposerReference = {
   index: number
 }
 
-/** Add image and skill branches here as durable Composer sidecars gain ownership. */
-export type DraftComposerReference = DraftSessionComposerReference | DraftPasteComposerReference
+type DraftSkillComposerReference = {
+  id: string
+  kind: "skill"
+  start: number
+  end: number
+  display: string
+  skillName: string
+}
+
+type DraftCommandComposerReference = {
+  id: string
+  kind: "command"
+  start: number
+  end: number
+  display: string
+  commandName: string
+  reference: string
+}
+
+export type DraftComposerReference = DraftSessionComposerReference | DraftPasteComposerReference | DraftSkillComposerReference | DraftCommandComposerReference
 export type DraftComposerDocument = { text: string; references: DraftComposerReference[] }
 
 export const DRAFT_COMPOSER_REFERENCE_LIMITS = {
@@ -134,6 +152,9 @@ export const DRAFT_COMPOSER_REFERENCE_LIMITS = {
   idLength: 512,
   displayLength: 512,
   sessionIDLength: 128,
+  skillNameLength: 511,
+  commandNameLength: 511,
+  commandReferenceLength: 8_192,
   pastePayloadLength: 100_000,
   totalPastePayloadLength: 200_000,
 } as const
@@ -187,11 +208,16 @@ export const parseDraftMentions = (text: string, value: unknown): DraftMention[]
 }
 
 export const isValidDraftComposerSessionID = (value: unknown): value is string => isBoundedString(value, DRAFT_COMPOSER_REFERENCE_LIMITS.sessionIDLength) && /^[A-Za-z0-9_-]+$/.test(value)
+export const isValidDraftComposerSkillName = (value: unknown): value is string => isBoundedString(value, DRAFT_COMPOSER_REFERENCE_LIMITS.skillNameLength) && /^[A-Za-z0-9][A-Za-z0-9_-]*$/.test(value)
+export const isValidDraftComposerCommandName = (value: unknown): value is string => isBoundedString(value, DRAFT_COMPOSER_REFERENCE_LIMITS.commandNameLength) && /^[\p{L}\p{N}._/-]+$/u.test(value)
+export const isValidDraftComposerCommandReference = (value: unknown): value is string => isBoundedString(value, DRAFT_COMPOSER_REFERENCE_LIMITS.commandReferenceLength) && !/[\]\r\n]/u.test(value)
 
 const parseComposerReference = (value: unknown): DraftComposerReference | undefined => {
   if (!isPlainObject(value) || !isBoundedString(value.id, DRAFT_COMPOSER_REFERENCE_LIMITS.idLength) || !isBoundedString(value.display, DRAFT_COMPOSER_REFERENCE_LIMITS.displayLength) || !isNonNegativeInteger(value.start) || !isNonNegativeInteger(value.end) || value.end <= value.start) return undefined
   if (value.kind === "session" && hasOnlyKeys(value, ["id", "kind", "start", "end", "display", "sessionId"]) && isValidDraftComposerSessionID(value.sessionId)) return { id: value.id, kind: "session", start: value.start, end: value.end, display: value.display, sessionId: value.sessionId }
   if (value.kind === "paste" && hasOnlyKeys(value, ["id", "kind", "start", "end", "display", "text", "characterCount", "index"]) && typeof value.text === "string" && value.text.length <= DRAFT_COMPOSER_REFERENCE_LIMITS.pastePayloadLength && isNonNegativeInteger(value.characterCount) && value.characterCount === countUnicodeCodePoints(value.text) && isNonNegativeInteger(value.index) && value.index >= 1) return { id: value.id, kind: "paste", start: value.start, end: value.end, display: value.display, text: value.text, characterCount: value.characterCount, index: value.index }
+  if (value.kind === "skill" && hasOnlyKeys(value, ["id", "kind", "start", "end", "display", "skillName"]) && isValidDraftComposerSkillName(value.skillName) && value.display === `/${value.skillName}`) return { id: value.id, kind: "skill", start: value.start, end: value.end, display: value.display, skillName: value.skillName }
+  if (value.kind === "command" && hasOnlyKeys(value, ["id", "kind", "start", "end", "display", "commandName", "reference"]) && isValidDraftComposerCommandName(value.commandName) && isValidDraftComposerCommandReference(value.reference) && value.display === `/${value.commandName}`) return { id: value.id, kind: "command", start: value.start, end: value.end, display: value.display, commandName: value.commandName, reference: value.reference }
   return undefined
 }
 

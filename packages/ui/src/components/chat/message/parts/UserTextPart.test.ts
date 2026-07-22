@@ -1,6 +1,6 @@
 import { describe, expect, test } from 'bun:test';
 
-import { prepareUserMarkdownContent } from './userTextPartContent';
+import { prepareUserMarkdownContent, SKILL_TOKEN_PATTERN } from './userTextPartContent';
 
 describe('prepareUserMarkdownContent', () => {
     test('keeps fenced code < and -> unescaped for the markdown renderer', () => {
@@ -48,5 +48,14 @@ describe('prepareUserMarkdownContent', () => {
         expect(content).toContain('[@agent](#openchamber-agent:build-agent)');
         expect(content).toContain('[/skill-name](#openchamber-skill:skill-name)');
         expect(content).toContain('hello  \n[/skill-name]');
+    });
+});
+
+describe('SKILL_TOKEN_PATTERN', () => {
+    test('recognizes standalone slash skill tokens', () => {
+        SKILL_TOKEN_PATTERN.lastIndex = 0;
+        expect(SKILL_TOKEN_PATTERN.test('Use /code-review for this change')).toBe(true);
+        SKILL_TOKEN_PATTERN.lastIndex = 0;
+        expect(SKILL_TOKEN_PATTERN.test('https://example.com/skills')).toBe(false);
     });
 });

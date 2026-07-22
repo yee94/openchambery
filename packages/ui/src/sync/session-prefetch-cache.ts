@@ -64,11 +64,11 @@ export function getSessionPrefetch(directory: string, sessionID: string, runtime
   return cache.get(compositeKey(directory, sessionID, runtimeKey))
 }
 
-export function beginSessionMessageLoad(directory: string, sessionID: string, runtimeKey = getRuntimeKey()) {
+export function beginSessionMessageLoad(directory: string, sessionID: string, requestedLimit: number, runtimeKey = getRuntimeKey()) {
   const id = compositeKey(directory, sessionID, runtimeKey)
   const current = cache.get(id)
   cache.set(id, {
-    limit: current?.limit ?? 0,
+    limit: Math.max(current?.limit ?? 0, requestedLimit),
     cursor: current?.cursor,
     complete: current?.complete ?? false,
     at: current?.at ?? Date.now(),

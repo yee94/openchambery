@@ -24,6 +24,11 @@ type UserTextPartProps = {
     agentMention?: AgentMentionInfo;
 };
 
+const hasPotentialSkillToken = (textContent: string): boolean => {
+    SKILL_TOKEN_PATTERN.lastIndex = 0;
+    return SKILL_TOKEN_PATTERN.test(textContent);
+};
+
 const normalizeUserMessageRenderingMode = (mode: unknown): 'markdown' | 'plain' => {
     return mode === 'markdown' ? 'markdown' : 'plain';
 };
@@ -38,7 +43,10 @@ const UserTextPart: React.FC<UserTextPartProps> = ({ part, messageId, agentMenti
     const userMessageRenderingMode = useUIStore((state) => state.userMessageRenderingMode);
     const collapsibleUserMessages = useUIStore((state) => state.collapsibleUserMessages);
     const effectiveDirectory = useEffectiveDirectory();
-    const skillsQuery = useInstalledSkillsQuery({ directory: effectiveDirectory });
+    const skillsQuery = useInstalledSkillsQuery({
+        directory: effectiveDirectory,
+        enabled: hasPotentialSkillToken(textContent),
+    });
     const skills = React.useMemo(() => skillsQuery.data ?? [], [skillsQuery.data]);
     const openContextFile = useUIStore((state) => state.openContextFile);
     const { t } = useI18n();

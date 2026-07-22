@@ -1,5 +1,20 @@
 export type TrayStatusSnapshot = Record<string, { type?: string }>;
 
+const compareStrings = (left: string, right: string): number => (
+  left < right ? -1 : left > right ? 1 : 0
+);
+
+export const getTrayStatusTargetSignature = (
+  targets: ReadonlyMap<string, readonly string[]>,
+): string => JSON.stringify(
+  [...targets.entries()]
+    .map(([directory, sessionIds]) => [
+      directory,
+      [...new Set(sessionIds)].sort(compareStrings),
+    ] as const)
+    .sort(([left], [right]) => compareStrings(left, right)),
+);
+
 type RefreshTrayStatusTargetsInput = {
   targets: ReadonlyMap<string, readonly string[]>;
   isReady: () => boolean;

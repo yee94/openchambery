@@ -22,14 +22,17 @@ export const resolveComposerActionAvailability = (input: {
     draftSubmitting: boolean;
     submissionBlocked: boolean;
     queueFrozen: boolean;
+    hasBlockingAdmission: boolean;
 }) => {
     const sendDisabled = !input.canSend
         || !input.hasSessionTarget
         || input.draftSubmitting
-        || input.submissionBlocked;
+        || input.submissionBlocked
+        || input.hasBlockingAdmission;
     const queueDisabled = !input.hasSessionTarget
         || input.submissionBlocked
-        || input.queueFrozen;
+        || input.queueFrozen
+        || input.hasBlockingAdmission;
     return {
         sendDisabled,
         queueDisabled,

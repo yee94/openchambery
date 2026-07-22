@@ -5,6 +5,8 @@ import { compileComposerSendPlan } from './send-plan';
 
 const session = (id: string, start: number, display = '@Same') => ({ id, kind: 'session' as const, sessionId: id, display, start, end: start + display.length });
 const paste = (id: string, start: number, display = '[Paste 1]') => ({ id, kind: 'paste' as const, text: 'original paste', characterCount: 14, index: 1, display, start, end: start + display.length });
+const skill = (id: string, start: number, skillName = 'review') => ({ id, kind: 'skill' as const, skillName, display: `/${skillName}`, start, end: start + skillName.length + 1 });
+const command = (id: string, start: number, commandName = 'run', reference = 'run') => ({ id, kind: 'command' as const, commandName, reference, display: `/${commandName}`, start, end: start + commandName.length + 1 });
 
 describe('composerReferences', () => {
     test('validates static adapter payloads and bounded session IDs', () => {
@@ -106,6 +108,42 @@ describe('composerReferences', () => {
         expect(serialized.ok && serialized.text).toBe('@session:a @session:b');
         if (!serialized.ok) throw new Error('Expected canonical serialization to succeed');
         expect(materializeComposerReferenceTokens(serialized.text, new Map([['a', '😀'], ['b', 'B']]))).toEqual(document);
+    });
+
+    test('serializes, materializes, and atomically deletes durable skill and command references', () => {
+        const document: ComposerDocument = { text: '/review /run', references: [skill('skill', 0), command('command', 8)] };
+        const canonical = serializeComposerDocument(document);
+        const direct = serializeComposerDocument(document, 'direct-send-display');
+        expect(canonical.ok && [canonical.text, canonical.semantics]).toEqual(['[skill:review] [command:run]', []]);
+        expect(direct.ok && [direct.text, direct.semantics]).toEqual(['[skill:review] [command:run]', []]);
+        const materialized = materializeComposerReferenceTokens('[skill:review] [command:run]', new Map());
+        expect(materialized).toEqual({ text: '/review /run', references: [skill('skill:0', 0), command('command:15', 8)] });
+        const rematerialized = serializeComposerDocument(materialized);
+        expect(rematerialized.ok && rematerialized.text).toBe('[skill:review] [command:run]');
+        expect(resolveComposerReferenceDeletion(document, { key: 'Backspace', selectionStart: 3, selectionEnd: 3 })?.document).toEqual({ text: ' /run', references: [command('command', 1)] });
+    });
+
+    test('materializes command file references using their basename while preserving the reference', () => {
+        expect(materializeComposerReferenceTokens('[command:/abs/path/review.md] [command:C:\\commands\\review.md] [command:name]', new Map())).toEqual({
+            text: '/review /review /name',
+            references: [
+                command('command:0', 0, 'review', '/abs/path/review.md'),
+                command('command:30', 8, 'review', 'C:\\commands\\review.md'),
+                command('command:62', 16, 'name', 'name'),
+            ],
+        });
+    });
+
+    test('rejects malformed durable skill and command references', () => {
+        expect(validateComposerDocument('/review', [{ ...skill('skill', 0), skillName: 'bad skill' }]).rejectedCount).toBe(1);
+        expect(validateComposerDocument('/run', [{ ...command('command', 0), reference: '' }]).rejectedCount).toBe(1);
+        expect(validateComposerDocument('/run', [{ ...command('command', 0), reference: 'x'.repeat(COMPOSER_REFERENCE_LIMITS.commandReferenceLength + 1) }]).rejectedCount).toBe(1);
+        expect(validateComposerDocument('/run', [{ ...command('command', 0), commandName: 'bad name' }]).rejectedCount).toBe(1);
+        expect(validateComposerDocument('/run', [{ ...command('command', 0), commandName: 'bad[name' }]).rejectedCount).toBe(1);
+        expect(validateComposerDocument('/run', [{ ...command('command', 0), reference: 'bad]reference' }]).rejectedCount).toBe(1);
+        expect(validateComposerDocument('/run', [{ ...command('command', 0), reference: 'bad\r\nreference' }]).rejectedCount).toBe(1);
+        expect(validateComposerDocument('/命令.v1/a_b-c', [command('command', 0, '命令.v1/a_b-c')]).rejectedCount).toBe(0);
+        expect(materializeComposerReferenceTokens('[skill:bad skill] [command:] [command:bad\r\nreference]', new Map())).toEqual({ text: '[skill:bad skill] [command:] [command:bad\r\nreference]', references: [] });
     });
 
     test('materializes static canonical codecs in source order and leaves overlapping token text intact', () => {
@@ -225,6 +263,8 @@ describe('composerReferences', () => {
         expect(direct.ok && direct.plan.semantics).toEqual([{ type: 'session', sessionId: 'first' }, { type: 'session', sessionId: 'second' }]);
         expect(decorateComposerReference(session('first', 0))).toEqual({ style: 'mentionSession', sessionLabel: 'Same' });
         expect(decorateComposerReference(paste('paste', 0))).toEqual({ style: 'mentionPaste' });
+        expect(decorateComposerReference(skill('skill', 0))).toEqual({ style: 'mentionCommand', skillName: 'review' });
+        expect(decorateComposerReference(command('command', 0))).toEqual({ style: 'mentionCommand' });
     });
 
     test('derives every canonical reference strategy through its extension helper', () => {

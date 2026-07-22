@@ -46,6 +46,9 @@ export type PinnableItem = {
 
 const chipId = (group: StarterGroup, ref: DraftStarterRef): string => `${group}:${starterKey(ref)}`;
 
+const requiresDraftStarterDirectoryResolution = (ref: DraftStarterRef): boolean =>
+    ref.type === 'skill' || !getBuiltInStarter(ref.name);
+
 export type UseDraftStartersResult = {
     global: ResolvedStarter[];
     project: ResolvedStarter[];
@@ -61,12 +64,6 @@ export function useDraftStarters(directory?: string | null): UseDraftStartersRes
     const { t } = useI18n();
     const isVSCode = React.useMemo(() => isVSCodeRuntime(), []);
     const globalRaw = useUIStore((s) => s.globalDraftStarters);
-    const commandsQuery = useCommandsQuery({ directory });
-    const commands = React.useMemo(() => commandsQuery.data ?? [], [commandsQuery.data]);
-    const { refetch: refetchCommands } = commandsQuery;
-    const skillsQuery = useInstalledSkillsQuery({ directory });
-    const skills = React.useMemo(() => skillsQuery.data ?? [], [skillsQuery.data]);
-    const { refetch: refetchSkills } = skillsQuery;
     const activeProjectId = useProjectsStore((s) => s.activeProjectId);
     const projects = useProjectsStore((s) => s.projects);
 
@@ -78,6 +75,18 @@ export function useDraftStarters(directory?: string | null): UseDraftStartersRes
     }, [activeProjectId, projects]);
 
     const [projectStarters, setProjectStarters] = React.useState<DraftStarterRef[]>([]);
+    const globalRefs = React.useMemo<readonly DraftStarterRef[]>(
+        () => globalRaw ?? DEFAULT_GLOBAL_STARTERS,
+        [globalRaw],
+    );
+    const shouldResolveStarterDirectories = globalRefs.some(requiresDraftStarterDirectoryResolution)
+        || projectStarters.some(requiresDraftStarterDirectoryResolution);
+    const commandsQuery = useCommandsQuery({ directory, enabled: shouldResolveStarterDirectories });
+    const commands = React.useMemo(() => commandsQuery.data ?? [], [commandsQuery.data]);
+    const { refetch: refetchCommands } = commandsQuery;
+    const skillsQuery = useInstalledSkillsQuery({ directory, enabled: shouldResolveStarterDirectories });
+    const skills = React.useMemo(() => skillsQuery.data ?? [], [skillsQuery.data]);
+    const { refetch: refetchSkills } = skillsQuery;
 
     React.useEffect(() => {
         let cancelled = false;
@@ -99,13 +108,6 @@ export function useDraftStarters(directory?: string | null): UseDraftStartersRes
         void refetchSkills();
     }, [refetchCommands, refetchSkills]);
 
-    // Preload commands and skills on mount so that pinned command/skill starters
-    // resolve immediately without requiring the user to open the add dialog first.
-    // Both loaders coalesce matching in-flight requests, so this shares an active refresh.
-    React.useEffect(() => {
-        ensureLoaded();
-    }, [ensureLoaded]);
-
     const commandNames = React.useMemo(() => new Set(commands.map((c) => c.name)), [commands]);
     const skillNames = React.useMemo(() => new Set(skills.map((s) => s.name)), [skills]);
 
@@ -122,11 +124,6 @@ export function useDraftStarters(directory?: string | null): UseDraftStartersRes
         if (!skillNames.has(ref.name)) return null;
         return { id: chipId(group, ref), ref, group, label: normalizeStarterLabel(ref.name), icon: SKILL_FALLBACK_ICON, submitText: `/${ref.name}` };
     }, [t, commandNames, skillNames, isVSCode]);
-
-    const globalRefs = React.useMemo<readonly DraftStarterRef[]>(
-        () => globalRaw ?? DEFAULT_GLOBAL_STARTERS,
-        [globalRaw],
-    );
 
     const global = React.useMemo(
         () => globalRefs.map((r) => resolve(r, 'global')).filter((x): x is ResolvedStarter => x !== null),

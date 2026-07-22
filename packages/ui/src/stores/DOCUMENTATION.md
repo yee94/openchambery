@@ -74,8 +74,10 @@ transport identity, configuration directory, and source ID for source pages.
 `useSkillsCatalogStore` owns source selection and scan/install mutation state.
 Skills mutations capture their directory and transport before dispatch. Successful
 mutations refresh the matching installed-skills query and invalidate matching
-Catalog queries after OpenCode is ready; legacy store refresh remains for current
-consumers.
+Catalog queries after OpenCode is ready. The installed-skills query is the sole
+owner of the installed list; `useSkillsStore` retains selection, drafts, detail
+reads, and mutations. Concurrent reads and mutation refreshes for one transport
+and configuration directory share the same TanStack Query flight.
 
 `useQuotaStore` keeps UI settings and rendered provider results. Runtime reset
 clears quota results, fetch state, errors, and active refresh generations.

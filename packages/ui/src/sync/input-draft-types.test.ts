@@ -123,14 +123,16 @@ describe("input draft types", () => {
     expect(parseDraftRecord(missingServerPath)).toBe(undefined)
   })
 
-  test("keeps old records readable and round-trips session and paste sidecars", () => {
+  test("keeps old records readable and round-trips durable composer sidecars", () => {
     const legacy = record()
     const document = record()
-    document.text = "@Session [Paste]"
+    document.text = "@Session [Paste] /review-pr /run"
     document.mentions = []
     document.composerReferences = [
       { id: "session-1", kind: "session", sessionId: "ses_1", start: 0, end: 8, display: "@Session" },
       { id: "paste-1", kind: "paste", text: "😀x", characterCount: 2, index: 1, start: 9, end: 16, display: "[Paste]" },
+      { id: "skill-1", kind: "skill", skillName: "review-pr", start: 17, end: 27, display: "/review-pr" },
+      { id: "command-1", kind: "command", commandName: "run", reference: "task-42", start: 28, end: 32, display: "/run" },
     ]
     expect(parseDraftRecord(legacy)?.composerReferences).toBe(undefined)
     expect(cloneDraftRecord(document)).toEqual(document)
@@ -145,6 +147,11 @@ describe("input draft types", () => {
     ]
     expect(parseDraftRecord(document)).toBe(undefined)
     document.composerReferences = [{ id: "bad-session", kind: "session", sessionId: "bad id", start: 0, end: 4, display: "@one" }]
+    expect(parseDraftRecord(document)).toBe(undefined)
+    document.text = "/skill"
+    document.composerReferences = [{ id: "bad-skill", kind: "skill", skillName: "bad skill", start: 0, end: 6, display: "/skill" }]
+    expect(parseDraftRecord(document)).toBe(undefined)
+    document.composerReferences = [{ id: "bad-command", kind: "command", commandName: "", reference: "ref", start: 0, end: 6, display: "/skill" }]
     expect(parseDraftRecord(document)).toBe(undefined)
     document.text = "[a][b][c]"
     document.composerReferences = Array.from({ length: 3 }, (_, index) => ({ id: `paste-${index}`, kind: "paste" as const, text: "x".repeat(80_000), characterCount: 80_000, index: index + 1, start: index * 3, end: index * 3 + 3, display: `[${String.fromCharCode(97 + index)}]` }))

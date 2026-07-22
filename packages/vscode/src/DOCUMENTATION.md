@@ -47,6 +47,8 @@ Keep `bridge.ts` as a thin orchestration layer that delegates message handling t
   - Skills list, detail/CRUD, files, catalog, scan, and install requests carry the
     webview directory hint. Directory-sensitive handlers resolve that payload at
     call time, so project-scoped skills match the shared UI query directory.
+  - Skill `summary=true` and command metadata `{ catalog: true }` requests return
+    compact autocomplete contracts without skill content, sources, or command templates.
 
 - `bridge-settings-runtime.ts`
   - Settings read/write and OpenCode skills discovery via API for bridge consumers.

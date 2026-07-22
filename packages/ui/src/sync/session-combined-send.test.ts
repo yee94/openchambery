@@ -19,6 +19,10 @@ import { useDirectoryStore } from '@/stores/useDirectoryStore'
 import { useGlobalSessionsStore } from '@/stores/useGlobalSessionsStore'
 import { useSelectionStore } from './selection-store'
 import type { ConversationCreateWithPromptResult, ConversationCreateWithPromptInput, RuntimeAPIs } from '@/lib/api/types'
+import { commandQueryOptions } from '@/queries/commandQueries'
+import { installedSkillsQueryOptions } from '@/queries/installedSkillsQueries'
+import { queryClient } from '@/lib/queryRuntime'
+import { getRuntimeTransportIdentity } from '@/lib/runtime-switch'
 
 // ─── helpers ────────────────────────────────────────────────────────────────
 
@@ -80,6 +84,7 @@ let originalBuildMessageParts: typeof opencodeClient.buildMessageParts
 let originalGetDirectory: typeof opencodeClient.getDirectory
 let originalCreateSession: typeof opencodeClient.createSession
 let originalSendMessage: typeof opencodeClient.sendMessage
+let originalSendCommand: typeof opencodeClient.sendCommand
 let originalDeleteSessionMessage: typeof opencodeClient.deleteSessionMessage
 let originalShellSession: typeof opencodeClient.shellSession
 let originalFetch: typeof globalThis.fetch
@@ -151,6 +156,7 @@ beforeEach(() => {
   originalGetDirectory = opencodeClient.getDirectory
   originalCreateSession = opencodeClient.createSession
   originalSendMessage = opencodeClient.sendMessage
+  originalSendCommand = opencodeClient.sendCommand
   originalDeleteSessionMessage = opencodeClient.deleteSessionMessage
   originalShellSession = opencodeClient.shellSession
   originalFetch = globalThis.fetch
@@ -182,6 +188,7 @@ beforeEach(() => {
 
   resetAll()
   setupChildStores()
+  queryClient.clear()
 })
 
 afterEach(() => {
@@ -189,6 +196,7 @@ afterEach(() => {
   opencodeClient.getDirectory = originalGetDirectory
   opencodeClient.createSession = originalCreateSession
   opencodeClient.sendMessage = originalSendMessage
+  opencodeClient.sendCommand = originalSendCommand
   opencodeClient.deleteSessionMessage = originalDeleteSessionMessage
   opencodeClient.shellSession = originalShellSession
   globalThis.fetch = originalFetch
@@ -200,6 +208,7 @@ afterEach(() => {
   registerRuntimeAPIs(null)
   setActionRefs(null as any, null as any, () => '')
   setOptimisticRefs(null as any, null as any)
+  queryClient.clear()
 })
 
 // ─── tests ──────────────────────────────────────────────────────────────────
@@ -647,6 +656,24 @@ describe('handleCombinedDraftSend', () => {
     await flushNotifications()
     expect(callerConfirmations).toBe(1)
     expect(notificationRequests).toHaveLength(1)
+  })
+
+  test('16) slash commands resolve from query catalogs without sync command bootstrap', async () => {
+    const transport = getRuntimeTransportIdentity()
+    queryClient.setQueryData(commandQueryOptions(PROJECT.path, transport).queryKey, [{ name: 'deploy' }])
+    queryClient.setQueryData(installedSkillsQueryOptions(PROJECT.path, transport).queryKey, [])
+    let command = ''
+    opencodeClient.sendCommand = (async (input: { command: string }) => { command = input.command }) as any
+
+    await routeMessage({
+      sessionId: SESSION_ID,
+      directory: PROJECT.path,
+      content: '/deploy production',
+      providerID: 'openai',
+      modelID: 'gpt-4o',
+    })
+
+    expect(command).toBe('deploy')
   })
 })
 

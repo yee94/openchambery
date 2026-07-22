@@ -237,4 +237,17 @@ describe('message queue server adapter', () => {
     const sizeError = await downloadError();
     expect(sizeError.status).toBe(200); expect(sizeError.code).toBe('unavailable');
   });
+
+  test('parseItem accepts a true manualDispatchRequested, omits it when absent, and rejects wrong types as malformed', async () => {
+    responseImplementation = async () => new Response(JSON.stringify({ ...scope, items: [{ ...item, manualDispatchRequested: true }] }));
+    const parsed = await api.fetchMessageQueueScope('scope/a');
+    expect(parsed.items[0]?.manualDispatchRequested).toBe(true);
+    responseImplementation = async () => new Response(JSON.stringify({ ...scope, items: [item] }));
+    const omitted = await api.fetchMessageQueueScope('scope/a');
+    expect(omitted.items[0]?.manualDispatchRequested).toBe(undefined);
+    responseImplementation = async () => new Response(JSON.stringify({ ...scope, items: [{ ...item, manualDispatchRequested: 'yes' }] }));
+    try { await api.fetchMessageQueueScope('scope/a'); throw new Error('expected malformed item to fail'); } catch (error) { expect((error as { code?: string }).code).toBe('unavailable'); }
+    responseImplementation = async () => new Response(JSON.stringify({ ...scope, items: [{ ...item, manualDispatchRequested: 1 }] }));
+    try { await api.fetchMessageQueueScope('scope/a'); throw new Error('expected number manualDispatchRequested to fail'); } catch (error) { expect((error as { code?: string }).code).toBe('unavailable'); }
+  });
 });

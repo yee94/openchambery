@@ -450,6 +450,7 @@ describe('routeMessage skill invocation', () => {
   let originalFetchQuery;
   let queryResults;
   let queryFetches;
+  let optimisticAdds;
 
   beforeEach(() => {
     sendCommandCalls.length = 0;
@@ -466,7 +467,8 @@ describe('routeMessage skill invocation', () => {
       getChild: () => childStore,
     };
     setActionRefs(opencodeClient, childStores, () => '/skills/project');
-    setOptimisticRefs(() => {}, () => {});
+    optimisticAdds = [];
+    setOptimisticRefs((payload) => optimisticAdds.push(payload), () => {});
     useConfigStore.setState({ isConnected: true });
 
     queryClient.removeQueries({ queryKey: installedSkillsQueryOptions('/skills/project').queryKey });
@@ -544,7 +546,7 @@ describe('routeMessage skill invocation', () => {
   });
 
   test('loads a cold command cache before classifying a slash token', async () => {
-    queryResults.commands = [{ name: 'cold-command' }];
+    queryResults.commands = [{ name: 'cold-command', isBuiltIn: true }];
 
     await routeMessage({
       sessionId: 'session-command',
@@ -558,6 +560,94 @@ describe('routeMessage skill invocation', () => {
     expect(sendCommandCalls).toHaveLength(1);
     expect(sendCommandCalls[0]).toMatchObject({ command: 'cold-command', arguments: 'argument' });
     expect(sendMessageCalls).toHaveLength(0);
+  });
+
+  test('sends a markdown custom command as a structured normal prompt', async () => {
+    queryClient.setQueryData(commandQueryOptions('/skills/project').queryKey, [{
+      name: 'markdown-command',
+      isBuiltIn: false,
+      reference: '/skills/project/.opencode/commands/markdown-command.md',
+    }]);
+
+    await routeMessage({
+      sessionId: 'session-command',
+      directory: '/skills/project',
+      content: '/markdown-command focus on auth',
+      providerID: 'provider-a',
+      modelID: 'model-a',
+      files: [{ type: 'file', mime: 'text/plain', url: 'file:///notes.txt', filename: 'notes.txt' }],
+      additionalParts: [{ text: 'Synthetic context', synthetic: true }],
+      messageID: 'msg-custom-command',
+    });
+
+    const content = '[command:/skills/project/.opencode/commands/markdown-command.md] focus on auth';
+    expect(sendCommandCalls).toHaveLength(0);
+    expect(sendMessageCalls).toHaveLength(1);
+    expect(sendMessageCalls[0]).toMatchObject({
+      text: content,
+      messageId: 'msg-custom-command',
+      files: [{ type: 'file', mime: 'text/plain', url: 'file:///notes.txt', filename: 'notes.txt' }],
+      additionalParts: [{ text: 'Synthetic context', synthetic: true }],
+    });
+    expect(optimisticAdds).toHaveLength(1);
+    expect(optimisticAdds[0].parts[0].text).toBe(content);
+  });
+
+  test('uses a JSON custom command name as the structured reference', async () => {
+    queryClient.setQueryData(commandQueryOptions('/skills/project').queryKey, [{ name: 'json-command', isBuiltIn: false }]);
+
+    await routeMessage({
+      sessionId: 'session-command',
+      directory: '/skills/project',
+      content: '/json-command',
+      providerID: 'provider-a',
+      modelID: 'model-a',
+    });
+
+    expect(sendCommandCalls).toHaveLength(0);
+    expect(sendMessageCalls).toHaveLength(1);
+    expect(sendMessageCalls[0].text).toBe('[command:json-command]');
+  });
+
+  test('sends built-in commands through session.command', async () => {
+    queryClient.setQueryData(commandQueryOptions('/skills/project').queryKey, [{ name: 'built-in-command', isBuiltIn: true }]);
+
+    await routeMessage({
+      sessionId: 'session-command',
+      directory: '/skills/project',
+      content: '/built-in-command argument',
+      providerID: 'provider-a',
+      modelID: 'model-a',
+    });
+
+    expect(sendCommandCalls).toHaveLength(1);
+    expect(sendCommandCalls[0]).toMatchObject({ command: 'built-in-command', arguments: 'argument' });
+    expect(sendMessageCalls).toHaveLength(0);
+  });
+
+  test('uses the first whitespace boundary and preserves trimmed slash arguments', async () => {
+    queryClient.setQueryData(commandQueryOptions('/skills/project').queryKey, [
+      { name: 'built-in-command', isBuiltIn: true },
+      { name: 'custom-command', isBuiltIn: false, reference: '/commands/custom-command.md' },
+    ]);
+
+    await routeMessage({
+      sessionId: 'session-command',
+      directory: '/skills/project',
+      content: '/built-in-command\t first\r\n second  ',
+      providerID: 'provider-a',
+      modelID: 'model-a',
+    });
+    await routeMessage({
+      sessionId: 'session-command',
+      directory: '/skills/project',
+      content: '/custom-command\r\n  focus on auth  ',
+      providerID: 'provider-a',
+      modelID: 'model-a',
+    });
+
+    expect(sendCommandCalls[0]).toMatchObject({ command: 'built-in-command', arguments: 'first\r\n second' });
+    expect(sendMessageCalls[0].text).toBe('[command:/commands/custom-command.md] focus on auth');
   });
 
   test('preserves trailing skill instructions in the regular prompt', async () => {
@@ -636,7 +726,7 @@ describe('routeMessage skill invocation', () => {
       modelID: 'model-a',
     })).rejects.toThrow('command discovery failed');
 
-    queryResults.commands = [{ name: 'retry-command' }];
+    queryResults.commands = [{ name: 'retry-command', isBuiltIn: true }];
 
     await routeMessage({
       sessionId: 'session-command',

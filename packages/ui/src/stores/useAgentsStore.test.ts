@@ -7,6 +7,8 @@ let configChangeCalls = 0;
 let agentsSnapshot: Array<{ name: string; hidden?: boolean }> = [];
 let refreshedAgents: Array<{ name: string; hidden?: boolean }> = [];
 let responseImpl: () => Promise<Response> = async () => new Response(JSON.stringify({ requiresReload: false }));
+const installedRefreshes: Array<[string | null, string]> = [];
+const catalogInvalidations: Array<[string | null, string]> = [];
 
 mock.module('@/lib/opencode/client', () => ({ opencodeClient: { getDirectory: () => '/fallback/project', checkHealth: async () => true } }));
 mock.module('@/stores/useProjectsStore', () => ({ useProjectsStore: { getState: () => ({ getActiveProject: () => ({ path: activeProjectPath }), projects: [] }) } }));
@@ -24,10 +26,15 @@ mock.module('@/queries/agentQueries', () => ({
 mock.module('@/lib/configUpdate', () => ({ startConfigUpdate: mock(() => undefined), finishConfigUpdate: mock(() => undefined), updateConfigUpdateMessage: mock(() => undefined) }));
 mock.module('@/lib/configSync', () => ({ emitConfigChange: () => { configChangeCalls += 1; }, scopeMatches: mock(() => false), subscribeToConfigChanges: mock(() => () => undefined) }));
 mock.module('@/stores/useConfigStore', () => ({ useConfigStore: { getState: () => ({ loadAgents: async () => undefined, loadProviders: async () => undefined, invalidateModelMetadataCache: () => undefined, invalidateProviderCache: () => undefined }) } }));
-mock.module('@/stores/useSkillsStore', () => ({ invalidateSkillsLoadCache: mock(() => undefined), useSkillsStore: { getState: () => ({}) } }));
-mock.module('@/stores/useSkillsCatalogStore', () => ({ useSkillsCatalogStore: { getState: () => ({}) } }));
+mock.module('@/queries/installedSkillsQueries', () => ({
+  refreshInstalledSkillsQuery: async (_client: unknown, directory: string | null, transport: string) => { installedRefreshes.push([directory, transport]); return []; },
+}));
+mock.module('@/queries/skillsCatalogQueries', () => ({
+  FALLBACK_SKILLS_CATALOG_SOURCES: [{ id: 'fallback', label: 'Fallback', source: 'owner/repo' }],
+  invalidateSkillsCatalogQueries: async (_client: unknown, directory: string | null, transport: string) => { catalogInvalidations.push([directory, transport]); },
+}));
 
-const { useAgentsStore } = await import('./useAgentsStore');
+const { refreshAfterOpenCodeRestart, useAgentsStore } = await import('./useAgentsStore');
 
 describe('useAgentsStore', () => {
   beforeEach(() => {
@@ -35,6 +42,8 @@ describe('useAgentsStore', () => {
     runtimeKey = 'runtime-a';
     refreshCalls = [];
     configChangeCalls = 0;
+    installedRefreshes.length = 0;
+    catalogInvalidations.length = 0;
     agentsSnapshot = [{ name: 'visible' }, { name: 'hidden', hidden: true }];
     refreshedAgents = agentsSnapshot;
     responseImpl = async () => new Response(JSON.stringify({ requiresReload: false }));
@@ -99,5 +108,12 @@ describe('useAgentsStore', () => {
     expect(result).toEqual({ ok: true });
     expect(refreshCalls).toEqual([['/workspace/update-project', 'runtime-a']]);
     expect(useAgentsStore.getState().getAgentByName('visible')).toEqual({ name: 'visible', hidden: true });
+  });
+
+  test('refreshes skills through the installed query and Catalog invalidation', async () => {
+    await refreshAfterOpenCodeRestart({ scopes: ['skills'], mode: 'active', queryDirectory: '/workspace/skills' });
+
+    expect(installedRefreshes).toEqual([['/workspace/skills', 'runtime-a']]);
+    expect(catalogInvalidations).toEqual([['/workspace/skills', 'runtime-a']]);
   });
 });

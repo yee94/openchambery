@@ -38,7 +38,7 @@ import { mergeFailedAttachments } from './chat-input-recovery';
 import { AutoReviewBanner } from './AutoReviewBanner';
 import { FileMentionAutocomplete, type FileMentionHandle } from './FileMentionAutocomplete';
 import { CommandAutocomplete, type CommandAutocompleteHandle, type CommandInfo } from './CommandAutocomplete';
-import { SkillAutocomplete, type SkillAutocompleteHandle } from './SkillAutocomplete';
+import { SkillAutocomplete, type SkillAutocompleteHandle, type SkillInfo } from './SkillAutocomplete';
 import { SnippetAutocomplete, type SnippetAutocompleteHandle } from './SnippetAutocomplete';
 import { cn, formatDirectoryName } from '@/lib/utils';
 import { ModelControls } from './ModelControls';
@@ -133,8 +133,9 @@ import type { Part } from '@opencode-ai/sdk/v2/client';
 import { consumesImmediateCommandText, getLocalChatCommand, preservesComposerResources } from './localCommandClassifier';
 import { consumeImmediateCommandText } from './immediateCommandTextConsumption';
 import { runImmediateSessionCommand } from './immediateSessionCommandAction';
-import { admitChatInputQueueMessageAndConsumeResources, admitServerQueueMessageAndConsumeResources, attachedFilesToQueueCandidates, createServerQueueAdmissionCapture, createServerQueueAdmissionIdentity, resolveQueueSendConfig } from './queueAdmission';
+import { admitChatInputQueueMessageAndConsumeResources, admitServerQueueMessageAndConsumeResources, attachedFilesToQueueCandidates, createServerQueueAdmissionCapture, createServerQueueAdmissionIdentity, isServerQueueAdmissionEventBlocked, resolveQueueSendConfig } from './queueAdmission';
 import { shouldShowPermissionAutoAcceptControl, togglePermissionAutoAccept } from './permissionAutoAccept';
+import { getSlashTokenRange } from './commandSelection';
 import { canCompactPastedText, createPastedTextReference, getNextPastedTextReferenceIndex } from './pastedTextReferences';
 import { decorateComposerReference, materializeComposerDocument, serializeComposerDocument, validateComposerDocument, type ComposerDocument, type SessionComposerReference } from '@/composer/document';
 import { useComposerController } from '@/composer/use-composer-controller';
@@ -148,6 +149,24 @@ const COMPOSER_TEXT_LAYOUT_CLASS = 'box-border w-full whitespace-pre-wrap break-
 const ToolOutputDialog = lazyWithChunkRecovery(() => import('./message/ToolOutputDialog'));
 const EMPTY_QUEUE: QueueItem[] = [];
 const FILE_MENTION_TOKEN = /^@[^\s]+$/;
+const shouldEnableComposerSlashDirectoryQueries = ({
+    inputMode,
+    message,
+    showCommandAutocomplete,
+    showSkillAutocomplete,
+}: {
+    inputMode: 'normal' | 'shell';
+    message: string;
+    showCommandAutocomplete: boolean;
+    showSkillAutocomplete: boolean;
+}): boolean => (
+    inputMode !== 'shell'
+    && (
+        showCommandAutocomplete
+        || showSkillAutocomplete
+        || /(^|\s)\/[A-Za-z0-9_-]*/.test(message)
+    )
+);
 // Single-line URL pasted over a selection becomes a markdown link.
 const PASTE_LINK_URL_PATTERN = /^(https?:\/\/|mailto:)\S+$/i;
 const COMPACT_CHAT_PLACEHOLDER_MAX_WIDTH = 560;
@@ -694,6 +713,7 @@ type ComposerActionButtonsProps = {
     draftSubmitting?: boolean;
     submissionBlocked: boolean;
     queueFrozen: boolean;
+    hasBlockingAdmission: boolean;
     onPrimaryAction: () => void;
     onQueueMessage: () => void;
     onAbort: () => void;
@@ -713,6 +733,7 @@ const ComposerActionButtons = React.memo(function ComposerActionButtons(props: C
         draftSubmitting,
         submissionBlocked,
         queueFrozen,
+        hasBlockingAdmission,
         onPrimaryAction,
         onQueueMessage,
         onAbort,
@@ -724,6 +745,7 @@ const ComposerActionButtons = React.memo(function ComposerActionButtons(props: C
         draftSubmitting: Boolean(draftSubmitting),
         submissionBlocked,
         queueFrozen,
+        hasBlockingAdmission,
     });
 
     const sendButton = (
@@ -804,6 +826,7 @@ const ComposerActionButtons = React.memo(function ComposerActionButtons(props: C
     && prev.draftSubmitting === next.draftSubmitting
     && prev.submissionBlocked === next.submissionBlocked
     && prev.queueFrozen === next.queueFrozen
+    && prev.hasBlockingAdmission === next.hasBlockingAdmission
     && prev.onPrimaryAction === next.onPrimaryAction
     && prev.onQueueMessage === next.onQueueMessage
     && prev.onAbort === next.onAbort
@@ -1002,7 +1025,6 @@ const ChatInputComponent: React.FC<ChatInputProps> = ({ onOpenSettings, scrollTo
 
     const currentProviderId = useConfigStore((state) => state.currentProviderId);
     const currentModelId = useConfigStore((state) => state.currentModelId);
-    const currentVariant = useConfigStore((state) => state.currentVariant);
     const setAgent = useConfigStore((state) => state.setAgent);
     const getVisibleAgents = useConfigStore((state) => state.getVisibleAgents);
     const agents = getVisibleAgents();
@@ -1186,9 +1208,15 @@ const ChatInputComponent: React.FC<ChatInputProps> = ({ onOpenSettings, scrollTo
 
     // Known slash-invocations (commands + skills + built-ins) used to highlight
     // matching /tokens in the composer, the same way confirmed @files are.
-    const commandsQuery = useCommandsQuery({ directory: currentDirectory });
+    const shouldLoadSlashDirectories = shouldEnableComposerSlashDirectoryQueries({
+        inputMode,
+        message,
+        showCommandAutocomplete,
+        showSkillAutocomplete,
+    });
+    const commandsQuery = useCommandsQuery({ directory: currentDirectory, enabled: shouldLoadSlashDirectories });
     const availableCommands = React.useMemo(() => commandsQuery.data ?? [], [commandsQuery.data]);
-    const installedSkillsQuery = useInstalledSkillsQuery({ directory: currentDirectory });
+    const installedSkillsQuery = useInstalledSkillsQuery({ directory: currentDirectory, enabled: shouldLoadSlashDirectories });
     const availableSkills = React.useMemo(() => installedSkillsQuery.data ?? [], [installedSkillsQuery.data]);
     const availableSkillNames = React.useMemo(
         () => new Map(availableSkills.map((skill) => [skill.name.toLowerCase(), skill.name])),
@@ -1557,6 +1585,7 @@ const ChatInputComponent: React.FC<ChatInputProps> = ({ onOpenSettings, scrollTo
     const hasContent = message.trim().length > 0 || sendableAttachedFiles.length > 0 || hasDrafts;
     const hasQueuedMessages = serverQueue.mode === 'server' ? serverQueue.items.length > 0 : queuedMessages.length > 0;
     const queueFrozen = !queueModeAllowsMutations(serverQueue.mode);
+    const hasBlockingAdmission = serverQueue.hasBlockingAdmission;
     const canSend = hasContent || hasQueuedMessages;
 
     const canAbort = sessionPhase !== 'idle';
@@ -1586,10 +1615,11 @@ const ChatInputComponent: React.FC<ChatInputProps> = ({ onOpenSettings, scrollTo
         presetText?: string;
     };
     const handleSubmitRef = React.useRef<(options?: SubmitOptions) => Promise<void>>(async () => {});
+    const serverAdmissionFlightRef = React.useRef(false);
 
     // Add message to queue instead of sending
     const handleQueueMessage = useEvent(() => {
-        if (submissionBlocked || queueFrozen) return;
+        if (submissionBlocked || queueFrozen || isServerQueueAdmissionEventBlocked(serverQueue.mode, hasBlockingAdmission, serverAdmissionFlightRef.current)) return;
         const inputSnapshot = getCurrentInputSnapshot();
         if (!inputSnapshot.hasContent || !currentSessionId) return;
         const sendConfig = resolveQueueSendConfig({
@@ -1638,6 +1668,7 @@ const ChatInputComponent: React.FC<ChatInputProps> = ({ onOpenSettings, scrollTo
             });
             const identity = createServerQueueAdmissionIdentity();
             const attachmentCandidates = attachedFilesToQueueCandidates(attachmentsToQueue);
+            serverAdmissionFlightRef.current = true;
             void admitServerQueueMessageAndConsumeResources({
                 capture: admissionCapture,
                 admit: () => serverQueue.actions.admit({
@@ -1674,6 +1705,8 @@ const ChatInputComponent: React.FC<ChatInputProps> = ({ onOpenSettings, scrollTo
                 if (result.status === 'committed' && !isMobile) textareaRef.current?.focus();
             }).catch((error) => {
                 toast.error(t(error instanceof RangeError ? 'chat.chatInput.toast.attachmentsTooLarge' : 'chat.chatInput.toast.messageSendFailed'));
+            }).finally(() => {
+                serverAdmissionFlightRef.current = false;
             });
             return;
         }
@@ -1736,7 +1769,7 @@ const ChatInputComponent: React.FC<ChatInputProps> = ({ onOpenSettings, scrollTo
     }, []);
 
     const handleSubmit = async (options?: SubmitOptions) => {
-        if (submissionBlocked) return;
+        if (submissionBlocked || isServerQueueAdmissionEventBlocked(serverQueue.mode, hasBlockingAdmission, serverAdmissionFlightRef.current)) return;
         const queuedOnly = options?.queuedOnly ?? false;
         const queuedMessageId = options?.queuedMessageId;
         const delivery = options?.delivery === 'steer' && sessionPhase !== 'idle' ? 'steer' : undefined;
@@ -2476,6 +2509,7 @@ const ChatInputComponent: React.FC<ChatInputProps> = ({ onOpenSettings, scrollTo
 
     // Primary action for send/queue button — respects selected follow-up behavior
     const handlePrimaryAction = React.useCallback(() => {
+        if (isServerQueueAdmissionEventBlocked(serverQueue.mode, hasBlockingAdmission, serverAdmissionFlightRef.current)) return;
         const inputSnapshot = getCurrentInputSnapshot();
         const canQueue = inputMode === 'normal' && inputSnapshot.hasContent && currentSessionId && (sessionPhase !== 'idle' || autoReviewRunning);
         if (followUpBehavior === 'queue' && canQueue) {
@@ -2485,7 +2519,7 @@ const ChatInputComponent: React.FC<ChatInputProps> = ({ onOpenSettings, scrollTo
         } else {
             void handleSubmitRef.current();
         }
-    }, [inputMode, getCurrentInputSnapshot, currentSessionId, sessionPhase, autoReviewRunning, followUpBehavior, handleQueueMessage]);
+    }, [inputMode, getCurrentInputSnapshot, currentSessionId, sessionPhase, autoReviewRunning, followUpBehavior, handleQueueMessage, serverQueue.mode, hasBlockingAdmission]);
 
     // Draft welcome presets: submit immediately.
     const submitPresetPrompt = React.useCallback((text: string) => {
@@ -3721,34 +3755,38 @@ const ChatInputComponent: React.FC<ChatInputProps> = ({ onOpenSettings, scrollTo
         })();
     });
 
-    const handleSkillSelect = (skillName: string) => {
+    const insertSlashReference = useEvent((reference: Parameters<typeof insertReference>[2]): boolean => {
+        const document = getDocument();
         const textarea = textareaRef.current;
-        const cursorPosition = textarea?.selectionStart ?? message.length;
-        const textBeforeCursor = message.substring(0, cursorPosition);
-        const lastSlashSymbol = textBeforeCursor.lastIndexOf('/');
+        const cursorPosition = textarea?.selectionStart ?? document.text.length;
+        const range = getSlashTokenRange(document.text, cursorPosition);
+        if (!range) return false;
 
-        if (lastSlashSymbol !== -1) {
-            const before = message.substring(0, lastSlashSymbol);
-            const after = message.substring(cursorPosition);
-            const insertion = withReferenceInsertionBoundaries(`/${skillName}`, before, after);
-            const newMessage = `${before}${insertion}${after}`;
-            applyProgrammaticEdit(newMessage);
-
-            const nextCursor = before.length + insertion.length;
-            requestAnimationFrame(() => {
-                if (textareaRef.current) {
-                    textareaRef.current.selectionStart = nextCursor;
-                    textareaRef.current.selectionEnd = nextCursor;
-                }
-                adjustTextareaHeight();
-                updateAutocompleteState(newMessage, nextCursor);
-            });
-        }
-
-        setShowSkillAutocomplete(false);
-        setSkillQuery('');
-
+        const inserted = insertReference(range.start, range.end, reference, { inlineBoundaries: true });
+        const insertedReference = inserted.document.references.some((candidate) => candidate.id === reference.id);
+        requestAnimationFrame(() => {
+            if (textareaRef.current) {
+                textareaRef.current.selectionStart = inserted.caret;
+                textareaRef.current.selectionEnd = inserted.caret;
+            }
+            adjustTextareaHeight();
+            updateAutocompleteState(inserted.document.text, inserted.caret);
+            if (insertedReference) {
+                setShowCommandAutocomplete(false);
+                setShowSkillAutocomplete(false);
+            }
+        });
         textareaRef.current?.focus();
+        return insertedReference;
+    });
+
+    const handleSkillSelect = (skill: SkillInfo) => {
+        if (insertSlashReference({
+            id: `skill:${skill.name}:${createUuid()}`,
+            kind: 'skill',
+            skillName: skill.name,
+            display: `/${skill.name}`,
+        })) setSkillQuery('');
     };
 
     const handleSnippetSelect = (_snippet: unknown, trigger: string) => {
@@ -3776,6 +3814,28 @@ const ChatInputComponent: React.FC<ChatInputProps> = ({ onOpenSettings, scrollTo
     const handleCommandSelect = (command: CommandInfo, submit = false) => {
 
         const commandText = `/${command.name}`;
+
+        if (!submit && command.isSkill) {
+            if (insertSlashReference({
+                id: `skill:${command.name}:${createUuid()}`,
+                kind: 'skill',
+                skillName: command.name,
+                display: commandText,
+            })) setCommandQuery('');
+            return;
+        }
+
+        if (!submit && command.source === 'opencode' && command.isBuiltIn === false) {
+            if (insertSlashReference({
+                id: `command:${command.name}:${createUuid()}`,
+                kind: 'command',
+                commandName: command.name,
+                reference: command.reference ?? command.name,
+                display: commandText,
+            })) setCommandQuery('');
+            return;
+        }
+
         replacePlainDocument(command.isSkill ? `   ${commandText} ` : `${commandText} `);
 
         const textareaElement = textareaRef.current as HTMLTextAreaElement & { _commandMetadata?: typeof command };
@@ -5321,6 +5381,7 @@ const ChatInputComponent: React.FC<ChatInputProps> = ({ onOpenSettings, scrollTo
                                 draftSubmitting={draftBusy}
                                 submissionBlocked={submissionBlocked}
                                 queueFrozen={queueFrozen}
+                                hasBlockingAdmission={hasBlockingAdmission}
                                 onPrimaryAction={handlePrimaryAction}
                                 onQueueMessage={handleQueueMessage}
                                 onAbort={handleAbort}
@@ -5798,6 +5859,7 @@ const ChatInputComponent: React.FC<ChatInputProps> = ({ onOpenSettings, scrollTo
                                                 draftSubmitting={draftBusy}
                                                 submissionBlocked={submissionBlocked}
                                                 queueFrozen={queueFrozen}
+                                                hasBlockingAdmission={hasBlockingAdmission}
                                                 onPrimaryAction={handlePrimaryAction}
                                                 onQueueMessage={handleQueueMessage}
                                                 onAbort={handleAbort}
@@ -5880,6 +5942,7 @@ const ChatInputComponent: React.FC<ChatInputProps> = ({ onOpenSettings, scrollTo
                                         draftSubmitting={draftBusy}
                                         submissionBlocked={submissionBlocked}
                                         queueFrozen={queueFrozen}
+                                        hasBlockingAdmission={hasBlockingAdmission}
                                         onPrimaryAction={handlePrimaryAction}
                                         onQueueMessage={handleQueueMessage}
                                         onAbort={handleAbort}

@@ -120,7 +120,7 @@ export const createMessageQueueService = ({ dbPath, getRuntimeConfig = () => nul
       scopeID: row.scope_id, directory: scopeRow(row.scope_id)?.directory, sessionID: scopeRow(row.scope_id)?.session_id,
       ...(row.composer_document ? { composerDocument: parse(row.composer_document) } : {}),
       ...(row.send_config ? { sendConfig: parse(row.send_config) } : {}),
-      status: row.status, attemptCount: attempt.attempt_count, position: row.position, rowVersion: row.row_version, createdAt: row.created_at,
+      status: row.status, manualDispatchRequested: row.manual_dispatch_requested === 1, attemptCount: attempt.attempt_count, position: row.position, rowVersion: row.row_version, createdAt: row.created_at,
       dueAt: row.due_at, ...(row.reconciliation_due_at != null ? { reconciliationDueAt: row.reconciliation_due_at } : {}),
       attachments: attachmentsFor(row.queue_item_id), attachmentIssues: parse(row.attachment_issues) ?? [],
     };

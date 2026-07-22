@@ -5,7 +5,10 @@ import fs from 'node:fs/promises';
 import os from 'node:os';
 import path from 'node:path';
 
-import { registerConfigEntityRoutes } from './config-entity-routes.js';
+vi.mock('@opencode-ai/sdk/v2', () => ({ createOpencodeClient: vi.fn() }));
+
+const { createOpencodeClient } = await import('@opencode-ai/sdk/v2');
+const { registerConfigEntityRoutes } = await import('./config-entity-routes.js');
 
 const createDependencies = (getCommandSources, configDirectory, getAgentSources = vi.fn()) => ({
   resolveProjectDirectory: async () => ({ directory: '/repo' }),
@@ -33,6 +36,9 @@ const createDependencies = (getCommandSources, configDirectory, getAgentSources 
   deleteSnippet: vi.fn(),
   expandSnippets: vi.fn(),
   configDirectory,
+  buildOpenCodeUrl: () => 'http://opencode-upstream:4096/',
+  getOpenCodeAuthHeaders: () => ({ Authorization: 'Basic example' }),
+  getOpenCodePort: () => 4096,
 });
 
 describe('config entity command metadata route', () => {
@@ -58,6 +64,82 @@ describe('config entity command metadata route', () => {
         'built-in': { scope: null, isBuiltIn: true },
       },
     });
+  });
+
+  it('returns a compact SDK command catalog without templates', async () => {
+    const app = express();
+    app.use(express.json());
+    const markdownPath = '/repo/.opencode/commands/markdown.md';
+    const getCommandSources = vi.fn((name) => ({
+      md: { exists: name === 'markdown', scope: name === 'markdown' ? 'project' : null, path: name === 'markdown' ? markdownPath : null },
+      json: { exists: name === 'json', scope: name === 'json' ? 'project' : null },
+    }));
+    createOpencodeClient.mockReturnValue({
+      command: {
+        list: vi.fn(async () => ({ data: [
+          { name: 'markdown', description: ` ${'😀'.repeat(161)}\nvalue `, template: 'secret markdown template', source: 'command' },
+          { name: 'json', description: ' JSON\n command ', template: 'secret JSON template', source: 'command' },
+          { name: 'skill-command', description: 'hidden', template: 'secret skill template', source: 'skill' },
+        ] })),
+      },
+    });
+    registerConfigEntityRoutes(app, createDependencies(getCommandSources));
+
+    const response = await request(app)
+      .post('/api/config/commands/metadata?directory=%2Frepo')
+      .send({ catalog: true })
+      .expect(200);
+
+    expect(createOpencodeClient).toHaveBeenCalledWith(expect.objectContaining({
+      baseUrl: 'http://opencode-upstream:4096',
+      directory: '/repo',
+      headers: { Authorization: 'Basic example' },
+    }));
+    expect(response.body.commands).toEqual([
+      expect.objectContaining({ name: 'markdown', reference: markdownPath, description: `${'😀'.repeat(160)}…`, scope: 'project', isBuiltIn: false }),
+      expect.objectContaining({ name: 'json', reference: 'json', description: 'JSON command', scope: 'project', isBuiltIn: false }),
+    ]);
+    expect(response.body.commands[0]).not.toHaveProperty('template');
+  });
+
+  it('bounds command tag references and excludes unsafe command names', async () => {
+    const app = express();
+    app.use(express.json());
+    const getCommandSources = vi.fn((name) => ({
+      md: {
+        exists: ['safe-path', 'unsafe-path', 'long-path'].includes(name),
+        scope: 'project',
+        path: name === 'safe-path'
+          ? '/repo/.opencode/commands/safe-path.md'
+          : (name === 'unsafe-path' ? '/repo/commands/bad].md' : 'x'.repeat(8_193)),
+      },
+      json: { exists: false, scope: null },
+    }));
+    createOpencodeClient.mockReturnValue({
+      command: {
+        list: vi.fn(async () => ({ data: [
+          { name: 'safe-path', source: 'command' },
+          { name: 'unsafe-path', source: 'command' },
+          { name: 'long-path', source: 'command' },
+          { name: 'bad]name', source: 'command' },
+          { name: 'bad\rname', source: 'command' },
+          { name: 'bad\nname', source: 'command' },
+          { name: '   ', source: 'command' },
+        ] })),
+      },
+    });
+    registerConfigEntityRoutes(app, createDependencies(getCommandSources));
+
+    const response = await request(app)
+      .post('/api/config/commands/metadata?directory=%2Frepo')
+      .send({ catalog: true })
+      .expect(200);
+
+    expect(response.body.commands.map(({ name, reference }) => ({ name, reference }))).toEqual([
+      { name: 'safe-path', reference: '/repo/.opencode/commands/safe-path.md' },
+      { name: 'unsafe-path', reference: 'unsafe-path' },
+      { name: 'long-path', reference: 'long-path' },
+    ]);
   });
 });
 

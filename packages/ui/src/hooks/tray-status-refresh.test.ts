@@ -1,5 +1,5 @@
 import { describe, expect, test } from 'bun:test';
-import { refreshTrayStatusTargets } from './tray-status-refresh';
+import { getTrayStatusTargetSignature, refreshTrayStatusTargets } from './tray-status-refresh';
 
 const targets = new Map([
   ['/repo-a', ['a']],
@@ -9,6 +9,23 @@ const targets = new Map([
 ]);
 
 describe('refreshTrayStatusTargets', () => {
+  test('uses order-independent directory and session membership signatures', () => {
+    const first = new Map([
+      ['/repo-b', ['b2', 'b1']],
+      ['/repo-a', ['a1', 'a1']],
+    ]);
+    const reordered = new Map([
+      ['/repo-a', ['a1']],
+      ['/repo-b', ['b1', 'b2']],
+    ]);
+
+    expect(getTrayStatusTargetSignature(first)).toBe(getTrayStatusTargetSignature(reordered));
+    expect(getTrayStatusTargetSignature(reordered)).not.toBe(getTrayStatusTargetSignature(new Map([
+      ['/repo-a', ['a1']],
+      ['/repo-b', ['b1', 'b3']],
+    ])));
+  });
+
   test('does not poll any directory before OpenCode is ready', async () => {
     const calls: string[] = [];
 

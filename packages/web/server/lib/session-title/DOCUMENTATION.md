@@ -40,13 +40,16 @@ minutes per session.
      title as a loading state.
     - Call `generateSmallModelText` with a **bounded** transcript — never the
       full session history:
-      - Fetch only the latest ~24 messages (`limit` on OpenCode message API).
-      - Keep the latest 10 user/assistant turns after the most recent
+      - Fetch only the latest ~16 messages (`limit` on OpenCode message API).
+      - Keep the latest 5 user/assistant turns after the most recent
         compaction part (if any); content before compaction is ignored.
+      - Limit each user message to 2,000 characters and each assistant
+        message to 1,200 characters so verbose model output cannot dominate
+        the title signal.
       - Optionally prepend an earlier subject anchor (first real user message
         still inside that post-compaction window when it fell outside the
         latest turns).
-      - Hard-cap the final transcript under 100K characters (prefer latest
+      - Hard-cap the final transcript under 20K characters (prefer latest
         content when over budget).
       - Pass the current title as a continuity hint. The prompt asks the model
         to name the main subject of the work, keep that subject across wrap-up

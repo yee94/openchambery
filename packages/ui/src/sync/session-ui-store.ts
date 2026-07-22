@@ -116,6 +116,7 @@ export async function routeMessage(params: {
 }): Promise<void> {
   const requestDirectory = params.directory ?? undefined
   const onSendConfirmed = createConfirmedSendCallback(params.sessionId, params.onSendConfirmed)
+  let content = params.content
   if (params.inputMode === "shell") {
     const messageID = params.messageID ?? ascendingId("msg")
     return opencodeClient.shellSession({
@@ -131,16 +132,14 @@ export async function routeMessage(params: {
 
   // Slash commands — fire and forget, SSE delivers messages and status
   if (params.content.startsWith("/")) {
-    const [head, ...tail] = params.content.split(" ")
+    const separatorIndex = params.content.search(/\s/u)
+    const head = separatorIndex === -1 ? params.content : params.content.slice(0, separatorIndex)
+    const argumentsText = separatorIndex === -1 ? "" : params.content.slice(separatorIndex).trim()
     const cmdName = head.slice(1)
-
-    const dirState = getDirectoryState(requestDirectory)
-    const syncCommands = dirState?.command ?? []
 
     // OpenCode also exposes skills through its command catalog. Resolve the
     // installed skill catalog first so slash-invoked skills stay on the prompt
     // path and reach the model through the skill tool.
-    const syncCommand = syncCommands.find((c) => c.name === cmdName)
     const queryDirectory = requestDirectory ?? useDirectoryStore.getState().currentDirectory ?? null
     const transport = getRuntimeTransportIdentity()
     const commandsQuery = commandQueryOptions(queryDirectory, transport)
@@ -149,12 +148,10 @@ export async function routeMessage(params: {
     const skillsQueryState = queryClient.getQueryState(skillsQuery.queryKey)
     const hasCommandsSnapshot = commandsQueryState?.data !== undefined
     const hasSkillsSnapshot = skillsQueryState?.data !== undefined
-    const [storeCommands, installedSkills] = await Promise.all([
-      syncCommand
-        ? Promise.resolve([])
-        : hasCommandsSnapshot
-          ? Promise.resolve(readCommandsSnapshot(queryDirectory, transport))
-          : queryClient.fetchQuery({ ...commandsQuery, staleTime: Infinity }),
+    const [commands, installedSkills] = await Promise.all([
+      hasCommandsSnapshot
+        ? Promise.resolve(readCommandsSnapshot(queryDirectory, transport))
+        : queryClient.fetchQuery({ ...commandsQuery, staleTime: Infinity }),
       hasSkillsSnapshot
         ? Promise.resolve(readInstalledSkillsSnapshot(queryClient, queryDirectory, transport))
         : queryClient.fetchQuery({ ...skillsQuery, staleTime: Infinity }),
@@ -165,9 +162,11 @@ export async function routeMessage(params: {
     }
 
     const isSkill = installedSkills.some((skill) => skill.name === cmdName)
-    const isCommand = !isSkill && Boolean(syncCommand || storeCommands.find((c) => c.name === cmdName))
+    const command = isSkill ? undefined : commands.find((candidate) => candidate.name === cmdName)
 
-    if (isCommand) {
+    if (command?.isBuiltIn === false) {
+      content = `[command:${command.reference ?? command.name}]${argumentsText ? ` ${argumentsText}` : ""}`
+    } else if (command) {
       return optimisticSend({
         sessionId: params.sessionId,
         content: params.content,
@@ -184,7 +183,7 @@ export async function routeMessage(params: {
           providerID: params.providerID,
           modelID: params.modelID,
           command: cmdName,
-          arguments: tail.join(" "),
+          arguments: argumentsText,
           agent: params.agent,
           variant: params.variant,
           files: params.files,
@@ -198,7 +197,7 @@ export async function routeMessage(params: {
   // Normal prompt — optimistic insert so message appears instantly
   return optimisticSend({
     sessionId: params.sessionId,
-    content: params.content,
+    content,
     providerID: params.providerID,
     modelID: params.modelID,
     agent: params.agent,
@@ -211,7 +210,7 @@ export async function routeMessage(params: {
       id: params.sessionId,
       providerID: params.providerID,
       modelID: params.modelID,
-      text: params.content,
+      text: content,
       agent: params.agent,
       agentMentions: params.agentMentionName ? [{ name: params.agentMentionName }] : undefined,
       variant: params.variant,

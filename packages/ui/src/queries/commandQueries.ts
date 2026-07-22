@@ -15,10 +15,11 @@ export interface CommandConfig {
   source?: string;
   template?: string;
   scope?: CommandScope;
+  reference?: string;
 }
 
 export interface Command extends CommandConfig {
-  isBuiltIn?: boolean;
+  isBuiltIn: boolean;
 }
 
 const normalizeDirectory = (directory: string | null | undefined): string | null => directory?.trim() || null;
@@ -39,14 +40,6 @@ export const commandQueryOptions = (
   return {
     queryKey: commandQueryKey(normalizedDirectory, transport),
     queryFn: async ({ signal }: { signal: AbortSignal }): Promise<Command[]> => {
-      const commands = await opencodeClient.withDirectory(
-        normalizedDirectory,
-        () => opencodeClient.listCommandsWithDetails(),
-      );
-      const configurableCommands = commands.filter((command) => command.source !== 'skill');
-      if (configurableCommands.length === 0) {
-        return [];
-      }
       const response = await runtimeFetch('/api/config/commands/metadata', {
         method: 'POST',
         headers: {
@@ -54,18 +47,15 @@ export const commandQueryOptions = (
           'Cache-Control': 'no-cache',
           ...(normalizedDirectory ? { 'x-opencode-directory': normalizedDirectory } : {}),
         },
-        body: JSON.stringify({ names: configurableCommands.map((command) => command.name) }),
+        body: JSON.stringify({ catalog: true }),
         query: normalizedDirectory ? { directory: normalizedDirectory } : undefined,
         signal,
       });
       if (!response.ok) {
         throw new Error('Failed to fetch command metadata');
       }
-      const data = await response.json() as { commands?: Record<string, { scope?: unknown }> };
-      return configurableCommands.map((command) => {
-        const scope = data.commands?.[command.name]?.scope;
-        return scope === 'project' || scope === 'user' ? { ...command, scope } : command;
-      });
+      const data = await response.json() as { commands?: Command[] };
+      return Array.isArray(data.commands) ? data.commands : [];
     },
     retry: 2,
   };

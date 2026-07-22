@@ -1,5 +1,8 @@
 import {
     DRAFT_COMPOSER_REFERENCE_LIMITS,
+    isValidDraftComposerCommandName,
+    isValidDraftComposerCommandReference,
+    isValidDraftComposerSkillName,
     isValidDraftComposerSessionID,
     type DraftComposerReference,
 } from '@/sync/input-draft-types';
@@ -9,6 +12,8 @@ export type ComposerReference = DraftComposerReference;
 export type ComposerReferenceKind = ComposerReference['kind'];
 export type SessionComposerReference = Extract<ComposerReference, { kind: 'session' }>;
 export type PasteComposerReference = Extract<ComposerReference, { kind: 'paste' }>;
+export type SkillComposerReference = Extract<ComposerReference, { kind: 'skill' }>;
+export type CommandComposerReference = Extract<ComposerReference, { kind: 'command' }>;
 export type NewComposerReference = ComposerReference extends infer Reference
     ? Reference extends ComposerReference ? Omit<Reference, 'start' | 'end'> : never
     : never;
@@ -38,7 +43,8 @@ export type ComposerReferenceSemantic =
 export type ComposerReferenceContribution = { text: string; semantic?: ComposerReferenceSemantic };
 export type ComposerReferenceDecoration =
     | { style: 'mentionSession'; sessionLabel: string }
-    | { style: 'mentionPaste' };
+    | { style: 'mentionPaste' }
+    | { style: 'mentionCommand'; skillName?: string };
 export type ComposerReferenceResourceIdentity = { type: 'attachment'; attachmentRefID: string };
 export type ComposerPayloadBudget = { category: 'opaque-text'; length: number };
 export interface ComposerResourceDelta {
@@ -60,6 +66,8 @@ export interface ComposerReferenceExtension<K extends ComposerReferenceKind> {
 }
 
 export const isValidComposerSessionId = (value: unknown): value is string => typeof value === 'string' && isValidDraftComposerSessionID(value);
+
+const commandNameFromReference = (reference: string): string => reference.replaceAll('\\', '/').split('/').at(-1)?.replace(/\.md$/, '') ?? '';
 
 const COMPOSER_REFERENCE_EXTENSIONS = {
     session: {
@@ -95,6 +103,37 @@ const COMPOSER_REFERENCE_EXTENSIONS = {
         contributeDirectSend: (reference) => ({ text: reference.text }),
         decorate: () => ({ style: 'mentionPaste' }),
         payloadBudget: (reference) => ({ category: 'opaque-text', length: reference.text.length }),
+    },
+    skill: {
+        kind: 'skill',
+        validatePayload: (value) => isValidDraftComposerSkillName(value.skillName) && value.display === `/${value.skillName}`,
+        contributeCanonical: (reference) => ({ text: `[skill:${reference.skillName}]` }),
+        contributeDirectSend: (reference) => ({ text: `[skill:${reference.skillName}]` }),
+        decorate: (reference) => ({ style: 'mentionCommand', skillName: reference.skillName }),
+        payloadBudget: () => undefined,
+        canonical: {
+            matcher: /\[skill:([A-Za-z0-9][A-Za-z0-9_-]*)\]/g,
+            resolveDisplay: (match) => `/${match[1]}`,
+            materialize: (match, display, start) => ({ id: `skill:${start}`, kind: 'skill', skillName: match[1], display, start, end: start + display.length }),
+        },
+    },
+    command: {
+        kind: 'command',
+        validatePayload: (value) => isValidDraftComposerCommandName(value.commandName)
+            && isValidDraftComposerCommandReference(value.reference)
+            && value.display === `/${value.commandName}`,
+        contributeCanonical: (reference) => ({ text: `[command:${reference.reference}]` }),
+        contributeDirectSend: (reference) => ({ text: `[command:${reference.reference}]` }),
+        decorate: () => ({ style: 'mentionCommand' }),
+        payloadBudget: () => undefined,
+        canonical: {
+            matcher: /\[command:([^\]\r\n]+)\]/g,
+            resolveDisplay: (match) => {
+                const commandName = commandNameFromReference(match[1]);
+                return isValidDraftComposerCommandReference(match[1]) && isValidDraftComposerCommandName(commandName) ? `/${commandName}` : null;
+            },
+            materialize: (match, display, start) => ({ id: `command:${start}`, kind: 'command', commandName: commandNameFromReference(match[1]), reference: match[1], display, start, end: start + display.length }),
+        },
     },
 } as const satisfies { [K in ComposerReference['kind']]: ComposerReferenceExtension<K> };
 

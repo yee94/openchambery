@@ -19,7 +19,7 @@ import { useSessionUIStore } from '@/sync/session-ui-store';
 import { useGitStore } from '@/stores/useGitStore';
 import { useUIStore } from '@/stores/useUIStore';
 import { useConfigStore } from '@/stores/useConfigStore';
-import { refreshTrayStatusTargets } from './tray-status-refresh';
+import { getTrayStatusTargetSignature, refreshTrayStatusTargets } from './tray-status-refresh';
 import { resolveProjectForSessionDirectory, normalizeProjectPath } from '@/lib/projectResolution';
 import { getSessionActivityUpdatedAt } from '@/lib/sessionActivity';
 import type { ProjectEntry } from '@/lib/api/types';
@@ -434,10 +434,6 @@ export const useTraySync = (): void => {
     // after that recover via reconnect resync, not a periodic poll.
     let statusRefreshPromise: Promise<void> | null = null;
     let lastStatusTargetSignature = '';
-    const statusTargetSignature = (targets: ReadonlyMap<string, readonly string[]>) =>
-      [...targets.entries()]
-        .map(([directory, sessionIds]) => `${directory}:${sessionIds.join(',')}`)
-        .join('|');
     const isOpenCodeReady = () => {
       const config = useConfigStore.getState();
       return config.isConnected && config.connectionPhase === 'connected';
@@ -445,7 +441,7 @@ export const useTraySync = (): void => {
     const refreshGlobalStatus = () => {
       if (statusRefreshPromise) return statusRefreshPromise;
       const targets = collectStatusPollDirectories();
-      lastStatusTargetSignature = statusTargetSignature(targets);
+      lastStatusTargetSignature = getTrayStatusTargetSignature(targets);
       statusRefreshPromise = refreshTrayStatusTargets({
         targets,
         isReady: isOpenCodeReady,
@@ -462,7 +458,7 @@ export const useTraySync = (): void => {
       }).finally(() => {
         statusRefreshPromise = null;
         const nextTargets = collectStatusPollDirectories();
-        if (!disposed && isOpenCodeReady() && statusTargetSignature(nextTargets) !== lastStatusTargetSignature) {
+        if (!disposed && isOpenCodeReady() && getTrayStatusTargetSignature(nextTargets) !== lastStatusTargetSignature) {
           void refreshGlobalStatus();
         }
       });
@@ -525,7 +521,7 @@ export const useTraySync = (): void => {
     const unsubscribeGlobal = useGlobalSessionsStore.subscribe(() => {
       scheduleFlush();
       if (!isOpenCodeReady()) return;
-      const nextTargetSignature = statusTargetSignature(collectStatusPollDirectories());
+      const nextTargetSignature = getTrayStatusTargetSignature(collectStatusPollDirectories());
       if (nextTargetSignature !== lastStatusTargetSignature) void refreshGlobalStatus();
     });
     // Project labels and discovered worktrees feed the "project · branch"

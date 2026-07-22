@@ -146,13 +146,45 @@ describe('Electron session index', () => {
     service.close();
   });
 
+  it('reports exact event-summary repeats as unchanged without touching directory recency', () => {
+    const runtimeRef = { value: 'http://runtime-a.test' };
+    const service = createService(runtimeRef);
+    service.replaceDirectory({ directory: '/repo', sessions: [session('ses_a', 10)], cursor: null, hasMore: false, now: 1000 });
+
+    expect(service.upsertAndReportChange(session('ses_a', 10), 2000, { preserveActivity: true })).toBe(false);
+    expect(service.upsert(session('ses_a', 10), 2500, { preserveActivity: true })).toBe(true);
+    expect(service.snapshot().directories[0].lastAccessedAt).toBe(1000);
+
+    expect(service.upsertAndReportChange({ ...session('ses_a', 10), title: 'Renamed' }, 3000, { preserveActivity: true })).toBe(true);
+    expect(service.snapshot().directories[0]).toMatchObject({
+      lastAccessedAt: 3000,
+      sessions: [expect.objectContaining({ id: 'ses_a', title: 'Renamed' })],
+    });
+    service.close();
+  });
+
+  it('ignores event summaries that remain outside the bounded root page', () => {
+    const runtimeRef = { value: 'http://runtime-a.test' };
+    const service = createService(runtimeRef);
+    const sessions = Array.from({ length: 20 }, (_, index) => session(`ses_${index}`, 100 - index));
+    service.replaceDirectory({ directory: '/repo', sessions, cursor: 80, hasMore: true, now: 1000 });
+
+    expect(service.upsertAndReportChange(session('ses_old', 1), 2000, { preserveActivity: true })).toBe(false);
+
+    const snapshot = service.snapshot().directories[0];
+    expect(snapshot.lastAccessedAt).toBe(1000);
+    expect(snapshot.sessions).toHaveLength(20);
+    expect(snapshot.sessions.some((item) => item.id === 'ses_old')).toBe(false);
+    service.close();
+  });
+
   it('stores the latest session status transition independently from ordering', () => {
     const runtimeRef = { value: 'http://runtime-a.test' };
     const service = createService(runtimeRef);
     service.replaceDirectory({ directory: '/repo', sessions: [session('ses_a', 10)], cursor: null, hasMore: false });
 
-    service.updateStatus('ses_a', 'busy', 20);
-    service.updateStatus('ses_a', 'idle', 10);
+    expect(service.updateStatus('ses_a', 'busy', 20)).toBe(true);
+    expect(service.updateStatus('ses_a', 'idle', 10)).toBe(false);
 
     const stored = service.snapshot().directories[0].sessions[0];
     expect(stored.metadata.openchamber.sessionStatus).toEqual({ type: 'busy', changedAt: 20 });
@@ -170,6 +202,18 @@ describe('Electron session index', () => {
 
     service.remove('ses_child');
     expect(service.snapshot().directories[0].sessions[0]).not.toHaveProperty('hasChildren');
+    service.close();
+  });
+
+  it('reports repeated child membership as unchanged', () => {
+    const runtimeRef = { value: 'http://runtime-a.test' };
+    const service = createService(runtimeRef);
+    service.replaceDirectory({ directory: '/repo', sessions: [session('ses_parent', 10)], cursor: null, hasMore: false, now: 1000 });
+    const child = { ...session('ses_child', 11), parentID: 'ses_parent' };
+
+    expect(service.upsertAndReportChange(child, 2000, { preserveActivity: true })).toBe(true);
+    expect(service.upsertAndReportChange(child, 3000, { preserveActivity: true })).toBe(false);
+    expect(service.snapshot().directories[0].lastAccessedAt).toBe(2000);
     service.close();
   });
 

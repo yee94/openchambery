@@ -816,8 +816,9 @@ const handleLocalApiRequest = async (input: RequestInfo | URL, url: URL, init: R
   // Skills CRUD: /api/config/skills/:name or /api/config/skills
   if (pathname === '/api/config/skills') {
     const directory = getRequestDirectoryHint(url, input, init);
+    const summary = url.searchParams.get('summary') === 'true';
     try {
-      const data = await sendBridgeMessage('api:config/skills', { method: 'GET', directory });
+      const data = await sendBridgeMessage('api:config/skills', { method: 'GET', body: { summary }, directory });
       return new Response(JSON.stringify(data), { status: 200, headers: { 'Content-Type': 'application/json' } });
     } catch (error) {
       const message = error instanceof Error ? error.message : String(error);

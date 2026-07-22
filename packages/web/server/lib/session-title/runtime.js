@@ -24,13 +24,14 @@ const OPENCHAMBER_SETTINGS_FILE = path.join(
 export const TITLE_QUIET_MS = 15_000;
 /** At most one auto title refresh per session in this window. */
 export const TITLE_THROTTLE_MS = 5 * 60_000;
-/** Fetch only a short recent window — never the full session. */
-const TRANSCRIPT_MESSAGE_LIMIT = 24;
+/** Fetch enough recent messages to find a subject anchor around the title window. */
+const TRANSCRIPT_MESSAGE_LIMIT = 16;
 /** Latest user/assistant turns used for title generation. */
-const TRANSCRIPT_MAX_TURNS = 10;
-const TRANSCRIPT_PART_CHAR_LIMIT = 4_000;
+const TRANSCRIPT_MAX_TURNS = 5;
+const TRANSCRIPT_USER_CHAR_LIMIT = 2_000;
+const TRANSCRIPT_ASSISTANT_CHAR_LIMIT = 1_200;
 /** Hard cap so long sessions / huge parts stay under small-model budget. */
-const TRANSCRIPT_MAX_CHARS = 100_000;
+const TRANSCRIPT_MAX_CHARS = 20_000;
 const TITLE_CHAR_LIMIT = 80;
 const FETCH_TIMEOUT_MS = 5_000;
 
@@ -201,11 +202,14 @@ const extractUserMessage = (payload) => {
 
 const messagePartsToText = (message) => {
   const parts = Array.isArray(message?.parts) ? message.parts : [];
+  const charLimit = message?.info?.role === 'assistant'
+    ? TRANSCRIPT_ASSISTANT_CHAR_LIMIT
+    : TRANSCRIPT_USER_CHAR_LIMIT;
   return parts
     .map((part) => (part?.type === 'text' && typeof part.text === 'string' ? part.text : ''))
     .filter(Boolean)
     .join('\n')
-    .slice(0, TRANSCRIPT_PART_CHAR_LIMIT);
+    .slice(0, charLimit);
 };
 
 const isRealUserMessage = (message) => {
@@ -274,11 +278,11 @@ const readTitleRefreshMeta = (session) => {
 
 /**
  * Build a short transcript for title generation.
- * Uses only the latest N turns (default 10) from a bounded recent fetch —
+ * Uses only the latest N turns (default 5) from a bounded recent fetch —
  * never the full session. Stops at the most recent compaction boundary.
  * When the latest window does not include the first real user message after
  * that boundary, prepend that subject anchor so wrap-up turns do not erase
- * the feature being done. Final transcript is hard-capped under 100K chars.
+ * the feature being done. Final transcript is hard-capped under 20K chars.
  */
 export const buildLatestTitleTranscript = (
   messages,

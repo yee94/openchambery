@@ -2,6 +2,7 @@ import * as fs from 'fs';
 import * as os from 'os';
 import * as path from 'path';
 import * as vscode from 'vscode';
+import { createOpencodeClient } from '@opencode-ai/sdk/v2';
 import { BUILT_IN_SKILL_LOCATION, type DiscoveredSkill, type SkillScope, type SkillSource } from './opencodeConfig';
 import type { BridgeContext } from './bridge';
 
@@ -157,6 +158,40 @@ export const fetchOpenCodeSkillsFromApi = async (
   } catch {
     return null;
   }
+};
+
+export type OpenCodeCommand = {
+  name: string;
+  description?: string;
+  agent?: string;
+  model?: string;
+  source?: string;
+};
+
+export const fetchOpenCodeCommandsFromApi = async (
+  ctx: BridgeContext | undefined,
+  workingDirectory?: string,
+): Promise<OpenCodeCommand[]> => {
+  const apiUrl = ctx?.manager?.getApiUrl();
+  if (!apiUrl) return [];
+  const client = createOpencodeClient({
+    baseUrl: apiUrl.replace(/\/+$/, ''),
+    headers: ctx?.manager?.getOpenCodeAuthHeaders() ?? {},
+    directory: workingDirectory,
+  });
+  const response = await client.command.list(workingDirectory ? { directory: workingDirectory } : undefined);
+  if (!Array.isArray(response.data)) return [];
+  return response.data.flatMap((command) => {
+    const name = typeof command?.name === 'string' ? command.name.trim() : '';
+    if (!name) return [];
+    return [{
+      name,
+      ...(typeof command.description === 'string' ? { description: command.description } : {}),
+      ...(typeof command.agent === 'string' ? { agent: command.agent } : {}),
+      ...(typeof command.model === 'string' ? { model: command.model } : {}),
+      ...(typeof command.source === 'string' ? { source: command.source } : {}),
+    }];
+  });
 };
 
 const readSharedSettingsFromDisk = (): Record<string, unknown> => {

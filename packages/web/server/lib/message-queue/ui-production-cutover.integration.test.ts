@@ -131,9 +131,9 @@ describe('Gate 2 UI production cutover E2E', () => {
           sendConfig: { providerID: 'openai', modelID: 'gpt' }, attachmentIssues: [], createdAt: Date.now(),
         },
       })).resolves.toMatchObject({ status: 'committed' });
-      expect(ui.getScope({ transportIdentity: 'device-a', directory: '/repo', sessionID: 'paste-session' })?.items).toEqual([
+      await eventually(() => expect(ui.getScope({ transportIdentity: 'device-a', directory: '/repo', sessionID: 'paste-session' })?.items).toEqual([
         expect.objectContaining({ queueItemID: 'paste-item', content, composerDocument: expect.objectContaining({ text: display }) }),
-      ]);
+      ]));
     } finally { await f.close(); }
   }, 15_000);
 

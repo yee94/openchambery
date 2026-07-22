@@ -63,3 +63,10 @@ test("composer sidecars require strict ranges and matching queue canonical conte
   expect(parseQueueLedgerSnapshot(snapshot({ ...valid, content: "drift" })).issues).toHaveLength(1)
   expect(parseQueueLedgerSnapshot(snapshot({ ...valid, composerDocument: { ...sidecar, references: [{ ...sidecar.references[0], end: 9 }] } })).issues).toHaveLength(1)
 })
+test("composer ledger sidecars retain durable skill and command references", () => {
+  const sidecar: NonNullable<QueueItemDTO["composerDocument"]> = { text: "/review /run", references: [
+    { id: "skill", kind: "skill", skillName: "review", display: "/review", start: 0, end: 7 },
+    { id: "command", kind: "command", commandName: "run", reference: "task-42", display: "/run", start: 8, end: 12 },
+  ] }
+  expect(parseQueueLedgerSnapshot(snapshot({ ...item(), content: "[skill:review] [command:task-42]", composerDocument: sidecar })).issues).toHaveLength(0)
+})

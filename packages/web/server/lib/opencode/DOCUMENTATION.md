@@ -221,7 +221,7 @@ This module provides OpenCode server integration utilities for the web server ru
 ## Public exports (config-entity-routes.js)
 - `registerConfigEntityRoutes(app, dependencies)`: registers configuration entity routes:
   - Agents: `/api/config/agents/:name` and `/api/config/agents/:name/config`
-  - Commands: batched metadata via `POST /api/config/commands/metadata`, plus CRUD at `/api/config/commands/:name`
+  - Commands: batched metadata via `POST /api/config/commands/metadata`; `{ catalog: true }` returns the compact autocomplete catalog without templates, plus CRUD at `/api/config/commands/:name`
   - Global raw configs: `GET /api/config/global` discovers existing config targets; `GET/PUT /api/config/global/:target` reads and writes `opencode`, `oh-my-opencode-slim`, and `oh-my-openagent` JSON or JSONC files
   - MCP servers: `/api/config/mcp` and `/api/config/mcp/:name`
   - Snippets: `/api/config/snippets`, `/api/config/snippets/:name`, and `/api/config/snippets/expand`
@@ -339,7 +339,7 @@ This module provides OpenCode server integration utilities for the web server ru
 
 ## Public exports (skill-routes.js)
 - `registerSkillRoutes(app, dependencies)`: registers skills-related routes:
-  - Skills config CRUD and metadata under `/api/config/skills*`
+  - Skills config CRUD and metadata under `/api/config/skills*`; `summary=true` returns compact autocomplete fields without skill content or sources
   - Skills catalog listing/source pagination, scan, and install routes
   - Supporting skill file read/write/delete routes
 

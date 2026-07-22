@@ -38,4 +38,16 @@ describe('direct composer send plan', () => {
         expect(resolved).toBe('@Sidecar session compare @Legacy session');
         expect(partitionComposerSemantics([...semantics, { type: 'session', sessionId: 'legacy' }]).sessionIds).toEqual(['sidecar', 'legacy']);
     });
+
+    test('keeps durable skill and command tags opaque with no synthetic semantics', () => {
+        const compiled = compileComposerSendPlan({ text: '/review /run', references: [
+            { id: 'skill', kind: 'skill', skillName: 'review', display: '/review', start: 0, end: 7 },
+            { id: 'command', kind: 'command', commandName: 'run', reference: 'task-42', display: '/run', start: 8, end: 12 },
+        ] });
+        expect(compiled.ok && compiled.plan).toEqual({ chunks: [
+            { provenance: 'reference-payload', text: '[skill:review]', start: 0, end: 7, referenceId: 'skill' },
+            { provenance: 'authored', text: ' ', start: 7, end: 8 },
+            { provenance: 'reference-payload', text: '[command:task-42]', start: 8, end: 12, referenceId: 'command' },
+        ], semantics: [] });
+    });
 });

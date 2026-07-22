@@ -48,6 +48,7 @@ export type MessageQueueItem = {
   position: number;
   rowVersion: number;
   createdAt: number;
+  manualDispatchRequested?: boolean;
   composerDocument?: MessageQueueComposerDocument;
   composerMentions?: MessageQueueComposerMention[];
   sendConfig?: MessageQueueSendConfig;
@@ -187,6 +188,7 @@ const parseAttachment = (value: unknown): MessageQueueAttachment | null => {
 const parseAttachments = (value: unknown): MessageQueueAttachment[] | null => Array.isArray(value) ? value.map(parseAttachment).every((entry): entry is MessageQueueAttachment => entry !== null) ? value.map(parseAttachment) as MessageQueueAttachment[] : null : null;
 const parseItem = (value: unknown): MessageQueueItem | null => {
   if (!isRecord(value) || typeof value.queueItemID !== 'string' || typeof value.operationID !== 'string' || typeof value.messageID !== 'string' || typeof value.content !== 'string' || typeof value.status !== 'string' || !isRevision(value.attemptCount) || !isRevision(value.position) || !isRevision(value.rowVersion) || !isRevision(value.createdAt)) return null;
+  if (value.manualDispatchRequested !== undefined && typeof value.manualDispatchRequested !== 'boolean') return null;
   const composerDocument = value.composerDocument === undefined ? undefined : parseComposerDocument(value.composerDocument);
   const composerMentions = value.composerMentions === undefined ? undefined : parseObjectArray<MessageQueueComposerMention>(value.composerMentions);
   const sendConfig = value.sendConfig === undefined ? undefined : parseSendConfig(value.sendConfig);
@@ -194,7 +196,7 @@ const parseItem = (value: unknown): MessageQueueItem | null => {
   if ((value.composerDocument !== undefined && !composerDocument) || (value.composerMentions !== undefined && !composerMentions) || (value.sendConfig !== undefined && !sendConfig) || (value.attachmentIssues !== undefined && !attachmentIssues)) return null;
   const attachments = value.attachments === undefined ? undefined : parseAttachments(value.attachments);
   if (value.attachments !== undefined && !attachments) return null;
-  return { queueItemID: value.queueItemID, operationID: value.operationID, messageID: value.messageID, content: value.content, status: value.status, attemptCount: value.attemptCount, position: value.position, rowVersion: value.rowVersion, createdAt: value.createdAt, ...(composerDocument ? { composerDocument } : {}), ...(composerMentions ? { composerMentions } : {}), ...(sendConfig ? { sendConfig } : {}), ...(attachments ? { attachments } : {}), ...(attachmentIssues ? { attachmentIssues } : {}) };
+  return { queueItemID: value.queueItemID, operationID: value.operationID, messageID: value.messageID, content: value.content, status: value.status, attemptCount: value.attemptCount, position: value.position, rowVersion: value.rowVersion, createdAt: value.createdAt, ...(value.manualDispatchRequested === true ? { manualDispatchRequested: true } : {}), ...(composerDocument ? { composerDocument } : {}), ...(composerMentions ? { composerMentions } : {}), ...(sendConfig ? { sendConfig } : {}), ...(attachments ? { attachments } : {}), ...(attachmentIssues ? { attachmentIssues } : {}) };
 };
 
 const parseScope = (value: unknown): MessageQueueScope | null => {

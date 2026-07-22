@@ -2,6 +2,7 @@ import fs from 'node:fs/promises';
 import os from 'node:os';
 import path from 'node:path';
 import { parse as parseJsonc } from 'jsonc-parser';
+import { createOpencodeClient } from '@opencode-ai/sdk/v2';
 
 const MAX_GLOBAL_CONFIG_SIZE = 2 * 1024 * 1024;
 const GLOBAL_CONFIG_FILES = {
@@ -9,6 +10,20 @@ const GLOBAL_CONFIG_FILES = {
   'oh-my-opencode-slim': ['oh-my-opencode-slim.json', 'oh-my-opencode-slim.jsonc'],
   'oh-my-openagent': ['oh-my-openagent.json', 'oh-my-openagent.jsonc'],
 };
+
+const truncateDescription = (value, maximum = 160) => {
+  const normalized = typeof value === 'string' ? value.replace(/\s+/gu, ' ').trim() : '';
+  const codePoints = Array.from(normalized);
+  return codePoints.length > maximum ? `${codePoints.slice(0, maximum).join('')}…` : normalized;
+};
+
+const isSafeCommandCatalogName = (value) => typeof value === 'string'
+  && value.length > 0
+  && !/[\]\r\n]/u.test(value);
+
+const isSafeCommandCatalogReference = (value) => typeof value === 'string'
+  && value.length <= 8_192
+  && !/[\]\r\n]/u.test(value);
 
 function resolveGlobalConfigPath(target, configDirectory) {
   const fileNames = GLOBAL_CONFIG_FILES[target];
@@ -73,6 +88,9 @@ export const registerConfigEntityRoutes = (app, dependencies) => {
     updateAgent,
     deleteAgent,
     getCommandSources,
+    buildOpenCodeUrl,
+    getOpenCodeAuthHeaders,
+    getOpenCodePort,
     createCommand,
     updateCommand,
     deleteCommand,
@@ -448,6 +466,44 @@ export const registerConfigEntityRoutes = (app, dependencies) => {
       const { directory, error } = await resolveProjectDirectory(req);
       if (!directory) {
         return res.status(400).json({ error });
+      }
+      if (req.body?.catalog === true) {
+        if (!getOpenCodePort()) {
+          return res.json({ commands: [] });
+        }
+        const client = createOpencodeClient({
+          baseUrl: buildOpenCodeUrl('/', '').replace(/\/$/, ''),
+          directory,
+          headers: getOpenCodeAuthHeaders(),
+          fetch: (request) => fetch(request, { signal: AbortSignal.timeout(8_000) }),
+        });
+        const response = await client.command.list({ directory });
+        const commands = Array.isArray(response?.data) ? response.data : [];
+        return res.json({
+          commands: commands
+            .filter((command) => command?.source !== 'skill')
+            .map((command) => {
+              const rawName = command?.name;
+              if (!isSafeCommandCatalogName(rawName)) return null;
+              const name = rawName.trim();
+              if (!isSafeCommandCatalogName(name)) return null;
+              const sources = getCommandSources(name, directory);
+              const scope = sources.md.exists
+                ? sources.md.scope
+                : (sources.json.exists ? sources.json.scope : null);
+              return {
+                name,
+                description: truncateDescription(command.description),
+                agent: typeof command.agent === 'string' ? command.agent : null,
+                model: typeof command.model === 'string' ? command.model : null,
+                source: typeof command.source === 'string' ? command.source : null,
+                scope,
+                isBuiltIn: !sources.md.exists && !sources.json.exists,
+                reference: sources.md.exists && isSafeCommandCatalogReference(sources.md.path) ? sources.md.path : name,
+              };
+            })
+            .filter(Boolean),
+        });
       }
       if (!Array.isArray(req.body?.names)) {
         return res.status(400).json({ error: 'names must be an array' });

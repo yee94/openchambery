@@ -31,6 +31,34 @@ type QueueAdmissionSelectionReader = {
 
 const nonEmptyString = (value: string | null | undefined): string | undefined => value?.trim() || undefined;
 
+export const isServerQueueAdmissionEventBlocked = (
+    queueMode: 'legacy' | 'server' | 'frozen',
+    hasBlockingAdmission: boolean,
+    hasServerAdmissionFlight: boolean,
+): boolean => hasBlockingAdmission || (queueMode !== 'legacy' && hasServerAdmissionFlight);
+
+export type ServerQueueScopeMutationFlights = Map<string, string>;
+
+export const startServerQueueScopeMutationFlight = <T>(
+    flightRef: { current: ServerQueueScopeMutationFlights },
+    scopeKey: string,
+    createRequestID: () => string,
+    mutate: (requestID: string) => Promise<T>,
+): Promise<T> | null => {
+    if (flightRef.current.has(scopeKey)) return null;
+    const requestID = createRequestID();
+    flightRef.current.set(scopeKey, requestID);
+    let mutation: Promise<T>;
+    try {
+        mutation = mutate(requestID);
+    } catch (error) {
+        mutation = Promise.reject(error);
+    }
+    return mutation.finally(() => {
+        if (flightRef.current.get(scopeKey) === requestID) flightRef.current.delete(scopeKey);
+    });
+};
+
 export const resolveQueueSendConfig = ({
     currentConfig,
     sessionID,

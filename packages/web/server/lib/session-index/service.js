@@ -147,6 +147,20 @@ export const createSessionIndexService = ({ dbPath, getRuntimeConfig = () => nul
       status, status_changed_at AS statusChangedAt
     FROM session_summary WHERE runtime_key = ? AND directory = ?
   `);
+  const readSummary = db.prepare(`
+    SELECT title, created_at AS createdAt, updated_at AS updatedAt,
+      activity_updated_at AS activityUpdatedAt, archived_at AS archivedAt,
+      parent_id AS parentID, has_children AS hasChildren
+    FROM session_summary
+    WHERE runtime_key = ? AND directory = ? AND session_id = ?
+  `);
+  const readRootRetentionCutoff = db.prepare(`
+    SELECT session_id AS id, activity_updated_at AS activityUpdatedAt
+    FROM session_summary
+    WHERE runtime_key = ? AND directory = ?
+    ORDER BY activity_updated_at DESC, session_id DESC
+    LIMIT 1 OFFSET ?
+  `);
   const insertSummary = db.prepare(`
     INSERT INTO session_summary(runtime_key, directory, session_id, title, created_at, updated_at, activity_updated_at, archived_at, status, status_changed_at, parent_id, has_children)
     VALUES (@runtimeKey, @directory, @id, @title, @createdAt, @updatedAt, @activityUpdatedAt, @archivedAt, @status, @statusChangedAt, @parentID, @hasChildren)
@@ -239,45 +253,65 @@ export const createSessionIndexService = ({ dbPath, getRuntimeConfig = () => nul
     }
   });
 
-  const upsert = db.transaction((session, now = Date.now(), options = {}) => {
-    if (!isVisibleSession(session)) return remove(session?.id);
+  const upsertMutation = db.transaction((session, now = Date.now(), options = {}) => {
+    if (!isVisibleSession(session)) {
+      const changed = remove(session?.id);
+      return { accepted: changed, changed };
+    }
     const summary = toSummary(session);
-    if (!summary) return false;
+    if (!summary) return { accepted: false, changed: false };
     const key = runtimeKey();
     if (summary.archivedAt) {
-      db.prepare('DELETE FROM session_summary WHERE runtime_key = ? AND session_id = ?').run(key, summary.id);
-      const parent = parentForChild.get(key, summary.id);
-      deleteChild.run(key, summary.id);
-      if (parent) {
-        setHasChildren.run(
-          toBooleanInt(Number(countChildrenForParent.get(key, parent.directory, parent.parentID)?.count ?? 0) > 0),
-          key,
-          parent.directory,
-          parent.parentID,
-        );
+      return { accepted: true, changed: remove(summary.id) };
+    }
+    if (summary.parentID) {
+      const existingChild = parentForChild.get(key, summary.id);
+      const parent = readSummary.get(key, summary.directory, summary.parentID);
+      const membershipChanged = existingChild?.directory !== summary.directory
+        || existingChild?.parentID !== summary.parentID;
+      const parentFlagChanged = Boolean(parent) && !Boolean(parent.hasChildren);
+      if (!membershipChanged && !parentFlagChanged) {
+        return { accepted: true, changed: false };
       }
-      return true;
+      touchExistingDirectory.run({
+        runtimeKey: key,
+        directory: summary.directory,
+        lastAccessedAt: toTimestamp(now),
+      });
+      upsertChild.run(key, summary.directory, summary.id, summary.parentID);
+      setHasChildren.run(1, key, summary.directory, summary.parentID);
+      return { accepted: true, changed: true };
+    }
+    const existing = readSummary.get(key, summary.directory, summary.id);
+    const activityUpdatedAt = options.preserveActivity === true && existing
+      ? toTimestamp(existing.activityUpdatedAt)
+      : Math.max(toTimestamp(existing?.activityUpdatedAt), summary.activityUpdatedAt);
+    const hasChildren = toBooleanInt(summary.hasChildren ?? Boolean(existing?.hasChildren));
+    if (existing) {
+      const unchanged = existing.title === summary.title
+        && toTimestamp(existing.createdAt) === summary.createdAt
+        && toTimestamp(existing.updatedAt) === summary.updatedAt
+        && toTimestamp(existing.activityUpdatedAt) === activityUpdatedAt
+        && toTimestamp(existing.archivedAt) === summary.archivedAt
+        && (existing.parentID ?? null) === summary.parentID
+        && toBooleanInt(existing.hasChildren) === hasChildren;
+      if (unchanged) return { accepted: true, changed: false };
+    } else {
+      const cutoff = readRootRetentionCutoff.get(key, summary.directory, MAX_ROOT_SESSIONS - 1);
+      const fallsOutsideBound = cutoff
+        && (activityUpdatedAt < toTimestamp(cutoff.activityUpdatedAt)
+          || (activityUpdatedAt === toTimestamp(cutoff.activityUpdatedAt) && summary.id < cutoff.id));
+      if (fallsOutsideBound) return { accepted: true, changed: false };
     }
     touchExistingDirectory.run({
       runtimeKey: key,
       directory: summary.directory,
       lastAccessedAt: toTimestamp(now),
     });
-    if (summary.parentID) {
-      upsertChild.run(key, summary.directory, summary.id, summary.parentID);
-      setHasChildren.run(1, key, summary.directory, summary.parentID);
-      return true;
-    }
-    const existing = db.prepare(`
-      SELECT has_children AS hasChildren, activity_updated_at AS activityUpdatedAt FROM session_summary
-      WHERE runtime_key = ? AND directory = ? AND session_id = ?
-    `).get(key, summary.directory, summary.id);
     upsertSummary.run({
       ...summary,
-      activityUpdatedAt: options.preserveActivity === true && existing
-        ? toTimestamp(existing.activityUpdatedAt)
-        : summary.activityUpdatedAt,
-      hasChildren: toBooleanInt(summary.hasChildren ?? Boolean(existing?.hasChildren)),
+      activityUpdatedAt,
+      hasChildren,
       runtimeKey: key,
     });
     const extra = db.prepare(`
@@ -290,8 +324,10 @@ export const createSessionIndexService = ({ dbPath, getRuntimeConfig = () => nul
       const remove = db.prepare('DELETE FROM session_summary WHERE runtime_key = ? AND directory = ? AND session_id = ?');
       for (const row of extra) remove.run(key, summary.directory, row.session_id);
     }
-    return true;
+    return { accepted: true, changed: true };
   });
+  const upsert = (...args) => upsertMutation(...args).accepted;
+  const upsertAndReportChange = (...args) => upsertMutation(...args).changed;
 
   const snapshot = () => {
     const key = runtimeKey();
@@ -353,9 +389,9 @@ export const createSessionIndexService = ({ dbPath, getRuntimeConfig = () => nul
     if (!timestamp) return false;
     const result = db.prepare(`
       UPDATE session_summary
-      SET activity_updated_at = MAX(activity_updated_at, ?)
-      WHERE runtime_key = ? AND session_id = ?
-    `).run(timestamp, runtimeKey(), sessionID);
+      SET activity_updated_at = ?
+      WHERE runtime_key = ? AND session_id = ? AND activity_updated_at < ?
+    `).run(timestamp, runtimeKey(), sessionID, timestamp);
     return result.changes > 0;
   };
 
@@ -391,6 +427,7 @@ export const createSessionIndexService = ({ dbPath, getRuntimeConfig = () => nul
     replaceDirectory,
     replaceDirectories,
     upsert,
+    upsertAndReportChange,
     touchActivity,
     updateStatus,
     remove,

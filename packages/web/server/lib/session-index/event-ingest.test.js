@@ -5,7 +5,7 @@ import { applySessionIndexEvent } from './event-ingest.js';
 describe('session index event ingest', () => {
   it('writes session summaries, user activity, and status to the service', () => {
     const service = {
-      upsert: vi.fn(() => true),
+      upsertAndReportChange: vi.fn(() => true),
       touchActivity: vi.fn(() => true),
       updateStatus: vi.fn(() => true),
       remove: vi.fn(() => true),
@@ -33,13 +33,25 @@ describe('session index event ingest', () => {
       },
     }, 300);
 
-    expect(service.upsert).toHaveBeenCalledWith(
+    expect(service.upsertAndReportChange).toHaveBeenCalledWith(
       expect.objectContaining({ id: 'ses_1', directory: '/repo' }),
       100,
       { preserveActivity: true },
     );
     expect(service.touchActivity).toHaveBeenCalledWith('ses_1', 200);
     expect(service.updateStatus).toHaveBeenCalledWith('ses_1', 'busy', 300);
+  });
+
+  it('propagates an unchanged session summary without publishing a revision', () => {
+    const service = { upsertAndReportChange: vi.fn(() => false) };
+
+    expect(applySessionIndexEvent(service, {
+      directory: '/repo',
+      payload: {
+        type: 'session.updated',
+        properties: { info: { id: 'ses_1', title: 'Session', time: { created: 1, updated: 1 } } },
+      },
+    }, 100)).toBe(false);
   });
 
   it('ignores assistant message activity', () => {

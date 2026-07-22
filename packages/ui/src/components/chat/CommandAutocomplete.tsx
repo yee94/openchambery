@@ -25,6 +25,7 @@ export interface CommandInfo {
   isOpenChamber?: boolean;
   isSkill?: boolean;
   scope?: string;
+  reference?: string;
 }
 
 export interface CommandAutocompleteHandle {
@@ -94,7 +95,6 @@ export const CommandAutocomplete = React.forwardRef<CommandAutocompleteHandle, C
   const isCommandsFetching = commandsQuery.isFetching;
   const skillsQuery = useInstalledSkillsQuery({ directory });
   const skills = React.useMemo(() => skillsQuery.data ?? [], [skillsQuery.data]);
-  const { refetch: refetchSkills } = skillsQuery;
   const [selectedIndex, setSelectedIndex] = React.useState(0);
   const selectedIndexRef = React.useRef(0);
   const keyboardNavigationRef = React.useRef(false);
@@ -104,10 +104,6 @@ export const CommandAutocomplete = React.forwardRef<CommandAutocompleteHandle, C
   const ignoreClickRef = React.useRef(false);
   const pointerStartRef = React.useRef<{ x: number; y: number } | null>(null);
   const pointerMovedRef = React.useRef(false);
-
-  React.useEffect(() => {
-    void refetchSkills();
-  }, [refetchSkills]);
 
   React.useEffect(() => {
     const handlePointerDown = (event: MouseEvent | TouchEvent) => {
@@ -131,7 +127,6 @@ export const CommandAutocomplete = React.forwardRef<CommandAutocompleteHandle, C
     const loadCommands = async () => {
       setLoading(isCommandsFetching);
       try {
-        const skillNames = new Set(skills.map((skill) => skill.name));
         const customCommands: CommandInfo[] = commandsWithMetadata.map((cmd, index) => ({
           id: `opencode:${cmd.scope ?? 'global'}:${cmd.name}:${cmd.agent ?? ''}:${cmd.model ?? ''}:${index}`,
           name: cmd.name,
@@ -139,9 +134,10 @@ export const CommandAutocomplete = React.forwardRef<CommandAutocompleteHandle, C
           description: cmd.description,
           agent: cmd.agent ?? undefined,
           model: cmd.model ?? undefined,
-          isBuiltIn: cmd.name === 'init' || cmd.name === 'review',
-          isSkill: cmd.source === 'skill' || skillNames.has(cmd.name),
+          isBuiltIn: cmd.isBuiltIn,
+          isSkill: cmd.source === 'skill',
           scope: cmd.scope,
+          reference: cmd.reference,
         }));
         const skillCommands: CommandInfo[] = skills.map((skill, index) => ({
           id: `skill:${skill.scope}:${skill.source ?? 'opencode'}:${skill.name}:${index}`,

@@ -29,11 +29,9 @@ import { sessionSyncCoordinator } from "./session-sync-coordinator"
 import { loadSessionChildrenOnDemand, mergeSessionChildren } from "./session-children"
 import { opencodeClient } from "@/lib/opencode/client"
 import { waitForSessionStartupBarrier } from "@/lib/session-startup-barrier"
+import { getInitialSessionMessagePageSize } from "./session-message-page-size"
 
 const SKIP_PARTS = new Set(["patch", "step-start", "step-finish"])
-const INITIAL_MESSAGE_PAGE_SIZE = 30
-const VSCODE_INITIAL_MESSAGE_PAGE_SIZE = 30
-const MOBILE_INITIAL_MESSAGE_PAGE_SIZE = 30
 const HISTORY_MESSAGE_PAGE_SIZE = 30
 const MAX_SEEN_DIRS = 30
 const VSCODE_SESSION_CACHE_LIMIT = 4
@@ -86,12 +84,7 @@ const getEffectiveSessionCacheLimit = () => {
   if (isMobileSurfaceRuntime()) return MOBILE_SESSION_CACHE_LIMIT
   return SESSION_CACHE_LIMIT
 }
-const getInitialMessagePageSize = () => {
-  if (isVSCodeRuntime()) return VSCODE_INITIAL_MESSAGE_PAGE_SIZE
-  if (isMobileSurfaceRuntime()) return MOBILE_INITIAL_MESSAGE_PAGE_SIZE
-  return INITIAL_MESSAGE_PAGE_SIZE
-}
-const getDefaultMeta = (): SyncMeta => ({ limit: getInitialMessagePageSize(), cursor: undefined, complete: false, loading: false })
+const getDefaultMeta = (): SyncMeta => ({ limit: getInitialSessionMessagePageSize(), cursor: undefined, complete: false, loading: false })
 
 function getPrefetchMeta(directory: string, sessionID: string): SyncMeta | undefined {
   const info = getSessionPrefetch(directory, sessionID)
@@ -111,7 +104,7 @@ function sortParts(parts: Part[]) {
 function isHeavyConstrainedSessionCache(state: Pick<State, "message" | "part">, sessionID: string): boolean {
   const messages = state.message[sessionID]
   if (!messages || messages.length === 0) return false
-  return messages.length > getInitialMessagePageSize()
+  return messages.length > getInitialSessionMessagePageSize()
 }
 
 function isUserMessage(message: Message): boolean {
@@ -134,6 +127,15 @@ export function shouldFetchSessionForRenderableSync(input: {
   force?: boolean
 }): boolean {
   return Boolean(input.force) || !input.hasSession || input.shouldLoadMessages
+}
+
+export function getReactiveSessionMessageRequestLimit(input: {
+  before?: string
+  recordedLimit: number
+  renderedMessageCount: number
+}): number {
+  if (input.before) return HISTORY_MESSAGE_PAGE_SIZE
+  return Math.max(getInitialSessionMessagePageSize(), input.recordedLimit, input.renderedMessageCount)
 }
 
 export function getConstrainedCacheStateAfterPrefetchEviction<T>(input: {
@@ -399,9 +401,18 @@ export function useSync() {
         sessionLoadDebug("reactive-load-deduped", { sessionID, directory: targetDirectory, before: options?.before ?? null })
         return
       }
-      setMetaFor(sessionID, { loading: true }, targetDirectory)
       const runtimeKey = getRuntimeKey()
-      beginSessionMessageLoad(targetDirectory, sessionID, runtimeKey)
+      // Live events can append messages without growing m.limit. A resync
+      // must cover everything already rendered or it can manufacture an
+      // "older" cursor for history that is already on screen.
+      const storeMessageCount = targetStore.getState().message[sessionID]?.length ?? 0
+      const limit = getReactiveSessionMessageRequestLimit({
+        before: options?.before,
+        recordedLimit: m.limit,
+        renderedMessageCount: storeMessageCount,
+      })
+      setMetaFor(sessionID, { loading: true }, targetDirectory)
+      beginSessionMessageLoad(targetDirectory, sessionID, limit, runtimeKey)
       const startedAt = performance.now()
 
       try {
@@ -453,11 +464,6 @@ export function useSync() {
           return { messages: materialized.messages, cursor: merged.cursor, complete: merged.complete }
         }
 
-        // Live events can append messages without growing m.limit. A resync
-        // must cover everything already rendered or it can manufacture an
-        // "older" cursor for history that is already on screen.
-        const storeMessageCount = targetStore.getState().message[sessionID]?.length ?? 0
-        const limit = options?.before ? HISTORY_MESSAGE_PAGE_SIZE : Math.max(m.limit, storeMessageCount)
         const page = await fetchMessages(sessionID, limit, options?.before, runtimeKey, targetDirectory)
         const recovered = options?.before || page.complete
           ? page
@@ -570,7 +576,7 @@ export function useSync() {
             hasSession,
             hasMessages: cachedReady,
             info: prefetchInfo,
-            pageSize: getInitialMessagePageSize(),
+            pageSize: getInitialSessionMessagePageSize(),
           })) return
 
           const shouldLoadMessages = Boolean(!cachedReady || force)

@@ -48,7 +48,7 @@ export type SessionMentionContext = { id: string; title: string; messages: Array
 
 export const buildSkillMentionInstruction = (skillNames: readonly string[]): string | null => {
     if (skillNames.length === 0) return null;
-    return `The user explicitly mentioned these skills in their message: ${skillNames.map((name) => `/${name}`).join(', ')}. Use the corresponding skill tool when it is relevant to accomplishing the user's request.`;
+    return skillNames.map((name) => `[skill:${name}]`).join(' ');
 };
 
 export const buildSessionMentionInstruction = (contexts: SessionMentionContext[], maxChars = 36_000): string | null => {

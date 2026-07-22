@@ -121,7 +121,7 @@ describe('session-title helpers', () => {
     expect(result.languageSample).toBe('修复会话标题语言');
   });
 
-  it('keeps only the latest 10 turns by default', () => {
+  it('keeps only the latest 5 turns by default', () => {
     const messages = [];
     for (let i = 1; i <= 12; i += 1) {
       messages.push({
@@ -134,13 +134,36 @@ describe('session-title helpers', () => {
       });
     }
     const result = buildLatestTitleTranscript(messages);
-    // Latest window is turns 3–12; turn 1 only appears as subject anchor.
+    // Latest window is turns 8–12; turn 1 only appears as subject anchor.
     expect(result.subjectAnchor).toBe('user turn 1');
     expect(result.transcript).toContain('Earlier subject anchor');
-    expect(result.transcript).toContain('user turn 3');
+    expect(result.transcript).toContain('user turn 8');
     expect(result.transcript).toContain('user turn 12');
-    expect(result.transcript).not.toContain('user turn 2');
+    expect(result.transcript).not.toContain('user turn 7');
     expect(result.lastAssistantId).toBe('a12');
+  });
+
+  it('gives user and assistant messages separate character budgets', () => {
+    const messages = [
+      {
+        info: { id: 'u1', role: 'user' },
+        parts: [{ type: 'text', text: `user-start-${'u'.repeat(3_000)}-user-end` }],
+      },
+      {
+        info: { id: 'a1', role: 'assistant' },
+        parts: [{ type: 'text', text: `assistant-start-${'a'.repeat(2_000)}-assistant-end` }],
+      },
+    ];
+
+    const result = buildLatestTitleTranscript(messages);
+    const userText = result.transcript.match(/User:\n([^\n]+)/)?.[1] || '';
+    const assistantText = result.transcript.match(/Assistant:\n([^\n]+)/)?.[1] || '';
+    expect(userText.length).toBe(2_000);
+    expect(assistantText.length).toBe(1_200);
+    expect(userText).toContain('user-start');
+    expect(assistantText).toContain('assistant-start');
+    expect(userText).not.toContain('user-end');
+    expect(assistantText).not.toContain('assistant-end');
   });
 
   it('stops at the most recent compaction boundary', () => {

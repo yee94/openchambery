@@ -1,5 +1,11 @@
 import { createOpencodeClient } from '@opencode-ai/sdk/v2';
 
+const summarizeDescription = (value) => {
+  const normalized = typeof value === 'string' ? value.replace(/\s+/gu, ' ').trim() : '';
+  const codePoints = Array.from(normalized);
+  return codePoints.length > 160 ? `${codePoints.slice(0, 160).join('')}…` : normalized;
+};
+
 export const registerSkillRoutes = (app, dependencies) => {
   const {
     fs,
@@ -209,6 +215,18 @@ export const registerSkillRoutes = (app, dependencies) => {
       const openCodeSkills = await fetchOpenCodeDiscoveredSkills(directory);
       const localSkills = discoverSkills(directory);
       const skills = mergeDiscoveredSkills(openCodeSkills, localSkills);
+
+      if (req.query.summary === 'true') {
+        return res.json({
+          skills: skills.map((skill) => ({
+            name: skill.name,
+            path: skill.path,
+            scope: skill.scope,
+            source: skill.source,
+            description: summarizeDescription(skill.description),
+          })),
+        });
+      }
 
       const enrichedSkills = skills.map((skill) => {
         const sources = getSkillSources(skill.name, directory, skill);

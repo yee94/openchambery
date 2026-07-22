@@ -21,9 +21,7 @@ mock.module('@/lib/runtime-fetch', () => ({
 }));
 mock.module('@/lib/configUpdate', () => ({ startConfigUpdate: () => undefined, finishConfigUpdate: () => undefined, updateConfigUpdateMessage: () => undefined }));
 mock.module('@/stores/useSkillsStore', () => ({
-  invalidateSkillsLoadCache: () => undefined,
   refreshSkillsAfterOpenCodeRestart: async (options: { directory?: string | null; transportIdentity?: string }) => { restartRefreshes.push(options); },
-  useSkillsStore: { getState: () => ({ loadSkills: async () => true }) },
 }));
 mock.module('@/queries/installedSkillsQueries', () => ({
   refreshInstalledSkillsQuery: async (_client: unknown, directory: string | null, transport: string) => { installedRefreshes.push([directory, transport]); return []; },

@@ -521,12 +521,20 @@ describe('message queue service', () => {
 
   it('persists one manual dispatch intent through release and consumes it at beginAttempt', () => {
     let time = 1_000; const pathname = dbPath(); const service = createMessageQueueService({ dbPath: pathname, getRuntimeConfig: () => ({ apiBaseUrl: 'http://runtime' }), clock: () => time });
-    const admitted = service.admit({ ...admission(), item: { ...admission().item, dueAt: time } }); service.setAuthority({ authority: 'active', expectedGeneration: 0 });
+    const admitted = service.admit({ ...admission(), item: { ...admission().item, dueAt: time } }); expect(service.getScope(admitted.scopeID).items[0].manualDispatchRequested).toBe(false); service.setAuthority({ authority: 'active', expectedGeneration: 0 });
     const promoted = service.manualSend({ requestID: 'manual-intent', queueItemID: 'item-1', expectedRevision: admitted.revision, expectedRowVersion: admitted.rowVersion });
-    expect(service.manualSend({ requestID: 'manual-intent', queueItemID: 'item-1', expectedRevision: admitted.revision, expectedRowVersion: admitted.rowVersion })).toEqual(promoted);
-    const first = service.claimNext({ owner: 'worker' }); expect(first.dispatchMode).toBe('manual'); service.releaseIneligible({ queueItemID: 'item-1', leaseToken: first.leaseToken, fenceGeneration: first.fenceGeneration, dueAt: time });
-    const second = service.claimNext({ owner: 'worker' }); expect(second.dispatchMode).toBe('manual'); service.beginAttempt({ queueItemID: 'item-1', leaseToken: second.leaseToken, fenceGeneration: second.fenceGeneration, messageID: 'msg_0000000001' }); service.scheduleRetry({ queueItemID: 'item-1', leaseToken: second.leaseToken, fenceGeneration: second.fenceGeneration, dueAt: time, errorCode: 'retry' });
+    expect(service.manualSend({ requestID: 'manual-intent', queueItemID: 'item-1', expectedRevision: admitted.revision, expectedRowVersion: admitted.rowVersion })).toEqual(promoted); expect(service.getScope(admitted.scopeID).items[0].manualDispatchRequested).toBe(true);
+    const first = service.claimNext({ owner: 'worker' }); expect(first.dispatchMode).toBe('manual'); service.scheduleRetry({ queueItemID: 'item-1', leaseToken: first.leaseToken, fenceGeneration: first.fenceGeneration, dueAt: time, errorCode: 'attachment_materialization_failed' }); expect(service.getScope(admitted.scopeID).items[0]).toMatchObject({ status: 'retrying', manualDispatchRequested: true });
+    const second = service.claimNext({ owner: 'worker' }); expect(second.dispatchMode).toBe('manual'); service.beginAttempt({ queueItemID: 'item-1', leaseToken: second.leaseToken, fenceGeneration: second.fenceGeneration, messageID: 'msg_0000000001' }); expect(service.getScope(admitted.scopeID).items[0].manualDispatchRequested).toBe(false); service.scheduleRetry({ queueItemID: 'item-1', leaseToken: second.leaseToken, fenceGeneration: second.fenceGeneration, dueAt: time, errorCode: 'retry' }); expect(service.getScope(admitted.scopeID).items[0].manualDispatchRequested).toBe(false);
     expect(service.claimNext({ owner: 'worker' }).dispatchMode).toBe('automatic'); service.close();
+  });
+
+  it('keeps a paused manual promotion pending until its resumed attempt begins', () => {
+    let time = 1_000; const service = createMessageQueueService({ dbPath: dbPath(), getRuntimeConfig: () => ({ apiBaseUrl: 'http://runtime' }), clock: () => time });
+    const admitted = service.admit({ ...admission(), item: { ...admission().item, dueAt: time } }); const active = service.setAuthority({ authority: 'active', expectedGeneration: 0 }); const paused = service.pauseAuthority({ expectedGeneration: active.generation });
+    const scope = service.getScope(admitted.scopeID); const item = scope.items[0]; service.manualSend({ requestID: 'paused-manual-intent', queueItemID: item.queueItemID, expectedRevision: scope.revision, expectedRowVersion: item.rowVersion }); expect(service.getScope(admitted.scopeID).items[0].manualDispatchRequested).toBe(true);
+    service.resumeAuthority({ expectedGeneration: paused.generation }); expect(service.getScope(admitted.scopeID).items[0].manualDispatchRequested).toBe(true);
+    const claim = service.claimNext({ owner: 'worker' }); expect(claim.dispatchMode).toBe('manual'); service.beginAttempt({ queueItemID: 'item-1', leaseToken: claim.leaseToken, fenceGeneration: claim.fenceGeneration, messageID: 'msg_0000000001' }); expect(service.getScope(admitted.scopeID).items[0].manualDispatchRequested).toBe(false); service.close();
   });
 
   it('renews edit reservations without advancing queue revisions and fences worker wakes', async () => {

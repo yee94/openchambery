@@ -1,6 +1,6 @@
 import { downloadMessageQueueAttachment, type MessageQueueItem } from '@/lib/message-queue-server';
 import { parseDraftComposerDocument, parseDraftMentions, type DraftAttachmentMetadata, type DraftKey } from './input-draft-types';
-import { useInputStore, type DraftCommitInput, type InputDraftRuntimeCapture } from './input-store';
+import { useInputStore, type DraftCommitInput } from './input-store';
 import type { MessageQueueEditResult } from './message-queue-edit-bridge';
 import { getMessageQueueServerRuntime, type MessageQueueServerRuntimeCapture, type MessageQueueServerSurface } from './message-queue-server-runtime';
 
@@ -18,10 +18,12 @@ export const createMessageQueueServerEditBridge = (overrides: Partial<Dependenci
   const deps = { ...defaults, ...overrides };
   const flights = new Map<string, Promise<MessageQueueEditResult>>();
   const editServerQueueItemIntoDraft = (input: ServerQueueEditInput): Promise<MessageQueueEditResult> => {
-    const key = `${input.scopeID}\u0000${input.item.queueItemID}`;
+    let queueRuntime: MessageQueueServerRuntimeCapture;
+    try { queueRuntime = deps.queue.captureRuntime(); } catch { return Promise.resolve(diagnostic('materialize-failed', 'identity', 'runtime-capture-failed')); }
+    const key = `${queueRuntime.transportIdentity}\u0000${queueRuntime.generation}\u0000${input.scopeID}\u0000${input.item.queueItemID}`;
     const existing = flights.get(key); if (existing) return existing;
     const task = (async (): Promise<MessageQueueEditResult> => {
-      const queueRuntime = deps.queue.captureRuntime(), inputRuntime = deps.input.captureDraftRuntime();
+      const inputRuntime = deps.input.captureDraftRuntime();
       if (queueRuntime.transportIdentity !== inputRuntime.transportIdentity || queueRuntime.generation !== inputRuntime.generation || input.targetKey.transportIdentity !== queueRuntime.transportIdentity) return diagnostic('materialize-failed', 'identity', 'runtime-mismatch');
       if ((input.item.attachmentIssues?.length ?? 0) > 0) return { ...diagnostic('materialize-failed', 'attachments', 'attachment-issues'), attachmentIssues: input.item.attachmentIssues as unknown as MessageQueueEditResult['attachmentIssues'] };
       let reservation: Awaited<ReturnType<Dependencies['queue']['reserveEdit']>>;
@@ -34,20 +36,19 @@ export const createMessageQueueServerEditBridge = (overrides: Partial<Dependenci
       const renew = (): Promise<boolean> => {
         if (leaseLost) return Promise.resolve(false);
         if (renewFlight) return renewFlight;
-        let flight!: Promise<boolean>;
-        flight = (async () => {
+        const flight = (async () => {
           try {
             const next = await deps.queue.renewEdit({ item: input.item, token: reservation.token, generation: reservation.generation, ttlMs: 60_000, runtime: queueRuntime, signal: controller.signal });
             if (!next || next.queueItemID !== input.item.queueItemID || next.token !== reservation.token || next.generation !== reservation.generation || !Number.isSafeInteger(next.expiresAt) || Date.now() >= next.expiresAt || !deps.current(queueRuntime)) { loseLease(); return false; }
             return true;
           } catch { loseLease(); return false; }
-          finally { if (renewFlight === flight) renewFlight = undefined; }
+          finally { renewFlight = undefined; }
         })();
         renewFlight = flight;
         return flight;
       };
       const heartbeat = setInterval(() => { void renew(); }, 20_000);
-      const release = async () => { if (released) return; released = true; try { await deps.queue.releaseEdit({ item: input.item, token: reservation.token, runtime: queueRuntime }); } catch {} };
+      const release = async () => { if (released) return; released = true; try { await deps.queue.releaseEdit({ item: input.item, token: reservation.token, runtime: queueRuntime }); } catch { return; } };
       try {
         if (!deps.current(queueRuntime) || leaseLost) return diagnostic('materialize-failed', 'identity', leaseLost ? 'lease-lost' : 'runtime-stale');
         const attachments = input.item.attachments ?? [];

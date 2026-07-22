@@ -1,5 +1,5 @@
 import { expect, test } from 'bun:test';
-import { buildSessionMentionInstruction, compileAuthoredDeliveryPlan, partitionComposerSemantics } from './delivery';
+import { buildSessionMentionInstruction, buildSkillMentionInstruction, compileAuthoredDeliveryPlan, partitionComposerSemantics } from './delivery';
 
 test('delivery partitions semantic references with stable type-local deduplication', () => {
     expect(partitionComposerSemantics([
@@ -9,6 +9,10 @@ test('delivery partitions semantic references with stable type-local deduplicati
         { type: 'attachment', attachmentRefID: 'a1' },
         { type: 'skill', skillName: 'review' },
     ])).toEqual({ sessionIds: ['s1'], skillNames: ['review'], attachmentRefIDs: ['a1'] });
+});
+
+test('delivery emits compact canonical tags for legacy skill semantics', () => {
+    expect(buildSkillMentionInstruction(['review', 'test'])).toBe('[skill:review] [skill:test]');
 });
 
 test('delivery keeps bounded session context JSON parseable', () => {

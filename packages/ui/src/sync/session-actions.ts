@@ -20,6 +20,7 @@ import { retry } from "./retry"
 import { sessionLoadDebug } from "./session-load-debug"
 import { getRuntimeGeneration, getRuntimeKey, getRuntimeTransportIdentity } from "@/lib/runtime-switch"
 import { loadSessionMessage, loadSessionMessagePage, recoverAssistantTailBoundary } from "./session-message-loader"
+import { getInitialSessionMessagePageSize } from "./session-message-page-size"
 import { beginSessionMessageLoad, failSessionMessageLoad, getSessionPrefetch, setSessionPrefetch } from "./session-prefetch-cache"
 import { stripMessageDiffSnapshots, stripSessionDiffSnapshots } from "./sanitize"
 import { sessionEvents } from "@/lib/sessionEvents"
@@ -2017,16 +2018,14 @@ export async function forkSession(sessionId: string, operationId: number, messag
 // ---------------------------------------------------------------------------
 
 const FETCH_MESSAGES_LOADING = new Map<string, Promise<void>>()
-const CONSTRAINED_INITIAL_PAGE_SIZE = 30
-
-const getFetchPageSize = () => CONSTRAINED_INITIAL_PAGE_SIZE
 
 export async function fetchMessagesForSession(sessionID: string, directory?: string | null): Promise<void> {
   const resolvedDir = directory ?? dir()
   if (!resolvedDir) return
 
   const runtimeKey = getRuntimeKey()
-  const loadingKey = `${runtimeKey}:${resolvedDir}:${sessionID}`
+  const limit = getInitialSessionMessagePageSize()
+  const loadingKey = `${runtimeKey}:${resolvedDir}:${sessionID}:${limit}`
   if (!_sdk || !_childStores) {
     PENDING_MESSAGE_FETCHES.set(loadingKey, { sessionID, directory: resolvedDir })
     sessionLoadDebug("imperative-queued", { sessionID, directory: resolvedDir })
@@ -2038,7 +2037,7 @@ export async function fetchMessagesForSession(sessionID: string, directory?: str
     return existingRequest
   }
 
-  const request = fetchMessagesForSessionInternal(sessionID, resolvedDir, runtimeKey)
+  const request = fetchMessagesForSessionInternal(sessionID, resolvedDir, runtimeKey, limit)
   const trackedRequest = request.finally(() => {
     FETCH_MESSAGES_LOADING.delete(loadingKey)
   })
@@ -2046,9 +2045,8 @@ export async function fetchMessagesForSession(sessionID: string, directory?: str
   return trackedRequest
 }
 
-async function fetchMessagesForSessionInternal(sessionID: string, resolvedDir: string, runtimeKey: string): Promise<void> {
+async function fetchMessagesForSessionInternal(sessionID: string, resolvedDir: string, runtimeKey: string, limit: number): Promise<void> {
   const startedAt = performance.now()
-  const limit = getFetchPageSize()
   sessionLoadDebug("imperative-start", { sessionID, directory: resolvedDir, limit })
 
   try {
@@ -2063,7 +2061,7 @@ async function fetchMessagesForSessionInternal(sessionID: string, resolvedDir: s
       return
     }
 
-    beginSessionMessageLoad(resolvedDir, sessionID, runtimeKey)
+    beginSessionMessageLoad(resolvedDir, sessionID, limit, runtimeKey)
 
     const result = await loadSessionMessagePage({
       runtimeKey,

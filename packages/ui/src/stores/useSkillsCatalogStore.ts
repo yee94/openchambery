@@ -9,7 +9,7 @@ import type {
   SkillsInstallError,
 } from '@/lib/api/types';
 
-import { invalidateSkillsLoadCache, refreshSkillsAfterOpenCodeRestart, useSkillsStore } from '@/stores/useSkillsStore';
+import { refreshSkillsAfterOpenCodeRestart } from '@/stores/useSkillsStore';
 import { startConfigUpdate, finishConfigUpdate, updateConfigUpdateMessage } from '@/lib/configUpdate';
 import { queryClient } from '@/lib/queryRuntime';
 import { FALLBACK_SKILLS_CATALOG_SOURCES, invalidateSkillsCatalogQueries } from '@/queries/skillsCatalogQueries';
@@ -132,10 +132,8 @@ export const useSkillsCatalogStore = create<SkillsCatalogState>()(
             });
           } else {
             updateConfigUpdateMessage(payload.message || 'Refreshing skills…');
-            invalidateSkillsLoadCache(directory);
             await refreshInstalledSkillsQuery(queryClient, directory, transport);
             await invalidateSkillsCatalogQueries(queryClient, directory, transport);
-            void useSkillsStore.getState().loadSkills();
           }
           return payload;
         } catch (error) {

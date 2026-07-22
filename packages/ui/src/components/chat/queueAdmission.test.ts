@@ -1,5 +1,5 @@
 import { beforeEach, describe, expect, test } from 'bun:test';
-import { admitChatInputQueueMessageAndConsumeResources, admitQueueMessageAndConsumeResources, admitServerQueueMessageAndConsumeResources, attachedFilesToQueueCandidates, createServerQueueAdmissionCapture, createServerQueueAdmissionIdentity } from './queueAdmission';
+import { admitChatInputQueueMessageAndConsumeResources, admitQueueMessageAndConsumeResources, admitServerQueueMessageAndConsumeResources, attachedFilesToQueueCandidates, createServerQueueAdmissionCapture, createServerQueueAdmissionIdentity, isServerQueueAdmissionEventBlocked, startServerQueueScopeMutationFlight, type ServerQueueScopeMutationFlights } from './queueAdmission';
 import { legacyQueueScope, setMessageQueueMutationFence, useMessageQueueStore, type QueueItem, type QueueScope } from '@/stores/messageQueueStore';
 import { sessionDraftKey, type DraftRecord } from '@/sync/input-draft-types';
 import type { AttachedFile } from '@/stores/types/sessionTypes';
@@ -52,6 +52,41 @@ const serverAdmissionFixture = () => {
 
 describe('admitQueueMessageAndConsumeResources', () => {
     beforeEach(() => { setMessageQueueMutationFence('open'); });
+    test('blocks server admission events for runtime blocking state or a component-local flight', () => {
+        expect(isServerQueueAdmissionEventBlocked('server', false, false)).toBe(false);
+        expect(isServerQueueAdmissionEventBlocked('server', true, false)).toBe(true);
+        expect(isServerQueueAdmissionEventBlocked('server', false, true)).toBe(true);
+        expect(isServerQueueAdmissionEventBlocked('frozen', false, true)).toBe(true);
+        expect(isServerQueueAdmissionEventBlocked('legacy', false, true)).toBe(false);
+    });
+
+    test('runs one server queue mutation per scope flight and keeps its request ID until settlement', async () => {
+        const flightRef: { current: ServerQueueScopeMutationFlights } = { current: new Map() };
+        let settle!: () => void;
+        const pending = new Promise<void>((resolve) => { settle = resolve; });
+        const requestIDs: string[] = [];
+        let sequence = 0;
+        const start = () => startServerQueueScopeMutationFlight(
+            flightRef,
+            'runtime-a:scope-a',
+            () => `request-${++sequence}`,
+            (requestID) => {
+                requestIDs.push(requestID);
+                return pending;
+            },
+        );
+
+        const first = start();
+        expect(first).not.toBeNull();
+        expect(start()).toBeNull();
+        expect(requestIDs).toEqual(['request-1']);
+        expect(flightRef.current.get('runtime-a:scope-a')).toBe('request-1');
+
+        settle();
+        await first;
+        expect(flightRef.current.has('runtime-a:scope-a')).toBe(false);
+    });
+
     test('admits before consuming drafts, body, and attachments', () => {
         const calls: string[] = [];
 

@@ -12,7 +12,7 @@ export const applySessionIndexEvent = (service, event, observedAt = Date.now()) 
 
   if (payload.type === 'session.created' || payload.type === 'session.updated') {
     const session = withDirectory(properties.info, directory);
-    return session ? service.upsert(session, observedAt, { preserveActivity: true }) : false;
+    return session ? service.upsertAndReportChange(session, observedAt, { preserveActivity: true }) : false;
   }
 
   if (payload.type === 'session.deleted') {

@@ -20,6 +20,16 @@ let abortReject = false
 let abortResult: { data?: boolean; error?: unknown; response?: { status?: number } } = { data: true }
 const abortBlockEvents: Array<{ event: "begin" | "clear"; scope: Record<string, unknown>; token: string }> = []
 let abortBlockToken = 0
+let mobileSurfaceRuntime = false
+let vscodeRuntime = false
+
+mock.module("@/lib/runtimeSurface", () => ({
+  isMobileSurfaceRuntime: () => mobileSurfaceRuntime,
+}))
+
+mock.module("@/lib/desktop", () => ({
+  isVSCodeRuntime: () => vscodeRuntime,
+}))
 
 const mockScopedClient = {
   permission: {
@@ -282,6 +292,11 @@ function createChildStores(entries: Array<[string, StoreApi<DirectoryStore>]>) {
 }
 
 describe("fetchMessagesForSession startup race", () => {
+  beforeEach(() => {
+    mobileSurfaceRuntime = false
+    vscodeRuntime = false
+  })
+
   test("replays a selection fetch queued before sync action refs initialize", async () => {
     replyCalls.length = 0
     sessionMessagesResult = { data: [] }
@@ -314,6 +329,22 @@ describe("fetchMessagesForSession startup race", () => {
     const messageCalls = replyCalls.filter((call) => call.method === "session.messages")
     expect(messageCalls).toHaveLength(1)
     expect(messageCalls[0]?.params.limit).toBe(30)
+  })
+
+  test("uses the runtime-aware initial page size", async () => {
+    const store = createStore({}, { session: [{ id: "session-a", time: { created: 1 } } as Session] })
+    const childStores = createChildStores([["/test/project", store]])
+    const { fetchMessagesForSession, setActionRefs } = await import("./session-actions")
+    setActionRefs(mockSdk as unknown as OpencodeClient, childStores, () => "/test/project")
+
+    for (const runtime of ["mobile", "web", "vscode"] as const) {
+      replyCalls.length = 0
+      mobileSurfaceRuntime = runtime === "mobile"
+      vscodeRuntime = runtime === "vscode"
+      await fetchMessagesForSession("session-a", "/test/project")
+
+      expect(replyCalls.filter((call) => call.method === "session.messages")[0]?.params.limit).toBe(runtime === "mobile" ? 16 : 30)
+    }
   })
 })
 

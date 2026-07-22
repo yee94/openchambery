@@ -23,7 +23,6 @@ import { queryClient } from "@/lib/queryRuntime";
 import { useProjectsStore } from "@/stores/useProjectsStore";
 import { invalidateSkillsCatalogQueries } from "@/queries/skillsCatalogQueries";
 import { refreshInstalledSkillsQuery } from "@/queries/installedSkillsQueries";
-import { invalidateSkillsLoadCache, useSkillsStore } from "@/stores/useSkillsStore";
 import { runtimeFetch } from "@/lib/runtime-fetch";
 import { getRuntimeTransportIdentity } from "@/lib/runtime-switch";
 
@@ -347,7 +346,6 @@ async function performConfigRefresh(options: ConfigRefreshOptions = {}) {
     if (getRuntimeTransportIdentity() !== transport) return;
 
     const configStore = useConfigStore.getState();
-    const skillsStore = useSkillsStore.getState();
 
     const refreshProviders = scopes.includes("all") || scopes.includes("providers");
     const refreshSdkAgents = scopes.includes("all") || scopes.includes("agents");
@@ -391,8 +389,6 @@ async function performConfigRefresh(options: ConfigRefreshOptions = {}) {
       uiRefreshTasks.push(refreshCommandsQuery(queryClient, queryDirectory, transport).then(() => undefined));
     }
     if (refreshSkills) {
-      invalidateSkillsLoadCache(queryDirectory);
-      uiRefreshTasks.push(skillsStore.loadSkills().then(() => undefined));
       uiRefreshTasks.push(refreshInstalledSkillsQuery(queryClient, queryDirectory, transport).then(() => undefined));
       uiRefreshTasks.push(invalidateSkillsCatalogQueries(queryClient, queryDirectory, transport).then(() => undefined));
     }

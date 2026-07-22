@@ -58,6 +58,7 @@ import {
   type SkillsCatalogSourceConfig,
 } from './skillsCatalog';
 import type { BridgeContext, BridgeResponse } from './bridge';
+import type { OpenCodeCommand } from './bridge-settings-runtime';
 
 type BridgeMessageInput = {
   id: string;
@@ -73,6 +74,7 @@ type ConfigRuntimeDeps = {
   resetMagicPromptOverride: (id: string) => Promise<{ version: number; overrides: Record<string, string> }>;
   resetAllMagicPromptOverrides: () => Promise<{ version: number; overrides: Record<string, string> }>;
   fetchOpenCodeSkillsFromApi: (ctx: BridgeContext | undefined, workingDirectory?: string) => Promise<DiscoveredSkill[] | null>;
+  fetchOpenCodeCommandsFromApi: (ctx: BridgeContext | undefined, workingDirectory?: string) => Promise<OpenCodeCommand[]>;
   clientReloadDelayMs: number;
 };
 
@@ -194,6 +196,20 @@ const resolveDiscoveredSkills = async (
   (await deps.fetchOpenCodeSkillsFromApi(ctx, workingDirectory)) || [],
   discoverSkills(workingDirectory),
 );
+
+const truncateDescription = (value: unknown): string => {
+  const normalized = typeof value === 'string' ? value.replace(/\s+/gu, ' ').trim() : '';
+  const codePoints = Array.from(normalized);
+  return codePoints.length > 160 ? `${codePoints.slice(0, 160).join('')}…` : normalized;
+};
+
+const isSafeCommandCatalogName = (value: unknown): value is string => typeof value === 'string'
+  && value.length > 0
+  && !/[\]\r\n]/u.test(value);
+
+const isSafeCommandCatalogReference = (value: unknown): value is string => typeof value === 'string'
+  && value.length <= 8_192
+  && !/[\]\r\n]/u.test(value);
 
 export async function handleConfigBridgeMessage(
   message: BridgeMessageInput,
@@ -455,6 +471,32 @@ export async function handleConfigBridgeMessage(
       };
       const workingDirectory = resolveWorkingDirectory(ctx, directory);
       const normalizedMethod = typeof method === 'string' && method.trim() ? method.trim().toUpperCase() : 'GET';
+      if (normalizedMethod === 'POST' && !name && body?.catalog === true) {
+        const listedCommands = await deps.fetchOpenCodeCommandsFromApi(ctx, workingDirectory);
+        const commands = listedCommands
+          .filter((command) => command.source !== 'skill')
+          .map((command) => {
+            if (!isSafeCommandCatalogName(command.name)) return null;
+            const name = command.name.trim();
+            if (!isSafeCommandCatalogName(name)) return null;
+            const sources = getCommandSources(name, workingDirectory);
+            const scope = sources.md.exists
+              ? sources.md.scope
+              : (sources.json.exists ? sources.json.scope : null);
+            return {
+              name,
+              description: truncateDescription(command.description),
+              agent: command.agent ?? null,
+              model: command.model ?? null,
+              source: command.source ?? null,
+              scope,
+              isBuiltIn: !sources.md.exists && !sources.json.exists,
+              reference: sources.md.exists && isSafeCommandCatalogReference(sources.md.path) ? sources.md.path : name,
+            };
+          })
+          .filter((command): command is NonNullable<typeof command> => command !== null);
+        return { id, type, success: true, data: { commands } };
+      }
       if (normalizedMethod === 'POST' && !name && Array.isArray(body?.names)) {
         const names = [...new Set(body.names
           .filter((candidate): candidate is string => typeof candidate === 'string')
@@ -772,6 +814,22 @@ export async function handleConfigBridgeMessage(
 
       if (!name && normalizedMethod === 'GET') {
         const skills = await resolveDiscoveredSkills(deps, ctx, workingDirectory);
+        if (body?.summary === true) {
+          return {
+            id,
+            type,
+            success: true,
+            data: {
+              skills: skills.map((skill) => ({
+                name: skill.name,
+                path: skill.path,
+                scope: skill.scope,
+                source: skill.source,
+                description: truncateDescription(skill.description),
+              })),
+            },
+          };
+        }
         return { id, type, success: true, data: { skills } };
       }
 

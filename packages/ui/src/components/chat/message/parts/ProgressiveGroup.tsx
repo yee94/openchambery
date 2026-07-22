@@ -584,7 +584,7 @@ const StaticToolRowInner: React.FC<{
     const isReadGroup = toolName.toLowerCase() === 'read';
     const runtime = React.useContext(RuntimeAPIContext);
     const currentDirectory = useDirectoryStore((state) => state.currentDirectory);
-    const skillsQuery = useInstalledSkillsQuery();
+    const skillsQuery = useInstalledSkillsQuery({ enabled: toolName.toLowerCase() === 'skill' });
     const skills = React.useMemo(() => skillsQuery.data ?? [], [skillsQuery.data]);
     const hasRunningActivity = React.useMemo(() => activities.some((activity) => isActivityRunning(activity)), [activities]);
     const skillByName = React.useMemo(() => new Map(skills.map((skill) => [skill.name, skill])), [skills]);

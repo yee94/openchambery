@@ -11,7 +11,7 @@ type RawSkillResponse = {
   path: string;
   scope?: SkillScope;
   source?: SkillSource;
-  sources?: { md?: { description?: string } };
+  description?: string;
 };
 
 const normalizeDirectory = (directory: string | null | undefined): string | null => directory?.trim() || null;
@@ -41,7 +41,7 @@ export const installedSkillsQueryOptions = (
     queryKey: installedSkillsQueryKey(normalizedDirectory, transport),
     queryFn: async ({ signal }: { signal: AbortSignal }): Promise<DiscoveredSkill[]> => {
       const response = await runtimeFetch('/api/config/skills', {
-        query: normalizedDirectory ? { directory: normalizedDirectory } : undefined,
+        query: { summary: 'true', ...(normalizedDirectory ? { directory: normalizedDirectory } : {}) },
         signal,
       });
       if (!response.ok) throw new Error(`Failed to list skills: ${response.status}`);
@@ -51,7 +51,7 @@ export const installedSkillsQueryOptions = (
         path: skill.path,
         scope: skill.scope ?? 'user',
         source: skill.source ?? 'opencode',
-        description: skill.sources?.md?.description ?? '',
+        description: skill.description ?? '',
         group: parseSkillGroup(skill.path),
       }));
     },

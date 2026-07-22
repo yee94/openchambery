@@ -5,7 +5,7 @@ import { useUIStore } from '@/stores/useUIStore';
 import { ScrollableOverlay } from '@/components/ui/ScrollableOverlay';
 import { useMobileAutocompleteMaxHeight } from './useMobileAutocompleteMaxHeight';
 
-interface SkillInfo {
+export interface SkillInfo {
   name: string;
   scope: string;
   source?: string;
@@ -18,7 +18,7 @@ export interface SkillAutocompleteHandle {
 
 interface SkillAutocompleteProps {
   searchQuery: string;
-  onSkillSelect: (skillName: string) => void;
+  onSkillSelect: (skill: SkillInfo) => void;
   onClose: () => void;
   directory?: string | null;
   style?: React.CSSProperties;
@@ -41,11 +41,6 @@ export const SkillAutocomplete = React.forwardRef<SkillAutocompleteHandle, Skill
   const itemRefs = React.useRef<(HTMLDivElement | null)[]>([]);
   const skillsQuery = useInstalledSkillsQuery({ directory });
   const skills = React.useMemo(() => skillsQuery.data ?? [], [skillsQuery.data]);
-  const { refetch: refetchSkills } = skillsQuery;
-
-  React.useEffect(() => {
-    void refetchSkills();
-  }, [refetchSkills]);
 
   React.useEffect(() => {
     const normalizedQuery = searchQuery.trim();
@@ -118,7 +113,7 @@ export const SkillAutocomplete = React.forwardRef<SkillAutocompleteHandle, Skill
         const safeIndex = ((selectedIndexRef.current % filteredSkills.length) + filteredSkills.length) % filteredSkills.length;
         const skill = filteredSkills[safeIndex];
         if (skill) {
-          onSkillSelect(skill.name);
+          onSkillSelect(skill);
         }
       }
     },
@@ -138,7 +133,7 @@ export const SkillAutocomplete = React.forwardRef<SkillAutocompleteHandle, Skill
             isMobile ? 'items-center' : 'items-start',
           index === selectedIndex && 'bg-interactive-selection'
         )}
-        onClick={() => onSkillSelect(skill.name)}
+        onClick={() => onSkillSelect(skill)}
         onMouseMove={() => {
           keyboardNavigationRef.current = false;
           setSelectedIndex(index);

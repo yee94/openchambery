@@ -34,6 +34,7 @@ const deps = {
   resetMagicPromptOverride: async () => ({ version: 1, overrides: {} }),
   resetAllMagicPromptOverrides: async () => ({ version: 1, overrides: {} }),
   fetchOpenCodeSkillsFromApi: async () => null,
+  fetchOpenCodeCommandsFromApi: async () => [],
   clientReloadDelayMs: 800,
 };
 
@@ -111,6 +112,66 @@ describe('VS Code config bridge plugin parity', () => {
     expect(Object.keys(agents?.data?.agents || {})).toEqual(['built-in']);
     expect(commands?.data).toMatchObject({ commands: { 'built-in': { scope: null, isBuiltIn: true } } });
     expect(Object.keys(commands?.data?.commands || {})).toEqual(['built-in']);
+  });
+
+  test('returns compact skill and command catalogs with matching references', async () => {
+    const root = fs.mkdtempSync(path.join(os.tmpdir(), 'openchamber-vscode-catalog-'));
+    tempRoots.push(root);
+    const ctx = createCtx(root);
+    const markdownPath = path.join(root, '.opencode', 'commands', 'markdown.md');
+    fs.mkdirSync(path.dirname(markdownPath), { recursive: true });
+    fs.writeFileSync(markdownPath, '---\ndescription: markdown\n---\nTemplate', 'utf8');
+    const longDescription = `  ${'😀'.repeat(161)}\nnext  `;
+    const catalogDeps = {
+      ...deps,
+      fetchOpenCodeSkillsFromApi: async () => [{ name: 'skill', path: '/tmp/skill/SKILL.md', scope: 'user', source: 'opencode', description: longDescription, content: 'secret skill content' }],
+      fetchOpenCodeCommandsFromApi: async () => [
+        { name: 'markdown', description: longDescription, source: 'command' },
+        { name: 'json', description: ' JSON\n command ', source: 'command' },
+        { name: 'skill-command', description: 'hidden', source: 'skill' },
+      ],
+    };
+
+    const skills = await handleConfigBridgeMessage({
+      id: 'skills-summary', type: 'api:config/skills', payload: { method: 'GET', directory: root, body: { summary: true } },
+    }, ctx, catalogDeps);
+    const commands = await handleConfigBridgeMessage({
+      id: 'commands-catalog', type: 'api:config/commands', payload: { method: 'POST', directory: root, body: { catalog: true } },
+    }, ctx, catalogDeps);
+
+    expect(skills?.data?.skills[0]).toEqual(expect.objectContaining({ description: `${'😀'.repeat(160)}…` }));
+    expect(skills?.data?.skills[0]).not.toHaveProperty('content');
+    expect(commands?.data?.commands).toEqual(expect.arrayContaining([
+      expect.objectContaining({ name: 'markdown', reference: markdownPath, description: `${'😀'.repeat(160)}…` }),
+      expect.objectContaining({ name: 'json', reference: 'json', description: 'JSON command' }),
+    ]));
+    expect(commands?.data?.commands).toHaveLength(2);
+    expect(commands?.data?.commands[0]).not.toHaveProperty('template');
+  });
+
+  test('bounds command tag references and excludes unsafe command names', async () => {
+    const root = fs.mkdtempSync(path.join(os.tmpdir(), 'openchamber-vscode-catalog-]-'));
+    tempRoots.push(root);
+    const ctx = createCtx(root);
+    const markdownPath = path.join(root, '.opencode', 'commands', 'markdown.md');
+    fs.mkdirSync(path.dirname(markdownPath), { recursive: true });
+    fs.writeFileSync(markdownPath, 'Template', 'utf8');
+    const commands = await handleConfigBridgeMessage({
+      id: 'commands-catalog', type: 'api:config/commands', payload: { method: 'POST', directory: root, body: { catalog: true } },
+    }, ctx, {
+      ...deps,
+      fetchOpenCodeCommandsFromApi: async () => [
+        { name: 'markdown', source: 'command' },
+        { name: 'bad]name', source: 'command' },
+        { name: 'bad\rname', source: 'command' },
+        { name: 'bad\nname', source: 'command' },
+        { name: '   ', source: 'command' },
+      ],
+    });
+
+    expect(commands?.data?.commands).toEqual([
+      expect.objectContaining({ name: 'markdown', reference: 'markdown' }),
+    ]);
   });
 
   test('removes agent fields when update payload sends null', async () => {
