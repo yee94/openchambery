@@ -4,6 +4,15 @@ All notable changes to this project will be documented in this file.
 
 ## [Unreleased]
 
+## [1.16.53] - 2026-07-22
+
+- **Assistants:** add cross-instance Assistant workspaces with continuous and stateless modes, session binding, managed or project workspaces, share-operation polling, and a Settings surface for create/edit lifecycle.
+- **Assistant UI:** reuse the shared chat shell for Assistant conversations, with desktop list navigation, mobile chip selection, emoji avatars, onboarding that routes into Settings, and per-device share welcome guidance.
+- **Mobile sharing:** deliver Share Sheet and Direct Share content into Assistant inboxes on iOS and Android, with native confirmation screens, draft promotion, stable operation IDs across retries, and iOS intent donations for suggested recipients.
+- **Message queue:** admit Assistant-targeted queue items with captured provider/model/agent config, wake the server runtime after successful admits, and tighten queued-message edit/remove eligibility.
+- **Composer:** improve session-mention handling, message display normalization, and trigger-icon rendering across Assistant and chat surfaces.
+- **Dependencies:** upgrade `@opencode-ai/sdk` to 1.18.4.
+
 ## [1.16.52] - 2026-07-22
 
 - **Runtime switching:** bind catalog transport identity to the active transport fingerprint instead of the stable runtime key so provider and agent reloads survive LAN⇄relay swaps without being silently discarded.
