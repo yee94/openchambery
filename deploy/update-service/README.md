@@ -7,7 +7,8 @@ This EdgeOne Makers project serves the public OpenChamber update-check API at
 
 The endpoint accepts the existing client payload. It derives its decision from
 `currentVersion` and returns `latestVersion`, `updateAvailable`,
-`releaseNotes`, `releaseNotesUrl`, and `nextSuggestedCheckInSec`.
+`releaseNotes`, `releaseNotesUrl`, platform download targets, and
+`nextSuggestedCheckInSec`.
 
 The service reads only `currentVersion`. It ignores `installId` and retains no
 request data.
@@ -49,9 +50,10 @@ region that includes MLC.
 Connect the repository to Makers so pushes to `main` create production
 deployments.
 
-The OpenChamber Web host process and VS Code Extension Host can supply
-`OPENCHAMBER_UPDATE_API_URL` with the Makers project domain followed by
-`/v1/update/check`. A chosen custom domain can replace this value in the next
-application release.
+OpenChamber Web, CLI, VS Code, Capacitor mobile, and macOS Desktop use
+`https://openchamber-update.edgeone.dev/v1/update/check`. Windows and Linux
+Desktop use the Electron updater metadata under `/desktop/`. Those metadata
+responses point signed package downloads at GitHub Release assets.
 
-Electron desktop package updates retain their signed release-feed workflow.
+`OPENCHAMBER_UPDATE_API_URL` remains available as a compatible JSON API
+override for Web, VS Code, and macOS Desktop.

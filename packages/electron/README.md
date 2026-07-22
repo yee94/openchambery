@@ -98,7 +98,7 @@ Packaged Desktop builds include the official OpenCode CLI that matches the pinne
 
 ## Releases and automatic updates
 
-Packaged desktop apps read updates from GitHub Releases in `yee94/openchamber`. Each cold startup checks once, and users can check again from the app menu, sidebar, or Settings. The publish target in `package.json` and the runtime feed in `main.mjs` must continue to point to the same repository.
+Packaged desktop apps check updates through `openchamber-update.edgeone.dev`. macOS uses the shared JSON version API, while Windows and Linux use Electron updater metadata proxied through `/desktop/`. Signed installers and AppImages remain GitHub Release assets. Each cold startup checks once, and users can check again from the app menu, sidebar, or Settings.
 
 The `Release` GitHub Actions workflow runs for `v*` tags or by manual dispatch. Before starting a release:
 

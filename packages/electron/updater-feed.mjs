@@ -1,7 +1,6 @@
 export const PRODUCTION_UPDATER_FEED = Object.freeze({
-  provider: 'github',
-  owner: 'yee94',
-  repo: 'openchamber',
+  provider: 'generic',
+  url: 'https://openchamber-update.edgeone.dev/desktop/',
 });
 
 const isLoopbackHostname = (hostname) => {

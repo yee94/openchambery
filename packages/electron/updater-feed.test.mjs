@@ -12,12 +12,11 @@ const overrideEnvironment = {
   OPENCHAMBER_UPDATER_E2E_URL: 'http://127.0.0.1:49152/updates/',
 };
 
-test('production updater feed is immutable GitHub configuration', () => {
+test('production updater feed is immutable EdgeOne generic configuration', () => {
   assert.equal(Object.isFrozen(PRODUCTION_UPDATER_FEED), true);
   assert.deepEqual(PRODUCTION_UPDATER_FEED, {
-    provider: 'github',
-    owner: 'yee94',
-    repo: 'openchamber',
+    provider: 'generic',
+    url: 'https://openchamber-update.edgeone.dev/desktop/',
   });
 });
 

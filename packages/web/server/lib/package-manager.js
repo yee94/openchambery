@@ -13,13 +13,12 @@ const PACKAGE_PATH_SEGMENTS = PACKAGE_NAME.split('/');
 const NPM_REGISTRY_URL = `https://registry.npmjs.org/${PACKAGE_NAME}`;
 const CHANGELOG_URL = 'https://raw.githubusercontent.com/yee94/openchamber/main/CHANGELOG.md';
 const GITHUB_RELEASES_URL = 'https://github.com/yee94/openchamber/releases';
-const GITHUB_LATEST_RELEASE_URL = 'https://api.github.com/repos/yee94/openchamber/releases/latest';
 let cachedDetectedPm = null;
 
 function getSpawnSyncBaseOptions() {
   return process.platform === 'win32' ? { windowsHide: true } : {};
 }
-const UPDATE_CHECK_URL = process.env.OPENCHAMBER_UPDATE_API_URL || 'https://api.openchamber.dev/v1/update/check';
+const UPDATE_CHECK_URL = process.env.OPENCHAMBER_UPDATE_API_URL || 'https://openchamber-update.edgeone.dev/v1/update/check';
 
 function getOpenChamberConfigDir() {
   if (process.platform === 'win32') {
@@ -140,55 +139,6 @@ async function checkForUpdatesFromApi(currentVersion, options = {}) {
         typeof data.nextSuggestedCheckInSec === 'number' && Number.isFinite(data.nextSuggestedCheckInSec)
           ? data.nextSuggestedCheckInSec
           : undefined,
-    };
-  } catch {
-    return null;
-  }
-}
-
-async function checkForUpdatesFromGitHub(currentVersion, options = {}) {
-  try {
-    const platform = normalizePlatform(options.platform);
-    const headers = {
-      Accept: 'application/vnd.github+json',
-      'User-Agent': 'OpenChamber-Update-Check/1.0',
-    };
-    const token = process.env.GITHUB_TOKEN || process.env.GH_TOKEN;
-    if (token) {
-      headers.Authorization = `Bearer ${token}`;
-    }
-
-    const response = await fetch(GITHUB_LATEST_RELEASE_URL, {
-      headers,
-      signal: AbortSignal.timeout(10000),
-    });
-
-    if (!response.ok) return null;
-    const release = await response.json();
-    const tagName = release.tag_name;
-    if (!tagName) return null;
-
-    const latestVersion = tagName.replace(/^v/, '');
-    const versionComparison = compareVersions(latestVersion, currentVersion);
-    if (versionComparison <= 0) return null;
-
-    let downloadUrl;
-    if (platform === 'android' && Array.isArray(release.assets)) {
-      const apkAsset = release.assets.find(
-        (a) => a.name && a.name.endsWith('.apk') && a.browser_download_url,
-      );
-      if (apkAsset) {
-        downloadUrl = apkAsset.browser_download_url;
-      }
-    }
-
-    return {
-      available: true,
-      version: latestVersion,
-      currentVersion,
-      body: release.body || undefined,
-      releaseUrl: release.html_url || `${GITHUB_RELEASES_URL}/tag/${tagName}`,
-      downloadUrl,
     };
   } catch {
     return null;
@@ -783,10 +733,8 @@ export async function checkForUpdates(options = {}) {
   const appType = normalizeAppType(options.appType);
   const platform = normalizePlatform(options.platform);
 
-  // Mobile: check GitHub Releases directly — APK versions track git tags,
-  // not npm registry, and the update API is being deprecated for mobile.
   if (appType === 'mobile-capacitor' && currentVersion !== 'unknown') {
-    const remote = await checkForUpdatesFromGitHub(currentVersion, options);
+    const remote = await checkForUpdatesFromApi(currentVersion, options);
     if (remote) {
       return {
         ...remote,

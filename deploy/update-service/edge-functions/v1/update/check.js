@@ -2,6 +2,7 @@ const VERSION_PATTERN = /^v?\d+\.\d+\.\d+(?:-[0-9A-Za-z.-]+)?(?:\+[0-9A-Za-z.-]+
 const DEFAULT_CHECK_INTERVAL_SECONDS = 3600;
 const MANIFEST_PATH = '/update-manifest.json';
 const CHANGELOG_PATH = '/CHANGELOG.md';
+const RELEASE_DOWNLOAD_BASE = 'https://github.com/yee94/openchamber/releases/download';
 
 function responseHeaders(headers = {}) {
   return {
@@ -168,6 +169,13 @@ export async function onRequest(context) {
   const releaseNotes = updateAvailable
     ? await loadReleaseNotes(request, currentVersion, manifest.latestVersion)
     : undefined;
+  const appType = payload.appType;
+  const platform = payload.platform;
+  const downloadUrl = appType === 'mobile-capacitor' && platform === 'android'
+    ? `${RELEASE_DOWNLOAD_BASE}/v${manifest.latestVersion}/app-release.apk`
+    : appType === 'mobile-capacitor' && platform === 'ios'
+      ? manifest.releaseNotesUrl
+      : undefined;
 
   return jsonResponse({
     latestVersion: manifest.latestVersion,
@@ -176,5 +184,6 @@ export async function onRequest(context) {
     releaseNotesUrl: manifest.releaseNotesUrl,
     nextSuggestedCheckInSec: manifest.nextSuggestedCheckInSec,
     ...(releaseNotes ? { releaseNotes } : {}),
+    ...(downloadUrl ? { downloadUrl } : {}),
   });
 }

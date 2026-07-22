@@ -157,7 +157,7 @@ environment:
   UI_PASSWORD: your_secure_password
   OPENCHAMBER_TUNNEL_MODE: quick # quick | managed-remote | managed-local
   OPENCHAMBER_TUNNEL_PROVIDER: cloudflare
-  OPENCHAMBER_UPDATE_API_URL: https://updates.example.com/v1/update/check # Optional compatible update-check endpoint
+  OPENCHAMBER_UPDATE_API_URL: https://updates.example.com/v1/update/check # Optional compatible update-check override
 ```
 
 For `managed-remote` mode, also set:

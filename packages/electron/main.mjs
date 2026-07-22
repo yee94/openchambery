@@ -16,6 +16,7 @@ import { resolveManagedOpenCodeCwd } from './opencode-cwd.mjs';
 import { sanitizeRuntimeRequestHeaders } from './runtime-request-headers.mjs';
 import { assertUpdaterCapability } from './updater-capability.mjs';
 import { checkForDesktopUpdate } from './updater-check.mjs';
+import { checkMacOSReleaseUpdate } from './update-api.mjs';
 import { resolveUpdaterFeed } from './updater-feed.mjs';
 import { mintOutsideFileGrant } from '@openchamber/web/server/lib/fs/routes.js';
 
@@ -3017,41 +3018,6 @@ const compareSemver = (left, right) => {
   return 0;
 };
 
-const parseGithubRepo = () => {
-  return GITHUB_REPOSITORY;
-};
-
-const checkMacOSReleaseUpdate = async () => {
-  const { owner, repo } = parseGithubRepo();
-  const response = await fetch(`https://api.github.com/repos/${owner}/${repo}/releases/latest`, {
-    headers: {
-      Accept: 'application/vnd.github+json',
-      'User-Agent': `OpenChamber/${APP_VERSION}`,
-    },
-    signal: AbortSignal.timeout(10_000),
-  });
-
-  if (!response.ok) {
-    throw new Error(`GitHub Releases responded with ${response.status}`);
-  }
-
-  const release = await response.json();
-  const tagName = typeof release?.tag_name === 'string' ? release.tag_name : '';
-  const nextVersion = tagName.replace(/^v/, '');
-  if (!nextVersion) {
-    throw new Error('GitHub Releases did not provide a version tag');
-  }
-
-  return {
-    available: compareSemver(nextVersion, APP_VERSION) > 0,
-    currentVersion: APP_VERSION,
-    version: nextVersion,
-    body: typeof release?.body === 'string' ? release.body : null,
-    date: typeof release?.published_at === 'string' ? release.published_at : null,
-    releaseUrl: typeof release?.html_url === 'string' ? release.html_url : null,
-    manualUpdate: true,
-  };
-};
 const setupAutoUpdater = () => {
   if (!app.isPackaged) {
     return;
@@ -3066,13 +3032,11 @@ const setupAutoUpdater = () => {
   const testBuild = typeof __OPENCHAMBER_UPDATER_E2E_BUILD__ !== 'undefined'
     && __OPENCHAMBER_UPDATER_E2E_BUILD__ === true;
   const resolvedFeed = resolveUpdaterFeed({ testBuild });
-  const feed = resolvedFeed.provider === 'github'
-    ? { ...resolvedFeed, ...GITHUB_REPOSITORY }
-    : resolvedFeed;
+  const feed = resolvedFeed;
   autoUpdater.setFeedURL(feed);
   log.info('[electron] updater feed configured', {
     provider: feed.provider,
-    target: feed.provider === 'github' ? `${feed.owner}/${feed.repo}` : feed.url,
+    target: feed.url,
   });
 
   autoUpdater.on('download-progress', (progress) => {
@@ -4142,7 +4106,7 @@ const handleInvoke = async (browserWindow, command, args = {}) => {
       assertUpdaterCapability({ packaged: app.isPackaged });
       const currentVersion = APP_VERSION;
       if (process.platform === 'darwin') {
-        return checkMacOSReleaseUpdate();
+        return checkMacOSReleaseUpdate({ currentVersion: APP_VERSION });
       }
 
       const { available, updateInfo, updateResult, nextVersion, pendingUpdate } = await checkForDesktopUpdate({

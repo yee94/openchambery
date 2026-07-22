@@ -119,6 +119,24 @@ test('treats a prerelease client as older than the corresponding stable release'
   assert.equal(body.currentVersion, '1.16.50-beta.1');
 });
 
+test('returns platform download targets for Capacitor clients', async () => {
+  stubStaticAssets({ manifest, changelog: '## [1.16.50] - 2026-07-21\n\n- Mobile release' });
+  const androidResponse = await onRequest({ request: requestWithJson({
+    currentVersion: '1.16.49', appType: 'mobile-capacitor', platform: 'android',
+  }) });
+  const android = await androidResponse.json();
+  assert.equal(android.downloadUrl, 'https://github.com/yee94/openchamber/releases/download/v1.16.50/app-release.apk');
+
+  restoreFetch?.();
+  restoreFetch = null;
+  stubStaticAssets({ manifest, changelog: '## [1.16.50] - 2026-07-21\n\n- Mobile release' });
+  const iosResponse = await onRequest({ request: requestWithJson({
+    currentVersion: '1.16.49', appType: 'mobile-capacitor', platform: 'ios',
+  }) });
+  const ios = await iosResponse.json();
+  assert.equal(ios.downloadUrl, manifest.releaseNotesUrl);
+});
+
 test('returns a controlled error for malformed request JSON', async () => {
   const originalFetch = globalThis.fetch;
   globalThis.fetch = async () => {

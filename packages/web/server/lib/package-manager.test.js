@@ -55,7 +55,7 @@ describe('checkForUpdates', () => {
 
   it('returns available=true when both API and npm confirm a newer version', async () => {
     fetchMock
-      .when('api.openchamber.dev', {
+      .when('openchamber-update.edgeone.dev', {
         ok: true,
         json: async () => ({
           latestVersion: '1.10.0',
@@ -85,7 +85,7 @@ describe('checkForUpdates', () => {
 
   it('returns available=false when API claims update but npm has same version', async () => {
     fetchMock
-      .when('api.openchamber.dev', {
+      .when('openchamber-update.edgeone.dev', {
         ok: true,
         json: async () => ({
           latestVersion: '1.10.0',
@@ -107,7 +107,7 @@ describe('checkForUpdates', () => {
 
   it('returns available=false when npm only has a prerelease of the current version', async () => {
     fetchMock
-      .when('api.openchamber.dev', Promise.reject(new Error('Network error')))
+      .when('openchamber-update.edgeone.dev', Promise.reject(new Error('Network error')))
       .when('registry.npmjs.org', {
         ok: true,
         json: async () => ({
@@ -122,7 +122,7 @@ describe('checkForUpdates', () => {
 
   it('accepts electron desktop update claims without npm cross-checking', async () => {
     fetchMock
-      .when('api.openchamber.dev', {
+      .when('openchamber-update.edgeone.dev', {
         ok: true,
         json: async () => ({
           latestVersion: '1.10.0',
@@ -143,7 +143,7 @@ describe('checkForUpdates', () => {
 
   it('returns available=false when API claims update but npm is behind', async () => {
     fetchMock
-      .when('api.openchamber.dev', {
+      .when('openchamber-update.edgeone.dev', {
         ok: true,
         json: async () => ({
           latestVersion: '1.10.0',
@@ -166,7 +166,7 @@ describe('checkForUpdates', () => {
   // --- Scenario: API says no update, npm agrees ---
 
   it('returns available=false when API says no update and versions match', async () => {
-    fetchMock.when('api.openchamber.dev', {
+    fetchMock.when('openchamber-update.edgeone.dev', {
       ok: true,
       json: async () => ({
         latestVersion: '1.9.10',
@@ -183,7 +183,7 @@ describe('checkForUpdates', () => {
 
   it('returns available=true from npm fallback when API is unreachable and npm has newer version', async () => {
     fetchMock
-      .when('api.openchamber.dev', Promise.reject(new Error('Network error')))
+      .when('openchamber-update.edgeone.dev', Promise.reject(new Error('Network error')))
       .when('registry.npmjs.org', {
         ok: true,
         json: async () => ({
@@ -203,7 +203,7 @@ describe('checkForUpdates', () => {
 
   it('returns available=false from npm fallback when API is unreachable and versions match', async () => {
     fetchMock
-      .when('api.openchamber.dev', Promise.reject(new Error('Network error')))
+      .when('openchamber-update.edgeone.dev', Promise.reject(new Error('Network error')))
       .when('registry.npmjs.org', {
         ok: true,
         json: async () => ({
@@ -220,7 +220,7 @@ describe('checkForUpdates', () => {
 
   it('returns available=false when API returns non-ok status and versions match on npm', async () => {
     fetchMock
-      .when('api.openchamber.dev', {
+      .when('openchamber-update.edgeone.dev', {
         ok: false,
         status: 500,
         json: async () => ({}),
@@ -241,7 +241,7 @@ describe('checkForUpdates', () => {
 
   it('returns available=false when both sources are unreachable', async () => {
     fetchMock
-      .when('api.openchamber.dev', Promise.reject(new Error('Network error')))
+      .when('openchamber-update.edgeone.dev', Promise.reject(new Error('Network error')))
       .when('registry.npmjs.org', Promise.reject(new Error('Registry unreachable')));
 
     const result = await checkForUpdates({ currentVersion: '1.9.10' });
@@ -249,19 +249,17 @@ describe('checkForUpdates', () => {
     expect(result.available).toBe(false);
   });
 
-  // --- Mobile (Capacitor / Android) via GitHub Releases ---
+  // --- Mobile (Capacitor / Android) via the shared update API ---
 
-  it('mobile: returns available=true when GitHub release is newer with APK asset', async () => {
-    fetchMock.when('api.github.com', {
+  it('mobile: returns available=true with the API-provided APK asset', async () => {
+    fetchMock.when('openchamber-update.edgeone.dev', {
       ok: true,
       json: async () => ({
-        tag_name: 'v1.11.0',
-        name: 'v1.11.0',
-        body: '## [1.11.0] - 2026-06-01\n\n- Fixes for Android',
-        html_url: 'https://github.com/yee94/openchamber/releases/tag/v1.11.0',
-        assets: [
-          { name: 'app-debug.apk', browser_download_url: 'https://github.com/yee94/openchamber/releases/download/v1.11.0/app-debug.apk' },
-        ],
+        latestVersion: '1.11.0',
+        updateAvailable: true,
+        releaseNotes: '## [1.11.0] - 2026-06-01\n\n- Fixes for Android',
+        releaseNotesUrl: 'https://github.com/yee94/openchamber/releases/tag/v1.11.0',
+        downloadUrl: 'https://github.com/yee94/openchamber/releases/download/v1.11.0/app-release.apk',
       }),
     });
 
@@ -273,21 +271,17 @@ describe('checkForUpdates', () => {
 
     expect(result.available).toBe(true);
     expect(result.version).toBe('1.11.0');
-    expect(result.downloadUrl).toBe('https://github.com/yee94/openchamber/releases/download/v1.11.0/app-debug.apk');
+    expect(result.downloadUrl).toBe('https://github.com/yee94/openchamber/releases/download/v1.11.0/app-release.apk');
     expect(result.releaseUrl).toBe('https://github.com/yee94/openchamber/releases/tag/v1.11.0');
-    // Should not call npm registry for mobile
     expect(fetchMock).toHaveBeenCalledTimes(1);
   });
 
-  it('mobile: returns available=false when GitHub release is the same version', async () => {
-    fetchMock.when('api.github.com', {
+  it('mobile: returns available=false when the update API reports the same version', async () => {
+    fetchMock.when('openchamber-update.edgeone.dev', {
       ok: true,
       json: async () => ({
-        tag_name: 'v1.10.5',
-        name: 'v1.10.5',
-        body: '',
-        html_url: 'https://github.com/yee94/openchamber/releases/tag/v1.10.5',
-        assets: [],
+        latestVersion: '1.10.5',
+        updateAvailable: false,
       }),
     });
 
@@ -300,8 +294,8 @@ describe('checkForUpdates', () => {
     expect(result.available).toBe(false);
   });
 
-  it('mobile: returns available=false with error when GitHub API is unreachable', async () => {
-    fetchMock.when('api.github.com', Promise.reject(new Error('Network error')));
+  it('mobile: returns available=false with error when the update API is unreachable', async () => {
+    fetchMock.when('openchamber-update.edgeone.dev', Promise.reject(new Error('Network error')));
 
     const result = await checkForUpdates({
       appType: 'mobile-capacitor',
@@ -313,15 +307,13 @@ describe('checkForUpdates', () => {
     expect(result.error).toBe('Unable to check for mobile updates');
   });
 
-  it('mobile: returns available=false when GitHub release has no APK asset', async () => {
-    fetchMock.when('api.github.com', {
+  it('mobile: falls back to the release page when the update API omits a download URL', async () => {
+    fetchMock.when('openchamber-update.edgeone.dev', {
       ok: true,
       json: async () => ({
-        tag_name: 'v1.11.0',
-        name: 'v1.11.0',
-        body: 'Release notes',
-        html_url: 'https://github.com/yee94/openchamber/releases/tag/v1.11.0',
-        assets: [],
+        latestVersion: '1.11.0',
+        updateAvailable: true,
+        releaseNotesUrl: 'https://github.com/yee94/openchamber/releases/tag/v1.11.0',
       }),
     });
 
@@ -333,7 +325,7 @@ describe('checkForUpdates', () => {
 
     expect(result.available).toBe(true);
     expect(result.version).toBe('1.11.0');
-    expect(result.downloadUrl).toBeUndefined();
+    expect(result.downloadUrl).toBe('https://github.com/yee94/openchamber/releases/tag/v1.11.0');
   });
 
   it('mobile: returns available=false when currentVersion is unknown', async () => {
