@@ -19,7 +19,7 @@ export function ComposerTriggerIconMark({
 }) {
     const consumed = visual.trigger.length + visual.label.length + (visual.suffix?.length ?? 0);
     const remainder = text.slice(consumed);
-    const iconSizeClass = visual.slot === 'reserved' ? 'size-[1em]' : 'size-[0.4em]';
+    const iconSizeClass = 'size-[1em]';
     const iconClassName = visual.align === 'center'
         ? `pointer-events-none absolute left-1/2 top-1/2 ${iconSizeClass} -translate-x-1/2 -translate-y-1/2 text-[var(--primary)]`
         : `pointer-events-none absolute top-1/2 ${iconSizeClass} -translate-y-1/2 text-[var(--primary)]`;

@@ -27,7 +27,9 @@ const isSafeDisplayName = (value) => typeof value === 'string'
   && !/[\u0000-\u001f\u007f]/u.test(value);
 
 const isSafeReleaseDate = (value) => typeof value === 'string'
+  && value.length > 0
   && value.length <= MAX_RELEASE_DATE_LENGTH
+  && value.trim() === value
   && !/[\u0000-\u001f\u007f]/u.test(value);
 
 const isSafeNumber = (value) => typeof value === 'number'

@@ -117,7 +117,8 @@ const model = (value: unknown): { value?: ConfigCatalogModel; partial: boolean }
   }
   if (input.limit !== undefined && !rawLimit) partial = true;
   if (rawLimit && ((rawLimit.context !== undefined && number(rawLimit.context) === undefined) || (rawLimit.output !== undefined && number(rawLimit.output) === undefined))) partial = true;
-  if (input.release_date !== undefined && !safeReleaseDate) partial = true;
+  // Empty release_date is treated as absent (common upstream placeholder), not partial.
+  if (input.release_date !== undefined && input.release_date !== '' && !safeReleaseDate) partial = true;
   if (input.variants !== undefined && !rawVariants) partial = true;
   if (rawVariants) {
     const variants: Record<string, object> = {};

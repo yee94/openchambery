@@ -1,5 +1,5 @@
 import { opencodeClient } from '@/lib/opencode/client';
-import type { RuntimeEndpointChangedDetail } from '@/lib/runtime-switch';
+import { getRuntimeTransportIdentity, type RuntimeEndpointChangedDetail } from '@/lib/runtime-switch';
 import { disposeTerminalInputTransport } from '@/lib/terminalApi';
 import { useConfigStore } from '@/stores/useConfigStore';
 import { useProjectsStore } from '@/stores/useProjectsStore';
@@ -23,6 +23,12 @@ export const reconnectAppForTransportSwitch = (): void => {
   console.warn('[refresh-debug] runtime-transport-switch');
   disposeTerminalInputTransport();
   opencodeClient.reconnectToRuntimeBaseUrl();
+  // Provider/agent loaders gate writes on catalogTransportIdentity matching the
+  // active transport fingerprint. Keep that fingerprint in sync on LAN⇄relay
+  // swaps so catalog refreshes are not silently discarded.
+  useConfigStore.setState({
+    catalogTransportIdentity: getRuntimeTransportIdentity(),
+  });
   resetStreamingState();
 };
 
@@ -39,7 +45,10 @@ export const resetAppForRuntimeEndpointChange = (detail: RuntimeEndpointChangedD
   disposeTerminalInputTransport();
   opencodeClient.reconnectToRuntimeBaseUrl();
   useConfigStore.setState({
-    catalogTransportIdentity: detail.runtimeKey,
+    // Must match getRuntimeTransportIdentity(), not runtimeKey. runtimeKey is the
+    // stable device/instance id (shared across LAN and relay); loadProviders /
+    // loadAgents compare against the transport fingerprint (direct:/relay:...).
+    catalogTransportIdentity: getRuntimeTransportIdentity(),
     activeDirectoryKey: '__global__',
     directoryScoped: {},
     providerConfigLoadingByDirectory: {},

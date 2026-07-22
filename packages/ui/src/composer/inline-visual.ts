@@ -5,7 +5,7 @@ import { DRAFT_COMPOSER_TRIGGER_ICON_SLOT } from '@/sync/input-draft-types';
  *
  * A controlled reference stores an em-space after its trigger. That source
  * glyph reserves the icon and label gap without changing textarea metrics.
- * Legacy or authored raw text renders with a compact icon inside its trigger.
+ * Legacy or authored raw text renders with a full-size icon anchored to its trigger.
  */
 export type ComposerTriggerIconAlign = 'center' | 'end';
 export type ComposerTriggerIconSlot = 'reserved' | 'compact';
@@ -25,7 +25,7 @@ export interface ComposerTriggerIconVisual {
     align: ComposerTriggerIconAlign;
     label: string;
     suffix?: string;
-    /** A reserved slot supports the full-size icon and owned label gap. */
+    /** A reserved slot owns the label gap; compact anchors the icon to the trigger. */
     slot: ComposerTriggerIconSlot;
 }
 

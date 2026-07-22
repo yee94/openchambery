@@ -1256,7 +1256,15 @@ const ChatInputComponent: React.FC<ChatInputProps> = ({ onOpenSettings, scrollTo
                         message.slice(slashStart, slashStart + tokenLength),
                     ),
                 }
-                : { start: slashStart, end: slashStart + tokenLength, style: 'mentionCommand' });
+                : {
+                    start: slashStart,
+                    end: slashStart + tokenLength,
+                    style: 'mentionCommand',
+                    visual: composerTriggerIconVisual(
+                        { trigger: '/', icon: 'command', label: name },
+                        message.slice(slashStart, slashStart + tokenLength),
+                    ),
+                });
         }
         return ranges;
     }, [availableSkillNames, inputMode, knownSlashNames, message]);

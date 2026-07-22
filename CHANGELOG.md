@@ -4,6 +4,13 @@ All notable changes to this project will be documented in this file.
 
 ## [Unreleased]
 
+## [1.16.52] - 2026-07-22
+
+- **Runtime switching:** bind catalog transport identity to the active transport fingerprint instead of the stable runtime key so provider and agent reloads survive LAN⇄relay swaps without being silently discarded.
+- **Composer commands:** render slash-command references with the shared trigger-icon overlay in composer highlighting so command chips match Session and Skill references visually.
+- **Composer icons:** anchor legacy and temporary attachment citations to full-size trigger icons instead of compact in-trigger glyphs for consistent chip alignment.
+- **Provider catalog:** treat empty upstream `release_date` values as absent and reject blank or whitespace-padded provider display names during catalog parsing.
+
 ## [1.16.51] - 2026-07-22
 
 - **Unified updates:** route Web, CLI, VS Code, Capacitor mobile, and Desktop version checks through the EdgeOne update service, with platform-specific mobile downloads and Electron metadata that keeps signed installers on GitHub Releases.
