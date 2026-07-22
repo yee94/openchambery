@@ -4,6 +4,12 @@ All notable changes to this project will be documented in this file.
 
 ## [Unreleased]
 
+## [1.16.54] - 2026-07-23
+
+- **Provider startup snapshots:** persist one bounded safe Provider catalog snapshot for the active configuration directory, seed the cold Provider TanStack Query from that complete snapshot on rehydrate, and keep partial and Agent catalogs memory-only.
+- **Session drafts:** force-refresh Providers when opening a new session draft or switching its target, and apply default model/agent selection only for the latest completed draft activation.
+- **Config store persistence:** sanitize persisted agent/model selections and Provider default entries, bound persisted catalog size, and migrate the config-store schema to version 2.
+
 ## [1.16.53] - 2026-07-22
 
 - **Assistants:** add cross-instance Assistant workspaces with continuous and stateless modes, session binding, managed or project workspaces, share-operation polling, and a Settings surface for create/edit lifecycle.
