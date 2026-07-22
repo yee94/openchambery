@@ -53,8 +53,10 @@ openchamber update                   # Update to latest version
 
 Run a private Relay when OpenChamber Hosts need outbound-only remote access:
 
+Install and run OpenChamber Hosts with `@openchamber/web`. Install the self-hosted Relay server separately:
+
 ```sh
-npm install -g @openchamber/web
+npm install -g @openchamber/relay-server
 openchamber-relay --public-url wss://relay.example.com/ws
 ```
 
@@ -74,7 +76,7 @@ Point every OpenChamber Host at the Relay, then generate a Relay pairing link or
 OPENCHAMBER_RELAY_URL=wss://relay.example.com/ws openchamber
 ```
 
-Saved pairing candidates retain their endpoint snapshot. Use a new pairing link or candidate refresh to move existing clients to the self-hosted endpoint. See [OpenChamber Private Relay](server/private-relay/README.md) for bundle builds, reverse-proxy configuration, security, operations, and systemd guidance.
+Saved pairing candidates retain their endpoint snapshot. Use a new pairing link or candidate refresh to move existing clients to the self-hosted endpoint. See [OpenChamber Relay Server](https://github.com/yee94/openchamber/tree/main/packages/relay-server#readme) for bundle builds, reverse-proxy configuration, security, operations, and systemd guidance.
 
 ### Tunnel behavior notes
 
@@ -155,6 +157,7 @@ environment:
   UI_PASSWORD: your_secure_password
   OPENCHAMBER_TUNNEL_MODE: quick # quick | managed-remote | managed-local
   OPENCHAMBER_TUNNEL_PROVIDER: cloudflare
+  OPENCHAMBER_UPDATE_API_URL: https://updates.example.com/v1/update/check # Optional compatible update-check endpoint
 ```
 
 For `managed-remote` mode, also set:

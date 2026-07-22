@@ -1,0 +1,14 @@
+{
+  "name": "@openchamber/update-service",
+  "private": true,
+  "type": "module",
+  "packageManager": "bun@1.3.14",
+  "engines": {
+    "node": ">=22.0.0"
+  },
+  "scripts": {
+    "build": "node scripts/build.mjs",
+    "release-manifest": "node scripts/write-release-manifest.mjs",
+    "test": "node --test"
+  }
+}
