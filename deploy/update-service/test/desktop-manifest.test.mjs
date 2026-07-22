@@ -7,13 +7,13 @@ test('rewrites relative Electron updater asset urls to GitHub release downloads'
   const rewritten = rewriteRelativeAssetUrls([
     'version: 1.16.50',
     'path: OpenChamber-1.16.50-win-x64.exe',
-    '  url: "OpenChamber-1.16.50-win-x64.exe.blockmap"',
+    '  - url: "OpenChamber-1.16.50-win-x64.exe.blockmap"',
     'url: https://example.com/asset',
     'path: ../outside',
   ].join('\n'));
 
   assert.match(rewritten, /path: https:\/\/github\.com\/yee94\/openchamber\/releases\/latest\/download\/OpenChamber-1\.16\.50-win-x64\.exe/);
-  assert.match(rewritten, /url: "https:\/\/github\.com\/yee94\/openchamber\/releases\/latest\/download\/OpenChamber-1\.16\.50-win-x64\.exe\.blockmap"/);
+  assert.match(rewritten, /- url: "https:\/\/github\.com\/yee94\/openchamber\/releases\/latest\/download\/OpenChamber-1\.16\.50-win-x64\.exe\.blockmap"/);
   assert.match(rewritten, /url: https:\/\/example\.com\/asset/);
   assert.match(rewritten, /path: \.\.\/outside/);
 });

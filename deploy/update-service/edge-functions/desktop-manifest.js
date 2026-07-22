@@ -1,7 +1,7 @@
 const GITHUB_RELEASE_DOWNLOAD_BASE = 'https://github.com/yee94/openchamber/releases/latest/download/';
 
 const rewriteRelativeAssetUrls = (manifest) => manifest.replace(
-  /^(\s*(?:url|path):\s*)(["']?)([^\s"'#]+)\2(\s*(?:#.*)?)$/gm,
+  /^(\s*(?:-\s+)?(?:url|path):\s*)(["']?)([^\s"'#]+)\2(\s*(?:#.*)?)$/gm,
   (line, prefix, quote, asset, suffix) => {
     if (!/^[A-Za-z0-9][A-Za-z0-9._-]*$/.test(asset)) return line;
     return `${prefix}${quote}${GITHUB_RELEASE_DOWNLOAD_BASE}${asset}${quote}${suffix}`;
