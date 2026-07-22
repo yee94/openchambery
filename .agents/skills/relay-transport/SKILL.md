@@ -43,6 +43,8 @@ Adding a new WS endpoint (or porting one, e.g. the planned terminal port) requir
 
 - Relay mode routes through `runtime-switch` (activates the tunnel singleton), `runtime-fetch` (routes runtime requests through it), `runtime-url`/`runtime-socket` (tunnel-backed URLs/sockets), and `runtime-auth` (mints the URL token through the tunnel). When refactoring any of these, preserve the relay branch and the direct-URL/Electron-realtime-proxy branches — they must remain byte-identical in behavior for non-relay runtimes.
 - **The host dispatcher never injects credentials.** Tunneled requests carry the client's own token; the server authenticates them. Do not add host-side auth shortcuts, and do not trust loopback source address as authentication (relay traffic arrives at loopback but represents remote clients).
+- **New OpenChamber-owned HTTP APIs use the same `/api/...` path over Relay.** Register them on the real Host before the OpenCode proxy/SPA fallback. A stale worktree or packaged Desktop Host without the route still answers through the tunnel with SPA HTML, which looks like “Relay broke Providers” while chat/status keep working.
+- **`catalogTransportIdentity` follows `getRuntimeTransportIdentity()`, never `runtimeKey`.** LAN⇄relay reconnects must update that transport fingerprint in `runtimeEndpointReset.ts` or Provider/Agent catalog commits are discarded even when the HTTP response is fine.
 
 ## Reconnect pacing
 
@@ -70,3 +72,6 @@ Blind short retries on hidden, offline, unauthorized, or stale-path clients wast
 - [ ] No new dependence on `window.location.origin`?
 - [ ] Wire/codec/handshake change mirrored in TS and JS, cross-compat test green?
 - [ ] Direct and relay paths both still work; verified over the relay on the transport that actually uses it?
+- [ ] New/changed OpenChamber `/api/...` route registered on the Host that holds the relay claim, before OpenCode proxy/SPA fallback?
+- [ ] Catalog or similar loaders still gate on `getRuntimeTransportIdentity()` (not `runtimeKey`) across LAN⇄relay?
+- [ ] Safe catalog `partial` rules still treat empty optional placeholders such as empty `release_date` as absent?

@@ -3,6 +3,7 @@ import {
     buildMessageReferenceParts,
     detectMessageReferences,
     hasMessageReferenceHint,
+    messageReferenceTriggerIconSpec,
     toComposerHighlightRanges,
     tokenizeMessageReferences,
 } from './index';
@@ -73,6 +74,20 @@ describe('detectMessageReferences', () => {
         ]);
     });
 
+    test('detects exact visible session labels from semantic message context', () => {
+        const spans = detectMessageReferences('@OpenChamber status please review', {
+            sessionMentions: [{ sessionId: 'ses_1', sessionLabel: 'OpenChamber status' }],
+        });
+        expect(spans).toEqual([{
+            start: 0,
+            end: 19,
+            kind: 'session',
+            raw: '@OpenChamber status',
+            label: 'OpenChamber status',
+            payload: { kind: 'session', sessionId: 'ses_1', sessionLabel: 'OpenChamber status' },
+        }]);
+    });
+
     test('prefers skill over command when a slash name exists in both sets', () => {
         const spans = detectMessageReferences('/review', {
             skillNames: new Set(['review']),
@@ -127,5 +142,16 @@ describe('toComposerHighlightRanges', () => {
             ['mentionCommand', 'review', 'book-open'],
             ['mentionFile', 'shot.png', 'file-image'],
         ]);
+    });
+});
+
+describe('messageReferenceTriggerIconSpec', () => {
+    test('keeps image and session references on the shared icon contract', () => {
+        expect(messageReferenceTriggerIconSpec({ kind: 'image', label: 'image-1.png', icon: 'file-image', className: 'reference' })).toEqual({
+            trigger: '[', icon: 'file-image', label: 'image-1.png', suffix: ']',
+        });
+        expect(messageReferenceTriggerIconSpec({ kind: 'session', label: 'OpenChamber', icon: 'chat-thread', className: 'reference' })).toEqual({
+            trigger: '@', icon: 'chat-thread', label: 'OpenChamber',
+        });
     });
 });

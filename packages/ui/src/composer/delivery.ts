@@ -46,6 +46,31 @@ export const dedupeDeliveryAttachments = (attachments: readonly AttachedFile[]):
 
 export type SessionMentionContext = { id: string; title: string; messages: Array<{ role: string; text: string }> };
 
+const SESSION_MENTION_INSTRUCTION_PREFIX = 'The user explicitly referenced these loaded OpenCode sessions. Use their conversation content as context for this request. Some content may be omitted to fit the context limit.\n';
+
+export const parseSessionMentionInstruction = (text: string): SessionMentionContext[] => {
+    if (!text.startsWith(SESSION_MENTION_INSTRUCTION_PREFIX)) return [];
+    try {
+        const value: unknown = JSON.parse(text.slice(SESSION_MENTION_INSTRUCTION_PREFIX.length));
+        if (!Array.isArray(value)) return [];
+        return value.flatMap((item) => {
+            if (!item || typeof item !== 'object') return [];
+            const candidate = item as { id?: unknown; title?: unknown; messages?: unknown };
+            if (typeof candidate.id !== 'string' || typeof candidate.title !== 'string' || !Array.isArray(candidate.messages)) return [];
+            const messages = candidate.messages.flatMap((message) => {
+                if (!message || typeof message !== 'object') return [];
+                const entry = message as { role?: unknown; text?: unknown };
+                return typeof entry.role === 'string' && typeof entry.text === 'string'
+                    ? [{ role: entry.role, text: entry.text }]
+                    : [];
+            });
+            return [{ id: candidate.id, title: candidate.title, messages }];
+        });
+    } catch {
+        return [];
+    }
+};
+
 export const buildSkillMentionInstruction = (skillNames: readonly string[]): string | null => {
     if (skillNames.length === 0) return null;
     return skillNames.map((name) => `[skill:${name}]`).join(' ');
@@ -53,7 +78,7 @@ export const buildSkillMentionInstruction = (skillNames: readonly string[]): str
 
 export const buildSessionMentionInstruction = (contexts: SessionMentionContext[], maxChars = 36_000): string | null => {
     if (contexts.length === 0) return null;
-    const prefix = 'The user explicitly referenced these loaded OpenCode sessions. Use their conversation content as context for this request. Some content may be omitted to fit the context limit.\n';
+    const prefix = SESSION_MENTION_INSTRUCTION_PREFIX;
     const payloadBudget = maxChars - prefix.length;
     if (payloadBudget < 2) return prefix.slice(0, maxChars);
 

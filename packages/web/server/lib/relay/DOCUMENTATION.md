@@ -45,6 +45,17 @@ Everything a client normally sends to the single OpenChamber origin:
 
 The host dispatcher restricts tunneled traffic to explicit path allowlists (one for HTTP, one for WS).
 
+### Catalog and new HTTP API pitfalls over Relay
+
+Private Relay is transparent for allowlisted HTTP paths, so most “works on LAN / Desktop, empty on mobile Relay” bugs are Host routing or client transport-identity mistakes rather than Relay framing bugs:
+
+- **Same path, real Host route required.** Clients call the ordinary `/api/...` path through the tunnel. If that route is missing on the Host process currently holding the relay claim (wrong git worktree, stale packaged Desktop build, or a backend that never registered the OpenChamber route before the OpenCode proxy/SPA fallback), the tunnel still returns HTTP 200 with SPA HTML or proxied OpenCode content. Symptom: chat and status work, Provider/model catalog does not.
+- **HTTP allowlist is prefix-based for `/api/`.** New REST/SSE APIs under `/api/` do not need a tunnel-host allowlist edit. New **WebSocket** paths still need both `ALLOWED_WS_PATHS` and `isUrlAuthWebSocketPath` (see the `relay-transport` skill).
+- **Transport identity ≠ runtime key.** After LAN⇄relay swaps, UI catalog loaders commit only when `useConfigStore.catalogTransportIdentity` matches `getRuntimeTransportIdentity()`. `runtimeEndpointReset.ts` must write that transport fingerprint on both full endpoint reset and in-place transport reconnect. Writing `runtimeKey` instead leaves Providers empty because the stable device/instance id is shared across LAN and relay.
+- **Safe catalog projection stays Host-owned.** Provider credentials never cross the browser; Relay only carries the already-allowlisted `GET /api/config/catalog/providers` JSON. Keep Host projection, client parser bounds, and `partial` rules in sync (empty `release_date` is absent, not partial).
+
+See also `packages/web/server/lib/opencode/DOCUMENTATION.md` (“Catalog / OpenChamber-owned API change checklist”) and `packages/ui/src/stores/DOCUMENTATION.md` (Provider catalog / `catalogTransportIdentity`).
+
 ## Authentication model
 
 - The tunnel is **transport only**. The OpenChamber server still authenticates every tunneled request exactly as it authenticates a direct remote client. The relay path grants reachability, not authorization.

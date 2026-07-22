@@ -63,6 +63,8 @@ export interface MessageReferenceDetectContext {
     citationIcons?: ReadonlyMap<string, 'image' | 'attachment'>;
     /** sessionId -> title used when materializing `@session:id`. */
     sessionTitles?: ReadonlyMap<string, string>;
+    /** Exact visible Session mentions recovered from the message's semantic context. */
+    sessionMentions?: readonly { sessionId: string; sessionLabel: string }[];
     /** Lowercased agent names that should highlight as mentions. */
     agentNames?: ReadonlySet<string>;
     /** Confirmed file mention paths (composer confirmation / delivery extraction). */

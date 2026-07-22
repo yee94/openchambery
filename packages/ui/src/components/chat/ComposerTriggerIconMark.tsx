@@ -2,6 +2,7 @@ import { Icon } from '@/components/icon/Icon';
 import type { IconName } from '@/components/icon/icons';
 import {
     COMPOSER_TRIGGER_ICON_END_INSET,
+    COMPOSER_TRIGGER_ICON_SIZE_CLASS,
     type ComposerTriggerIconVisual,
 } from '@/composer/inline-visual';
 
@@ -19,10 +20,9 @@ export function ComposerTriggerIconMark({
 }) {
     const consumed = visual.trigger.length + visual.label.length + (visual.suffix?.length ?? 0);
     const remainder = text.slice(consumed);
-    const iconSizeClass = 'size-[1em]';
     const iconClassName = visual.align === 'center'
-        ? `pointer-events-none absolute left-1/2 top-1/2 ${iconSizeClass} -translate-x-1/2 -translate-y-1/2 text-[var(--primary)]`
-        : `pointer-events-none absolute top-1/2 ${iconSizeClass} -translate-y-1/2 text-[var(--primary)]`;
+        ? `pointer-events-none absolute left-1/2 top-1/2 ${COMPOSER_TRIGGER_ICON_SIZE_CLASS} -translate-x-1/2 -translate-y-1/2 text-[var(--primary)]`
+        : `pointer-events-none absolute top-1/2 ${COMPOSER_TRIGGER_ICON_SIZE_CLASS} -translate-y-1/2 text-[var(--primary)]`;
 
     return (
         <>

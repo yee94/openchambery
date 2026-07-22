@@ -420,6 +420,7 @@ interface MessageBodyProps {
     sessionId?: string;
     messageId: string;
     parts: Part[];
+    sourceParts?: Part[];
     isUser: boolean;
     isMessageCompleted: boolean;
     messageFinish?: string;
@@ -476,9 +477,10 @@ const writeRevealedToolIds = (messageId: string, value: Set<string>): void => {
     revealedToolIdsByMessage.set(messageId, new Set(value));
 };
 
-const UserMessageBody = React.memo(({ messageId, parts, messageCreatedAt, isMobile, alwaysShowActions = isMobile, hasTouchInput, hasTextContent, onCopyMessage, copiedMessage, onShowPopup, agentMention, onEdit, onRevert, onFork, pendingMessageAction, userActionsMode = 'inline', stickyUserHeaderEnabled = true }: {
+const UserMessageBody = React.memo(({ messageId, parts, sourceParts, messageCreatedAt, isMobile, alwaysShowActions = isMobile, hasTouchInput, hasTextContent, onCopyMessage, copiedMessage, onShowPopup, agentMention, onEdit, onRevert, onFork, pendingMessageAction, userActionsMode = 'inline', stickyUserHeaderEnabled = true }: {
     messageId: string;
     parts: Part[];
+    sourceParts?: Part[];
     messageCreatedAt?: number | null;
     isMobile: boolean;
     alwaysShowActions?: boolean;
@@ -780,7 +782,7 @@ const UserMessageBody = React.memo(({ messageId, parts, messageCreatedAt, isMobi
                                 messageId={messageId}
                                 isMobile={isMobile}
                                 agentMention={mentionForPart}
-                                messageParts={parts}
+                                messageParts={sourceParts ?? parts}
                             />
                         </React.Fragment>
                     );
@@ -2032,6 +2034,7 @@ const MessageBody = React.memo(({ isUser, ...props }: MessageBodyProps) => {
             <UserMessageBody
                 messageId={props.messageId}
                 parts={props.parts}
+                sourceParts={props.sourceParts}
                 messageCreatedAt={props.messageCreatedAt}
                 isMobile={props.isMobile}
                 alwaysShowActions={props.alwaysShowActions}

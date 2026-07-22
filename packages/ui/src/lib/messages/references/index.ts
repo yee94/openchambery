@@ -30,7 +30,7 @@ export {
 export { buildCitationIconsFromParts } from './citations';
 
 export {
+    messageReferenceTriggerIconSpec,
     toComposerHighlightRanges,
     type ComposerCompatibleHighlightRange,
 } from './composerAdapter';
-

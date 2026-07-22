@@ -1,5 +1,5 @@
 import { expect, test } from 'bun:test';
-import { buildSessionMentionInstruction, buildSkillMentionInstruction, compileAuthoredDeliveryPlan, partitionComposerSemantics } from './delivery';
+import { buildSessionMentionInstruction, buildSkillMentionInstruction, compileAuthoredDeliveryPlan, parseSessionMentionInstruction, partitionComposerSemantics } from './delivery';
 
 test('delivery partitions semantic references with stable type-local deduplication', () => {
     expect(partitionComposerSemantics([
@@ -23,6 +23,14 @@ test('delivery keeps bounded session context JSON parseable', () => {
     expect((instruction?.length ?? Infinity) <= 500).toBe(true);
     const payload = instruction?.slice((instruction.indexOf('\n') ?? -1) + 1) ?? '';
     expect((JSON.parse(payload) as Array<{ id: string }>).map((context) => context.id)).toEqual(['s1', 's2']);
+});
+
+test('delivery recovers authoritative visible session mention metadata', () => {
+    const contexts = [{ id: 's1', title: 'OpenChamber status', messages: [{ role: 'user', text: 'hello' }] }];
+    const instruction = buildSessionMentionInstruction(contexts);
+    expect(parseSessionMentionInstruction(instruction ?? '')).toEqual(contexts);
+    expect(parseSessionMentionInstruction('ordinary text')).toEqual([]);
+    expect(parseSessionMentionInstruction('The user explicitly referenced these loaded OpenCode sessions. Use their conversation content as context for this request. Some content may be omitted to fit the context limit.\n{}')).toEqual([]);
 });
 
 test('delivery preserves the original small-budget session instruction behavior', () => {

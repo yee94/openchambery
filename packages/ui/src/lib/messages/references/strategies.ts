@@ -229,6 +229,31 @@ export const sessionReferenceStrategy: MessageReferenceStrategy = {
                 payload: { kind: 'session', sessionId, sessionLabel },
             });
         }
+
+        const visibleMentions = [...(context.sessionMentions ?? [])]
+            .filter((mention) => mention.sessionLabel.length > 0)
+            .sort((left, right) => right.sessionLabel.length - left.sessionLabel.length);
+        for (const mention of visibleMentions) {
+            const token = `@${mention.sessionLabel}`;
+            let start = text.indexOf(token);
+            while (start !== -1) {
+                const end = start + token.length;
+                const boundaryBefore = start === 0 || /[\s([{]/.test(text[start - 1]);
+                const boundaryAfter = end === text.length || /[\s)\]},.!?;:]/.test(text[end]);
+                const overlaps = spans.some((span) => span.start < end && span.end > start);
+                if (boundaryBefore && boundaryAfter && !overlaps) {
+                    pushSpan(spans, {
+                        start,
+                        end,
+                        kind: 'session',
+                        raw: text.slice(start, end),
+                        label: mention.sessionLabel,
+                        payload: { kind: 'session', sessionId: mention.sessionId, sessionLabel: mention.sessionLabel },
+                    });
+                }
+                start = text.indexOf(token, end);
+            }
+        }
         return spans;
     },
     decorate: (span) => {

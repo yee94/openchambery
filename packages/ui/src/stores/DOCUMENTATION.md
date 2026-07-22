@@ -127,6 +127,20 @@ complete snapshot while cold partial snapshots remain available. Provider and Ag
 runtime generation and transport identity before every commit, trace, error log, and loading
 cleanup, so an earlier runtime lifetime cannot republish catalog state after a switch. Refresh
 failures retain the previous snapshot.
+
+`catalogTransportIdentity` must equal `getRuntimeTransportIdentity()` — the
+`direct:` / `relay:` transport fingerprint — not `runtimeKey`. `runtimeKey` is the
+stable paired-device/instance id and stays the same across LAN⇄relay; Provider/Agent
+loaders compare against the transport fingerprint, so writing `runtimeKey` into
+`catalogTransportIdentity` silently drops catalog results after a transport switch
+while the rest of the app looks connected. Both `resetAppForRuntimeEndpointChange`
+and `reconnectAppForTransportSwitch` in `runtimeEndpointReset.ts` must keep that
+fingerprint in sync. On the parser side, empty-string `release_date` is treated as
+absent (common upstream placeholder) and must not force `partial: true` when the
+providers/models themselves are valid. When Host catalog routes are missing,
+Relay/mobile clients can still receive SPA HTML for `/api/config/catalog/providers`;
+fix that against the Host process that holds the relay claim before debugging the
+UI gate.
 Settings bootstrap defaults are read through `settingsBootstrapQueries.ts` by
 runtime transport identity from the dedicated `GET /api/config/settings/bootstrap`
 safe projection. Provider and Agent loads across configuration

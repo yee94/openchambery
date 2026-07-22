@@ -74,6 +74,53 @@ const clampPromptToModelLimit = ({ prompt, catalog, providerID, modelID }) => {
   return { prompt: `${prompt.slice(0, maxChars)}…`, truncated: true };
 };
 
+const listCallableProviderIDsForState = (auth, catalog) => {
+  const ids = new Set(
+    Object.keys(auth || {}).filter((providerID) => {
+      if (!isUsableAuthEntry(auth[providerID])) return false;
+      if (providerID === 'openai' || providerID === 'anthropic' || providerID === 'google') return true;
+      const provider = getCatalogProvider(catalog, providerID);
+      return typeof provider?.api === 'string' && provider.api.length > 0;
+    }),
+  );
+  if (isUsableAuthEntry(getAuthEntryForProvider(auth, 'github-copilot'))) {
+    ids.add('github-copilot');
+  }
+  return Array.from(ids);
+};
+
+const listCallableModelsForState = (auth, catalog) => {
+  const result = {};
+  for (const providerID of listCallableProviderIDsForState(auth, catalog)) {
+    if (providerID === 'openai' && auth.openai?.type === 'oauth') {
+      result[providerID] = ['gpt-5.4-mini'];
+      continue;
+    }
+    if (providerID === 'github-copilot') {
+      result[providerID] = ['gpt-5.4-nano'];
+      continue;
+    }
+    const provider = getCatalogProvider(catalog, providerID);
+    const modelIDs = Object.values(provider?.models || {})
+      .map((model) => typeof model?.id === 'string' ? model.id : '')
+      .filter(Boolean);
+    if (modelIDs.length > 0) {
+      result[providerID] = modelIDs;
+    }
+  }
+  return result;
+};
+
+const resolveDefaultSummaryModel = (auth, catalog) => {
+  const callableModels = listCallableModelsForState(auth, catalog);
+  const providerIDs = Object.keys(callableModels);
+  const providerID = callableModels.openai ? 'openai' : providerIDs[0];
+  const modelID = providerID ? callableModels[providerID]?.[0] : undefined;
+  return providerID && modelID
+    ? { providerID, modelID, source: 'summary-default' }
+    : null;
+};
+
 const readConfiguredSmallModel = (workingDirectory) => {
   try {
     const { mergedConfig } = readConfigLayers(workingDirectory);
@@ -97,9 +144,9 @@ export async function generateSmallModelText({ prompt, system, maxOutputTokens, 
   const catalog = await getModelCatalog().catch(() => ({}));
   const summarySettings = SUMMARY_PURPOSES.has(purpose) ? readSummarySettings() : null;
   const summaryPrompt = summarySettings?.prompts?.[purpose];
-  const defaultSummaryProviderID = SUMMARY_PURPOSES.has(purpose) && isUsableAuthEntry(getAuthEntryForProvider(auth, 'openai'))
-    ? 'openai'
-    : '';
+  const defaultSummaryModel = SUMMARY_PURPOSES.has(purpose)
+    ? resolveDefaultSummaryModel(auth, catalog)
+    : null;
 
   const explicit = parseModelRef(model);
   const summaryProvider = summarySettings?.mode === 'provider' && summarySettings.providerID && summarySettings.modelID
@@ -108,7 +155,9 @@ export async function generateSmallModelText({ prompt, system, maxOutputTokens, 
         modelID: summarySettings.modelID,
         source: 'summary-provider',
       }
-    : null;
+    : summarySettings?.mode !== 'custom'
+      ? defaultSummaryModel
+      : null;
   const summaryCustom = summarySettings?.mode === 'custom' ? summarySettings.custom : null;
   if (summarySettings?.mode === 'custom' && !summaryCustom) {
     throw Object.assign(
@@ -127,7 +176,7 @@ export async function generateSmallModelText({ prompt, system, maxOutputTokens, 
           catalog,
           settingsSmallModel: readSmallModelSettingsOverride(),
           configSmallModel: readConfiguredSmallModel(directory),
-          preferredProviderID: summarySettings?.providerID || defaultSummaryProviderID || preferredProviderID,
+          preferredProviderID: summarySettings?.providerID || preferredProviderID,
           preferredModelID,
         });
 
@@ -143,7 +192,7 @@ export async function generateSmallModelText({ prompt, system, maxOutputTokens, 
   // model) is always allowed, anything else must stay on the session's
   // provider.
   if (restrictToPreferredProvider
-    && !['settings', 'config', 'request', 'summary-provider', 'summary-custom'].includes(resolved.source)
+    && !['settings', 'config', 'request', 'summary-provider', 'summary-default', 'summary-custom'].includes(resolved.source)
     && resolved.providerID !== preferredProviderID) {
     throw Object.assign(
       new Error('No small model available within the session provider'),
@@ -188,20 +237,7 @@ export async function listCallableProviders() {
   try {
     const auth = readAuthFile();
     const catalog = await getModelCatalog().catch(() => ({}));
-    const ids = new Set(
-      Object.keys(auth || {}).filter((providerID) => {
-        if (!isUsableAuthEntry(auth[providerID])) return false;
-        if (providerID === 'openai' || providerID === 'anthropic' || providerID === 'google') return true;
-        const provider = getCatalogProvider(catalog, providerID);
-        return typeof provider?.api === 'string' && provider.api.length > 0;
-      }),
-    );
-    // The catalog id is github-copilot while legacy auth entries may sit
-    // under the copilot alias.
-    if (isUsableAuthEntry(getAuthEntryForProvider(auth, 'github-copilot'))) {
-      ids.add('github-copilot');
-    }
-    return Array.from(ids);
+    return listCallableProviderIDsForState(auth, catalog);
   } catch {
     return [];
   }
@@ -211,28 +247,7 @@ export async function listCallableModels() {
   try {
     const auth = readAuthFile();
     const catalog = await getModelCatalog().catch(() => ({}));
-    const providers = await listCallableProviders();
-    const result = {};
-
-    for (const providerID of providers) {
-      if (providerID === 'openai' && auth.openai?.type === 'oauth') {
-        result[providerID] = ['gpt-5.4-mini'];
-        continue;
-      }
-      if (providerID === 'github-copilot') {
-        result[providerID] = ['gpt-5.4-nano'];
-        continue;
-      }
-      const provider = getCatalogProvider(catalog, providerID);
-      const modelIDs = Object.values(provider?.models || {})
-        .map((model) => typeof model?.id === 'string' ? model.id : '')
-        .filter(Boolean);
-      if (modelIDs.length > 0) {
-        result[providerID] = modelIDs;
-      }
-    }
-
-    return result;
+    return listCallableModelsForState(auth, catalog);
   } catch {
     return {};
   }

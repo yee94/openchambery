@@ -1031,6 +1031,7 @@ const ChatMessage: React.FC<ChatMessageProps> = ({
                                             <MessageBody
                                                 messageId={message.info.id}
                                                 parts={displayParts}
+                                                sourceParts={normalizedParts}
                                                 isUser={isUser}
                                                 isMessageCompleted={isMessageCompleted}
                                                 messageFinish={messageFinish}
@@ -1067,6 +1068,7 @@ const ChatMessage: React.FC<ChatMessageProps> = ({
                                             <MessageBody
                                                 messageId={message.info.id}
                                                 parts={displayParts}
+                                                sourceParts={normalizedParts}
                                                 isUser={isUser}
                                                 isMessageCompleted={isMessageCompleted}
                                                 messageFinish={messageFinish}

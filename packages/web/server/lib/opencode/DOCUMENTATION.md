@@ -226,12 +226,22 @@ This module provides OpenCode server integration utilities for the web server ru
 ## Public exports (config-entity-routes.js)
 - `registerConfigEntityRoutes(app, dependencies)`: registers configuration entity routes:
   - `GET /api/config/catalog/providers` resolves the request project directory, calls OpenCode's SDK `config.providers`, and returns schema version `1` with an allowlisted provider/model catalog. The route is available through the shared web host used by Web, Electron, hosted mobile, and Capacitor mobile, before generic OpenCode proxy handling.
-  - Provider catalog responses include only provider `id`, `name`, and safe models. Safe models include `id`, `name`, fixed text/audio/image/video/pdf capability modalities, bounded cost/limit fields, `release_date`, and variant names with `{}` values. Identifiers are bounded to 512 characters, display names to 1024, release dates to 64, numeric values to absolute 1e9, and catalog collections to 200 providers, 500 models per provider, and 100 defaults or variants. Provider credentials/configuration and unallowlisted model fields stay server-side. Malformed catalog roots and SDK error envelopes return HTTP 502; truncation, duplicate identifiers, and invalid provider/model/default/capability entries set `partial: true` while valid entries remain available.
+  - Provider catalog responses include only provider `id`, `name`, and safe models. Safe models include `id`, `name`, fixed text/audio/image/video/pdf capability modalities, bounded cost/limit fields, `release_date`, and variant names with `{}` values. Identifiers are bounded to 512 characters, display names to 1024, release dates to 64, numeric values to absolute 1e9, and catalog collections to 200 providers, 500 models per provider, and 100 defaults or variants. Provider credentials/configuration and unallowlisted model fields stay server-side. Malformed catalog roots and SDK error envelopes return HTTP 502; truncation, duplicate identifiers, and invalid provider/model/default/capability entries set `partial: true` while valid entries remain available. Empty-string `release_date` is a common upstream placeholder and must be treated as absent on the client parser, not as `partial: true`.
   - Agents: `/api/config/agents/:name` and `/api/config/agents/:name/config`
   - Commands: batched metadata via `POST /api/config/commands/metadata`; `{ catalog: true }` returns the compact autocomplete catalog without templates, plus CRUD at `/api/config/commands/:name`
   - Global raw configs: `GET /api/config/global` discovers existing config targets; `GET/PUT /api/config/global/:target` reads and writes `opencode`, `oh-my-opencode-slim`, and `oh-my-openagent` JSON or JSONC files
   - MCP servers: `/api/config/mcp` and `/api/config/mcp/:name`
   - Snippets: `/api/config/snippets`, `/api/config/snippets/:name`, and `/api/config/snippets/expand`
+
+### Catalog / OpenChamber-owned API change checklist
+
+When adding or changing Host HTTP APIs that mobile/desktop clients reach over Private Relay:
+
+1. Register the route on the shared OpenChamber web host **before** the generic OpenCode proxy / SPA fallback. Otherwise Relay and remote clients still reach `/api/...`, but the Host returns proxied OpenCode traffic or SPA HTML instead of the intended JSON.
+2. Verify against the **actual Host process** that will answer Relay traffic (packaged Desktop `OpenChamber.app`, CLI, or the intended `packages/web` checkout). A Vite frontend pointed at a stale worktree/backend that lacks the route looks healthy for chat/status while Provider catalog loads fail with HTML/`partial` empty results.
+3. Keep the path under the Host tunnel HTTP allowlist (`/api/*`, `/auth/*`, `/health` in `packages/web/server/lib/relay/tunnel-host.js`). Relay forwards the same path; do not invent a parallel Relay-only URL.
+4. Keep client Query keys and `useConfigStore.catalogTransportIdentity` aligned with `getRuntimeTransportIdentity()` (the `direct:` / `relay:` fingerprint). Do not gate catalog commits on `runtimeKey`, which stays stable across LAN⇄relay for one paired device and silently discards the refresh after a transport swap.
+5. Coordinate `partial` semantics between Host projection and `packages/ui/src/lib/configCatalogParser.ts`. Do not mark common absent/empty optional fields such as empty `release_date` as partial when valid providers/models remain.
 
 ## Public exports (auth-state-runtime.js)
 - `createOpenCodeAuthStateRuntime(dependencies)`: creates runtime for managed OpenCode auth password state and request headers.

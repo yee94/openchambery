@@ -31,6 +31,7 @@ export interface ComposerTriggerIconVisual {
 
 export const COMPOSER_TRIGGER_ICON_SLOT = DRAFT_COMPOSER_TRIGGER_ICON_SLOT;
 export const COMPOSER_TRIGGER_ICON_END_INSET = '0.4em';
+export const COMPOSER_TRIGGER_ICON_SIZE_CLASS = 'size-[1.125em]';
 
 const sourceText = ({ trigger, label, suffix = '' }: Pick<ComposerTriggerIconSpec, 'trigger' | 'label' | 'suffix'>): string => (
     `${trigger}${label}${suffix}`

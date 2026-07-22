@@ -26,10 +26,12 @@ vi.mock('./call.js', () => ({
 
 const { generateSmallModelText } = await import('./index.js');
 const { callSmallModel } = await import('./call.js');
+const { readAuthFile } = await import('../opencode/auth.js');
 
 describe('summary AI settings', () => {
   beforeEach(async () => {
     vi.mocked(callSmallModel).mockClear();
+    vi.mocked(readAuthFile).mockReturnValue({});
     await fsPromises.writeFile(path.join(tempRoot, 'settings.json'), JSON.stringify({
       summaryModelMode: 'custom',
       summaryCustomBaseURL: 'https://summary.example.test/v1',
@@ -73,5 +75,34 @@ describe('summary AI settings', () => {
       source: 'summary-custom',
     });
     expect(JSON.stringify(result)).not.toContain('summary-token');
+  });
+
+  it('uses the displayed default Summary AI model across session providers', async () => {
+    vi.mocked(readAuthFile).mockReturnValue({
+      openai: {
+        type: 'oauth',
+        access: 'openai-access-token',
+      },
+    });
+    await fsPromises.writeFile(path.join(tempRoot, 'settings.json'), JSON.stringify({}), 'utf8');
+
+    const result = await generateSmallModelText({
+      purpose: 'session-title',
+      prompt: 'Conversation content',
+      preferredProviderID: 'anthropic',
+      preferredModelID: 'claude-sonnet-4-5',
+      restrictToPreferredProvider: true,
+    });
+
+    expect(callSmallModel).toHaveBeenCalledWith(expect.objectContaining({
+      providerID: 'openai',
+      modelID: 'gpt-5.4-mini',
+    }));
+    expect(result).toEqual({
+      text: 'Generated summary',
+      providerID: 'openai',
+      modelID: 'gpt-5.4-mini',
+      source: 'summary-default',
+    });
   });
 });

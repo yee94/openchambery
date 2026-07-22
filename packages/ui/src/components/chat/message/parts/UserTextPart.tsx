@@ -10,9 +10,9 @@ import type { IconName } from '@/components/icon/icons';
 import { useEffectiveDirectory } from '@/hooks/useEffectiveDirectory';
 import { getDirectoryForFilePath } from '@/lib/path-utils';
 import { useI18n } from '@/lib/i18n';
-import {
-    type ComposerTriggerIconSpec,
-} from '@/composer/inline-visual';
+import { COMPOSER_TRIGGER_ICON_SIZE_CLASS } from '@/composer/inline-visual';
+import { parseSessionMentionInstruction } from '@/composer/delivery';
+import { isSyntheticPart } from '@/lib/messages/synthetic';
 import {
     buildAgentMentionUrl,
     parseSkillHref,
@@ -20,6 +20,7 @@ import {
 import {
     buildCitationIconsFromParts,
     buildMessageReferenceParts,
+    messageReferenceTriggerIconSpec,
     type MessageReferenceDecoration,
     type MessageTextPart,
 } from '@/lib/messages/references';
@@ -50,39 +51,19 @@ const normalizeUserMessageRenderingMode = (mode: unknown): 'markdown' | 'plain' 
     return mode === 'markdown' ? 'markdown' : 'plain';
 };
 
-const triggerIconSpecForMessageReference = (
-    decoration: MessageReferenceDecoration,
-): ComposerTriggerIconSpec | undefined => {
-    switch (decoration.kind) {
-        case 'session':
-            return { trigger: '@', icon: 'chat-thread', label: decoration.label };
-        case 'skill':
-            return { trigger: '/', icon: 'book-open', label: decoration.label.replace(/^\//, '') };
-        case 'command':
-            return { trigger: '/', icon: 'command', label: decoration.label.replace(/^\//, '') };
-        case 'image':
-            return { trigger: '[', icon: 'file-image', label: decoration.label, suffix: ']' };
-        case 'attachment':
-            return { trigger: '[', icon: 'attachment-2', label: decoration.label, suffix: ']' };
-        case 'file':
-        case 'agent':
-            return undefined;
-    }
-};
-
 const MessageReferenceChip: React.FC<{
     decoration: MessageReferenceDecoration;
     onOpenSkill?: (skillName: string) => void;
 }> = ({ decoration, onOpenSkill }) => {
-    const triggerIconSpec = triggerIconSpecForMessageReference(decoration);
+    const triggerIconSpec = messageReferenceTriggerIconSpec(decoration);
     const content = (
         <span className={cn(
             triggerIconSpec ? 'mx-1 inline-flex max-w-[calc(100%-0.5rem)] items-center gap-[0.4em] align-middle' : 'inline-flex items-baseline gap-0.5 align-baseline',
             decoration.className,
-        )}>
+        )} data-message-reference-kind={decoration.kind}>
             {triggerIconSpec ? (
                 <>
-                    <Icon name={triggerIconSpec.icon as IconName} className="size-[1em] shrink-0" aria-hidden="true" />
+                    <Icon name={triggerIconSpec.icon as IconName} className={cn(COMPOSER_TRIGGER_ICON_SIZE_CLASS, 'shrink-0')} aria-hidden="true" />
                     <span className="min-w-0 break-all">{triggerIconSpec.label}</span>
                 </>
             ) : decoration.icon ? (
@@ -148,6 +129,18 @@ const UserTextPart: React.FC<UserTextPartProps> = ({ part, messageId, agentMenti
     const textRef = React.useRef<HTMLDivElement>(null);
     const skillByName = React.useMemo(() => new Map(skills.map((skill) => [skill.name, skill])), [skills]);
     const citationIcons = React.useMemo(() => buildCitationIconsFromParts(messageParts), [messageParts]);
+    const sessionMentions = React.useMemo(() => {
+        const byId = new Map<string, { sessionId: string; sessionLabel: string }>();
+        for (const messagePart of messageParts ?? []) {
+            if (messagePart.type !== 'text' || !isSyntheticPart(messagePart)) continue;
+            const syntheticText = (messagePart as PartWithText).text;
+            if (typeof syntheticText !== 'string') continue;
+            for (const context of parseSessionMentionInstruction(syntheticText)) {
+                byId.set(context.id, { sessionId: context.id, sessionLabel: context.title || context.id });
+            }
+        }
+        return Array.from(byId.values());
+    }, [messageParts]);
 
     const openSkill = React.useCallback((name: string) => {
         const skill = skillByName.get(name);
@@ -229,12 +222,13 @@ const UserTextPart: React.FC<UserTextPartProps> = ({ part, messageId, agentMenti
         return buildMessageReferenceParts(textContent, {
             skillNames: new Set(skillByName.keys()),
             citationIcons,
+            sessionMentions,
             agentNames: agentMention?.name
                 ? new Set([agentMention.name.toLowerCase(), agentMention.token.replace(/^@/, '').toLowerCase()])
                 : undefined,
             allowPathHeuristics: true,
         });
-    }, [agentMention, citationIcons, skillByName, textContent]);
+    }, [agentMention, citationIcons, sessionMentions, skillByName, textContent]);
 
     const processedMarkdownContent = React.useMemo(() => {
         return prepareUserMarkdownContent({
@@ -259,6 +253,7 @@ const UserTextPart: React.FC<UserTextPartProps> = ({ part, messageId, agentMenti
                     key={key}
                     content={markdown}
                     className={cn(
+                        "inline w-auto align-baseline [&_.markdown-content]:contents [&_.markdown-content_p]:inline [&_[data-markdown-size-spacer]]:inline",
                         "[&_.markdown-content>*:first-child]:mt-0 [&_.markdown-content>*:last-child]:mb-0",
                         isCollapsed && [
                             "[&_.markdown-content>*]:my-0",

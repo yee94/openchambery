@@ -1306,9 +1306,6 @@ const ChatInputComponent: React.FC<ChatInputProps> = ({ onOpenSettings, scrollTo
             return [];
         }
         const ranges: MentionRange[] = [];
-        for (const reference of composerDocument.references) {
-            if (reference.kind === 'session') ranges.push({ start: reference.start, end: reference.end, kind: 'session', label: reference.display.slice(1) });
-        }
         const mentionRegex = /@([^\s]+)/g;
         let match: RegExpExecArray | null;
         while ((match = mentionRegex.exec(message)) !== null) {
@@ -1331,7 +1328,7 @@ const ChatInputComponent: React.FC<ChatInputProps> = ({ onOpenSettings, scrollTo
             }
         }
         return ranges;
-    }, [composerDocument.references, inputMode, message, knownAgentNames]);
+    }, [inputMode, message, knownAgentNames]);
 
     const attachmentCitationRanges = React.useMemo<HighlightRange[]>(() => {
         if (!message || !message.includes('[') || inputMode === 'shell' || sendableAttachedFiles.length === 0) {

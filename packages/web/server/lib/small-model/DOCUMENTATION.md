@@ -74,9 +74,10 @@ the server settings file; settings read responses expose only
 `hasSummaryCustomAPIToken`.
 
 `summaryCommitPrompt` and `summarySessionTitlePrompt` replace the respective
-call's system prompt when non-empty. With no provider choice, summary calls
-prefer an authenticated OpenAI provider and then use the standard small-model
-resolution chain.
+call's system prompt when non-empty. With no persisted provider choice, summary
+calls use the same effective default shown by Settings: authenticated OpenAI
+when available, otherwise the first callable provider/model. This effective
+default remains authoritative when the active session uses another provider.
 
 Provider mode uses direct provider APIs from the server rather than sending a
 chat request through the active OpenCode session. The dispatcher has dedicated

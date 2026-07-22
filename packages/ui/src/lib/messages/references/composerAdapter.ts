@@ -1,9 +1,30 @@
 import { decorateMessageReference } from './strategies';
-import type { MessageReferenceSpan } from './types';
+import type { MessageReferenceDecoration, MessageReferenceSpan } from './types';
 import {
     composerTriggerIconVisual,
+    type ComposerTriggerIconSpec,
     type ComposerTriggerIconVisual,
 } from '@/composer/inline-visual';
+
+export const messageReferenceTriggerIconSpec = (
+    decoration: MessageReferenceDecoration,
+): ComposerTriggerIconSpec | undefined => {
+    switch (decoration.kind) {
+        case 'session':
+            return { trigger: '@', icon: 'chat-thread', label: decoration.label };
+        case 'skill':
+            return { trigger: '/', icon: 'book-open', label: decoration.label.replace(/^\//, '') };
+        case 'command':
+            return { trigger: '/', icon: 'command', label: decoration.label.replace(/^\//, '') };
+        case 'image':
+            return { trigger: '[', icon: 'file-image', label: decoration.label, suffix: ']' };
+        case 'attachment':
+            return { trigger: '[', icon: 'attachment-2', label: decoration.label, suffix: ']' };
+        case 'file':
+        case 'agent':
+            return undefined;
+    }
+};
 
 /**
  * Structural highlight range shared with the composer overlay.
