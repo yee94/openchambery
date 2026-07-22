@@ -19,6 +19,7 @@
     <string name="share_error_preparing">Shared content could not be prepared. Try again.</string>
     <string name="share_error_sending">Shared content could not be sent. Review it and try again.</string>
     <string name="share_openchamber_mark">OpenChamber app icon</string>
+    <string name="share_opening_assistant">Opening assistant…</string>
     <string name="share_assistant_avatar">%1$s avatar</string>
     <string name="share_image_preview">Shared image %1$d of %2$d</string>
     <plurals name="share_images">

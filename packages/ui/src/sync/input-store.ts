@@ -160,7 +160,7 @@ export type InputState = {
   addDraftMention: (key: DraftKey, mention: DraftMention) => DraftRecord | undefined
   removeDraftMention: (key: DraftKey, value: string) => DraftRecord | undefined
   setDraftSyntheticParts: (key: DraftKey, parts: DraftSyntheticPart[]) => DraftRecord | undefined
-  consumeDraftSyntheticParts: (key: DraftKey) => DraftSyntheticPart[] | null
+  consumeDraftSyntheticParts: (key: DraftKey, retain?: (part: DraftSyntheticPart) => boolean) => DraftSyntheticPart[] | null
   setDraftAttachments: (key: DraftKey, attachments: DraftAttachmentMetadata[]) => DraftRecord | undefined
   addDraftLocalAttachment: (key: DraftKey, file: File | Blob, options?: { attachmentID?: string; filename?: string; source?: "local" | "vscode"; vscodePath?: string; vscodeSource?: "selection"; partID?: string }) => Promise<DraftAttachmentMetadata | undefined>
   addDraftDurableAttachment: (key: DraftKey, attachment: Omit<DraftAttachmentMetadata, "attachmentID" | "attachmentRefID" | "locator"> & { attachmentID?: string; url: string; partID?: string }) => DraftAttachmentMetadata | undefined
@@ -172,7 +172,7 @@ export type InputState = {
   deleteDraft: (key: DraftKey, expectedRevision?: number) => boolean
   moveDraft: (source: DraftKey, destination: DraftKey, expectedRevision?: number) => DraftRecord | undefined
   moveDraftWithAttachments: (source: DraftKey, destination: DraftKey, expectedRevision?: number) => Promise<DraftRecord | undefined>
-  hydrateDraftMetadata: (transportIdentity: string) => Promise<void>
+  hydrateDraftMetadata: (transportIdentity: string) => Promise<boolean>
   claimLegacyNewDraft: (key: DraftKey) => Promise<DraftRecord | undefined>
   setDraftPersistenceEnabled: (enabled: boolean) => Promise<void>
   flushDraftPersistence: () => Promise<void>
@@ -220,6 +220,7 @@ export const createInputStore = (services: InputDraftServices = {}) => {
   const hydrateEpoch = new Map<string, number>()
   const attachmentHydrateEpoch = new Map<string, number>()
   const attachmentHydrationTasks = new Map<string, Promise<void>>()
+  const draftMetadataHydrationTasks = new Map<string, Promise<boolean>>()
   const pendingPersists = new Set<Promise<InputDraftDurabilityResult>>()
   const deferredComposerPersistIDs = new Set<string>()
   let deferredComposerPersistTimer: ReturnType<typeof setTimeout> | undefined
@@ -578,11 +579,12 @@ export const createInputStore = (services: InputDraftServices = {}) => {
   addDraftMention: (key, mention) => mutate(key, (record) => ({ ...record, revision: record.revision + 1, mentions: [...record.mentions, mention] })),
   removeDraftMention: (key, value) => mutate(key, (record) => ({ ...record, revision: record.revision + 1, mentions: record.mentions.filter((mention) => mention.value !== value) })),
   setDraftSyntheticParts: (key, syntheticParts) => mutate(key, (record) => ({ ...record, revision: record.revision + 1, syntheticParts })),
-  consumeDraftSyntheticParts: (key) => {
+  consumeDraftSyntheticParts: (key, retain) => {
     const record = get().getDraft(key)
     if (!record) return null
-    const parts = record.syntheticParts
-    return mutate(key, (current) => ({ ...current, revision: current.revision + 1, syntheticParts: [] }), record.revision) ? parts : null
+    const parts = record.syntheticParts.filter((part) => !retain?.(part))
+    const retained = record.syntheticParts.filter((part) => retain?.(part))
+    return mutate(key, (current) => ({ ...current, revision: current.revision + 1, syntheticParts: retained }), record.revision) ? parts : null
   },
   setDraftAttachments: (key, attachments) => mutate(key, (record) => ({ ...record, revision: record.revision + 1, attachments })),
   addDraftLocalAttachment: async (key, file, options = {}) => {
@@ -814,31 +816,44 @@ export const createInputStore = (services: InputDraftServices = {}) => {
     await persist(ids)
     await durability.flush()
   },
-  hydrateDraftMetadata: async (transportIdentity) => {
+  hydrateDraftMetadata: (transportIdentity) => {
+    const active = draftMetadataHydrationTasks.get(transportIdentity)
+    if (active) return active
+    const task = (async (): Promise<boolean> => {
     const request = (hydrateEpoch.get(transportIdentity) ?? 0) + 1
     hydrateEpoch.set(transportIdentity, request)
     const runtime = runtimeCapture()
-    if (runtime.transportIdentity !== transportIdentity) return
+    if (runtime.transportIdentity !== transportIdentity) return false
     const generation = persistenceGeneration
     const startEpochs = new Map(keyEpoch)
     const startLegacyEpoch = legacyEpoch
     const knownIDs = Object.entries(get().drafts).filter(([, draft]) => draft.key.transportIdentity === transportIdentity).map(([id]) => id)
     set((state) => ({ draftHydration: { ...state.draftHydration, ...Object.fromEntries(knownIDs.map((id) => [id, "loading" as const])) } }))
     const enabledAtStart = get().persistenceEnabled
-    const migrated = await repository.migrate(transportIdentity, { persistenceEnabled: enabledAtStart })
-    if (hydrateEpoch.get(transportIdentity) !== request || persistenceGeneration !== generation || !runtimeMatches(runtime)) return
+    let migrated: Awaited<ReturnType<typeof repository.migrate>>
+    try {
+      migrated = await repository.migrate(transportIdentity, { persistenceEnabled: enabledAtStart })
+    } catch {
+      return false
+    }
+    if (hydrateEpoch.get(transportIdentity) !== request || persistenceGeneration !== generation || !runtimeMatches(runtime)) return false
     if (!migrated.ok) {
       set((state) => ({ draftHydration: { ...state.draftHydration, ...Object.fromEntries(knownIDs.map((id) => [id, state.drafts[id] ? "degraded" as const : "error" as const])) } }))
-      return
+      return false
     }
     const snapshot = migrated.value
     if (!seeded) {
       seedPromise ??= durability.seed(snapshot).finally(() => { seedPromise = undefined })
-      const result = await seedPromise
-      if (hydrateEpoch.get(transportIdentity) !== request || persistenceGeneration !== generation || !runtimeMatches(runtime)) return
+      let result: InputDraftDurabilityResult
+      try {
+        result = await seedPromise
+      } catch {
+        return false
+      }
+      if (hydrateEpoch.get(transportIdentity) !== request || persistenceGeneration !== generation || !runtimeMatches(runtime)) return false
       if (result.status !== "committed" && result.status !== "disabled") {
         set((state) => ({ draftHydration: { ...state.draftHydration, ...Object.fromEntries(knownIDs.map((id) => [id, "degraded" as const])) } }))
-        return
+        return false
       }
       if (result.status === "committed") seeded = true
     }
@@ -877,8 +892,19 @@ export const createInputStore = (services: InputDraftServices = {}) => {
     const dirty = [...dirtyKeys]
     for (const id of dirty) touched.add(id)
     dirtyKeys.clear()
-    await persist(touched)
-    await durability.flush()
+    try {
+      await persist(touched)
+      await durability.flush()
+    } catch {
+      return false
+    }
+    return hydrateEpoch.get(transportIdentity) === request && persistenceGeneration === generation && runtimeMatches(runtime)
+    })()
+    draftMetadataHydrationTasks.set(transportIdentity, task)
+    void task.finally(() => {
+      if (draftMetadataHydrationTasks.get(transportIdentity) === task) draftMetadataHydrationTasks.delete(transportIdentity)
+    }).catch(() => undefined)
+    return task
   },
   claimLegacyNewDraft: async (key) => {
     const entry = get().legacyNewDraft

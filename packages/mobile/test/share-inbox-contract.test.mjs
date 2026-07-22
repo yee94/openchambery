@@ -55,23 +55,56 @@ test('Android share drafts commit only after confirmation and release only after
   assert.match(store, /new File\(context\.getFilesDir\(\), "openchamber-share-drafts"\)/);
   assert.match(store, /new JSONObject\(\)\.put\("version", 1\)\.put\("operationID", draftID\)/);
   assert.match(store, /\.put\("source", "android-share"\)/);
-  assert.match(store, /static void cancelDraft[\s\S]*delete\(new File\(drafts\(context\), draftID\)\)/);
+  assert.match(store, /static void markDraftCancelled\(Context context, String draftID\)/);
+  assert.match(store, /getSharedPreferences\(CANCELLATIONS, Context\.MODE_PRIVATE\)/);
+  assert.match(store, /putLong\(draftID, System\.currentTimeMillis\(\) \+ DRAFT_TTL_MILLIS\)\.commit\(\)/);
+  assert.match(store, /static void cancelDraft[\s\S]*markDraftCancelled\(context, draftID\);[\s\S]*delete\(new File\(drafts\(context\), draftID\)\)/);
   assert.doesNotMatch(store, /cancelDraft[\s\S]*delete\(new File\(inbox\(context\), draftID\)\)/);
-  assert.match(store, /CANCELLED_DRAFTS\.add\(draftID\)/);
-  assert.match(store, /CANCELLED_DRAFTS\.remove\(draftID\)/);
+  const prepare = store.match(/static JSONObject prepareDraft[\s\S]*?(?=\n    static JSONObject loadDraft)/)?.[0];
+  assert.ok(prepare);
+  assert.match(prepare, /synchronized \(LOCK\) \{[\s\S]*File temp[\s\S]*copyLimited\(context\.getContentResolver\(\)\.openInputStream\(uri\), output, MAX_IMAGE_BYTES\)[\s\S]*writeAtomic\(new File\(temp, "draft\.json"\)[\s\S]*temp\.renameTo\(ready\)/);
+  assert.match(prepare, /copyLimited[\s\S]*throwIfDraftCancelled\(context, draftID\)[\s\S]*temp\.renameTo\(ready\)/);
+  assert.match(prepare, /writeAtomic[\s\S]*throwIfDraftCancelled\(context, draftID\)[\s\S]*temp\.renameTo\(ready\)/);
+  const markCancelled = store.match(/static void markDraftCancelled[\s\S]*?(?=\n    private static SharedPreferences cancellations)/)?.[0];
+  assert.ok(markCancelled);
+  assert.doesNotMatch(markCancelled, /synchronized \(LOCK\)/);
+  assert.match(store, /pruneCancelledDrafts\(context\)/);
+  assert.doesNotMatch(store, /CANCELLED_DRAFTS/);
   assert.match(store, /releaseAcknowledged[\s\S]*\.has\("consumedAt"\)/);
   assert.match(store, /readJSON\(committedDraft\)\.put\("committed", true\)/);
   assert.match(plugin, /OpenChamberShareStore\.releaseAcknowledged\(getContext\(\), id\)/);
   assert.match(activity, /intent\.setAction\(null\); intent\.removeExtra\("operationID"\);/);
 });
 
-test('Android share confirmation resumes committed drafts and the delivery bridge accepts the native image limit', async () => {
+test('Android draft delivery exposes complete draft copies and clears draft-ready intents', async () => {
+  const [store, plugin, activity] = await Promise.all([
+    source('android/app/src/main/java/com/openchamber/app/OpenChamberShareStore.java'),
+    source('android/app/src/main/java/com/openchamber/app/OpenChamberSharePlugin.java'),
+    source('android/app/src/main/java/com/openchamber/app/MainActivity.java'),
+  ]);
+  assert.match(store, /static JSONArray pendingDrafts\(Context context\)/);
+  assert.match(store, /synchronized \(LOCK\)[\s\S]*pruneLocked\(context\)/);
+  assert.match(store, /new JSONObject\(attachments\.getJSONObject\(i\)\.toString\(\)\)/);
+  assert.match(store, /attachment\.put\("stagedPath", new File\(dir, attachment\.getString\("stagedPath"\)\)\.getAbsolutePath\(\)\)/);
+  assert.match(store, /completeAttachments\(dir, attachments\)/);
+  assert.match(store, /private static boolean isDraftCancelled\(Context context, String draftID\)/);
+  assert.match(store, /if \(isDraftCancelled\(context, dir\.getName\(\)\)\) \{\s*delete\(dir\);\s*continue;/);
+  assert.match(store, /Collections\.sort\(draftsByCreatedAt/);
+  assert.match(plugin, /@PluginMethod public void listDrafts\(PluginCall call\)[\s\S]*put\("drafts", OpenChamberShareStore\.pendingDrafts\(getContext\(\)\)\)/);
+  assert.match(plugin, /@PluginMethod public void cancelDraft\(PluginCall call\)[\s\S]*OpenChamberShareStore\.cancelDraft\(getContext\(\), id\)/);
+  assert.match(plugin, /void emitDraftReceived\(String draftID\)[\s\S]*notifyListeners\("shareDraftReceived", event\)/);
+  assert.match(activity, /ACTION_SHARE_DRAFT_READY = "com\.openchamber\.app\.SHARE_DRAFT_READY"/);
+  assert.match(activity, /getStringExtra\("draftID"\)[\s\S]*emitDraftReceived\(id\)[\s\S]*intent\.setAction\(null\); intent\.removeExtra\("draftID"\);/);
+});
+
+test('Android share ingress opens the WebView composer and the delivery bridge accepts the native image limit', async () => {
   const [receiver, bridge] = await Promise.all([
     source('android/app/src/main/java/com/openchamber/app/ShareReceiverActivity.java'),
     source('../ui/src/apps/MobileShareBridge.tsx'),
   ]);
-  assert.match(receiver, /draft\.optBoolean\("committed"\)[\s\S]*completeShare\(\)/);
-  assert.doesNotMatch(receiver, /COMMITTING\.contains|CANCELLING\.add/);
+  assert.match(receiver, /OpenChamberShareStore\.prepareDraft\(context, id, selectedTarget, text, images\)/);
+  assert.match(receiver, /setAction\(MainActivity\.ACTION_SHARE_DRAFT_READY\)[\s\S]*putExtra\("draftID", draftID\)/);
+  assert.doesNotMatch(receiver, /EditText|previewRow|sendButton/);
   assert.match(receiver, /destroyed \|\| terminalNavigation/);
   assert.match(bridge, /envelope\.attachments\.length > 10/);
 });

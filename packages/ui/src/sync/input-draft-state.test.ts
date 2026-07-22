@@ -41,6 +41,50 @@ describe("keyed input draft state", () => {
     expect(store.getState().draftPersistence).toEqual({})
   })
 
+  test("retains selected synthetic parts while consuming the remaining parts atomically", () => {
+    const store = createInputStore({ persistenceEnabled: false })
+    const draft = key("runtime")
+    store.getState().ensureDraft(draft)
+    store.getState().setDraftSyntheticParts(draft, [
+      { partID: "send", text: "context", attachments: [] },
+      { partID: "mobile-share-handoff:share", text: "", attachments: [], synthetic: true },
+    ])
+    expect(store.getState().consumeDraftSyntheticParts(draft, (part) => part.partID?.startsWith("mobile-share-handoff:"))).toEqual([{ partID: "send", text: "context", attachments: [] }])
+    expect(store.getState().getDraft(draft)?.syntheticParts).toEqual([{ partID: "mobile-share-handoff:share", text: "", attachments: [], synthetic: true }])
+  })
+
+  test("shares same-transport authoritative hydration and reports failed or stale barriers", async () => {
+    const storage = new MemoryStorage()
+    const sink = createInputDraftMetadataStorageSink(storage as unknown as Storage)
+    const repository = createInputDraftMetadataRepository(sink)
+    const migrate = repository.migrate
+    const gate = deferred<void>()
+    let migrations = 0
+    repository.migrate = async (...args) => { migrations += 1; await gate.promise; return migrate(...args) }
+    let capture = { transportIdentity: "runtime", generation: 1 }
+    const store = createInputStore({ repository, blobStore: blobStore(), runtimeCapture: () => capture })
+    const first = store.getState().hydrateDraftMetadata("runtime")
+    const second = store.getState().hydrateDraftMetadata("runtime")
+    expect(first).toBe(second)
+    gate.resolve()
+    expect(await Promise.all([first, second])).toEqual([true, true])
+    expect(migrations).toBe(1)
+
+    const failedRepository = createInputDraftMetadataRepository(createInputDraftMetadataStorageSink(new MemoryStorage() as unknown as Storage))
+    failedRepository.migrate = async () => ({ ok: false, error: { code: "unavailable" } })
+    expect(await createInputStore({ repository: failedRepository, runtimeCapture: () => ({ transportIdentity: "runtime", generation: 1 }) }).getState().hydrateDraftMetadata("runtime")).toBe(false)
+
+    const staleRepository = createInputDraftMetadataRepository(createInputDraftMetadataStorageSink(new MemoryStorage() as unknown as Storage))
+    const staleMigrate = staleRepository.migrate
+    const staleGate = deferred<void>()
+    staleRepository.migrate = async (...args) => { await staleGate.promise; return staleMigrate(...args) }
+    const staleStore = createInputStore({ repository: staleRepository, runtimeCapture: () => capture })
+    const stale = staleStore.getState().hydrateDraftMetadata("runtime")
+    capture = { transportIdentity: "other", generation: 2 }
+    staleGate.resolve()
+    expect(await stale).toBe(false)
+  })
+
   test("preserves memory edits across slow hydration and keeps metadata for moves", async () => {
     const storage = new MemoryStorage()
     const sink = createInputDraftMetadataStorageSink(storage as unknown as Storage)

@@ -15,6 +15,7 @@
     <string name="share_error_preparing">无法准备分享内容，请重试。</string>
     <string name="share_error_sending">无法发送分享内容，请检查后重试。</string>
     <string name="share_openchamber_mark">OpenChamber 应用图标</string>
+    <string name="share_opening_assistant">正在打开助理…</string>
     <string name="share_assistant_avatar">%1$s的头像</string>
     <string name="share_image_preview">第 %1$d 张分享图片，共 %2$d 张</string>
     <plurals name="share_images">

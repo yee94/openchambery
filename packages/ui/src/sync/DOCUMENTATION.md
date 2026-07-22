@@ -77,6 +77,8 @@ Text and Composer-state bursts use one per-store 40ms latest-wins persistence wi
 
 Committed draft snapshot and ownership actions use per-key CAS epochs plus a captured runtime generation. The durability lane validates candidate currentness before every blob, cleanup, or metadata operation and validates it again before metadata persistence. A metadata-committed action adopts its durable draft or tombstone keys independently after post-write epoch changes; runtime-stale completions clear attachment views, missing-ref IDs, hydration, and both persistence maps in one publication while preserving newer memory records. Ownership finalization evaluates source and destination epochs independently, so one durable source tombstone can coexist with a newer destination record. Revision increments require positive safe integers, including delete tombstones.
 
+Draft metadata hydration is single-flight per transport and returns an explicit success signal; external durable handoffs proceed only after that authoritative hydration succeeds. Android share handoff commits text, image blobs, and a hidden synthetic receipt in the same draft CAS. Composer submission atomically retains that receipt until native cancellation and runtime-correct Assistant navigation finish, then the bridge durably removes the receipt before finalizing its handoff journal.
+
 ## Session list rules
 
 ### Directory-scoped session list
