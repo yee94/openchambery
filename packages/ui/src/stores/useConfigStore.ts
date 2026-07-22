@@ -21,7 +21,7 @@ import { rememberResponseStyleSettings } from "@/lib/responseStyle";
 import { markStartupTrace, measureStartupTrace } from "@/lib/startupTrace";
 import { normalizePath } from "@/lib/pathNormalization";
 import { getSyncConfig, subscribeToSyncConfigChanges } from "@/sync/sync-refs";
-import { ensureProviderCatalogQuery, ensureRawAgentsQuery, invalidateProviderCatalogQuery, refreshProviderCatalogQuery, refreshRawAgentsQuery } from "@/queries/configCatalogQueries";
+import { ensureProviderCatalogQuery, ensureRawAgentsQuery, invalidateProviderCatalogQuery, refreshProviderCatalogQuery, refreshRawAgentsQuery, seedProviderCatalogQuery } from "@/queries/configCatalogQueries";
 import { getRuntimeGeneration, getRuntimeTransportIdentity } from "@/lib/runtime-switch";
 import { parseProviderCatalog } from "@/lib/configCatalogParser";
 import type { ConfigCatalogModel, ConfigCatalogProvider } from "@/types/configCatalog";
@@ -788,18 +788,13 @@ const toConfigDirectoryKey = (directory: string | null | undefined): string =>
 
 export const getConfigDirectoryKey = (directory: string | null | undefined): string => toConfigDirectoryKey(directory);
 
-// Runtime freshness tracking (NOT persisted) for the stale-while-revalidate
-// background refresh, keyed by config-directory key. Prevents re-fetching
-// project-scoped providers/agents we just loaded — e.g. initializeApp loading a
-// project, then activateDirectory firing for the same project moments later.
-const _providersLoadedAt = new Map<string, number>();
-const _agentsLoadedAt = new Map<string, number>();
-const CONFIG_REFRESH_TTL_MS = 30_000;
 const PROJECT_CONFIG_PREWARM_DELAY_MS = 1_000;
-const isConfigFresh = (loadedAt: Map<string, number>, key: string): boolean => {
-    const at = loadedAt.get(key);
-    return typeof at === 'number' && Date.now() - at < CONFIG_REFRESH_TTL_MS;
-};
+const PERSISTED_CONFIG_CATALOG_BYTE_BUDGET = 1_250_000;
+const PERSISTED_AGENT_MODEL_SELECTION_LIMIT = 100;
+const PERSISTED_SELECTION_STRING_LIMIT = 256;
+const PERSISTED_SELECTION_DANGEROUS_KEYS = new Set(["__proto__", "prototype", "constructor"]);
+const PERSISTED_SELECTION_CONTROL_CHARACTERS = /[\u0000-\u001F\u007F]/u;
+const persistedCatalogTextEncoder = new TextEncoder();
 
 interface DirectoryScopedConfig {
 
@@ -812,6 +807,7 @@ interface DirectoryScopedConfig {
     selectedProviderId: string;
     agentModelSelections: { [agentName: string]: AgentModelSelection };
     defaultProviders: { [key: string]: string };
+    providerCatalogPartial?: boolean;
     opencodeDefaultAgent?: string;
     opencodeDefaultModel?: string;
     selectionSource?: "auto" | "manual";
@@ -820,10 +816,8 @@ interface DirectoryScopedConfig {
 /**
  * Lift the active directory's cached provider/agent snapshot into the top-level
  * fields the pickers read (`providers`, `agents`, selections), so a cold start
- * paints instantly from persisted data. Falls back to whatever top-level data
- * was persisted; handles legacy persisted blobs that only stored directoryScoped.
- * Catalog fields are memory-only (TanStack Query SWR) — persist rehydrate now
- * supplies empty providers/agents, so this lift only helps in-session merges.
+ * paints instantly from persisted data. Falls back to legacy top-level selection
+ * fields when the active directory has no snapshot.
  */
 const hydrateActiveDirectorySnapshot = <T extends Partial<ConfigStore>>(merged: T): T => {
     const directoryScoped = merged.directoryScoped;
@@ -833,27 +827,50 @@ const hydrateActiveDirectorySnapshot = <T extends Partial<ConfigStore>>(merged: 
     if (!snapshot) return merged;
 
     const next: Partial<ConfigStore> = { ...merged };
-    if ((!merged.providers || merged.providers.length === 0) && snapshot.providers?.length) {
-        next.providers = snapshot.providers;
-    }
-    if ((!merged.agents || merged.agents.length === 0) && snapshot.agents?.length) {
-        next.agents = snapshot.agents;
-    }
-    if (!merged.defaultProviders || Object.keys(merged.defaultProviders).length === 0) {
-        if (snapshot.defaultProviders && Object.keys(snapshot.defaultProviders).length > 0) {
-            next.defaultProviders = snapshot.defaultProviders;
-        }
-    }
-    if (snapshot.opencodeDefaultAgent !== undefined) {
-        next.opencodeDefaultAgent = snapshot.opencodeDefaultAgent;
-    }
-    if (snapshot.opencodeDefaultModel !== undefined) {
-        next.opencodeDefaultModel = snapshot.opencodeDefaultModel;
-    }
-    if (snapshot.selectionSource) {
-        next.selectionSource = snapshot.selectionSource;
+    next.providers = snapshot.providers;
+    next.agents = [];
+    next.defaultProviders = snapshot.defaultProviders;
+    next.currentProviderId = snapshot.currentProviderId;
+    next.currentModelId = snapshot.currentModelId;
+    next.currentVariant = snapshot.currentVariant;
+    next.currentAgentName = snapshot.currentAgentName;
+    next.selectedProviderId = snapshot.selectedProviderId;
+    next.agentModelSelections = snapshot.agentModelSelections;
+    next.opencodeDefaultAgent = snapshot.opencodeDefaultAgent;
+    next.opencodeDefaultModel = snapshot.opencodeDefaultModel;
+    next.selectionSource = snapshot.selectionSource ?? "auto";
+    if (snapshot.providers.length > 0 && snapshot.providerCatalogPartial !== true) {
+        seedProviderCatalogQuery(fromDirectoryKey(activeKey), snapshot);
     }
     return next as T;
+};
+
+const sanitizeSelectionIdentifier = (value: unknown, requireTrimmed = false): string | undefined => {
+    if (typeof value !== "string") return undefined;
+    const trimmed = value.trim();
+    if (
+        trimmed.length === 0
+        || trimmed.length > PERSISTED_SELECTION_STRING_LIMIT
+        || (requireTrimmed && trimmed !== value)
+        || PERSISTED_SELECTION_CONTROL_CHARACTERS.test(trimmed)
+        || PERSISTED_SELECTION_DANGEROUS_KEYS.has(trimmed)
+    ) return undefined;
+    return trimmed;
+};
+
+const sanitizeAgentModelSelections = (value: unknown): { [agentName: string]: AgentModelSelection } => {
+    if (!isRecord(value)) return {};
+    const entries: Array<[string, AgentModelSelection]> = [];
+    for (const [agentName, rawSelection] of Object.entries(value)) {
+        if (entries.length >= PERSISTED_AGENT_MODEL_SELECTION_LIMIT || !isRecord(rawSelection)) continue;
+        const safeAgentName = sanitizeSelectionIdentifier(agentName, true);
+        const providerId = sanitizeSelectionIdentifier(rawSelection.providerId);
+        const modelId = sanitizeSelectionIdentifier(rawSelection.modelId);
+        const variant = sanitizeSelectionIdentifier(rawSelection.variant);
+        if (!safeAgentName || !providerId || !modelId || (rawSelection.variant !== undefined && !variant)) continue;
+        entries.push([safeAgentName, { providerId, modelId, ...(variant ? { variant } : {}) }]);
+    }
+    return Object.fromEntries(entries);
 };
 
 const sanitizePersistedCatalogState = (persistedState: unknown): Partial<ConfigStore> => {
@@ -874,25 +891,26 @@ const sanitizePersistedCatalogState = (persistedState: unknown): Partial<ConfigS
         if (typeof persistedState[key] === 'number' && Number.isFinite(persistedState[key])) preferences[key] = persistedState[key];
     }
     const currentTransport = getRuntimeTransportIdentity();
-    // Catalog snapshots (providers/agents/defaultProviders) are TanStack Query
-    // memory-SWR only — never hydrate them from localStorage, even when the
-    // transport fingerprint matches. Selection/preference fields may restore.
     if (transportIdentity !== currentTransport) return { ...preferences, catalogTransportIdentity: currentTransport, directoryScoped: {}, providers: [], agents: [], defaultProviders: {}, currentProviderId: '', currentModelId: '', currentVariant: undefined, currentAgentName: undefined, selectedProviderId: '', agentModelSelections: {}, providerConfigLoadingByDirectory: {}, agentConfigLoadingByDirectory: {} };
     const directoryScoped: Record<string, DirectoryScopedConfig> = {};
     if (isRecord(persistedState.directoryScoped)) {
         for (const [directoryKey, rawSnapshot] of Object.entries(persistedState.directoryScoped)) {
             if (!isRecord(rawSnapshot)) continue;
+            const providerCatalogPartial = rawSnapshot.providerCatalogPartial === true;
+            const providers = providerCatalogPartial ? [] : sanitizeProviderList(rawSnapshot.providers);
+            const defaultProviders = providerCatalogPartial ? {} : sanitizeDefaultProviders(rawSnapshot.defaultProviders);
             directoryScoped[directoryKey] = {
                 ...createEmptyDirectoryScopedConfig(),
-                providers: [],
+                providers,
                 agents: [],
                 currentProviderId: normalizeOptionalString(rawSnapshot.currentProviderId) ?? '',
                 currentModelId: normalizeOptionalString(rawSnapshot.currentModelId) ?? '',
                 currentVariant: normalizeOptionalString(rawSnapshot.currentVariant),
                 currentAgentName: normalizeOptionalString(rawSnapshot.currentAgentName),
                 selectedProviderId: sanitizePersistedSelectedProviderId(normalizeOptionalString(rawSnapshot.selectedProviderId)),
-                agentModelSelections: isRecord(rawSnapshot.agentModelSelections) ? rawSnapshot.agentModelSelections as DirectoryScopedConfig['agentModelSelections'] : {},
-                defaultProviders: {},
+                agentModelSelections: sanitizeAgentModelSelections(rawSnapshot.agentModelSelections),
+                defaultProviders,
+                providerCatalogPartial,
                 opencodeDefaultAgent: normalizeOptionalString(rawSnapshot.opencodeDefaultAgent),
                 opencodeDefaultModel: normalizeOptionalString(rawSnapshot.opencodeDefaultModel),
                 selectionSource: rawSnapshot.selectionSource === 'manual' ? 'manual' : 'auto',
@@ -906,7 +924,12 @@ const sanitizePersistedCatalogState = (persistedState: unknown): Partial<ConfigS
         providers: [],
         agents: [],
         defaultProviders: {},
+        currentProviderId: normalizeOptionalString(persistedState.currentProviderId) ?? '',
+        currentModelId: normalizeOptionalString(persistedState.currentModelId) ?? '',
+        currentVariant: normalizeOptionalString(persistedState.currentVariant),
+        currentAgentName: normalizeOptionalString(persistedState.currentAgentName),
         selectedProviderId: sanitizePersistedSelectedProviderId(normalizeOptionalString(persistedState.selectedProviderId)),
+        agentModelSelections: sanitizeAgentModelSelections(persistedState.agentModelSelections),
     };
 };
 
@@ -923,6 +946,7 @@ const createEmptyDirectoryScopedConfig = (
     selectedProviderId: "",
     agentModelSelections: {},
     defaultProviders: {},
+    providerCatalogPartial: false,
     opencodeDefaultAgent: undefined,
     opencodeDefaultModel: undefined,
     selectionSource: "auto",
@@ -1080,7 +1104,7 @@ interface ConfigStore {
     setSummarizeCharacterThreshold: (threshold: number) => void;
     setSummarizeMaxLength: (maxLength: number) => void;
 
-    activateDirectory: (directory: string | null | undefined) => Promise<void>;
+    activateDirectory: (directory: string | null | undefined, options?: { refreshProviders?: boolean; source?: string }) => Promise<void>;
 
     loadProviders: (options?: { directory?: string | null; source?: string; forceRefresh?: boolean }) => Promise<void>;
     loadAgents: (options?: { directory?: string | null; source?: string; forceRefresh?: boolean }) => Promise<boolean>;
@@ -1382,7 +1406,7 @@ export const useConfigStore = create<ConfigStore>()(
                     }
                     return 500;
                 })(),
-                activateDirectory: async (directory) => {
+                activateDirectory: async (directory, options) => {
                     // Resolve the worktree to its owning project up-front so the
                     // active key + snapshot key always match and stay project-scoped.
                     // Everything below operates on this key unchanged; the OpenCode
@@ -1460,8 +1484,8 @@ export const useConfigStore = create<ConfigStore>()(
                     // populated the pickers, refresh in the background so the UI
                     // stays instant but never shows stale provider/agent data for
                     // longer than one fetch. Only block when there is nothing to show.
-                    if (!snapshotHadProviders) {
-                        await get().loadProviders({ directory: fromDirectoryKey(directoryKey), source: 'activateDirectory' });
+                    if (!snapshotHadProviders || options?.refreshProviders) {
+                        await get().loadProviders({ directory: fromDirectoryKey(directoryKey), source: options?.source ?? 'activateDirectory', forceRefresh: options?.refreshProviders });
                     }
 
                     if (!snapshotHadAgents) {
@@ -1583,6 +1607,7 @@ export const useConfigStore = create<ConfigStore>()(
                                     ...baseSnapshot,
                                     providers: processedProviders,
                                     defaultProviders: defaults,
+                                    providerCatalogPartial: apiResult.partial,
                                     currentProviderId: resolvedModel?.providerId ?? "",
                                     currentModelId: resolvedModel?.modelId ?? "",
                                     currentVariant: resolvedModel?.variant,
@@ -3207,7 +3232,7 @@ export const useConfigStore = create<ConfigStore>()(
 
                             if (debug) console.log("Loading providers and agents...");
                             await Promise.all([
-                                get().loadProviders({ directory: configDirectory, source: 'initializeApp' }),
+                                get().loadProviders({ directory: configDirectory, source: 'initializeApp', forceRefresh: true }),
                                 get().loadAgents({ directory: configDirectory, source: 'initializeApp' }),
                             ]);
 
@@ -3335,7 +3360,7 @@ export const useConfigStore = create<ConfigStore>()(
             }),
             {
                 name: "config-store",
-                version: 1,
+                version: 2,
                 storage: createDeferredSafeJSONStorage(),
                 migrate: (persistedState) => sanitizePersistedCatalogState(persistedState),
                 merge: (persistedState, currentState) =>
@@ -3343,55 +3368,65 @@ export const useConfigStore = create<ConfigStore>()(
                         ...currentState,
                         ...sanitizePersistedCatalogState(persistedState),
                     }),
-                // Stale-while-revalidate: persist the last-known provider/agent
-                // snapshots so the model/agent pickers paint instantly on cold
-                // start. Freshness is guaranteed by the background refresh in
-                // initializeApp() / activateDirectory() (which overwrite these on
-                // success) and by the provider/agent config-change subscriptions.
-                // IMPORTANT: Provider/Agent catalogs are TanStack Query memory-SWR
-                // only — never write providers/agents/defaultProviders to
-                // localStorage. Persist selection + settings preferences only;
-                // Query retains the in-memory catalog across in-session reuse.
-                partialize: (state) => ({
-                    activeDirectoryKey: state.activeDirectoryKey,
-                    catalogTransportIdentity: getRuntimeTransportIdentity(),
-                    directoryScoped: Object.fromEntries(
+                partialize: (state) => {
+                    const activeSnapshot = state.directoryScoped[state.activeDirectoryKey];
+                    const activeCatalog = activeSnapshot && activeSnapshot.providerCatalogPartial !== true
+                        ? {
+                            providers: sanitizeProviderList(activeSnapshot.providers),
+                            defaultProviders: sanitizeDefaultProviders(activeSnapshot.defaultProviders),
+                            providerCatalogPartial: false,
+                        }
+                        : { providers: [], defaultProviders: {}, providerCatalogPartial: activeSnapshot?.providerCatalogPartial === true };
+                    const directoryScoped = Object.fromEntries(
                         Object.entries(state.directoryScoped).map(([directoryKey, snapshot]) => [
                             directoryKey,
                             {
-                                providers: [],
+                                ...(directoryKey === state.activeDirectoryKey ? activeCatalog : { providers: [], defaultProviders: {}, providerCatalogPartial: snapshot.providerCatalogPartial === true }),
                                 agents: [],
                                 currentProviderId: snapshot.currentProviderId,
                                 currentModelId: snapshot.currentModelId,
                                 currentVariant: snapshot.currentVariant,
                                 currentAgentName: snapshot.currentAgentName,
                                 selectedProviderId: sanitizePersistedSelectedProviderId(snapshot.selectedProviderId),
-                                agentModelSelections: snapshot.agentModelSelections,
-                                defaultProviders: {},
+                                agentModelSelections: sanitizeAgentModelSelections(snapshot.agentModelSelections),
                                 opencodeDefaultAgent: snapshot.opencodeDefaultAgent,
                                 opencodeDefaultModel: snapshot.opencodeDefaultModel,
                                 selectionSource: snapshot.selectionSource,
                             },
                         ]),
-                    ),
-                    currentProviderId: state.currentProviderId,
-                    currentModelId: state.currentModelId,
-                    currentVariant: state.currentVariant,
-                    currentAgentName: state.currentAgentName,
-                    selectedProviderId: sanitizePersistedSelectedProviderId(state.selectedProviderId),
-                    agentModelSelections: state.agentModelSelections,
-                    settingsDefaultModel: state.settingsDefaultModel,
-                    settingsDefaultVariant: state.settingsDefaultVariant,
-                    settingsDefaultAgent: state.settingsDefaultAgent,
-                    settingsAutoCreateWorktree: state.settingsAutoCreateWorktree,
-                    settingsGitmojiEnabled: state.settingsGitmojiEnabled,
-                    settingsDefaultFileViewerPreview: state.settingsDefaultFileViewerPreview,
-                    settingsZenModel: state.settingsZenModel,
-                    settingsMessageStreamTransport: state.settingsMessageStreamTransport,
-                    speechRate: state.speechRate,
-                    speechPitch: state.speechPitch,
-                    speechVolume: state.speechVolume,
-                }),
+                    );
+                    const activeCatalogSerialized = JSON.stringify(activeCatalog);
+                    if (persistedCatalogTextEncoder.encode(activeCatalogSerialized).byteLength > PERSISTED_CONFIG_CATALOG_BYTE_BUDGET) {
+                        const active = directoryScoped[state.activeDirectoryKey] as Record<string, unknown> | undefined;
+                        if (active) {
+                            active.providers = [];
+                            active.defaultProviders = {};
+                            active.providerCatalogPartial = true;
+                        }
+                    }
+                    return {
+                        activeDirectoryKey: state.activeDirectoryKey,
+                        catalogTransportIdentity: getRuntimeTransportIdentity(),
+                        directoryScoped,
+                        currentProviderId: state.currentProviderId,
+                        currentModelId: state.currentModelId,
+                        currentVariant: state.currentVariant,
+                        currentAgentName: state.currentAgentName,
+                        selectedProviderId: sanitizePersistedSelectedProviderId(state.selectedProviderId),
+                        agentModelSelections: sanitizeAgentModelSelections(state.agentModelSelections),
+                        settingsDefaultModel: state.settingsDefaultModel,
+                        settingsDefaultVariant: state.settingsDefaultVariant,
+                        settingsDefaultAgent: state.settingsDefaultAgent,
+                        settingsAutoCreateWorktree: state.settingsAutoCreateWorktree,
+                        settingsGitmojiEnabled: state.settingsGitmojiEnabled,
+                        settingsDefaultFileViewerPreview: state.settingsDefaultFileViewerPreview,
+                        settingsZenModel: state.settingsZenModel,
+                        settingsMessageStreamTransport: state.settingsMessageStreamTransport,
+                        speechRate: state.speechRate,
+                        speechPitch: state.speechPitch,
+                        speechVolume: state.speechVolume,
+                    };
+                },
              },
          ),
     ),

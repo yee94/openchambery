@@ -118,18 +118,22 @@ partial catalogs with invalid individual entities removed. TanStack Query owns t
 network retry policy, infinite freshness/retention, exact invalidation, and single-flight.
 `useConfigStore.ts` owns project-scoped UI projections, selection, and mutation
 orchestration. It applies the Provider DTO allowlist again when projecting Query
-results into the store. TanStack Query is the sole SWR cache for Provider/Agent
-catalogs and is memory-only — `config-store` localStorage persistence must never
-write `providers` / `agents` / `defaultProviders`. Persisted selection and settings
-carry transport identity; legacy catalog blobs and catalogs from another runtime
-are discarded on rehydrate while unrelated user settings remain available. Runtime
+results into the store. TanStack Query remains the Provider/Agent network SWR
+owner. `config-store` localStorage keeps one bounded safe Provider/default DTO
+startup snapshot for the active configuration directory, seeds an empty Provider
+Query from that complete snapshot, and Agent catalogs remain memory-only.
+Startup and new-draft target activation explicitly force-refresh Providers while
+historical session activation reuses the snapshot. Failed refreshes retain the
+previous snapshot. Persisted selection, startup snapshots, and settings carry
+transport identity; another transport receives isolated catalogs and directory
+selection. Runtime
 endpoint reset clears Provider and Agent snapshots, directory scopes, defaults, and catalog
 selection state. Reset and same-device LAN⇄relay rebinds must assign
 `catalogTransportIdentity` from `getRuntimeTransportIdentity()`, never from `runtimeKey`;
 `runtimeKey` is the stable device/instance id shared across transports, while catalog loaders
-discard writes whose transport fingerprint does not match the active one. The persisted allowlist excludes credential fields, catalog snapshots, and unknown keys; migration
+discard writes whose transport fingerprint does not match the active one. The persisted allowlist excludes credential fields and unknown keys; the Provider snapshot uses the parser DTO allowlist, and migration
 rewrites legacy envelopes through that allowlist. Partial Provider refreshes retain an existing
-complete in-memory snapshot while cold partial snapshots remain available. Provider and Agent loads capture
+complete snapshot while cold partial snapshots stay memory-only. Provider and Agent loads capture
 runtime generation and transport identity before every commit, trace, error log, and loading
 cleanup, so an earlier runtime lifetime cannot republish catalog state after a switch. Refresh
 failures retain the previous in-memory snapshot.

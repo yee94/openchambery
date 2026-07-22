@@ -526,8 +526,11 @@ const resolveForkSourceSessionSnapshot = (sessionId: string): Session | null => 
   return [...global.activeSessions, ...global.archivedSessions].find((session) => session.id === sessionId) ?? null
 }
 
-const activateConfigForDirectory = async (directory: string | null | undefined): Promise<void> => {
-  await useConfigStore.getState().activateDirectory(normalizePath(directory))
+const activateConfigForDirectory = async (
+  directory: string | null | undefined,
+  options?: { refreshProviders?: boolean; source?: string },
+): Promise<void> => {
+  await useConfigStore.getState().activateDirectory(normalizePath(directory), options)
 }
 
 const DEFAULT_DRAFT: NewSessionDraftState = {
@@ -1336,7 +1339,19 @@ export const useSessionUIStore = create<SessionUIState>()((set, get) => ({
     // the project's config instead so the default cascade matches app startup, then re-apply it
     // (a fresh draft must start from defaults, not inherit the previous session's selection).
     const configDirectory = normalizePath(selectedProject?.path ?? null) ?? directory
-    void activateConfigForDirectory(configDirectory).then(() => {
+    const normalizedConfigDirectory = selectedProject ? normalizePath(configDirectory) : null
+    const draftID = nextDraft.draftID
+    const transportIdentity = getRuntimeTransportIdentity()
+    void activateConfigForDirectory(configDirectory, { refreshProviders: true, source: 'newSessionDraft' }).then(() => {
+      const currentDraft = get().newSessionDraft
+      const activeConfigDirectory = normalizePath(useConfigStore.getState().activeDirectoryKey)
+      if (
+        !currentDraft.open
+        || currentDraft.draftID !== draftID
+        || getRuntimeTransportIdentity() !== transportIdentity
+        || !normalizedConfigDirectory
+        || activeConfigDirectory !== normalizedConfigDirectory
+      ) return
       useConfigStore.getState().applyDefaultModelAgentSelection({
         projectDefaultModel: selectedProject?.defaultModel,
       })
@@ -1395,7 +1410,7 @@ export const useSessionUIStore = create<SessionUIState>()((set, get) => ({
         },
       }
     })
-    void activateConfigForDirectory(nextDirectory)
+    void activateConfigForDirectory(nextDirectory, { refreshProviders: true, source: 'setNewSessionDraftTarget' })
 
     if (nextDirectory && nextDirectory !== useDirectoryStore.getState().currentDirectory) {
       useDirectoryStore.getState().setDirectory(nextDirectory)
@@ -1554,7 +1569,7 @@ export const useSessionUIStore = create<SessionUIState>()((set, get) => ({
       )
       return { newSessionDraft: nextDraft }
     })
-    void activateConfigForDirectory(nextDirectory)
+    void activateConfigForDirectory(nextDirectory, { refreshProviders: true, source: 'overrideNewSessionDraftTarget' })
 
     if (nextDirectory && nextDirectory !== useDirectoryStore.getState().currentDirectory) {
       useDirectoryStore.getState().setDirectory(nextDirectory)

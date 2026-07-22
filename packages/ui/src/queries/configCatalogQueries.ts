@@ -87,6 +87,35 @@ export const readProviderCatalogSnapshot = (directory: string | null, transport 
 export const readRawAgentsSnapshot = (directory: string | null, transport = getRuntimeTransportIdentity()): Agent[] | undefined =>
   queryClient.getQueryData<Agent[]>(rawAgentsQueryOptions(directory, transport).queryKey);
 
+export const seedProviderCatalogQuery = (
+  directory: string | null,
+  snapshot: { providers: unknown; defaultProviders: unknown; providerCatalogPartial?: boolean },
+  transport = getRuntimeTransportIdentity(),
+): void => {
+  if (snapshot.providerCatalogPartial === true) return;
+  const options = providerCatalogQueryOptions(directory, transport);
+  if (queryClient.getQueryData(options.queryKey) !== undefined) return;
+  try {
+    const providers = Array.isArray(snapshot.providers)
+      ? snapshot.providers.map((provider) => {
+        if (typeof provider !== 'object' || provider === null || Array.isArray(provider)) return provider;
+        const entry = provider as Record<string, unknown>;
+        return {
+          ...entry,
+          models: Array.isArray(entry.models)
+            ? Object.fromEntries(entry.models.map((model, index) => [String(index), model]))
+            : entry.models,
+        };
+      })
+      : snapshot.providers;
+    const catalog = parseProviderCatalog({ schemaVersion: 1, providers, default: snapshot.defaultProviders, partial: false });
+    if (catalog.partial) return;
+    queryClient.setQueryData(options.queryKey, catalog);
+  } catch {
+    // Persisted startup snapshots are optional and isolated from network loading.
+  }
+};
+
 export const ensureProviderCatalogQuery = (directory: string | null, transport = getRuntimeTransportIdentity()): Promise<ProviderCatalog> =>
   queryClient.fetchQuery(providerCatalogQueryOptions(directory, transport));
 

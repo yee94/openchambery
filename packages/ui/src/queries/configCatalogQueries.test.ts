@@ -54,6 +54,7 @@ const {
   ensureRawAgentsQuery,
   ensureProviderCatalogQuery,
   refreshProviderCatalogQuery,
+  seedProviderCatalogQuery,
   invalidateRawAgentsQuery,
   providerCatalogQueryOptions,
   rawAgentsQueryOptions,
@@ -123,6 +124,31 @@ describe('configCatalogQueries', () => {
     expect(result.providers[0]).toEqual({ id: 'safe', name: 'Safe', models: { model: { id: 'model', name: 'Model', variants: { fast: {} } } } });
     expect(JSON.stringify(result)).not.toContain('secret');
     expect(JSON.stringify(queryClient.getQueryData(providerCatalogQueryOptions('/workspace/project', runtimeKey).queryKey))).not.toContain('secret');
+  });
+
+  test('完整快照只 seed 冷 Query，partial 快照不创建冷 Query', () => {
+    seedProviderCatalogQuery('/workspace/project', {
+      providers: [{ id: 'seed', name: 'Seed', apiKey: 'secret', models: [{ id: 'model', name: 'Model', variants: { fast: { token: 'secret' } } }] }],
+      defaultProviders: { default: 'seed' },
+      providerCatalogPartial: false,
+    }, runtimeKey);
+    expect(queryClient.getQueryData(providerCatalogQueryOptions('/workspace/project', runtimeKey).queryKey)).toEqual({
+      schemaVersion: 1,
+      providers: [{ id: 'seed', name: 'Seed', models: { '0': { id: 'model', name: 'Model', variants: { fast: {} } } } }],
+      default: { default: 'seed' },
+      partial: false,
+    });
+    const warmCatalog = queryClient.getQueryData(providerCatalogQueryOptions('/workspace/project', runtimeKey).queryKey);
+    seedProviderCatalogQuery('/workspace/project', {
+      providers: [{ id: 'replacement', name: 'Replacement', models: [{ id: 'replacement-model', name: 'Replacement model' }] }],
+      defaultProviders: { default: 'replacement' },
+      providerCatalogPartial: false,
+    }, runtimeKey);
+    expect(queryClient.getQueryData(providerCatalogQueryOptions('/workspace/project', runtimeKey).queryKey)).toEqual(warmCatalog);
+
+    const coldPartialKey = providerCatalogQueryOptions('/workspace/cold-partial', runtimeKey).queryKey;
+    seedProviderCatalogQuery('/workspace/cold-partial', { providers: [], defaultProviders: {}, providerCatalogPartial: true }, runtimeKey);
+    expect(queryClient.getQueryData(coldPartialKey)).toBe(undefined);
   });
 
   test('Provider Catalog 顶层 schema 失效时失败关闭', async () => {

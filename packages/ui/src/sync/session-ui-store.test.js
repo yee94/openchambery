@@ -392,6 +392,55 @@ describe('openNewSessionDraft project binding', () => {
     expect(useProjectsStore.getState().activeProjectId).toBe(createdProject?.id);
   });
 
+  test('new draft activation explicitly requests a Provider refresh', async () => {
+    const originalActivateDirectory = useConfigStore.getState().activateDirectory;
+    const calls = [];
+    useConfigStore.setState({ activateDirectory: async (...args) => { calls.push(args); } });
+    try {
+      useSessionUIStore.getState().openNewSessionDraft({ selectedProjectId: projectA.id });
+      await new Promise((resolve) => setTimeout(resolve, 0));
+      expect(calls).toEqual([[projectA.path, { refreshProviders: true, source: 'newSessionDraft' }]]);
+    } finally {
+      useConfigStore.setState({ activateDirectory: originalActivateDirectory });
+    }
+  });
+
+  test('applies defaults only for the latest completed draft activation', async () => {
+    const originalActivateDirectory = useConfigStore.getState().activateDirectory;
+    const originalApplyDefaultModelAgentSelection = useConfigStore.getState().applyDefaultModelAgentSelection;
+    const activations = new Map();
+    const appliedDirectories = [];
+    useConfigStore.setState({
+      activateDirectory: (directory) => {
+        useConfigStore.setState({ activeDirectoryKey: directory ?? '' });
+        const activation = { resolve: undefined, promise: undefined };
+        activation.promise = new Promise((resolve) => { activation.resolve = resolve; });
+        activations.set(directory, activation);
+        return activation.promise;
+      },
+      applyDefaultModelAgentSelection: () => {
+        appliedDirectories.push(useConfigStore.getState().activeDirectoryKey);
+      },
+    });
+
+    try {
+      useSessionUIStore.getState().openNewSessionDraft({ selectedProjectId: projectA.id });
+      useSessionUIStore.getState().openNewSessionDraft({ selectedProjectId: projectB.id });
+      activations.get(projectA.path).resolve();
+      await new Promise((resolve) => setTimeout(resolve, 0));
+      expect(appliedDirectories).toEqual([]);
+
+      activations.get(projectB.path).resolve();
+      await new Promise((resolve) => setTimeout(resolve, 0));
+      expect(appliedDirectories).toEqual([projectB.path]);
+    } finally {
+      useConfigStore.setState({
+        activateDirectory: originalActivateDirectory,
+        applyDefaultModelAgentSelection: originalApplyDefaultModelAgentSelection,
+      });
+    }
+  });
+
   test('does not create a duplicate project when a deep-link directory is already covered', () => {
     useSessionUIStore.getState().openNewSessionDraft({
       directoryOverride: '/projects/beta/src',
