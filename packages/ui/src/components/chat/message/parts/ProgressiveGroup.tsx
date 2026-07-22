@@ -610,7 +610,9 @@ const StaticToolRowInner: React.FC<{
 
             const skill = skillByName.get(name);
             const rawPath = skill?.path || getToolSkillDirectory(activity);
-            const path = rawPath ? resolveSkillFilePath(rawPath) : '';
+            // Built-in skills are not backed by a real file path.
+            if (!rawPath || rawPath === '<built-in>') continue;
+            const path = resolveSkillFilePath(rawPath);
             if (!path || entries.some((entry) => entry.name === name && entry.path === path)) continue;
             entries.push({ name, path });
         }
@@ -668,11 +670,24 @@ const StaticToolRowInner: React.FC<{
     }, [currentDirectory, runtime]);
 
     const handleSkillClick = React.useCallback((skillPath: string) => {
-        if (!skillPath) {
+        const absolutePath = normalizeFilePath(skillPath);
+        if (!absolutePath) {
             return;
         }
-        const uiStore = useUIStore.getState();
-        uiStore.openContextFile(currentDirectory || getDirectoryForFilePath('', skillPath), skillPath);
+
+        const openInContext = () => {
+            const uiStore = useUIStore.getState();
+            const contextDirectory = currentDirectory || getDirectoryForFilePath('', absolutePath);
+            uiStore.openContextFile(contextDirectory, absolutePath);
+        };
+
+        // Skill files are commonly outside the active workspace; mint a grant
+        // first so the right-hand FilesView can read them without a 403.
+        if (currentDirectory && !isFilePathWithinDirectory(absolutePath, currentDirectory)) {
+            void ensureOutsideFileGrantForDesktop(absolutePath, currentDirectory).then(openInContext);
+            return;
+        }
+        openInContext();
     }, [currentDirectory]);
 
     const normalizedToolName = toolName.toLowerCase();

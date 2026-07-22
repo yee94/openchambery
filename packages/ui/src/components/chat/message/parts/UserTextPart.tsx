@@ -8,11 +8,13 @@ import { useInstalledSkillsQuery } from '@/queries/installedSkillsQueries';
 import { Icon } from "@/components/icon/Icon";
 import type { IconName } from '@/components/icon/icons';
 import { useEffectiveDirectory } from '@/hooks/useEffectiveDirectory';
-import { getDirectoryForFilePath } from '@/lib/path-utils';
+import { ensureOutsideFileGrantForDesktop } from '@/lib/outsideFileGrants';
+import { getDirectoryForFilePath, isFilePathWithinDirectory, normalizeFilePath } from '@/lib/path-utils';
 import { useI18n } from '@/lib/i18n';
-import { COMPOSER_TRIGGER_ICON_SIZE_CLASS } from '@/composer/inline-visual';
+import { COMPOSER_TRIGGER_ICON_LABEL_GAP, COMPOSER_TRIGGER_ICON_SIZE_CLASS, COMPOSER_TRIGGER_ICON_SLOT } from '@/composer/inline-visual';
 import { parseSessionMentionInstruction } from '@/composer/delivery';
 import { isSyntheticPart } from '@/lib/messages/synthetic';
+import { getAllSyncSessionMap } from '@/sync/sync-refs';
 import {
     buildAgentMentionUrl,
     parseSkillHref,
@@ -51,15 +53,19 @@ const MessageReferenceChip: React.FC<{
     onOpenSkill?: (skillName: string) => void;
 }> = ({ decoration, onOpenSkill }) => {
     const triggerIconSpec = messageReferenceTriggerIconSpec(decoration);
+    // Keep icon+label as one unbreakable inline unit — no local wrap inside the chip.
+    // Optical icon→label gap only; no extra left margin, or the chip indents past neighbors.
     const content = (
         <span className={cn(
-            triggerIconSpec ? 'mx-1 inline-flex max-w-[calc(100%-0.5rem)] items-center gap-[0.4em] align-middle' : 'inline-flex items-baseline gap-0.5 align-baseline',
+            triggerIconSpec
+                ? 'mr-1 inline-flex shrink-0 items-center align-middle whitespace-nowrap'
+                : 'inline-flex items-baseline gap-0.5 align-baseline',
             decoration.className,
-        )} data-message-reference-kind={decoration.kind}>
+        )} style={triggerIconSpec ? { gap: COMPOSER_TRIGGER_ICON_LABEL_GAP } : undefined} data-message-reference-kind={decoration.kind}>
             {triggerIconSpec ? (
                 <>
                     <Icon name={triggerIconSpec.icon as IconName} className={cn(COMPOSER_TRIGGER_ICON_SIZE_CLASS, 'shrink-0')} aria-hidden="true" />
-                    <span className="min-w-0 break-all">{triggerIconSpec.label}</span>
+                    <span>{triggerIconSpec.label}</span>
                 </>
             ) : decoration.icon ? (
                 <Icon name={decoration.icon} className="relative top-[0.1em] size-[1em] shrink-0" aria-hidden="true" />
@@ -126,6 +132,7 @@ const UserTextPart: React.FC<UserTextPartProps> = ({ part, messageId, agentMenti
     const citationIcons = React.useMemo(() => buildCitationIconsFromParts(messageParts), [messageParts]);
     const sessionMentions = React.useMemo(() => {
         const byId = new Map<string, { sessionId: string; sessionLabel: string }>();
+        // Authoritative: synthetic session-mention instructions kept on sourceParts.
         for (const messagePart of messageParts ?? []) {
             if (messagePart.type !== 'text' || !isSyntheticPart(messagePart)) continue;
             const syntheticText = (messagePart as PartWithText).text;
@@ -134,13 +141,46 @@ const UserTextPart: React.FC<UserTextPartProps> = ({ part, messageId, agentMenti
                 byId.set(context.id, { sessionId: context.id, sessionLabel: context.title || context.id });
             }
         }
+        // Fallback: match visible @Title tokens against currently loaded sessions
+        // when the synthetic sidecar was stripped or never attached.
+        if (textContent.includes('@')) {
+            for (const [sessionId, session] of getAllSyncSessionMap()) {
+                const title = typeof session.title === 'string' ? session.title.trim() : '';
+                if (!title || byId.has(sessionId)) continue;
+                if (
+                    textContent.includes(`@${title}`)
+                    || textContent.includes(`@${COMPOSER_TRIGGER_ICON_SLOT}${title}`)
+                ) {
+                    byId.set(sessionId, { sessionId, sessionLabel: title });
+                }
+            }
+        }
         return Array.from(byId.values());
-    }, [messageParts]);
+    }, [messageParts, textContent]);
 
     const openSkill = React.useCallback((name: string) => {
         const skill = skillByName.get(name);
-        if (!skill?.path) return;
-        openContextFile(effectiveDirectory || getDirectoryForFilePath('', skill.path) || '/', skill.path);
+        const rawPath = typeof skill?.path === 'string' ? skill.path : '';
+        const normalizedPath = normalizeFilePath(rawPath);
+        // Built-in skills have no on-disk SKILL.md to preview.
+        if (!normalizedPath || normalizedPath === '<built-in>') return;
+
+        // Skills often live outside the active workspace (user/global skill roots).
+        // Resolve to SKILL.md when discovery returns a directory, then mint a
+        // desktop outside-file grant before opening in the right-hand panel.
+        const skillPath = normalizedPath.toLowerCase().endsWith('/skill.md')
+            ? normalizedPath
+            : `${normalizedPath}/SKILL.md`;
+        const contextDirectory = effectiveDirectory || getDirectoryForFilePath('', skillPath) || '/';
+        const open = () => {
+            openContextFile(contextDirectory, skillPath);
+        };
+
+        if (effectiveDirectory && !isFilePathWithinDirectory(skillPath, effectiveDirectory)) {
+            void ensureOutsideFileGrantForDesktop(skillPath, effectiveDirectory).then(open);
+            return;
+        }
+        open();
     }, [effectiveDirectory, openContextFile, skillByName]);
 
     const hasActiveSelectionInElement = React.useCallback((element: HTMLElement): boolean => {

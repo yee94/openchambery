@@ -1995,6 +1995,8 @@ export const dict: Record<I18nKey, string> = {
   "chat.messageBody.actions.revert": "Volver desde aquí",
   "chat.messageBody.actions.forkAria": "Bifurcar desde este mensaje",
   "chat.messageBody.actions.fork": "Bifurcar desde aquí",
+  "chat.messageBody.actions.openSourceSessionAria": "Abrir sesión original",
+  "chat.messageBody.actions.openSourceSession": "Abrir sesión original",
   "chat.messageBody.actions.copyMessageAria": "Copiar texto del mensaje",
   "chat.messageBody.actions.copyMessage": "Copiar mensaje",
   "chat.messageBody.actions.openPreviewAria": "Abrir vista previa",

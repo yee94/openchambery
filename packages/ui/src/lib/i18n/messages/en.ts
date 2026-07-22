@@ -2017,6 +2017,8 @@ export const dict = {
   'chat.messageBody.actions.revert': 'Revert from here',
   'chat.messageBody.actions.forkAria': 'Fork from this message',
   'chat.messageBody.actions.fork': 'Fork from here',
+  'chat.messageBody.actions.openSourceSessionAria': 'Open original session',
+  'chat.messageBody.actions.openSourceSession': 'Open original session',
   'chat.messageBody.actions.copyMessageAria': 'Copy message text',
   'chat.messageBody.actions.copyMessage': 'Copy message',
   'chat.messageBody.actions.openPreviewAria': 'Open preview',

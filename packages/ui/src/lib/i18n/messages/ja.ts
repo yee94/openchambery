@@ -2013,6 +2013,8 @@ export const dict: Record<I18nKey, string> = {
   'chat.messageBody.actions.revert': 'ここから元に戻す',
   'chat.messageBody.actions.forkAria': 'このメッセージからフォーク',
   'chat.messageBody.actions.fork': 'ここからフォーク',
+  'chat.messageBody.actions.openSourceSessionAria': '元のセッションを開く',
+  'chat.messageBody.actions.openSourceSession': '元のセッションを開く',
   'chat.messageBody.actions.copyMessageAria': 'メッセージテキストをコピー',
   'chat.messageBody.actions.copyMessage': 'メッセージをコピー',
   'chat.messageBody.actions.openPreviewAria': 'プレビューを開く',

@@ -44,6 +44,38 @@ test('Android sharing shortcut contract declares its target and category', async
   assert.match(receiver, /Intent\.EXTRA_SHORTCUT_ID/);
 });
 
+test('Android share drafts commit only after confirmation and release only after acknowledgement', async () => {
+  const [store, plugin, activity] = await Promise.all([
+    source('android/app/src/main/java/com/openchamber/app/OpenChamberShareStore.java'),
+    source('android/app/src/main/java/com/openchamber/app/OpenChamberSharePlugin.java'),
+    source('android/app/src/main/java/com/openchamber/app/MainActivity.java'),
+  ]);
+  assert.match(store, /static JSONObject prepareDraft\(Context context, String draftID, JSONObject target, String text, java\.util\.List<Uri> images\)/);
+  assert.match(store, /static String confirmDraft\(Context context, String draftID, String text\)/);
+  assert.match(store, /new File\(context\.getFilesDir\(\), "openchamber-share-drafts"\)/);
+  assert.match(store, /new JSONObject\(\)\.put\("version", 1\)\.put\("operationID", draftID\)/);
+  assert.match(store, /\.put\("source", "android-share"\)/);
+  assert.match(store, /static void cancelDraft[\s\S]*delete\(new File\(drafts\(context\), draftID\)\)/);
+  assert.doesNotMatch(store, /cancelDraft[\s\S]*delete\(new File\(inbox\(context\), draftID\)\)/);
+  assert.match(store, /CANCELLED_DRAFTS\.add\(draftID\)/);
+  assert.match(store, /CANCELLED_DRAFTS\.remove\(draftID\)/);
+  assert.match(store, /releaseAcknowledged[\s\S]*\.has\("consumedAt"\)/);
+  assert.match(store, /readJSON\(committedDraft\)\.put\("committed", true\)/);
+  assert.match(plugin, /OpenChamberShareStore\.releaseAcknowledged\(getContext\(\), id\)/);
+  assert.match(activity, /intent\.setAction\(null\); intent\.removeExtra\("operationID"\);/);
+});
+
+test('Android share confirmation resumes committed drafts and the delivery bridge accepts the native image limit', async () => {
+  const [receiver, bridge] = await Promise.all([
+    source('android/app/src/main/java/com/openchamber/app/ShareReceiverActivity.java'),
+    source('../ui/src/apps/MobileShareBridge.tsx'),
+  ]);
+  assert.match(receiver, /draft\.optBoolean\("committed"\)[\s\S]*completeShare\(\)/);
+  assert.doesNotMatch(receiver, /COMMITTING\.contains|CANCELLING\.add/);
+  assert.match(receiver, /destroyed \|\| terminalNavigation/);
+  assert.match(bridge, /envelope\.attachments\.length > 10/);
+});
+
 test('iOS sharing resolves public.image files to concrete, signature-verified MIME types', async () => {
   const [controller, store] = await Promise.all([
     source('ios/App/OpenChamberShareExtension/ShareViewController.swift'),
@@ -71,6 +103,7 @@ test('iOS sharing collects compose text, attributed content, URLs, and plain tex
   assert.match(controller, /extensionItems\.compactMap \{ \$0\.attributedContentText\?\.string \}/);
   assert.match(controller, /hasItemConformingToTypeIdentifier\(UTType\.url\.identifier\)/);
   assert.match(controller, /loadItem\(forTypeIdentifier: UTType\.url\.identifier, options: nil\)/);
+  assert.doesNotMatch(controller, /hasItemConformingToTypeIdentifier\(UTType\.image\.identifier\) \{ continue \}/);
   assert.match(controller, /hasItemConformingToTypeIdentifier\(UTType\.plainText\.identifier\)/);
   assert.match(controller, /loadItem\(forTypeIdentifier: UTType\.plainText\.identifier, options: nil\)/);
   assert.match(controller, /\[self\.contentText\] \+ attributedText \+ loadedText/);

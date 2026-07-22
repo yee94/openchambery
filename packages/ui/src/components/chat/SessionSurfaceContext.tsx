@@ -22,6 +22,11 @@ export interface SessionSurfaceContextValue {
     navigateSession?: (sessionId: string, directory: string) => void;
     /** Hosted surfaces (Assistant) restore into their own draft partition. */
     onRevertMessage?: (messageId: string) => Promise<void>;
+    /**
+     * Hosted surfaces (Assistant) jump from a stitched reply into the underlying
+     * OpenCode session so the user can continue that turn outside the Assistant tab.
+     */
+    openSourceSession?: (sessionId: string, directory: string) => void;
 }
 
 export const PRIMARY_SESSION_SURFACE_CAPABILITIES: SessionSurfaceCapabilities = {
@@ -64,6 +69,7 @@ export const getSessionSurfaceActionAvailability = (surface: SessionSurfaceConte
     reviewTransfer: surface.capabilities.mutateSession,
     timeline: surface.capabilities.openTimeline,
     textSelectionMutation: surface.capabilities.textSelectionActions,
+    openSourceSession: Boolean(surface.openSourceSession),
 });
 
 export const navigateNestedSession = (

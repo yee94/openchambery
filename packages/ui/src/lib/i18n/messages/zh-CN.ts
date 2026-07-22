@@ -1983,6 +1983,8 @@ export const dict: Record<I18nKey, string> = {
   'chat.messageBody.actions.revert': '从此处回退',
   'chat.messageBody.actions.forkAria': '从这条消息分叉',
   'chat.messageBody.actions.fork': '从此处分叉',
+  'chat.messageBody.actions.openSourceSessionAria': '打开原始会话',
+  'chat.messageBody.actions.openSourceSession': '打开原始会话',
   'chat.messageBody.actions.copyMessageAria': '复制消息文本',
   'chat.messageBody.actions.copyMessage': '复制消息',
   'chat.messageBody.actions.openPreviewAria': '打开预览',

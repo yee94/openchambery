@@ -2530,7 +2530,7 @@ const MobileShell: React.FC<{ onActiveConnectionDeleted: () => void }> = ({ onAc
         label: t('sessions.sidebar.header.actions.scheduledTasks'),
         onSelect: () => setScheduledTasksDialogOpen(true),
       });
-      if (assistantCapability.data?.supported) items.push({
+      if (assistantCapability.data?.supported && assistantCapability.data?.enabled) items.push({
         key: 'assistant',
         icon: 'ai-agent',
         label: t('assistants.title'),
@@ -2569,7 +2569,7 @@ const MobileShell: React.FC<{ onActiveConnectionDeleted: () => void }> = ({ onAc
       });
       return items;
     },
-    [assistantCapability.data?.supported, dirtyChangeCount, isIPad, openChangesSurface, openFilesSurface, openNewSessionDraft, setActiveMainTab, setScheduledTasksDialogOpen, showCapacitorOnlyFeatures, showUpdateItem, t],
+    [assistantCapability.data?.enabled, assistantCapability.data?.supported, dirtyChangeCount, isIPad, openChangesSurface, openFilesSurface, openNewSessionDraft, setActiveMainTab, setScheduledTasksDialogOpen, showCapacitorOnlyFeatures, showUpdateItem, t],
   );
 
   return (

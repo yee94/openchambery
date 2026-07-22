@@ -30,8 +30,18 @@ export interface ComposerTriggerIconVisual {
 }
 
 export const COMPOSER_TRIGGER_ICON_SLOT = DRAFT_COMPOSER_TRIGGER_ICON_SLOT;
-export const COMPOSER_TRIGGER_ICON_END_INSET = '0.4em';
-export const COMPOSER_TRIGGER_ICON_SIZE_CLASS = 'size-[1.125em]';
+/**
+ * Shared optical gap between the painted trigger icon and the visible label.
+ * Composer reserved-slot overlays use this as the icon's end inset inside the
+ * `/`+em-space advance. Sent-message chips use the same value as flex `gap`.
+ */
+export const COMPOSER_TRIGGER_ICON_LABEL_GAP = '0.15em';
+/** @deprecated Use COMPOSER_TRIGGER_ICON_LABEL_GAP — reserved-slot inset is the shared gap. */
+export const COMPOSER_TRIGGER_ICON_END_INSET = COMPOSER_TRIGGER_ICON_LABEL_GAP;
+/** Shared Composer + sent-message trigger-icon size (matches text em box). */
+export const COMPOSER_TRIGGER_ICON_SIZE_CLASS = 'size-[1em]';
+/** Small downward nudge from em-box center; keep near 0 so the icon stays with the text. */
+export const COMPOSER_TRIGGER_ICON_OPTICAL_NUDGE_Y = '0.02em';
 
 const sourceText = ({ trigger, label, suffix = '' }: Pick<ComposerTriggerIconSpec, 'trigger' | 'label' | 'suffix'>): string => (
     `${trigger}${label}${suffix}`

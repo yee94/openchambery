@@ -8,7 +8,16 @@ import { assistantContractFixtures } from './contracts.js';
 
 const require = createRequire(import.meta.url);
 const root = () => fs.mkdtempSync(path.join(os.tmpdir(), 'assistants-'));
-const setup = (directory = root(), client = {}, options = {}) => createAssistantsService({ dbPath: path.join(directory, 'assistants.sqlite'), dataDir: directory, getAllowedRoots: () => [directory], buildOpenCodeUrl: () => 'http://127.0.0.1:1', getOpenCodeAuthHeaders: () => ({}), clientFactory: () => ({ session: { create: async () => ({ data: { id: crypto.randomUUID() } }), get: async () => ({ data: { id: 'present' } }), promptAsync: async () => ({ data: { info: { id: 'msg_1' } } }), summarize: async () => ({ data: true }), ...client } }), ...options });
+// Behavioral tests enable the global switch after boot; pass enabled:false to assert the fresh-install default.
+const setup = (directory = root(), client = {}, options = {}) => {
+  const { enabled = true, ...serviceOptions } = options;
+  const service = createAssistantsService({ dbPath: path.join(directory, 'assistants.sqlite'), dataDir: directory, getAllowedRoots: () => [directory], buildOpenCodeUrl: () => 'http://127.0.0.1:1', getOpenCodeAuthHeaders: () => ({}), clientFactory: () => ({ session: { create: async () => ({ data: { id: crypto.randomUUID() } }), get: async () => ({ data: { id: 'present' } }), promptAsync: async () => ({ data: { info: { id: 'msg_1' } } }), summarize: async () => ({ data: true }), ...client } }), ...serviceOptions });
+  if (enabled) {
+    const snapshot = service.snapshot();
+    if (!snapshot.enabled) service.setEnabled({ enabled: true, expectedRevision: snapshot.revision });
+  }
+  return service;
+};
 const assistantInput = { name: 'A', providerID: 'p', modelID: 'm' };
 
 describe('assistants service', () => {
@@ -107,6 +116,24 @@ describe('assistants service', () => {
     const service = setup(); const assistant = service.createAssistant(assistantInput); const payload = { messageID: 'client_share', parts: [{ type: 'text', text: 'shared' }] }; const first = await service.share(assistant.id, { operationID: 'share_1', payload }); const second = await service.share(assistant.id, { operationID: 'share_1', payload }); expect(second).toEqual(first); expect(service.shareOperation('share_1')).toMatchObject({ sessionID: expect.any(String), messageID: 'client_share', state: 'running', phase: 'submitted', attempt: 1 }); expect(first).not.toHaveProperty('binding'); expect(Object.keys(first).sort()).toEqual(Object.keys(assistantContractFixtures.shareOperation).sort()); service.close();
   });
 
+  it('reuses one stateless share reservation for sequential duplicate requests', async () => {
+    let creates = 0; let prompts = 0; const service = setup(root(), { create: async () => ({ data: { id: `ses_${++creates}` } }), promptAsync: async () => { prompts++; return { response: { status: 204 } }; } }); const assistant = service.createAssistant({ ...assistantInput, mode: 'stateless' }); const payload = { messageID: 'stateless-sequential-message', parts: [{ type: 'text', text: 'shared' }] };
+    const first = await service.share(assistant.id, { operationID: 'stateless-sequential', payload }); const second = await service.share(assistant.id, { operationID: 'stateless-sequential', payload });
+    expect(creates).toBe(1); expect(prompts).toBe(1); expect(second.sessionID).toBe(first.sessionID); service.close();
+  });
+
+  it('reuses one stateless share reservation for concurrent duplicate requests', async () => {
+    let creates = 0; let prompts = 0; const service = setup(root(), { create: async () => ({ data: { id: `ses_${++creates}` } }), promptAsync: async () => { prompts++; return { response: { status: 204 } }; } }); const assistant = service.createAssistant({ ...assistantInput, mode: 'stateless' }); const payload = { messageID: 'stateless-concurrent-message', parts: [{ type: 'text', text: 'shared' }] };
+    const [first, second] = await Promise.all([service.share(assistant.id, { operationID: 'stateless-concurrent', payload }), service.share(assistant.id, { operationID: 'stateless-concurrent', payload })]);
+    expect(creates).toBe(1); expect(prompts).toBe(1); expect(second.sessionID).toBe(first.sessionID); service.close();
+  });
+
+  it('rejects conflicting stateless share payloads without creating another session', async () => {
+    let creates = 0; let prompts = 0; const service = setup(root(), { create: async () => ({ data: { id: `ses_${++creates}` } }), promptAsync: async () => { prompts++; return { response: { status: 204 } }; } }); const assistant = service.createAssistant({ ...assistantInput, mode: 'stateless' });
+    await service.share(assistant.id, { operationID: 'stateless-conflict', payload: { messageID: 'stateless-conflict-message', parts: [{ type: 'text', text: 'first' }] } }); await expect(service.share(assistant.id, { operationID: 'stateless-conflict', payload: { messageID: 'stateless-conflict-message', parts: [{ type: 'text', text: 'second' }] } })).rejects.toMatchObject({ code: 'idempotency_conflict' });
+    expect(creates).toBe(1); expect(prompts).toBe(1); service.close();
+  });
+
   it('allows one claimant to submit a shared operation during concurrent admission', async () => {
     let release; let prompts = 0; const wait = new Promise((resolve) => { release = resolve; }); const service = setup(root(), { promptAsync: async () => { prompts++; await wait; return { response: { status: 204 } }; } }); const assistant = service.createAssistant(assistantInput); const payload = { messageID: 'client_concurrent', parts: [{ type: 'text', text: 'shared' }] };
     const first = service.share(assistant.id, { operationID: 'share_concurrent', payload }); const second = await service.share(assistant.id, { operationID: 'share_concurrent', payload }); expect(second).toMatchObject({ state: 'running', phase: 'submitting', attempt: 1 }); expect(prompts).toBe(1); release(); await first; service.close();
@@ -134,6 +161,13 @@ describe('assistants service', () => {
   it('uses the workspace directory when submitting shares', async () => {
     const directory = root(); const workspace = path.join(directory, 'workspace'); fs.mkdirSync(workspace); let prompt; const service = setup(directory, { promptAsync: async (input) => { prompt = input; return { response: { status: 204 } }; } }); const assistant = service.createAssistant({ ...assistantInput, workspacePath: workspace });
     await service.share(assistant.id, { operationID: 'share_directory', payload: { messageID: 'client_share_directory', parts: [{ type: 'text', text: 'shared' }] } }); expect(prompt.directory).toBe(fs.realpathSync(workspace)); service.close();
+  });
+
+  it('defaults the global Assistants switch to off and preserves a persisted on value', async () => {
+    const fresh = setup(root(), {}, { enabled: false }); expect(await fresh.capability()).toMatchObject({ supported: true, enabled: false, revision: 0 }); expect(fresh.snapshot()).toMatchObject({ enabled: false, revision: 0 }); expect(fresh.setEnabled({ enabled: true, expectedRevision: 0 })).toMatchObject({ enabled: true, revision: 1 }); fresh.close();
+    const directory = root(); const Database = require('better-sqlite3'); const db = new Database(path.join(directory, 'assistants.sqlite'));
+    db.exec('CREATE TABLE assistant_meta (key TEXT PRIMARY KEY, value TEXT NOT NULL)'); db.prepare("INSERT INTO assistant_meta VALUES ('enabled','1')").run(); db.prepare("INSERT INTO assistant_meta VALUES ('revision','3')").run(); db.prepare("INSERT INTO assistant_meta VALUES ('schema_version','8')").run(); db.close();
+    const persisted = setup(directory, {}, { enabled: false }); expect(await persisted.capability()).toMatchObject({ supported: true, enabled: true, revision: 3 }); expect(persisted.snapshot()).toMatchObject({ enabled: true, revision: 3 }); persisted.close();
   });
 
   it('permits a disabled assistant to be re-enabled through an editable CAS patch', async () => {

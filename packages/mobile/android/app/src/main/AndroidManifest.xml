@@ -26,7 +26,7 @@
                 <category android:name="android.intent.category.LAUNCHER" />
             </intent-filter>
         </activity>
-        <activity android:name=".ShareReceiverActivity" android:exported="true" android:theme="@style/AppTheme.NoActionBarLaunch">
+        <activity android:name=".ShareReceiverActivity" android:exported="true" android:theme="@style/AppTheme.ShareReceiver">
             <meta-data android:name="android.app.shortcuts" android:resource="@xml/share_shortcuts" />
             <intent-filter>
                 <action android:name="android.intent.action.SEND" />

@@ -4,4 +4,25 @@
     <string name="title_activity_main">OpenChamber</string>
     <string name="package_name">com.openchamber.app</string>
     <string name="custom_url_scheme">com.openchamber.app</string>
+    <string name="share_title">Share with OpenChamber</string>
+    <string name="share_assistant">Assistant</string>
+    <string name="share_missing_target">Choose a default share assistant in OpenChamber.</string>
+    <string name="share_message">Message</string>
+    <string name="share_message_hint">Add a message</string>
+    <string name="share_cancel">Cancel</string>
+    <string name="share_send">Send</string>
+    <string name="share_retry">Retry</string>
+    <string name="share_sending_button">Sending…</string>
+    <string name="share_preparing">Preparing shared content…</string>
+    <string name="share_sending">Sending to OpenChamber…</string>
+    <string name="share_cancelling">Removing shared content…</string>
+    <string name="share_error_preparing">Shared content could not be prepared. Try again.</string>
+    <string name="share_error_sending">Shared content could not be sent. Review it and try again.</string>
+    <string name="share_openchamber_mark">OpenChamber app icon</string>
+    <string name="share_assistant_avatar">%1$s avatar</string>
+    <string name="share_image_preview">Shared image %1$d of %2$d</string>
+    <plurals name="share_images">
+        <item quantity="one">%d image</item>
+        <item quantity="other">%d images</item>
+    </plurals>
 </resources>

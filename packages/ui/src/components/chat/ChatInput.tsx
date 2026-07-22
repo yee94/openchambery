@@ -149,7 +149,7 @@ import { decorateComposerReference, materializeComposerDocument, serializeCompos
 import { useComposerController } from '@/composer/use-composer-controller';
 import { buildComposerSemanticParts, dedupeDeliveryAttachments } from '@/composer/delivery';
 import type { ComposerReferenceSemantic } from '@/composer/extensions';
-import { COMPOSER_TRIGGER_ICON_SLOT, composerTriggerIconVisual } from '@/composer/inline-visual';
+import { COMPOSER_TRIGGER_ICON_SLOT, composerTriggerIconDisplay, composerTriggerIconVisual } from '@/composer/inline-visual';
 import { buildAssistantQueueDeliveryParts, buildAssistantQueueSyntheticSidecar, buildSyntheticDeliveryParts, compileChatComposerDelivery, legacyTextToAuthoredPlan } from './chatComposerDelivery';
 import { queueModeAllowsMutations } from './queuedMessageChipsState';
 
@@ -1597,7 +1597,14 @@ const ChatInputRuntime: React.FC<ChatInputProps> = ({ onOpenSettings, scrollToBo
             ...composerCommandRanges,
             ...composerSnippetRanges,
             ...attachmentCitationRanges,
-            ...composerDocument.references.map((reference): HighlightRange => ({ start: reference.start, end: reference.end, ...decorateComposerReference(reference) })),
+            // Authoritative reference decorations win over slash rescans so
+            // reserved-slot skills/sessions keep their metric-safe icon placement.
+            ...composerDocument.references.map((reference): HighlightRange => ({
+                start: reference.start,
+                end: reference.end,
+                priority: 103,
+                ...decorateComposerReference(reference),
+            })),
         ];
         return buildHighlightParts(message, ranges);
     }, [attachmentCitationRanges, composerCommandRanges, composerSnippetRanges, composerMentionRanges, composerDocument.references, inputMode, message]);
@@ -4024,7 +4031,7 @@ const ChatInputRuntime: React.FC<ChatInputProps> = ({ onOpenSettings, scrollToBo
                     id: `session:${session.id}:${createUuid()}`,
                     kind: 'session',
                     sessionId: session.id,
-                    display: `@${sessionTitle}`,
+                    display: composerTriggerIconDisplay({ trigger: '@', icon: 'chat-thread', label: sessionTitle }),
                 };
                 const inserted = insertReference(mentionStart, cursorPosition, sessionReference, { inlineBoundaries: true });
                 requestAnimationFrame(() => {
@@ -4076,7 +4083,7 @@ const ChatInputRuntime: React.FC<ChatInputProps> = ({ onOpenSettings, scrollToBo
             id: `skill:${skill.name}:${createUuid()}`,
             kind: 'skill',
             skillName: skill.name,
-            display: `/${skill.name}`,
+            display: composerTriggerIconDisplay({ trigger: '/', icon: 'book-open', label: skill.name }),
         })) setSkillQuery('');
     };
 
@@ -4112,7 +4119,7 @@ const ChatInputRuntime: React.FC<ChatInputProps> = ({ onOpenSettings, scrollToBo
                 id: `skill:${command.name}:${createUuid()}`,
                 kind: 'skill',
                 skillName: command.name,
-                display: commandText,
+                display: composerTriggerIconDisplay({ trigger: '/', icon: 'book-open', label: command.name }),
             })) setCommandQuery('');
             return;
         }
@@ -4123,7 +4130,7 @@ const ChatInputRuntime: React.FC<ChatInputProps> = ({ onOpenSettings, scrollToBo
                 kind: 'command',
                 commandName: command.name,
                 reference: command.reference ?? command.name,
-                display: commandText,
+                display: composerTriggerIconDisplay({ trigger: '/', icon: 'command', label: command.name }),
             })) setCommandQuery('');
             return;
         }

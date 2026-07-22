@@ -109,6 +109,7 @@ describe('SessionSurfaceContext', () => {
             reviewTransfer: false,
             timeline: false,
             textSelectionMutation: false,
+            openSourceSession: false,
         });
     });
 
@@ -126,5 +127,22 @@ describe('SessionSurfaceContext', () => {
 
         expect(surface.onRevertMessage).toBe(onRevertMessage);
         expect(getSessionSurfaceActionAvailability(surface).revert).toBe(true);
+    });
+
+    test('exposes openSourceSession only when the host provides a jump handler', () => {
+        const openSourceSession = () => {};
+        const surface: SessionSurfaceContextValue = {
+            kind: 'embedded',
+            surfaceId: 'assistant:test',
+            sessionId: 'ses_test',
+            directory: '/workspace',
+            active: true,
+            capabilities: PRIMARY_SESSION_SURFACE.capabilities,
+            openSourceSession,
+        };
+
+        expect(surface.openSourceSession).toBe(openSourceSession);
+        expect(getSessionSurfaceActionAvailability(surface).openSourceSession).toBe(true);
+        expect(getSessionSurfaceActionAvailability(PRIMARY_SESSION_SURFACE).openSourceSession).toBe(false);
     });
 });

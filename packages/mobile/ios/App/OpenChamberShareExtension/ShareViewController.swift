@@ -395,7 +395,6 @@ class ShareViewController: UIViewController, UITextViewDelegate {
         var failure: Error?
 
         for (index, provider) in providers.enumerated() {
-            if provider.hasItemConformingToTypeIdentifier(UTType.image.identifier) { continue }
             if provider.hasItemConformingToTypeIdentifier(UTType.url.identifier) {
                 group.enter()
                 provider.loadItem(forTypeIdentifier: UTType.url.identifier, options: nil) { item, _ in

@@ -24,7 +24,10 @@ describe('Assistant UI product contract', () => {
     const sidebarMenu = sidebar.slice(sidebar.indexOf('const topContent ='), sidebar.indexOf('const isInlineEditing'));
     expect(sidebarMenu.indexOf('sessions.scheduledTasks.dialog.actions.newTask')).toBeLessThan(sidebarMenu.indexOf('sessions.sidebar.header.actions.scheduledTasks'));
     expect(sidebarMenu.indexOf('sessions.sidebar.header.actions.scheduledTasks')).toBeLessThan(sidebarMenu.indexOf('t("assistants.title")'));
-    expect(sidebarMenu.slice(0, sidebarMenu.indexOf('sessions.sidebar.header.actions.scheduledTasks'))).not.toContain('assistantCapability.data?.supported ? <Button');
+    // Product entry only appears when the host supports Assistants and the global switch is on.
+    expect(sidebarMenu).toContain('assistantCapability.data?.supported && assistantCapability.data?.enabled ? <Button');
+    expect(sidebarMenu.slice(0, sidebarMenu.indexOf('sessions.sidebar.header.actions.scheduledTasks'))).not.toContain('assistantCapability.data?.supported && assistantCapability.data?.enabled ? <Button');
+    expect(mobile).toContain('assistantCapability.data?.supported && assistantCapability.data?.enabled');
     expect(mobile.indexOf("key: 'scheduled'")).toBeLessThan(mobile.indexOf("key: 'assistant'"));
   });
 
@@ -218,6 +221,23 @@ describe('Assistant UI product contract', () => {
     expect(conversation).toContain('PRIMARY_SESSION_SURFACE_CAPABILITIES');
   });
 
+  test('disables edit/revert for stateless Assistants and jumps replies into the source session', async () => {
+    const [conversation, sessionSurface, messageBody] = await Promise.all([
+      read('AssistantConversationSurface.tsx'),
+      read('../chat/SessionSurfaceContext.tsx'),
+      read('../chat/message/MessageBody.tsx'),
+    ]);
+    expect(conversation).toContain("const mutateSession = assistant.mode === 'continuous'");
+    expect(conversation).toContain('mutateSession,');
+    expect(conversation).toContain('openSourceSession');
+    expect(conversation).toContain("setActiveMainTab('chat')");
+    expect(conversation).toContain('setCurrentSession(targetSessionID, targetDirectory)');
+    expect(sessionSurface).toContain('openSourceSession?: (sessionId: string, directory: string) => void');
+    expect(sessionSurface).toContain('openSourceSession: Boolean(surface.openSourceSession)');
+    expect(messageBody).toContain("t('chat.messageBody.actions.openSourceSession')");
+    expect(messageBody).toContain('sessionId={sessionId}');
+  });
+
   test('keeps compiled Assistant queue delivery and timeline reads scoped to the Assistant binding', async () => {
     const [chatInput, conversation, chatContainer, chatMessage, timeline, queueServer] = await Promise.all([
       read('../chat/ChatInput.tsx'),
@@ -328,6 +348,7 @@ describe('Assistant UI product contract', () => {
     expect(chatContainer).toContain('<StatusRowContainer');
     expect(statusRow).toContain('useAssistantStatus(currentSessionId, currentSessionDirectory)');
     expect(statusRow).toContain('surface.sessionId ?? primarySessionId');
+    expect(view).toContain('if (active && assistantID && !sessionID) void ensureAssistantSession(assistantID)');
   });
 
   test('returns from Assistant on Android back', async () => {

@@ -42,4 +42,14 @@ describe('Assistant query contract', () => {
     expect(directFetch).not.toContain('queryClient');
     expect(directFetch).not.toContain('retry');
   });
+
+  test('forces an authoritative runtime-current snapshot refresh through its exact Query key', async () => {
+    const source = await readFile(join(directory, 'assistantQueries.ts'), 'utf8');
+    const refresh = source.slice(source.indexOf('export const forceRefreshAssistantSnapshot'), source.indexOf('export const ensureAssistantSession'));
+    expect(refresh).toContain('const transport = getRuntimeTransportIdentity()');
+    expect(refresh).toContain('const generation = getRuntimeGeneration()');
+    expect(refresh).toContain('invalidateQueries({ queryKey: key.snapshot(transport), exact: true })');
+    expect(refresh).toContain('fetchQuery(assistantSnapshotQueryOptions(transport))');
+    expect(refresh.match(/assertCurrent\(transport, generation\)/g)).toHaveLength(2);
+  });
 });

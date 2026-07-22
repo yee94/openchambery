@@ -30,6 +30,13 @@ describe('getSlashTokenRange', () => {
     expect(getSlashTokenRange('path/to', 7)).toBeNull();
     expect(getSlashTokenRange('plain text', 10)).toBeNull();
   });
+
+  test('includes the reserved trigger-icon em-space in the slash token', () => {
+    const text = `before /\u2003review after`;
+    const start = text.indexOf('/');
+    const end = start + '/\u2003review'.length;
+    expect(getSlashTokenRange(text, end)).toEqual({ start, end });
+  });
 });
 
 describe('command policy', () => {

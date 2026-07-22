@@ -3,6 +3,12 @@ import type { Message, Part } from '@opencode-ai/sdk/v2';
 export interface ChatMessageEntry {
     info: Message;
     parts: Part[];
+    /**
+     * Parts before display-time synthetic filtering.
+     * Used to recover decoration context (e.g. session-mention instructions)
+     * without rendering hidden sidecar text in the bubble.
+     */
+    sourceParts?: Part[];
 }
 
 type TurnActivityKind = 'tool' | 'reasoning' | 'justification';

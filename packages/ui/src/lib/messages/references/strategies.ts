@@ -1,3 +1,4 @@
+import { DRAFT_COMPOSER_TRIGGER_ICON_SLOT } from '@/sync/input-draft-types';
 import { buildAgentHref, buildSkillHref } from '@/lib/messages/inlineMessageLinks';
 import type {
     MessageReferenceDecoration,
@@ -13,6 +14,8 @@ const CANONICAL_SKILL_PATTERN = /\[skill:([A-Za-z0-9][A-Za-z0-9_-]*)\]/g;
 const CANONICAL_COMMAND_PATTERN = /\[command:([^\]\r\n]+)\]/g;
 const SESSION_TOKEN_PATTERN = /(^|[\s([{])(@session:([A-Za-z0-9_-]+))(?=$|[\s)\]},.!?;:])/g;
 const MENTION_PATTERN = /@([^\s]+)/g;
+/** Composer may persist the reserved icon slot between `@` and the session label. */
+const SESSION_VISIBLE_SLOT = DRAFT_COMPOSER_TRIGGER_ICON_SLOT;
 
 const commandNameFromReference = (reference: string): string => (
     reference.replaceAll('\\', '/').split('/').at(-1)?.replace(/\.md$/, '') ?? ''
@@ -234,24 +237,30 @@ export const sessionReferenceStrategy: MessageReferenceStrategy = {
             .filter((mention) => mention.sessionLabel.length > 0)
             .sort((left, right) => right.sessionLabel.length - left.sessionLabel.length);
         for (const mention of visibleMentions) {
-            const token = `@${mention.sessionLabel}`;
-            let start = text.indexOf(token);
-            while (start !== -1) {
-                const end = start + token.length;
-                const boundaryBefore = start === 0 || /[\s([{]/.test(text[start - 1]);
-                const boundaryAfter = end === text.length || /[\s)\]},.!?;:]/.test(text[end]);
-                const overlaps = spans.some((span) => span.start < end && span.end > start);
-                if (boundaryBefore && boundaryAfter && !overlaps) {
-                    pushSpan(spans, {
-                        start,
-                        end,
-                        kind: 'session',
-                        raw: text.slice(start, end),
-                        label: mention.sessionLabel,
-                        payload: { kind: 'session', sessionId: mention.sessionId, sessionLabel: mention.sessionLabel },
-                    });
+            // Prefer the reserved-slot form first so `@␠Label` wins over a bare `@Label` prefix.
+            const tokens = [
+                `@${SESSION_VISIBLE_SLOT}${mention.sessionLabel}`,
+                `@${mention.sessionLabel}`,
+            ];
+            for (const token of tokens) {
+                let start = text.indexOf(token);
+                while (start !== -1) {
+                    const end = start + token.length;
+                    const boundaryBefore = start === 0 || /[\s([{]/.test(text[start - 1]);
+                    const boundaryAfter = end === text.length || /[\s)\]},.!?;:]/.test(text[end]);
+                    const overlaps = spans.some((span) => span.start < end && span.end > start);
+                    if (boundaryBefore && boundaryAfter && !overlaps) {
+                        pushSpan(spans, {
+                            start,
+                            end,
+                            kind: 'session',
+                            raw: text.slice(start, end),
+                            label: mention.sessionLabel,
+                            payload: { kind: 'session', sessionId: mention.sessionId, sessionLabel: mention.sessionLabel },
+                        });
+                    }
+                    start = text.indexOf(token, end);
                 }
-                start = text.indexOf(token, end);
             }
         }
         return spans;

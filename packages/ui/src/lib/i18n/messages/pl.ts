@@ -875,6 +875,8 @@ export const dict: Record<I18nKey, string> = {
   'chat.messageBody.actions.revert': 'Cofnij od tego miejsca',
   'chat.messageBody.actions.forkAria': 'Rozwidl z tej wiadomości',
   'chat.messageBody.actions.fork': 'Rozwidl od tego miejsca',
+  'chat.messageBody.actions.openSourceSessionAria': 'Otwórz oryginalną sesję',
+  'chat.messageBody.actions.openSourceSession': 'Otwórz oryginalną sesję',
   'chat.messageBody.actions.copyMessageAria': 'Kopiuj tekst wiadomości',
   'chat.messageBody.actions.copyMessage': 'Kopiuj wiadomość',
   'chat.messageBody.actions.openPreviewAria': 'Otwórz podgląd',

@@ -106,14 +106,17 @@ interface ChatMessageProps {
     message: {
         info: Message;
         parts: Part[];
+        sourceParts?: Part[];
     };
     previousMessage?: {
         info: Message;
         parts: Part[];
+        sourceParts?: Part[];
     };
     nextMessage?: {
         info: Message;
         parts: Part[];
+        sourceParts?: Part[];
     };
     onContentChange?: (reason?: ContentChangeReason) => void;
     animationHandlers?: AnimationHandlers;
@@ -211,14 +214,20 @@ const ChatMessage: React.FC<ChatMessageProps> = ({
         }))
     );
 
+    // Prefer pre-filter sourceParts from display normalization — message.parts
+    // alone may already have session-mention synthetics stripped upstream.
+    const sourceParts = React.useMemo(
+        () => normalizeParts(message.sourceParts ?? message.parts),
+        [message.parts, message.sourceParts],
+    );
+
     const normalizedParts = React.useMemo(() => {
-        const safeParts = normalizeParts(message.parts);
         if (!isUser) {
-            return safeParts;
+            return normalizeParts(message.parts);
         }
 
-        return normalizeUserDisplayParts(safeParts, { planModeEnabled });
-    }, [isUser, message.parts, planModeEnabled]);
+        return normalizeUserDisplayParts(sourceParts, { planModeEnabled });
+    }, [isUser, message.parts, planModeEnabled, sourceParts]);
 
     const previousUserMetadata = React.useMemo(() => {
         if (isUser || !previousMessage) {
@@ -1037,7 +1046,7 @@ const ChatMessage: React.FC<ChatMessageProps> = ({
                                             <MessageBody
                                                 messageId={message.info.id}
                                                 parts={displayParts}
-                                                sourceParts={normalizedParts}
+                                                sourceParts={sourceParts}
                                                 isUser={isUser}
                                                 isMessageCompleted={isMessageCompleted}
                                                 messageFinish={messageFinish}
@@ -1074,7 +1083,7 @@ const ChatMessage: React.FC<ChatMessageProps> = ({
                                             <MessageBody
                                                 messageId={message.info.id}
                                                 parts={displayParts}
-                                                sourceParts={normalizedParts}
+                                                sourceParts={sourceParts}
                                                 isUser={isUser}
                                                 isMessageCompleted={isMessageCompleted}
                                                 messageFinish={messageFinish}
@@ -1180,6 +1189,7 @@ export default React.memo(ChatMessage, (prev, next) => {
         { info: prev.message.info, parts: prev.message.parts },
         { info: next.message.info, parts: next.message.parts }
     )
+        && prev.message.sourceParts === next.message.sourceParts
         && areOptionalRenderRelevantMessagesEqual(
             prev.previousMessage ? { info: prev.previousMessage.info, parts: prev.previousMessage.parts } : undefined,
             next.previousMessage ? { info: next.previousMessage.info, parts: next.previousMessage.parts } : undefined

@@ -804,6 +804,8 @@ interface AssistantMessageActionButtonsProps {
         onClick: () => void | Promise<void>;
     };
     ttsText: string;
+    /** Source OpenCode session for hosted Assistant replies; omitted for primary chat. */
+    sessionId?: string;
 }
 
 const AssistantMessageActionButtons = React.memo(({
@@ -812,6 +814,7 @@ const AssistantMessageActionButtons = React.memo(({
     onCopyMessage,
     reviewTransferAction,
     ttsText,
+    sessionId,
 }: AssistantMessageActionButtonsProps) => {
     const { t } = useI18n();
     const chatSurfaceMode = useChatSurfaceMode();
@@ -826,6 +829,12 @@ const AssistantMessageActionButtons = React.memo(({
     const copyHintTimeoutRef = React.useRef<number | null>(null);
     const copiedResetTimeoutRef = React.useRef<number | null>(null);
     const canCopyMessage = Boolean(onCopyMessage);
+    const canOpenSourceSession = Boolean(
+        sessionId
+        && sessionSurface.directory
+        && sessionSurfaceActions.openSourceSession
+        && chatSurfaceMode !== 'mini-chat',
+    );
 
     const clearCopyHintTimeout = React.useCallback(() => {
         if (copyHintTimeoutRef.current !== null && typeof window !== 'undefined') {
@@ -915,6 +924,17 @@ const AssistantMessageActionButtons = React.memo(({
         [hasCopyableText, isTransferringReview, reviewTransferAction]
     );
 
+    // Jump from a stitched Assistant reply into the underlying OpenCode session.
+    const handleOpenSourceSessionClick = React.useCallback(
+        (event: React.MouseEvent<HTMLButtonElement>) => {
+            event.stopPropagation();
+            event.preventDefault();
+            if (!sessionId || !sessionSurface.directory || !sessionSurface.openSourceSession) return;
+            sessionSurface.openSourceSession(sessionId, sessionSurface.directory);
+        },
+        [sessionId, sessionSurface],
+    );
+
     const readAloudTooltip = React.useMemo(() => {
         if (isTTSPlaying) {
             return t('chat.messageBody.tts.stopSpeaking');
@@ -988,6 +1008,24 @@ const AssistantMessageActionButtons = React.memo(({
                     <TooltipContent sideOffset={6}>{t('chat.messageBody.actions.copyAnswer')}</TooltipContent>
                 </Tooltip>
             )}
+            {canOpenSourceSession ? (
+                <Tooltip>
+                    <TooltipTrigger asChild>
+                        <Button
+                            type="button"
+                            variant="ghost"
+                            size="icon"
+                            className={MESSAGE_ACTION_ICON_BUTTON_CLASS}
+                            aria-label={t('chat.messageBody.actions.openSourceSessionAria')}
+                            onPointerDown={(event) => event.stopPropagation()}
+                            onClick={handleOpenSourceSessionClick}
+                        >
+                            <Icon weight={MESSAGE_ACTION_ICON_WEIGHT} name="external-link" className={MESSAGE_ACTION_ICON_CLASS} />
+                        </Button>
+                    </TooltipTrigger>
+                    <TooltipContent sideOffset={6}>{t('chat.messageBody.actions.openSourceSession')}</TooltipContent>
+                </Tooltip>
+            ) : null}
             {reviewTransferAction && chatSurfaceMode !== 'mini-chat' && sessionSurfaceActions.reviewTransfer ? (
                 <Tooltip>
                     <TooltipTrigger asChild>
@@ -1530,8 +1568,9 @@ const AssistantMessageBody = React.memo(({
             onCopyMessage={onCopyMessage}
             ttsText={assistantPlanText}
             reviewTransferAction={reviewTransferAction}
+            sessionId={sessionId}
         />
-    ), [assistantPlanText, hasCopyableText, isTouchContext, onCopyMessage, reviewTransferAction]);
+    ), [assistantPlanText, hasCopyableText, isTouchContext, onCopyMessage, reviewTransferAction, sessionId]);
 
     const renderJustificationActions = React.useCallback((activity: NonNullable<TurnGroupingContext['activityParts']>[number]) => {
         if (!showSplitAssistantMessageActions || !isSortedRenderMode) {

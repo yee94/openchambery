@@ -2019,6 +2019,8 @@ export const dict: Record<I18nKey, string> = {
   'chat.messageBody.actions.revert': '여기부터 되돌리기',
   'chat.messageBody.actions.forkAria': '이 메시지에서 분기',
   'chat.messageBody.actions.fork': '여기서 분기 시작',
+  'chat.messageBody.actions.openSourceSessionAria': '원본 세션 열기',
+  'chat.messageBody.actions.openSourceSession': '원본 세션 열기',
   'chat.messageBody.actions.copyMessageAria': '메시지 텍스트 복사',
   'chat.messageBody.actions.copyMessage': '메시지 복사',
   'chat.messageBody.actions.copyAnswer': '답변 복사',

@@ -365,13 +365,15 @@ export function findSkillMentionRanges(
 ): SkillMentionRange[] {
     const knownNames = new Set(Array.from(skillNames, (name) => name.toLowerCase()));
     const ranges: SkillMentionRange[] = [];
-    const pattern = /(^|\s)\/([a-z0-9](?:[a-z0-9-]{0,62}[a-z0-9])?)/gi;
+    // Optional em-space slot between `/` and the skill name (reserved icon chips).
+    const pattern = /(^|\s)\/(\u2003)?([a-z0-9](?:[a-z0-9-]{0,62}[a-z0-9])?)/gi;
     let match: RegExpExecArray | null;
     while ((match = pattern.exec(text)) !== null) {
-        const name = match[2] || '';
+        const slot = match[2] ?? '';
+        const name = match[3] || '';
         if (!knownNames.has(name.toLowerCase())) continue;
         const start = match.index + (match[1]?.length ?? 0);
-        ranges.push({ start, end: start + name.length + 1, name });
+        ranges.push({ start, end: start + 1 + slot.length + name.length, name });
     }
     return ranges;
 }
@@ -453,6 +455,7 @@ export function mentionRangesToHighlightRanges(mentions: MentionRange[]): Highli
         visual: mention.kind === 'session' && mention.label
             ? composerTriggerIconVisual(
                 { trigger: '@', icon: 'chat-thread', label: mention.label },
+                // Visual must match the exact source glyphs in the textarea.
                 composerTriggerIconText({ trigger: '@', icon: 'chat-thread', label: mention.label }),
             )
             : undefined,

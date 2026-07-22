@@ -88,6 +88,18 @@ describe('detectMessageReferences', () => {
         }]);
     });
 
+    test('detects reserved-slot session labels from semantic message context', () => {
+        const parts = buildMessageReferenceParts(`@\u2003MessageReferenceChip 间距调整`, {
+            sessionMentions: [{ sessionId: 'ses_1', sessionLabel: 'MessageReferenceChip' }],
+        });
+        expect(parts?.map((part) => (
+            part.type === 'text' ? part.text : [part.decoration.kind, part.decoration.label, part.decoration.icon]
+        ))).toEqual([
+            ['session', 'MessageReferenceChip', 'chat-thread'],
+            ' 间距调整',
+        ]);
+    });
+
     test('prefers skill over command when a slash name exists in both sets', () => {
         const spans = detectMessageReferences('/review', {
             skillNames: new Set(['review']),

@@ -66,12 +66,16 @@ export const getNormalizedMessageForDisplay = (message: ChatMessageEntry): ChatM
 
     const normalizedPartMessage = normalizeMessageParts(message);
     const normalizedCompactionMessage = normalizeCompactionCommandMessage(normalizedPartMessage);
-    const filteredParts = filterSyntheticParts(normalizedCompactionMessage.parts);
-    const normalized = filteredParts === normalizedCompactionMessage.parts
+    const sourceParts = normalizedCompactionMessage.parts;
+    const filteredParts = filterSyntheticParts(sourceParts);
+    // When synthetics are stripped for display, retain the pre-filter parts so
+    // session-mention (and similar) decoration can still resolve titles/ids.
+    const normalized = filteredParts === sourceParts
         ? normalizedCompactionMessage
         : {
             ...normalizedCompactionMessage,
             parts: filteredParts,
+            sourceParts,
         };
 
     normalizedMessageBySource.set(message, normalized);

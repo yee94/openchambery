@@ -4,9 +4,10 @@ import { Capacitor, registerPlugin } from '@capacitor/core';
 import { connectMobileShareConnection, loadMobileConnections, mobileConnectionKey } from './mobileConnections';
 import { getRuntimeGeneration, getRuntimeKey, getRuntimeTransportIdentity, subscribeRuntimeEndpointChanged } from '@/lib/runtime-switch';
 import { runtimeFetch } from '@/lib/runtime-fetch';
-import { AssistantShareOperationError, fetchAssistantCapability, ensureAssistantSnapshot, sendAssistantShare, waitForAssistantShare, type AssistantPart } from '@/queries/assistantQueries';
+import { AssistantShareOperationError, fetchAssistantCapability, forceRefreshAssistantSnapshot, ensureAssistantSnapshot, sendAssistantShare, waitForAssistantShare, type AssistantPart } from '@/queries/assistantQueries';
 import { openAssistant, useAssistantUIStore, type AssistantCatalogEntry } from '@/stores/useAssistantUIStore';
 import { drainMobileShareItems, retryMobileShareCleanupStage, type MobileShareDrainItem } from './mobileShareDrain';
+import { ascendingId } from '@/sync/message-id';
 
 type NativeAssistantCatalogEntry = AssistantCatalogEntry;
 type NativeShareAttachment = { stagedPath: string; originalName: string; mime: string; byteSize: number };
@@ -23,7 +24,7 @@ type OpenChamberSharePlugin = {
 const OpenChamberShare = registerPlugin<OpenChamberSharePlugin>('OpenChamberShare');
 const OUTBOX_KEY = 'openchamber.mobile-share.outbox.v1';
 export type MobileShareState = 'pending' | 'resolving-instance' | 'connecting' | 'auth-required' | 'offline' | 'target-stale' | 'dispatching' | 'reconciling' | 'delivered' | 'failed';
-type OutboxItem = { envelope: NativeShareEnvelope; state: MobileShareState; cleanupPhase?: 'server-completed' | 'native-acked' | 'files-released'; updatedAt: number; error?: string };
+type OutboxItem = { envelope: NativeShareEnvelope; messageID: string; state: MobileShareState; cleanupPhase?: 'server-completed' | 'native-acked' | 'files-released'; updatedAt: number; error?: string };
 
 const nativeAvailable = (): boolean => Capacitor.isNativePlatform();
 const readOutbox = (): Record<string, OutboxItem> => {
@@ -64,7 +65,7 @@ const imageDataUrl = async (attachment: NativeShareAttachment): Promise<string> 
 const partsFor = async (envelope: NativeShareEnvelope): Promise<AssistantPart[]> => {
   const parts: AssistantPart[] = [];
   if (envelope.text?.trim()) parts.push({ type: 'text', text: envelope.text });
-  if (envelope.attachments.length > 8) throw new Error('too_many_share_attachments');
+  if (envelope.attachments.length > 10) throw new Error('too_many_share_attachments');
   for (const attachment of envelope.attachments) {
     if (attachment.byteSize <= 0 || attachment.byteSize > 20 * 1024 * 1024) throw new Error('invalid_share_attachment');
     parts.push({ type: 'file', mime: attachment.mime, url: await imageDataUrl(attachment) });
@@ -136,7 +137,9 @@ const cleanupNativeDelivery = async (item: OutboxItem): Promise<void> => {
 const deliverOne = async (envelope: NativeShareEnvelope): Promise<void> => {
   const existing = readOutbox()[envelope.operationID];
   if (existing?.cleanupPhase) { await cleanupNativeDelivery(existing); return; }
-  let item: OutboxItem = existing ?? { envelope, state: 'pending', updatedAt: Date.now() };
+  let item: OutboxItem = existing?.messageID
+    ? existing
+    : { envelope, messageID: ascendingId('msg'), state: existing?.state ?? 'pending', cleanupPhase: existing?.cleanupPhase, updatedAt: Date.now(), error: existing?.error };
   save(item); // Durable admission precedes every native share mutation.
   item = { ...item, state: 'resolving-instance', updatedAt: Date.now() }; save(item);
   const partition = Object.values(useAssistantUIStore.getState().assistantCatalogByConnection).find((entry) => entry.serverInstanceID === envelope.serverInstanceID && entry.entries.some((candidate) => candidate.assistantID === envelope.assistantID));
@@ -160,10 +163,14 @@ const deliverOne = async (envelope: NativeShareEnvelope): Promise<void> => {
     const parts = await partsFor(envelope);
     if (!current(partition.connectionKey, generation)) return;
     item = { ...item, state: 'reconciling', updatedAt: Date.now() }; save(item);
-    const operation = await sendAssistantShare(assistant.id, envelope.operationID, envelope.operationID, parts, envelope.source);
-    await waitForAssistantShare(operation, getRuntimeTransportIdentity(), generation);
-    deliveredAssistantID = assistant.id;
-    if (!current(partition.connectionKey, generation)) return;
+    const operation = await sendAssistantShare(assistant.id, envelope.operationID, item.messageID, parts, envelope.source);
+    const completedOperation = await waitForAssistantShare(operation, getRuntimeTransportIdentity(), generation);
+    const refreshedSnapshot = await forceRefreshAssistantSnapshot().catch((error): null => { save({ ...item, state: 'reconciling', updatedAt: Date.now(), error: error instanceof Error ? error.message : 'snapshot_refresh_failed' }); return null; });
+    if (!refreshedSnapshot) return;
+    if (!current(partition.connectionKey, generation)) { save({ ...item, state: 'reconciling', updatedAt: Date.now(), error: 'runtime_stale' }); return; }
+    const refreshedAssistant = refreshedSnapshot.assistants.find((candidate) => candidate.id === assistant.id);
+    if (!refreshedAssistant || refreshedAssistant.sessionID !== completedOperation.sessionID) { save({ ...item, state: 'reconciling', updatedAt: Date.now(), error: 'assistant_binding_mismatch' }); return; }
+    deliveredAssistantID = refreshedAssistant.id;
   } catch (error) {
     const retainReconciliation = (error instanceof AssistantShareOperationError && error.code === 'share_unresolved') || (error instanceof Error && error.message === 'runtime_stale');
     if (retainReconciliation) {

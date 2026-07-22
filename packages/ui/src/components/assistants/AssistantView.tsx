@@ -86,7 +86,7 @@ export const AssistantView: React.FC = () => {
 
   React.useEffect(() => { if (!selectedAssistantID && snapshot?.assistants[0]) selectAssistant(snapshot.assistants[0].id); }, [selectAssistant, selectedAssistantID, snapshot?.assistants]);
   React.useEffect(() => { if (snapshotQuery.isSuccess && selectedAssistantID && !assistant) selectAssistant(snapshot?.assistants[0]?.id ?? null); }, [assistant, selectAssistant, selectedAssistantID, snapshot?.assistants, snapshotQuery.isSuccess]);
-  React.useEffect(() => { if (assistantID) void ensureAssistantSession(assistantID); }, [assistantID]);
+  React.useEffect(() => { if (active && assistantID && !sessionID) void ensureAssistantSession(assistantID); }, [active, assistantID, sessionID]);
   React.useEffect(() => { if (active && sessionID && directory) { void sync.ensureSessionRenderable(sessionID, { directory }); void fetchMessagesForSession(sessionID, directory); } }, [active, directory, sessionID, sync]);
   React.useEffect(() => { selectionCoordinator.activate(selectionIdentity); }, [selectionCoordinator, selectionIdentity]);
   React.useEffect(() => () => { selectionCoordinator.dispose(); }, [selectionCoordinator]);

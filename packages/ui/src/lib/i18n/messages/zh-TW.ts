@@ -1987,6 +1987,8 @@ export const dict: Record<I18nKey, string> = {
   'chat.messageBody.actions.revert': '從此處收回',
   'chat.messageBody.actions.forkAria': '從這條訊息分支',
   'chat.messageBody.actions.fork': '從此處分支',
+  'chat.messageBody.actions.openSourceSessionAria': '開啟原始工作階段',
+  'chat.messageBody.actions.openSourceSession': '開啟原始工作階段',
   'chat.messageBody.actions.copyMessageAria': '複製訊息文字',
   'chat.messageBody.actions.copyMessage': '複製訊息',
   'chat.messageBody.actions.openPreviewAria': '開啟預覽',

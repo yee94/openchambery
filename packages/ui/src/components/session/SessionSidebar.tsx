@@ -2492,7 +2492,7 @@ export const SessionSidebar: React.FC<SessionSidebarProps> = ({
             <Icon name="time" className="size-4" />
             <span className="truncate">{t("sessions.sidebar.header.actions.scheduledTasks")}</span>
           </Button>
-          {assistantCapability.data?.supported ? <Button
+          {assistantCapability.data?.supported && assistantCapability.data?.enabled ? <Button
             variant="ghost"
             size="sm"
             className={cn(

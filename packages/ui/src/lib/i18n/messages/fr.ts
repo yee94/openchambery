@@ -1801,6 +1801,8 @@ export const dict = {
   'chat.messageBody.actions.revert': 'Revenir à partir d\'ici',
   'chat.messageBody.actions.forkAria': 'Fork de ce message',
   'chat.messageBody.actions.fork': 'Fourche d\'ici',
+  'chat.messageBody.actions.openSourceSessionAria': 'Ouvrir la session d\'origine',
+  'chat.messageBody.actions.openSourceSession': 'Ouvrir la session d\'origine',
   'chat.messageBody.actions.copyMessageAria': 'Copier le texte du message',
   'chat.messageBody.actions.copyMessage': 'Copier le message',
   'chat.messageBody.actions.openPreviewAria': 'Ouvrir l\'aperçu',

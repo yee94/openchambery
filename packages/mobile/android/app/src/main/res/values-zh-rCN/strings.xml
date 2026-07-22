@@ -1,0 +1,23 @@
+<?xml version='1.0' encoding='utf-8'?>
+<resources>
+    <string name="share_title">分享到 OpenChamber</string>
+    <string name="share_assistant">助理</string>
+    <string name="share_missing_target">请先在 OpenChamber 中选择默认分享助理。</string>
+    <string name="share_message">消息</string>
+    <string name="share_message_hint">添加消息</string>
+    <string name="share_cancel">取消</string>
+    <string name="share_send">发送</string>
+    <string name="share_retry">重试</string>
+    <string name="share_sending_button">正在发送…</string>
+    <string name="share_preparing">正在准备分享内容…</string>
+    <string name="share_sending">正在发送到 OpenChamber…</string>
+    <string name="share_cancelling">正在移除分享内容…</string>
+    <string name="share_error_preparing">无法准备分享内容，请重试。</string>
+    <string name="share_error_sending">无法发送分享内容，请检查后重试。</string>
+    <string name="share_openchamber_mark">OpenChamber 应用图标</string>
+    <string name="share_assistant_avatar">%1$s的头像</string>
+    <string name="share_image_preview">第 %1$d 张分享图片，共 %2$d 张</string>
+    <plurals name="share_images">
+        <item quantity="other">%d 张图片</item>
+    </plurals>
+</resources>
