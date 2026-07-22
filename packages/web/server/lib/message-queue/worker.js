@@ -10,7 +10,7 @@ const settle = (value) => Promise.resolve(value);
 
 export const createMessageQueueWorker = ({ service, adapter, workerID, concurrency = 4, leaseMs = DEFAULT_LEASE_MS, clock = () => Date.now() } = {}) => {
   if (!service || !adapter || typeof workerID !== 'string' || !workerID) throw new TypeError('message_queue_worker_dependencies_required');
-  let paused = true; let stopping = false; let timer; let flight = null; let safeFlight = null; const active = new Set(); const controllers = new Set();
+  let paused = true; let stopping = false; let timer; let flight = null; let safeFlight = null; let wakeRequested = false; const active = new Set(); const controllers = new Set();
   const process = async (claim, eligibility, runtimeKey, runtime) => {
     const { item } = claim; const args = leaseArgs(claim, runtimeKey); let begun = false; let leaseLost = false; const controller = new AbortController(); controllers.add(controller);
     const renew = () => { try { settle(service.renewLease({ ...args, leaseMs })).catch((error) => { if (error?.code === 'lease_lost') { leaseLost = true; controller.abort(); } }); } catch (error) { if (error?.code === 'lease_lost') { leaseLost = true; controller.abort(); } } };
@@ -88,8 +88,17 @@ export const createMessageQueueWorker = ({ service, adapter, workerID, concurren
   };
   const runOnce = () => {
     if (!flight) {
-      flight = run().finally(() => { flight = null; safeFlight = null; schedule(); });
+      wakeRequested = false;
+      flight = run().finally(() => {
+        flight = null; safeFlight = null;
+        // admit / manualSend / session.idle may arrive while a probe is in flight.
+        // Coalesce into one follow-up run instead of waiting for the 1s poll timer.
+        if (wakeRequested && !paused && !stopping) void launch();
+        else schedule();
+      });
       safeFlight = flight.catch((error) => { console.error('message_queue_worker_run_failed', error); return status(); });
+    } else {
+      wakeRequested = true;
     }
     return flight;
   };

@@ -99,4 +99,30 @@ describe('message queue runtime ownership', () => {
     expect(diagnostic).toHaveBeenCalledWith('message_queue_runtime_wake_failed', expect.objectContaining({ message: 'event wake failed' }));
     diagnostic.mockRestore();
   });
+
+  it('starts a paused worker on wake when authority is already active', async () => {
+    let paused = true;
+    const service = { expireAttachmentUploadsAll: vi.fn(), listAttachmentObjectsForGC: vi.fn(() => []), listLiveAttachmentStorageKeys: vi.fn(() => new Set()), getAuthority: vi.fn(() => ({ authority: 'active', generation: 1 })), close: vi.fn() };
+    const store = { init: vi.fn(), gc: vi.fn(), deleteObjectIf: vi.fn(), stop: vi.fn() };
+    const worker = {
+      status: () => ({ paused, active: 0 }),
+      start: vi.fn(() => { paused = false; return { paused, active: 0 }; }),
+      wake: vi.fn(() => Promise.resolve({ paused, active: 0 })),
+      stop: vi.fn(),
+    };
+    const runtime = createMessageQueueRuntime({ dbPath: '/tmp/queue.sqlite', service, attachmentStore: store, worker, adapter: {} });
+    await expect(runtime.wake()).resolves.toMatchObject({ paused: false, active: 0 });
+    expect(worker.start).toHaveBeenCalledTimes(1);
+    expect(worker.wake).toHaveBeenCalledTimes(1);
+  });
+
+  it('does not start a paused worker on wake when authority is not active', async () => {
+    const service = { expireAttachmentUploadsAll: vi.fn(), listAttachmentObjectsForGC: vi.fn(() => []), listLiveAttachmentStorageKeys: vi.fn(() => new Set()), getAuthority: vi.fn(() => ({ authority: 'shadow', generation: 0 })), close: vi.fn() };
+    const store = { init: vi.fn(), gc: vi.fn(), deleteObjectIf: vi.fn(), stop: vi.fn() };
+    const worker = { status: () => ({ paused: true, active: 0 }), start: vi.fn(), wake: vi.fn(() => Promise.resolve({ paused: true, active: 0 })), stop: vi.fn() };
+    const runtime = createMessageQueueRuntime({ dbPath: '/tmp/queue.sqlite', service, attachmentStore: store, worker, adapter: {} });
+    await expect(runtime.wake()).resolves.toMatchObject({ paused: true, active: 0 });
+    expect(worker.start).not.toHaveBeenCalled();
+    expect(worker.wake).toHaveBeenCalledTimes(1);
+  });
 });

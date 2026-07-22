@@ -17,7 +17,6 @@ import { registerSessionDirectory } from "./sync-refs"
 import { isSyntheticPart } from "@/lib/messages/synthetic"
 import { getSessionMaterializationStatus, materializeSessionSnapshots } from "./materialization"
 import { retry } from "./retry"
-import { sessionLoadDebug } from "./session-load-debug"
 import { getRuntimeGeneration, getRuntimeKey, getRuntimeTransportIdentity } from "@/lib/runtime-switch"
 import { loadSessionMessage, loadSessionMessagePage, recoverAssistantTailBoundary } from "./session-message-loader"
 import { getInitialSessionMessagePageSize } from "./session-message-page-size"
@@ -2054,12 +2053,10 @@ export async function fetchMessagesForSession(sessionID: string, directory?: str
   const loadingKey = `${runtimeKey}:${resolvedDir}:${sessionID}:${limit}`
   if (!_sdk || !_childStores) {
     PENDING_MESSAGE_FETCHES.set(loadingKey, { sessionID, directory: resolvedDir })
-    sessionLoadDebug("imperative-queued", { sessionID, directory: resolvedDir })
     return
   }
   const existingRequest = FETCH_MESSAGES_LOADING.get(loadingKey)
   if (existingRequest) {
-    sessionLoadDebug("imperative-deduped", { sessionID, directory: resolvedDir })
     return existingRequest
   }
 
@@ -2072,9 +2069,6 @@ export async function fetchMessagesForSession(sessionID: string, directory?: str
 }
 
 async function fetchMessagesForSessionInternal(sessionID: string, resolvedDir: string, runtimeKey: string, limit: number): Promise<void> {
-  const startedAt = performance.now()
-  sessionLoadDebug("imperative-start", { sessionID, directory: resolvedDir, limit })
-
   try {
     const s = sdk()
     const store = dirStoreForDirectory(resolvedDir)
@@ -2083,7 +2077,6 @@ async function fetchMessagesForSessionInternal(sessionID: string, resolvedDir: s
     const cachedComplete = getSessionPrefetch(resolvedDir, sessionID)?.complete === true
     const hasUserBoundary = cachedMessages?.some((message) => message.role === "user" || (message as Message & { clientRole?: string }).clientRole === "user")
     if (getSessionMaterializationStatus(store.getState(), sessionID).renderable && (hasUserBoundary || cachedComplete)) {
-      sessionLoadDebug("imperative-cache-hit", { sessionID, directory: resolvedDir })
       return
     }
 
@@ -2107,13 +2100,6 @@ async function fetchMessagesForSessionInternal(sessionID: string, resolvedDir: s
 
     const records = (assertSdkSuccess(result, "session.messages") ?? [])
       .filter((record: { info?: { id?: string } }) => !!record?.info?.id)
-    sessionLoadDebug("imperative-response", {
-      sessionID,
-      directory: resolvedDir,
-      limit,
-      records: records.length,
-      durationMs: Math.round((performance.now() - startedAt) * 10) / 10,
-    })
     const cursor = result.response?.headers?.get?.("x-next-cursor") ?? undefined
     const recovered = await recoverAssistantTailBoundary({
       records: records.map((record: { info: Message; parts?: Part[] }) => ({
@@ -2144,7 +2130,6 @@ async function fetchMessagesForSessionInternal(sessionID: string, resolvedDir: s
     // session while the fetch was in flight. Skip the write so a slow fetch
     // can't repopulate (and un-evict) a session already navigated away from.
     if (useSessionUIStore.getState().currentSessionId !== sessionID) {
-      sessionLoadDebug("imperative-stale", { sessionID, directory: resolvedDir })
       setSessionPrefetch({ directory: resolvedDir, sessionID, runtimeKey, limit: completeRecords.length, cursor, complete: !cursor })
       return
     }
@@ -2152,7 +2137,6 @@ async function fetchMessagesForSessionInternal(sessionID: string, resolvedDir: s
     const latestState = store.getState()
     const latestStatus = getSessionMaterializationStatus(latestState, sessionID)
     if (latestStatus.renderable && (latestState.message[sessionID]?.length ?? 0) >= completeRecords.length) {
-      sessionLoadDebug("imperative-superseded", { sessionID, directory: resolvedDir })
       setSessionPrefetch({ directory: resolvedDir, sessionID, runtimeKey, limit: completeRecords.length, cursor, complete: !cursor })
       return
     }
@@ -2175,18 +2159,7 @@ async function fetchMessagesForSessionInternal(sessionID: string, resolvedDir: s
       cursor,
       complete: !cursor,
     })
-    sessionLoadDebug("imperative-committed", {
-      sessionID,
-      directory: resolvedDir,
-      durationMs: Math.round((performance.now() - startedAt) * 10) / 10,
-    })
   } catch (error) {
-    sessionLoadDebug("imperative-error", {
-      sessionID,
-      directory: resolvedDir,
-      durationMs: Math.round((performance.now() - startedAt) * 10) / 10,
-      error: error instanceof Error ? error.message : String(error),
-    })
     // Transient failure — the reactive path in ChatContainer will retry
     failSessionMessageLoad(resolvedDir, sessionID, formatSdkError(error), runtimeKey)
   }

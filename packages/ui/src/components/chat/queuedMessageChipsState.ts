@@ -35,6 +35,20 @@ export const canSendServerQueuedMessage = (message: MessageQueueServerDisplayIte
     return ['queued', 'retrying', 'failed', 'unresolved'].includes(message.status);
 };
 
+// Remove stays available while a manual dispatch is only requested (still queued).
+// Server remove is blocked solely for in-flight dispatch statuses; keep edit/send
+// locked separately via isReadOnly / canSend*.
+export const canRemoveQueuedMessage = (
+    message: QueuedMessage | MessageQueueServerDisplayItem,
+    options: { frozen: boolean; scopeOperationPending?: boolean },
+): boolean => {
+    if (options.frozen) return false;
+    if (options.scopeOperationPending) return false;
+    if (isMessageQueuePendingAdmissionItem(message)) return false;
+    const status = ('status' in message ? message.status : undefined) ?? 'queued';
+    return status !== 'sending' && status !== 'reconciling';
+};
+
 // Authoritative server item is dispatch-pending when an explicit manual dispatch
 // was requested (POST ack acknowledged but the worker has not yet started) or the
 // worker has begun the attempt (sending/reconciling). Pending admission rows are

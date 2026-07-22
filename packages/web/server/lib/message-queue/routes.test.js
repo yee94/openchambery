@@ -9,6 +9,27 @@ describe('message queue routes', () => {
   it('uses unavailable code for disabled runtimes', () => { const { app, route } = registry(); registerMessageQueueRoutes(app, { messageQueueService: null }); const res = response(); route('GET', prefix)({}, res); expect(res).toMatchObject({ statusCode: 501, body: { code: 'unavailable' } }); });
   it('maps stable errors to code-only responses', () => { const { app, route } = registry(); registerMessageQueueRoutes(app, { messageQueueService: { admit: () => { const error = new Error('private detail'); error.code = 'attachment_total_limit'; throw error; } } }); const res = response(); route('POST', `${prefix}/items`)({ body: {} }, res); expect(res).toMatchObject({ statusCode: 413, body: { code: 'attachment_total_limit' } }); });
   it('maps admission payload limits to 413', () => { const { app, route } = registry(); registerMessageQueueRoutes(app, { messageQueueService: { admit: () => { const error = new Error('private detail'); error.code = 'admission_payload_limit'; throw error; } } }); const res = response(); route('POST', `${prefix}/items`)({ body: {} }, res); expect(res).toMatchObject({ statusCode: 413, body: { code: 'admission_payload_limit' } }); });
+  it('wakes the runtime after a successful admit', () => {
+    const { app, route } = registry();
+    const admit = vi.fn(() => ({ revision: 1, queueItemID: 'item' }));
+    const wake = vi.fn();
+    registerMessageQueueRoutes(app, { messageQueueService: { admit }, messageQueueRuntime: { wake } });
+    const res = response();
+    route('POST', `${prefix}/items`)({ body: { requestID: 'r1' } }, res);
+    expect(admit).toHaveBeenCalledWith({ requestID: 'r1' });
+    expect(wake).toHaveBeenCalledTimes(1);
+    expect(res).toMatchObject({ statusCode: 200, body: { revision: 1, queueItemID: 'item' } });
+  });
+  it('does not wake when admit fails', () => {
+    const { app, route } = registry();
+    const admit = vi.fn(() => { const error = new Error('locked'); error.code = 'scope_locked'; throw error; });
+    const wake = vi.fn();
+    registerMessageQueueRoutes(app, { messageQueueService: { admit }, messageQueueRuntime: { wake } });
+    const res = response();
+    route('POST', `${prefix}/items`)({ body: {} }, res);
+    expect(wake).toHaveBeenCalledTimes(0);
+    expect(res).toMatchObject({ statusCode: 409, body: { code: 'scope_locked' } });
+  });
   it('registers reservation routes, wakes on release, and maps reserved conflicts', () => {
     const { app, route } = registry(); const reserveForEdit = vi.fn(() => ({ token: 'token' })); const releaseEditReservation = vi.fn(() => ({ released: true })); const renewEditReservation = vi.fn(() => { const error = new Error('expired'); error.code = 'reservation_expired'; throw error; }); const reservedRemove = vi.fn(() => { const error = new Error('reserved'); error.code = 'reserved'; throw error; }); const wake = vi.fn();
     registerMessageQueueRoutes(app, { messageQueueService: { reserveForEdit, releaseEditReservation, renewEditReservation, reservedRemove }, messageQueueRuntime: { wake } });

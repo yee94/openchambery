@@ -83,7 +83,6 @@ import { setSessionOpener } from "./session-opener"
 import { getRuntimeKey, getRuntimeTransportIdentity } from "@/lib/runtime-switch"
 import { rememberRuntimeLiveStatus } from "./runtime-live-memory"
 import { beginSessionSwitchMeasure } from "@/lib/sessionSwitchPerf"
-import { sessionLoadDebug } from "./session-load-debug"
 import { announceSessionSwitchIntent } from "@/lib/sessionSwitchIntent"
 
 export type { AttachedFile }
@@ -1069,13 +1068,6 @@ export const useSessionUIStore = create<SessionUIState>()((set, get) => ({
     )
     const fallbackDir = opencodeClient.getDirectory() ?? directoryState.currentDirectory ?? null
     const resolvedDir = (directoryHint ? normalizePath(directoryHint) : null) ?? sessionDir ?? fallbackDir
-    sessionLoadDebug("selection", {
-      sessionID: id,
-      previousSessionID: previousSessionId,
-      directory: resolvedDir,
-      directoryHint,
-      currentDirectory: directoryState.currentDirectory,
-    })
     const projectsState = useProjectsStore.getState()
     const sessionProject = resolvedDir
       ? resolveProjectForSessionDirectory(
@@ -1105,7 +1097,6 @@ export const useSessionUIStore = create<SessionUIState>()((set, get) => ({
     // state change and fires ChatContainer.useEffect. The fetch is
     // fire-and-forget — any transient failure gets retried by the reactive path.
     if (id) {
-      sessionLoadDebug("imperative-dispatch", { sessionID: id, directory: resolvedDir })
       void fetchMessagesForSession(id, resolvedDir)
     }
 

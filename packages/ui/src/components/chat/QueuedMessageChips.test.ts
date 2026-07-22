@@ -1,7 +1,6 @@
 import { beforeEach, describe, expect, test } from 'bun:test';
 import { legacyQueueScope, setMessageQueueMutationFence, useMessageQueueStore, type QueueItem, type QueueScope } from '@/stores/messageQueueStore';
-import { applyPendingServerQueueOperation, canSendQueuedMessage, canSendServerQueuedMessage, isServerQueueItemDispatchPending, mergeQueuedMessageScopes, popQueuedMessageForEdit, queueModeAllowsMutations, reorderServerQueueItems, selectPendingServerQueueOperation, serverQueueEditInput, serverQueueItemMutationInput } from './queuedMessageChipsState';
-import type { ServerQueueOperationIdentity } from './queuedMessageChipsState';
+import { applyPendingServerQueueOperation, canRemoveQueuedMessage, canSendQueuedMessage, canSendServerQueuedMessage, isServerQueueItemDispatchPending, mergeQueuedMessageScopes, popQueuedMessageForEdit, queueModeAllowsMutations, reorderServerQueueItems, selectPendingServerQueueOperation, serverQueueEditInput, serverQueueItemMutationInput } from './queuedMessageChipsState';import type { ServerQueueOperationIdentity } from './queuedMessageChipsState';
 import type { MessageQueueItem, MessageQueueScope } from '@/lib/message-queue-server';
 import { sessionDraftKey } from '@/sync/input-draft-types';
 import type { MessageQueuePendingAdmissionItem } from '@/sync/message-queue-server-runtime';
@@ -139,6 +138,18 @@ describe('QueuedMessageChips production queue boundary', () => {
         expect(isServerQueueItemDispatchPending(queued)).toBe(false);
         expect(isServerQueueItemDispatchPending(serverItem('sending', 'sending'))).toBe(true);
         expect(isServerQueueItemDispatchPending(serverItem('reconciling', 'reconciling'))).toBe(true);
+    });
+
+    test('keeps Remove available during manual dispatch pending and only locks sending/reconciling', () => {
+        const queued = serverItem('queue-a', 'queued');
+        const manual = { ...queued, manualDispatchRequested: true };
+        expect(canRemoveQueuedMessage(queued, { frozen: false })).toBe(true);
+        expect(canRemoveQueuedMessage(manual, { frozen: false })).toBe(true);
+        expect(canRemoveQueuedMessage(serverItem('sending', 'sending'), { frozen: false })).toBe(false);
+        expect(canRemoveQueuedMessage(serverItem('reconciling', 'reconciling'), { frozen: false })).toBe(false);
+        expect(canRemoveQueuedMessage(manual, { frozen: true })).toBe(false);
+        expect(canRemoveQueuedMessage(manual, { frozen: false, scopeOperationPending: true })).toBe(false);
+        expect(canRemoveQueuedMessage(pendingAdmissionItem, { frozen: false })).toBe(false);
     });
 
     test('selectPendingServerQueueOperation filters by exact scope and isolates runtime switches', () => {

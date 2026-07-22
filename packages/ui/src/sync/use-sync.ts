@@ -22,7 +22,6 @@ import {
   failSessionMessageLoad,
 } from "./session-prefetch-cache"
 import { getSessionMaterializationStatus, materializeSessionSnapshots } from "./materialization"
-import { sessionLoadDebug } from "./session-load-debug"
 import { loadSessionMessage, loadSessionMessagePage, recoverAssistantTailBoundary } from "./session-message-loader"
 import { getRuntimeKey } from "@/lib/runtime-switch"
 import { sessionSyncCoordinator } from "./session-sync-coordinator"
@@ -352,9 +351,7 @@ export function useSync() {
   // Fetch messages from API
   const fetchMessages = useCallback(
     async (sessionID: string, limit: number, before?: string, runtimeKey = getRuntimeKey(), targetDirectory = directory) => {
-      const startedAt = performance.now()
       const scopedClient = opencodeClient.getScopedSdkClient(targetDirectory)
-      sessionLoadDebug("reactive-request-start", { sessionID, directory: targetDirectory, limit, before: before ?? null })
       const result = await loadSessionMessagePage({
         runtimeKey,
         directory: targetDirectory,
@@ -376,15 +373,6 @@ export function useSync() {
         part: sortParts(x.parts),
       }))
       const cursor = result.response?.headers?.get?.("x-next-cursor") ?? undefined
-      sessionLoadDebug("reactive-request-response", {
-        sessionID,
-        directory: targetDirectory,
-        limit,
-        before: before ?? null,
-        records: session.length,
-        hasCursor: Boolean(cursor),
-        durationMs: Math.round((performance.now() - startedAt) * 10) / 10,
-      })
       return { session, part, cursor, complete: !cursor }
     },
     [directory],
@@ -398,7 +386,6 @@ export function useSync() {
       const scopedClient = opencodeClient.getScopedSdkClient(targetDirectory)
       const m = getMetaFor(sessionID, targetDirectory)
       if (m.loading) {
-        sessionLoadDebug("reactive-load-deduped", { sessionID, directory: targetDirectory, before: options?.before ?? null })
         return
       }
       const runtimeKey = getRuntimeKey()
@@ -413,7 +400,6 @@ export function useSync() {
       })
       setMetaFor(sessionID, { loading: true }, targetDirectory)
       beginSessionMessageLoad(targetDirectory, sessionID, limit, runtimeKey)
-      const startedAt = performance.now()
 
       try {
         // Commit a fetched page to the store: merge optimistic items, run
@@ -519,13 +505,6 @@ export function useSync() {
           complete: committed.complete,
           loading: false,
         }, targetDirectory)
-        sessionLoadDebug("reactive-committed", {
-          sessionID,
-          directory: targetDirectory,
-          messages: committed.messages.length,
-          mode: options?.mode ?? "replace",
-          durationMs: Math.round((performance.now() - startedAt) * 10) / 10,
-        })
         setSessionPrefetch({
           directory: targetDirectory,
           sessionID,
@@ -535,12 +514,6 @@ export function useSync() {
           complete: committed.complete,
         })
       } catch (error) {
-        sessionLoadDebug("reactive-error", {
-          sessionID,
-          directory: targetDirectory,
-          durationMs: Math.round((performance.now() - startedAt) * 10) / 10,
-          error: error instanceof Error ? error.message : String(error),
-        })
         setMetaFor(sessionID, { loading: false }, targetDirectory)
         failSessionMessageLoad(targetDirectory, sessionID, formatSdkError(error), runtimeKey)
       }
@@ -581,16 +554,6 @@ export function useSync() {
 
           const shouldLoadMessages = Boolean(!cachedReady || force)
           const shouldFetchSession = shouldFetchSessionForRenderableSync({ hasSession, shouldLoadMessages, force: Boolean(force) })
-          sessionLoadDebug("reactive-sync-decision", {
-            sessionID,
-            directory: targetDirectory,
-            cached,
-            cachedReady,
-            hasSession,
-            shouldLoadMessages,
-            shouldFetchSession,
-            force: Boolean(force),
-          })
           await Promise.all([
             shouldFetchSession
               ? (async () => {

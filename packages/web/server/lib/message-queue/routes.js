@@ -9,7 +9,10 @@ export const registerMessageQueueRoutes = (app, { messageQueueService, messageQu
   app.get(`${prefix}/status`, (_req, res) => runtime() ? send(res, () => runtime().status()) : unsupported(res));
   app.get(prefix, (_req, res) => messageQueueService ? send(res, () => messageQueueService.snapshot()) : unsupported(res));
   app.get(`${prefix}/scopes/:scopeID`, (req, res) => messageQueueService ? send(res, () => messageQueueService.getScope(req.params.scopeID, { offset: Number(req.query?.offset ?? 0), limit: Number(req.query?.limit ?? 8), expectedRevision: req.query?.expectedRevision === undefined ? undefined : Number(req.query.expectedRevision) })) : unsupported(res));
-  app.post(`${prefix}/items`, (req, res) => messageQueueService ? send(res, () => messageQueueService.admit(req.body)) : unsupported(res));
+  app.post(`${prefix}/items`, (req, res) => {
+    if (!messageQueueService) return unsupported(res);
+    try { const result = messageQueueService.admit(req.body); runtime()?.wake?.(); res.json(result); } catch (error) { res.status(statusFor(error)).json({ code: publicCode(error) }); }
+  });
   app.post(`${prefix}/imports`, (req, res) => messageQueueService ? send(res, () => messageQueueService.createImport(req.body)) : unsupported(res));
   app.get(`${prefix}/imports/:importID`, (req, res) => messageQueueService ? send(res, () => messageQueueService.getImportDetails(req.params.importID)) : unsupported(res));
   app.post(`${prefix}/imports/:importID/items`, (req, res) => messageQueueService ? send(res, () => messageQueueService.stageImport({ ...(req.body ?? {}), importID: req.params.importID })) : unsupported(res));

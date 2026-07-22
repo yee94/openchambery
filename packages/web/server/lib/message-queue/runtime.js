@@ -17,7 +17,14 @@ export const createMessageQueueRuntime = ({ dbPath, attachmentRoot, service, att
   const start = async () => { await startPaused(); const authority = queue.getAuthority(); if (authority.authority === 'active') queueWorker.start(); else await queueWorker.stop(); return status(); };
   const startActive = async () => { await startPaused(); queueWorker.start(); return status(); };
   const wake = () => {
-    try { return Promise.resolve(queueWorker.wake()).catch((error) => { console.error('message_queue_runtime_wake_failed', error); return status(); }); }
+    try {
+      // admit / manualSend / session.idle / edit-release wake the loop. If authority
+      // became active after a paused boot (or without going through start/resume),
+      // wake would otherwise no-op forever while status reports authority:active.
+      const authority = queue.getAuthority();
+      if (authority?.authority === 'active' && queueWorker.status()?.paused) queueWorker.start();
+      return Promise.resolve(queueWorker.wake()).catch((error) => { console.error('message_queue_runtime_wake_failed', error); return status(); });
+    }
     catch (error) { console.error('message_queue_runtime_wake_failed', error); return Promise.resolve(status()); }
   };
   const stop = async () => { if (stopped) return; stopped = true; clearInterval(gcTimer); await queueWorker.stop(); await gc(); await store.stop(); queue.close(); };

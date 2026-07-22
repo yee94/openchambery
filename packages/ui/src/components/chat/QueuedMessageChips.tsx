@@ -31,7 +31,7 @@ import { Button } from '@/components/ui/button';
 import { cn } from '@/lib/utils';
 import { createUuid } from '@/lib/uuid';
 import { toast } from '@/components/ui';
-import { applyPendingServerQueueOperation, canSendQueuedMessage, canSendServerQueuedMessage, isServerQueueItemDispatchPending, mergeQueuedMessageScopes, queueModeAllowsMutations, reorderServerQueueItems, selectPendingServerQueueOperation, serverQueueEditInput, serverQueueItemMutationInput, type ServerQueueOperationIdentity, type ServerQueueOperationKind } from './queuedMessageChipsState';
+import { applyPendingServerQueueOperation, canRemoveQueuedMessage, canSendQueuedMessage, canSendServerQueuedMessage, isServerQueueItemDispatchPending, mergeQueuedMessageScopes, popQueuedMessageForEdit, queueModeAllowsMutations, reorderServerQueueItems, selectPendingServerQueueOperation, serverQueueEditInput, serverQueueItemMutationInput, type ServerQueueOperationIdentity, type ServerQueueOperationKind } from './queuedMessageChipsState';
 import { startServerQueueScopeMutationFlight, type ServerQueueScopeMutationFlights } from './queueAdmission';
 
 type BoundQueueScope = Extract<QueueScope, { state: 'bound' }> & {
@@ -90,7 +90,11 @@ const QueuedMessageChip = memo(({ message, server, frozen, hasDispatchLock, scop
     const reorderPending = isPendingTarget && pendingOperationKind === 'reorder';
     const authoritativeDispatchPending = server && !pendingAdmission && isServerQueueItemDispatchPending(message as MessageQueueItem);
     const sendPending = (isPendingTarget && pendingOperationKind === 'send') || authoritativeDispatchPending;
+    // Edit/send/reorder stay locked while a manual dispatch is outstanding, but
+    // remove remains available until the worker actually claims the item
+    // (sending/reconciling). Matches server remove eligibility.
     const isReadOnly = frozen || pendingAdmission || scopeOperationPending || authoritativeDispatchPending || status === 'sending' || status === 'reconciling';
+    const canRemove = canRemoveQueuedMessage(message, { frozen, scopeOperationPending });
     const legacyMessage = server ? undefined : message as QueuedMessage;
     const isDragDisabled = legacyMessage?.owner?.state === 'unbound-legacy' || isReadOnly || (server && serverReorderDisabled);
     const canSend = !isReadOnly && (server ? canSendServerQueuedMessage(message as MessageQueueServerDisplayItem, hasDispatchLock) : canSendQueuedMessage(message as QueuedMessage, hasDispatchLock));
@@ -151,7 +155,7 @@ const QueuedMessageChip = memo(({ message, server, frozen, hasDispatchLock, scop
                         size="icon"
                         className="-ml-0.5 !h-6 !w-4 !min-h-6 !min-w-4 rounded-md bg-transparent text-muted-foreground hover:bg-transparent hover:text-foreground active:bg-transparent"
                         onClick={() => onRemove(message)}
-                        disabled={isReadOnly}
+                        disabled={!canRemove}
                         aria-busy={removePending || undefined}
                         aria-label={t('chat.queuedMessage.removeAria')}
                     >
@@ -226,7 +230,7 @@ const QueuedMessageChip = memo(({ message, server, frozen, hasDispatchLock, scop
                         <button
                             type="button"
                             onClick={() => onRemove(message)}
-                            disabled={isReadOnly}
+                            disabled={!canRemove}
                             aria-busy={removePending || undefined}
                             className={cn(
                                 'flex flex-shrink-0 items-center justify-center text-muted-foreground transition-colors',

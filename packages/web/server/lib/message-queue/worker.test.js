@@ -77,7 +77,7 @@ describe('message queue worker', () => {
 
   it('settles an event wake after reconcile adapter failure and retries safely', async () => {
     const diagnostic = vi.spyOn(console, 'error').mockImplementation(() => {});
-    const { worker } = setup({ service: { claimDueReconcile: vi.fn().mockReturnValueOnce(reconcileClaim).mockReturnValue(null) }, adapter: { findMessage: vi.fn(() => { throw new Error('event reconcile failed'); }) } });
+    const { worker } = setup({ service: { claimDueReconcile: vi.fn().mockReturnValueOnce(reconcileClaim).mockReturnValue(null), reserveEligibilityCandidate: vi.fn(() => null) }, adapter: { findMessage: vi.fn(() => { throw new Error('event reconcile failed'); }) } });
     worker.start();
     await expect(worker.wake()).resolves.toEqual({ paused: false, active: 0 });
     expect(diagnostic).toHaveBeenCalledWith('message_queue_worker_run_failed', expect.objectContaining({ message: 'event reconcile failed' }));
@@ -184,6 +184,38 @@ describe('message queue worker', () => {
     await worker.stop();
   });
 
+  it('follows a wake that arrives during flight without waiting for the poll timer', async () => {
+    vi.useFakeTimers();
+    let releaseEligibility;
+    const pending = new Promise((resolve) => { releaseEligibility = resolve; });
+    const manualItem = { ...claim.item, queueItemID: 'manual-item' };
+    const reserveEligibilityCandidate = vi.fn()
+      .mockReturnValueOnce(candidate)
+      .mockReturnValueOnce(null)
+      .mockReturnValueOnce({ ...candidate, item: manualItem, eligibilityToken: 'eligibility-2', dispatchMode: 'manual' })
+      .mockReturnValue(null);
+    const claimNext = vi.fn().mockReturnValueOnce({ ...claim, item: manualItem, leaseToken: 'lease-2' }).mockReturnValue(null);
+    const { worker, service, adapter } = setup({
+      service: { reserveEligibilityCandidate, claimNext },
+      adapter: {
+        checkEligibility: vi.fn()
+          .mockImplementationOnce(() => pending)
+          .mockImplementation(() => ({ available: true, idle: false, settled: false, latestMessageID: 'msg_0000000000' })),
+      },
+    });
+    worker.start();
+    await flush();
+    const firstFlight = worker.wake();
+    releaseEligibility({ available: true, idle: false, settled: false });
+    await firstFlight;
+    await flush();
+    await worker.wake();
+    expect(service.claimNext).toHaveBeenCalledWith({ runtimeKey: 'runtime', owner: 'worker', leaseMs: 15000, queueItemID: 'manual-item', eligibilityToken: 'eligibility-2' });
+    expect(adapter.send).toHaveBeenCalledTimes(1);
+    // Follow-up ran from wakeRequested; the 1s poll timer was not required.
+    await worker.stop();
+  });
+
   it('将并发wake合并为单个claim和reconcile flight', async () => {
     let release;
     const pending = new Promise((resolve) => { release = resolve; });
@@ -200,7 +232,8 @@ describe('message queue worker', () => {
     await first;
     expect(adapter.findMessage).toHaveBeenCalledTimes(1);
     expect(service.recordReconcileConfirmed).toHaveBeenCalledTimes(1);
-    expect(service.reserveEligibilityCandidate).toHaveBeenCalledTimes(1);
+    // Coalesced wakes request one immediate follow-up run after the in-flight work settles.
+    expect(service.reserveEligibilityCandidate).toHaveBeenCalledTimes(2);
     await worker.stop();
   });
 
