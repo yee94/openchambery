@@ -7,7 +7,8 @@ import type {
   GitLogResponse,
   GitIdentitySummary,
 } from '@/lib/api/types';
-import { getDeferredSafeStorage } from '@/stores/utils/safeStorage';
+import { ensureGitBranchesQuery, refreshGitBranchesQuery, type GitBranchQueryAPI } from '@/queries/gitBranchQueries';
+import { getRuntimeTransportIdentity, subscribeRuntimeEndpointChanged } from '@/lib/runtime-switch';
 
 const LOG_STALE_THRESHOLD = 10000;
 const REPO_CHECK_STALE_THRESHOLD = 60_000;
@@ -29,6 +30,7 @@ interface DirectoryGitState {
   isGitRepo: boolean | null;
   status: GitStatus | null;
   branches: GitBranch | null;
+  branchesTransportIdentity: string | null;
   log: GitLogResponse | null;
   identity: GitIdentitySummary | null;
   diffCache: Map<string, { original: string; modified: string; fetchedAt: number; isBinary?: boolean }>;
@@ -56,7 +58,7 @@ interface GitStore {
   getDirectoryState: (directory: string) => DirectoryGitState | null;
 
   fetchStatus: (directory: string, git: GitAPI, options?: { silent?: boolean; mode?: 'light' }) => Promise<boolean>;
-  fetchBranches: (directory: string, git: GitAPI) => Promise<void>;
+  fetchBranches: (directory: string, git: GitAPI, options?: { force?: boolean }) => Promise<void>;
   fetchLog: (directory: string, git: GitAPI, maxCount?: number) => Promise<void>;
   fetchIdentity: (directory: string, git: GitAPI) => Promise<void>;
   fetchAll: (directory: string, git: GitAPI, options?: { force?: boolean; silentIfCached?: boolean }) => Promise<void>;
@@ -85,10 +87,9 @@ interface GitFileDiffResponse {
   isBinary?: boolean;
 }
 
-interface GitAPI {
+interface GitAPI extends GitBranchQueryAPI {
   checkIsGitRepository: (directory: string) => Promise<boolean>;
   getGitStatus: (directory: string, options?: { mode?: 'light' }) => Promise<GitStatus>;
-  getGitBranches: (directory: string) => Promise<GitBranch>;
   getGitLog: (directory: string, options?: { maxCount?: number }) => Promise<GitLogResponse>;
   getCurrentGitIdentity: (directory: string) => Promise<GitIdentitySummary | null>;
   getGitFileDiff: (directory: string, options: { path: string }) => Promise<GitFileDiffResponse>;
@@ -96,6 +97,7 @@ interface GitAPI {
 
 const inFlightDiffFetchesByDirectory = new Map<string, Set<string>>();
 const diffFetchGenerationByDirectory = new Map<string, number>();
+const branchesFetchGenerationByDirectory = new Map<string, number>();
 const inFlightStatusFetches = new Map<string, Promise<boolean>>();
 const inFlightEnsureAllByDirectory = new Map<string, Promise<void>>();
 
@@ -107,6 +109,12 @@ const getDiffFetchGeneration = (directory: string): number =>
 const bumpDiffFetchGeneration = (directory: string): number => {
   const next = getDiffFetchGeneration(directory) + 1;
   diffFetchGenerationByDirectory.set(directory, next);
+  return next;
+};
+
+const bumpBranchesFetchGeneration = (directory: string): number => {
+  const next = (branchesFetchGenerationByDirectory.get(directory) ?? 0) + 1;
+  branchesFetchGenerationByDirectory.set(directory, next);
   return next;
 };
 
@@ -124,6 +132,7 @@ const createEmptyDirectoryState = (): DirectoryGitState => ({
   isGitRepo: null,
   status: null,
   branches: null,
+  branchesTransportIdentity: null,
   log: null,
   identity: null,
   diffCache: new Map(),
@@ -142,51 +151,9 @@ const createEmptyDirectoryState = (): DirectoryGitState => ({
 });
 
 // ---------------------------------------------------------------------------
-// Persisted branch cache (stale-while-revalidate)
-//
-// `git branch` is slow on cold start and the draft branch selector above the
-// composer is gated behind it — it's the slowest-loading composer element.
-// Cache the per-directory branch list to localStorage and seed the store on
-// init so the selector paints instantly from the last-known branches; a stale
-// refresh runs in the background (see ChatInput's draft-branch effect). Only the
-// branch list is cached — never status/log/diff.
+// Branch startup snapshots belong to gitBranchQueries. The store mirrors Query
+// results for legacy consumers and records the producing transport identity.
 // ---------------------------------------------------------------------------
-const GIT_BRANCH_CACHE_KEY = 'oc.gitBranchCache';
-
-const readBranchCache = (): Record<string, GitBranch> => {
-  try {
-    const raw = getDeferredSafeStorage().getItem(GIT_BRANCH_CACHE_KEY);
-    if (!raw) return {};
-    const parsed = JSON.parse(raw) as Record<string, GitBranch>;
-    return parsed && typeof parsed === 'object' ? parsed : {};
-  } catch {
-    return {};
-  }
-};
-
-const writeCachedBranches = (directory: string, branches: GitBranch): void => {
-  if (!directory || !branches) return;
-  try {
-    const cache = readBranchCache();
-    cache[directory] = branches;
-    getDeferredSafeStorage().setItem(GIT_BRANCH_CACHE_KEY, JSON.stringify(cache));
-  } catch {
-    // quota / serialization — ignore; live fetch still refreshes the store
-  }
-};
-
-const seedDirectoriesFromBranchCache = (): Map<string, DirectoryGitState> => {
-  const directories = new Map<string, DirectoryGitState>();
-  const cache = readBranchCache();
-  for (const [directory, branches] of Object.entries(cache)) {
-    if (!directory || !branches || !Array.isArray(branches.all)) continue;
-    // A cached branch list implies the directory was a git repo. Seed isGitRepo
-    // so the selector's gate passes immediately; lastBranchesFetch stays 0 so the
-    // ChatInput effect treats it as stale and refreshes in the background.
-    directories.set(directory, { ...createEmptyDirectoryState(), isGitRepo: true, branches });
-  }
-  return directories;
-};
 
 // LRU eviction helper for diff cache
 const evictDiffCacheIfNeeded = (
@@ -421,7 +388,7 @@ const isCleanStatusFile = (file: GitStatus['files'][number]): boolean =>
 export const useGitStore = create<GitStore>()(
   devtools(
     (set, get) => ({
-      directories: seedDirectoriesFromBranchCache(),
+      directories: new Map(),
       activeDirectory: null,
 
       setActiveDirectory: (directory) => {
@@ -684,7 +651,9 @@ export const useGitStore = create<GitStore>()(
         set({ directories: nextDirectories });
       },
 
-      fetchBranches: async (directory, git) => {
+      fetchBranches: async (directory, git, options = {}) => {
+        const transport = getRuntimeTransportIdentity();
+        const generation = bumpBranchesFetchGeneration(directory);
         {
           const newDirectories = new Map(get().directories);
           const d = newDirectories.get(directory) ?? createEmptyDirectoryState();
@@ -693,14 +662,27 @@ export const useGitStore = create<GitStore>()(
         }
 
         try {
-          const branches = await git.getGitBranches(directory);
+          const branches = options.force
+            ? await refreshGitBranchesQuery(directory, git, undefined, transport)
+            : await ensureGitBranchesQuery(directory, git, undefined, transport);
+          if (
+            generation !== branchesFetchGenerationByDirectory.get(directory)
+            || transport !== getRuntimeTransportIdentity()
+          ) {
+            return;
+          }
           const newDirectories = new Map(get().directories);
           const dirState = newDirectories.get(directory) ?? createEmptyDirectoryState();
-          newDirectories.set(directory, { ...dirState, branches, isLoadingBranches: false, lastBranchesFetch: Date.now() });
+          newDirectories.set(directory, { ...dirState, branches, branchesTransportIdentity: transport, isLoadingBranches: false, lastBranchesFetch: Date.now() });
           set({ directories: newDirectories });
-          writeCachedBranches(directory, branches);
         } catch (error) {
           console.error('Failed to fetch git branches:', error);
+          if (
+            generation !== branchesFetchGenerationByDirectory.get(directory)
+            || transport !== getRuntimeTransportIdentity()
+          ) {
+            return;
+          }
           const newDirectories = new Map(get().directories);
           const d = newDirectories.get(directory) ?? createEmptyDirectoryState();
           newDirectories.set(directory, { ...d, isLoadingBranches: false });
@@ -785,7 +767,7 @@ export const useGitStore = create<GitStore>()(
         const updatedDirState = get().directories.get(directory);
         if (!updatedDirState?.isGitRepo) return;
 
-        await get().fetchBranches(directory, git);
+        await get().fetchBranches(directory, git, { force });
 
         const logAge = now - (updatedDirState.lastLogFetch || 0);
         if (force || logAge > LOG_STALE_THRESHOLD || !updatedDirState.log) {
@@ -1021,9 +1003,11 @@ export const useGitStatus = (directory: string | null) => {
 };
 
 export const useGitBranches = (directory: string | null) => {
+  const transport = React.useSyncExternalStore(subscribeRuntimeEndpointChanged, getRuntimeTransportIdentity, getRuntimeTransportIdentity);
   return useGitStore((state) => {
     if (!directory) return null;
-    return state.directories.get(directory)?.branches ?? null;
+    const entry = state.directories.get(directory);
+    return entry?.branchesTransportIdentity === transport ? entry.branches : null;
   });
 };
 

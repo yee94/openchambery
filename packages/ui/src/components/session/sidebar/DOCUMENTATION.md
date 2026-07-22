@@ -98,11 +98,12 @@
   The former three-dot overflow menu is a direct archive control; hold Shift to hard-delete
   (archived buckets always show delete). Rename/share/folder and other actions remain on the
   row context menu.
-- Session busy/unread status is a trailing shrink-0 marker on the right of the title
-  (ContextUsage-style track+arc ring while busy, info-colored unread dot when
-  idle+unseen). It owns its own gutter so long titles truncate before it, and
-  hides instantly on row hover (no opacity/padding transition) when hover/always-visible
-  row actions take that edge.
+- Session busy/unread/question status is a trailing shrink-0 marker on the right of the title
+  (highlighted `question` icon while an ask-tool question is pending, ContextUsage-style
+  track+arc ring while busy, info-colored unread dot when idle+unseen). Pending questions
+  outrank the busy spinner because the session is waiting on the user. It owns its own
+  gutter so long titles truncate before it, and hides instantly on row hover (no
+  opacity/padding transition) when hover/always-visible row actions take that edge.
 - Archived groups are collapsed by default and support bulk deletion at group/folder level.
 - Session rows support compact inline dates in minimal mode and simplified metadata in default mode.
 - Session-row visual selection is published through a narrow row-only Focus store before authoritative navigation. Focus includes the render scope (`recent` or `project`) plus session/project identity, so duplicate representations never both receive the Active background or satisfy the wrong paint barrier.

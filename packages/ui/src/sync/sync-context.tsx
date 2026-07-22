@@ -1845,9 +1845,19 @@ const dispatchOpenCodeUpdateAvailableUnlessBundled = (payload: { version: string
   })
 }
 
+export function shouldBootstrapDirectory(
+  directory: string,
+  currentDirectory: string,
+  bootstrapCurrentDirectory?: boolean,
+): boolean {
+  return directory !== currentDirectory || bootstrapCurrentDirectory !== false
+}
+
 export function SyncProvider(props: {
   sdk: OpencodeClient
   directory: string
+  /** Keeps the current directory store live while deferring its full bootstrap. */
+  bootstrapDirectory?: boolean
   children: React.ReactNode
 }) {
   // Capacitor apps were previously locked to SSE because Android WebSocket
@@ -1871,6 +1881,13 @@ export function SyncProvider(props: {
   const pipelineReconnectRef = useRef<((reason?: string) => void) | null>(null)
   const pipelineHasConnectedRef = useRef(false)
   const pipelineDisconnectedBeforeFirstConnectRef = useRef(false)
+  const bootstrapGateRef = useRef({ directory: props.directory, enabled: props.bootstrapDirectory })
+  bootstrapGateRef.current = { directory: props.directory, enabled: props.bootstrapDirectory }
+
+  const canBootstrapDirectory = (directory: string) => {
+    const gate = bootstrapGateRef.current
+    return shouldBootstrapDirectory(directory, gate.directory, gate.enabled)
+  }
 
   const system = useMemo<SyncSystem>(
     () => ({
@@ -1886,6 +1903,7 @@ export function SyncProvider(props: {
     reason: SessionMaterializationReason,
     options?: { statusOnly?: boolean },
   ) => {
+    if (!canBootstrapDirectory(directory)) return
     const store = childStores.children.get(directory)
     if (!store) return
     const resyncing = resyncingDirectoriesRef.current
@@ -1928,6 +1946,7 @@ export function SyncProvider(props: {
 
     childStores.configure({
       onBootstrap: (directory) => {
+        if (!canBootstrapDirectory(directory)) return
         if (bootingDirs.has(directory)) return
         bootingDirs.add(directory)
 
@@ -1936,6 +1955,7 @@ export function SyncProvider(props: {
 
         const runBootstrap = async () => {
           await waitForSessionStartupBarrier()
+          if (!canBootstrapDirectory(directory)) return
           const globalState = useGlobalSyncStore.getState()
           await bootstrapDirectory({
             directory,
@@ -2183,7 +2203,9 @@ export function SyncProvider(props: {
   useEffect(() => {
     let seedExpiryTimer: ReturnType<typeof setTimeout> | undefined
     if (props.directory) {
-      const store = childStores.ensureChild(props.directory)
+      const store = childStores.ensureChild(props.directory, {
+        bootstrap: shouldBootstrapDirectory(props.directory, props.directory, props.bootstrapDirectory),
+      })
       const statusSeed = getRuntimeLiveStatusSeed(getRuntimeKey(), props.directory)
       if (statusSeed) {
         store.setState((state: DirectoryStore) => ({
@@ -2211,7 +2233,7 @@ export function SyncProvider(props: {
     return () => {
       if (seedExpiryTimer) clearTimeout(seedExpiryTimer)
     }
-  }, [props.directory, childStores, routingIndex])
+  }, [props.directory, props.bootstrapDirectory, childStores, routingIndex])
 
   // Set refs so non-React code (session-actions, session-ui-store) can access sync state
   useEffect(() => {
@@ -2379,10 +2401,22 @@ export function useSessionPermissions(
 }
 
 /** Get questions for a specific session */
-export function useSessionQuestions(sessionID: string, directory?: string) {
-  return useDirectorySync(
-    useCallback((state: State) => state.question[sessionID] ?? EMPTY_QUESTION_REQUESTS, [sessionID]),
-    directory,
+export function useSessionQuestions(
+  sessionID: string,
+  directory?: string,
+  options?: { bootstrap?: boolean },
+) {
+  // Mirror useSessionPermissions so lightweight consumers (sidebar rows) can
+  // subscribe with `{ bootstrap: false }` and still receive routed
+  // question.asked / replied / rejected events without kicking off a full
+  // directory bootstrap.
+  const store = useDirectoryStore(directory, options)
+  return useStore(
+    store,
+    useCallback(
+      (state: State) => (sessionID ? (state.question[sessionID] ?? EMPTY_QUESTION_REQUESTS) : EMPTY_QUESTION_REQUESTS),
+      [sessionID],
+    ),
   )
 }
 

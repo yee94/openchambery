@@ -47,11 +47,27 @@ Keep `bridge.ts` as a thin orchestration layer that delegates message handling t
   - Skills list, detail/CRUD, files, catalog, scan, and install requests carry the
     webview directory hint. Directory-sensitive handlers resolve that payload at
     call time, so project-scoped skills match the shared UI query directory.
+  - Provider catalogs are projected through the Extension Host safe-field allowlist
+    before they reach the webview.
   - Skill `summary=true` and command metadata `{ catalog: true }` requests return
     compact autocomplete contracts without skill content, sources, or command templates.
 
 - `bridge-settings-runtime.ts`
-  - Settings read/write and OpenCode skills discovery via API for bridge consumers.
+  - Settings read/write, OpenCode skills discovery, and provider catalog API access for bridge consumers.
+  - Full settings responses use an explicit non-sensitive DesktopSettings allowlist and expose stored tunnel and summary credentials only through their `has*` indicators.
+
+- `settings-visible-runtime.ts`
+  - Pure formatter for the full settings response allowlist and credential-presence indicators.
+
+- `settings-bootstrap-runtime.ts`
+  - Projects the bounded, secret-free settings bootstrap contract at the Extension Host boundary.
+  - Validates bootstrap STT URLs as credential-free HTTP(S) URLs and restricts transport, STT provider, and response-style values to their supported enums.
+
+- `provider-catalog-runtime.ts`
+  - Pure bounded provider catalog projection at the Extension Host trust boundary.
+  - Rejects malformed top-level responses and marks isolated invalid entities as partial.
+  - Limits providers, models, defaults, and variants; validates identifiers and scalar bounds; and emits null-prototype dictionaries for dynamic catalog maps.
+  - Requires a non-empty bridge directory and treats SDK errors as catalog failures before projection.
 
 - `bridge-system-runtime.ts`
   - System/editor/provider/quota/notification/update-check message handlers.
@@ -63,6 +79,10 @@ Keep `bridge.ts` as a thin orchestration layer that delegates message handling t
 The VS Code webview returns `501 { code: 'unavailable' }` for the message-queue
 server route family. This explicit response precedes the generic OpenCode proxy,
 so shared UI worktree-order synchronization exits cleanly in this runtime.
+
+The exact `GET /api/config/settings/bootstrap` webview route dispatches to
+`api:config/settings:bootstrap` before the generic settings route. The legacy
+`GET /api/config/settings?bootstrap=true` form remains supported.
 
 When adding new bridge route families:
 

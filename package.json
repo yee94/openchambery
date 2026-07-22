@@ -1,6 +1,6 @@
 {
   "name": "openchamber-monorepo",
-  "version": "1.16.50",
+  "version": "1.16.51",
   "description": "OpenChamber monorepo workspace for web, ui, and desktop runtimes",
   "private": true,
   "type": "module",
@@ -47,6 +47,7 @@
     "dev:web:hmr": "node ./scripts/dev-web-hmr.mjs",
     "start:web": "bun run --cwd packages/web start",
     "pack:web": "bun pm pack --cwd packages/web",
+    "pack:relay": "bun pm pack --cwd packages/relay-server",
     "electron:dev": "node ./packages/electron/scripts/electron-dev.mjs",
     "electron:dev:bundled": "OPENCHAMBER_ELECTRON_USE_BUNDLED_UI=1 node ./packages/electron/scripts/electron-dev.mjs",
     "electron:build": "bun run --cwd packages/electron package",

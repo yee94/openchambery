@@ -2,7 +2,7 @@ import { afterEach, expect, it } from 'bun:test';
 import http from 'node:http';
 import { WebSocket } from 'ws';
 
-import { createPrivateRelayServer, formatRelayWsUrl, resolveRelayClientIp } from './index.js';
+import { createPrivateRelayServer, formatRelayWsUrl, resolveRelayClientIp } from '../src/index.js';
 
 const relays = [];
 afterEach(async () => { await Promise.all(relays.splice(0).map((relay) => relay.stop())); });

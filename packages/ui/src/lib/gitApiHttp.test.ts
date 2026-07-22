@@ -1,6 +1,8 @@
 import { describe, expect, test } from 'bun:test';
 import {
   getGitStatus,
+  getGitBranches,
+  getRemotes,
   gitFetch,
   listGitWorktrees,
   resolveGitPrimaryRoot,
@@ -114,6 +116,24 @@ describe('gitApiHttp index mutations', () => {
       expect(unstageError).toBeInstanceOf(Error);
       expect((unstageError as Error).message).toBe('path is required to unstage git changes');
       expect(calls).toHaveLength(0);
+    } finally {
+      restoreMocks();
+    }
+  });
+});
+
+describe('gitApiHttp branch discovery', () => {
+  test('passes AbortSignal through branches and remotes runtime requests', async () => {
+    installWindowMock();
+    const calls = installFetchMock();
+    const controller = new AbortController();
+    try {
+      await getGitBranches('/repo', { signal: controller.signal });
+      await getRemotes('/repo', { signal: controller.signal });
+
+      expect(calls).toHaveLength(2);
+      expect(calls[0].init?.signal).toBe(controller.signal);
+      expect(calls[1].init?.signal).toBe(controller.signal);
     } finally {
       restoreMocks();
     }

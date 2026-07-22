@@ -6,6 +6,7 @@ import { runtimeFetch } from '@/lib/runtime-fetch';
 import { getRuntimeTransportIdentity } from '@/lib/runtime-switch';
 import { useProjectsStore } from '@/stores/useProjectsStore';
 import { resolveConfigQueryDirectory as resolveDirectory } from './commandQueries';
+import { rawAgentsQueryOptions } from './configCatalogQueries';
 
 export { resolveConfigQueryDirectory } from './commandQueries';
 
@@ -42,7 +43,7 @@ export const agentQueryOptions = (
   return {
     queryKey: agentQueryKey(normalizedDirectory, transport),
     queryFn: async ({ signal }: { signal: AbortSignal }): Promise<Agent[]> => {
-      const agents = await opencodeClient.listAgents(normalizedDirectory);
+      const agents = await queryClient.fetchQuery(rawAgentsQueryOptions(normalizedDirectory, transport));
       const response = await runtimeFetch('/api/config/agents/metadata', {
         method: 'POST',
         headers: {
@@ -69,6 +70,8 @@ export const agentQueryOptions = (
       });
     },
     retry: 2,
+    staleTime: Infinity,
+    gcTime: Infinity,
   };
 };
 
@@ -86,7 +89,7 @@ export const readAgentsSnapshot = (
 ): Agent[] => queryClient.getQueryData<Agent[]>(agentQueryKey(normalizeDirectory(directory), transport)) ?? [];
 
 export const refreshAgentsQuery = async (
-  client: Pick<QueryClient, 'fetchQuery' | 'getQueryData'>,
+  client: Pick<QueryClient, 'fetchQuery' | 'getQueryData' | 'invalidateQueries'>,
   directory: string | null,
   transport: string,
 ): Promise<Agent[]> => {
@@ -94,5 +97,7 @@ export const refreshAgentsQuery = async (
   if (getRuntimeTransportIdentity() !== transport) {
     return client.getQueryData<Agent[]>(agentQueryKey(normalizedDirectory, transport)) ?? [];
   }
-  return client.fetchQuery({ ...agentQueryOptions(normalizedDirectory, transport), staleTime: 0 });
+  const options = agentQueryOptions(normalizedDirectory, transport);
+  await client.invalidateQueries({ queryKey: options.queryKey, exact: true });
+  return client.fetchQuery(options);
 };

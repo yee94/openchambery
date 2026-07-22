@@ -107,10 +107,37 @@ Web and Electron store up to four panel transcript views within a 48 MiB local c
 the cache is runtime-scoped through each view's geometry key and is cleared for
 all nested views when its tab closes.
 
-`useConfigStore.ts` keeps provider and agent snapshots project-scoped. Its transient
-provider/agent loading maps are keyed by the active config directory so a deeplink
-into an uncached project can show explicit composer loading controls while cached
-projects continue to render immediately during background refresh.
+`configCatalogQueries.ts` owns the safe Provider catalog and raw Agent catalog by transport
+identity plus normalized project configuration directory. New OpenChamber hosts always use the safe
+projection from `GET /api/config/catalog/providers` via `runtimeFetch`, with directory and AbortSignal
+propagation. Older OpenChamber hosts that answer 404 or 501 use one compatibility read through the
+official SDK's `/api/config/providers` network path; its raw response is parsed immediately into the
+safe DTO. The Provider DTO admits only provider/model display and capability fields;
+the parser constructs each field, drops unknown keys, bounds collections, and accepts
+partial catalogs with invalid individual entities removed. TanStack Query owns the sole
+network retry policy, infinite freshness/retention, exact invalidation, and single-flight.
+`useConfigStore.ts` owns project-scoped UI projections, selection, and mutation
+orchestration. It applies the Provider DTO allowlist again during hydration and
+partialization. Persisted catalogs carry transport identity; legacy catalogs and catalogs
+from another runtime are discarded while unrelated user settings remain available. Runtime
+endpoint reset clears Provider and Agent snapshots, directory scopes, defaults, and catalog
+selection state. The persisted allowlist excludes credential fields and unknown keys; migration
+rewrites legacy envelopes through that allowlist. Partial Provider refreshes retain an existing
+complete snapshot while cold partial snapshots remain available. Provider and Agent loads capture
+runtime generation and transport identity before every commit, trace, error log, and loading
+cleanup, so an earlier runtime lifetime cannot republish catalog state after a switch. Refresh
+failures retain the previous snapshot.
+Settings bootstrap defaults are read through `settingsBootstrapQueries.ts` by
+runtime transport identity from the dedicated `GET /api/config/settings/bootstrap`
+safe projection. Provider and Agent loads across configuration
+directories share its infinite-freshness Query snapshot, and the response-style
+send-path cache is partitioned by transport and warms from that same snapshot.
+Confirmed settings saves capture their originating transport and patch that exact
+snapshot through the allowlisted DTO parser; failed loads and saves retain the prior
+Query or Store snapshot. Full Settings synchronization keeps its short-lived cache,
+in-flight request, debounce batch, and hydrated diff scoped to the same captured
+transport. The Behavior surface loads the response-style bootstrap and AGENTS.md
+independently; each editor remains read-only until its authoritative source succeeds.
 
 `ChatInput` subscribes directly to the active `agents` snapshot for permission
 auto-accept visibility. It derives the selected agent's prompt capability locally,
@@ -192,7 +219,9 @@ The Git and PR stores are the most important stores to understand before editing
 
 ### `useGitStore.ts`
 
-`useGitStore` is a centralized per-directory Git cache.
+`useGitStore` is a centralized per-directory Git compatibility cache for status,
+log, identity, diffs, and branch Query mirrors. TanStack Query owns runtime-scoped
+branches, remotes, and persisted branch startup snapshots through `gitBranchQueries.ts`.
 
 Core model:
 
@@ -209,7 +238,16 @@ Core model:
 
 Important properties:
 
-- `directories: Map<string, DirectoryGitState>` is the source of truth
+- `directories: Map<string, DirectoryGitState>` owns status, log, identity, and diff state
+- branches/remotes Query keys contain transport identity plus normalized directory;
+  branches use 30-second SWR freshness and infinite retention
+- `fetchBranches()` delegates to the branches Query and mirrors successful results into
+  the legacy store with their transport identity; Query owns persisted startup snapshots
+- branch startup snapshots use version 2 transport-plus-normalized-directory keys; the
+  former directory-only payload migrates once to the first reading transport, while
+  malformed and unsupported payloads are ignored
+- branch mutations use exact Query refresh before status refresh; Query observers
+  share a single in-flight request for one runtime and directory
 - loading state is per-directory, not global
 - `ensureStatus()` and `ensureAll()` are the preferred entry points for consumers
 - in-flight dedupe exists for status and `ensureAll()`

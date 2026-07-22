@@ -60,6 +60,7 @@ interface BranchSelectorProps {
   worktreesLabel?: string;
   worktreeNewLabel?: string;
   projectRootLabel?: string;
+  onOpenChange?: (open: boolean) => void;
 }
 
 const sanitizeBranchNameInput = (value: string): string => {
@@ -97,6 +98,7 @@ export const BranchSelector: React.FC<BranchSelectorProps> = ({
   worktreesLabel,
   worktreeNewLabel,
   projectRootLabel,
+  onOpenChange,
 }) => {
   const { t } = useI18n();
   const [isOpen, setIsOpen] = React.useState(false);
@@ -258,7 +260,10 @@ export const BranchSelector: React.FC<BranchSelectorProps> = ({
   );
 
   return (
-    <DropdownMenu open={isOpen} onOpenChange={setIsOpen}>
+    <DropdownMenu open={isOpen} onOpenChange={(open) => {
+      setIsOpen(open);
+      onOpenChange?.(open);
+    }}>
       {hideTooltip || trigger ? (
         menuTrigger
       ) : (

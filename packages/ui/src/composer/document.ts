@@ -127,6 +127,8 @@ const expandedEditRange = (references: readonly ComposerReference[], start: numb
 
 export interface ComposerReferenceInsertionOptions {
     inlineBoundaries?: boolean;
+    /** Also insert ordinary spaces when the chip sits at the document start/end. */
+    padDocumentEdges?: boolean;
 }
 
 export function insertComposerReference(document: ComposerDocument, selectionStart: number, selectionEnd: number, reference: NewComposerReference, options: ComposerReferenceInsertionOptions = {}): { document: ComposerDocument; caret: number; edit: ComposerEdit } {
@@ -137,8 +139,12 @@ export function insertComposerReference(document: ComposerDocument, selectionSta
     const range = expandedEditRange(current.references, selectedStart, selectedEnd);
     const before = current.text.slice(0, range.start);
     const after = current.text.slice(range.end);
-    const leadingSpace = options.inlineBoundaries && before.length > 0 && !/\s$/.test(before) ? ' ' : '';
-    const trailingSpace = options.inlineBoundaries && after.length > 0 && !/^\s/.test(after) ? ' ' : '';
+    const leadingSpace = options.inlineBoundaries
+        && (before.length > 0 || options.padDocumentEdges)
+        && !/\s$/.test(before) ? ' ' : '';
+    const trailingSpace = options.inlineBoundaries
+        && (after.length > 0 || options.padDocumentEdges)
+        && !/^\s/.test(after) ? ' ' : '';
     const text = `${before}${leadingSpace}${reference.display}${trailingSpace}${after}`;
     const inserted = { ...reference, start: range.start + leadingSpace.length, end: range.start + leadingSpace.length + reference.display.length } as ComposerReference;
     const delta = leadingSpace.length + reference.display.length + trailingSpace.length - (range.end - range.start);
@@ -216,6 +222,19 @@ export const resolveComposerReferenceDeletion = (document: ComposerDocument, int
     const text = `${current.text.slice(0, expanded.start)}${current.text.slice(expanded.end)}`;
     const references = current.references.filter((reference) => !removed.includes(reference)).map((reference) => reference.start >= expanded.end ? { ...reference, start: reference.start - (expanded.end - expanded.start), end: reference.end - (expanded.end - expanded.start) } : reference);
     return { document: normalizeTrustedComposerDocument({ text, references }), caret: expanded.start, edit: { oldStart: expanded.start, oldEnd: expanded.end, newEnd: expanded.start }, removedIds: removed.map((reference) => reference.id), removedReferences: removed };
+};
+
+/** Collapses the whitespace left by an atomic Composer reference deletion. */
+export const normalizeComposerReferenceDeletionWhitespace = (text: string, caret: number): { text: string; caret: number } => {
+    let start = caret;
+    let end = caret;
+    while (start > 0 && /\s/.test(text[start - 1])) start -= 1;
+    while (end < text.length && /\s/.test(text[end])) end += 1;
+    const separator = start > 0 && end < text.length ? ' ' : '';
+    return {
+        text: `${text.slice(0, start)}${separator}${text.slice(end)}`,
+        caret: start + separator.length,
+    };
 };
 
 export type ComposerSerializationResult = { ok: true; text: string; chunks?: import('./send-plan').ComposerSendChunk[]; semantics?: import('./extensions').ComposerReferenceSemantic[] } | { ok: false; reason: 'invalid-references' | 'reference-budget-exceeded' | 'reference-payload-budget-exceeded' | 'canonical-output-too-large' };

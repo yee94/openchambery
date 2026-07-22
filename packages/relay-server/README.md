@@ -1,4 +1,4 @@
-# OpenChamber Private Relay
+# OpenChamber Relay Server
 
 `openchamber-relay` is the self-hosted Layer 1 relay for OpenChamber remote access. It gives OpenChamber Hosts an outbound Relay connection and carries encrypted client traffic through that connection.
 
@@ -21,16 +21,16 @@ Relay v1 accepts anonymous Client route requests. Admission, connection, frame, 
 
 ## Requirements
 
-- `@openchamber/web` installation: Node.js 22 or later and a supported package manager such as npm, pnpm, yarn, or Bun.
+- `@openchamber/relay-server` installation: Node.js 22 or later and a supported package manager such as npm, pnpm, yarn, or Bun.
 - Single-file bundle build: Bun. This repository uses Bun 1.3.14.
 - Public deployment: a DNS name, TLS certificate, reverse proxy, and firewall policy appropriate for the deployment.
 
 ## Install and quick start
 
-`openchamber-relay` ships as an executable in the public `@openchamber/web` package.
+`openchamber-relay` ships as an executable in the public `@openchamber/relay-server` package.
 
 ```sh
-npm install -g @openchamber/web
+npm install -g @openchamber/relay-server
 openchamber-relay --public-url wss://relay.example.com/ws
 ```
 
@@ -41,7 +41,7 @@ The default listener is `127.0.0.1:8787` and the default WebSocket upgrade path 
 Run these commands from the repository root. `bun build --compile` creates a single executable for the current platform and architecture.
 
 ```sh
-bun build --compile --outfile ./openchamber-relay ./packages/web/bin/relay-server.js
+bun build --compile --outfile ./openchamber-relay ./packages/relay-server/bin/openchamber-relay.js
 sudo install -m 0755 ./openchamber-relay /usr/local/bin/openchamber-relay
 ```
 
@@ -57,7 +57,7 @@ kill -TERM "$relay_pid"
 wait "$relay_pid"
 ```
 
-The executable remains independently deployable after compilation. Its distribution ownership remains `@openchamber/web`, where it is published as the `openchamber-relay` executable.
+The executable remains independently deployable after compilation. `@openchamber/relay-server` owns its distribution and publishes the `openchamber-relay` executable.
 
 ## Configure the listener and public URL
 
@@ -238,7 +238,7 @@ sudo systemctl status openchamber-relay
 
 ## Docker delivery assets
 
-The repository provides optional Docker delivery assets at [`Dockerfile.relay`](../../../../Dockerfile.relay) and [`docker-compose.relay.yml`](../../../../docker-compose.relay.yml). The Compose service publishes `127.0.0.1:${OPENCHAMBER_RELAY_PUBLISHED_PORT:-8787}` and accepts `OPENCHAMBER_RELAY_SERVER_PUBLIC_URL` plus selected Relay limits.
+The repository provides optional Docker delivery assets at [`Dockerfile.relay`](../../Dockerfile.relay) and [`docker-compose.relay.yml`](../../docker-compose.relay.yml). The Compose service publishes `127.0.0.1:${OPENCHAMBER_RELAY_PUBLISHED_PORT:-8787}` and accepts `OPENCHAMBER_RELAY_SERVER_PUBLIC_URL` plus selected Relay limits.
 
 ```sh
 OPENCHAMBER_RELAY_SERVER_PUBLIC_URL=wss://relay.example.com/ws \
@@ -262,15 +262,11 @@ These assets define an optional follow-on deployment path. Validate the image, p
 
 ## Development and test coverage
 
-Run Relay test files independently from the repository root:
+Run Relay package unit tests and Host/Client end-to-end coverage independently from the repository root:
 
 ```sh
-bun test packages/web/server/private-relay/private-relay.test.js
-bun test packages/web/server/private-relay/standalone.test.js
-bun test packages/web/server/private-relay/hardening.test.js
-bun test packages/web/server/private-relay/lifecycle.test.js
-bun test packages/web/server/private-relay/matrix.test.js
-bun test packages/web/server/private-relay/e2e.test.ts
+bun test packages/relay-server/test
+bun test packages/web/server/lib/relay/relay-server.e2e.test.ts
 ```
 
-`e2e.test.ts` builds a compiled Relay executable and exercises a real Host and TypeScript Client across authenticated HTTP, streaming SSE, URL-token WebSocket traffic, Relay restart recovery, and cleanup. Use this E2E coverage when validating Relay transport changes.
+`packages/web/server/lib/relay/relay-server.e2e.test.ts` builds a compiled Relay executable and exercises a real Host and TypeScript Client across authenticated HTTP, streaming SSE, URL-token WebSocket traffic, Relay restart recovery, and cleanup. Use this E2E coverage when validating Relay transport changes.

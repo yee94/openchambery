@@ -25,25 +25,35 @@
  * ```
  */
 
-// Extend Window interface for SpeechRecognition
-declare global {
-  interface Window {
-    SpeechRecognition: { new(): SpeechRecognition };
-    webkitSpeechRecognition: { new(): SpeechRecognition };
-  }
-}
-
 // Callback types
 type SpeechResultCallback = (text: string, isFinal: boolean) => void;
 type SpeechEndCallback = () => void;
 type ErrorCallback = (error: string) => void;
+type BrowserSpeechRecognitionResult = {
+  isFinal: boolean;
+  [index: number]: { transcript: string };
+};
+type BrowserSpeechRecognition = {
+  continuous: boolean;
+  interimResults: boolean;
+  lang: string;
+  onstart: (() => void) | null;
+  onaudiostart: (() => void) | null;
+  onsoundstart: (() => void) | null;
+  onresult: ((event: { resultIndex: number; results: ArrayLike<BrowserSpeechRecognitionResult> }) => void) | null;
+  onerror: ((event: { error: string }) => void) | null;
+  onend: (() => void) | null;
+  start(): void;
+  stop(): void;
+  abort(): void;
+};
 
 /**
  * Browser Voice Service class
  * Wraps Web Speech API with a clean interface
  */
 class BrowserVoiceService {
-  private recognition: SpeechRecognition | null = null;
+  private recognition: BrowserSpeechRecognition | null = null;
   private isListening = false;
   private currentLang = 'en-US';
   private onResultCallback: SpeechResultCallback | null = null;
@@ -217,33 +227,41 @@ class BrowserVoiceService {
     this.stopListening();
 
     // Create new recognition instance
-    const SpeechRecognitionConstructor = window.SpeechRecognition || window.webkitSpeechRecognition;
-    this.recognition = new SpeechRecognitionConstructor();
+    const SpeechRecognitionConstructor = (window.SpeechRecognition || window.webkitSpeechRecognition) as
+      | (new () => BrowserSpeechRecognition)
+      | undefined;
+    if (!SpeechRecognitionConstructor) {
+      const errorMsg = 'Web Speech API not supported in this browser';
+      onError?.(errorMsg);
+      throw new Error(errorMsg);
+    }
+    const recognition = new SpeechRecognitionConstructor();
+    this.recognition = recognition;
     this.currentLang = lang;
     this.onResultCallback = onResult;
     this.onErrorCallback = onError || null;
 
     // Configure recognition
-    this.recognition.continuous = true;
-    this.recognition.interimResults = true;
-    this.recognition.lang = lang;
+    recognition.continuous = true;
+    recognition.interimResults = true;
+    recognition.lang = lang;
 
     // Set up event handlers
-    this.recognition.onstart = () => {
+    recognition.onstart = () => {
       console.log('[BrowserVoiceService] Recognition started');
       this.isListening = true;
       this.restartOnEnd = true;
     };
 
-    this.recognition.onaudiostart = () => {
+    recognition.onaudiostart = () => {
       console.log('[BrowserVoiceService] Audio recording started');
     };
     
-    this.recognition.onsoundstart = () => {
+    recognition.onsoundstart = () => {
       console.log('[BrowserVoiceService] Sound detected');
     };
 
-    this.recognition.onresult = (event: SpeechRecognitionEvent) => {
+    recognition.onresult = (event) => {
       console.log('[BrowserVoiceService] Got result:', event.results.length, 'results');
       let finalTranscript = '';
       let interimTranscript = '';
@@ -272,7 +290,7 @@ class BrowserVoiceService {
       }
     };
 
-    this.recognition.onerror = (event: SpeechRecognitionErrorEvent) => {
+    recognition.onerror = (event) => {
       // "aborted" is commonly emitted when we intentionally stop/pause recognition.
       // Treat it as non-fatal to avoid noisy error loops in continuous mode.
       if (event.error === 'aborted') {
@@ -291,7 +309,7 @@ class BrowserVoiceService {
       }
     };
 
-    this.recognition.onend = () => {
+    recognition.onend = () => {
       this.isListening = false;
       
       // Auto-restart if still supposed to be listening and not speaking.
@@ -307,7 +325,7 @@ class BrowserVoiceService {
 
     // Start recognition - MUST be synchronous for iOS Safari
     try {
-      this.recognition.start();
+      recognition.start();
     } catch (err) {
       const errorMsg = err instanceof Error ? err.message : 'Failed to start speech recognition';
       onError?.(errorMsg);

@@ -134,6 +134,10 @@
     font-size: 16px !important; /* Prevents iOS zoom */
   }
 
+  :root.mobile-pointer:not(.desktop-runtime) [data-chat-input-highlight="true"] {
+    font-size: 16px !important;
+  }
+
   /* Prevent keyboard on non-input elements */
   :root.mobile-pointer:not(.desktop-runtime)
     button:not([type="submit"]):not([type="button"]):not([type="reset"]),

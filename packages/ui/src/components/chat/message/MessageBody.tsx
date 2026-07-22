@@ -780,6 +780,7 @@ const UserMessageBody = React.memo(({ messageId, parts, messageCreatedAt, isMobi
                                 messageId={messageId}
                                 isMobile={isMobile}
                                 agentMention={mentionForPart}
+                                messageParts={parts}
                             />
                         </React.Fragment>
                     );

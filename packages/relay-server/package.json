@@ -1,0 +1,50 @@
+{
+  "name": "@openchamber/relay-server",
+  "version": "1.16.51",
+  "description": "Self-hosted private relay server for OpenChamber",
+  "private": false,
+  "type": "module",
+  "main": "./src/index.js",
+  "types": "./src/index.d.ts",
+  "exports": {
+    ".": {
+      "types": "./src/index.d.ts",
+      "import": "./src/index.js",
+      "default": "./src/index.js"
+    }
+  },
+  "bin": {
+    "openchamber-relay": "./bin/openchamber-relay.js"
+  },
+  "publishConfig": {
+    "access": "public"
+  },
+  "engines": {
+    "node": ">=22.0.0"
+  },
+  "license": "MIT",
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/yee94/openchamber.git"
+  },
+  "homepage": "https://github.com/yee94/openchamber#readme",
+  "bugs": {
+    "url": "https://github.com/yee94/openchamber/issues"
+  },
+  "files": [
+    "bin",
+    "src",
+    "README.md",
+    "DOCUMENTATION.md"
+  ],
+  "scripts": {
+    "test": "bun test test",
+    "test:node": "node test/node-smoke.js",
+    "type-check": "node --check src/index.js && node --check src/cli.js && node --check bin/openchamber-relay.js && node --check bin/cli-entry.js",
+    "lint": "node --check src/index.js && node --check src/cli.js && node --check bin/openchamber-relay.js && node --check bin/cli-entry.js",
+    "build:standalone": "bun build --compile --outfile dist/openchamber-relay bin/openchamber-relay.js"
+  },
+  "dependencies": {
+    "ws": "^8.18.3"
+  }
+}

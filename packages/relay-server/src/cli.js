@@ -1,4 +1,4 @@
-import { startPrivateRelayServer } from '../../server/private-relay/index.js';
+import { startPrivateRelayServer } from './index.js';
 import { isIP } from 'node:net';
 
 const LIMIT_KEYS = ['maxUrlBytes', 'maxFieldBytes', 'maxHosts', 'maxSockets', 'maxConnections', 'maxClientsPerHost', 'maxClientsPerIp', 'maxPendingClients', 'pendingMs', 'maxRawSockets', 'maxRawSocketsPerIp', 'graceMs', 'timestampSkewMs', 'replayMs', 'maxReplayEntries', 'maxFrameBytes', 'maxQueuedBytesPerConnection', 'maxGlobalQueuedBytes', 'maxBufferedAmount', 'maxControlQueueEntries', 'maxControlQueuedBytes', 'pumpRetryMs', 'heartbeatMs', 'handshakeMs', 'closeDeadlineMs', 'admissionWindowMs', 'maxAdmissionsPerIp', 'maxAdmissionEntries', 'idAttempts'];

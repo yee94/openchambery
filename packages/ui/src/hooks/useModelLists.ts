@@ -1,10 +1,10 @@
 import React from 'react';
 import { useConfigStore } from '@/stores/useConfigStore';
 import { useUIStore } from '@/stores/useUIStore';
-import type { Provider } from '@opencode-ai/sdk/v2';
+import type { ConfigCatalogModel, ConfigCatalogProvider } from '@/types/configCatalog';
 
-type ProviderModel = Provider["models"][string];
-type ProviderWithModelList = Omit<Provider, "models"> & { models: ProviderModel[] };
+type ProviderModel = ConfigCatalogModel;
+type ProviderWithModelList = Omit<ConfigCatalogProvider, "models"> & { models: ProviderModel[] };
 
 export interface ModelListItem {
   provider: ProviderWithModelList;

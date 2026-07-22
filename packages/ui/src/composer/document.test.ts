@@ -1,12 +1,21 @@
 import { describe, expect, test } from 'bun:test';
-import { COMPOSER_REFERENCE_LIMITS, decorateComposerReference, insertComposerReference, isValidComposerSessionId, materializeComposerDocument, materializeComposerReferenceTokens, materializeSessionMentionTokens, mergeComposerRecovery, reconcileComposerDocument, resolveComposerReferenceDeletion, serializeComposerDocument, validateComposerDocument, type ComposerDocument } from './document';
+import { COMPOSER_REFERENCE_LIMITS, decorateComposerReference, insertComposerReference, isValidComposerSessionId, materializeComposerDocument, materializeComposerReferenceTokens, materializeSessionMentionTokens, mergeComposerRecovery, normalizeComposerReferenceDeletionWhitespace, reconcileComposerDocument, resolveComposerReferenceDeletion, serializeComposerDocument, validateComposerDocument, type ComposerDocument } from './document';
 import { contributeComposerReferenceCanonical, diffComposerResources } from './extensions';
+import { COMPOSER_TRIGGER_ICON_SLOT, composerTriggerIconDisplay } from './inline-visual';
 import { compileComposerSendPlan } from './send-plan';
 
 const session = (id: string, start: number, display = '@Same') => ({ id, kind: 'session' as const, sessionId: id, display, start, end: start + display.length });
 const paste = (id: string, start: number, display = '[Paste 1]') => ({ id, kind: 'paste' as const, text: 'original paste', characterCount: 14, index: 1, display, start, end: start + display.length });
-const skill = (id: string, start: number, skillName = 'review') => ({ id, kind: 'skill' as const, skillName, display: `/${skillName}`, start, end: start + skillName.length + 1 });
-const command = (id: string, start: number, commandName = 'run', reference = 'run') => ({ id, kind: 'command' as const, commandName, reference, display: `/${commandName}`, start, end: start + commandName.length + 1 });
+const sessionTriggerDisplay = (label: string) => composerTriggerIconDisplay({ trigger: '@', icon: 'chat-thread', label });
+const slashTriggerDisplay = (name: string, icon = 'book-open') => composerTriggerIconDisplay({ trigger: '/', icon, label: name });
+const skill = (id: string, start: number, skillName = 'review') => {
+    const display = slashTriggerDisplay(skillName);
+    return { id, kind: 'skill' as const, skillName, display, start, end: start + display.length };
+};
+const command = (id: string, start: number, commandName = 'run', reference = 'run') => {
+    const display = slashTriggerDisplay(commandName);
+    return { id, kind: 'command' as const, commandName, reference, display, start, end: start + display.length };
+};
 
 describe('composerReferences', () => {
     test('validates static adapter payloads and bounded session IDs', () => {
@@ -97,6 +106,25 @@ describe('composerReferences', () => {
         expect(resolveComposerReferenceDeletion(document, { key: 'Backspace', selectionStart: 3, selectionEnd: 3 })?.edit).toEqual({ oldStart: 2, oldEnd: 4, newEnd: 2 });
     });
 
+    test('atomically deletes slot-reserved references from a partial selection', () => {
+        const display = sessionTriggerDisplay('Current');
+        const start = 'before '.length;
+        const document: ComposerDocument = {
+            text: `before ${display} after`,
+            references: [session('session', start, display)],
+        };
+        const deleted = resolveComposerReferenceDeletion(document, {
+            key: 'Delete',
+            selectionStart: start + 1,
+            selectionEnd: start + 2,
+        });
+
+        expect(deleted?.document).toEqual({ text: 'before  after', references: [] });
+        expect(deleted?.removedIds).toEqual(['session']);
+        expect(deleted?.caret).toBe(start);
+        expect(normalizeComposerReferenceDeletionWhitespace(deleted?.document.text ?? '', deleted?.caret ?? 0)).toEqual({ text: 'before after', caret: start });
+    });
+
     test('reports reconciled removals for resource ownership', () => {
         const reconciled = reconcileComposerDocument({ text: '@A text', references: [session('s', 0, '@A')] }, '@ text', 1);
         expect(reconciled.removedReferences).toEqual([session('s', 0, '@A')]);
@@ -105,31 +133,33 @@ describe('composerReferences', () => {
     test('serializes and materializes session IDs symmetrically', () => {
         const document = materializeSessionMentionTokens('@session:a @session:b', new Map([['a', '😀'], ['b', 'B']]));
         const serialized = serializeComposerDocument(document);
+        const direct = serializeComposerDocument(document, 'direct-send-display');
         expect(serialized.ok && serialized.text).toBe('@session:a @session:b');
+        expect(direct.ok && direct.text).toBe('@😀 @B');
         if (!serialized.ok) throw new Error('Expected canonical serialization to succeed');
         expect(materializeComposerReferenceTokens(serialized.text, new Map([['a', '😀'], ['b', 'B']]))).toEqual(document);
     });
 
     test('serializes, materializes, and atomically deletes durable skill and command references', () => {
-        const document: ComposerDocument = { text: '/review /run', references: [skill('skill', 0), command('command', 8)] };
+        const document: ComposerDocument = { text: `${slashTriggerDisplay('review')} ${slashTriggerDisplay('run')}`, references: [skill('skill', 0), command('command', slashTriggerDisplay('review').length + 1)] };
         const canonical = serializeComposerDocument(document);
         const direct = serializeComposerDocument(document, 'direct-send-display');
         expect(canonical.ok && [canonical.text, canonical.semantics]).toEqual(['[skill:review] [command:run]', []]);
         expect(direct.ok && [direct.text, direct.semantics]).toEqual(['[skill:review] [command:run]', []]);
         const materialized = materializeComposerReferenceTokens('[skill:review] [command:run]', new Map());
-        expect(materialized).toEqual({ text: '/review /run', references: [skill('skill:0', 0), command('command:15', 8)] });
+        expect(materialized).toEqual({ text: `${slashTriggerDisplay('review')} ${slashTriggerDisplay('run')}`, references: [skill('skill:0', 0), command('command:15', slashTriggerDisplay('review').length + 1)] });
         const rematerialized = serializeComposerDocument(materialized);
         expect(rematerialized.ok && rematerialized.text).toBe('[skill:review] [command:run]');
-        expect(resolveComposerReferenceDeletion(document, { key: 'Backspace', selectionStart: 3, selectionEnd: 3 })?.document).toEqual({ text: ' /run', references: [command('command', 1)] });
+        expect(resolveComposerReferenceDeletion(document, { key: 'Backspace', selectionStart: 3, selectionEnd: 3 })?.document).toEqual({ text: ` ${slashTriggerDisplay('run')}`, references: [command('command', 1)] });
     });
 
     test('materializes command file references using their basename while preserving the reference', () => {
         expect(materializeComposerReferenceTokens('[command:/abs/path/review.md] [command:C:\\commands\\review.md] [command:name]', new Map())).toEqual({
-            text: '/review /review /name',
+            text: `${slashTriggerDisplay('review')} ${slashTriggerDisplay('review')} ${slashTriggerDisplay('name')}`,
             references: [
                 command('command:0', 0, 'review', '/abs/path/review.md'),
-                command('command:30', 8, 'review', 'C:\\commands\\review.md'),
-                command('command:62', 16, 'name', 'name'),
+                command('command:30', slashTriggerDisplay('review').length + 1, 'review', 'C:\\commands\\review.md'),
+                command('command:62', (slashTriggerDisplay('review').length + 1) * 2, 'name', 'name'),
             ],
         });
     });
@@ -142,14 +172,14 @@ describe('composerReferences', () => {
         expect(validateComposerDocument('/run', [{ ...command('command', 0), commandName: 'bad[name' }]).rejectedCount).toBe(1);
         expect(validateComposerDocument('/run', [{ ...command('command', 0), reference: 'bad]reference' }]).rejectedCount).toBe(1);
         expect(validateComposerDocument('/run', [{ ...command('command', 0), reference: 'bad\r\nreference' }]).rejectedCount).toBe(1);
-        expect(validateComposerDocument('/命令.v1/a_b-c', [command('command', 0, '命令.v1/a_b-c')]).rejectedCount).toBe(0);
+        expect(validateComposerDocument(slashTriggerDisplay('命令.v1/a_b-c'), [command('command', 0, '命令.v1/a_b-c')]).rejectedCount).toBe(0);
         expect(materializeComposerReferenceTokens('[skill:bad skill] [command:] [command:bad\r\nreference]', new Map())).toEqual({ text: '[skill:bad skill] [command:] [command:bad\r\nreference]', references: [] });
     });
 
     test('materializes static canonical codecs in source order and leaves overlapping token text intact', () => {
-        expect(materializeComposerReferenceTokens('@session:a @session:b', new Map([['a', 'A'], ['b', 'B']]))).toEqual({ text: '@A @B', references: [
-            { id: 'session:a:0', kind: 'session', sessionId: 'a', display: '@A', start: 0, end: 2 },
-            { id: 'session:b:11', kind: 'session', sessionId: 'b', display: '@B', start: 3, end: 5 },
+        expect(materializeComposerReferenceTokens('@session:a @session:b', new Map([['a', 'A'], ['b', 'B']]))).toEqual({ text: `${sessionTriggerDisplay('A')} ${sessionTriggerDisplay('B')}`, references: [
+            { id: 'session:a:0', kind: 'session', sessionId: 'a', display: sessionTriggerDisplay('A'), start: 0, end: sessionTriggerDisplay('A').length },
+            { id: 'session:b:11', kind: 'session', sessionId: 'b', display: sessionTriggerDisplay('B'), start: sessionTriggerDisplay('A').length + 1, end: sessionTriggerDisplay('A').length + sessionTriggerDisplay('B').length + 1 },
         ] });
         expect(materializeComposerReferenceTokens('@session:a@session:b', new Map([['a', 'A'], ['b', 'B']]))).toEqual({ text: '@session:a@session:b', references: [] });
     });
@@ -159,9 +189,9 @@ describe('composerReferences', () => {
             text: '[Paste 1] @session:next',
             references: [paste('p', 0)],
         }, new Map([['next', 'Next']])) ;
-        expect(restored).toEqual({ text: '[Paste 1] @Next', references: [
+        expect(restored).toEqual({ text: `[Paste 1] ${sessionTriggerDisplay('Next')}`, references: [
             paste('p', 0),
-            { id: 'session:next:10', kind: 'session', sessionId: 'next', display: '@Next', start: 10, end: 15 },
+            { id: 'session:next:10', kind: 'session', sessionId: 'next', display: sessionTriggerDisplay('Next'), start: 10, end: 10 + sessionTriggerDisplay('Next').length },
         ] });
         expect(materializeComposerDocument({ text: '@session:current', references: [paste('p', 0, '@session:current')] }, new Map([['current', 'Current']]))).toEqual({
             text: '@session:current', references: [paste('p', 0, '@session:current')],
@@ -177,6 +207,22 @@ describe('composerReferences', () => {
         expect(insertComposerReference({ text: 'left', references: [] }, 4, 4, reference, { inlineBoundaries: true }).document.text).toBe('left [Paste 1]');
         const adjacent: ComposerDocument = { text: '@A [Paste 1]', references: [session('s', 0, '@A'), paste('old', 3)] };
         expect(insertComposerReference(adjacent, 3, 3, reference, { inlineBoundaries: true }).document.text).toBe('@A [Paste 1] [Paste 1]');
+    });
+
+    test('pads document edges when chip insertion requests edge spaces', () => {
+        const reference = skill('skill', 0, 'review');
+        expect(insertComposerReference({ text: '', references: [] }, 0, 0, reference, {
+            inlineBoundaries: true,
+            padDocumentEdges: true,
+        }).document.text).toBe(` ${slashTriggerDisplay('review')} `);
+        expect(insertComposerReference({ text: 'after', references: [] }, 0, 0, reference, {
+            inlineBoundaries: true,
+            padDocumentEdges: true,
+        }).document.text).toBe(` ${slashTriggerDisplay('review')} after`);
+        expect(insertComposerReference({ text: 'before', references: [] }, 6, 6, reference, {
+            inlineBoundaries: true,
+            padDocumentEdges: true,
+        }).document.text).toBe(`before ${slashTriggerDisplay('review')} `);
     });
 
     test('round-trips adjacent session and paste references with ordinary spacing', () => {
@@ -261,10 +307,20 @@ describe('composerReferences', () => {
         expect(queue.ok && [queue.text, queue.plan.semantics]).toEqual(['@session:first @session:second', [{ type: 'session', sessionId: 'first' }, { type: 'session', sessionId: 'second' }]]);
         const direct = compileComposerSendPlan(document, 'direct-send-display');
         expect(direct.ok && direct.plan.semantics).toEqual([{ type: 'session', sessionId: 'first' }, { type: 'session', sessionId: 'second' }]);
-        expect(decorateComposerReference(session('first', 0))).toEqual({ style: 'mentionSession', sessionLabel: 'Same' });
+        expect(decorateComposerReference(session('first', 0))).toEqual({
+            style: 'mentionSession',
+            visual: { trigger: '@', icon: 'chat-thread', align: 'end', label: 'Same', slot: 'compact' },
+        });
         expect(decorateComposerReference(paste('paste', 0))).toEqual({ style: 'mentionPaste' });
-        expect(decorateComposerReference(skill('skill', 0))).toEqual({ style: 'mentionCommand', skillName: 'review' });
-        expect(decorateComposerReference(command('command', 0))).toEqual({ style: 'mentionCommand' });
+        expect(decorateComposerReference(skill('skill', 0))).toEqual({
+            style: 'mentionCommand',
+            skillName: 'review',
+            visual: { trigger: `/${COMPOSER_TRIGGER_ICON_SLOT}`, icon: 'book-open', align: 'end', label: 'review', slot: 'reserved' },
+        });
+        expect(decorateComposerReference(command('command', 0))).toEqual({
+            style: 'mentionCommand',
+            visual: { trigger: `/${COMPOSER_TRIGGER_ICON_SLOT}`, icon: 'command', align: 'end', label: 'run', slot: 'reserved' },
+        });
     });
 
     test('derives every canonical reference strategy through its extension helper', () => {

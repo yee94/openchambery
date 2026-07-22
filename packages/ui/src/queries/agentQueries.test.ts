@@ -18,6 +18,7 @@ mock.module('@/lib/runtime-fetch', () => ({ runtimeFetch: async (path: string, i
 mock.module('@/lib/runtime-switch', () => ({ getRuntimeTransportIdentity: () => runtimeKey, isRuntimeEndpointIdentityChange: () => false, subscribeRuntimeEndpointChanged: () => () => undefined }));
 
 const { agentQueryOptions, readAgentsSnapshot, refreshAgentsQuery } = await import('./agentQueries');
+const { ensureRawAgentsQuery } = await import('./configCatalogQueries');
 const { queryClient } = await import('@/lib/queryRuntime');
 
 describe('agentQueries', () => {
@@ -55,5 +56,16 @@ describe('agentQueries', () => {
     await refreshAgentsQuery(queryClient, activeProjectPath, 'runtime-a');
     expect(listCalls).toBe(2);
     expect(agentQueryOptions(activeProjectPath).queryKey).toEqual(['runtime-b', 'agents', '/workspace/second']);
+  });
+
+  test('enriched query reuses raw agents and keeps metadata work with enriched consumers', async () => {
+    listImpl = async () => [{ name: 'build' }];
+    await ensureRawAgentsQuery(activeProjectPath, runtimeKey);
+    expect(listCalls).toBe(1);
+    expect(metadataCalls).toBe(0);
+
+    await refreshAgentsQuery(queryClient, activeProjectPath, runtimeKey);
+    expect(listCalls).toBe(1);
+    expect(metadataCalls).toBe(1);
   });
 });

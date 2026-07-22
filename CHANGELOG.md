@@ -2,9 +2,23 @@
 
 All notable changes to this project will be documented in this file.
 
+## [Unreleased]
+
+## [1.16.51] - 2026-07-22
+
+- **Unified updates:** route Web, CLI, VS Code, Capacitor mobile, and Desktop version checks through the EdgeOne update service, with platform-specific mobile downloads and Electron metadata that keeps signed installers on GitHub Releases.
+- **Release automation:** publish the EdgeOne release manifest from the completed GitHub Release workflow so every successful release becomes visible to all clients automatically.
+- **Private relay package:** move the self-hosted Relay server and CLI into the dedicated `@openchamber/relay-server` package with updated packaging, lifecycle, hardening, and end-to-end coverage.
+- **Composer references:** add durable inline reference detection, rendering, history, and adapters for authored resources across input highlighting, messages, drafts, and queued delivery.
+- **Configuration catalogs:** add bounded provider and settings bootstrap contracts with runtime-scoped queries and matching Web and VS Code bridge implementations.
+- **Git branches:** add branch query caching and startup snapshots so branch selectors and Git views share current repository state with fewer repeated requests.
+- **Runtime switching:** reset endpoint-scoped caches and state consistently across Web, Desktop, VS Code, and mobile surfaces when the active runtime changes.
+- **Reliability:** strengthen configuration, persistence, response-style, session bootstrap, and Git-store validation with focused regression coverage.
+
 ## [1.16.50] - 2026-07-21
 
 - **Private relay:** add the self-hosted `openchamber-relay` server for Layer 1 remote access, with CLI packaging, Docker deployment, health/readiness endpoints, and end-to-end routing coverage.
+- **Private relay packaging:** move the self-hosted Relay server and CLI to `@openchamber/relay-server`; `openchamber-relay` remains the command name and installs from the new package.
 - **Queued messages:** accept canonical Composer sidecars with Paste and Session reference labels while validating their serialized content against queue-canonical admission.
 
 ## [1.16.49] - 2026-07-21

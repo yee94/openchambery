@@ -16,7 +16,8 @@ import { useI18n } from '@/lib/i18n';
 import type { GitRemote } from '@/lib/api/types';
 import { cn } from '@/lib/utils';
 import { createWorktreeDraft, createWorktreeDraftForBranch } from '@/lib/worktreeSessionCreator';
-import { useGitBranches, useGitStore } from '@/stores/useGitStore';
+import { useGitStore, useIsGitRepo } from '@/stores/useGitStore';
+import { refreshGitBranchesQuery, useGitBranchesQuery, useGitRemotesQuery } from '@/queries/gitBranchQueries';
 
 export type DraftSessionBranchSelectorProps = {
   directory: string | null;
@@ -49,10 +50,13 @@ export const DraftSessionBranchSelector: React.FC<DraftSessionBranchSelectorProp
 }) => {
   const { t } = useI18n();
   const { git } = useRuntimeAPIs();
-  const branches = useGitBranches(directory);
-  const fetchBranches = useGitStore((state) => state.fetchBranches);
+  const isGitRepo = useIsGitRepo(directory);
+  const branchesQuery = useGitBranchesQuery(directory, git, isGitRepo === true);
+  const branches = branchesQuery.data;
   const fetchStatus = useGitStore((state) => state.fetchStatus);
-  const [remotes, setRemotes] = React.useState<GitRemote[]>([]);
+  const [branchSelectorOpen, setBranchSelectorOpen] = React.useState(false);
+  const remotesQuery = useGitRemotesQuery(directory, git, isGitRepo === true && branchSelectorOpen);
+  const remotes = remotesQuery.data ?? [];
   const [pendingBranch, setPendingBranch] = React.useState<string | null>(null);
   const [isActing, setIsActing] = React.useState(false);
 
@@ -74,37 +78,11 @@ export const DraftSessionBranchSelector: React.FC<DraftSessionBranchSelectorProp
   const currentBranch = branches?.current?.trim() || null;
   const chipLabel = label || currentBranch || t('chat.chatInput.branch');
 
-  React.useEffect(() => {
-    if (!directory || !git) return;
-    void fetchBranches(directory, git);
-    void fetchStatus(directory, git, { silent: true });
-  }, [directory, fetchBranches, fetchStatus, git]);
-
-  React.useEffect(() => {
-    if (!directory || !git?.getRemotes) {
-      setRemotes([]);
-      return;
-    }
-    let cancelled = false;
-    void git.getRemotes(directory)
-      .then((next) => {
-        if (!cancelled) setRemotes(Array.isArray(next) ? next : []);
-      })
-      .catch(() => {
-        if (!cancelled) setRemotes([]);
-      });
-    return () => {
-      cancelled = true;
-    };
-  }, [directory, git]);
-
   const refreshGit = React.useCallback(async () => {
     if (!directory || !git) return;
-    await Promise.all([
-      fetchBranches(directory, git),
-      fetchStatus(directory, git, { silent: true }),
-    ]);
-  }, [directory, fetchBranches, fetchStatus, git]);
+    await refreshGitBranchesQuery(directory, git);
+    await fetchStatus(directory, git, { silent: true });
+  }, [directory, fetchStatus, git]);
 
   const findExistingWorktree = React.useCallback((branch: string) => {
     const normalized = normalizeBranchRef(branch);
@@ -254,6 +232,7 @@ export const DraftSessionBranchSelector: React.FC<DraftSessionBranchSelectorProp
         selectedDirectory={directory}
         onSelectDirectory={onSelectDirectory}
         onCreateWorktree={() => { void createWorktreeDraft(); }}
+        onOpenChange={setBranchSelectorOpen}
       />
 
       <Dialog

@@ -7,6 +7,16 @@ import {
     type DraftComposerReference,
 } from '@/sync/input-draft-types';
 import { countUnicodeCodePoints } from '@/lib/unicodeMetrics';
+import {
+    composerTriggerIconDisplay,
+    composerTriggerIconLabel,
+    composerTriggerIconText,
+    composerTriggerIconVisual,
+    isComposerTriggerIconDisplay,
+    type ComposerTriggerIconVisual,
+} from '@/composer/inline-visual';
+
+export type { ComposerTriggerIconAlign, ComposerTriggerIconVisual } from '@/composer/inline-visual';
 
 export type ComposerReference = DraftComposerReference;
 export type ComposerReferenceKind = ComposerReference['kind'];
@@ -42,9 +52,9 @@ export type ComposerReferenceSemantic =
     | { type: 'attachment'; attachmentRefID: string };
 export type ComposerReferenceContribution = { text: string; semantic?: ComposerReferenceSemantic };
 export type ComposerReferenceDecoration =
-    | { style: 'mentionSession'; sessionLabel: string }
+    | { style: 'mentionSession'; visual: ComposerTriggerIconVisual }
     | { style: 'mentionPaste' }
-    | { style: 'mentionCommand'; skillName?: string };
+    | { style: 'mentionCommand'; skillName?: string; visual: ComposerTriggerIconVisual };
 export type ComposerReferenceResourceIdentity = { type: 'attachment'; attachmentRefID: string };
 export type ComposerPayloadBudget = { category: 'opaque-text'; length: number };
 export interface ComposerResourceDelta {
@@ -68,14 +78,22 @@ export interface ComposerReferenceExtension<K extends ComposerReferenceKind> {
 export const isValidComposerSessionId = (value: unknown): value is string => typeof value === 'string' && isValidDraftComposerSessionID(value);
 
 const commandNameFromReference = (reference: string): string => reference.replaceAll('\\', '/').split('/').at(-1)?.replace(/\.md$/, '') ?? '';
+const sessionIconSpec = (label: string) => ({ trigger: '@', icon: 'chat-thread', label });
+const slashIconSpec = (label: string, icon: string) => ({ trigger: '/', icon, label });
 
 const COMPOSER_REFERENCE_EXTENSIONS = {
     session: {
         kind: 'session',
         validatePayload: (value) => isValidComposerSessionId(value.sessionId),
         contributeCanonical: (reference) => ({ text: `@session:${reference.sessionId}`, semantic: { type: 'session', sessionId: reference.sessionId } }),
-        contributeDirectSend: (reference) => ({ text: reference.display, semantic: { type: 'session', sessionId: reference.sessionId } }),
-        decorate: (reference) => ({ style: 'mentionSession', sessionLabel: reference.display.slice(1) }),
+        contributeDirectSend: (reference) => {
+            const spec = sessionIconSpec(composerTriggerIconLabel(reference.display, '@'));
+            return { text: composerTriggerIconText(spec), semantic: { type: 'session', sessionId: reference.sessionId } };
+        },
+        decorate: (reference) => {
+            const spec = sessionIconSpec(composerTriggerIconLabel(reference.display, '@'));
+            return { style: 'mentionSession' as const, visual: composerTriggerIconVisual(spec, reference.display) };
+        },
         payloadBudget: () => undefined,
         canonical: {
             matcher: /@session:([A-Za-z0-9_-]+)/g,
@@ -83,7 +101,7 @@ const COMPOSER_REFERENCE_EXTENSIONS = {
                 const preceding = match.index === 0 ? '' : context.text[match.index - 1];
                 const following = context.text[match.index + match[0].length] ?? '';
                 return (preceding === '' || /[\s([{]/.test(preceding)) && (following === '' || /[\s)\]},.!?;:]/.test(following))
-                    ? `@${context.sessionTitles.get(match[1]) || match[1]}`
+                    ? composerTriggerIconDisplay(sessionIconSpec(context.sessionTitles.get(match[1]) || match[1]))
                     : null;
             },
             materialize: (match, display, start) => ({ id: `session:${match[1]}:${match.index}`, kind: 'session', sessionId: match[1], display, start, end: start + display.length }),
@@ -106,14 +124,20 @@ const COMPOSER_REFERENCE_EXTENSIONS = {
     },
     skill: {
         kind: 'skill',
-        validatePayload: (value) => isValidDraftComposerSkillName(value.skillName) && value.display === `/${value.skillName}`,
+        validatePayload: (value) => isValidDraftComposerSkillName(value.skillName)
+            && typeof value.display === 'string'
+            && isComposerTriggerIconDisplay(value.display, slashIconSpec(value.skillName, 'book-open')),
         contributeCanonical: (reference) => ({ text: `[skill:${reference.skillName}]` }),
         contributeDirectSend: (reference) => ({ text: `[skill:${reference.skillName}]` }),
-        decorate: (reference) => ({ style: 'mentionCommand', skillName: reference.skillName }),
+        decorate: (reference) => ({
+            style: 'mentionCommand',
+            skillName: reference.skillName,
+            visual: composerTriggerIconVisual(slashIconSpec(reference.skillName, 'book-open'), reference.display),
+        }),
         payloadBudget: () => undefined,
         canonical: {
             matcher: /\[skill:([A-Za-z0-9][A-Za-z0-9_-]*)\]/g,
-            resolveDisplay: (match) => `/${match[1]}`,
+            resolveDisplay: (match) => composerTriggerIconDisplay(slashIconSpec(match[1], 'book-open')),
             materialize: (match, display, start) => ({ id: `skill:${start}`, kind: 'skill', skillName: match[1], display, start, end: start + display.length }),
         },
     },
@@ -121,16 +145,22 @@ const COMPOSER_REFERENCE_EXTENSIONS = {
         kind: 'command',
         validatePayload: (value) => isValidDraftComposerCommandName(value.commandName)
             && isValidDraftComposerCommandReference(value.reference)
-            && value.display === `/${value.commandName}`,
+            && typeof value.display === 'string'
+            && isComposerTriggerIconDisplay(value.display, slashIconSpec(value.commandName, 'command')),
         contributeCanonical: (reference) => ({ text: `[command:${reference.reference}]` }),
         contributeDirectSend: (reference) => ({ text: `[command:${reference.reference}]` }),
-        decorate: () => ({ style: 'mentionCommand' }),
+        decorate: (reference) => ({
+            style: 'mentionCommand',
+            visual: composerTriggerIconVisual(slashIconSpec(reference.commandName, 'command'), reference.display),
+        }),
         payloadBudget: () => undefined,
         canonical: {
             matcher: /\[command:([^\]\r\n]+)\]/g,
             resolveDisplay: (match) => {
                 const commandName = commandNameFromReference(match[1]);
-                return isValidDraftComposerCommandReference(match[1]) && isValidDraftComposerCommandName(commandName) ? `/${commandName}` : null;
+                return isValidDraftComposerCommandReference(match[1]) && isValidDraftComposerCommandName(commandName)
+                    ? composerTriggerIconDisplay(slashIconSpec(commandName, 'command'))
+                    : null;
             },
             materialize: (match, display, start) => ({ id: `command:${start}`, kind: 'command', commandName: commandNameFromReference(match[1]), reference: match[1], display, start, end: start + display.length }),
         },

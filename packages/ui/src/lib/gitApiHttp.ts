@@ -435,8 +435,8 @@ export async function isLinkedWorktree(directory: string): Promise<boolean> {
   return Boolean(data.linked);
 }
 
-export async function getGitBranches(directory: string): Promise<GitBranch> {
-  const response = await runtimeFetch(buildUrl(`${API_BASE}/branches`, directory));
+export async function getGitBranches(directory: string, options?: { signal?: AbortSignal }): Promise<GitBranch> {
+  const response = await runtimeFetch(buildUrl(`${API_BASE}/branches`, directory), { signal: options?.signal });
   if (!response.ok) {
     throw new Error(`Failed to get branches: ${response.statusText}`);
   }
@@ -1067,8 +1067,8 @@ export async function getRemoteUrl(directory: string, remote?: string): Promise<
   return data.url ?? null;
 }
 
-export async function getRemotes(directory: string): Promise<Array<{ name: string; fetchUrl: string; pushUrl: string }>> {
-  const response = await runtimeFetch(buildUrl(`${API_BASE}/remotes`, directory));
+export async function getRemotes(directory: string, options?: { signal?: AbortSignal }): Promise<Array<{ name: string; fetchUrl: string; pushUrl: string }>> {
+  const response = await runtimeFetch(buildUrl(`${API_BASE}/remotes`, directory), { signal: options?.signal });
   if (!response.ok) {
     throw new Error(`Failed to get remotes: ${response.statusText}`);
   }

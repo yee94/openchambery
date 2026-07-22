@@ -24,14 +24,23 @@
         "src/mobile-main.tsx",
         "src/mini-chat-main.tsx",
         "src/sw.ts",
-        "server/private-relay/node-smoke.js",
-        "server/**/*.{test,spec}.{js,cjs,mjs}",
+        "server/**/*.{test,spec}.{js,cjs,mjs,ts,tsx}",
         "src/**/*.{test,spec}.{ts,tsx}"
       ],
       "project": [
         "bin/**/*.js",
         "server/**/*.{js,mjs,cjs}",
         "src/**/*.{ts,tsx}"
+      ]
+    },
+    "packages/relay-server": {
+      "entry": [
+        "test/**/*.{test,spec}.{js,cjs,mjs,ts,tsx}"
+      ],
+      "project": [
+        "bin/**/*.js",
+        "src/**/*.{js,ts}",
+        "test/**/*.js"
       ]
     },
     "packages/electron": {

@@ -4,7 +4,7 @@ import http from 'node:http';
 import net from 'node:net';
 import { WebSocket } from 'ws';
 
-import { createPrivateRelayServer } from './index.js';
+import { createPrivateRelayServer } from '../src/index.js';
 
 const relays = [];
 const sockets = [];

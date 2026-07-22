@@ -2,7 +2,7 @@ import assert from 'node:assert/strict';
 import http from 'node:http';
 import net from 'node:net';
 
-import { createPrivateRelayServer } from './index.js';
+import { createPrivateRelayServer } from '../src/index.js';
 
 const once = (emitter, name) => new Promise((resolve) => emitter.once(name, (...args) => resolve(args)));
 const eventually = async (check) => {

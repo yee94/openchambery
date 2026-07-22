@@ -193,10 +193,15 @@ export async function isLinkedWorktree(directory: string): Promise<boolean> {
   return gitHttp.isLinkedWorktree(directory);
 }
 
-export async function getGitBranches(directory: string): Promise<import('./api/types').GitBranch> {
+export async function getGitBranches(directory: string, options?: { signal?: AbortSignal }): Promise<import('./api/types').GitBranch> {
   const runtime = getRuntimeGit();
-  if (runtime) return runtime.getGitBranches(directory);
-  return gitHttp.getGitBranches(directory);
+  options?.signal?.throwIfAborted();
+  if (runtime) {
+    const result = await runtime.getGitBranches(directory, options);
+    options?.signal?.throwIfAborted();
+    return result;
+  }
+  return gitHttp.getGitBranches(directory, options);
 }
 
 export async function deleteGitBranch(directory: string, payload: import('./api/types').GitDeleteBranchPayload): Promise<{ success: boolean }> {
@@ -949,10 +954,15 @@ export async function getRemoteUrl(directory: string, remote?: string): Promise<
   return gitHttp.getRemoteUrl(directory, remote);
 }
 
-export async function getRemotes(directory: string): Promise<import('./api/types').GitRemote[]> {
+export async function getRemotes(directory: string, options?: { signal?: AbortSignal }): Promise<import('./api/types').GitRemote[]> {
   const runtime = getRuntimeGit();
-  if (runtime) return runtime.getRemotes(directory);
-  return gitHttp.getRemotes(directory);
+  options?.signal?.throwIfAborted();
+  if (runtime) {
+    const result = await runtime.getRemotes(directory, options);
+    options?.signal?.throwIfAborted();
+    return result;
+  }
+  return gitHttp.getRemotes(directory, options);
 }
 
 export async function removeRemote(

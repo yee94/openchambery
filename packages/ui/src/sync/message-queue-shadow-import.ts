@@ -1,4 +1,4 @@
-import { admitTextQueueItem, createMessageQueueImport, fetchMessageQueueImportDetails, stageMessageQueueImport, sealMessageQueueImport, type MessageQueueAdmissionItem, type MessageQueueAttachment, type MessageQueueItem } from '@/lib/message-queue-server';
+import { admitTextQueueItem, createMessageQueueImport, fetchMessageQueueImportDetails, stageMessageQueueImport, sealMessageQueueImport, type MessageQueueAdmissionItem, type MessageQueueAttachment } from '@/lib/message-queue-server';
 import { uploadQueueAttachments } from './message-queue-server-attachment-adapter';
 import type { MessageQueueRuntime } from './message-queue-runtime';
 import { queueLedgerScopeKey, type QueueItemDTO } from '@/stores/message-queue-ledger';

@@ -1,7 +1,7 @@
 import { expect, it } from 'bun:test';
 import http from 'node:http';
 
-import { createPrivateRelayServer } from './index.js';
+import { createPrivateRelayServer } from '../src/index.js';
 
 const listen = (server) => new Promise((resolve) => server.listen(0, '127.0.0.1', resolve));
 const close = (server) => new Promise((resolve) => server.close(resolve));

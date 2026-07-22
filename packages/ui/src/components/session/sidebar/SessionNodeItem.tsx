@@ -11,7 +11,7 @@ import { Dialog, DialogContent, DialogDescription, DialogFooter, DialogHeader, D
 import { Icon } from "@/components/icon/Icon";
 import { buildExportFilename, downloadAsMarkdown, formatSessionAsMarkdown, getExportRevealLabelKey, revealExportedMarkdown, saveAsMarkdownDesktop } from '@/lib/exportSession';
 import type { ChildSessionExport } from '@/lib/exportSession';
-import { buildSessionMessageRecordsSnapshot, useDirectoryStore, useGlobalSessionStatus, useSessionPermissions } from '@/sync/sync-context';
+import { buildSessionMessageRecordsSnapshot, useDirectoryStore, useGlobalSessionStatus, useSessionPermissions, useSessionQuestions } from '@/sync/sync-context';
 import { useSync } from '@/sync/use-sync';
 import { useViewportStore, viewportSessionKey } from '@/sync/viewport-store';
 import { DraggableSessionRow } from './sessionFolderDnd';
@@ -430,6 +430,14 @@ function SessionNodeItemComponent(props: Props): React.ReactNode {
     sessionDirectory ?? undefined,
     { bootstrap: false },
   );
+  // Same lightweight subscription as permissions: routed question events land
+  // in the child store without bootstrapping the whole directory just because
+  // this row rendered.
+  const sessionQuestions = useSessionQuestions(
+    session.id,
+    sessionDirectory ?? undefined,
+    { bootstrap: false },
+  );
   const rowFocus = React.useMemo<SessionFocusIdentity>(() => ({
     scope: renderContext,
     sessionId: session.id,
@@ -721,32 +729,46 @@ function SessionNodeItemComponent(props: Props): React.ReactNode {
   const isStreaming = statusType === 'busy' || statusType === 'retry';
   const isTitleGenerating = pendingSmartTitle !== null || titleRefreshMetadata?.isGenerating === true;
   const pendingPermissionCount = sessionPermissions.length;
-  const showUnreadStatus = !isStreaming && needsAttention && !isActive;
-  const showStatusMarker = isStreaming || showUnreadStatus;
+  // Pending ask-tool questions outrank the busy spinner: the session is
+  // waiting on the user, so the trailing marker should read as a Question
+  // tip (highlighted question icon) rather than a loading ring.
+  const hasPendingQuestion = sessionQuestions.length > 0;
+  const showUnreadStatus = !hasPendingQuestion && !isStreaming && needsAttention && !isActive;
+  const showStatusMarker = hasPendingQuestion || isStreaming || showUnreadStatus;
   // Trailing status owns a shrink-0 gutter on the right (same idea as hover
-  // action padding): context-style ring while busy, slightly larger info dot
-  // when unread. Hide when row actions take over so the two never fight for
-  // the same edge.
+  // action padding): question tip while awaiting input, context-style ring
+  // while busy, slightly larger info dot when unread. Hide when row actions
+  // take over so the two never fight for the same edge.
   const hideTrailingStatusOnActionReveal = !alwaysShowActions || isVSCode;
-  const statusMarkerContent = isStreaming
+  const statusMarkerContent = hasPendingQuestion
     ? (
         <span
           className="inline-flex h-3.5 w-3.5 items-center justify-center"
-          aria-label={t('sessions.sidebar.session.status.active')}
-          title={t('sessions.sidebar.session.status.active')}
+          aria-label={t('sessions.sidebar.session.status.questionRequired')}
+          title={t('sessions.sidebar.session.status.questionRequired')}
         >
-          <SessionBusyIndicator />
+          <Icon name="question" className="h-3.5 w-3.5 text-primary" />
         </span>
       )
-    : (
-        <span
-          className="inline-flex h-3.5 w-3.5 items-center justify-center"
-          aria-label={t('sessions.sidebar.session.status.unread')}
-          title={t('sessions.sidebar.session.status.unread')}
-        >
-          <span className="h-2 w-2 rounded-full bg-[var(--status-info)]" />
-        </span>
-      );
+    : isStreaming
+      ? (
+          <span
+            className="inline-flex h-3.5 w-3.5 items-center justify-center"
+            aria-label={t('sessions.sidebar.session.status.active')}
+            title={t('sessions.sidebar.session.status.active')}
+          >
+            <SessionBusyIndicator />
+          </span>
+        )
+      : (
+          <span
+            className="inline-flex h-3.5 w-3.5 items-center justify-center"
+            aria-label={t('sessions.sidebar.session.status.unread')}
+            title={t('sessions.sidebar.session.status.unread')}
+          >
+            <span className="h-2 w-2 rounded-full bg-[var(--status-info)]" />
+          </span>
+        );
   const hideLeadingIndicatorOnHover = !isPinnedContext && !alwaysShowActions && hasChildren && isPinnedSession;
   const showPinnedMarker = !isPinnedContext && isPinnedSession;
   const pinnedMarkerContent = (
@@ -1227,8 +1249,8 @@ function SessionNodeItemComponent(props: Props): React.ReactNode {
                           <span className="leading-none">{pendingPermissionCount}</span>
                         </span>
                       ) : null}
-                      {/* Trailing busy/unread marker: shrink-0 so title truncates before it.
-                          Snap hide on hover (no opacity/padding fade) so the ring/dot
+                      {/* Trailing question/busy/unread marker: shrink-0 so title truncates before it.
+                          Snap hide on hover (no opacity/padding fade) so the tip/ring/dot
                           vanishes the instant row actions take the edge. */}
                       {showStatusMarker ? (
                         <span

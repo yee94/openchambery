@@ -23,6 +23,9 @@ import {
 } from '@/lib/responseStyle';
 import type { DesktopSettings } from '@/lib/desktop';
 import { runtimeFetch } from '@/lib/runtime-fetch';
+import { getRuntimeTransportIdentity, subscribeRuntimeEndpointChanged } from '@/lib/runtime-switch';
+import { projectSettingsBootstrapPatch } from '@/queries/settingsBootstrapParser';
+import { ensureSettingsBootstrapQuery, patchSettingsBootstrapSnapshot } from '@/queries/settingsBootstrapQueries';
 
 const AGENTS_MD_PATH = '~/.config/opencode/AGENTS.md';
 
@@ -42,6 +45,12 @@ type BehaviorSettingsState = {
   responseStyleEnabled: boolean;
   responseStylePreset: ResponseStyleValue;
   responseStyleCustomInstructions: string;
+};
+
+type ResponseStyleDraft = {
+  enabled: boolean;
+  preset: ResponseStyleValue;
+  custom: string;
 };
 
 const DEFAULT_BEHAVIOR_SETTINGS: BehaviorSettingsState = {
@@ -83,136 +92,187 @@ const saveBehaviorSetting = async (settings: Partial<DesktopSettings>, fallbackE
   if (!response.ok) {
     throw new Error(await readApiError(response, fallbackError));
   }
+  return response.json().catch(() => null) as Promise<unknown>;
 };
 
 export const BehaviorPage: React.FC = () => {
   const { t } = useI18n();
+  const transport = React.useSyncExternalStore(
+    subscribeRuntimeEndpointChanged,
+    getRuntimeTransportIdentity,
+    getRuntimeTransportIdentity,
+  );
   const [prompt, setPrompt] = React.useState('');
   const [responseStyleEnabled, setResponseStyleEnabled] = React.useState(DEFAULT_BEHAVIOR_SETTINGS.responseStyleEnabled);
   const [responseStylePreset, setResponseStylePreset] = React.useState<ResponseStyleValue>(DEFAULT_BEHAVIOR_SETTINGS.responseStylePreset);
   const [responseStyleCustomInstructions, setResponseStyleCustomInstructions] = React.useState(DEFAULT_BEHAVIOR_SETTINGS.responseStyleCustomInstructions);
-  const [isLoading, setIsLoading] = React.useState(true);
+  const [promptReady, setPromptReady] = React.useState(false);
+  const [responseStyleReady, setResponseStyleReady] = React.useState(false);
   const [isSaving, setIsSaving] = React.useState(false);
   const [initialPrompt, setInitialPrompt] = React.useState('');
-  const lastSavedResponseStyleRef = React.useRef<{
-    enabled: boolean;
-    preset: ResponseStyleValue;
-    custom: string;
-  } | null>(null);
+  const lastCommittedResponseStyleRef = React.useRef<ResponseStyleDraft | null>(null);
+  const latestRequestedResponseStyleRef = React.useRef<ResponseStyleDraft | null>(null);
+  const responseStyleSaveGenerationRef = React.useRef(0);
+  const responseStyleSaveQueueRef = React.useRef<Promise<void>>(Promise.resolve());
+
+  React.useEffect(() => {
+    let active = true;
+    setResponseStyleReady(false);
+    lastCommittedResponseStyleRef.current = null;
+    latestRequestedResponseStyleRef.current = null;
+    responseStyleSaveGenerationRef.current += 1;
+
+    void ensureSettingsBootstrapQuery(transport)
+      .then((data) => {
+        if (!active || transport !== getRuntimeTransportIdentity()) return;
+        const nextResponseStyle = {
+          enabled: data.responseStyleEnabled === true,
+          preset: sanitizeResponseStylePreset(data.responseStylePreset),
+          custom: typeof data.responseStyleCustomInstructions === 'string'
+            ? data.responseStyleCustomInstructions
+            : '',
+        };
+        setResponseStyleEnabled(nextResponseStyle.enabled);
+        setResponseStylePreset(nextResponseStyle.preset);
+        setResponseStyleCustomInstructions(nextResponseStyle.custom);
+        rememberResponseStyleSettings({
+          enabled: nextResponseStyle.enabled,
+          preset: nextResponseStyle.preset,
+          customInstructions: nextResponseStyle.custom,
+        }, transport);
+        lastCommittedResponseStyleRef.current = nextResponseStyle;
+        latestRequestedResponseStyleRef.current = nextResponseStyle;
+        setResponseStyleReady(true);
+      })
+      .catch((error) => {
+        if (active && (error as Error)?.name !== 'AbortError') {
+          console.warn('Failed to load behavior settings:', error);
+        }
+      });
+
+    return () => {
+      active = false;
+      responseStyleSaveGenerationRef.current += 1;
+    };
+  }, [transport]);
 
   React.useEffect(() => {
     const abort = new AbortController();
+    let active = true;
+    setPromptReady(false);
+    setIsSaving(false);
 
-    const load = async () => {
+    const loadPrompt = async () => {
       try {
-        const [settingsRes, agentsMdRes] = await Promise.all([
-          runtimeFetch('/api/config/settings', {
-            method: 'GET',
-            headers: { Accept: 'application/json' },
-            signal: abort.signal,
-          }),
-          runtimeFetch('/api/behavior/agents-md', {
-            method: 'GET',
-            headers: { Accept: 'application/json' },
-            signal: abort.signal,
-          }),
-        ]);
-
-        let nextSettings: BehaviorSettingsState = DEFAULT_BEHAVIOR_SETTINGS;
-        if (settingsRes.ok) {
-          const data = await settingsRes.json();
-          nextSettings = {
-            ...nextSettings,
-            responseStyleEnabled: data.responseStyleEnabled === true,
-            responseStylePreset: sanitizeResponseStylePreset(data.responseStylePreset),
-            responseStyleCustomInstructions: typeof data.responseStyleCustomInstructions === 'string'
-              ? data.responseStyleCustomInstructions
-              : '',
-          };
-          if (typeof data.globalBehaviorPrompt === 'string') {
-            nextSettings = { ...nextSettings, prompt: data.globalBehaviorPrompt };
-          }
-        }
-
-        if (!nextSettings.prompt.trim() && agentsMdRes.ok) {
-          const agentsData = await agentsMdRes.json();
-          if (typeof agentsData.content === 'string') {
-            nextSettings = { ...nextSettings, prompt: agentsData.content };
-          }
-        }
-
-        setPrompt(nextSettings.prompt);
-        setResponseStyleEnabled(nextSettings.responseStyleEnabled);
-        setResponseStylePreset(nextSettings.responseStylePreset);
-        setResponseStyleCustomInstructions(nextSettings.responseStyleCustomInstructions);
-        setInitialPrompt(nextSettings.prompt);
-        rememberResponseStyleSettings({
-          enabled: nextSettings.responseStyleEnabled,
-          preset: nextSettings.responseStylePreset,
-          customInstructions: nextSettings.responseStyleCustomInstructions,
+        const response = await runtimeFetch('/api/behavior/agents-md', {
+          method: 'GET',
+          headers: { Accept: 'application/json' },
+          signal: abort.signal,
         });
-        lastSavedResponseStyleRef.current = {
-          enabled: nextSettings.responseStyleEnabled,
-          preset: nextSettings.responseStylePreset,
-          custom: nextSettings.responseStyleCustomInstructions,
-        };
-      } catch (error) {
-        if ((error as Error).name !== 'AbortError') {
-          console.warn('Failed to load behavior settings:', error);
+        if (!response.ok) {
+          throw new Error(`Behavior prompt request failed (${response.status})`);
         }
-      } finally {
-        setIsLoading(false);
+        const data = await response.json().catch(() => null) as { content?: unknown } | null;
+        if (typeof data?.content !== 'string') {
+          throw new Error('Invalid behavior prompt response');
+        }
+        if (!active || transport !== getRuntimeTransportIdentity()) return;
+        setPrompt(data.content);
+        setInitialPrompt(data.content);
+        setPromptReady(true);
+      } catch (error) {
+        if (active && (error as Error)?.name !== 'AbortError') {
+          console.warn('Failed to load behavior prompt:', error);
+        }
       }
     };
 
-    void load();
-    return () => abort.abort();
-  }, []);
+    void loadPrompt();
+    return () => {
+      active = false;
+      abort.abort();
+    };
+  }, [transport]);
 
   React.useEffect(() => {
-    if (isLoading) return;
-    const last = lastSavedResponseStyleRef.current;
-    if (
-      last &&
-      last.enabled === responseStyleEnabled &&
-      last.preset === responseStylePreset &&
-      last.custom === responseStyleCustomInstructions
-    ) {
-      return;
-    }
+    if (!responseStyleReady) return;
 
     const next = {
       enabled: responseStyleEnabled,
       preset: responseStylePreset,
       custom: responseStyleCustomInstructions,
     };
+    const requested = latestRequestedResponseStyleRef.current;
+    if (
+      requested &&
+      requested.enabled === next.enabled &&
+      requested.preset === next.preset &&
+      requested.custom === next.custom
+    ) {
+      return;
+    }
+    latestRequestedResponseStyleRef.current = next;
+    const generation = responseStyleSaveGenerationRef.current + 1;
+    responseStyleSaveGenerationRef.current = generation;
 
-    const timer = setTimeout(async () => {
-      try {
-        await saveBehaviorSetting({
-          responseStyleEnabled: next.enabled,
-          responseStylePreset: next.preset,
-          responseStyleCustomInstructions: next.custom,
-        }, t('settings.behavior.page.toast.saveFailed'));
-        rememberResponseStyleSettings({
-          enabled: next.enabled,
-          preset: next.preset,
-          customInstructions: next.custom,
-        });
-        lastSavedResponseStyleRef.current = next;
-      } catch (error) {
-        const message = error instanceof Error ? error.message : t('settings.behavior.page.toast.saveFailed');
-        toast.error(message);
-      }
+    const timer = setTimeout(() => {
+      const run = async () => {
+        if (transport !== getRuntimeTransportIdentity()) return;
+        try {
+          const updated = await saveBehaviorSetting({
+            responseStyleEnabled: next.enabled,
+            responseStylePreset: next.preset,
+            responseStyleCustomInstructions: next.custom,
+          }, t('settings.behavior.page.toast.saveFailed'));
+          if (transport !== getRuntimeTransportIdentity()) return;
+          const projected = projectSettingsBootstrapPatch(updated);
+          const committed = {
+            enabled: projected.responseStyleEnabled ?? next.enabled,
+            preset: projected.responseStylePreset ?? next.preset,
+            custom: projected.responseStyleCustomInstructions ?? next.custom,
+          };
+          rememberResponseStyleSettings({
+            enabled: committed.enabled,
+            preset: committed.preset,
+            customInstructions: committed.custom,
+          }, transport);
+          patchSettingsBootstrapSnapshot({
+            responseStyleEnabled: committed.enabled,
+            responseStylePreset: committed.preset,
+            responseStyleCustomInstructions: committed.custom,
+          }, transport);
+          lastCommittedResponseStyleRef.current = committed;
+          if (generation !== responseStyleSaveGenerationRef.current) return;
+          latestRequestedResponseStyleRef.current = committed;
+          setResponseStyleEnabled(committed.enabled);
+          setResponseStylePreset(committed.preset);
+          setResponseStyleCustomInstructions(committed.custom);
+        } catch (error) {
+          if (transport === getRuntimeTransportIdentity() && generation === responseStyleSaveGenerationRef.current) {
+            const committed = lastCommittedResponseStyleRef.current;
+            latestRequestedResponseStyleRef.current = committed;
+            if (committed) {
+              setResponseStyleEnabled(committed.enabled);
+              setResponseStylePreset(committed.preset);
+              setResponseStyleCustomInstructions(committed.custom);
+            }
+            const message = error instanceof Error ? error.message : t('settings.behavior.page.toast.saveFailed');
+            toast.error(message);
+          }
+        }
+      };
+      responseStyleSaveQueueRef.current = responseStyleSaveQueueRef.current.then(run, run);
     }, 400);
 
     return () => clearTimeout(timer);
-  }, [responseStyleEnabled, responseStylePreset, responseStyleCustomInstructions, isLoading, t]);
+  }, [responseStyleEnabled, responseStylePreset, responseStyleCustomInstructions, responseStyleReady, t, transport]);
 
   const responseStylePreview = getResponseStylePreview(responseStylePreset, responseStyleCustomInstructions);
   const isPromptDirty = prompt !== initialPrompt;
 
   const handleSave = async () => {
+    const saveTransport = transport;
+    if (saveTransport !== getRuntimeTransportIdentity()) return;
     setIsSaving(true);
     try {
       const content = normalizeAgentsMdContent(prompt);
@@ -228,20 +288,25 @@ export const BehaviorPage: React.FC = () => {
       if (!response.ok) {
         throw new Error(await readApiError(response, t('settings.behavior.page.toast.saveFailed')));
       }
+      if (saveTransport !== getRuntimeTransportIdentity()) return;
 
       await saveBehaviorSetting({
         globalBehaviorPrompt: content,
       }, t('settings.behavior.page.toast.saveFailed'));
+      if (saveTransport !== getRuntimeTransportIdentity()) return;
 
       setPrompt(content);
       setInitialPrompt(content);
       toast.success(t('settings.behavior.page.toast.saved'));
     } catch (error) {
+      if (saveTransport !== getRuntimeTransportIdentity()) return;
       console.error('Failed to save behavior:', error);
       const message = error instanceof Error ? error.message : t('settings.behavior.page.toast.saveFailed');
       toast.error(message);
     } finally {
-      setIsSaving(false);
+      if (saveTransport === getRuntimeTransportIdentity()) {
+        setIsSaving(false);
+      }
     }
   };
 
@@ -284,13 +349,13 @@ export const BehaviorPage: React.FC = () => {
               onChange={(e) => setPrompt(e.target.value)}
               placeholder={t('settings.behavior.page.field.systemPromptPlaceholder')}
               rows={12}
-              disabled={isLoading}
+              disabled={!promptReady}
               outerClassName="min-h-[160px] max-h-[70vh]"
               className="w-full font-mono typography-meta bg-transparent"
             />
             <Button
               onClick={handleSave}
-              disabled={isSaving || !isPromptDirty || isLoading}
+              disabled={isSaving || !isPromptDirty || !promptReady}
               size="xs"
               className="!font-normal"
             >
@@ -321,7 +386,7 @@ export const BehaviorPage: React.FC = () => {
               <Checkbox
                 checked={responseStyleEnabled}
                 onChange={setResponseStyleEnabled}
-                disabled={isLoading}
+                disabled={!responseStyleReady}
                 ariaLabel={t('settings.behavior.page.responseStyle.enableAria')}
               />
               {t('settings.behavior.page.responseStyle.enable')}
@@ -330,7 +395,7 @@ export const BehaviorPage: React.FC = () => {
             <Select<ResponseStyleValue>
               value={responseStylePreset}
               onValueChange={(value) => setResponseStylePreset(value)}
-              disabled={isLoading || !responseStyleEnabled}
+              disabled={!responseStyleReady || !responseStyleEnabled}
             >
               <SelectTrigger className="w-full sm:w-56" size="lg">
                 <SelectValue>
@@ -358,7 +423,7 @@ export const BehaviorPage: React.FC = () => {
               onChange={(event) => setResponseStyleCustomInstructions(event.target.value)}
               placeholder={t('settings.behavior.page.responseStyle.customPlaceholder')}
               rows={5}
-              disabled={isLoading || !responseStyleEnabled || responseStylePreset !== 'custom'}
+              disabled={!responseStyleReady || !responseStyleEnabled || responseStylePreset !== 'custom'}
               outerClassName="min-h-[120px]"
               className="w-full font-mono typography-meta bg-transparent"
             />

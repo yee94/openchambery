@@ -10,6 +10,7 @@ const PACKAGES = [
   'package.json',
   'packages/ui/package.json',
   'packages/web/package.json',
+  'packages/relay-server/package.json',
   'packages/electron/package.json',
   'packages/vscode/package.json',
   'packages/mobile/package.json',

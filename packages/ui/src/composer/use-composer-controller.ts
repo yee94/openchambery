@@ -1,8 +1,9 @@
 import { useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState, useSyncExternalStore } from "react"
 import { useInputStore, type InputDraftRuntimeCapture } from "@/sync/input-store"
 import { draftKeyString, parseDraftComposerDocument, type DraftComposerDocument, type DraftKey, type DraftMention, type DraftRecord } from "@/sync/input-draft-types"
-import { insertComposerReference, materializeComposerDocument, mergeComposerRecovery, reconcileComposerDocument, resolveComposerReferenceDeletion, validateComposerDocument, type ComposerDocument } from "./document"
+import { insertComposerReference, materializeComposerDocument, mergeComposerRecovery, normalizeComposerReferenceDeletionWhitespace, reconcileComposerDocument, resolveComposerReferenceDeletion, validateComposerDocument, type ComposerDocument } from "./document"
 import { diffComposerDocumentResources, type ComposerResourceDelta, type ComposerReference, type NewComposerReference } from "./extensions"
+import { createComposerReferenceHistorySnapshot, emptyComposerReferenceHistory, pushComposerReferenceHistory, redoComposerReferenceHistory, undoComposerReferenceHistory } from "./reference-history"
 
 type InputStoreApi = Pick<typeof useInputStore, "getState" | "subscribe">
 export type ComposerInputMode = "compose" | "history-preview"
@@ -123,6 +124,7 @@ export const useComposerController = ({ draftKey, sessionTitles, persistenceEnab
   const appliedRevisionRef = useRef(record?.revision ?? 0)
   const localCommitRef = useRef<ComposerLocalCommit | undefined>(undefined)
   const previewRef = useRef<ComposerPreviewState | undefined>(undefined)
+  const referenceHistoryRef = useRef(emptyComposerReferenceHistory())
 
   documentRef.current = document
   mentionsRef.current = mentions
@@ -152,6 +154,7 @@ export const useComposerController = ({ draftKey, sessionTitles, persistenceEnab
     keyRef.current = binding.key
     localCommitRef.current = undefined
     previewRef.current = undefined
+    referenceHistoryRef.current = emptyComposerReferenceHistory()
     setInputMode("compose")
     appliedRevisionRef.current = binding.revision
     publish(binding.document, binding.mentions)
@@ -195,6 +198,19 @@ export const useComposerController = ({ draftKey, sessionTitles, persistenceEnab
     notifyResourcesChanged(previous, normalized)
     return committed
   }, [store, publish, notifyResourcesChanged])
+  const recordReferenceHistory = useCallback((
+    before: ComposerDocument,
+    beforeMentions: readonly DraftMention[],
+    beforeSelection: { start: number; end: number },
+    after: ComposerDocument,
+    afterMentions: readonly DraftMention[],
+    afterSelection: { start: number; end: number },
+  ): void => {
+    referenceHistoryRef.current = pushComposerReferenceHistory(referenceHistoryRef.current, {
+      before: createComposerReferenceHistorySnapshot(before, beforeMentions, beforeSelection),
+      after: createComposerReferenceHistorySnapshot(after, afterMentions, afterSelection),
+    })
+  }, [])
 
   const promotePreview = useCallback((): boolean => {
     if (!previewRef.current) return false
@@ -210,10 +226,15 @@ export const useComposerController = ({ draftKey, sessionTitles, persistenceEnab
   }, [commit, promotePreview])
   const applyBrowserEdit = useCallback((nextText: string, selectionStart: number, selectionEnd = selectionStart): { start: number; end: number; requiresTextCorrection: boolean } => {
     const preview = promotePreview()
-    const result = applyBrowserComposerEdit(documentRef.current, preview ? [] : mentionsRef.current, nextText, selectionStart, selectionEnd)
+    const before = cloneDocument(documentRef.current)
+    const beforeMentions = preview ? [] : mentionsRef.current
+    const result = applyBrowserComposerEdit(before, beforeMentions, nextText, selectionStart, selectionEnd)
     commit(result.document, result.mentions)
+    if (result.removedReferences.length > 0) {
+      recordReferenceHistory(before, beforeMentions, { start: result.selectionStart, end: result.selectionEnd }, result.document, result.mentions, { start: result.selectionStart, end: result.selectionEnd })
+    }
     return { start: result.selectionStart, end: result.selectionEnd, requiresTextCorrection: result.requiresTextCorrection }
-  }, [commit, promotePreview])
+  }, [commit, promotePreview, recordReferenceHistory])
   const applyProgrammaticEdit = useCallback((edit: { start: number; end: number; text: string }, mentionsUpdater?: ComposerMentionsUpdater): { start: number; end: number } => {
     const current = documentRef.current
     const start = Math.max(0, Math.min(edit.start, current.text.length)); const end = Math.max(start, Math.min(edit.end, current.text.length))
@@ -234,12 +255,35 @@ export const useComposerController = ({ draftKey, sessionTitles, persistenceEnab
     return { start: inserted.caret, end: inserted.caret, caret: inserted.caret, document: inserted.document }
   }, [commit, promotePreview])
   const deleteReference = useCallback((intent: { key: "Backspace" | "Delete"; selectionStart: number; selectionEnd: number; altKey?: boolean }): { start: number; end: number } | null => {
-    const deleted = resolveComposerReferenceDeletion(documentRef.current, intent)
+    const before = cloneDocument(documentRef.current)
+    const deleted = resolveComposerReferenceDeletion(before, intent)
     if (!deleted) return null
     const preview = promotePreview()
-    commit(deleted.document, rebaseComposerMentions(preview ? [] : mentionsRef.current, deleted.document, deleted.edit))
-    return { start: deleted.caret, end: deleted.caret }
-  }, [commit, promotePreview])
+    const beforeMentions = preview ? [] : mentionsRef.current
+    const deletedMentions = rebaseComposerMentions(beforeMentions, deleted.document, deleted.edit)
+    const normalized = normalizeComposerReferenceDeletionWhitespace(deleted.document.text, deleted.caret)
+    const reconciled = reconcileComposerDocument(deleted.document, normalized.text, normalized.caret)
+    const nextMentions = rebaseComposerMentions(deletedMentions, reconciled.document, reconciled.edit)
+    commit(reconciled.document, nextMentions)
+    recordReferenceHistory(
+      before,
+      beforeMentions,
+      { start: intent.selectionStart, end: intent.selectionEnd },
+      reconciled.document,
+      nextMentions,
+      { start: reconciled.selectionStart, end: reconciled.selectionEnd },
+    )
+    return { start: reconciled.selectionStart, end: reconciled.selectionEnd }
+  }, [commit, promotePreview, recordReferenceHistory])
+  const restoreReferenceHistory = useCallback((direction: "undo" | "redo"): { start: number; end: number } | null => {
+    if (previewRef.current) return null
+    const restored = direction === "undo"
+      ? undoComposerReferenceHistory(referenceHistoryRef.current, documentRef.current)
+      : redoComposerReferenceHistory(referenceHistoryRef.current, documentRef.current)
+    if (!restored || !commit(restored.snapshot.document, restored.snapshot.mentions)) return null
+    referenceHistoryRef.current = restored.history
+    return restored.snapshot.selection
+  }, [commit])
   const commitMentions = useCallback((nextMentions: DraftMention[]): DraftRecord | undefined => commit(documentRef.current, nextMentions), [commit])
   const enterHistoryPreview = useCallback((historyDocument: ComposerDocument): void => {
     const transition = previewRef.current ? { document: { text: historyDocument.text, references: [] }, mentions: [] } : enterComposerHistoryPreview(documentRef.current, mentionsRef.current, historyDocument)
@@ -274,5 +318,5 @@ export const useComposerController = ({ draftKey, sessionTitles, persistenceEnab
   }, [notifyResourcesChanged, store])
 
   const getDocument = useCallback(() => documentRef.current, [])
-  return useMemo(() => ({ document, mentions, confirmedFileMentions: mentions.filter((mention) => mention.kind === "file" || mention.kind === "directory"), inputMode, hydration, persistence, getDocument, replacePlainDocument, replaceMaterializedDocument, applyBrowserEdit, applyProgrammaticEdit, replaceProgrammaticText, insertReference, deleteReference, commitMentions, enterHistoryPreview, exitHistoryPreview, captureSubmission, recoverSubmission }), [applyBrowserEdit, applyProgrammaticEdit, captureSubmission, commitMentions, deleteReference, document, enterHistoryPreview, exitHistoryPreview, getDocument, hydration, inputMode, insertReference, mentions, persistence, recoverSubmission, replaceMaterializedDocument, replacePlainDocument, replaceProgrammaticText])
+  return useMemo(() => ({ document, mentions, confirmedFileMentions: mentions.filter((mention) => mention.kind === "file" || mention.kind === "directory"), inputMode, hydration, persistence, getDocument, replacePlainDocument, replaceMaterializedDocument, applyBrowserEdit, applyProgrammaticEdit, replaceProgrammaticText, insertReference, deleteReference, restoreReferenceHistory, commitMentions, enterHistoryPreview, exitHistoryPreview, captureSubmission, recoverSubmission }), [applyBrowserEdit, applyProgrammaticEdit, captureSubmission, commitMentions, deleteReference, document, enterHistoryPreview, exitHistoryPreview, getDocument, hydration, inputMode, insertReference, mentions, persistence, recoverSubmission, replaceMaterializedDocument, replacePlainDocument, replaceProgrammaticText, restoreReferenceHistory])
 }

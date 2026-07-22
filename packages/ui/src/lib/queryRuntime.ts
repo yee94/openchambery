@@ -23,6 +23,10 @@ export const queryKeys = {
   },
   agents: {
     list: (directory: string | null, transport = getRuntimeTransportIdentity()): readonly [string, 'agents', string | null] => [transport, 'agents', directory],
+    raw: (directory: string | null, transport = getRuntimeTransportIdentity()): readonly [string, 'agents', 'raw', string | null] => [transport, 'agents', 'raw', normalizeQueryDirectory(directory)],
+  },
+  configCatalog: {
+    providers: (directory: string | null, transport = getRuntimeTransportIdentity()): readonly [string, 'configCatalog', 'providers', string | null] => [transport, 'configCatalog', 'providers', normalizeQueryDirectory(directory)],
   },
   skills: {
     list: (directory: string | null, transport = getRuntimeTransportIdentity()): readonly [string, 'skills', string | null] => [transport, 'skills', directory],
@@ -42,6 +46,10 @@ export const queryKeys = {
   },
   github: {
     auth: (transport = getRuntimeTransportIdentity()): readonly [string, 'github', 'auth'] => [transport, 'github', 'auth'],
+  },
+  git: {
+    branches: (directory: string | null | undefined, transport = getRuntimeTransportIdentity()): readonly [string, 'git', 'branches', string | null] => [transport, 'git', 'branches', normalizeQueryDirectory(directory)],
+    remotes: (directory: string | null | undefined, transport = getRuntimeTransportIdentity()): readonly [string, 'git', 'remotes', string | null] => [transport, 'git', 'remotes', normalizeQueryDirectory(directory)],
   },
   plugins: {
     list: (directory: string | null, transport = getRuntimeTransportIdentity()): readonly [string, 'plugins', 'list', string | null] => [transport, 'plugins', 'list', directory],

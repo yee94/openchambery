@@ -1,3 +1,58 @@
+const BOOTSTRAP_SETTINGS_STRING_MAX_LENGTH = 512;
+const BOOTSTRAP_SETTINGS_URL_MAX_LENGTH = 4096;
+const BOOTSTRAP_SETTINGS_LANGUAGE_MAX_LENGTH = 64;
+const BOOTSTRAP_SETTINGS_CUSTOM_INSTRUCTIONS_MAX_LENGTH = 200000;
+
+export const projectBootstrapSettingsResponse = (response) => {
+  const source = response && typeof response === 'object' && !Array.isArray(response) ? response : {};
+  const projected = { schemaVersion: 1 };
+  const copyBoolean = (key) => {
+    if (typeof source[key] === 'boolean') {
+      projected[key] = source[key];
+    }
+  };
+  const copyString = (key, maxLength = BOOTSTRAP_SETTINGS_STRING_MAX_LENGTH) => {
+    if (typeof source[key] === 'string' && source[key].length <= maxLength) {
+      projected[key] = source[key];
+    }
+  };
+  const copyEnum = (key, values) => {
+    if (values.has(source[key])) {
+      projected[key] = source[key];
+    }
+  };
+
+  copyString('defaultModel');
+  copyString('defaultVariant');
+  copyString('defaultAgent');
+  copyBoolean('autoCreateWorktree');
+  copyBoolean('gitmojiEnabled');
+  copyBoolean('defaultFileViewerPreview');
+  copyString('zenModel');
+  copyEnum('messageStreamTransport', new Set(['auto', 'ws', 'sse']));
+  copyEnum('sttProvider', new Set(['local', 'openai-compatible']));
+
+  if (typeof source.sttServerUrl === 'string' && source.sttServerUrl.length <= BOOTSTRAP_SETTINGS_URL_MAX_LENGTH) {
+    try {
+      const url = new URL(source.sttServerUrl);
+      if ((url.protocol === 'http:' || url.protocol === 'https:') && !url.username && !url.password) {
+        projected.sttServerUrl = source.sttServerUrl;
+      }
+    } catch {
+      // The bootstrap response only includes valid HTTP(S) server URLs.
+    }
+  }
+
+  copyString('sttModel');
+  copyString('sttLocalModel');
+  copyString('sttLanguage', BOOTSTRAP_SETTINGS_LANGUAGE_MAX_LENGTH);
+  copyBoolean('responseStyleEnabled');
+  copyEnum('responseStylePreset', new Set(['concise', 'detailed', 'mentor', 'pushback', 'noFiller', 'matchEnergy', 'warmPeer', 'custom']));
+  copyString('responseStyleCustomInstructions', BOOTSTRAP_SETTINGS_CUSTOM_INSTRUCTIONS_MAX_LENGTH);
+
+  return projected;
+};
+
 export const createSettingsHelpers = (dependencies) => {
   const {
     normalizePathForPersistence,
@@ -18,8 +73,8 @@ export const createSettingsHelpers = (dependencies) => {
   } = dependencies;
 
   const PWA_APP_NAME_MAX_LENGTH = 64;
-  const STT_SERVER_URL_MAX_LENGTH = 2048;
-  const STT_MODEL_MAX_LENGTH = 256;
+  const STT_SERVER_URL_MAX_LENGTH = BOOTSTRAP_SETTINGS_URL_MAX_LENGTH;
+  const STT_MODEL_MAX_LENGTH = BOOTSTRAP_SETTINGS_STRING_MAX_LENGTH;
   const STT_LANGUAGE_MAX_LENGTH = 64;
   const SUMMARY_PROVIDER_ID_MAX_LENGTH = 128;
   const SUMMARY_MODEL_ID_MAX_LENGTH = 256;
@@ -813,7 +868,7 @@ export const createSettingsHelpers = (dependencies) => {
 
     if (typeof candidate.responseStyleCustomInstructions === 'string') {
       const value = candidate.responseStyleCustomInstructions;
-      if (value.length <= 50_000) {
+      if (value.length <= BOOTSTRAP_SETTINGS_CUSTOM_INSTRUCTIONS_MAX_LENGTH) {
         result.responseStyleCustomInstructions = value;
       }
     }
@@ -940,5 +995,6 @@ export const createSettingsHelpers = (dependencies) => {
     sanitizeSettingsUpdate,
     mergePersistedSettings,
     formatSettingsResponse,
+    projectBootstrapSettingsResponse,
   };
 };

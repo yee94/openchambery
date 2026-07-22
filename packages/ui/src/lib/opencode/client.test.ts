@@ -12,6 +12,7 @@ let runtimeKey = 'test-runtime';
 let runtimeBase = '/api';
 const healthFetchCalls: unknown[][] = [];
 const healthFetchResults: Array<Response | Error | Promise<Response>> = [];
+const agentSdkCalls: unknown[][] = [];
 
 const promptAsyncMock = mock(async (...args: unknown[]) => {
   promptAsyncCalls.push(args);
@@ -28,6 +29,12 @@ mock.module('@opencode-ai/sdk/v2', () => ({
         return new Promise<ConfigResponse>((resolve) => {
           configResolvers.push(resolve);
         });
+      }),
+    },
+    app: {
+      agents: mock((...args: unknown[]) => {
+        agentSdkCalls.push(args);
+        return Promise.resolve({ data: [{ name: 'build' }] });
       }),
     },
     session: {
@@ -75,8 +82,19 @@ beforeEach(() => {
   promptAsyncResults.length = 0;
   healthFetchCalls.length = 0;
   healthFetchResults.length = 0;
+  agentSdkCalls.length = 0;
   runtimeKey = 'test-runtime';
   runtimeBase = '/api';
+});
+
+describe('opencodeClient catalog abort signals', () => {
+  test('passes signals to scoped SDK catalog requests', async () => {
+    const agentSignal = new AbortController().signal;
+
+    await opencodeClient.listAgents('/workspace/project', agentSignal);
+
+    expect(agentSdkCalls[0]?.[1]).toEqual({ signal: agentSignal });
+  });
 });
 
 describe('opencodeClient getConfig cache', () => {

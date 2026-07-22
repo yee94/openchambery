@@ -8,6 +8,8 @@ mock.module('vscode', () => ({
     workspaceFolders: [],
     getConfiguration: () => ({ get: () => undefined }),
   },
+  window: { activeColorTheme: { kind: 1 } },
+  ColorThemeKind: { Light: 1, HighContrastLight: 4 },
 }));
 
 const { handleConfigBridgeMessage } = await import('./bridge-config-runtime.ts');
@@ -35,6 +37,7 @@ const deps = {
   resetAllMagicPromptOverrides: async () => ({ version: 1, overrides: {} }),
   fetchOpenCodeSkillsFromApi: async () => null,
   fetchOpenCodeCommandsFromApi: async () => [],
+  fetchProviderCatalogFromApi: async () => ({ schemaVersion: 1, providers: [], default: {}, partial: false }),
   clientReloadDelayMs: 800,
 };
 
@@ -53,6 +56,58 @@ afterEach(() => {
 const readJson = (filePath) => JSON.parse(fs.readFileSync(filePath, 'utf8'));
 
 describe('VS Code config bridge plugin parity', () => {
+  test('reads settings before projecting the bootstrap allowlist', async () => {
+    const readSettings = mock(() => ({
+      defaultModel: 'provider/model',
+      summaryCustomAPIToken: 'SUMMARY_SENTINEL',
+    }));
+    const response = await handleConfigBridgeMessage({
+      id: 'settings-bootstrap',
+      type: 'api:config/settings:bootstrap',
+    }, createCtx('/workspace'), { ...deps, readSettings });
+
+    expect(readSettings).toHaveBeenCalledTimes(1);
+    expect(response).toEqual({
+      id: 'settings-bootstrap',
+      type: 'api:config/settings:bootstrap',
+      success: true,
+      data: { schemaVersion: 1, defaultModel: 'provider/model' },
+    });
+  });
+
+  test('forwards the provider catalog directory hint to the Extension Host fetcher', async () => {
+    const root = fs.mkdtempSync(path.join(os.tmpdir(), 'openchamber-vscode-provider-catalog-'));
+    tempRoots.push(root);
+    const directory = path.join(root, 'workspace');
+    const calls = [];
+    const response = await handleConfigBridgeMessage({
+      id: 'provider-catalog',
+      type: 'api:config:providers:catalog',
+      payload: { directory },
+    }, createCtx(root), {
+      ...deps,
+      fetchProviderCatalogFromApi: async (_ctx, workingDirectory) => {
+        calls.push(workingDirectory);
+        return { schemaVersion: 1, providers: [], default: {}, partial: false };
+      },
+    });
+
+    expect(calls).toEqual([directory]);
+    expect(response?.data).toEqual({ schemaVersion: 1, providers: [], default: {}, partial: false });
+  });
+
+  test('requires a non-empty provider catalog directory', async () => {
+    const fetchProviderCatalogFromApi = mock(async () => ({ schemaVersion: 1, providers: [], default: {}, partial: false }));
+    const response = await handleConfigBridgeMessage({
+      id: 'provider-catalog-missing-directory',
+      type: 'api:config:providers:catalog',
+      payload: {},
+    }, createCtx('/manager-directory'), { ...deps, fetchProviderCatalogFromApi });
+
+    expect(response).toMatchObject({ success: false, error: 'Directory is required' });
+    expect(fetchProviderCatalogFromApi).not.toHaveBeenCalled();
+  });
+
   test('uses an explicit directory for project skill creation and listing', async () => {
     const managerRoot = fs.mkdtempSync(path.join(os.tmpdir(), 'openchamber-vscode-skills-manager-'));
     const targetRoot = fs.mkdtempSync(path.join(os.tmpdir(), 'openchamber-vscode-skills-target-'));

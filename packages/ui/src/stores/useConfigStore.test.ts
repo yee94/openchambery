@@ -13,11 +13,15 @@ let liveProviderVariants: Record<string, Record<string, unknown>> | undefined;
 let getProvidersCalls = 0;
 let getConfigCalls = 0;
 let listAgentsCalls = 0;
+let settingsBootstrapCalls = 0;
+let settingsBootstrapStatus = 200;
 let liveAgents: TestAgent[] = [];
 let listAgentsImpl: ((directory?: string | null) => Promise<TestAgent[]>) | null = null;
 let withDirectoryCalls: Array<string | null> = [];
 let currentFetchDirectory: string | null = DIRECTORY;
 let configListener: ((event: { scopes: string[]; source?: string; timestamp: number }) => void | Promise<void>) | null = null;
+let runtimeGeneration = 0;
+let runtimeIdentity = 'test-runtime';
 
 const makeStorage = (): Storage => ({
   getItem: (key: string) => storage.get(key) ?? null,
@@ -60,7 +64,7 @@ const provider = (id: string, modelId = `${id}-model`, variants?: Record<string,
       cost: { input: 0, output: 0, cache: { read: 0, write: 0 } },
       limit: { context: 0, output: 0 },
       options: {},
-      release_date: '',
+      release_date: '2024-01-01',
       status: 'active' as const,
       headers: {},
       attachment: false,
@@ -96,7 +100,7 @@ const providerResponse = (id: string, modelId = `${id}-model`, variants?: Record
       cost: { input: 0, output: 0, cache: { read: 0, write: 0 } },
       limit: { context: 0, output: 0 },
       options: {},
-      release_date: '',
+      release_date: '2024-01-01',
       status: 'active' as const,
       headers: {},
       attachment: false,
@@ -206,14 +210,27 @@ mock.module('@/lib/opencode/client', () => ({
   },
 }));
 
-mock.module('@/contexts/runtimeAPIRegistry', () => ({
-  getRegisteredRuntimeAPIs: mock(() => null),
-}));
-
 mock.module('@/lib/runtime-fetch', () => ({
-  runtimeFetch: mock(async () => new Response(JSON.stringify({}), {
-    headers: { 'Content-Type': 'application/json' },
-  })),
+  runtimeFetch: mock(async (path: string, options?: RequestInit) => {
+    if (path === '/api/config/settings/bootstrap') {
+      settingsBootstrapCalls += 1;
+      return new Response(JSON.stringify({ schemaVersion: 1 }), {
+        status: settingsBootstrapStatus,
+        headers: { 'Content-Type': 'application/json' },
+      });
+    }
+    if (path === '/api/config/catalog/providers') {
+      getProvidersCalls += 1;
+      const directory = new Headers(options?.headers).get('x-opencode-directory') ?? '';
+      if (getProvidersForConfigImpl) {
+        const result = await getProvidersForConfigImpl(directory);
+        return new Response(JSON.stringify({ schemaVersion: 1, ...result, partial: false }));
+      }
+      const id = liveProviderIdsByDirectory.get(directory) ?? liveProviderId;
+      return new Response(JSON.stringify({ schemaVersion: 1, providers: [providerResponse(id, `${id}-model`, liveProviderVariants)], default: { default: id }, partial: false }));
+    }
+    return new Response(JSON.stringify({}), { headers: { 'Content-Type': 'application/json' } });
+  }),
   setRuntimeInteractiveSessionRequestId: mock(() => undefined),
 }));
 
@@ -239,13 +256,25 @@ mock.module('@/lib/configSync', () => ({
   }),
 }));
 
+mock.module('@/lib/runtime-switch', () => ({
+  getRuntimeApiBaseUrl: () => '',
+  getRuntimeGeneration: () => runtimeGeneration,
+  getRuntimeKey: () => runtimeIdentity,
+  getRuntimeTransportIdentity: () => runtimeIdentity,
+  isRuntimeEndpointIdentityChange: () => false,
+  subscribeRuntimeEndpointChanged: () => () => undefined,
+}));
+
 const { useConfigStore } = await import('./useConfigStore');
+const { queryClient } = await import('@/lib/queryRuntime');
 const { emitSyncConfigChanged, setSyncRefs } = await import('@/sync/sync-refs');
 const { useSelectionStore } = await import('@/sync/selection-store');
 const { useSessionUIStore } = await import('@/sync/session-ui-store');
+const { getRuntimeTransportIdentity } = await import('@/lib/runtime-switch');
 
 describe('useConfigStore provider persistence', () => {
   beforeEach(() => {
+    queryClient.clear();
     storage = new Map<string, string>();
     Object.defineProperty(globalThis, 'localStorage', {
       configurable: true,
@@ -258,10 +287,14 @@ describe('useConfigStore provider persistence', () => {
     getProvidersCalls = 0;
     getConfigCalls = 0;
     listAgentsCalls = 0;
+    settingsBootstrapCalls = 0;
+    settingsBootstrapStatus = 200;
     liveAgents = [];
     listAgentsImpl = null;
     withDirectoryCalls = [];
     currentFetchDirectory = DIRECTORY;
+    runtimeGeneration = 0;
+    runtimeIdentity = 'test-runtime';
     setSyncRefs({} as never, { children: new Map(), getState: () => undefined } as never, DIRECTORY);
     useSelectionStore.setState({
       sessionModelSelections: new Map(),
@@ -292,7 +325,7 @@ describe('useConfigStore provider persistence', () => {
     });
   });
 
-  test('hydrates persisted provider snapshots for instant paint, then refreshes to live data', async () => {
+  test('legacy persisted catalogs without transport identity are discarded before live refresh', async () => {
     storage.set(STORAGE_KEY, JSON.stringify({
       state: {
         activeDirectoryKey: DIRECTORY,
@@ -328,16 +361,10 @@ describe('useConfigStore provider persistence', () => {
 
     await useConfigStore.persist.rehydrate();
 
-    // Stale-while-revalidate: the persisted snapshot is hydrated as-is so the
-    // pickers can paint instantly on cold start, instead of being stripped to empty.
     const hydrated = useConfigStore.getState();
-    expect(hydrated.providers.map((entry) => entry.id)).toEqual(['stale']);
-    expect(hydrated.defaultProviders).toEqual({ default: 'stale' });
-    expect(hydrated.directoryScoped[DIRECTORY]?.providers.map((entry) => entry.id)).toEqual(['stale']);
-    expect(hydrated.directoryScoped[DIRECTORY]?.defaultProviders).toEqual({ default: 'stale' });
-    expect(hydrated.directoryScoped[DIRECTORY]?.agents).toEqual([{ name: 'build', mode: 'primary' }]);
-    expect(hydrated.directoryScoped[DIRECTORY]?.currentAgentName).toBe('build');
-    expect(hydrated.directoryScoped[OTHER_DIRECTORY]?.providers.map((entry) => entry.id)).toEqual(['other-stale']);
+    expect(hydrated.providers).toEqual([]);
+    expect(hydrated.defaultProviders).toEqual({});
+    expect(hydrated.directoryScoped).toEqual({});
 
     liveProviderId = 'fresh';
     await hydrated.initializeApp();
@@ -459,6 +486,77 @@ describe('useConfigStore provider persistence', () => {
     const persisted = JSON.parse(storage.get(STORAGE_KEY) ?? '{}');
     expect(persisted.state.selectedProviderId).toBe('');
     expect(persisted.state.directoryScoped[DIRECTORY].selectedProviderId).toBe('');
+  });
+
+  test('rehydrate and partialize remove provider secret sentinels from every catalog projection', async () => {
+    const sentinel = '__provider_secret__';
+    storage.set(STORAGE_KEY, JSON.stringify({
+      state: {
+        catalogTransportIdentity: getRuntimeTransportIdentity(),
+        activeDirectoryKey: DIRECTORY,
+        providers: [{ ...provider('unsafe'), key: sentinel }],
+        defaultProviders: { default: 'unsafe' },
+        directoryScoped: {
+          [DIRECTORY]: {
+            providers: [{ ...provider('unsafe'), headers: { authorization: sentinel } }],
+            agents: [], currentProviderId: 'unsafe', currentModelId: 'unsafe-model', selectedProviderId: 'unsafe', agentModelSelections: {}, defaultProviders: { default: 'unsafe' },
+          },
+        },
+      }, version: 0,
+    }));
+    await useConfigStore.persist.rehydrate();
+    const state = useConfigStore.getState();
+    const partial = useConfigStore.persist.getOptions().partialize?.(state);
+    expect(JSON.stringify(state.providers)).not.toContain(sentinel);
+    expect(JSON.stringify(state.directoryScoped)).not.toContain(sentinel);
+    expect(JSON.stringify(partial)).not.toContain(sentinel);
+  });
+
+  test('migration rewrites the allowlisted preference envelope without credential sentinels', async () => {
+    const sentinel = '__credential_sentinel__';
+    storage.set(STORAGE_KEY, JSON.stringify({
+      state: {
+        settingsDefaultModel: 'safe/model',
+        settingsAutoCreateWorktree: true,
+        speechRate: 1.2,
+        openaiApiKey: sentinel,
+        openaiCompatibleApiKey: sentinel,
+        sttApiKey: sentinel,
+        unknownPreference: sentinel,
+      },
+      version: 0,
+    }));
+
+    await useConfigStore.persist.rehydrate();
+
+    const state = useConfigStore.getState();
+    expect(state.settingsDefaultModel).toBe('safe/model');
+    expect(state.settingsAutoCreateWorktree).toBe(true);
+    expect(state.speechRate).toBe(1.2);
+    const rewritten = storage.get(STORAGE_KEY) ?? '';
+    expect(JSON.parse(rewritten).version).toBe(1);
+    expect(rewritten).not.toContain(sentinel);
+    expect(rewritten).not.toContain('unknownPreference');
+    expect(JSON.stringify(useConfigStore.persist.getOptions().partialize?.(state))).not.toContain(sentinel);
+  });
+
+  test('transport mismatch clears catalogs while retaining only legal persisted preferences', async () => {
+    storage.set(STORAGE_KEY, JSON.stringify({
+      state: {
+        catalogTransportIdentity: 'old-runtime',
+        providers: [provider('stale')],
+        settingsGitmojiEnabled: true,
+        settingsMessageStreamTransport: 'ws',
+        settingsAutoCreateWorktree: 'invalid',
+        openaiApiKey: '__credential_sentinel__',
+      },
+      version: 1,
+    }));
+    await useConfigStore.persist.rehydrate();
+    const state = useConfigStore.getState();
+    expect(state.providers).toEqual([]);
+    expect(state.settingsGitmojiEnabled).toBe(true);
+    expect(state.settingsMessageStreamTransport).toBe('ws');
   });
 
   test('setAgent applies settings default variant for an agent configured model', () => {
@@ -717,6 +815,40 @@ describe('useConfigStore provider persistence', () => {
 
     expect(listAgentsCalls).toBe(1);
     expect(getConfigCalls).toBe(0);
+  });
+
+  test('重复的跨目录 loadAgents 共享 settings bootstrap Query', async () => {
+    liveAgents = [testAgent('build')];
+
+    await useConfigStore.getState().loadAgents({ directory: DIRECTORY, source: 'test:settingsBootstrapA' });
+    await useConfigStore.getState().loadAgents({ directory: OTHER_DIRECTORY, source: 'test:settingsBootstrapB' });
+
+    expect(listAgentsCalls).toBe(2);
+    expect(settingsBootstrapCalls).toBe(1);
+  });
+
+  test('settings bootstrap 失败时保留当前 Store 默认值', async () => {
+    settingsBootstrapStatus = 503;
+    liveAgents = [testAgent('build')];
+    useConfigStore.setState({
+      providers: [provider('openai', 'gpt-5.5', { high: {} })],
+      settingsDefaultModel: 'openai/gpt-5.5',
+      settingsDefaultVariant: 'high',
+      settingsDefaultAgent: 'build',
+      settingsAutoCreateWorktree: true,
+      settingsGitmojiEnabled: true,
+      settingsDefaultFileViewerPreview: true,
+    });
+
+    await useConfigStore.getState().loadAgents({ directory: DIRECTORY, source: 'test:settingsBootstrapFailure' });
+
+    const state = useConfigStore.getState();
+    expect(state.settingsDefaultModel).toBe('openai/gpt-5.5');
+    expect(state.settingsDefaultVariant).toBe('high');
+    expect(state.settingsDefaultAgent).toBe('build');
+    expect(state.settingsAutoCreateWorktree).toBe(true);
+    expect(state.settingsGitmojiEnabled).toBe(true);
+    expect(state.settingsDefaultFileViewerPreview).toBe(true);
   });
 
   test('manual selection survives an in-flight loadAgents refresh', async () => {
@@ -1133,6 +1265,51 @@ describe('useConfigStore provider persistence', () => {
 
     pendingProviders.resolve({ providers: [providerResponse('fresh')], default: {} });
     pendingAgents.resolve([testAgent('review')]);
+  });
+
+  test('stale provider completion cannot revive catalog or loading after an A to B runtime switch', async () => {
+    const pendingProviders = deferred<{ providers: ReturnType<typeof providerResponse>[]; default: Record<string, string> }>();
+    getProvidersForConfigImpl = () => pendingProviders.promise;
+    useConfigStore.setState({ catalogTransportIdentity: 'test-runtime', activeDirectoryKey: DIRECTORY, providers: [], directoryScoped: {} });
+    const load = useConfigStore.getState().loadProviders({ directory: DIRECTORY, source: 'test:staleProvider' });
+    expect(useConfigStore.getState().providerConfigLoadingByDirectory[DIRECTORY]).toBe(true);
+
+    runtimeIdentity = 'runtime-b';
+    runtimeGeneration += 1;
+    useConfigStore.setState({ catalogTransportIdentity: 'runtime-b', providers: [provider('runtime-b')], directoryScoped: {}, providerConfigLoadingByDirectory: {} });
+    pendingProviders.resolve({ providers: [providerResponse('runtime-a')], default: { default: 'runtime-a' } });
+    await load;
+
+    expect(useConfigStore.getState().providers.map((entry) => entry.id)).toEqual(['runtime-b']);
+    expect(useConfigStore.getState().providerConfigLoadingByDirectory).toEqual({});
+  });
+
+  test('stale agent resolve and rejection stay silent through an A to B to A generation sequence', async () => {
+    const pendingAgents = deferred<TestAgent[]>();
+    listAgentsImpl = () => pendingAgents.promise;
+    useConfigStore.setState({ catalogTransportIdentity: 'test-runtime', activeDirectoryKey: DIRECTORY, agents: [], directoryScoped: {}, agentConfigLoadingByDirectory: {} });
+    const resolveLoad = useConfigStore.getState().loadAgents({ directory: DIRECTORY, source: 'test:staleAgentResolve' });
+
+    runtimeIdentity = 'runtime-b';
+    runtimeGeneration += 1;
+    runtimeIdentity = 'test-runtime';
+    runtimeGeneration += 1;
+    useConfigStore.setState({ catalogTransportIdentity: 'test-runtime', agents: [testAgent('current')], directoryScoped: {}, agentConfigLoadingByDirectory: {} });
+    pendingAgents.resolve([testAgent('stale')]);
+    await resolveLoad;
+    expect(useConfigStore.getState().agents.map((agent) => agent.name)).toEqual(['current']);
+    expect(useConfigStore.getState().agentConfigLoadingByDirectory).toEqual({});
+
+    listAgentsImpl = async () => { throw new Error('stale failure'); };
+    let errorCalls = 0;
+    const originalError = console.error;
+    console.error = () => { errorCalls += 1; };
+    const rejectLoad = useConfigStore.getState().loadAgents({ directory: DIRECTORY, source: 'test:staleAgentReject' });
+    runtimeGeneration += 1;
+    await rejectLoad;
+    console.error = originalError;
+    expect(errorCalls).toBe(0);
+    expect(useConfigStore.getState().agents.map((agent) => agent.name)).toEqual(['current']);
   });
 
   test('sync config without defaults clears stored OpenCode defaults without changing manual selection', () => {

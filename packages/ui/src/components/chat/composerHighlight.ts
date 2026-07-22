@@ -27,6 +27,13 @@ type HighlightStyle =
     | 'blockquote'
     | 'listMarker';
 
+import {
+    composerTriggerIconText,
+    composerTriggerIconVisual,
+    sameComposerTriggerIconVisual,
+    type ComposerTriggerIconVisual,
+} from '@/composer/inline-visual';
+
 type MentionKind = 'file' | 'agent' | 'session';
 
 export interface HighlightRange {
@@ -42,13 +49,9 @@ export interface HighlightRange {
     className?: string;
     /** Optional explicit priority; falls back to STYLE_PRIORITY[style]. */
     priority?: number;
-    /** Filename rendered as an inline attachment tag with its file-type icon. */
-    attachmentName?: string;
-    /** Visual kind for inline image and code-selection citations. */
-    attachmentIcon?: 'image' | 'attachment';
-    /** Session title rendered over the stable session mention token. */
-    sessionLabel?: string;
-    /** Skill name rendered as an inline skill reference with its book icon. */
+    /** Shared trigger→icon→label chip visual for metric-safe overlay rendering. */
+    visual?: ComposerTriggerIconVisual;
+    /** Skill name retained for authored slash-skill semantics and deletion helpers. */
     skillName?: string;
 }
 
@@ -62,9 +65,7 @@ export interface MentionRange {
 export interface HighlightPart {
     text: string;
     className: string;
-    attachmentName?: string;
-    attachmentIcon?: 'image' | 'attachment';
-    sessionLabel?: string;
+    visual?: ComposerTriggerIconVisual;
     skillName?: string;
 }
 
@@ -345,15 +346,13 @@ export function buildHighlightParts(
             ? (bestRange.className ?? STYLE_CLASS[bestRange.style])
             : DEFAULT_CLASS;
         const segText = text.slice(segStart, segEnd);
-        const attachmentName = bestRange?.attachmentName;
-        const attachmentIcon = bestRange?.attachmentIcon;
-        const sessionLabel = bestRange?.sessionLabel;
+        const visual = bestRange?.visual;
         const skillName = bestRange?.skillName;
         const last = parts[parts.length - 1];
-        if (last && last.className === className && last.attachmentName === attachmentName && last.attachmentIcon === attachmentIcon && last.sessionLabel === sessionLabel && last.skillName === skillName) {
+        if (last && last.className === className && sameComposerTriggerIconVisual(last.visual, visual) && last.skillName === skillName) {
             last.text += segText;
         } else {
-            parts.push({ text: segText, className, attachmentName, attachmentIcon, sessionLabel, skillName });
+            parts.push({ text: segText, className, visual, skillName });
         }
     }
 
@@ -451,6 +450,11 @@ export function mentionRangesToHighlightRanges(mentions: MentionRange[]): Highli
             : mention.kind === 'session'
                 ? 'mentionSession'
                 : 'mentionAgent',
-        sessionLabel: mention.kind === 'session' ? mention.label : undefined,
+        visual: mention.kind === 'session' && mention.label
+            ? composerTriggerIconVisual(
+                { trigger: '@', icon: 'chat-thread', label: mention.label },
+                composerTriggerIconText({ trigger: '@', icon: 'chat-thread', label: mention.label }),
+            )
+            : undefined,
     }));
 }

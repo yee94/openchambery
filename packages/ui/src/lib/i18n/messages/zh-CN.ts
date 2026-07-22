@@ -512,6 +512,7 @@ export const dict: Record<I18nKey, string> = {
   'sessions.sidebar.session.status.pinned': '已置顶会话',
   'sessions.sidebar.session.actions.pinned': '置顶',
   'sessions.sidebar.session.status.permissionRequired': '需要权限',
+  'sessions.sidebar.session.status.questionRequired': '需要回答',
   'sessions.sidebar.session.subsessions.collapse': '折叠子会话',
   'sessions.sidebar.session.subsessions.expand': '展开子会话',
   'sessions.sidebar.dialogs.deleteSession.title': '删除会话？',

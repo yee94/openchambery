@@ -1,13 +1,12 @@
 {
   "name": "@openchamber/web",
-  "version": "1.16.50",
+  "version": "1.16.51",
   "private": false,
   "type": "module",
   "main": "./server/index.js",
   "types": "./server/index.d.ts",
   "bin": {
-    "openchamber": "./bin/cli.js",
-    "openchamber-relay": "./bin/relay-server.js"
+    "openchamber": "./bin/cli.js"
   },
   "publishConfig": {
     "access": "public"

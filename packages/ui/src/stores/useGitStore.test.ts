@@ -1,6 +1,8 @@
 import { beforeEach, describe, expect, test } from 'bun:test';
-import type { GitStatus } from '@/lib/api/types';
+import type { GitBranch, GitStatus } from '@/lib/api/types';
 import { useGitStore } from './useGitStore';
+import { queryClient } from '@/lib/queryRuntime';
+import { switchRuntimeEndpoint } from '@/lib/runtime-switch';
 
 type Deferred<T> = {
   promise: Promise<T>;
@@ -35,6 +37,7 @@ const createDirectoryState = (status: GitStatus): DirectoryGitState => ({
   isGitRepo: true,
   status,
   branches: null,
+  branchesTransportIdentity: null,
   log: null,
   identity: null,
   diffCache: new Map(),
@@ -70,10 +73,77 @@ const createGitApi = (getGitStatus: GitAPI['getGitStatus']): GitAPI => ({
 
 describe('useGitStore', () => {
   beforeEach(() => {
+    queryClient.clear();
     useGitStore.setState({
       directories: new Map(),
       activeDirectory: null,
     });
+  });
+
+  test('mirrors the Query branches snapshot and force refreshes it', async () => {
+    let calls = 0;
+    const git = createGitApi(async () => createStatus());
+    git.getGitBranches = async () => {
+      calls += 1;
+      return { all: [calls === 1 ? 'main' : 'next'], current: calls === 1 ? 'main' : 'next', branches: {} };
+    };
+
+    await useGitStore.getState().fetchBranches('/repo', git);
+    await useGitStore.getState().fetchBranches('/repo', git);
+    await useGitStore.getState().fetchBranches('/repo', git, { force: true });
+
+    expect(calls).toBe(2);
+    expect(useGitStore.getState().getDirectoryState('/repo')?.branches?.current).toBe('next');
+  });
+
+  test('keeps the latest branches fetch loading while an earlier runtime request completes', async () => {
+    const oldRequest = createDeferred<GitBranch>();
+    const newRequest = createDeferred<GitBranch>();
+    const oldGit = createGitApi(async () => createStatus());
+    oldGit.getGitBranches = () => oldRequest.promise;
+    const newGit = createGitApi(async () => createStatus());
+    newGit.getGitBranches = () => newRequest.promise;
+    switchRuntimeEndpoint({ apiBaseUrl: 'http://runtime-a.test' });
+    const oldFetch = useGitStore.getState().fetchBranches('/repo', oldGit);
+    await Promise.resolve();
+
+    switchRuntimeEndpoint({ apiBaseUrl: 'http://runtime-b.test' });
+    const newFetch = useGitStore.getState().fetchBranches('/repo', newGit);
+    await Promise.resolve();
+
+    oldRequest.resolve({ all: ['old'], current: 'old', branches: {} });
+    await oldFetch;
+    expect(useGitStore.getState().getDirectoryState('/repo')?.branches).toBeNull();
+    expect(useGitStore.getState().getDirectoryState('/repo')?.isLoadingBranches).toBe(true);
+
+    newRequest.resolve({ all: ['new'], current: 'new', branches: {} });
+    await newFetch;
+    expect(useGitStore.getState().getDirectoryState('/repo')?.branches).toEqual({ all: ['new'], current: 'new', branches: {} });
+    expect(useGitStore.getState().getDirectoryState('/repo')?.isLoadingBranches).toBe(false);
+  });
+
+  test('keeps the latest branches fetch loading when an earlier runtime request fails', async () => {
+    const oldRequest = createDeferred<GitBranch>();
+    const newRequest = createDeferred<GitBranch>();
+    const oldGit = createGitApi(async () => createStatus());
+    oldGit.getGitBranches = () => oldRequest.promise;
+    const newGit = createGitApi(async () => createStatus());
+    newGit.getGitBranches = () => newRequest.promise;
+    switchRuntimeEndpoint({ apiBaseUrl: 'http://runtime-c.test' });
+    const oldFetch = useGitStore.getState().fetchBranches('/repo', oldGit);
+    await Promise.resolve();
+
+    switchRuntimeEndpoint({ apiBaseUrl: 'http://runtime-d.test' });
+    const newFetch = useGitStore.getState().fetchBranches('/repo', newGit);
+    await Promise.resolve();
+
+    oldRequest.reject(new Error('offline'));
+    await oldFetch;
+    expect(useGitStore.getState().getDirectoryState('/repo')?.isLoadingBranches).toBe(true);
+
+    newRequest.resolve({ all: ['new'], current: 'new', branches: {} });
+    await newFetch;
+    expect(useGitStore.getState().getDirectoryState('/repo')?.isLoadingBranches).toBe(false);
   });
 
   test('does not reuse an in-flight light status request for full status', async () => {

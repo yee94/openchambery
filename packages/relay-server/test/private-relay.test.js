@@ -2,7 +2,7 @@ import { afterEach, describe, expect, it } from 'bun:test';
 import crypto from 'node:crypto';
 import { WebSocket } from 'ws';
 
-import { createPrivateRelayServer } from './index.js';
+import { createPrivateRelayServer } from '../src/index.js';
 
 const sockets = [];
 const relays = [];

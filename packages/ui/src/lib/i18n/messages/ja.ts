@@ -512,6 +512,7 @@ export const dict: Record<I18nKey, string> = {
   'sessions.sidebar.session.status.pinned': 'ピン留めされたセッション',
   'sessions.sidebar.session.actions.pinned': 'ピン留め',
   'sessions.sidebar.session.status.permissionRequired': '権限が必要です',
+  'sessions.sidebar.session.status.questionRequired': '質問への回答が必要です',
   'sessions.sidebar.session.subsessions.collapse': 'サブセッションを折りたたむ',
   'sessions.sidebar.session.subsessions.expand': 'サブセッションを展開',
   'sessions.sidebar.dialogs.deleteSession.title': 'セッションを削除しますか？',

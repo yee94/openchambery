@@ -49,6 +49,19 @@ describe('prepareUserMarkdownContent', () => {
         expect(content).toContain('[/skill-name](#openchamber-skill:skill-name)');
         expect(content).toContain('hello  \n[/skill-name]');
     });
+
+    test('can skip inline reference rewriting when chips own presentation', () => {
+        const content = prepareUserMarkdownContent({
+            textContent: '@agent hello\n/skill-name',
+            agentMention: { name: 'build-agent', token: '@agent' },
+            skillNames: new Set(['skill-name']),
+            decorateInlineReferences: false,
+        });
+
+        expect(content).toContain('@agent hello  \n/skill-name');
+        expect(content).not.toContain('#openchamber-agent:');
+        expect(content).not.toContain('#openchamber-skill:');
+    });
 });
 
 describe('SKILL_TOKEN_PATTERN', () => {

@@ -1,4 +1,5 @@
-import { runtimeFetch } from './runtime-fetch';
+import { ensureSettingsBootstrapQuery } from '@/queries/settingsBootstrapQueries';
+import { getRuntimeTransportIdentity } from '@/lib/runtime-switch';
 
 export const RESPONSE_STYLE_PRESETS = ['concise', 'detailed', 'mentor', 'pushback', 'noFiller', 'matchEnergy', 'warmPeer'] as const;
 export type ResponseStylePreset = typeof RESPONSE_STYLE_PRESETS[number];
@@ -32,8 +33,8 @@ type ResponseStyleSettingsSnapshot = {
   customInstructions: unknown;
 };
 
-let responseStyleSettingsCache: ResponseStyleSettingsSnapshot | null = null;
-let responseStyleFetchInFlight: Promise<string | null> | null = null;
+const responseStyleSettingsCache = new Map<string, ResponseStyleSettingsSnapshot>();
+const responseStyleFetchInFlight = new Map<string, Promise<string | null>>();
 
 export const buildResponseStyleInstruction = ({
   enabled,
@@ -55,61 +56,57 @@ export const buildResponseStyleInstruction = ({
 
 /**
  * Warm / refresh the send-path cache when settings are loaded or saved elsewhere
- * (defaults bootstrap, Behavior page). Avoids GET /api/config/settings on every
+ * (defaults bootstrap, Behavior page). Avoids settings bootstrap reads on every
  * first message while the browser connection pool is saturated.
  */
 export const rememberResponseStyleSettings = (settings: {
   enabled?: unknown;
   preset?: unknown;
   customInstructions?: unknown;
-}): void => {
-  responseStyleSettingsCache = {
+}, transport = getRuntimeTransportIdentity()): void => {
+  responseStyleSettingsCache.set(transport, {
     enabled: settings.enabled === true,
     preset: settings.preset,
     customInstructions: settings.customInstructions,
-  };
+  });
 };
 
 /** Test helper — clears the in-memory send-path cache. */
 export const clearResponseStyleSettingsCache = (): void => {
-  responseStyleSettingsCache = null;
-  responseStyleFetchInFlight = null;
+  responseStyleSettingsCache.clear();
+  responseStyleFetchInFlight.clear();
 };
 
-export const getCachedResponseStyleInstruction = (): string | null | undefined => {
-  if (!responseStyleSettingsCache) return undefined;
-  return buildResponseStyleInstruction(responseStyleSettingsCache);
+export const getCachedResponseStyleInstruction = (transport = getRuntimeTransportIdentity()): string | null | undefined => {
+  const cached = responseStyleSettingsCache.get(transport);
+  if (!cached) return undefined;
+  return buildResponseStyleInstruction(cached);
 };
 
 export const fetchResponseStyleInstruction = async (): Promise<string | null> => {
-  const cached = getCachedResponseStyleInstruction();
+  const transport = getRuntimeTransportIdentity();
+  const cached = getCachedResponseStyleInstruction(transport);
   if (cached !== undefined) return cached;
 
-  if (responseStyleFetchInFlight) return responseStyleFetchInFlight;
+  const inFlight = responseStyleFetchInFlight.get(transport);
+  if (inFlight) return inFlight;
 
-  responseStyleFetchInFlight = (async () => {
-    const response = await runtimeFetch('/api/config/settings', {
-      method: 'GET',
-      headers: { Accept: 'application/json' },
-    });
-    if (!response.ok) return null;
-    const settings = await response.json().catch(() => null) as {
-      responseStyleEnabled?: unknown;
-      responseStylePreset?: unknown;
-      responseStyleCustomInstructions?: unknown;
-    } | null;
-    if (!settings) return null;
+  const request = (async () => {
+    const settings = await ensureSettingsBootstrapQuery(transport);
     rememberResponseStyleSettings({
       enabled: settings.responseStyleEnabled,
       preset: settings.responseStylePreset,
       customInstructions: settings.responseStyleCustomInstructions,
-    });
-    return getCachedResponseStyleInstruction() ?? null;
+    }, transport);
+    return getCachedResponseStyleInstruction(transport) ?? null;
   })();
+  responseStyleFetchInFlight.set(transport, request);
 
   try {
-    return await responseStyleFetchInFlight;
+    return await request;
   } finally {
-    responseStyleFetchInFlight = null;
+    if (responseStyleFetchInFlight.get(transport) === request) {
+      responseStyleFetchInFlight.delete(transport);
+    }
   }
 };

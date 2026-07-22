@@ -4,6 +4,8 @@ import * as path from 'path';
 import * as vscode from 'vscode';
 import { createOpencodeClient } from '@opencode-ai/sdk/v2';
 import { BUILT_IN_SKILL_LOCATION, type DiscoveredSkill, type SkillScope, type SkillSource } from './opencodeConfig';
+import { projectProviderCatalog, type ProviderCatalog } from './provider-catalog-runtime';
+import { formatSettingsResponse } from './settings-visible-runtime';
 import type { BridgeContext } from './bridge';
 
 const SETTINGS_KEY = 'openchamber.settings';
@@ -194,6 +196,27 @@ export const fetchOpenCodeCommandsFromApi = async (
   });
 };
 
+export const fetchProviderCatalogFromApi = async (
+  ctx: BridgeContext | undefined,
+  workingDirectory?: string,
+): Promise<ProviderCatalog> => {
+  const apiUrl = ctx?.manager?.getApiUrl();
+  if (!apiUrl) throw new Error('OpenCode API is unavailable');
+  const client = createOpencodeClient({
+    baseUrl: apiUrl.replace(/\/+$/, ''),
+    headers: ctx?.manager?.getOpenCodeAuthHeaders() ?? {},
+    directory: workingDirectory,
+  });
+  const response = await client.config.providers(
+    workingDirectory ? { directory: workingDirectory } : undefined,
+    { signal: AbortSignal.timeout(8_000) },
+  );
+  if (response.error || response.data === undefined) {
+    throw new Error('OpenCode provider catalog request failed');
+  }
+  return projectProviderCatalog(response.data);
+};
+
 const readSharedSettingsFromDisk = (): Record<string, unknown> => {
   try {
     const raw = fs.readFileSync(OPENCHAMBER_SHARED_SETTINGS_PATH, 'utf8');
@@ -303,9 +326,6 @@ const readPersistedSettings = (ctx?: BridgeContext): Record<string, unknown> => 
 
 export const readSettings = (ctx?: BridgeContext): Record<string, unknown> => {
   const persisted = readPersistedSettings(ctx);
-  const { summaryCustomAPIToken, ...visibleSettings } = persisted;
-  const persistedOpencodeBinary =
-    typeof persisted.opencodeBinary === 'string' ? String(persisted.opencodeBinary).trim() : '';
   const workspaceFolder = vscode.workspace.workspaceFolders?.[0]?.uri.fsPath || '';
   const themeVariant =
     vscode.window.activeColorTheme.kind === vscode.ColorThemeKind.Light ||
@@ -313,17 +333,10 @@ export const readSettings = (ctx?: BridgeContext): Record<string, unknown> => {
       ? 'light'
       : 'dark';
 
-  return {
-    ...visibleSettings,
-    hasSummaryCustomAPIToken: typeof summaryCustomAPIToken === 'string' && summaryCustomAPIToken.trim().length > 0,
-    themeVariant,
-    lastDirectory: workspaceFolder,
-    opencodeBinary: persistedOpencodeBinary || undefined,
-  };
+  return formatSettingsResponse(persisted, { themeVariant, lastDirectory: workspaceFolder });
 };
 
 export const persistSettings = async (changes: Record<string, unknown>, ctx?: BridgeContext): Promise<Record<string, unknown>> => {
-  const current = readSettings(ctx);
   const restChanges = stripDerived({ ...(changes || {}) });
 
   const keysToClear = new Set<string>();
@@ -411,20 +424,15 @@ export const persistSettings = async (changes: Record<string, unknown>, ctx?: Br
   // globalState so older builds can still read recent values if a user
   // downgrades the extension.
   await writeSharedSettingsToDisk(persistable);
-  const { summaryCustomAPIToken, ...settingsForGlobalState } = persistable;
+  const settingsForGlobalState = { ...persistable };
+  delete settingsForGlobalState.managedRemoteTunnelToken;
+  delete settingsForGlobalState.managedRemoteTunnelPresetTokens;
+  delete settingsForGlobalState.summaryCustomAPIToken;
+  delete settingsForGlobalState.desktopUiPassword;
   await ctx?.context?.globalState.update(SETTINGS_KEY, settingsForGlobalState);
 
   // Return the same shape as readSettings (with derived fields re-applied).
-  return {
-    ...settingsForGlobalState,
-    hasSummaryCustomAPIToken: typeof summaryCustomAPIToken === 'string' && summaryCustomAPIToken.trim().length > 0,
-    themeVariant: current.themeVariant,
-    lastDirectory: current.lastDirectory,
-    opencodeBinary:
-      typeof persistable.opencodeBinary === 'string' && persistable.opencodeBinary.length > 0
-        ? persistable.opencodeBinary
-        : undefined,
-  };
+  return readSettings(ctx);
 };
 
 export const readMagicPromptOverrides = (): { version: number; overrides: Record<string, string> } => {

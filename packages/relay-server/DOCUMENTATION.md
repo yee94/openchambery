@@ -1,8 +1,10 @@
-# Self-Hosted Private Relay
+# Relay Server Package Documentation
+
+`packages/relay-server/` owns the self-hosted Layer 1 Relay server, the `openchamber-relay` CLI, and the package release and deployment contract.
 
 ## Purpose and security boundary
 
-`server/private-relay/` owns the self-hosted Relay server. It brokers Layer 1 routing: Host control connections, client route requests, and matching Host data connections. It forwards opaque Layer 2/3 frames verbatim.
+The Relay server brokers Layer 1 routing: Host control connections, client route requests, and matching Host data connections. It forwards opaque Layer 2/3 frames verbatim.
 
 Host and Client terminate the E2EE channel. Each Host authenticates Relay connections with its long-lived P-256 signing key. Pairing secrets and client bearer credentials continue through endpoint validation; Relay reachability grants transport access.
 
@@ -15,7 +17,7 @@ The Relay keeps process-local routing state only. Hosts reconnect after Relay re
 Install the package, then start the Relay:
 
 ```sh
-npm install -g @openchamber/web
+npm install -g @openchamber/relay-server
 openchamber-relay
 ```
 
@@ -62,7 +64,7 @@ Run the Relay with `--public-url wss://relay.example.com/ws`. The `/ws` path in 
 
 ## Docker
 
-From the repository root, build and start the supplied service:
+From the repository root, build and start the supplied service. The compatibility assets are [`Dockerfile.relay`](../../Dockerfile.relay) and [`docker-compose.relay.yml`](../../docker-compose.relay.yml):
 
 ```sh
 OPENCHAMBER_RELAY_SERVER_PUBLIC_URL=wss://relay.example.com/ws \

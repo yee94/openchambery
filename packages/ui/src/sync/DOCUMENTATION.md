@@ -40,6 +40,13 @@ So:
   `ensureChild(directory, { bootstrap: false })`. Global events can still route
   live status/permission updates into that store, but merely rendering a cached
   row must never start the directory's full bootstrap.
+- `SyncProvider` keeps the current directory child store available during an
+  open blank new-session draft with `bootstrapDirectory={false}`. The store
+  remains in `loading` and accepts live or optimistic updates. A root enables
+  bootstrap when the draft closes or a real session becomes current; the same
+  directory then performs one full bootstrap. Reconnect, transport-switch, and
+  watchdog resyncs use this gate for the current draft directory, while other
+  initialized directories retain their normal recovery lifecycle.
 
 ## Ownership map
 

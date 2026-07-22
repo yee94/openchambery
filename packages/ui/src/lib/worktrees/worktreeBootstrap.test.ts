@@ -233,7 +233,8 @@ describe('worktreeBootstrap.waitForWorktreeBootstrap', () => {
     emitBootstrapStatus('/repo-wt', 'ready', null, readyAt);
     expect(getWorktreeBootstrapState('/repo-wt')?.status).toBe('ready');
 
-    releaseSeed?.({ status: 'pending', error: null, updatedAt: readyAt - 50 });
+    const release = releaseSeed as ((value: typeof bootstrapStatusResult) => void) | null;
+    release?.({ status: 'pending', error: null, updatedAt: readyAt - 50 });
     await new Promise((resolve) => setTimeout(resolve, 0));
 
     expect(getWorktreeBootstrapState('/repo-wt')).toEqual({
@@ -287,7 +288,8 @@ describe('worktreeBootstrap.waitForWorktreeBootstrap', () => {
     markWorktreeBootstrapPending('/repo-wt');
     expect(getWorktreeBootstrapState('/repo-wt')?.status).toBe('pending');
 
-    releaseSeed?.({ status: 'failed', error: 'stale seed', updatedAt: Date.now() + 1_000 });
+    const release = releaseSeed as ((value: typeof bootstrapStatusResult) => void) | null;
+    release?.({ status: 'failed', error: 'stale seed', updatedAt: Date.now() + 1_000 });
     await new Promise((resolve) => setTimeout(resolve, 0));
 
     expect(getWorktreeBootstrapState('/repo-wt')?.status).toBe('pending');

@@ -2,7 +2,7 @@
 import packageJson from '../package.json' with { type: 'json' };
 
 import { isModuleCliExecution } from './cli-entry.js';
-import { runRelayServerCli } from './lib/relay-server-cli.js';
+import { runRelayServerCli } from '../src/cli.js';
 
 const version = packageJson.version;
 

@@ -512,6 +512,7 @@ export const dict: Record<I18nKey, string> = {
   "sessions.sidebar.session.status.pinned": "Sesión anclada",
   "sessions.sidebar.session.actions.pinned": "Fijado",
   "sessions.sidebar.session.status.permissionRequired": "Permiso requerido",
+  "sessions.sidebar.session.status.questionRequired": "Pregunta pendiente",
   "sessions.sidebar.session.subsessions.collapse": "Colapsar subsesiones",
   "sessions.sidebar.session.subsessions.expand": "Expandir subsesiones",
   "sessions.sidebar.dialogs.deleteSession.title": "¿Eliminar sesión?",

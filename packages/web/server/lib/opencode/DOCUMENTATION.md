@@ -19,6 +19,7 @@ This module provides OpenCode server integration utilities for the web server ru
 - `packages/web/server/lib/opencode/network-runtime.js`: OpenCode URL construction, health-probe readiness checks, and API prefix runtime.
 - `packages/web/server/lib/opencode/project-directory-runtime.js`: request-scoped and settings-backed project directory resolution/validation runtime.
 - `packages/web/server/lib/opencode/config-entity-routes.js`: route registration for agent/command/MCP config orchestration and reload semantics.
+- `packages/web/server/lib/opencode/provider-catalog.js`: fail-closed projection for the safe provider catalog response.
 - `packages/web/server/lib/opencode/snippets.js`: opencode-snippets-compatible snippet file CRUD, discovery, and hashtag expansion.
 - `packages/web/server/lib/opencode/cli-options.js`: CLI/environment option parsing for server startup arguments.
 - `packages/web/server/lib/opencode/core-routes.js`: server status/system routes, auth/access guard routes, and settings utility route registration.
@@ -73,9 +74,12 @@ This module provides OpenCode server integration utilities for the web server ru
 
 ## Public exports (routes.js)
 - `registerOpenCodeRoutes(app, dependencies)`: Registers OpenCode-owned HTTP routes and internal module runtime:
-  - `GET /api/config/settings`
+  - `GET /api/config/settings`: returns the full formatted settings response. `?bootstrap=true` remains a safe bootstrap alias that returns schema version `1` and a bounded allowlist for bootstrap clients: default model/variant/agent, worktree/git/file-preview preferences, Zen model, message transport, STT settings, and response-style settings. The bootstrap projection omits credentials and accepts HTTP(S) STT URLs without URL credentials.
+  - `GET /api/config/settings/bootstrap`: returns the schema version `1` bootstrap allowlist. UI clients use this dedicated endpoint so older hosts return HTTP 404; this prevents an older server that ignores the `bootstrap` query parameter from returning the full settings response.
   - `PUT /api/config/settings`
   - `GET /api/config/opencode-resolution`
+  - `GET /api/behavior/agents-md`: returns an authoritative empty document only when the file is absent (`ENOENT`); permission and I/O failures return HTTP 500.
+  - `PUT /api/behavior/agents-md`
   - `POST /api/opencode/upgrade` (proxies OpenCode upgrade, then restarts managed OpenCode so the new binary is active)
   - `GET /api/opencode/upgrade-status`
   - `POST /api/opencode/directory`
@@ -185,6 +189,7 @@ This module provides OpenCode server integration utilities for the web server ru
   - `sanitizeSettingsUpdate(payload)`
   - `mergePersistedSettings(current, changes)`
   - `formatSettingsResponse(settings)`
+  - `projectBootstrapSettingsResponse(response)`: projects a formatted settings response into the schema-versioned bootstrap allowlist. General strings are bounded to 512 characters, STT URLs to 4096, language to 64, and custom response-style instructions to 200000.
 
 ## Public exports (settings-normalization-runtime.js)
 - `createSettingsNormalizationRuntime(dependencies)`: creates normalization/sanitization runtime for shared settings and tunnel helper logic.
@@ -220,6 +225,8 @@ This module provides OpenCode server integration utilities for the web server ru
 
 ## Public exports (config-entity-routes.js)
 - `registerConfigEntityRoutes(app, dependencies)`: registers configuration entity routes:
+  - `GET /api/config/catalog/providers` resolves the request project directory, calls OpenCode's SDK `config.providers`, and returns schema version `1` with an allowlisted provider/model catalog. The route is available through the shared web host used by Web, Electron, hosted mobile, and Capacitor mobile, before generic OpenCode proxy handling.
+  - Provider catalog responses include only provider `id`, `name`, and safe models. Safe models include `id`, `name`, fixed text/audio/image/video/pdf capability modalities, bounded cost/limit fields, `release_date`, and variant names with `{}` values. Identifiers are bounded to 512 characters, display names to 1024, release dates to 64, numeric values to absolute 1e9, and catalog collections to 200 providers, 500 models per provider, and 100 defaults or variants. Provider credentials/configuration and unallowlisted model fields stay server-side. Malformed catalog roots and SDK error envelopes return HTTP 502; truncation, duplicate identifiers, and invalid provider/model/default/capability entries set `partial: true` while valid entries remain available.
   - Agents: `/api/config/agents/:name` and `/api/config/agents/:name/config`
   - Commands: batched metadata via `POST /api/config/commands/metadata`; `{ catalog: true }` returns the compact autocomplete catalog without templates, plus CRUD at `/api/config/commands/:name`
   - Global raw configs: `GET /api/config/global` discovers existing config targets; `GET/PUT /api/config/global/:target` reads and writes `opencode`, `oh-my-opencode-slim`, and `oh-my-openagent` JSON or JSONC files

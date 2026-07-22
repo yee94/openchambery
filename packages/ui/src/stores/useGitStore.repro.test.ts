@@ -6,7 +6,7 @@
  * the Zustand store, but does NOT auto-fetch branches when the dialog opens.
  * Branches only get populated if:
  *   - The Git tab has been opened (GitView's ensureAll)
- *   - A draft session has been started (ChatInput's branch fetch)
+ *   - A draft session has been started and its branch Query has refreshed
  *   - The user manually clicks the refresh button in the dialog
  *
  * This test demonstrates that branches start as null (empty list) for a
@@ -15,6 +15,7 @@
  */
 import { beforeEach, describe, expect, test } from 'bun:test';
 import { useGitStore } from './useGitStore';
+import { queryClient } from '@/lib/queryRuntime';
 
 type GitAPI = Parameters<ReturnType<typeof useGitStore.getState>['fetchStatus']>[1];
 
@@ -44,6 +45,7 @@ const createGitApi = (branchesResult?: { all: string[]; current: string }): GitA
 
 describe('Issue #1564 - Source branch list is empty in create worktree dialog', () => {
   beforeEach(() => {
+    queryClient.clear();
     // Reset store state - simulating a fresh app load where
     // no Git tab has been opened and no draft session started
     useGitStore.setState({
@@ -97,20 +99,13 @@ describe('Issue #1564 - Source branch list is empty in create worktree dialog', 
     expect(remoteBranches).toEqual(['remotes/origin/main']);
   });
 
-  test('simulates the ChatInput flow: branches become available after draft session start', async () => {
-    // The ChatInput component fetches branches when showDraftTargetSelectors is true
-    // This is triggered when a draft session is started
+  test('mirrors branches into the legacy store after a Query-backed refresh', async () => {
     const directory = '/my-project';
     const git = createGitApi({ all: ['main', 'hotfix', 'remotes/origin/main'], current: 'main' });
     
     // Before draft session - branches not fetched
     expect(useGitStore.getState().directories.get(directory)?.branches).toBe(undefined);
     
-    // Simulate ChatInput's useEffect that runs on draft session start:
-    //   React.useEffect(() => {
-    //     if (!showDraftTargetSelectors || ...) return;
-    //     void fetchBranches(selectedDraftProjectPath, runtimeGit)
-    //   }, [...]);
     await useGitStore.getState().fetchBranches(directory, git);
     
     // After fetch - branches are now available
@@ -134,10 +129,8 @@ describe('Issue #1564 - Source branch list is empty in create worktree dialog', 
     // - Line 355-360: handleFetchBranches only triggered by manual refresh button
     // - Lines 616-647: reset effect on open does NOT call fetchBranches
     //
-    // Compare with ChatInput's approach (lines 3557-3563):
-    //   if (selectedDraftProjectBranches?.all) { return; }
-    //   void fetchBranches(selectedDraftProjectPath, runtimeGit)
-    // ChatInput auto-fetches if branches aren't available.
+    // DraftSessionBranchSelector reads the branches Query directly, including
+    // its transport-scoped stale startup snapshot.
     //
     // The dialog should similarly auto-fetch:
     //   React.useEffect(() => {

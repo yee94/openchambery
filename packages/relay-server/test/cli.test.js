@@ -5,11 +5,11 @@ import os from 'node:os';
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
 
-import { isModuleCliExecution } from '../cli-entry.js';
-import { buildRelayConfig, parseRelayServerArgs, runRelayServerCli } from './relay-server-cli.js';
+import { isModuleCliExecution } from '../bin/cli-entry.js';
+import { buildRelayConfig, parseRelayServerArgs, runRelayServerCli } from '../src/cli.js';
 
 const baseEnv = { ...process.env };
-const packageManifest = JSON.parse(fs.readFileSync(new URL('../../package.json', import.meta.url), 'utf8'));
+const packageManifest = JSON.parse(fs.readFileSync(new URL('../package.json', import.meta.url), 'utf8'));
 afterEach(() => { process.env = { ...baseEnv }; });
 
 it('gives flags precedence over relay environment configuration', () => {
@@ -46,7 +46,7 @@ it('runs compiled relay help and version from the published bin name', () => {
   const directory = fs.mkdtempSync(path.join(os.tmpdir(), 'openchamber-relay-'));
   const executable = path.join(directory, 'openchamber-relay');
   try {
-    const entry = fileURLToPath(new URL('../relay-server.js', import.meta.url));
+    const entry = fileURLToPath(new URL('../bin/openchamber-relay.js', import.meta.url));
     expect(spawnSync(process.execPath, ['build', '--compile', entry, '--outfile', executable], { encoding: 'utf8' }).status).toBe(0);
     expect(spawnSync(executable, ['--help'], { encoding: 'utf8' })).toMatchObject({ status: 0, stdout: expect.stringContaining('Usage: openchamber-relay') });
     expect(spawnSync(executable, ['--version'], { encoding: 'utf8' })).toMatchObject({ status: 0, stdout: expect.stringMatching(new RegExp(`^${packageManifest.version.replaceAll('.', '\\.')}\\s*$`)) });
@@ -55,8 +55,8 @@ it('runs compiled relay help and version from the published bin name', () => {
   }
 });
 
-it('publishes the relay executable alongside the existing CLI', () => {
-  expect(packageManifest.bin).toMatchObject({ openchamber: './bin/cli.js', 'openchamber-relay': './bin/relay-server.js' });
+it('publishes the relay executable as an independent package contract', () => {
+  expect(packageManifest.bin).toEqual({ 'openchamber-relay': './bin/openchamber-relay.js' });
 });
 
 it('keeps JSON output JSON-only and cleans signal listeners', async () => {

@@ -143,6 +143,96 @@ describe('config entity command metadata route', () => {
   });
 });
 
+describe('provider catalog route', () => {
+  it('uses the resolved directory, OpenCode auth, SDK providers call, and explicit catalog route', async () => {
+    const app = express();
+    const resolveProjectDirectory = vi.fn(async () => ({ directory: '/project/from-header' }));
+    const providers = vi.fn(async () => ({ data: { providers: [], default: {} } }));
+    createOpencodeClient.mockReturnValue({ config: { providers } });
+    registerConfigEntityRoutes(app, {
+      ...createDependencies(vi.fn()),
+      resolveProjectDirectory,
+    });
+    app.use('/api', (_req, res) => res.status(599).json({ proxy: true }));
+
+    const response = await request(app)
+      .get('/api/config/catalog/providers?directory=%2Frepo')
+      .set('x-opencode-directory', '/project/from-header')
+      .expect(200);
+
+    expect(resolveProjectDirectory).toHaveBeenCalledWith(expect.objectContaining({ query: { directory: '/repo' } }));
+    expect(createOpencodeClient).toHaveBeenCalledWith(expect.objectContaining({
+      baseUrl: 'http://opencode-upstream:4096',
+      directory: '/project/from-header',
+      headers: { Authorization: 'Basic example' },
+      fetch: expect.any(Function),
+    }));
+    expect(providers).toHaveBeenCalledWith({ directory: '/project/from-header' });
+    expect(response.body).toEqual({ schemaVersion: 1, providers: [], default: {}, partial: false });
+  });
+
+  it('returns 502 for SDK failure and malformed catalog responses', async () => {
+    const app = express();
+    createOpencodeClient.mockReturnValue({ config: { providers: vi.fn(async () => ({ data: { providers: {} } })) } });
+    registerConfigEntityRoutes(app, createDependencies(vi.fn()));
+    await request(app).get('/api/config/catalog/providers').expect(502);
+
+    const failingApp = express();
+    createOpencodeClient.mockReturnValue({ config: { providers: vi.fn(async () => { throw new Error('upstream unavailable'); }) } });
+    registerConfigEntityRoutes(failingApp, createDependencies(vi.fn()));
+    await request(failingApp).get('/api/config/catalog/providers').expect(502);
+  });
+
+  it('returns 502 for SDK error envelopes that include data', async () => {
+    const app = express();
+    createOpencodeClient.mockReturnValue({
+      config: { providers: vi.fn(async () => ({ error: { message: 'upstream sentinel' }, data: { providers: [], default: {} } })) },
+    });
+    registerConfigEntityRoutes(app, createDependencies(vi.fn()));
+
+    const response = await request(app).get('/api/config/catalog/providers').expect(502);
+    expect(JSON.stringify(response.body)).not.toContain('sentinel');
+  });
+});
+
+describe('agent and command mutation logging', () => {
+  it('keeps request bodies and error stacks out of agent and command logs', async () => {
+    const app = express();
+    app.use(express.json());
+    const bodySentinel = 'body-secret-sentinel';
+    const stackSentinel = 'stack-secret-sentinel';
+    const updateFailure = () => {
+      const error = new Error('Update failed');
+      error.stack = stackSentinel;
+      throw error;
+    };
+    const dependencies = {
+      ...createDependencies(vi.fn()),
+      resolveProjectDirectory: async () => ({ directory: '/directory-secret-sentinel' }),
+      createAgent: vi.fn(),
+      updateAgent: vi.fn(updateFailure),
+      createCommand: vi.fn(),
+      updateCommand: vi.fn(updateFailure),
+    };
+    const log = vi.spyOn(console, 'log').mockImplementation(() => {});
+    const error = vi.spyOn(console, 'error').mockImplementation(() => {});
+    registerConfigEntityRoutes(app, dependencies);
+
+    const agentCreate = await request(app).post('/api/config/agents/safe-agent').send({ prompt: bodySentinel }).expect(200);
+    const commandCreate = await request(app).post('/api/config/commands/safe-command').send({ template: bodySentinel }).expect(200);
+    const agentUpdate = await request(app).patch('/api/config/agents/safe-agent').send({ prompt: bodySentinel }).expect(500);
+    const commandUpdate = await request(app).patch('/api/config/commands/safe-command').send({ template: bodySentinel }).expect(500);
+    const output = JSON.stringify([agentCreate.body, commandCreate.body, agentUpdate.body, commandUpdate.body]);
+    const logs = `${log.mock.calls.flat().join(' ')} ${error.mock.calls.flat().join(' ')}`;
+
+    expect(output).not.toContain('sentinel');
+    expect(logs).not.toContain(bodySentinel);
+    expect(logs).not.toContain(stackSentinel);
+    log.mockRestore();
+    error.mockRestore();
+  });
+});
+
 describe('config entity agent metadata route', () => {
   it('normalizes, deduplicates, bounds, and returns agent metadata in one batch', async () => {
     const app = express();

@@ -39,8 +39,23 @@ export const resetAppForRuntimeEndpointChange = (detail: RuntimeEndpointChangedD
   disposeTerminalInputTransport();
   opencodeClient.reconnectToRuntimeBaseUrl();
   useConfigStore.setState({
+    catalogTransportIdentity: detail.runtimeKey,
+    activeDirectoryKey: '__global__',
+    directoryScoped: {},
+    providerConfigLoadingByDirectory: {},
+    agentConfigLoadingByDirectory: {},
     providers: [],
     agents: [],
+    defaultProviders: {},
+    currentProviderId: '',
+    currentModelId: '',
+    currentVariant: undefined,
+    currentAgentName: undefined,
+    selectedProviderId: '',
+    agentModelSelections: {},
+    opencodeDefaultAgent: undefined,
+    opencodeDefaultModel: undefined,
+    selectionSource: 'auto',
     isConnected: false,
     isInitialized: false,
     connectionPhase: 'connecting',

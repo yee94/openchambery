@@ -298,6 +298,8 @@ const useSessionUnavailable = (config: MiniChatConfig): boolean => {
 export function ElectronMiniChatApp({ apis }: ElectronMiniChatAppProps) {
   const config = React.useMemo(() => readMiniChatConfig(), []);
   const currentDirectory = useDirectoryStore((state) => state.currentDirectory);
+  const currentSessionId = useSessionUIStore((state) => state.currentSessionId);
+  const newSessionDraftOpen = useSessionUIStore((state) => Boolean(state.newSessionDraft?.open));
 
   React.useEffect(() => {
     opencodeClient.setDirectory(currentDirectory || config.directory || undefined);
@@ -315,7 +317,7 @@ export function ElectronMiniChatApp({ apis }: ElectronMiniChatAppProps) {
 
   return (
     <ErrorBoundary>
-      <SyncProvider sdk={opencodeClient.getSdkClient()} directory={currentDirectory || config.directory || ''}>
+      <SyncProvider sdk={opencodeClient.getSdkClient()} directory={currentDirectory || config.directory || ''} bootstrapDirectory={!(newSessionDraftOpen && currentSessionId === null)}>
         <RuntimeAPIProvider apis={apis}>
           <TooltipProvider delayDuration={300} skipDelayDuration={150}>
             <div className="h-full text-foreground bg-background">

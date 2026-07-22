@@ -10,6 +10,9 @@ import { getRegisteredRuntimeAPIs } from '@/contexts/runtimeAPIRegistry';
 import { sanitizeStarterRefs } from '@/lib/draftStarters';
 import { normalizeMobileKeyboardMode, setStoredMobileKeyboardMode } from '@/lib/mobileKeyboardMode';
 import { runtimeFetch } from '@/lib/runtime-fetch';
+import { getRuntimeTransportIdentity } from '@/lib/runtime-switch';
+import { projectSettingsBootstrapPatch } from '@/queries/settingsBootstrapParser';
+import { patchSettingsBootstrapSnapshot } from '@/queries/settingsBootstrapQueries';
 
 export const applyPersistedHomeDirectoryToWindow = (homeDirectory: string): void => {
   if (typeof window === 'undefined') {
@@ -409,6 +412,23 @@ const getPersistApi = (): PersistApi | undefined => {
 };
 
 const getRuntimeSettingsAPI = () => getRegisteredRuntimeAPIs()?.settings ?? null;
+
+const patchSettingsBootstrapAfterSave = (
+  updated: unknown,
+  changes: Partial<DesktopSettings>,
+  transport: string,
+): void => {
+  const patch = {
+    ...projectSettingsBootstrapPatch(changes),
+    ...projectSettingsBootstrapPatch(updated),
+  };
+  if (Object.keys(patch).length === 0) return;
+  try {
+    patchSettingsBootstrapSnapshot(patch, transport);
+  } catch (error) {
+    console.warn('Failed to patch settings bootstrap cache:', error);
+  }
+};
 
 const applyDesktopUiPreferences = (settings: DesktopSettings) => {
   const store = useUIStore.getState();
@@ -1322,31 +1342,35 @@ const sanitizeWebSettings = (payload: unknown): DesktopSettings | null => {
 };
 
 // Short-lived cache + in-flight dedup for settings fetches to avoid repeated GET calls during startup
-let _settingsCache: { value: DesktopSettings | null; at: number } | null = null;
-let _settingsInflight: Promise<DesktopSettings | null> | null = null;
+const _settingsCache = new Map<string, { value: DesktopSettings | null; at: number }>();
+const _settingsInflight = new Map<string, Promise<DesktopSettings | null>>();
 const SETTINGS_CACHE_TTL = 2_000; // 2 seconds — covers the startup burst
 
-const fetchWebSettings = async (): Promise<DesktopSettings | null> => {
+const fetchWebSettings = async (transport: string): Promise<DesktopSettings | null> => {
   // Return cached if fresh
-  if (_settingsCache && Date.now() - _settingsCache.at < SETTINGS_CACHE_TTL) {
-    return _settingsCache.value;
+  const cached = _settingsCache.get(transport);
+  if (cached && Date.now() - cached.at < SETTINGS_CACHE_TTL) {
+    return cached.value;
   }
 
   // Dedup concurrent calls
-  if (_settingsInflight) return _settingsInflight;
+  const inFlight = _settingsInflight.get(transport);
+  if (inFlight) return inFlight;
 
-  _settingsInflight = (async (): Promise<DesktopSettings | null> => {
+  const request = (async (): Promise<DesktopSettings | null> => {
+    if (getRuntimeTransportIdentity() !== transport) return null;
     const runtimeSettings = getRuntimeSettingsAPI();
     if (runtimeSettings) {
       try {
         const result = await runtimeSettings.load();
         const settings = sanitizeWebSettings(result.settings);
-        _settingsCache = { value: settings, at: Date.now() };
+        _settingsCache.set(transport, { value: settings, at: Date.now() });
         return settings;
       } catch (error) {
         console.warn('Failed to load shared settings from runtime settings API:', error);
       }
     }
+    if (getRuntimeTransportIdentity() !== transport) return null;
 
     try {
       const response = await runtimeFetch('/api/config/settings', {
@@ -1358,26 +1382,34 @@ const fetchWebSettings = async (): Promise<DesktopSettings | null> => {
       }
       const data = await response.json().catch(() => null);
       const settings = sanitizeWebSettings(data);
-      _settingsCache = { value: settings, at: Date.now() };
+      _settingsCache.set(transport, { value: settings, at: Date.now() });
       return settings;
     } catch (error) {
       console.warn('Failed to load shared settings from server:', error);
       return null;
     }
-  })().finally(() => { _settingsInflight = null; });
+  })();
+  _settingsInflight.set(transport, request);
 
-  return _settingsInflight;
+  try {
+    return await request;
+  } finally {
+    if (_settingsInflight.get(transport) === request) {
+      _settingsInflight.delete(transport);
+    }
+  }
 };
 
 /** Invalidate cached settings (call after a successful PUT) */
-export const invalidateSettingsCache = (): void => {
-  _settingsCache = null;
+export const invalidateSettingsCache = (transport = getRuntimeTransportIdentity()): void => {
+  _settingsCache.delete(transport);
 };
 
 export const syncDesktopSettings = async (): Promise<void> => {
   if (typeof window === 'undefined') {
     return;
   }
+  const transport = getRuntimeTransportIdentity();
 
   const persistApi = getPersistApi();
 
@@ -1412,12 +1444,13 @@ export const syncDesktopSettings = async (): Promise<void> => {
   // a TypeError from writing to a contextBridge-protected global) doesn't
   // prevent server settings from reaching the Zustand store.
   const applySettings = async (settings: DesktopSettings) => {
+    await waitForHydration();
+    if (getRuntimeTransportIdentity() !== transport) return;
     try {
       persistToLocalStorage(settings);
     } catch (error) {
       console.warn('persistToLocalStorage failed:', error);
     }
-    await waitForHydration();
     try {
       applyDesktopUiPreferences(settings);
     } catch (error) {
@@ -1428,8 +1461,8 @@ export const syncDesktopSettings = async (): Promise<void> => {
   };
 
   try {
-    const webSettings = await fetchWebSettings();
-    if (webSettings) {
+    const webSettings = await fetchWebSettings(transport);
+    if (webSettings && getRuntimeTransportIdentity() === transport) {
       await applySettings(webSettings);
     }
   } catch (error) {
@@ -1439,35 +1472,48 @@ export const syncDesktopSettings = async (): Promise<void> => {
 
 // Coalesce rapid updateDesktopSettings calls into a single PUT
 let _pendingSettingsChanges: Partial<DesktopSettings> | null = null;
+let _pendingSettingsTransport: string | null = null;
 let _settingsFlushTimer: ReturnType<typeof setTimeout> | null = null;
 let _settingsFlushWaiters: Array<() => void> = [];
 const SETTINGS_DEBOUNCE_MS = 200;
 
 const _flushSettingsUpdate = async (): Promise<void> => {
   const changes = _pendingSettingsChanges;
+  const transport = _pendingSettingsTransport;
   const waiters = _settingsFlushWaiters;
   _pendingSettingsChanges = null;
+  _pendingSettingsTransport = null;
   _settingsFlushTimer = null;
   _settingsFlushWaiters = [];
-  if (!changes || Object.keys(changes).length === 0) {
+  if (!changes || !transport || Object.keys(changes).length === 0) {
     waiters.forEach((resolve) => resolve());
     return;
   }
+  if (getRuntimeTransportIdentity() !== transport) {
+    waiters.forEach((resolve) => resolve());
+    return;
+  }
+  const isCurrentTransport = () => getRuntimeTransportIdentity() === transport;
 
   const runtimeSettings = getRuntimeSettingsAPI();
   if (runtimeSettings) {
     try {
       const updated = await runtimeSettings.save(changes);
-      if (updated) {
+      patchSettingsBootstrapAfterSave(updated, changes, transport);
+      if (updated && isCurrentTransport()) {
         persistToLocalStorage(updated);
         applyDesktopUiPreferences(updated);
         dispatchSettingsSynced(updated);
-        _settingsCache = { value: sanitizeWebSettings(updated), at: Date.now() };
+        _settingsCache.set(transport, { value: sanitizeWebSettings(updated), at: Date.now() });
       }
       waiters.forEach((resolve) => resolve());
       return;
     } catch (error) {
       console.warn('Failed to update settings via runtime settings API:', error);
+    }
+    if (!isCurrentTransport()) {
+      waiters.forEach((resolve) => resolve());
+      return;
     }
   }
 
@@ -1487,11 +1533,12 @@ const _flushSettingsUpdate = async (): Promise<void> => {
     }
 
     const updated = (await response.json().catch(() => null)) as DesktopSettings | null;
-    if (updated) {
+    patchSettingsBootstrapAfterSave(updated, changes, transport);
+    if (updated && isCurrentTransport()) {
       persistToLocalStorage(updated);
       applyDesktopUiPreferences(updated);
       dispatchSettingsSynced(updated);
-      _settingsCache = { value: sanitizeWebSettings(updated), at: Date.now() };
+      _settingsCache.set(transport, { value: sanitizeWebSettings(updated), at: Date.now() });
     }
   } catch (error) {
     console.warn('Failed to update shared settings via API:', error);
@@ -1505,8 +1552,21 @@ export const updateDesktopSettings = async (changes: Partial<DesktopSettings>): 
     return;
   }
 
+  const transport = getRuntimeTransportIdentity();
+  if (_pendingSettingsTransport && _pendingSettingsTransport !== transport) {
+    if (_settingsFlushTimer) {
+      clearTimeout(_settingsFlushTimer);
+      _settingsFlushTimer = null;
+    }
+    _pendingSettingsChanges = null;
+    _pendingSettingsTransport = null;
+    const staleWaiters = _settingsFlushWaiters;
+    _settingsFlushWaiters = [];
+    staleWaiters.forEach((resolve) => resolve());
+  }
+
   const nextChanges = { ...(_pendingSettingsChanges ?? {}) } as Record<string, unknown>;
-  const hydrated = _settingsCache?.value as Record<string, unknown> | null | undefined;
+  const hydrated = _settingsCache.get(transport)?.value as Record<string, unknown> | null | undefined;
   for (const [key, value] of Object.entries(changes)) {
     const currentValue = hydrated?.[key];
     const matchesHydrated = Object.is(value, currentValue)
@@ -1519,8 +1579,11 @@ export const updateDesktopSettings = async (changes: Partial<DesktopSettings>): 
     }
   }
   _pendingSettingsChanges = nextChanges as Partial<DesktopSettings>;
+  _pendingSettingsTransport = transport;
 
   if (Object.keys(nextChanges).length === 0 && !_settingsFlushTimer) {
+    _pendingSettingsChanges = null;
+    _pendingSettingsTransport = null;
     return;
   }
 

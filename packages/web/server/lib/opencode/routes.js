@@ -1,4 +1,5 @@
 import { createProjectIdFromPath } from '../projects/project-id.js';
+import { projectBootstrapSettingsResponse } from './settings-helpers.js';
 import fs from 'fs';
 import os from 'os';
 import path from 'path';
@@ -132,13 +133,25 @@ export const registerOpenCodeRoutes = (app, dependencies) => {
     }
   };
 
-  app.get('/api/config/settings', async (_req, res) => {
+  app.get('/api/config/settings', async (req, res) => {
     try {
       const settings = await readSettingsFromDiskMigrated();
-      res.json(formatSettingsResponse(settings));
+      const response = formatSettingsResponse(settings);
+      res.json(req.query?.bootstrap === 'true' ? projectBootstrapSettingsResponse(response) : response);
     } catch (error) {
       console.error('Failed to read settings:', error);
       res.status(500).json({ error: 'Failed to read settings' });
+    }
+  });
+
+  app.get('/api/config/settings/bootstrap', async (_req, res) => {
+    try {
+      const settings = await readSettingsFromDiskMigrated();
+      const response = formatSettingsResponse(settings);
+      res.json(projectBootstrapSettingsResponse(response));
+    } catch (error) {
+      console.error('Failed to read bootstrap settings:', error);
+      res.status(500).json({ error: 'Failed to read bootstrap settings' });
     }
   });
 
@@ -528,12 +541,14 @@ export const registerOpenCodeRoutes = (app, dependencies) => {
   app.get('/api/behavior/agents-md', async (_req, res) => {
     try {
       try {
-        await fs.promises.access(AGENTS_MD_PATH);
-      } catch {
-        return res.json({ content: '', exists: false });
+        const content = await fs.promises.readFile(AGENTS_MD_PATH, 'utf8');
+        return res.json({ content, exists: true });
+      } catch (error) {
+        if (error?.code === 'ENOENT') {
+          return res.json({ content: '', exists: false });
+        }
+        throw error;
       }
-      const content = await fs.promises.readFile(AGENTS_MD_PATH, 'utf8');
-      return res.json({ content, exists: true });
     } catch (error) {
       console.error('Failed to read AGENTS.md:', error);
       return res.status(500).json({ error: 'Failed to read AGENTS.md' });

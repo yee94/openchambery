@@ -98,12 +98,12 @@ const SessionFolderItemBase = <TSessionNode,>({
   const renaming = isRenaming || localRenaming;
   const draft = isRenaming ? renameDraft : localDraft;
 
-  const handleStartRename = React.useCallback(() => {
+  const handleStartRename = () => {
     setLocalDraft(folder.name);
     setLocalRenaming(true);
-  }, [folder.name]);
+  };
 
-  const handleSaveRename = React.useCallback(() => {
+  const handleSaveRename = () => {
     const trimmed = draft.trim();
     if (trimmed && trimmed !== folder.name) {
       onRename(trimmed);
@@ -113,26 +113,23 @@ const SessionFolderItemBase = <TSessionNode,>({
     }
     setLocalRenaming(false);
     setLocalDraft('');
-  }, [draft, folder.name, isRenaming, onRename, onRenameSave]);
+  };
 
-  const handleCancelRename = React.useCallback(() => {
+  const handleCancelRename = () => {
     if (isRenaming && onRenameCancel) {
       onRenameCancel();
     }
     setLocalRenaming(false);
     setLocalDraft('');
-  }, [isRenaming, onRenameCancel]);
+  };
 
-  const handleDraftChange = React.useCallback(
-    (value: string) => {
-      if (isRenaming && onRenameDraftChange) {
-        onRenameDraftChange(value);
-      } else {
-        setLocalDraft(value);
-      }
-    },
-    [isRenaming, onRenameDraftChange],
-  );
+  const handleDraftChange = (value: string) => {
+    if (isRenaming && onRenameDraftChange) {
+      onRenameDraftChange(value);
+      return;
+    }
+    setLocalDraft(value);
+  };
 
   // Auto-focus rename when externally triggered
   React.useEffect(() => {

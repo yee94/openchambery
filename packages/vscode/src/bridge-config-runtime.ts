@@ -59,6 +59,8 @@ import {
 } from './skillsCatalog';
 import type { BridgeContext, BridgeResponse } from './bridge';
 import type { OpenCodeCommand } from './bridge-settings-runtime';
+import type { ProviderCatalog } from './provider-catalog-runtime';
+import { projectSettingsBootstrap } from './settings-bootstrap-runtime';
 
 type BridgeMessageInput = {
   id: string;
@@ -75,6 +77,7 @@ type ConfigRuntimeDeps = {
   resetAllMagicPromptOverrides: () => Promise<{ version: number; overrides: Record<string, string> }>;
   fetchOpenCodeSkillsFromApi: (ctx: BridgeContext | undefined, workingDirectory?: string) => Promise<DiscoveredSkill[] | null>;
   fetchOpenCodeCommandsFromApi: (ctx: BridgeContext | undefined, workingDirectory?: string) => Promise<OpenCodeCommand[]>;
+  fetchProviderCatalogFromApi: (ctx: BridgeContext | undefined, workingDirectory?: string) => Promise<ProviderCatalog>;
   clientReloadDelayMs: number;
 };
 
@@ -297,10 +300,25 @@ export async function handleConfigBridgeMessage(
       return { id, type, success: true, data: settings };
     }
 
+    case 'api:config/settings:bootstrap': {
+      const settings = deps.readSettings(ctx);
+      return { id, type, success: true, data: projectSettingsBootstrap(settings) };
+    }
+
     case 'api:config/settings:save': {
       const changes = (payload as Record<string, unknown>) || {};
       const updated = await deps.persistSettings(changes, ctx);
       return { id, type, success: true, data: updated };
+    }
+
+    case 'api:config:providers:catalog': {
+      const request = (payload || {}) as { directory?: unknown };
+      const workingDirectory = typeof request.directory === 'string' ? request.directory.trim() : '';
+      if (!workingDirectory) {
+        return { id, type, success: false, error: 'Directory is required' };
+      }
+      const data = await deps.fetchProviderCatalogFromApi(ctx, workingDirectory);
+      return { id, type, success: true, data };
     }
 
     case 'api:behavior/agents-md:get': {

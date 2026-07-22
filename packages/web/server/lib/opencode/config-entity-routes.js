@@ -3,6 +3,7 @@ import os from 'node:os';
 import path from 'node:path';
 import { parse as parseJsonc } from 'jsonc-parser';
 import { createOpencodeClient } from '@opencode-ai/sdk/v2';
+import { projectProviderCatalog } from './provider-catalog.js';
 
 const MAX_GLOBAL_CONFIG_SIZE = 2 * 1024 * 1024;
 const GLOBAL_CONFIG_FILES = {
@@ -107,6 +108,35 @@ export const registerConfigEntityRoutes = (app, dependencies) => {
     expandSnippets,
     configDirectory = path.join(os.homedir(), '.config', 'opencode'),
   } = dependencies;
+
+  app.get('/api/config/catalog/providers', async (req, res) => {
+    try {
+      const { directory, error } = await resolveProjectDirectory(req);
+      if (!directory) {
+        return res.status(400).json({ error });
+      }
+      const client = createOpencodeClient({
+        baseUrl: buildOpenCodeUrl('/', '').replace(/\/$/, ''),
+        directory,
+        headers: getOpenCodeAuthHeaders(),
+        fetch: (request) => fetch(request, { signal: AbortSignal.timeout(8_000) }),
+      });
+      const response = await client.config.providers({ directory });
+      if (response?.error || response?.data === undefined) {
+        console.error('Provider catalog upstream response failed');
+        return res.status(502).json({ error: 'Provider catalog is unavailable' });
+      }
+      const catalog = projectProviderCatalog(response?.data);
+      if (!catalog.ok) {
+        console.error('Provider catalog upstream response is malformed');
+        return res.status(502).json({ error: 'Provider catalog is unavailable' });
+      }
+      return res.json(catalog.value);
+    } catch {
+      console.error('Provider catalog request failed');
+      return res.status(502).json({ error: 'Provider catalog is unavailable' });
+    }
+  });
 
   app.get('/api/config/global', async (_req, res) => {
     try {
@@ -300,9 +330,7 @@ export const registerConfigEntityRoutes = (app, dependencies) => {
         return res.status(400).json({ error });
       }
 
-      console.log('[Server] Creating agent:', agentName);
-      console.log('[Server] Config received:', JSON.stringify(config, null, 2));
-      console.log('[Server] Scope:', scope, 'Working directory:', directory);
+      console.log('[Server] Creating agent');
 
       createAgent(agentName, config, directory, scope);
       const refreshResult = await refreshOpenCodeAfterConfigChange('agent creation', {
@@ -314,7 +342,7 @@ export const registerConfigEntityRoutes = (app, dependencies) => {
         manualRestartMessage: `Agent ${agentName} saved. Restart your connected OpenCode server to apply the change.`,
       }));
     } catch (error) {
-      console.error('Failed to create agent:', error);
+      console.error('Failed to create agent');
       res.status(500).json({ error: error.message || 'Failed to create agent' });
     }
   });
@@ -328,22 +356,19 @@ export const registerConfigEntityRoutes = (app, dependencies) => {
         return res.status(400).json({ error });
       }
 
-      console.log(`[Server] Updating agent: ${agentName}`);
-      console.log('[Server] Updates:', JSON.stringify(updates, null, 2));
-      console.log('[Server] Working directory:', directory);
+      console.log('[Server] Updating agent');
 
       updateAgent(agentName, updates, directory);
       const refreshResult = await refreshOpenCodeAfterConfigChange('agent update');
 
-      console.log(`[Server] Agent ${agentName} updated successfully`);
+      console.log('[Server] Agent updated successfully');
 
       res.json(buildConfigMutationResponse(refreshResult, {
         liveMessage: `Agent ${agentName} updated successfully. Reloading interface…`,
         manualRestartMessage: `Agent ${agentName} saved. Restart your connected OpenCode server to apply the change.`,
       }));
     } catch (error) {
-      console.error('[Server] Failed to update agent:', error);
-      console.error('[Server] Error stack:', error.stack);
+      console.error('[Server] Failed to update agent');
       res.status(500).json({ error: error.message || 'Failed to update agent' });
     }
   });
@@ -365,7 +390,7 @@ export const registerConfigEntityRoutes = (app, dependencies) => {
         manualRestartMessage: `Agent ${agentName} deleted. Restart your connected OpenCode server to apply the change.`,
       }));
     } catch (error) {
-      console.error('Failed to delete agent:', error);
+      console.error('Failed to delete agent');
       res.status(500).json({ error: error.message || 'Failed to delete agent' });
     }
   });
@@ -566,9 +591,7 @@ export const registerConfigEntityRoutes = (app, dependencies) => {
         return res.status(400).json({ error });
       }
 
-      console.log('[Server] Creating command:', commandName);
-      console.log('[Server] Config received:', JSON.stringify(config, null, 2));
-      console.log('[Server] Scope:', scope, 'Working directory:', directory);
+      console.log('[Server] Creating command');
 
       createCommand(commandName, config, directory, scope);
       await refreshOpenCodeAfterConfigChange('command creation', {
@@ -582,7 +605,7 @@ export const registerConfigEntityRoutes = (app, dependencies) => {
         reloadDelayMs: clientReloadDelayMs,
       });
     } catch (error) {
-      console.error('Failed to create command:', error);
+      console.error('Failed to create command');
       res.status(500).json({ error: error.message || 'Failed to create command' });
     }
   });
@@ -596,14 +619,12 @@ export const registerConfigEntityRoutes = (app, dependencies) => {
         return res.status(400).json({ error });
       }
 
-      console.log(`[Server] Updating command: ${commandName}`);
-      console.log('[Server] Updates:', JSON.stringify(updates, null, 2));
-      console.log('[Server] Working directory:', directory);
+      console.log('[Server] Updating command');
 
       updateCommand(commandName, updates, directory);
       await refreshOpenCodeAfterConfigChange('command update');
 
-      console.log(`[Server] Command ${commandName} updated successfully`);
+      console.log('[Server] Command updated successfully');
 
       res.json({
         success: true,
@@ -612,8 +633,7 @@ export const registerConfigEntityRoutes = (app, dependencies) => {
         reloadDelayMs: clientReloadDelayMs,
       });
     } catch (error) {
-      console.error('[Server] Failed to update command:', error);
-      console.error('[Server] Error stack:', error.stack);
+      console.error('[Server] Failed to update command');
       res.status(500).json({ error: error.message || 'Failed to update command' });
     }
   });
@@ -636,7 +656,7 @@ export const registerConfigEntityRoutes = (app, dependencies) => {
         reloadDelayMs: clientReloadDelayMs,
       });
     } catch (error) {
-      console.error('Failed to delete command:', error);
+      console.error('Failed to delete command');
       res.status(500).json({ error: error.message || 'Failed to delete command' });
     }
   });

@@ -3,6 +3,8 @@ import { afterAll, beforeEach, describe, expect, test } from 'bun:test';
 import type { RuntimeAPIs, SettingsPayload } from '@/lib/api/types';
 import { registerRuntimeAPIs } from '@/contexts/runtimeAPIRegistry';
 import { startModelPrefsAutoSave } from '@/lib/modelPrefsAutoSave';
+import { queryClient } from '@/lib/queryRuntime';
+import { patchSettingsBootstrapSnapshot, readSettingsBootstrapSnapshot } from '@/queries/settingsBootstrapQueries';
 import { useUIStore } from '@/stores/useUIStore';
 import { applyPersistedHomeDirectoryToWindow, invalidateSettingsCache, syncDesktopSettings, updateDesktopSettings } from './persistence';
 
@@ -125,6 +127,7 @@ describe('updateDesktopSettings', () => {
     getWindow();
     registerRuntimeAPIs(null);
     invalidateSettingsCache();
+    queryClient.clear();
     resetModelPrefsState();
   });
 
@@ -211,6 +214,78 @@ describe('updateDesktopSettings', () => {
     await updateDesktopSettings({ themeVariant: 'dark', homeDirectory: '/Users/example' });
 
     expect(saveCalls).toHaveLength(0);
+  });
+
+  test('patches the settings bootstrap cache from a successful runtime save response', async () => {
+    patchSettingsBootstrapSnapshot({ defaultModel: 'previous/model' });
+    registerSettingsSave(async () => ({ defaultModel: 'saved/model', themeVariant: 'dark' }));
+
+    await updateDesktopSettings({ defaultModel: 'requested/model' });
+
+    expect(readSettingsBootstrapSnapshot()).toEqual({ schemaVersion: 1, defaultModel: 'saved/model' });
+  });
+
+  test('patches the settings bootstrap cache from changes when a successful save returns no object', async () => {
+    patchSettingsBootstrapSnapshot({ defaultAgent: 'previous-agent' });
+    registerSettingsSave(async () => undefined as unknown as SettingsPayload);
+
+    await updateDesktopSettings({ defaultAgent: 'requested-agent' });
+
+    expect(readSettingsBootstrapSnapshot()).toEqual({ schemaVersion: 1, defaultAgent: 'requested-agent' });
+  });
+
+  test('merges requested bootstrap fields when a successful save response is empty or partial', async () => {
+    registerSettingsSave(async () => ({ defaultModel: 'saved/model' }));
+
+    await updateDesktopSettings({
+      defaultModel: 'requested/model',
+      defaultAgent: 'requested-agent',
+    });
+
+    expect(readSettingsBootstrapSnapshot()).toEqual({
+      schemaVersion: 1,
+      defaultModel: 'saved/model',
+      defaultAgent: 'requested-agent',
+    });
+  });
+
+  test('uses requested bootstrap fields for empty and metadata-only save responses', async () => {
+    for (const response of [{}, { success: true }]) {
+      queryClient.clear();
+      registerSettingsSave(async () => response as SettingsPayload);
+
+      await updateDesktopSettings({ defaultAgent: 'requested-agent' });
+
+      expect(readSettingsBootstrapSnapshot()).toEqual({
+        schemaVersion: 1,
+        defaultAgent: 'requested-agent',
+      });
+    }
+  });
+
+  test('patches the settings bootstrap cache from a successful web save response', async () => {
+    const originalFetch = globalThis.fetch;
+    globalThis.fetch = async () => new Response(JSON.stringify({ defaultModel: 'web/saved-model' }));
+    registerRuntimeAPIs(null);
+
+    try {
+      await updateDesktopSettings({ defaultModel: 'requested/model' });
+    } finally {
+      globalThis.fetch = originalFetch;
+    }
+
+    expect(readSettingsBootstrapSnapshot()).toEqual({ schemaVersion: 1, defaultModel: 'web/saved-model' });
+  });
+
+  test('keeps the settings bootstrap cache after a failed save', async () => {
+    patchSettingsBootstrapSnapshot({ defaultAgent: 'previous-agent' });
+    registerSettingsSave(async () => {
+      throw new Error('save failed');
+    });
+
+    await updateDesktopSettings({ defaultAgent: 'requested-agent' });
+
+    expect(readSettingsBootstrapSnapshot()).toEqual({ schemaVersion: 1, defaultAgent: 'previous-agent' });
   });
 
   test('applies model selector settings from server settings', async () => {

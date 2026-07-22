@@ -525,6 +525,7 @@ export const dict: Record<I18nKey, string> = {
   'sessions.sidebar.session.status.pinned': '已釘選會話',
   'sessions.sidebar.session.actions.pinned': '釘選',
   'sessions.sidebar.session.status.permissionRequired': '需要權限',
+  'sessions.sidebar.session.status.questionRequired': '需要回答',
   'sessions.sidebar.session.subsessions.collapse': '摺疊子會話',
   'sessions.sidebar.session.subsessions.expand': '展開子會話',
   'sessions.sidebar.dialogs.deleteSession.title': '刪除會話？',

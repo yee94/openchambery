@@ -3,6 +3,7 @@ import { onCommand, onThemeChange, proxyApiRequest, proxySessionMessageRequest, 
 import { vscodeStreamPerfCount, vscodeStreamPerfMeasure, vscodeStreamPerfObserve } from './api/streamPerf';
 import { extractBodyBase64, extractBodyText, extractJsonBody, hasInitBody } from './requestBodyTransport';
 import { isMessageQueueRoute } from './messageQueueRoute';
+import { getSettingsBridgeMessageType, isSettingsBootstrapRequest } from '../src/settings-bootstrap-runtime';
 import type { RuntimeAPIs } from '@openchamber/ui/lib/api/types';
 import { opencodeClient } from '@openchamber/ui/lib/opencode/client';
 import { sanitizeHeadersForBrowser } from '@openchamber/ui/lib/runtime-fetch';
@@ -375,6 +376,15 @@ const handleLocalApiRequest = async (input: RequestInfo | URL, url: URL, init: R
       platform: config?.platform || '',
       arch: config?.arch || '',
     });
+  }
+
+  if (normalizedPathname === '/api/config/catalog/providers' && method === 'GET') {
+    const directory = getRequestDirectoryHint(url, input, init);
+    try {
+      return jsonResponse(await sendBridgeMessage('api:config:providers:catalog', { directory }));
+    } catch {
+      return jsonResponse({ error: 'Provider catalog is unavailable' }, 502);
+    }
   }
 
   if (normalizedPathname === '/api/preview/targets') {
@@ -864,8 +874,25 @@ const handleLocalApiRequest = async (input: RequestInfo | URL, url: URL, init: R
     }
   }
 
+  if (pathname === '/api/config/settings/bootstrap' && method === 'GET') {
+    try {
+      const settings = await sendBridgeMessage(getSettingsBridgeMessageType(pathname, method, url.searchParams)!);
+      return new Response(JSON.stringify(settings), { status: 200, headers: { 'Content-Type': 'application/json' } });
+    } catch {
+      return new Response(JSON.stringify({ error: 'Settings bootstrap request failed' }), { status: 500, headers: { 'Content-Type': 'application/json' } });
+    }
+  }
+
   if (pathname.startsWith('/api/config/settings')) {
     if (method === 'GET') {
+      if (isSettingsBootstrapRequest(url.searchParams)) {
+        try {
+          const settings = await sendBridgeMessage('api:config/settings:bootstrap');
+          return new Response(JSON.stringify(settings), { status: 200, headers: { 'Content-Type': 'application/json' } });
+        } catch {
+          return new Response(JSON.stringify({ error: 'Settings bootstrap request failed' }), { status: 500, headers: { 'Content-Type': 'application/json' } });
+        }
+      }
       const settings = await sendBridgeMessage('api:config/settings:get');
       return new Response(JSON.stringify(settings), { status: 200, headers: { 'Content-Type': 'application/json' } });
     }

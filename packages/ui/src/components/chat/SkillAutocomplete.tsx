@@ -45,7 +45,8 @@ export const SkillAutocomplete = React.forwardRef<SkillAutocompleteHandle, Skill
   React.useEffect(() => {
     const normalizedQuery = searchQuery.trim();
     const matches = normalizedQuery.length
-      ? skills.filter((skill) => fuzzyMatch(skill.name, normalizedQuery))
+      ? skills.filter((skill) => fuzzyMatch(skill.name, normalizedQuery)
+        || Boolean(skill.description && fuzzyMatch(skill.description, normalizedQuery)))
       : skills;
 
     const sorted = [...matches].sort((a, b) => {

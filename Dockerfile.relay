@@ -3,20 +3,25 @@ FROM oven/bun:1.3.14 AS builder
 
 WORKDIR /build
 
-RUN bun add --exact ws@8.18.3
+COPY packages/relay-server/package.json ./packages/relay-server/package.json
 
-COPY packages/web/package.json ./packages/web/package.json
-COPY packages/web/bin ./packages/web/bin
-COPY packages/web/server/private-relay ./packages/web/server/private-relay
+WORKDIR /build/packages/relay-server
 
-RUN mkdir -p /out/packages/web/bin \
-  && bun build --compile --outfile /out/packages/web/bin/openchamber-relay ./packages/web/bin/relay-server.js
+RUN bun install --production
+
+WORKDIR /build
+
+COPY packages/relay-server/src ./packages/relay-server/src
+COPY packages/relay-server/bin ./packages/relay-server/bin
+
+RUN mkdir -p /out/packages/relay-server/bin \
+  && bun build --compile --outfile /out/packages/relay-server/bin/openchamber-relay ./packages/relay-server/bin/openchamber-relay.js
 
 FROM oven/bun:1.3.14 AS runtime
 
 WORKDIR /app
 
-COPY --from=builder --chown=bun:bun /out/packages/web/bin/openchamber-relay ./packages/web/bin/openchamber-relay
+COPY --from=builder --chown=bun:bun /out/packages/relay-server/bin/openchamber-relay ./packages/relay-server/bin/openchamber-relay
 
 USER bun
 
@@ -28,4 +33,4 @@ EXPOSE 8787
 HEALTHCHECK --interval=30s --timeout=5s --start-period=10s --retries=3 \
   CMD ["bun", "-e", "fetch('http://127.0.0.1:8787/healthz').then((response) => process.exit(response.ok ? 0 : 1)).catch(() => process.exit(1))"]
 
-ENTRYPOINT ["/app/packages/web/bin/openchamber-relay"]
+ENTRYPOINT ["/app/packages/relay-server/bin/openchamber-relay"]

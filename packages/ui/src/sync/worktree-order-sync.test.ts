@@ -22,7 +22,7 @@ const dependencies = (overrides: Partial<WorktreeOrderSyncDependencies> = {}): W
     fetchSnapshot: async () => snapshot(),
     fetchOrder: async (projectDirectory) => ({ projectDirectory, orderedPaths: ['/remote'], revision: 2 }),
     setOrder: async (input) => ({ revision: input.expectedRevision + 1, worktreeOrder: { projectDirectory: input.projectDirectory, orderedPaths: input.orderedPaths, revision: input.expectedRevision + 1 } }),
-    waitChanges: async () => { throw new MessageQueueServerError(501, 'unavailable'); },
+    waitInvalidation: async () => { throw new MessageQueueServerError(501, 'unavailable'); },
     captureRuntime: () => ({ transportIdentity: 'runtime', generation: 1 }),
     isCurrent: () => true,
     sleep: async () => {},
@@ -112,21 +112,22 @@ test('observer recovers from a transient fetch and applies cross-device changes'
   let snapshots = 0;
   let waits = 0;
   const observer = createWorktreeOrderObserver(() => [{ id: 'project', path: '/project' }], dependencies({
+    waitInvalidation: async () => {
+      waits += 1;
+      if (waits === 1) return 'tip';
+      throw new MessageQueueServerError(501, 'unavailable');
+    },
     fetchSnapshot: async () => {
       snapshots += 1;
       if (snapshots === 1) throw new MessageQueueServerError(0, 'unavailable');
-      return snapshot([{ projectDirectory: '/project', orderedPaths: ['/snapshot'], revision: 1 }]);
-    },
-    waitChanges: async () => {
-      waits += 1;
-      if (waits === 1) return { revision: 2, scopes: [], worktreeOrders: [{ projectDirectory: '/project', orderedPaths: ['/changed'], revision: 2 }] };
-      throw new MessageQueueServerError(501, 'unavailable');
+      if (snapshots === 2) return snapshot([{ projectDirectory: '/project', orderedPaths: ['/snapshot'], revision: 1 }]);
+      return { revision: 2, scopes: [], worktreeOrders: [{ projectDirectory: '/project', orderedPaths: ['/changed'], revision: 2 }] };
     },
   }));
   observer.start();
   await settle();
   observer.stop();
-  expect(snapshots).toBe(2);
+  expect(snapshots).toBe(3);
   expect(useWorktreeOrderStore.getState().orderByProject.project).toEqual(['/changed']);
 });
 
@@ -136,7 +137,7 @@ test('observer exits immediately for an explicitly unsupported runtime', async (
   let waits = 0;
   const observer = createWorktreeOrderObserver(() => [], dependencies({
     fetchSnapshot: async () => { throw new MessageQueueServerError(501, 'unavailable'); },
-    waitChanges: async () => { waits += 1; return { revision: 0, scopes: [], worktreeOrders: [] }; },
+    waitInvalidation: async () => { waits += 1; return 'tip'; },
     sleep: async () => { sleeps += 1; },
   }));
   observer.start();
@@ -152,7 +153,7 @@ test('observer exits immediately for permanent client failures', async () => {
   let waits = 0;
   const observer = createWorktreeOrderObserver(() => [], dependencies({
     fetchSnapshot: async () => { throw new MessageQueueServerError(400, 'validation_error'); },
-    waitChanges: async () => { waits += 1; return { revision: 0, scopes: [], worktreeOrders: [] }; },
+    waitInvalidation: async () => { waits += 1; return 'tip'; },
     sleep: async () => { sleeps += 1; },
   }));
   observer.start();

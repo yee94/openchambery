@@ -82,6 +82,7 @@ import { opencodeClient } from '@/lib/opencode/client';
 import { useProjectsStore } from '@/stores/useProjectsStore';
 import { PROJECT_COLOR_MAP, PROJECT_ICON_MAP, ProjectIconImage } from '@/lib/projectMeta';
 import { useGitBranches, useGitStore, useIsGitRepo } from '@/stores/useGitStore';
+import { useGitBranchesQuery } from '@/queries/gitBranchQueries';
 import { useDirectoryStore } from '@/stores/useDirectoryStore';
 import { queryClient } from '@/lib/queryRuntime';
 import { readInstalledSkillsSnapshot, useInstalledSkillsQuery } from '@/queries/installedSkillsQueries';
@@ -109,6 +110,12 @@ import {
     type HighlightRange,
     type MentionRange,
 } from './composerHighlight';
+import { ComposerTriggerIconMark } from './ComposerTriggerIconMark';
+import {
+    COMPOSER_TRIGGER_ICON_SLOT,
+    composerTriggerIconDisplay,
+    composerTriggerIconVisual,
+} from '@/composer/inline-visual';
 import { shouldApplyComposerDomCorrection } from './composerFocus';
 import { highlightFencedCode } from './composerCodeHighlight';
 import {
@@ -137,7 +144,7 @@ import { admitChatInputQueueMessageAndConsumeResources, admitServerQueueMessageA
 import { shouldShowPermissionAutoAcceptControl, togglePermissionAutoAccept } from './permissionAutoAccept';
 import { getSlashTokenRange } from './commandSelection';
 import { canCompactPastedText, createPastedTextReference, getNextPastedTextReferenceIndex } from './pastedTextReferences';
-import { decorateComposerReference, materializeComposerDocument, serializeComposerDocument, validateComposerDocument, type ComposerDocument, type SessionComposerReference } from '@/composer/document';
+import { decorateComposerReference, materializeComposerDocument, normalizeComposerReferenceDeletionWhitespace, serializeComposerDocument, validateComposerDocument, type ComposerDocument, type SessionComposerReference } from '@/composer/document';
 import { useComposerController } from '@/composer/use-composer-controller';
 import { buildComposerSemanticParts, dedupeDeliveryAttachments } from '@/composer/delivery';
 import type { ComposerReferenceSemantic } from '@/composer/extensions';
@@ -233,18 +240,6 @@ const withInlineInsertionBoundaries = (content: string, before: string, after: s
 const withReferenceInsertionBoundaries = (content: string, before: string, after: string): string => {
     const insertion = withInlineInsertionBoundaries(content, before, after);
     return `   ${insertion.trim()} `;
-};
-
-const normalizeReferenceDeletionWhitespace = (text: string, caret: number): { text: string; caret: number } => {
-    let start = caret;
-    let end = caret;
-    while (start > 0 && /\s/.test(text[start - 1])) start -= 1;
-    while (end < text.length && /\s/.test(text[end])) end += 1;
-    const separator = start > 0 && end < text.length ? ' ' : '';
-    return {
-        text: `${text.slice(0, start)}${separator}${text.slice(end)}`,
-        caret: start + separator.length,
-    };
 };
 
 const hasUserMessages = (sessionId: string, directory?: string) => {
@@ -1050,7 +1045,7 @@ const ChatInputComponent: React.FC<ChatInputProps> = ({ onOpenSettings, scrollTo
     const composer = useComposerController({ draftKey, sessionTitles, persistenceEnabled: persistChatDraft });
     const composerDocument = composer.document;
     const message = composerDocument.text;
-    const { replacePlainDocument, replaceMaterializedDocument, replaceProgrammaticText, applyBrowserEdit, insertReference, deleteReference, enterHistoryPreview, exitHistoryPreview, captureSubmission, recoverSubmission, confirmedFileMentions, mentions: composerMentions } = composer;
+    const { replacePlainDocument, replaceMaterializedDocument, replaceProgrammaticText, applyBrowserEdit, insertReference, deleteReference, restoreReferenceHistory, enterHistoryPreview, exitHistoryPreview, captureSubmission, recoverSubmission, confirmedFileMentions, mentions: composerMentions } = composer;
     const applyProgrammaticEdit = React.useCallback((nextText: string, mentionsUpdater?: (mentions: readonly DraftMention[], document: ComposerDocument) => DraftMention[]) => replaceProgrammaticText(nextText, mentionsUpdater), [replaceProgrammaticText]);
     const isConfirmedFilePath = React.useCallback((text: string): boolean => !text.startsWith('session:') && (text.includes('/') || text.includes('\\') || text.includes('.') || confirmedFileMentions.some((mention) => mention.value === text)), [confirmedFileMentions]);
     const textareaRef = React.useRef<HTMLTextAreaElement>(null);
@@ -1238,24 +1233,30 @@ const ChatInputComponent: React.FC<ChatInputProps> = ({ onOpenSettings, scrollTo
             return [];
         }
         const ranges: HighlightRange[] = [];
-        const slashRegex = /(^|\s)\/([A-Za-z0-9][A-Za-z0-9_-]*)/g;
+        const slashRegex = new RegExp(`(^|\\s)/(${COMPOSER_TRIGGER_ICON_SLOT})?([A-Za-z0-9][A-Za-z0-9_-]*)`, 'g');
         let match: RegExpExecArray | null;
         while ((match = slashRegex.exec(message)) !== null) {
-            const name = match[2];
+            const slot = match[2] ?? '';
+            const name = match[3];
             if (!knownSlashNames.has(name.toLowerCase())) {
                 continue;
             }
             const slashStart = match.index + match[1].length;
+            const tokenLength = 1 + slot.length + name.length;
             const skillName = availableSkillNames.get(name.toLowerCase());
             ranges.push(skillName
                 ? {
                     start: slashStart,
-                    end: slashStart + 1 + name.length,
+                    end: slashStart + tokenLength,
                     style: 'mentionCommand',
                     priority: 102,
                     skillName,
+                    visual: composerTriggerIconVisual(
+                        { trigger: '/', icon: 'book-open', label: skillName },
+                        message.slice(slashStart, slashStart + tokenLength),
+                    ),
                 }
-                : { start: slashStart, end: slashStart + 1 + name.length, style: 'mentionCommand' });
+                : { start: slashStart, end: slashStart + tokenLength, style: 'mentionCommand' });
         }
         return ranges;
     }, [availableSkillNames, inputMode, knownSlashNames, message]);
@@ -1339,13 +1340,21 @@ const ChatInputComponent: React.FC<ChatInputProps> = ({ onOpenSettings, scrollTo
             inlineAttachments.map((file) => file.filename),
         ).flatMap((range) => {
             const attachmentName = message.slice(range.start + 1, range.end - 1);
+            const attachmentIcon = attachmentIcons.get(attachmentName.trim().toLowerCase());
             return [
                 {
                     ...range,
                     style: 'mentionFile' as const,
                     priority: 101,
-                    attachmentName,
-                    attachmentIcon: attachmentIcons.get(attachmentName.trim().toLowerCase()),
+                    visual: composerTriggerIconVisual(
+                        {
+                            trigger: '[',
+                            icon: attachmentIcon === 'image' ? 'file-image' : 'attachment-2',
+                            label: attachmentName,
+                            suffix: ']',
+                        },
+                        message.slice(range.start, range.end),
+                    ),
                 },
             ];
         });
@@ -2591,6 +2600,27 @@ const ChatInputComponent: React.FC<ChatInputProps> = ({ onOpenSettings, scrollTo
         // Uses keyCode === 229 fallback for WebKit where compositionend fires before keydown.
         if (isIMECompositionEvent(e)) return;
 
+        const primaryUndo = (e.metaKey || e.ctrlKey) && !e.altKey && e.key.toLowerCase() === 'z';
+        const primaryRedo = (e.metaKey || e.ctrlKey) && !e.altKey
+            && (e.key.toLowerCase() === 'y' || (e.key.toLowerCase() === 'z' && e.shiftKey));
+        if (primaryUndo || primaryRedo) {
+            const restored = restoreReferenceHistory(primaryRedo ? 'redo' : 'undo');
+            if (restored) {
+                e.preventDefault();
+                const text = composer.getDocument().text;
+                requestAnimationFrame(() => {
+                    const textarea = textareaRef.current;
+                    if (textarea) {
+                        textarea.value = text;
+                        textarea.setSelectionRange(restored.start, restored.end);
+                    }
+                    adjustTextareaHeight();
+                });
+                updateAutocompleteState(text, restored.end);
+                return;
+            }
+        }
+
         if (
             clearAllMessagesShortcut
             && eventMatchesShortcut(e, clearAllMessagesShortcut)
@@ -2626,14 +2656,16 @@ const ChatInputComponent: React.FC<ChatInputProps> = ({ onOpenSettings, scrollTo
             const selectionEnd = textarea?.selectionEnd ?? message.length;
             const referenceDeletion = deleteReference({ key: e.key, selectionStart, selectionEnd, altKey: e.altKey });
             if (referenceDeletion) {
-                const normalizedDeletion = normalizeReferenceDeletionWhitespace(composer.getDocument().text, referenceDeletion.start);
                 e.preventDefault();
-                applyProgrammaticEdit(normalizedDeletion.text);
+                const text = composer.getDocument().text;
                 requestAnimationFrame(() => {
-                    textareaRef.current?.setSelectionRange(normalizedDeletion.caret, normalizedDeletion.caret);
+                    if (textareaRef.current) {
+                        textareaRef.current.value = text;
+                        textareaRef.current.setSelectionRange(referenceDeletion.start, referenceDeletion.end);
+                    }
                     adjustTextareaHeight();
                 });
-                updateAutocompleteState(normalizedDeletion.text, normalizedDeletion.caret);
+                updateAutocompleteState(text, referenceDeletion.end);
                 return;
             }
             const citationDeletion = resolveAttachmentCitationDeletion(
@@ -2646,7 +2678,7 @@ const ChatInputComponent: React.FC<ChatInputProps> = ({ onOpenSettings, scrollTo
 
             if (citationDeletion) {
                 const removedFilenames = new Set(citationDeletion.removedFilenames.map((filename) => filename.toLowerCase()));
-                const normalizedDeletion = normalizeReferenceDeletionWhitespace(citationDeletion.text, citationDeletion.caret);
+                const normalizedDeletion = normalizeComposerReferenceDeletionWhitespace(citationDeletion.text, citationDeletion.caret);
                 e.preventDefault();
                 for (const attachment of attachedFiles) {
                     if (removedFilenames.has(attachment.filename.toLowerCase())) {
@@ -2671,7 +2703,7 @@ const ChatInputComponent: React.FC<ChatInputProps> = ({ onOpenSettings, scrollTo
                 { key: e.key, selectionStart, selectionEnd, altKey: e.altKey },
             );
             if (skillDeletion) {
-                const normalizedDeletion = normalizeReferenceDeletionWhitespace(skillDeletion.text, skillDeletion.caret);
+                const normalizedDeletion = normalizeComposerReferenceDeletionWhitespace(skillDeletion.text, skillDeletion.caret);
                 e.preventDefault();
                 applyProgrammaticEdit(normalizedDeletion.text);
                 requestAnimationFrame(() => {
@@ -3733,9 +3765,12 @@ const ChatInputComponent: React.FC<ChatInputProps> = ({ onOpenSettings, scrollTo
                     id: `session:${session.id}:${createUuid()}`,
                     kind: 'session',
                     sessionId: session.id,
-                    display: `@${sessionTitle}`,
+                    display: composerTriggerIconDisplay({ trigger: '@', icon: 'chat-thread', label: sessionTitle }),
                 };
-                const inserted = insertReference(mentionStart, cursorPosition, sessionReference, { inlineBoundaries: true });
+                const inserted = insertReference(mentionStart, cursorPosition, sessionReference, {
+                    inlineBoundaries: true,
+                    padDocumentEdges: true,
+                });
                 requestAnimationFrame(() => {
                     if (textareaRef.current) {
                         textareaRef.current.selectionStart = inserted.caret;
@@ -3762,7 +3797,10 @@ const ChatInputComponent: React.FC<ChatInputProps> = ({ onOpenSettings, scrollTo
         const range = getSlashTokenRange(document.text, cursorPosition);
         if (!range) return false;
 
-        const inserted = insertReference(range.start, range.end, reference, { inlineBoundaries: true });
+        const inserted = insertReference(range.start, range.end, reference, {
+            inlineBoundaries: true,
+            padDocumentEdges: true,
+        });
         const insertedReference = inserted.document.references.some((candidate) => candidate.id === reference.id);
         requestAnimationFrame(() => {
             if (textareaRef.current) {
@@ -3785,7 +3823,7 @@ const ChatInputComponent: React.FC<ChatInputProps> = ({ onOpenSettings, scrollTo
             id: `skill:${skill.name}:${createUuid()}`,
             kind: 'skill',
             skillName: skill.name,
-            display: `/${skill.name}`,
+            display: composerTriggerIconDisplay({ trigger: '/', icon: 'book-open', label: skill.name }),
         })) setSkillQuery('');
     };
 
@@ -3820,7 +3858,7 @@ const ChatInputComponent: React.FC<ChatInputProps> = ({ onOpenSettings, scrollTo
                 id: `skill:${command.name}:${createUuid()}`,
                 kind: 'skill',
                 skillName: command.name,
-                display: commandText,
+                display: composerTriggerIconDisplay({ trigger: '/', icon: 'book-open', label: command.name }),
             })) setCommandQuery('');
             return;
         }
@@ -3831,7 +3869,7 @@ const ChatInputComponent: React.FC<ChatInputProps> = ({ onOpenSettings, scrollTo
                 kind: 'command',
                 commandName: command.name,
                 reference: command.reference ?? command.name,
-                display: commandText,
+                display: composerTriggerIconDisplay({ trigger: '/', icon: 'command', label: command.name }),
             })) setCommandQuery('');
             return;
         }
@@ -4203,14 +4241,15 @@ const ChatInputComponent: React.FC<ChatInputProps> = ({ onOpenSettings, scrollTo
     );
     const draftProjectLabel = selectedDraftProject ? getProjectDisplayLabel(selectedDraftProject) : null;
 
-    const selectedDraftProjectBranches = useGitBranches(selectedDraftProjectPath);
-    const selectedDraftProjectBranchesFetchedAt = useGitStore(
-        (s) => (selectedDraftProjectPath ? s.directories.get(selectedDraftProjectPath)?.lastBranchesFetch ?? 0 : 0),
-    );
+    const persistedDraftProjectBranches = useGitBranches(selectedDraftProjectPath);
     const selectedDraftProjectIsGitRepo = useIsGitRepo(selectedDraftProjectPath);
-    const hasDraftBranchList = Boolean(selectedDraftProjectBranches?.all);
-    const fetchBranches = useGitStore((state) => state.fetchBranches);
-    const [isDiscoveringDraftBranches, setIsDiscoveringDraftBranches] = React.useState(false);
+    const draftBranchesQuery = useGitBranchesQuery(
+        selectedDraftProjectPath,
+        runtimeGit,
+        showDraftTargetSelectors && selectedDraftProjectIsGitRepo === true,
+    );
+    const selectedDraftProjectBranches = draftBranchesQuery.data ?? persistedDraftProjectBranches;
+    const isDiscoveringDraftBranches = draftBranchesQuery.isLoading && !selectedDraftProjectBranches;
 
     React.useEffect(() => {
         if (!showDraftTargetSelectors || !selectedDraftProjectPath || !runtimeGit || selectedDraftProjectIsGitRepo !== null) {
@@ -4219,41 +4258,6 @@ const ChatInputComponent: React.FC<ChatInputProps> = ({ onOpenSettings, scrollTo
 
         void fetchGitStatus(selectedDraftProjectPath, runtimeGit, { silent: true });
     }, [fetchGitStatus, runtimeGit, selectedDraftProjectIsGitRepo, selectedDraftProjectPath, showDraftTargetSelectors]);
-
-    React.useEffect(() => {
-        if (!showDraftTargetSelectors || !selectedDraftProjectPath || !selectedDraftProject || !runtimeGit || selectedDraftProjectIsGitRepo !== true) {
-            setIsDiscoveringDraftBranches(false);
-            return;
-        }
-
-        // Stale-while-revalidate: branches seeded from the persisted cache show
-        // instantly. Refresh based on staleness (not mere presence) so a cached
-        // list can't go stale, while only showing the discovering spinner when
-        // there is nothing to display yet.
-        const DRAFT_BRANCHES_SWR_TTL_MS = 30_000;
-        const isStale =
-            !selectedDraftProjectBranchesFetchedAt ||
-            Date.now() - selectedDraftProjectBranchesFetchedAt > DRAFT_BRANCHES_SWR_TTL_MS;
-
-        if (hasDraftBranchList && !isStale) {
-            setIsDiscoveringDraftBranches(false);
-            return;
-        }
-
-        let cancelled = false;
-        setIsDiscoveringDraftBranches(!hasDraftBranchList);
-
-        void fetchBranches(selectedDraftProjectPath, runtimeGit)
-            .finally(() => {
-                if (!cancelled) {
-                    setIsDiscoveringDraftBranches(false);
-                }
-            });
-
-        return () => {
-            cancelled = true;
-        };
-    }, [fetchBranches, runtimeGit, selectedDraftProject, selectedDraftProjectBranchesFetchedAt, hasDraftBranchList, selectedDraftProjectIsGitRepo, selectedDraftProjectPath, showDraftTargetSelectors]);
 
     const selectedDraftProjectCurrentBranch = selectedDraftProjectBranches?.current?.trim() ?? '';
 
@@ -5563,6 +5567,7 @@ const ChatInputComponent: React.FC<ChatInputProps> = ({ onOpenSettings, scrollTo
                             {highlightedComposerContent && (
                                 <div
                                     aria-hidden
+                                    data-chat-input-highlight="true"
                                     className={cn(
                                         'pointer-events-none absolute inset-0 z-0 rounded-b-none',
                                         COMPOSER_TEXT_LAYOUT_CLASS,
@@ -5580,32 +5585,8 @@ const ChatInputComponent: React.FC<ChatInputProps> = ({ onOpenSettings, scrollTo
                                             key={`${index}-${part.text.length}`}
                                             className={part.className}
                                         >
-                                            {part.sessionLabel ? (
-                                                <>
-                                                    <span className="relative inline-block align-baseline text-transparent">
-                                                        @
-                                                        <Icon name="chat-thread" className="pointer-events-none absolute left-1/2 top-1/2 size-[1em] -translate-x-1/2 -translate-y-1/2 text-[var(--primary)]" aria-hidden="true" />
-                                                    </span>
-                                                    <span>{part.sessionLabel}</span>
-                                                    <span className="text-transparent">{part.text.slice(part.sessionLabel.length + 1)}</span>
-                                                </>
-                                            ) : part.attachmentName ? (
-                                                <>
-                                                    <span className="relative inline-block align-baseline text-transparent">
-                                                        [
-                                                        <Icon name={part.attachmentIcon === 'image' ? 'file-image' : 'attachment-2'} className="pointer-events-none absolute right-[0.25em] top-1/2 size-[1em] -translate-y-1/2 text-[var(--primary)]" aria-hidden="true" />
-                                                    </span>
-                                                    <span>{part.attachmentName}</span>
-                                                    <span className="text-transparent">]</span>
-                                                </>
-                                            ) : part.skillName ? (
-                                                <>
-                                                    <span className="relative inline-block align-baseline text-transparent">
-                                                        /
-                                                        <Icon name="book-open" className="pointer-events-none absolute right-[0.25em] top-1/2 size-[1em] -translate-y-1/2 text-[var(--primary)]" aria-hidden="true" />
-                                                    </span>
-                                                    <span>{part.text.slice(1)}</span>
-                                                </>
+                                            {part.visual ? (
+                                                <ComposerTriggerIconMark visual={part.visual} text={part.text} />
                                             ) : part.text}
                                         </span>
                                     ))}

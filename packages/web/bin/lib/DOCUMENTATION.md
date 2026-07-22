@@ -2,16 +2,14 @@
 
 This directory contains the non-entrypoint implementation for the OpenChamber CLI. `packages/web/bin/cli.js` should stay thin: it owns bootstrap, command wiring, top-level dispatch, signal/cancel handling, and compatibility exports. Domain logic belongs in these modules.
 
+The self-hosted Relay CLI belongs to `packages/relay-server/`.
+
 ## Entrypoint Boundary
 
 - `../cli.js`
   - Owns process bootstrap, package/version lookup, command table wiring, signal handlers, top-level error handling, and legacy exports used by tests or external consumers.
   - Injects runtime dependencies into command factories, such as `serveCommand`, `stopCommand`, package-manager loading, cancel cleanup, and foreground server state setters.
   - Should not grow command-specific behavior. If a new branch needs more than dispatch/wiring, move it here into a command or helper module instead.
-
-- `../relay-server.js`
-  - Owns the standalone `openchamber-relay` executable entrypoint and version wiring.
-  - Starts the private Relay CLI only when invoked through the published binary name.
 
 ## Command Modules
 
@@ -98,10 +96,6 @@ These modules hold reusable, non-presentational logic for commands.
 
 - `cli-tunnel-capabilities.js`
   - Built-in tunnel provider capability fallbacks used when a live server cannot provide tunnel metadata.
-
-- `relay-server-cli.js`
-  - Implements `openchamber-relay`: flag parsing, `OPENCHAMBER_RELAY_SERVER_*` configuration resolution, startup output, and signal-driven shutdown.
-  - Starts `server/private-relay/` with flags taking precedence over environment variables and defaults.
 
 ## Placement Rules
 

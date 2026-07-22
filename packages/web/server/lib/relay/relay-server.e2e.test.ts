@@ -8,11 +8,11 @@ import path from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { WebSocketServer } from 'ws';
 
-import { createRelayTunnelClient } from '../../../ui/src/lib/relay/tunnel-client.ts';
-import { startRelayHost } from '../lib/relay/host-client.js';
-import { exportPublicKeyJwk, generateEcdhKeyPair, importEcdhPrivateKey } from '../lib/relay/e2ee.js';
-import { createRequestSecurityRuntime } from '../lib/security/request-security.js';
-import { createUiAuth } from '../lib/ui-auth/ui-auth.js';
+import { createRelayTunnelClient } from '../../../../ui/src/lib/relay/tunnel-client.ts';
+import { startRelayHost } from './host-client.js';
+import { exportPublicKeyJwk, generateEcdhKeyPair, importEcdhPrivateKey } from './e2ee.js';
+import { createRequestSecurityRuntime } from '../security/request-security.js';
+import { createUiAuth } from '../ui-auth/ui-auth.js';
 
 const timeoutMs = 10_000;
 const wait = (ms: number) => new Promise((resolve) => setTimeout(resolve, ms));
@@ -236,7 +236,7 @@ describe('private relay compiled-process boundary', () => {
       const failed = results.find((result) => result.status === 'rejected');
       if (failed?.status === 'rejected') throw failed.reason;
     };
-    const relayEntrypoint = fileURLToPath(new URL('../../bin/relay-server.js', import.meta.url));
+    const relayEntrypoint = fileURLToPath(new URL('../../../../relay-server/bin/openchamber-relay.js', import.meta.url));
     const compile = Bun.spawn(['bun', 'build', '--compile', relayEntrypoint, '--outfile', binary], { stdout: 'pipe', stderr: 'pipe' });
     const compileStderr = new Response(compile.stderr).text();
     const compileExitCode = await compile.exited;

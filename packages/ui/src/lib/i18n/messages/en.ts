@@ -511,6 +511,7 @@ export const dict = {
   'sessions.sidebar.session.status.pinned': 'Pinned session',
   'sessions.sidebar.session.actions.pinned': 'Pinned',
   'sessions.sidebar.session.status.permissionRequired': 'Permission required',
+  'sessions.sidebar.session.status.questionRequired': 'Question required',
   'sessions.sidebar.session.subsessions.collapse': 'Collapse subsessions',
   'sessions.sidebar.session.subsessions.expand': 'Expand subsessions',
   'sessions.sidebar.dialogs.deleteSession.title': 'Delete session?',

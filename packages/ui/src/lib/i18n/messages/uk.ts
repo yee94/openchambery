@@ -512,6 +512,7 @@ export const dict: Record<I18nKey, string> = {
   "sessions.sidebar.session.status.pinned": "Закріплений сесія",
   "sessions.sidebar.session.actions.pinned": "Закріплено",
   "sessions.sidebar.session.status.permissionRequired": "Потрібен дозвіл",
+  "sessions.sidebar.session.status.questionRequired": "Потрібна відповідь",
   "sessions.sidebar.session.subsessions.collapse": "Згорнути підсесії",
   "sessions.sidebar.session.subsessions.expand": "Розгорнути підсесії",
   "sessions.sidebar.dialogs.deleteSession.title": "Видалити сесія?",

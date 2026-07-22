@@ -10,6 +10,7 @@ import { handleProxyBridgeMessage } from './bridge-proxy-runtime';
 import {
   fetchOpenCodeSkillsFromApi,
   fetchOpenCodeCommandsFromApi,
+  fetchProviderCatalogFromApi,
   persistSettings,
   readSettings,
   readMagicPromptOverrides,
@@ -114,6 +115,7 @@ export async function handleBridgeMessage(message: BridgeRequest, ctx?: BridgeCo
         resetAllMagicPromptOverrides,
         fetchOpenCodeSkillsFromApi,
         fetchOpenCodeCommandsFromApi,
+        fetchProviderCatalogFromApi,
         clientReloadDelayMs: CLIENT_RELOAD_DELAY_MS,
       },
     );

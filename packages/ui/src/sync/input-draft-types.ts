@@ -150,7 +150,7 @@ export type DraftComposerDocument = { text: string; references: DraftComposerRef
 export const DRAFT_COMPOSER_REFERENCE_LIMITS = {
   referenceCount: 1_000,
   idLength: 512,
-  displayLength: 512,
+  displayLength: 514,
   sessionIDLength: 128,
   skillNameLength: 511,
   commandNameLength: 511,
@@ -158,6 +158,9 @@ export const DRAFT_COMPOSER_REFERENCE_LIMITS = {
   pastePayloadLength: 100_000,
   totalPastePayloadLength: 200_000,
 } as const
+
+/** Persisted width reservation used by Composer's trigger-icon display contract. */
+export const DRAFT_COMPOSER_TRIGGER_ICON_SLOT = '\u2003'
 
 export type DraftRecord = {
   version: 1
@@ -178,7 +181,6 @@ const isPlainObject = (value: unknown): value is Record<string, unknown> => {
 }
 
 const hasOnlyKeys = (value: Record<string, unknown>, keys: readonly string[]): boolean => Object.keys(value).every((key) => keys.includes(key))
-
 const isString = (value: unknown): value is string => typeof value === "string" && value.length > 0
 const isStringValue = (value: unknown): value is string => typeof value === "string"
 const isNonNegativeInteger = (value: unknown): value is number => typeof value === "number" && Number.isSafeInteger(value) && value >= 0
@@ -216,8 +218,8 @@ const parseComposerReference = (value: unknown): DraftComposerReference | undefi
   if (!isPlainObject(value) || !isBoundedString(value.id, DRAFT_COMPOSER_REFERENCE_LIMITS.idLength) || !isBoundedString(value.display, DRAFT_COMPOSER_REFERENCE_LIMITS.displayLength) || !isNonNegativeInteger(value.start) || !isNonNegativeInteger(value.end) || value.end <= value.start) return undefined
   if (value.kind === "session" && hasOnlyKeys(value, ["id", "kind", "start", "end", "display", "sessionId"]) && isValidDraftComposerSessionID(value.sessionId)) return { id: value.id, kind: "session", start: value.start, end: value.end, display: value.display, sessionId: value.sessionId }
   if (value.kind === "paste" && hasOnlyKeys(value, ["id", "kind", "start", "end", "display", "text", "characterCount", "index"]) && typeof value.text === "string" && value.text.length <= DRAFT_COMPOSER_REFERENCE_LIMITS.pastePayloadLength && isNonNegativeInteger(value.characterCount) && value.characterCount === countUnicodeCodePoints(value.text) && isNonNegativeInteger(value.index) && value.index >= 1) return { id: value.id, kind: "paste", start: value.start, end: value.end, display: value.display, text: value.text, characterCount: value.characterCount, index: value.index }
-  if (value.kind === "skill" && hasOnlyKeys(value, ["id", "kind", "start", "end", "display", "skillName"]) && isValidDraftComposerSkillName(value.skillName) && value.display === `/${value.skillName}`) return { id: value.id, kind: "skill", start: value.start, end: value.end, display: value.display, skillName: value.skillName }
-  if (value.kind === "command" && hasOnlyKeys(value, ["id", "kind", "start", "end", "display", "commandName", "reference"]) && isValidDraftComposerCommandName(value.commandName) && isValidDraftComposerCommandReference(value.reference) && value.display === `/${value.commandName}`) return { id: value.id, kind: "command", start: value.start, end: value.end, display: value.display, commandName: value.commandName, reference: value.reference }
+  if (value.kind === "skill" && hasOnlyKeys(value, ["id", "kind", "start", "end", "display", "skillName"]) && isValidDraftComposerSkillName(value.skillName) && (value.display === `/${value.skillName}` || value.display === `/${DRAFT_COMPOSER_TRIGGER_ICON_SLOT}${value.skillName}`)) return { id: value.id, kind: "skill", start: value.start, end: value.end, display: value.display, skillName: value.skillName }
+  if (value.kind === "command" && hasOnlyKeys(value, ["id", "kind", "start", "end", "display", "commandName", "reference"]) && isValidDraftComposerCommandName(value.commandName) && isValidDraftComposerCommandReference(value.reference) && (value.display === `/${value.commandName}` || value.display === `/${DRAFT_COMPOSER_TRIGGER_ICON_SLOT}${value.commandName}`)) return { id: value.id, kind: "command", start: value.start, end: value.end, display: value.display, commandName: value.commandName, reference: value.reference }
   return undefined
 }
 
@@ -322,4 +324,4 @@ export const parseDraftRecord = (value: unknown): DraftRecord | undefined => {
 
 export const cloneDraftRecord = (record: DraftRecord): DraftRecord | undefined => parseDraftRecord(record)
 
-export const isDraftRecordPersistable = (record: unknown): record is DraftRecord => parseDraftRecord(record) !== undefined
+export const isDraftRecordPersistable = (record: unknown): record is DraftRecord => !!parseDraftRecord(record)

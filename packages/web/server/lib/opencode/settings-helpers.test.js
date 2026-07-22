@@ -268,6 +268,59 @@ describe('settings helpers', () => {
     expect(response.collapsibleThinkingBlocks).toBe(true);
   });
 
+  it('projects the bounded bootstrap settings allowlist', () => {
+    const helpers = createTestHelpers();
+    const maxUrl = `https://stt.example.test/${'u'.repeat(4096 - 'https://stt.example.test/'.length)}`;
+    const response = helpers.projectBootstrapSettingsResponse({
+      defaultModel: 'm'.repeat(512),
+      defaultVariant: 'variant',
+      defaultAgent: 'agent',
+      autoCreateWorktree: true,
+      gitmojiEnabled: false,
+      defaultFileViewerPreview: true,
+      zenModel: 'zen',
+      messageStreamTransport: 'ws',
+      sttProvider: 'openai-compatible',
+      sttServerUrl: maxUrl,
+      sttModel: 'model',
+      sttLocalModel: 'local-model',
+      sttLanguage: 'l'.repeat(64),
+      responseStyleEnabled: true,
+      responseStylePreset: 'custom',
+      responseStyleCustomInstructions: 'i'.repeat(200000),
+    });
+
+    expect(response).toMatchObject({
+      schemaVersion: 1,
+      defaultModel: 'm'.repeat(512),
+      sttServerUrl: maxUrl,
+      sttLanguage: 'l'.repeat(64),
+      responseStyleCustomInstructions: 'i'.repeat(200000),
+    });
+    expect(Object.keys(response)).toHaveLength(17);
+  });
+
+  it('keeps secret sentinels and invalid bootstrap values outside the projection', () => {
+    const helpers = createTestHelpers();
+    const secretSentinel = 'bootstrap-secret-sentinel';
+    const response = helpers.projectBootstrapSettingsResponse({
+      summaryCustomAPIToken: secretSentinel,
+      managedRemoteTunnelToken: secretSentinel,
+      defaultModel: 'm'.repeat(513),
+      messageStreamTransport: 'websocket',
+      sttProvider: 'server',
+      sttServerUrl: `https://user:${secretSentinel}@stt.example.test`,
+      sttModel: 'm'.repeat(513),
+      sttLanguage: 'l'.repeat(65),
+      responseStylePreset: 'unknown',
+      responseStyleCustomInstructions: 'i'.repeat(200001),
+      unrelated: secretSentinel,
+    });
+
+    expect(response).toEqual({ schemaVersion: 1 });
+    expect(JSON.stringify(response)).not.toContain(secretSentinel);
+  });
+
   it('includes transient desktop LAN access runtime status in desktop settings response', () => {
     const helpers = createTestHelpers();
     const previousRuntime = process.env.OPENCHAMBER_RUNTIME;

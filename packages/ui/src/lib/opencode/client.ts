@@ -291,7 +291,6 @@ class OpencodeService {
   private currentDirectory: string | undefined = undefined;
   private directoryContextQueue: Promise<void> = Promise.resolve();
   private listDirectoryInFlight: Map<string, Promise<FilesystemEntry[]>> = new Map();
-  private configProvidersInFlight: Map<string, Promise<{ providers: Provider[]; default: { [key: string]: string } }>> = new Map();
   private listAgentsInFlight: Map<string, Promise<Agent[]>> = new Map();
   private configInFlight: Map<string, Promise<Config>> = new Map();
   private configCache: Map<string, { config: Config; expiresAt: number }> = new Map();
@@ -322,7 +321,6 @@ class OpencodeService {
     this.client = createRuntimeOpencodeClient({ baseUrl: this.baseUrl });
     this.scopedClients.clear();
     this.listDirectoryInFlight.clear();
-    this.configProvidersInFlight.clear();
     this.listAgentsInFlight.clear();
     this.clearConfigCache();
     this.listDirectoryCache.clear();
@@ -1451,40 +1449,6 @@ class OpencodeService {
     return result;
   }
 
-  async getProviders(): Promise<{
-    providers: Provider[];
-    default: { [key: string]: string };
-  }> {
-    return this.getProvidersForConfig(this.currentDirectory);
-  }
-
-  async getProvidersForConfig(directory?: string | null): Promise<{
-    providers: Provider[];
-    default: { [key: string]: string };
-  }> {
-    const effectiveDirectory = this.normalizeCandidatePath(directory) ?? directory ?? this.currentDirectory ?? undefined;
-    const key = effectiveDirectory ?? '';
-
-    const existing = this.configProvidersInFlight.get(key);
-    if (existing) {
-      return existing;
-    }
-
-    const request = (async () => {
-      const response = await this.client.config.providers(
-        effectiveDirectory ? { directory: effectiveDirectory } : undefined,
-      );
-      return unwrapSdkData(response, 'config.providers');
-    })();
-
-    this.configProvidersInFlight.set(key, request);
-    try {
-      return await request;
-    } finally {
-      this.configProvidersInFlight.delete(key);
-    }
-  }
-
   // App Management - using config endpoint since /app doesn't exist in this version
   async getApp(): Promise<App> {
     // Return basic app info from config
@@ -1510,21 +1474,21 @@ class OpencodeService {
    * useAgentsStore) can observe failure and retry; silently returning an
    * empty list would defeat retries and clear the cached agent list.
    */
-  async listAgents(directory?: string | null): Promise<Agent[]> {
+  async listAgents(directory?: string | null, signal?: AbortSignal): Promise<Agent[]> {
     // Pass the directory explicitly so we don't depend on (and serialize behind)
     // withDirectory's shared context queue. Concurrent callers for the same
     // directory (e.g. config store + agents store at startup) share one request.
     const effectiveDirectory = this.normalizeCandidatePath(directory) ?? directory ?? this.currentDirectory ?? undefined;
     const key = effectiveDirectory ?? '';
 
-    const existing = this.listAgentsInFlight.get(key);
-    if (existing) {
-      return existing;
+    if (!signal) {
+      const existing = this.listAgentsInFlight.get(key);
+      if (existing) return existing;
     }
 
     const request = (async () => {
       const params = effectiveDirectory ? { directory: effectiveDirectory } : undefined;
-      const response = await this.client.app.agents(params);
+      const response = await this.client.app.agents(params, signal ? { signal } : undefined);
       if (!response.error && Array.isArray(response.data) && response.data.length > 0) {
         return response.data;
       }
@@ -1533,6 +1497,7 @@ class OpencodeService {
       // agent list at /agent, while app.agents can be empty on some runtimes.
       const fallbackResponse = await runtimeFetch('/api/agent', {
         ...(effectiveDirectory ? { query: { directory: effectiveDirectory } } : {}),
+        signal,
       });
       if (!fallbackResponse.ok) {
         if (response.error) {
@@ -1548,6 +1513,7 @@ class OpencodeService {
       return fallbackData as Agent[];
     })();
 
+    if (signal) return request;
     this.listAgentsInFlight.set(key, request);
     try {
       return await request;

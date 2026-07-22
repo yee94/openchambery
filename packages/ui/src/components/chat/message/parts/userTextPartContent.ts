@@ -32,23 +32,29 @@ export const prepareUserMarkdownContent = ({
     textContent,
     agentMention,
     skillNames,
+    // When the shared reference tokenizer already owns skill/agent chips,
+    // skip link rewriting so we don't double-decorate the same tokens.
+    decorateInlineReferences = true,
 }: {
     textContent: string;
     agentMention?: AgentMentionInfo;
     skillNames: ReadonlySet<string>;
+    decorateInlineReferences?: boolean;
 }): string => {
     let content = mapNonFencedSegments(textContent, escapeHtml);
 
-    // Insert agent mention links with an internal href so markdown renders them as mentions, not external links.
-    if (agentMention?.token && content.includes(agentMention.token)) {
-        const mentionMarkdown = `[${agentMention.token}](${buildAgentHref(agentMention.name)})`;
-        content = content.replace(agentMention.token, mentionMarkdown);
-    }
+    if (decorateInlineReferences) {
+        // Insert agent mention links with an internal href so markdown renders them as mentions, not external links.
+        if (agentMention?.token && content.includes(agentMention.token)) {
+            const mentionMarkdown = `[${agentMention.token}](${buildAgentHref(agentMention.name)})`;
+            content = content.replace(agentMention.token, mentionMarkdown);
+        }
 
-    content = content.replace(SKILL_TOKEN_PATTERN, (match, prefix: string, skillName: string) => {
-        if (!skillNames.has(skillName)) return match;
-        return `${prefix}[/${skillName}](${buildSkillHref(skillName)})`;
-    });
+        content = content.replace(SKILL_TOKEN_PATTERN, (match, prefix: string, skillName: string) => {
+            if (!skillNames.has(skillName)) return match;
+            return `${prefix}[/${skillName}](${buildSkillHref(skillName)})`;
+        });
+    }
 
     // Preserve user newlines (markdown soft breaks would otherwise collapse to spaces)
     return applyHardLineBreaks(content);

@@ -19,6 +19,7 @@ declare module "bun:test" {
     toBeGreaterThan(expected: number): void;
     toBeGreaterThanOrEqual(expected: number): void;
     toBeLessThan(expected: number): void;
+    toBeLessThanOrEqual(expected: number): void;
     toHaveLength(expected: number): void;
     toBeInstanceOf(expected: unknown): void;
     not: {
@@ -34,5 +35,6 @@ declare module "bun:test" {
   export function mock<T extends (...args: never[]) => unknown>(fn?: T): T;
   export namespace mock {
     function module(moduleName: string, factory: () => Record<string, unknown>): void;
+    function restore(): void;
   }
 }

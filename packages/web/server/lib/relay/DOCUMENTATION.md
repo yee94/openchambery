@@ -6,7 +6,7 @@ The private relay lets an OpenChamber client (mobile app, browser, or another de
 
 Traffic is **end-to-end encrypted between the two endpoints** (client and host instance). The relay infrastructure forwards opaque ciphertext and cannot read application traffic — it is an untrusted transport, not a trusted middlebox.
 
-This module (`packages/web/server/lib/relay/`) is the **host side**: it runs inside the OpenChamber web server (so it works for Electron desktop, headless server, and CLI installs alike). The **client side** lives in `packages/ui/src/lib/relay/`. Hosted Relay instances may run in a Worker. The self-hosted Relay implementation belongs to `packages/web/server/private-relay/` and only brokers Layer 1 connections.
+This module (`packages/web/server/lib/relay/`) is the **Host side**: it runs inside the OpenChamber web server, including Electron desktop, headless server, and CLI installs. The **Client side** lives in `packages/ui/src/lib/relay/`. Hosted Relay instances may run in a Worker. The self-hosted **Relay server** belongs to `packages/relay-server/` and brokers Layer 1 connections.
 
 ## The three layers
 

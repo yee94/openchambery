@@ -786,7 +786,7 @@ export const GitView: React.FC<GitViewProps> = ({ isActive }) => {
       try {
         await Promise.all([
           fetchStatus(currentDirectory, git),
-          fetchBranches(currentDirectory, git),
+          fetchBranches(currentDirectory, git, { force: true }),
         ]);
       } catch (err) {
         if (showErrors) {
@@ -1742,7 +1742,7 @@ export const GitView: React.FC<GitViewProps> = ({ isActive }) => {
     setGitLogDialogMode(null);
     if (currentDirectory) {
       fetchStatus(currentDirectory, git);
-      fetchBranches(currentDirectory, git);
+      fetchBranches(currentDirectory, git, { force: true });
       fetchLog(currentDirectory, git, logMaxCountLocal);
     }
   }, [currentDirectory, fetchStatus, fetchBranches, fetchLog, logMaxCountLocal, git]);
@@ -1764,7 +1764,7 @@ export const GitView: React.FC<GitViewProps> = ({ isActive }) => {
       });
       if (currentDirectory) {
         fetchStatus(currentDirectory, git);
-        fetchBranches(currentDirectory, git);
+        fetchBranches(currentDirectory, git, { force: true });
         fetchLog(currentDirectory, git, logMaxCountLocal);
       }
       return;
