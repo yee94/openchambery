@@ -4,6 +4,12 @@ All notable changes to this project will be documented in this file.
 
 ## [Unreleased]
 
+## [1.16.58] - 2026-07-23
+
+- **Message headers:** show non-default thinking depth as a muted model-name suffix (same rule as the composer), and hide the default depth instead of rendering a separate brain badge.
+- **Send after idle:** paint the optimistic user bubble and busy status before the connection grace wait so long-idle reconnects no longer clear the composer while the chat list still shows the pre-send snapshot.
+- **Session message cache:** only force-refetch a busy/retry session when the local tail is not already a user message, so ordinary session switches keep the cache and avoid a loading flash.
+
 ## [1.16.57] - 2026-07-23
 
 - **Model picker:** open thinking variants in a dedicated desktop sub-view, show the active variant on model triggers (including mobile), and dismiss the menu instantly after a pick without flashing the model list.

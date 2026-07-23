@@ -635,9 +635,12 @@ const ChatMessage: React.FC<ChatMessageProps> = ({
         });
     }, []);
 
+    // Only surface a non-empty thinking depth on the message header; default is hidden
+    // (same rule as the composer model-label suffix — no dedicated thinking badge).
     const headerVariantRaw = !isUser ? (turnGroupingContext?.userMessageVariant ?? previousUserMetadata?.variant) : undefined;
-
-    const headerVariant = !isUser && modelHasVariants ? (headerVariantRaw ?? 'Default') : undefined;
+    const headerVariant = !isUser && modelHasVariants && typeof headerVariantRaw === 'string' && headerVariantRaw.trim().length > 0
+        ? headerVariantRaw
+        : undefined;
 
     // Summary body removed — flat rendering means text is always inline.
 

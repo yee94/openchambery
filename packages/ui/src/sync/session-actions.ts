@@ -1076,6 +1076,10 @@ import { ascendingId } from "./message-id"
  * Uses useSync()'s optimistic infrastructure — message + parts are inserted
  * into the store AND registered in the shadow Map. mergeOptimisticPage
  * handles deduplication when the server echoes back the real message.
+ *
+ * Insert the optimistic user row before the connection grace wait so a
+ * long-idle reconnect cannot leave the composer cleared / status busy while
+ * the chat list still shows the pre-send snapshot.
  */
 export async function optimisticSend(input: {
   sessionId: string
@@ -1107,7 +1111,6 @@ export async function optimisticSend(input: {
   let transportEntered = false
   let messageID: string | undefined
   try {
-    await waitForConnectionOrThrow()
     assertCurrentSendTarget(capture, transport)
     input.beforeOptimisticInsert?.()
     assertCurrentSendTarget(capture, transport)
@@ -1115,6 +1118,8 @@ export async function optimisticSend(input: {
     messageID = input.messageID ?? ascendingId("msg")
     input.onMessageID?.(messageID)
 
+    // Paint the user bubble + busy status immediately. Connection recovery may
+    // take up to CONNECTION_GRACE_MS; the list must not wait on that.
     optimisticInsertUserMessage({
       sessionId: input.sessionId,
       messageID,
@@ -1127,6 +1132,7 @@ export async function optimisticSend(input: {
     })
     input.onOptimisticInsert?.()
 
+    await waitForConnectionOrThrow()
     assertCurrentSendTarget(capture, transport)
     transportEntered = true
     await input.send(messageID)
@@ -2073,10 +2079,28 @@ async function fetchMessagesForSessionInternal(sessionID: string, resolvedDir: s
     const s = sdk()
     const store = dirStoreForDirectory(resolvedDir)
 
-    const cachedMessages = store.getState().message[sessionID]
+    const cachedState = store.getState()
+    const cachedMessages = cachedState.message[sessionID]
     const cachedComplete = getSessionPrefetch(resolvedDir, sessionID)?.complete === true
-    const hasUserBoundary = cachedMessages?.some((message) => message.role === "user" || (message as Message & { clientRole?: string }).clientRole === "user")
-    if (getSessionMaterializationStatus(store.getState(), sessionID).renderable && (hasUserBoundary || cachedComplete)) {
+    const isUserRole = (message: Message) =>
+      message.role === "user" || (message as Message & { clientRole?: string }).clientRole === "user"
+    const hasUserBoundary = cachedMessages?.some(isUserRole)
+    // Narrow cache bypass for the long-idle send race: status can be busy while
+    // the list is still the pre-send snapshot (no trailing user row). Do NOT
+    // force-refetch every busy session — that would add needless network on
+    // ordinary switches and is unnecessary once optimistic insert already
+    // painted the user bubble. Only bypass when live work and the local tail
+    // does not already look like a send in progress.
+    const liveStatus = cachedState.session_status?.[sessionID]?.type
+    const sessionIsLive = liveStatus === "busy" || liveStatus === "retry"
+    const lastMessage = cachedMessages?.[cachedMessages.length - 1]
+    const tailLooksLikeInFlightSend = Boolean(lastMessage && isUserRole(lastMessage))
+    const mustRefetchLiveStaleCache = sessionIsLive && !tailLooksLikeInFlightSend
+    if (
+      !mustRefetchLiveStaleCache
+      && getSessionMaterializationStatus(cachedState, sessionID).renderable
+      && (hasUserBoundary || cachedComplete)
+    ) {
       return
     }
 

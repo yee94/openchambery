@@ -2,6 +2,7 @@ import React from 'react';
 import { cn } from '@/lib/utils';
 import { getAgentColor } from '@/lib/agentColors';
 import { AgentAvatar } from '@/components/chat/AgentAvatar';
+import { formatEffortLabel } from '@/components/chat/mobileControlsUtils';
 import { Icon } from "@/components/icon/Icon";
 import { ModelLogo } from '@/components/ui/ModelLogo';
 
@@ -16,7 +17,18 @@ interface MessageHeaderProps {
     variant?: string;
 }
 
+/** Non-default thinking depth only — matches composer model-label suffix rules. */
+const resolveVariantSuffix = (variant?: string) => {
+    if (!variant?.trim()) return null;
+    const trimmed = variant.trim();
+    if (trimmed.toLowerCase() === 'default') return null;
+    return formatEffortLabel(trimmed);
+};
+
 const MessageHeader: React.FC<MessageHeaderProps> = ({ isUser, isMobile, providerID, modelID, agentName, modelName, variant }) => {
+    const variantSuffix = !isUser ? resolveVariantSuffix(variant) : null;
+    const displayModelName = modelName || 'Assistant';
+
     return (
         <div className={cn('mb-1.5')}>
             <div className={cn('flex items-center justify-between gap-2')}>
@@ -43,11 +55,16 @@ const MessageHeader: React.FC<MessageHeaderProps> = ({ isUser, isMobile, provide
                     <div className="flex items-center gap-2">
                         <h3
                             className={cn(
-                                'font-semibold typography-ui-header tracking-tight leading-none',
+                                'inline-flex min-w-0 items-center gap-1.5 font-semibold typography-ui-header tracking-tight leading-none',
                                 isUser ? 'text-primary' : 'text-foreground'
                             )}
                         >
-                            {isUser ? 'You' : (modelName || 'Assistant')}
+                            <span className="truncate">{isUser ? 'You' : displayModelName}</span>
+                            {variantSuffix ? (
+                                <span className="shrink-0 font-normal text-muted-foreground">
+                                    {variantSuffix}
+                                </span>
+                            ) : null}
                         </h3>
                         {!isUser && agentName && (
                             <div
@@ -64,28 +81,6 @@ const MessageHeader: React.FC<MessageHeaderProps> = ({ isUser, isMobile, provide
                                 <span className="font-medium">
                                     {agentName.charAt(0).toUpperCase() + agentName.slice(1)}
                                 </span>
-                            </div>
-                        )}
-                        {!isUser && variant && (
-                            <div
-                                className={cn(
-                                    'flex items-center gap-1 px-1.5 py-0 rounded cursor-default',
-                                    'agent-badge',
-                                    isMobile ? 'text-[12px]' : 'typography-meta',
-                                    'hover:bg-[rgb(from_var(--agent-color-bg)_r_g_b_/_0.1)] hover:border-[rgb(from_var(--agent-color)_r_g_b_/_0.2)]',
-                                    variant === 'Default' ? undefined : 'agent-info'
-                                )}
-                                style={
-                                    variant === 'Default'
-                                        ? ({
-                                              '--agent-color': 'var(--muted-foreground)',
-                                              '--agent-color-bg': 'var(--muted-foreground)',
-                                          } as React.CSSProperties)
-                                        : undefined
-                                }
-                            >
-                                <Icon name="brain-ai-3" className="h-3 w-3 flex-shrink-0" />
-                                <span className="font-medium">{variant.length > 0 ? variant[0].toLowerCase() + variant.slice(1) : variant}</span>
                             </div>
                         )}
                     </div>

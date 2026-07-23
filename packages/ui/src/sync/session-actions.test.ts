@@ -167,13 +167,15 @@ mock.module("@/lib/opencode/client", () => ({
   },
 }))
 
-// Mock useConfigStore
+// Mock useConfigStore — mutable so connection-grace send tests can force disconnect.
+const configStoreState = {
+  isConnected: true,
+  hasEverConnected: true,
+  probeConnection: async (_options?: { timeoutMs?: number }) => configStoreState.isConnected,
+}
 mock.module("@/stores/useConfigStore", () => ({
   useConfigStore: {
-    getState: () => ({
-      isConnected: true,
-      hasEverConnected: true,
-    }),
+    getState: () => configStoreState,
   },
 }))
 
@@ -295,6 +297,8 @@ describe("fetchMessagesForSession startup race", () => {
   beforeEach(() => {
     mobileSurfaceRuntime = false
     vscodeRuntime = false
+    configStoreState.isConnected = true
+    configStoreState.hasEverConnected = true
   })
 
   test("replays a selection fetch queued before sync action refs initialize", async () => {
@@ -345,6 +349,140 @@ describe("fetchMessagesForSession startup race", () => {
 
       expect(replyCalls.filter((call) => call.method === "session.messages")[0]?.params.limit).toBe(runtime === "mobile" ? 16 : 30)
     }
+  })
+
+  test("refetches a busy session when the local tail is still pre-send (last message is assistant)", async () => {
+    replyCalls.length = 0
+    // IDs must sort lexicographically the same way materialization orders them.
+    const existingUser = {
+      id: "msg_1",
+      role: "user",
+      sessionID: "session-busy",
+      time: { created: 1 },
+    } as Message
+    const existingAssistant = {
+      id: "msg_2",
+      role: "assistant",
+      sessionID: "session-busy",
+      time: { created: 2 },
+    } as Message
+    const sentUser = {
+      id: "msg_3",
+      role: "user",
+      sessionID: "session-busy",
+      time: { created: 3 },
+    } as Message
+    sessionMessagesResult = {
+      data: [
+        { info: existingUser, parts: [{ id: "prt_1", type: "text", text: "old" } as Part] },
+        { info: existingAssistant, parts: [{ id: "prt_2", type: "text", text: "reply" } as Part] },
+        { info: sentUser, parts: [{ id: "prt_3", type: "text", text: "new" } as Part] },
+      ],
+    }
+    const store = createStore({}, {
+      session: [{ id: "session-busy", time: { created: 1 } } as Session],
+      message: { "session-busy": [existingUser, existingAssistant] },
+      part: {
+        msg_1: [{ id: "prt_1", type: "text", text: "old" } as Part],
+        msg_2: [{ id: "prt_2", type: "text", text: "reply" } as Part],
+      },
+      session_status: { "session-busy": { type: "busy" } },
+    })
+    const childStores = createChildStores([["/test/project", store]])
+    const { fetchMessagesForSession, setActionRefs } = await import("./session-actions")
+    setActionRefs(mockSdk as unknown as OpencodeClient, childStores, () => "/test/project")
+
+    // Pin selection so the in-flight write is not treated as stale.
+    const { useSessionUIStore } = await import("./session-ui-store")
+    const previousGetState = useSessionUIStore.getState
+    useSessionUIStore.getState = () => ({
+      ...previousGetState(),
+      currentSessionId: "session-busy",
+    }) as ReturnType<typeof previousGetState>
+
+    try {
+      await fetchMessagesForSession("session-busy", "/test/project")
+    } finally {
+      useSessionUIStore.getState = previousGetState
+    }
+
+    expect(replyCalls.filter((call) => call.method === "session.messages")).toHaveLength(1)
+    expect(store.getState().message["session-busy"]?.map((message) => message.id)).toEqual([
+      "msg_1",
+      "msg_2",
+      "msg_3",
+    ])
+  })
+
+  test("does not force-refetch a busy session when the local tail is already a user message", async () => {
+    replyCalls.length = 0
+    const existingUser = {
+      id: "msg_1",
+      role: "user",
+      sessionID: "session-busy-tail",
+      time: { created: 1 },
+    } as Message
+    const existingAssistant = {
+      id: "msg_2",
+      role: "assistant",
+      sessionID: "session-busy-tail",
+      time: { created: 2 },
+    } as Message
+    const optimisticUser = {
+      id: "msg_3",
+      role: "user",
+      sessionID: "session-busy-tail",
+      time: { created: 3 },
+    } as Message
+    const store = createStore({}, {
+      session: [{ id: "session-busy-tail", time: { created: 1 } } as Session],
+      message: { "session-busy-tail": [existingUser, existingAssistant, optimisticUser] },
+      part: {
+        msg_1: [{ id: "prt_1", type: "text", text: "old" } as Part],
+        msg_2: [{ id: "prt_2", type: "text", text: "reply" } as Part],
+        msg_3: [{ id: "prt_3", type: "text", text: "new" } as Part],
+      },
+      session_status: { "session-busy-tail": { type: "busy" } },
+    })
+    const childStores = createChildStores([["/test/project", store]])
+    const { fetchMessagesForSession, setActionRefs } = await import("./session-actions")
+    setActionRefs(mockSdk as unknown as OpencodeClient, childStores, () => "/test/project")
+
+    await fetchMessagesForSession("session-busy-tail", "/test/project")
+
+    expect(replyCalls.filter((call) => call.method === "session.messages")).toHaveLength(0)
+  })
+
+  test("still early-returns an idle renderable cache without refetching", async () => {
+    replyCalls.length = 0
+    const existingUser = {
+      id: "msg_idle",
+      role: "user",
+      sessionID: "session-idle-cache",
+      time: { created: 1 },
+    } as Message
+    const existingAssistant = {
+      id: "msg_idle_assistant",
+      role: "assistant",
+      sessionID: "session-idle-cache",
+      time: { created: 2 },
+    } as Message
+    const store = createStore({}, {
+      session: [{ id: "session-idle-cache", time: { created: 1 } } as Session],
+      message: { "session-idle-cache": [existingUser, existingAssistant] },
+      part: {
+        msg_idle: [{ id: "prt_idle", type: "text", text: "hi" } as Part],
+        msg_idle_assistant: [{ id: "prt_idle_a", type: "text", text: "hello" } as Part],
+      },
+      session_status: { "session-idle-cache": { type: "idle" } },
+    })
+    const childStores = createChildStores([["/test/project", store]])
+    const { fetchMessagesForSession, setActionRefs } = await import("./session-actions")
+    setActionRefs(mockSdk as unknown as OpencodeClient, childStores, () => "/test/project")
+
+    await fetchMessagesForSession("session-idle-cache", "/test/project")
+
+    expect(replyCalls.filter((call) => call.method === "session.messages")).toHaveLength(0)
   })
 })
 
@@ -707,6 +845,72 @@ describe("optimisticSend target directory", () => {
     replyCalls.length = 0
     scopedClientDirectories.length = 0
     sessionMessagesResult = { data: [] }
+    configStoreState.isConnected = true
+    configStoreState.hasEverConnected = true
+  })
+
+  test("inserts the optimistic user row before waiting for connection recovery", async () => {
+    const targetStore = createStore({})
+    const childStores = createChildStores([["/target/project", targetStore]])
+    let optimisticAdd: OptimisticAddCall | null = null
+    let optimisticRemove: OptimisticRemoveCall | null = null
+    let sendCalled = false
+    configStoreState.isConnected = false
+
+    const { getSendFailureKind, optimisticSend, setActionRefs, setOptimisticRefs } = await import("./session-actions")
+    setActionRefs(mockSdk as unknown as OpencodeClient, childStores, () => "/target/project")
+    setOptimisticRefs(
+      (input) => {
+        optimisticAdd = input
+        // Mirror production optimisticAdd: paint the row into the directory store.
+        const current = targetStore.getState()
+        const messages = current.message[input.sessionID] ? [...current.message[input.sessionID]] : []
+        messages.push(input.message)
+        targetStore.setState({
+          message: { ...current.message, [input.sessionID]: messages },
+          part: { ...current.part, [input.message.id]: input.parts },
+          session_status: { ...current.session_status, [input.sessionID]: { type: "busy" as const } },
+          session_status_observed_at: { ...current.session_status_observed_at, [input.sessionID]: Date.now() },
+        })
+      },
+      (input) => {
+        optimisticRemove = input
+        const current = targetStore.getState()
+        const messages = (current.message[input.sessionID] ?? []).filter((message) => message.id !== input.messageID)
+        const part = { ...current.part }
+        delete part[input.messageID]
+        targetStore.setState({
+          message: { ...current.message, [input.sessionID]: messages },
+          part,
+        })
+      },
+    )
+
+    let caught: unknown = null
+    try {
+      await optimisticSend({
+        sessionId: "session-idle",
+        directory: "/target/project",
+        content: "after long idle",
+        providerID: "provider",
+        modelID: "model",
+        send: async () => {
+          sendCalled = true
+        },
+      })
+    } catch (error) {
+      caught = error
+    }
+
+    expect(optimisticAdd).not.toBeNull()
+    expect((optimisticAdd as unknown as OptimisticAddCall).sessionID).toBe("session-idle")
+    expect((optimisticAdd as unknown as OptimisticAddCall).message.role).toBe("user")
+    // Connection never recovered — transport must not enter, and the optimistic
+    // row is rolled back as a pre-dispatch failure.
+    expect(sendCalled).toBe(false)
+    expect(getSendFailureKind(caught)).toBe("pre-dispatch")
+    expect((optimisticRemove as OptimisticRemoveCall | null)?.sessionID).toBe("session-idle")
+    expect(targetStore.getState().session_status["session-idle"]?.type).toBe("idle")
   })
 
   test("passes the prompt directory to optimistic state during session switch races", async () => {
