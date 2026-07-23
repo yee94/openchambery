@@ -1,7 +1,7 @@
 import { admitTextQueueItem, editTextQueueItem, fetchMessageQueueScope, fetchMessageQueueServerStatus, fetchMessageQueueSnapshot, MessageQueueServerError, pauseMessageQueueAuthority, releaseMessageQueueItemEditReservation, removeQueueItem, removeReservedMessageQueueItem, reorderQueueScope, reserveMessageQueueItemForEdit, renewEditReservation, resumeMessageQueueAuthority, sendQueueItemNow, waitForMessageQueueInvalidation, type MessageQueueAdmissionItem, type MessageQueueEditReservation, type MessageQueueEditReservationRenewal, type MessageQueueItem, type MessageQueueScope, type MessageQueueScopeDescriptor } from '@/lib/message-queue-server';
 import { queryClient } from '@/lib/queryRuntime';
 import { getRuntimeGeneration, getRuntimeTransportIdentity, subscribeRuntimeEndpointChanged, isRuntimeEndpointIdentityChange } from '@/lib/runtime-switch';
-import { clearMessageQueueScope, clearMessageQueueScopes, invalidateMessageQueueScope, readMessageQueueScope, replaceMessageQueueScope, replaceMessageQueueSnapshot, replaceMessageQueueStatus } from '@/queries/messageQueueQueries';
+import { clearMessageQueueScope, clearMessageQueueScopes, ensureMessageQueueStatus, invalidateMessageQueueScope, readMessageQueueScope, replaceMessageQueueScope, replaceMessageQueueSnapshot, replaceMessageQueueStatus, refreshMessageQueueSnapshot } from '@/queries/messageQueueQueries';
 import { uploadQueueAttachments, type QueueAttachmentCandidate } from './message-queue-server-attachment-adapter';
 import { getMessageQueueRuntime } from './message-queue-runtime';
 import { createMessageQueueShadowImporter, type MessageQueueShadowImportState } from './message-queue-shadow-import';
@@ -19,9 +19,36 @@ export type MessageQueuePendingAdmissionItem = {
 export type MessageQueueServerDisplayItem = MessageQueueItem | MessageQueuePendingAdmissionItem;
 export const isMessageQueuePendingAdmissionItem = (value: unknown): value is MessageQueuePendingAdmissionItem => typeof value === 'object' && value !== null && (value as { kind?: unknown }).kind === 'pending-admission';
 export type MessageQueueServerSurface = { subscribe(listener: () => void): () => void; subscribeScope(scope: { transportIdentity: string; directory: string; sessionID: string }, listener: () => void): () => void; getState(): MessageQueueServerSurfaceState; getScope(scope: { transportIdentity: string; directory: string; sessionID: string }): MessageQueueScope | undefined; getPendingAdmissions(scope: { transportIdentity: string; directory: string; sessionID: string }): readonly MessageQueuePendingAdmissionItem[]; captureRuntime(): MessageQueueServerRuntimeCapture; start(): void; stop(): void; restart(): void; runShadowImport(): Promise<MessageQueueShadowImportState>; pause?(expectedGeneration: number): Promise<void>; resume?(expectedGeneration: number): Promise<void>; admit(input: { requestID: string; scope: { directory: string; sessionID: string }; item: Omit<MessageQueueAdmissionItem, 'attachments'>; attachments?: readonly QueueAttachmentCandidate[] }): Promise<MessageQueueServerMutationResult>; edit(input: { requestID: string; scopeID: string; revision: number; item: MessageQueueItem; patch: Parameters<typeof editTextQueueItem>[1]['item'] }): Promise<MessageQueueServerMutationResult>; remove(input: { requestID: string; scopeID: string; revision: number; item: MessageQueueItem }): Promise<MessageQueueServerMutationResult>; reserveEdit(input: { requestID: string; scopeID: string; revision: number; item: MessageQueueItem; owner: string; ttlMs: number; runtime: MessageQueueServerRuntimeCapture }): Promise<MessageQueueEditReservation | undefined>; renewEdit(input: { item: MessageQueueItem; token: string; generation: number; ttlMs: number; runtime: MessageQueueServerRuntimeCapture; signal?: AbortSignal }): Promise<MessageQueueEditReservationRenewal | undefined>; releaseEdit(input: { item: MessageQueueItem; token: string; runtime: MessageQueueServerRuntimeCapture }): Promise<void>; removeReserved(input: { requestID: string; scopeID: string; revision: number; item: MessageQueueItem; token: string; generation: number; runtime: MessageQueueServerRuntimeCapture }): Promise<boolean>; reorder(input: { requestID: string; scopeID: string; revision: number; queueItemIDs: string[] }): Promise<MessageQueueServerMutationResult>; manualSend(input: { requestID: string; scopeID: string; revision: number; item: MessageQueueItem }): Promise<MessageQueueServerMutationResult>; refresh(): Promise<void> };
-type Client = Pick<typeof queryClient, 'setQueryData' | 'getQueryData' | 'removeQueries' | 'invalidateQueries'>;
+type Client = Pick<typeof queryClient, 'setQueryData' | 'getQueryData' | 'removeQueries' | 'invalidateQueries' | 'fetchQuery'>;
 type Dependencies = { snapshot: typeof fetchMessageQueueSnapshot; status: typeof fetchMessageQueueServerStatus; scope: typeof fetchMessageQueueScope; waitInvalidation: typeof waitForMessageQueueInvalidation; admit: typeof admitTextQueueItem; edit: typeof editTextQueueItem; remove: typeof removeQueueItem; reserve: typeof reserveMessageQueueItemForEdit; renew: typeof renewEditReservation; release: typeof releaseMessageQueueItemEditReservation; removeReserved: typeof removeReservedMessageQueueItem; reorder: typeof reorderQueueScope; manualSend: typeof sendQueueItemNow; upload: typeof uploadQueueAttachments; client: Client; capture: () => MessageQueueServerRuntimeCapture; current: (capture: MessageQueueServerRuntimeCapture) => boolean; legacyManualSend: (item: MessageQueueItem) => Promise<void>; shadowQueue: () => ReturnType<typeof getMessageQueueRuntime> };
-const defaults: Dependencies = { snapshot: fetchMessageQueueSnapshot, status: fetchMessageQueueServerStatus, scope: fetchMessageQueueScope, waitInvalidation: waitForMessageQueueInvalidation, admit: admitTextQueueItem, edit: editTextQueueItem, remove: removeQueueItem, reserve: reserveMessageQueueItemForEdit, renew: renewEditReservation, release: releaseMessageQueueItemEditReservation, removeReserved: removeReservedMessageQueueItem, reorder: reorderQueueScope, manualSend: sendQueueItemNow, upload: uploadQueueAttachments, client: queryClient, capture: () => ({ transportIdentity: getRuntimeTransportIdentity(), generation: getRuntimeGeneration() }), current: (capture) => capture.transportIdentity === getRuntimeTransportIdentity() && capture.generation === getRuntimeGeneration(), legacyManualSend: async () => {}, shadowQueue: getMessageQueueRuntime };
+const withAbort = <T>(promise: Promise<T>, signal?: AbortSignal): Promise<T> => promise.then((value) => {
+  if (signal?.aborted) throw new DOMException('Aborted', 'AbortError');
+  return value;
+});
+
+/** Production defaults go through TanStack Query so concurrent cutover/worktree callers share in-flight GETs. */
+const defaults: Dependencies = {
+  // Force network after tips/mutations; concurrent callers still coalesce on the same in-flight fetchQuery.
+  snapshot: (signal) => withAbort(refreshMessageQueueSnapshot(queryClient), signal),
+  status: (signal) => withAbort(ensureMessageQueueStatus(queryClient), signal),
+  scope: fetchMessageQueueScope,
+  waitInvalidation: waitForMessageQueueInvalidation,
+  admit: admitTextQueueItem,
+  edit: editTextQueueItem,
+  remove: removeQueueItem,
+  reserve: reserveMessageQueueItemForEdit,
+  renew: renewEditReservation,
+  release: releaseMessageQueueItemEditReservation,
+  removeReserved: removeReservedMessageQueueItem,
+  reorder: reorderQueueScope,
+  manualSend: sendQueueItemNow,
+  upload: uploadQueueAttachments,
+  client: queryClient,
+  capture: () => ({ transportIdentity: getRuntimeTransportIdentity(), generation: getRuntimeGeneration() }),
+  current: (capture) => capture.transportIdentity === getRuntimeTransportIdentity() && capture.generation === getRuntimeGeneration(),
+  legacyManualSend: async () => {},
+  shadowQueue: getMessageQueueRuntime,
+};
 const isConflict = (error: unknown) => error instanceof MessageQueueServerError && (error.code === 'revision_conflict' || error.code === 'row_version_conflict');
 const scopeKey = (scope: { transportIdentity: string; directory: string; sessionID: string }) => `${scope.transportIdentity}\u0000${scope.directory}\u0000${scope.sessionID}`;
 const pause = (ms: number, signal: AbortSignal) => new Promise<void>((resolve) => { const timer = setTimeout(resolve, ms); signal.addEventListener('abort', () => { clearTimeout(timer); resolve(); }, { once: true }); });
@@ -143,8 +170,9 @@ export const createMessageQueueServerRuntime = (dependencies: Partial<Dependenci
     } catch (error) { if (!isCaptureCurrent(capture) || signal.aborted) return; publish({ capability: error instanceof MessageQueueServerError && error.status === 501 ? 'unsupported' : 'error', hydration: 'error', error }); }
     finally { if (isCaptureCurrent(capture)) publish({ isFetching: false }); }
   };
-  // Tip waits miss advances that happen while paging a scope. Lead with GET, then
-  // wait only after the cache already matches the authoritative snapshot.
+  // Tip waits miss advances that happen while paging a scope. Lead once with GET
+  // (refresh), then wait for the next tip before the next snapshot GET so startup
+  // does not immediately re-fetch the catalog it just applied.
   const observe = async () => {
     await refresh(); let failures = 0;
     const observer = controller;
@@ -153,20 +181,21 @@ export const createMessageQueueServerRuntime = (dependencies: Partial<Dependenci
     while (!signal.aborted && controller === observer) {
       const capture = deps.capture();
       try {
+        const cached = deps.client.getQueryData<Awaited<ReturnType<typeof fetchMessageQueueSnapshot>>>([capture.transportIdentity, 'messageQueue', 'snapshot']);
+        const waitRevision = cached?.revision ?? currentWatermark(capture);
+        const reason = await deps.waitInvalidation(waitRevision, { signal });
+        if (!isCaptureCurrent(capture) || signal.aborted || reason === 'aborted') return;
         const latest = await deps.snapshot(signal); if (!isCaptureCurrent(capture) || signal.aborted) return;
         const known = new Map(state.scopes);
-        const cached = deps.client.getQueryData<Awaited<ReturnType<typeof fetchMessageQueueSnapshot>>>([capture.transportIdentity, 'messageQueue', 'snapshot']);
         const needsApply = cached?.revision !== latest.revision
           || latest.scopes.some((descriptor) => known.get(descriptor.scopeID)?.revision !== descriptor.revision)
           || [...known.keys()].some((scopeID) => !latest.scopes.some((scope) => scope.scopeID === scopeID));
         if (needsApply) {
           const completeScopes = await Promise.all(latest.scopes.filter((descriptor) => known.get(descriptor.scopeID)?.revision !== descriptor.revision).map((descriptor) => loadScope(descriptor, capture, signal)));
           if (commitSnapshot(latest, completeScopes, capture)) { publish({ hydration: 'ready', error: undefined }); failures = 0; }
-          continue;
+        } else {
+          failures = 0;
         }
-        const reason = await deps.waitInvalidation(latest.revision, { signal });
-        if (!isCaptureCurrent(capture) || signal.aborted || reason === 'aborted') return;
-        failures = 0;
       } catch (error) {
         if (signal.aborted || controller !== observer || !isCaptureCurrent(capture)) return;
         // Mid-page worker bumps surface as revision_conflict; pull again immediately.
@@ -231,8 +260,22 @@ export const createMessageQueueServerRuntime = (dependencies: Partial<Dependenci
     }
     throw new MessageQueueServerError(409, 'revision_conflict');
   };
+  /** Delay stop so React StrictMode cleanup+remount does not abort an in-flight first observe. */
+  let stopTimer: ReturnType<typeof setTimeout> | undefined;
   const stopObserver = () => { controller?.abort(); controller = undefined; importFlight = undefined; };
-  const startObserver = () => { if (controller) return; controller = new AbortController(); void observe(); };
+  const startObserver = () => {
+    if (stopTimer !== undefined) { clearTimeout(stopTimer); stopTimer = undefined; }
+    if (controller) return;
+    controller = new AbortController();
+    void observe();
+  };
+  const scheduleStopObserver = () => {
+    if (stopTimer !== undefined) clearTimeout(stopTimer);
+    stopTimer = setTimeout(() => {
+      stopTimer = undefined;
+      if (!users) stopObserver();
+    }, 0);
+  };
   const runShadowImport = () => {
     if (importFlight) return importFlight;
     const flight = (async () => {
@@ -251,7 +294,10 @@ export const createMessageQueueServerRuntime = (dependencies: Partial<Dependenci
       const capture = synchronizeTransport();
       return scope.transportIdentity === capture.transportIdentity && state.transportIdentity === scope.transportIdentity ? pendingAdmissions.get(scopeKey(scope)) ?? EMPTY_PENDING_ADMISSIONS : EMPTY_PENDING_ADMISSIONS;
     },
-    start: () => { users++; synchronizeTransport(); startObserver(); }, stop: () => { users = Math.max(0, users - 1); if (!users) stopObserver(); }, restart: () => { stopObserver(); resetForTransport(deps.capture()); if (users) startObserver(); }, refresh, runShadowImport,
+    start: () => { users++; synchronizeTransport(); startObserver(); },
+    stop: () => { users = Math.max(0, users - 1); if (!users) scheduleStopObserver(); },
+    restart: () => { if (stopTimer !== undefined) { clearTimeout(stopTimer); stopTimer = undefined; } stopObserver(); resetForTransport(deps.capture()); if (users) startObserver(); },
+    refresh, runShadowImport,
     pause: async (expectedGeneration) => { await pauseMessageQueueAuthority({ expectedGeneration, signal: controller?.signal }); await refresh(); }, resume: async (expectedGeneration) => { await resumeMessageQueueAuthority({ expectedGeneration, signal: controller?.signal }); await refresh(); },
     admit: async ({ requestID, scope, item, attachments = [] }) => {
       const capture = synchronizeTransport();

@@ -9,6 +9,7 @@ import type {
   SessionStatus,
   Todo,
 } from "@opencode-ai/sdk/v2/client"
+import { isVisibleGlobalSession } from "@/stores/globalSessions"
 import { Binary } from "./binary"
 import type { FileDiff, GlobalState, State } from "./types"
 import { dropSessionCaches } from "./session-cache"
@@ -228,6 +229,16 @@ export function applyDirectoryEvent(
       const info = stripSessionDiffSnapshots((event.properties as { info: Session }).info)
       const sessions = draft.session
       const result = Binary.search(sessions, info.id, (s) => s.id)
+      // Temporary SmartFetch secondary sessions must never enter the live
+      // directory list; otherwise the sidebar merges them in for a flash
+      // before session.deleted arrives.
+      if (!isVisibleGlobalSession(info)) {
+        if (!result.found) return false
+        sessions.splice(result.index, 1)
+        cleanupSessionCaches(draft, info.id, callbacks?.onSetSessionTodo)
+        if (!info.parentID) draft.sessionTotal = Math.max(0, draft.sessionTotal - 1)
+        return true
+      }
       if (result.found && shouldSkipStaleSessionEvent(sessions[result.index], info)) {
         return false
       }
@@ -251,6 +262,16 @@ export function applyDirectoryEvent(
       // mark the session archived.
       if (result.found && shouldSkipStaleSessionEvent(sessions[result.index], info)) {
         return false
+      }
+
+      // Same title blacklist as the global sessions store: never surface
+      // temporary SmartFetch secondary sessions in the live directory list.
+      if (!isVisibleGlobalSession(info)) {
+        if (!result.found) return false
+        sessions.splice(result.index, 1)
+        cleanupSessionCaches(draft, info.id, callbacks?.onSetSessionTodo)
+        if (!info.parentID) draft.sessionTotal = Math.max(0, draft.sessionTotal - 1)
+        return true
       }
 
       if (info.time.archived) {

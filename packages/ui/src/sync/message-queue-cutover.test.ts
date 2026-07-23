@@ -49,4 +49,21 @@ describe('message queue cutover ownership', () => {
     expect(cutover.getSnapshot().migration).toBe('idle');
     cutover.stop();
   });
+
+  test('runs server refresh before a single status read', async () => {
+    const order: string[] = [];
+    const cutover = createMessageQueueCutover({
+      server: { refresh: async () => { order.push('refresh'); } } as never,
+      status: async () => {
+        order.push('status');
+        throw new MessageQueueServerError(501, 'unavailable');
+      },
+      capture: () => ({ transportIdentity: 'runtime-order', generation: 1 }),
+      current: () => true,
+    });
+    await cutover.refresh();
+    expect(order).toEqual(['refresh', 'status']);
+    expect(cutover.getSnapshot().ownership).toBe('legacy-unsupported');
+    cutover.stop();
+  });
 });

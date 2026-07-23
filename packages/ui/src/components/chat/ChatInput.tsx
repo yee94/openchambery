@@ -149,7 +149,13 @@ import { decorateComposerReference, materializeComposerDocument, serializeCompos
 import { useComposerController } from '@/composer/use-composer-controller';
 import { buildComposerSemanticParts, dedupeDeliveryAttachments } from '@/composer/delivery';
 import type { ComposerReferenceSemantic } from '@/composer/extensions';
-import { COMPOSER_TRIGGER_ICON_SLOT, composerTriggerIconDisplay, composerTriggerIconVisual } from '@/composer/inline-visual';
+import {
+    attachmentCitationDisplay,
+    COMPOSER_TRIGGER_ICON_SLOT,
+    composerTriggerIconDisplay,
+    composerTriggerIconVisual,
+    stripComposerTriggerIconSlot,
+} from '@/composer/inline-visual';
 import { buildAssistantQueueDeliveryParts, buildAssistantQueueSyntheticSidecar, buildSyntheticDeliveryParts, compileChatComposerDelivery, legacyTextToAuthoredPlan } from './chatComposerDelivery';
 import { queueModeAllowsMutations } from './queuedMessageChipsState';
 
@@ -244,7 +250,11 @@ const withInlineInsertionBoundaries = (content: string, before: string, after: s
 
 const withReferenceInsertionBoundaries = (content: string, before: string, after: string): string => {
     const insertion = withInlineInsertionBoundaries(content, before, after);
-    return `   ${insertion.trim()} `;
+    // Only pad when the citation sits alone at a message edge — never force a
+    // multi-space lead-in mid-line (that reads as a huge gap before the icon).
+    const leadingSpace = before.length === 0 && !/^\s/.test(insertion) ? ' ' : '';
+    const trailingSpace = after.length === 0 && !/\s$/.test(insertion) ? ' ' : '';
+    return `${leadingSpace}${insertion}${trailingSpace}`;
 };
 
 const normalizeReferenceDeletionWhitespace = (text: string, caret: number): { text: string; caret: number } => {
@@ -1563,8 +1573,8 @@ const ChatInputRuntime: React.FC<ChatInputProps> = ({ onOpenSettings, scrollToBo
             message,
             inlineAttachments.map((file) => file.filename),
         ).flatMap((range) => {
-            const attachmentName = message.slice(range.start + 1, range.end - 1);
-            const attachmentIcon = attachmentIcons.get(attachmentName.trim().toLowerCase());
+            const attachmentName = stripComposerTriggerIconSlot(message.slice(range.start + 1, range.end - 1)).trim();
+            const attachmentIcon = attachmentIcons.get(attachmentName.toLowerCase());
             return [
                 {
                     ...range,
@@ -3678,8 +3688,10 @@ const ChatInputRuntime: React.FC<ChatInputProps> = ({ onOpenSettings, scrollToBo
 
         const value = e.target.value;
         for (const file of attachedFiles) {
-            const citation = `[${file.filename}]`;
-            if (messageRef.current.includes(citation) && !value.includes(citation)) {
+            const citations = [attachmentCitationDisplay(file.filename), `[${file.filename}]`];
+            const wasPresent = citations.some((citation) => messageRef.current.includes(citation));
+            const stillPresent = citations.some((citation) => value.includes(citation));
+            if (wasPresent && !stillPresent) {
                 surfaceResources.removeAttachment(file.id);
             }
         }
@@ -5271,7 +5283,13 @@ const ChatInputRuntime: React.FC<ChatInputProps> = ({ onOpenSettings, scrollToBo
                         disabled={mobileAgentControlsDisabled}
                         className="flex-shrink-0"
                     />
-                    <MemoMobileModelButton onOpenModel={() => handleOpenMobilePanel('model')} providerID={surface.selection.value.providerID} modelID={surface.selection.value.modelID} className="flex-shrink-0" />
+                    <MemoMobileModelButton
+                        onOpenModel={() => handleOpenMobilePanel('model')}
+                        providerID={surface.selection.value.providerID}
+                        modelID={surface.selection.value.modelID}
+                        variant={surface.selection.value.variant}
+                        className="flex-shrink-0"
+                    />
                 </div>
             ) : null}
         </>

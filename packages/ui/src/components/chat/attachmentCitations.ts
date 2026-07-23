@@ -1,3 +1,9 @@
+import {
+    attachmentCitationDisplay,
+    COMPOSER_TRIGGER_ICON_SLOT,
+    stripComposerTriggerIconSlot,
+} from '@/composer/inline-visual';
+
 export interface ImageAttachmentCandidate {
     name: string;
     type?: string;
@@ -174,7 +180,12 @@ export const assignImageAttachmentFilenames = (
 };
 
 export const buildAttachmentCitationText = (filenames: string[]): string => (
-    filenames.map((filename) => `[${filename}]`).join(' ')
+    filenames.map((filename) => attachmentCitationDisplay(filename)).join(' ')
+);
+
+/** Drop reserved icon wells before delivery so agents see plain `[filename]`. */
+export const stripAttachmentCitationSlotsForDelivery = (text: string): string => (
+    text.replaceAll(`[${COMPOSER_TRIGGER_ICON_SLOT}`, '[')
 );
 
 export const getAttachmentCitationIconPath = (filename: string): string => (
@@ -197,9 +208,12 @@ export const expandCodeSelectionCitations = (
         }
         const lineRange = attachment.filename.match(/:(\d+(?:-\d+)?)$/)?.[1];
         if (!lineRange) continue;
+        const expandedToken = `[${attachment.vscodePath}:${lineRange}]`;
         expanded = expanded
+            .split(attachmentCitationDisplay(attachment.filename))
+            .join(expandedToken)
             .split(`[${attachment.filename}]`)
-            .join(`[${attachment.vscodePath}:${lineRange}]`);
+            .join(expandedToken);
     }
     return expanded;
 };
@@ -243,9 +257,9 @@ export const findAttachmentCitationRanges = (text: string, filenames: string[]):
         }
 
         // Markdown links keep their normal link highlighting; attachment citations
-        // are plain bracket references like [desktop.png].
+        // are plain bracket references like [desktop.png] or reserved [␠desktop.png].
         if (text[end + 1] !== '(') {
-            const name = text.slice(start + 1, end).trim();
+            const name = stripComposerTriggerIconSlot(text.slice(start + 1, end)).trim();
             if (known.has(normalizeFilenameKey(name))) {
                 ranges.push({ start, end: end + 1 });
             }

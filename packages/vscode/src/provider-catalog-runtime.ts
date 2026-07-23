@@ -56,23 +56,16 @@ const safeReleaseDate = (value: unknown): string | undefined =>
 const safeNumber = (value: unknown): number | undefined =>
   typeof value === 'number' && Number.isFinite(value) && Math.abs(value) <= MAX_FINITE_NUMBER ? value : undefined;
 
-const projectModalities = (value: unknown): {
-  modalities?: Record<'text' | 'audio' | 'image' | 'video' | 'pdf', boolean>;
-  partial: boolean;
-} => {
-  if (!isRecord(value)) return { partial: value !== undefined };
+const projectModalities = (value: unknown): Record<'text' | 'audio' | 'image' | 'video' | 'pdf', boolean> | undefined => {
+  if (!isRecord(value)) return undefined;
   const modalities = createDictionary<boolean>() as Record<'text' | 'audio' | 'image' | 'video' | 'pdf', boolean>;
   let hasValue = false;
-  let partial = false;
   for (const [key, modalityValue] of Object.entries(value)) {
-    if (!(MODALITIES as readonly string[]).includes(key) || typeof modalityValue !== 'boolean') {
-      partial = true;
-      continue;
-    }
+    if (!(MODALITIES as readonly string[]).includes(key) || typeof modalityValue !== 'boolean') continue;
     modalities[key as typeof MODALITIES[number]] = modalityValue;
     hasValue = true;
   }
-  return { ...(hasValue ? { modalities } : {}), partial };
+  return hasValue ? modalities : undefined;
 };
 
 const projectModel = (value: unknown): { model: SafeModel; partial: boolean } | null => {
@@ -82,90 +75,66 @@ const projectModel = (value: unknown): { model: SafeModel; partial: boolean } | 
   if (!id || !name) return null;
 
   const model: SafeModel = { id, name };
+  // partial is structural only (e.g. variant truncation). Soft allowlist stripping of optional
+  // metadata must not mark the catalog partial or UI refresh will retain a stale complete snapshot.
   let partial = false;
-  if (value.capabilities !== undefined) {
-    if (isRecord(value.capabilities)) {
-      const capabilities: NonNullable<SafeModel['capabilities']> = {};
-      for (const key of ['temperature', 'reasoning', 'attachment', 'toolcall'] as const) {
-        const capability = value.capabilities[key];
-        if (typeof capability === 'boolean') capabilities[key] = capability;
-        else if (capability !== undefined) partial = true;
-      }
-      for (const key of ['input', 'output'] as const) {
-        const projected = projectModalities(value.capabilities[key]);
-        if (projected.modalities) capabilities[key] = projected.modalities;
-        if (projected.partial) partial = true;
-      }
-      if (Object.keys(capabilities).length > 0) model.capabilities = capabilities;
-    } else {
-      partial = true;
+  if (value.capabilities !== undefined && isRecord(value.capabilities)) {
+    const capabilities: NonNullable<SafeModel['capabilities']> = {};
+    for (const key of ['temperature', 'reasoning', 'attachment', 'toolcall'] as const) {
+      const capability = value.capabilities[key];
+      if (typeof capability === 'boolean') capabilities[key] = capability;
     }
+    for (const key of ['input', 'output'] as const) {
+      const projected = projectModalities(value.capabilities[key]);
+      if (projected) capabilities[key] = projected;
+    }
+    if (Object.keys(capabilities).length > 0) model.capabilities = capabilities;
   }
 
-  if (value.cost !== undefined) {
-    if (isRecord(value.cost)) {
-      const cost: NonNullable<SafeModel['cost']> = {};
-      for (const key of ['input', 'output'] as const) {
-        const amount = safeNumber(value.cost[key]);
-        if (amount !== undefined) cost[key] = amount;
-        else if (value.cost[key] !== undefined) partial = true;
-      }
-      if (value.cost.cache !== undefined) {
-        if (isRecord(value.cost.cache)) {
-          const cache: NonNullable<NonNullable<SafeModel['cost']>['cache']> = {};
-          for (const key of ['read', 'write'] as const) {
-            const amount = safeNumber(value.cost.cache[key]);
-            if (amount !== undefined) cache[key] = amount;
-            else if (value.cost.cache[key] !== undefined) partial = true;
-          }
-          if (Object.keys(cache).length > 0) cost.cache = cache;
-        } else {
-          partial = true;
-        }
-      }
-      if (Object.keys(cost).length > 0) model.cost = cost;
-    } else {
-      partial = true;
+  if (value.cost !== undefined && isRecord(value.cost)) {
+    const cost: NonNullable<SafeModel['cost']> = {};
+    for (const key of ['input', 'output'] as const) {
+      const amount = safeNumber(value.cost[key]);
+      if (amount !== undefined) cost[key] = amount;
     }
+    if (value.cost.cache !== undefined && isRecord(value.cost.cache)) {
+      const cache: NonNullable<NonNullable<SafeModel['cost']>['cache']> = {};
+      for (const key of ['read', 'write'] as const) {
+        const amount = safeNumber(value.cost.cache[key]);
+        if (amount !== undefined) cache[key] = amount;
+      }
+      if (Object.keys(cache).length > 0) cost.cache = cache;
+    }
+    if (Object.keys(cost).length > 0) model.cost = cost;
   }
 
-  if (value.limit !== undefined) {
-    if (isRecord(value.limit)) {
-      const limit: NonNullable<SafeModel['limit']> = {};
-      for (const key of ['context', 'output'] as const) {
-        const amount = safeNumber(value.limit[key]);
-        if (amount !== undefined) limit[key] = amount;
-        else if (value.limit[key] !== undefined) partial = true;
-      }
-      if (Object.keys(limit).length > 0) model.limit = limit;
-    } else {
-      partial = true;
+  if (value.limit !== undefined && isRecord(value.limit)) {
+    const limit: NonNullable<SafeModel['limit']> = {};
+    for (const key of ['context', 'output'] as const) {
+      const amount = safeNumber(value.limit[key]);
+      if (amount !== undefined) limit[key] = amount;
     }
+    if (Object.keys(limit).length > 0) model.limit = limit;
   }
 
-  if (value.release_date !== undefined) {
+  // Empty/null/invalid release_date is a common upstream placeholder; treat as absent, not partial.
+  if (value.release_date !== undefined && value.release_date !== '' && value.release_date !== null) {
     const releaseDate = safeReleaseDate(value.release_date);
     if (releaseDate) model.release_date = releaseDate;
-    else partial = true;
   }
 
-  if (value.variants !== undefined) {
-    if (isRecord(value.variants)) {
-      const variants = createDictionary<Record<string, never>>();
-      const entries = Object.entries(value.variants);
-      if (entries.length > MAX_VARIANTS_PER_MODEL) partial = true;
-      for (const [key, variant] of entries.slice(0, MAX_VARIANTS_PER_MODEL)) {
-        const variantName = safeIdentifier(key);
-        if (!variantName || !isRecord(variant) || Object.prototype.hasOwnProperty.call(variants, variantName)) {
-          partial = true;
-          continue;
-        }
-        variants[variantName] = createDictionary<never>();
+  if (value.variants !== undefined && isRecord(value.variants)) {
+    const variants = createDictionary<Record<string, never>>();
+    const entries = Object.entries(value.variants);
+    if (entries.length > MAX_VARIANTS_PER_MODEL) partial = true;
+    for (const [key, variant] of entries.slice(0, MAX_VARIANTS_PER_MODEL)) {
+      const variantName = safeIdentifier(key);
+      if (!variantName || !isRecord(variant) || Object.prototype.hasOwnProperty.call(variants, variantName)) {
+        continue;
       }
-      if (Object.keys(variants).length > 0) model.variants = variants;
-    } else {
-      partial = true;
+      variants[variantName] = createDictionary<never>();
     }
+    if (Object.keys(variants).length > 0) model.variants = variants;
   }
   return { model, partial };
 };

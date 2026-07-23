@@ -4,6 +4,22 @@ All notable changes to this project will be documented in this file.
 
 ## [Unreleased]
 
+## [1.16.58] - 2026-07-23
+
+- **Message headers:** show non-default thinking depth as a muted model-name suffix (same rule as the composer), and hide the default depth instead of rendering a separate brain badge.
+- **Send after idle:** paint the optimistic user bubble and busy status before the connection grace wait so long-idle reconnects no longer clear the composer while the chat list still shows the pre-send snapshot.
+- **Session message cache:** only force-refetch a busy/retry session when the local tail is not already a user message, so ordinary session switches keep the cache and avoid a loading flash.
+
+## [1.16.57] - 2026-07-23
+
+- **Model picker:** open thinking variants in a dedicated desktop sub-view, show the active variant on model triggers (including mobile), and dismiss the menu instantly after a pick without flashing the model list.
+- **Composer references:** center trigger icons in a fixed 1em well with balanced insets, reserve icon slots for attachment citations, and strip those slots before delivery so agents still see plain `[filename]` text.
+- **Provider catalogs:** treat soft metadata allowlist stripping as non-partial so incomplete optional fields no longer freeze a stale complete catalog snapshot across Web, VS Code, and shared parsers.
+- **Session index:** coalesce concurrent session-index GETs and debounce dense revision tips before the next full snapshot refresh.
+- **Message queue:** share status and snapshot reads through TanStack Query helpers, skip duplicate startup catalog fetches, and defer StrictMode stop so remount reuses the first in-flight refresh.
+- **SmartFetch sessions:** keep temporary `smartfetch-secondary` sessions out of live directory lists and sidebar merges.
+- **Desktop quit:** on macOS, a second `Cmd+Q` while the quit-risk confirmation is open confirms quit along the same shutdown path as the dialog Quit button.
+
 ## [1.16.56] - 2026-07-23
 
 - **Keyboard shortcuts:** restore the first Esc confirmation prompt and second Esc abort path from focused chat composer inputs while a session is running.

@@ -145,9 +145,11 @@ loaders compare against the transport fingerprint, so writing `runtimeKey` into
 `catalogTransportIdentity` silently drops catalog results after a transport switch
 while the rest of the app looks connected. Both `resetAppForRuntimeEndpointChange`
 and `reconnectAppForTransportSwitch` in `runtimeEndpointReset.ts` must keep that
-fingerprint in sync. On the parser side, empty-string `release_date` is treated as
-absent (common upstream placeholder) and must not force `partial: true` when the
-providers/models themselves are valid. When Host catalog routes are missing,
+fingerprint in sync. On the parser and Host/VS Code projection sides, `partial` is structural only
+(dropped/truncated providers, models, defaults, or variants). Soft allowlist
+stripping of optional metadata—including empty/null/invalid `release_date`,
+unknown modalities, and out-of-range cost/limit numbers—must not force
+`partial: true` when the providers/models themselves remain usable. When Host catalog routes are missing,
 Relay/mobile clients can still receive SPA HTML for `/api/config/catalog/providers`;
 fix that against the Host process that holds the relay claim before debugging the
 UI gate.

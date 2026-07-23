@@ -1,5 +1,6 @@
 import type { SessionStatus } from '@opencode-ai/sdk/v2/client'
 import type { Session } from '@opencode-ai/sdk/v2'
+import { isVisibleGlobalSession } from '@/stores/globalSessions'
 import type { State } from './types'
 
 type LiveStateSlice = Pick<State, 'session' | 'session_status'>
@@ -142,7 +143,12 @@ export function aggregateLiveSessions(
 
   for (const state of states) {
     for (const session of state.session) {
-      if (!session?.id || excludedSessionIds?.has(session.id) || session.parentID) {
+      if (
+        !session?.id
+        || excludedSessionIds?.has(session.id)
+        || session.parentID
+        || !isVisibleGlobalSession(session)
+      ) {
         continue
       }
       const current = sessionsById.get(session.id)

@@ -37,120 +37,94 @@ const isSafeNumber = (value) => typeof value === 'number'
   && Math.abs(value) <= MAX_ABSOLUTE_NUMBER;
 
 const projectBooleanFields = (source, fields) => {
-  if (!isRecord(source)) return { value: undefined, partial: true };
+  if (!isRecord(source)) return undefined;
   const projected = createDictionary();
-  let partial = false;
   for (const field of fields) {
     if (!Object.hasOwn(source, field)) continue;
     if (typeof source[field] === 'boolean') projected[field] = source[field];
-    else partial = true;
   }
-  return { value: ownKeys(projected).length > 0 ? projected : undefined, partial };
+  return ownKeys(projected).length > 0 ? projected : undefined;
 };
 
 const projectModalities = (source) => {
-  if (!isRecord(source)) return { value: undefined, partial: true };
+  if (!isRecord(source)) return undefined;
   const projected = createDictionary();
-  let partial = false;
   for (const key of ownKeys(source)) {
-    if (!MODALITIES.has(key) || !isSafeIdentifier(key) || typeof source[key] !== 'boolean') {
-      partial = true;
-      continue;
-    }
+    if (!MODALITIES.has(key) || !isSafeIdentifier(key) || typeof source[key] !== 'boolean') continue;
     projected[key] = source[key];
   }
-  return { value: ownKeys(projected).length > 0 ? projected : undefined, partial };
+  return ownKeys(projected).length > 0 ? projected : undefined;
 };
 
 const projectCapabilities = (source) => {
-  if (!isRecord(source)) return { value: undefined, partial: true };
+  if (!isRecord(source)) return undefined;
   const capabilities = createDictionary();
-  let partial = false;
   const flags = projectBooleanFields(source, ['temperature', 'reasoning', 'attachment', 'toolcall']);
-  if (flags.value) Object.assign(capabilities, flags.value);
-  partial ||= flags.partial;
+  if (flags) Object.assign(capabilities, flags);
   for (const field of ['input', 'output']) {
     if (!Object.hasOwn(source, field)) continue;
     const modalities = projectModalities(source[field]);
-    if (modalities.value) capabilities[field] = modalities.value;
-    partial ||= modalities.partial;
+    if (modalities) capabilities[field] = modalities;
   }
-  return { value: ownKeys(capabilities).length > 0 ? capabilities : undefined, partial };
+  return ownKeys(capabilities).length > 0 ? capabilities : undefined;
 };
 
 const projectCost = (source) => {
-  if (!isRecord(source)) return { value: undefined, partial: true };
+  if (!isRecord(source)) return undefined;
   const cost = createDictionary();
-  let partial = false;
   for (const field of ['input', 'output']) {
     if (!Object.hasOwn(source, field)) continue;
     if (isSafeNumber(source[field])) cost[field] = source[field];
-    else partial = true;
   }
-  if (Object.hasOwn(source, 'cache')) {
-    if (!isRecord(source.cache)) {
-      partial = true;
-    } else {
-      const cache = createDictionary();
-      for (const field of ['read', 'write']) {
-        if (!Object.hasOwn(source.cache, field)) continue;
-        if (isSafeNumber(source.cache[field])) cache[field] = source.cache[field];
-        else partial = true;
-      }
-      if (ownKeys(cache).length > 0) cost.cache = cache;
+  if (Object.hasOwn(source, 'cache') && isRecord(source.cache)) {
+    const cache = createDictionary();
+    for (const field of ['read', 'write']) {
+      if (!Object.hasOwn(source.cache, field)) continue;
+      if (isSafeNumber(source.cache[field])) cache[field] = source.cache[field];
     }
+    if (ownKeys(cache).length > 0) cost.cache = cache;
   }
-  return { value: ownKeys(cost).length > 0 ? cost : undefined, partial };
+  return ownKeys(cost).length > 0 ? cost : undefined;
 };
 
 function projectModel(source) {
   if (!isRecord(source) || !isSafeIdentifier(source.id) || !isSafeDisplayName(source.name)) return null;
+  // partial is structural only (e.g. variant truncation). Soft allowlist stripping of optional
+  // metadata must not mark the catalog partial or UI refresh will retain a stale complete snapshot.
   let partial = false;
   const model = { id: source.id, name: source.name };
   if (Object.hasOwn(source, 'capabilities')) {
     const capabilities = projectCapabilities(source.capabilities);
-    if (capabilities.value) model.capabilities = capabilities.value;
-    partial ||= capabilities.partial;
+    if (capabilities) model.capabilities = capabilities;
   }
   if (Object.hasOwn(source, 'cost')) {
     const cost = projectCost(source.cost);
-    if (cost.value) model.cost = cost.value;
-    partial ||= cost.partial;
+    if (cost) model.cost = cost;
   }
-  if (Object.hasOwn(source, 'limit')) {
-    if (!isRecord(source.limit)) {
-      partial = true;
-    } else {
-      const limit = createDictionary();
-      for (const field of ['context', 'output']) {
-        if (!Object.hasOwn(source.limit, field)) continue;
-        if (isSafeNumber(source.limit[field])) limit[field] = source.limit[field];
-        else partial = true;
-      }
-      if (ownKeys(limit).length > 0) model.limit = limit;
+  if (Object.hasOwn(source, 'limit') && isRecord(source.limit)) {
+    const limit = createDictionary();
+    for (const field of ['context', 'output']) {
+      if (!Object.hasOwn(source.limit, field)) continue;
+      if (isSafeNumber(source.limit[field])) limit[field] = source.limit[field];
     }
+    if (ownKeys(limit).length > 0) model.limit = limit;
   }
-  if (Object.hasOwn(source, 'release_date')) {
+  // Empty/null/invalid release_date is a common upstream placeholder; treat as absent, not partial.
+  if (Object.hasOwn(source, 'release_date') && source.release_date !== '' && source.release_date !== null) {
     if (isSafeReleaseDate(source.release_date)) model.release_date = source.release_date;
-    else partial = true;
   }
-  if (Object.hasOwn(source, 'variants')) {
-    if (!isRecord(source.variants)) {
-      partial = true;
-    } else {
-      const variants = createDictionary();
-      let variantCount = 0;
-      for (const variantName of ownKeys(source.variants)) {
-        if (variantCount >= MAX_VARIANTS_PER_MODEL) {
-          partial = true;
-          break;
-        }
-        variantCount += 1;
-        if (isSafeIdentifier(variantName)) variants[variantName] = createDictionary();
-        else partial = true;
+  if (Object.hasOwn(source, 'variants') && isRecord(source.variants)) {
+    const variants = createDictionary();
+    let variantCount = 0;
+    for (const variantName of ownKeys(source.variants)) {
+      if (variantCount >= MAX_VARIANTS_PER_MODEL) {
+        partial = true;
+        break;
       }
-      if (ownKeys(variants).length > 0) model.variants = variants;
+      variantCount += 1;
+      if (isSafeIdentifier(variantName)) variants[variantName] = createDictionary();
     }
+    if (ownKeys(variants).length > 0) model.variants = variants;
   }
   return { value: model, partial };
 }

@@ -46,34 +46,31 @@ const releaseDate = (value: unknown): string | undefined =>
 const number = (value: unknown): number | undefined =>
   typeof value === 'number' && Number.isFinite(value) && Math.abs(value) <= 1_000_000_000 ? value : undefined;
 
-const booleans = (value: unknown): { values?: Record<string, boolean>; partial: boolean } => {
+const booleans = (value: unknown): Record<string, boolean> | undefined => {
   const input = record(value);
-  if (!input) return { partial: value !== undefined };
+  if (!input) return undefined;
   const output: Record<string, boolean> = {};
-  let partial = false;
   for (const [key, item] of Object.entries(input)) {
-    if (!MODALITIES.has(key) || typeof item !== 'boolean') { partial = true; continue; }
+    if (!MODALITIES.has(key) || typeof item !== 'boolean') continue;
     output[key] = item;
   }
-  return { values: Object.keys(output).length ? output : undefined, partial };
+  return Object.keys(output).length ? output : undefined;
 };
 
-const capabilities = (value: unknown): { value?: ConfigCatalogCapabilities; partial: boolean } => {
+const capabilities = (value: unknown): ConfigCatalogCapabilities | undefined => {
   const input = record(value);
-  if (!input) return { partial: value !== undefined };
+  if (!input) return undefined;
   const output: ConfigCatalogCapabilities = {};
-  let partial = false;
   for (const key of ['temperature', 'reasoning', 'attachment', 'toolcall'] as const) {
     if (input[key] === undefined) continue;
-    if (typeof input[key] !== 'boolean') { partial = true; continue; }
+    if (typeof input[key] !== 'boolean') continue;
     output[key] = input[key];
   }
   const inputCapabilities = booleans(input.input);
   const outputCapabilities = booleans(input.output);
-  if (inputCapabilities.values) output.input = inputCapabilities.values;
-  if (outputCapabilities.values) output.output = outputCapabilities.values;
-  partial ||= inputCapabilities.partial || outputCapabilities.partial;
-  return { value: Object.keys(output).length ? output : undefined, partial };
+  if (inputCapabilities) output.input = inputCapabilities;
+  if (outputCapabilities) output.output = outputCapabilities;
+  return Object.keys(output).length ? output : undefined;
 };
 
 const model = (value: unknown): { value?: ConfigCatalogModel; partial: boolean } => {
@@ -82,7 +79,11 @@ const model = (value: unknown): { value?: ConfigCatalogModel; partial: boolean }
   const name = displayName(input?.name);
   if (!input || !id || !name) return { partial: true };
   const output: ConfigCatalogModel = { id, name };
-  const modelCapabilities = capabilities(input.capabilities); if (modelCapabilities.value) output.capabilities = modelCapabilities.value;
+  // Soft allowlist stripping of optional metadata must not mark partial; only structural
+  // drops (invalid model identity, truncated variants) affect catalog completeness.
+  let partial = false;
+  const modelCapabilities = capabilities(input.capabilities);
+  if (modelCapabilities) output.capabilities = modelCapabilities;
   const rawCost = record(input.cost);
   if (rawCost) {
     const cost: NonNullable<ConfigCatalogModel['cost']> = {};
@@ -104,26 +105,18 @@ const model = (value: unknown): { value?: ConfigCatalogModel; partial: boolean }
     const limitOutput = number(rawLimit.output); if (limitOutput !== undefined) limit.output = limitOutput;
     if (Object.keys(limit).length) output.limit = limit;
   }
-  const safeReleaseDate = releaseDate(input.release_date); if (safeReleaseDate) output.release_date = safeReleaseDate;
+  // Empty/null/invalid release_date is treated as absent (common upstream placeholder), not partial.
+  const safeReleaseDate = releaseDate(input.release_date);
+  if (safeReleaseDate) output.release_date = safeReleaseDate;
   const rawVariants = record(input.variants);
-  let partial = modelCapabilities.partial;
-  if (input.cost !== undefined && !rawCost) partial = true;
-  if (rawCost) {
-    if (rawCost.input !== undefined && number(rawCost.input) === undefined) partial = true;
-    if (rawCost.output !== undefined && number(rawCost.output) === undefined) partial = true;
-    const rawCache = record(rawCost.cache);
-    if (rawCost.cache !== undefined && !rawCache) partial = true;
-    if (rawCache && ((rawCache.read !== undefined && number(rawCache.read) === undefined) || (rawCache.write !== undefined && number(rawCache.write) === undefined))) partial = true;
-  }
-  if (input.limit !== undefined && !rawLimit) partial = true;
-  if (rawLimit && ((rawLimit.context !== undefined && number(rawLimit.context) === undefined) || (rawLimit.output !== undefined && number(rawLimit.output) === undefined))) partial = true;
-  // Empty release_date is treated as absent (common upstream placeholder), not partial.
-  if (input.release_date !== undefined && input.release_date !== '' && !safeReleaseDate) partial = true;
-  if (input.variants !== undefined && !rawVariants) partial = true;
   if (rawVariants) {
     const variants: Record<string, object> = {};
     for (const [index, [key, item]] of Object.entries(rawVariants).entries()) {
-      if (index >= MAX_VARIANTS || !identifier(key) || !record(item)) { partial = true; continue; }
+      if (index >= MAX_VARIANTS) {
+        partial = true;
+        break;
+      }
+      if (!identifier(key) || !record(item)) continue;
       variants[key] = {};
     }
     if (Object.keys(variants).length) output.variants = variants;

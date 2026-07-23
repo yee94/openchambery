@@ -58,7 +58,8 @@ describe('VS Code provider catalog projection', () => {
         },
       }],
       default: { provider: 'model' },
-      partial: true,
+      // Soft allowlist stripping of unknown modalities/extra fields is not partial.
+      partial: false,
     });
     expect(JSON.stringify(result)).not.toContain('SECRET_SENTINEL');
   });
@@ -124,10 +125,35 @@ describe('VS Code provider catalog projection', () => {
       default: { provider: 'model' },
     });
 
-    expect(result.partial).toBe(true);
+    // Soft numeric/release stripping alone is not partial.
+    expect(result.partial).toBe(false);
     expect(result.providers[0].models.model.cost).toEqual({ input: -1_000_000_000, output: 1_000_000_000 });
     expect(result.providers[0].models.model.limit).toEqual({ context: -1_000_000_000 });
     expect(JSON.stringify(result)).not.toContain('Infinity');
     expect(JSON.stringify(result)).not.toContain('\u0007');
+  });
+
+  test('treats empty/null release_date as absent without marking the catalog partial', () => {
+    const result = projectProviderCatalog({
+      providers: [{
+        id: 'provider',
+        name: 'Provider',
+        models: {
+          model: { id: 'model', name: 'Model', release_date: '' },
+          nullable: { id: 'nullable', name: 'Nullable', release_date: null },
+          other: { id: 'other', name: 'Other', release_date: '2026-01-01' },
+        },
+      }],
+      default: { provider: 'model' },
+    });
+
+    expect(result.partial).toBe(false);
+    expect(result.providers[0].models.model).toEqual({ id: 'model', name: 'Model' });
+    expect(result.providers[0].models.nullable).toEqual({ id: 'nullable', name: 'Nullable' });
+    expect(result.providers[0].models.other).toEqual({
+      id: 'other',
+      name: 'Other',
+      release_date: '2026-01-01',
+    });
   });
 });

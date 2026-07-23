@@ -5,7 +5,7 @@ agent: build
 
 You are releasing OpenChamber from this repository. Follow @docs/RELEASING.md and treat @.github/workflows/release.yml as the authoritative workflow contract.
 
-Arguments: `$ARGUMENTS`
+Arguments: `$ARGUMENTS.opencode/commands/release.md`
 
 Accept an optional semantic version in `X.Y.Z` or `X.Y.Z-prerelease.N` form, followed by an optional `dry-run` token. When no version is provided, read the highest version from the five release manifests and increment its patch component by one. Proceed automatically with that version.
 

@@ -32,6 +32,7 @@ import { useDeviceInfo } from '@/lib/device';
 import { cn } from '@/lib/utils';
 import { useInputStore } from '@/sync/input-store';
 import { useUIStore } from '@/stores/useUIStore';
+import { attachmentCitationDisplay } from '@/composer/inline-visual';
 
 
 // Threshold (bytes) above which syntax highlighting is degraded for performance
@@ -607,7 +608,7 @@ export const PierreDiffViewer: React.FC<PierreDiffViewerProps> = ({
     const displayFileName = fileName.replace(/\\/g, '/').split('/').pop() || fileName;
     const attachmentLabel = `${displayFileName}:${lineRange}`;
     void addCodeSelectionAttachment(fileName, attachmentLabel, code);
-    setPendingInputText(`[${attachmentLabel}]`, 'append-inline');
+    setPendingInputText(attachmentCitationDisplay(attachmentLabel), 'append-inline');
     useUIStore.getState().setActiveMainTab('chat');
   }, [addCodeSelectionAttachment, fileDiff, fileName, modified, original, setPendingInputText]);
 

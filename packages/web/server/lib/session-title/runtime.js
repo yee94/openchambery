@@ -33,7 +33,8 @@ const TRANSCRIPT_ASSISTANT_CHAR_LIMIT = 1_200;
 /** Hard cap so long sessions / huge parts stay under small-model budget. */
 const TRANSCRIPT_MAX_CHARS = 20_000;
 const TITLE_CHAR_LIMIT = 80;
-const FETCH_TIMEOUT_MS = 5_000;
+/** OpenCode session/message HTTP timeout (GET + PATCH). Long sessions can be slow after idle. */
+const FETCH_TIMEOUT_MS = 30_000;
 
 const PARENT_TITLE_PREFIX = 'New session - ';
 const CHILD_TITLE_PREFIX = 'Child session - ';

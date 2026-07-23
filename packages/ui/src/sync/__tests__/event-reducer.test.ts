@@ -184,6 +184,41 @@ describe("applyDirectoryEvent", () => {
     expect(draft.session[0]?.title).toBe("New Title")
   })
 
+  test("never inserts SmartFetch secondary sessions into the live directory list", () => {
+    const draft = state({ session: [], sessionTotal: 0 })
+    const hidden = buildSession("smartfetch-secondary", { created: 1, updated: 2 })
+
+    expect(applyDirectoryEvent(draft, {
+      type: "session.created",
+      properties: { info: hidden },
+    } as Event)).toBe(false)
+    expect(draft.session).toEqual([])
+    expect(draft.sessionTotal).toBe(0)
+
+    expect(applyDirectoryEvent(draft, {
+      type: "session.updated",
+      properties: { info: hidden },
+    } as Event)).toBe(false)
+    expect(draft.session).toEqual([])
+    expect(draft.sessionTotal).toBe(0)
+  })
+
+  test("removes a previously visible session that becomes a SmartFetch secondary title", () => {
+    const draft = state({
+      session: [buildSession("visible", { created: 1, updated: 10 })],
+      sessionTotal: 1,
+    })
+
+    expect(applyDirectoryEvent(draft, {
+      type: "session.updated",
+      properties: {
+        info: buildSession("smartfetch-secondary", { created: 1, updated: 20 }),
+      },
+    } as Event)).toBe(true)
+    expect(draft.session).toEqual([])
+    expect(draft.sessionTotal).toBe(0)
+  })
+
   test("applies part update without materialization when owning message exists", () => {
     const draft = state({
       message: { ses_1: [{ id: "msg_1", sessionID: "ses_1", role: "assistant", time: { created: 1 } } as never] },

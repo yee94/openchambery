@@ -1,5 +1,7 @@
-import { activateMessageQueueImport, commitLateMessageQueueImport, fetchMessageQueueServerStatus, MessageQueueServerError, type MessageQueueServerStatus } from '@/lib/message-queue-server';
+import { activateMessageQueueImport, commitLateMessageQueueImport, MessageQueueServerError, type MessageQueueServerStatus } from '@/lib/message-queue-server';
+import { queryClient } from '@/lib/queryRuntime';
 import { getRuntimeGeneration, getRuntimeTransportIdentity, subscribeRuntimeEndpointChanged, isRuntimeEndpointIdentityChange } from '@/lib/runtime-switch';
+import { ensureMessageQueueStatus, refreshMessageQueueStatus } from '@/queries/messageQueueQueries';
 import { getMessageQueueRuntime, type MessageQueueRuntime } from './message-queue-runtime';
 import { createMessageQueueShadowImporter, type MessageQueueShadowImportState } from './message-queue-shadow-import';
 import { getMessageQueueServerRuntime, type MessageQueueServerSurface } from './message-queue-server-runtime';
@@ -11,8 +13,21 @@ export type MessageQueueOwnership = 'probing' | 'legacy-unsupported' | 'server-a
 export type MessageQueueMigration = 'idle' | 'freezing' | 'staging' | 'activating' | 'late-importing' | 'complete' | 'error';
 export type MessageQueueCutoverState = { ownership: MessageQueueOwnership; migration: MessageQueueMigration; frozen: boolean; admission: 'legacy' | 'server' | 'frozen'; status?: MessageQueueServerStatus; importState: MessageQueueShadowImportState; error?: unknown };
 type Capture = { transportIdentity: string; generation: number };
-type Dependencies = { server: MessageQueueServerSurface; queue: MessageQueueRuntime; status: typeof fetchMessageQueueServerStatus; activate: typeof activateMessageQueueImport; lateCommit: typeof commitLateMessageQueueImport; capture: () => Capture; current: (capture: Capture) => boolean; quiesce: () => Promise<void>; flush: () => Promise<void>; prepare: typeof prepareLegacyQueuesForCutover; resolveDirectory: (sessionID: string) => string | null | undefined };
-const defaults: Dependencies = { server: getMessageQueueServerRuntime(), queue: getMessageQueueRuntime(), status: fetchMessageQueueServerStatus, activate: activateMessageQueueImport, lateCommit: commitLateMessageQueueImport, capture: () => ({ transportIdentity: getRuntimeTransportIdentity(), generation: getRuntimeGeneration() }), current: (capture) => capture.transportIdentity === getRuntimeTransportIdentity() && capture.generation === getRuntimeGeneration(), quiesce: async () => { await quiesceQueuedMessageAutoSend(); }, flush: async () => { flushMessageQueuePersistence(); }, prepare: prepareLegacyQueuesForCutover, resolveDirectory: (sessionID) => useSessionUIStore.getState().getDirectoryForSession(sessionID) };
+type Dependencies = { server: MessageQueueServerSurface; queue: MessageQueueRuntime; status: (signal?: AbortSignal) => Promise<MessageQueueServerStatus>; activate: typeof activateMessageQueueImport; lateCommit: typeof commitLateMessageQueueImport; capture: () => Capture; current: (capture: Capture) => boolean; quiesce: () => Promise<void>; flush: () => Promise<void>; prepare: typeof prepareLegacyQueuesForCutover; resolveDirectory: (sessionID: string) => string | null | undefined };
+/** Status reads share Query in-flight with server-runtime refresh so cutover does not double-GET. */
+const defaults: Dependencies = {
+  server: getMessageQueueServerRuntime(),
+  queue: getMessageQueueRuntime(),
+  status: (signal) => ensureMessageQueueStatus(queryClient).then((value) => { if (signal?.aborted) throw new DOMException('Aborted', 'AbortError'); return value; }),
+  activate: activateMessageQueueImport,
+  lateCommit: commitLateMessageQueueImport,
+  capture: () => ({ transportIdentity: getRuntimeTransportIdentity(), generation: getRuntimeGeneration() }),
+  current: (capture) => capture.transportIdentity === getRuntimeTransportIdentity() && capture.generation === getRuntimeGeneration(),
+  quiesce: async () => { await quiesceQueuedMessageAutoSend(); },
+  flush: async () => { flushMessageQueuePersistence(); },
+  prepare: prepareLegacyQueuesForCutover,
+  resolveDirectory: (sessionID) => useSessionUIStore.getState().getDirectoryForSession(sessionID),
+};
 const initial = (): MessageQueueCutoverState => ({ ownership: 'probing', migration: 'idle', frozen: true, admission: 'frozen', importState: { status: 'idle', imported: 0, total: 0, issues: [], canActivate: false } });
 
 export type MessageQueueCutover = { subscribe(listener: () => void): () => void; getSnapshot(): MessageQueueCutoverState; start(): void; stop(): void; refresh(): Promise<MessageQueueCutoverState> };
@@ -48,7 +63,12 @@ export const createMessageQueueCutover = (overrides: Partial<Dependencies> = {})
   const refreshInner = async (): Promise<MessageQueueCutoverState> => {
     const capture = deps.capture(); controller?.abort(); controller = new AbortController();
     try {
-      await deps.server.refresh(); const status = await deps.status(controller.signal); if (!deps.current(capture)) return state;
+      // server.refresh already loads status into Query; ensureMessageQueueStatus
+      // reuses that warm cache (staleTime) instead of issuing a second network GET.
+      await deps.server.refresh();
+      if (!deps.current(capture) || controller.signal.aborted) return state;
+      const status = await deps.status(controller.signal);
+      if (!deps.current(capture) || controller.signal.aborted) return state;
       if (!status.capability) { blocked(new Error('capability-unavailable')); return state; }
       if (status.protocol !== undefined && status.protocol !== 4) { blocked(new Error('protocol-unsupported')); return state; }
       publish({ ownership: 'probing', migration: 'freezing', frozen: true, admission: 'frozen', status, error: undefined });
@@ -82,7 +102,7 @@ export const createMessageQueueCutover = (overrides: Partial<Dependencies> = {})
     } catch (error) {
       if (!deps.current(capture)) return;
       // A lost response is confirmed by the authority epoch and manifest on the next status read.
-      const confirmed = await deps.status(controller?.signal).catch(() => undefined);
+      const confirmed = await refreshMessageQueueStatus(queryClient).catch(() => undefined);
       if (confirmed?.manifestHash === imported.manifestHash && confirmed.activationEpoch !== undefined && (confirmed.authority === 'active' || confirmed.authority === 'paused')) { backoff = 500; publish({ ownership: confirmed.authority === 'paused' ? 'server-paused' : 'server-active', migration: 'complete', frozen: false, admission: 'server', status: confirmed, importState: { ...imported, activationEpoch: confirmed.activationEpoch } }); return; }
       if (confirmed?.authority === 'active' || confirmed?.authority === 'paused') {
         // Another client won activation. Re-capture the local ledger under server ownership and append it as late work.
@@ -92,7 +112,43 @@ export const createMessageQueueCutover = (overrides: Partial<Dependencies> = {})
       retryImport(capture, status, kind, imported, error);
     }
   };
-  return { subscribe: (listener) => { listeners.add(listener); return () => listeners.delete(listener); }, getSnapshot: () => state, start: () => { users++; if (users > 1) return; unsubscribe = subscribeRuntimeEndpointChanged((detail) => { if (isRuntimeEndpointIdentityChange(detail)) { controller?.abort(); publish(initial()); setTimeout(() => { void refresh(); }, 0); } }); void refresh(); }, stop: () => { users = Math.max(0, users - 1); if (users) return; controller?.abort(); controller = undefined; clearTimeout(retry); unsubscribe?.(); unsubscribe = undefined; }, refresh };
+  /** Delay teardown so React StrictMode cleanup+remount reuses the in-flight refresh. */
+  let stopTimer: ReturnType<typeof setTimeout> | undefined;
+  const hardStop = () => {
+    controller?.abort();
+    controller = undefined;
+    clearTimeout(retry);
+    retry = undefined;
+    unsubscribe?.();
+    unsubscribe = undefined;
+  };
+  return {
+    subscribe: (listener) => { listeners.add(listener); return () => listeners.delete(listener); },
+    getSnapshot: () => state,
+    start: () => {
+      users++;
+      if (stopTimer !== undefined) { clearTimeout(stopTimer); stopTimer = undefined; }
+      if (users > 1) return;
+      unsubscribe = subscribeRuntimeEndpointChanged((detail) => {
+        if (isRuntimeEndpointIdentityChange(detail)) {
+          controller?.abort();
+          publish(initial());
+          setTimeout(() => { void refresh(); }, 0);
+        }
+      });
+      void refresh();
+    },
+    stop: () => {
+      users = Math.max(0, users - 1);
+      if (users) return;
+      if (stopTimer !== undefined) clearTimeout(stopTimer);
+      stopTimer = setTimeout(() => {
+        stopTimer = undefined;
+        if (!users) hardStop();
+      }, 0);
+    },
+    refresh,
+  };
 };
 let singleton: MessageQueueCutover | undefined;
 export const getMessageQueueCutover = () => singleton ??= createMessageQueueCutover();

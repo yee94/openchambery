@@ -13,6 +13,7 @@ import {
     isGenericImageFilename,
     removeAttachmentCitations,
     resolveAttachmentCitationDeletion,
+    stripAttachmentCitationSlotsForDelivery,
 } from '../attachmentCitations';
 
 describe('attachment citations', () => {
@@ -51,8 +52,14 @@ describe('attachment citations', () => {
         expect(isGenericImageFilename('desktop_without_icons.jpg')).toBe(false);
     });
 
-    test('builds bracket citations', () => {
-        expect(buildAttachmentCitationText(['desktop.jpg', 'icon.png'])).toBe('[desktop.jpg] [icon.png]');
+    test('builds bracket citations with a reserved icon slot', () => {
+        expect(buildAttachmentCitationText(['desktop.jpg', 'icon.png'])).toBe('[\u2003desktop.jpg] [\u2003icon.png]');
+    });
+
+    test('strips reserved icon slots before delivery', () => {
+        expect(stripAttachmentCitationSlotsForDelivery(
+            'see [\u2003desktop.jpg] and [icon.png]',
+        )).toBe('see [desktop.jpg] and [icon.png]');
     });
 
     test('keeps code selections and image references inline while regular files stay in the attachment area', () => {
@@ -88,11 +95,28 @@ describe('attachment citations', () => {
         )).toEqual([{ start: 8, end: 21 }]);
     });
 
+    test('finds reserved-slot attachment citation ranges', () => {
+        expect(findAttachmentCitationRanges(
+            'see [\u2003desktop.jpg] and [desktop.jpg]',
+            ['desktop.jpg'],
+        )).toEqual([
+            { start: 4, end: 18 },
+            { start: 23, end: 36 },
+        ]);
+    });
+
     test('removes every citation for a removed attachment', () => {
         expect(removeAttachmentCitations(
             'compare [image-1.png] against [image-2.png], then revisit [image-1.png]',
             ['image-1.png'],
         )).toBe('compare against [image-2.png], then revisit');
+    });
+
+    test('removes reserved-slot citations for a removed attachment', () => {
+        expect(removeAttachmentCitations(
+            'compare [\u2003image-1.png] against [\u2003image-2.png]',
+            ['image-1.png'],
+        )).toBe('compare against [\u2003image-2.png]');
     });
 
     test('removes code-selection line suffixes from file-type icon paths', () => {
