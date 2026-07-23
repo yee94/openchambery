@@ -4,6 +4,15 @@ All notable changes to this project will be documented in this file.
 
 ## [Unreleased]
 
+## [1.16.59] - 2026-07-23
+
+- **Assistant history:** persist and page assistant-owned conversation archives across bindings, keep archived rows read-only, and avoid replacing a restorable transcript with a live-session load-failure wall.
+- **Assistant composer:** allow hosted secondary surfaces to send without waiting for a directory session-list row, and fall back from queue to steer when the server queue is legacy or frozen so share-busy turns stay sendable.
+- **OpenCode recovery:** recover stuck directory instances before turn admission when MCP probes report a poisoned instance that still returns prompt_async 204.
+- **Desktop Preview:** package side-by-side Preview builds with distinct app identity, PREVIEW icon, and isolated OpenChamber/OpenCode data so local QA no longer collides with the installed release app.
+- **Model labels:** humanize slug-style catalog names (for example DeepSeek-V4-Flash → DeepSeek V4 Flash) for consistent picker and header display.
+- **Desktop sidebar:** pin brand mark and global search above the scroll region when a brand is configured, and reserve no empty brand row when it is not.
+
 ## [1.16.58] - 2026-07-23
 
 - **Message headers:** show non-default thinking depth as a muted model-name suffix (same rule as the composer), and hide the default depth instead of rendering a separate brain badge.
