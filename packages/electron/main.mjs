@@ -18,6 +18,7 @@ import { assertUpdaterCapability } from './updater-capability.mjs';
 import { checkForDesktopUpdate } from './updater-check.mjs';
 import { checkMacOSReleaseUpdate } from './update-api.mjs';
 import { resolveUpdaterFeed } from './updater-feed.mjs';
+import { resolveQuitInterception } from './quit-confirmation.mjs';
 import { mintOutsideFileGrant } from '@openchamber/web/server/lib/fs/routes.js';
 
 const execFileAsync = promisify(execFile);
@@ -405,17 +406,17 @@ for (const signal of ['SIGINT', 'SIGTERM', 'SIGHUP']) {
 }
 
 const requestQuitWithConfirmation = async () => {
+  if (state.quitConfirmationPending) {
+    return;
+  }
+  state.quitConfirmationPending = true;
+
   await refreshQuitRiskFlags();
 
   if (!shouldRequireQuitConfirmation()) {
     void performConfirmedQuit();
     return;
   }
-
-  if (state.quitConfirmationPending) {
-    return;
-  }
-  state.quitConfirmationPending = true;
 
   const windows = BrowserWindow.getAllWindows().filter((window) => !window.isDestroyed());
   const visible = windows.find((window) => window.isVisible());
@@ -5052,9 +5053,18 @@ app.on('before-quit', (event) => {
     return;
   }
 
-  if (process.platform === 'darwin' && !state.quitConfirmed) {
+  const quitInterception = resolveQuitInterception({
+    platform: process.platform,
+    quitConfirmed: state.quitConfirmed,
+    quitConfirmationPending: state.quitConfirmationPending,
+  });
+  if (quitInterception !== 'continue') {
     event.preventDefault();
-    void requestQuitWithConfirmation();
+    if (quitInterception === 'confirm') {
+      void performConfirmedQuit();
+    } else {
+      void requestQuitWithConfirmation();
+    }
     return;
   }
 

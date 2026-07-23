@@ -192,8 +192,8 @@ describe('configCatalogQueries', () => {
     expect(queryClient.getQueryData(providerCatalogQueryOptions('/workspace/project', runtimeKey).queryKey)).toBe(undefined);
   });
 
-  test('parser keeps valid fixed modalities and model keys while marking every dropped allowlisted value partial', () => {
-    const parsed = parseProviderCatalog({
+  test('parser keeps valid fixed modalities and model keys; soft metadata strip is not partial, structural drops are', () => {
+    const softOnly = parseProviderCatalog({
       schemaVersion: 1,
       providers: [
         { id: 'safe', name: 'Safe', models: {
@@ -205,6 +205,25 @@ describe('configCatalogQueries', () => {
             release_date: ' invalid ',
             variants: { valid: {}, invalid: 'bad' },
           },
+        } },
+      ],
+      default: { safe: 'model' },
+      partial: false,
+    });
+    expect(softOnly.partial).toBe(false);
+    expect(Object.keys(softOnly.providers[0]!.models)).toEqual(['stable_key']);
+    expect(softOnly.providers[0]!.models.stable_key?.capabilities?.input).toEqual({ text: true, audio: false, image: true, video: false, pdf: true });
+    expect(softOnly.providers[0]!.models.stable_key?.cost).toEqual({ output: 1, cache: { write: 2 } });
+    expect(softOnly.providers[0]!.models.stable_key?.limit).toEqual({ output: 3 });
+    expect(softOnly.providers[0]!.models.stable_key?.release_date).toBe(undefined);
+    expect(softOnly.providers[0]!.models.stable_key?.variants).toEqual({ valid: {} });
+    expect(softOnly.default).toEqual({ safe: 'model' });
+
+    const structural = parseProviderCatalog({
+      schemaVersion: 1,
+      providers: [
+        { id: 'safe', name: 'Safe', models: {
+          stable_key: { id: 'model', name: 'Model' },
           duplicate_id: { id: 'model', name: 'Duplicate' },
           missing_name: { id: 'missing-name' },
           constructor: { id: 'dangerous-key', name: 'Dangerous key' },
@@ -215,11 +234,9 @@ describe('configCatalogQueries', () => {
       default: { constructor: 'model', safe: 'model' },
       partial: false,
     });
-    expect(parsed.partial).toBe(true);
-    expect(Object.keys(parsed.providers[0]!.models)).toEqual(['stable_key']);
-    expect(parsed.providers[0]!.models.stable_key?.capabilities?.input).toEqual({ text: true, audio: false, image: true, video: false, pdf: true });
-    expect(parsed.providers[0]!.models.stable_key?.cost).toEqual({ output: 1, cache: { write: 2 } });
-    expect(parsed.default).toEqual({ safe: 'model' });
+    expect(structural.partial).toBe(true);
+    expect(Object.keys(structural.providers[0]!.models)).toEqual(['stable_key']);
+    expect(structural.default).toEqual({ safe: 'model' });
 
     const nullPrototype = Object.assign(Object.create(null), { schemaVersion: 1, providers: [], default: {}, partial: false });
     expect(() => parseProviderCatalog(nullPrototype)).toThrow('Invalid provider catalog response');

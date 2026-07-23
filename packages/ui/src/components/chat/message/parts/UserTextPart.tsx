@@ -11,7 +11,11 @@ import { useEffectiveDirectory } from '@/hooks/useEffectiveDirectory';
 import { ensureOutsideFileGrantForDesktop } from '@/lib/outsideFileGrants';
 import { getDirectoryForFilePath, isFilePathWithinDirectory, normalizeFilePath } from '@/lib/path-utils';
 import { useI18n } from '@/lib/i18n';
-import { COMPOSER_TRIGGER_ICON_LABEL_GAP, COMPOSER_TRIGGER_ICON_SIZE_CLASS, COMPOSER_TRIGGER_ICON_SLOT } from '@/composer/inline-visual';
+import {
+    COMPOSER_TRIGGER_ICON_LABEL_GAP,
+    COMPOSER_TRIGGER_ICON_SIZE_CLASS,
+    COMPOSER_TRIGGER_ICON_SLOT,
+} from '@/composer/inline-visual';
 import { parseSessionMentionInstruction } from '@/composer/delivery';
 import { isSyntheticPart } from '@/lib/messages/synthetic';
 import { getAllSyncSessionMap } from '@/sync/sync-refs';
@@ -58,17 +62,22 @@ const MessageReferenceChip: React.FC<{
     const content = (
         <span className={cn(
             triggerIconSpec
-                ? 'mr-1 inline-flex shrink-0 items-center align-middle whitespace-nowrap'
+                ? 'mr-1 inline-flex shrink-0 items-center align-baseline whitespace-nowrap'
                 : 'inline-flex items-baseline gap-0.5 align-baseline',
             decoration.className,
+        // Match Composer overlay: fixed 1em well + shared optical gap before the label.
         )} style={triggerIconSpec ? { gap: COMPOSER_TRIGGER_ICON_LABEL_GAP } : undefined} data-message-reference-kind={decoration.kind}>
             {triggerIconSpec ? (
                 <>
-                    <Icon name={triggerIconSpec.icon as IconName} className={cn(COMPOSER_TRIGGER_ICON_SIZE_CLASS, 'shrink-0')} aria-hidden="true" />
+                    <span className={cn(COMPOSER_TRIGGER_ICON_SIZE_CLASS, 'inline-flex shrink-0 items-center justify-center')}>
+                        <Icon name={triggerIconSpec.icon as IconName} className="size-full" aria-hidden="true" />
+                    </span>
                     <span>{triggerIconSpec.label}</span>
                 </>
             ) : decoration.icon ? (
-                <Icon name={decoration.icon} className="relative top-[0.1em] size-[1em] shrink-0" aria-hidden="true" />
+                <span className="inline-flex size-[1em] shrink-0 items-center justify-center">
+                    <Icon name={decoration.icon} className="size-full" aria-hidden="true" />
+                </span>
             ) : null}
             {triggerIconSpec ? null : <span>{decoration.label}</span>}
         </span>

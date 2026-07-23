@@ -24,7 +24,13 @@ export const messageQueueScopeQueryOptions = (scopeID: string, revision: number,
 export const useMessageQueueStatusQuery = (enabled = true) => useQuery({ ...messageQueueStatusQueryOptions(), enabled });
 export const useMessageQueueSnapshotQuery = (enabled = true) => useQuery({ ...messageQueueSnapshotQueryOptions(), enabled });
 export const useMessageQueueScopeQuery = (scopeID: string, revision: number, enabled = true) => useInfiniteQuery({ ...messageQueueScopeQueryOptions(scopeID, revision), enabled: enabled && Boolean(scopeID) });
+export const readMessageQueueStatus = (client: Pick<QueryClient, 'getQueryData'> = queryClient, transport = getRuntimeTransportIdentity()): MessageQueueServerStatus | undefined => client.getQueryData(statusKey(transport));
 export const readMessageQueueSnapshot = (client: Pick<QueryClient, 'getQueryData'> = queryClient, transport = getRuntimeTransportIdentity()): MessageQueueSnapshot | undefined => client.getQueryData(snapshotKey(transport));
+/** Shared pull for status: concurrent callers share one in-flight Query fetch and honor staleTime. */
+export const ensureMessageQueueStatus = (client: Pick<QueryClient, 'fetchQuery'> = queryClient, transport = getRuntimeTransportIdentity()): Promise<MessageQueueServerStatus> => client.fetchQuery(messageQueueStatusQueryOptions(transport));
+/** Shared pull for snapshot catalog: concurrent runtime/cutover/worktree callers coalesce. */
+export const ensureMessageQueueSnapshot = (client: Pick<QueryClient, 'fetchQuery'> = queryClient, transport = getRuntimeTransportIdentity()): Promise<MessageQueueSnapshot> => client.fetchQuery(messageQueueSnapshotQueryOptions(transport));
+export const refreshMessageQueueStatus = async (client: Pick<QueryClient, 'fetchQuery'> = queryClient, transport = getRuntimeTransportIdentity()): Promise<MessageQueueServerStatus> => client.fetchQuery({ ...messageQueueStatusQueryOptions(transport), staleTime: 0 });
 export const refreshMessageQueueSnapshot = async (client: Pick<QueryClient, 'fetchQuery'> = queryClient, transport = getRuntimeTransportIdentity()): Promise<MessageQueueSnapshot> => client.fetchQuery({ ...messageQueueSnapshotQueryOptions(transport), staleTime: 0 });
 export const replaceMessageQueueScope = (client: Pick<QueryClient, 'setQueryData'>, scope: MessageQueueScope, transport = getRuntimeTransportIdentity()): void => {
   client.setQueryData<InfiniteData<MessageQueueScope, number>>(scopeKey(scope.scopeID, scope.revision, transport), { pages: [scope], pageParams: [0] });

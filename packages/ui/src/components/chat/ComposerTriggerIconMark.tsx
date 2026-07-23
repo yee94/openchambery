@@ -1,21 +1,19 @@
-import type { CSSProperties } from 'react';
 import { Icon } from '@/components/icon/Icon';
 import type { IconName } from '@/components/icon/icons';
 import {
     COMPOSER_TRIGGER_ICON_LABEL_GAP,
-    COMPOSER_TRIGGER_ICON_OPTICAL_NUDGE_Y,
     COMPOSER_TRIGGER_ICON_SIZE_CLASS,
     type ComposerTriggerIconVisual,
 } from '@/composer/inline-visual';
 
 /**
  * Shared textarea-overlay chip renderer.
- * Keeps trigger/suffix glyphs for metrics, paints the icon into the trigger slot,
- * and shows the label after the shared optical gap (reserved) or flush (compact).
+ * Keeps trigger/suffix glyphs for metrics and paints the icon into a fixed 1em×1em well.
  *
- * Avoid overflow clipping on the trigger box — a 1.125em icon needs slight vertical
- * overflow in a ~1em line, and clipping makes it look shifted up. Left spill is
- * prevented by reserved-slot end inset inside the `/`+em-space advance instead.
+ * The well is centered in the trigger run with equal left/right inset
+ * (`COMPOSER_TRIGGER_ICON_LABEL_GAP`). That keeps icon→label air and lead-in air
+ * balanced for every reserved chip (`[`/`@`/`/` + em-space), instead of pinning
+ * flush to one edge and leaving the opposite side empty or cramped.
  */
 export function ComposerTriggerIconMark({
     visual,
@@ -33,28 +31,22 @@ export function ComposerTriggerIconMark({
     const suffixText = text.slice(labelEnd, Math.min(suffixEnd, text.length));
     const remainder = text.slice(Math.min(suffixEnd, text.length));
 
-    const iconStyle: CSSProperties = {
-        top: '50%',
-        transform: visual.align === 'center'
-            ? `translate(-50%, calc(-50% + ${COMPOSER_TRIGGER_ICON_OPTICAL_NUDGE_Y}))`
-            : `translateY(calc(-50% + ${COMPOSER_TRIGGER_ICON_OPTICAL_NUDGE_Y}))`,
-        ...(visual.align === 'end'
-            ? { right: visual.slot === 'reserved' ? COMPOSER_TRIGGER_ICON_LABEL_GAP : 0 }
-            : { left: '50%' }),
-    };
-
     return (
         <>
-            <span className="relative inline-block align-middle text-transparent">
+            <span className="relative inline-block align-baseline text-transparent leading-none">
                 {visual.trigger}
-                <Icon
-                    name={visual.icon as IconName}
-                    className={`pointer-events-none absolute ${COMPOSER_TRIGGER_ICON_SIZE_CLASS} text-[var(--primary)]`}
-                    style={iconStyle}
-                    aria-hidden="true"
-                />
+                <span
+                    className="pointer-events-none absolute inset-y-0 inline-flex items-center justify-center"
+                    style={{ left: COMPOSER_TRIGGER_ICON_LABEL_GAP, right: COMPOSER_TRIGGER_ICON_LABEL_GAP }}
+                >
+                    <Icon
+                        name={visual.icon as IconName}
+                        className={`${COMPOSER_TRIGGER_ICON_SIZE_CLASS} shrink-0 text-[var(--primary)]`}
+                        aria-hidden="true"
+                    />
+                </span>
             </span>
-            <span className="align-middle">{labelText}</span>
+            <span>{labelText}</span>
             {suffixText ? <span className="text-transparent">{suffixText}</span> : null}
             {remainder ? <span className="text-transparent">{remainder}</span> : null}
         </>

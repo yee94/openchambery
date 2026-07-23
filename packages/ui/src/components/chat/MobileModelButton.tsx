@@ -1,7 +1,7 @@
 import React from 'react';
 import { cn } from '@/lib/utils';
 import type { DisplayProvider } from '@/lib/modelDisplay';
-import { getModelDisplayName } from './mobileControlsUtils';
+import { formatEffortLabel, getModelDisplayName } from './mobileControlsUtils';
 import { ModelLogo } from '@/components/ui/ModelLogo';
 import { useI18n } from '@/lib/i18n';
 
@@ -11,12 +11,24 @@ interface MobileModelButtonProps {
     providerID?: string;
     modelID?: string;
     provider?: DisplayProvider;
+    /** Non-default thinking variant; default/empty is hidden. */
+    variant?: string;
     disabled?: boolean;
 }
 
-export const MobileModelButton: React.FC<MobileModelButtonProps> = ({ onOpenModel, className, providerID, modelID, provider, disabled = false }) => {
+export const MobileModelButton: React.FC<MobileModelButtonProps> = ({
+    onOpenModel,
+    className,
+    providerID,
+    modelID,
+    provider,
+    variant,
+    disabled = false,
+}) => {
     const { t } = useI18n();
     const modelLabel = getModelDisplayName(provider, modelID, t('chat.modelControls.selectModel'));
+    const variantLabel = variant?.trim() ? formatEffortLabel(variant) : null;
+    const accessibleLabel = variantLabel ? `${modelLabel} ${variantLabel}` : modelLabel;
 
     return (
         <button
@@ -41,14 +53,19 @@ export const MobileModelButton: React.FC<MobileModelButtonProps> = ({ onOpenMode
                 className
             )}
             style={{ height: '26px', maxHeight: '26px', minHeight: '26px' }}
-            title={modelLabel}
-            aria-label={modelLabel}
+            title={accessibleLabel}
+            aria-label={accessibleLabel}
         >
             <span className="flex h-full w-full min-w-0 items-center gap-1">
                 {modelID || providerID ? (
                     <ModelLogo modelId={modelID} providerId={providerID} className="size-4 flex-shrink-0" />
                 ) : null}
-                <span className="truncate">{modelLabel}</span>
+                <span className="inline-flex min-w-0 items-center gap-1">
+                    <span className="truncate">{modelLabel}</span>
+                    {variantLabel ? (
+                        <span className="shrink-0 font-normal text-muted-foreground">{variantLabel}</span>
+                    ) : null}
+                </span>
             </span>
         </button>
     );

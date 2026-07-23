@@ -4,8 +4,9 @@ import { DRAFT_COMPOSER_TRIGGER_ICON_SLOT } from '@/sync/input-draft-types';
  * Metric-safe Composer chip visuals for the textarea highlight overlay.
  *
  * A controlled reference stores an em-space after its trigger. That source
- * glyph reserves the icon and label gap without changing textarea metrics.
- * Legacy or authored raw text renders with a full-size icon anchored to its trigger.
+ * glyph reserves a fixed 1em×1em icon well and label gap without changing
+ * textarea metrics. Legacy compact source text still paints the same well
+ * end-anchored to a narrow trigger (may overflow left).
  */
 export type ComposerTriggerIconAlign = 'center' | 'end';
 export type ComposerTriggerIconSlot = 'reserved' | 'compact';
@@ -31,17 +32,37 @@ export interface ComposerTriggerIconVisual {
 
 export const COMPOSER_TRIGGER_ICON_SLOT = DRAFT_COMPOSER_TRIGGER_ICON_SLOT;
 /**
- * Shared optical gap between the painted trigger icon and the visible label.
- * Composer reserved-slot overlays use this as the icon's end inset inside the
- * `/`+em-space advance. Sent-message chips use the same value as flex `gap`.
+ * Shared optical gap around the painted trigger icon.
+ * Composer overlays use this as equal left/right inset inside the trigger run
+ * so the fixed 1em well stays centered with the same air on both sides.
+ * Sent-message chips use the same value as flex `gap` after the well.
  */
-export const COMPOSER_TRIGGER_ICON_LABEL_GAP = '0.15em';
+export const COMPOSER_TRIGGER_ICON_LABEL_GAP = '0.2em';
 /** @deprecated Use COMPOSER_TRIGGER_ICON_LABEL_GAP — reserved-slot inset is the shared gap. */
 export const COMPOSER_TRIGGER_ICON_END_INSET = COMPOSER_TRIGGER_ICON_LABEL_GAP;
-/** Shared Composer + sent-message trigger-icon size (matches text em box). */
+/**
+ * Fixed icon well size shared by Composer overlay and sent-message chips.
+ * Always 1em×1em so every reference kind paints the same box, independent of
+ * trigger glyph width (`[`, `@`, `/`).
+ */
 export const COMPOSER_TRIGGER_ICON_SIZE_CLASS = 'size-[1em]';
-/** Small downward nudge from em-box center; keep near 0 so the icon stays with the text. */
-export const COMPOSER_TRIGGER_ICON_OPTICAL_NUDGE_Y = '0.02em';
+/** @deprecated Icon well is fixed and inset-centered; optical Y nudge is no longer applied. */
+export const COMPOSER_TRIGGER_ICON_OPTICAL_NUDGE_Y = '0';
+
+/** Strip a leading reserved icon slot from bracket/slash bodies when matching labels. */
+export const stripComposerTriggerIconSlot = (value: string): string => (
+    value.startsWith(COMPOSER_TRIGGER_ICON_SLOT) ? value.slice(COMPOSER_TRIGGER_ICON_SLOT.length) : value
+);
+
+/** Bracket citation display with a reserved em-space icon well: `[␠filename]`. */
+export const attachmentCitationDisplay = (filename: string): string => (
+    composerTriggerIconDisplay({
+        trigger: '[',
+        icon: 'file-image',
+        label: filename,
+        suffix: ']',
+    })
+);
 
 const sourceText = ({ trigger, label, suffix = '' }: Pick<ComposerTriggerIconSpec, 'trigger' | 'label' | 'suffix'>): string => (
     `${trigger}${label}${suffix}`

@@ -27,6 +27,7 @@ import { GoToLineDialog } from './GoToLineDialog';
 import { PreviewToggleButton } from './PreviewToggleButton';
 import { JsonTreeView } from '@/components/ui/JsonTreeView';
 import { SimpleMarkdownRenderer } from '@/components/chat/MarkdownRenderer';
+import { attachmentCitationDisplay } from '@/composer/inline-visual';
 import { languageByExtension, loadLanguageByExtension } from '@/lib/codemirror/languageByExtension';
 import { createFlexokiCodeMirrorTheme } from '@/lib/codemirror/flexokiTheme';
 import { shikiHighlightExtension } from '@/lib/codemirror/shikiHighlight';
@@ -2367,7 +2368,7 @@ export const FilesView: React.FC<FilesViewProps> = ({ mode = 'full', isActive = 
     const lineRange = startLine === endLine ? `${startLine}` : `${startLine}-${endLine}`;
     const attachmentLabel = `${selectedFile.name}:${lineRange}`;
     void addCodeSelectionAttachment(selectedFile.path, attachmentLabel, selectedText);
-    setPendingInputText(`[${attachmentLabel}]`, 'append-inline');
+    setPendingInputText(attachmentCitationDisplay(attachmentLabel), 'append-inline');
     setEditorSelectionPosition(null);
     useUIStore.getState().setActiveMainTab('chat');
   }, [addCodeSelectionAttachment, selectedFile, setPendingInputText]);
@@ -2381,7 +2382,7 @@ export const FilesView: React.FC<FilesViewProps> = ({ mode = 'full', isActive = 
     const lineRange = start === end ? `${start}` : `${start}-${end}`;
     const attachmentLabel = `${selectedFile.name}:${lineRange}`;
     void addCodeSelectionAttachment(selectedFile.path, attachmentLabel, selectedText);
-    setPendingInputText(`[${attachmentLabel}]`, 'append-inline');
+    setPendingInputText(attachmentCitationDisplay(attachmentLabel), 'append-inline');
     useUIStore.getState().setActiveMainTab('chat');
   }, [addCodeSelectionAttachment, draftContent, selectedFile, setPendingInputText]);
 

@@ -166,7 +166,7 @@ test('failed manual send reloads the authoritative scope instead of leaving an e
   expect(runtime.getScope({ transportIdentity: 'device-a', directory: '/repo', sessionID: 'session-a' })?.items.map((entry) => entry.queueItemID)).toEqual(['queue-a', 'queue-b']);
 });
 
-test('observer leading pull applies a newer snapshot after a tip without another wait', async () => {
+test('observer applies a newer snapshot after a tip without re-waiting mid-apply', async () => {
   const cache = new Map<string, unknown>();
   const client = { setQueryData: (key: readonly unknown[], value: unknown) => cache.set(JSON.stringify(key), value), getQueryData: <T>(key: readonly unknown[]) => cache.get(JSON.stringify(key)) as T | undefined, removeQueries: () => {}, invalidateQueries: async () => {} };
   let revision = 1;
@@ -192,8 +192,8 @@ test('observer leading pull applies a newer snapshot after a tip without another
   runtime.start();
   for (let i = 0; i < 100 && waits < 1; i++) await Promise.resolve();
   expect(waits).toBe(1);
-  // Server advanced while the observer was between applies; the next leading GET
-  // must clear the completed row when the tip wait unblocks.
+  // Server advanced while waiting on a tip; the post-tip snapshot GET must clear
+  // the completed row when the wait unblocks.
   revision = 2;
   releaseWait();
   for (let i = 0; i < 100 && (runtime.getScope({ transportIdentity: 'device-a', directory: '/repo', sessionID: 'session-a' })?.items.length ?? -1) !== 0; i++) await Promise.resolve();

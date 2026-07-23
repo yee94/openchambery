@@ -28,17 +28,15 @@ export type SessionIndexSnapshot = {
   directories: SessionIndexDirectory[];
 };
 
+/** Coalesce dense revision tips before the next full snapshot GET. */
+const SESSION_INDEX_TIP_DEBOUNCE_MS = 100;
+
 const ensureOk = async (response: Response): Promise<void> => {
   if (response.ok) return;
   throw new Error(`session index request failed (${response.status})`);
 };
 
-export const loadSessionIndexSnapshot = async (): Promise<SessionIndexSnapshot | null> => {
-  if (typeof window === 'undefined') return null;
-  const response = await runtimeFetch('/api/openchamber/session-index');
-  if (response.status === 501) return null;
-  await ensureOk(response);
-  const payload = await response.json() as Partial<SessionIndexSnapshot> & { available?: boolean };
+const parseSessionIndexSnapshot = (payload: Partial<SessionIndexSnapshot> & { available?: boolean }): SessionIndexSnapshot | null => {
   if (payload.available !== true || !Array.isArray(payload.directories)) return null;
   return {
     revision: typeof payload.revision === 'number' ? payload.revision : 0,
@@ -53,6 +51,30 @@ export const loadSessionIndexSnapshot = async (): Promise<SessionIndexSnapshot |
     },
     directories: payload.directories,
   };
+};
+
+let sessionIndexSnapshotInflight: Promise<SessionIndexSnapshot | null> | undefined;
+
+/**
+ * Authoritative session-index GET. Concurrent callers share one in-flight request
+ * so hydrate + tip consumers cannot fan out identical snapshots.
+ */
+export const loadSessionIndexSnapshot = async (): Promise<SessionIndexSnapshot | null> => {
+  if (typeof window === 'undefined') return null;
+  if (sessionIndexSnapshotInflight) return sessionIndexSnapshotInflight;
+  const flight = (async (): Promise<SessionIndexSnapshot | null> => {
+    const response = await runtimeFetch('/api/openchamber/session-index');
+    if (response.status === 501) return null;
+    await ensureOk(response);
+    const payload = await response.json() as Partial<SessionIndexSnapshot> & { available?: boolean };
+    return parseSessionIndexSnapshot(payload);
+  })();
+  // Clear by the shared promise identity (the finally-wrapped handle), not the raw flight.
+  const shared = flight.finally(() => {
+    if (sessionIndexSnapshotInflight === shared) sessionIndexSnapshotInflight = undefined;
+  });
+  sessionIndexSnapshotInflight = shared;
+  return shared;
 };
 
 export const startSessionIndexBackgroundSync = async (
@@ -72,6 +94,9 @@ export const startSessionIndexBackgroundSync = async (
 /**
  * Wait until a session-index tip arrives with revision > afterRevision, or the
  * OpenChamber event stream becomes ready (reconnect repair), or the signal aborts.
+ *
+ * Dense revision tips (server enrich/sync) are debounced so consumers issue one
+ * snapshot GET after the tip burst settles instead of one GET per tip.
  */
 export const waitForSessionIndexInvalidation = (
   afterRevision: number,
@@ -81,19 +106,33 @@ export const waitForSessionIndexInvalidation = (
     resolve('aborted');
     return;
   }
+  let debounceTimer: ReturnType<typeof setTimeout> | undefined;
+  let pendingReason: 'tip' | 'ready' | undefined;
   const finish = (reason: 'tip' | 'ready' | 'aborted') => {
+    if (debounceTimer !== undefined) clearTimeout(debounceTimer);
     unsubscribe();
     signal.removeEventListener('abort', onAbort);
     resolve(reason);
   };
+  const schedule = (reason: 'tip' | 'ready') => {
+    pendingReason = reason;
+    if (debounceTimer !== undefined) clearTimeout(debounceTimer);
+    debounceTimer = setTimeout(() => {
+      debounceTimer = undefined;
+      finish(pendingReason ?? reason);
+    }, SESSION_INDEX_TIP_DEBOUNCE_MS);
+  };
   const onAbort = () => finish('aborted');
   const unsubscribe = subscribeOpenchamberEvents((event) => {
     if (event.type === 'event-stream-ready') {
-      finish('ready');
+      // Reconnect repair: coalesce with any in-flight tip burst, otherwise wait
+      // the same quiet window so a ready edge mid-sync does not force an extra GET.
+      schedule('ready');
       return;
     }
     if (event.type === 'session-index-changed' && event.revision > afterRevision) {
-      finish('tip');
+      schedule('tip');
+      return;
     }
   });
   signal.addEventListener('abort', onAbort, { once: true });

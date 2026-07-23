@@ -7,7 +7,6 @@ import {
     DropdownMenu,
     DropdownMenuContent,
     DropdownMenuItem,
-    DropdownMenuLabel,
     DropdownMenuSeparator,
     DropdownMenuTrigger,
 } from '@/components/ui/dropdown-menu';
@@ -22,7 +21,6 @@ import type { IconName } from "@/components/icon/icons";
 import { ModelPickerList, type ModelPickerEntry, type ModelPickerProvider } from '@/components/model-picker/ModelPickerList';
 import { MobileModelPickerPanel } from '@/components/model-picker/MobileModelPickerPanel';
 import { useIsVSCodeRuntime } from '@/hooks/useRuntimeAPIs';
-import { isDesktopShell } from '@/lib/desktop';
 import { getAgentColor } from '@/lib/agentColors';
 import { useDeviceInfo } from '@/lib/device';
 import { mergeModelMetadataWithLiveModel } from '@/lib/modelMetadata';
@@ -44,7 +42,7 @@ import { getSessionMaterializationStatus } from '@/sync/materialization';
 import { useUIStore } from '@/stores/useUIStore';
 import { useModelLists } from '@/hooks/useModelLists';
 import { useIsTextTruncated } from '@/hooks/useIsTextTruncated';
-import { getCycledPrimaryAgentName, isPrimaryMode, resolveAgentModelSelection, type ControlledModelSelection, type MobileControlsPanel } from './mobileControlsUtils';
+import { formatEffortLabel, getCycledPrimaryAgentName, isPrimaryMode, resolveAgentModelSelection, type ControlledModelSelection, type MobileControlsPanel } from './mobileControlsUtils';
 import { getCurrentIntlLocale, useI18n } from '@/lib/i18n';
 import { useOpenCodeReadiness } from '@/hooks/useOpenCodeReadiness';
 import { eventMatchesShortcut, getEffectiveShortcutCombo, normalizeCombo } from '@/lib/shortcuts';
@@ -457,7 +455,6 @@ export const ModelControls: React.FC<ModelControlsProps> = ({
     // itself rendered null.
     const uiIsMobile = useUIStore((state) => state.isMobile);
     const isMobile = deviceIsMobile || uiIsMobile;
-    const isDesktop = React.useMemo(() => isDesktopShell(), []);
     const isVSCodeRuntime = useIsVSCodeRuntime();
     // Only use mobile panels on actual mobile devices, VSCode uses desktop dropdowns
     const isCompact = isMobile;
@@ -481,6 +478,7 @@ export const ModelControls: React.FC<ModelControlsProps> = ({
         closeMobilePanel();
     }, [setSelectedProvider, setSettingsPage, setSettingsDialogOpen, setAgentMenuOpen, closeMobilePanel]);
     const [desktopModelQuery, setDesktopModelQuery] = React.useState('');
+    const [desktopVariantTarget, setDesktopVariantTarget] = React.useState<ModelPickerEntry | null>(null);
     const [modelTooltipOpen, setModelTooltipOpen] = React.useState(false);
     const suppressModelTooltipUntilRef = React.useRef(0);
     const keyboardOwnsModelSelectionRef = React.useRef(false);
@@ -1308,33 +1306,6 @@ export const ModelControls: React.FC<ModelControlsProps> = ({
         manualVariantSelectionRef.current = false;
     }, [currentProviderId, currentModelId]);
 
-    const handleVariantSelect = React.useCallback((variant: string | undefined) => {
-        if (selectionAdapter) {
-            if (!currentProviderId || !currentModelId) {
-                return;
-            }
-            void selectionAdapter.onChange({
-                providerID: currentProviderId,
-                modelID: currentModelId,
-                agent: selectionAdapter.selection.agent,
-                variant,
-            }).catch(() => undefined);
-            return;
-        }
-        if (currentProviderId && currentModelId) {
-            commitVariantSelectionForModel(currentProviderId, currentModelId, variant);
-            const agentName = resolveLiveAgentName();
-            if (agentName) {
-                useConfigStore.getState().saveAgentModelSelection(
-                    agentName,
-                    currentProviderId,
-                    currentModelId,
-                    variant,
-                );
-            }
-        }
-    }, [commitVariantSelectionForModel, currentModelId, currentProviderId, resolveLiveAgentName, selectionAdapter]);
-
     const handleAgentChange = React.useCallback((agentName: string, options?: { closeModelSelector?: boolean }) => {
         if (selectionAdapter) {
             const nextSelection = resolveAgentModelSelection(selectionAdapter.selection, agentName, agents, providers);
@@ -1430,8 +1401,18 @@ export const ModelControls: React.FC<ModelControlsProps> = ({
     const handleProviderAndModelChange = (
         providerId: string,
         modelId: string,
-        options?: { applyVariant?: boolean; variant?: string | undefined; agentName?: string | null },
+        options?: {
+            applyVariant?: boolean;
+            variant?: string | undefined;
+            agentName?: string | null;
+            /** Skip open/close animation when dismissing after a pick. */
+            closeInstant?: boolean;
+        },
     ) => {
+        const closeModelMenu = () => {
+            setAgentMenuOpen(false, options?.closeInstant ? { instant: true } : undefined);
+        };
+
         if (selectionAdapter) {
             if (isCompact) closeMobilePanel();
             void selectionAdapter.onChange({
@@ -1441,7 +1422,7 @@ export const ModelControls: React.FC<ModelControlsProps> = ({
                 variant: options?.applyVariant ? options.variant : undefined,
             }).then(() => {
                 addRecentModel(providerId, modelId);
-                setAgentMenuOpen(false);
+                closeModelMenu();
             }).catch(() => undefined);
             return;
         }
@@ -1468,7 +1449,7 @@ export const ModelControls: React.FC<ModelControlsProps> = ({
                 // Add to recent models on successful selection.
                 addRecentModel(providerId, modelId);
             }
-            setAgentMenuOpen(false);
+            closeModelMenu();
             if (isCompact) {
                 closeMobilePanel();
             }
@@ -1494,7 +1475,7 @@ export const ModelControls: React.FC<ModelControlsProps> = ({
 
     const currentModelDisplayName = getCurrentModelDisplayName();
     const modelLabelRef = React.useRef<HTMLSpanElement>(null);
-    const isModelLabelTruncated = useIsTextTruncated(modelLabelRef, [currentModelDisplayName, isCompact]);
+    const isModelLabelTruncated = useIsTextTruncated(modelLabelRef, [currentModelDisplayName, currentVariant, isCompact]);
 
     const getAgentDisplayName = () => {
         if (!uiAgentName) {
@@ -2020,8 +2001,28 @@ export const ModelControls: React.FC<ModelControlsProps> = ({
             setModelTooltipOpen(false);
             if (!nextOpen) {
                 suppressModelTooltipUntilRef.current = performance.now() + 200;
+                setDesktopVariantTarget(null);
+                setDesktopModelQuery('');
             }
             setAgentMenuOpen(nextOpen);
+        };
+
+        const formatVariantLabel = (variant: string | undefined) => {
+            if (!variant?.trim()) return t('chat.modelControls.default');
+            return formatEffortLabel(variant);
+        };
+
+        const handleDesktopVariantSelect = (entry: ModelPickerEntry, variant: string | undefined) => {
+            // Keep the variant view mounted while closing — clearing target first
+            // would flash the model list before the menu dismisses. closeInstant
+            // skips the popover exit scale/opacity animation entirely.
+            const effectiveAgentName = resolveLiveAgentName();
+            handleProviderAndModelChange(entry.providerID, entry.modelID, {
+                applyVariant: true,
+                variant,
+                agentName: effectiveAgentName,
+                closeInstant: true,
+            });
         };
 
         const handleModelTooltipOpenChange = (nextOpen: boolean) => {
@@ -2047,25 +2048,143 @@ export const ModelControls: React.FC<ModelControlsProps> = ({
             costPerMillion: t('chat.modelControls.costPerMillion'),
         };
 
-        const renderThinkingSlot = (entry: ModelPickerEntry, { isHighlighted, isSelected }: { isHighlighted: boolean; isSelected: boolean }) => {
-            const hasThinkingVariants = getModelVariantOptions(entry.providerID, entry.modelID).length > 0;
-            const mapKey = buildModelRefKey(entry.providerID, entry.modelID);
-            const wasAdjusted = adjustedThinkingModels.has(mapKey);
-            if (!hasThinkingVariants || (!isHighlighted && !isSelected)) return null;
+        const renderThinkingSlot = (entry: ModelPickerEntry, { isSelected }: { isHighlighted: boolean; isSelected: boolean }) => {
+            const variantOptions = getModelVariantOptions(entry.providerID, entry.modelID);
+            if (variantOptions.length === 0) return null;
 
+            const mapKey = buildModelRefKey(entry.providerID, entry.modelID);
             const hasPendingVariant = pendingThinkingVariants.has(mapKey);
             const pendingVariant = pendingThinkingVariants.get(mapKey);
             const effectiveVariant = hasPendingVariant ? pendingVariant : (isSelected ? currentVariant : undefined);
-            const displayLabel = effectiveVariant
-                ? effectiveVariant.charAt(0).toUpperCase() + effectiveVariant.slice(1)
-                : 'Default';
+            const wasAdjusted = adjustedThinkingModels.has(mapKey);
+            const hasActiveVariant = Boolean(wasAdjusted || effectiveVariant);
 
             return (
-                <span className={cn('typography-micro whitespace-nowrap', wasAdjusted ? 'text-foreground' : 'text-muted-foreground')}>
-                    Thinking: {displayLabel}
-                </span>
+                <button
+                    type="button"
+                    className={cn(
+                        'group/thinking flex shrink-0 items-center gap-0.5 rounded-md px-1.5 py-0.5 typography-micro font-medium transition-colors',
+                        hasActiveVariant
+                            ? 'text-foreground/80'
+                            : 'text-muted-foreground',
+                        'hover:bg-[color-mix(in_srgb,var(--surface-foreground)_6%,transparent)] hover:text-foreground',
+                    )}
+                    onClick={(event) => {
+                        event.preventDefault();
+                        event.stopPropagation();
+                        setDesktopVariantTarget(entry);
+                    }}
+                    aria-label={t('chat.modelControls.showThinkingModes')}
+                >
+                    <Icon name="brain-ai-3" className="size-3 opacity-70" />
+                    <span className="max-w-20 truncate">{formatVariantLabel(effectiveVariant)}</span>
+                    <Icon name="arrow-right-s" className="size-3 opacity-60 transition-transform group-hover/thinking:translate-x-px" />
+                </button>
             );
         };
+
+        const renderDesktopVariantPicker = () => {
+            if (!desktopVariantTarget) return null;
+
+            const variantOptions = getModelVariantOptions(
+                desktopVariantTarget.providerID,
+                desktopVariantTarget.modelID,
+            );
+            const mapKey = buildModelRefKey(desktopVariantTarget.providerID, desktopVariantTarget.modelID);
+            const hasPendingVariant = pendingThinkingVariants.has(mapKey);
+            const pendingVariant = pendingThinkingVariants.get(mapKey);
+            const isCurrentModel = desktopVariantTarget.providerID === currentProviderId
+                && desktopVariantTarget.modelID === currentModelId;
+            const selectedVariant = hasPendingVariant
+                ? pendingVariant
+                : (isCurrentModel ? currentVariant : undefined);
+            const targetModelLabel = getSharedModelDisplayName(
+                desktopVariantTarget.model,
+                desktopVariantTarget.modelID,
+                { maxLength: 40 },
+            );
+
+            return (
+                <div
+                    className="flex min-h-0 flex-1 flex-col"
+                    onKeyDownCapture={(event) => {
+                        if (event.key === 'Escape') {
+                            event.preventDefault();
+                            event.stopPropagation();
+                            setDesktopVariantTarget(null);
+                        }
+                    }}
+                >
+                    <div className="flex items-center gap-1.5 border-b border-border/40 px-1.5 py-1.5">
+                        <button
+                            type="button"
+                            className="flex size-7 shrink-0 items-center justify-center rounded-md text-muted-foreground transition-colors hover:bg-interactive-hover hover:text-foreground"
+                            onClick={() => setDesktopVariantTarget(null)}
+                            aria-label={t('header.actions.backAria')}
+                        >
+                            <Icon name="arrow-left" className="size-3.5" />
+                        </button>
+                        <div className="flex min-w-0 flex-1 items-center gap-1.5">
+                            <ModelLogo
+                                modelId={desktopVariantTarget.modelID}
+                                providerId={desktopVariantTarget.providerID}
+                                className="size-3.5 shrink-0"
+                            />
+                            <span className="truncate typography-meta font-medium text-foreground">
+                                {targetModelLabel}
+                            </span>
+                            <span aria-hidden="true" className="shrink-0 text-border">·</span>
+                            <span className="inline-flex shrink-0 items-center gap-1 typography-micro text-muted-foreground">
+                                <Icon name="brain-ai-3" className="size-3 opacity-70" />
+                                {t('chat.modelControls.thinking')}
+                            </span>
+                        </div>
+                    </div>
+                    <div className="flex flex-col gap-0.5 p-1" role="listbox" aria-label={t('chat.modelControls.thinking')}>
+                        {[undefined, ...variantOptions].map((option) => {
+                            const selected = option === selectedVariant || (!option && !selectedVariant);
+                            return (
+                                <button
+                                    key={option ?? '__default'}
+                                    type="button"
+                                    role="option"
+                                    aria-selected={selected}
+                                    className={cn(
+                                        'flex w-full items-center justify-between gap-2 rounded-md px-2 py-1.5 text-left typography-meta transition-colors',
+                                        selected
+                                            ? 'bg-interactive-selection text-interactive-selection-foreground'
+                                            : 'text-foreground hover:bg-interactive-hover/50',
+                                    )}
+                                    onClick={() => handleDesktopVariantSelect(desktopVariantTarget, option)}
+                                >
+                                    <span className={cn(
+                                        'truncate font-medium',
+                                        !option && !selected && 'text-muted-foreground',
+                                    )}>
+                                        {formatVariantLabel(option)}
+                                    </span>
+                                    {selected ? (
+                                        <Icon name="check" className="size-3.5 shrink-0 text-primary" />
+                                    ) : (
+                                        <span className="size-3.5 shrink-0" aria-hidden="true" />
+                                    )}
+                                </button>
+                            );
+                        })}
+                    </div>
+                    <div className="flex items-center gap-1.5 border-t border-border/40 px-2 py-1.5 typography-micro text-muted-foreground">
+                        <Kbd className="h-4 min-w-4 rounded-[3px] px-1 text-[10px] font-medium tracking-tight shadow-none">Esc</Kbd>
+                        <span>{t('header.actions.backAria')}</span>
+                        <span aria-hidden="true" className="text-border">·</span>
+                        <span>{t('chat.modelControls.keyboardHintThinking')}</span>
+                    </div>
+                </div>
+            );
+        };
+
+        const modelTriggerVariantLabel = currentVariant && hasVariants
+            ? formatEffortLabel(currentVariant)
+            : null;
 
         return (
             <Tooltip open={agentMenuOpen ? false : modelTooltipOpen} onOpenChange={handleModelTooltipOpenChange} delayDuration={600}>
@@ -2111,7 +2230,7 @@ export const ModelControls: React.FC<ModelControlsProps> = ({
                                     {isModelControlReady && (
                                         <span
                                             ref={modelLabelRef}
-                                            key={`${currentProviderId}-${currentModelId}`}
+                                            key={`${currentProviderId}-${currentModelId}-${currentVariant ?? ''}`}
                                             className={cn(
                                                 'model-controls__model-label overflow-hidden',
                                                 controlTextSize,
@@ -2119,8 +2238,13 @@ export const ModelControls: React.FC<ModelControlsProps> = ({
                                                 'max-w-[260px]'
                                             )}
                                         >
-                                            <span className={cn('marquee-text', isModelLabelTruncated && 'marquee-text--active')}>
-                                                {currentModelDisplayName}
+                                            <span className={cn('inline-flex min-w-0 items-center gap-1', isModelLabelTruncated && 'marquee-text marquee-text--active')}>
+                                                <span className="truncate">{currentModelDisplayName}</span>
+                                                {modelTriggerVariantLabel ? (
+                                                    <span className="shrink-0 font-normal text-muted-foreground">
+                                                        {modelTriggerVariantLabel}
+                                                    </span>
+                                                ) : null}
                                             </span>
                                         </span>
                                     )}
@@ -2137,63 +2261,73 @@ export const ModelControls: React.FC<ModelControlsProps> = ({
                             onKeyDownCapture={handleModelShortcutKeyDownCapture}
                             finalFocus={resolveComposerFinalFocus}
                         >
-                            <div className="p-1 border-b border-border/40">
-                                <button
-                                    type="button"
-                                    onClick={openAddProviderSettings}
-                                    className="typography-meta group flex w-full items-center gap-1 rounded-md px-2 py-1.5 cursor-pointer hover:bg-interactive-hover/50"
-                                >
-                                    <span className="flex size-4 items-center justify-center text-muted-foreground">
-                                        <Icon name="add" className="size-4 -mr-0.5" />
-                                    </span>
-                                    <span className="font-medium text-foreground">{t('chat.modelControls.addNewProvider')}</span>
-                                </button>
-                            </div>
-                            <ModelPickerList
-                                providers={providers as ModelPickerProvider[]}
-                                favoriteModels={favoriteModelsList}
-                                recentModels={recentModelsList}
-                                modelsMetadata={useConfigStore.getState().modelsMetadata}
-                                searchQuery={desktopModelQuery}
-                                onSearchQueryChange={setDesktopModelQuery}
-                                onSelect={handleSharedModelSelect}
-                                labels={modelPickerLabels}
-                                selectedModel={currentProviderId && currentModelId ? { providerID: currentProviderId, modelID: currentModelId } : null}
-                                hiddenModels={hiddenModels}
-                                onActiveKeyDown={handleModelPickerKeyDown}
-                                onActiveEntryChange={(entry) => { activeModelPickerEntryRef.current = entry; }}
-                                onVariantKey={handleThinkingVariantKey}
-                                isFavorite={(entry) => isFavoriteModel(entry.providerID, entry.modelID)}
-                                onToggleFavorite={(entry) => toggleFavoriteModel(entry.providerID, entry.modelID)}
-                                renderRowEnd={renderThinkingSlot}
-                                renderVersion={modelPickerRenderVersion}
-                                onReorderFavorite={(active, over) => reorderFavoriteModel(
-                                    active.providerID,
-                                    active.modelID,
-                                    over.providerID,
-                                    over.modelID,
-                                )}
-                                reorderFavoriteAriaLabel={t('chat.modelControls.reorderFavoriteAria')}
-                                reorderFavoriteTitle={t('chat.modelControls.reorderFavoriteTitle')}
-                                providerOrder={providerOrder}
-                                onReorderProvider={setProviderOrder}
-                                reorderProviderTitle={t('chat.modelControls.reorderProviderTitle')}
-                                footerContent={(activeEntry) => {
-                                    const activeHasThinkingVariants = activeEntry
-                                        ? getModelVariantOptions(activeEntry.providerID, activeEntry.modelID).length > 0
-                                        : false;
+                            {desktopVariantTarget ? renderDesktopVariantPicker() : (
+                                <>
+                                    <div className="p-1 border-b border-border/40">
+                                        <button
+                                            type="button"
+                                            onClick={openAddProviderSettings}
+                                            className="typography-meta group flex w-full items-center gap-1 rounded-md px-2 py-1.5 cursor-pointer hover:bg-interactive-hover/50"
+                                        >
+                                            <span className="flex size-4 items-center justify-center text-muted-foreground">
+                                                <Icon name="add" className="size-4 -mr-0.5" />
+                                            </span>
+                                            <span className="font-medium text-foreground">{t('chat.modelControls.addNewProvider')}</span>
+                                        </button>
+                                    </div>
+                                    <ModelPickerList
+                                        providers={providers as ModelPickerProvider[]}
+                                        favoriteModels={favoriteModelsList}
+                                        recentModels={recentModelsList}
+                                        modelsMetadata={useConfigStore.getState().modelsMetadata}
+                                        searchQuery={desktopModelQuery}
+                                        onSearchQueryChange={setDesktopModelQuery}
+                                        onSelect={handleSharedModelSelect}
+                                        labels={modelPickerLabels}
+                                        selectedModel={currentProviderId && currentModelId ? { providerID: currentProviderId, modelID: currentModelId } : null}
+                                        hiddenModels={hiddenModels}
+                                        onActiveKeyDown={handleModelPickerKeyDown}
+                                        onActiveEntryChange={(entry) => { activeModelPickerEntryRef.current = entry; }}
+                                        onVariantKey={handleThinkingVariantKey}
+                                        isFavorite={(entry) => isFavoriteModel(entry.providerID, entry.modelID)}
+                                        onToggleFavorite={(entry) => toggleFavoriteModel(entry.providerID, entry.modelID)}
+                                        renderRowEnd={renderThinkingSlot}
+                                        renderVersion={modelPickerRenderVersion}
+                                        onReorderFavorite={(active, over) => reorderFavoriteModel(
+                                            active.providerID,
+                                            active.modelID,
+                                            over.providerID,
+                                            over.modelID,
+                                        )}
+                                        reorderFavoriteAriaLabel={t('chat.modelControls.reorderFavoriteAria')}
+                                        reorderFavoriteTitle={t('chat.modelControls.reorderFavoriteTitle')}
+                                        providerOrder={providerOrder}
+                                        onReorderProvider={setProviderOrder}
+                                        reorderProviderTitle={t('chat.modelControls.reorderProviderTitle')}
+                                        footerContent={(activeEntry) => {
+                                            const activeHasThinkingVariants = activeEntry
+                                                ? getModelVariantOptions(activeEntry.providerID, activeEntry.modelID).length > 0
+                                                : false;
 
-                                    return (
-                                        <div className="flex items-center gap-x-2 whitespace-nowrap overflow-hidden">
-                                            <span>{t('chat.modelControls.keyboardHintNavigate')}</span>
-                                            <span>{t('chat.modelControls.keyboardHintSwitchAgent', { shortcut: 'Tab' })}</span>
-                                            {activeHasThinkingVariants ? <span>{t('chat.modelControls.keyboardHintThinking')}</span> : null}
-                                        </div>
-                                    );
-                                }}
-                                tooltipsEnabled={agentMenuOpen}
-                                onEscape={() => setAgentMenuOpen(false)}
-                            />
+                                            return (
+                                                <div className="flex items-center gap-x-2 whitespace-nowrap overflow-hidden">
+                                                    <span>{t('chat.modelControls.keyboardHintNavigate')}</span>
+                                                    <span>{t('chat.modelControls.keyboardHintSwitchAgent', { shortcut: 'Tab' })}</span>
+                                                    {activeHasThinkingVariants ? <span>{t('chat.modelControls.keyboardHintThinking')}</span> : null}
+                                                </div>
+                                            );
+                                        }}
+                                        tooltipsEnabled={agentMenuOpen && !desktopVariantTarget}
+                                        onEscape={() => {
+                                            if (desktopVariantTarget) {
+                                                setDesktopVariantTarget(null);
+                                                return;
+                                            }
+                                            setAgentMenuOpen(false);
+                                        }}
+                                    />
+                                </>
+                            )}
                         </DropdownMenuContent>
                     </DropdownMenu>
                 ) : (
@@ -2234,8 +2368,13 @@ export const ModelControls: React.FC<ModelControlsProps> = ({
                                         isMobile ? 'max-w-[120px]' : 'max-w-[220px]',
                                     )}
                                 >
-                                    <span className={cn('marquee-text', isModelLabelTruncated && 'marquee-text--active')}>
-                                        {currentModelDisplayName}
+                                    <span className={cn('inline-flex min-w-0 items-center gap-1', isModelLabelTruncated && 'marquee-text marquee-text--active')}>
+                                        <span className="truncate">{currentModelDisplayName}</span>
+                                        {modelTriggerVariantLabel ? (
+                                            <span className="shrink-0 font-normal text-muted-foreground">
+                                                {modelTriggerVariantLabel}
+                                            </span>
+                                        ) : null}
                                     </span>
                                 </span>
                             </>
@@ -2371,100 +2510,6 @@ export const ModelControls: React.FC<ModelControlsProps> = ({
                     )}
                 </div>
             </TooltipContent>
-        );
-    };
-
-    const renderVariantSelector = () => {
-        if (!isModelControlReady || !hasVariants) {
-            return null;
-        }
-
-        const displayVariant = currentVariant ?? t('chat.modelControls.default');
-        const isDefault = !currentVariant;
-        const colorClass = isDefault ? 'text-muted-foreground' : 'text-[color:var(--status-info)]';
-
-        if (isCompact) {
-            return (
-                <button
-                    type="button"
-                    onClick={() => setActiveMobilePanel('variant')}
-                    className={cn(
-                        'model-controls__variant-trigger transition-opacity min-w-0 focus:outline-none',
-                        'cursor-pointer',
-                        COMPOSER_TRIGGER_CHROME_CLASS,
-                    )}
-                >
-                    <Icon name="brain-ai-3" className={cn(controlIconSize, 'flex-shrink-0', colorClass)} />
-                    <span className={cn(
-                        'model-controls__variant-label',
-                        controlTextSize,
-                        'font-medium truncate min-w-0',
-                        isMobile && 'max-w-[60px]',
-                        colorClass
-                    )}>
-                        {displayVariant}
-                    </span>
-                </button>
-            );
-        }
-
-        return (
-            <Tooltip delayDuration={600}>
-                <DropdownMenu>
-                    <TooltipTrigger asChild>
-                        <DropdownMenuTrigger asChild>
-                            <div
-                                className={cn(
-                                    'model-controls__variant-trigger transition-colors cursor-pointer min-w-0',
-                                    COMPOSER_TRIGGER_CHROME_CLASS,
-                                )}
-                            >
-                                <Icon name="brain-ai-3" className={cn(controlIconSize, 'flex-shrink-0', colorClass)} />
-                                <span
-                                    className={cn(
-                                        'model-controls__variant-label',
-                                        controlTextSize,
-                                        'font-medium min-w-0 truncate',
-                                        isDesktop ? 'max-w-[180px]' : undefined,
-                                        colorClass,
-                                    )}
-                                >
-                                    {displayVariant}
-                                </span>
-                            </div>
-                        </DropdownMenuTrigger>
-                    </TooltipTrigger>
-                    <DropdownMenuContent align="end" alignOffset={-40} className="w-[min(180px,calc(100vw-2rem))]">
-                        <DropdownMenuLabel className="typography-ui-header font-semibold text-foreground">{t('chat.modelControls.thinking')}</DropdownMenuLabel>
-                        <DropdownMenuItem className="typography-meta" onSelect={() => handleVariantSelect(undefined)}>
-                            <div className="flex items-center justify-between gap-2 w-full min-w-0">
-                                <span className="typography-meta font-medium text-foreground truncate min-w-0">{t('chat.modelControls.default')}</span>
-                                {isDefault && <Icon name="check" className="size-4 text-primary flex-shrink-0" />}
-                            </div>
-                        </DropdownMenuItem>
-                        {availableVariants.length > 0 && <DropdownMenuSeparator />}
-                        {availableVariants.map((variant) => {
-                            const selected = currentVariant === variant;
-                            const label = variant.charAt(0).toUpperCase() + variant.slice(1);
-                            return (
-                                <DropdownMenuItem
-                                    key={variant}
-                                    className="typography-meta"
-                                    onSelect={() => handleVariantSelect(variant)}
-                                >
-                                    <div className="flex items-center justify-between gap-2 w-full min-w-0">
-                                        <span className="typography-meta font-medium text-foreground truncate min-w-0">{label}</span>
-                                        {selected && <Icon name="check" className="size-4 text-primary flex-shrink-0" />}
-                                    </div>
-                                </DropdownMenuItem>
-                            );
-                        })}
-                    </DropdownMenuContent>
-                </DropdownMenu>
-                <TooltipContent side="top">
-                    <p className="typography-meta">Thinking: {displayVariant}</p>
-                </TooltipContent>
-            </Tooltip>
         );
     };
 
@@ -2661,7 +2706,6 @@ export const ModelControls: React.FC<ModelControlsProps> = ({
                     )}
                 >
                     {relocateDesktopAgent ? null : agentSelector}
-                    {renderVariantSelector()}
                     {renderModelSelector()}
                 </div>
             </div>

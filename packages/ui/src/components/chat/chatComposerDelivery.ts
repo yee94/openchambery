@@ -5,7 +5,11 @@ import { compileAuthoredDeliveryPlan, dedupeDeliveryAttachments } from '@/compos
 import type { ComposerReferenceSemantic } from '@/composer/extensions';
 import type { ComposerSendPlan } from '@/composer/send-plan';
 import { getSyncSessions } from '@/sync/sync-refs';
-import { expandCodeSelectionCitations, DIRECTORY_ATTACHMENT_MIME } from './attachmentCitations';
+import {
+    DIRECTORY_ATTACHMENT_MIME,
+    expandCodeSelectionCitations,
+    stripAttachmentCitationSlotsForDelivery,
+} from './attachmentCitations';
 import { collectSessionMentionIds, replaceSessionMentionTokens } from './fileMentionAutocompleteState';
 
 const INLINE_SKILL_TOKEN_PATTERN = /(^|\s)\/([a-z0-9](?:[a-z0-9-]{0,62}[a-z0-9])?)/g;
@@ -92,7 +96,12 @@ export const compileChatComposerDelivery = ({ plan, agents, installedSkillNames,
         const semantics = [...collectSkillSemantics(authored, installedSkillNames), ...collectSessionMentionIds(authored).map((sessionId) => ({ type: 'session' as const, sessionId }))];
         const attachments = extractInlineFileMentions({ text: agent.sanitizedText, root, confirmedFilePaths, confirmedDirectoryPaths, agentNames });
         return {
-            text: replaceSessionMentionTokens(expandCodeSelectionCitations(agent.sanitizedText, citationAttachments), labels),
+            text: replaceSessionMentionTokens(
+                stripAttachmentCitationSlotsForDelivery(
+                    expandCodeSelectionCitations(agent.sanitizedText, citationAttachments),
+                ),
+                labels,
+            ),
             agent: agent.mention?.name,
             attachments,
             semantics,

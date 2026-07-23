@@ -40,6 +40,8 @@ minutes per session.
      title as a loading state.
     - Call `generateSmallModelText` with a **bounded** transcript — never the
       full session history:
+      - OpenCode session/message fetches (GET + PATCH) use a 30s timeout so
+        long sessions that settle slowly after idle are less likely to abort.
       - Fetch only the latest ~16 messages (`limit` on OpenCode message API).
       - Keep the latest 5 user/assistant turns after the most recent
         compaction part (if any); content before compaction is ignored.

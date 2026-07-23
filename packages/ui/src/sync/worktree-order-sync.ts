@@ -1,7 +1,9 @@
 import React from 'react';
 
-import { fetchMessageQueueSnapshot, fetchWorktreeOrder, MessageQueueServerError, setWorktreeOrder, waitForMessageQueueInvalidation, type MessageQueueSnapshot, type WorktreeOrder } from '@/lib/message-queue-server';
+import { fetchWorktreeOrder, MessageQueueServerError, setWorktreeOrder, waitForMessageQueueInvalidation, type MessageQueueSnapshot, type WorktreeOrder } from '@/lib/message-queue-server';
+import { queryClient } from '@/lib/queryRuntime';
 import { getRuntimeGeneration, getRuntimeTransportIdentity, isRuntimeEndpointIdentityChange, subscribeRuntimeEndpointChanged } from '@/lib/runtime-switch';
+import { ensureMessageQueueSnapshot, refreshMessageQueueSnapshot } from '@/queries/messageQueueQueries';
 import { useProjectsStore } from '@/stores/useProjectsStore';
 import { registerWorktreeOrderWriter, useWorktreeOrderStore } from '@/stores/useWorktreeOrderStore';
 
@@ -11,6 +13,8 @@ export type WorktreeOrderRuntimeCapture = { transportIdentity: string; generatio
 type WorktreeOrderProject = { id: string; path: string };
 export type WorktreeOrderSyncDependencies = {
   fetchSnapshot: (signal?: AbortSignal) => Promise<MessageQueueSnapshot>;
+  /** Tip-driven re-read; defaults force a network GET so warm Query cache cannot hide order advances. */
+  refreshSnapshot?: (signal?: AbortSignal) => Promise<MessageQueueSnapshot>;
   fetchOrder: (directory: string, signal?: AbortSignal) => Promise<WorktreeOrder>;
   setOrder: (input: { requestID: string; projectDirectory: string; expectedRevision: number; orderedPaths: string[]; signal?: AbortSignal }) => Promise<{ revision: number; worktreeOrder?: WorktreeOrder }>;
   waitInvalidation: (revision: number, options: { signal?: AbortSignal }) => Promise<'tip' | 'ready' | 'aborted'>;
@@ -33,8 +37,18 @@ const sleep = (ms: number, signal: AbortSignal): Promise<void> => new Promise((r
   if (signal.aborted) onAbort(); else signal.addEventListener('abort', onAbort, { once: true });
 });
 
+const withAbort = <T>(promise: Promise<T>, signal?: AbortSignal): Promise<T> => promise.then((value) => {
+  if (signal?.aborted) throw new DOMException('Aborted', 'AbortError');
+  return value;
+});
+
 const defaults: WorktreeOrderSyncDependencies = {
-  fetchSnapshot: fetchMessageQueueSnapshot, fetchOrder: fetchWorktreeOrder, setOrder: setWorktreeOrder, waitInvalidation: waitForMessageQueueInvalidation,
+  // Share snapshot GETs with message-queue-server-runtime via TanStack Query.
+  fetchSnapshot: (signal) => withAbort(ensureMessageQueueSnapshot(queryClient), signal),
+  refreshSnapshot: (signal) => withAbort(refreshMessageQueueSnapshot(queryClient), signal),
+  fetchOrder: fetchWorktreeOrder,
+  setOrder: setWorktreeOrder,
+  waitInvalidation: waitForMessageQueueInvalidation,
   captureRuntime: () => ({ transportIdentity: getRuntimeTransportIdentity(), generation: getRuntimeGeneration() }),
   isCurrent: (capture) => capture.transportIdentity === getRuntimeTransportIdentity() && capture.generation === getRuntimeGeneration(),
   sleep,
@@ -141,7 +155,7 @@ export const createWorktreeOrderObserver = (projects: () => WorktreeOrderProject
         try {
           const reason = await dependencies.waitInvalidation(revision, { signal });
           if (signal.aborted || !dependencies.isCurrent(capture) || reason === 'aborted') return;
-          const snapshot = await dependencies.fetchSnapshot(signal);
+          const snapshot = await (dependencies.refreshSnapshot ?? dependencies.fetchSnapshot)(signal);
           if (signal.aborted || !dependencies.isCurrent(capture)) return;
           revision = snapshot.revision;
           applyOrders(snapshot.worktreeOrders, projects(), capture, dependencies);

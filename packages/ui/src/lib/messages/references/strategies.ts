@@ -1,4 +1,5 @@
 import { DRAFT_COMPOSER_TRIGGER_ICON_SLOT } from '@/sync/input-draft-types';
+import { stripComposerTriggerIconSlot } from '@/composer/inline-visual';
 import { buildAgentHref, buildSkillHref } from '@/lib/messages/inlineMessageLinks';
 import type {
     MessageReferenceDecoration,
@@ -172,7 +173,7 @@ export const citationReferenceStrategy: MessageReferenceStrategy = {
                 continue;
             }
 
-            const filename = text.slice(start + 1, end).trim();
+            const filename = stripComposerTriggerIconSlot(text.slice(start + 1, end)).trim();
             const key = normalizeFilenameKey(filename);
             const configured = context.citationIcons?.get(key);
             const inferredImage = !configured && IMAGE_FILENAME_PATTERN.test(filename);

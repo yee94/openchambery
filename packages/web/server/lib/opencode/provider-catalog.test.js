@@ -150,7 +150,36 @@ describe('projectProviderCatalog', () => {
     });
     expect(result.value.providers[0].models['gpt-5']).not.toHaveProperty('release_date');
     expect(Object.keys(result.value.default)).toHaveLength(100);
+    // Soft numeric/release stripping is not partial; dropped duplicate model/default overflow is.
     expect(result.value.partial).toBe(true);
+  });
+
+  it('soft-strips optional metadata without marking the catalog partial', () => {
+    const catalog = safeCatalog();
+    const model = catalog.providers[0].models['gpt-5'];
+    model.capabilities.input.file = true;
+    model.capabilities.temperature = 'yes';
+    model.cost.cache.read = Infinity;
+    model.limit.context = 'bad';
+    model.release_date = ' invalid ';
+
+    const result = projectProviderCatalog(catalog);
+    expect(result.ok).toBe(true);
+    expect(result.value.partial).toBe(false);
+    expect(result.value.providers[0].models['gpt-5']).toEqual({
+      id: 'gpt-5',
+      name: 'GPT 5',
+      capabilities: {
+        reasoning: false,
+        attachment: true,
+        toolcall: true,
+        input: { text: true, audio: false, image: true, video: false, pdf: true },
+        output: { text: true, audio: true, image: false, video: false, pdf: false },
+      },
+      cost: { input: 1, output: 2, cache: { write: 0.2 } },
+      limit: { output: 16000 },
+      variants: { low: {}, high: {} },
+    });
   });
 
   it('bounds provider, model, and variant dictionaries while retaining their valid prefixes', () => {
@@ -173,5 +202,21 @@ describe('projectProviderCatalog', () => {
     expect(Object.keys(result.value.providers[0].models)).toHaveLength(500);
     expect(Object.keys(result.value.providers[1].models.bounded.variants)).toHaveLength(100);
     expect(result.value.partial).toBe(true);
+  });
+
+  it('treats empty/null release_date as absent without marking the catalog partial', () => {
+    const catalog = safeCatalog();
+    catalog.providers[0].models['gpt-5'].release_date = '';
+    catalog.providers[0].models['gpt-6'] = {
+      id: 'gpt-6',
+      name: 'GPT 6',
+      release_date: null,
+    };
+
+    const result = projectProviderCatalog(catalog);
+    expect(result.ok).toBe(true);
+    expect(result.value.partial).toBe(false);
+    expect(result.value.providers[0].models['gpt-5']).not.toHaveProperty('release_date');
+    expect(result.value.providers[0].models['gpt-6']).toEqual({ id: 'gpt-6', name: 'GPT 6' });
   });
 });

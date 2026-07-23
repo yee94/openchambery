@@ -84,29 +84,35 @@ describe('buildHighlightParts', () => {
     });
 
     test('preserves image citation icon semantics through highlight segmentation', () => {
-        const parts = buildHighlightParts('[image-1.png] [selection.ts:1-2]', [
+        const imageSpec = { trigger: '[', icon: 'file-image', label: 'image-1.png', suffix: ']' };
+        const selectionSpec = { trigger: '[', icon: 'attachment-2', label: 'selection.ts:1-2', suffix: ']' };
+        const imageToken = composerTriggerIconDisplay(imageSpec);
+        const selectionToken = composerTriggerIconDisplay(selectionSpec);
+        const parts = buildHighlightParts(`${imageToken} ${selectionToken}`, [
             {
                 start: 0,
-                end: 13,
+                end: imageToken.length,
                 style: 'mentionFile',
-                visual: composerTriggerIconVisual(
-                    { trigger: '[', icon: 'file-image', label: 'image-1.png', suffix: ']' },
-                    '[image-1.png]',
-                ),
+                visual: composerTriggerIconVisual(imageSpec, imageToken),
             },
             {
-                start: 14,
-                end: 32,
+                start: imageToken.length + 1,
+                end: imageToken.length + 1 + selectionToken.length,
                 style: 'mentionFile',
-                visual: composerTriggerIconVisual(
-                    { trigger: '[', icon: 'attachment-2', label: 'selection.ts:1-2', suffix: ']' },
-                    '[selection.ts:1-2]',
-                ),
+                visual: composerTriggerIconVisual(selectionSpec, selectionToken),
             },
         ]);
 
-        expect([parts?.[0]?.visual?.label, parts?.[0]?.visual?.icon]).toEqual(['image-1.png', 'file-image']);
-        expect([parts?.[2]?.visual?.label, parts?.[2]?.visual?.icon]).toEqual(['selection.ts:1-2', 'attachment-2']);
+        expect([parts?.[0]?.visual?.label, parts?.[0]?.visual?.icon, parts?.[0]?.visual?.slot]).toEqual([
+            'image-1.png',
+            'file-image',
+            'reserved',
+        ]);
+        expect([parts?.[2]?.visual?.label, parts?.[2]?.visual?.icon, parts?.[2]?.visual?.slot]).toEqual([
+            'selection.ts:1-2',
+            'attachment-2',
+            'reserved',
+        ]);
     });
 
     test('uses one primary color for every composer reference kind', () => {

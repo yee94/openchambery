@@ -29,6 +29,7 @@ mock.module('@/lib/openchamberEvents', () => ({
 import { configureRuntimeUrlResolver, getRuntimeUrlResolver, setRuntimeUrlResolver } from './runtime-url';
 
 const {
+  loadSessionIndexSnapshot,
   startSessionIndexBackgroundSync,
   waitForSessionIndexInvalidation,
 } = await import('./session-index-api');
@@ -102,5 +103,34 @@ describe('session index background transport', () => {
     const aborted = waitForSessionIndexInvalidation(1, controller.signal);
     controller.abort();
     expect(await aborted).toBe('aborted');
+  });
+
+  test('debounces dense session-index tips into one wait resolution', async () => {
+    const pending = waitForSessionIndexInvalidation(1, new AbortController().signal);
+    emitTip({ type: 'session-index-changed', revision: 2, occurredAt: 1 });
+    emitTip({ type: 'session-index-changed', revision: 3, occurredAt: 2 });
+    emitTip({ type: 'session-index-changed', revision: 4, occurredAt: 3 });
+    expect(await pending).toBe('tip');
+  });
+
+  test('coalesces concurrent snapshot GETs then allows a later independent GET', async () => {
+    let loads = 0;
+    globalThis.fetch = async (input) => {
+      loads += 1;
+      const body = { available: true, ...payload, revision: loads };
+      return new Response(JSON.stringify(body), {
+        status: 200,
+        headers: { 'Content-Type': 'application/json' },
+      });
+    };
+    const first = loadSessionIndexSnapshot();
+    const second = loadSessionIndexSnapshot();
+    const [a, b] = await Promise.all([first, second]);
+    expect(loads).toBe(1);
+    expect(a?.revision).toBe(1);
+    expect(b?.revision).toBe(1);
+    const third = await loadSessionIndexSnapshot();
+    expect(loads).toBe(2);
+    expect(third?.revision).toBe(2);
   });
 });

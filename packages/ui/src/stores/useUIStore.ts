@@ -1956,6 +1956,9 @@ export const useUIStore = create<UIStore>()(
 
         setModelSelectorOpen: (open, options) => {
           // Opening the model picker closes the agent picker so only one stays open.
+          // On close, honor explicit instant so select→dismiss can skip exit animation.
+          // When instant is omitted, preserve the open-time flag through the closing render;
+          // ModelControls clears it in onOpenChangeComplete.
           set((state) => (open
             ? {
               isModelSelectorOpen: true,
@@ -1964,8 +1967,11 @@ export const useUIStore = create<UIStore>()(
             }
             : {
               isModelSelectorOpen: false,
-              // Preserve the source through the closing render; ModelControls clears it on rAF.
-              isModelSelectorInstant: options?.instant === false ? false : state.isModelSelectorInstant,
+              isModelSelectorInstant: options?.instant === true
+                ? true
+                : options?.instant === false
+                  ? false
+                  : state.isModelSelectorInstant,
             }));
         },
 

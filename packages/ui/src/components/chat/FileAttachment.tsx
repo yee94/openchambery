@@ -17,6 +17,7 @@ import {
   isDirectoryAttachmentMime,
   isDirectoryAttachmentPath,
 } from './attachmentCitations';
+import { attachmentCitationDisplay } from '@/composer/inline-visual';
 
 import type { ToolPopupContent } from './message/types';
 
@@ -492,7 +493,7 @@ export const ActiveEditorFileSuggestion = memo(() => {
 
   const handleAddFile = () => {
     addVSCodeFileAttachment(filePath, fileName, fileSize);
-    setPendingInputText(`[${fileName}]`, 'append-inline');
+    setPendingInputText(attachmentCitationDisplay(fileName), 'append-inline');
   };
 
   const handlePinSelection = async () => {
@@ -500,7 +501,7 @@ export const ActiveEditorFileSuggestion = memo(() => {
     const blob = new Blob([selection.text], { type: 'text/plain' });
     const file = new File([blob], selectionLabel, { type: 'text/plain' });
     await addVSCodeSelectionAttachment(filePath, file);
-    setPendingInputText(`[${selectionLabel}]`, 'append-inline');
+    setPendingInputText(attachmentCitationDisplay(selectionLabel), 'append-inline');
   };
 
   // If there is a selection, prefer showing the pin-selection UI only.

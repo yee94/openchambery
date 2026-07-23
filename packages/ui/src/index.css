@@ -815,18 +815,14 @@ html:not(.dark) .chat-scroll {
 }
 
 /* Model/agent controls: progressively collapse labels to icon-only as the row narrows.
-   Hide priority (most aggressive first → most resilient last): agent, variant, model. */
+   Hide priority (most aggressive first → most resilient last): agent, then model.
+   Thinking variants are no longer a separate composer control — they show as a muted
+   suffix on the model label when non-default. */
 
 /* Desktop (non-VSCode): pick thresholds that fire BEFORE the per-label `max-w-[Xpx]`
    constraints would truncate text with an ellipsis. */
 @container model-controls (max-width: 22rem) {
   :root:not(.vscode-runtime) .model-controls__agent-label {
-    display: none;
-  }
-}
-
-@container model-controls (max-width: 14rem) {
-  :root:not(.vscode-runtime) .model-controls__variant-label {
     display: none;
   }
 }
@@ -840,12 +836,6 @@ html:not(.dark) .chat-scroll {
 /* VS Code side panel: tighter thresholds since the panel is narrow and labels are smaller. */
 @container model-controls (max-width: 11rem) {
   :root.vscode-runtime .model-controls__agent-label {
-    display: none;
-  }
-}
-
-@container model-controls (max-width: 9rem) {
-  :root.vscode-runtime .model-controls__variant-label {
     display: none;
   }
 }
