@@ -72,6 +72,57 @@ Build output goes to `packages/electron/dist`.
 
 macOS builds produce `dmg` and `zip` artifacts. Windows builds produce an NSIS installer. Linux builds produce an AppImage for the native x64 or arm64 host.
 
+### Desktop profiles (release vs preview)
+
+Packaging is profile-driven via `OPENCHAMBER_DESKTOP_PROFILE`. The default is **`release`**, which is what CI and `bun run electron:build` use. Nothing about preview is hardcoded into the production identity.
+
+| Profile | How to build | Output | Identity |
+|---|---|---|---|
+| `release` (default) | `bun run electron:build` | `packages/electron/dist/` | `OpenChamber` / `dev.openchamber.desktop` |
+| `preview` | `bun run electron:build:preview` | `packages/electron/dist-preview/` | `OpenChamber Preview` / `dev.openchamber.desktop.preview` |
+
+#### Local builds should use Preview
+
+When packaging Desktop **on a developer machine** (feature QA, assistant work, side-by-side with a store/installed app), use:
+
+```bash
+bun run electron:build:preview
+```
+
+Do **not** use plain `bun run electron:build` for routine local installs: that produces a release-identity app that collides with the production install (same `appId` / product name / single-instance lock) and can overwrite the same dock identity.
+
+CI / GitHub Release workflows keep using the default release profile (`electron:build` / `electron-builder` without `OPENCHAMBER_DESKTOP_PROFILE`).
+
+Preview builds:
+
+- Use a **PREVIEW-badged dock/app icon** (`resources/icons/preview-icon.*`).
+- Keep a **separate userData / single-instance lock**, so they can run next to the installed release app.
+- Point **OpenChamber server data** at a profile-local directory (see isolation table below).
+- Are safe to merge to main: release CI does not set the env var, so it still packages the normal product.
+
+#### Runtime isolation (Preview vs installed release)
+
+| Concern | Isolated in Preview? | Location |
+|---|---|---|
+| Electron app identity / dock icon | Yes | product name + PREVIEW icon + `dev.openchamber.desktop.preview` |
+| Single-instance lock | Yes | separate `userData` |
+| OpenChamber server data (`settings.json`, `assistants.sqlite`, relay host claim, managed OpenCode bookkeeping, etc.) | Yes | `$userData/openchamber-data` via `OPENCHAMBER_DATA_DIR` |
+| Session index / message-queue SQLite | Yes | under Electron `userData` |
+| Desktop local HTTP port | Effectively yes | stored in profile settings; binds a free port if the preferred one is taken |
+| Managed OpenCode **process** | Yes (separate process + port) | spawned by that Desktop instance |
+| **OpenCode session DB** (`opencode.db`) | Yes | `$OPENCHAMBER_DATA_DIR/xdg-data/opencode` via `XDG_DATA_HOME` |
+| OpenCode config for that process | Yes (seeded once from shared) | `$OPENCHAMBER_DATA_DIR/xdg-config/opencode` via `XDG_CONFIG_HOME` |
+
+So: Preview must **not** load or mutate the release install’s OpenCode session store. On first Preview launch, provider `auth.json` and global OpenCode config are **copied once** into the isolated tree so models still work; later Preview sessions stay under the Preview XDG tree only.
+
+Regenerate preview icons after changing the production mark:
+
+```bash
+bun run --cwd packages/electron generate:preview-icons
+```
+
+Requires Pillow (`python3` + `PIL`) and, on macOS, `sips` + `iconutil`.
+
 ## Platform Notes
 
 macOS packaging needs Xcode/build tools for ad-hoc-signed builds and icon asset compilation. Ad-hoc signing requires no Apple account and keeps Apple Silicon executables runnable, but it is not Developer ID signing or notarization, so users must explicitly allow the app in macOS Privacy & Security on first launch.
@@ -128,6 +179,8 @@ Use an explicit override when testing a different OpenCode CLI build or when a u
 | `OPENCHAMBER_RUNTIME=desktop` | Set by Electron before starting the web server |
 | `OPENCHAMBER_OPENCODE_CLI_VERSION` | Optional packaging override for the bundled OpenCode CLI version; defaults to the pinned root `@opencode-ai/sdk` version |
 | `OPENCHAMBER_TARGET_ARCH` | Explicit desktop package architecture (`x64` or `arm64`); Linux requires it to match the native host |
+| `OPENCHAMBER_DESKTOP_PROFILE` | Packaging profile: unset/`release` (CI default) or `preview` (local side-by-side QA build; distinct identity, PREVIEW icon, isolated OpenChamber data dir). Prefer `bun run electron:build:preview` for local Desktop packages. |
+| `OPENCHAMBER_DATA_DIR` | OpenChamber server data root. Preview/dev set this under Electron `userData` when unset so they do not share `~/.config/openchamber` with the release app. |
 | `OPENCHAMBER_DESKTOP_NOTIFY=true` | Enables desktop notification flow in the web server |
 | `OPENCHAMBER_SKIP_API_COMPRESSION=true` | Defaulted by Desktop to reduce local CPU overhead |
 | `OPENCODE_HOST` / `OPENCODE_PORT` / `OPENCODE_SKIP_START` | Connect Desktop to an external OpenCode server instead of starting one locally |

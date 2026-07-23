@@ -908,6 +908,12 @@ function App({ apis }: AppProps) {
       return;
     }
 
+    // Always full-reload into main. During the chooser, initializeApp may already
+    // have finished (or short-circuited) before OpenCode was ready, leaving empty
+    // providers/agents. Soft-swapping bootView to main reuses that half-init shell.
+    // Reload re-runs initializeApp + SyncProvider bootstrap against a ready runtime.
+    // Packaged openchamber-ui reloads are allowed by will-navigate; init scripts
+    // are synced on desktop_hosts_set so the post-reload boot outcome is local/ok.
     window.location.reload();
   });
 

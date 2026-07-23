@@ -20,6 +20,13 @@ import { checkMacOSReleaseUpdate } from './update-api.mjs';
 import { resolveUpdaterFeed } from './updater-feed.mjs';
 import { resolveQuitInterception } from './quit-confirmation.mjs';
 import { mintOutsideFileGrant } from '@openchamber/web/server/lib/fs/routes.js';
+import {
+  UI_PROTOCOL,
+  isPackagedUiUrl,
+  packagedUiOrigin,
+  sameUrlIdentity,
+  urlIdentityKey,
+} from './url-identity.mjs';
 
 const execFileAsync = promisify(execFile);
 
@@ -28,11 +35,73 @@ const __dirname = path.dirname(__filename);
 const isDev = process.env.OPENCHAMBER_ELECTRON_DEV === '1' || !app.isPackaged;
 
 const DEEP_LINK_PROTOCOL = 'openchamber';
-const UI_PROTOCOL = 'openchamber-ui';
 const PACKAGED_APP_USER_MODEL_ID = 'dev.openchamber.desktop';
 const DEV_APP_USER_MODEL_ID = 'dev.openchamber.desktop.dev';
-const APP_USER_MODEL_ID = app.isPackaged ? PACKAGED_APP_USER_MODEL_ID : DEV_APP_USER_MODEL_ID;
+const PREVIEW_APP_USER_MODEL_ID = 'dev.openchamber.desktop.preview';
+// Build-time define from bundle-main.mjs (defaults to release when undefined).
+const BUILD_TIME_DESKTOP_PROFILE = typeof __OPENCHAMBER_DESKTOP_PROFILE__ === 'string'
+  ? __OPENCHAMBER_DESKTOP_PROFILE__
+  : null;
+// Side-by-side preview builds (distinct appId/productName) must not share the
+// production single-instance lock or userData, or they exit(0) while OpenChamber runs.
+const resolveDesktopProfileId = () => {
+  if (BUILD_TIME_DESKTOP_PROFILE === 'preview' || BUILD_TIME_DESKTOP_PROFILE === 'release') {
+    return BUILD_TIME_DESKTOP_PROFILE;
+  }
+  const envProfile = String(process.env.OPENCHAMBER_DESKTOP_PROFILE || '').trim().toLowerCase();
+  if (envProfile === 'preview' || envProfile === 'assistant-preview' || envProfile === 'assistant_preview') {
+    return 'preview';
+  }
+  if (envProfile === 'release' || envProfile === 'default' || envProfile === 'production') {
+    return 'release';
+  }
+  const initialName = typeof app.getName === 'function' ? app.getName() : '';
+  const haystack = `${initialName}\n${process.execPath || ''}`;
+  if (/openchamber[\s-]*preview/i.test(haystack) || /assistant[\s-]*preview/i.test(haystack)) {
+    return 'preview';
+  }
+  return 'release';
+};
+const desktopProfileId = resolveDesktopProfileId();
+const isPreviewDesktop = desktopProfileId === 'preview';
+const APP_USER_MODEL_ID = isDev
+  ? DEV_APP_USER_MODEL_ID
+  : isPreviewDesktop
+    ? PREVIEW_APP_USER_MODEL_ID
+    : PACKAGED_APP_USER_MODEL_ID;
 const BACKGROUND_START_ARG = '--background';
+
+/**
+ * Copy shared OpenCode auth/config into an isolated XDG tree once, so Preview
+ * can talk to providers without writing sessions into the release OpenCode DB.
+ * Existing isolated files are never overwritten.
+ */
+const seedSharedOpenCodeIntoIsolatedXdg = ({ xdgDataHome, xdgConfigHome }) => {
+  const copyFileIfMissing = (source, target) => {
+    if (!source || !target || !fs.existsSync(source) || fs.existsSync(target)) return;
+    fs.mkdirSync(path.dirname(target), { recursive: true });
+    fs.copyFileSync(source, target);
+  };
+  const copyDirIfMissing = (source, target) => {
+    if (!source || !target || !fs.existsSync(source) || fs.existsSync(target)) return;
+    fs.cpSync(source, target, { recursive: true, errorOnExist: false, force: false });
+  };
+  try {
+    const home = os.homedir();
+    // Auth + session-adjacent store OpenCode keeps under XDG_DATA_HOME/opencode.
+    copyFileIfMissing(
+      path.join(home, '.local', 'share', 'opencode', 'auth.json'),
+      path.join(xdgDataHome, 'opencode', 'auth.json'),
+    );
+    // Global OpenCode config (models, agents, plugins). Do not copy huge caches.
+    copyDirIfMissing(
+      path.join(home, '.config', 'opencode'),
+      path.join(xdgConfigHome, 'opencode'),
+    );
+  } catch {
+    // Best-effort seed; Preview can still prompt for providers if missing.
+  }
+};
 
 const getLoginItemOptions = () => {
   if (process.platform === 'win32') {
@@ -64,12 +133,43 @@ const shouldStartInBackground = (loginItemSettings = readLoginItemSettings()) =>
 
 // Set the product name early so electron-log derives its log directory as
 // ~/Library/Logs/OpenChamber/ (not ~/Library/Logs/@openchamber/electron/).
-app.setName('OpenChamber');
+// Preview builds keep a distinct name so SingletonLock/userData stay isolated.
+app.setName(isPreviewDesktop ? 'OpenChamber Preview' : 'OpenChamber');
 if (process.platform === 'linux') {
-  app.setDesktopName('openchamber.desktop');
+  app.setDesktopName(isPreviewDesktop ? 'openchamber-preview.desktop' : 'openchamber.desktop');
 }
 if (isDev) {
   app.setPath('userData', path.join(app.getPath('appData'), 'OpenChamber Dev'));
+} else if (isPreviewDesktop) {
+  app.setPath('userData', path.join(app.getPath('appData'), 'OpenChamber Preview'));
+}
+// Preview (and dev) must not share release-app state:
+// - OPENCHAMBER_DATA_DIR: assistants.sqlite, settings, relay claim, …
+// - XDG_*: managed OpenCode session DB (opencode.db), config, cache
+// Without XDG isolation, both apps talk to the same ~/.local/share/opencode
+// store and Preview sessions appear in the release sidebar (and vice versa).
+if (isPreviewDesktop || isDev) {
+  const isolatedRoot = path.join(app.getPath('userData'), 'openchamber-data');
+  if (!process.env.OPENCHAMBER_DATA_DIR?.trim()) {
+    process.env.OPENCHAMBER_DATA_DIR = isolatedRoot;
+  }
+  const dataDir = process.env.OPENCHAMBER_DATA_DIR;
+  if (!process.env.XDG_DATA_HOME?.trim()) {
+    process.env.XDG_DATA_HOME = path.join(dataDir, 'xdg-data');
+  }
+  if (!process.env.XDG_CONFIG_HOME?.trim()) {
+    process.env.XDG_CONFIG_HOME = path.join(dataDir, 'xdg-config');
+  }
+  if (!process.env.XDG_CACHE_HOME?.trim()) {
+    process.env.XDG_CACHE_HOME = path.join(dataDir, 'xdg-cache');
+  }
+  if (!process.env.OPENCHAMBER_MANAGED_PROCESS_REGISTRY?.trim()) {
+    process.env.OPENCHAMBER_MANAGED_PROCESS_REGISTRY = path.join(dataDir, 'managed-opencode');
+  }
+  seedSharedOpenCodeIntoIsolatedXdg({
+    xdgDataHome: process.env.XDG_DATA_HOME,
+    xdgConfigHome: process.env.XDG_CONFIG_HOME,
+  });
 }
 app.setAppUserModelId(APP_USER_MODEL_ID);
 app.commandLine.appendSwitch('proxy-bypass-list', '<-loopback>');
@@ -87,6 +187,8 @@ protocol.registerSchemesAsPrivileged([
 ]);
 
 if (!app.requestSingleInstanceLock()) {
+  // Silent exit is intentional for same-app second instances. Preview builds
+  // use a separate userData path so they no longer collide with production.
   app.exit(0);
   process.exit(0);
 }
@@ -1067,7 +1169,6 @@ const shouldUsePackagedUi = () => {
   if (process.env.OPENCHAMBER_ELECTRON_USE_BUNDLED_UI === '1') return true;
   return app.isPackaged;
 };
-const packagedUiOrigin = () => `${UI_PROTOCOL}://app`;
 const buildPackagedUiUrl = (pathname = '/index.html') => new URL(pathname, `${packagedUiOrigin()}/`).toString();
 
 const injectRuntimeConfigIntoHtml = (html) => {
@@ -1582,9 +1683,58 @@ const buildInitScript = (localOrigin, bootOutcome, apiBaseUrl = '', clientToken 
   const outcome = JSON.stringify(bootOutcome ?? null);
   return [
     '(function(){',
-    `try{var __oc_local=${local};var __oc_api=${apiBase};var __oc_headers=${headers};var __oc_packaged=${packagedOrigin};var __oc_origin=window.location&&window.location.origin||'';var __oc_is_packaged=__oc_origin===__oc_packaged;var __oc_is_local=__oc_local&&__oc_origin===new URL(__oc_local).origin;window.__OPENCHAMBER_MACOS_MAJOR__=${macVersion};window.__OPENCHAMBER_LOCAL_ORIGIN__=__oc_local;window.__OPENCHAMBER_API_BASE_URL__=__oc_api;if(__oc_is_local||__oc_is_packaged){window.__OPENCHAMBER_HOME__=${home};window.__OPENCHAMBER_RUNTIME_HEADERS__=__oc_headers;}if((__oc_is_local||__oc_is_packaged)&&${token}){window.__OPENCHAMBER_CLIENT_TOKEN__=${token};}var __oc_bo=${outcome};if(__oc_bo){window.__OPENCHAMBER_DESKTOP_BOOT_OUTCOME__=__oc_bo;}}catch(_e){}`,
+    `try{var __oc_local=${local};var __oc_api=${apiBase};var __oc_headers=${headers};var __oc_packaged=${packagedOrigin};var __oc_origin=window.location&&window.location.origin||'';var __oc_protocol=window.location&&window.location.protocol||'';var __oc_host=window.location&&window.location.hostname||'';var __oc_is_packaged=__oc_origin===__oc_packaged||__oc_protocol==='openchamber-ui:'||(__oc_protocol==='openchamber-ui:'&&__oc_host==='app');var __oc_is_local=false;try{__oc_is_local=!!(__oc_local&&__oc_origin===new URL(__oc_local).origin);}catch(_l){}window.__OPENCHAMBER_MACOS_MAJOR__=${macVersion};window.__OPENCHAMBER_LOCAL_ORIGIN__=__oc_local;window.__OPENCHAMBER_API_BASE_URL__=__oc_api;if(__oc_is_local||__oc_is_packaged){window.__OPENCHAMBER_HOME__=${home};window.__OPENCHAMBER_RUNTIME_HEADERS__=__oc_headers;}if((__oc_is_local||__oc_is_packaged)&&${token}){window.__OPENCHAMBER_CLIENT_TOKEN__=${token};}var __oc_bo=${outcome};if(__oc_bo){window.__OPENCHAMBER_DESKTOP_BOOT_OUTCOME__=__oc_bo;}}catch(_e){}`,
     '}())',
   ].join('');
+};
+
+/**
+ * Keep per-window init scripts aligned with the latest boot outcome.
+ *
+ * First-launch onboarding persists the local host choice via desktop_hosts_set,
+ * then reloads. If windows still hold a stale not-configured script, the reload
+ * re-injects the chooser and the UI never reaches main. Main windows follow
+ * state.initScript; mini-chat windows keep their runtime config but pick up the
+ * current bootOutcome.
+ */
+const syncWindowInitScriptsFromState = () => {
+  const localOrigin = state.localOrigin || state.sidecarUrl || '';
+  const mainScript = state.initScript || buildInitScript(
+    localOrigin,
+    state.bootOutcome,
+    state.apiBaseUrl || '',
+    state.clientToken || '',
+    state.requestHeaders || {},
+  );
+  if (!state.initScript) {
+    state.initScript = mainScript;
+  }
+
+  for (const browserWindow of BrowserWindow.getAllWindows()) {
+    if (!browserWindow || browserWindow.isDestroyed()) continue;
+    if (browserWindow.__ocMiniChat === true) {
+      const runtimeConfig = browserWindow.__ocRuntimeConfig || {};
+      browserWindow.__ocInitScript = buildInitScript(
+        localOrigin,
+        state.bootOutcome,
+        runtimeConfig.apiBaseUrl || state.apiBaseUrl || '',
+        runtimeConfig.clientToken || state.clientToken || '',
+        runtimeConfig.requestHeaders || state.requestHeaders || {},
+      );
+      continue;
+    }
+    browserWindow.__ocInitScript = mainScript;
+  }
+};
+
+/** Resolve the init script that should run for a given window on navigation. */
+const resolveWindowInitScript = (browserWindow) => {
+  if (browserWindow?.__ocMiniChat === true) {
+    return browserWindow.__ocInitScript || state.initScript;
+  }
+  // Prefer process-level state so reloads after desktop_hosts_set (first-launch
+  // local choice) never re-inject a stale not-configured boot outcome.
+  return state.initScript || browserWindow?.__ocInitScript || null;
 };
 
 const computeBootOutcome = ({ envTargetUrl, probe, config, localAvailable }) => {
@@ -2533,32 +2683,19 @@ const createBrowserWindow = ({ label, restoreGeometry, url, runtimeConfig = {} }
     try {
       const url = new URL(raw);
       if (url.protocol === 'devtools:') return true;
+      // Packaged UI: match host, not origin (origin is the string "null").
+      if (url.protocol === `${UI_PROTOCOL}:`) {
+        return isPackagedUiUrl(url)
+          || (state.localUiOrigin ? sameUrlIdentity(url, state.localUiOrigin) : false);
+      }
       if (url.protocol !== 'http:' && url.protocol !== 'https:') return false;
-      if (state.localOrigin) {
-        try {
-          if (new URL(state.localOrigin).origin === url.origin) return true;
-        } catch {
-        }
-      }
-      if (state.localUiOrigin) {
-        try {
-          if (new URL(state.localUiOrigin).origin === url.origin) return true;
-        } catch {
-        }
-      }
-      if (state.sidecarUrl) {
-        try {
-          if (new URL(state.sidecarUrl).origin === url.origin) return true;
-        } catch {
-        }
-      }
+      if (state.localOrigin && sameUrlIdentity(url, state.localOrigin)) return true;
+      if (state.localUiOrigin && sameUrlIdentity(url, state.localUiOrigin)) return true;
+      if (state.sidecarUrl && sameUrlIdentity(url, state.sidecarUrl)) return true;
       const hosts = readDesktopHostsConfig()?.hosts || [];
       for (const entry of hosts) {
         if (typeof entry?.url !== 'string') continue;
-        try {
-          if (new URL(entry.url).origin === url.origin) return true;
-        } catch {
-        }
+        if (sameUrlIdentity(url, entry.url)) return true;
       }
       return false;
     } catch {
@@ -2604,7 +2741,7 @@ const createBrowserWindow = ({ label, restoreGeometry, url, runtimeConfig = {} }
   });
 
   browserWindow.webContents.on('dom-ready', () => {
-    const initScript = browserWindow.__ocInitScript || state.initScript;
+    const initScript = resolveWindowInitScript(browserWindow);
     if (initScript) {
       void browserWindow.webContents.executeJavaScript(initScript).catch(() => {});
     }
@@ -2886,16 +3023,16 @@ const createMiniChatWindow = async ({ mode, sessionId = '', directory = '', proj
   });
   browserWindow.webContents.on('will-navigate', (event, url) => {
     try {
-      const target = new URL(url);
-      const local = new URL(shouldUsePackagedUi() ? packagedUiOrigin() : (state.localOrigin || state.sidecarUrl || ''));
-      if (target.origin === local.origin) return;
+      if (shouldUsePackagedUi() ? isPackagedUiUrl(url) : sameUrlIdentity(url, state.localOrigin || state.sidecarUrl || '')) {
+        return;
+      }
     } catch {
     }
     event.preventDefault();
     void shell.openExternal(url).catch(() => {});
   });
   browserWindow.webContents.on('dom-ready', () => {
-    const initScript = browserWindow.__ocInitScript || state.initScript;
+    const initScript = resolveWindowInitScript(browserWindow);
     if (initScript) {
       void browserWindow.webContents.executeJavaScript(initScript).catch(() => {});
     }
@@ -2955,12 +3092,15 @@ const resolveInitialUrl = async () => {
     ? hmrUiUrl
     : localUrl;
 
-  state.localUiOrigin = new URL(localUiUrl).origin;
+  // Never store URL.origin for openchamber-ui — it is the string "null".
+  state.localUiOrigin = shouldUsePackagedUi()
+    ? packagedUiOrigin()
+    : (urlIdentityKey(localUiUrl) || new URL(localUiUrl).origin);
 
   state.sidecarUrl = localUrl;
   const localAvailable = Boolean(localUrl);
 
-  const localOrigin = new URL(localUrl).origin;
+  const localOrigin = urlIdentityKey(localUrl) || new URL(localUrl).origin;
   let initialUrl = localUiUrl;
   let apiBaseUrl = localUrl;
   let clientToken = readDesktopLocalClientToken();
@@ -4027,6 +4167,23 @@ const handleInvoke = async (browserWindow, command, args = {}) => {
         localAvailable: Boolean(state.sidecarUrl || state.localOrigin),
       });
       state.initScript = buildInitScript(state.localOrigin, state.bootOutcome, state.apiBaseUrl, state.clientToken, state.requestHeaders || {});
+      // First-launch chooser reloads after this write. Stale per-window scripts
+      // would re-inject not-configured and trap the UI on onboarding forever.
+      syncWindowInitScriptsFromState();
+      // Await live inject so announceAvailable → soft main transition can read
+      // the updated __OPENCHAMBER_DESKTOP_BOOT_OUTCOME__ before hosts_set returns.
+      await Promise.all(
+        BrowserWindow.getAllWindows().map(async (browserWindow) => {
+          if (!browserWindow || browserWindow.isDestroyed()) return;
+          const script = resolveWindowInitScript(browserWindow);
+          if (!script) return;
+          try {
+            await browserWindow.webContents.executeJavaScript(script);
+          } catch {
+            // Window may be mid-navigation; next dom-ready still uses state.initScript.
+          }
+        }),
+      );
       log.info('[electron] hosts config updated, recomputed bootOutcome', state.bootOutcome);
       return null;
     }

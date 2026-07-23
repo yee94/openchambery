@@ -51,7 +51,9 @@ export const AssistantConversationSurface: React.FC<AssistantConversationSurface
     return directories;
   }, [historyEntries]);
   const fetchPreviousHistory = useEvent(async () => {
-    if (historyQuery.hasNextPage) await historyQuery.fetchNextPage();
+    if (historyQuery.hasNextPage || historyQuery.isFetchNextPageError) {
+      await historyQuery.fetchNextPage();
+    }
   });
   // Stateless turns cannot rewrite history; keep continuous Assistants mutable.
   const mutateSession = assistant.mode === 'continuous';
@@ -78,6 +80,11 @@ export const AssistantConversationSurface: React.FC<AssistantConversationSurface
     openSourceSession,
   }), [directory, mutateSession, onRevertMessage, openSourceSession, sessionID, surface.active, surface.surfaceID]);
 
+  // Terminal error: stop load-older from spinning forever. Background refetches
+  // must not flip loading (near-top controller). Only initial/next-page fetches load.
+  const historyComplete = historyQuery.isError || (historyQuery.isSuccess && !historyQuery.hasNextPage);
+  const historyLoading = historyQuery.isLoading || historyQuery.isFetchingNextPage;
+
   const host = React.useMemo<ChatContainerHost>(() => ({
     sessionId: sessionID,
     directory,
@@ -86,12 +93,12 @@ export const AssistantConversationSurface: React.FC<AssistantConversationSurface
     warning,
     assistantHistory: {
       entries: historyEntries,
-      complete: historyQuery.isSuccess && !historyQuery.hasNextPage,
-      loading: historyQuery.isFetching,
+      complete: historyComplete,
+      loading: historyLoading,
       fetchPrevious: fetchPreviousHistory,
     },
     onRevertMessage,
-  }), [directory, fetchPreviousHistory, historyEntries, historyQuery.hasNextPage, historyQuery.isFetching, historyQuery.isSuccess, onRevertMessage, sessionID, sessionSurface, surface, warning]);
+  }), [directory, fetchPreviousHistory, historyComplete, historyEntries, historyLoading, onRevertMessage, sessionID, sessionSurface, surface, warning]);
 
   return <ChatContainer autoOpenDraft={false} host={host} />;
 };

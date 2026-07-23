@@ -3,6 +3,8 @@ node_modules/
 
 # Electron build output
 dist/
+dist-preview/
+dist-assistant-preview/
 dist-bundle/
 
 # Generated packaging resources

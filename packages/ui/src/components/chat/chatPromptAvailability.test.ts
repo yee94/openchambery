@@ -1,6 +1,42 @@
 import { describe, expect, test } from 'bun:test';
 
-import { resolveChatPromptAvailability, resolveComposerActionAvailability } from './chatPromptAvailability';
+import { resolveChatPromptAvailability, resolveComposerActionAvailability, resolveSessionIdentityPending } from './chatPromptAvailability';
+
+describe('resolveSessionIdentityPending', () => {
+    test('blocks primary chat while the directory session entity is missing', () => {
+        expect(resolveSessionIdentityPending({
+            sessionId: 'ses_1',
+            hasSessionEntity: false,
+            composerSurfaceKind: 'primary',
+        })).toBe(true);
+        expect(resolveSessionIdentityPending({
+            sessionId: 'ses_1',
+            hasSessionEntity: false,
+        })).toBe(true);
+    });
+
+    test('does not block hosted Assistant secondary surfaces on a missing list entity', () => {
+        // Share/new rebinds often land before the managed workspace index has the row.
+        expect(resolveSessionIdentityPending({
+            sessionId: 'ses_share',
+            hasSessionEntity: false,
+            composerSurfaceKind: 'secondary',
+        })).toBe(false);
+        expect(resolveSessionIdentityPending({
+            sessionId: 'ses_share',
+            hasSessionEntity: true,
+            composerSurfaceKind: 'secondary',
+        })).toBe(false);
+    });
+
+    test('is not pending without a session id', () => {
+        expect(resolveSessionIdentityPending({
+            sessionId: null,
+            hasSessionEntity: false,
+            composerSurfaceKind: 'primary',
+        })).toBe(false);
+    });
+});
 
 describe('resolveChatPromptAvailability', () => {
     test('keeps the primary composer mounted while session identity is temporarily pending', () => {

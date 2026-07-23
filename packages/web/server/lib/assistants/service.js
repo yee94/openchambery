@@ -129,6 +129,12 @@ export const createAssistantsService = ({ dbPath, dataDir, buildOpenCodeUrl, get
     db.prepare('UPDATE assistant_message_mirror SET covered=0 WHERE assistant_id=? AND session_id=?').run(assistantID, sessionID);
     db.prepare('INSERT INTO assistant_message_backfill(assistant_id,session_id,cursor,complete,updated_at) VALUES (?,?,?,?,?) ON CONFLICT(assistant_id,session_id) DO UPDATE SET cursor=NULL,complete=0,updated_at=excluded.updated_at').run(assistantID, sessionID, null, 0, now());
   };
+  // Structural part deletes may leave a covered message incomplete; re-demand that session only.
+  // Do not blanket-uncover on ordinary message/part upserts — that blanks served history until re-backfill.
+  const invalidateMessageCoverage = (assistantID, sessionID, messageID) => {
+    db.prepare('UPDATE assistant_message_mirror SET covered=0 WHERE assistant_id=? AND session_id=? AND message_id=?').run(assistantID, sessionID, messageID);
+    db.prepare('INSERT INTO assistant_message_backfill(assistant_id,session_id,cursor,complete,updated_at) VALUES (?,?,?,?,?) ON CONFLICT(assistant_id,session_id) DO UPDATE SET cursor=NULL,complete=0,updated_at=excluded.updated_at').run(assistantID, sessionID, null, 0, now());
+  };
   const processEvent = (event) => {
     const payload = event?.payload?.payload ?? event?.payload ?? event;
     const properties = payload?.properties;
@@ -136,22 +142,22 @@ export const createAssistantsService = ({ dbPath, dataDir, buildOpenCodeUrl, get
     if (payload.type === 'message.updated') {
       const info = properties.info; const sessionID = info?.sessionID;
       if (!nonEmptyString(sessionID) || !plainObject(info)) return false;
-      const assistants = mappedAssistants(sessionID); for (const assistantID of assistants) { mirrorMessage(assistantID, sessionID, info); invalidateCoverage(assistantID, sessionID); } return assistants.length > 0;
+      const assistants = mappedAssistants(sessionID); for (const assistantID of assistants) mirrorMessage(assistantID, sessionID, info); return assistants.length > 0;
     }
     if (payload.type === 'message.part.updated') {
       const part = properties.part; const sessionID = properties.sessionID ?? part?.sessionID;
       if (!nonEmptyString(sessionID) || !plainObject(part)) return false;
-      const assistants = mappedAssistants(sessionID); for (const assistantID of assistants) { mirrorPart(assistantID, sessionID, part); invalidateCoverage(assistantID, sessionID); } return assistants.length > 0;
+      const assistants = mappedAssistants(sessionID); for (const assistantID of assistants) mirrorPart(assistantID, sessionID, part); return assistants.length > 0;
     }
     if (payload.type === 'message.removed') {
       const sessionID = properties.sessionID; const messageID = properties.messageID;
       if (!nonEmptyString(sessionID) || !nonEmptyString(messageID)) return false;
-      const assistants = mappedAssistants(sessionID); for (const assistantID of assistants) { db.prepare('DELETE FROM assistant_message_part_mirror WHERE assistant_id=? AND session_id=? AND message_id=?').run(assistantID, sessionID, messageID); db.prepare('DELETE FROM assistant_message_mirror WHERE assistant_id=? AND session_id=? AND message_id=?').run(assistantID, sessionID, messageID); invalidateCoverage(assistantID, sessionID); } return assistants.length > 0;
+      const assistants = mappedAssistants(sessionID); for (const assistantID of assistants) { db.prepare('DELETE FROM assistant_message_part_mirror WHERE assistant_id=? AND session_id=? AND message_id=?').run(assistantID, sessionID, messageID); db.prepare('DELETE FROM assistant_message_mirror WHERE assistant_id=? AND session_id=? AND message_id=?').run(assistantID, sessionID, messageID); } return assistants.length > 0;
     }
     if (payload.type === 'message.part.removed') {
       const sessionID = properties.sessionID; const messageID = properties.messageID ?? properties.part?.messageID; const partID = properties.partID ?? properties.part?.id;
       if (!nonEmptyString(sessionID) || !nonEmptyString(messageID) || !nonEmptyString(partID)) return false;
-      const assistants = mappedAssistants(sessionID); for (const assistantID of assistants) { db.prepare('DELETE FROM assistant_message_part_mirror WHERE assistant_id=? AND session_id=? AND message_id=? AND part_id=?').run(assistantID, sessionID, messageID, partID); invalidateCoverage(assistantID, sessionID); } return assistants.length > 0;
+      const assistants = mappedAssistants(sessionID); for (const assistantID of assistants) { db.prepare('DELETE FROM assistant_message_part_mirror WHERE assistant_id=? AND session_id=? AND message_id=? AND part_id=?').run(assistantID, sessionID, messageID, partID); invalidateMessageCoverage(assistantID, sessionID, messageID); } return assistants.length > 0;
     }
     return false;
   };
@@ -255,5 +261,21 @@ export const createAssistantsService = ({ dbPath, dataDir, buildOpenCodeUrl, get
     operation = db.prepare('SELECT * FROM assistant_share_operation WHERE operation_id=?').get(operationID); if (operation?.phase !== 'reserving') { const claimed = claim(operationID, operation?.state === 'failed'); if (claimed) await submitClaim(claimed); } return shareOperation(operationID); };
   const timer = setIntervalFn(() => { if (!closed) { db.prepare('DELETE FROM assistant_share_operation WHERE updated_at<?').run(now() - SHARE_RETENTION_MS); void reconcile(); } }, reconcileIntervalMs);
   void reconcile();
-  return { capability: async () => ({ supported: true, enabled: enabled(), revision: revision(), serverInstanceID: await getServerId() }), snapshot: () => ({ revision: revision(), enabled: enabled(), assistants: db.prepare('SELECT * FROM assistant_v2 WHERE tombstone_at IS NULL ORDER BY created_at').all().map(output) }), createAssistant, updateAssistant, setEnabled: (input) => { if (!plainObject(input) || typeof input.enabled !== 'boolean' || input.expectedRevision !== revision()) fail('revision_conflict'); db.prepare("UPDATE assistant_meta SET value=? WHERE key='enabled'").run(input.enabled ? '1' : '0'); return { enabled: input.enabled, revision: bump() }; }, removeAssistant: (assistantID, expectedRevision) => { const result = db.prepare('UPDATE assistant_v2 SET tombstone_at=?,revision=revision+1,updated_at=? WHERE assistant_id=? AND revision=? AND tombstone_at IS NULL').run(now(), now(), assistantID, expectedRevision); if (!result.changes) fail('revision_conflict'); db.prepare('DELETE FROM assistant_session_history WHERE assistant_id=?').run(assistantID); bump(); return { assistantID, tombstoneAt: now() }; }, ensure, createNew, compact, send, abort, captureQueueDeliveryTarget, sendWithCapturedConfig, share, shareOperation, historicalMessages, processEvent, close: () => { if (!closed) { closed = true; unsubscribeEvents?.(); clearIntervalFn(timer); db.close(); } } };
+  return { capability: async () => ({ supported: true, enabled: enabled(), revision: revision(), serverInstanceID: await getServerId() }), snapshot: () => ({ revision: revision(), enabled: enabled(), assistants: db.prepare('SELECT * FROM assistant_v2 WHERE tombstone_at IS NULL ORDER BY created_at').all().map(output) }), createAssistant, updateAssistant, setEnabled: (input) => { if (!plainObject(input) || typeof input.enabled !== 'boolean' || input.expectedRevision !== revision()) fail('revision_conflict'); db.prepare("UPDATE assistant_meta SET value=? WHERE key='enabled'").run(input.enabled ? '1' : '0'); return { enabled: input.enabled, revision: bump() }; }, removeAssistant: (assistantID, expectedRevision) => {
+    db.exec('BEGIN IMMEDIATE');
+    try {
+      const result = db.prepare('UPDATE assistant_v2 SET tombstone_at=?,revision=revision+1,updated_at=? WHERE assistant_id=? AND revision=? AND tombstone_at IS NULL').run(now(), now(), assistantID, expectedRevision);
+      if (!result.changes) fail('revision_conflict');
+      db.prepare('DELETE FROM assistant_session_history WHERE assistant_id=?').run(assistantID);
+      db.prepare('DELETE FROM assistant_message_part_mirror WHERE assistant_id=?').run(assistantID);
+      db.prepare('DELETE FROM assistant_message_mirror WHERE assistant_id=?').run(assistantID);
+      db.prepare('DELETE FROM assistant_message_backfill WHERE assistant_id=?').run(assistantID);
+      bump();
+      db.exec('COMMIT');
+      return { assistantID, tombstoneAt: now() };
+    } catch (error) {
+      db.exec('ROLLBACK');
+      throw error;
+    }
+  }, ensure, createNew, compact, send, abort, captureQueueDeliveryTarget, sendWithCapturedConfig, share, shareOperation, historicalMessages, processEvent, close: () => { if (!closed) { closed = true; unsubscribeEvents?.(); clearIntervalFn(timer); db.close(); } } };
 };

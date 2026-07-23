@@ -150,6 +150,8 @@ describe('Assistant UI product contract', () => {
     expect(chatContainer).toContain('if (props.host)');
     expect(chatContainer).toContain('HostedChatContainer');
     expect(chatContainer).toContain('<ChatInput surface={composerSurface}');
+    expect(chatContainer).toContain('resolveSessionIdentityPending');
+    expect(chatContainer).toContain("composerSurfaceKind: composerSurface?.kind");
     expect(chatContainer).toContain('<MessageList');
     expect(chatContainer).toContain('<QuestionCard');
     expect(chatContainer).toContain('<PermissionCard');
@@ -176,18 +178,25 @@ describe('Assistant UI product contract', () => {
   });
 
   test('loads Assistant history through the binding-scoped paged host', async () => {
-    const [conversation, chatContainer, hostedHistory] = await Promise.all([
+    const [conversation, chatContainer, hostedHistory, messageList] = await Promise.all([
       read('AssistantConversationSurface.tsx'),
       read('../chat/ChatContainer.tsx'),
       read('../chat/hostedSessionHistory.ts'),
+      read('../chat/MessageList.tsx'),
     ]);
     expect(conversation).toContain('useAssistantHistoryInfiniteQuery');
     expect(conversation).toContain('assistantHistory:');
     expect(conversation).toContain('fetchPrevious: fetchPreviousHistory');
+    expect(conversation).toContain('historyQuery.isLoading || historyQuery.isFetchingNextPage');
+    expect(conversation).toContain('historyQuery.isError || (historyQuery.isSuccess && !historyQuery.hasNextPage)');
     expect(chatContainer).toContain('await sync.loadMore(sessionId)');
     expect(chatContainer).toContain('await assistantHistory.fetchPrevious()');
+    expect(chatContainer).toContain('// Only page assistant-owned archives after live pagination is authoritative-complete.');
+    expect(chatContainer).toContain('historyPrefix.length === 0');
     expect(hostedHistory).not.toContain('ensureSessionRenderable');
     expect(hostedHistory).not.toContain('fetchMessagesForSession');
+    expect(messageList).toContain('compose: false');
+    expect(messageList).toContain('openTimeline: false');
   });
 
   test('builds an isolated secondary surface with committed selection and Assistant backend routes', async () => {

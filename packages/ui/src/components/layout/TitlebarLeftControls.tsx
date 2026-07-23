@@ -8,6 +8,7 @@ import { WindowsWindowControls } from '@/components/desktop/WindowsWindowControl
 import { formatShortcutForDisplay, getEffectiveShortcutCombo } from '@/lib/shortcuts';
 import { invokeDesktop, isDesktopShell, isVSCodeRuntime, isWebRuntime } from '@/lib/desktop';
 import { useDesktopWindowControlsLayout } from '@/hooks/useDesktopWindowControlsLayout';
+import { useSidebarBrandStore } from '@/stores/useSidebarBrandStore';
 import { SidebarBrandMark } from './SidebarBrandMark';
 import { GlobalSearchButton } from './GlobalSearchButton';
 
@@ -16,8 +17,14 @@ const ICON_BUTTON_CLASS =
 
 /**
  * Persistent top-left titlebar controls, with the Web wordmark sharing the
- * control row while the sidebar is open. Electron keeps global search here
- * while the sidebar is collapsed; the open sidebar renders it beside its brand.
+ * control row while the sidebar is open.
+ *
+ * Global search placement:
+ * - Web: always next to the sidebar collapse control (same row as brand when open).
+ * - Electron with a configured logo: in the fixed sidebar brand row while open;
+ *   falls back here while the sidebar is collapsed.
+ * - Electron without a logo: always here next to the collapse control (no empty
+ *   brand row is reserved in the sidebar).
  *
  * Rendered exactly once as an absolutely-positioned overlay above both the
  * sidebar and the header, so native titlebar controls stay fixed while the
@@ -33,12 +40,14 @@ export const TitlebarLeftControls: React.FC = () => {
   const sidebarWidth = useUIStore((state) => state.sidebarWidth);
   const toggleSidebar = useUIStore((state) => state.toggleSidebar);
   const shortcutOverrides = useUIStore((state) => state.shortcutOverrides);
+  const hasSidebarBrand = useSidebarBrandStore((state) => state.sidebarBrandName.trim().length > 0);
   const clusterRef = React.useRef<HTMLDivElement | null>(null);
 
   const toggleShortcut = formatShortcutForDisplay(getEffectiveShortcutCombo('toggle_sidebar', shortcutOverrides));
   const { usesFramelessChrome, side: windowControlsSide } = useDesktopWindowControlsLayout();
   const isDesktopShellRuntime = React.useMemo(() => isDesktopShell(), []);
-  const showGlobalSearchInTitlebar = !isDesktopShellRuntime || !isSidebarOpen;
+  // Electron only moves search into the sidebar when a brand/logo is shown there.
+  const showGlobalSearchInTitlebar = !isDesktopShellRuntime || !isSidebarOpen || !hasSidebarBrand;
   const usesWebSidebarHeader = React.useMemo(
     () => isWebRuntime() && !isDesktopShellRuntime && !isVSCodeRuntime(),
     [isDesktopShellRuntime],

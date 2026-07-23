@@ -319,4 +319,58 @@ describe('assistants service', () => {
     const restarted = setup(directory, { get: async () => ({ data: { directory: outside } }), messages: async (input) => { messages.push(input); return { data: [{ info: { id: 'msg_1', sessionID: input.sessionID, role: 'assistant', time: { created: 1 } }, parts: [] }], response: { headers: { get: () => null } } }; } });
     expect((await restarted.historicalMessages(assistant.id)).entries[0]).toMatchObject({ sessionID: first.sessionID, directory: null }); const historicalRequest = messages.find((input) => input.sessionID === first.sessionID); expect(historicalRequest).toMatchObject({ sessionID: first.sessionID }); expect(historicalRequest.directory).toBeUndefined(); const persisted = new Database(path.join(directory, 'assistants.sqlite')); expect(persisted.prepare('SELECT directory FROM assistant_session_history WHERE assistant_id=? AND session_id=?').get(assistant.id, first.sessionID).directory).toBeNull(); persisted.close(); restarted.close();
   });
+
+  it('keeps covered history visible across ordinary message events without re-backfill', async () => {
+    const directory = root(); let creates = 0; let calls = 0;
+    const service = setup(directory, {
+      create: async () => ({ data: { id: `ses_${++creates}` } }),
+      messages: async ({ sessionID }) => {
+        calls += 1;
+        return {
+          data: [{ info: { id: 'msg_1', sessionID, role: 'assistant', time: { created: 1 } }, parts: [{ id: 'part_1', sessionID, messageID: 'msg_1', type: 'text', text: 'hello' }] }],
+          response: { headers: { get: () => null } },
+        };
+      },
+    });
+    const assistant = service.createAssistant({ ...assistantInput, mode: 'stateless' });
+    const first = await service.ensure(assistant.id);
+    await service.createNew(assistant.id);
+    expect((await service.historicalMessages(assistant.id)).entries.map((entry) => entry.info.id)).toEqual(['msg_1']);
+    expect(calls).toBe(1);
+    service.processEvent({ type: 'message.updated', properties: { info: { id: 'msg_1', sessionID: first.sessionID, role: 'assistant', time: { created: 1 }, status: 'completed' } } });
+    service.processEvent({ type: 'message.part.updated', properties: { sessionID: first.sessionID, part: { id: 'part_1', sessionID: first.sessionID, messageID: 'msg_1', type: 'text', text: 'hello updated' } } });
+    expect((await service.historicalMessages(assistant.id)).entries).toEqual([{
+      sessionID: first.sessionID,
+      directory: expect.any(String),
+      info: { id: 'msg_1', sessionID: first.sessionID, role: 'assistant', time: { created: 1 }, status: 'completed' },
+      parts: [{ id: 'part_1', sessionID: first.sessionID, messageID: 'msg_1', type: 'text', text: 'hello updated' }],
+    }]);
+    expect(calls).toBe(1);
+    service.close();
+  });
+
+  it('deletes message/part/backfill mirrors when an assistant is removed', async () => {
+    const directory = root(); let creates = 0;
+    const service = setup(directory, {
+      create: async () => ({ data: { id: `ses_${++creates}` } }),
+      messages: async ({ sessionID }) => ({
+        data: [{ info: { id: 'msg_1', sessionID, role: 'assistant', time: { created: 1 } }, parts: [{ id: 'part_1', sessionID, messageID: 'msg_1', type: 'text', text: 'secret' }] }],
+        response: { headers: { get: () => null } },
+      }),
+    });
+    const assistant = service.createAssistant({ ...assistantInput, mode: 'stateless' });
+    await service.ensure(assistant.id);
+    await service.createNew(assistant.id);
+    await service.historicalMessages(assistant.id);
+    const revision = service.snapshot().assistants[0].revision;
+    service.removeAssistant(assistant.id, revision);
+    const Database = require('better-sqlite3');
+    const db = new Database(path.join(directory, 'assistants.sqlite'));
+    expect(db.prepare('SELECT COUNT(*) AS count FROM assistant_session_history WHERE assistant_id=?').get(assistant.id).count).toBe(0);
+    expect(db.prepare('SELECT COUNT(*) AS count FROM assistant_message_mirror WHERE assistant_id=?').get(assistant.id).count).toBe(0);
+    expect(db.prepare('SELECT COUNT(*) AS count FROM assistant_message_part_mirror WHERE assistant_id=?').get(assistant.id).count).toBe(0);
+    expect(db.prepare('SELECT COUNT(*) AS count FROM assistant_message_backfill WHERE assistant_id=?').get(assistant.id).count).toBe(0);
+    db.close();
+    service.close();
+  });
 });

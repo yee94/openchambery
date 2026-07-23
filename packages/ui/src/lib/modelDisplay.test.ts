@@ -3,12 +3,28 @@ import { describe, expect, test } from 'bun:test';
 import { getModelDisplayName, getProviderModelDisplayName, humanizeModelId } from './modelDisplay';
 
 describe('modelDisplay', () => {
-  test('prefers model name over ids', () => {
+  test('prefers friendly model name over ids', () => {
     expect(getModelDisplayName({ id: 'claude-sonnet-4-5', name: 'Claude Sonnet 4.5' })).toBe('Claude Sonnet 4.5');
   });
 
   test('falls back to a human-readable model id when name is missing', () => {
     expect(getModelDisplayName({ id: 'claude-sonnet-4-5' })).toBe('Claude Sonnet 4.5');
+  });
+
+  test('humanizes slug-style catalog names so message header and composer match', () => {
+    // Provider catalogs often ship name === "DeepSeek-V4-Flash" while the id is
+    // lowercase. Prefer the humanized id so both surfaces show the same label.
+    expect(getModelDisplayName({ id: 'deepseek-v4-flash', name: 'DeepSeek-V4-Flash' })).toBe('DeepSeek V4 Flash');
+    expect(getModelDisplayName({ id: 'deepseek-v4-flash' })).toBe('DeepSeek V4 Flash');
+    expect(getProviderModelDisplayName(
+      { models: [{ id: 'deepseek-v4-flash', name: 'DeepSeek-V4-Flash' }] },
+      'deepseek-v4-flash',
+    )).toBe('DeepSeek V4 Flash');
+    expect(getProviderModelDisplayName(undefined, 'deepseek-v4-flash')).toBe('DeepSeek V4 Flash');
+  });
+
+  test('humanizes slug-style names when only the name is available', () => {
+    expect(getModelDisplayName({ name: 'DeepSeek-V4-Flash' })).toBe('DeepSeek V4 Flash');
   });
 
   test('falls back to a human-readable explicit model id when provider data is unavailable', () => {

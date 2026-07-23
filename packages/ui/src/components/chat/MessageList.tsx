@@ -450,10 +450,15 @@ const MessageRow = React.memo<MessageRowProps>(({
             ...sessionSurface,
             sessionId: message.sourceSessionID,
             directory: message.sourceDirectory ?? null,
+            // Archived assistant history is read-only; only copy/selection stay on.
             capabilities: {
                 ...sessionSurface.capabilities,
+                compose: false,
                 mutateSession: false,
+                answerRequests: false,
+                openTimeline: false,
                 forkSession: false,
+                navigateNestedSession: false,
             },
         }
         : sessionSurface;

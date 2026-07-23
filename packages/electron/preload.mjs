@@ -42,9 +42,22 @@ const currentOrigin = (() => {
     return '';
   }
 })();
-const isLocalPage = currentOrigin !== 'null'
-  && (currentOrigin === 'openchamber-ui://app'
-  || (localOrigin && currentOrigin === localOrigin));
+// Custom schemes report location.origin as the string "null". Detect packaged
+// UI via protocol/hostname instead so client token / home stay local-only.
+const isPackagedUiPage = (() => {
+  try {
+    return typeof location !== 'undefined'
+      && location.protocol === 'openchamber-ui:'
+      && (location.hostname === 'app' || location.host === 'app');
+  } catch {
+    return false;
+  }
+})();
+const isLocalPage = isPackagedUiPage
+  || (Boolean(currentOrigin)
+    && currentOrigin !== 'null'
+    && Boolean(localOrigin)
+    && currentOrigin === localOrigin);
 
 // Remote pages need __OPENCHAMBER_LOCAL_ORIGIN__ so the HostSwitcher knows
 // the URL of the Local entry (isDesktopLocalOriginActive() falls back to
