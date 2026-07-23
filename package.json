@@ -51,6 +51,7 @@
     "electron:dev": "node ./packages/electron/scripts/electron-dev.mjs",
     "electron:dev:bundled": "OPENCHAMBER_ELECTRON_USE_BUNDLED_UI=1 node ./packages/electron/scripts/electron-dev.mjs",
     "electron:build": "bun run --cwd packages/electron package",
+    "electron:build:preview": "bun run --cwd packages/electron package:preview",
     "mobile:build": "bun run --cwd packages/mobile build",
     "mobile:sync": "bun run --cwd packages/mobile sync",
     "mobile:add:ios": "bun run --cwd packages/mobile add:ios",

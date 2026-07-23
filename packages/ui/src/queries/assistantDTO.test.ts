@@ -1,27 +1,31 @@
 import { describe, expect, test } from 'bun:test';
 // @ts-expect-error The server contract fixture is JavaScript and shared across the package boundary.
 import { assistantContractFixtures } from '../../../web/server/lib/assistants/contracts.js';
-import { AssistantAPIError, parseAssistantCapabilityDTO, parseCompactResponse, parseMessageAdmission, parseSessionBinding, parseShareOperation, parseAssistantSnapshotDTO } from './assistantDTO';
+import { AssistantAPIError, parseAssistantCapabilityDTO, parseAssistantHistoryPage, parseCompactResponse, parseMessageAdmission, parseSessionBinding, parseShareOperation, parseAssistantSnapshotDTO } from './assistantDTO';
 describe('Assistant DTO parsing', () => {
   test('parses server contract fixtures across the web and UI boundary', () => {
     const serverBindingFixture = assistantContractFixtures.sessionBinding;
-    const snapshot = parseAssistantSnapshotDTO({ revision: 1, enabled: true, assistants: [{ id: 'assistant-1', revision: 1, enabled: true, name: 'Assistant', defaultPrompt: '', workspacePath: '/project', effectiveWorkspacePath: '/project', managedWorkspacePath: '/managed', skillRoots: ['/legacy-skill'], providerID: 'provider', modelID: 'model', agent: null, mode: 'continuous', sessionID: 'ses-1', sessionGeneration: 2, historySessionIDs: ['ses-0'], createdAt: null, updatedAt: 2, tombstoneAt: null }] });
+    const snapshot = parseAssistantSnapshotDTO({ revision: 1, enabled: true, assistants: [{ id: 'assistant-1', revision: 1, enabled: true, name: 'Assistant', defaultPrompt: '', workspacePath: '/project', effectiveWorkspacePath: '/project', managedWorkspacePath: '/managed', skillRoots: ['/legacy-skill'], providerID: 'provider', modelID: 'model', agent: null, mode: 'continuous', sessionID: 'ses-1', sessionGeneration: 2, historySessionIDs: ['ses-0'], historySessionCount: 1, createdAt: null, updatedAt: 2, tombstoneAt: null }] });
     const binding = parseSessionBinding(serverBindingFixture);
     const compact = parseCompactResponse(assistantContractFixtures.compactResponse);
     const admission = parseMessageAdmission(assistantContractFixtures.messageAdmission);
     const share = parseShareOperation(assistantContractFixtures.shareOperation);
+    const history = parseAssistantHistoryPage(assistantContractFixtures.historicalMessages);
     expect(snapshot.assistants[0]?.sessionID).toBe('ses-1');
     expect(snapshot.assistants[0]?.sessionGeneration).toBe(2);
     expect(snapshot.assistants[0]?.effectiveWorkspacePath).toBe('/project');
     expect(snapshot.assistants[0]?.managedWorkspacePath).toBe('/managed');
     expect(snapshot.assistants[0]?.mode).toBe('continuous');
     expect(snapshot.assistants[0]?.historySessionIDs).toEqual(['ses-0']);
+    expect(snapshot.assistants[0]?.historySessionCount).toBe(1);
     expect('skillRoots' in snapshot.assistants[0]).toBe(false);
     expect(binding.directory).toBe('/workspace');
     expect(compact.binding.sessionID).toBe('ses_fixture');
     expect(admission.messageID).toBe('msg_fixture');
     expect(share.sessionID).toBe('ses_fixture');
     expect(share.state).toBe('running');
+    expect(history.entries[0]?.sessionID).toBe('ses_fixture');
+    expect(history.entries[0]?.directory).toBeNull();
     expect(parseAssistantCapabilityDTO({ supported: true, enabled: false, revision: 3, serverInstanceID: null }).serverInstanceID).toBeNull();
   });
   test('accepts every terminal and in-flight share state', () => {
@@ -32,5 +36,23 @@ describe('Assistant DTO parsing', () => {
     expect(() => parseCompactResponse({ binding: { sessionID: 'ses-1', directory: '/project', sessionGeneration: 2 }, admitted: true })).toThrow(AssistantAPIError);
     expect(() => parseShareOperation({ operationID: 'share-1', assistantID: 'assistant-1', phase: 'submitted', binding: { sessionID: 'ses-1' }, messageID: 'msg-1', state: 'completed', errorCode: null })).toThrow(AssistantAPIError);
     expect(() => parseAssistantSnapshotDTO({ revision: 1, enabled: true, assistants: [{ id: 'a' }] })).toThrow(AssistantAPIError);
+  });
+  test('strictly parses paged server history while preserving OpenCode records', () => {
+    const info = { id: 'msg_1', sessionID: 'ses_1', role: 'user', time: { created: 1 } };
+    const part = { id: 'prt_1', sessionID: 'ses_1', messageID: 'msg_1', type: 'text', text: 'hello' };
+    const page = parseAssistantHistoryPage({ entries: [{ sessionID: 'ses_1', directory: '/workspace-a', info, parts: [part] }], nextCursor: 'msg_0', complete: false });
+    expect(page.entries[0]?.info).toBe(info);
+    expect(page.entries[0]?.parts[0]).toBe(part);
+    expect(page.entries[0]?.directory).toBe('/workspace-a');
+    expect(page.entries[0]?.info.sessionID).toBe('ses_1');
+    expect(parseAssistantHistoryPage({ entries: [{ sessionID: 'ses_1', directory: null, info, parts: [] }], nextCursor: null, complete: true }).entries[0]?.directory).toBeNull();
+    expect(() => parseAssistantHistoryPage({ entries: [], nextCursor: null, complete: false })).toThrow(AssistantAPIError);
+    expect(() => parseAssistantHistoryPage({ entries: [], nextCursor: 'msg_0', complete: true })).toThrow(AssistantAPIError);
+    expect(() => parseAssistantHistoryPage({ entries: [{ sessionID: 'ses_1', directory: '/workspace-a', info, parts: [{}] }], nextCursor: null, complete: true })).toThrow(AssistantAPIError);
+    expect(() => parseAssistantHistoryPage({ entries: [{ sessionID: 'ses_1', info, parts: [] }], nextCursor: null, complete: true })).toThrow(AssistantAPIError);
+    expect(() => parseAssistantHistoryPage({ entries: [{ sessionID: 'ses_2', directory: '/workspace-a', info, parts: [] }], nextCursor: null, complete: true })).toThrow(AssistantAPIError);
+    expect(() => parseAssistantHistoryPage({ entries: [{ sessionID: 'ses_1', directory: '/workspace-a', info, parts: [{ ...part, sessionID: 'ses_2' }] }], nextCursor: null, complete: true })).toThrow(AssistantAPIError);
+    expect(() => parseAssistantHistoryPage({ entries: [{ sessionID: 'ses_1', directory: '/workspace-a', info, parts: [{ ...part, messageID: 'msg_2' }] }], nextCursor: null, complete: true })).toThrow(AssistantAPIError);
+    expect(() => parseAssistantSnapshotDTO({ revision: 1, enabled: true, assistants: [{ ...assistantContractFixtures.assistant, historySessionIDs: ['ses_1'], historySessionCount: 0 }] })).toThrow(AssistantAPIError);
   });
 });

@@ -127,6 +127,7 @@ export const createFeatureRoutesRuntime = (dependencies) => {
       messageQueueService,
       messageQueueRuntime,
       broadcastGlobalUiEvent,
+      globalMessageStreamHub,
       getServerId,
     } = routeDependencies;
 
@@ -214,6 +215,7 @@ export const createFeatureRoutesRuntime = (dependencies) => {
       getServerId,
       getAllowedRoots: () => assistantAllowedRoots,
       refreshAllowedRoots: refreshAssistantAllowedRoots,
+      globalEventHub: globalMessageStreamHub,
     });
     messageQueueRuntime?.setAssistantDeliveryService?.(assistantRoutesRuntime.service);
 

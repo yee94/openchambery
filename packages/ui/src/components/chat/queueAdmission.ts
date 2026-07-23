@@ -37,6 +37,17 @@ export const isServerQueueAdmissionEventBlocked = (
     hasServerAdmissionFlight: boolean,
 ): boolean => hasBlockingAdmission || (queueMode !== 'legacy' && hasServerAdmissionFlight);
 
+/**
+ * Assistant deliveries only admit through the server-backed queue. Legacy and
+ * frozen modes reject assistant queue admission (or no-op when frozen), so a
+ * busy session with default follow-up "queue" would silently eat sends after
+ * share/new left the turn running. Callers should fall back to direct/steer.
+ */
+export const assistantQueueAdmissionAvailable = (
+    deliveryTargetKind: 'primary' | 'assistant' | undefined,
+    queueMode: 'legacy' | 'server' | 'frozen',
+): boolean => deliveryTargetKind !== 'assistant' || queueMode === 'server';
+
 export type ServerQueueScopeMutationFlights = Map<string, string>;
 
 export const startServerQueueScopeMutationFlight = <T>(

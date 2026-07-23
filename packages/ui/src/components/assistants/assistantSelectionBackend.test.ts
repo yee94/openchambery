@@ -4,7 +4,7 @@ import { commitAssistantSelection } from './assistantSelectionBackend';
 import { AssistantSelectionCoordinator, AssistantSelectionStaleError, type AssistantSelectionIdentity } from './assistantSelectionCoordinator';
 
 const identity: AssistantSelectionIdentity = { assistantID: 'assistant-a', transportIdentity: 'runtime-a', runtimeGeneration: 1 };
-const assistant: AssistantDTO = { id: 'assistant-a', revision: 1, enabled: true, name: 'Assistant', defaultPrompt: '', workspacePath: null, effectiveWorkspacePath: '/workspace', managedWorkspacePath: null, providerID: 'provider-a', modelID: 'model-a', agent: null, variant: null, mode: 'continuous', sessionID: null, sessionGeneration: 1, historySessionIDs: [], createdAt: null, updatedAt: 1, tombstoneAt: null };
+const assistant: AssistantDTO = { id: 'assistant-a', revision: 1, enabled: true, name: 'Assistant', defaultPrompt: '', workspacePath: null, effectiveWorkspacePath: '/workspace', managedWorkspacePath: null, providerID: 'provider-a', modelID: 'model-a', agent: null, variant: null, mode: 'continuous', sessionID: null, sessionGeneration: 1, historySessionIDs: [], historySessionCount: 0, createdAt: null, updatedAt: 1, tombstoneAt: null };
 
 describe('Assistant selection backend', () => {
   test('stops a conflict refresh and retry after a runtime switch without changing the old cache', async () => {
@@ -73,4 +73,3 @@ describe('Assistant selection backend', () => {
     expect(cacheAPICalls.count).toBe(0);
   });
 });
-

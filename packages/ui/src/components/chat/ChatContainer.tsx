@@ -1,4 +1,5 @@
 import React from 'react';
+import { useEvent } from '@reactuses/core';
 import type { Message, Part } from '@opencode-ai/sdk/v2';
 import type { PermissionRequest } from '@/types/permission';
 import type { QuestionRequest } from '@/types/question';
@@ -28,7 +29,8 @@ import { PromptNavigatorRail } from './components/PromptNavigatorRail';
 import { ScrollShadow } from '@/components/ui/ScrollShadow';
 import { useChatAutoFollow, type AnimationHandlers, type ContentChangeReason } from '@/hooks/useChatAutoFollow';
 import { useChatTimelineController } from './hooks/useChatTimelineController';
-import { createAssistantSessionDivider, useHostedSessionHistoryPrefix } from './hostedSessionHistory';
+import { createAssistantSessionDivider, stitchHostedSessionHistory } from './hostedSessionHistory';
+import type { ChatMessageEntry } from './lib/turns/types';
 import { TimelineDialog } from './TimelineDialog';
 import { useChatTurnNavigation } from './hooks/useChatTurnNavigation';
 import { useChatSurfaceMode } from './useChatSurfaceMode';
@@ -86,7 +88,7 @@ import { isFullySyntheticMessage } from '@/lib/messages/synthetic';
 import { normalizeUserDisplayParts } from './message/normalizeUserDisplayParts';
 import { findShellCommandForMessage, isUserShellMarkerMessage } from './lib/shellBridge';
 import { resolveContextPanelSessionExecution } from '@/components/layout/contextPanelSessionExecution';
-import { resolveChatPromptAvailability } from './chatPromptAvailability';
+import { resolveChatPromptAvailability, resolveSessionIdentityPending } from './chatPromptAvailability';
 import { shouldEnsureChatSessionRenderable } from './chatSessionMaterialization';
 
 const EMPTY_MESSAGES: Array<{ info: Message; parts: Part[] }> = [];
@@ -541,7 +543,7 @@ type ChatContainerContentProps = Omit<ChatContainerProps, 'host'> & {
     onSessionViewEstimateChange?: (key: string, estimatedBytes: number) => void;
     composerSurface?: ChatInputSurface;
     hostedFeatures?: Required<ChatContainerHostFeatures>;
-    historySessionIDs?: readonly string[];
+    assistantHistory?: ChatContainerHost['assistantHistory'];
     onRevertMessage?: (messageId: string) => Promise<void>;
     warning?: string | null;
 };
@@ -563,7 +565,7 @@ const ChatContainerContent: React.FC<ChatContainerContentProps> = ({
     onSessionViewEstimateChange,
     composerSurface,
     hostedFeatures,
-    historySessionIDs,
+    assistantHistory,
     onRevertMessage,
     warning = null,
 }) => {
@@ -590,11 +592,6 @@ const ChatContainerContent: React.FC<ChatContainerContentProps> = ({
     const ensureSessionRenderable = React.useCallback(
         (sessionId: string) => sync.ensureSessionRenderable(sessionId, { directory: effectiveSessionDirectory }),
         [effectiveSessionDirectory, sync],
-    );
-    const loadMoreMessages = React.useCallback(
-        // eslint-disable-next-line @typescript-eslint/no-unused-vars
-        (sessionId: string, _direction: 'up' | 'down') => sync.loadMore(sessionId),
-        [sync],
     );
 
     // UI store
@@ -637,7 +634,17 @@ const ChatContainerContent: React.FC<ChatContainerContentProps> = ({
         effectiveSessionDirectory,
     );
     const currentSessionEntity = useSession(currentSessionId, effectiveSessionDirectory);
-    const sessionIdentityPending = Boolean(currentSessionId && !currentSessionEntity);
+    // Primary chat blocks send until the session appears in the directory list
+    // (identity may lag messages). Hosted secondary surfaces (Assistant) already
+    // carry an authoritative binding on the host; their managed workspaces often
+    // never appear in the selected-directory session index the same way, so a
+    // missing list entry must not permanently disable the composer — especially
+    // after mobile share creates/rebinds a fresh session.
+    const sessionIdentityPending = resolveSessionIdentityPending({
+        sessionId: currentSessionId,
+        hasSessionEntity: Boolean(currentSessionEntity),
+        composerSurfaceKind: composerSurface?.kind,
+    });
     const sessionIdentityEnsureKey = currentSessionId
         ? JSON.stringify([effectiveSessionDirectory, currentSessionId])
         : null;
@@ -658,10 +665,9 @@ const ChatContainerContent: React.FC<ChatContainerContentProps> = ({
     const sessionExecutionModelName = React.useMemo(() => {
         if (!sessionExecution.modelId) return t('common.unavailable');
         const provider = providers.find((entry) => entry.id === sessionExecution.providerId);
-        const modelExists = provider?.models.some((model) => model.id === sessionExecution.modelId);
-        return modelExists
-            ? getProviderModelDisplayName(provider, sessionExecution.modelId) || sessionExecution.modelId
-            : sessionExecution.modelId;
+        // Always go through display helper so missing catalog entries humanize
+        // (e.g. deepseek-v4-flash → "DeepSeek V4 Flash") instead of raw ids.
+        return getProviderModelDisplayName(provider, sessionExecution.modelId) || sessionExecution.modelId;
     }, [providers, sessionExecution.modelId, sessionExecution.providerId, t]);
     const hasUserBoundary = React.useMemo(
         () => sessionMessages.some(({ info }) => (
@@ -683,6 +689,24 @@ const ChatContainerContent: React.FC<ChatContainerContentProps> = ({
         ),
         React.useCallback(() => undefined, []),
     );
+    const loadMoreMessages = useEvent(async (sessionId: string) => {
+        const syncComplete = sync.isComplete(sessionId);
+        const prefetchHasMore = !syncComplete
+            && Boolean(sessionPrefetchInfo?.cursor)
+            && sessionPrefetchInfo?.complete !== true;
+        if (sync.hasMore(sessionId) || prefetchHasMore) {
+            await sync.loadMore(sessionId);
+            return;
+        }
+        if (!syncComplete) {
+            await sync.loadMore(sessionId);
+            return;
+        }
+        // Only page assistant-owned archives after live pagination is authoritative-complete.
+        if (assistantHistory && !assistantHistory.complete) {
+            await assistantHistory.fetchPrevious();
+        }
+    });
 
     // Plan detection - watches messages for plan creation and signals store
     usePlanDetection(currentSessionId ?? '', sessionMessages);
@@ -786,12 +810,13 @@ const ChatContainerContent: React.FC<ChatContainerContentProps> = ({
         const prefetchHasMore = !syncComplete
             && Boolean(sessionPrefetchInfo?.cursor)
             && sessionPrefetchInfo?.complete !== true;
+        const liveComplete = syncComplete || !(sync.hasMore(currentSessionId) || prefetchHasMore);
         return {
             limit: sessionMessages.length,
-            complete: syncComplete || !(sync.hasMore(currentSessionId) || prefetchHasMore),
-            loading: sync.isLoading(currentSessionId),
+            complete: liveComplete && (assistantHistory?.complete ?? true),
+            loading: sync.isLoading(currentSessionId) || Boolean(assistantHistory?.loading),
         };
-    }, [currentSessionId, sessionMessages.length, sessionPrefetchInfo, sync]);
+    }, [assistantHistory?.complete, assistantHistory?.loading, currentSessionId, sessionMessages.length, sessionPrefetchInfo, sync]);
 
     const { isMobile } = useDeviceInfo();
     const isVSCode = isVSCodeRuntime();
@@ -930,7 +955,16 @@ const ChatContainerContent: React.FC<ChatContainerContentProps> = ({
             ? null
             : <ChatInput surface={composerSurface} scrollToBottom={scrollToBottomOnSend} submissionBlocked={promptAvailability.blockSubmission} />;
 
-    const historyPrefix = useHostedSessionHistoryPrefix(historySessionIDs, currentSessionId, effectiveSessionDirectory);
+    const historyPrefixCacheRef = React.useRef<ChatMessageEntry[]>([]);
+    const historyPrefix = React.useMemo(() => {
+        const next = stitchHostedSessionHistory(
+            assistantHistory?.entries ?? [],
+            currentSessionId,
+            historyPrefixCacheRef.current,
+        );
+        historyPrefixCacheRef.current = next;
+        return next;
+    }, [assistantHistory?.entries, currentSessionId]);
     const viewportMessages = React.useMemo(() => {
         if (historyPrefix.length === 0) return sessionMessages;
         if (!currentSessionId) return historyPrefix;
@@ -1105,9 +1139,12 @@ const ChatContainerContent: React.FC<ChatContainerContentProps> = ({
             !hasRenderableSessionSnapshot
             || sessionPrefetchInfo?.status === 'loading'
         );
+    // Assistant-owned history is authoritative for prior bindings. Do not replace
+    // a restorable transcript with the live-session load-failure wall.
     const hasSessionHistoryLoadError =
         sessionPrefetchInfo?.status === 'error'
-        && !hasUserBoundary;
+        && !hasUserBoundary
+        && historyPrefix.length === 0;
 
     React.useEffect(() => {
         if (!currentSessionId) return;
@@ -1532,7 +1569,7 @@ const SessionViewLoadingPlaceholder: React.FC = () => (
     </div>
 );
 
-const RuntimeScopedChatContainer: React.FC<ChatContainerProps & { runtimeKey: string }> = ({ runtimeKey, host: _host, ...props }) => {
+const RuntimeScopedChatContainer: React.FC<ChatContainerProps & { runtimeKey: string }> = ({ runtimeKey, ...props }) => {
     const chatSurfaceMode = useChatSurfaceMode();
     const syncDirectory = useSyncDirectory();
     const selectedSession = useSessionUIStore(
@@ -1719,7 +1756,7 @@ const HostedChatContainer: React.FC<ChatContainerProps & { host: ChatContainerHo
                     sessionViewKey={sessionViewKey}
                     composerSurface={host.composerSurface}
                     hostedFeatures={hostedFeatures}
-                    historySessionIDs={host.historySessionIDs}
+                    assistantHistory={host.assistantHistory}
                     onRevertMessage={host.onRevertMessage}
                     warning={host.warning}
                 />

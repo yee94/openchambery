@@ -150,6 +150,8 @@ describe('Assistant UI product contract', () => {
     expect(chatContainer).toContain('if (props.host)');
     expect(chatContainer).toContain('HostedChatContainer');
     expect(chatContainer).toContain('<ChatInput surface={composerSurface}');
+    expect(chatContainer).toContain('resolveSessionIdentityPending');
+    expect(chatContainer).toContain("composerSurfaceKind: composerSurface?.kind");
     expect(chatContainer).toContain('<MessageList');
     expect(chatContainer).toContain('<QuestionCard');
     expect(chatContainer).toContain('<PermissionCard');
@@ -173,6 +175,28 @@ describe('Assistant UI product contract', () => {
     expect(promptComposer).toContain('data-chat-input-footer="true"');
     expect(promptComposer).toContain('onRemoveAttachment');
     expect(chatInput).toContain('<MemoModelControls');
+  });
+
+  test('loads Assistant history through the binding-scoped paged host', async () => {
+    const [conversation, chatContainer, hostedHistory, messageList] = await Promise.all([
+      read('AssistantConversationSurface.tsx'),
+      read('../chat/ChatContainer.tsx'),
+      read('../chat/hostedSessionHistory.ts'),
+      read('../chat/MessageList.tsx'),
+    ]);
+    expect(conversation).toContain('useAssistantHistoryInfiniteQuery');
+    expect(conversation).toContain('assistantHistory:');
+    expect(conversation).toContain('fetchPrevious: fetchPreviousHistory');
+    expect(conversation).toContain('historyQuery.isLoading || historyQuery.isFetchingNextPage');
+    expect(conversation).toContain('historyQuery.isError || (historyQuery.isSuccess && !historyQuery.hasNextPage)');
+    expect(chatContainer).toContain('await sync.loadMore(sessionId)');
+    expect(chatContainer).toContain('await assistantHistory.fetchPrevious()');
+    expect(chatContainer).toContain('// Only page assistant-owned archives after live pagination is authoritative-complete.');
+    expect(chatContainer).toContain('historyPrefix.length === 0');
+    expect(hostedHistory).not.toContain('ensureSessionRenderable');
+    expect(hostedHistory).not.toContain('fetchMessagesForSession');
+    expect(messageList).toContain('compose: false');
+    expect(messageList).toContain('openTimeline: false');
   });
 
   test('builds an isolated secondary surface with committed selection and Assistant backend routes', async () => {
@@ -221,7 +245,7 @@ describe('Assistant UI product contract', () => {
     expect(conversation).toContain('PRIMARY_SESSION_SURFACE_CAPABILITIES');
   });
 
-  test('disables edit/revert for stateless Assistants and jumps replies into the source session', async () => {
+  test('disables edit/revert for stateless Assistants and opens source sessions in their own workspace', async () => {
     const [conversation, sessionSurface, messageBody] = await Promise.all([
       read('AssistantConversationSurface.tsx'),
       read('../chat/SessionSurfaceContext.tsx'),
@@ -232,6 +256,9 @@ describe('Assistant UI product contract', () => {
     expect(conversation).toContain('openSourceSession');
     expect(conversation).toContain("setActiveMainTab('chat')");
     expect(conversation).toContain('setCurrentSession(targetSessionID, targetDirectory)');
+    expect(conversation).toContain("targetSessionID === sessionID");
+    expect(conversation).toContain('historyDirectories.get(targetSessionID)');
+    expect(conversation).toContain('expectedDirectory !== targetDirectory');
     expect(sessionSurface).toContain('openSourceSession?: (sessionId: string, directory: string) => void');
     expect(sessionSurface).toContain('openSourceSession: Boolean(surface.openSourceSession)');
     expect(messageBody).toContain("t('chat.messageBody.actions.openSourceSession')");
@@ -259,6 +286,7 @@ describe('Assistant UI product contract', () => {
     expect(chatInput).toContain('(sessionIsRunning || autoReviewRunning)');
     expect(queueServer).toContain("deliveryTarget.kind === 'assistant' && !deliveryParts");
     expect(conversation).toContain('const directory = assistant.effectiveWorkspacePath;');
+    expect(conversation).toContain('flattenAssistantHistoryPages(historyQuery.data?.pages ?? [])');
     expect(conversation).toContain('directory,');
     expect(conversation).toContain('onRevertMessage');
     expect(chatContainer).toContain('sessionID={currentSessionId ?? undefined}');
@@ -368,16 +396,34 @@ describe('Assistant UI product contract', () => {
     expect(view).toContain('min-w-0 max-w-[min(60vw,18rem)]');
   });
 
-  test('stitches prior assistant session history into the shared ChatContainer host', async () => {
+  test('stitches paged Assistant history into the shared ChatContainer host', async () => {
     const [surface, host, chat] = await Promise.all([
       read('AssistantConversationSurface.tsx'),
       read('../chat/chatContainerHost.ts'),
       read('../chat/ChatContainer.tsx'),
     ]);
-    expect(host).toContain('historySessionIDs?: readonly string[]');
-    expect(surface).toContain('historySessionIDs: assistant.historySessionIDs');
-    expect(chat).toContain('useHostedSessionHistoryPrefix');
+    expect(host).toContain('assistantHistory?: {');
+    expect(surface).toContain('useAssistantHistoryInfiniteQuery');
+    expect(surface).toContain('assistantHistory: {');
+    expect(chat).toContain('stitchHostedSessionHistory');
     expect(chat).toContain('createAssistantSessionDivider');
+  });
+
+  test('scopes historical message actions to their source workspace', async () => {
+    const [surface, list, history] = await Promise.all([
+      read('AssistantConversationSurface.tsx'),
+      read('../chat/MessageList.tsx'),
+      read('../chat/hostedSessionHistory.ts'),
+    ]);
+    expect(history).toContain('sourceSessionID: entry.sessionID');
+    expect(history).toContain('sourceDirectory: entry.directory');
+    expect(list).toContain('message.sourceSessionID');
+    expect(list).toContain('directory: message.sourceDirectory');
+    expect(list).toContain('mutateSession: false');
+    expect(list).toContain('forkSession: false');
+    expect(list).toContain('SessionSurfaceContext.Provider');
+    expect(surface).toContain('historyDirectories.get(targetSessionID)');
+    expect(surface).toContain('expectedDirectory !== targetDirectory');
   });
 
   test('filters Assistant agent catalogs through the shared composer visibility helper', async () => {

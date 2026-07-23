@@ -1,5 +1,5 @@
 import { beforeEach, describe, expect, test } from 'bun:test';
-import { admitChatInputQueueMessageAndConsumeResources, admitQueueMessageAndConsumeResources, admitServerQueueMessageAndConsumeResources, attachedFilesToQueueCandidates, createServerQueueAdmissionCapture, createServerQueueAdmissionIdentity, isServerQueueAdmissionEventBlocked, startServerQueueScopeMutationFlight, type ServerQueueScopeMutationFlights } from './queueAdmission';
+import { admitChatInputQueueMessageAndConsumeResources, admitQueueMessageAndConsumeResources, admitServerQueueMessageAndConsumeResources, assistantQueueAdmissionAvailable, attachedFilesToQueueCandidates, createServerQueueAdmissionCapture, createServerQueueAdmissionIdentity, isServerQueueAdmissionEventBlocked, startServerQueueScopeMutationFlight, type ServerQueueScopeMutationFlights } from './queueAdmission';
 import { legacyQueueScope, setMessageQueueMutationFence, useMessageQueueStore, type QueueItem, type QueueScope } from '@/stores/messageQueueStore';
 import { sessionDraftKey, type DraftRecord } from '@/sync/input-draft-types';
 import type { AttachedFile } from '@/stores/types/sessionTypes';
@@ -58,6 +58,15 @@ describe('admitQueueMessageAndConsumeResources', () => {
         expect(isServerQueueAdmissionEventBlocked('server', false, true)).toBe(true);
         expect(isServerQueueAdmissionEventBlocked('frozen', false, true)).toBe(true);
         expect(isServerQueueAdmissionEventBlocked('legacy', false, true)).toBe(false);
+    });
+
+    test('assistant queue admission requires server-backed queue ownership', () => {
+        expect(assistantQueueAdmissionAvailable('assistant', 'server')).toBe(true);
+        expect(assistantQueueAdmissionAvailable('assistant', 'legacy')).toBe(false);
+        expect(assistantQueueAdmissionAvailable('assistant', 'frozen')).toBe(false);
+        expect(assistantQueueAdmissionAvailable('primary', 'legacy')).toBe(true);
+        expect(assistantQueueAdmissionAvailable('primary', 'frozen')).toBe(true);
+        expect(assistantQueueAdmissionAvailable(undefined, 'legacy')).toBe(true);
     });
 
     test('runs one server queue mutation per scope flight and keeps its request ID until settlement', async () => {

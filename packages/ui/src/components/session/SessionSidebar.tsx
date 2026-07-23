@@ -46,6 +46,7 @@ import { SidebarFooter } from './sidebar/SidebarFooter';
 import { SidebarProjectsList } from './sidebar/SidebarProjectsList';
 import { SidebarBrandMark } from '@/components/layout/SidebarBrandMark';
 import { GlobalSearchButton } from '@/components/layout/GlobalSearchButton';
+import { useSidebarBrandStore } from '@/stores/useSidebarBrandStore';
 import { SessionNodeItem } from './sidebar/SessionNodeItem';
 import type { SessionNodeRenderExtras } from './sidebar/sessionNodeItemUtils';
 import { useUpdateStore } from '@/stores/useUpdateStore';
@@ -619,6 +620,11 @@ export const SessionSidebar: React.FC<SessionSidebarProps> = ({
   }, []);
 
   const isDesktopShellRuntime = React.useMemo(() => isDesktopShell(), []);
+  // Empty brand config hides the mark entirely. Desktop then keeps global search
+  // next to the titlebar collapse control (web parity) and reserves no empty row.
+  const hasSidebarBrand = useSidebarBrandStore(
+    (state) => state.sidebarBrandName.trim().length > 0,
+  );
 
   const { isTablet } = useDeviceInfo();
   const alwaysShowSidebarActions = mobileVariant || isTablet;
@@ -2450,20 +2456,21 @@ export const SessionSidebar: React.FC<SessionSidebarProps> = ({
       expandAllProjects={expandAllProjects}
     />
   ) : null;
-  const showBrandInContent = mobileVariant || isDesktopShellRuntime;
+  // Desktop brand+search sit above the scroll region so the logo never scrolls.
+  // Mobile still keeps the mark inside the scrollable leading content.
+  const desktopBrandHeader =
+    isDesktopShellRuntime && hasSidebarBrand && !isVSCode && !hasSessionSearchQuery ? (
+      <div className="shrink-0 px-3">
+        <div className="flex items-center justify-between">
+          <SidebarBrandMark className="min-w-0 flex-1" />
+          <GlobalSearchButton className="ml-auto shrink-0" />
+        </div>
+      </div>
+    ) : null;
   const topContent =
     !isVSCode && !hasSessionSearchQuery ? (
       <>
-        {showBrandInContent ? (
-          isDesktopShellRuntime ? (
-            <div className="flex items-center justify-between">
-              <SidebarBrandMark className="min-w-0 flex-1" />
-              <GlobalSearchButton className="ml-auto shrink-0" />
-            </div>
-          ) : (
-            <SidebarBrandMark />
-          )
-        ) : null}
+        {mobileVariant && hasSidebarBrand ? <SidebarBrandMark /> : null}
         <div className="space-y-0.5 py-1">
           <Button
             variant="ghost"
@@ -2567,6 +2574,8 @@ export const SessionSidebar: React.FC<SessionSidebarProps> = ({
         hasSessionSearchQuery={hasSessionSearchQuery}
         searchMatchCount={searchMatchCount}
       />
+
+      {desktopBrandHeader}
 
       <SidebarProjectsList
         topContent={topContent}

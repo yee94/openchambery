@@ -99,6 +99,7 @@ describe('apply_patch navigation', () => {
         expect(toolPartSource).toContain('getPrimaryDiffFromMetadata(normalizedPartTool, metadata, filePath)');
         expect(toolPartSource).toContain('const fileDiff = metadata.filediff;');
         expect(toolPartSource).toContain('getPatchText((fileDiff as { patch?: unknown }).patch)');
+        expect(toolPartSource).toContain('if (isFileNavTool && !currentDirectory)');
         expect(toolPartSource).toContain("openContextDiff(currentDirectory, relativePath, false, 'turn', targetLine, messageId);");
         expect(toolPartSource).toContain("openContextPanelTab(currentDirectory, { mode: 'diff', diffScope: 'turn', diffTurnMessageId: messageId });");
         expect(toolPartSource).toContain('openContextToolDiff(');

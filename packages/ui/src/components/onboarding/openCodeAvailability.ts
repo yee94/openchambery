@@ -15,5 +15,8 @@ export async function checkOpenCodeAvailability(): Promise<boolean> {
 
 export async function retryOpenCodeAvailability(): Promise<boolean> {
   const response = await runtimeFetch('/api/opencode/retry', { method: 'POST' });
-  return response.ok;
+  if (!response.ok) return false;
+  // Retry endpoint waits for managed startup, but treat readiness as
+  // authoritative health — never enter the main shell on a bare HTTP 200.
+  return checkOpenCodeAvailability();
 }

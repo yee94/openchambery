@@ -229,19 +229,37 @@ export const humanizeModelId = (modelId: string | null | undefined): string => {
   return displaySuffix ? `${displayName} (${displaySuffix})` : displayName;
 };
 
+/**
+ * Catalog labels that are still slug/id-shaped (e.g. "DeepSeek-V4-Flash").
+ * Prefer humanizing the model id instead of showing these raw — otherwise the
+ * same model renders as "DeepSeek-V4-Flash" when the catalog name is present
+ * and "DeepSeek V4 Flash" when the UI falls back to the id.
+ */
+const isSlugStyleLabel = (value: string): boolean => {
+  return !/\s/.test(value) && /[-_]/.test(value);
+};
+
 export const getModelDisplayName = (
   model: DisplayModel | null | undefined,
   fallbackModelId?: string | null,
   options: ModelDisplayOptions = {},
 ): string => {
   const name = normalizeString(model?.name);
-  if (name) {
+  const modelId = normalizeString(model?.id) || normalizeString(fallbackModelId);
+
+  // Friendly catalog names (already human-readable) win as-is.
+  if (name && !isSlugStyleLabel(name)) {
     return truncate(name, options.maxLength);
   }
 
-  const modelId = normalizeString(model?.id) || normalizeString(fallbackModelId);
+  // Slug-style names or missing names → humanize the id (usually lowercase and
+  // brand-token friendly). Fall back to humanizing the slug name when no id.
   if (modelId) {
     return truncate(humanizeModelId(modelId), options.maxLength);
+  }
+
+  if (name) {
+    return truncate(humanizeModelId(name.toLowerCase()), options.maxLength);
   }
 
   return options.fallbackLabel ?? '';

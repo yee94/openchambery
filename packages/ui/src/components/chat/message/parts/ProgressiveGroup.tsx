@@ -26,6 +26,7 @@ import { areRenderRelevantPartsEqual } from '../renderCompare';
 import { getExternalFaviconUrl } from '@/lib/url';
 import { getDirectoryForFilePath, getRelativeFilePath, isFilePathWithinDirectory, normalizeFilePath, toAbsoluteFilePath } from '@/lib/path-utils';
 import { getToolRowBlockClass, TOOL_ROW_INTERACTIVE_CHROME_CLASS } from './toolRowChrome';
+import { useSessionSurface } from '../../SessionSurfaceContext';
 
 const TOOL_ROW_TEXT_CLASS = '!text-[length:var(--text-meta)] !leading-5 sm:!leading-6 tracking-normal';
 const TOOL_ROW_TITLE_CLASS = cn('typography-meta font-medium', TOOL_ROW_TEXT_CLASS);
@@ -583,7 +584,11 @@ const StaticToolRowInner: React.FC<{
     const icon = getToolIcon(toolName);
     const isReadGroup = toolName.toLowerCase() === 'read';
     const runtime = React.useContext(RuntimeAPIContext);
-    const currentDirectory = useDirectoryStore((state) => state.currentDirectory);
+    const fallbackDirectory = useDirectoryStore((state) => state.currentDirectory);
+    const sessionSurface = useSessionSurface();
+    const currentDirectory = sessionSurface.kind === 'embedded'
+        ? sessionSurface.directory
+        : fallbackDirectory;
     const skillsQuery = useInstalledSkillsQuery({ enabled: toolName.toLowerCase() === 'skill' });
     const skills = React.useMemo(() => skillsQuery.data ?? [], [skillsQuery.data]);
     const hasRunningActivity = React.useMemo(() => activities.some((activity) => isActivityRunning(activity)), [activities]);
@@ -637,6 +642,9 @@ const StaticToolRowInner: React.FC<{
     }, [activities, currentDirectory, isReadGroup]);
 
     const handleReadFileClick = React.useCallback((filePath: string, offset?: number) => {
+        if (!currentDirectory) {
+            return;
+        }
         const absolutePath = toAbsoluteFilePath(currentDirectory, filePath);
         if (!absolutePath) {
             return;
@@ -723,6 +731,7 @@ const StaticToolRowInner: React.FC<{
                     <button
                         key={entry.path}
                         type="button"
+                        disabled={!currentDirectory}
                         onClick={(event) => {
                             event.preventDefault();
                             event.stopPropagation();

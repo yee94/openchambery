@@ -1,5 +1,6 @@
 import type { ChatInputSurface } from '@/components/chat/chatInputSurface';
 import type { SessionSurfaceContextValue } from '@/components/chat/SessionSurfaceContext';
+import type { AssistantHistoryEntry } from '@/queries/assistantQueries';
 
 export type ChatContainerHostFeatures = {
   /** Primary-only new-session draft welcome. Hosted surfaces default this off. */
@@ -23,8 +24,13 @@ export type ChatContainerHost = {
   composerSurface: ChatInputSurface;
   sessionSurface: SessionSurfaceContextValue;
   warning?: string | null;
-  /** Prior OpenCode sessions to prepend (read-only) ahead of the live binding. */
-  historySessionIDs?: readonly string[];
+  /** Server-paged prior OpenCode entries to prepend ahead of the live binding. */
+  assistantHistory?: {
+    entries: readonly AssistantHistoryEntry[];
+    complete: boolean;
+    loading: boolean;
+    fetchPrevious: () => Promise<unknown>;
+  };
   features?: ChatContainerHostFeatures;
   onRevertMessage?: (messageId: string) => Promise<void>;
 };

@@ -4,8 +4,14 @@ import { useSidebarBrandStore } from '@/stores/useSidebarBrandStore';
 import { cn } from '@/lib/utils';
 
 /**
- * Left-sidebar wordmark, rendered in the Web header row or above the Recent
- * section where the runtime keeps its existing sidebar chrome.
+ * Left-sidebar wordmark.
+ *
+ * Placement:
+ * - Web: titlebar control row while the sidebar is open
+ * - Electron (configured brand): fixed header above the sidebar scroll region,
+ *   so the mark does not scroll with sessions
+ * - Electron (empty brand): not rendered; no empty slot is reserved
+ * - Mobile: leading sidebar content (scrollable)
  *
  * Dual-tone like Codex branding: leading words use the surface foreground and
  * the final word uses the primary accent. Set in Syne (geometric display face)

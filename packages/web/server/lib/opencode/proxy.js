@@ -6,6 +6,11 @@ import {
   shouldForwardProxyResponseHeader,
 } from '../../proxy-headers.js';
 import { createRealpathCache } from '../path-realpath-cache.js';
+import {
+  createDirectoryInstanceRecovery,
+  extractDirectoryFromRequest,
+  isDirectoryTurnAdmissionPath,
+} from './instance-recovery-runtime.js';
 
 export const createDirectoryQueryCanonicalizer = ({ realpath, ...cacheOptions } = {}) => {
   const realpathCache = createRealpathCache({ fallbackOnError: true, realpath, ...cacheOptions });
@@ -823,6 +828,28 @@ export const registerOpenCodeProxy = (app, deps) => {
       // Pass through as-is if URL parsing or realpath resolution fails.
     }
     next();
+  });
+
+  // Recover poisoned OpenCode directory instances before turn admission.
+  // A stuck instance still accepts prompt_async (204) but aborts the turn
+  // immediately with MessageAbortedError before process starts; MCP probe
+  // returns 503. Dispose recreates a healthy instance on the next request.
+  const directoryInstanceRecovery = createDirectoryInstanceRecovery({
+    buildOpenCodeUrl,
+    getOpenCodeAuthHeaders,
+  });
+  app.use('/api', async (req, _res, next) => {
+    if (req.method !== 'POST' || !isDirectoryTurnAdmissionPath(req.path || req.url || '')) {
+      return next();
+    }
+    const directory = extractDirectoryFromRequest(req);
+    if (!directory) return next();
+    try {
+      await directoryInstanceRecovery.ensureHealthy(directory);
+    } catch {
+      // Admission must still proceed; recovery is best-effort.
+    }
+    return next();
   });
 
   app.use('/api', applyProxyResponseDeadline);

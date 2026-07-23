@@ -3,6 +3,17 @@ type ChatPromptAvailability = {
     blockSubmission: boolean;
 };
 
+/**
+ * Primary chat waits for the directory session list entity. Hosted secondary
+ * surfaces (Assistant) already own an authoritative binding on the host — a
+ * missing list row must not block the composer.
+ */
+export const resolveSessionIdentityPending = (input: {
+    sessionId: string | null | undefined;
+    hasSessionEntity: boolean;
+    composerSurfaceKind?: 'primary' | 'secondary' | null;
+}): boolean => Boolean(input.sessionId && !input.hasSessionEntity && input.composerSurfaceKind !== 'secondary');
+
 export const resolveChatPromptAvailability = (input: {
     readOnly: boolean;
     sessionIdentityPending: boolean;

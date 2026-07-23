@@ -134,7 +134,7 @@ import type { Part } from '@opencode-ai/sdk/v2/client';
 import { consumesImmediateCommandText, getLocalChatCommand, preservesComposerResources } from './localCommandClassifier';
 import { consumeImmediateCommandText } from './immediateCommandTextConsumption';
 import { runImmediateSessionCommand } from './immediateSessionCommandAction';
-import { admitChatInputQueueMessageAndConsumeResources, admitServerQueueMessageAndConsumeResources, attachedFilesToQueueCandidates, createServerQueueAdmissionCapture, createServerQueueAdmissionIdentity, isServerQueueAdmissionEventBlocked } from './queueAdmission';
+import { admitChatInputQueueMessageAndConsumeResources, admitServerQueueMessageAndConsumeResources, assistantQueueAdmissionAvailable, attachedFilesToQueueCandidates, createServerQueueAdmissionCapture, createServerQueueAdmissionIdentity, isServerQueueAdmissionEventBlocked } from './queueAdmission';
 import { shouldShowPermissionAutoAcceptControl, togglePermissionAutoAccept } from './permissionAutoAccept';
 import { getSlashTokenRange } from './commandSelection';
 import { isCommandAllowedForSubmission } from './commandSelection';
@@ -1869,8 +1869,16 @@ const ChatInputRuntime: React.FC<ChatInputProps> = ({ onOpenSettings, scrollToBo
             name: command.name,
             source: 'openchamber',
         }))) return;
-        if (submissionBlocked || queueFrozen || isServerQueueAdmissionEventBlocked(serverQueue.mode, hasBlockingAdmission, serverAdmissionFlightRef.current)) return;
+        if (submissionBlocked || isServerQueueAdmissionEventBlocked(serverQueue.mode, hasBlockingAdmission, serverAdmissionFlightRef.current)) return;
         if (!inputSnapshot.hasContent || !currentSessionId) return;
+        // Invariant: Assistant never dead-ends in queue. Legacy/frozen ownership
+        // cannot admit assistant deliveries — falling back keeps the conversation
+        // usable after share/busy (default follow-up is "queue").
+        if (!assistantQueueAdmissionAvailable(surface.deliveryTarget?.kind, serverQueue.mode)) {
+            void handleSubmitRef.current(sessionIsRunning ? { delivery: 'steer' } : undefined);
+            return;
+        }
+        if (queueFrozen) return;
         await surface.selection.flush();
         const sendConfig = surface.selection.value.providerID && surface.selection.value.modelID
             ? { ...surface.selection.value, providerID: surface.selection.value.providerID, modelID: surface.selection.value.modelID }
@@ -1994,10 +2002,7 @@ const ChatInputRuntime: React.FC<ChatInputProps> = ({ onOpenSettings, scrollToBo
             });
             return;
         }
-        if (scope.deliveryTarget.kind === 'assistant') {
-            toast.error(t('chat.chatInput.toast.messageSendFailed'));
-            return;
-        }
+        // Primary-only legacy queue path. Assistant is handled above.
         const admission = admitChatInputQueueMessageAndConsumeResources({
             bindLegacy: () => useMessageQueueStore.getState().bindLegacyQueue(legacyQueueScope(currentSessionId), scope),
             addComposer: () => addToQueue(scope, {
@@ -2799,14 +2804,17 @@ const ChatInputRuntime: React.FC<ChatInputProps> = ({ onOpenSettings, scrollToBo
         // while session status was still loading, which parked idle sends in the
         // queue path and left the composer uncleared when legacy queue rejected them.
         const canQueue = inputMode === 'normal' && inputSnapshot.hasContent && currentSessionId && (sessionIsRunning || autoReviewRunning);
-        if (followUpBehavior === 'queue' && canQueue) {
+        const queueUsable = canQueue && assistantQueueAdmissionAvailable(surface.deliveryTarget?.kind, serverQueue.mode);
+        if (followUpBehavior === 'queue' && queueUsable) {
             handleQueueMessage();
-        } else if (followUpBehavior === 'steer' && canQueue) {
-            void handleSubmitRef.current({ delivery: 'steer' });
+        } else if ((followUpBehavior === 'steer' && canQueue) || (followUpBehavior === 'queue' && canQueue && !queueUsable)) {
+            // Assistant + legacy/frozen queue: fall back to steer into the running
+            // turn (or direct when idle) so share-busy sessions stay sendable.
+            void handleSubmitRef.current(canQueue ? { delivery: 'steer' } : undefined);
         } else {
             void handleSubmitRef.current();
         }
-    }, [inputMode, getCurrentInputSnapshot, currentSessionId, sessionIsRunning, autoReviewRunning, followUpBehavior, handleQueueMessage, serverQueue.mode, hasBlockingAdmission]);
+    }, [inputMode, getCurrentInputSnapshot, currentSessionId, sessionIsRunning, autoReviewRunning, followUpBehavior, handleQueueMessage, serverQueue.mode, hasBlockingAdmission, surface.deliveryTarget?.kind]);
 
     // Draft welcome presets: submit immediately.
     const submitPresetPrompt = React.useCallback((text: string) => {
@@ -3208,12 +3216,16 @@ const ChatInputRuntime: React.FC<ChatInputProps> = ({ onOpenSettings, scrollToBo
             // Queueing / steering only works when there's an existing busy
             // session (or an active auto-review run). `unknown` is not running.
             const canQueue = inputMode === 'normal' && hasContent && currentSessionId && (sessionIsRunning || autoReviewRunning);
+            const queueUsable = canQueue && assistantQueueAdmissionAvailable(surface.deliveryTarget?.kind, serverQueue.mode);
 
             if (followUpBehavior === 'queue') {
                 if (isCtrlEnter || !canQueue) {
                     handleSubmit();
-                } else {
+                } else if (queueUsable) {
                     handleQueueMessage();
+                } else {
+                    // Assistant without server queue: steer instead of a dead-end admit.
+                    handleSubmit({ delivery: 'steer' });
                 }
             } else {
                 // steer: Enter steers into the running turn, Ctrl+Enter sends now.

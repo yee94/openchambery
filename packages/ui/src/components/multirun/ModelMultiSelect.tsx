@@ -8,6 +8,7 @@ import { useConfigStore } from '@/stores/useConfigStore';
 import { useUIStore } from '@/stores/useUIStore';
 import { useModelLists } from '@/hooks/useModelLists';
 import { useI18n } from '@/lib/i18n';
+import { getModelDisplayName } from '@/lib/modelDisplay';
 import { ModelPickerList, type ModelPickerEntry, type ModelPickerProvider } from '@/components/model-picker/ModelPickerList';
 
 /** Chip height class - shared between chips and add button */
@@ -194,7 +195,7 @@ export const ModelMultiSelect: React.FC<ModelMultiSelectProps> = ({
     const nextModel = {
       providerID: entry.providerID,
       modelID: entry.modelID,
-      displayName: (entry.model.name as string) || entry.modelID,
+      displayName: getModelDisplayName(entry.model as { id?: string; name?: string }, entry.modelID) || entry.modelID,
       instanceId: generateInstanceId(),
     };
     if (isSingleSelect && selectedModels.length > 0 && onUpdate) {

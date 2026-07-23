@@ -43,6 +43,10 @@ import { spawnSync } from 'node:child_process';
 const resolveRegistryDir = () => {
   const override = process.env.OPENCHAMBER_MANAGED_PROCESS_REGISTRY;
   if (override && override.trim()) return override.trim();
+  // Prefer the active OpenChamber data dir (Preview/dev isolate this under
+  // Electron userData) so managed-OpenCode reapers never cross product profiles.
+  const dataDir = typeof process.env.OPENCHAMBER_DATA_DIR === 'string' ? process.env.OPENCHAMBER_DATA_DIR.trim() : '';
+  if (dataDir) return path.join(dataDir, 'managed-opencode');
   return path.join(os.homedir(), '.config', 'openchamber', 'managed-opencode');
 };
 
