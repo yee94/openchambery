@@ -1973,10 +1973,13 @@ const ToolPartContent: React.FC<ToolPartProps> = ({
     const openContextDiff = useUIStore((s) => s.openContextDiff);
     const openContextToolDiff = useUIStore((s) => s.openContextToolDiff);
     const navigateToDiff = useUIStore((s) => s.navigateToDiff);
-    const currentDirectory = useEffectiveDirectory() ?? '';
+    const effectiveDirectory = useEffectiveDirectory();
     const setCurrentSession = useSessionUIStore((s) => s.setCurrentSession);
     const mobileActions = useMobileAppActions();
     const sessionSurface = useSessionSurface();
+    const currentDirectory = sessionSurface.kind === 'embedded'
+        ? sessionSurface.directory ?? ''
+        : effectiveDirectory ?? '';
 
     const normalizedPartTool = normalizeToolName(part.tool);
     const isTaskTool = normalizedPartTool === 'task';
@@ -2346,6 +2349,10 @@ const ToolPartContent: React.FC<ToolPartProps> = ({
                 // 子会话 id 还在路上：记下意图，id 到达后自动打开
                 pendingOpenTaskSessionRef.current = true;
             }
+            return;
+        }
+
+        if (isFileNavTool && !currentDirectory) {
             return;
         }
 

@@ -1,26 +1,26 @@
-import { useQuery, type QueryClient } from '@tanstack/react-query';
+import { useInfiniteQuery, useQuery, type QueryClient } from '@tanstack/react-query';
 import { queryClient } from '@/lib/queryRuntime';
 import { runtimeFetch } from '@/lib/runtime-fetch';
 import { getRuntimeGeneration, getRuntimeTransportIdentity } from '@/lib/runtime-switch';
-import { AssistantAPIError, AssistantShareOperationError, parseAssistantCapabilityDTO, parseAssistantDTO, parseAssistantSnapshotDTO, parseCompactResponse, parseMessageAdmission, parseSessionBinding, parseShareOperation, type AssistantCapabilityDTO, type AssistantDTO, type AssistantMode, type AssistantPart, type AssistantSnapshotDTO, type AssistantSource, type CompactResponse, type MessageAdmission, type SessionBinding, type ShareOperation } from './assistantDTO';
-export type { AssistantDTO, AssistantMode, AssistantPart, AssistantSource, CompactResponse, MessageAdmission, SessionBinding, ShareOperation } from './assistantDTO';
+import { AssistantAPIError, AssistantShareOperationError, parseAssistantCapabilityDTO, parseAssistantDTO, parseAssistantHistoryPage, parseAssistantSnapshotDTO, parseCompactResponse, parseMessageAdmission, parseSessionBinding, parseShareOperation, type AssistantCapabilityDTO, type AssistantDTO, type AssistantHistoryPage, type AssistantMode, type AssistantPart, type AssistantSnapshotDTO, type AssistantSource, type CompactResponse, type MessageAdmission, type SessionBinding, type ShareOperation } from './assistantDTO';
+export type { AssistantDTO, AssistantHistoryEntry, AssistantHistoryPage, AssistantMode, AssistantPart, AssistantSource, CompactResponse, MessageAdmission, SessionBinding, ShareOperation } from './assistantDTO';
 export type AssistantSnapshot = AssistantSnapshotDTO;
 export type AssistantCapability = AssistantCapabilityDTO;
 export interface AssistantDraft { enabled: boolean; name: string; defaultPrompt: string; workspacePath: string | null; providerID: string; modelID: string; agent: string | null; variant?: string | null; mode: AssistantMode; }
 export { AssistantAPIError, AssistantShareOperationError, parseAssistantCapabilityDTO, parseShareOperation } from './assistantDTO';
 
-const key = { snapshot: (transport = getRuntimeTransportIdentity()) => [transport, 'assistants', 'snapshot'] as const };
+const ASSISTANT_HISTORY_PAGE_SIZE = 30;
+const key = {
+  snapshot: (transport = getRuntimeTransportIdentity()) => [transport, 'assistants', 'snapshot'] as const,
+  history: (assistantID: string, sessionID: string, sessionGeneration: number, transport = getRuntimeTransportIdentity(), runtimeGeneration = getRuntimeGeneration()) => [transport, runtimeGeneration, 'assistants', 'history', assistantID, sessionID, sessionGeneration] as const,
+};
 const requestJSON = async <T>(path: string, init: RequestInit = {}): Promise<T> => { const response = await runtimeFetch(path, init); const payload = await response.json().catch(() => null) as { error?: unknown } | T | null; if (!response.ok) throw new AssistantAPIError(payload && typeof payload === 'object' && 'error' in payload && typeof payload.error === 'string' ? payload.error : 'request_failed', response.status); return payload as T; };
 const jsonInit = (method: string, body?: unknown): RequestInit => ({ method, headers: { 'Content-Type': 'application/json' }, body: body === undefined ? undefined : JSON.stringify(body) });
 const assertCurrent = (transport: string, generation: number) => { if (getRuntimeTransportIdentity() !== transport || getRuntimeGeneration() !== generation) throw new AssistantAPIError('runtime_stale', 409); };
 const applyBinding = (assistantID: string, binding: SessionBinding, transport: string) => {
   queryClient.setQueryData<AssistantSnapshot>(key.snapshot(transport), (snapshot) => snapshot && ({ ...snapshot, assistants: snapshot.assistants.map((assistant) => {
     if (assistant.id !== assistantID) return assistant;
-    const previousSessionID = assistant.sessionID;
-    const historySessionIDs = previousSessionID && binding.sessionID && previousSessionID !== binding.sessionID
-      ? [...assistant.historySessionIDs.filter((sessionID) => sessionID !== previousSessionID && sessionID !== binding.sessionID), previousSessionID].slice(-50)
-      : assistant.historySessionIDs;
-    return { ...assistant, sessionID: binding.sessionID, sessionGeneration: binding.sessionGeneration, effectiveWorkspacePath: binding.directory, historySessionIDs };
+    return { ...assistant, sessionID: binding.sessionID, sessionGeneration: binding.sessionGeneration, effectiveWorkspacePath: binding.directory };
   }) }));
   void queryClient.invalidateQueries({ queryKey: key.snapshot(transport) });
 };
@@ -30,6 +30,35 @@ const applyAssistant = (assistant: AssistantDTO, transport: string) => {
 };
 export const assistantSnapshotQueryOptions = (transport = getRuntimeTransportIdentity()) => ({ queryKey: key.snapshot(transport), queryFn: async ({ signal }: { signal: AbortSignal }) => parseAssistantSnapshotDTO(await requestJSON<unknown>('/api/openchamber/assistants/snapshot', { signal })), retry: 2 });
 export const useAssistantSnapshotQuery = () => useQuery(assistantSnapshotQueryOptions());
+export const assistantHistoryInfiniteQueryOptions = (
+  assistantID: string,
+  sessionID: string,
+  sessionGeneration: number,
+  transport = getRuntimeTransportIdentity(),
+  runtimeGeneration = getRuntimeGeneration(),
+) => ({
+  queryKey: key.history(assistantID, sessionID, sessionGeneration, transport, runtimeGeneration),
+  queryFn: async ({ signal, pageParam }: { signal: AbortSignal; pageParam: string | null }) => {
+    assertCurrent(transport, runtimeGeneration);
+    const query = new URLSearchParams({ limit: String(ASSISTANT_HISTORY_PAGE_SIZE) });
+    if (pageParam) query.set('before', pageParam);
+    const page = parseAssistantHistoryPage(await requestJSON<unknown>(`/api/openchamber/assistants/${encodeURIComponent(assistantID)}/messages?${query}`, { signal }));
+    assertCurrent(transport, runtimeGeneration);
+    return page;
+  },
+  initialPageParam: null as string | null,
+  getNextPageParam: getNextAssistantHistoryPageParam,
+  retry: 2,
+});
+export const getNextAssistantHistoryPageParam = (page: AssistantHistoryPage): string | undefined => page.complete ? undefined : page.nextCursor ?? undefined;
+export const useAssistantHistoryInfiniteQuery = (
+  assistantID: string,
+  binding: Pick<SessionBinding, 'sessionID' | 'sessionGeneration'>,
+  enabled = true,
+) => useInfiniteQuery({
+  ...assistantHistoryInfiniteQueryOptions(assistantID, binding.sessionID ?? '', binding.sessionGeneration),
+  enabled: enabled && Boolean(assistantID && binding.sessionID),
+});
 export const fetchAssistantSnapshot = async (signal: AbortSignal): Promise<AssistantSnapshot> => parseAssistantSnapshotDTO(await requestJSON<unknown>('/api/openchamber/assistants/snapshot', { signal }));
 export const assistantCapabilityQueryOptions = (transport = getRuntimeTransportIdentity()) => ({ queryKey: [transport, 'assistants', 'capability'] as const, queryFn: () => fetchAssistantCapability(), retry: false });
 export const useAssistantCapabilityQuery = () => useQuery(assistantCapabilityQueryOptions());

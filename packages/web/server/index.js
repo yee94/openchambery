@@ -1656,6 +1656,7 @@ async function main(options = {}) {
     permissionAutoAcceptRuntime,
     messageQueueService,
     messageQueueRuntime,
+    globalMessageStreamHub,
     getServerId: () => relayService.getServerId(),
   });
 

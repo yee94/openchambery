@@ -9,6 +9,9 @@ export interface ChatMessageEntry {
      * without rendering hidden sidecar text in the bubble.
      */
     sourceParts?: Part[];
+    /** Assistant history source identity for per-message workspace actions. */
+    sourceSessionID?: string;
+    sourceDirectory?: string | null;
 }
 
 type TurnActivityKind = 'tool' | 'reasoning' | 'justification';

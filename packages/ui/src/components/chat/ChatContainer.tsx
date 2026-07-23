@@ -1,4 +1,5 @@
 import React from 'react';
+import { useEvent } from '@reactuses/core';
 import type { Message, Part } from '@opencode-ai/sdk/v2';
 import type { PermissionRequest } from '@/types/permission';
 import type { QuestionRequest } from '@/types/question';
@@ -28,7 +29,8 @@ import { PromptNavigatorRail } from './components/PromptNavigatorRail';
 import { ScrollShadow } from '@/components/ui/ScrollShadow';
 import { useChatAutoFollow, type AnimationHandlers, type ContentChangeReason } from '@/hooks/useChatAutoFollow';
 import { useChatTimelineController } from './hooks/useChatTimelineController';
-import { createAssistantSessionDivider, useHostedSessionHistoryPrefix } from './hostedSessionHistory';
+import { createAssistantSessionDivider, stitchHostedSessionHistory } from './hostedSessionHistory';
+import type { ChatMessageEntry } from './lib/turns/types';
 import { TimelineDialog } from './TimelineDialog';
 import { useChatTurnNavigation } from './hooks/useChatTurnNavigation';
 import { useChatSurfaceMode } from './useChatSurfaceMode';
@@ -541,7 +543,7 @@ type ChatContainerContentProps = Omit<ChatContainerProps, 'host'> & {
     onSessionViewEstimateChange?: (key: string, estimatedBytes: number) => void;
     composerSurface?: ChatInputSurface;
     hostedFeatures?: Required<ChatContainerHostFeatures>;
-    historySessionIDs?: readonly string[];
+    assistantHistory?: ChatContainerHost['assistantHistory'];
     onRevertMessage?: (messageId: string) => Promise<void>;
     warning?: string | null;
 };
@@ -563,7 +565,7 @@ const ChatContainerContent: React.FC<ChatContainerContentProps> = ({
     onSessionViewEstimateChange,
     composerSurface,
     hostedFeatures,
-    historySessionIDs,
+    assistantHistory,
     onRevertMessage,
     warning = null,
 }) => {
@@ -590,11 +592,6 @@ const ChatContainerContent: React.FC<ChatContainerContentProps> = ({
     const ensureSessionRenderable = React.useCallback(
         (sessionId: string) => sync.ensureSessionRenderable(sessionId, { directory: effectiveSessionDirectory }),
         [effectiveSessionDirectory, sync],
-    );
-    const loadMoreMessages = React.useCallback(
-        // eslint-disable-next-line @typescript-eslint/no-unused-vars
-        (sessionId: string, _direction: 'up' | 'down') => sync.loadMore(sessionId),
-        [sync],
     );
 
     // UI store
@@ -683,6 +680,22 @@ const ChatContainerContent: React.FC<ChatContainerContentProps> = ({
         ),
         React.useCallback(() => undefined, []),
     );
+    const loadMoreMessages = useEvent(async (sessionId: string) => {
+        const syncComplete = sync.isComplete(sessionId);
+        const prefetchHasMore = !syncComplete
+            && Boolean(sessionPrefetchInfo?.cursor)
+            && sessionPrefetchInfo?.complete !== true;
+        if (sync.hasMore(sessionId) || prefetchHasMore) {
+            await sync.loadMore(sessionId);
+            return;
+        }
+        if (!syncComplete) {
+            await sync.loadMore(sessionId);
+        }
+        if (assistantHistory && !assistantHistory.complete) {
+            await assistantHistory.fetchPrevious();
+        }
+    });
 
     // Plan detection - watches messages for plan creation and signals store
     usePlanDetection(currentSessionId ?? '', sessionMessages);
@@ -786,12 +799,13 @@ const ChatContainerContent: React.FC<ChatContainerContentProps> = ({
         const prefetchHasMore = !syncComplete
             && Boolean(sessionPrefetchInfo?.cursor)
             && sessionPrefetchInfo?.complete !== true;
+        const liveComplete = syncComplete || !(sync.hasMore(currentSessionId) || prefetchHasMore);
         return {
             limit: sessionMessages.length,
-            complete: syncComplete || !(sync.hasMore(currentSessionId) || prefetchHasMore),
-            loading: sync.isLoading(currentSessionId),
+            complete: liveComplete && (assistantHistory?.complete ?? true),
+            loading: sync.isLoading(currentSessionId) || Boolean(assistantHistory?.loading),
         };
-    }, [currentSessionId, sessionMessages.length, sessionPrefetchInfo, sync]);
+    }, [assistantHistory?.complete, assistantHistory?.loading, currentSessionId, sessionMessages.length, sessionPrefetchInfo, sync]);
 
     const { isMobile } = useDeviceInfo();
     const isVSCode = isVSCodeRuntime();
@@ -930,7 +944,16 @@ const ChatContainerContent: React.FC<ChatContainerContentProps> = ({
             ? null
             : <ChatInput surface={composerSurface} scrollToBottom={scrollToBottomOnSend} submissionBlocked={promptAvailability.blockSubmission} />;
 
-    const historyPrefix = useHostedSessionHistoryPrefix(historySessionIDs, currentSessionId, effectiveSessionDirectory);
+    const historyPrefixCacheRef = React.useRef<ChatMessageEntry[]>([]);
+    const historyPrefix = React.useMemo(() => {
+        const next = stitchHostedSessionHistory(
+            assistantHistory?.entries ?? [],
+            currentSessionId,
+            historyPrefixCacheRef.current,
+        );
+        historyPrefixCacheRef.current = next;
+        return next;
+    }, [assistantHistory?.entries, currentSessionId]);
     const viewportMessages = React.useMemo(() => {
         if (historyPrefix.length === 0) return sessionMessages;
         if (!currentSessionId) return historyPrefix;
@@ -1532,7 +1555,8 @@ const SessionViewLoadingPlaceholder: React.FC = () => (
     </div>
 );
 
-const RuntimeScopedChatContainer: React.FC<ChatContainerProps & { runtimeKey: string }> = ({ runtimeKey, host: _host, ...props }) => {
+const RuntimeScopedChatContainer: React.FC<ChatContainerProps & { runtimeKey: string }> = ({ runtimeKey, host, ...props }) => {
+    void host;
     const chatSurfaceMode = useChatSurfaceMode();
     const syncDirectory = useSyncDirectory();
     const selectedSession = useSessionUIStore(
@@ -1719,7 +1743,7 @@ const HostedChatContainer: React.FC<ChatContainerProps & { host: ChatContainerHo
                     sessionViewKey={sessionViewKey}
                     composerSurface={host.composerSurface}
                     hostedFeatures={hostedFeatures}
-                    historySessionIDs={host.historySessionIDs}
+                    assistantHistory={host.assistantHistory}
                     onRevertMessage={host.onRevertMessage}
                     warning={host.warning}
                 />

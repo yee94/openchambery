@@ -31,6 +31,7 @@ import {
     readTaskSessionIdFromRecord,
 } from './message/parts/taskToolModel';
 import { MarkdownHydrationProvider } from './markdown/MarkdownHydrationProvider';
+import { SessionSurfaceContext, useSessionSurface } from './SessionSurfaceContext';
 import {
     createInitialMarkdownHydratedKeys,
     ensureNewestMarkdownKeyHydrated,
@@ -443,7 +444,20 @@ const MessageRow = React.memo<MessageRowProps>(({
     scrollToBottom,
     reviewTransferDirection,
 }) => {
-    return (
+    const sessionSurface = useSessionSurface();
+    const messageSurface = message.sourceSessionID
+        ? {
+            ...sessionSurface,
+            sessionId: message.sourceSessionID,
+            directory: message.sourceDirectory ?? null,
+            capabilities: {
+                ...sessionSurface.capabilities,
+                mutateSession: false,
+                forkSession: false,
+            },
+        }
+        : sessionSurface;
+    const chatMessage = (
         <ChatMessage
             message={message}
             previousMessage={previousMessage}
@@ -460,11 +474,16 @@ const MessageRow = React.memo<MessageRowProps>(({
             reviewTransferDirection={reviewTransferDirection}
         />
     );
+    return (
+        messageSurface === sessionSurface ? chatMessage : <SessionSurfaceContext.Provider value={messageSurface}>{chatMessage}</SessionSurfaceContext.Provider>
+    );
 }, (prev, next) => {
     const prevTurn = prev.turnGroupingContext;
     const nextTurn = next.turnGroupingContext;
 
     return areRenderRelevantMessagesEqual(prev.message, next.message)
+        && prev.message.sourceSessionID === next.message.sourceSessionID
+        && prev.message.sourceDirectory === next.message.sourceDirectory
         && areOptionalRenderRelevantMessagesEqual(prev.previousMessage, next.previousMessage)
         && areOptionalRenderRelevantMessagesEqual(prev.nextMessage, next.nextMessage)
         && prev.animateUserOnMount === next.animateUserOnMount

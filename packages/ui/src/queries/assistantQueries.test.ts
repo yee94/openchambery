@@ -17,6 +17,26 @@ describe('Assistant query contract', () => {
     expect(source).toContain('{ sessionID: binding.sessionID, sessionGeneration: binding.sessionGeneration, messageID, parts, source }');
   });
 
+  test('keys paged Assistant history by transport, Assistant, and binding', async () => {
+    const source = await readFile(join(directory, 'assistantQueries.ts'), 'utf8');
+    expect(source).toContain("[transport, runtimeGeneration, 'assistants', 'history', assistantID, sessionID, sessionGeneration]");
+    expect(source).toContain('useInfiniteQuery');
+    expect(source).toContain('initialPageParam: null as string | null');
+    expect(source).toContain('getNextPageParam: getNextAssistantHistoryPageParam');
+    expect(source).toContain('/messages?${query}');
+    expect(source).toContain("query.set('before', pageParam)");
+    expect(source).toContain('parseAssistantHistoryPage');
+    expect(source).toContain('assertCurrent(transport, runtimeGeneration)');
+  });
+
+  test('uses one initial history request and follows only server cursors', async () => {
+    const source = await readFile(join(directory, 'assistantQueries.ts'), 'utf8');
+    const history = source.slice(source.indexOf('export const assistantHistoryInfiniteQueryOptions'), source.indexOf('export const useAssistantHistoryInfiniteQuery'));
+    expect(history).toContain('initialPageParam: null as string | null');
+    expect(history).toContain('getNextPageParam: getNextAssistantHistoryPageParam');
+    expect(history.match(/queryFn:/g)).toHaveLength(1);
+  });
+
   test('settles share delivery only from a completed operation in its captured runtime', async () => {
     const source = await readFile(join(directory, 'assistantQueries.ts'), 'utf8');
     expect(source).toContain("current.state === 'running' || current.state === 'submitting'");

@@ -1,9 +1,6 @@
-import React from 'react';
 import type { Message, Part } from '@opencode-ai/sdk/v2';
 import type { ChatMessageEntry } from '@/components/chat/lib/turns/types';
-import { useDirectoryStore } from '@/sync/sync-context';
-import { fetchMessagesForSession } from '@/sync/session-actions';
-import { useSync } from '@/sync/use-sync';
+import type { AssistantHistoryEntry, AssistantHistoryPage } from '@/queries/assistantQueries';
 
 export const ASSISTANT_SESSION_DIVIDER_PREFIX = 'oc_asst_session_divider:';
 
@@ -40,27 +37,28 @@ export const toChatMessageEntries = (
   return result.length === 0 ? EMPTY_PREFIX : result;
 };
 
+export const flattenAssistantHistoryPages = (pages: readonly Pick<AssistantHistoryPage, 'entries'>[]): AssistantHistoryEntry[] => (
+  pages.slice().reverse().flatMap((page) => page.entries)
+);
+
 export const stitchHostedSessionHistory = (
-  historySessionIDs: readonly string[],
+  entries: readonly AssistantHistoryEntry[],
   currentSessionID: string | null | undefined,
-  directory: string | null | undefined,
-  readEntries: (sessionID: string) => readonly ChatMessageEntry[],
   previousPrefix: ChatMessageEntry[] = EMPTY_PREFIX,
 ): ChatMessageEntry[] => {
-  if (!historySessionIDs.length || !directory) return EMPTY_PREFIX;
+  if (!entries.length) return EMPTY_PREFIX;
 
   const result: ChatMessageEntry[] = [];
   let sawContent = false;
-  for (const sessionID of historySessionIDs) {
-    if (!sessionID || sessionID === currentSessionID) continue;
-    const messages = readEntries(sessionID);
-    if (!messages.length) continue;
-    if (sawContent) {
-      const createdAt = Number((messages[0]?.info as { time?: { created?: number } } | undefined)?.time?.created ?? 0);
-      result.push(createAssistantSessionDivider(sessionID, createdAt));
+  let previousSessionID: string | null = null;
+  for (const entry of entries) {
+    if (entry.sessionID === currentSessionID) continue;
+    if (sawContent && previousSessionID !== entry.sessionID) {
+      result.push(createAssistantSessionDivider(entry.sessionID, Number((entry.info as { time?: { created?: number } }).time?.created ?? 0)));
     }
-    result.push(...messages);
+    result.push({ info: entry.info, parts: entry.parts, sourceSessionID: entry.sessionID, sourceDirectory: entry.directory });
     sawContent = true;
+    previousSessionID = entry.sessionID;
   }
   if (result.length === 0) return EMPTY_PREFIX;
   return samePrefix(previousPrefix, result) ? previousPrefix : result;
@@ -84,61 +82,7 @@ const samePrefix = (left: readonly ChatMessageEntry[], right: readonly ChatMessa
     const rightEntry = right[index];
     if (!leftEntry || !rightEntry) return false;
     if (leftEntry === rightEntry || sameAssistantSessionDivider(leftEntry, rightEntry)) continue;
-    if (leftEntry?.info !== rightEntry?.info || leftEntry?.parts !== rightEntry?.parts) return false;
+    if (leftEntry?.info !== rightEntry?.info || leftEntry?.parts !== rightEntry?.parts || leftEntry.sourceSessionID !== rightEntry.sourceSessionID || leftEntry.sourceDirectory !== rightEntry.sourceDirectory) return false;
   }
   return true;
-};
-
-/**
- * Loads prior hosted-session transcripts (Assistant history chain) and returns
- * a prefix of messages + session dividers to prepend ahead of the live binding.
- */
-export const useHostedSessionHistoryPrefix = (
-  historySessionIDs: readonly string[] | undefined,
-  currentSessionID: string | null | undefined,
-  directory: string | null | undefined,
-): ChatMessageEntry[] => {
-  const sync = useSync();
-  const store = useDirectoryStore(directory ?? undefined);
-  const sessionKey = React.useMemo(
-    () => (historySessionIDs ?? []).filter((sessionID) => sessionID && sessionID !== currentSessionID).join('\0'),
-    [currentSessionID, historySessionIDs],
-  );
-  const resolvedIDs = React.useMemo(
-    () => (sessionKey ? sessionKey.split('\0') : []),
-    [sessionKey],
-  );
-  const cacheRef = React.useRef<ChatMessageEntry[]>(EMPTY_PREFIX);
-
-  React.useEffect(() => {
-    if (!directory || resolvedIDs.length === 0) return;
-    for (const sessionID of resolvedIDs) {
-      void sync.ensureSessionRenderable(sessionID, { directory });
-      void fetchMessagesForSession(sessionID, directory);
-    }
-  }, [directory, resolvedIDs, sync]);
-
-  const getSnapshot = React.useCallback(() => {
-    if (!directory || resolvedIDs.length === 0) {
-      cacheRef.current = EMPTY_PREFIX;
-      return EMPTY_PREFIX;
-    }
-    const state = store.getState();
-    const next = stitchHostedSessionHistory(
-      resolvedIDs,
-      currentSessionID,
-      directory,
-      (sessionID) => toChatMessageEntries(state.message[sessionID], state.part),
-      cacheRef.current,
-    );
-    cacheRef.current = next;
-    return next;
-  }, [currentSessionID, directory, resolvedIDs, store]);
-
-  const subscribe = React.useCallback((notify: () => void) => {
-    if (!directory || resolvedIDs.length === 0) return () => undefined;
-    return store.subscribe(notify);
-  }, [directory, resolvedIDs, store]);
-
-  return React.useSyncExternalStore(subscribe, getSnapshot, () => EMPTY_PREFIX);
 };
