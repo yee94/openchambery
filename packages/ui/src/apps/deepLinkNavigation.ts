@@ -1,6 +1,7 @@
 import React from 'react';
 
-import { isCapacitorApp } from '@/lib/platform';
+import { isCapacitorApp, isIPadApp } from '@/lib/platform';
+import { useMobileNavigationStore } from '@/mobile/useMobileNavigationStore';
 import { useSessionUIStore } from '@/sync/session-ui-store';
 import { useUIStore } from '@/stores/useUIStore';
 
@@ -36,11 +37,33 @@ let pending: DeepLinkIntent | null = null;
 
 const execute = (intent: DeepLinkIntent): boolean => {
   switch (intent.type) {
-    case 'session':
+    case 'session': {
+      // Phone: route through the navigation coordinator so the chat page opens
+      // (single authority: coordinator runs setCurrentSession synchronously).
+      // Other surfaces (iPad split layout, desktop MainLayout) keep the direct
+      // store selection.
+      if (!isIPadApp()) {
+        useMobileNavigationStore.getState().openSession({
+          sessionId: intent.sessionId,
+          directory: intent.directory ?? null,
+        });
+        return true;
+      }
       void useSessionUIStore.getState().setCurrentSession(intent.sessionId, intent.directory ?? null);
       return true;
+    }
 
     case 'new-session': {
+      if (!isIPadApp()) {
+        useMobileNavigationStore.getState().openDraft({
+          directoryOverride: intent.directory ?? null,
+          selectedProjectId: intent.projectId ?? null,
+          preserveDirectoryOverride: Boolean(intent.directory),
+          ensureProjectForDirectory: Boolean(intent.directory),
+          initialPrompt: intent.prompt,
+        });
+        return true;
+      }
       const store = useSessionUIStore.getState();
       store.openNewSessionDraft({
         directoryOverride: intent.directory ?? null,
@@ -55,6 +78,13 @@ const execute = (intent: DeepLinkIntent): boolean => {
     case 'open-project': {
       // Desktop/Electron also listens for this DOM event; on mobile we open a
       // draft targeted at the directory so the user lands in a usable composer.
+      if (!isIPadApp()) {
+        useMobileNavigationStore.getState().openDraft({
+          directoryOverride: intent.directory,
+          preserveDirectoryOverride: true,
+        });
+        return true;
+      }
       const store = useSessionUIStore.getState();
       store.openNewSessionDraft({
         directoryOverride: intent.directory,
@@ -69,8 +99,13 @@ const execute = (intent: DeepLinkIntent): boolean => {
       return true;
 
     case 'status':
-      // The session status panel is store-backed (useUIStore.mobileSessionPanelOpen),
-      // so it opens without a shell handler — like session/new-session.
+      // Phone routes status to the projects tab (same as sessions). Fall back to
+      // the legacy store-backed panel when no shell handler is registered (iPad
+      // before handlers mount, or non-mobile hosts that still use the panel).
+      if (handlers.openSessions) {
+        handlers.openSessions();
+        return true;
+      }
       useUIStore.getState().setMobileSessionPanelOpen(true);
       return true;
 

@@ -145,7 +145,7 @@ Require both correctness and performance guards:
 - memory/cache growth check for long-running paths;
 - production build or equivalent runtime profile for UI interactions.
 
-State what was not measured. Never claim a freeze is fixed from type-check and unit tests alone.
+State what was not measured. Never claim a freeze is fixed from static checks and unit tests alone.
 
 ## Hotfix Policy
 

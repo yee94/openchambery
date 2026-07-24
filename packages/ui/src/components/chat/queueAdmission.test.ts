@@ -1,5 +1,5 @@
 import { beforeEach, describe, expect, test } from 'bun:test';
-import { admitChatInputQueueMessageAndConsumeResources, admitQueueMessageAndConsumeResources, admitServerQueueMessageAndConsumeResources, assistantQueueAdmissionAvailable, attachedFilesToQueueCandidates, createServerQueueAdmissionCapture, createServerQueueAdmissionIdentity, isServerQueueAdmissionEventBlocked, startServerQueueScopeMutationFlight, type ServerQueueScopeMutationFlights } from './queueAdmission';
+import { admitChatInputQueueMessageAndConsumeResources, admitQueueMessageAndConsumeResources, admitServerQueueMessageAndConsumeResources, assistantQueueAdmissionAvailable, attachedFilesToQueueCandidates, createServerQueueAdmissionCapture, createServerQueueAdmissionIdentity, isCompleteQueueSendConfig, isQueueAdmissionRuntimeCurrent, isServerQueueAdmissionEventBlocked, startServerQueueScopeMutationFlight, type ServerQueueScopeMutationFlights } from './queueAdmission';
 import { legacyQueueScope, setMessageQueueMutationFence, useMessageQueueStore, type QueueItem, type QueueScope } from '@/stores/messageQueueStore';
 import { sessionDraftKey, type DraftRecord } from '@/sync/input-draft-types';
 import type { AttachedFile } from '@/stores/types/sessionTypes';
@@ -58,6 +58,35 @@ describe('admitQueueMessageAndConsumeResources', () => {
         expect(isServerQueueAdmissionEventBlocked('server', false, true)).toBe(true);
         expect(isServerQueueAdmissionEventBlocked('frozen', false, true)).toBe(true);
         expect(isServerQueueAdmissionEventBlocked('legacy', false, true)).toBe(false);
+    });
+
+    test('isCompleteQueueSendConfig requires non-empty providerID and modelID for new admissions', () => {
+        expect(isCompleteQueueSendConfig({ providerID: 'openai', modelID: 'gpt-5.5' })).toBe(true);
+        expect(isCompleteQueueSendConfig({
+            providerID: 'openai',
+            modelID: 'gpt-5.5',
+            agent: 'build',
+        } as { providerID: string; modelID: string; agent?: string })).toBe(true);
+        expect(isCompleteQueueSendConfig(undefined)).toBe(false);
+        expect(isCompleteQueueSendConfig(null)).toBe(false);
+        expect(isCompleteQueueSendConfig({ providerID: '', modelID: 'gpt-5.5' })).toBe(false);
+        expect(isCompleteQueueSendConfig({ providerID: 'openai', modelID: '  ' })).toBe(false);
+        expect(isCompleteQueueSendConfig({ providerID: 'openai' } as { providerID: string; modelID?: string })).toBe(false);
+    });
+
+    test('isQueueAdmissionRuntimeCurrent requires matching transport identity and generation', () => {
+        expect(isQueueAdmissionRuntimeCurrent(
+            { transportIdentity: 'runtime-a', generation: 1 },
+            { transportIdentity: 'runtime-a', generation: 1 },
+        )).toBe(true);
+        expect(isQueueAdmissionRuntimeCurrent(
+            { transportIdentity: 'runtime-a', generation: 1 },
+            { transportIdentity: 'runtime-b', generation: 1 },
+        )).toBe(false);
+        expect(isQueueAdmissionRuntimeCurrent(
+            { transportIdentity: 'runtime-a', generation: 1 },
+            { transportIdentity: 'runtime-a', generation: 2 },
+        )).toBe(false);
     });
 
     test('assistant queue admission requires server-backed queue ownership', () => {

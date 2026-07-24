@@ -4,7 +4,7 @@ import { useEvent } from '@reactuses/core';
 import { isCapacitorApp } from '@/lib/platform';
 import { ComposerDictation } from '@/components/dictation/ComposerDictation';
 // sessionStore removed — currentSessionId comes from useSessionUIStore
-import { useConfigStore } from '@/stores/useConfigStore';
+import { getConfigDirectoryKey, useConfigStore } from '@/stores/useConfigStore';
 import { useUIStore } from '@/stores/useUIStore';
 import { useLeaderKeyStore } from '@/stores/useLeaderKeyStore';
 import { useMessageQueueStore, getQueueForScope, legacyQueueScope, queueScopeKey, type QueueItem, type QueueScope, type QueuedMessage } from '@/stores/messageQueueStore';
@@ -17,7 +17,7 @@ import { useInputStore } from '@/sync/input-store';
 import { newSessionDraftKey, sessionDraftKey, type DraftKey, type DraftMention } from '@/sync/input-draft-types';
 import type { AttachedFile } from '@/stores/types/sessionTypes';
 import * as sessionActions from '@/sync/session-actions';
-import { useDirectorySync, useUserMessageHistory } from '@/sync/sync-context';
+import { useDirectorySync, useSessionMessages, useUserMessageHistory } from '@/sync/sync-context';
 import { getAllSyncSessionMap, getSyncMessages, resolveMaterializedSessionDirectory } from '@/sync/sync-refs';
 import { useSync } from '@/sync/use-sync';
 import { useInlineCommentDraftStore, type InlineCommentDraft } from '@/stores/useInlineCommentDraftStore';
@@ -134,7 +134,7 @@ import type { Part } from '@opencode-ai/sdk/v2/client';
 import { consumesImmediateCommandText, getLocalChatCommand, preservesComposerResources } from './localCommandClassifier';
 import { consumeImmediateCommandText } from './immediateCommandTextConsumption';
 import { runImmediateSessionCommand } from './immediateSessionCommandAction';
-import { admitChatInputQueueMessageAndConsumeResources, admitServerQueueMessageAndConsumeResources, assistantQueueAdmissionAvailable, attachedFilesToQueueCandidates, createServerQueueAdmissionCapture, createServerQueueAdmissionIdentity, isServerQueueAdmissionEventBlocked } from './queueAdmission';
+import { admitChatInputQueueMessageAndConsumeResources, admitServerQueueMessageAndConsumeResources, assistantQueueAdmissionAvailable, attachedFilesToQueueCandidates, createServerQueueAdmissionCapture, createServerQueueAdmissionIdentity, isCompleteQueueSendConfig, isQueueAdmissionRuntimeCurrent, isServerQueueAdmissionEventBlocked } from './queueAdmission';
 import { shouldShowPermissionAutoAcceptControl, togglePermissionAutoAccept } from './permissionAutoAccept';
 import { getSlashTokenRange } from './commandSelection';
 import { isCommandAllowedForSubmission } from './commandSelection';
@@ -142,8 +142,14 @@ import { clearActiveChatInputSurface, setActiveChatInputSurface } from './active
 import { resolveComposerVisibleAgents } from './chatComposerCatalog';
 import { assertChatInputSurfaceReady, isChatInputCommandAllowed, resolveChatInputCommandContext, resolveChatInputDraftBusy, resolveChatInputSurface, resolveModelVariantKeys, useChatInputSurfaceContext, usePrimaryChatInputSurface, type ChatInputSurface } from './chatInputSurface';
 import type { CommandAutocompleteContext } from './CommandAutocomplete';
-import { createChatInputControllerWiring } from './chatInputSurfaceWiring';
-import { applyPrimaryComposerSelectionChange } from './primaryComposerSelection';
+import { assertDeliveryRequestRuntimeCurrent, createChatInputControllerWiring, primarySendOptionsFromDeliveryRequest } from './chatInputSurfaceWiring';
+import {
+    applyPrimaryComposerSelectionChange,
+    applyPrimaryComposerSessionRestore,
+    capturePrimaryComposerSendConfig,
+    parseLatestUserChoiceFromMessages,
+    resolvePrimaryComposerSessionSelection,
+} from './primaryComposerSelection';
 import { canCompactPastedText, createPastedTextReference, getNextPastedTextReferenceIndex } from './pastedTextReferences';
 import { decorateComposerReference, materializeComposerDocument, serializeComposerDocument, validateComposerDocument, type ComposerDocument, type SessionComposerReference } from '@/composer/document';
 import { useComposerController } from '@/composer/use-composer-controller';
@@ -1004,6 +1010,18 @@ const ChatInputRuntime: React.FC<ChatInputProps> = ({ onOpenSettings, scrollToBo
     const currentSessionDirectoryForSync = useSessionUIStore(
         React.useCallback((s) => primarySessionID ? s.getDirectoryForSession(primarySessionID) : null, [primarySessionID]),
     );
+    // Primary owns session selection restore (ModelControls adapter path skips its own restore).
+    const primarySessionMessages = useSessionMessages(
+        primarySessionID ?? '',
+        currentSessionDirectoryForSync ?? undefined,
+    );
+    const primaryLatestUserChoice = React.useMemo(
+        () => parseLatestUserChoiceFromMessages(primarySessionMessages),
+        [primarySessionMessages],
+    );
+    const primaryConfigScopeKey = useConfigStore((state) => state.activeDirectoryKey);
+    const primarySelectionEditRevisionRef = React.useRef(0);
+    const primarySessionRestoreKeyRef = React.useRef<string | null>(null);
     const newSessionDraft = useSessionUIStore((s) => s.newSessionDraft);
     const primaryNewSessionDraftOpen = Boolean(newSessionDraft?.open);
     const draftSubmitting = useSessionUIStore((s) => s.newSessionDraft.draftSubmitting ?? false);
@@ -1077,8 +1095,107 @@ const ChatInputRuntime: React.FC<ChatInputProps> = ({ onOpenSettings, scrollToBo
                 ready: !primaryProviderConfigLoading && !primaryAgentConfigLoading,
                 loading: primaryProviderConfigLoading || primaryAgentConfigLoading,
             },
-            flush: async () => {},
+            flush: async () => {
+                const sessionId = useSessionUIStore.getState().currentSessionId;
+                if (!sessionId) {
+                    return;
+                }
+                const generationAtStart = getRuntimeGeneration();
+                const transportAtStart = getRuntimeTransportIdentity();
+                const editRevisionAtStart = primarySelectionEditRevisionRef.current;
+                const sessionAtStart = sessionId;
+                const sessionDirectoryAtStart =
+                    useSessionUIStore.getState().getDirectoryForSession(sessionAtStart) ?? null;
+                const expectedConfigKey = getConfigDirectoryKey(sessionDirectoryAtStart);
+
+                // Activate the session's Project/config scope before restore so
+                // send capture cannot read another Project's active config.
+                if (useConfigStore.getState().activeDirectoryKey !== expectedConfigKey) {
+                    await useConfigStore.getState().activateDirectory(sessionDirectoryAtStart);
+                }
+
+                if (
+                    getRuntimeGeneration() !== generationAtStart
+                    || getRuntimeTransportIdentity() !== transportAtStart
+                    || useSessionUIStore.getState().currentSessionId !== sessionAtStart
+                    || useConfigStore.getState().activeDirectoryKey !== expectedConfigKey
+                    || primarySelectionEditRevisionRef.current !== editRevisionAtStart
+                ) {
+                    return;
+                }
+
+                await ensureSessionRenderable(sessionAtStart, {
+                    directory: sessionDirectoryAtStart ?? undefined,
+                });
+
+                const sessionDirectoryAfter =
+                    useSessionUIStore.getState().getDirectoryForSession(sessionAtStart) ?? null;
+                const expectedConfigKeyAfter = getConfigDirectoryKey(sessionDirectoryAfter);
+                if (
+                    getRuntimeGeneration() !== generationAtStart
+                    || getRuntimeTransportIdentity() !== transportAtStart
+                    || useSessionUIStore.getState().currentSessionId !== sessionAtStart
+                    || sessionDirectoryAfter !== sessionDirectoryAtStart
+                    || expectedConfigKeyAfter !== expectedConfigKey
+                    || useConfigStore.getState().activeDirectoryKey !== expectedConfigKey
+                    || primarySelectionEditRevisionRef.current !== editRevisionAtStart
+                ) {
+                    return;
+                }
+
+                const config = useConfigStore.getState();
+                const catalog = {
+                    providers: config.providers,
+                    agents: config.getVisibleAgents(),
+                };
+                if (catalog.providers.length === 0 || catalog.agents.length === 0) {
+                    return;
+                }
+
+                const messages = getSyncMessages(sessionAtStart, sessionDirectoryAfter ?? undefined);
+                const latestChoice = parseLatestUserChoiceFromMessages(messages);
+                const memory = useSelectionStore.getState();
+                const resolved = resolvePrimaryComposerSessionSelection({
+                    sessionId: sessionAtStart,
+                    latestUserChoice: latestChoice,
+                    catalog,
+                    memory,
+                    fallbackAgentName: config.currentAgentName,
+                });
+                if (!resolved) {
+                    return;
+                }
+
+                const restoreKey = [
+                    sessionAtStart,
+                    resolved.source,
+                    resolved.messageId ?? '',
+                    resolved.agent ?? '',
+                    resolved.providerID,
+                    resolved.modelID,
+                    resolved.variant ?? '',
+                    expectedConfigKey,
+                ].join('|');
+                if (primarySessionRestoreKeyRef.current === restoreKey) {
+                    return;
+                }
+
+                applyPrimaryComposerSessionRestore(resolved, {
+                    currentAgentName: config.currentAgentName,
+                    setAgent: config.setAgent,
+                    setProvider: config.setProvider,
+                    setModel: config.setModel,
+                    setCurrentVariant: config.setCurrentVariant,
+                }, {
+                    sessionId: sessionAtStart,
+                    memory,
+                });
+                primarySessionRestoreKeyRef.current = restoreKey;
+            },
             change: async (selection) => {
+                // Explicit user pick: bump edit revision so an in-flight flush
+                // cannot overwrite the new choice after ensureSessionRenderable.
+                primarySelectionEditRevisionRef.current += 1;
                 // setAgent re-applies agent-scoped model memory and would clobber an
                 // explicit model pick if called after setModel. applyPrimaryComposer-
                 // SelectionChange only switches agents when needed, then applies the
@@ -1095,6 +1212,37 @@ const ChatInputRuntime: React.FC<ChatInputProps> = ({ onOpenSettings, scrollToBo
                     sessionId: useSessionUIStore.getState().currentSessionId,
                     memory: useSelectionStore.getState(),
                 });
+                // Pin the current history/memory restore key so the effect does not
+                // re-apply the same latest user message over this explicit pick.
+                // A newer message id (or session switch) still re-resolves.
+                const sessionId = useSessionUIStore.getState().currentSessionId;
+                if (sessionId) {
+                    const directory = useSessionUIStore.getState().getDirectoryForSession(sessionId) ?? undefined;
+                    const latestChoice = parseLatestUserChoiceFromMessages(getSyncMessages(sessionId, directory));
+                    const memory = useSelectionStore.getState();
+                    const resolved = resolvePrimaryComposerSessionSelection({
+                        sessionId,
+                        latestUserChoice: latestChoice,
+                        catalog: {
+                            providers: config.providers,
+                            agents: config.getVisibleAgents(),
+                        },
+                        memory,
+                        fallbackAgentName: selection.agent ?? config.currentAgentName,
+                    });
+                    if (resolved) {
+                        primarySessionRestoreKeyRef.current = [
+                            sessionId,
+                            resolved.source,
+                            resolved.messageId ?? '',
+                            resolved.agent ?? '',
+                            resolved.providerID,
+                            resolved.modelID,
+                            resolved.variant ?? '',
+                            useConfigStore.getState().activeDirectoryKey,
+                        ].join('|');
+                    }
+                }
             },
         },
         resources: {
@@ -1129,7 +1277,27 @@ const ChatInputRuntime: React.FC<ChatInputProps> = ({ onOpenSettings, scrollToBo
             abortPrompt: { sessionID: abortPromptSessionId, clear: clearAbortPrompt },
         },
         backend: {
-            send: (request) => primarySendMessage(request.text ?? '', request.providerID, request.modelID, request.agent, request.attachments ?? [], request.agentMention, request.parts, request.variant, request.inputMode, request.options),
+            send: (request) => {
+                // Reject stale runtime so restoreFailedSubmission can reinstate composer resources.
+                assertDeliveryRequestRuntimeCurrent(request, {
+                    transportIdentity: getRuntimeTransportIdentity(),
+                    runtimeGeneration: getRuntimeGeneration(),
+                });
+                // Pin first-submit session/directory; draft (null) keeps materialization path.
+                const sendOptions = primarySendOptionsFromDeliveryRequest(request);
+                return primarySendMessage(
+                    request.text ?? '',
+                    request.providerID,
+                    request.modelID,
+                    request.agent,
+                    request.attachments ?? [],
+                    request.agentMention,
+                    request.parts,
+                    request.variant,
+                    request.inputMode,
+                    sendOptions,
+                );
+            },
             sendQueued: (request) => dispatchQueuedMessage(request.sessionID ?? '', { delivery: request.options?.delivery === 'steer' ? 'steer' : undefined, queueItemID: request.queueItemID, manual: request.manual, scope: request.queueScope ? { state: 'bound', ...request.queueScope } : undefined }),
             create: async () => openNewSessionDraft(),
             compact: async (request) => opencodeClient.summarizeSession(request.sessionID ?? '', request.providerID ?? '', request.modelID ?? '', request.directory),
@@ -1239,6 +1407,104 @@ const ChatInputRuntime: React.FC<ChatInputProps> = ({ onOpenSettings, scrollToBo
         disabled: !surface.active,
         catalog: selectionCatalog,
     }), [selectionCatalog, selectionChange, selectionValue.agent, selectionValue.modelID, selectionValue.providerID, selectionValue.variant, surface.active]);
+
+    // Primary surface owns session selection restore while ModelControls uses the
+    // adapter (which disables ModelControls' own history/memory restore path).
+    React.useEffect(() => {
+        if (surface.kind !== 'primary' || !primarySessionID) {
+            if (!primarySessionID) {
+                primarySessionRestoreKeyRef.current = null;
+            }
+            return;
+        }
+        if (primaryProviderConfigLoading || primaryAgentConfigLoading) {
+            return;
+        }
+        if (primarySelectionProviders.length === 0 || primarySelectionAgents.length === 0) {
+            return;
+        }
+
+        // Wait until the active config scope matches this session's Project key.
+        // Otherwise restore would write Project B session selection into Project A.
+        const expectedConfigKey = getConfigDirectoryKey(currentSessionDirectoryForSync);
+        if (primaryConfigScopeKey !== expectedConfigKey) {
+            return;
+        }
+
+        const memory = useSelectionStore.getState();
+        const catalog = {
+            providers: primarySelectionProviders,
+            agents: primarySelectionAgents,
+        };
+        const resolved = resolvePrimaryComposerSessionSelection({
+            sessionId: primarySessionID,
+            latestUserChoice: primaryLatestUserChoice,
+            catalog,
+            memory,
+            fallbackAgentName: primaryAgentName,
+        });
+        if (!resolved) {
+            return;
+        }
+
+        const restoreKey = [
+            primarySessionID,
+            resolved.source,
+            resolved.messageId ?? '',
+            resolved.agent ?? '',
+            resolved.providerID,
+            resolved.modelID,
+            resolved.variant ?? '',
+            primaryConfigScopeKey,
+        ].join('|');
+        if (primarySessionRestoreKeyRef.current === restoreKey) {
+            return;
+        }
+
+        // Skip re-applying when live config already matches (manual pick or prior restore).
+        if (
+            (resolved.agent === undefined || resolved.agent === primaryAgentName)
+            && resolved.providerID === primaryProviderID
+            && resolved.modelID === primaryModelID
+            && resolved.variant === primaryVariant
+        ) {
+            primarySessionRestoreKeyRef.current = restoreKey;
+            return;
+        }
+
+        // Re-check scope immediately before apply — activateDirectory may have raced.
+        if (useConfigStore.getState().activeDirectoryKey !== expectedConfigKey) {
+            return;
+        }
+
+        const config = useConfigStore.getState();
+        applyPrimaryComposerSessionRestore(resolved, {
+            currentAgentName: config.currentAgentName,
+            setAgent: config.setAgent,
+            setProvider: config.setProvider,
+            setModel: config.setModel,
+            setCurrentVariant: config.setCurrentVariant,
+        }, {
+            sessionId: primarySessionID,
+            memory,
+        });
+        primarySessionRestoreKeyRef.current = restoreKey;
+    }, [
+        surface.kind,
+        primarySessionID,
+        primaryLatestUserChoice,
+        primarySelectionProviders,
+        primarySelectionAgents,
+        primaryProviderConfigLoading,
+        primaryAgentConfigLoading,
+        primaryConfigScopeKey,
+        currentSessionDirectoryForSync,
+        primaryAgentName,
+        primaryProviderID,
+        primaryModelID,
+        primaryVariant,
+    ]);
+
     const getVisibleAgents = useConfigStore((state) => state.getVisibleAgents);
     const primaryAgents = surface.kind === 'primary' ? getVisibleAgents() : EMPTY_AGENTS;
     const primaryProviders = useConfigStore((state) => surface.kind === 'primary' ? state.providers : EMPTY_PROVIDERS);
@@ -1879,10 +2145,68 @@ const ChatInputRuntime: React.FC<ChatInputProps> = ({ onOpenSettings, scrollToBo
             return;
         }
         if (queueFrozen) return;
+        // Pin surface/runtime/scope/session before flush so runtime switch cannot
+        // pair new sendConfig with the pre-switch composer surface.
+        const surfaceTransportAtStart = surface.transportIdentity;
+        const surfaceGenerationAtStart = surface.runtimeGeneration;
+        const draftRuntimeAtStart = surfaceResources.captureRuntime();
+        const queueScopeAtStart = currentQueueScope;
+        const primaryQueueSessionIdAtStart = surface.kind === 'primary'
+            ? (currentQueueScope?.sessionID ?? currentSessionId)
+            : null;
         await surface.selection.flush();
-        const sendConfig = surface.selection.value.providerID && surface.selection.value.modelID
-            ? { ...surface.selection.value, providerID: surface.selection.value.providerID, modelID: surface.selection.value.modelID }
-            : undefined;
+        if (!isQueueAdmissionRuntimeCurrent(
+            { transportIdentity: surfaceTransportAtStart, generation: surfaceGenerationAtStart },
+            { transportIdentity: getRuntimeTransportIdentity(), generation: getRuntimeGeneration() },
+        )) {
+            return;
+        }
+        if (!isQueueAdmissionRuntimeCurrent(draftRuntimeAtStart, surfaceResources.captureRuntime())) {
+            return;
+        }
+        if (
+            primaryQueueSessionIdAtStart
+            && useSessionUIStore.getState().currentSessionId !== primaryQueueSessionIdAtStart
+        ) {
+            return;
+        }
+        if (!queueScopeAtStart) {
+            toast.error(t('chat.chatInput.toast.messageSendFailed'));
+            return;
+        }
+        // Re-check scope against live transport + primary session directory (not render-closed values).
+        if (
+            queueScopeAtStart.transportIdentity !== getRuntimeTransportIdentity()
+            || queueScopeAtStart.runtimeGeneration !== getRuntimeGeneration()
+            || queueScopeAtStart.sessionID !== (primaryQueueSessionIdAtStart ?? queueScopeAtStart.sessionID)
+            || (
+                primaryQueueSessionIdAtStart
+                && (useSessionUIStore.getState().getDirectoryForSession(primaryQueueSessionIdAtStart) ?? null) !== queueScopeAtStart.directory
+            )
+        ) {
+            return;
+        }
+        const scope = queueScopeAtStart;
+        // Primary must read live config after flush (React selection.value can be stale).
+        // Scope-check so activateDirectory failure cannot capture another Project's config.
+        const sendConfig = surface.kind === 'primary'
+            ? (() => {
+                const configState = useConfigStore.getState();
+                const sessionDirectory = primaryQueueSessionIdAtStart
+                    ? (useSessionUIStore.getState().getDirectoryForSession(primaryQueueSessionIdAtStart) ?? null)
+                    : null;
+                return capturePrimaryComposerSendConfig(configState, {
+                    expectedConfigKey: getConfigDirectoryKey(sessionDirectory),
+                    activeDirectoryKey: configState.activeDirectoryKey,
+                });
+            })()
+            : (surface.selection.value.providerID && surface.selection.value.modelID
+                ? { ...surface.selection.value, providerID: surface.selection.value.providerID, modelID: surface.selection.value.modelID }
+                : undefined);
+        // New queue admission requires a complete sendConfig; keep composer resources.
+        if (!isCompleteQueueSendConfig(sendConfig)) {
+            return;
+        }
 
         const resourcePolicy = initialPlan.chunks.every((chunk) => chunk.provenance === 'authored') && preservesComposerResources(logicalMessage, inputMode);
         if (resourcePolicy) {
@@ -1899,11 +2223,6 @@ const ChatInputRuntime: React.FC<ChatInputProps> = ({ onOpenSettings, scrollToBo
         if (!serialized.ok) { toast.error(t('chat.chatInput.toast.messageSendFailed')); return; }
         const attachmentsToQueue = sanitizeAttachmentsForSend(sendableAttachedFiles);
 
-        const scope = currentQueueScope;
-        if (!scope) {
-            toast.error(t('chat.chatInput.toast.messageSendFailed'));
-            return;
-        }
         if (serverQueue.mode === 'server') {
             if (!draftKey) {
                 toast.error(t('chat.chatInput.toast.messageSendFailed'));
@@ -1912,7 +2231,7 @@ const ChatInputRuntime: React.FC<ChatInputProps> = ({ onOpenSettings, scrollToBo
             const admissionCapture = createServerQueueAdmissionCapture({
                 draftKey,
                 draftRecord: surfaceResources.getDraft(draftKey),
-                runtime: surfaceResources.captureRuntime(),
+                runtime: draftRuntimeAtStart,
                 document: inputSnapshot.document,
                 attachments: sendableAttachedFiles,
                 inlineDrafts: drafts,
@@ -2004,7 +2323,7 @@ const ChatInputRuntime: React.FC<ChatInputProps> = ({ onOpenSettings, scrollToBo
         }
         // Primary-only legacy queue path. Assistant is handled above.
         const admission = admitChatInputQueueMessageAndConsumeResources({
-            bindLegacy: () => useMessageQueueStore.getState().bindLegacyQueue(legacyQueueScope(currentSessionId), scope),
+            bindLegacy: () => useMessageQueueStore.getState().bindLegacyQueue(legacyQueueScope(scope.sessionID), scope),
             addComposer: () => addToQueue(scope, {
                 content: serialized.text,
                 composerDocument: documentToQueue,
@@ -2146,13 +2465,52 @@ const ChatInputRuntime: React.FC<ChatInputProps> = ({ onOpenSettings, scrollToBo
         // prevents the UI from looking like it accepted a second send.
         if (!currentSessionId && resolvedDraftBusy) return;
 
-        await surface.selection.flush();
+        // Primary: pin session before any await so A→B switch mid-flush aborts send.
+        // Queued-only prefers the bound queue owner / first queued item owner when present.
+        const primarySubmitSessionIdAtStart = surface.kind === 'primary'
+            ? (() => {
+                if (queuedOnly) {
+                    const queuedOwner = queuedMessagesToSend[0]?.owner;
+                    if (queuedOwner?.state === 'bound') return queuedOwner.sessionID;
+                    if (queuedOwner?.state === 'unbound-legacy') return queuedOwner.sessionID;
+                    if (currentQueueScope?.sessionID) return currentQueueScope.sessionID;
+                }
+                return currentSessionId;
+            })()
+            : null;
         const capturedSendConfig = queuedOnly ? queuedMessagesToSend[0]?.sendConfig : undefined;
+        // Queued-only with a captured sendConfig already owns the selection; skip flush.
+        if (!(queuedOnly && capturedSendConfig)) {
+            await surface.selection.flush();
+        }
+        // Primary session must still be the one this handler started for.
+        if (
+            primarySubmitSessionIdAtStart !== null
+            && useSessionUIStore.getState().currentSessionId !== primarySubmitSessionIdAtStart
+        ) {
+            return;
+        }
+        // Primary post-flush capture must use live config-store snapshot, not a
+        // React closure over surface.selection.value. Queued captured sendConfig
+        // stays authoritative (no live re-resolve). New-session draft (null id)
+        // keeps draft active config without a session Project scope key.
         const sendConfig = capturedSendConfig
             ? { ...capturedSendConfig }
-            : surface.selection.value.providerID && surface.selection.value.modelID
-                ? { ...surface.selection.value, providerID: surface.selection.value.providerID, modelID: surface.selection.value.modelID }
-                : undefined;
+            : surface.kind === 'primary'
+                ? (() => {
+                    const configState = useConfigStore.getState();
+                    if (!primarySubmitSessionIdAtStart) {
+                        return capturePrimaryComposerSendConfig(configState);
+                    }
+                    const sessionDirectory = useSessionUIStore.getState().getDirectoryForSession(primarySubmitSessionIdAtStart) ?? null;
+                    return capturePrimaryComposerSendConfig(configState, {
+                        expectedConfigKey: getConfigDirectoryKey(sessionDirectory),
+                        activeDirectoryKey: configState.activeDirectoryKey,
+                    });
+                })()
+                : (surface.selection.value.providerID && surface.selection.value.modelID
+                    ? { ...surface.selection.value, providerID: surface.selection.value.providerID, modelID: surface.selection.value.modelID }
+                    : undefined);
         const providerIdToSend = sendConfig?.providerID;
         const modelIdToSend = sendConfig?.modelID;
         const agentNameToSend = sendConfig?.agent;
@@ -2185,9 +2543,29 @@ const ChatInputRuntime: React.FC<ChatInputProps> = ({ onOpenSettings, scrollToBo
             }
         }
 
+        // Pin first-submit session/directory so backend cannot re-route after a mid-flight switch.
         const sendMessageOptions = {
             ...(delivery ? { delivery } : {}),
             commitStagedMessageEdit: !queuedOnly,
+            ...(primarySubmitSessionIdAtStart
+                ? {
+                    sessionId: primarySubmitSessionIdAtStart,
+                    directoryHint: (
+                        useSessionUIStore.getState().getDirectoryForSession(primarySubmitSessionIdAtStart)
+                        ?? currentDirectory
+                        ?? null
+                    ),
+                }
+                : surface.kind === 'primary' && currentSessionId
+                    ? {
+                        sessionId: currentSessionId,
+                        directoryHint: (
+                            useSessionUIStore.getState().getDirectoryForSession(currentSessionId)
+                            ?? currentDirectory
+                            ?? null
+                        ),
+                    }
+                    : {}),
         };
 
         // Build the primary message (first part) and additional parts

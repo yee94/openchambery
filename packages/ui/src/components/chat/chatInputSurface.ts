@@ -105,7 +105,13 @@ export type ChatInputDeliveryRequest = {
   parts?: readonly { text: string; attachments?: readonly AttachedFile[]; synthetic?: boolean }[];
   systemContext?: readonly { text: string; synthetic?: boolean }[];
   inputMode?: 'normal' | 'shell';
-  options?: { delivery?: string; commitStagedMessageEdit?: boolean };
+  options?: {
+    delivery?: string;
+    commitStagedMessageEdit?: boolean;
+    /** First-submit pin; preferred over live surface session when present. */
+    sessionId?: string;
+    directoryHint?: string | null;
+  };
   queueScope?: ChatInputQueueScope;
 };
 

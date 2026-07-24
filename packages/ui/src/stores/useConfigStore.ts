@@ -240,7 +240,8 @@ type DefaultAgentModelSelection = {
 // Shared default-selection cascade used both at startup (loadAgents) and when opening a
 // fresh draft (applyDefaultModelAgentSelection), so the two paths stay identical.
 //
-//   Agent: settings.defaultAgent → inherit → opencode default_agent → build → first primary → first
+//   Agent: settings.defaultAgent → Project lastSelectedAgentName (inherit) → opencode default_agent
+//          → build → first primary → first
 //   Model: last user manual pick for the resolved agent (agentModelSelections, model+variant)
 //          → project.defaultModel → settings.defaultModel
 //          → resolved agent's pinned model+variant → opencode config.model
@@ -248,7 +249,8 @@ type DefaultAgentModelSelection = {
 //
 // Per-agent manual memory is first-class config-store state (directory-scoped), not derived
 // from any session's last model. It wins over project/settings defaults and OpenCode pins so
-// a user's last pick for that agent sticks on every new draft.
+// a user's last pick for that agent sticks on every new draft. Historical session restore
+// never updates lastSelectedAgentName or agentModelSelections.
 const resolveDefaultAgentModelSelection = ({
     agents,
     providers,
@@ -806,6 +808,8 @@ interface DirectoryScopedConfig {
     currentAgentName: string | undefined;
     selectedProviderId: string;
     agentModelSelections: { [agentName: string]: AgentModelSelection };
+    /** Last explicitly chosen primary agent for this Project/config directory. */
+    lastSelectedAgentName?: string;
     defaultProviders: { [key: string]: string };
     providerCatalogPartial?: boolean;
     opencodeDefaultAgent?: string;
@@ -836,6 +840,7 @@ const hydrateActiveDirectorySnapshot = <T extends Partial<ConfigStore>>(merged: 
     next.currentAgentName = snapshot.currentAgentName;
     next.selectedProviderId = snapshot.selectedProviderId;
     next.agentModelSelections = snapshot.agentModelSelections;
+    next.lastSelectedAgentName = snapshot.lastSelectedAgentName;
     next.opencodeDefaultAgent = snapshot.opencodeDefaultAgent;
     next.opencodeDefaultModel = snapshot.opencodeDefaultModel;
     next.selectionSource = snapshot.selectionSource ?? "auto";
@@ -891,7 +896,7 @@ const sanitizePersistedCatalogState = (persistedState: unknown): Partial<ConfigS
         if (typeof persistedState[key] === 'number' && Number.isFinite(persistedState[key])) preferences[key] = persistedState[key];
     }
     const currentTransport = getRuntimeTransportIdentity();
-    if (transportIdentity !== currentTransport) return { ...preferences, catalogTransportIdentity: currentTransport, directoryScoped: {}, providers: [], agents: [], defaultProviders: {}, currentProviderId: '', currentModelId: '', currentVariant: undefined, currentAgentName: undefined, selectedProviderId: '', agentModelSelections: {}, providerConfigLoadingByDirectory: {}, agentConfigLoadingByDirectory: {} };
+    if (transportIdentity !== currentTransport) return { ...preferences, catalogTransportIdentity: currentTransport, directoryScoped: {}, providers: [], agents: [], defaultProviders: {}, currentProviderId: '', currentModelId: '', currentVariant: undefined, currentAgentName: undefined, selectedProviderId: '', agentModelSelections: {}, lastSelectedAgentName: undefined, providerConfigLoadingByDirectory: {}, agentConfigLoadingByDirectory: {} };
     const directoryScoped: Record<string, DirectoryScopedConfig> = {};
     if (isRecord(persistedState.directoryScoped)) {
         for (const [directoryKey, rawSnapshot] of Object.entries(persistedState.directoryScoped)) {
@@ -909,6 +914,7 @@ const sanitizePersistedCatalogState = (persistedState: unknown): Partial<ConfigS
                 currentAgentName: normalizeOptionalString(rawSnapshot.currentAgentName),
                 selectedProviderId: sanitizePersistedSelectedProviderId(normalizeOptionalString(rawSnapshot.selectedProviderId)),
                 agentModelSelections: sanitizeAgentModelSelections(rawSnapshot.agentModelSelections),
+                lastSelectedAgentName: sanitizeSelectionIdentifier(rawSnapshot.lastSelectedAgentName, true),
                 defaultProviders,
                 providerCatalogPartial,
                 opencodeDefaultAgent: normalizeOptionalString(rawSnapshot.opencodeDefaultAgent),
@@ -930,6 +936,7 @@ const sanitizePersistedCatalogState = (persistedState: unknown): Partial<ConfigS
         currentAgentName: normalizeOptionalString(persistedState.currentAgentName),
         selectedProviderId: sanitizePersistedSelectedProviderId(normalizeOptionalString(persistedState.selectedProviderId)),
         agentModelSelections: sanitizeAgentModelSelections(persistedState.agentModelSelections),
+        lastSelectedAgentName: sanitizeSelectionIdentifier(persistedState.lastSelectedAgentName, true),
     };
 };
 
@@ -945,6 +952,7 @@ const createEmptyDirectoryScopedConfig = (
     currentAgentName: undefined,
     selectedProviderId: "",
     agentModelSelections: {},
+    lastSelectedAgentName: undefined,
     defaultProviders: {},
     providerCatalogPartial: false,
     opencodeDefaultAgent: undefined,
@@ -1024,6 +1032,8 @@ interface ConfigStore {
     currentAgentName: string | undefined;
     selectedProviderId: string;
     agentModelSelections: { [agentName: string]: AgentModelSelection };
+    /** Project/config-directory last explicit agent (new-draft inherit). */
+    lastSelectedAgentName: string | undefined;
     defaultProviders: { [key: string]: string };
     selectionSource: "auto" | "manual";
     isConnected: boolean;
@@ -1169,6 +1179,7 @@ export const useConfigStore = create<ConfigStore>()(
                 currentAgentName: undefined,
                 selectedProviderId: "",
                 agentModelSelections: {},
+                lastSelectedAgentName: undefined,
                 defaultProviders: {},
                 selectionSource: "auto",
                 isConnected: false,
@@ -1437,6 +1448,7 @@ export const useConfigStore = create<ConfigStore>()(
                                 currentAgentName: snapshot.currentAgentName,
                                 selectedProviderId: snapshot.selectedProviderId,
                                 agentModelSelections: snapshot.agentModelSelections,
+                                lastSelectedAgentName: snapshot.lastSelectedAgentName,
                                 defaultProviders: snapshot.defaultProviders,
                                 opencodeDefaultAgent: snapshot.opencodeDefaultAgent,
                                 opencodeDefaultModel: snapshot.opencodeDefaultModel,
@@ -1461,6 +1473,7 @@ export const useConfigStore = create<ConfigStore>()(
                             currentAgentName: undefined,
                             selectedProviderId: "",
                             agentModelSelections: {},
+                            lastSelectedAgentName: undefined,
                             defaultProviders: {},
                             opencodeDefaultAgent: undefined,
                             opencodeDefaultModel: undefined,
@@ -1910,22 +1923,26 @@ export const useConfigStore = create<ConfigStore>()(
                     set((state) => {
                         const directoryKey = state.activeDirectoryKey;
                         const previous = state.agentModelSelections[agentName];
-                        if (
+                        const sameModel =
                             previous?.providerId === providerId
                             && previous?.modelId === modelId
-                            && previous?.variant === variant
-                        ) {
+                            && previous?.variant === variant;
+                        // Always record last agent on explicit user pick, even when the
+                        // agent already has the same model remembered.
+                        if (sameModel && state.lastSelectedAgentName === agentName) {
                             return state;
                         }
 
-                        const nextSelections = {
-                            ...state.agentModelSelections,
-                            [agentName]: {
-                                providerId,
-                                modelId,
-                                ...(variant ? { variant } : {}),
-                            },
-                        };
+                        const nextSelections = sameModel
+                            ? state.agentModelSelections
+                            : {
+                                ...state.agentModelSelections,
+                                [agentName]: {
+                                    providerId,
+                                    modelId,
+                                    ...(variant ? { variant } : {}),
+                                },
+                            };
 
                         const baseSnapshot: DirectoryScopedConfig = state.directoryScoped[directoryKey] ?? {
                             providers: state.providers,
@@ -1935,17 +1952,20 @@ export const useConfigStore = create<ConfigStore>()(
                             currentAgentName: state.currentAgentName,
                             selectedProviderId: state.selectedProviderId,
                             agentModelSelections: state.agentModelSelections,
+                            lastSelectedAgentName: state.lastSelectedAgentName,
                             defaultProviders: state.defaultProviders,
                         };
 
                         const nextSnapshot: DirectoryScopedConfig = {
                             ...baseSnapshot,
                             agentModelSelections: nextSelections,
+                            lastSelectedAgentName: agentName,
                             selectionSource: "manual",
                         };
 
                         return {
                             agentModelSelections: nextSelections,
+                            lastSelectedAgentName: agentName,
                             selectionSource: "manual",
                             directoryScoped: {
                                 ...state.directoryScoped,
@@ -2228,8 +2248,12 @@ export const useConfigStore = create<ConfigStore>()(
                             }
 
                             // Resolve agent + model via the shared cascade:
-                            //   settings.defaultAgent → opencode default_agent → build → first primary → first
+                            //   settings.defaultAgent → Project lastSelectedAgentName → opencode default_agent → build → first
                             //   per-agent last user pick → settings.defaultModel → agent pin → opencode/big-pickle → first
+                            const directoryAgentSelections = get().directoryScoped[directoryKey]?.agentModelSelections
+                                ?? (get().activeDirectoryKey === directoryKey ? get().agentModelSelections : {});
+                            const directoryLastAgent = get().directoryScoped[directoryKey]?.lastSelectedAgentName
+                                ?? (get().activeDirectoryKey === directoryKey ? get().lastSelectedAgentName : undefined);
                             const resolvedDefault = resolveDefaultAgentModelSelection({
                                 agents: safeAgents,
                                 providers,
@@ -2238,7 +2262,8 @@ export const useConfigStore = create<ConfigStore>()(
                                 settingsDefaultVariant: openChamberDefaults.defaultVariant,
                                 opencodeDefaultAgent,
                                 opencodeDefaultModel,
-                                agentModelSelections: get().agentModelSelections,
+                                agentModelSelections: directoryAgentSelections,
+                                inheritAgentName: directoryLastAgent,
                             });
                             const resolvedAgentName = resolvedDefault.agentName ?? safeAgents[0].name;
                             const resolvedProviderId = resolvedDefault.providerId;
@@ -2609,7 +2634,7 @@ export const useConfigStore = create<ConfigStore>()(
                 },
 
                 // Re-applies the same priority cascade used at app startup (see loadAgents):
-                //   agent: settings.defaultAgent → last session agent → build → first primary → first
+                //   agent: settings.defaultAgent → Project lastSelectedAgentName → build → first primary → first
                 //   model: per-agent last user pick → project/settings default → agent pin
                 //          → opencode/big-pickle → first
                 // Used when entering a fresh draft session so model/agent reset to defaults
@@ -2624,16 +2649,12 @@ export const useConfigStore = create<ConfigStore>()(
                         opencodeDefaultAgent,
                         opencodeDefaultModel,
                         agentModelSelections,
+                        lastSelectedAgentName,
                     } = get();
 
                     if (agents.length === 0 || providers.length === 0) {
                         return;
                     }
-
-                    const selState = useSelectionStore.getState();
-                    const lastAgentEntry = selState.sessionAgentSelections.size > 0
-                        ? Array.from(selState.sessionAgentSelections).at(-1)?.[1]
-                        : undefined;
 
                     const {
                         agentName: resolvedAgentName,
@@ -2650,7 +2671,7 @@ export const useConfigStore = create<ConfigStore>()(
                         opencodeDefaultAgent,
                         opencodeDefaultModel,
                         agentModelSelections,
-                        inheritAgentName: lastAgentEntry,
+                        inheritAgentName: lastSelectedAgentName,
                     });
 
                     if (!resolvedAgentName) {
@@ -2759,6 +2780,12 @@ export const useConfigStore = create<ConfigStore>()(
                             return nextState;
                         }
 
+                        const directoryAgentSelections = isActive
+                            ? state.agentModelSelections
+                            : (snapshot?.agentModelSelections ?? {});
+                        const directoryLastAgent = isActive
+                            ? state.lastSelectedAgentName
+                            : snapshot?.lastSelectedAgentName;
                         const resolved = resolveDefaultAgentModelSelection({
                             agents,
                             providers,
@@ -2767,7 +2794,8 @@ export const useConfigStore = create<ConfigStore>()(
                             settingsDefaultVariant: state.settingsDefaultVariant,
                             opencodeDefaultAgent,
                             opencodeDefaultModel,
-                            agentModelSelections: state.agentModelSelections,
+                            agentModelSelections: directoryAgentSelections,
+                            inheritAgentName: directoryLastAgent,
                         });
 
                         if (!resolved.agentName) {
@@ -3360,7 +3388,7 @@ export const useConfigStore = create<ConfigStore>()(
             }),
             {
                 name: "config-store",
-                version: 2,
+                version: 3,
                 storage: createDeferredSafeJSONStorage(),
                 migrate: (persistedState) => sanitizePersistedCatalogState(persistedState),
                 merge: (persistedState, currentState) =>
@@ -3389,6 +3417,7 @@ export const useConfigStore = create<ConfigStore>()(
                                 currentAgentName: snapshot.currentAgentName,
                                 selectedProviderId: sanitizePersistedSelectedProviderId(snapshot.selectedProviderId),
                                 agentModelSelections: sanitizeAgentModelSelections(snapshot.agentModelSelections),
+                                lastSelectedAgentName: sanitizeSelectionIdentifier(snapshot.lastSelectedAgentName, true),
                                 opencodeDefaultAgent: snapshot.opencodeDefaultAgent,
                                 opencodeDefaultModel: snapshot.opencodeDefaultModel,
                                 selectionSource: snapshot.selectionSource,
@@ -3414,6 +3443,7 @@ export const useConfigStore = create<ConfigStore>()(
                         currentAgentName: state.currentAgentName,
                         selectedProviderId: sanitizePersistedSelectedProviderId(state.selectedProviderId),
                         agentModelSelections: sanitizeAgentModelSelections(state.agentModelSelections),
+                        lastSelectedAgentName: sanitizeSelectionIdentifier(state.lastSelectedAgentName, true),
                         settingsDefaultModel: state.settingsDefaultModel,
                         settingsDefaultVariant: state.settingsDefaultVariant,
                         settingsDefaultAgent: state.settingsDefaultAgent,

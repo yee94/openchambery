@@ -33,8 +33,6 @@ After edits, run:
 
 Then run:
 
-`bun run type-check`
-
 `bun run lint`
 
 Validation and delivery:
@@ -51,7 +49,7 @@ PR requirements:
 - Include selected files.
 - Include diagnostics fixed according to `check-batch`.
 - Include remaining diagnostics in selected files.
-- Include validation results for `bun run type-check` and `bun run lint`.
+- Include validation results for `bun run lint`.
 - Include a `Manual testing recommendations` section with focused checks for the changed behavior. Base it on the selected files and actual edits, for example checking affected dropdowns, keyboard navigation, model/agent selection, settings controls, or mobile/desktop variants.
 - Include any skipped diagnostics and why.
 

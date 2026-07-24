@@ -218,10 +218,17 @@ export function ScheduledTasksWorkspace({
   presentation = 'workspace',
   open = true,
   onOpenChange,
+  registerEditorBackHandler,
 }: {
-  presentation?: 'workspace' | 'mobile-panel';
+  presentation?: 'workspace' | 'mobile-panel' | 'mobile-tab';
   open?: boolean;
   onOpenChange?: (open: boolean) => void;
+  /**
+   * Tab-mode Android back: when the editor is open, cancel it (with dirty-draft
+   * confirm) and return true. Host owns the back chain; tab mode must not also
+   * listen for the global dialog close event.
+   */
+  registerEditorBackHandler?: (handler: (() => boolean) | null) => void;
 } = {}) {
   const { t } = useI18n();
   const reduceMotion = useReducedMotion();
@@ -239,7 +246,11 @@ export function ScheduledTasksWorkspace({
   const [mutatingTaskIdentity, setMutatingTaskIdentity] = React.useState<string | null>(null);
   const [contextMenuTaskIdentity, setContextMenuTaskIdentity] = React.useState<string | null>(null);
   const [dropdownMenuTaskIdentity, setDropdownMenuTaskIdentity] = React.useState<string | null>(null);
-  const isMobilePanel = presentation === 'mobile-panel';
+  // `mobile-tab` shares the mobile layout but is hosted as a root tab page:
+  // no panel header (the tab supplies its own large-title header) and no
+  // close/back wiring against the dialog open flag.
+  const isMobileTab = presentation === 'mobile-tab';
+  const isMobilePanel = presentation === 'mobile-panel' || isMobileTab;
 
   React.useEffect(() => {
     if (projects.some((project) => project.id === createProjectID)) return;
@@ -403,8 +414,10 @@ export function ScheduledTasksWorkspace({
     return true;
   });
 
+  // Dialog / mobile-panel only: global close event is owned by the overlay path.
+  // Tab mode must not double-listen — it registers via registerEditorBackHandler.
   React.useEffect(() => {
-    if (!isMobilePanel || !open) return;
+    if (presentation !== 'mobile-panel' || !open) return;
     mobileCloseRequest = requestClose;
     const handleCloseRequest = () => requestClose();
     window.addEventListener('oc:scheduled-tasks-close-request', handleCloseRequest);
@@ -414,7 +427,23 @@ export function ScheduledTasksWorkspace({
     };
     // useEvent keeps requestClose stable while open controls subscription lifecycle.
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [isMobilePanel, open]);
+  }, [presentation, open]);
+
+  const handleEditorBack = useEvent(() => {
+    if (editorMode !== 'closed') {
+      handleCancelEditor(false);
+      return true;
+    }
+    return false;
+  });
+
+  React.useEffect(() => {
+    if (!registerEditorBackHandler) return;
+    registerEditorBackHandler(handleEditorBack);
+    return () => registerEditorBackHandler(null);
+    // useEvent keeps handleEditorBack stable; registration identity drives lifecycle.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [registerEditorBackHandler]);
 
   const handleSaveTask = useEvent(async (taskDraft: Partial<ScheduledTask>) => {
     const projectID = selectedTaskIdentity?.projectId || createProjectID;
@@ -519,7 +548,7 @@ export function ScheduledTasksWorkspace({
 
   return (
     <div className={cn('relative flex h-full min-h-0 overflow-hidden bg-background', isMobilePanel && 'flex-col')} data-presentation={presentation}>
-      {isMobilePanel ? (
+      {isMobilePanel && !isMobileTab ? (
         <header className="flex h-14 shrink-0 items-center gap-2 border-b border-border/40 px-2">
           {editorMode !== 'closed' ? (
             <Button

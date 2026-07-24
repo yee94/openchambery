@@ -212,6 +212,8 @@ export interface EdgeSwipeSessionSwitchOptions {
 export const useEdgeSwipeSessionSwitch = (
   ref: React.RefObject<HTMLElement | null>,
   options?: EdgeSwipeSessionSwitchOptions,
+  /** Re-bind trigger: flip when the ref's element mounts after first render. */
+  active?: unknown,
 ): void => {
   // Keep onSwitch in a ref so a changing callback identity doesn't re-attach the listeners.
   const onSwitchRef = React.useRef(options?.onSwitch);
@@ -402,5 +404,7 @@ export const useEdgeSwipeSessionSwitch = (
       element.removeEventListener('touchcancel', onTouchCancel);
       element.removeEventListener('click', onClickCapture, true);
     };
-  }, [ref]);
+    // `active` re-binds when the host element appears after first render (the
+    // phone chat subtree mounts only when the secondary page opens).
+  }, [ref, active]);
 };

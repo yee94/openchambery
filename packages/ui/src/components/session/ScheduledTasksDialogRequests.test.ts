@@ -94,16 +94,21 @@ describe('ScheduledTasksDialog queries', () => {
     expect(editorContent).toContain('MOBILE_PANEL_CONTROL_CLASS');
   });
 
-  test('exposes the scheduled tasks overlay from the dedicated mobile menu', async () => {
+  test('exposes scheduled tasks from the dedicated mobile menu and tab', async () => {
     const content = await readFile(join(dirname(fileURLToPath(import.meta.url)), '../../apps/MobileApp.tsx'), 'utf8');
     expect(content).toContain("key: 'scheduled'");
     expect(content).toContain("icon: 'time'");
     expect(content).toContain("label: t('sessions.sidebar.header.actions.scheduledTasks')");
-    expect(content).toContain('onSelect: () => setScheduledTasksDialogOpen(true)');
+    // iPad keeps the dialog; phone routes to the scheduled tab.
+    expect(content).toContain('setScheduledTasksDialogOpen(true);');
+    expect(content).toContain("useMobileNavigationStore.getState().setActiveTab('scheduled');");
     expect(content).toContain('|| scheduledTasksDialogOpen');
     expect(content).toContain('if (scheduledTasksDialogOpen) {');
     expect(content).toContain("window.dispatchEvent(new Event('oc:scheduled-tasks-close-request'));");
     expect(content).toContain('<ScheduledTasksDialog />');
+    // The phone tab hosts the workspace as a root page.
+    expect(content).toContain('<ScheduledTasksWorkspace');
+    expect(content).toContain('presentation="mobile-tab"');
   });
 
   test('keeps the mobile editor contained and routes close requests through its draft guard', async () => {
@@ -113,11 +118,14 @@ describe('ScheduledTasksDialog queries', () => {
       readFile(join(directory, '../ui/MobileOverlayPanel.tsx'), 'utf8'),
       readFile(join(directory, '../../apps/MobileApp.tsx'), 'utf8'),
     ]);
-    expect(workspaceContent).toContain("presentation?: 'workspace' | 'mobile-panel'");
+    expect(workspaceContent).toContain("presentation?: 'workspace' | 'mobile-panel' | 'mobile-tab'");
     expect(workspaceContent).toContain("presentation={isMobilePanel ? 'mobile-panel' : undefined}");
     expect(workspaceContent).toContain('if (editorMode !== \'closed\')');
     expect(workspaceContent).toContain('handleCancelEditor(false)');
+    // Global close event is exclusive to mobile-panel (dialog); tab uses registerEditorBackHandler.
+    expect(workspaceContent).toContain("if (presentation !== 'mobile-panel' || !open) return");
     expect(workspaceContent).toContain("window.addEventListener('oc:scheduled-tasks-close-request', handleCloseRequest)");
+    expect(workspaceContent).toContain('registerEditorBackHandler?: (handler: (() => boolean) | null) => void');
     expect(overlayContent).toContain('containedBody?: boolean');
     expect(overlayContent).toContain("'flex min-h-0 flex-1 flex-col overflow-hidden'");
     expect(overlayContent).toContain('openOverlayStack[openOverlayStack.length - 1] === overlayID');

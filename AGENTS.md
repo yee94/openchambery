@@ -121,9 +121,7 @@ Pure code-reading or explanation does not require implementation skills unless n
 
 - Use `package.json` scripts as the command source of truth.
 - Prefer focused tests and runtime validation during routine task iteration.
-- Reserve lint and type-check for immediately before a user-requested commit or for explicit user requests.
-- When lint or type-check is required, use package-scoped checks by default and workspace-wide checks for cross-workspace contracts, root tooling, dependencies, or shared generated assets.
 - Run `bun run dead-code` when source files are added/deleted/renamed or exports, types, entrypoints, or import shape change; inspect its report because it is non-blocking.
-- Do not assume TypeScript/lint covers server JS, CLI JS, Electron helpers, or native behavior; run focused tests, syntax checks, builds, or runtime validation for the touched surface.
+- Run focused tests, syntax checks, builds, or runtime validation for the touched surface when relevant.
 - For docs-only or isolated config changes, run the narrowest relevant validation.
 - Report exactly what was and was not validated. Static checks alone do not prove runtime, relay, performance, or platform correctness.

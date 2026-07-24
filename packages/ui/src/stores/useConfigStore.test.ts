@@ -300,6 +300,7 @@ describe('useConfigStore provider persistence', () => {
       sessionModelSelections: new Map(),
       sessionAgentSelections: new Map(),
       sessionAgentModelSelections: new Map(),
+      sessionAgentModelVariantSelections: new Map(),
       lastUsedProvider: null,
     });
     useSessionUIStore.setState({ currentSessionId: null });
@@ -317,6 +318,7 @@ describe('useConfigStore provider persistence', () => {
       currentAgentName: undefined,
       agents: [],
       agentModelSelections: {},
+      lastSelectedAgentName: undefined,
       opencodeDefaultAgent: undefined,
       opencodeDefaultModel: undefined,
       selectionSource: 'auto',
@@ -635,7 +637,7 @@ describe('useConfigStore provider persistence', () => {
     expect(state.settingsAutoCreateWorktree).toBe(true);
     expect(state.speechRate).toBe(1.2);
     const rewritten = storage.get(STORAGE_KEY) ?? '';
-    expect(JSON.parse(rewritten).version).toBe(2);
+    expect(JSON.parse(rewritten).version).toBe(3);
     expect(rewritten).not.toContain(sentinel);
     expect(rewritten).not.toContain('unknownPreference');
     expect(JSON.stringify(useConfigStore.persist.getOptions().partialize?.(state))).not.toContain(sentinel);
@@ -873,6 +875,7 @@ describe('useConfigStore provider persistence', () => {
     useConfigStore.setState({
       activeDirectoryKey: DIRECTORY,
       agentModelSelections: {},
+      lastSelectedAgentName: undefined,
       directoryScoped: {},
     });
 
@@ -888,6 +891,156 @@ describe('useConfigStore provider persistence', () => {
       modelId: 'gpt-5.5',
       variant: 'high',
     });
+    expect(useConfigStore.getState().lastSelectedAgentName).toBe('build');
+    expect(useConfigStore.getState().directoryScoped[DIRECTORY]?.lastSelectedAgentName).toBe('build');
+  });
+
+  test('saveAgentModelSelection updates last agent even when model is unchanged', () => {
+    useConfigStore.setState({
+      activeDirectoryKey: DIRECTORY,
+      agentModelSelections: {
+        build: { providerId: 'openai', modelId: 'gpt-5.5', variant: 'high' },
+        plan: { providerId: 'anthropic', modelId: 'claude-sonnet' },
+      },
+      lastSelectedAgentName: 'plan',
+      directoryScoped: {},
+    });
+
+    useConfigStore.getState().saveAgentModelSelection('build', 'openai', 'gpt-5.5', 'high');
+
+    expect(useConfigStore.getState().lastSelectedAgentName).toBe('build');
+    expect(useConfigStore.getState().directoryScoped[DIRECTORY]?.lastSelectedAgentName).toBe('build');
+    expect(useConfigStore.getState().agentModelSelections.build).toEqual({
+      providerId: 'openai',
+      modelId: 'gpt-5.5',
+      variant: 'high',
+    });
+  });
+
+  test('Project A/B lastSelectedAgentName isolation and new-draft inherit', async () => {
+    useConfigStore.setState({
+      activeDirectoryKey: DIRECTORY,
+      isConnected: false,
+      providers: [
+        provider('openai', 'gpt-5.5', { low: {}, high: {} }),
+        provider('anthropic', 'claude-sonnet'),
+      ],
+      agents: [testAgent('build'), testAgent('plan')],
+      agentModelSelections: {
+        plan: { providerId: 'openai', modelId: 'gpt-5.5', variant: 'high' },
+      },
+      lastSelectedAgentName: 'plan',
+      settingsDefaultAgent: undefined,
+      settingsDefaultModel: undefined,
+      settingsDefaultVariant: undefined,
+      currentProviderId: 'anthropic',
+      currentModelId: 'claude-sonnet',
+      currentVariant: undefined,
+      currentAgentName: 'build',
+      directoryScoped: {
+        [DIRECTORY]: {
+          providers: [
+            provider('openai', 'gpt-5.5', { low: {}, high: {} }),
+            provider('anthropic', 'claude-sonnet'),
+          ],
+          agents: [testAgent('build'), testAgent('plan')],
+          currentProviderId: 'anthropic',
+          currentModelId: 'claude-sonnet',
+          currentAgentName: 'build',
+          selectedProviderId: 'anthropic',
+          agentModelSelections: {
+            plan: { providerId: 'openai', modelId: 'gpt-5.5', variant: 'high' },
+          },
+          lastSelectedAgentName: 'plan',
+          defaultProviders: {},
+          selectionSource: 'manual',
+        },
+        [OTHER_DIRECTORY]: {
+          providers: [
+            provider('openai', 'gpt-5.5', { low: {}, high: {} }),
+            provider('anthropic', 'claude-sonnet'),
+          ],
+          agents: [testAgent('build'), testAgent('plan')],
+          currentProviderId: 'openai',
+          currentModelId: 'gpt-5.5',
+          currentAgentName: 'plan',
+          selectedProviderId: 'openai',
+          agentModelSelections: {
+            build: { providerId: 'anthropic', modelId: 'claude-sonnet' },
+          },
+          lastSelectedAgentName: 'build',
+          defaultProviders: {},
+          selectionSource: 'manual',
+        },
+      },
+    });
+
+    // Project A new draft inherits plan + plan's remembered model.
+    useConfigStore.getState().applyDefaultModelAgentSelection();
+    expect(useConfigStore.getState().currentAgentName).toBe('plan');
+    expect(useConfigStore.getState().currentProviderId).toBe('openai');
+    expect(useConfigStore.getState().currentModelId).toBe('gpt-5.5');
+    expect(useConfigStore.getState().currentVariant).toBe('high');
+    expect(useConfigStore.getState().directoryScoped[DIRECTORY]?.lastSelectedAgentName).toBe('plan');
+    expect(useConfigStore.getState().directoryScoped[OTHER_DIRECTORY]?.lastSelectedAgentName).toBe('build');
+
+    // Activate Project B and apply new-draft inherit — B uses build + its own model.
+    await useConfigStore.getState().activateDirectory(OTHER_DIRECTORY);
+    expect(useConfigStore.getState().activeDirectoryKey).toBe(OTHER_DIRECTORY);
+    expect(useConfigStore.getState().lastSelectedAgentName).toBe('build');
+
+    useConfigStore.getState().applyDefaultModelAgentSelection();
+    expect(useConfigStore.getState().currentAgentName).toBe('build');
+    expect(useConfigStore.getState().currentProviderId).toBe('anthropic');
+    expect(useConfigStore.getState().currentModelId).toBe('claude-sonnet');
+
+    // Project A snapshot stays isolated (plan + plan model prefs unchanged).
+    expect(useConfigStore.getState().directoryScoped[DIRECTORY]?.lastSelectedAgentName).toBe('plan');
+    expect(useConfigStore.getState().directoryScoped[DIRECTORY]?.agentModelSelections.plan).toEqual({
+      providerId: 'openai',
+      modelId: 'gpt-5.5',
+      variant: 'high',
+    });
+    expect(useConfigStore.getState().directoryScoped[OTHER_DIRECTORY]?.lastSelectedAgentName).toBe('build');
+    expect(useConfigStore.getState().directoryScoped[OTHER_DIRECTORY]?.agentModelSelections.build).toEqual({
+      providerId: 'anthropic',
+      modelId: 'claude-sonnet',
+    });
+  });
+
+  test('settingsDefaultAgent still wins over Project lastSelectedAgentName', () => {
+    useConfigStore.setState({
+      activeDirectoryKey: DIRECTORY,
+      providers: [
+        provider('openai', 'gpt-5.5', { low: {}, high: {} }),
+        provider('anthropic', 'claude-sonnet'),
+      ],
+      agents: [
+        testAgent('build', { model: { providerID: 'anthropic', modelID: 'claude-sonnet' } }),
+        testAgent('plan'),
+      ],
+      agentModelSelections: {
+        plan: { providerId: 'openai', modelId: 'gpt-5.5', variant: 'high' },
+      },
+      lastSelectedAgentName: 'plan',
+      settingsDefaultAgent: 'build',
+      settingsDefaultModel: undefined,
+      settingsDefaultVariant: undefined,
+      opencodeDefaultModel: 'anthropic/claude-sonnet',
+      currentProviderId: 'openai',
+      currentModelId: 'gpt-5.5',
+      currentVariant: 'high',
+      currentAgentName: 'plan',
+      directoryScoped: {},
+    });
+
+    useConfigStore.getState().applyDefaultModelAgentSelection();
+
+    const state = useConfigStore.getState();
+    expect(state.currentAgentName).toBe('build');
+    // build agent pin / cascade, not plan's remembered model
+    expect(state.currentProviderId).toBe('anthropic');
+    expect(state.currentModelId).toBe('claude-sonnet');
   });
 
   test('loadAgents does not fetch OpenCode config directly', async () => {

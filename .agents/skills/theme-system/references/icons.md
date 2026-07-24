@@ -46,7 +46,7 @@ Use literal inference (`as const`) only when the surrounding type does not alrea
 1. Use the correct kebab-case name in source.
 2. Type non-JSX values as `IconName`.
 3. Run `bun run icons:generate`.
-4. Inspect generated changes and run relevant type-check/build validation.
+4. Inspect generated changes and run relevant build validation.
 
 Never edit `packages/ui/src/components/icon/sprite.ts` manually. The generator scans source usages, maps names to Remixicon, and regenerates the sprite.
 

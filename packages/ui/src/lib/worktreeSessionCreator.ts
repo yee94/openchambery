@@ -7,12 +7,11 @@
 import { toast } from '@/components/ui';
 import { useSessionUIStore } from '@/sync/session-ui-store';
 import { useProjectsStore } from '@/stores/useProjectsStore';
-import { useConfigStore } from '@/stores/useConfigStore';
-import { useContextStore } from '@/stores/contextStore';
+import { getConfigDirectoryKey, useConfigStore } from '@/stores/useConfigStore';
 import { useDirectoryStore } from '@/stores/useDirectoryStore';
+import { useSelectionStore } from '@/sync/selection-store';
 import { checkIsGitRepository, previewGitWorktree } from '@/lib/gitApi';
 import { generateBranchName } from '@/lib/git/branchNameGenerator';
-import { parseModelIdentifier } from '@/lib/modelIdentifier';
 import { getRootBranch } from '@/lib/worktrees/worktreeStatus';
 import { getWorktreeSetupCommands, getWorktreeSetupWaitEnabled } from '@/lib/openchamberConfig';
 import {
@@ -28,6 +27,58 @@ import {
 import { waitForWorktreeBootstrap } from '@/lib/worktrees/worktreeBootstrap';
 
 const normalizePath = (value: string): string => value.replace(/\\/g, '/').replace(/\/+$/, '') || value;
+
+/** Snapshot of live config selection after Project defaults are applied. */
+export type WorktreeSessionSelectionSnapshot = {
+  agentName?: string;
+  providerId?: string;
+  modelId?: string;
+  variant?: string;
+};
+
+export const readWorktreeSessionSelectionSnapshot = (config: {
+  currentAgentName?: string;
+  currentProviderId?: string;
+  currentModelId?: string;
+  currentVariant?: string;
+}): WorktreeSessionSelectionSnapshot => ({
+  agentName: config.currentAgentName,
+  providerId: config.currentProviderId,
+  modelId: config.currentModelId,
+  variant: config.currentVariant,
+});
+
+/**
+ * Persist a complete selection snapshot into session memory.
+ * Variant is always written (including undefined) so a clear is explicit.
+ */
+export const writeWorktreeSessionSelection = (
+  sessionId: string,
+  snapshot: WorktreeSessionSelectionSnapshot,
+  memory: {
+    saveSessionAgentSelection: (sessionId: string, agentName: string) => void;
+    saveSessionModelSelection: (sessionId: string, providerId: string, modelId: string) => void;
+    saveAgentModelForSession: (sessionId: string, agentName: string, providerId: string, modelId: string) => void;
+    saveAgentModelVariantForSession: (
+      sessionId: string,
+      agentName: string,
+      providerId: string,
+      modelId: string,
+      variant: string | undefined,
+    ) => void;
+  },
+): void => {
+  const agentName = snapshot.agentName?.trim() || undefined;
+  const providerId = snapshot.providerId?.trim() || undefined;
+  const modelId = snapshot.modelId?.trim() || undefined;
+  if (!agentName || !providerId || !modelId) {
+    return;
+  }
+  memory.saveSessionAgentSelection(sessionId, agentName);
+  memory.saveSessionModelSelection(sessionId, providerId, modelId);
+  memory.saveAgentModelForSession(sessionId, agentName, providerId, modelId);
+  memory.saveAgentModelVariantForSession(sessionId, agentName, providerId, modelId, snapshot.variant);
+};
 
 const waitForWorktreeBootstrapIfEnabled = async (project: ProjectRef, directory: string): Promise<void> => {
   if (await getWorktreeSetupWaitEnabled(project)) {
@@ -63,89 +114,60 @@ const resolveProjectRef = (directory: string): ProjectRef | null => {
 // Track if a worktree creation flow is already running
 let isCreatingWorktreeSession = false;
 
-
-
-const applyDefaultAgentAndModelSelection = (sessionId: string, configState = useConfigStore.getState()) => {
+/**
+ * Activate owning Project config, apply Project-aware defaults, then write the
+ * resulting selection into session memory. Cross-Project inheritance is blocked
+ * by activating projectRef.path before applyDefaultModelAgentSelection.
+ */
+const applyProjectDefaultSelectionForWorktreeSession = async (
+  sessionId: string,
+  projectRef: ProjectRef,
+): Promise<void> => {
   try {
-    const visibleAgents = configState.getVisibleAgents();
-    let agentName: string | undefined;
-
-    if (configState.settingsDefaultAgent) {
-      const settingsAgent = visibleAgents.find((a) => a.name === configState.settingsDefaultAgent);
-      if (settingsAgent) {
-        agentName = settingsAgent.name;
-      }
-    }
-
-    if (!agentName) {
-      agentName =
-        visibleAgents.find((agent) => agent.name === 'build')?.name ||
-        visibleAgents[0]?.name;
-    }
-
-    if (!agentName) {
+    const project = useProjectsStore.getState().projects.find((entry) => entry.id === projectRef.id)
+      ?? useProjectsStore.getState().projects.find((entry) => normalizePath(entry.path) === normalizePath(projectRef.path));
+    const expectedKey = getConfigDirectoryKey(projectRef.path);
+    await useConfigStore.getState().activateDirectory(projectRef.path, {
+      refreshProviders: true,
+      source: 'worktreeSessionCreator',
+    });
+    const afterActivate = useConfigStore.getState();
+    // Catalog/activation failure must not apply another Project's live selection.
+    if (afterActivate.activeDirectoryKey !== expectedKey) {
       return;
     }
-
-    configState.setAgent(agentName);
-    useContextStore.getState().saveSessionAgentSelection(sessionId, agentName);
-
-    const settingsDefaultModel = configState.settingsDefaultModel;
-    if (!settingsDefaultModel) {
+    if (afterActivate.providers.length === 0 || afterActivate.agents.length === 0) {
       return;
     }
-
-    const parsed = parseModelIdentifier(settingsDefaultModel);
-    if (!parsed) {
-      return;
-    }
-
-    const { providerId, modelId } = parsed;
-    const modelMetadata = configState.getModelMetadata(providerId, modelId);
-    if (!modelMetadata) {
-      return;
-    }
-
-    useContextStore.getState().saveSessionModelSelection(sessionId, providerId, modelId);
-    useContextStore.getState().saveAgentModelForSession(sessionId, agentName, providerId, modelId);
-
-    const settingsDefaultVariant = configState.settingsDefaultVariant;
-    if (!settingsDefaultVariant) {
-      return;
-    }
-
-    const provider = configState.providers.find((p) => p.id === providerId);
-    const model = provider?.models.find((m: Record<string, unknown>) => (m as { id?: string }).id === modelId) as
-      | { variants?: Record<string, unknown> }
-      | undefined;
-    const variants = model?.variants;
-
-    if (variants && Object.prototype.hasOwnProperty.call(variants, settingsDefaultVariant)) {
-      configState.setCurrentVariant(settingsDefaultVariant);
-      useContextStore
-        .getState()
-        .saveAgentModelVariantForSession(sessionId, agentName, providerId, modelId, settingsDefaultVariant);
-    }
+    afterActivate.applyDefaultModelAgentSelection({
+      projectDefaultModel: project?.defaultModel ?? undefined,
+    });
+    const snapshot = readWorktreeSessionSelectionSnapshot(useConfigStore.getState());
+    writeWorktreeSessionSelection(sessionId, snapshot, useSelectionStore.getState());
   } catch {
-    // Ignore errors setting default agent
+    // Ignore selection errors; session remains usable with empty memory.
   }
 };
 
-const initializeSessionForWorktree = (sessionId: string, metadata: {
-  path: string;
-  projectDirectory: string;
-  branch: string;
-  label: string;
-  name?: string;
-  createdFromBranch?: string;
-  kind?: 'pr' | 'standard';
-}) => {
+const initializeSessionForWorktree = async (
+  sessionId: string,
+  metadata: {
+    path: string;
+    projectDirectory: string;
+    branch: string;
+    label: string;
+    name?: string;
+    createdFromBranch?: string;
+    kind?: 'pr' | 'standard';
+  },
+  projectRef: ProjectRef,
+) => {
   const sessionStore = useSessionUIStore.getState();
   const configState = useConfigStore.getState();
   sessionStore.initializeNewOpenChamberSession(sessionId, configState.agents);
   sessionStore.setSessionDirectory(sessionId, metadata.path);
   sessionStore.setWorktreeMetadata(sessionId, metadata);
-  applyDefaultAgentAndModelSelection(sessionId, configState);
+  await applyProjectDefaultSelectionForWorktreeSession(sessionId, projectRef);
   useDirectoryStore.getState().setDirectory(metadata.path, { showOverlay: false });
 };
 
@@ -428,7 +450,7 @@ export async function createWorktreeSessionForNewBranch(
         throw new Error('Could not create a session for the worktree.');
       }
 
-      initializeSessionForWorktree(session.id, createdMetadata);
+      await initializeSessionForWorktree(session.id, createdMetadata, projectRef);
 
       return { id: session.id, branch: metadata.branch || base, path: metadata.path };
     } catch (error) {

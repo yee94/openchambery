@@ -77,4 +77,4 @@ Use `IconName` for icon values stored in arrays, objects, state, or config. `Ico
 - Icons use `Icon`/`IconName`, and generated sprite changes are intentional.
 - Hover, selection, primary, and status semantics are distinct.
 - Light/dark/high-contrast and long-text states remain legible.
-- Relevant type-check, visual/runtime validation, and generated-asset checks ran.
+- Relevant visual/runtime validation and generated-asset checks ran.

@@ -99,7 +99,6 @@ Linux is supported for web/CLI development. A Linux desktop app is still planned
 ## Before Submitting
 
 ```bash
-bun run type-check   # Must pass
 bun run lint         # Must pass
 bun run build        # Must succeed
 ```

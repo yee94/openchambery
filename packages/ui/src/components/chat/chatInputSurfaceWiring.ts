@@ -17,9 +17,58 @@ export type ChatInputControllerWiring = {
   resources: NonNullable<ChatInputSurface['resources']> | null;
 };
 
+/** Reject delivery when the surface capture no longer matches the live runtime. */
+export const assertDeliveryRequestRuntimeCurrent = (
+  request: Pick<ChatInputDeliveryRequest, 'transportIdentity' | 'runtimeGeneration'>,
+  current: { transportIdentity: string; runtimeGeneration: number },
+): void => {
+  if (
+    request.transportIdentity !== current.transportIdentity
+    || request.runtimeGeneration !== current.runtimeGeneration
+  ) {
+    throw new Error('chat-input-delivery-runtime-stale');
+  }
+};
+
+/**
+ * Pin session/directory identity from the delivery request into sendMessage options.
+ * Existing sessions always pass sessionId + directoryHint; draft (null session) keeps
+ * materialization on the current draft path without a forced session pin.
+ * First-submit options.sessionId (handleSubmit capture) wins over live surface identity.
+ */
+export const primarySendOptionsFromDeliveryRequest = (
+  request: Pick<ChatInputDeliveryRequest, 'sessionID' | 'directory' | 'options'>,
+): {
+  sessionId?: string;
+  directoryHint?: string | null;
+  delivery?: 'steer';
+  commitStagedMessageEdit?: boolean;
+} => {
+  const base = {
+    ...(request.options?.delivery === 'steer' ? { delivery: 'steer' as const } : {}),
+    ...(request.options?.commitStagedMessageEdit !== undefined
+      ? { commitStagedMessageEdit: request.options.commitStagedMessageEdit }
+      : {}),
+  };
+  const sessionId = request.options?.sessionId ?? request.sessionID ?? undefined;
+  if (!sessionId) {
+    return base;
+  }
+  const directoryHint = request.options?.directoryHint !== undefined
+    ? request.options.directoryHint
+    : (request.directory || null);
+  return {
+    ...base,
+    sessionId,
+    directoryHint,
+  };
+};
+
 const request = (surface: ChatInputSurface, operation: ChatInputDeliveryRequest['operation'], fields: DeliveryFields = {}): ChatInputDeliveryRequest => ({
   operation,
   surfaceID: surface.surfaceID,
+  // Pin surface identity before any await so a mid-flight session switch cannot
+  // rewrite the delivery target after flush re-resolves selection.
   transportIdentity: surface.transportIdentity,
   runtimeGeneration: surface.runtimeGeneration,
   sessionID: surface.sessionID,
@@ -36,20 +85,36 @@ export const createChatInputControllerWiring = (surface: ChatInputSurface): Chat
   const canAbort = surface.activity?.canAbort ?? (activity === 'busy' || activity === 'retry');
   return {
     send: async (fields) => {
+      // Capture identity before flush so primary dispatch cannot mix first-submit
+      // config with a later Session after the user switches mid-flight.
+      const delivery = request(surface, 'send', fields);
       await surface.selection.flush();
       if (surface.kind === 'secondary') await surface.shortcuts!.submit();
-      return surface.backend.send(request(surface, 'send', fields) as ChatInputDeliveryRequest & { operation: 'send' });
+      return surface.backend.send(delivery as ChatInputDeliveryRequest & { operation: 'send' });
     },
     sendQueued: async (queueItemID, fields = {}) => {
-      await surface.selection.flush();
-      const { manual, ...delivery } = fields;
+      const { manual, ...deliveryFields } = fields;
+      const delivery = request(surface, 'send', deliveryFields);
       const queueScope = chatInputQueueScope(surface);
+      await surface.selection.flush();
       if (!queueScope) throw new Error('chat-input-queue-scope-incomplete');
-      return surface.backend.sendQueued({ ...request(surface, 'send', delivery), queueItemID, manual, queueScope } as ChatInputDeliveryRequest & { operation: 'send' } & { queueItemID: string; manual?: boolean });
+      return surface.backend.sendQueued({ ...delivery, queueItemID, manual, queueScope } as ChatInputDeliveryRequest & { operation: 'send' } & { queueItemID: string; manual?: boolean });
     },
-    create: async () => { await surface.selection.flush(); return surface.backend.create(request(surface, 'create') as ChatInputDeliveryRequest & { operation: 'create' }); },
-    compact: async (fields) => { await surface.selection.flush(); return surface.backend.compact(request(surface, 'compact', fields) as ChatInputDeliveryRequest & { operation: 'compact' }); },
-    abort: async () => { await surface.selection.flush(); return surface.backend.abort(request(surface, 'abort') as ChatInputDeliveryRequest & { operation: 'abort' }); },
+    create: async () => {
+      const delivery = request(surface, 'create');
+      await surface.selection.flush();
+      return surface.backend.create(delivery as ChatInputDeliveryRequest & { operation: 'create' });
+    },
+    compact: async (fields) => {
+      const delivery = request(surface, 'compact', fields);
+      await surface.selection.flush();
+      return surface.backend.compact(delivery as ChatInputDeliveryRequest & { operation: 'compact' });
+    },
+    abort: async () => {
+      const delivery = request(surface, 'abort');
+      await surface.selection.flush();
+      return surface.backend.abort(delivery as ChatInputDeliveryRequest & { operation: 'abort' });
+    },
     queueScope: chatInputQueueScope(surface),
     canAbort,
     canQueue: activity === 'busy' || activity === 'retry',
@@ -62,8 +127,18 @@ export const createChatInputControllerWiring = (surface: ChatInputSurface): Chat
         else await surface.shortcuts!.submit();
         return;
       }
-      if (command === 'abort') { await surface.selection.flush(); await surface.backend.abort(request(surface, 'abort') as ChatInputDeliveryRequest & { operation: 'abort' }); return; }
-      if (command === 'new') { await surface.selection.flush(); await surface.backend.create(request(surface, 'create') as ChatInputDeliveryRequest & { operation: 'create' }); return; }
+      if (command === 'abort') {
+        const delivery = request(surface, 'abort');
+        await surface.selection.flush();
+        await surface.backend.abort(delivery as ChatInputDeliveryRequest & { operation: 'abort' });
+        return;
+      }
+      if (command === 'new') {
+        const delivery = request(surface, 'create');
+        await surface.selection.flush();
+        await surface.backend.create(delivery as ChatInputDeliveryRequest & { operation: 'create' });
+        return;
+      }
       if (command === 'submit') return;
       await surface.shortcuts?.cycle(direction);
     },

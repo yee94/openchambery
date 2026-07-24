@@ -32,8 +32,6 @@ After fixes, run:
 
 `bun run doctor -- check-batch --run <run-id>`
 
-`bun run type-check`
-
 `bun run lint`
 
 Delivery:

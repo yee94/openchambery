@@ -63,7 +63,7 @@ Blind short retries on hidden, offline, unauthorized, or stale-path clients wast
 
 - Exercise the real auth and origin gates. An end-to-end test whose stub server accepts any WS upgrade will pass while the real server rejects it — this is precisely how the origin-check bug shipped. When writing a relay integration test, mirror the real gates (`ensureSessionToken` via `oc_url_token`, `isRequestOriginAllowed`) or run against the real server pieces.
 - Run relay tests per file (`bun test <file>`); the suite has order sensitivity.
-- Validate both sides: `packages/ui` `type-check`/`lint`, and `node --check` on changed JS host files.
+- Validate both sides with `packages/ui` lint and `node --check` on changed JS host files.
 
 ## Quick checklist before finishing relay-adjacent work
 

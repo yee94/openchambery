@@ -2,7 +2,6 @@ import { createConfiguredWebAPIs, getDesktopRelayRestoreReady } from './runtimeC
 import { registerSW } from 'virtual:pwa-register';
 
 import type { RuntimeAPIs } from '@openchamber/ui/lib/api/types';
-import { getStoredMobileLayoutPreference } from '@openchamber/ui/lib/mobileLayoutPreference';
 import type { HostedSurface } from '@openchamber/ui/lib/runtimeSurface';
 import '@openchamber/ui/index.css';
 import '@openchamber/ui/styles/fonts';
@@ -33,7 +32,7 @@ const detectHostedSurface = (): HostedSurface => {
   const width = Math.min(window.innerWidth || 0, window.screen?.width || window.innerWidth || 0);
   const touchPoints = navigator.maxTouchPoints || 0;
   const likelyPhone = width > 0 && width <= 760 && (touchPoints > 0 || isCoarsePointer());
-  return likelyPhone && getStoredMobileLayoutPreference() === 'new' ? 'mobile' : 'desktop';
+  return likelyPhone ? 'mobile' : 'desktop';
 };
 
 const hostedSurface = detectHostedSurface();

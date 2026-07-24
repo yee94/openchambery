@@ -2671,6 +2671,7 @@ export const dict = {
   'quota.window.premiumInteractions': 'Interactions premium',
   'layout.mainTab.diagram': 'Diagramme',
   'mobile.nav.aria': 'Navigation mobile',
+  'mobile.nav.secondaryPageAria': 'Page de détail',
   'mobile.connect.welcome.title': 'Se connecter à OpenChamber',
   'mobile.connect.welcome.description': 'Ajoutez une URL de serveur ou scannez un code QR d\'appairage pour commencer à utiliser l\'app mobile.',
   'mobile.connect.url.label': 'URL du serveur',

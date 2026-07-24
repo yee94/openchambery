@@ -443,7 +443,7 @@ export type SessionUIState = {
   getSessionsByDirectory: (directory: string) => Session[]
   getAuthoritativeDirectoryForSession: (sessionId: string) => string | null
   getDirectoryForSession: (sessionId: string) => string | null
-  getLastUserChoice: (sessionId: string) => { agent?: string; providerID?: string; modelID?: string; variant?: string } | null
+  getLastUserChoice: (sessionId: string) => { id?: string; agent?: string; providerID?: string; modelID?: string; variant?: string } | null
   getCurrentAgent: (sessionId: string) => string | undefined
   debugSessionMessages: (sessionId: string) => Promise<void>
   pollForTokenUpdates: () => void
@@ -2242,12 +2242,20 @@ export const useSessionUIStore = create<SessionUIState>()((set, get) => ({
       const agent = typeof message.agent === "string" && message.agent.trim().length > 0
         ? message.agent
         : (typeof message.mode === "string" && message.mode.trim().length > 0 ? message.mode : undefined)
+      // OpenCode 1.4.0 moved variant from top-level to model.variant.
+      // Prefer the new location, fall back to the legacy one for older servers.
       const variantCandidate = message.model?.variant ?? message.variant
       const variant = typeof variantCandidate === "string" && variantCandidate.trim().length > 0
         ? variantCandidate
         : undefined
 
-      return { agent, providerID, modelID, variant }
+      return {
+        id: typeof message.id === "string" ? message.id : undefined,
+        agent,
+        providerID,
+        modelID,
+        variant,
+      }
     }
     return null
   },

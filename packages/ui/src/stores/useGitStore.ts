@@ -10,6 +10,11 @@ import type {
 import { ensureGitBranchesQuery, refreshGitBranchesQuery, type GitBranchQueryAPI } from '@/queries/gitBranchQueries';
 import { getRuntimeTransportIdentity, subscribeRuntimeEndpointChanged } from '@/lib/runtime-switch';
 
+/** Abort/cancel rejections from superseded or unmounted requests — expected, not failures. */
+const isAbortLikeError = (error: unknown): boolean => (
+  error instanceof Error && (error.name === 'AbortError' || error.name === 'CancelledError')
+);
+
 const LOG_STALE_THRESHOLD = 10000;
 const REPO_CHECK_STALE_THRESHOLD = 60_000;
 const STATUS_STALE_THRESHOLD = 5_000;
@@ -676,7 +681,11 @@ export const useGitStore = create<GitStore>()(
           newDirectories.set(directory, { ...dirState, branches, branchesTransportIdentity: transport, isLoadingBranches: false, lastBranchesFetch: Date.now() });
           set({ directories: newDirectories });
         } catch (error) {
-          console.error('Failed to fetch git branches:', error);
+          // A superseded/unmounted request rejects with a cancellation — that
+          // is expected, not a failure worth surfacing in the console.
+          if (!isAbortLikeError(error)) {
+            console.error('Failed to fetch git branches:', error);
+          }
           if (
             generation !== branchesFetchGenerationByDirectory.get(directory)
             || transport !== getRuntimeTransportIdentity()

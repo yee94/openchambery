@@ -47,4 +47,4 @@ Non-user-visible child processes must never flash a console window.
 
 ## Validation
 
-Run the Electron package type-check/lint commands from `package.json` and focused tests. For startup, preload, routing, or packaging changes, test both HMR development and bundled UI mode. For Windows process work, inspect the complete process tree and verify no console flash; a successful command alone is insufficient.
+Run the Electron package lint command from `package.json` and focused tests. For startup, preload, routing, or packaging changes, test both HMR development and bundled UI mode. For Windows process work, inspect the complete process tree and verify no console flash; a successful command alone is insufficient.

@@ -62,7 +62,7 @@ import { useSelectionStore } from '@/sync/selection-store';
 import { useSessionUIStore } from '@/sync/session-ui-store';
 import { SessionStartupCoordinator } from '@/components/session/SessionStartupCoordinator';
 import { DirectoryExplorerDialog } from '@/components/session/DirectoryExplorerDialog';
-import { ScheduledTasksDialog } from '@/components/session/ScheduledTasksDialog';
+import { ScheduledTasksDialog, ScheduledTasksWorkspace } from '@/components/session/ScheduledTasksDialog';
 import { SyncProvider, useCurrentSessionEntity, useParentSessionTarget, useSessionMessages } from '@/sync/sync-context';
 
 import { SyncAppEffects } from './AppEffects';
@@ -71,6 +71,9 @@ import { MobileFilesSurface } from './MobileFilesSurface';
 import { BusyDots } from '@/components/chat/message/parts/BusyDots';
 import { MobileSessionsSheet } from './MobileSessionsSheet';
 import { MobileSurfaceShell } from './MobileSurfaceShell';
+import { MobilePhoneShell } from '@/mobile/MobilePhoneShell';
+import { MobileChatScreen } from '@/mobile/chat';
+import { useMobileNavigationStore } from '@/mobile/useMobileNavigationStore';
 import { DedicatedMobileAppProvider, type MobileAppActions } from './mobileAppContext';
 import { autoConnectLastInstance, connectionDisplayUrl, getAutoConnectTargetLabel, isActiveRuntimeConnection, reprobeActiveConnection, useMobileConnection } from './mobileConnections';
 import { isRelayModeActive } from '@/lib/relay/runtime-tunnel';
@@ -2252,8 +2255,11 @@ const MobileShell: React.FC<{ onActiveConnectionDeleted: () => void }> = ({ onAc
   const deepLinkHandlers = React.useMemo(
     () => ({
       openSessions: () => {
-        if (isIPad) setIpadSidebarOpen(true);
-        else setMobileSessionPanelOpen(true);
+        if (isIPad) {
+          setIpadSidebarOpen(true);
+          return;
+        }
+        useMobileNavigationStore.getState().setActiveTab('projects');
       },
       openView: (target: 'files' | 'mcp' | 'instances' | 'update') => {
         if (target === 'files') openFilesSurface();
@@ -2266,11 +2272,15 @@ const MobileShell: React.FC<{ onActiveConnectionDeleted: () => void }> = ({ onAc
       },
       openSettings: (section?: string) => {
         if (section) setSettingsPage(section as Parameters<typeof setSettingsPage>[0]);
-        setSettingsInitialMobileStage(section ? 'page-content' : 'nav');
-        setSettingsOpen(true);
+        if (isIPad) {
+          setSettingsInitialMobileStage(section ? 'page-content' : 'nav');
+          setSettingsOpen(true);
+          return;
+        }
+        useMobileNavigationStore.getState().setActiveTab('settings');
       },
     }),
-    [isIPad, openChangesSurface, openFilesSurface, setMobileSessionPanelOpen, setSettingsPage],
+    [isIPad, openChangesSurface, openFilesSurface, setSettingsPage],
   );
   useDeepLinkHandlers(deepLinkHandlers);
 
@@ -2328,15 +2338,21 @@ const MobileShell: React.FC<{ onActiveConnectionDeleted: () => void }> = ({ onAc
       if (child instanceof HTMLElement) child.style.opacity = progress.canSwitch ? '1' : '0.35';
     });
   });
+  // Re-bind when the chat subtree mounts: on phone it only exists while the
+  // secondary page is open; on iPad it is always mounted.
+  const phoneSecondaryOpen = useMobileNavigationStore((state) => state.secondary !== null);
+  const phoneChatMounted = !isIPad && phoneSecondaryOpen;
   useEdgeSwipeSessionSwitch(chatMainRef, {
     onSwitch: recordSwipeDirection,
     onProgress: renderSwipeProgress,
-  });
+  }, isIPad || phoneChatMounted);
 
   // A right swipe across more than half the chat opens the session panel.
-  // Disabled when any overlay is already open so the gesture doesn't stack
-  // sheets or compete with dismiss gestures.
-  const headerSwipeDisabled = isIPad
+  // Phone no longer mounts the legacy sessions sheet (projects tab replaces
+  // it), so the gesture only applies to the iPad layout. Disabled when any
+  // overlay is already open so the gesture doesn't stack sheets or compete
+  // with dismiss gestures.
+  const headerSwipeDisabled = !isIPad
     || mobileSessionPanelOpen
     || filesOpen
     || changesOpen
@@ -2385,6 +2401,14 @@ const MobileShell: React.FC<{ onActiveConnectionDeleted: () => void }> = ({ onAc
     );
   }, [currentSessionId]);
 
+  // Phone chat secondary page: MobilePhoneShell registers a handler that
+  // closes the chat page before the app would minimize. Ref indirection keeps
+  // the registration stable across MobilePhoneShell remounts.
+  const phoneSecondaryBackRef = React.useRef<(() => boolean) | null>(null);
+  const registerPhoneSecondaryBack = useEvent((handler: (() => boolean) | null) => {
+    phoneSecondaryBackRef.current = handler;
+  });
+
   const handleNativeBack = useEvent(() => {
     if (overflowOpen) {
       setOverflowOpen(false);
@@ -2428,6 +2452,11 @@ const MobileShell: React.FC<{ onActiveConnectionDeleted: () => void }> = ({ onAc
     }
     if (updateOpen) {
       setUpdateOpen(false);
+      return true;
+    }
+    // Phone chat secondary page closes before the app would minimize or
+    // switch back to the root tab shell.
+    if (phoneSecondaryBackRef.current?.()) {
       return true;
     }
     if (activeMainTab === 'assistant') {
@@ -2501,8 +2530,12 @@ const MobileShell: React.FC<{ onActiveConnectionDeleted: () => void }> = ({ onAc
           icon: 'chat-new',
           label: t('mobile.menu.newSession'),
           onSelect: () => {
-            setActiveMainTab('chat');
-            openNewSessionDraft();
+            if (isIPad) {
+              setActiveMainTab('chat');
+              openNewSessionDraft();
+              return;
+            }
+            useMobileNavigationStore.getState().openDraft();
           },
         },
       ];
@@ -2528,13 +2561,25 @@ const MobileShell: React.FC<{ onActiveConnectionDeleted: () => void }> = ({ onAc
         key: 'scheduled',
         icon: 'time',
         label: t('sessions.sidebar.header.actions.scheduledTasks'),
-        onSelect: () => setScheduledTasksDialogOpen(true),
+        onSelect: () => {
+          if (isIPad) {
+            setScheduledTasksDialogOpen(true);
+            return;
+          }
+          useMobileNavigationStore.getState().setActiveTab('scheduled');
+        },
       });
       if (assistantCapability.data?.supported && assistantCapability.data?.enabled) items.push({
         key: 'assistant',
         icon: 'ai-agent',
         label: t('assistants.title'),
-        onSelect: () => setActiveMainTab('assistant'),
+        onSelect: () => {
+          if (isIPad) {
+            setActiveMainTab('assistant');
+            return;
+          }
+          useMobileNavigationStore.getState().setActiveTab('assistant');
+        },
       });
       items.push({
         key: 'mcp',
@@ -2635,49 +2680,86 @@ const MobileShell: React.FC<{ onActiveConnectionDeleted: () => void }> = ({ onAc
         ) : null}
 
         <div className="flex h-full min-w-0 flex-1 flex-col" data-page-scroll-lock="true">
-          {activeMainTab !== 'assistant' ? <div>
-            <MobileHeader
-              onOpenSessions={() => (isIPad ? toggleIpadSidebar() : setMobileSessionPanelOpen(true))}
-              onOpenMenu={() => setOverflowOpen(true)}
-              surfaceShortcuts={isIPad ? {
-              activePanel: ipadRightPanel === 'turn-diff' ? 'changes' : ipadRightPanel,
-              changesDirty: dirtyChangeCount > 0,
-              onToggleFiles: () => toggleIpadRightPanel('files'),
-              onToggleChanges: () => toggleIpadRightPanel('changes'),
-            } : undefined}
+          {isIPad ? (
+            <>
+              {activeMainTab !== 'assistant' ? <div>
+                <MobileHeader
+                  onOpenSessions={() => toggleIpadSidebar()}
+                  onOpenMenu={() => setOverflowOpen(true)}
+                  surfaceShortcuts={{
+                    activePanel: ipadRightPanel === 'turn-diff' ? 'changes' : ipadRightPanel,
+                    changesDirty: dirtyChangeCount > 0,
+                    onToggleFiles: () => toggleIpadRightPanel('files'),
+                    onToggleChanges: () => toggleIpadRightPanel('changes'),
+                  }}
+                />
+              </div> : null}
+              <main ref={chatMainRef} className="relative min-h-0 flex-1 overflow-hidden" data-page-scroll-lock="true">
+                <div
+                  ref={previousSessionHolderRef}
+                  aria-hidden="true"
+                  className="pointer-events-none absolute inset-y-0 -left-full flex w-full items-center justify-end gap-3 bg-background pr-4"
+                >
+                  <span className="typography-micro font-medium tracking-wide text-muted-foreground/60">
+                    {t('helpDialog.item.previousSession')}
+                  </span>
+                  <span className="flex size-11 items-center justify-center rounded-full border border-border/70 bg-[var(--surface-elevated)] text-foreground shadow-sm">
+                    <Icon name="arrow-left" className="size-5" />
+                  </span>
+                </div>
+                <div
+                  ref={nextSessionHolderRef}
+                  aria-hidden="true"
+                  className="pointer-events-none absolute inset-y-0 left-full flex w-full items-center justify-start gap-3 bg-background pl-4"
+                >
+                  <span className="flex size-11 items-center justify-center rounded-full border border-border/70 bg-[var(--surface-elevated)] text-foreground shadow-sm">
+                    <Icon name="arrow-right" className="size-5" />
+                  </span>
+                  <span className="typography-micro font-medium tracking-wide text-muted-foreground/60">
+                    {t('helpDialog.item.nextSession')}
+                  </span>
+                </div>
+                <div ref={chatAnimRef} className="relative h-full w-full bg-background">
+                  <ErrorBoundary>
+                    {activeMainTab === 'assistant' ? <AssistantView /> : <ChatView />}
+                  </ErrorBoundary>
+                </div>
+              </main>
+            </>
+          ) : (
+            <MobilePhoneShell
+              className="min-h-0 flex-1"
+              onAddProject={() => setDirectoryDialogOpen(true)}
+              onEnableAssistants={() => {
+                setSettingsPage('assistants');
+                setSettingsInitialMobileStage('page-content');
+                setSettingsOpen(true);
+              }}
+              registerSecondaryBackHandler={registerPhoneSecondaryBack}
+              scheduledContent={(registerEditorBackHandler) => (
+                <ScheduledTasksWorkspace
+                  presentation="mobile-tab"
+                  registerEditorBackHandler={registerEditorBackHandler}
+                />
+              )}
+              renderChat={(target) => (
+                <MobileChatScreen
+                  sessionId={target.sessionId}
+                  directory={target.directory}
+                  onBack={() => phoneSecondaryBackRef.current?.()}
+                  onOpenMenu={() => setOverflowOpen(true)}
+                >
+                  <main ref={chatMainRef} className="relative h-full min-h-0 flex-1 overflow-hidden" data-page-scroll-lock="true">
+                    <div ref={chatAnimRef} className="relative h-full w-full bg-background">
+                      <ErrorBoundary>
+                        <ChatView />
+                      </ErrorBoundary>
+                    </div>
+                  </main>
+                </MobileChatScreen>
+              )}
             />
-          </div> : null}
-          <main ref={chatMainRef} className="relative min-h-0 flex-1 overflow-hidden" data-page-scroll-lock="true">
-            <div
-              ref={previousSessionHolderRef}
-              aria-hidden="true"
-              className="pointer-events-none absolute inset-y-0 -left-full flex w-full items-center justify-end gap-3 bg-background pr-4"
-            >
-              <span className="typography-micro font-medium tracking-wide text-muted-foreground/60">
-                {t('helpDialog.item.previousSession')}
-              </span>
-              <span className="flex size-11 items-center justify-center rounded-full border border-border/70 bg-[var(--surface-elevated)] text-foreground shadow-sm">
-                <Icon name="arrow-left" className="size-5" />
-              </span>
-            </div>
-            <div
-              ref={nextSessionHolderRef}
-              aria-hidden="true"
-              className="pointer-events-none absolute inset-y-0 left-full flex w-full items-center justify-start gap-3 bg-background pl-4"
-            >
-              <span className="flex size-11 items-center justify-center rounded-full border border-border/70 bg-[var(--surface-elevated)] text-foreground shadow-sm">
-                <Icon name="arrow-right" className="size-5" />
-              </span>
-              <span className="typography-micro font-medium tracking-wide text-muted-foreground/60">
-                {t('helpDialog.item.nextSession')}
-              </span>
-            </div>
-            <div ref={chatAnimRef} className="relative h-full w-full bg-background">
-              <ErrorBoundary>
-                {activeMainTab === 'assistant' ? <AssistantView /> : <ChatView />}
-              </ErrorBoundary>
-            </div>
-          </main>
+          )}
         </div>
 
         {/* iPad: Changes/Files live in a full-height right sidebar instead of
@@ -3013,9 +3095,11 @@ const MobileShell: React.FC<{ onActiveConnectionDeleted: () => void }> = ({ onAc
           && assistantCapability.data?.supported === true
           && assistantCapability.data?.enabled === true}
       />
-      <ErrorBoundary>
-        <MobileSessionStatusBar />
-      </ErrorBoundary>
+      {isIPad ? (
+        <ErrorBoundary>
+          <MobileSessionStatusBar />
+        </ErrorBoundary>
+      ) : null}
     </DedicatedMobileAppProvider>
   );
 };
@@ -3181,6 +3265,9 @@ export function MobileApp({ apis }: MobileAppProps) {
         return;
       }
       resetAppForRuntimeEndpointChange(detail);
+      // Drop phone navigation state — the old runtime's chat/draft targets must
+      // never materialize into the new runtime's session store.
+      useMobileNavigationStore.getState().reset();
       setRuntimeEndpointEpoch((epoch) => epoch + 1);
       setConnectionEpoch((epoch) => epoch + 1);
     });
@@ -3465,6 +3552,7 @@ export function MobileApp({ apis }: MobileAppProps) {
               <MobileAppUpdateToast />
               <MobileShell onActiveConnectionDeleted={() => {
                 switchRuntimeEndpoint({ apiBaseUrl: '', clientToken: null, runtimeKey: 'mobile-disconnected' });
+                useMobileNavigationStore.getState().reset();
                 setConnectionEpoch((value) => value + 1);
               }} />
               <Toaster position="top-center" offset="calc(var(--oc-safe-area-top, 0px) + 16px)" />

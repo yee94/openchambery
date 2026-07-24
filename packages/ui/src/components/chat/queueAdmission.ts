@@ -98,6 +98,11 @@ export const resolveQueueSendConfig = ({
     };
 };
 
+/** New queue rows must capture a complete model pair; incomplete capture aborts admission. */
+export const isCompleteQueueSendConfig = (
+    config: { providerID?: string; modelID?: string } | null | undefined,
+): config is QueueSendConfig => Boolean(nonEmptyString(config?.providerID) && nonEmptyString(config?.modelID));
+
 type QueueAdmissionConsumption<TDraft> = {
     admit: () => void;
     drafts: readonly TDraft[];
@@ -143,7 +148,13 @@ export type ServerQueueAdmissionConsumptionResult = {
     inlineDraftIDsConsumed: string[];
 };
 
-const sameRuntime = (left: InputDraftRuntimeCapture, right: InputDraftRuntimeCapture): boolean => left.transportIdentity === right.transportIdentity && left.generation === right.generation;
+/** True when a pre-flush runtime pin still matches the live transport/generation pair. */
+export const isQueueAdmissionRuntimeCurrent = (
+    captured: { transportIdentity: string; generation: number },
+    current: { transportIdentity: string; generation: number },
+): boolean => captured.transportIdentity === current.transportIdentity && captured.generation === current.generation;
+
+const sameRuntime = (left: InputDraftRuntimeCapture, right: InputDraftRuntimeCapture): boolean => isQueueAdmissionRuntimeCurrent(left, right);
 const documentFingerprint = (document: ComposerDocument): string => JSON.stringify([document.text, document.references]);
 const inlineDraftFingerprint = (draft: InlineCommentDraft): string => JSON.stringify(draft);
 const sameAttachmentOccurrence = (captured: AttachedFile, current: AttachedFile): boolean => captured.id === current.id

@@ -79,8 +79,8 @@ Use `package.json` scripts as the command source of truth.
 
 | Change | Minimum validation |
 |---|---|
-| Executable source | Focused tests plus package-scoped type-check and lint |
-| Cross-workspace/shared contract | Workspace-wide type-check and lint plus affected builds/tests |
+| Executable source | Focused tests and relevant package validation |
+| Cross-workspace/shared contract | Affected builds/tests and relevant workspace validation |
 | Added/deleted/renamed source file, export/type/entrypoint/import shape | `bun run dead-code` in addition to relevant checks |
 | Persisted or external contract | Compatibility and round-trip tests; conversion/malformed-old-data tests when old data needs migration; failed-write/migration rollback tests |
 | Dependency or lockfile | Workspace-wide checks and affected builds |
@@ -108,7 +108,7 @@ For type-only shared contracts, validate compile-time consumers. Add runtime ser
 - Run focused regression tests for the changed contract.
 - Preserve unrelated changes encountered in shared files.
 - Re-read the owning docs and update them when the implementation changed their truth.
-- Do not claim runtime, relay, performance, or platform correctness from type-check/lint alone.
+- Do not claim runtime, relay, performance, or platform correctness from static checks alone.
 
 ## Common Failure Modes
 

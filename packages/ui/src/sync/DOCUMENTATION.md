@@ -422,7 +422,9 @@ message materialization preserves the idle path.
   retain their directory snapshot timestamp.
 - Message-sent confirmation precedes dependent queue side effects. A composer
   queue admission completes before it consumes inline drafts, body text, or
-  attachments. Local chat commands retain these composer resources across both
+  attachments. New queue rows require a complete captured `sendConfig`
+  (providerID+modelID); incomplete capture aborts admission and keeps composer
+  resources. Local chat commands retain these composer resources across both
   successful actions and action failures. Immediate local commands (`/compact`,
   `/fork`, `/undo`, and `/redo`) consume only their command text before awaiting
   their action, clear the source session's legacy text draft synchronously, and
@@ -697,7 +699,7 @@ The optimization multiplies with targeted event cloning: fewer new references pe
 | `session-ui-store.ts` | Session selection, draft lifecycle, abort, worktree, SDK actions | Session switch, draft open/close |
 | `voice-store.ts` | Voice connection/activity state | Voice toggle |
 | `input-store.ts` | Pending input text, synthetic parts, attached files | User typing, file attach, revert/edit/fork |
-| `selection-store.ts` | Per-session model/agent/variant choices | Model/agent picker |
+| `selection-store.ts` | Per-session model/agent/variant memory (localStorage, last 150 sessions). History (latest user message) is the cross-client baseline; this store is same-client fallback when messages are not ready. Variant is persisted in Zustand state (`undefined` deletes the entry). Project-level agent/model defaults live in config-store (`lastSelectedAgentName`, `agentModelSelections`), not here. | Session switch restore, primary composer flush |
 | `viewport-store.ts` | Scroll anchors, session memory state, sync status | Streaming, scroll, session switch |
 
 ### Rules for new UI state

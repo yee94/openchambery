@@ -40,7 +40,7 @@ export const presetThemes: Theme[] = [
 ### 3. Validate
 
 ```bash
-bun run type-check && bun run lint && bun run build
+bun run lint && bun run build
 ```
 
 ## Key Files

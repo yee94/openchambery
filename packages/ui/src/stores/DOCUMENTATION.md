@@ -116,7 +116,7 @@ safe DTO. The Provider DTO admits only provider/model display and capability fie
 the parser constructs each field, drops unknown keys, bounds collections, and accepts
 partial catalogs with invalid individual entities removed. TanStack Query owns the sole
 network retry policy, infinite freshness/retention, exact invalidation, and single-flight.
-`useConfigStore.ts` owns project-scoped UI projections, selection, and mutation
+`useConfigStore.ts` owns project-scoped UI projections, selection (including directory-scoped `agentModelSelections` and `lastSelectedAgentName` for new-draft agent inherit), and mutation
 orchestration. It applies the Provider DTO allowlist again when projecting Query
 results into the store. TanStack Query remains the Provider/Agent network SWR
 owner. `config-store` localStorage keeps one bounded safe Provider/default DTO
