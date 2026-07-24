@@ -4,6 +4,13 @@ All notable changes to this project will be documented in this file.
 
 ## [Unreleased]
 
+## [1.16.60] - 2026-07-24
+
+- **Mobile navigation:** redesign phone flows around tab-based navigation with stronger back handling, primary composer restore from session history, and send/queue runtime identity pinning so stale cross-session dispatch cannot fire.
+- **Mobile settings:** unify settings and secondary navigation shells with shared layout, mobile back navigation, and Settings surfaces that match the new mobile chrome.
+- **Mobile projects:** add project search, refreshed session navigation rows, and clearer session status indicators on the projects home surface.
+- **Reliability:** detect TanStack Query cancelled errors correctly in Git store refreshes so cancelled work no longer surfaces as hard failures.
+
 ## [1.16.59] - 2026-07-23
 
 - **Assistant history:** persist and page assistant-owned conversation archives across bindings, keep archived rows read-only, and avoid replacing a restorable transcript with a live-session load-failure wall.
