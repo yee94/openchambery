@@ -11,6 +11,8 @@ import {
 import { useI18n } from '@/lib/i18n';
 import { cn } from '@/lib/utils';
 
+import { MobileFloatingSurface } from '../MobileSurface';
+
 export type MobileProjectTone = 'neutral' | 'info' | 'success' | 'warning' | 'error';
 
 export type MobileProjectCardModel = {
@@ -27,6 +29,7 @@ export type MobileProjectCardModel = {
 export type MobileProjectCardProps = {
   project: MobileProjectCardModel;
   expanded: boolean;
+  embedded?: boolean;
   onToggle: (project: MobileProjectCardModel) => void;
   onOpenActions: (project: MobileProjectCardModel) => void;
   className?: string;
@@ -40,9 +43,24 @@ const TONE_STYLES: Record<MobileProjectTone, React.CSSProperties | undefined> = 
   error: { color: 'var(--status-error)', backgroundColor: 'var(--status-error-background)' },
 };
 
+/** Prefer a short parent/folder segment over the full absolute path on small screens. */
+const formatProjectPathHint = (path: string): string => {
+  const normalized = path.replace(/\\/g, '/').replace(/\/+$/g, '');
+  if (!normalized) return '';
+  const segments = normalized.split('/').filter(Boolean);
+  if (segments.length <= 1) return normalized;
+  if (segments.length === 2) return segments[0];
+  return segments.slice(-3, -1).join('/');
+};
+
+/**
+ * Floating project header capsule. The project is the visual and semantic
+ * parent of the workspace/session card that follows it in MobileProjectsHome.
+ */
 export function MobileProjectCard({
   project,
   expanded,
+  embedded = false,
   onToggle,
   onOpenActions,
   className,
@@ -98,69 +116,91 @@ export function MobileProjectCard({
   const countLabel = project.sessionCount === 1
     ? t('mobile.sessions.project.sessionsSingle')
     : t('mobile.sessions.project.sessionsPlural', { count: project.sessionCount });
+  const pathHint = formatProjectPathHint(project.path);
 
-  return (
+  const card = (
     <article
-      className={cn(
-        'relative flex min-h-[88px] items-stretch overflow-hidden rounded-[24px] border border-[var(--interactive-border)] bg-[color:color-mix(in_srgb,var(--surface-elevated)_90%,transparent)] shadow-[0_14px_36px_color-mix(in_srgb,var(--surface-foreground)_8%,transparent)] backdrop-blur-xl supports-[corner-shape:squircle]:rounded-[56px]',
-        project.active && 'ring-2 ring-[var(--interactive-selection)] ring-offset-2 ring-offset-[var(--surface-background)]',
-        pressed && 'bg-[var(--interactive-active)]',
-        className,
-      )}
-    >
-      <button
-        type="button"
-        className="flex min-w-0 flex-1 items-center gap-3.5 px-4 py-3 text-left outline-none focus-visible:ring-2 focus-visible:ring-inset focus-visible:ring-[var(--interactive-focus-ring)]"
-        aria-expanded={expanded}
-        onClick={handleToggle}
-        onPointerDown={handlePointerDown}
-        onPointerMove={handlePointerMove}
-        onPointerUp={handlePointerUp}
-        onPointerCancel={handlePointerCancel}
-        onContextMenu={handleContextMenu}
-        style={{ touchAction: 'pan-y' }}
+        data-mobile-press-surface="soft"
+        className={cn(
+          'oc-mobile-project-card relative flex items-stretch overflow-hidden rounded-[var(--oc-mobile-surface-radius)]',
+          pressed && 'bg-interactive-hover',
+          className,
+        )}
       >
-        <span
-          className="flex size-12 shrink-0 items-center justify-center rounded-[17px] bg-[var(--surface-muted)] text-muted-foreground supports-[corner-shape:squircle]:rounded-[38px]"
-          style={TONE_STYLES[project.tone ?? 'neutral']}
-          aria-hidden
+        <button
+          type="button"
+          data-mobile-press-surface-trigger
+          data-mobile-press-feedback="none"
+          className="oc-mobile-project-trigger flex min-w-0 flex-1 items-center text-left outline-none focus-visible:ring-2 focus-visible:ring-inset focus-visible:ring-[var(--interactive-focus-ring)]"
+          aria-expanded={expanded}
+          onClick={handleToggle}
+          onPointerDown={handlePointerDown}
+          onPointerMove={handlePointerMove}
+          onPointerUp={handlePointerUp}
+          onPointerCancel={handlePointerCancel}
+          onContextMenu={handleContextMenu}
+          style={{ touchAction: 'pan-y' }}
         >
-          <Icon name={project.icon ?? 'folder-open'} className="size-5" />
-        </span>
-
-        <span className="flex min-w-0 flex-1 flex-col gap-1">
-          <span className="flex min-w-0 items-center gap-2">
-            <span className="truncate typography-ui-label font-semibold tracking-[-0.01em]">{project.name}</span>
-            {project.active ? <span className="size-1.5 shrink-0 rounded-full bg-[var(--status-success)]" aria-label={t('mobile.sessions.activeProjectAria')} /> : null}
+          <span
+            className={cn(
+              'oc-mobile-project-icon oc-mobile-glass-control flex shrink-0 items-center justify-center rounded-full text-muted-foreground',
+            )}
+            style={TONE_STYLES[project.tone ?? 'neutral']}
+            aria-hidden
+          >
+            <Icon name={project.icon ?? 'code-box'} className="oc-mobile-project-icon-glyph" />
           </span>
-          <span className="truncate typography-micro text-muted-foreground">{project.path}</span>
-          <span className="flex items-center gap-2 typography-micro text-muted-foreground">
-            <span>{countLabel}</span>
-            {project.activityLabel ? (
-              <>
-                <span className="size-0.5 rounded-full bg-[var(--surface-mutedForeground)]" aria-hidden />
-                <span className="truncate">{project.activityLabel}</span>
-              </>
-            ) : null}
+
+          <span className="flex min-w-0 flex-1 flex-col gap-1">
+            <span className="flex min-w-0 items-center gap-2">
+              <span className="oc-mobile-project-title oc-mobile-entity-title truncate font-semibold text-foreground">
+                {project.name}
+              </span>
+              {project.active ? (
+                <span
+                  className="size-2 shrink-0 rounded-full bg-[var(--status-success)] shadow-[0_0_0_3px_color-mix(in_srgb,var(--status-success)_12%,transparent)]"
+                  aria-label={t('mobile.sessions.activeProjectAria')}
+                />
+              ) : null}
+            </span>
+            <span className="oc-mobile-project-meta oc-mobile-entity-meta flex min-w-0 items-center text-muted-foreground">
+              <span className="shrink-0 tabular-nums">{countLabel}</span>
+              {project.activityLabel ? (
+                <>
+                  <span aria-hidden className="text-muted-foreground/50">·</span>
+                  <span className="shrink-0 tabular-nums">{project.activityLabel}</span>
+                </>
+              ) : null}
+              {pathHint ? (
+                <>
+                  <span aria-hidden className="text-muted-foreground/50">·</span>
+                  <span className="min-w-0 truncate" title={project.path}>{pathHint}</span>
+                </>
+              ) : null}
+            </span>
           </span>
-        </span>
 
-        <Icon
-          name="arrow-down-s"
-          className={cn('size-5 shrink-0 text-muted-foreground transition-transform duration-200 motion-reduce:transition-none', expanded ? 'rotate-0' : '-rotate-90')}
-        />
-      </button>
+          <Icon
+            name="arrow-down-s"
+            className={cn(
+              'oc-mobile-project-chevron shrink-0 text-muted-foreground transition-transform duration-150 motion-reduce:transition-none',
+              expanded ? 'rotate-0' : '-rotate-90',
+            )}
+          />
+        </button>
 
-      <Button
-        type="button"
-        variant="ghost"
-        size="icon"
-        className="mr-2 min-h-11 min-w-11 self-center rounded-full text-muted-foreground"
-        aria-label={t('sessions.sidebar.project.actions.projectMenu')}
-        onClick={handleOpenActions}
-      >
-        <Icon name="more-2" className="size-5" />
-      </Button>
+        <Button
+          type="button"
+          variant="ghost"
+          size="icon"
+          className="oc-mobile-project-action self-center rounded-full text-muted-foreground"
+          aria-label={t('sessions.sidebar.project.actions.projectMenu')}
+          onClick={handleOpenActions}
+        >
+          <Icon name="more-2" className="size-4" />
+        </Button>
     </article>
   );
+
+  return embedded ? card : <MobileFloatingSurface asChild>{card}</MobileFloatingSurface>;
 }

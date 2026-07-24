@@ -20,7 +20,7 @@ export const getMobileWindowMotionSurfaceLayout = (
   if (edge === 'top') return `${sheet} mx-auto mb-auto max-h-[calc(100dvh-0.75rem)] w-full max-w-lg rounded-b-xl border-x border-b border-border/50`;
   if (edge === 'left') return `${sheet} h-full w-[min(86vw,24rem)] rounded-r-xl border-r border-y border-border/50`;
   if (edge === 'right') return `${sheet} ml-auto h-full w-[min(86vw,24rem)] rounded-l-xl border-l border-y border-border/50`;
-  return `${sheet} mx-auto mt-auto max-h-[calc(100dvh-0.75rem)] w-full max-w-lg rounded-t-xl border-x border-t border-border/50`;
+  return `${sheet} mx-auto mt-auto max-h-[calc(100dvh-0.75rem)] w-full max-w-lg rounded-t-2xl border-x border-t border-border/50`;
 };
 
 export const clampMobileWindowMotionProgress = (progress: number): number => (

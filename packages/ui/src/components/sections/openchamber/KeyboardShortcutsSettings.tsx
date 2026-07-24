@@ -222,11 +222,17 @@ export const KeyboardShortcutsSettings: React.FC = () => {
           const hasDraft = typeof draft === 'string' && normalizeCombo(draft) !== normalizeCombo(effective);
 
           return (
-            <div key={action.id} className={cn("flex flex-col gap-2 py-1.5 sm:flex-row sm:items-center sm:gap-8", index > 0 && "border-t border-[var(--surface-subtle)]")}>
-              <div className="flex min-w-0 flex-col sm:w-56 shrink-0">
+            <div
+              key={action.id}
+              className={cn(
+                "oc-settings-group-row oc-settings-split-row",
+                index > 0 && "border-t border-[var(--surface-subtle)]",
+              )}
+            >
+              <div className="oc-settings-split-row-copy">
                 <span className="typography-ui-label text-foreground">{actionLabel(action.id, action.label)}</span>
               </div>
-              <div className="flex min-w-0 flex-1 items-center gap-2 sm:w-fit sm:flex-initial">
+              <div className="oc-settings-split-row-control">
                 <Input
                   readOnly
                   value={capturingActionId === action.id ? t('settings.openchamber.keyboardShortcuts.field.pressKeys') : formatShortcutForDisplay(displayCombo)}
@@ -261,7 +267,7 @@ export const KeyboardShortcutsSettings: React.FC = () => {
                     setPendingOverwrite(null);
                     setErrorText('');
                   }}
-                  className="h-7 w-40 min-w-0 typography-ui-label text-center"
+                  className="w-40 min-w-0 typography-ui-label text-right"
                 />
                 <Button
                   type="button"

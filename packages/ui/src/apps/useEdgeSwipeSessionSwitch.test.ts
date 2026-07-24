@@ -1,5 +1,9 @@
 import { describe, expect, test } from 'bun:test';
-import { evaluateSwipeDirection, evaluateSwipeProgress } from './useEdgeSwipeSessionSwitch';
+import {
+  evaluateSwipeDirection,
+  evaluateSwipeProgress,
+  shouldStartSessionSwipe,
+} from './useEdgeSwipeSessionSwitch';
 
 import type { SwipeDirectionInput } from './useEdgeSwipeSessionSwitch';
 
@@ -23,6 +27,37 @@ const baseSwipe = (
   ...overrides,
 });
 
+describe('shouldStartSessionSwipe', () => {
+  test('rejects transcript content outside the explicit Composer surface', () => {
+    expect(shouldStartSessionSwipe({
+      onExplicitSurface: false,
+      onCodeBlock: false,
+      withinHorizontalScroller: false,
+    })).toBe(false);
+  });
+
+  test('accepts the marked mobile Composer surface', () => {
+    expect(shouldStartSessionSwipe({
+      onExplicitSurface: true,
+      onCodeBlock: false,
+      withinHorizontalScroller: false,
+    })).toBe(true);
+  });
+
+  test('excludes code and horizontal scrollers even inside the Composer surface', () => {
+    expect(shouldStartSessionSwipe({
+      onExplicitSurface: true,
+      onCodeBlock: true,
+      withinHorizontalScroller: false,
+    })).toBe(false);
+    expect(shouldStartSessionSwipe({
+      onExplicitSurface: true,
+      onCodeBlock: false,
+      withinHorizontalScroller: true,
+    })).toBe(false);
+  });
+});
+
 describe('evaluateSwipeDirection', () => {
   // -----------------------------------------------------------------------
   // Horizontal: left swipe → next
@@ -38,19 +73,19 @@ describe('evaluateSwipeDirection', () => {
   });
 
   // -----------------------------------------------------------------------
-  // Horizontal: right swipe → prev
+  // Horizontal: right swipe → previous
   // -----------------------------------------------------------------------
-  test('right swipe maps to prev', () => {
+  test('right swipe maps to previous', () => {
     expect(evaluateSwipeDirection(baseSwipe({ endX: 300, endY: 303 }))).toBe('prev');
     // dx = 100, absDx = 100 > 64
   });
 
-  test('right swipe exactly at min distance maps to prev', () => {
+  test('right swipe exactly at min distance maps to previous', () => {
     expect(evaluateSwipeDirection(baseSwipe({ startX: 200, endX: 264, endY: 302 }))).toBe('prev');
   });
 
   // -----------------------------------------------------------------------
-  // Vertical gestures are reserved for composer expansion and page scrolling.
+  // Vertical gestures remain reserved for page scrolling.
   // -----------------------------------------------------------------------
   test('up swipe is ignored', () => {
     expect(evaluateSwipeDirection(baseSwipe({ endX: 203, endY: 200 }))).toBe(null);
@@ -160,5 +195,14 @@ describe('evaluateSwipeProgress', () => {
   test('ignores tiny and vertical-dominant movement', () => {
     expect(evaluateSwipeProgress(baseSwipe({ endX: 194 }), { prev: true, next: true })).toBe(null);
     expect(evaluateSwipeProgress(baseSwipe({ endX: 180, endY: 330 }), { prev: true, next: true })).toBe(null);
+  });
+
+  test('reports progressive previous-session feedback for right swipes', () => {
+    expect(evaluateSwipeProgress(baseSwipe({ endX: 232, endY: 303 }), { prev: true, next: true })).toEqual({
+      direction: 'prev',
+      progress: 0.5,
+      offsetX: 32,
+      canSwitch: true,
+    });
   });
 });

@@ -1,0 +1,464 @@
+/* Shared Settings workspace grammar. Navigation and detail surfaces use the
+   same grouped material as Scheduled Tasks; responsive layout only decides
+   whether navigation sits beside detail or is navigated into. */
+.oc-settings-workspace {
+  --oc-settings-base-font-size: var(--text-ui-label);
+  --oc-settings-base-line-height: var(--form-control-line-height);
+  --oc-settings-group-radius: 1rem;
+  --oc-settings-section-gap: 0.5rem;
+  /* One roomy vertical rhythm for navigation cards and detail groups across
+     desktop and mobile. Keep this distinct from compact in-card row spacing. */
+  --oc-settings-section-stack-gap: 1.25rem;
+  --oc-settings-section-title-size: 0.75rem;
+  --oc-settings-section-title-line-height: 1rem;
+  --oc-settings-section-title-weight: 600;
+  --oc-settings-section-title-inset: 0.5rem;
+  --oc-settings-section-title-slot: calc(
+    var(--oc-settings-section-title-line-height) +
+      var(--oc-settings-section-gap)
+  );
+  --oc-settings-row-min-height: 3.25rem;
+  --oc-settings-row-gap: 0.625rem;
+  --oc-settings-row-label-size: var(--oc-settings-base-font-size);
+  --oc-settings-row-label-line-height: var(--oc-settings-base-line-height);
+  --oc-settings-row-meta-size: var(--form-helper-font-size);
+  --oc-settings-row-meta-line-height: var(--form-helper-line-height);
+  --oc-settings-row-block-padding: 0.6875rem;
+  --oc-settings-group-background: color-mix(
+    in srgb,
+    var(--surface-muted) 28%,
+    var(--surface-elevated)
+  );
+  --oc-settings-group-border: var(--form-surface-border);
+  --oc-settings-row-divider: var(--form-row-divider);
+  --oc-settings-row-inset: 0.875rem;
+  --oc-settings-desktop-value-max-width: 18rem;
+}
+
+.oc-settings-section-stack,
+.oc-settings-page-content {
+  display: flex;
+  min-width: 0;
+  flex-direction: column;
+  gap: var(--oc-settings-section-stack-gap);
+}
+
+.oc-settings-section-stack > *,
+.oc-settings-page-content > * {
+  margin-block: 0 !important;
+}
+
+.oc-settings-page-section {
+  min-width: 0;
+  margin: 0;
+  padding: 0;
+  border: 0;
+}
+
+/* Explicit Settings detail primitives. These intentionally mirror the grouped
+   cards used by Scheduled Task detail, and are shared by desktop and narrow
+   layouts instead of inferring structure from arbitrary section markup. */
+.oc-settings-group {
+  display: flex;
+  width: 100%;
+  min-width: 0;
+  flex-direction: column;
+  gap: var(--oc-settings-section-gap);
+}
+
+.oc-settings-group-label {
+  padding-inline: var(--oc-settings-section-title-inset);
+  font-size: var(--oc-settings-section-title-size);
+  line-height: var(--oc-settings-section-title-line-height);
+  font-weight: var(--oc-settings-section-title-weight);
+  color: var(--surface-muted-foreground);
+}
+
+/* Latin-only labels have a visibly smaller x-height than CJK glyphs at the
+   same nominal size. Apply one optical step without special-casing product
+   names so mixed-language navigation keeps one perceived hierarchy. */
+.oc-settings-group-label[data-settings-label-script="latin"] {
+  font-size: calc(var(--oc-settings-section-title-size) + 0.0625rem);
+}
+
+.oc-settings-group-card {
+  width: 100%;
+  min-width: 0;
+  overflow: hidden;
+  border: 1px solid var(--oc-settings-group-border);
+  border-radius: var(--oc-settings-group-radius);
+  background: var(--oc-settings-group-background);
+  box-shadow: none;
+}
+
+.oc-settings-group-description {
+  margin: 0;
+  padding-inline: var(--oc-settings-section-title-inset);
+  font-size: var(--oc-settings-row-meta-size);
+  line-height: var(--oc-settings-row-meta-line-height);
+}
+
+.oc-settings-group-row {
+  width: 100%;
+  min-width: 0;
+  min-height: var(--oc-settings-row-min-height);
+  padding: var(--oc-settings-row-block-padding) var(--oc-settings-row-inset);
+  font-size: var(--oc-settings-row-label-size);
+  line-height: var(--oc-settings-row-label-line-height);
+}
+
+.oc-settings-group-card > .oc-settings-group-row:not(:last-child) {
+  border-bottom: 1px solid var(--oc-settings-row-divider);
+}
+
+.oc-settings-split-row {
+  display: grid;
+  grid-template-columns: minmax(8.5rem, auto) minmax(0, 1fr);
+  align-items: center;
+  column-gap: clamp(1rem, 4vw, 3rem);
+}
+
+.oc-settings-split-row-copy {
+  display: flex;
+  min-width: 0;
+  max-width: 20rem;
+  flex-direction: column;
+  gap: 0.125rem;
+}
+
+.oc-settings-split-row-copy .typography-ui-label,
+.oc-settings-group-row .oc-mobile-settings-chip,
+.oc-settings-group-row [data-slot="select-trigger"],
+.oc-settings-group-row [data-slot="input"] {
+  font-size: var(--form-control-font-size) !important;
+  line-height: var(--form-control-line-height) !important;
+}
+
+.oc-settings-split-row-copy .typography-meta {
+  font-size: var(--oc-settings-row-meta-size) !important;
+  line-height: var(--oc-settings-row-meta-line-height) !important;
+}
+
+.oc-settings-split-row-control {
+  display: flex;
+  width: min(100%, 28rem);
+  min-width: 0;
+  align-items: center;
+  justify-content: flex-end;
+  justify-self: end;
+  gap: 0.5rem;
+}
+
+.oc-settings-split-row-control > [data-slot="select-trigger"],
+.oc-settings-split-row-control > [data-slot="input"],
+.oc-settings-split-row-control > [data-slot="number-input"],
+.oc-settings-split-row-control > .oc-settings-inline-value {
+  width: auto;
+  min-width: 0;
+  max-width: 20rem;
+  flex: 1 1 10rem;
+}
+
+/* Settings values share the Scheduled Task detail grammar: controls read as
+   right-aligned values in their row instead of as permanently outlined input
+   boxes. A transparent border is always reserved so the hover/focus affordance
+   never changes the control's size or moves surrounding content. */
+.oc-settings-page-content
+  :is(.oc-settings-group-row, section:not(.oc-settings-group) [data-settings-item])
+  :is([data-slot="select-trigger"], [data-slot="input"], [data-slot="number-input"], .oc-settings-inline-value) {
+  height: var(--form-control-height) !important;
+  min-height: var(--form-control-height) !important;
+  justify-content: flex-end !important;
+  gap: 0.5rem !important;
+  border: 1px solid transparent !important;
+  border-radius: var(--form-control-radius) !important;
+  background: transparent !important;
+  margin-inline-end: -0.5rem;
+  padding-inline: 0.5rem !important;
+  text-align: right !important;
+  box-shadow: none !important;
+}
+
+.oc-settings-page-content
+  [data-settings-value]
+  .oc-settings-inline-value > div {
+  flex: 0 1 auto !important;
+  justify-content: flex-end;
+  text-align: right;
+}
+
+.oc-settings-page-content
+  :is(.oc-settings-group-row, section:not(.oc-settings-group) [data-settings-item])
+  [data-slot="select-trigger"]
+  [data-slot="select-value"] {
+  min-width: 0;
+  justify-content: flex-end !important;
+  text-align: right;
+}
+
+.oc-settings-page-content
+  :is(.oc-settings-group-row, section:not(.oc-settings-group) [data-settings-item])
+  :is([data-slot="select-trigger"], [data-slot="input"], [data-slot="number-input"], .oc-settings-inline-value):hover:not(:focus),
+.oc-settings-page-content
+  :is(.oc-settings-group-row, section:not(.oc-settings-group) [data-settings-item])
+  [data-slot="select-trigger"][data-popup-open],
+.oc-settings-page-content
+  :is(.oc-settings-group-row, section:not(.oc-settings-group) [data-settings-item])
+  [data-slot="number-input"]:focus-within {
+  border-color: var(--form-control-border) !important;
+  background: var(--form-control-background) !important;
+}
+
+.oc-settings-page-content
+  :is(.oc-settings-group-row, section:not(.oc-settings-group) [data-settings-item])
+  :is([data-slot="select-trigger"], [data-slot="input"], .oc-settings-inline-value):focus-visible {
+  box-shadow: 0 0 0 2px var(--interactive-focus-ring) !important;
+}
+
+.oc-settings-page-content
+  :is(.oc-settings-group-row, section:not(.oc-settings-group) [data-settings-item])
+  [data-slot="input"] {
+  text-align: right;
+}
+
+.oc-settings-page-content
+  :is(.oc-settings-group-row, section:not(.oc-settings-group) [data-settings-item])
+  [data-slot="number-input-value"] {
+  width: auto !important;
+  min-width: 0 !important;
+  flex: 1 1 auto;
+  font-size: inherit !important;
+  line-height: inherit !important;
+}
+
+.oc-settings-page-content
+  :is(.oc-settings-group-row, section:not(.oc-settings-group) [data-settings-item])
+  [data-slot="number-input"] > button:first-child {
+  border-right-color: transparent !important;
+}
+
+.oc-settings-page-content
+  :is(.oc-settings-group-row, section:not(.oc-settings-group) [data-settings-item])
+  [data-slot="number-input"] > button:last-child {
+  border-left-color: transparent !important;
+}
+
+.oc-settings-page-content
+  :is(.oc-settings-group-row, section:not(.oc-settings-group) [data-settings-item])
+  [data-slot="number-input"]:is(:hover, :focus-within) > button:first-child {
+  border-right-color: var(--form-control-border) !important;
+}
+
+.oc-settings-page-content
+  :is(.oc-settings-group-row, section:not(.oc-settings-group) [data-settings-item])
+  [data-slot="number-input"]:is(:hover, :focus-within) > button:last-child {
+  border-left-color: var(--form-control-border) !important;
+}
+
+.oc-settings-split-row-stacked {
+  grid-template-columns: minmax(0, 1fr);
+  row-gap: 0.5rem;
+}
+
+.oc-settings-split-row-stacked .oc-settings-split-row-copy {
+  max-width: 32rem;
+}
+
+.oc-settings-split-row-stacked .oc-settings-split-row-control {
+  width: min(100%, 28rem);
+  justify-self: start;
+}
+
+@media (max-width: 640px) {
+  .oc-settings-split-row {
+    grid-template-columns: minmax(0, 42%) minmax(0, 1fr);
+    column-gap: 0.875rem;
+  }
+
+  .oc-settings-split-row-control {
+    width: 100%;
+  }
+}
+
+.oc-settings-workspace-desktop .oc-settings-navigation {
+  padding: 0.875rem;
+  border-right: 0 !important;
+  background: var(--surface-background) !important;
+}
+
+.oc-settings-workspace-desktop .oc-settings-navigation-content {
+  gap: var(--oc-settings-section-stack-gap);
+}
+
+.oc-settings-nav-list {
+  display: flex;
+  min-width: 0;
+  flex-direction: column;
+}
+
+.oc-settings-workspace-desktop
+  .oc-settings-navigation-content
+  > .oc-settings-search {
+  padding: 0;
+}
+.oc-settings-workspace-desktop .oc-settings-nav-list {
+  gap: var(--oc-settings-section-stack-gap);
+  padding: 0 !important;
+}
+
+.oc-settings-workspace-desktop .oc-settings-nav-group {
+  display: flex;
+  flex-direction: column;
+  gap: 0.375rem;
+}
+
+.oc-settings-workspace-desktop .oc-settings-nav-group-label {
+  padding-inline: var(--oc-settings-section-title-inset);
+  font-size: 0.6875rem;
+  font-weight: 600;
+  line-height: 0.875rem;
+  color: var(--surface-muted-foreground);
+}
+
+.oc-settings-workspace-desktop .oc-settings-nav-group-card {
+  overflow: visible;
+  border: 0;
+  border-radius: 0;
+  background: transparent;
+  box-shadow: none;
+}
+
+.oc-settings-workspace-desktop .oc-settings-nav-row {
+  min-height: 2.5rem !important;
+  border-radius: 0.5rem !important;
+  padding-inline: 0.75rem !important;
+}
+
+.oc-settings-workspace-desktop .oc-settings-nav-row + .oc-settings-nav-row {
+  box-shadow: none;
+}
+.oc-settings-workspace-desktop .oc-settings-navigation-footer {
+  padding: 0 !important;
+}
+
+.oc-settings-workspace-desktop
+  .oc-settings-navigation-footer
+  > .oc-settings-nav-group-card {
+  padding: 0.25rem;
+  border: 0 !important;
+  background: transparent !important;
+}
+
+/* Desktop keeps a stable value column when the detail pane grows. Mobile
+   retains the responsive grid above, while every desktop control footprint —
+   including an adjacent reset action — is capped by the same shared width. */
+.oc-settings-workspace-desktop .oc-settings-split-row,
+.oc-settings-workspace-desktop .oc-settings-split-row-stacked {
+  grid-template-columns:
+    minmax(12rem, 1fr)
+    minmax(0, var(--oc-settings-desktop-value-max-width));
+  column-gap: 2rem;
+}
+
+.oc-settings-workspace-desktop .oc-settings-split-row-copy,
+.oc-settings-workspace-desktop
+  .oc-settings-split-row-stacked
+  .oc-settings-split-row-copy {
+  max-width: 24rem;
+}
+
+.oc-settings-workspace-desktop .oc-settings-split-row-control,
+.oc-settings-workspace-desktop
+  .oc-settings-split-row-stacked
+  .oc-settings-split-row-control {
+  width: 100%;
+  max-width: var(--oc-settings-desktop-value-max-width);
+  justify-self: end;
+}
+
+.oc-settings-workspace-desktop
+  .oc-settings-split-row-control
+  > :is([data-slot="select-trigger"], [data-slot="input"], [data-slot="number-input"], .oc-settings-inline-value) {
+  max-width: 100%;
+}
+
+.oc-settings-workspace-desktop .oc-settings-detail-pane {
+  display: flex;
+  min-width: 0;
+  padding: 1.25rem;
+  background: var(--surface-background) !important;
+}
+
+.oc-settings-workspace-desktop .oc-settings-detail-pane > * {
+  min-width: 0;
+  min-height: 0;
+  flex: 1 1 auto;
+}
+
+.oc-settings-workspace-desktop .oc-settings-detail-pane .openchamber-page-body {
+  width: min(100%, 52rem);
+  margin-inline: auto;
+  padding: 0.25rem !important;
+}
+
+.oc-settings-workspace-desktop
+  .oc-settings-page-content
+  section:not(.oc-settings-group),
+.oc-settings-workspace-desktop
+  .oc-settings-page-content
+  > [data-settings-item] {
+  overflow: hidden;
+  padding: 0 !important;
+  border: 1px solid var(--oc-settings-group-border);
+  border-radius: var(--oc-settings-group-radius);
+  background: var(--oc-settings-group-background);
+  box-shadow: none;
+}
+
+.oc-settings-workspace-desktop
+  .oc-settings-page-content
+  section:not(.oc-settings-group)
+  > h3,
+.oc-settings-workspace-desktop
+  .oc-settings-page-content
+  section:not(.oc-settings-group)
+  > h4 {
+  margin: 0 !important;
+  padding: 0.75rem var(--oc-settings-row-inset) 0.5rem !important;
+  font-size: 0.75rem !important;
+  line-height: 1rem !important;
+  font-weight: 650 !important;
+  color: var(--surface-muted-foreground) !important;
+}
+
+.oc-settings-workspace-desktop
+  .oc-settings-page-content
+  section:not(.oc-settings-group)
+  > :not(h3, h4) {
+  margin: 0 !important;
+  padding: 0.625rem var(--oc-settings-row-inset) !important;
+  border-top: 1px solid var(--oc-settings-row-divider);
+}
+
+.oc-settings-workspace-desktop
+  .oc-settings-page-content
+  section:not(.oc-settings-group)
+  > :first-child:not(h3, h4) {
+  border-top: 0;
+}
+
+.oc-settings-workspace-desktop
+  .oc-settings-page-content
+  > [data-settings-item] {
+  padding: var(--oc-settings-row-inset) !important;
+}
+
+.oc-settings-workspace-desktop
+  .oc-settings-page-content
+  > [data-settings-item]
+  > section {
+  padding: 0 !important;
+  border: 0;
+  background: transparent;
+  box-shadow: none;
+}

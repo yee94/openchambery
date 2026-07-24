@@ -17,6 +17,7 @@ import { useUIStore } from '@/stores/useUIStore';
 import { getDeferredSafeStorage } from '@/stores/utils/safeStorage';
 import { useGitRepoStatusMap } from '@/stores/useGitStore';
 import { isVSCodeRuntime } from '@/lib/desktop';
+import { forceRefreshProjectWorktreeCatalog } from '@/lib/worktrees/worktreeManager';
 import { NewWorktreeDialog } from './NewWorktreeDialog';
 import { ScheduledTasksDialog } from './ScheduledTasksDialog';
 import { ArchivedSessionsDialog } from '@/components/sections/openchamber/ArchivedSessionsDialog';
@@ -1104,13 +1105,27 @@ export const SessionSidebar: React.FC<SessionSidebarProps> = ({
   );
 
   const syncProjectSessions = React.useCallback((projectId: string) => {
-    const directories = collectDirectoriesForProjectId(projectId);
-    if (directories.length === 0) return;
-    void syncGlobalSessionsForDirectories(
-      directories,
-      syncSessionsSnapshotRef.current,
-    );
-  }, [collectDirectoriesForProjectId]);
+    const project = projects.find((entry) => entry.id === projectId);
+    if (!project) return;
+    void (async () => {
+      // Manual sync must re-discover worktrees first. The menu only knows the
+      // in-memory catalog; external `git worktree add` or OpenCode sessions in a
+      // new linked tree would otherwise never reach the session-index DB.
+      if (!isVSCode) {
+        try {
+          await forceRefreshProjectWorktreeCatalog({ id: project.id, path: project.path });
+        } catch (error) {
+          console.warn('[SessionSidebar] Worktree refresh before session sync failed:', error);
+        }
+      }
+      const directories = collectDirectoriesForProjectId(projectId);
+      if (directories.length === 0) return;
+      await syncGlobalSessionsForDirectories(
+        directories,
+        syncSessionsSnapshotRef.current,
+      );
+    })();
+  }, [collectDirectoriesForProjectId, isVSCode, projects]);
 
   // Persisted expanded projects are already open when the sidebar mounts, so
   // they never pass through toggleProject's "expanding" branch. Once collapse

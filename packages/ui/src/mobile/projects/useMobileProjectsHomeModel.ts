@@ -381,6 +381,7 @@ export function useMobileProjectsHomeModel(): MobileProjectsHomeModel {
         if (remaining > 0 || hasRemoteSessions) {
           sessionsTree.push({
             id: `${SHOW_MORE_ID_PREFIX}${node.project.id}::${bucket.key}`,
+            kind: 'pagination',
             title: t('sessions.sidebar.group.showMore'),
             subtitle: pagination?.loadingMore ? '…' : undefined,
           });
@@ -388,6 +389,7 @@ export function useMobileProjectsHomeModel(): MobileProjectsHomeModel {
         if (canShowFewer) {
           sessionsTree.push({
             id: `${SHOW_FEWER_ID_PREFIX}${node.project.id}::${bucket.key}`,
+            kind: 'pagination',
             title: t('sessions.sidebar.group.showFewer'),
           });
         }
@@ -403,12 +405,22 @@ export function useMobileProjectsHomeModel(): MobileProjectsHomeModel {
           ),
         );
 
+        // Root path (no worktree metadata) is the project's main workspace —
+        // sessions list flat under the project card. Linked worktrees stay
+        // collapsible groups.
+        const isMainWorkspace = bucket.worktree == null;
+
         return {
           id: bucket.key,
-          name: bucket.label,
+          name: isMainWorkspace
+            ? t('mobile.sessions.mainWorkspace')
+            : bucket.label,
           path: bucket.path,
+          kind: isMainWorkspace ? 'main' as const : 'worktree' as const,
           active: isActiveWorktree,
-          expanded: worktreeExpanded,
+          // Main workspace is always open when the project is expanded; only
+          // linked worktrees remember an independent expand toggle.
+          expanded: isMainWorkspace ? true : worktreeExpanded,
           sessions: sessionsTree,
         };
       });

@@ -4,6 +4,7 @@ import { Icon } from '@/components/icon/Icon';
 import { Button } from '@/components/ui/button';
 import { MobileSheetSnapHandle } from '@/components/ui/MobileSheetSnapHandle';
 import { MobileWindowMotion } from '@/components/ui/MobileWindowMotion';
+import { cn } from '@/lib/utils';
 import {
   MOBILE_SHEET_EXPANDED_SNAP,
   useMobileSheetSnap,
@@ -13,11 +14,14 @@ type MobileResizableSheetProps = {
   id: string;
   open: boolean;
   onOpenChange: (open: boolean) => void;
-  title: React.ReactNode;
+  title?: React.ReactNode;
+  leading?: React.ReactNode;
   ariaLabel: string;
   closeAriaLabel: string;
   resizeAriaLabel: string;
   initiallyExpanded?: boolean;
+  fitContent?: boolean;
+  bodyClassName?: string;
   children: React.ReactNode;
 };
 
@@ -26,14 +30,18 @@ export const MobileResizableSheet: React.FC<MobileResizableSheetProps> = ({
   open,
   onOpenChange,
   title,
+  leading,
   ariaLabel,
   closeAriaLabel,
   resizeAriaLabel,
   initiallyExpanded = false,
+  fitContent = false,
+  bodyClassName,
   children,
 }) => {
   const sheetSnap = useMobileSheetSnap({
     initialSnapPoint: initiallyExpanded ? MOBILE_SHEET_EXPANDED_SNAP : undefined,
+    fitContent,
     onDismiss: () => onOpenChange(false),
   });
 
@@ -48,14 +56,17 @@ export const MobileResizableSheet: React.FC<MobileResizableSheetProps> = ({
       ariaLabel={ariaLabel}
       surfaceClassName={sheetSnap.snapPoint === MOBILE_SHEET_EXPANDED_SNAP
         ? 'h-[98dvh] max-h-[98dvh]'
-        : 'h-[72dvh] max-h-[98dvh]'}
+        : fitContent
+          ? 'h-auto max-h-[72dvh]'
+          : 'h-[72dvh] max-h-[98dvh]'}
       surfaceElementRef={sheetSnap.surfaceRef}
       onExitComplete={sheetSnap.reset}
     >
       <div className="flex min-h-0 flex-1 flex-col">
-        <div className="shrink-0 border-b border-border/40">
+        <div className="shrink-0">
           <MobileSheetSnapHandle controller={sheetSnap} ariaLabel={resizeAriaLabel} />
           <div className="flex min-h-10 items-center gap-2 px-4 pb-2">
+            {leading ? <div className="flex shrink-0 items-center">{leading}</div> : null}
             <div className="min-w-0 flex-1">{title}</div>
             <Button
               type="button"
@@ -70,7 +81,7 @@ export const MobileResizableSheet: React.FC<MobileResizableSheetProps> = ({
             </Button>
           </div>
         </div>
-        <div className="min-h-0 flex-1 overflow-hidden">{children}</div>
+        <div className={cn('min-h-0 flex-1 overflow-hidden', bodyClassName)}>{children}</div>
       </div>
     </MobileWindowMotion>
   );

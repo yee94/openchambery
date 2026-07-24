@@ -12,7 +12,7 @@ import { useConfigStore } from '@/stores/useConfigStore';
 import { useUIStore } from '@/stores/useUIStore';
 import { useDeviceInfo } from '@/lib/device';
 import { cn } from '@/lib/utils';
-import { MobileOverlayPanel } from '@/components/ui/MobileOverlayPanel';
+import { MobileResizableSheet } from '@/components/ui/MobileResizableSheet';
 import { Icon } from "@/components/icon/Icon";
 import { AgentAvatar } from '@/components/chat/AgentAvatar';
 import { useI18n } from '@/lib/i18n';
@@ -57,6 +57,7 @@ export const AgentSelector: React.FC<AgentSelectorProps> = ({
     const isActuallyMobile = isMobile || deviceIsMobile;
 
     const [isMobilePanelOpen, setIsMobilePanelOpen] = React.useState(false);
+    const mobileSheetId = React.useId();
 
     React.useEffect(() => {
         if (catalogAgents || rawAgents.length > 0) return;
@@ -74,16 +75,22 @@ export const AgentSelector: React.FC<AgentSelectorProps> = ({
         if (!isActuallyMobile) return null;
 
         return (
-                <MobileOverlayPanel
-                    open={isMobilePanelOpen}
-                    onClose={closeMobilePanel}
-                    title={t('settings.commands.agentSelector.title')}
-                >
-                <div className="space-y-1">
+            <MobileResizableSheet
+                id={`mobile-agent-selector-sheet-${mobileSheetId}`}
+                open={isMobilePanelOpen}
+                onOpenChange={(nextOpen) => {
+                    if (!nextOpen) closeMobilePanel();
+                }}
+                ariaLabel={t('settings.commands.agentSelector.title')}
+                closeAriaLabel={t('mobile.surface.closeAria')}
+                resizeAriaLabel={t('mobile.sessions.sheet.resizeAria')}
+                bodyClassName="px-2 pb-[max(0.5rem,var(--safe-area-inset-bottom,env(safe-area-inset-bottom,0px)))]"
+            >
+                <div className="flex min-h-0 flex-1 flex-col gap-1 overflow-y-auto overscroll-contain">
                     <button
                         type="button"
                         className={cn(
-                            'flex w-full items-center justify-between rounded-lg border border-border/40 bg-background/95 px-2 py-1.5 text-left',
+                            'grid w-full grid-cols-[1rem_minmax(0,1fr)_auto] items-center gap-x-2 rounded-lg border border-border/40 bg-background/95 px-2 py-1.5 text-left',
                             !agentName ? 'bg-primary/10 text-primary' : 'text-foreground'
                         )}
                         onClick={() => {
@@ -91,11 +98,9 @@ export const AgentSelector: React.FC<AgentSelectorProps> = ({
                             closeMobilePanel();
                         }}
                     >
-                        <span className="flex items-center gap-2">
-                            <AgentAvatar name="default" size={16} />
-                            <span className={cn('typography-meta', !agentName ? 'font-medium' : 'text-muted-foreground')}>
-                                {t('settings.commands.agentSelector.notSelected')}
-                            </span>
+                        <AgentAvatar name="default" size={16} />
+                        <span className={cn('min-w-0 typography-meta', !agentName ? 'font-medium' : 'text-muted-foreground')}>
+                            {t('settings.commands.agentSelector.notSelected')}
                         </span>
                         {!agentName && <div className="h-2 w-2 rounded-full bg-primary" />}
                     </button>
@@ -107,7 +112,7 @@ export const AgentSelector: React.FC<AgentSelectorProps> = ({
                                 key={agent.name}
                                 type="button"
                                 className={cn(
-                                    'flex w-full items-center justify-between rounded-lg border border-border/40 bg-background/95 px-2 py-1.5 text-left',
+                                    'grid w-full grid-cols-[1rem_minmax(0,1fr)_auto] items-start gap-x-2 rounded-lg border border-border/40 bg-background/95 px-2 py-1.5 text-left',
                                     isSelected ? 'bg-primary/10 text-primary' : 'text-foreground'
                                 )}
                                 onClick={() => {
@@ -115,16 +120,14 @@ export const AgentSelector: React.FC<AgentSelectorProps> = ({
                                     closeMobilePanel();
                                 }}
                             >
-                                <div className="flex min-w-0 items-center gap-2">
-                                    <AgentAvatar name={agent.name} size={16} />
-                                    <div className="flex min-w-0 flex-col">
-                                        <span className="typography-meta font-medium">{agent.name}</span>
-                                        {agent.description && (
-                                            <span className="typography-micro text-muted-foreground">
-                                                {agent.description}
-                                            </span>
-                                        )}
-                                    </div>
+                                <AgentAvatar name={agent.name} size={16} />
+                                <div className="min-w-0">
+                                    <span className="typography-meta font-medium">{agent.name}</span>
+                                    {agent.description && (
+                                        <span className="mt-0.5 block whitespace-normal break-words typography-micro text-muted-foreground">
+                                            {agent.description}
+                                        </span>
+                                    )}
                                 </div>
                                 {isSelected && (
                                     <div className="h-2 w-2 rounded-full bg-primary" />
@@ -133,7 +136,7 @@ export const AgentSelector: React.FC<AgentSelectorProps> = ({
                         );
                     })}
                 </div>
-            </MobileOverlayPanel>
+            </MobileResizableSheet>
         );
     };
 

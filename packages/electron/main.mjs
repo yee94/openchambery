@@ -432,10 +432,10 @@ const quitConfirmationMessage = () => {
     reasons.push('an active tunnel');
   }
   if (quitRisk.runningScheduledTasksCount > 0) {
-    reasons.push(`${quitRisk.runningScheduledTasksCount} running scheduled task${quitRisk.runningScheduledTasksCount === 1 ? '' : 's'}`);
+    reasons.push(`${quitRisk.runningScheduledTasksCount} running schedule${quitRisk.runningScheduledTasksCount === 1 ? '' : 's'}`);
   }
   if (quitRisk.enabledScheduledTasksCount > 0) {
-    reasons.push(`${quitRisk.enabledScheduledTasksCount} enabled scheduled task${quitRisk.enabledScheduledTasksCount === 1 ? '' : 's'}`);
+    reasons.push(`${quitRisk.enabledScheduledTasksCount} enabled schedule${quitRisk.enabledScheduledTasksCount === 1 ? '' : 's'}`);
   }
   if (reasons.length === 0) {
     return 'Background processes (sidecar, SSH sessions) will be stopped.';

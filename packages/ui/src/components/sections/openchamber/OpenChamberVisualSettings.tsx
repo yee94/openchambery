@@ -33,12 +33,117 @@ import {
     setDirectoryShowHidden,
     useDirectoryShowHidden,
 } from '@/lib/directoryShowHidden';
+import {
+    SettingsField,
+    SettingsGroup,
+    SettingsRow,
+} from '@/components/sections/shared/SettingsGroup';
 
 interface Option<T extends string> {
     id: T;
     labelKey: string;
     descriptionKey?: string;
 }
+
+type ResponsiveSettingsGroupProps = {
+    isMobile: boolean;
+    label?: React.ReactNode;
+    children: React.ReactNode;
+    description?: React.ReactNode;
+    className?: string;
+};
+
+type ResponsiveSettingsFieldProps = {
+    isMobile: boolean;
+    itemId?: string;
+    label: React.ReactNode;
+    description?: React.ReactNode;
+    descriptionPlacement?: 'inside' | 'outside';
+    children: React.ReactNode;
+    className?: string;
+    copyClassName?: string;
+    controlClassName?: string;
+};
+
+const ResponsiveSettingsField = ({
+    isMobile,
+    itemId,
+    label,
+    description,
+    descriptionPlacement,
+    children,
+    className,
+    copyClassName,
+    controlClassName,
+}: ResponsiveSettingsFieldProps) => (
+    <SettingsField
+        itemId={itemId}
+        label={label}
+        description={description}
+        descriptionPlacement={descriptionPlacement}
+        groupClassName={cn('oc-settings-detail-group', isMobile && 'oc-mobile-settings-detail-group')}
+        className={className}
+        copyClassName={copyClassName}
+        controlClassName={controlClassName}
+    >
+        {children}
+    </SettingsField>
+);
+
+const ResponsiveSettingsGroup = ({
+    isMobile,
+    label,
+    children,
+    description,
+    className,
+}: ResponsiveSettingsGroupProps) => {
+    return (
+        <SettingsGroup
+            label={label}
+            description={description}
+            className={cn('oc-settings-detail-group', isMobile && 'oc-mobile-settings-detail-group', className)}
+        >
+            {children}
+        </SettingsGroup>
+    );
+};
+
+type ResponsiveSettingsRowProps = {
+    isMobile: boolean;
+    itemId?: string;
+    label: React.ReactNode;
+    mobileLabel?: React.ReactNode | null;
+    description?: React.ReactNode;
+    children: React.ReactNode;
+    className?: string;
+    copyClassName?: string;
+    controlClassName?: string;
+};
+
+const ResponsiveSettingsRow = ({
+    isMobile,
+    itemId,
+    label,
+    mobileLabel,
+    description,
+    children,
+    className,
+    copyClassName,
+    controlClassName,
+}: ResponsiveSettingsRowProps) => {
+    return (
+        <SettingsRow
+            itemId={itemId}
+            label={isMobile && mobileLabel !== undefined ? mobileLabel : label}
+            description={description}
+            className={className}
+            copyClassName={copyClassName}
+            controlClassName={controlClassName}
+        >
+            {children}
+        </SettingsRow>
+    );
+};
 
 const THEME_MODE_OPTIONS: Array<{ value: ThemeMode; labelKey: string }> = [
     {
@@ -239,12 +344,15 @@ type VisibleSetting = 'sessionAssist' | 'sessionGoal' | 'theme' | 'sidebarBrand'
 interface OpenChamberVisualSettingsProps {
     /** Which settings to show. If undefined, shows all. */
     visibleSettings?: VisibleSetting[];
+    /** The owning surface is already rendering the mobile settings flow. */
+    mobile?: boolean;
 }
 
-export const OpenChamberVisualSettings: React.FC<OpenChamberVisualSettingsProps> = ({ visibleSettings }) => {
+export const OpenChamberVisualSettings: React.FC<OpenChamberVisualSettingsProps> = ({ visibleSettings, mobile }) => {
     const { locale, locales, setLocale, label, t } = useI18n();
     const tUnsafe = React.useCallback((key: string) => t(key as Parameters<typeof t>[0]), [t]);
-    const { isMobile } = useDeviceInfo();
+    const { isMobile: deviceIsMobile } = useDeviceInfo();
+    const isMobile = mobile ?? deviceIsMobile;
     const { browserTab } = usePwaDetection();
     const directoryShowHidden = useDirectoryShowHidden();
     const showReasoningTraces = useUIStore(state => state.showReasoningTraces);
@@ -563,7 +671,7 @@ export const OpenChamberVisualSettings: React.FC<OpenChamberVisualSettingsProps>
     const hasLocalizationSettings = shouldShow('theme') || shouldShow('timeFormat') || shouldShow('weekStart');
     const hasAppearanceSettings = isVSCode
         ? (hasLocalizationSettings || shouldShow('sidebarBrand'))
-        : (shouldShow('theme') || shouldShow('sidebarBrand') || shouldShow('pwaInstallName') || shouldShow('pwaOrientation') || shouldShow('timeFormat') || shouldShow('weekStart'));
+        : (shouldShow('theme') || shouldShow('sidebarBrand') || shouldShow('pwaInstallName') || shouldShow('pwaOrientation') || shouldShow('mobileKeyboardMode') || shouldShow('timeFormat') || shouldShow('weekStart'));
     const hasLayoutSettings = shouldShow('fontSize') || shouldShow('codeFontSize') || shouldShow('terminalFontSize') || shouldShow('editorFontSize') || shouldShow('spacing') || shouldShow('inputBarOffset');
     const hasNavigationSettings = (shouldShow('terminalQuickKeys') && !isMobile) || shouldShow('fileEditorKeymap') || shouldShow('expandedEditorToolbar');
     const hasBehaviorSettings = shouldShow('mermaidRendering')
@@ -714,34 +822,37 @@ export const OpenChamberVisualSettings: React.FC<OpenChamberVisualSettingsProps>
     }, [setMobileKeyboardMode, showMobileKeyboardModeSetting, showPwaInstallNameSetting, showPwaOrientationSetting]);
 
     return (
-        <div className="space-y-8">
+        <div className="oc-settings-section-stack">
 
                 {/* --- Appearance & Themes --- */}
                 {hasAppearanceSettings && (
-                    <div className="mb-8 space-y-6">
+                    <>
                         {hasThemeSettings && (
-                            <section className="px-2 pb-2 pt-0 space-y-2">
-                                <div className="flex min-w-0 flex-col gap-1.5">
-                                    <span className="typography-ui-header font-medium text-foreground">{t('settings.openchamber.visual.section.colorMode')}</span>
-                                    <div className="flex flex-wrap items-center gap-1">
-                                        {THEME_MODE_OPTIONS.map((option) => (
-                                            <Button
-                                                key={option.value}
-                                                variant="chip"
-                                                size="xs"
-                                                aria-pressed={themeMode === option.value}
-                                                className="!font-normal"
-                                                onClick={() => setThemeMode(option.value)}
-                                            >
-                                                {tUnsafe(option.labelKey)}
-                                            </Button>
-                                        ))}
-                                    </div>
+                            <ResponsiveSettingsGroup
+                                isMobile={isMobile}
+                                label={t('settings.openchamber.visual.section.colorMode')}
+                            >
+                                <div className="oc-settings-group-row oc-settings-options-row flex flex-wrap items-center gap-1">
+                                    {THEME_MODE_OPTIONS.map((option) => (
+                                        <Button
+                                            key={option.value}
+                                            variant="chip"
+                                            size="xs"
+                                            aria-pressed={themeMode === option.value}
+                                            className="oc-mobile-settings-chip !font-normal"
+                                            onClick={() => setThemeMode(option.value)}
+                                        >
+                                            {tUnsafe(option.labelKey)}
+                                        </Button>
+                                    ))}
                                 </div>
 
-                                <div className="grid grid-cols-1 gap-2 py-1.5 md:grid-cols-[14rem_auto] md:gap-x-8 md:gap-y-2">
-                                    <div data-settings-item="appearance.light-theme" className="flex min-w-0 items-center gap-2">
-                                        <span className="typography-ui-label text-foreground shrink-0">{t('settings.openchamber.visual.field.lightTheme')}</span>
+                                <>
+                                    <ResponsiveSettingsRow
+                                        isMobile={isMobile}
+                                        itemId="appearance.light-theme"
+                                        label={t('settings.openchamber.visual.field.lightTheme')}
+                                    >
                                         <Select value={selectedLightTheme?.metadata.id ?? ''} onValueChange={setLightThemePreference}>
                                             <SelectTrigger aria-label={t('settings.openchamber.visual.field.selectLightThemeAria')} className="w-fit">
                                                 <SelectValue placeholder={t('settings.openchamber.visual.field.selectThemePlaceholder')}>
@@ -758,9 +869,12 @@ export const OpenChamberVisualSettings: React.FC<OpenChamberVisualSettingsProps>
                                                 ))}
                                             </SelectContent>
                                         </Select>
-                                    </div>
-                                    <div data-settings-item="appearance.dark-theme" className="flex min-w-0 items-center gap-2">
-                                        <span className="typography-ui-label text-foreground shrink-0">{t('settings.openchamber.visual.field.darkTheme')}</span>
+                                    </ResponsiveSettingsRow>
+                                    <ResponsiveSettingsRow
+                                        isMobile={isMobile}
+                                        itemId="appearance.dark-theme"
+                                        label={t('settings.openchamber.visual.field.darkTheme')}
+                                    >
                                         <Select value={selectedDarkTheme?.metadata.id ?? ''} onValueChange={setDarkThemePreference}>
                                             <SelectTrigger aria-label={t('settings.openchamber.visual.field.selectDarkThemeAria')} className="w-fit">
                                                 <SelectValue placeholder={t('settings.openchamber.visual.field.selectThemePlaceholder')}>
@@ -777,10 +891,10 @@ export const OpenChamberVisualSettings: React.FC<OpenChamberVisualSettingsProps>
                                                 ))}
                                             </SelectContent>
                                         </Select>
-                                    </div>
-                                </div>
+                                    </ResponsiveSettingsRow>
+                                </>
 
-                                <div className="flex items-center gap-2 py-1.5">
+                                <div className="oc-settings-group-row flex items-center gap-2">
                                     <button
                                         type="button"
                                         disabled={customThemesLoading || themesReloading}
@@ -819,7 +933,7 @@ export const OpenChamberVisualSettings: React.FC<OpenChamberVisualSettingsProps>
                                 </div>
 
                                 {macVibrancySupported && (
-                                    <div data-settings-item="appearance.window-transparency" className="flex flex-col gap-1.5 border-t border-border/40 pt-3">
+                                    <div data-settings-item="appearance.window-transparency" className="oc-settings-group-row flex flex-col gap-1.5">
                                         <div
                                             className="group flex cursor-pointer items-start gap-2 py-0.5"
                                             role="button"
@@ -869,7 +983,7 @@ export const OpenChamberVisualSettings: React.FC<OpenChamberVisualSettingsProps>
                                 )}
 
                                 {dockBadgeSupported && (
-                                    <div data-settings-item="appearance.dock-badge" className="flex flex-col gap-1.5 border-t border-border/40 pt-3">
+                                    <div data-settings-item="appearance.dock-badge" className="oc-settings-group-row flex flex-col gap-1.5">
                                         <div
                                             className="group flex cursor-pointer items-start gap-2 py-0.5"
                                             role="button"
@@ -899,18 +1013,20 @@ export const OpenChamberVisualSettings: React.FC<OpenChamberVisualSettingsProps>
                                         </div>
                                     </div>
                                 )}
-                            </section>
+                            </ResponsiveSettingsGroup>
                         )}
 
                         {hasLocalizationSettings && (
-                            <section className="px-2 pb-2 pt-0 space-y-2">
-                                <h4 className="typography-ui-header font-medium text-foreground">{t('settings.openchamber.visual.section.localization')}</h4>
-
-                                <div data-settings-item="appearance.language" className="grid grid-cols-1 gap-2 py-1.5 md:grid-cols-[14rem_auto] md:gap-x-8 md:gap-y-2">
-                                    <div className="flex min-w-0 flex-col">
-                                        <span className="typography-ui-label text-foreground shrink-0">{t('settings.appearance.language.label')}</span>
-                                        <span className="typography-meta text-muted-foreground">{t('settings.appearance.language.description')}</span>
-                                    </div>
+                            <ResponsiveSettingsGroup
+                                isMobile={isMobile}
+                                label={t('settings.openchamber.visual.section.localization')}
+                            >
+                                <ResponsiveSettingsRow
+                                    isMobile={isMobile}
+                                    itemId="appearance.language"
+                                    label={t('settings.appearance.language.label')}
+                                    description={t('settings.appearance.language.description')}
+                                >
                                     <Select value={locale} onValueChange={(value) => setLocale(value as Locale)}>
                                         <SelectTrigger aria-label={t('settings.appearance.language.select')} className="w-fit">
                                             <SelectValue>{label(locale)}</SelectValue>
@@ -923,13 +1039,16 @@ export const OpenChamberVisualSettings: React.FC<OpenChamberVisualSettingsProps>
                                             ))}
                                         </SelectContent>
                                     </Select>
-                                </div>
+                                </ResponsiveSettingsRow>
 
                                 {(shouldShow('timeFormat') || shouldShow('weekStart')) && (
-                                    <div className="grid grid-cols-1 gap-2 py-1.5 md:grid-cols-[14rem_auto] md:gap-x-8 md:gap-y-2">
+                                    <>
                                         {shouldShow('timeFormat') && (
-                                            <div data-settings-item="appearance.time-format" className="flex min-w-0 items-center gap-2">
-                                                <span className="typography-ui-label text-foreground shrink-0">{t('settings.openchamber.visual.field.timeFormat')}</span>
+                                            <ResponsiveSettingsRow
+                                                isMobile={isMobile}
+                                                itemId="appearance.time-format"
+                                                label={t('settings.openchamber.visual.field.timeFormat')}
+                                            >
                                                 <Select value={timeFormatPreference} onValueChange={(value: 'auto' | '12h' | '24h') => handleTimeFormatPreferenceChange(value)}>
                                                     <SelectTrigger aria-label={t('settings.openchamber.visual.field.selectTimeFormatAria')} className="w-fit">
                                                         <SelectValue>{selectedTimeFormatLabel}</SelectValue>
@@ -940,12 +1059,15 @@ export const OpenChamberVisualSettings: React.FC<OpenChamberVisualSettingsProps>
                                                         ))}
                                                     </SelectContent>
                                                 </Select>
-                                            </div>
+                                            </ResponsiveSettingsRow>
                                         )}
 
                                         {shouldShow('weekStart') && (
-                                            <div data-settings-item="appearance.week-start" className="flex min-w-0 items-center gap-2">
-                                                <span className="typography-ui-label text-foreground shrink-0">{t('settings.openchamber.visual.field.weekStartsOn')}</span>
+                                            <ResponsiveSettingsRow
+                                                isMobile={isMobile}
+                                                itemId="appearance.week-start"
+                                                label={t('settings.openchamber.visual.field.weekStartsOn')}
+                                            >
                                                 <Select value={weekStartPreference} onValueChange={(value: 'auto' | 'monday' | 'sunday') => handleWeekStartPreferenceChange(value)}>
                                                     <SelectTrigger aria-label={t('settings.openchamber.visual.field.selectWeekStartAria')} className="w-fit">
                                                         <SelectValue>{selectedWeekStartLabel}</SelectValue>
@@ -956,41 +1078,41 @@ export const OpenChamberVisualSettings: React.FC<OpenChamberVisualSettingsProps>
                                                         ))}
                                                     </SelectContent>
                                                 </Select>
-                                            </div>
+                                            </ResponsiveSettingsRow>
                                         )}
-                                    </div>
+                                    </>
                                 )}
-                            </section>
+                            </ResponsiveSettingsGroup>
                         )}
 
                         {shouldShow('sidebarBrand') && (
-                            <section className="px-2 pb-2 pt-0 space-y-2">
-                                <div data-settings-item="appearance.sidebar-brand" className="py-1.5 space-y-1.5">
-                                    <div className="flex min-w-0 flex-col">
-                                        <span className="typography-ui-label text-foreground">{t('settings.openchamber.visual.field.sidebarBrand')}</span>
-                                        <span className="typography-meta text-muted-foreground">{t('settings.openchamber.visual.field.sidebarBrandHint')}</span>
-                                    </div>
-                                    <Input
-                                        value={sidebarBrandName}
-                                        onChange={(event) => setSidebarBrandName(event.target.value)}
-                                        className="h-7 max-w-[28rem]"
-                                        maxLength={64}
-                                        aria-label={t('settings.openchamber.visual.field.sidebarBrandAria')}
-                                    />
-                                </div>
-                            </section>
+                            <ResponsiveSettingsField
+                                isMobile={isMobile}
+                                itemId="appearance.sidebar-brand"
+                                label={t('settings.openchamber.visual.field.sidebarBrand')}
+                                description={t('settings.openchamber.visual.field.sidebarBrandHint')}
+                                descriptionPlacement="outside"
+                                className="oc-settings-split-row-stacked"
+                            >
+                                <Input
+                                    value={sidebarBrandName}
+                                    onChange={(event) => setSidebarBrandName(event.target.value)}
+                                    maxLength={64}
+                                    aria-label={t('settings.openchamber.visual.field.sidebarBrandAria')}
+                                />
+                            </ResponsiveSettingsField>
                         )}
 
                         {(showPwaInstallNameSetting || showPwaOrientationSetting || showMobileKeyboardModeSetting) && (
-                            <section className="px-2 pb-2 pt-0 space-y-2">
-
-                            {showPwaInstallNameSetting && (
-                                <div data-settings-item="appearance.pwa-install-name" className="py-1.5 space-y-1.5">
-                                    <div className="flex min-w-0 flex-col">
-                                        <span className="typography-ui-label text-foreground">{t('settings.openchamber.visual.field.installAppName')}</span>
-                                        <span className="typography-meta text-muted-foreground">{t('settings.openchamber.visual.field.installAppNameHint')}</span>
-                                    </div>
-                                    <div className="flex w-full max-w-[28rem] items-center gap-2">
+                            <>
+                                {showPwaInstallNameSetting && (
+                                    <ResponsiveSettingsField
+                                        isMobile={isMobile}
+                                        itemId="appearance.pwa-install-name"
+                                        label={t('settings.openchamber.visual.field.installAppName')}
+                                        description={t('settings.openchamber.visual.field.installAppNameHint')}
+                                        className="oc-settings-split-row-stacked"
+                                    >
                                         <Input
                                             value={pwaInstallName}
                                             onChange={(event) => {
@@ -1005,7 +1127,6 @@ export const OpenChamberVisualSettings: React.FC<OpenChamberVisualSettingsProps>
                                                     void applyPwaInstallName(pwaInstallName);
                                                 }
                                             }}
-                                            className="h-7"
                                             maxLength={64}
                                             aria-label={t('settings.openchamber.visual.field.pwaInstallAppNameAria')}
                                         />
@@ -1022,17 +1143,18 @@ export const OpenChamberVisualSettings: React.FC<OpenChamberVisualSettingsProps>
                                         >
                                             <Icon name="restart" className="h-3.5 w-3.5" />
                                         </Button>
-                                    </div>
-                                </div>
-                            )}
+                                    </ResponsiveSettingsField>
+                                )}
 
-                            {showPwaOrientationSetting && (
-                                <div data-settings-item="appearance.pwa-orientation" className="py-1.5 space-y-1.5">
-                                    <div className="flex min-w-0 flex-col">
-                                        <span className="typography-ui-label text-foreground">{t('settings.openchamber.visual.field.installOrientation')}</span>
-                                        <span className="typography-meta text-muted-foreground">{t('settings.openchamber.visual.field.installOrientationHint')}</span>
-                                    </div>
-                                    <div className="flex w-full max-w-[18rem] items-center gap-2">
+                                {showPwaOrientationSetting && (
+                                    <ResponsiveSettingsField
+                                        isMobile={isMobile}
+                                        itemId="appearance.pwa-orientation"
+                                        label={t('settings.openchamber.visual.field.installOrientation')}
+                                        description={t('settings.openchamber.visual.field.installOrientationHint')}
+                                        descriptionPlacement="outside"
+                                        className="oc-settings-split-row-stacked"
+                                    >
                                         <Select
                                             value={pwaOrientation}
                                             onValueChange={(value) => {
@@ -1068,17 +1190,18 @@ export const OpenChamberVisualSettings: React.FC<OpenChamberVisualSettingsProps>
                                         >
                                             <Icon name="restart" className="h-3.5 w-3.5" />
                                         </Button>
-                                    </div>
-                                </div>
-                            )}
+                                    </ResponsiveSettingsField>
+                                )}
 
-                            {showMobileKeyboardModeSetting && (
-                                <div data-settings-item="appearance.mobile-keyboard-mode" className="py-1.5 space-y-1.5">
-                                    <div className="flex min-w-0 flex-col">
-                                        <span className="typography-ui-label text-foreground">{t('settings.openchamber.visual.field.mobileKeyboardMode')}</span>
-                                        <span className="typography-meta text-muted-foreground">{t('settings.openchamber.visual.field.mobileKeyboardModeHint')}</span>
-                                    </div>
-                                    <div className="flex w-full max-w-[18rem] items-center gap-2">
+                                {showMobileKeyboardModeSetting && (
+                                    <ResponsiveSettingsField
+                                        isMobile={isMobile}
+                                        itemId="appearance.mobile-keyboard-mode"
+                                        label={t('settings.openchamber.visual.field.mobileKeyboardMode')}
+                                        description={t('settings.openchamber.visual.field.mobileKeyboardModeHint')}
+                                        descriptionPlacement="outside"
+                                        className="oc-settings-split-row-stacked"
+                                    >
                                         <Select
                                             value={mobileKeyboardMode}
                                             onValueChange={(value) => {
@@ -1114,27 +1237,28 @@ export const OpenChamberVisualSettings: React.FC<OpenChamberVisualSettingsProps>
                                         >
                                             <Icon name="restart" className="h-3.5 w-3.5" />
                                         </Button>
-                                    </div>
-                                </div>
-                            )}
-                            </section>
+                                    </ResponsiveSettingsField>
+                                )}
+                            </>
                         )}
-                    </div>
+                    </>
                 )}
 
                 {/* --- UI Scaling & Layout --- */}
                 {hasLayoutSettings && (
-                    <div className="mb-8 space-y-3">
-                        <section className="p-2 space-y-0.5">
-                            <h4 className="typography-ui-header font-medium text-foreground">{t('settings.openchamber.visual.section.spacingAndLayout')}</h4>
-                            <div className="pl-2">
+                    <>
+                        <ResponsiveSettingsGroup
+                            isMobile={isMobile}
+                            label={t('settings.openchamber.visual.section.spacingAndLayout')}
+                        >
+                            <>
 
                             {shouldShow('fontSize') && !isMobile && (
-                                <div data-settings-item="appearance.interface-font-size" className="flex items-center gap-8 py-1">
-                                    <div className="flex min-w-0 flex-col w-56 shrink-0">
-                                        <span className="typography-ui-label text-foreground">{t('settings.openchamber.visual.field.interfaceFont')}</span>
-                                    </div>
-                                    <div className="flex items-center gap-2 w-fit">
+                                <ResponsiveSettingsRow
+                                    isMobile={isMobile}
+                                    itemId="appearance.interface-font-size"
+                                    label={t('settings.openchamber.visual.field.interfaceFont')}
+                                >
                                         <Select value={uiFont} onValueChange={(value) => setUiFont(value as UiFontOption)}>
                                             <SelectTrigger aria-label={t('settings.openchamber.visual.field.selectInterfaceFontAria')} className="w-[13rem]">
                                                 <SelectValue>{UI_FONT_OPTIONS.find((option) => option.id === uiFont)?.label}</SelectValue>
@@ -1158,18 +1282,17 @@ export const OpenChamberVisualSettings: React.FC<OpenChamberVisualSettingsProps>
                                         >
                                             <Icon name="restart" className="h-3.5 w-3.5" />
                                         </Button>
-                                    </div>
-                                </div>
+                                </ResponsiveSettingsRow>
                             )}
 
                             {shouldShow('terminalFontSize') && (
-                                <div className={cn("py-1", isMobile ? "flex flex-col gap-3" : "flex items-center gap-8")}>
-                                    <div className={cn("flex min-w-0 flex-col", isMobile ? "w-full" : "w-56 shrink-0")}>
-                                        <span className="typography-ui-label text-foreground">{t('settings.openchamber.visual.field.codeFont')}</span>
-                                    </div>
-                                    <div className={cn("flex items-center gap-2", isMobile ? "w-full" : "w-fit")}>
+                                <ResponsiveSettingsRow
+                                    isMobile={isMobile}
+                                    itemId="appearance.code-font"
+                                    label={t('settings.openchamber.visual.field.codeFont')}
+                                >
                                         <Select value={monoFont} onValueChange={(value) => setMonoFont(value as MonoFontOption)}>
-                                            <SelectTrigger aria-label={t('settings.openchamber.visual.field.selectCodeFontAria')} className="w-[13rem]">
+                                            <SelectTrigger aria-label={t('settings.openchamber.visual.field.selectCodeFontAria')} className="w-full max-w-[13rem]">
                                                 <SelectValue>{CODE_FONT_OPTIONS.find((option) => option.id === monoFont)?.label}</SelectValue>
                                             </SelectTrigger>
                                             <SelectContent>
@@ -1191,16 +1314,14 @@ export const OpenChamberVisualSettings: React.FC<OpenChamberVisualSettingsProps>
                                         >
                                             <Icon name="restart" className="h-3.5 w-3.5" />
                                         </Button>
-                                    </div>
-                                </div>
+                                </ResponsiveSettingsRow>
                             )}
 
                             {shouldShow('fontSize') && !isMobile && (
-                                <div className="flex items-center gap-8 py-1">
-                                    <div className="flex min-w-0 flex-col w-56 shrink-0">
-                                        <span className="typography-ui-label text-foreground">{t('settings.openchamber.visual.field.interfaceFontSize')}</span>
-                                    </div>
-                                    <div className="flex items-center gap-2 w-fit">
+                                <ResponsiveSettingsRow
+                                    isMobile={isMobile}
+                                    label={t('settings.openchamber.visual.field.interfaceFontSize')}
+                                >
                                         <NumberInput
                                             value={fontSize}
                                             onValueChange={setFontSize}
@@ -1221,16 +1342,15 @@ export const OpenChamberVisualSettings: React.FC<OpenChamberVisualSettingsProps>
                                         >
                                             <Icon name="restart" className="h-3.5 w-3.5" />
                                         </Button>
-                                    </div>
-                                </div>
+                                </ResponsiveSettingsRow>
                             )}
 
                             {shouldShow('codeFontSize') && !isMobile && (
-                                <div data-settings-item="appearance.code-font-size" className="flex items-center gap-8 py-1">
-                                    <div className="flex min-w-0 flex-col w-56 shrink-0">
-                                        <span className="typography-ui-label text-foreground">{t('settings.openchamber.visual.field.codeFontSize')}</span>
-                                    </div>
-                                    <div className="flex items-center gap-2 w-fit">
+                                <ResponsiveSettingsRow
+                                    isMobile={isMobile}
+                                    itemId="appearance.code-font-size"
+                                    label={t('settings.openchamber.visual.field.codeFontSize')}
+                                >
                                         <NumberInput
                                             value={codeFontSize}
                                             onValueChange={setCodeFontSize}
@@ -1251,16 +1371,15 @@ export const OpenChamberVisualSettings: React.FC<OpenChamberVisualSettingsProps>
                                         >
                                             <Icon name="restart" className="h-3.5 w-3.5" />
                                         </Button>
-                                    </div>
-                                </div>
+                                </ResponsiveSettingsRow>
                             )}
 
                             {shouldShow('terminalFontSize') && (
-                                <div data-settings-item="appearance.terminal-font-size" className={cn("py-1", isMobile ? "flex flex-col gap-3" : "flex items-center gap-8")}>
-                                    <div className={cn("flex min-w-0 flex-col", isMobile ? "w-full" : "w-56 shrink-0")}>
-                                        <span className="typography-ui-label text-foreground">{t('settings.openchamber.visual.field.terminalFontSize')}</span>
-                                    </div>
-                                    <div className={cn("flex items-center gap-2", isMobile ? "w-full" : "w-fit")}>
+                                <ResponsiveSettingsRow
+                                    isMobile={isMobile}
+                                    itemId="appearance.terminal-font-size"
+                                    label={t('settings.openchamber.visual.field.terminalFontSize')}
+                                >
                                         <NumberInput
                                             value={terminalFontSize}
                                             onValueChange={setTerminalFontSize}
@@ -1280,16 +1399,15 @@ export const OpenChamberVisualSettings: React.FC<OpenChamberVisualSettingsProps>
                                         >
                                             <Icon name="restart" className="h-3.5 w-3.5" />
                                         </Button>
-                                    </div>
-                                </div>
+                                </ResponsiveSettingsRow>
                             )}
 
                             {shouldShow('editorFontSize') && (
-                                <div data-settings-item="appearance.editor-font-size" className={cn("py-1", isMobile ? "flex flex-col gap-3" : "flex items-center gap-8")}>
-                                    <div className={cn("flex min-w-0 flex-col", isMobile ? "w-full" : "w-56 shrink-0")}>
-                                        <span className="typography-ui-label text-foreground">{t('settings.openchamber.visual.field.editorFontSize')}</span>
-                                    </div>
-                                    <div className={cn("flex items-center gap-2", isMobile ? "w-full" : "w-fit")}>
+                                <ResponsiveSettingsRow
+                                    isMobile={isMobile}
+                                    itemId="appearance.editor-font-size"
+                                    label={t('settings.openchamber.visual.field.editorFontSize')}
+                                >
                                         <NumberInput
                                             value={editorFontSize}
                                             onValueChange={setEditorFontSize}
@@ -1309,16 +1427,15 @@ export const OpenChamberVisualSettings: React.FC<OpenChamberVisualSettingsProps>
                                         >
                                             <Icon name="restart" className="h-3.5 w-3.5" />
                                         </Button>
-                                    </div>
-                                </div>
+                                </ResponsiveSettingsRow>
                             )}
 
                             {shouldShow('spacing') && (
-                                <div data-settings-item="appearance.spacing-density" className={cn("py-1", isMobile ? "flex flex-col gap-3" : "flex items-center gap-8")}>
-                                    <div className={cn("flex min-w-0 flex-col", isMobile ? "w-full" : "w-56 shrink-0")}>
-                                        <span className="typography-ui-label text-foreground">{t('settings.openchamber.visual.field.spacingDensity')}</span>
-                                    </div>
-                                    <div className={cn("flex items-center gap-2", isMobile ? "w-full" : "w-fit")}>
+                                <ResponsiveSettingsRow
+                                    isMobile={isMobile}
+                                    itemId="appearance.spacing-density"
+                                    label={t('settings.openchamber.visual.field.spacingDensity')}
+                                >
                                         <NumberInput
                                             value={padding}
                                             onValueChange={setPadding}
@@ -1338,15 +1455,16 @@ export const OpenChamberVisualSettings: React.FC<OpenChamberVisualSettingsProps>
                                         >
                                             <Icon name="restart" className="h-3.5 w-3.5" />
                                         </Button>
-                                    </div>
-                                </div>
+                                </ResponsiveSettingsRow>
                             )}
 
                             {shouldShow('inputBarOffset') && (
-                                <div data-settings-item="appearance.input-bar-offset" className={cn("py-1", isMobile ? "flex flex-col gap-3" : "flex items-center gap-8")}>
-                                    <div className={cn("flex min-w-0 flex-col", isMobile ? "w-full" : "w-56 shrink-0")}>
-                                        <div className="flex items-center gap-1.5">
-                                            <span className="typography-ui-label text-foreground">{t('settings.openchamber.visual.field.inputBarOffset')}</span>
+                                <ResponsiveSettingsRow
+                                    isMobile={isMobile}
+                                    itemId="appearance.input-bar-offset"
+                                    label={(
+                                        <span className="flex items-center gap-1.5">
+                                            <span>{t('settings.openchamber.visual.field.inputBarOffset')}</span>
                                             <Tooltip>
                                                 <TooltipTrigger asChild>
                                                     <Icon name="information" className="h-3.5 w-3.5 text-muted-foreground/60 cursor-help" />
@@ -1355,9 +1473,9 @@ export const OpenChamberVisualSettings: React.FC<OpenChamberVisualSettingsProps>
                                                     {t('settings.openchamber.visual.field.inputBarOffsetTooltip')}
                                                 </TooltipContent>
                                             </Tooltip>
-                                        </div>
-                                    </div>
-                                    <div className={cn("flex items-center gap-2", isMobile ? "w-full" : "w-fit")}>
+                                        </span>
+                                    )}
+                                >
                                         <NumberInput
                                             value={inputBarOffset}
                                             onValueChange={setInputBarOffset}
@@ -1377,23 +1495,24 @@ export const OpenChamberVisualSettings: React.FC<OpenChamberVisualSettingsProps>
                                         >
                                             <Icon name="restart" className="h-3.5 w-3.5" />
                                         </Button>
-                                    </div>
-                                </div>
+                                </ResponsiveSettingsRow>
                             )}
 
-                            </div>
+                            </>
 
-                        </section>
-                    </div>
+                        </ResponsiveSettingsGroup>
+                    </>
                 )}
 
                 {/* --- Navigation --- */}
                 {hasNavigationSettings && (
-                    <div className="space-y-3">
-                        <section className="px-2 pb-2 pt-0">
-                            <h4 className="typography-ui-header font-medium text-foreground">{t('settings.openchamber.visual.section.navigation')}</h4>
+                    <>
+                        <ResponsiveSettingsGroup
+                            isMobile={isMobile}
+                            label={t('settings.openchamber.visual.section.navigation')}
+                        >
                             {shouldShow('fileEditorKeymap') && (
-                                <div data-settings-item="appearance.file-editor-keymap" className="flex flex-col gap-2 py-1.5 sm:flex-row sm:items-start sm:gap-8">
+                                <div data-settings-item="appearance.file-editor-keymap" className="oc-settings-group-row flex flex-col gap-2 sm:flex-row sm:items-start sm:gap-8">
                                     <span className="typography-ui-label text-foreground sm:w-56 shrink-0">
                                         {t('settings.openchamber.visual.field.fileEditorKeymap')}
                                     </span>
@@ -1437,7 +1556,7 @@ export const OpenChamberVisualSettings: React.FC<OpenChamberVisualSettingsProps>
                             {shouldShow('expandedEditorToolbar') && (
                                 <div
                                     data-settings-item="appearance.expanded-editor-toolbar"
-                                    className="group flex cursor-pointer items-center gap-2 py-1.5"
+                                    className="oc-settings-group-row group flex cursor-pointer items-center gap-2"
                                     role="button"
                                     tabIndex={0}
                                     aria-pressed={expandedEditorToolbar}
@@ -1460,7 +1579,7 @@ export const OpenChamberVisualSettings: React.FC<OpenChamberVisualSettingsProps>
                             {shouldShow('terminalQuickKeys') && !isMobile && !isDesktopShell() && (
                                 <div
                                     data-settings-item="appearance.terminal-quick-keys"
-                                    className="group flex cursor-pointer items-center gap-2 py-1.5"
+                                    className="oc-settings-group-row group flex cursor-pointer items-center gap-2"
                                     role="button"
                                     tabIndex={0}
                                     aria-pressed={showTerminalQuickKeysOnDesktop}
@@ -1490,12 +1609,12 @@ export const OpenChamberVisualSettings: React.FC<OpenChamberVisualSettingsProps>
                                     </div>
                                 </div>
                             )}
-                        </section>
-                    </div>
+                        </ResponsiveSettingsGroup>
+                    </>
                 )}
 
                 {hasBehaviorSettings && (
-                    <div className="space-y-3">
+                    <div className="oc-settings-section-stack">
 
                             {(shouldShow('userMessageRendering') || shouldShow('mermaidRendering') || shouldShow('chatRenderMode') || shouldShow('messageTransport') || (shouldShow('activityRenderMode') && chatRenderMode === 'sorted') || (shouldShow('diffLayout') && !isVSCode) || shouldShow('followUpBehavior')) && (
                                 <div className="grid grid-cols-1 gap-y-2 md:grid-cols-[minmax(0,16rem)_minmax(0,16rem)] md:justify-start md:gap-x-2">
@@ -1824,81 +1943,59 @@ export const OpenChamberVisualSettings: React.FC<OpenChamberVisualSettingsProps>
                             {/* The goal loop runs in the web server — VS Code only renders
                                 goal state, so the settings section is hidden there too. */}
                             {shouldShow('sessionGoal') && !isVSCode && (
-                                <section className="p-2 mb-6 space-y-0.5">
-                                    <div className="flex items-center gap-1.5 py-1.5">
-                                        <h3 className="typography-ui-header font-medium text-foreground">{t('settings.openchamber.visual.goal.sectionTitle')}</h3>
-                                        <Tooltip>
-                                            <TooltipTrigger asChild>
-                                                <Icon name="information" className="h-3.5 w-3.5 cursor-help text-muted-foreground/60" />
-                                            </TooltipTrigger>
-                                            <TooltipContent sideOffset={8} className="max-w-sm">
-                                                {t('settings.openchamber.visual.goal.description')}
-                                            </TooltipContent>
-                                        </Tooltip>
-                                    </div>
-                                        <div
-                                            data-settings-item="chat.session-goal"
-                                            className="group flex cursor-pointer items-center gap-2 py-0.5"
-                                            role="button"
-                                            tabIndex={0}
-                                            aria-pressed={sessionGoalEnabled}
-                                            onClick={() => setSessionGoalEnabled(!sessionGoalEnabled)}
-                                            onKeyDown={(event) => {
-                                                if (event.key === ' ' || event.key === 'Enter') {
-                                                    event.preventDefault();
-                                                    setSessionGoalEnabled(!sessionGoalEnabled);
-                                                }
-                                            }}
-                                        >
-                                            <Checkbox
-                                                checked={sessionGoalEnabled}
-                                                onChange={setSessionGoalEnabled}
-                                                ariaLabel={t('settings.openchamber.visual.field.sessionGoalAria')}
-                                            />
-                                            <span className="typography-ui-label text-foreground">{t('settings.openchamber.visual.field.sessionGoal')}</span>
+                                <ResponsiveSettingsGroup
+                                    isMobile={isMobile}
+                                    label={(
+                                        <div className="flex items-center gap-1.5">
+                                            <span>{t('settings.openchamber.visual.goal.sectionTitle')}</span>
+                                            <Tooltip>
+                                                <TooltipTrigger asChild>
+                                                    <Icon name="information" className="h-3.5 w-3.5 cursor-help text-muted-foreground/60" />
+                                                </TooltipTrigger>
+                                                <TooltipContent sideOffset={8} className="max-w-sm">
+                                                    {t('settings.openchamber.visual.goal.description')}
+                                                </TooltipContent>
+                                            </Tooltip>
                                         </div>
-                                        <div
-                                            data-settings-item="chat.session-goal-budget"
-                                            className="flex items-center gap-2 py-0.5"
-                                        >
-                                            <div
-                                                className={cn('flex items-center gap-2', sessionGoalEnabled ? 'cursor-pointer' : 'opacity-50')}
-                                                role="button"
-                                                tabIndex={sessionGoalEnabled ? 0 : -1}
-                                                aria-pressed={sessionGoalDefaultBudgetEnabled}
-                                                onClick={() => {
-                                                    if (sessionGoalEnabled) setSessionGoalDefaultBudgetEnabled(!sessionGoalDefaultBudgetEnabled);
-                                                }}
-                                                onKeyDown={(event) => {
-                                                    if (sessionGoalEnabled && (event.key === ' ' || event.key === 'Enter')) {
-                                                        event.preventDefault();
-                                                        setSessionGoalDefaultBudgetEnabled(!sessionGoalDefaultBudgetEnabled);
+                                    )}
+                                >
+                                    <ResponsiveSettingsRow
+                                        isMobile={isMobile}
+                                        itemId="chat.session-goal"
+                                        label={t('settings.openchamber.visual.field.sessionGoal')}
+                                    >
+                                        <Checkbox
+                                            checked={sessionGoalEnabled}
+                                            onChange={setSessionGoalEnabled}
+                                            ariaLabel={t('settings.openchamber.visual.field.sessionGoalAria')}
+                                        />
+                                    </ResponsiveSettingsRow>
+                                    <ResponsiveSettingsRow
+                                        isMobile={isMobile}
+                                        itemId="chat.session-goal-budget"
+                                        label={t('settings.openchamber.visual.goal.budgetLabel')}
+                                    >
+                                        <Checkbox
+                                            checked={sessionGoalDefaultBudgetEnabled}
+                                            onChange={setSessionGoalDefaultBudgetEnabled}
+                                            disabled={!sessionGoalEnabled}
+                                            ariaLabel={t('settings.openchamber.visual.goal.budgetAria')}
+                                        />
+                                        {sessionGoalEnabled && sessionGoalDefaultBudgetEnabled ? (
+                                            <NumberInput
+                                                value={sessionGoalDefaultBudget}
+                                                onValueChange={(value) => {
+                                                    if (typeof value === 'number' && Number.isFinite(value) && value > 0) {
+                                                        setSessionGoalDefaultBudget(Math.floor(value));
                                                     }
                                                 }}
-                                            >
-                                                <Checkbox
-                                                    checked={sessionGoalDefaultBudgetEnabled}
-                                                    onChange={setSessionGoalDefaultBudgetEnabled}
-                                                    disabled={!sessionGoalEnabled}
-                                                    ariaLabel={t('settings.openchamber.visual.goal.budgetAria')}
-                                                />
-                                                <span className="typography-ui-label text-foreground">{t('settings.openchamber.visual.goal.budgetLabel')}</span>
-                                            </div>
-                                            {sessionGoalEnabled && sessionGoalDefaultBudgetEnabled ? (
-                                                <NumberInput
-                                                    value={sessionGoalDefaultBudget}
-                                                    onValueChange={(value) => {
-                                                        if (typeof value === 'number' && Number.isFinite(value) && value > 0) {
-                                                            setSessionGoalDefaultBudget(Math.floor(value));
-                                                        }
-                                                    }}
-                                                    min={1000}
-                                                    max={100000000}
-                                                    step={50000}
-                                                />
-                                            ) : null}
-                                        </div>
-                                </section>
+                                                min={1000}
+                                                max={100000000}
+                                                step={50000}
+                                            />
+                                        ) : null}
+                                    </ResponsiveSettingsRow>
+                                </ResponsiveSettingsGroup>
                             )}
 
                             {(shouldShow('sessionAssist') || shouldShow('collapsibleUserMessages') || shouldShow('stickyUserHeader') || (shouldShow('promptNavigatorEnabled') && !isVSCode) || shouldShow('wideChatLayout') || shouldShow('codeBlockLineWrap') || shouldShow('splitAssistantMessageActions') || shouldShow('subagentReadOnlyBanner') || shouldShow('dotfiles') || shouldShow('fileViewerPreview') || shouldShow('persistDraft') || shouldShow('showToolFileIcons') || shouldShow('showSubagentTaskDetails') || shouldShow('showTurnChangedFiles') || (!isMobile && shouldShow('inputSpellcheck')) || shouldShow('reasoning')) && (
@@ -2400,38 +2497,23 @@ export const OpenChamberVisualSettings: React.FC<OpenChamberVisualSettingsProps>
 
                 {/* --- Privacy & Data --- */}
                 {shouldShow('reportUsage') && (
-                    <div className="space-y-3">
-                        <section className="px-2 pb-2 pt-0">
-                            <h4 className="typography-ui-header font-medium text-foreground mb-2">{t('settings.openchamber.visual.section.privacy')}</h4>
-                            <div data-settings-item="appearance.usage-reports" className="flex items-start gap-2 py-1.5">
-                                <Checkbox
-                                    checked={reportUsage}
-                                    onChange={handleReportUsageChange}
-                                    ariaLabel={t('settings.openchamber.visual.field.sendAnonymousUsageReportsAria')}
-                                />
-                                <div className="flex min-w-0 flex-col gap-0.5">
-                                    <div
-                                        className="group flex cursor-pointer"
-                                        role="button"
-                                        tabIndex={0}
-                                        aria-pressed={reportUsage}
-                                        onClick={() => handleReportUsageChange(!reportUsage)}
-                                        onKeyDown={(event) => {
-                                            if (event.key === ' ' || event.key === 'Enter') {
-                                                event.preventDefault();
-                                                handleReportUsageChange(!reportUsage);
-                                            }
-                                        }}
-                                    >
-                                        <span className="typography-ui-label text-foreground">{t('settings.openchamber.visual.field.sendAnonymousUsageReports')}</span>
-                                    </div>
-                                    <span className="typography-meta text-muted-foreground pointer-events-none">
-                                        {t('settings.openchamber.visual.field.sendAnonymousUsageReportsHint')}
-                                    </span>
-                                </div>
-                            </div>
-                        </section>
-                    </div>
+                    <ResponsiveSettingsGroup
+                        isMobile={isMobile}
+                        label={t('settings.openchamber.visual.section.privacy')}
+                        description={t('settings.openchamber.visual.field.sendAnonymousUsageReportsHint')}
+                    >
+                        <ResponsiveSettingsRow
+                            isMobile={isMobile}
+                            itemId="appearance.usage-reports"
+                            label={t('settings.openchamber.visual.field.sendAnonymousUsageReports')}
+                        >
+                            <Checkbox
+                                checked={reportUsage}
+                                onChange={handleReportUsageChange}
+                                ariaLabel={t('settings.openchamber.visual.field.sendAnonymousUsageReportsAria')}
+                            />
+                        </ResponsiveSettingsRow>
+                    </ResponsiveSettingsGroup>
                 )}
 
             </div>

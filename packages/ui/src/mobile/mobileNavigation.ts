@@ -16,6 +16,11 @@ export type MobileSecondaryState =
       /** New-session draft composer: the primary ChatView renders the draft
           for the store-owned current directory. */
       kind: 'draft';
+    }
+  | {
+      /** Assistant conversation page. The selected Assistant is owned by the
+          Assistant UI store; navigation only owns the page depth. */
+      kind: 'assistant';
     };
 
 export type MobileNavigationState = {
@@ -26,6 +31,7 @@ export type MobileNavigationState = {
 export type MobileNavigationActions = {
   setActiveTab: (tab: MobileTabId) => void;
   openChat: (target: { sessionId: string; directory?: string | null }) => void;
+  openAssistant: (assistantID: string) => void;
   closeSecondary: () => void;
 };
 

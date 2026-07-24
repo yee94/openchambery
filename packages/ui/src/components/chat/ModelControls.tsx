@@ -13,6 +13,7 @@ import {
 import { Input } from '@/components/ui/input';
 import { Kbd } from '@/components/ui/kbd';
 import { MobileOverlayPanel } from '@/components/ui/MobileOverlayPanel';
+import { MobileResizableSheet } from '@/components/ui/MobileResizableSheet';
 import { ModelLogo } from '@/components/ui/ModelLogo';
 import { ScrollableOverlay } from '@/components/ui/ScrollableOverlay';
 import { Tooltip, TooltipContent, TooltipTrigger } from '@/components/ui/tooltip';
@@ -329,6 +330,7 @@ export const ModelControls: React.FC<ModelControlsProps> = ({
     selectionAdapter,
 }) => {
     const { t } = useI18n();
+    const mobileAgentSheetId = React.useId();
     const { isReady, isUnavailable } = useOpenCodeReadiness();
     const readinessLabel = isUnavailable || selectionAdapter?.catalog?.error ? t('common.unavailable') : t('common.loading');
     const isProviderConfigLoading = useConfigStore((state) => (
@@ -1792,13 +1794,18 @@ export const ModelControls: React.FC<ModelControlsProps> = ({
         if (!isCompact) return null;
  
         return (
-            <MobileOverlayPanel
+            <MobileResizableSheet
+                id={`mobile-agent-picker-sheet-${mobileAgentSheetId}`}
                 open={activeMobilePanel === 'agent'}
-                onClose={closeMobilePanel}
-                title={t('chat.modelControls.selectAgent')}
-                contentMaxHeightClassName="max-h-[min(52dvh,360px)]"
+                onOpenChange={(nextOpen) => {
+                    if (!nextOpen) closeMobilePanel();
+                }}
+                ariaLabel={t('chat.modelControls.selectAgent')}
+                closeAriaLabel={t('mobile.surface.closeAria')}
+                resizeAriaLabel={t('mobile.sessions.sheet.resizeAria')}
+                bodyClassName="px-2 pb-[max(0.5rem,var(--safe-area-inset-bottom,env(safe-area-inset-bottom,0px)))]"
             >
-                <div className="flex flex-col gap-2">
+                <div className="flex min-h-0 flex-1 flex-col gap-2 overflow-y-auto overscroll-contain">
                     {selectableDesktopAgents.map((agent) => {
                         const isSelected = agent.name === uiAgentName;
                         const agentColor = getAgentColor(agent.name);
@@ -1817,28 +1824,30 @@ export const ModelControls: React.FC<ModelControlsProps> = ({
                                 )}
                                 onClick={() => handleAgentChange(agent.name)}
                             >
-                                <div className="flex items-center gap-2">
+                                <div className="grid min-w-0 grid-cols-[1.125rem_minmax(0,1fr)_auto] items-start gap-x-2">
                                     <AgentAvatar name={agent.name} size={18} />
-                                    <span
-                                        className="typography-ui-label font-semibold"
-                                        style={isSelected ? { color: `var(${agentColor.var})` } : undefined}
-                                    >
-                                        {capitalizeAgentName(agent.name)}
-                                    </span>
+                                    <div className="min-w-0">
+                                        <span
+                                            className="block typography-ui-label font-semibold"
+                                            style={isSelected ? { color: `var(${agentColor.var})` } : undefined}
+                                        >
+                                            {capitalizeAgentName(agent.name)}
+                                        </span>
+                                        {agent.description && (
+                                            <span className="mt-1 block min-w-0 whitespace-normal break-words typography-micro text-muted-foreground">
+                                                {agent.description}
+                                            </span>
+                                        )}
+                                    </div>
                                     {isSelected && (
-                                        <Icon name="check" className="size-4 text-primary ml-auto flex-shrink-0" />
+                                        <Icon name="check" className="size-4 shrink-0 text-primary" />
                                     )}
                                 </div>
-                                {agent.description && (
-                                    <span className="typography-micro text-muted-foreground min-w-0 max-w-full pl-[1.625rem] break-words">
-                                        {agent.description}
-                                    </span>
-                                )}
                             </button>
                         );
                     })}
                 </div>
-            </MobileOverlayPanel>
+            </MobileResizableSheet>
         );
     };
 

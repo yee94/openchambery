@@ -1,9 +1,11 @@
+import * as React from 'react';
+import { useEvent } from '@reactuses/core';
+
 import type { SettingsPageSlug } from '@/lib/settings/metadata';
 import { useI18n } from '@/lib/i18n';
-import { cn } from '@/lib/utils';
 import { SettingsView } from '@/components/views/SettingsView';
 
-import { MobileTabPageHeader } from '../MobileTabPageHeader';
+import { MobileTabPageScaffold } from '../MobileSurface';
 
 // Keep this list aligned with the dedicated-mobile surface in MobileApp.
 const MOBILE_SETTINGS_PAGE_SLUGS = [
@@ -27,20 +29,34 @@ export type MobileSettingsTabProps = {
   contentClassName?: string;
 };
 
+type MobileSettingsStage = 'nav' | 'page-sidebar' | 'page-content';
+
 export function MobileSettingsTab({ className, contentClassName }: MobileSettingsTabProps) {
   const { t } = useI18n();
+  const [mobileStage, setMobileStage] = React.useState<MobileSettingsStage>('nav');
+  const handleMobileStageChange = useEvent((nextStage: MobileSettingsStage) => {
+    setMobileStage(nextStage);
+  });
+  const isRootSettingsPage = mobileStage === 'nav';
 
   return (
-    <div className={cn('flex h-full min-h-[70dvh] flex-col', className)}>
-      <MobileTabPageHeader title={t('mobile.settings.placeholder.title')} />
-      <div
-        className={cn(
-          'min-h-0 flex-1 overflow-hidden rounded-[26px] border border-border/50 bg-background shadow-[0_16px_44px_color-mix(in_srgb,var(--surface-foreground)_7%,transparent)] supports-[corner-shape:squircle]:rounded-[64px]',
-          contentClassName,
-        )}
-      >
-        <SettingsView forceMobile isWindowed visiblePageSlugs={[...MOBILE_SETTINGS_PAGE_SLUGS]} />
-      </div>
-    </div>
+    <MobileTabPageScaffold
+      title={t('mobile.settings.placeholder.title')}
+      className={className}
+      surface={false}
+      scrollsWithPage
+      showHeader={isRootSettingsPage}
+      surfaceClassName={contentClassName}
+    >
+      <SettingsView
+        forceMobile
+        isWindowed
+        hideMobileHeader={isRootSettingsPage}
+        flowMobile
+        autoOpenMobilePage={false}
+        onMobileStageChange={handleMobileStageChange}
+        visiblePageSlugs={[...MOBILE_SETTINGS_PAGE_SLUGS]}
+      />
+    </MobileTabPageScaffold>
   );
 }

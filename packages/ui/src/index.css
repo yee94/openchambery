@@ -2,6 +2,7 @@
 @import "tw-animate-css";
 @import "./styles/design-system.css";
 @import "./styles/typography.css";
+@import "./styles/settings.css";
 @import "./styles/mobile.css";
 /* Load KaTeX styles eagerly with the main bundle. Importing them inside the
    lazy MarkdownRendererImpl chunk meant a stylesheet was injected late on the
@@ -126,11 +127,7 @@ textarea[data-chat-input="true"]:focus-visible {
 }
 
 /* Ensure interactive controls consistently show pointer cursor */
-:where(
-  button,
-  [role="button"],
-  a[href]
-):not(:disabled) {
+:where(button, [role="button"], a[href]):not(:disabled) {
   cursor: pointer;
 }
 
@@ -140,7 +137,11 @@ textarea[data-chat-input="true"]:focus-visible {
 
 :root.light .message-content-text::selection,
 :root.light .message-content-text ::selection {
-  background: color-mix(in srgb, var(--interactive-border-focus) 18%, transparent);
+  background: color-mix(
+    in srgb,
+    var(--interactive-border-focus) 18%,
+    transparent
+  );
   color: var(--surface-foreground);
 }
 
@@ -149,10 +150,26 @@ textarea[data-chat-input="true"]:focus-visible {
 }
 
 .pierre-diff-wrapper {
-  --diffs-bg-selection-override: color-mix(in srgb, var(--primary-base) 22%, transparent);
-  --diffs-bg-selection-background-override: color-mix(in srgb, var(--primary-base) 14%, transparent);
-  --diffs-bg-selection-number-override: color-mix(in srgb, var(--primary-base) 28%, transparent);
-  --diffs-bg-selection-number-background-override: color-mix(in srgb, var(--primary-base) 18%, transparent);
+  --diffs-bg-selection-override: color-mix(
+    in srgb,
+    var(--primary-base) 22%,
+    transparent
+  );
+  --diffs-bg-selection-background-override: color-mix(
+    in srgb,
+    var(--primary-base) 14%,
+    transparent
+  );
+  --diffs-bg-selection-number-override: color-mix(
+    in srgb,
+    var(--primary-base) 28%,
+    transparent
+  );
+  --diffs-bg-selection-number-background-override: color-mix(
+    in srgb,
+    var(--primary-base) 18%,
+    transparent
+  );
   --diffs-selection-color-override: var(--primary-base);
 }
 
@@ -244,7 +261,11 @@ textarea[data-chat-input="true"]:focus-visible {
 .cm-editor .tok-brace,
 .cm-editor .tok-squareBracket,
 .cm-editor .tok-angleBracket {
-  color: color-mix(in srgb, var(--syntax-comment) 85%, var(--syntax-foreground) 15%);
+  color: color-mix(
+    in srgb,
+    var(--syntax-comment) 85%,
+    var(--syntax-foreground) 15%
+  );
 }
 
 /* Codemirror syntax fallback for class-based HighlightStyle tokens */
@@ -290,11 +311,19 @@ textarea[data-chat-input="true"]:focus-visible {
 }
 
 .cm-editor .cm-punctuation {
-  color: color-mix(in srgb, var(--syntax-comment) 85%, var(--syntax-foreground) 15%);
+  color: color-mix(
+    in srgb,
+    var(--syntax-comment) 85%,
+    var(--syntax-foreground) 15%
+  );
 }
 
 :root.vscode-runtime textarea[data-chat-input="true"]::placeholder {
-  color: color-mix(in srgb, var(--vscode-input-placeholderForeground, var(--muted-foreground)) 65%, transparent);
+  color: color-mix(
+    in srgb,
+    var(--vscode-input-placeholderForeground, var(--muted-foreground)) 65%,
+    transparent
+  );
 }
 
 /* Match chat footer background to input in WebKit to avoid dual-tone hover/focus */
@@ -365,7 +394,6 @@ textarea[data-chat-input="true"]:focus-visible {
   );
 }
 
-
 @keyframes spin-once {
   from {
     transform: rotate(0deg);
@@ -412,19 +440,30 @@ textarea[data-chat-input="true"]:focus-visible {
     transform: translateX(0%);
   }
   100% {
-    transform: translateX(calc(-100% + var(--file-mention-marquee-width, 360px)));
+    transform: translateX(
+      calc(-100% + var(--file-mention-marquee-width, 360px))
+    );
   }
 }
 
 .file-mention-marquee-container {
   --file-mention-marquee-width: 360px;
   --file-mention-marquee-duration: 4s;
-  mask-image: linear-gradient(to right, black calc(100% - 24px), transparent 100%);
-  -webkit-mask-image: linear-gradient(to right, black calc(100% - 24px), transparent 100%);
+  mask-image: linear-gradient(
+    to right,
+    black calc(100% - 24px),
+    transparent 100%
+  );
+  -webkit-mask-image: linear-gradient(
+    to right,
+    black calc(100% - 24px),
+    transparent 100%
+  );
 }
 
 .file-mention-marquee {
-  animation: oc-file-mention-marquee var(--file-mention-marquee-duration, 4s) linear 0.2s 1 both;
+  animation: oc-file-mention-marquee var(--file-mention-marquee-duration, 4s)
+    linear 0.2s 1 both;
   will-change: transform;
 }
 
@@ -721,7 +760,9 @@ html:not(.dark) .chat-scroll {
   background: var(--oc-scrollbar-thumb);
   border-radius: 9999px;
   opacity: 0.8;
-  transition: background-color 0.15s ease, opacity 0.15s ease;
+  transition:
+    background-color 0.15s ease,
+    opacity 0.15s ease;
   will-change: transform, height;
 }
 
@@ -761,7 +802,6 @@ html:not(.dark) .chat-scroll {
 }
 
 /* Desktop: slightly smaller diff code text */
-
 
 .pierre-diff-wrapper diffs-container {
   display: block;
@@ -1093,7 +1133,10 @@ html:not(.dark) .chat-scroll {
 
 /* Override Streamdown's hardcoded bg-muted for inline code - use theme colors instead */
 .markdown-content code[data-markdown="inline-code"] {
-  background-color: var(--markdown-inline-code-bg, var(--surface-muted)) !important;
+  background-color: var(
+    --markdown-inline-code-bg,
+    var(--surface-muted)
+  ) !important;
   color: var(--markdown-inline-code, var(--foreground)) !important;
   word-break: break-all;
   overflow-wrap: break-word;
@@ -1161,7 +1204,11 @@ html:not(.dark) .chat-scroll {
 .markdown-content hr {
   /* The preceding block supplies the upper gap; match it below the rule. */
   margin: 0 0 var(--markdown-paragraph-spacing);
-  border-color: color-mix(in srgb, var(--markdown-hr, var(--border)) 45%, transparent);
+  border-color: color-mix(
+    in srgb,
+    var(--markdown-hr, var(--border)) 45%,
+    transparent
+  );
 }
 
 /* Markdown bold/italic/strikethrough - use theme colors */
@@ -1192,11 +1239,15 @@ html:not(.dark) .chat-scroll {
   background-color: var(--sdm-tbg) !important;
 }
 
-.markdown-content [data-markdown="code-block-body"] span[style*="--shiki-light"] {
+.markdown-content
+  [data-markdown="code-block-body"]
+  span[style*="--shiki-light"] {
   color: var(--shiki-light) !important;
 }
 
-.markdown-content [data-markdown="code-block-body"] span[style*="--shiki-light-bg"] {
+.markdown-content
+  [data-markdown="code-block-body"]
+  span[style*="--shiki-light-bg"] {
   background-color: var(--shiki-light-bg) !important;
 }
 
@@ -1205,11 +1256,17 @@ html:not(.dark) .chat-scroll {
   color: var(--shiki-dark, var(--shiki-light, inherit));
 }
 
-.dark .markdown-content [data-markdown="code-block-body"] span[style*="--shiki-dark"] {
+.dark
+  .markdown-content
+  [data-markdown="code-block-body"]
+  span[style*="--shiki-dark"] {
   color: var(--shiki-dark) !important;
 }
 
-.dark .markdown-content [data-markdown="code-block-body"] span[style*="--shiki-dark-bg"] {
+.dark
+  .markdown-content
+  [data-markdown="code-block-body"]
+  span[style*="--shiki-dark-bg"] {
   background-color: var(--shiki-dark-bg) !important;
 }
 
@@ -1324,13 +1381,19 @@ html:not(.dark) .chat-scroll {
 }
 
 @media (hover: hover) and (pointer: fine) {
-  .markdown-content [data-markdown="code-block"] [data-markdown="code-block-actions"] {
+  .markdown-content
+    [data-markdown="code-block"]
+    [data-markdown="code-block-actions"] {
     opacity: 0;
     pointer-events: none;
   }
 
-  .markdown-content [data-markdown="code-block"]:hover [data-markdown="code-block-actions"],
-  .markdown-content [data-markdown="code-block"]:focus-within [data-markdown="code-block-actions"] {
+  .markdown-content
+    [data-markdown="code-block"]:hover
+    [data-markdown="code-block-actions"],
+  .markdown-content
+    [data-markdown="code-block"]:focus-within
+    [data-markdown="code-block-actions"] {
     opacity: 1;
     pointer-events: auto;
   }
@@ -1350,7 +1413,8 @@ html:not(.dark) .chat-scroll {
   min-width: 0;
 }
 
-[data-markdown="mermaid-block"][data-mermaid-render="svg"] [data-markdown="mermaid-scroll"] {
+[data-markdown="mermaid-block"][data-mermaid-render="svg"]
+  [data-markdown="mermaid-scroll"] {
   overflow: hidden;
 }
 
@@ -1371,7 +1435,8 @@ html:not(.dark) .chat-scroll {
   display: block;
 }
 
-[data-markdown="mermaid-block"][data-mermaid-panning="true"] [data-markdown="mermaid-viewport"] {
+[data-markdown="mermaid-block"][data-mermaid-panning="true"]
+  [data-markdown="mermaid-viewport"] {
   cursor: grabbing;
 }
 
@@ -1415,17 +1480,23 @@ html:not(.dark) .chat-scroll {
   background: var(--surface-elevated);
 }
 
-.markdown-mermaid-fullscreen [data-markdown="mermaid-block"] [data-markdown="mermaid-scroll"] {
+.markdown-mermaid-fullscreen
+  [data-markdown="mermaid-block"]
+  [data-markdown="mermaid-scroll"] {
   width: 100%;
   height: 100%;
   overflow: auto;
 }
 
-.markdown-mermaid-fullscreen [data-markdown="mermaid-block"][data-mermaid-render="svg"] [data-markdown="mermaid-scroll"] {
+.markdown-mermaid-fullscreen
+  [data-markdown="mermaid-block"][data-mermaid-render="svg"]
+  [data-markdown="mermaid-scroll"] {
   overflow: hidden;
 }
 
-.markdown-mermaid-fullscreen [data-markdown="mermaid-block"] [data-markdown="mermaid-viewport"] {
+.markdown-mermaid-fullscreen
+  [data-markdown="mermaid-block"]
+  [data-markdown="mermaid-viewport"] {
   width: 100%;
   height: 100%;
   min-width: 100%;
@@ -1433,13 +1504,17 @@ html:not(.dark) .chat-scroll {
   overflow: hidden;
 }
 
-.markdown-mermaid-fullscreen [data-markdown="mermaid-block"] [data-markdown="mermaid"] {
+.markdown-mermaid-fullscreen
+  [data-markdown="mermaid-block"]
+  [data-markdown="mermaid"] {
   width: 100%;
   height: 100%;
   display: block;
 }
 
-.markdown-mermaid-fullscreen [data-markdown="mermaid-block"] [data-markdown="mermaid-ascii"] {
+.markdown-mermaid-fullscreen
+  [data-markdown="mermaid-block"]
+  [data-markdown="mermaid-ascii"] {
   margin: 0;
   white-space: pre;
   width: max-content;
@@ -1450,7 +1525,10 @@ html:not(.dark) .chat-scroll {
   background: transparent;
 }
 
-.markdown-mermaid-fullscreen [data-markdown="mermaid-block"] [data-markdown="mermaid"] svg {
+.markdown-mermaid-fullscreen
+  [data-markdown="mermaid-block"]
+  [data-markdown="mermaid"]
+  svg {
   width: 100% !important;
   height: 100% !important;
   max-width: none !important;
@@ -1488,7 +1566,8 @@ textarea[data-terminal-hidden-input="true"]::placeholder {
 
 /* Hide browser/system caret for Ghostty's own input surfaces.
    Terminal cursor is rendered by the canvas renderer. */
-.terminal-viewport-container [contenteditable="true"][aria-label="Terminal input"] {
+.terminal-viewport-container
+  [contenteditable="true"][aria-label="Terminal input"] {
   caret-color: transparent !important;
   outline: none !important;
 }
@@ -1501,9 +1580,12 @@ input[aria-label="Terminal input"] {
 
 /* When touch terminal input uses the portaled overlay, keep Ghostty's
    internal editable surfaces fully non-painting to avoid duplicate cursors. */
-.terminal-viewport-container[data-hidden-input-overlay-active="true"] textarea:not([data-terminal-hidden-input="true"]),
-.terminal-viewport-container[data-hidden-input-overlay-active="true"] input:not([data-terminal-hidden-input="true"]),
-.terminal-viewport-container[data-hidden-input-overlay-active="true"] [contenteditable="true"] {
+.terminal-viewport-container[data-hidden-input-overlay-active="true"]
+  textarea:not([data-terminal-hidden-input="true"]),
+.terminal-viewport-container[data-hidden-input-overlay-active="true"]
+  input:not([data-terminal-hidden-input="true"]),
+.terminal-viewport-container[data-hidden-input-overlay-active="true"]
+  [contenteditable="true"] {
   caret-color: transparent !important;
   color: transparent !important;
   -webkit-text-fill-color: transparent !important;
@@ -1514,9 +1596,12 @@ input[aria-label="Terminal input"] {
   text-shadow: none !important;
 }
 
-.terminal-viewport-container[data-hidden-input-overlay-active="true"] textarea:not([data-terminal-hidden-input="true"]),
-.terminal-viewport-container[data-hidden-input-overlay-active="true"] input:not([data-terminal-hidden-input="true"]),
-.terminal-viewport-container[data-hidden-input-overlay-active="true"] [contenteditable="true"] {
+.terminal-viewport-container[data-hidden-input-overlay-active="true"]
+  textarea:not([data-terminal-hidden-input="true"]),
+.terminal-viewport-container[data-hidden-input-overlay-active="true"]
+  input:not([data-terminal-hidden-input="true"]),
+.terminal-viewport-container[data-hidden-input-overlay-active="true"]
+  [contenteditable="true"] {
   opacity: 0 !important;
   font-size: 0 !important;
   line-height: 0 !important;
@@ -1529,7 +1614,9 @@ input[aria-label="Terminal input"] {
 @media (max-width: 1024px) {
   .terminal-viewport-container {
     font-variant-ligatures: none;
-    font-feature-settings: "liga" 0, "calt" 0;
+    font-feature-settings:
+      "liga" 0,
+      "calt" 0;
   }
 }
 
@@ -1539,11 +1626,15 @@ input[aria-label="Terminal input"] {
 }
 
 .fonts-loaded .terminal-viewport-container {
-  font-family: "JetBrainsMono Nerd Font", "FiraCode Nerd Font", "Fira Code", "JetBrains Mono", "SFMono-Regular", Menlo, Consolas, "Liberation Mono", "Courier New", monospace;
+  font-family:
+    "JetBrainsMono Nerd Font", "FiraCode Nerd Font", "Fira Code",
+    "JetBrains Mono", "SFMono-Regular", Menlo, Consolas, "Liberation Mono",
+    "Courier New", monospace;
 }
 
 @keyframes oc-busy-pulse {
-  0%, 100% {
+  0%,
+  100% {
     opacity: 0.2;
   }
   50% {
@@ -1571,7 +1662,12 @@ input[aria-label="Terminal input"] {
     90deg,
     var(--oc-text-shimmer-base) 0%,
     var(--oc-text-shimmer-base) 38%,
-    color-mix(in srgb, var(--oc-text-shimmer-base) 28%, var(--surface-foreground) 72%) 50%,
+    color-mix(
+        in srgb,
+        var(--oc-text-shimmer-base) 28%,
+        var(--surface-foreground) 72%
+      )
+      50%,
     var(--oc-text-shimmer-base) 62%,
     var(--oc-text-shimmer-base) 100%
   );
@@ -1583,7 +1679,8 @@ input[aria-label="Terminal input"] {
 }
 
 @keyframes navrail-dot-wave {
-  0%, 100% {
+  0%,
+  100% {
     transform: scale(0.72);
     opacity: 0.52;
   }
@@ -1598,36 +1695,65 @@ input[aria-label="Terminal input"] {
 }
 
 @keyframes border-glow-pulse {
-  0%, 100% {
+  0%,
+  100% {
     border-color: var(--interactive-border);
     outline-color: transparent;
   }
   12.5% {
-    border-color: color-mix(in srgb, var(--primary) 22%, var(--interactive-border));
+    border-color: color-mix(
+      in srgb,
+      var(--primary) 22%,
+      var(--interactive-border)
+    );
     outline-color: color-mix(in srgb, var(--primary) 8%, transparent);
   }
   25% {
-    border-color: color-mix(in srgb, var(--primary) 40%, var(--interactive-border));
+    border-color: color-mix(
+      in srgb,
+      var(--primary) 40%,
+      var(--interactive-border)
+    );
     outline-color: color-mix(in srgb, var(--primary) 16%, transparent);
   }
   37.5% {
-    border-color: color-mix(in srgb, var(--primary) 62%, var(--interactive-border));
+    border-color: color-mix(
+      in srgb,
+      var(--primary) 62%,
+      var(--interactive-border)
+    );
     outline-color: color-mix(in srgb, var(--primary) 26%, transparent);
   }
   50% {
-    border-color: color-mix(in srgb, var(--primary) 78%, var(--interactive-border));
+    border-color: color-mix(
+      in srgb,
+      var(--primary) 78%,
+      var(--interactive-border)
+    );
     outline-color: color-mix(in srgb, var(--primary) 34%, transparent);
   }
   62.5% {
-    border-color: color-mix(in srgb, var(--primary) 62%, var(--interactive-border));
+    border-color: color-mix(
+      in srgb,
+      var(--primary) 62%,
+      var(--interactive-border)
+    );
     outline-color: color-mix(in srgb, var(--primary) 26%, transparent);
   }
   75% {
-    border-color: color-mix(in srgb, var(--primary) 40%, var(--interactive-border));
+    border-color: color-mix(
+      in srgb,
+      var(--primary) 40%,
+      var(--interactive-border)
+    );
     outline-color: color-mix(in srgb, var(--primary) 16%, transparent);
   }
   87.5% {
-    border-color: color-mix(in srgb, var(--primary) 22%, var(--interactive-border));
+    border-color: color-mix(
+      in srgb,
+      var(--primary) 22%,
+      var(--interactive-border)
+    );
     outline-color: color-mix(in srgb, var(--primary) 8%, transparent);
   }
 }
@@ -1640,19 +1766,28 @@ input[aria-label="Terminal input"] {
 }
 
 @keyframes marquee-scroll {
-  0% { transform: translateX(0); }
-  100% { transform: translateX(-100%); }
+  0% {
+    transform: translateX(0);
+  }
+  100% {
+    transform: translateX(-100%);
+  }
 }
 
 @keyframes open-file-name-marquee-scroll {
-  0% { transform: translateX(0); }
-  100% { transform: translateX(-50%); }
+  0% {
+    transform: translateX(0);
+  }
+  100% {
+    transform: translateX(-50%);
+  }
 }
 
 .open-file-name-marquee-track {
   display: inline-flex;
   min-width: max-content;
-  animation: open-file-name-marquee-scroll var(--open-file-name-marquee-duration, 14s) linear infinite;
+  animation: open-file-name-marquee-scroll
+    var(--open-file-name-marquee-duration, 14s) linear infinite;
   will-change: transform;
 }
 
@@ -1686,7 +1821,10 @@ input[aria-label="Terminal input"] {
 
   .animate-text-shimmer {
     animation: none;
-    color: var(--oc-text-shimmer-base, var(--surface-muted-foreground)) !important;
+    color: var(
+      --oc-text-shimmer-base,
+      var(--surface-muted-foreground)
+    ) !important;
     background-image: none;
   }
 
@@ -1708,10 +1846,10 @@ input[aria-label="Terminal input"] {
     padding-right: 0;
   }
 
-  .open-file-name-marquee-track .open-file-name-marquee-item[aria-hidden="true"] {
+  .open-file-name-marquee-track
+    .open-file-name-marquee-item[aria-hidden="true"] {
     display: none;
   }
-
 }
 
 /* Settings dialog: hide the overlay scrollbar; wheel/keyboard scroll still works. */
@@ -1724,7 +1862,9 @@ input[aria-label="Terminal input"] {
    cursors under the desktop runtime only — web in a browser keeps them.
    Resize/grab/text cursors are untouched. */
 html.desktop-runtime
-  :where(button, [role="button"], a[href], summary, label[for]):not(:disabled):not([aria-disabled="true"]) {
+  :where(button, [role="button"], a[href], summary, label[for]):not(
+    :disabled
+  ):not([aria-disabled="true"]) {
   cursor: default;
 }
 html.desktop-runtime [class*="cursor-pointer"] {

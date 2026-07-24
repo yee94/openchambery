@@ -400,7 +400,7 @@ const handleLocalApiRequest = async (input: RequestInfo | URL, url: URL, init: R
   }
 
   if (/^\/api\/projects\/[^/]+\/scheduled-tasks(?:\/[^/]+)?$/.test(normalizedPathname)) {
-    return unsupportedWebRouteResponse('Scheduled tasks');
+    return unsupportedWebRouteResponse('Schedule');
   }
 
   if (normalizedPathname === '/api/sessions/snapshot' && method === 'GET') {

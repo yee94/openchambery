@@ -61,7 +61,7 @@ export default async function scheduledTaskPlugin() {
     },
     tool: {
       scheduled_task: {
-        description: 'Manage OpenChamber scheduled tasks. Daily uses time or times; weekly uses weekdays (0=Sunday) with time or times; once uses date and time; cron uses cron. The current session model is the execution default. Update with enabled:false pauses and enabled:true resumes.',
+        description: 'Manage OpenChamber schedules. Daily uses time or times; weekly uses weekdays (0=Sunday) with time or times; once uses date and time; cron uses cron. The current session model is the execution default. Update with enabled:false pauses and enabled:true resumes.',
         args: { request: requestSchema },
         execute: async (args, context) => {
           const request = args?.request;
@@ -100,7 +100,7 @@ export default async function scheduledTaskPlugin() {
           }
           const body = await response.json().catch(() => ({}));
           if (!response.ok) {
-            const safeError = typeof body?.error === 'string' && body.error.trim() ? body.error.trim() : 'Scheduled task request failed';
+            const safeError = typeof body?.error === 'string' && body.error.trim() ? body.error.trim() : 'Schedule request failed';
             throw new Error(`scheduled_task bridge responded with ${response.status}: ${safeError}`);
           }
           try {

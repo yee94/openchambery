@@ -1,6 +1,7 @@
 import { create } from 'zustand';
 
 import { useSessionUIStore } from '@/sync/session-ui-store';
+import { useAssistantUIStore } from '@/stores/useAssistantUIStore';
 
 import {
   INITIAL_MOBILE_NAVIGATION_STATE,
@@ -32,6 +33,8 @@ type MobileNavigationStore = MobileNavigationState & {
    * session-store draft flow synchronously, then opens the page.
    */
   openDraft: (options?: OpenDraftOptions) => void;
+  /** Select an Assistant, then open its conversation as the second-level page. */
+  openAssistant: (assistantID: string) => void;
   closeSecondary: () => void;
   /** Runtime switch / disconnect: drop all navigation state. */
   reset: () => void;
@@ -52,6 +55,10 @@ export const useMobileNavigationStore = create<MobileNavigationStore>((set) => (
   openDraft: (options) => {
     useSessionUIStore.getState().openNewSessionDraft(options);
     set({ secondary: { kind: 'draft' } });
+  },
+  openAssistant: (assistantID) => {
+    useAssistantUIStore.getState().selectAssistant(assistantID);
+    set({ secondary: { kind: 'assistant' } });
   },
   closeSecondary: () =>
     set((state) => (state.secondary ? { ...state, secondary: null } : state)),

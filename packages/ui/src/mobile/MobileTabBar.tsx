@@ -6,6 +6,7 @@ import { useI18n } from '@/lib/i18n';
 import { cn } from '@/lib/utils';
 
 import { MOBILE_TABS, type MobileTabId } from './mobileTabs';
+import { MobileFloatingSurface } from './MobileSurface';
 
 export type MobileTabBarProps = {
   activeTab: MobileTabId;
@@ -13,6 +14,10 @@ export type MobileTabBarProps = {
   className?: string;
 };
 
+/**
+ * Floating glass capsule tab bar. Labels use dedicated short `mobile.tabs.*`
+ * keys and equal flex slots so Latin/CJK/long locales stay within a phone width.
+ */
 export function MobileTabBar({ activeTab, onTabChange, className }: MobileTabBarProps) {
   const { t } = useI18n();
 
@@ -39,14 +44,15 @@ export function MobileTabBar({ activeTab, onTabChange, className }: MobileTabBar
     <nav
       aria-label={t('mobile.nav.aria')}
       className={cn(
-        'pointer-events-none fixed inset-x-0 bottom-0 z-40 px-3 pb-[max(0.75rem,var(--safe-area-inset-bottom,env(safe-area-inset-bottom,0px)))]',
+        'pointer-events-none fixed inset-x-0 bottom-0 z-40 flex justify-center pb-[max(1.25rem,var(--safe-area-inset-bottom,env(safe-area-inset-bottom,0px)))]',
         className,
       )}
     >
-      <div
-        role="tablist"
-        className="pointer-events-auto mx-auto flex w-full max-w-md items-center gap-1 rounded-[26px] border border-border/60 bg-[color:color-mix(in_srgb,var(--surface-elevated)_88%,transparent)] p-1.5 shadow-[0_18px_48px_color-mix(in_srgb,var(--surface-foreground)_14%,transparent)] backdrop-blur-2xl supports-[corner-shape:squircle]:rounded-[64px]"
-      >
+      <MobileFloatingSurface asChild>
+        <div
+          role="tablist"
+          className="oc-mobile-tab-dock pointer-events-auto"
+        >
         {MOBILE_TABS.map((tab) => {
           const selected = tab.id === activeTab;
           const label = t(tab.labelKey);
@@ -59,24 +65,37 @@ export function MobileTabBar({ activeTab, onTabChange, className }: MobileTabBar
               type="button"
               role="tab"
               variant="ghost"
-              size="lg"
+              size="sm"
               aria-controls={`mobile-tabpanel-${tab.id}`}
               aria-label={label}
               aria-selected={selected}
               tabIndex={selected ? 0 : -1}
+              title={label}
               onClick={handleTabClick}
               onKeyDown={handleTabKeyDown}
               className={cn(
-                'min-h-11 min-w-0 flex-1 flex-col gap-0.5 rounded-[20px] px-1 typography-micro text-muted-foreground transition-[background-color,color,transform] duration-200 active:scale-[0.96] supports-[corner-shape:squircle]:rounded-[48px] motion-reduce:transition-none',
-                selected && 'bg-interactive-selection text-interactive-selection-foreground hover:bg-interactive-selection hover:text-interactive-selection-foreground',
+                // Equal flex slots + min-w-0 so long locale strings truncate, never overflow.
+                'oc-mobile-tab-button min-w-0 flex-1 flex-col overflow-hidden',
+                'text-[11px] font-medium leading-none tracking-tight text-muted-foreground',
+                // Scale press feedback comes from mobile.css global default (compact).
+                'transition-[background-color,color,box-shadow] duration-150',
+                'hover:bg-transparent hover:text-foreground',
+                'motion-reduce:transition-none',
+                selected && [
+                  'bg-interactive-selection text-interactive-selection-foreground',
+                  'shadow-[0_5px_14px_color-mix(in_srgb,var(--surface-foreground)_8%,transparent),inset_0_1px_0_color-mix(in_srgb,var(--surface-elevated)_82%,transparent)]',
+                  'hover:bg-interactive-selection hover:text-interactive-selection-foreground',
+                  'font-semibold',
+                ],
               )}
             >
-              <Icon name={tab.icon} weight="medium" className={cn('size-5 transition-transform duration-200 motion-reduce:transition-none', selected && '-translate-y-px')} />
-              <span className="max-w-full truncate leading-none">{label}</span>
+              <Icon name={tab.icon} weight="medium" className="size-[21px] shrink-0" />
+              <span className="block max-w-full overflow-hidden text-ellipsis whitespace-nowrap">{label}</span>
             </Button>
           );
         })}
-      </div>
+        </div>
+      </MobileFloatingSurface>
     </nav>
   );
 }

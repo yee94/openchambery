@@ -43,7 +43,11 @@ const scheduleTimes = (task: ScheduledTask): string[] => {
   return Array.from(new Set(valid)).sort((a, b) => a.localeCompare(b));
 };
 
-const formatSchedule = (task: ScheduledTask, t: ReturnType<typeof useI18n>['t']): string => {
+const formatSchedule = (
+  task: ScheduledTask,
+  t: ReturnType<typeof useI18n>['t'],
+  includeTimezone = true,
+): string => {
   const timesLabel = scheduleTimes(task).join(', ') || '--:--';
   const formatWeekday = (value: number) => {
     if (value === 0) return t('sessions.scheduledTasks.dialog.schedule.weekdayShort.sun');
@@ -56,7 +60,7 @@ const formatSchedule = (task: ScheduledTask, t: ReturnType<typeof useI18n>['t'])
     return t('sessions.scheduledTasks.dialog.schedule.weekdayShort.unknown');
   };
   if (task.schedule.kind === 'daily') {
-    if (task.schedule.timezone) {
+    if (includeTimezone && task.schedule.timezone) {
       return t('sessions.scheduledTasks.dialog.schedule.dailyWithTimezone', {
         time: timesLabel,
         timezone: task.schedule.timezone,
@@ -68,7 +72,7 @@ const formatSchedule = (task: ScheduledTask, t: ReturnType<typeof useI18n>['t'])
     const days = Array.isArray(task.schedule.weekdays)
       ? task.schedule.weekdays.map((value) => formatWeekday(value)).join(', ')
       : '';
-    if (task.schedule.timezone) {
+    if (includeTimezone && task.schedule.timezone) {
       return t('sessions.scheduledTasks.dialog.schedule.weeklyWithTimezone', {
         days,
         time: timesLabel,
@@ -84,7 +88,7 @@ const formatSchedule = (task: ScheduledTask, t: ReturnType<typeof useI18n>['t'])
     const time = typeof task.schedule.time === 'string' && task.schedule.time.trim().length > 0
       ? task.schedule.time
       : '--:--';
-    if (task.schedule.timezone) {
+    if (includeTimezone && task.schedule.timezone) {
       return t('sessions.scheduledTasks.dialog.schedule.onceWithTimezone', {
         date,
         time,
@@ -93,7 +97,7 @@ const formatSchedule = (task: ScheduledTask, t: ReturnType<typeof useI18n>['t'])
     }
     return t('sessions.scheduledTasks.dialog.schedule.once', { date, time });
   }
-  if (task.schedule.timezone) {
+  if (includeTimezone && task.schedule.timezone) {
     return t('sessions.scheduledTasks.dialog.schedule.cronWithTimezone', {
       cron: task.schedule.cron || '',
       timezone: task.schedule.timezone,
@@ -219,6 +223,7 @@ export function ScheduledTasksWorkspace({
   open = true,
   onOpenChange,
   registerEditorBackHandler,
+  onEditorActiveChange,
 }: {
   presentation?: 'workspace' | 'mobile-panel' | 'mobile-tab';
   open?: boolean;
@@ -229,6 +234,8 @@ export function ScheduledTasksWorkspace({
    * listen for the global dialog close event.
    */
   registerEditorBackHandler?: (handler: (() => boolean) | null) => void;
+  /** Lets the root mobile tab hand its large title to the detail screen. */
+  onEditorActiveChange?: (active: boolean) => void;
 } = {}) {
   const { t } = useI18n();
   const reduceMotion = useReducedMotion();
@@ -251,6 +258,12 @@ export function ScheduledTasksWorkspace({
   // close/back wiring against the dialog open flag.
   const isMobileTab = presentation === 'mobile-tab';
   const isMobilePanel = presentation === 'mobile-panel' || isMobileTab;
+
+  React.useEffect(() => {
+    if (!isMobileTab) return;
+    onEditorActiveChange?.(editorMode !== 'closed');
+    return () => onEditorActiveChange?.(false);
+  }, [editorMode, isMobileTab, onEditorActiveChange]);
 
   React.useEffect(() => {
     if (projects.some((project) => project.id === createProjectID)) return;
@@ -547,7 +560,11 @@ export function ScheduledTasksWorkspace({
   }));
 
   return (
-    <div className={cn('relative flex h-full min-h-0 overflow-hidden bg-background', isMobilePanel && 'flex-col')} data-presentation={presentation}>
+    <div className={cn(
+      'relative flex min-h-0 bg-background',
+      isMobileTab ? 'oc-mobile-scheduled-workspace flex-col overflow-visible' : 'h-full overflow-hidden',
+      isMobilePanel && 'flex-col',
+    )} data-presentation={presentation}>
       {isMobilePanel && !isMobileTab ? (
         <header className="flex h-14 shrink-0 items-center gap-2 border-b border-border/40 px-2">
           {editorMode !== 'closed' ? (
@@ -616,10 +633,21 @@ export function ScheduledTasksWorkspace({
           )}
         </header>
       ) : null}
-      <section className={cn('min-w-0 flex-1 flex-col overflow-hidden transition-[width] duration-300 ease-out', isMobilePanel && editorMode !== 'closed' ? 'hidden' : 'flex')}>
-        <header className={cn('shrink-0', isMobilePanel ? 'px-3 pb-3 pt-3' : 'px-4 pb-5 pt-4 sm:px-6')}>
-          <div className="mx-auto w-full max-w-4xl">
-          <div className={cn('flex items-center justify-between', isMobilePanel ? 'gap-2' : 'gap-3')}>
+      <section className={cn(
+        'min-w-0 flex-1 flex-col transition-[width] duration-300 ease-out',
+        isMobileTab ? 'overflow-visible' : 'overflow-hidden',
+        isMobilePanel && editorMode !== 'closed' ? 'hidden' : 'flex',
+      )}>
+        <header className={cn(
+          'shrink-0',
+          isMobileTab ? 'px-3 pb-0 pt-3' : isMobilePanel ? 'px-3 pb-3 pt-3' : 'px-4 pb-5 pt-4 sm:px-6',
+        )}>
+          <div className={cn('mx-auto w-full', isMobileTab ? 'max-w-[26rem]' : 'max-w-4xl')}>
+          <div className={cn(
+            'flex items-center justify-between',
+            isMobilePanel ? 'gap-2' : 'gap-3',
+            isMobileTab && 'oc-mobile-floating-surface oc-mobile-scheduled-controls',
+          )}>
             <div className={cn('flex items-center gap-1', isMobilePanel && 'min-w-0 flex-1')} role="group" aria-label={t('sessions.scheduledTasks.dialog.title')}>
               {(['all', 'active', 'paused'] as const).map((value) => (
                 <Button
@@ -628,7 +656,8 @@ export function ScheduledTasksWorkspace({
                   variant="ghost"
                   size="sm"
                   className={cn(
-                    'active:scale-[0.97] overflow-hidden rounded-xl border-0 bg-transparent text-muted-foreground shadow-none transition-[color,background-color,transform] duration-150 ease-out motion-reduce:transition-none',
+                    'active:scale-[0.97] overflow-hidden border-0 bg-transparent text-muted-foreground shadow-none transition-[color,background-color,transform] duration-150 ease-out motion-reduce:transition-none',
+                    isMobileTab ? 'rounded-[var(--oc-mobile-inset-radius)]' : 'rounded-xl',
                     isMobilePanel ? 'h-11 min-h-11 min-w-0 flex-1 px-2' : '!h-9 !min-h-9 px-3',
                     filter === value
                       ? 'text-foreground hover:bg-transparent hover:text-foreground'
@@ -640,7 +669,10 @@ export function ScheduledTasksWorkspace({
                   {filter === value ? (
                     <motion.span
                       layoutId="scheduled-task-filter-pill"
-                      className="absolute inset-0 rounded-xl bg-[var(--surface-elevated)]"
+                      className={cn(
+                        'absolute inset-0 bg-[var(--surface-elevated)]',
+                        isMobileTab ? 'rounded-[var(--oc-mobile-inset-radius)]' : 'rounded-xl',
+                      )}
                       transition={{ duration: reduceMotion ? 0 : 0.18, ease: [0.22, 1, 0.36, 1] }}
                     />
                   ) : null}
@@ -663,23 +695,36 @@ export function ScheduledTasksWorkspace({
               </Button>
             </div>
           </div>
-          <div className={cn('group relative w-full', isMobilePanel ? 'mt-3' : 'mt-7')}>
-            <Icon name="search" className="pointer-events-none absolute left-3.5 top-1/2 h-4 w-4 -translate-y-1/2 text-muted-foreground transition-[color,transform] duration-150 ease-out group-focus-within:scale-105 group-focus-within:text-foreground motion-reduce:transition-none" />
-            <Input
-              value={search}
-              onChange={(event) => setSearch(event.target.value)}
-              placeholder={t('sessions.scheduledTasks.workspace.search.placeholder')}
-              className={cn(
-                'rounded-full bg-[var(--surface-elevated)] pl-10 pr-4 ring-1 ring-inset ring-border/50 transition-[background-color,box-shadow,color] duration-200 ease-out hover:[&:not(:focus)]:ring-border focus:bg-[var(--surface-elevated)] focus:shadow-sm focus:ring-2 focus:ring-[var(--interactive-focus-ring)] motion-reduce:transition-none',
-                isMobilePanel ? 'h-11 min-h-11' : '!h-9 !min-h-9',
-              )}
-            />
-          </div>
+          {!isMobileTab ? (
+            <div className={cn('group relative w-full', isMobilePanel ? 'mt-3' : 'mt-7')}>
+              <Icon name="search" className="pointer-events-none absolute left-3.5 top-1/2 h-4 w-4 -translate-y-1/2 text-muted-foreground transition-[color,transform] duration-150 ease-out group-focus-within:scale-105 group-focus-within:text-foreground motion-reduce:transition-none" />
+              <Input
+                value={search}
+                onChange={(event) => setSearch(event.target.value)}
+                placeholder={t('sessions.scheduledTasks.workspace.search.placeholder')}
+                className={cn(
+                  'rounded-full bg-[var(--surface-elevated)] pl-10 pr-4 ring-1 ring-inset ring-border/50 transition-[background-color,box-shadow,color] duration-200 ease-out hover:[&:not(:focus)]:ring-border focus:bg-[var(--surface-elevated)] focus:shadow-sm focus:ring-2 focus:ring-[var(--interactive-focus-ring)] motion-reduce:transition-none',
+                  isMobilePanel ? 'h-11 min-h-11' : '!h-9 !min-h-9',
+                )}
+              />
+            </div>
+          ) : null}
           </div>
         </header>
 
-        <div className={cn('min-h-0 flex-1 overflow-y-auto', isMobilePanel ? 'overscroll-none px-3 pb-[max(1rem,env(safe-area-inset-bottom))]' : 'px-6 pb-6 [scrollbar-gutter:stable]')}>
-          <div className="mx-auto w-full max-w-4xl border-t border-border/40 pt-4">
+        <div className={cn(
+          'min-h-0 flex-1',
+          isMobileTab ? 'overflow-visible' : 'overflow-y-auto',
+          isMobileTab
+            ? 'overscroll-none px-3 pb-[max(1rem,env(safe-area-inset-bottom))] pt-5'
+            : isMobilePanel
+              ? 'overscroll-none px-3 pb-[max(1rem,env(safe-area-inset-bottom))]'
+              : 'px-6 pb-6 [scrollbar-gutter:stable]',
+        )}>
+          <div className={cn(
+            'mx-auto w-full',
+            isMobileTab ? 'max-w-[26rem]' : 'max-w-4xl border-t border-border/40 pt-4',
+          )}>
           {failedProjectIds.length > 0 ? (
             <div className="mb-3 rounded-xl border p-3 typography-meta" style={toneStyle('warning')}>
               {t('sessions.scheduledTasks.workspace.partialLoadWarning')}
@@ -713,7 +758,7 @@ export function ScheduledTasksWorkspace({
                   animate={{ opacity: 1, y: 0 }}
                   exit={reduceMotion ? { opacity: 0 } : { opacity: 0, y: -4 }}
                   transition={{ duration: reduceMotion ? 0 : 0.18, ease: [0.22, 1, 0.36, 1] }}
-                  className="space-y-1"
+                  className={cn(isMobileTab ? 'space-y-4' : 'space-y-1')}
                 >
                   <AnimatePresence initial={false} mode="popLayout">
                   {filteredTasks.map((entry) => {
@@ -771,6 +816,7 @@ export function ScheduledTasksWorkspace({
                     animate={{ opacity: 1, y: 0 }}
                     exit={reduceMotion ? { opacity: 0 } : { opacity: 0, y: -6 }}
                     transition={{ duration: reduceMotion ? 0 : 0.18, ease: [0.22, 1, 0.36, 1] }}
+                    className={cn(isMobileTab && 'oc-mobile-floating-surface oc-mobile-project-shell oc-mobile-scheduled-task-card')}
                   >
                   <ContextMenu
                     open={contextMenuTaskIdentity === identityKey}
@@ -781,7 +827,10 @@ export function ScheduledTasksWorkspace({
                       setContextMenuTaskIdentity(open ? identityKey : null);
                     }}
                   >
-                    <div className="group flex w-full items-center gap-1">
+                    <div className={cn(
+                      'group flex w-full items-center gap-1',
+                      isMobileTab && 'oc-mobile-project-card items-stretch',
+                    )}>
                     <ContextMenuTrigger
                       render={(
                         <button
@@ -795,6 +844,7 @@ export function ScheduledTasksWorkspace({
                           className={cn(
                             'flex min-h-11 min-w-0 flex-1 items-center rounded-xl border py-3 text-left outline-none transition-[background-color,border-color,box-shadow,transform,opacity] duration-150 ease-out active:scale-[0.995] focus-visible:ring-2 focus-visible:ring-[var(--interactive-focus-ring)] motion-reduce:transition-none',
                             isMobilePanel ? 'gap-2.5 px-3' : 'gap-3 px-4',
+                            isMobileTab && 'oc-mobile-project-trigger oc-mobile-scheduled-task-row',
                             selected
                               ? 'border-border/50 bg-[var(--surface-elevated)] shadow-sm'
                               : 'border-transparent hover:bg-interactive-hover',
@@ -805,7 +855,12 @@ export function ScheduledTasksWorkspace({
                       )}
                     >
                     <span
-                      className="flex size-5 shrink-0 items-center justify-center rounded-full border border-border text-muted-foreground transition-[border-color,color,background-color] duration-150 motion-reduce:transition-none"
+                      className={cn(
+                        'flex shrink-0 items-center justify-center rounded-full text-muted-foreground transition-[border-color,color,background-color] duration-150 motion-reduce:transition-none',
+                        isMobileTab
+                          ? 'oc-mobile-project-icon oc-mobile-glass-control'
+                          : 'size-5 border border-border',
+                      )}
                       style={task.enabled && meta.tone !== 'muted' ? { color: `var(--status-${meta.tone})` } : undefined}
                     >
                       <AnimatePresence initial={false} mode="wait">
@@ -817,15 +872,27 @@ export function ScheduledTasksWorkspace({
                           transition={{ duration: reduceMotion ? 0 : 0.15 }}
                           className="flex"
                         >
-                          <Icon name={task.enabled ? meta.Icon : 'pause'} className={cn('size-3.5', meta.spin && task.enabled && 'animate-spin')} />
+                          <Icon
+                            name={task.enabled ? meta.Icon : 'pause'}
+                            className={cn(
+                              isMobileTab ? 'oc-mobile-project-icon-glyph' : 'size-3.5',
+                              meta.spin && task.enabled && 'animate-spin',
+                            )}
+                          />
                         </motion.span>
                       </AnimatePresence>
                     </span>
                     <span className="min-w-0 flex-1">
-                      <span className="block truncate typography-ui-label font-medium">{task.name}</span>
-                      <span className={cn('mt-0.5 min-w-0 gap-1 typography-micro text-muted-foreground', isMobilePanel ? 'flex flex-col items-start' : 'flex items-center')}>
-                        <span className="truncate">{formatSchedule(task, t)}</span>
-                        <span className={cn('shrink-0 text-muted-foreground/50', isMobilePanel && 'hidden')}>·</span>
+                      <span className={cn(
+                        'block truncate font-medium',
+                        isMobileTab ? 'oc-mobile-project-title oc-mobile-entity-title font-semibold' : 'typography-ui-label',
+                      )}>{task.name}</span>
+                      <span className={cn(
+                        'mt-1 flex min-w-0 items-center text-muted-foreground',
+                        isMobileTab ? 'oc-mobile-project-meta oc-mobile-entity-meta' : 'gap-1 typography-micro',
+                      )}>
+                        <span className="truncate">{formatSchedule(task, t, !isMobileTab)}</span>
+                        <span className="shrink-0 text-muted-foreground/50">·</span>
                         <span className="shrink-0 truncate">
                           {nextAt ? formatRelativeTime(nextAt, t) : '—'}
                         </span>
@@ -847,7 +914,8 @@ export function ScheduledTasksWorkspace({
                           variant="ghost"
                           size="icon"
                           className={cn(
-                            'shrink-0 rounded-lg text-muted-foreground transition-[opacity,transform,background-color] duration-150 ease-out active:scale-95 data-[popup-open]:bg-interactive-hover motion-reduce:transition-none',
+                            'shrink-0 text-muted-foreground transition-[opacity,transform,background-color] duration-150 ease-out active:scale-95 data-[popup-open]:bg-interactive-hover motion-reduce:transition-none',
+                            isMobileTab ? 'oc-mobile-project-action rounded-full' : 'rounded-lg',
                             isMobilePanel
                               ? 'size-11'
                               : 'size-8 translate-x-1 opacity-0 group-hover:translate-x-0 group-hover:opacity-100 data-[popup-open]:translate-x-0 data-[popup-open]:opacity-100',
@@ -914,7 +982,7 @@ export function ScheduledTasksWorkspace({
       ) : editorMode !== 'closed' ? (
         <ScheduledTaskEditorDialog
           open
-          presentation={isMobilePanel ? 'mobile-panel' : undefined}
+          presentation={isMobileTab ? 'mobile-tab' : isMobilePanel ? 'mobile-panel' : undefined}
           task={editorMode === 'edit' ? selectedTask : null}
           onOpenChange={handleCancelEditor}
           onSave={handleSaveTask}

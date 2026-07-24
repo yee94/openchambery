@@ -101,6 +101,20 @@ describe("getReconnectMaterializationSessionIds", () => {
     })).toEqual(["viewed"])
   })
 
+  test("materializes the viewed session even when it is absent from candidates", () => {
+    expect(getReconnectMaterializationSessionIds(["busy-a", "busy-b"], {
+      directory: "/repo",
+      viewedSession: { directory: "/repo", sessionId: "viewed" },
+    })).toEqual(["viewed"])
+  })
+
+  test("does not materialize a viewed session from another directory", () => {
+    expect(getReconnectMaterializationSessionIds(["viewed"], {
+      directory: "/repo-a",
+      viewedSession: { directory: "/repo-b", sessionId: "viewed" },
+    })).toEqual([])
+  })
+
   test("does not fetch session detail for background candidates", () => {
     expect(getReconnectMaterializationSessionIds(["busy-a", "busy-b"], {
       directory: "/repo",

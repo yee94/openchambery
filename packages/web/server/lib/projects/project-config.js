@@ -422,7 +422,7 @@ export const createProjectConfigRuntime = (deps) => {
         });
       } catch (error) {
         const message = error instanceof Error ? error.message : String(error);
-        throw new Error(`scheduledTasks[${index}] is invalid and prevents scheduled task changes: ${message}`);
+        throw new Error(`scheduledTasks[${index}] is invalid and prevents schedule changes: ${message}`);
       }
     });
     return {

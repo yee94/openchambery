@@ -105,6 +105,7 @@ const MOBILE_SETTINGS_PAGES = [
 ] as const;
 const MOBILE_DIRECT_DIFF_WINDOW_ID = 'mobile-direct-diff';
 const MOBILE_TURN_DIFF_WINDOW_ID = 'mobile-turn-diff';
+const MOBILE_OVERFLOW_MENU_ID = 'mobile-overflow-menu';
 
 type MobileAppProps = {
   apis: RuntimeAPIs;
@@ -1672,8 +1673,18 @@ const MobileOverflowMenu: React.FC<{
         aria-label={t('mobile.surface.closeAria')}
         onClick={onClose}
       />
+      <button
+        type="button"
+        className="absolute top-[calc(var(--oc-safe-area-top,0px)+8px)] flex size-10 items-center justify-center rounded-full text-muted-foreground transition-colors hover:bg-interactive-hover hover:text-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-primary"
+        aria-label={t('mobile.surface.closeAria')}
+        onClick={onClose}
+        style={{ right: `${8 + rightOffset}px`, touchAction: 'manipulation' }}
+      >
+        <Icon name="more-2" className="size-5" />
+      </button>
       <div
-        className="absolute top-[calc(var(--oc-safe-area-top,0px)+56px+4px)] w-[min(220px,calc(100vw-1rem))] origin-top-right overflow-hidden rounded-2xl border border-border/40 bg-background shadow-[0_18px_60px_rgb(0_0_0_/_0.35)]"
+        id={MOBILE_OVERFLOW_MENU_ID}
+        className="absolute top-[calc(var(--oc-safe-area-top,0px)+56px+4px)] w-[min(220px,calc(100vw-1rem))] origin-top-right overflow-hidden rounded-2xl border border-border/40 bg-background shadow-[0_12px_36px_rgb(0_0_0_/_0.18)]"
         role="menu"
         style={{
           right: `${8 + rightOffset}px`,
@@ -1957,10 +1968,11 @@ type MobileHeaderSurfaceShortcuts = {
 
 const MobileHeader: React.FC<{
   onOpenSessions: () => void;
-  onOpenMenu: () => void;
+  menuOpen: boolean;
+  onToggleMenu: () => void;
   /** iPad only: Files/Changes header shortcuts that toggle the right sidebar. */
   surfaceShortcuts?: MobileHeaderSurfaceShortcuts;
-}> = ({ onOpenSessions, onOpenMenu, surfaceShortcuts }) => {
+}> = ({ onOpenSessions, menuOpen, onToggleMenu, surfaceShortcuts }) => {
   const { t } = useI18n();
   const [metadataOpen, setMetadataOpen] = React.useState(false);
   const currentDirectory = useDirectoryStore((state) => state.currentDirectory);
@@ -2009,9 +2021,9 @@ const MobileHeader: React.FC<{
     onOpenSessions();
   });
 
-  const handleOpenMenu = useEvent(() => {
+  const handleToggleMenu = useEvent(() => {
     setMetadataOpen(false);
-    onOpenMenu();
+    onToggleMenu();
   });
 
   return (
@@ -2080,7 +2092,10 @@ const MobileHeader: React.FC<{
             type="button"
             className="flex size-10 shrink-0 items-center justify-center rounded-full text-muted-foreground transition-colors hover:bg-interactive-hover hover:text-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-primary"
             aria-label={t('mobile.header.openMenuAria')}
-            onClick={handleOpenMenu}
+            aria-controls={MOBILE_OVERFLOW_MENU_ID}
+            aria-expanded={menuOpen}
+            aria-haspopup="menu"
+            onClick={handleToggleMenu}
             style={{ touchAction: 'manipulation' }}
           >
             <Icon name="more-2" className="size-5" />
@@ -2120,6 +2135,7 @@ const MobileShell: React.FC<{ onActiveConnectionDeleted: () => void }> = ({ onAc
   const [directoryDialogOpen, setDirectoryDialogOpen] = React.useState(false);
   const [settingsInitialMobileStage, setSettingsInitialMobileStage] = React.useState<'nav' | 'page-content'>('nav');
   const [overflowOpen, setOverflowOpen] = React.useState(false);
+  const toggleOverflowMenu = useEvent(() => setOverflowOpen((open) => !open));
   // When set, the Changes surface opens directly into the per-file diff for this path.
   const [pendingChangesDiff, setPendingChangesDiff] = React.useState<PendingMobileChangesDiff | null>(null);
   const currentDirectory = useDirectoryStore((state) => state.currentDirectory);
@@ -2284,9 +2300,13 @@ const MobileShell: React.FC<{ onActiveConnectionDeleted: () => void }> = ({ onAc
   );
   useDeepLinkHandlers(deepLinkHandlers);
 
-  // A horizontal swipe beginning on the mobile composer switches sessions.
+  // Horizontal swipes beginning on the explicitly marked Composer surface
+  // switch to the previous or next Session. Transcript gestures are owned by
+  // page-back and the Session List presentation below.
+  const phoneSecondaryBackRef = React.useRef<(() => boolean) | null>(null);
   const chatMainRef = React.useRef<HTMLElement>(null);
   const chatAnimRef = React.useRef<HTMLDivElement>(null);
+  const phoneBackSurfaceRef = React.useRef<HTMLElement | null>(null);
   const previousSessionHolderRef = React.useRef<HTMLDivElement>(null);
   const nextSessionHolderRef = React.useRef<HTMLDivElement>(null);
   const swipeDirectionRef = React.useRef<'prev' | 'next' | null>(null);
@@ -2310,16 +2330,20 @@ const MobileShell: React.FC<{ onActiveConnectionDeleted: () => void }> = ({ onAc
     const chat = chatAnimRef.current;
     const previous = previousSessionHolderRef.current;
     const next = nextSessionHolderRef.current;
-    if (!chat || !previous || !next) return;
+    if (!chat) return;
 
     if (!progress) {
       chat.style.transform = '';
       chat.style.opacity = '';
       chat.style.willChange = '';
-      previous.style.transform = '';
-      previous.style.willChange = '';
-      next.style.transform = '';
-      next.style.willChange = '';
+      if (previous) {
+        previous.style.transform = '';
+        previous.style.willChange = '';
+      }
+      if (next) {
+        next.style.transform = '';
+        next.style.willChange = '';
+      }
       return;
     }
 
@@ -2329,30 +2353,34 @@ const MobileShell: React.FC<{ onActiveConnectionDeleted: () => void }> = ({ onAc
     chat.style.willChange = 'transform, opacity';
     chat.style.transform = `translate3d(${progress.offsetX}px, 0, 0)`;
     chat.style.opacity = String(1 - progress.progress * 0.08);
-    previous.style.willChange = 'transform';
-    next.style.willChange = 'transform';
-    previous.style.transform = `translate3d(${progress.offsetX}px, 0, 0)`;
-    next.style.transform = `translate3d(${progress.offsetX}px, 0, 0)`;
+    if (previous) {
+      previous.style.willChange = 'transform';
+      previous.style.transform = `translate3d(${progress.offsetX}px, 0, 0)`;
+    }
+    if (next) {
+      next.style.willChange = 'transform';
+      next.style.transform = `translate3d(${progress.offsetX}px, 0, 0)`;
+    }
     const visibleHolder = progress.direction === 'prev' ? previous : next;
+    if (!visibleHolder) return;
     Array.from(visibleHolder.children).forEach((child) => {
       if (child instanceof HTMLElement) child.style.opacity = progress.canSwitch ? '1' : '0.35';
     });
   });
   // Re-bind when the chat subtree mounts: on phone it only exists while the
   // secondary page is open; on iPad it is always mounted.
-  const phoneSecondaryOpen = useMobileNavigationStore((state) => state.secondary !== null);
-  const phoneChatMounted = !isIPad && phoneSecondaryOpen;
+  const phoneSecondaryKind = useMobileNavigationStore((state) => state.secondary?.kind ?? null);
+  const phoneChatMounted = !isIPad && (phoneSecondaryKind === 'chat' || phoneSecondaryKind === 'draft');
   useEdgeSwipeSessionSwitch(chatMainRef, {
     onSwitch: recordSwipeDirection,
     onProgress: renderSwipeProgress,
   }, isIPad || phoneChatMounted);
 
-  // A right swipe across more than half the chat opens the session panel.
-  // Phone no longer mounts the legacy sessions sheet (projects tab replaces
-  // it), so the gesture only applies to the iPad layout. Disabled when any
-  // overlay is already open so the gesture doesn't stack sheets or compete
-  // with dismiss gestures.
-  const headerSwipeDisabled = !isIPad
+  // A right-to-left swipe across the chat body opens the Session List
+  // half-sheet. The opposite direction remains unclaimed for page-back.
+  // Disabled when no phone Session chat is mounted or another overlay is open.
+  const headerSwipeDisabled = (isIPad && activeMainTab === 'assistant')
+    || (!isIPad && !phoneChatMounted)
     || mobileSessionPanelOpen
     || filesOpen
     || changesOpen
@@ -2376,13 +2404,35 @@ const MobileShell: React.FC<{ onActiveConnectionDeleted: () => void }> = ({ onAc
   const renderHeaderSwipeProgress = useEvent((progress: number | null) => {
     if (progress !== null) getMobileWindowMotionController(MOBILE_SESSIONS_WINDOW_ID)?.update(progress);
   });
+  const handleBodySwipeBack = useEvent(() => {
+    phoneSecondaryBackRef.current?.();
+  });
+  const renderBodySwipeBackProgress = useEvent((progress: number | null) => {
+    const surface = phoneBackSurfaceRef.current
+      ?? chatMainRef.current?.closest<HTMLElement>('[data-mobile-secondary-page="true"]')
+      ?? null;
+    if (!surface) return;
+    phoneBackSurfaceRef.current = surface;
+    if (progress === null) {
+      surface.style.transform = '';
+      surface.style.opacity = '';
+      surface.style.willChange = '';
+      phoneBackSurfaceRef.current = null;
+      return;
+    }
+    surface.style.willChange = 'transform, opacity';
+    surface.style.transform = `translate3d(${progress * 35}%, 0, 0)`;
+    surface.style.opacity = String(1 - progress * 0.08);
+  });
   useHeaderSwipeToSessions(chatMainRef, {
     onOpen: handleHeaderSwipeOpen,
     onPreviewStart: handleHeaderSwipePreviewStart,
     onPreviewCancel: handleHeaderSwipePreviewCancel,
     onProgress: renderHeaderSwipeProgress,
+    onBack: isIPad ? undefined : handleBodySwipeBack,
+    onBackProgress: isIPad ? undefined : renderBodySwipeBackProgress,
     disabled: headerSwipeDisabled,
-  });
+  }, isIPad || phoneChatMounted);
 
   React.useLayoutEffect(() => {
     const direction = swipeDirectionRef.current;
@@ -2404,7 +2454,6 @@ const MobileShell: React.FC<{ onActiveConnectionDeleted: () => void }> = ({ onAc
   // Phone chat secondary page: MobilePhoneShell registers a handler that
   // closes the chat page before the app would minimize. Ref indirection keeps
   // the registration stable across MobilePhoneShell remounts.
-  const phoneSecondaryBackRef = React.useRef<(() => boolean) | null>(null);
   const registerPhoneSecondaryBack = useEvent((handler: (() => boolean) | null) => {
     phoneSecondaryBackRef.current = handler;
   });
@@ -2685,7 +2734,8 @@ const MobileShell: React.FC<{ onActiveConnectionDeleted: () => void }> = ({ onAc
               {activeMainTab !== 'assistant' ? <div>
                 <MobileHeader
                   onOpenSessions={() => toggleIpadSidebar()}
-                  onOpenMenu={() => setOverflowOpen(true)}
+                  menuOpen={overflowOpen}
+                  onToggleMenu={toggleOverflowMenu}
                   surfaceShortcuts={{
                     activePanel: ipadRightPanel === 'turn-diff' ? 'changes' : ipadRightPanel,
                     changesDirty: dirtyChangeCount > 0,
@@ -2736,20 +2786,44 @@ const MobileShell: React.FC<{ onActiveConnectionDeleted: () => void }> = ({ onAc
                 setSettingsOpen(true);
               }}
               registerSecondaryBackHandler={registerPhoneSecondaryBack}
-              scheduledContent={(registerEditorBackHandler) => (
+              scheduledContent={(registerEditorBackHandler, onEditorActiveChange) => (
                 <ScheduledTasksWorkspace
                   presentation="mobile-tab"
                   registerEditorBackHandler={registerEditorBackHandler}
+                  onEditorActiveChange={onEditorActiveChange}
                 />
               )}
               renderChat={(target) => (
                 <MobileChatScreen
                   sessionId={target.sessionId}
-                  directory={target.directory}
                   onBack={() => phoneSecondaryBackRef.current?.()}
-                  onOpenMenu={() => setOverflowOpen(true)}
+                  onOpenMenu={toggleOverflowMenu}
                 >
                   <main ref={chatMainRef} className="relative h-full min-h-0 flex-1 overflow-hidden" data-page-scroll-lock="true">
+                    <div
+                      ref={previousSessionHolderRef}
+                      aria-hidden="true"
+                      className="pointer-events-none absolute inset-y-0 -left-full flex w-full items-center justify-end gap-3 bg-background pr-4"
+                    >
+                      <span className="typography-micro font-medium tracking-wide text-muted-foreground/60">
+                        {t('helpDialog.item.previousSession')}
+                      </span>
+                      <span className="flex size-11 items-center justify-center rounded-full border border-border/70 bg-[var(--surface-elevated)] text-foreground shadow-sm">
+                        <Icon name="arrow-left" className="size-5" />
+                      </span>
+                    </div>
+                    <div
+                      ref={nextSessionHolderRef}
+                      aria-hidden="true"
+                      className="pointer-events-none absolute inset-y-0 left-full flex w-full items-center justify-start gap-3 bg-background pl-4"
+                    >
+                      <span className="flex size-11 items-center justify-center rounded-full border border-border/70 bg-[var(--surface-elevated)] text-foreground shadow-sm">
+                        <Icon name="arrow-right" className="size-5" />
+                      </span>
+                      <span className="typography-micro font-medium tracking-wide text-muted-foreground/60">
+                        {t('helpDialog.item.nextSession')}
+                      </span>
+                    </div>
                     <div ref={chatAnimRef} className="relative h-full w-full bg-background">
                       <ErrorBoundary>
                         <ChatView />
@@ -3095,11 +3169,9 @@ const MobileShell: React.FC<{ onActiveConnectionDeleted: () => void }> = ({ onAc
           && assistantCapability.data?.supported === true
           && assistantCapability.data?.enabled === true}
       />
-      {isIPad ? (
-        <ErrorBoundary>
-          <MobileSessionStatusBar />
-        </ErrorBoundary>
-      ) : null}
+      <ErrorBoundary>
+        <MobileSessionStatusBar />
+      </ErrorBoundary>
     </DedicatedMobileAppProvider>
   );
 };

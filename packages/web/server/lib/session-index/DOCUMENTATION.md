@@ -34,9 +34,12 @@ The renderer observes revisions through OpenChamber SSE tip events
 optional sync progress flags; the renderer then GETs
 `/api/openchamber/session-index` for the authoritative snapshot. Reconnecting
 never needs an event replay log because the next tip or `event-stream-ready`
-triggers a fresh snapshot load. The renderer keeps this tip observer active
-after startup refresh work becomes idle, and successful event-driven index
-writes with a semantic snapshot change publish a new revision tip immediately.
+triggers a fresh snapshot load. Tip waits also use a short safety timeout and
+re-GET when a completion tip can race ahead of the consumer subscription (for
+example a fast single-directory manual sync). The renderer keeps this tip
+observer active after startup refresh work becomes idle, and successful
+event-driven index writes with a semantic snapshot change publish a new
+revision tip immediately.
 
 The OpenCode proxy calls `noteInteractiveRequest()` for selected-session reads
 and mutations. That aborts the current background list, yields for one second,

@@ -967,9 +967,6 @@ const ChatInputRuntime: React.FC<ChatInputProps> = ({ onOpenSettings, scrollToBo
     // if it was open at that moment, reopen it when the overlay closes.
     const lastMobileBlurAtRef = React.useRef(0);
     const restoreKeyboardAfterOverlayRef = React.useRef(false);
-    // Pill ↔ full composer morph: the wrapper FLIP-animates its height between
-    // the two shapes while the swapped content fades in.
-    const composerHandleTouchRef = React.useRef<{ startY: number; fired: boolean } | null>(null);
     // Message history navigation state (up/down arrow to recall previous messages)
     const [historyIndex, setHistoryIndex] = React.useState(-1); // -1 = not browsing, 0+ = index from most recent
     const primaryCycleAgentRef = React.useRef<(direction: 1 | -1) => void>(() => {});
@@ -5446,8 +5443,8 @@ const ChatInputRuntime: React.FC<ChatInputProps> = ({ onOpenSettings, scrollToBo
             const detail = (event as CustomEvent<{ open?: boolean }>).detail;
             if (!detail || detail.open !== false) return;
             if (!mobileComposerExpandedRef.current) return;
-            // Something still holds the composer open (dictation, an overlay
-            // that closed the keyboard, drag) — the fallback path handles it.
+            // Something still holds the composer open (dictation or an overlay
+            // that closed the keyboard) — the fallback path handles it.
             if (mobileComposerBusyRef.current) return;
             mobileExpandIntentRef.current = null;
             flushSync(() => {
@@ -5463,35 +5460,6 @@ const ChatInputRuntime: React.FC<ChatInputProps> = ({ onOpenSettings, scrollToBo
     React.useEffect(() => {
         setMobileDraftPickerQuery('');
     }, [mobileDraftPicker]);
-
-
-    // ── Composer drag handle (mobile): swipe up = fullscreen, swipe down =
-    // leave fullscreen or dismiss the keyboard. ────────────────────────────
-    const handleComposerHandleTouchStart = React.useCallback((event: React.TouchEvent) => {
-        const touch = event.touches.item(0);
-        composerHandleTouchRef.current = touch ? { startY: touch.clientY, fired: false } : null;
-    }, []);
-    const handleComposerHandleTouchMove = React.useCallback((event: React.TouchEvent) => {
-        const state = composerHandleTouchRef.current;
-        if (!state || state.fired) return;
-        const touch = event.touches.item(0);
-        if (!touch) return;
-        const dy = touch.clientY - state.startY;
-        if (dy <= -28) {
-            state.fired = true;
-            if (!isExpandedInput) setExpandedInput(true);
-        } else if (dy >= 28) {
-            state.fired = true;
-            if (isExpandedInput) {
-                setExpandedInput(false);
-            } else {
-                textareaRef.current?.blur();
-            }
-        }
-    }, [isExpandedInput, setExpandedInput]);
-    const handleComposerHandleTouchEnd = React.useCallback(() => {
-        composerHandleTouchRef.current = null;
-    }, []);
 
     // Fullscreen composer in a mobile BROWSER: the page layout doesn't shrink
     // for the keyboard there — Safari pans/scrolls instead, so any flow-based
@@ -5607,32 +5575,6 @@ const ChatInputRuntime: React.FC<ChatInputProps> = ({ onOpenSettings, scrollToBo
         };
     }, [isMobile, isMobileExpanded, newSessionDraftOpen, mobileTextareaFocused]);
 
-    // Shared drag handle: rendered at the top of the full composer AND inside
-    // the dictation overlay, so swipe-expand/collapse works in Listening mode.
-    // Memoized so the always-mounted dictation instance's memo stays effective.
-    const mobileComposerHandle = React.useMemo(() => isMobile ? (
-        <div
-            // Hit area stays tappable; tight Y so handle sits closer to the model row.
-            className="relative z-10 flex touch-none items-center justify-center pt-1.5 pb-0.5"
-            onTouchStart={handleComposerHandleTouchStart}
-            onTouchMove={handleComposerHandleTouchMove}
-            onTouchEnd={handleComposerHandleTouchEnd}
-            onTouchCancel={handleComposerHandleTouchEnd}
-            aria-hidden="true"
-        >
-            <div
-                className="h-1.5 w-12 rounded-full"
-                style={{ backgroundColor: currentTheme.colors.interactive.border }}
-            />
-        </div>
-    ) : null, [
-        isMobile,
-        handleComposerHandleTouchStart,
-        handleComposerHandleTouchMove,
-        handleComposerHandleTouchEnd,
-        currentTheme.colors.interactive.border,
-    ]);
-
     const footerPaddingClass = isMobile ? 'px-1.5 py-1.5' : (isVSCode ? 'px-1.5 py-1' : 'px-2.5 py-1.5');
     const buttonSizeClass = isMobile ? 'h-8 w-8' : (isVSCode ? 'h-5 w-5' : 'h-6 w-6');
     const sendIconSizeClass = isMobile ? 'h-4 w-4' : (isVSCode ? 'h-3.5 w-3.5' : 'h-4 w-4');
@@ -5660,30 +5602,25 @@ const ChatInputRuntime: React.FC<ChatInputProps> = ({ onOpenSettings, scrollToBo
         };
     }, []);
 
-    const composerInputHeader = (
-        <>
-            {mobileComposerHandle}
-            {isMobile ? (
-                <div className="scrollbar-none relative z-10 flex items-center gap-x-2 overflow-x-auto px-3 pb-0.5 pt-0.5">
-                    <MemoMobileAgentButton
-                        onOpenAgentPanel={handleOpenAgentPanel}
-                        onCycleAgent={handleCycleAgent}
-                        agentName={surface.selection.value.agent}
-                        agents={agents}
-                        disabled={mobileAgentControlsDisabled}
-                        className="flex-shrink-0"
-                    />
-                    <MemoMobileModelButton
-                        onOpenModel={() => handleOpenMobilePanel('model')}
-                        providerID={surface.selection.value.providerID}
-                        modelID={surface.selection.value.modelID}
-                        variant={surface.selection.value.variant}
-                        className="flex-shrink-0"
-                    />
-                </div>
-            ) : null}
-        </>
-    );
+    const composerInputHeader = undefined;
+
+    const mobileComposerControls = isMobile ? (
+        <div className="flex min-w-0 flex-1 items-center justify-end gap-x-1.5">
+            <MemoMobileAgentButton
+                onOpenAgentPanel={handleOpenAgentPanel}
+                onCycleAgent={handleCycleAgent}
+                agentName={surface.selection.value.agent}
+                agents={agents}
+                disabled={mobileAgentControlsDisabled}
+            />
+            <MemoMobileModelButton
+                onOpenModel={() => handleOpenMobilePanel('model')}
+                providerID={surface.selection.value.providerID}
+                modelID={surface.selection.value.modelID}
+                variant={surface.selection.value.variant}
+            />
+        </div>
+    ) : null;
 
     const composerAttachmentContent = (
         <div className="relative z-10 flex flex-wrap items-center gap-1 px-3 pt-1">
@@ -5699,8 +5636,8 @@ const ChatInputRuntime: React.FC<ChatInputProps> = ({ onOpenSettings, scrollToBo
     ));
 
     const composerFooterContent = isMobile ? (
-        <div className="flex w-full items-center justify-between gap-x-1.5">
-            <div className="composer-mobile-actions flex items-center gap-x-2 pl-1">
+        <div className="flex w-full min-w-0 items-center gap-x-1.5">
+            <div className="composer-mobile-actions flex shrink-0 items-center gap-x-2 pl-1">
                 <ComposerAttachmentControls
                     isVSCode={isVSCode}
                     footerIconButtonClass={footerIconButtonClass}
@@ -5734,7 +5671,8 @@ const ChatInputRuntime: React.FC<ChatInputProps> = ({ onOpenSettings, scrollToBo
                 />
                 <SessionGoalObjectiveCounter length={message.length} />
             </div>
-            <div className="flex min-w-0 items-center justify-end gap-x-1">
+            {mobileComposerControls}
+            <div className="flex shrink-0 items-center justify-end gap-x-1">
                 <ComposerActionButtons
                     isMobile={isMobile}
                     footerIconButtonClass={footerIconButtonClass}
@@ -6599,7 +6537,6 @@ const ChatInputRuntime: React.FC<ChatInputProps> = ({ onOpenSettings, scrollToBo
                         onActiveChange={handleMobileDictationActiveChange}
                         onContentHeightChange={handleDictationContentHeightChange}
                         renderTrigger={false}
-                        topAccessory={mobileComposerHandle}
                     />
                 ) : null}
                 </div>

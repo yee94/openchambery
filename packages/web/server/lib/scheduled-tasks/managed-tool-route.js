@@ -223,7 +223,7 @@ export const registerScheduledTaskToolRoute = (app, dependencies) => {
       const settings = await readSettingsFromDiskMigrated();
       const projects = sanitizeProjects(settings?.projects || []);
       const project = await selectProject(path, validateDirectoryPath, Array.isArray(projects) ? projects : [], sessionDirectory, [context.directory, session.directory, context.worktree]);
-      if (!project) return res.status(404).json({ error: 'Configure a project containing this session directory before managing scheduled tasks' });
+      if (!project) return res.status(404).json({ error: 'Configure a project containing this session directory before managing schedules' });
 
       const messages = await fetchOpenCodeJson({
         buildOpenCodeUrl, getOpenCodeAuthHeaders, route: `/session/${encodeURIComponent(sessionID)}/message?limit=${OPEN_CODE_MESSAGE_LIMIT}`, directory: contextDirectory,
@@ -245,16 +245,16 @@ export const registerScheduledTaskToolRoute = (app, dependencies) => {
       if (operation === 'delete') {
         hasOnlyKeys(input, new Set(['taskId']), 'input');
         const deleted = await projectConfigRuntime.deleteScheduledTask(project.id, taskID);
-        if (!deleted.deleted) return res.status(404).json({ error: 'Task not found' });
+        if (!deleted.deleted) return res.status(404).json({ error: 'Schedule not found' });
         const schedulerSynced = await syncAfterMutation(project.id, operation);
         return res.json({ projectId: project.id, tasks: deleted.tasks, schedulerSynced });
       }
       if (operation === 'run') {
         hasOnlyKeys(input, new Set(['taskId']), 'input');
         const result = await scheduledTasksRuntime.runNow(project.id, taskID);
-        if (result.running || result.queued) return res.status(409).json({ error: result.error || 'Task already running' });
-        if (result.skipped) return res.status(404).json({ error: 'Task not found or disabled' });
-        if (!result.ok) return res.status(500).json({ error: 'Task run failed', task: result.task || null });
+        if (result.running || result.queued) return res.status(409).json({ error: result.error || 'Schedule already running' });
+        if (result.skipped) return res.status(404).json({ error: 'Schedule not found or disabled' });
+        if (!result.ok) return res.status(500).json({ error: 'Schedule run failed', task: result.task || null });
         return res.json({ ok: true, projectId: project.id, task: result.task, sessionId: result.sessionID });
       }
 
@@ -271,7 +271,7 @@ export const registerScheduledTaskToolRoute = (app, dependencies) => {
           ...(input.execution === undefined ? {} : { execution: input.execution }),
         };
         const patched = await projectConfigRuntime.patchScheduledTask(project.id, taskID, patch);
-        if (!patched?.task) return res.status(404).json({ error: 'Task not found' });
+        if (!patched?.task) return res.status(404).json({ error: 'Schedule not found' });
         const schedulerSynced = await syncAfterMutation(project.id, operation);
         return res.json({ projectId: project.id, task: patched.task, tasks: patched.tasks, schedulerSynced });
       }
@@ -297,7 +297,7 @@ export const registerScheduledTaskToolRoute = (app, dependencies) => {
     } catch (error) {
       const statusCode = error?.statusCode || (isValidationError(error?.message || '') ? 400 : 500);
       if (statusCode >= 500) logger.error?.('[ScheduledTaskTool] request failed', { operation: req.body?.operation, statusCode });
-      return res.status(statusCode).json({ error: statusCode >= 500 ? 'Failed to manage scheduled task' : (error?.message || 'Invalid scheduled task request') });
+      return res.status(statusCode).json({ error: statusCode >= 500 ? 'Failed to manage schedule' : (error?.message || 'Invalid schedule request') });
     }
   });
 };

@@ -32,6 +32,7 @@ import { useThemeSystem } from '@/contexts/useThemeSystem';
 import { useNotificationStore } from '@/sync/notification-store';
 import { useI18n } from '@/lib/i18n';
 import { useRuntimeAPIs } from '@/hooks/useRuntimeAPIs';
+import { forceRefreshProjectWorktreeCatalog } from '@/lib/worktrees/worktreeManager';
 import { getRootBranch } from '@/lib/worktrees/worktreeStatus';
 import { copyTextToClipboard } from '@/lib/clipboard';
 import { showArchivedSessionsUndoToast } from '@/lib/sessionMutationUndo';
@@ -987,10 +988,18 @@ export const MobileSessionStatusBar: React.FC<MobileSessionStatusBarProps> = ({
 
   const syncProjectSessions = (target: Extract<MobileActionTarget, { kind: 'project' }>) => {
     closeActionMenu();
-    void syncGlobalSessionsForDirectories(
-      [target.project.path, ...target.worktrees.map((worktree) => worktree.path)],
-      sessions,
-    );
+    void (async () => {
+      try {
+        await forceRefreshProjectWorktreeCatalog({ id: target.project.id, path: target.project.path });
+      } catch (error) {
+        console.warn('[MobileStatus] Worktree refresh before session sync failed:', error);
+      }
+      const latest = useSessionUIStore.getState().availableWorktreesByProject.get(target.project.path) ?? target.worktrees;
+      await syncGlobalSessionsForDirectories(
+        [target.project.path, ...latest.map((worktree) => worktree.path)],
+        sessions,
+      );
+    })();
   };
 
   const toggleWorktreeGroup = React.useCallback((groupKey: string) => {
@@ -1179,10 +1188,7 @@ export const MobileSessionStatusBar: React.FC<MobileSessionStatusBarProps> = ({
     <div className="shrink-0">
       <MobileSheetSnapHandle controller={sessionSheetSnap} ariaLabel={t('mobile.sessions.sheet.resizeAria')} />
 
-      <div className="flex items-center justify-between gap-2 px-4 pb-2">
-        <h2 className="text-[16px] font-semibold text-[var(--surface-foreground)]">
-          {t('mobile.sessions.search.section.sessions')}
-        </h2>
+      <div className="flex items-center justify-end gap-2 px-4 pb-2">
         <div className="flex items-center gap-3">
           <RunningIndicator count={totalRunning} />
           <UnreadIndicator count={totalUnread} />
@@ -1209,21 +1215,23 @@ export const MobileSessionStatusBar: React.FC<MobileSessionStatusBarProps> = ({
               <Icon name="node-tree" className="size-4" />
             </Button>
           ) : null}
-          <button
+          <Button
             type="button"
+            variant="ghost"
+            size="icon"
             onClick={closeSessionPanel}
             aria-label={t('mobile.surface.closeAria')}
-            className="flex size-8 items-center justify-center rounded-full text-[var(--surface-mutedForeground)] transition-colors hover:bg-[var(--interactive-hover)] hover:text-[var(--surface-foreground)]"
+            className="text-[var(--surface-mutedForeground)]"
             style={{ touchAction: 'manipulation' }}
           >
             <Icon name="close" className="h-5 w-5" />
-          </button>
+          </Button>
         </div>
       </div>
 
       {(projects.length > 1 || hasPinnedSessions) && (
         <div
-          className="flex items-center gap-2 overflow-x-auto border-t border-[color-mix(in_srgb,var(--interactive-border)_40%,transparent)] px-4 py-2.5 scrollbar-none"
+          className="flex items-center gap-2 overflow-x-auto px-4 py-2.5 scrollbar-none"
           style={{ scrollbarWidth: 'none', msOverflowStyle: 'none' }}
         >
           <ProjectFilterChip

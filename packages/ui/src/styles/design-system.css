@@ -26,6 +26,27 @@
     --text-meta: 0.875rem;
     --text-micro: 0.875rem;
 
+    /* Shared form geometry and materials. Settings surfaces consume these
+       tokens instead of defining page-local field borders, radii, or sizes. */
+    --form-control-height: 2.25rem;
+    --form-control-radius: var(--radius-lg, 0.625rem);
+    --form-control-border: var(--interactive-border, var(--border));
+    --form-control-background: var(--surface-elevated, var(--card));
+    --form-control-font-size: var(--text-ui-label);
+    --form-control-line-height: 1.375rem;
+    --form-helper-font-size: 0.75rem;
+    --form-helper-line-height: 1rem;
+    --form-surface-border: color-mix(
+      in srgb,
+      var(--surface-foreground, var(--foreground)) 8%,
+      transparent
+    );
+    --form-row-divider: color-mix(
+      in srgb,
+      var(--surface-foreground, var(--foreground)) 6%,
+      transparent
+    );
+
     /* Default Light Theme */
     --background: oklch(0.97 0.02 85); /* Warm sand background */
     --foreground: oklch(0.25 0.02 40); /* Dark warm text */

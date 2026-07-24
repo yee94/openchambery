@@ -5,17 +5,17 @@ export type MobileTabId = 'projects' | 'assistant' | 'scheduled' | 'settings';
 export type MobileTabDefinition = {
   id: MobileTabId;
   icon: IconName;
+  /** Short labels reserved for the floating tab bar — keep under ~10 Latin chars / 4 CJK. */
   labelKey:
-    | 'mobile.sessions.section.projects'
-    | 'assistants.title'
-    | 'sessions.scheduledTasks.dialog.title'
-    | 'mobile.settings.placeholder.title';
+    | 'mobile.tabs.projects'
+    | 'mobile.tabs.assistant'
+    | 'mobile.tabs.scheduled'
+    | 'mobile.tabs.settings';
 };
 
-// TODO(locale): Move these labels to dedicated mobile.tabs.* keys when locale dictionaries enter this lane.
 export const MOBILE_TABS: readonly MobileTabDefinition[] = [
-  { id: 'projects', icon: 'briefcase', labelKey: 'mobile.sessions.section.projects' },
-  { id: 'assistant', icon: 'sparkling', labelKey: 'assistants.title' },
-  { id: 'scheduled', icon: 'calendar-schedule', labelKey: 'sessions.scheduledTasks.dialog.title' },
-  { id: 'settings', icon: 'settings-3', labelKey: 'mobile.settings.placeholder.title' },
+  { id: 'projects', icon: 'folder-open', labelKey: 'mobile.tabs.projects' },
+  { id: 'assistant', icon: 'sparkling', labelKey: 'mobile.tabs.assistant' },
+  { id: 'scheduled', icon: 'calendar-schedule', labelKey: 'mobile.tabs.scheduled' },
+  { id: 'settings', icon: 'settings-3', labelKey: 'mobile.tabs.settings' },
 ];

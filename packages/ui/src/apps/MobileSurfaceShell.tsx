@@ -213,6 +213,7 @@ export const MobileSurfaceShell: React.FC<MobileSurfaceShellProps> = ({
     : dragOffset > 0
       ? `translateY(${dragOffset}px)`
       : 'none';
+  const hasHeaderCopy = Boolean(title || subtitle);
 
   return createPortal(
     <div
@@ -264,7 +265,7 @@ export const MobileSurfaceShell: React.FC<MobileSurfaceShellProps> = ({
           </div>
           {!headerless ? (
             <header className="flex h-[var(--oc-header-height,56px)] items-center gap-2 px-3">
-              {leading}
+              {hasHeaderCopy ? leading : null}
               <div className="min-w-0 flex-1 px-1">
                 {title ? (
                   typeof title === 'string' ? (
@@ -282,6 +283,7 @@ export const MobileSurfaceShell: React.FC<MobileSurfaceShellProps> = ({
                 ) : null}
               </div>
               {trailing ? <div className="flex shrink-0 items-center gap-1.5">{trailing}</div> : null}
+              {!hasHeaderCopy ? leading : null}
             </header>
           ) : null}
         </div>

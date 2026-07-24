@@ -441,6 +441,8 @@ describe("NumberInput rapid-click stepper", () => {
     );
     expect(markup).toContain('aria-label="Decrease value"');
     expect(markup).toContain('aria-label="Increase value"');
+    expect(markup).toContain('data-slot="number-input"');
+    expect(markup).toContain('data-slot="number-input-value"');
   });
 
   test("rapid `-` then `+` settles to the start value (post-fix contract)", () => {

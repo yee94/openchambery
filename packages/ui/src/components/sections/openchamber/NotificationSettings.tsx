@@ -652,7 +652,7 @@ export const NotificationSettings: React.FC = () => {
 
               <div className="grid grid-cols-1 gap-2 md:grid-cols-2 md:gap-3">
                 {(['completion', 'subtask', 'error', 'question'] as const).map((event: NotificationTemplateEvent) => (
-                  <section key={event} className="p-2">
+                  <section key={event} className="oc-settings-group-row p-2">
                     <span className="typography-ui-label text-foreground font-normal capitalize block">
                       {t(TEMPLATE_EVENT_LABEL_KEYS[event])}
                     </span>
@@ -662,7 +662,7 @@ export const NotificationSettings: React.FC = () => {
                         <Input
                           value={notificationTemplates[event].title}
                           onChange={(e) => updateTemplate(event, 'title', e.target.value)}
-                          className="h-7"
+                          className="w-full"
                           placeholder={t(DEFAULT_NOTIFICATION_TEMPLATES[event].titleKey)}
                         />
                       </div>
@@ -671,7 +671,7 @@ export const NotificationSettings: React.FC = () => {
                         <Input
                           value={notificationTemplates[event].message}
                           onChange={(e) => updateTemplate(event, 'message', e.target.value)}
-                          className="h-7"
+                          className="w-full"
                           placeholder={t(DEFAULT_NOTIFICATION_TEMPLATES[event].messageKey)}
                         />
                       </div>

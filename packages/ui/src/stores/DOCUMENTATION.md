@@ -231,13 +231,19 @@ new health-probe chain each time.
 
 On Electron, `useGlobalSessionsStore` is also the UI owner for the SQLite
 session-index startup state. The root coordinator restores summaries first and
-then starts one server-owned background job. A low-priority long poll applies
-new SQLite revisions and updates `startupSyncProgress`; it must not issue
-per-directory OpenCode requests from the renderer. Do not add a second
-session-summary cache to browser storage or a sidebar-local startup refresh.
+then starts one server-owned background job. Progress is observed through
+OpenChamber SSE revision tips (`openchamber:session-index-changed`) followed by
+an authoritative GET; it must not issue per-directory OpenCode requests from
+the renderer. Tip waits include a short safety timeout so a completed server
+job whose tip arrived before the consumer subscribed cannot hang manual or
+startup sync forever. Do not add a second session-summary cache to browser
+storage or a sidebar-local startup refresh.
 Every global session-index asynchronous entry captures runtime generation and
 transport identity, then applies its result only while both still match. This
-covers snapshot hydration, startup sync, persistence, and long-poll revisions.
+covers snapshot hydration, startup sync, persistence, and tip-driven revisions.
+Sidebar "同步会话" / Sync sessions re-lists project worktrees first, then
+enqueues those directories into the server session-index sync so newly created
+trees and OpenCode sessions land in SQLite.
 
 ## Git / PR Stores
 

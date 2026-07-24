@@ -1368,95 +1368,99 @@ async function resyncDirectoryAfterReconnect(
   // background idle→busy transitions are lost across reconnect.
   await resyncDirectorySessionStatuses(directory, store, candidateSessionIds)
 
-  if (options?.statusOnly) return
-
+  // statusOnly suppresses extra reconnect work (blocking requests, full routing
+  // ingest) but must still run bounded authoritative recovery for the currently
+  // viewed session. Bootstrap does not load message bodies; without this path
+  // stale transcript remains indefinitely after first stream ready / recent boot.
   const refreshedCandidateSessionIds = getActiveSessionCandidateIds(directory, store.getState())
   const materializationSessionIds = getReconnectMaterializationSessionIds(refreshedCandidateSessionIds, {
     directory,
     viewedSession: getViewedSessionMaterializationTarget(directory),
   })
-  if (materializationSessionIds.length === 0) return
+  if (materializationSessionIds.length > 0) {
+    const scopedClient = opencodeClient.getScopedSdkClient(directory)
+    await Promise.all(materializationSessionIds.map(async (sessionId) => {
+      const capturedRevision = getLiveRevision(sessionId)
+      syncDebug.recovery.materializing({ reason, directory, sessionID: sessionId })
+      const [sessionResponse, messageResponse] = await Promise.all([
+        retry(async () => {
+          const response = await scopedClient.session.get({ sessionID: sessionId })
+          assertSdkSuccess(response, "session.get")
+          return response
+        }).catch(() => null),
+        retry(async () => {
+          const response = await scopedClient.session.messages({ sessionID: sessionId, limit: RECONNECT_MESSAGE_LIMIT })
+          assertSdkSuccess(response, "session.messages")
+          return response
+        }).catch(() => null),
+      ])
+      const session = sessionResponse?.data
+      const records = messageResponse?.data
+      if (!session || !records) return
+      if (!isLiveRevisionCurrent(capturedRevision, getLiveRevision(sessionId))) return
+      const cursor = messageResponse.response?.headers?.get?.("x-next-cursor") ?? undefined
+      setSessionPrefetch({
+        directory,
+        sessionID: sessionId,
+        limit: records.length,
+        cursor,
+        complete: !cursor,
+      })
 
-  const scopedClient = opencodeClient.getScopedSdkClient(directory)
-  await Promise.all(materializationSessionIds.map(async (sessionId) => {
-    const capturedRevision = getLiveRevision(sessionId)
-    syncDebug.recovery.materializing({ reason, directory, sessionID: sessionId })
-    const [sessionResponse, messageResponse] = await Promise.all([
-      retry(async () => {
-        const response = await scopedClient.session.get({ sessionID: sessionId })
-        assertSdkSuccess(response, "session.get")
-        return response
-      }).catch(() => null),
-      retry(async () => {
-        const response = await scopedClient.session.messages({ sessionID: sessionId, limit: RECONNECT_MESSAGE_LIMIT })
-        assertSdkSuccess(response, "session.messages")
-        return response
-      }).catch(() => null),
-    ])
-    const session = sessionResponse?.data
-    const records = messageResponse?.data
-    if (!session || !records) return
-    if (!isLiveRevisionCurrent(capturedRevision, getLiveRevision(sessionId))) return
-    const cursor = messageResponse.response?.headers?.get?.("x-next-cursor") ?? undefined
-    setSessionPrefetch({
-      directory,
-      sessionID: sessionId,
-      limit: records.length,
-      cursor,
-      complete: !cursor,
-    })
+      const nextSession = stripSessionDiffSnapshots(session)
+      const nextMessages = records
+        .filter((record) => !!record?.info?.id)
+        .map((record) => stripMessageDiffSnapshots(record.info))
+        .sort((a, b) => cmp(a.id, b.id))
 
-    const nextSession = stripSessionDiffSnapshots(session)
-    const nextMessages = records
-      .filter((record) => !!record?.info?.id)
-      .map((record) => stripMessageDiffSnapshots(record.info))
-      .sort((a, b) => cmp(a.id, b.id))
+      store.setState((state: DirectoryStore) => {
+        const sessionIndex = state.session.findIndex((item) => item.id === nextSession.id)
+        let sessions = state.session
+        let sessionChanged = false
+        let sessionTotal = state.sessionTotal
 
-    store.setState((state: DirectoryStore) => {
-      const sessionIndex = state.session.findIndex((item) => item.id === nextSession.id)
-      let sessions = state.session
-      let sessionChanged = false
-      let sessionTotal = state.sessionTotal
-
-      if (sessionIndex >= 0) {
-        if (!haveEquivalentSyncSnapshots(sessions[sessionIndex], nextSession)) {
+        if (sessionIndex >= 0) {
+          if (!haveEquivalentSyncSnapshots(sessions[sessionIndex], nextSession)) {
+            sessions = [...state.session]
+            sessions[sessionIndex] = nextSession
+            sessionChanged = true
+          }
+        } else {
           sessions = [...state.session]
-          sessions[sessionIndex] = nextSession
+          sessions.push(nextSession)
+          sessions.sort((a, b) => cmp(a.id, b.id))
+          if (!nextSession.parentID) sessionTotal += 1
           sessionChanged = true
         }
-      } else {
-        sessions = [...state.session]
-        sessions.push(nextSession)
-        sessions.sort((a, b) => cmp(a.id, b.id))
-        if (!nextSession.parentID) sessionTotal += 1
-        sessionChanged = true
-      }
 
-      const materialized = materializeSessionSnapshots(
-        state,
-        sessionId,
-        records.map((record) => ({
-          info: stripMessageDiffSnapshots(record.info),
-          parts: record.parts ?? [],
-        })),
-        { skipPartTypes: RECONNECT_SKIP_PARTS, mode: "recovery" },
-      )
-      const messagesChanged = materialized.messagesChanged
-      const partsChanged = materialized.partsChanged
-      if (!sessionChanged && !messagesChanged && !partsChanged) {
-        return state
-      }
+        const materialized = materializeSessionSnapshots(
+          state,
+          sessionId,
+          records.map((record) => ({
+            info: stripMessageDiffSnapshots(record.info),
+            parts: record.parts ?? [],
+          })),
+          { skipPartTypes: RECONNECT_SKIP_PARTS, mode: "recovery" },
+        )
+        const messagesChanged = materialized.messagesChanged
+        const partsChanged = materialized.partsChanged
+        if (!sessionChanged && !messagesChanged && !partsChanged) {
+          return state
+        }
 
-      return {
-        ...(sessionChanged ? { session: sessions, sessionTotal } : {}),
-        ...(messagesChanged ? { message: materialized.message } : {}),
-        ...(partsChanged ? { part: materialized.part } : {}),
-      }
-    })
+        return {
+          ...(sessionChanged ? { session: sessions, sessionTotal } : {}),
+          ...(messagesChanged ? { message: materialized.message } : {}),
+          ...(partsChanged ? { part: materialized.part } : {}),
+        }
+      })
 
-    setIndexedSessionDirectory(routingIndex, nextSession.id, directory)
-    setIndexedSessionMessages(routingIndex, sessionId, directory, nextMessages)
-  }))
+      setIndexedSessionDirectory(routingIndex, nextSession.id, directory)
+      setIndexedSessionMessages(routingIndex, sessionId, directory, nextMessages)
+    }))
+  }
+
+  if (options?.statusOnly) return
 
   await resyncBlockingRequestsForDirectory(directory, store, candidateSessionIds)
 
@@ -2086,8 +2090,8 @@ export function SyncProvider(props: {
         const isFirstConnect = !pipelineHasConnectedRef.current
         pipelineHasConnectedRef.current = true
         // Always close the bootstrap-GET → WS-ready gap with an authoritative
-        // status snapshot. Skip heavier message materialization on first ready
-        // / recent boot; those paths already have bootstrap coverage.
+        // status snapshot. statusOnly still recovers the viewed session body;
+        // it only skips extra reconnect work (e.g. blocking requests).
         const statusOnly = (
           (isFirstConnect && !pipelineDisconnectedBeforeFirstConnectRef.current)
           || isRecentBoot()

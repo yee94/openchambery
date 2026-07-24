@@ -57,7 +57,7 @@ export const registerScheduledTaskRoutes = (app, dependencies) => {
       projects = sanitizeProjects(settings?.projects || []);
     } catch {
       console.error('[ScheduledTasks] failed to read projects for scheduled task list');
-      return res.status(500).json({ error: 'Failed to load scheduled tasks' });
+      return res.status(500).json({ error: 'Failed to load schedules' });
     }
 
     const results = await Promise.all(projects.map(async (project) => {
@@ -100,7 +100,7 @@ export const registerScheduledTaskRoutes = (app, dependencies) => {
       return res.json({ tasks });
     } catch (error) {
       console.error('[ScheduledTasks] failed to load tasks:', error);
-      return res.status(500).json({ error: 'Failed to load scheduled tasks' });
+      return res.status(500).json({ error: 'Failed to load schedules' });
     }
   });
 
@@ -131,7 +131,7 @@ export const registerScheduledTaskRoutes = (app, dependencies) => {
         schedulerSynced,
       });
     } catch (error) {
-      const message = error instanceof Error ? error.message : 'Failed to save scheduled task';
+      const message = error instanceof Error ? error.message : 'Failed to save schedule';
       const statusCode = message.toLowerCase().includes('required') || message.toLowerCase().includes('invalid')
         ? 400
         : 500;
@@ -160,13 +160,13 @@ export const registerScheduledTaskRoutes = (app, dependencies) => {
 
       const result = await projectConfigRuntime.deleteScheduledTask(projectID, taskID);
       if (!result.deleted) {
-        return res.status(404).json({ error: 'Task not found' });
+        return res.status(404).json({ error: 'Schedule not found' });
       }
       const schedulerSynced = await syncAfterMutation(projectID);
       return res.json({ tasks: result.tasks, schedulerSynced });
     } catch (error) {
       console.error('[ScheduledTasks] failed to delete task:', error);
-      return res.status(500).json({ error: 'Failed to delete scheduled task' });
+      return res.status(500).json({ error: 'Failed to delete schedule' });
     }
   });
 
@@ -188,14 +188,14 @@ export const registerScheduledTaskRoutes = (app, dependencies) => {
 
       const result = await scheduledTasksRuntime.runNow(projectID, taskID);
       if (result.running || result.queued) {
-        return res.status(409).json({ error: result.error || 'Task already running' });
+        return res.status(409).json({ error: result.error || 'Schedule already running' });
       }
       if (result.skipped) {
-        return res.status(404).json({ error: 'Task not found or disabled' });
+        return res.status(404).json({ error: 'Schedule not found or disabled' });
       }
       if (!result.ok) {
         return res.status(500).json({
-          error: result.error || 'Task run failed',
+          error: result.error || 'Schedule run failed',
           task: result.task,
         });
       }
@@ -207,7 +207,7 @@ export const registerScheduledTaskRoutes = (app, dependencies) => {
       });
     } catch (error) {
       console.error('[ScheduledTasks] failed to run task:', error);
-      return res.status(500).json({ error: 'Failed to run scheduled task' });
+      return res.status(500).json({ error: 'Failed to run schedule' });
     }
   });
 
@@ -246,7 +246,7 @@ export const registerScheduledTaskRoutes = (app, dependencies) => {
       });
     } catch (error) {
       console.error('[ScheduledTasks] failed to resolve scheduled task status:', error);
-      return res.status(500).json({ error: 'Failed to resolve scheduled task status' });
+      return res.status(500).json({ error: 'Failed to resolve schedule status' });
     }
   });
 

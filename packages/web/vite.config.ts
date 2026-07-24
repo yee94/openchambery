@@ -76,10 +76,36 @@ export default defineConfig(({ command }) => ({
     __APP_VERSION__: JSON.stringify(packageJson.version),
   },
   optimizeDeps: {
-    include: ['@opencode-ai/sdk/v2'],
+    // Prebundle the heavy runtime graph up front so desktop/mobile dynamic
+    // imports do not keep discovering new deps mid-session (which rewrites
+    // browserHash and 504s open tabs with "Outdated Optimize Dep").
+    include: [
+      '@opencode-ai/sdk/v2',
+      'react',
+      'react/jsx-runtime',
+      'react/jsx-dev-runtime',
+      'react-dom',
+      'react-dom/client',
+      'zustand',
+      'zustand/middleware',
+      '@tanstack/react-query',
+      '@reactuses/core',
+    ],
+    // Finish the static crawl before serving optimized deps to clients.
+    holdUntilCrawlEnd: true,
   },
   server: {
     port: 5173,
+    // Warm both entry graphs so the first navigation to either surface does
+    // not trigger a late optimizeDeps rewrite under an open browser tab.
+    warmup: {
+      clientFiles: [
+        './src/main.tsx',
+        './src/mobile-main.tsx',
+        './index.html',
+        './mobile.html',
+      ],
+    },
     proxy: {
       '/auth': {
         target: `http://127.0.0.1:${process.env.OPENCHAMBER_PORT || 3001}`,

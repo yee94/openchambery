@@ -26,7 +26,7 @@ export type MobileTabsRootProps = {
 };
 
 /**
- * Dedicated mobile shell root: floating bottom tabs plus a second-level page
+ * Dedicated mobile shell root: edge-to-edge bottom tabs plus a second-level page
  * host. Tab bodies use lazy-mount-on-first-visit and stay mounted afterwards
  * so drafts, scroll position, and subscriptions survive tab switches without
  * running every tab's queries on cold start.
@@ -87,11 +87,17 @@ export function MobileTabsRoot({
   });
 
   return (
-    <div className={cn('relative isolate flex h-full min-h-0 flex-col overflow-hidden bg-background text-foreground', className)}>
+    <div
+      className={cn(
+        'oc-mobile-floating-shell relative isolate flex h-full min-h-0 flex-col overflow-hidden text-foreground',
+        'bg-[color:color-mix(in_srgb,var(--surface-muted)_18%,var(--surface-background))]',
+        className,
+      )}
+    >
       <div
         aria-hidden={secondaryPage ? true : undefined}
         inert={secondaryPage ? true : undefined}
-        className={cn('flex h-full min-h-0 flex-1 flex-col transition-[opacity,transform] duration-300 ease-out motion-reduce:transition-none', secondaryPage && 'scale-[0.985] opacity-0')}
+        className={cn('flex h-full min-h-0 flex-1 flex-col transition-opacity duration-200 ease-out motion-reduce:transition-none', secondaryPage && 'opacity-0')}
       >
         {MOBILE_TABS.map((tab) => {
           const visited = visitedTabs.has(tab.id);
@@ -103,7 +109,7 @@ export function MobileTabsRoot({
               aria-labelledby={`mobile-tab-${tab.id}`}
               hidden={selectedTab !== tab.id}
               tabIndex={0}
-              className="h-full min-h-0 flex-1 overflow-y-auto overscroll-contain px-4 pb-[calc(7rem+var(--safe-area-inset-bottom,env(safe-area-inset-bottom,0px)))] pt-[max(1rem,var(--safe-area-inset-top,env(safe-area-inset-top,0px)))] outline-none"
+              className="scrollbar-none h-full min-h-0 flex-1 overflow-y-auto overscroll-contain px-[var(--oc-mobile-page-inline-inset)] pb-[calc(6rem+var(--safe-area-inset-bottom,env(safe-area-inset-bottom,0px)))] pt-[calc(var(--safe-area-inset-top,env(safe-area-inset-top,0px))+1rem)] outline-none"
             >
               {visited ? (tabs?.[tab.id] ?? <MobileTabPlaceholder tab={tab.id} icon={tab.icon} />) : null}
             </section>
@@ -115,11 +121,12 @@ export function MobileTabsRoot({
         <div
           key={secondaryPage.key}
           ref={secondaryHostRef}
+          data-mobile-secondary-page="true"
           role="dialog"
           aria-modal="true"
           aria-label={secondaryPage.ariaLabel ?? t('mobile.nav.secondaryPageAria')}
           tabIndex={-1}
-          className="absolute inset-0 z-50 flex h-full min-h-0 flex-col overflow-hidden bg-background outline-none animate-in fade-in slide-in-from-right-4 duration-300 motion-reduce:animate-none"
+          className="absolute inset-0 z-50 flex h-full min-h-0 flex-col overflow-hidden bg-background outline-none animate-in fade-in slide-in-from-right-3 duration-250 motion-reduce:animate-none"
         >
           {secondaryPage.content}
         </div>
@@ -142,10 +149,10 @@ export function MobileTabPlaceholder({ tab, icon, className }: MobileTabPlacehol
 
   return (
     <div className={cn('flex min-h-[70dvh] flex-col items-center justify-center gap-3 text-center', className)}>
-      <span className="flex size-14 items-center justify-center rounded-[20px] border border-border/50 bg-[var(--surface-elevated)] text-muted-foreground shadow-sm supports-[corner-shape:squircle]:rounded-[36px]">
+      <span className="flex size-12 items-center justify-center rounded-2xl bg-[var(--surface-muted)] text-muted-foreground">
         <Icon name={icon ?? definition.icon} className="size-6" />
       </span>
-      <h1 className="typography-ui-label font-semibold tracking-[-0.01em]">{t(definition.labelKey)}</h1>
+      <h1 className="typography-ui-label font-semibold tracking-[-0.01em] text-foreground">{t(definition.labelKey)}</h1>
     </div>
   );
 }

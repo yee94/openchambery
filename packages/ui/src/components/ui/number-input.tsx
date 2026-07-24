@@ -226,6 +226,7 @@ const NumberInput = React.forwardRef<HTMLInputElement, NumberInputProps>(
     if (isMobile) {
       return (
         <div
+          data-slot="number-input"
           className={cn(
             // NOTE: mobile.css enforces min-height:36px on buttons; match it to avoid clipping.
             "flex h-9 shrink-0 items-stretch overflow-x-hidden overflow-y-hidden rounded-lg border border-border bg-transparent select-none overscroll-contain",
@@ -251,6 +252,7 @@ const NumberInput = React.forwardRef<HTMLInputElement, NumberInputProps>(
           </button>
 
           <div
+            data-slot="number-input-value"
             className={cn(
               "flex h-full min-w-0 w-14 items-center justify-center bg-transparent px-1.5",
               "text-center text-[16px] leading-none text-foreground [font-variant-numeric:tabular-nums]",
@@ -282,6 +284,7 @@ const NumberInput = React.forwardRef<HTMLInputElement, NumberInputProps>(
 
     return (
       <div
+        data-slot="number-input"
         className={cn(
           "flex h-7 shrink-0 items-stretch overflow-x-hidden overflow-y-hidden rounded-lg border border-border bg-transparent",
           "disabled:pointer-events-none disabled:opacity-50",
@@ -303,6 +306,7 @@ const NumberInput = React.forwardRef<HTMLInputElement, NumberInputProps>(
         </button>
         <input
           {...props}
+          data-slot="number-input-value"
           ref={ref}
           type="text"
           inputMode={props.inputMode ?? 'numeric'}

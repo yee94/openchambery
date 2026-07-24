@@ -199,19 +199,13 @@ export function MobileProjectsHomeContainer({
     setActionsOpen(true);
   });
 
-  const handleOpenWorktreeActions = useEvent((
+  const handleNewWorktreeSession = useEvent((
     project: MobileProjectHomeItem,
     worktree: MobileWorktreeGroup,
   ) => {
     const meta = model.projectMetaById.get(project.id);
     if (!meta) return;
-    setActionTarget({
-      kind: 'worktree',
-      project: meta,
-      worktreePath: worktree.path,
-      worktreeName: worktree.name,
-    });
-    setActionsOpen(true);
+    startSessionDraftForDirectory(meta, worktree.path);
   });
 
   const handleShareFromMenu = useEvent(async (session: Session) => {
@@ -376,7 +370,7 @@ export function MobileProjectsHomeContainer({
         onToggleProject={handleToggleProject}
         onOpenProjectActions={handleOpenProjectActions}
         onToggleWorktree={handleToggleWorktree}
-        onOpenWorktreeActions={handleOpenWorktreeActions}
+        onNewWorktreeSession={handleNewWorktreeSession}
         onToggleSessionChildren={handleToggleSessionChildren}
         onSelectSession={handleSelectSession}
         onPinSession={handlePinSession}

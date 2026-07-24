@@ -70,7 +70,7 @@ export const fetchScheduledTasks = async (projectID: string): Promise<ScheduledT
   const safeProjectID = ensureProjectID(projectID);
   const response = await runtimeFetch(`/api/projects/${encodeURIComponent(safeProjectID)}/scheduled-tasks`);
   if (!response.ok) {
-    throw new Error(await parseErrorMessage(response, 'Failed to load scheduled tasks'));
+    throw new Error(await parseErrorMessage(response, 'Failed to load schedules'));
   }
   const parsed = await response.json().catch(() => null);
   if (!parsed || !Array.isArray(parsed.tasks)) {
@@ -82,7 +82,7 @@ export const fetchScheduledTasks = async (projectID: string): Promise<ScheduledT
 export const fetchGlobalScheduledTasks = async (): Promise<GlobalScheduledTasksResponse> => {
   const response = await runtimeFetch('/api/openchamber/scheduled-tasks');
   if (!response.ok) {
-    throw new Error(await parseErrorMessage(response, 'Failed to load scheduled tasks'));
+    throw new Error(await parseErrorMessage(response, 'Failed to load schedules'));
   }
   const parsed = await response.json().catch(() => null);
   return {
@@ -102,7 +102,7 @@ export const upsertScheduledTask = async (projectID: string, task: Partial<Sched
     body: JSON.stringify({ task }),
   });
   if (!response.ok) {
-    throw new Error(await parseErrorMessage(response, 'Failed to save scheduled task'));
+    throw new Error(await parseErrorMessage(response, 'Failed to save schedule'));
   }
   const parsed = await response.json().catch(() => null);
   if (!parsed || !Array.isArray(parsed.tasks)) {
@@ -121,7 +121,7 @@ export const deleteScheduledTask = async (projectID: string, taskID: string): Pr
     },
   });
   if (!response.ok) {
-    throw new Error(await parseErrorMessage(response, 'Failed to delete scheduled task'));
+    throw new Error(await parseErrorMessage(response, 'Failed to delete schedule'));
   }
   const parsed = await response.json().catch(() => null);
   if (!parsed || !Array.isArray(parsed.tasks)) {
@@ -140,7 +140,7 @@ export const runScheduledTaskNow = async (projectID: string, taskID: string): Pr
     },
   });
   if (!response.ok) {
-    throw new Error(await parseErrorMessage(response, 'Failed to run scheduled task'));
+    throw new Error(await parseErrorMessage(response, 'Failed to run schedule'));
   }
   const parsed = await response.json().catch(() => null);
   return {

@@ -249,8 +249,13 @@ becoming the cached startup result consumed by the session coordinator.
   authoritative history.
 - Reconnect recovery may poll lightweight status for multiple active sessions,
   but it materializes `session.get + session.messages` only for the currently
-  viewed session. Background busy/incomplete sessions wait until selection and
-  continue receiving live events without fetching their bodies.
+  viewed session. Viewed-session materialization requires only a matching
+  directory; it must not depend on the session already appearing in the
+  reconnect candidate list or child store. Background busy/incomplete sessions
+  wait until selection and continue receiving live events without fetching their
+  bodies. `statusOnly` reconnect (first stream ready / recent boot) still runs
+  this bounded viewed-body recovery; it only suppresses extra reconnect work such
+  as blocking-request resync, never viewed transcript reconciliation.
 - A bounded bootstrap may omit a selected session. `ensureSessionRenderable()`
   accepts an explicit target directory for this exact materialization path. It
   creates that directory child store with `bootstrap: false`, uses that

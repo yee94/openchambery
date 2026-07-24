@@ -1,6 +1,6 @@
-import React from 'react';
-import { ScrollableOverlay } from '@/components/ui/ScrollableOverlay';
-import { cn } from '@/lib/utils';
+import React from "react";
+import { ScrollableOverlay } from "@/components/ui/ScrollableOverlay";
+import { cn } from "@/lib/utils";
 
 interface SettingsPageLayoutProps {
   /** Page content */
@@ -32,13 +32,13 @@ export const SettingsPageLayout: React.FC<SettingsPageLayoutProps> = ({
 }) => {
   return (
     <ScrollableOverlay
-      outerClassName={cn('h-full', outerClassName)}
+      outerClassName={cn("h-full", outerClassName)}
       className="w-full"
     >
       <div
         className={cn(
-          'mx-auto max-w-3xl space-y-6 p-3 sm:p-6 sm:pt-8',
-          className
+          "oc-settings-page-content mx-auto max-w-3xl p-3 sm:p-6 sm:pt-8",
+          className,
         )}
       >
         {children}

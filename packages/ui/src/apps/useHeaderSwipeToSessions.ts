@@ -3,12 +3,13 @@ import React from 'react';
 import { evaluateSwipeThresholdHaptic, triggerMobileHaptic } from '@/hooks/streamingHaptics';
 
 /**
- * Phone-only content right-swipe gesture to open the session panel.
+ * Mobile chat-body horizontal navigation gesture.
  *
- * A horizontal left-to-right swipe across roughly one third of the viewport opens
- * the session panel.
+ * A horizontal right-to-left swipe across roughly one third of the viewport
+ * opens the session panel. On phone, the opposite direction returns from the
+ * current secondary chat page through the caller's existing back handler.
  *
- * - Only active on phone (not iPad), gated by the caller via `disabled`.
+ * - The caller gates whether a Session chat body is currently active.
  * - Disabled when any overlay (sessions sheet, settings, files, etc.) is
  *   already open so the gesture doesn't stack sheets or compete with
  *   overlay dismiss gestures.
@@ -39,7 +40,7 @@ export interface HeaderSwipeInput {
   endY: number;
   /** current viewport width in CSS pixels */
   viewportWidth: number;
-  /** whether the gesture is disabled (iPad or overlay open) */
+  /** whether the gesture is disabled (inactive chat body or overlay open) */
   disabled: boolean;
   /** whether the touch started on the composer or a horizontally-scrollable target */
   startedOnExcludedTarget: boolean;
@@ -48,6 +49,8 @@ export interface HeaderSwipeInput {
 interface HeaderSwipeResult {
   /** Whether the gesture should trigger opening the sessions sheet */
   open: boolean;
+  /** Whether the gesture should trigger phone secondary-page back navigation */
+  back: boolean;
 }
 
 interface HeaderSwipePoint {
@@ -83,29 +86,40 @@ export const updateHeaderSwipeGestureState = (
   return {
     segmentStart: state.segmentStart,
     lastTouch: touch,
-    open: exceedsThreshold && staysOnAxis && dx > 0,
+    open: exceedsThreshold && staysOnAxis && dx < 0,
   };
 };
 
 /**
- * Pure function: determine whether a completed touch gesture on the header
+ * Pure function: determine whether a completed touch gesture on the chat body
  * should open the sessions sheet. Callers inject the gate flags; this function
  * only evaluates the geometric and interactive constraints.
  */
 export const evaluateHeaderSwipe = (input: HeaderSwipeInput): HeaderSwipeResult => {
-  if (input.disabled) return { open: false };
-  if (input.startedOnExcludedTarget) return { open: false };
+  if (input.disabled) return { open: false, back: false };
+  if (input.startedOnExcludedTarget) return { open: false, back: false };
+
+  const dx = input.endX - input.startX;
+  const dy = input.endY - input.startY;
+  const exceedsThreshold = Math.abs(dx) >= input.viewportWidth * OPEN_DISTANCE_RATIO;
+  const staysOnAxis = Math.abs(dy) <= Math.abs(dx) * MAX_OFF_AXIS_RATIO;
 
   return {
-    open: updateHeaderSwipeGestureState(
-      createHeaderSwipeGestureState({ clientX: input.startX, clientY: input.startY }),
-      { clientX: input.endX, clientY: input.endY },
-      input.viewportWidth,
-    ).open,
+    open: exceedsThreshold && staysOnAxis && dx < 0,
+    back: exceedsThreshold && staysOnAxis && dx > 0,
   };
 };
 
 export const getHeaderSwipePresentationProgress = (
+  startX: number,
+  currentX: number,
+  viewportWidth: number,
+): number => Math.min(
+  Math.max(0, startX - currentX) / Math.max(1, viewportWidth * OPEN_DISTANCE_RATIO),
+  1,
+);
+
+export const getHeaderSwipeBackProgress = (
   startX: number,
   currentX: number,
   viewportWidth: number,
@@ -150,13 +164,19 @@ interface HeaderSwipeToSessionsOptions {
   onPreviewCancel?: () => void;
   /** Drives the mounted sessions surface while the finger moves. */
   onProgress?: (progress: number | null) => void;
-  /** Whether the gesture is currently disabled (iPad or overlay open). */
+  /** Returns from the phone's current secondary chat page. */
+  onBack?: () => void;
+  /** Drives phone secondary-page feedback during a back swipe. */
+  onBackProgress?: (progress: number | null) => void;
+  /** Whether the gesture is currently disabled (inactive chat body or overlay open). */
   disabled: boolean;
 }
 
 export const useHeaderSwipeToSessions = (
   ref: React.RefObject<HTMLElement | null>,
   options: HeaderSwipeToSessionsOptions,
+  /** Re-bind trigger for the phone chat body, which mounts after navigation. */
+  active?: unknown,
 ): void => {
   const onOpenRef = React.useRef(options.onOpen);
   onOpenRef.current = options.onOpen;
@@ -166,6 +186,10 @@ export const useHeaderSwipeToSessions = (
   onPreviewCancelRef.current = options.onPreviewCancel;
   const onProgressRef = React.useRef(options.onProgress);
   onProgressRef.current = options.onProgress;
+  const onBackRef = React.useRef(options.onBack);
+  onBackRef.current = options.onBack;
+  const onBackProgressRef = React.useRef(options.onBackProgress);
+  onBackProgressRef.current = options.onBackProgress;
   const disabledRef = React.useRef(options.disabled);
   disabledRef.current = options.disabled;
 
@@ -175,7 +199,7 @@ export const useHeaderSwipeToSessions = (
 
     let tracking = false;
     let startedOnExcludedTarget = false;
-    let horizontalIntent = false;
+    let horizontalIntent: 'sessions' | 'back' | null = null;
     let previewStarted = false;
     let thresholdReached = false;
     let thresholdHapticDelivered = false;
@@ -213,6 +237,14 @@ export const useHeaderSwipeToSessions = (
       previewStarted = false;
     };
 
+    const finishBack = (commit: boolean) => {
+      onBackProgressRef.current?.(null);
+      if (thresholdReached && !commit) triggerMobileHaptic('light', { bypassCadence: true });
+      thresholdReached = false;
+      thresholdHapticDelivered = false;
+      if (commit) onBackRef.current?.();
+    };
+
     const onTouchStart = (event: TouchEvent) => {
       if (event.touches.length !== 1) {
         tracking = false;
@@ -229,7 +261,7 @@ export const useHeaderSwipeToSessions = (
       tracking = true;
       viewportWidth = window.innerWidth;
       startedOnExcludedTarget = isExcludedTarget(touch);
-      horizontalIntent = false;
+      horizontalIntent = null;
       previewStarted = false;
       thresholdReached = false;
       thresholdHapticDelivered = false;
@@ -240,7 +272,8 @@ export const useHeaderSwipeToSessions = (
     const onTouchMove = (event: TouchEvent) => {
       if (!tracking || startedOnExcludedTarget || !gestureState) return;
       if (event.touches.length !== 1) {
-        if (horizontalIntent) finishPreview(false);
+        if (horizontalIntent === 'sessions') finishPreview(false);
+        if (horizontalIntent === 'back') finishBack(false);
         tracking = false;
         gestureState = null;
         return;
@@ -250,25 +283,37 @@ export const useHeaderSwipeToSessions = (
       const dx = touch.clientX - gestureState.segmentStart.clientX;
       const dy = touch.clientY - gestureState.segmentStart.clientY;
 
-      if (!horizontalIntent) {
+      if (horizontalIntent === null) {
         const absDx = Math.abs(dx);
         if (absDx < INTENT_DISTANCE) return;
-        if (dx <= 0 || Math.abs(dy) > absDx * MAX_OFF_AXIS_RATIO) {
+        if (Math.abs(dy) > absDx * MAX_OFF_AXIS_RATIO) return;
+        if (dx < 0) {
+          horizontalIntent = 'sessions';
+          previewStarted = true;
+          onPreviewStartRef.current?.();
+        } else if (onBackRef.current) {
+          horizontalIntent = 'back';
+        } else {
           return;
         }
-        horizontalIntent = true;
-        previewStarted = true;
-        onPreviewStartRef.current?.();
       }
 
       event.preventDefault();
-      latestDistance = Math.max(0, dx);
+      latestDistance = Math.abs(dx);
       updateThreshold(latestDistance);
-      onProgressRef.current?.(getHeaderSwipePresentationProgress(
-        gestureState.segmentStart.clientX,
-        touch.clientX,
-        viewportWidth,
-      ));
+      if (horizontalIntent === 'sessions') {
+        onProgressRef.current?.(getHeaderSwipePresentationProgress(
+          gestureState.segmentStart.clientX,
+          touch.clientX,
+          viewportWidth,
+        ));
+      } else {
+        onBackProgressRef.current?.(getHeaderSwipeBackProgress(
+          gestureState.segmentStart.clientX,
+          touch.clientX,
+          viewportWidth,
+        ));
+      }
     };
 
     const onTouchEnd = (event: TouchEvent) => {
@@ -276,16 +321,27 @@ export const useHeaderSwipeToSessions = (
       tracking = false;
       const touch = event.changedTouches[0];
       if (touch) gestureState = updateHeaderSwipeGestureState(gestureState, touch, viewportWidth);
-      const commit = horizontalIntent && gestureState.open;
+      const result = evaluateHeaderSwipe({
+        startX: gestureState.segmentStart.clientX,
+        startY: gestureState.segmentStart.clientY,
+        endX: gestureState.lastTouch.clientX,
+        endY: gestureState.lastTouch.clientY,
+        viewportWidth,
+        disabled: false,
+        startedOnExcludedTarget: false,
+      });
+      const commit = horizontalIntent === 'sessions' ? result.open : result.back;
       gestureState = null;
       if (!horizontalIntent) return;
       event.preventDefault();
       if (commit && !thresholdHapticDelivered) triggerMobileHaptic('medium', { bypassCadence: true });
-      finishPreview(commit);
+      if (horizontalIntent === 'sessions') finishPreview(commit);
+      else finishBack(commit);
     };
 
     const onTouchCancel = () => {
-      if (horizontalIntent) finishPreview(false);
+      if (horizontalIntent === 'sessions') finishPreview(false);
+      if (horizontalIntent === 'back') finishBack(false);
       tracking = false;
       gestureState = null;
     };
@@ -296,10 +352,12 @@ export const useHeaderSwipeToSessions = (
     element.addEventListener('touchcancel', onTouchCancel, { passive: true, capture: true });
     return () => {
       if (previewStarted) finishPreview(false);
+      if (horizontalIntent === 'back') finishBack(false);
       element.removeEventListener('touchstart', onTouchStart, true);
       element.removeEventListener('touchmove', onTouchMove, true);
       element.removeEventListener('touchend', onTouchEnd, true);
       element.removeEventListener('touchcancel', onTouchCancel, true);
     };
-  }, [ref]);
+    // `active` re-binds after the phone secondary chat page mounts.
+  }, [ref, active]);
 };

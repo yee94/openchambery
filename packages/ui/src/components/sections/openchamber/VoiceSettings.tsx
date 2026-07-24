@@ -10,6 +10,7 @@ import {
     SelectValue,
 } from '@/components/ui/select';
 import { Checkbox } from '@/components/ui/checkbox';
+import { Input } from '@/components/ui/input';
 import { Radio } from '@/components/ui/radio';
 import { Button } from '@/components/ui/button';
 import { NumberInput } from '@/components/ui/number-input';
@@ -762,7 +763,7 @@ export const VoiceSettings: React.FC = () => {
         <div className="space-y-8">
 
             {/* Playback (read messages aloud) */}
-            <div data-settings-item="voice.playback" className="mb-8">
+            <div data-settings-item="voice.playback" className="oc-settings-group-row mb-8">
                 <div className="mb-1 px-1">
                     <h3 className="typography-ui-header font-medium text-foreground">
                         {t('settings.voice.page.section.playbackAndSummary')}
@@ -870,13 +871,13 @@ export const VoiceSettings: React.FC = () => {
                                             ? t('settings.voice.page.field.apiKeyHintRequired')
                                             : t('settings.voice.page.field.apiKeyHintProvide')}
                                     </span>
-                                    <div className="relative mt-1.5 max-w-xs">
-                                        <input
+                                    <div className="relative ml-auto mt-1.5 max-w-xs">
+                                        <Input
                                             type="password"
                                             value={openaiApiKey}
                                             onChange={(e) => setOpenaiApiKey(e.target.value)}
                                             placeholder="sk-..."
-                                            className="w-full h-7 rounded-lg border border-input bg-transparent px-2 typography-ui-label text-foreground placeholder:text-muted-foreground focus:outline-none focus:ring-1 focus:ring-primary/50 focus:border-primary/70"
+                                            className="w-full pr-8"
                                         />
                                         {openaiApiKey && (
                                             <button
@@ -901,13 +902,13 @@ export const VoiceSettings: React.FC = () => {
                                         <span className="typography-meta ml-2 text-muted-foreground">
                                             {t('settings.voice.page.field.serverUrlHint')}
                                         </span>
-                                        <div className="relative mt-1.5 max-w-xs">
-                                            <input
+                                        <div className="relative ml-auto mt-1.5 max-w-xs">
+                                            <Input
                                                 type="text"
                                                 value={openaiCompatibleUrl}
                                                 onChange={(e) => setOpenaiCompatibleUrl(e.target.value)}
                                                 placeholder="http://localhost:8880/v1"
-                                                className="w-full h-7 rounded-lg border border-input bg-transparent px-2 typography-ui-label text-foreground placeholder:text-muted-foreground focus:outline-none focus:ring-1 focus:ring-primary/50 focus:border-primary/70"
+                                                className="w-full pr-8"
                                             />
                                             {openaiCompatibleUrl && (
                                                 <button
@@ -925,13 +926,13 @@ export const VoiceSettings: React.FC = () => {
                                         <span className="typography-meta ml-2 text-muted-foreground">
                                             Optional
                                         </span>
-                                        <div className="relative mt-1.5 max-w-xs">
-                                            <input
+                                        <div className="relative ml-auto mt-1.5 max-w-xs">
+                                            <Input
                                                 type="password"
                                                 value={openaiCompatibleApiKey}
                                                 onChange={(e) => setOpenaiCompatibleApiKey(e.target.value)}
                                                 placeholder="sk-..."
-                                                className="w-full h-7 rounded-lg border border-input bg-transparent px-2 typography-ui-label text-foreground placeholder:text-muted-foreground focus:outline-none focus:ring-1 focus:ring-primary/50 focus:border-primary/70"
+                                                className="w-full pr-8"
                                             />
                                             {openaiCompatibleApiKey && (
                                                 <button
@@ -946,13 +947,13 @@ export const VoiceSettings: React.FC = () => {
                                     </div>
                                     <div>
                                         <span className="typography-ui-label text-foreground">{t('settings.voice.page.field.model')}</span>
-                                        <div className="relative mt-1.5 max-w-xs">
-                                            <input
+                                        <div className="relative ml-auto mt-1.5 max-w-xs">
+                                            <Input
                                                 type="text"
                                                 value={openaiCompatibleTtsModel}
                                                 onChange={(e) => setOpenaiCompatibleTtsModel(e.target.value)}
                                                 placeholder="speaches-ai/Kokoro-82M-v1.0-ONNX"
-                                                className="w-full h-7 rounded-lg border border-input bg-transparent px-2 typography-ui-label text-foreground placeholder:text-muted-foreground focus:outline-none focus:ring-1 focus:ring-primary/50 focus:border-primary/70"
+                                                className="w-full"
                                             />
                                         </div>
                                     </div>
@@ -961,14 +962,14 @@ export const VoiceSettings: React.FC = () => {
                                         <span className="typography-meta ml-2 text-muted-foreground">
                                             {t('settings.voice.page.field.voiceIdentifierHint')}
                                         </span>
-                                        <div className="flex items-center gap-2 mt-1.5">
+                                        <div className="mt-1.5 flex items-center justify-end gap-2">
                                             <div className="relative max-w-xs flex-1">
-                                                <input
+                                                <Input
                                                     type="text"
                                                     value={openaiCompatibleVoice}
                                                     onChange={(e) => setOpenaiCompatibleVoice(e.target.value)}
                                                     placeholder="af_sky"
-                                                    className="w-full h-7 rounded-lg border border-input bg-transparent px-2 typography-ui-label text-foreground placeholder:text-muted-foreground focus:outline-none focus:ring-1 focus:ring-primary/50 focus:border-primary/70"
+                                                    className="w-full"
                                                 />
                                             </div>
                                             <Button size="xs" variant="ghost" onClick={previewCompatibleVoice} title={t('settings.voice.page.actions.preview')} disabled={!openaiCompatibleUrl.trim()}>
@@ -985,7 +986,7 @@ export const VoiceSettings: React.FC = () => {
                             {/* Voice Selection */}
                             <div className="flex items-center gap-8 py-1.5">
                                 <span className="typography-ui-label text-foreground sm:w-56 shrink-0">{t('settings.voice.page.field.voice')}</span>
-                                <div className="flex items-center gap-2 w-fit">
+                                <div className="ml-auto flex w-fit items-center justify-end gap-2">
                                     {voiceProvider === 'local' && (
                                         <>
                                             <Select
@@ -1076,7 +1077,7 @@ export const VoiceSettings: React.FC = () => {
                             {/* Speech Rate */}
                             <div className="flex items-center gap-8 py-1.5">
                                 <span className="typography-ui-label text-foreground sm:w-56 shrink-0">{t('settings.voice.page.field.speechRate')}</span>
-                                <div className="flex items-center gap-2 w-fit">
+                                <div className="ml-auto flex w-fit items-center justify-end gap-2">
                                     {!isMobile && <input type="range" min={0.5} max={2} step={0.1} value={speechRate} onChange={(e) => setSpeechRate(Number(e.target.value))} className={sliderClass} />}
                                     <NumberInput value={speechRate} onValueChange={setSpeechRate} min={0.5} max={2} step={0.1} className="w-16 tabular-nums" />
                                 </div>
@@ -1085,7 +1086,7 @@ export const VoiceSettings: React.FC = () => {
                             {/* Speech Pitch */}
                             <div className="flex items-center gap-8 py-1.5">
                                 <span className="typography-ui-label text-foreground sm:w-56 shrink-0">{t('settings.voice.page.field.speechPitch')}</span>
-                                <div className="flex items-center gap-2 w-fit">
+                                <div className="ml-auto flex w-fit items-center justify-end gap-2">
                                     {!isMobile && <input type="range" min={0.5} max={2} step={0.1} value={speechPitch} onChange={(e) => setSpeechPitch(Number(e.target.value))} className={sliderClass} />}
                                     <NumberInput value={speechPitch} onValueChange={setSpeechPitch} min={0.5} max={2} step={0.1} className="w-16 tabular-nums" />
                                 </div>
@@ -1094,7 +1095,7 @@ export const VoiceSettings: React.FC = () => {
                             {/* Speech Volume */}
                             <div className="flex items-center gap-8 py-1.5">
                                 <span className="typography-ui-label text-foreground sm:w-56 shrink-0">{t('settings.voice.page.field.speechVolume')}</span>
-                                <div className="flex items-center gap-2 w-fit">
+                                <div className="ml-auto flex w-fit items-center justify-end gap-2">
                                     {!isMobile && <input type="range" min={0} max={1} step={0.1} value={speechVolume} onChange={(e) => setSpeechVolume(Number(e.target.value))} className={sliderClass} />}
                                     {isMobile ? (
                                         <NumberInput value={Math.round(speechVolume * 100)} onValueChange={(v) => setSpeechVolume(v / 100)} min={0} max={100} step={10} className="w-16 tabular-nums" />
@@ -1151,7 +1152,7 @@ export const VoiceSettings: React.FC = () => {
             </div>
 
             {/* Speech Recognition */}
-            <div data-settings-item="voice.speech-recognition" className="mb-8">
+            <div data-settings-item="voice.speech-recognition" className="oc-settings-group-row mb-8">
                     <div className="mb-1 px-1">
                         <h3 className="typography-ui-header font-medium text-foreground">
                             {t('settings.voice.page.section.speechRecognition')}
@@ -1227,13 +1228,13 @@ export const VoiceSettings: React.FC = () => {
                                     <span className="typography-meta ml-2 text-muted-foreground">
                                         {t('settings.voice.page.field.sttServerUrlHint')}
                                     </span>
-                                    <div className="relative mt-1.5 max-w-xs">
-                                        <input
+                                    <div className="relative ml-auto mt-1.5 max-w-xs">
+                                        <Input
                                             type="text"
                                             value={sttServerUrl}
                                             onChange={(e) => setSttServerUrl(e.target.value)}
                                             placeholder="http://localhost:8001/v1"
-                                            className="w-full h-7 rounded-lg border border-input bg-transparent px-2 typography-ui-label text-foreground placeholder:text-muted-foreground focus:outline-none focus:ring-1 focus:ring-primary/50 focus:border-primary/70"
+                                            className="w-full pr-8"
                                         />
                                         {sttServerUrl && (
                                             <button
@@ -1251,13 +1252,13 @@ export const VoiceSettings: React.FC = () => {
                                     <span className="typography-meta ml-2 text-muted-foreground">
                                         Optional
                                     </span>
-                                    <div className="relative mt-1.5 max-w-xs">
-                                        <input
+                                    <div className="relative ml-auto mt-1.5 max-w-xs">
+                                        <Input
                                             type="password"
                                             value={sttApiKey}
                                             onChange={(e) => setSttApiKey(e.target.value)}
                                             placeholder="sk-..."
-                                            className="w-full h-7 rounded-lg border border-input bg-transparent px-2 typography-ui-label text-foreground placeholder:text-muted-foreground focus:outline-none focus:ring-1 focus:ring-primary/50 focus:border-primary/70"
+                                            className="w-full pr-8"
                                         />
                                         {sttApiKey && (
                                             <button
@@ -1272,13 +1273,13 @@ export const VoiceSettings: React.FC = () => {
                                 </div>
                                 <div>
                                     <span className="typography-ui-label text-foreground">{t('settings.voice.page.field.model')}</span>
-                                    <div className="relative mt-1.5 max-w-xs">
-                                        <input
+                                    <div className="relative ml-auto mt-1.5 max-w-xs">
+                                        <Input
                                             type="text"
                                             value={sttModel}
                                             onChange={(e) => setSttModel(e.target.value)}
                                             placeholder="deepdml/faster-whisper-large-v3-turbo-ct2"
-                                            className="w-full h-7 rounded-lg border border-input bg-transparent px-2 typography-ui-label text-foreground placeholder:text-muted-foreground focus:outline-none focus:ring-1 focus:ring-primary/50 focus:border-primary/70"
+                                            className="w-full"
                                         />
                                     </div>
                                 </div>
@@ -1287,13 +1288,13 @@ export const VoiceSettings: React.FC = () => {
                                     <span className="typography-meta ml-2 text-muted-foreground">
                                         {t('settings.voice.page.field.sttLanguageHint')}
                                     </span>
-                                    <div className="relative mt-1.5 max-w-[8rem]">
-                                        <input
+                                    <div className="relative ml-auto mt-1.5 max-w-[8rem]">
+                                        <Input
                                             type="text"
                                             value={sttLanguage}
                                             onChange={(e) => setSttLanguage(e.target.value)}
                                             placeholder="auto"
-                                            className="w-full h-7 rounded-lg border border-input bg-transparent px-2 typography-ui-label text-foreground placeholder:text-muted-foreground focus:outline-none focus:ring-1 focus:ring-primary/50 focus:border-primary/70"
+                                            className="w-full"
                                         />
                                     </div>
                                 </div>

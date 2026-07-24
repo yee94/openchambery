@@ -3,11 +3,15 @@ import type { GitHubAuthStatus, RuntimeAPIs } from '@/lib/api/types';
 import { queryClient, queryKeys } from '@/lib/queryRuntime';
 import { getRuntimeTransportIdentity } from '@/lib/runtime-switch';
 import {
+  readGitHubAuthSnapshot,
   refreshGitHubAuthQuery,
   setGitHubAuthSnapshot,
 } from '@/queries/githubAuthQueries';
 
 type GitHubAuthStatusWithError = GitHubAuthStatus & { error?: string };
+
+const isCancelledQueryError = (error: unknown): boolean =>
+  error instanceof Error && error.name === 'CancelledError';
 
 type GitHubAuthStore = {
   setStatus: (status: GitHubAuthStatusWithError | null) => void;
@@ -24,6 +28,13 @@ export const useGitHubAuthStore = create<GitHubAuthStore>(() => ({
     if (options?.force) {
       await queryClient.cancelQueries({ queryKey: queryKeys.github.auth(transport), exact: true });
     }
-    return refreshGitHubAuthQuery(queryClient, runtimeGitHub, transport);
+    try {
+      return await refreshGitHubAuthQuery(queryClient, runtimeGitHub, transport);
+    } catch (error) {
+      if (isCancelledQueryError(error)) {
+        return readGitHubAuthSnapshot(queryClient, transport);
+      }
+      throw error;
+    }
   },
 }));

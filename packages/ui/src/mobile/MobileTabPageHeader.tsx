@@ -9,7 +9,7 @@ export type MobileTabPageHeaderProps = {
   className?: string;
 };
 
-/** Large-title header for primary pages hosted by MobileTabsRoot. */
+/** Large title + trailing actions, matching the design reference header. */
 export function MobileTabPageHeader({
   title,
   eyebrow,
@@ -17,18 +17,18 @@ export function MobileTabPageHeader({
   className,
 }: MobileTabPageHeaderProps) {
   return (
-    <header className={cn('flex shrink-0 items-end gap-4 px-1 pb-5 pt-2', className)}>
+    <header className={cn('flex shrink-0 items-center gap-4 px-1 pb-0 pt-1.5', className)}>
       <div className="min-w-0 flex-1">
         {eyebrow ? (
-          <p className="mb-1 truncate typography-micro font-medium uppercase tracking-[0.14em] text-muted-foreground">
+          <p className="mb-0.5 truncate typography-micro font-medium text-muted-foreground">
             {eyebrow}
           </p>
         ) : null}
-        <h1 className="truncate text-[2rem] font-semibold leading-[1.08] tracking-[-0.035em] text-foreground">
+        <h1 className="oc-mobile-root-page-title truncate font-semibold text-foreground">
           {title}
         </h1>
       </div>
-      {trailing ? <div className="flex min-h-11 shrink-0 items-center">{trailing}</div> : null}
+      {trailing ? <div className="flex min-h-10 shrink-0 items-center gap-3.5">{trailing}</div> : null}
     </header>
   );
 }

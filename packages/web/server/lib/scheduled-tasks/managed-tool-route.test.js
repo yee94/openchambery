@@ -260,7 +260,7 @@ describe('managed scheduled task tool route', () => {
     try {
       const upstream = await request(fixture.app).post(MANAGED_SCHEDULED_TASK_TOOL_PATH).send(body('list'));
       expect(upstream.status).toBe(502);
-      expect(upstream.body.error).toBe('Failed to manage scheduled task');
+      expect(upstream.body.error).toBe('Failed to manage schedule');
       const oversized = await request(fixture.app).post(MANAGED_SCHEDULED_TASK_TOOL_PATH).send(body('list', { padding: 'x'.repeat(70_000) }));
       expect(oversized.status).toBe(413);
     } finally { fixture.restore(); }

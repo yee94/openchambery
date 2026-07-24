@@ -3,14 +3,1153 @@
 /* Set global device type variables */
 :root {
   --is-mobile: 0;
-  --device-type: 'desktop';
+  --device-type: "desktop";
   --font-scale: 1;
 }
 
+/* Projects home floating material. Project capsule, session container, and
+   bottom dock deliberately share this exact recipe so their elevation reads
+   as one system. Keep blur on the three container surfaces, never per row. */
+.oc-mobile-floating-shell {
+  --oc-mobile-surface-radius: 1.5rem;
+  --oc-mobile-inset-radius: 1rem;
+  --oc-mobile-control-radius: 1.25rem;
+  --oc-mobile-page-gap: 1.25rem;
+  --oc-mobile-page-inline-inset: 1.125rem;
+  --oc-mobile-root-title-size: 2rem;
+  --oc-mobile-detail-title-size: 0.9375rem;
+  --oc-mobile-detail-navigation-height: 3.5rem;
+  --oc-mobile-detail-action-edge-inset: 1rem;
+  --oc-mobile-detail-navigation-inline-inset: calc(
+    var(--oc-mobile-detail-action-edge-inset) - 0.5rem
+  );
+  --oc-mobile-project-group-gap: 0.75rem;
+  --oc-mobile-project-header-height: 5.25rem;
+  --oc-mobile-project-icon-size: 2.75rem;
+  --oc-mobile-project-action-size: 2.25rem;
+  --oc-mobile-entity-title-size: 1rem;
+  --oc-mobile-entity-title-line-height: 1.25rem;
+  --oc-mobile-entity-meta-size: 0.8125rem;
+  --oc-mobile-entity-meta-line-height: 1rem;
+  --oc-mobile-session-row-height: 2.875rem;
+  --oc-mobile-session-actions-width: 7rem;
+  --oc-mobile-session-action-width: calc(
+    var(--oc-mobile-session-actions-width) / 2
+  );
+  --oc-mobile-dock-height: 3.5rem;
+  --oc-mobile-dock-inline-inset: 2.5rem;
+  --oc-mobile-dock-max-width: 22rem;
+  --oc-mobile-dock-inner-inset: 0.25rem;
+  --oc-mobile-dock-gap: 0.125rem;
+  --oc-mobile-dock-radius: calc(var(--oc-mobile-dock-height) / 2);
+  --oc-mobile-tab-height: calc(
+    var(--oc-mobile-dock-height) - (var(--oc-mobile-dock-inner-inset) * 2)
+  );
+  --oc-mobile-tab-radius: calc(
+    var(--oc-mobile-dock-radius) - var(--oc-mobile-dock-inner-inset)
+  );
+  --oc-mobile-float-background: color-mix(
+    in srgb,
+    var(--surface-elevated) 88%,
+    transparent
+  );
+  --oc-mobile-field-background: color-mix(
+    in srgb,
+    var(--surface-elevated) 70%,
+    transparent
+  );
+  --oc-mobile-float-highlight: color-mix(
+    in srgb,
+    var(--surface-elevated) 92%,
+    transparent
+  );
+  --oc-mobile-shadow-far: color-mix(
+    in srgb,
+    var(--surface-foreground) 7%,
+    transparent
+  );
+  --oc-mobile-shadow-near: color-mix(
+    in srgb,
+    var(--surface-foreground) 3%,
+    transparent
+  );
+  --oc-mobile-shadow-control: color-mix(
+    in srgb,
+    var(--surface-foreground) 5%,
+    transparent
+  );
+  --oc-mobile-float-shadow:
+    0 12px 30px var(--oc-mobile-shadow-far),
+    0 1px 4px var(--oc-mobile-shadow-near),
+    inset 0 1px 0 var(--oc-mobile-float-highlight);
+}
+
+/* In dark mode, elevation should recede into the page instead of casting a
+   pale halo. Keep all mobile materials on a black shadow scale, including
+   controls and the navigation back affordance. */
+.dark .oc-mobile-floating-shell {
+  --oc-mobile-shadow-far: rgb(0 0 0 / 0.24);
+  --oc-mobile-shadow-near: rgb(0 0 0 / 0.14);
+  --oc-mobile-shadow-control: rgb(0 0 0 / 0.18);
+  --oc-mobile-float-highlight: color-mix(
+    in srgb,
+    var(--surface-elevated) 24%,
+    transparent
+  );
+}
+
+.oc-mobile-tab-dock {
+  display: flex;
+  width: calc(100% - (var(--oc-mobile-dock-inline-inset) * 2));
+  max-width: var(--oc-mobile-dock-max-width);
+  height: var(--oc-mobile-dock-height);
+  align-items: center;
+  gap: var(--oc-mobile-dock-gap);
+  padding: var(--oc-mobile-dock-inner-inset);
+  border-radius: var(--oc-mobile-dock-radius);
+  corner-shape: round;
+}
+
+.oc-mobile-tab-button {
+  height: var(--oc-mobile-tab-height) !important;
+  min-height: 0 !important;
+  gap: var(--oc-mobile-dock-gap);
+  padding: var(--oc-mobile-dock-inner-inset);
+  border-radius: var(--oc-mobile-tab-radius) !important;
+  corner-shape: round;
+  font-size: 0.6875rem !important;
+  line-height: 0.6875rem !important;
+  overflow: hidden;
+  scrollbar-width: none;
+}
+
+.oc-mobile-tab-button > span {
+  overflow: hidden;
+  scrollbar-width: none;
+}
+
+.oc-mobile-tab-button::-webkit-scrollbar,
+.oc-mobile-tab-button > span::-webkit-scrollbar {
+  display: none;
+  width: 0;
+  height: 0;
+}
+
+/* The mobile typography compatibility block resets typography utility sizes
+   with !important. Re-assert the dock's measured label size at higher
+   specificity so 计划任务 remains complete on the 378px native viewport. */
+:root.mobile-pointer:not(.desktop-runtime)
+  .oc-mobile-tab-button.typography-ui-label {
+  font-size: 0.6875rem !important;
+  line-height: 0.6875rem !important;
+}
+
+.oc-mobile-floating-surface,
+.oc-mobile-glass-surface {
+  border: 0;
+  background: var(--oc-mobile-float-background);
+  box-shadow: var(--oc-mobile-float-shadow);
+  -webkit-backdrop-filter: blur(22px) saturate(1.35);
+  backdrop-filter: blur(22px) saturate(1.35);
+}
+
+.oc-mobile-glass-control {
+  border: 0;
+  background: color-mix(in srgb, var(--surface-elevated) 74%, transparent);
+  box-shadow:
+    0 6px 16px var(--oc-mobile-shadow-control),
+    inset 0 1px 0 var(--oc-mobile-float-highlight);
+  -webkit-backdrop-filter: blur(16px) saturate(1.25);
+  backdrop-filter: blur(16px) saturate(1.25);
+}
+
+.oc-mobile-round-control {
+  corner-shape: round;
+}
+
+.oc-mobile-tab-page {
+  display: flex;
+  height: 100%;
+  min-height: 70dvh;
+  flex-direction: column;
+  gap: var(--oc-mobile-page-gap);
+}
+
+.oc-mobile-root-page-title {
+  font-size: var(--oc-mobile-root-title-size);
+  line-height: 1.1;
+  letter-spacing: -0.04em;
+}
+
+.oc-mobile-tab-page-flow {
+  height: auto;
+  min-height: 0;
+}
+
+.oc-mobile-tab-page-flow .oc-mobile-tab-page-content {
+  min-height: 0;
+  flex: none;
+}
+
+.oc-mobile-tab-page-surface {
+  min-height: 0;
+  flex: 1 1 0%;
+  overflow: hidden;
+  border-radius: var(--oc-mobile-surface-radius);
+}
+
+.oc-mobile-tab-page-content {
+  min-height: 0;
+  flex: 1 1 0%;
+}
+
+.oc-mobile-project-shell {
+  display: flex;
+  flex-direction: column;
+  overflow: hidden;
+  border-radius: var(--oc-mobile-surface-radius);
+}
+
+.oc-mobile-project-card {
+  min-height: var(--oc-mobile-project-header-height);
+  flex: none;
+  background: transparent;
+}
+
+.oc-mobile-project-trigger {
+  gap: 0.5rem;
+  padding: 0.75rem;
+}
+
+.oc-mobile-project-icon {
+  width: var(--oc-mobile-project-icon-size);
+  height: var(--oc-mobile-project-icon-size);
+}
+
+.oc-mobile-project-icon-glyph {
+  width: 1.25rem;
+  height: 1.25rem;
+}
+
+.oc-mobile-entity-title {
+  font-size: var(--oc-mobile-entity-title-size);
+  line-height: var(--oc-mobile-entity-title-line-height);
+  letter-spacing: -0.024em;
+}
+
+.oc-mobile-entity-meta {
+  gap: 0.3125rem;
+  font-size: var(--oc-mobile-entity-meta-size);
+  line-height: var(--oc-mobile-entity-meta-line-height);
+}
+
+.oc-mobile-project-chevron {
+  width: 1rem;
+  height: 1rem;
+}
+
+.oc-mobile-project-action {
+  width: var(--oc-mobile-project-action-size);
+  min-width: var(--oc-mobile-project-action-size) !important;
+  min-height: var(--oc-mobile-project-action-size) !important;
+  height: var(--oc-mobile-project-action-size);
+  margin-right: 0.25rem;
+}
+
+.oc-mobile-project-groups {
+  display: flex;
+  flex-direction: column;
+  gap: var(--oc-mobile-project-group-gap);
+  padding: 0.125rem 0.875rem 1rem;
+}
+
+.oc-mobile-labeled-surface-group {
+  --oc-mobile-session-row-background: color-mix(
+    in srgb,
+    var(--surface-muted) 38%,
+    var(--surface-elevated)
+  );
+  display: flex;
+  flex-direction: column;
+  overflow: hidden;
+  border-radius: var(--oc-mobile-inset-radius);
+  border: 1px solid
+    color-mix(in srgb, var(--surface-foreground) 6%, transparent);
+  background: var(--oc-mobile-session-row-background);
+  box-shadow: inset 0 1px 0
+    color-mix(in srgb, var(--surface-elevated) 72%, transparent);
+}
+
+.oc-mobile-labeled-surface-group-label {
+  min-width: 0;
+  box-shadow: inset 0 -1px 0
+    color-mix(in srgb, var(--surface-foreground) 6%, transparent);
+}
+
+.oc-mobile-page-section-label {
+  display: block;
+  padding: 0.25rem 0.5rem;
+  font-size: var(--text-micro);
+  font-weight: 600;
+  color: var(--muted-foreground);
+}
+
+.oc-mobile-labeled-surface-group-content {
+  min-width: 0;
+}
+
+.oc-mobile-group-label {
+  display: flex;
+  min-height: 3rem;
+  min-width: 0;
+  align-items: center;
+  gap: 0.25rem;
+}
+
+.oc-mobile-group-label-trigger {
+  display: flex;
+  min-height: 3rem;
+  min-width: 0;
+  flex: 1 1 auto;
+  align-items: center;
+  gap: 0.5rem;
+  border-radius: var(--oc-mobile-inset-radius);
+  padding: 0.5rem 0.75rem;
+  text-align: left;
+}
+
+button.oc-mobile-group-label-trigger {
+  outline: none;
+  transition: background-color 150ms ease;
+}
+
+button.oc-mobile-group-label-trigger:hover {
+  background: color-mix(in srgb, var(--surface-muted) 46%, transparent);
+}
+
+button.oc-mobile-group-label-trigger:focus-visible {
+  box-shadow: inset 0 0 0 2px var(--interactive-focus-ring);
+}
+
+.oc-mobile-group-label-icon {
+  display: flex;
+  width: 1.25rem;
+  height: 1.25rem;
+  flex: none;
+  align-items: center;
+  justify-content: center;
+  color: var(--muted-foreground);
+}
+
+.oc-mobile-group-label-trigger .typography-ui-label {
+  font-size: 0.8125rem !important;
+  line-height: 1rem !important;
+}
+
+.oc-mobile-group-label-trigger .typography-small {
+  font-size: 0.75rem !important;
+  line-height: 1rem !important;
+}
+
+/* The primary workspace is the compact baseline for its session list: the
+   header shares the row rhythm below it, while remaining a quiet label rather
+   than competing with the project title. Other worktree headings keep the
+   shared default measurement. */
+.oc-mobile-main-workspace-group .oc-mobile-group-label,
+.oc-mobile-main-workspace-group .oc-mobile-group-label-trigger {
+  min-height: 2.5rem;
+}
+
+.oc-mobile-main-workspace-group .oc-mobile-group-label-trigger {
+  padding-block: 0.25rem;
+}
+
+.oc-mobile-main-workspace-group
+  .oc-mobile-group-label-trigger
+  .typography-ui-label {
+  font-size: 0.75rem !important;
+  line-height: 0.9375rem !important;
+}
+
+.oc-mobile-main-workspace-group
+  .oc-mobile-group-label-trigger
+  .typography-small {
+  font-size: 0.6875rem !important;
+  line-height: 0.875rem !important;
+}
+
+.oc-mobile-main-workspace-group .oc-mobile-group-label-icon {
+  width: 1rem;
+  height: 1rem;
+}
+
+.oc-mobile-group-action {
+  width: 2.25rem;
+  min-width: 2.25rem !important;
+  height: 2.25rem;
+  min-height: 2.25rem !important;
+  margin-right: 0.375rem;
+}
+
+/* A worktree has one direct action. The compact inline action keeps the
+   collapse chevron and the create affordance as one trailing control cluster. */
+.oc-mobile-worktree-group .oc-mobile-group-label-trigger {
+  padding-right: 0.25rem;
+}
+
+.oc-mobile-worktree-new-session {
+  width: 2rem;
+  min-width: 2rem !important;
+  min-height: 2rem !important;
+  height: 2rem;
+  margin-right: 0.25rem;
+  padding: 0 !important;
+}
+
+.oc-mobile-session-row {
+  min-width: 0;
+  background: var(--oc-mobile-session-row-background, var(--surface-elevated));
+}
+
+.oc-mobile-session-row:not(:last-child) {
+  box-shadow: inset 0 -1px 0
+    color-mix(in srgb, var(--surface-foreground) 6%, transparent);
+}
+
+/* “More” and “Fewer” are one pagination control, not two separately divided
+   list items. Keep the divider above the control group, but remove the split
+   inside it. */
+.oc-mobile-session-row.oc-mobile-session-pagination-continues {
+  box-shadow: none;
+}
+
+.oc-mobile-session-row-content,
+.oc-mobile-session-row-main,
+.oc-mobile-session-pagination-row {
+  min-height: var(--oc-mobile-session-row-height);
+}
+
+.oc-mobile-session-row-content {
+  background: var(--oc-mobile-session-row-background, var(--surface-elevated));
+}
+
+.oc-mobile-session-row-main {
+  gap: 0.5625rem;
+  padding-block: 0.4375rem;
+  padding-right: 0.125rem;
+}
+
+.oc-mobile-session-dot {
+  width: 0.3125rem;
+  height: 0.3125rem;
+}
+
+.oc-mobile-session-title {
+  font-size: 0.8125rem;
+  line-height: 1.125rem;
+  letter-spacing: -0.012em;
+}
+
+.oc-mobile-session-subtitle,
+.oc-mobile-session-action-label {
+  font-size: 0.625rem;
+  line-height: 0.75rem;
+}
+
+.oc-mobile-session-time {
+  font-size: 0.6875rem;
+  line-height: 0.875rem;
+}
+
+.oc-mobile-session-actions {
+  width: var(--oc-mobile-session-actions-width);
+}
+
+.oc-mobile-session-action {
+  width: var(--oc-mobile-session-action-width);
+  min-width: var(--oc-mobile-session-action-width) !important;
+  gap: 0.1875rem;
+  border-radius: 0 !important;
+}
+
+.oc-mobile-session-pagination-row {
+  display: flex;
+  width: 100%;
+  align-items: center;
+  gap: 0.5rem;
+  padding: 0.5rem 0.75rem 0.5rem 2.5rem;
+  font-size: 0.8125rem;
+  line-height: 1.125rem;
+  outline: none;
+}
+
+.oc-mobile-session-pagination-row:focus-visible {
+  box-shadow: inset 0 0 0 2px var(--interactive-focus-ring);
+}
+
+.oc-mobile-assistant-state {
+  display: flex;
+  min-height: 0;
+  flex: 1 1 0%;
+  align-items: center;
+}
+
+.oc-mobile-assistant-state-card {
+  width: 100%;
+  padding: 1.25rem;
+  border-radius: var(--oc-mobile-surface-radius);
+}
+
+.oc-mobile-assistant-content {
+  min-height: 0;
+  flex: 1 1 0%;
+}
+
+.oc-mobile-assistant-catalog {
+  display: flex;
+  width: 100%;
+  min-width: 0;
+  flex-direction: column;
+  gap: var(--oc-mobile-project-group-gap);
+}
+
+.oc-mobile-assistant-loading {
+  overflow: hidden;
+  border-radius: var(--oc-mobile-surface-radius);
+}
+
+.oc-mobile-assistant-card-shell {
+  overflow: hidden;
+  border-radius: var(--oc-mobile-surface-radius);
+  transition: transform 150ms ease-out;
+}
+
+.oc-mobile-assistant-card {
+  display: flex;
+  width: 100%;
+  min-width: 0;
+  min-height: 4.5rem;
+  align-items: center;
+  gap: 0.625rem;
+  border: 0;
+  border-radius: var(--oc-mobile-surface-radius);
+  corner-shape: round;
+  padding: 0.75rem;
+  text-align: left;
+  outline: none;
+  touch-action: manipulation;
+  background: transparent;
+  transition: background-color 150ms ease-out;
+}
+
+.oc-mobile-assistant-card:active {
+  background: var(--interactive-active);
+}
+
+.oc-mobile-assistant-card-shell:has(.oc-mobile-assistant-card:active) {
+  transform: scale(0.995);
+}
+
+.oc-mobile-assistant-avatar {
+  display: flex;
+  width: 2.5rem;
+  height: 2.5rem;
+  flex: none;
+  align-items: center;
+  justify-content: center;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .oc-mobile-assistant-card,
+  .oc-mobile-assistant-card-shell {
+    transition: none;
+  }
+}
+
+.oc-mobile-assistant-content > *,
+.oc-mobile-scheduled-content > * {
+  height: 100%;
+  min-height: 0;
+}
+
+.oc-mobile-scheduled-workspace {
+  background: transparent;
+}
+
+.oc-mobile-scheduled-workspace [data-slot="input"]:not(:focus) {
+  border-color: transparent;
+  background: var(--oc-mobile-field-background);
+  box-shadow:
+    0 5px 14px var(--oc-mobile-shadow-control),
+    inset 0 1px 0 var(--oc-mobile-float-highlight);
+}
+
+.oc-mobile-scheduled-controls {
+  min-height: 3.25rem;
+  border-radius: var(--oc-mobile-surface-radius);
+  padding: 0.25rem;
+}
+
+.oc-mobile-scheduled-task-card {
+  overflow: hidden;
+  border-radius: var(--oc-mobile-surface-radius);
+}
+
+.oc-mobile-scheduled-task-card .oc-mobile-scheduled-task-row {
+  border: 0;
+  border-radius: 0;
+  background: transparent;
+}
+
+.oc-mobile-scheduled-workspace .border-t {
+  border-color: transparent;
+}
+
+/* Mobile Settings follows the native grouped-list grammar: a quiet label,
+   one full-width material card, and compact rows with inset separators. */
+.oc-mobile-settings-content,
+.oc-mobile-settings-content > *,
+.oc-mobile-settings-content [data-settings-view="true"] {
+  width: 100%;
+  min-width: 0;
+}
+
+.oc-mobile-settings-content [data-settings-view="true"] {
+  height: auto;
+  border: 0;
+  background: transparent;
+}
+
+.oc-mobile-settings-content [data-settings-view="true"] .bg-background,
+.oc-mobile-settings-content [data-settings-view="true"] .bg-sidebar {
+  background: transparent;
+}
+
+.oc-mobile-settings-search {
+  width: 100%;
+  padding: 0;
+}
+
+.oc-mobile-settings-search-field {
+  width: 100%;
+  min-height: 2.75rem;
+  border: 0;
+  border-radius: var(--oc-mobile-control-radius);
+  background: var(--oc-mobile-field-background);
+  box-shadow:
+    0 5px 14px var(--oc-mobile-shadow-control),
+    inset 0 1px 0 var(--oc-mobile-float-highlight);
+}
+
+.oc-mobile-settings-nav-list {
+  width: 100%;
+  gap: var(--oc-settings-section-stack-gap);
+  padding: var(--oc-settings-section-stack-gap) 0 0;
+}
+
+.oc-mobile-settings-group {
+  display: flex;
+  width: 100%;
+  min-width: 0;
+  flex-direction: column;
+  gap: var(--oc-settings-section-gap);
+}
+
+.oc-mobile-settings-group-label {
+  padding-inline: var(--oc-settings-section-title-inset);
+  font-size: var(--oc-settings-section-title-size);
+  line-height: var(--oc-settings-section-title-line-height);
+  font-weight: var(--oc-settings-section-title-weight);
+  color: var(--muted-foreground);
+}
+
+.oc-mobile-settings-card {
+  width: 100%;
+  min-width: 0;
+  overflow: hidden;
+  border: 1px solid var(--oc-settings-group-border);
+  border-radius: var(--oc-settings-group-radius);
+  background: var(--oc-settings-group-background);
+  box-shadow: none;
+}
+
+.oc-mobile-settings-card-borderless {
+  border: 0;
+  box-shadow: none;
+}
+
+.oc-mobile-settings-row {
+  display: flex;
+  width: 100%;
+  min-height: var(--oc-settings-row-min-height);
+  min-width: 0;
+  align-items: center;
+  gap: var(--oc-settings-row-gap);
+  overflow: hidden;
+  border: 0;
+  border-radius: 0;
+  padding-inline: var(--oc-settings-row-inset);
+  background: transparent;
+  text-align: left;
+  outline: none;
+}
+
+.oc-mobile-settings-row + .oc-mobile-settings-row {
+  box-shadow: inset 0 1px 0 var(--oc-settings-row-divider);
+}
+
+.oc-mobile-settings-row:focus-visible {
+  box-shadow: inset 0 0 0 2px var(--interactive-focus-ring);
+}
+
+.oc-mobile-settings-search-result {
+  flex-direction: row;
+  justify-content: space-between;
+  padding-block: 0.625rem;
+}
+
+.oc-mobile-settings-footer {
+  width: 100%;
+  padding-top: 1.25rem;
+  padding-bottom: 0.25rem;
+}
+
+.oc-mobile-settings-footer > .oc-mobile-settings-card {
+  padding: 0;
+  border: 1px solid var(--oc-settings-group-border);
+  background: var(--oc-settings-group-background);
+}
+
+.oc-mobile-detail-navigation {
+  isolation: isolate;
+  padding-inline: var(--oc-mobile-detail-navigation-inline-inset);
+  border-bottom: 0;
+  background: transparent;
+  box-shadow: none;
+}
+
+.oc-mobile-detail-navigation::after {
+  position: absolute;
+  z-index: -1;
+  top: 0;
+  right: 0;
+  left: 0;
+  height: calc(
+    var(--oc-safe-area-top, 0px) +
+      var(--oc-mobile-detail-navigation-height) + 1.75rem
+  );
+  content: "";
+  pointer-events: none;
+  background: linear-gradient(
+    to bottom,
+    color-mix(in srgb, var(--surface-background) 95%, transparent) 0%,
+    color-mix(in srgb, var(--surface-background) 95%, transparent)
+      calc(var(--oc-safe-area-top, 0px) + 35%),
+    transparent 100%
+  );
+}
+
+.oc-mobile-detail-navigation-sticky {
+  position: sticky;
+  top: 0;
+  z-index: 30;
+}
+
+/* Root tabs keep comfortable page gutters. Secondary pages deliberately
+   escape those gutters: their navigation begins at the physical top edge and
+   owns the safe area plus the full-width fade into scrollable content. */
+.oc-mobile-floating-shell [role="tabpanel"]:has(.oc-mobile-detail-navigation) {
+  padding-top: 0;
+}
+
+.oc-mobile-tab-page-flow .oc-mobile-detail-navigation {
+  margin-inline: calc(-1 * var(--oc-mobile-page-inline-inset));
+}
+
+.oc-mobile-detail-navigation-content,
+.oc-mobile-settings-detail-header {
+  min-height: var(--oc-mobile-detail-navigation-height);
+}
+
+.oc-mobile-settings-detail-header {
+  margin-bottom: 0.25rem;
+  padding-inline: 0.5rem;
+  border: 0 !important;
+}
+
+.oc-mobile-detail-title,
+.oc-mobile-settings-detail-title {
+  font-size: var(--oc-mobile-detail-title-size);
+  line-height: 1.125rem;
+  font-weight: 650;
+  text-align: center;
+}
+
+.oc-mobile-detail-action,
+.oc-mobile-settings-detail-action {
+  border-radius: 999px;
+  background: color-mix(in srgb, var(--surface-elevated) 54%, transparent);
+  box-shadow:
+    0 4px 12px var(--oc-mobile-shadow-control),
+    inset 0 1px 0 var(--oc-mobile-float-highlight);
+  -webkit-backdrop-filter: blur(16px) saturate(1.25);
+  backdrop-filter: blur(16px) saturate(1.25);
+}
+
+.oc-mobile-detail-editor-title {
+  color: var(--surface-foreground);
+  border-color: transparent !important;
+  background: transparent !important;
+  box-shadow: none !important;
+}
+
+.oc-mobile-settings-detail-navigation
+  .oc-mobile-detail-action:first-child {
+  justify-self: start;
+}
+
+.oc-mobile-settings-detail-card {
+  width: 100%;
+  min-width: 0;
+  height: auto;
+  overflow: hidden;
+  border: 0;
+  border-radius: 0;
+  background: transparent;
+  box-shadow: none;
+}
+
+.oc-mobile-settings-detail-card > * {
+  min-height: 0;
+  height: auto;
+  background: transparent;
+}
+
+.oc-mobile-settings-detail-card .openchamber-page-body {
+  width: 100%;
+  max-width: none;
+  padding: 0.75rem 0 calc(var(--oc-mobile-dock-height) + 1.5rem);
+}
+
+.oc-mobile-settings-detail-card .oc-settings-page-content {
+  width: 100%;
+  max-width: none;
+  padding: 0.75rem 0 calc(var(--oc-mobile-dock-height) + 1.5rem);
+}
+
+.oc-mobile-settings-detail-card > * > .border-b:first-child,
+.oc-mobile-settings-detail-card > .border-b:first-child {
+  border-bottom: 0;
+}
+
+/* Detail pages share native Settings hierarchy: the page itself is a quiet
+   canvas, with only the individual setting sections receiving a subtle local
+   material. This prevents desktop form wrappers from reading as one giant
+   mobile card while preserving their underlying controls and data anchors. */
+.oc-mobile-settings-detail-card .openchamber-page-body > .oc-settings-section-stack {
+  display: flex;
+  flex-direction: column;
+  gap: var(--oc-settings-section-stack-gap);
+}
+
+.oc-mobile-settings-detail-card
+  .openchamber-page-body
+  section:not(.oc-settings-group) {
+  position: relative;
+  isolation: isolate;
+  overflow: visible;
+  padding: 0 !important;
+  border: 0;
+  border-radius: 0;
+  background: transparent;
+  box-shadow: none;
+}
+
+.oc-mobile-settings-detail-card
+  .openchamber-page-body
+  section:not(.oc-settings-group)::before {
+  position: absolute;
+  z-index: -1;
+  inset: 0;
+  border: 0;
+  border-radius: var(--oc-settings-group-radius);
+  content: "";
+  pointer-events: none;
+  background: var(--oc-settings-group-background);
+  box-shadow: none;
+}
+
+.oc-mobile-settings-detail-card
+  .openchamber-page-body
+  section:not(.oc-settings-group):has(> h3, > h4) {
+  padding-top: var(--oc-settings-section-title-slot) !important;
+}
+
+.oc-mobile-settings-detail-card
+  .openchamber-page-body
+  section:not(.oc-settings-group):has(> h3, > h4)::before {
+  top: var(--oc-settings-section-title-slot);
+}
+
+.oc-mobile-settings-detail-card
+  .oc-settings-page-content
+  > [data-settings-item] {
+  min-width: 0;
+  overflow: hidden;
+  margin: 0 !important;
+  padding: var(--oc-settings-row-inset) !important;
+  border: 0;
+  border-radius: var(--oc-settings-group-radius);
+  background: var(--oc-settings-group-background);
+  box-shadow: none;
+}
+
+.oc-mobile-settings-detail-card
+  .oc-settings-page-content
+  > [data-settings-item]
+  > section {
+  padding: 0 !important;
+  border: 0;
+  background: transparent;
+  box-shadow: none;
+}
+
+.oc-mobile-settings-detail-card
+  .oc-settings-page-content
+  > [data-settings-item]
+  > section::before {
+  display: none;
+}
+
+.oc-mobile-settings-detail-card
+  .openchamber-page-body
+  section:not(.oc-settings-group)
+  > h3,
+.oc-mobile-settings-detail-card
+  .openchamber-page-body
+  section:not(.oc-settings-group)
+  > h4 {
+  position: absolute;
+  top: 0;
+  right: 0;
+  left: 0;
+  margin: 0 !important;
+  padding: 0 var(--oc-settings-section-title-inset) !important;
+  font-size: var(--oc-settings-section-title-size) !important;
+  line-height: var(--oc-settings-section-title-line-height) !important;
+  font-weight: var(--oc-settings-section-title-weight) !important;
+  color: var(--muted-foreground) !important;
+}
+
+.oc-mobile-settings-detail-card
+  .openchamber-page-body
+  section:not(.oc-settings-group)
+  > :not(h3, h4) {
+  min-width: 0;
+  margin: 0 !important;
+  padding: var(--oc-settings-row-block-padding)
+    var(--oc-settings-row-inset) !important;
+  border-top: 1px solid var(--oc-settings-row-divider);
+}
+
+.oc-mobile-settings-detail-card
+  .openchamber-page-body
+  section:not(.oc-settings-group)
+  > :first-child:not(h3, h4) {
+  border-top: 0;
+}
+
+.oc-mobile-settings-detail-card
+  .openchamber-page-body
+  section:not(.oc-settings-group)
+  > :is(h3, h4)
+  + * {
+  border-top: 0;
+}
+
+.oc-mobile-settings-detail-card
+  .openchamber-page-body
+  section:not(.oc-settings-group)
+  > :not(h3, h4)
+  > [data-settings-item]
+  + [data-settings-item] {
+  border-top: 1px solid var(--oc-settings-row-divider);
+}
+
+.oc-mobile-settings-detail-card .oc-mobile-settings-chip {
+  font-size: var(--oc-settings-row-label-size) !important;
+  line-height: var(--oc-settings-row-label-line-height) !important;
+}
+
+.oc-mobile-settings-detail-card
+  .openchamber-page-body
+  section:not(.oc-settings-group)
+  > :not(h3, h4)
+  .typography-ui-label {
+  font-size: var(--oc-settings-row-label-size) !important;
+  line-height: var(--oc-settings-row-label-line-height) !important;
+}
+
+.oc-mobile-settings-detail-card
+  .openchamber-page-body
+  section
+  > :not(h3, h4)
+  .typography-meta {
+  font-size: var(--oc-settings-row-meta-size) !important;
+  line-height: var(--oc-settings-row-meta-line-height) !important;
+}
+
+/* Explicit mobile detail primitives. These share the Settings home tokens,
+   but never infer layout from arbitrary desktop DOM. */
+.oc-mobile-settings-detail-card
+  .openchamber-page-body
+  .oc-mobile-settings-detail-group {
+  display: flex;
+  overflow: visible;
+  padding: 0 !important;
+  border: 0;
+  border-radius: 0;
+  background: transparent;
+  box-shadow: none;
+}
+
+.oc-mobile-settings-detail-card
+  .openchamber-page-body
+  .oc-mobile-settings-detail-group::before {
+  display: none;
+}
+
+.oc-mobile-settings-detail-card
+  .openchamber-page-body
+  .oc-mobile-settings-detail-group
+  > :is(.oc-mobile-settings-group-label, .oc-settings-group-label) {
+  position: static;
+  margin: 0 !important;
+  padding: 0 var(--oc-settings-section-title-inset) !important;
+  border: 0;
+  font-size: var(--oc-settings-section-title-size) !important;
+  line-height: var(--oc-settings-section-title-line-height) !important;
+  font-weight: var(--oc-settings-section-title-weight) !important;
+}
+
+.oc-mobile-settings-detail-card
+  .openchamber-page-body
+  .oc-mobile-settings-detail-group
+  > :is(.oc-mobile-settings-card, .oc-settings-group-card) {
+  min-width: 0;
+  margin: 0 !important;
+  padding: 0 !important;
+  border: 1px solid var(--oc-settings-group-border) !important;
+  background: var(--oc-settings-group-background);
+  box-shadow: none !important;
+}
+
+.oc-mobile-settings-detail-row {
+  display: grid;
+  min-height: var(--oc-settings-row-min-height);
+  grid-template-columns: minmax(0, 1fr) minmax(0, 1fr);
+  align-items: center;
+  column-gap: 1rem;
+  padding-block: var(--oc-settings-row-block-padding);
+}
+
+.oc-mobile-settings-detail-row-copy {
+  display: flex;
+  min-width: 0;
+  flex-direction: column;
+  gap: 0.125rem;
+}
+
+.oc-mobile-settings-detail-row-copy .typography-ui-label {
+  font-size: var(--oc-settings-row-label-size) !important;
+  line-height: var(--oc-settings-row-label-line-height) !important;
+}
+
+.oc-mobile-settings-detail-row-copy .typography-meta {
+  font-size: var(--oc-settings-row-meta-size) !important;
+  line-height: var(--oc-settings-row-meta-line-height) !important;
+}
+
+.oc-mobile-settings-detail-row-control {
+  display: flex;
+  width: 100%;
+  min-width: 0;
+  align-items: center;
+  justify-content: flex-end;
+  gap: 0.5rem;
+}
+
+.oc-mobile-settings-detail-row-control > [data-slot="select-trigger"],
+.oc-mobile-settings-detail-row-control > [data-slot="input"],
+.oc-mobile-settings-detail-row-control > [data-slot="number-input"] {
+  width: auto;
+  min-width: 0;
+  max-width: 13rem;
+  flex: 1 1 0;
+}
+
+.oc-mobile-settings-detail-row-control > button:not([data-slot="select-trigger"]) {
+  flex: none;
+}
+
+.oc-mobile-settings-detail-card
+  .openchamber-page-body
+  section:not(.oc-settings-group)
+  [data-slot="select-trigger"] {
+  min-height: 2rem;
+  height: 2rem;
+  margin-left: auto;
+  border: 0;
+  border-radius: 0.625rem;
+  background: color-mix(in srgb, var(--surface-elevated) 54%, transparent);
+  box-shadow: none;
+}
+
+.oc-mobile-settings-detail-card
+  .openchamber-page-body
+  section:not(.oc-settings-group)
+  [data-slot="input"] {
+  min-height: 2rem;
+  height: 2rem;
+  border-color: color-mix(in srgb, var(--surface-foreground) 9%, transparent);
+  border-radius: 0.625rem;
+  background: color-mix(in srgb, var(--surface-elevated) 54%, transparent);
+  box-shadow: none;
+}
+
+.oc-mobile-settings-detail-card
+  .openchamber-page-body
+  section:not(.oc-settings-group)
+  [data-slot="checkbox"] {
+  width: 1.125rem;
+  height: 1.125rem;
+  border-radius: 0.3125rem;
+}
+
+.oc-mobile-floating-shell [role="tabpanel"] {
+  scrollbar-width: none;
+}
+
+.oc-mobile-floating-shell [role="tabpanel"]::-webkit-scrollbar {
+  display: none;
+  width: 0;
+  height: 0;
+}
+
+@media (prefers-reduced-transparency: reduce) {
+  .oc-mobile-glass-surface,
+  .oc-mobile-floating-surface,
+  .oc-mobile-glass-control {
+    background: var(--surface-elevated);
+    -webkit-backdrop-filter: none;
+    backdrop-filter: none;
+  }
+}
+
 @media (max-width: 1024px) {
-:root.mobile-pointer:not(.desktop-runtime) {
+  :root.mobile-pointer:not(.desktop-runtime) {
     --is-mobile: 1;
-    --device-type: 'mobile';
+    --device-type: "mobile";
     --font-scale: 0.9;
   }
 }
@@ -82,7 +1221,8 @@
   }
 
   /* Improve touch targets for mobile */
-  :root.mobile-pointer:not(.desktop-runtime) button:not([role="radio"]):not([role="checkbox"]):not([role="switch"]),
+  :root.mobile-pointer:not(.desktop-runtime)
+    button:not([role="radio"]):not([role="checkbox"]):not([role="switch"]),
   :root.mobile-pointer:not(.desktop-runtime) .btn,
   :root.mobile-pointer:not(.desktop-runtime) [role="button"] {
     min-height: 36px;
@@ -112,8 +1252,12 @@
 
   /* Message action / footer icons: don't inflate to 36px touch min — keeps
      equal gaps and left-align with message body on mobile. */
-  :root.mobile-pointer:not(.desktop-runtime) [data-message-action-group="true"] button,
-  :root.mobile-pointer:not(.desktop-runtime) [data-message-action-group="true"] [role="button"] {
+  :root.mobile-pointer:not(.desktop-runtime)
+    [data-message-action-group="true"]
+    button,
+  :root.mobile-pointer:not(.desktop-runtime)
+    [data-message-action-group="true"]
+    [role="button"] {
     min-height: 0 !important;
     min-width: 0 !important;
   }
@@ -134,7 +1278,8 @@
     font-size: 16px !important; /* Prevents iOS zoom */
   }
 
-  :root.mobile-pointer:not(.desktop-runtime) [data-chat-input-highlight="true"] {
+  :root.mobile-pointer:not(.desktop-runtime)
+    [data-chat-input-highlight="true"] {
     font-size: 16px !important;
   }
 
@@ -156,43 +1301,128 @@
     pointer-events: auto;
   }
 
-  /* Give touch controls immediate, native-feeling press feedback. Target only
-     the deepest active control so nested action buttons do not scale their row. */
-  :root.mobile-pointer:not(.desktop-runtime)
-    :where(button, [role="button"]):not(:disabled):not([aria-disabled="true"]):not([data-mobile-press-feedback="none"]) {
-    -webkit-tap-highlight-color: transparent;
-    touch-action: manipulation;
-    transform-origin: center;
-    transition: scale 120ms cubic-bezier(0.2, 0.9, 0.25, 1.25);
+  /* Touch press feedback (shrink-in), pure CSS — no JS size measurement.
+     Absolute-ish large surfaces: scale ≈ 1 - (2 * edge-inset) / width, using
+     container query units against a full-bleed ancestor (see shells below).
+     When no query container exists, cqi falls back to the small viewport size,
+     which is close enough for near-full-width mobile chrome.
+     Compact controls stay on a fixed punchy scale so 40px chips still read.
+     - default: compact buttons / icons / tab chips → fixed scale
+     - soft:    wide list rows (data-mobile-press-feedback="soft")
+     - surface: whole floating card (data-mobile-press-surface + trigger)
+     - none:    opt out (drag handles, surface triggers, etc.)
+     Press-in is duration 0. Release is pure ease-out (no y>1 overshoot). */
+  :root.mobile-pointer:not(.desktop-runtime) {
+    --oc-press-edge-inset: 3px;
+    --oc-press-compact-scale: 0.9;
+    --oc-press-release-duration: 160ms;
+    --oc-press-release-ease: cubic-bezier(0.22, 1, 0.36, 1);
+    /* ~per-side inset via scale; clamp so tiny/huge widths never look broken */
+    --oc-press-soft-scale: clamp(
+      0.97,
+      calc(1 - (2 * var(--oc-press-edge-inset)) / 100cqi),
+      0.994
+    );
+  }
+
+  /* Full-bleed shells expose inline size so soft/surface children resolve cqi
+     against roughly their own width (row/card ≈ shell). */
+  :root.mobile-pointer:not(.desktop-runtime) .oc-mobile-project-shell,
+  :root.mobile-pointer:not(.desktop-runtime) .oc-mobile-project-groups,
+  :root.mobile-pointer:not(.desktop-runtime) .oc-mobile-session-row,
+  :root.mobile-pointer:not(.desktop-runtime) .oc-mobile-settings-card,
+  :root.mobile-pointer:not(.desktop-runtime) .oc-mobile-settings-nav-list,
+  :root.mobile-pointer:not(.desktop-runtime) [data-mobile-composer-surface="true"] {
+    container-type: inline-size;
   }
 
   :root.mobile-pointer:not(.desktop-runtime)
-    :where(button, [role="button"]):not(:disabled):not([aria-disabled="true"]):not([data-mobile-press-feedback="none"]):active:not(:has(:where(button, [role="button"]):active)) {
-    scale: 1.04;
+    :where(button, [role="button"]):not(:disabled):not(
+      [aria-disabled="true"]
+    ):not([data-mobile-press-feedback="none"]) {
+    -webkit-tap-highlight-color: transparent;
+    touch-action: manipulation;
+    transform-origin: center;
+    transition: scale var(--oc-press-release-duration) var(--oc-press-release-ease);
+  }
+
+  /* Compact controls only — never full-bleed list rows (those look like 0.9× of
+     a whole card and feel "stacked" / massively overscaled). */
+  :root.mobile-pointer:not(.desktop-runtime)
+    :where(button, [role="button"]):not(:disabled):not(
+      [aria-disabled="true"]
+    ):not([data-mobile-press-feedback="none"]):not(
+      [data-mobile-press-feedback="soft"]
+    ):not(.oc-mobile-settings-row):active:not(
+      :has(:where(button, [role="button"]):active)
+    ) {
+    scale: var(--oc-press-compact-scale);
     transition-duration: 0ms;
   }
 
-  /* The composer is a large touch surface, so use a smaller scale that reads
-     immediately without shifting its edges too far across the viewport. */
-  :root.mobile-pointer:not(.desktop-runtime) [data-mobile-composer-surface="true"] {
+  /* Wide rows: absolute-ish edge inset from cqi only (no Y dip).
+     Match either explicit soft markers or known full-width mobile rows so
+     Settings nav ("外观" / "聊天" …) never falls into compact 0.9. */
+  :root.mobile-pointer:not(.desktop-runtime)
+    :where(button, [role="button"])[data-mobile-press-feedback="soft"]:not(
+      :disabled
+    ):not([aria-disabled="true"]):active:not(
+      :has(:where(button, [role="button"]):active)
+    ),
+  :root.mobile-pointer:not(.desktop-runtime)
+    :where(button, [role="button"]).oc-mobile-settings-row:not(:disabled):not(
+      [aria-disabled="true"]
+    ):not([data-mobile-press-feedback="none"]):active:not(
+      :has(:where(button, [role="button"]):active)
+    ) {
+    scale: var(--oc-press-soft-scale);
+    transition-duration: 0ms;
+  }
+
+  /* Floating card chrome: whole shell moves together (border/shadow/content). */
+  :root.mobile-pointer:not(.desktop-runtime)
+    [data-mobile-press-surface="soft"] {
+    -webkit-tap-highlight-color: transparent;
+    transform-origin: center;
+    transition: scale var(--oc-press-release-duration) var(--oc-press-release-ease);
+  }
+
+  :root.mobile-pointer:not(.desktop-runtime)
+    [data-mobile-press-surface="soft"]:has(
+      [data-mobile-press-surface-trigger]:active
+    ) {
+    scale: var(--oc-press-soft-scale);
+    transition-duration: 0ms;
+  }
+
+  /* Composer: same absolute-ish soft language as wide cards. */
+  :root.mobile-pointer:not(.desktop-runtime)
+    [data-mobile-composer-surface="true"] {
     -webkit-tap-highlight-color: transparent;
     touch-action: manipulation;
     transform-origin: center;
-    transition: scale 120ms cubic-bezier(0.2, 0.9, 0.25, 1.2);
+    transition: scale var(--oc-press-release-duration) var(--oc-press-release-ease);
   }
 
   :root.mobile-pointer:not(.desktop-runtime)
     [data-mobile-composer-surface="true"]:has(textarea:active),
   :root.mobile-pointer:not(.desktop-runtime)
-    [data-mobile-composer-surface="true"]:has([data-mobile-composer-trigger="true"]:active) {
-    scale: 1.015;
+    [data-mobile-composer-surface="true"]:has(
+      [data-mobile-composer-trigger="true"]:active
+    ) {
+    scale: var(--oc-press-soft-scale);
     transition-duration: 0ms;
   }
 
   @media (prefers-reduced-motion: reduce) {
     :root.mobile-pointer:not(.desktop-runtime)
-      :where(button, [role="button"]):not(:disabled):not([aria-disabled="true"]):not([data-mobile-press-feedback="none"]),
-    :root.mobile-pointer:not(.desktop-runtime) [data-mobile-composer-surface="true"] {
+      :where(button, [role="button"]):not(:disabled):not(
+        [aria-disabled="true"]
+      ):not([data-mobile-press-feedback="none"]),
+    :root.mobile-pointer:not(.desktop-runtime)
+      [data-mobile-press-surface="soft"],
+    :root.mobile-pointer:not(.desktop-runtime)
+      [data-mobile-composer-surface="true"] {
       transition: none;
       scale: 1 !important;
     }
@@ -205,9 +1435,9 @@
     user-select: text;
   }
 
-
   /* Allow system context menu only when explicitly requested via the "More" button */
-  :root.mobile-pointer:not(.desktop-runtime) .message-content-text.show-system-menu {
+  :root.mobile-pointer:not(.desktop-runtime)
+    .message-content-text.show-system-menu {
     -webkit-touch-callout: default;
   }
 
@@ -235,7 +1465,9 @@
   }
 
   /* Keep markdown code blocks horizontally scrollable on mobile. */
-  :root.mobile-pointer:not(.desktop-runtime) .markdown-content [data-markdown="code-block-body"] {
+  :root.mobile-pointer:not(.desktop-runtime)
+    .markdown-content
+    [data-markdown="code-block-body"] {
     overflow-x: auto !important;
     overflow-y: hidden !important;
     -webkit-overflow-scrolling: touch;
@@ -308,7 +1540,11 @@
     --oc-safe-area-top: env(safe-area-inset-top, 0);
     --oc-safe-area-right: env(safe-area-inset-right, 0);
     --oc-safe-area-bottom: env(safe-area-inset-bottom, 0);
-    --oc-safe-area-bottom-visual: clamp(0px, calc(var(--oc-safe-area-bottom) * 0.05), 4px);
+    --oc-safe-area-bottom-visual: clamp(
+      0px,
+      calc(var(--oc-safe-area-bottom) * 0.05),
+      4px
+    );
     --oc-safe-area-left: env(safe-area-inset-left, 0);
   }
 
@@ -318,7 +1554,7 @@
     padding-top: var(--oc-safe-area-top);
   }
 
-  :root.oc-capacitor-app [data-sonner-toaster][data-y-position='top'] {
+  :root.oc-capacitor-app [data-sonner-toaster][data-y-position="top"] {
     top: calc(env(safe-area-inset-top, 0px) + 16px) !important;
   }
 }
@@ -334,7 +1570,11 @@
       --oc-safe-area-top: env(safe-area-inset-top, 0);
       --oc-safe-area-right: env(safe-area-inset-right, 0);
       --oc-safe-area-bottom: env(safe-area-inset-bottom, 0);
-      --oc-safe-area-bottom-visual: clamp(0px, calc(var(--oc-safe-area-bottom) * 0.05), 4px);
+      --oc-safe-area-bottom-visual: clamp(
+        0px,
+        calc(var(--oc-safe-area-bottom) * 0.05),
+        4px
+      );
       --oc-safe-area-left: env(safe-area-inset-left, 0);
     }
 
@@ -424,7 +1664,8 @@
     }
 
     /* Fix font size for tool displays */
-    [class*="tool"], [class*="code"] {
+    [class*="tool"],
+    [class*="code"] {
       font-size: 0.875rem !important;
     }
   }
@@ -437,7 +1678,11 @@
       --oc-safe-area-top: env(safe-area-inset-top, 0);
       --oc-safe-area-right: env(safe-area-inset-right, 0);
       --oc-safe-area-bottom: env(safe-area-inset-bottom, 0);
-      --oc-safe-area-bottom-visual: clamp(0px, calc(var(--oc-safe-area-bottom) * 0.05), 4px);
+      --oc-safe-area-bottom-visual: clamp(
+        0px,
+        calc(var(--oc-safe-area-bottom) * 0.05),
+        4px
+      );
       --oc-safe-area-left: env(safe-area-inset-left, 0);
     }
 
@@ -473,19 +1718,17 @@
        keep the vh-based fallback. Newer browsers use 100dvh so Android
        Chrome's collapsible URL bar doesn't push the dialog footer off-screen. */
     max-height: calc(
-      100vh
-      - var(--oc-safe-area-top, 0px)
-      - var(--oc-safe-area-bottom-visual, 0px)
-      - 20px
+      100vh - var(--oc-safe-area-top, 0px) -
+        var(--oc-safe-area-bottom-visual, 0px) - 20px
     );
     max-height: calc(
-      100dvh
-      - var(--oc-safe-area-top, 0px)
-      - var(--oc-safe-area-bottom-visual, 0px)
-      - 20px
+      100dvh - var(--oc-safe-area-top, 0px) -
+        var(--oc-safe-area-bottom-visual, 0px) - 20px
     );
     padding: var(--pwa-dialog-padding);
-    padding-top: calc(var(--pwa-dialog-padding) + (var(--oc-safe-area-top, 0px) * 0.35));
+    padding-top: calc(
+      var(--pwa-dialog-padding) + (var(--oc-safe-area-top, 0px) * 0.35)
+    );
     row-gap: clamp(0.75rem, 2vw, 1.25rem);
   }
 
@@ -536,12 +1779,15 @@
   :root.device-mobile:not(.desktop-runtime) body::after,
   :root.device-tablet:not(.desktop-runtime) body::after,
   :root.mobile-pointer:not(.desktop-runtime) body::after {
-    content: '';
+    content: "";
     position: fixed;
     bottom: 0;
     left: 0;
     right: 0;
-    height: var(--oc-safe-area-bottom-visual, var(--oc-safe-area-bottom, env(safe-area-inset-bottom, 0)));
+    height: var(
+      --oc-safe-area-bottom-visual,
+      var(--oc-safe-area-bottom, env(safe-area-inset-bottom, 0))
+    );
     background: linear-gradient(
       to top,
       var(--background) 0%,
@@ -563,8 +1809,8 @@
         to top,
         var(--background) 0%,
         var(--background) 30%,
-        rgba(21, 19, 19, 0.8) 60%,  /* Dark theme fallback */
-        rgba(21, 19, 19, 0.3) 85%,
+        rgba(21, 19, 19, 0.8) 60%,
+        /* Dark theme fallback */ rgba(21, 19, 19, 0.3) 85%,
         transparent 100%
       );
     }
@@ -575,8 +1821,8 @@
         to top,
         var(--background) 0%,
         var(--background) 30%,
-        rgba(248, 247, 243, 0.8) 60%,  /* Light theme fallback */
-        rgba(248, 247, 243, 0.3) 85%,
+        rgba(248, 247, 243, 0.8) 60%,
+        /* Light theme fallback */ rgba(248, 247, 243, 0.3) 85%,
         transparent 100%
       );
     }
@@ -589,7 +1835,10 @@
    not match — so nothing reserves bottom room in the native app. Expose it as a token
    so any native surface can consume it; the chat shell does so below. */
 :root.oc-capacitor-app {
-  --oc-app-bottom-safe: max(16px, calc(var(--safe-area-inset-bottom, env(safe-area-inset-bottom, 0px)) * 0.5));
+  --oc-app-bottom-safe: max(
+    16px,
+    calc(var(--safe-area-inset-bottom, env(safe-area-inset-bottom, 0px)) * 0.5)
+  );
 }
 
 /* Android native safe areas. Every --oc-safe-area-* definition above is gated
@@ -603,17 +1852,31 @@
    inset still applies, both sources report 0 — no double padding. */
 :root.oc-capacitor-app.oc-platform-android {
   --oc-safe-area-top: var(--safe-area-inset-top, env(safe-area-inset-top, 0px));
-  --oc-safe-area-right: var(--safe-area-inset-right, env(safe-area-inset-right, 0px));
-  --oc-safe-area-bottom: var(--safe-area-inset-bottom, env(safe-area-inset-bottom, 0px));
-  --oc-safe-area-bottom-visual: clamp(0px, calc(var(--oc-safe-area-bottom) * 0.05), 4px);
-  --oc-safe-area-left: var(--safe-area-inset-left, env(safe-area-inset-left, 0px));
+  --oc-safe-area-right: var(
+    --safe-area-inset-right,
+    env(safe-area-inset-right, 0px)
+  );
+  --oc-safe-area-bottom: var(
+    --safe-area-inset-bottom,
+    env(safe-area-inset-bottom, 0px)
+  );
+  --oc-safe-area-bottom-visual: clamp(
+    0px,
+    calc(var(--oc-safe-area-bottom) * 0.05),
+    4px
+  );
+  --oc-safe-area-left: var(
+    --safe-area-inset-left,
+    env(safe-area-inset-left, 0px)
+  );
 }
 
 :root.oc-capacitor-app.oc-platform-android .header-safe-area {
   padding-top: var(--oc-safe-area-top);
 }
 
-:root.oc-capacitor-app.oc-platform-android [data-sonner-toaster][data-y-position='top'] {
+:root.oc-capacitor-app.oc-platform-android
+  [data-sonner-toaster][data-y-position="top"] {
   top: calc(var(--oc-safe-area-top) + 16px) !important;
 }
 
@@ -664,7 +1927,10 @@
   /* Reserve the bottom safe area only while the keyboard is down — when it's up the
      inset cancels it out (the home indicator is hidden and the composer should sit
      flush above the keyboard). The shell keeps its own bg behind this padding. */
-  padding-bottom: max(0px, calc(var(--oc-app-bottom-safe, 0px) - var(--oc-kb-layout, 0px)));
+  padding-bottom: max(
+    0px,
+    calc(var(--oc-app-bottom-safe, 0px) - var(--oc-kb-layout, 0px))
+  );
 }
 
 /* Portal surfaces (bottom sheets, overlay panels) render at <body> level, outside
@@ -676,7 +1942,9 @@
    be overridden by this rule's `transition` shorthand). */
 :root.oc-capacitor-app .oc-keyboard-inset-surface {
   bottom: var(--oc-keyboard-inset, 0px);
-  transition: bottom 0.25s cubic-bezier(0.38, 0.7, 0.125, 1), opacity 0.2s ease-out;
+  transition:
+    bottom 0.25s cubic-bezier(0.38, 0.7, 0.125, 1),
+    opacity 0.2s ease-out;
 }
 /* While a panel is playing its enter animation, its bottom anchor snaps
    instead of transitioning — opening an overlay typically dismisses the
@@ -691,7 +1959,8 @@
   transition: bottom 0.25s cubic-bezier(0.38, 0.7, 0.125, 1);
 }
 
-:root.oc-capacitor-app .oc-keyboard-inset-surface.oc-mobile-window-motion.oc-mobile-window-motion-active {
+:root.oc-capacitor-app
+  .oc-keyboard-inset-surface.oc-mobile-window-motion.oc-mobile-window-motion-active {
   transition: none;
 }
 
@@ -703,9 +1972,8 @@
    both the keyboard inset and the top safe area from the available height. */
 :root.oc-capacitor-app .pwa-overlay-panel {
   max-height: calc(
-    100dvh
-    - var(--oc-keyboard-inset, 0px)
-    - max(0.75rem, env(safe-area-inset-top))
+    100dvh - var(--oc-keyboard-inset, 0px) -
+      max(0.75rem, env(safe-area-inset-top))
   );
 }
 
@@ -752,7 +2020,9 @@
      formula) — so the scroller's parent only loses (keyboard − safe). Extend
      by exactly that, or the settle grows clientHeight by the safe inset and
      the pinned chat clamps one row down a beat after the keyboard opens. */
-  bottom: calc(-1 * max(var(--oc-kb-layout, 0px) - var(--oc-app-bottom-safe, 0px), 0px));
+  bottom: calc(
+    -1 * max(var(--oc-kb-layout, 0px) - var(--oc-app-bottom-safe, 0px), 0px)
+  );
   /* The padding leg is driven by its own variable so it can be applied at the
      very START of the keyboard rise (with an immediate re-pin — the bottom of
      the chat moves up as the keyboard begins, not after it finishes), while
@@ -824,8 +2094,12 @@
     transition: padding-bottom 220ms cubic-bezier(0.33, 1, 0.68, 1);
   }
 
-  :root:not(.oc-capacitor-app):not(.oc-browser-keyboard-open) .oc-mobile-composer {
-    padding-bottom: calc(0.75rem + max(16px, var(--oc-safe-area-bottom, env(safe-area-inset-bottom, 0px)))) !important;
+  :root:not(.oc-capacitor-app):not(.oc-browser-keyboard-open)
+    .oc-mobile-composer {
+    padding-bottom: calc(
+      0.75rem +
+        max(16px, var(--oc-safe-area-bottom, env(safe-area-inset-bottom, 0px)))
+    ) !important;
   }
 
   /* Fullscreen composer: ChatInput pins the form to the visual viewport from
@@ -833,7 +2107,9 @@
      form's first row lands under the status bar / Dynamic Island. Pad the
      content down into the safe region instead. */
   :root.oc-browser-kb-fullscreen:not(.oc-capacitor-app) .oc-mobile-composer {
-    padding-top: calc(var(--oc-safe-area-top, env(safe-area-inset-top, 0px)) + 0.5rem) !important;
+    padding-top: calc(
+      var(--oc-safe-area-top, env(safe-area-inset-top, 0px)) + 0.5rem
+    ) !important;
   }
 
   /* iOS standalone can leave 100dvh stuck at the keyboard-shrunk value after
@@ -848,14 +2124,20 @@
 
   /* Top toasts: same offset the Capacitor shell already applies — without it
      they render under the clock / Dynamic Island. */
-  :root:not(.oc-capacitor-app) [data-sonner-toaster][data-y-position='top'] {
-    top: calc(var(--oc-safe-area-top, env(safe-area-inset-top, 0px)) + 16px) !important;
+  :root:not(.oc-capacitor-app) [data-sonner-toaster][data-y-position="top"] {
+    top: calc(
+      var(--oc-safe-area-top, env(safe-area-inset-top, 0px)) + 16px
+    ) !important;
   }
 }
 
 @keyframes oc-composer-morph-fade {
-  from { opacity: 0; }
-  to { opacity: 1; }
+  from {
+    opacity: 0;
+  }
+  to {
+    opacity: 1;
+  }
 }
 
 /* Voice overlay variant: the overlay BACKGROUND appears immediately (it rides

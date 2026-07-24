@@ -1,6 +1,7 @@
 import * as React from 'react';
 import { useEvent } from '@reactuses/core';
 
+import { AssistantView } from '@/components/assistants/AssistantView';
 import { useI18n } from '@/lib/i18n';
 import { useSessionUIStore } from '@/sync/session-ui-store';
 
@@ -25,6 +26,7 @@ export type MobilePhoneShellProps = {
    */
   scheduledContent?: React.ReactNode | ((
     registerEditorBackHandler: (handler: (() => boolean) | null) => void,
+    onEditorActiveChange: (active: boolean) => void,
   ) => React.ReactNode);
   /** Chat secondary page content. Rendered with the active chat target. */
   renderChat: (target: { sessionId: string; directory: string | null }) => React.ReactNode;
@@ -49,6 +51,7 @@ export function MobilePhoneShell({
   const setActiveTabStore = useMobileNavigationStore((state) => state.setActiveTab);
   const openSessionStore = useMobileNavigationStore((state) => state.openSession);
   const openDraftStore = useMobileNavigationStore((state) => state.openDraft);
+  const openAssistantStore = useMobileNavigationStore((state) => state.openAssistant);
   const closeSecondaryStore = useMobileNavigationStore((state) => state.closeSecondary);
 
   const setActiveTab = useEvent((tab: MobileTabId) => {
@@ -67,11 +70,19 @@ export function MobilePhoneShell({
     openDraftStore();
   });
 
+  const openAssistant = useEvent((assistantID: string) => {
+    openAssistantStore(assistantID);
+  });
+
   // Scheduled-tab editor back (open create/edit form) sits above chat secondary
   // in the phone back chain: overlays → scheduled editor → chat secondary → root.
   const scheduledEditorBackRef = React.useRef<(() => boolean) | null>(null);
+  const [scheduledEditorActive, setScheduledEditorActive] = React.useState(false);
   const registerScheduledEditorBack = useEvent((handler: (() => boolean) | null) => {
     scheduledEditorBackRef.current = handler;
+  });
+  const handleScheduledEditorActiveChange = useEvent((active: boolean) => {
+    setScheduledEditorActive(active);
   });
 
   // Android-back / external back coordination: MobileApp's overlay chain keeps
@@ -97,7 +108,7 @@ export function MobilePhoneShell({
   );
 
   const scheduledTabBody: React.ReactNode = typeof scheduledContent === 'function'
-    ? scheduledContent(registerScheduledEditorBack)
+    ? scheduledContent(registerScheduledEditorBack, handleScheduledEditorActiveChange)
     : scheduledContent;
 
   const tabs = React.useMemo(
@@ -109,16 +120,23 @@ export function MobilePhoneShell({
           onNewSession={handleNewSessionDraft}
         />
       ),
-      assistant: <MobileAssistantTab onEnable={onEnableAssistants} />,
-      scheduled: <MobileScheduledTab>{scheduledTabBody}</MobileScheduledTab>,
+      assistant: <MobileAssistantTab onEnable={onEnableAssistants} onOpenAssistant={openAssistant} />,
+      scheduled: <MobileScheduledTab showHeader={!scheduledEditorActive}>{scheduledTabBody}</MobileScheduledTab>,
       settings: <MobileSettingsTab />,
     }),
-    [openChat, handleNewSessionDraft, onAddProject, onEnableAssistants, scheduledTabBody],
+    [openChat, openAssistant, handleNewSessionDraft, onAddProject, onEnableAssistants, scheduledEditorActive, scheduledTabBody],
   );
 
   const secondaryKind = navigation.secondary?.kind ?? null;
   const secondaryPage = React.useMemo(() => {
     if (!secondaryKind) return null;
+    if (secondaryKind === 'assistant') {
+      return {
+        key: 'assistant-secondary',
+        ariaLabel: t('assistants.title'),
+        content: <AssistantView activeOverride onMobileBack={closeSecondary} />,
+      };
+    }
     // Project the render target from the authoritative session store: once a
     // draft's first prompt materializes the real session, the header/status
     // switch to the live entity while the stable host key keeps the ChatView
@@ -135,7 +153,7 @@ export function MobilePhoneShell({
           : { sessionId: '', directory: null },
       ),
     };
-  }, [secondaryKind, currentSessionId, currentSessionDirectory, renderChat, t]);
+  }, [secondaryKind, closeSecondary, currentSessionId, currentSessionDirectory, renderChat, t]);
 
   return (
     <MobileTabsRoot

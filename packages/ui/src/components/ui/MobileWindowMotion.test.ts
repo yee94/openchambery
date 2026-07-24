@@ -12,12 +12,21 @@ import {
   getMobileWindowMotionSurfaceLayout,
   getMobileWindowMotionVisibleProgress,
 } from './MobileWindowMotionRecipe';
-import { clampMobileSheetSnapDragHeight, shouldDismissMobileSheetSnap } from './useMobileSheetSnap';
+import {
+  clampMobileSheetSnapDragHeight,
+  getMobileSheetCollapsedHeight,
+  getNearestMobileSheetSnapPoint,
+  shouldDismissMobileSheetSnap,
+} from './useMobileSheetSnap';
 
 const __dirname = dirname(fileURLToPath(import.meta.url));
 const mobileSessionStatusBarSource = readFileSync(join(__dirname, '../chat/MobileSessionStatusBar.tsx'), 'utf-8');
+const mobileResizableSheetSource = readFileSync(join(__dirname, 'MobileResizableSheet.tsx'), 'utf-8');
 const mobileSheetSnapHandleSource = readFileSync(join(__dirname, 'MobileSheetSnapHandle.tsx'), 'utf-8');
 const mobileWindowMotionSource = readFileSync(join(__dirname, 'MobileWindowMotion.tsx'), 'utf-8');
+const mobileModelPickerPanelSource = readFileSync(join(__dirname, '../model-picker/MobileModelPickerPanel.tsx'), 'utf-8');
+const modelControlsSource = readFileSync(join(__dirname, '../chat/ModelControls.tsx'), 'utf-8');
+const agentSelectorSource = readFileSync(join(__dirname, '../sections/commands/AgentSelector.tsx'), 'utf-8');
 
 describe('MobileWindowMotion recipe', () => {
   test('maps every edge to its closed transform', () => {
@@ -84,6 +93,30 @@ describe('MobileWindowMotion recipe', () => {
     expect(shouldDismissMobileSheetSnap(657, 1000, 64)).toBe(false);
     expect(shouldDismissMobileSheetSnap(656, 1000, 64)).toBe(true);
     expect(shouldDismissMobileSheetSnap(600, 1000, 64)).toBe(true);
+  });
+
+  test('uses short content height as the collapsed snap and dismissal baseline', () => {
+    expect(getMobileSheetCollapsedHeight(1000, 420)).toBe(420);
+    expect(getMobileSheetCollapsedHeight(1000, 900)).toBe(720);
+    expect(getNearestMobileSheetSnapPoint(650, 1000, 420)).toBe(0.72);
+    expect(getNearestMobileSheetSnapPoint(760, 1000, 420)).toBe(0.98);
+    expect(shouldDismissMobileSheetSnap(357, 1000, 64, 420)).toBe(false);
+    expect(shouldDismissMobileSheetSnap(356, 1000, 64, 420)).toBe(true);
+  });
+
+  test('keeps compact resizable sheets content-sized below the collapsed maximum', () => {
+    expect(mobileResizableSheetSource).toContain("? 'h-auto max-h-[72dvh]'");
+    expect(mobileResizableSheetSource).not.toContain('border-b border-border/40');
+    expect(getMobileWindowMotionSurfaceLayout('sheet', 'bottom')).toContain('rounded-t-2xl');
+  });
+
+  test('uses the standard resizable sheet for mobile model and agent selection', () => {
+    expect(mobileModelPickerPanelSource).toContain("from '@/components/ui/MobileResizableSheet'");
+    expect(mobileModelPickerPanelSource).toContain('id={`mobile-model-picker-sheet-${mobileSheetId}`}');
+    expect(agentSelectorSource).toContain("from '@/components/ui/MobileResizableSheet'");
+    expect(agentSelectorSource).toContain('id={`mobile-agent-selector-sheet-${mobileSheetId}`}');
+    expect(modelControlsSource).toContain('id={`mobile-agent-picker-sheet-${mobileAgentSheetId}`}');
+    expect(modelControlsSource).toContain('<MobileResizableSheet');
   });
 
   test('lets a dismissible sheet track downward continuously to zero height', () => {

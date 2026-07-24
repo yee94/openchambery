@@ -104,6 +104,16 @@ function getLanAddresses() {
   return addresses;
 }
 
+/**
+ * Wipe Vite's prebundle cache only when explicitly requested.
+ *
+ * Why this is NOT the default: every cold start with cache wipe + `vite --force`
+ * mints a new optimized-deps browserHash. Open browser tabs still request the
+ * previous `chunk-*.js?v=<oldHash>` URLs, Vite answers 504 Outdated Optimize Dep,
+ * and dynamic imports (`@openchamber/ui/main`, `renderMobileApp`) fail → white
+ * screen. Keeping the cache across restarts is the stable path; force rebuild
+ * is opt-in via OPENCHAMBER_VITE_FORCE=1.
+ */
 function clearViteCache() {
   const cacheDirs = [
     path.join(webRoot, 'node_modules/.vite'),
@@ -116,17 +126,31 @@ function clearViteCache() {
   }
 }
 
-clearViteCache();
+const forceViteOptimize =
+  process.env.OPENCHAMBER_VITE_FORCE === '1'
+  || process.env.OPENCHAMBER_VITE_FORCE === 'true';
+
+if (forceViteOptimize) {
+  console.log('[dev:web:hmr] OPENCHAMBER_VITE_FORCE=1 — clearing Vite dep cache and re-optimizing');
+  clearViteCache();
+}
+
 mkdirSync(hmrSessionIndexDir, { recursive: true });
 
 const api = run('api', 'bun', ['run', '--cwd', 'packages/web', 'dev:server:watch'], {
   OPENCHAMBER_PORT: backendPort,
   OPENCHAMBER_SESSION_INDEX_DB_PATH: hmrSessionIndexDbPath,
 });
+
+const viteArgs = ['x', 'vite', '--host', hmrHost, '--port', uiPort, '--strictPort'];
+if (forceViteOptimize) {
+  viteArgs.splice(2, 0, '--force');
+}
+
 const vite = run(
   'vite',
   'bun',
-  ['x', 'vite', '--force', '--host', hmrHost, '--port', uiPort, '--strictPort'],
+  viteArgs,
   {
     OPENCHAMBER_PORT: backendPort,
     OPENCHAMBER_DISABLE_PWA_DEV: '1',

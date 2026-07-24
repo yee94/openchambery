@@ -210,7 +210,7 @@ export const formatScheduledSessionTitle = (task, nowMs = Date.now()) => {
   const stamp = DateTime.fromMillis(nowMs, { zone: timezone }).toFormat('yyyy-LL-dd HH:mm');
   const taskName = typeof task?.name === 'string' && task.name.trim().length > 0
     ? task.name.trim()
-    : 'Scheduled task';
+    : 'Schedule';
   const suffix = ` ${stamp}`;
   const maxTaskNameLength = Math.max(1, TASK_TITLE_MAX_LENGTH - suffix.length);
   const trimmedName = taskName.length > maxTaskNameLength
@@ -736,7 +736,7 @@ export const createScheduledTasksRuntime = (deps) => {
           let timeoutID;
           const timeoutPromise = new Promise((_, reject) => {
             timeoutID = setTimeout(() => {
-              reject(new Error('scheduled task run timed out'));
+              reject(new Error('schedule run timed out'));
             }, maxRunDurationMs);
           });
 

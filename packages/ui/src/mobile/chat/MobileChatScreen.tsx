@@ -2,22 +2,14 @@ import * as React from 'react';
 
 import { useI18n } from '@/lib/i18n';
 import { cn } from '@/lib/utils';
-import {
-  useCurrentSessionEntity,
-  useScopedSessionStatusReader,
-  useScopedSessionStatusRevision,
-} from '@/sync/sync-context';
-import type { ScopedSessionStatusScope } from '@/sync/scoped-session-status';
+import { useCurrentSessionEntity } from '@/sync/sync-context';
 
 import { MobileChatHeader } from './MobileChatHeader';
 
 export type MobileChatScreenProps = {
   /** Empty string = new-session draft mode (no entity/status lookups). */
   sessionId: string;
-  directory?: string | null;
   title?: string;
-  subtitle?: string;
-  busy?: boolean;
   onBack: () => void;
   onOpenMenu: () => void;
   children: React.ReactNode;
@@ -32,10 +24,7 @@ export type MobileChatScreenProps = {
  */
 export function MobileChatScreen({
   sessionId,
-  directory,
   title,
-  subtitle,
-  busy,
   onBack,
   onOpenMenu,
   children,
@@ -45,28 +34,9 @@ export function MobileChatScreen({
   const { t } = useI18n();
   const isDraft = sessionId.length === 0;
   const session = useCurrentSessionEntity(isDraft ? null : sessionId);
-  const resolvedDirectory = directory?.trim() || session?.directory?.trim() || null;
-  const statusScopes = React.useMemo<ScopedSessionStatusScope[]>(
-    () => (!isDraft && resolvedDirectory) ? [{ directory: resolvedDirectory, sessionID: sessionId }] : [],
-    [isDraft, resolvedDirectory, sessionId],
-  );
-  useScopedSessionStatusRevision(statusScopes);
-  const readScopedStatus = useScopedSessionStatusReader();
-  const scopedStatus = statusScopes[0] ? readScopedStatus(statusScopes[0]) : 'unknown';
-  const resolvedStatus = busy === true ? 'busy' : busy === false ? 'idle' : scopedStatus;
   const resolvedTitle = isDraft
     ? (title?.trim() || t('mobile.menu.newSession'))
     : (title?.trim() || session?.title?.trim() || t('mobile.sessions.untitled'));
-  const resolvedSubtitle = subtitle?.trim() || (isDraft
-    ? undefined
-    : resolvedStatus === 'busy'
-      ? t('miniChat.status.busy')
-      : resolvedStatus === 'retry'
-        ? t('miniChat.status.retry')
-        : resolvedStatus === 'idle'
-          ? t('miniChat.status.idle')
-          : undefined
-  );
 
   return (
     <main
@@ -77,8 +47,6 @@ export function MobileChatScreen({
     >
       <MobileChatHeader
         title={resolvedTitle}
-        subtitle={resolvedSubtitle}
-        busy={resolvedStatus === 'busy' || resolvedStatus === 'retry'}
         onBack={onBack}
         onOpenMenu={onOpenMenu}
         trailing={headerTrailing}

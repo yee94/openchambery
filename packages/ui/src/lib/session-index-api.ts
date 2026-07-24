@@ -30,6 +30,13 @@ export type SessionIndexSnapshot = {
 
 /** Coalesce dense revision tips before the next full snapshot GET. */
 const SESSION_INDEX_TIP_DEBOUNCE_MS = 100;
+/**
+ * Hang-break for tip waits: a completed background sync can publish its final
+ * tip between POST /sync returning and the consumer attaching a tip listener.
+ * Re-GET the authoritative snapshot on this timeout so manual / startup sync
+ * cannot sit forever on a missed tip.
+ */
+const SESSION_INDEX_SAFETY_TIMEOUT_MS = 1_500;
 
 const ensureOk = async (response: Response): Promise<void> => {
   if (response.ok) return;
@@ -97,19 +104,30 @@ export const startSessionIndexBackgroundSync = async (
  *
  * Dense revision tips (server enrich/sync) are debounced so consumers issue one
  * snapshot GET after the tip burst settles instead of one GET per tip.
+ *
+ * `safetyTimeoutMs` is a hang-break for the race where the server finishes and
+ * publishes tips between POST /sync returning and this subscription attaching.
+ * Consumers treat `'timeout'` like a tip: GET the authoritative snapshot and
+ * continue. Tips still win when they arrive first.
  */
 export const waitForSessionIndexInvalidation = (
   afterRevision: number,
   signal: AbortSignal,
-): Promise<'tip' | 'ready' | 'aborted'> => new Promise((resolve) => {
+  options?: { safetyTimeoutMs?: number },
+): Promise<'tip' | 'ready' | 'aborted' | 'timeout'> => new Promise((resolve) => {
   if (signal.aborted) {
     resolve('aborted');
     return;
   }
+  const safetyTimeoutMs = typeof options?.safetyTimeoutMs === 'number' && options.safetyTimeoutMs > 0
+    ? options.safetyTimeoutMs
+    : SESSION_INDEX_SAFETY_TIMEOUT_MS;
   let debounceTimer: ReturnType<typeof setTimeout> | undefined;
+  let safetyTimer: ReturnType<typeof setTimeout> | undefined;
   let pendingReason: 'tip' | 'ready' | undefined;
-  const finish = (reason: 'tip' | 'ready' | 'aborted') => {
+  const finish = (reason: 'tip' | 'ready' | 'aborted' | 'timeout') => {
     if (debounceTimer !== undefined) clearTimeout(debounceTimer);
+    if (safetyTimer !== undefined) clearTimeout(safetyTimer);
     unsubscribe();
     signal.removeEventListener('abort', onAbort);
     resolve(reason);
@@ -136,6 +154,7 @@ export const waitForSessionIndexInvalidation = (
     }
   });
   signal.addEventListener('abort', onAbort, { once: true });
+  safetyTimer = setTimeout(() => finish('timeout'), safetyTimeoutMs);
 });
 
 export const persistSessionIndexDirectory = async (input: {

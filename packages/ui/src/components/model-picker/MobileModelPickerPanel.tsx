@@ -1,8 +1,9 @@
 import React from 'react';
 import { Icon } from '@/components/icon/Icon';
 import type { IconName } from '@/components/icon/icons';
+import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
-import { MobileOverlayPanel } from '@/components/ui/MobileOverlayPanel';
+import { MobileResizableSheet } from '@/components/ui/MobileResizableSheet';
 import { ModelLogo } from '@/components/ui/ModelLogo';
 import { ProviderLogo } from '@/components/ui/ProviderLogo';
 import { getCurrentIntlLocale, useI18n } from '@/lib/i18n';
@@ -81,6 +82,7 @@ export const MobileModelPickerPanel: React.FC<MobileModelPickerPanelProps> = ({
     onViewChange,
 }) => {
     const { t } = useI18n();
+    const mobileSheetId = React.useId();
     const [query, setQuery] = React.useState('');
     const [expandedProviders, setExpandedProviders] = React.useState<Set<string>>(() => new Set(selectedProviderID ? [selectedProviderID] : []));
     const [expandedModelKey, setExpandedModelKey] = React.useState<string | null>(null);
@@ -276,25 +278,34 @@ export const MobileModelPickerPanel: React.FC<MobileModelPickerPanelProps> = ({
     const targetVariants = activeVariantTarget ? getVariantOptions(providers, activeVariantTarget.providerID, activeVariantTarget.modelID) : [];
     const targetSelectedVariant = activeVariantTarget ? resolveSelectedVariant(activeVariantTarget.providerID, activeVariantTarget.modelID) : undefined;
     const hasResults = filteredFavorites.length > 0 || filteredRecents.length > 0 || filteredProviders.length > 0;
+    const isVariantView = activeView === 'variant' && Boolean(activeVariantTarget);
 
     return (
-        <MobileOverlayPanel
+        <MobileResizableSheet
+            id={`mobile-model-picker-sheet-${mobileSheetId}`}
             open={open}
-            onClose={onClose}
-            title={activeView === 'variant' ? t('chat.modelControls.thinking') : t('chat.modelControls.selectModel')}
-            renderHeader={activeView === 'variant' && variantTarget ? ((closeButton) => (
-                <div className="flex items-center justify-between border-b border-border/40 px-3 py-2">
-                    <button type="button" onClick={() => setView('model')} className="flex items-center gap-1 rounded-lg px-1.5 py-1 typography-meta text-muted-foreground hover:bg-interactive-hover">
-                        <Icon name="arrow-go-back" className="size-4" />
-                        <span>{t('onboarding.common.actions.back')}</span>
-                    </button>
-                    <h2 className="typography-ui-label font-semibold text-foreground">{t('chat.modelControls.thinking')}</h2>
-                    {closeButton}
-                </div>
-            )) : undefined}
+            onOpenChange={(nextOpen) => {
+                if (!nextOpen) onClose();
+            }}
+            leading={isVariantView ? (
+                <Button
+                    type="button"
+                    variant="ghost"
+                    size="icon"
+                    onClick={() => setView('model')}
+                    aria-label={t('onboarding.common.actions.back')}
+                >
+                    <Icon name="arrow-left" className="size-5" />
+                </Button>
+            ) : undefined}
+            ariaLabel={isVariantView ? t('chat.modelControls.thinking') : t('chat.modelControls.selectModel')}
+            closeAriaLabel={t('mobile.surface.closeAria')}
+            resizeAriaLabel={t('mobile.sessions.sheet.resizeAria')}
+            bodyClassName="px-2 pb-[max(0.5rem,var(--safe-area-inset-bottom,env(safe-area-inset-bottom,0px)))]"
         >
-            {activeView === 'variant' && activeVariantTarget ? (
-                <div className="flex flex-col gap-1.5">
+            <div className="flex min-h-0 flex-1 flex-col gap-2 overflow-y-auto overscroll-contain">
+                {isVariantView && activeVariantTarget ? (
+                    <div className="flex flex-col gap-1.5">
                     {[undefined, ...targetVariants].map((variant) => {
                         const selected = variant === targetSelectedVariant || (!variant && !targetSelectedVariant);
                         return (
@@ -304,9 +315,9 @@ export const MobileModelPickerPanel: React.FC<MobileModelPickerPanelProps> = ({
                             </button>
                         );
                     })}
-                </div>
-            ) : (
-                <div className="flex flex-col gap-2">
+                    </div>
+                ) : (
+                    <>
                     <div className="relative">
                         <Icon name="search" className="absolute left-2 top-1/2 size-3.5 -translate-y-1/2 text-muted-foreground" />
                         <Input value={query} onChange={(event) => { setQuery(event.target.value); setExpandedModelKey(null); }} placeholder={t('chat.modelControls.searchProvidersOrModels')} className="h-9 rounded-xl border-border/40 bg-[var(--surface-elevated)] pl-7 typography-meta" />
@@ -337,8 +348,9 @@ export const MobileModelPickerPanel: React.FC<MobileModelPickerPanelProps> = ({
                             </div>
                         );
                     })}
-                </div>
-            )}
-        </MobileOverlayPanel>
+                    </>
+                )}
+            </div>
+        </MobileResizableSheet>
     );
 };

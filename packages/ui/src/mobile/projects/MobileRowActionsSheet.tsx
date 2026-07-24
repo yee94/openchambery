@@ -3,7 +3,7 @@ import { useEvent } from '@reactuses/core';
 import { Icon } from '@/components/icon/Icon';
 import type { IconName } from '@/components/icon/icons';
 import { Button } from '@/components/ui/button';
-import { MobileOverlayPanel } from '@/components/ui/MobileOverlayPanel';
+import { MobileResizableSheet } from '@/components/ui/MobileResizableSheet';
 import { useI18n } from '@/lib/i18n';
 
 export type MobileRowActionTarget =
@@ -48,7 +48,7 @@ function ActionRow({ icon, label, onClick, destructive = false }: ActionRowProps
       type="button"
       variant={destructive ? 'destructive' : 'ghost'}
       size="lg"
-      className="min-h-12 w-full justify-start gap-3 rounded-2xl px-4"
+      className="min-h-12 w-full justify-start gap-3 rounded-lg px-4"
       onClick={handleClick}
     >
       <Icon name={icon} className="size-5" />
@@ -64,7 +64,6 @@ export function MobileRowActionsSheet({
   onOpenChange,
 }: MobileRowActionsSheetProps) {
   const { t } = useI18n();
-  const handleClose = useEvent(() => onOpenChange(false));
   const run = (action?: () => void) => () => {
     onOpenChange(false);
     action?.();
@@ -73,24 +72,17 @@ export function MobileRowActionsSheet({
   if (!target) return null;
 
   return (
-    <MobileOverlayPanel
+    <MobileResizableSheet
+      id="mobile-row-actions-sheet"
       open={open}
-      title={target.title}
-      onClose={handleClose}
+      onOpenChange={onOpenChange}
+      title={<h2 className="truncate typography-ui-label font-semibold">{target.title}</h2>}
+      ariaLabel={target.title}
       closeAriaLabel={t('mobile.surface.closeAria')}
-      containedBody
-      className="rounded-t-[30px] border-[var(--interactive-border)] bg-[color:color-mix(in_srgb,var(--surface-elevated)_94%,transparent)] pb-[var(--safe-area-inset-bottom,env(safe-area-inset-bottom,0px))] shadow-[0_-20px_60px_color-mix(in_srgb,var(--surface-foreground)_14%,transparent)] backdrop-blur-2xl supports-[corner-shape:squircle]:rounded-t-[68px] motion-reduce:transition-none"
-      renderHeader={(closeButton) => (
-        <div className="px-4 pb-2 pt-3">
-          <div className="mx-auto mb-3 h-1 w-10 rounded-full bg-[var(--surface-muted)]" aria-hidden />
-          <div className="flex min-h-11 items-center justify-between gap-3">
-            <h2 className="min-w-0 truncate typography-ui-label font-semibold">{target.title}</h2>
-            {closeButton}
-          </div>
-        </div>
-      )}
+      resizeAriaLabel={t('mobile.sessions.sheet.resizeAria')}
+      fitContent
     >
-      <div className="flex min-h-0 flex-col gap-1 overflow-y-auto overscroll-contain px-2 pb-2">
+      <div className="flex h-full min-h-0 flex-col gap-1 overflow-y-auto overscroll-contain px-2 pb-[max(0.5rem,var(--safe-area-inset-bottom,env(safe-area-inset-bottom,0px)))]">
         {target.kind === 'session' ? (
           <>
             {actions.onRename ? <ActionRow icon="pencil-ai" label={t('sessions.sidebar.session.menu.rename')} onClick={run(actions.onRename)} /> : null}
@@ -142,6 +134,6 @@ export function MobileRowActionsSheet({
           </>
         ) : null}
       </div>
-    </MobileOverlayPanel>
+    </MobileResizableSheet>
   );
 }

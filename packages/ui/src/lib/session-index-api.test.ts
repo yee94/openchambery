@@ -113,6 +113,21 @@ describe('session index background transport', () => {
     expect(await pending).toBe('tip');
   });
 
+  test('safety-timeouts a missed tip so manual sync cannot hang forever', async () => {
+    const pending = waitForSessionIndexInvalidation(1, new AbortController().signal, {
+      safetyTimeoutMs: 20,
+    });
+    expect(await pending).toBe('timeout');
+  });
+
+  test('prefers a tip over the safety timeout when the tip arrives first', async () => {
+    const pending = waitForSessionIndexInvalidation(1, new AbortController().signal, {
+      safetyTimeoutMs: 200,
+    });
+    emitTip({ type: 'session-index-changed', revision: 2, occurredAt: 1 });
+    expect(await pending).toBe('tip');
+  });
+
   test('coalesces concurrent snapshot GETs then allows a later independent GET', async () => {
     let loads = 0;
     globalThis.fetch = async (input) => {

@@ -103,17 +103,69 @@ const unregisterDevelopmentServiceWorkers = (): void => {
   });
 };
 
+const RELOAD_ONCE_KEY = 'openchamber.dev.module-reload';
+
+const isStaleViteOptimizeDepError = (error: unknown): boolean => {
+  if (!error) return false;
+  const message = error instanceof Error ? error.message : String(error);
+  // Vite answers 504 for optimized-dep URLs whose browserHash no longer matches
+  // the server's current prebundle; the dynamic import then fails with TypeError.
+  return (
+    message.includes('Failed to fetch dynamically imported module')
+    || message.includes('Outdated Optimize Dep')
+    || message.includes('error loading dynamically imported module')
+  );
+};
+
+/**
+ * Vite can leave open tabs holding stale optimized-dep URLs after a dep
+ * re-optimization. One hard navigation with a cache-bust query recovers;
+ * only runs for the known stale-dep failure shape, and only once per session.
+ */
+const recoverFromStaleModuleImport = (error: unknown, label: string): void => {
+  console.error(`[openchamber] failed to load ${label}:`, error);
+  if (typeof window === 'undefined' || !import.meta.env.DEV) return;
+  if (!isStaleViteOptimizeDepError(error)) return;
+  try {
+    if (sessionStorage.getItem(RELOAD_ONCE_KEY) === '1') {
+      sessionStorage.removeItem(RELOAD_ONCE_KEY);
+      return;
+    }
+    sessionStorage.setItem(RELOAD_ONCE_KEY, '1');
+    const url = new URL(window.location.href);
+    url.searchParams.set('_oc_vite', String(Date.now()));
+    window.location.replace(url.toString());
+  } catch {
+    // sessionStorage/URL may be unavailable; leave the console error as the signal.
+  }
+};
+
 if (hostedSurface === 'mobile') {
   void import('@openchamber/ui/apps/renderMobileApp')
     .then(({ renderMobileApp }) => {
+      try {
+        sessionStorage.removeItem(RELOAD_ONCE_KEY);
+      } catch {
+        // ignore
+      }
       renderMobileApp(window.__OPENCHAMBER_RUNTIME_APIS__ ?? createConfiguredWebAPIs());
-    });
+    })
+    .catch((error) => recoverFromStaleModuleImport(error, 'renderMobileApp'));
 } else {
   // Hold the render (HTML splash stays up) until a desktop relay-host restore
   // has picked its transport — otherwise the app boots against a not-yet-chosen
   // endpoint and flashes the auth screen before the tunnel connects. Resolves
   // immediately when no relay host is involved.
-  void getDesktopRelayRestoreReady().then(() => import('@openchamber/ui/main'));
+  void getDesktopRelayRestoreReady()
+    .then(() => import('@openchamber/ui/main'))
+    .then(() => {
+      try {
+        sessionStorage.removeItem(RELOAD_ONCE_KEY);
+      } catch {
+        // ignore
+      }
+    })
+    .catch((error) => recoverFromStaleModuleImport(error, 'desktop main'));
 }
 
 if (import.meta.env.PROD) {

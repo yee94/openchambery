@@ -46,7 +46,10 @@ export const MobileModelButton: React.FC<MobileModelButtonProps> = ({
                 }
             }}
             className={cn(
-                'inline-flex min-w-0 items-stretch',
+                // Keep the footer controls compact on narrow phones. The text
+                // itself truncates below, while the full name remains available
+                // through the accessible label and native title.
+                'inline-flex min-w-0 max-w-36 items-stretch',
                 'rounded-lg',
                 'typography-micro font-medium text-foreground/80',
                 'focus:outline-none hover:bg-[var(--interactive-hover)] disabled:cursor-not-allowed disabled:opacity-40',

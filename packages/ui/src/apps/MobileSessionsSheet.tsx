@@ -19,7 +19,7 @@ import { useRuntimeAPIs } from '@/hooks/useRuntimeAPIs';
 import { useI18n } from '@/lib/i18n';
 import { PROJECT_COLOR_MAP, PROJECT_ICON_MAP, ProjectIconImage } from '@/lib/projectMeta';
 import { cn } from '@/lib/utils';
-import { listProjectWorktrees } from '@/lib/worktrees/worktreeManager';
+import { forceRefreshProjectWorktreeCatalog, listProjectWorktrees } from '@/lib/worktrees/worktreeManager';
 import { getRootBranch } from '@/lib/worktrees/worktreeStatus';
 import { useDirectoryStore } from '@/stores/useDirectoryStore';
 import {
@@ -1114,8 +1114,18 @@ export const MobileSessionsSheet: React.FC<MobileSessionsSheetProps> = ({ open, 
   };
 
   const syncProjectSessions = (project: ProjectMeta) => {
-    const directories = [project.path, ...project.worktrees.map((worktree) => worktree.path)];
-    void syncGlobalSessionsForDirectories(directories, sessions);
+    void (async () => {
+      // Re-list git worktrees before session-index sync so newly created trees
+      // land in the SQLite catalog, not only the already-cached sidebar paths.
+      try {
+        await forceRefreshProjectWorktreeCatalog({ id: project.id, path: project.path });
+      } catch (error) {
+        console.warn('[MobileSessions] Worktree refresh before session sync failed:', error);
+      }
+      const latest = useSessionUIStore.getState().availableWorktreesByProject.get(project.path) ?? project.worktrees;
+      const directories = [project.path, ...latest.map((worktree) => worktree.path)];
+      await syncGlobalSessionsForDirectories(directories, sessions);
+    })();
   };
 
   /** Short "Project · branch" string shown under the session title in search results. */
@@ -1804,10 +1814,7 @@ export const MobileSessionsSheet: React.FC<MobileSessionsSheetProps> = ({ open, 
     if (!open) return null;
     return (
       <div className="flex h-full min-h-0 flex-col">
-        <div className="flex h-[var(--oc-header-height,56px)] shrink-0 items-center justify-between gap-2 border-b border-border/30 px-4">
-          <h2 className="truncate typography-ui-label font-semibold text-foreground">
-            {t('mobile.sessions.sheet.title')}
-          </h2>
+        <div className="flex h-[var(--oc-header-height,56px)] shrink-0 items-center justify-end gap-2 px-4">
           {trailingActions ? (
             <div className="flex shrink-0 items-center gap-2">{trailingActions}</div>
           ) : null}
@@ -1822,7 +1829,6 @@ export const MobileSessionsSheet: React.FC<MobileSessionsSheetProps> = ({ open, 
       open={open}
       onClose={() => onOpenChange(false)}
       ariaLabel={t('mobile.sessions.sheet.title')}
-      title={t('mobile.sessions.sheet.title')}
       trailing={trailingActions}
     >
       {surfaceContent}

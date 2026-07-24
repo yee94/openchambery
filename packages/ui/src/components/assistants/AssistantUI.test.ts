@@ -109,18 +109,27 @@ describe('Assistant UI product contract', () => {
     }
   });
 
-  test('opens the mobile assistant selector in the shared half-height overlay', async () => {
-    const view = await read('AssistantView.tsx');
-    expect(/<Button\s+variant="chip"\s+size="sm"/.test(view)).toBe(true);
-    expect(view).toContain('className="ml-auto min-w-0 max-w-[min(60vw,18rem)] border-transparent bg-transparent');
-    expect(view).toContain('className="h-5 min-w-0 truncate leading-5"');
-    expect(view).toContain('className="translate-y-0.5 self-center"');
-    expect(view).toContain('<MobileOverlayPanel');
-    expect(view).toContain('contentMaxHeightClassName="max-h-[min(52dvh,28rem)]"');
-    expect(view).toContain('role="listbox"');
-    expect(view).toContain('aria-selected={selected}');
-    expect(view).not.toContain('<DropdownMenuContent');
-    expect(/aria-label=\{t\('assistants\.selectorAria'/.test(view)).toBe(true);
+  test('opens an Assistant from the mobile catalog as a second-level conversation', async () => {
+    const [view, mobileTab, phoneShell, navigation] = await Promise.all([
+      read('AssistantView.tsx'),
+      read('../../mobile/assistant/MobileAssistantTab.tsx'),
+      read('../../mobile/MobilePhoneShell.tsx'),
+      read('../../mobile/useMobileNavigationStore.ts'),
+    ]);
+    expect(mobileTab).toContain('role="listbox"');
+    expect(mobileTab).toContain("onClick={() => handleOpenAssistant(assistant.id)}");
+    expect(mobileTab).toContain('<MobileFloatingSurface key={assistant.id} className="oc-mobile-assistant-card-shell">');
+    expect(mobileTab).toContain('oc-mobile-assistant-card');
+    expect(mobileTab).toContain('oc-mobile-entity-title');
+    expect(mobileTab).toContain('oc-mobile-entity-meta');
+    expect(phoneShell).toContain("secondaryKind === 'assistant'");
+    expect(phoneShell).toContain('<AssistantView activeOverride onMobileBack={closeSecondary} />');
+    expect(navigation).toContain("set({ secondary: { kind: 'assistant' } })");
+    expect(navigation.indexOf('selectAssistant(assistantID)')).toBeLessThan(navigation.indexOf("set({ secondary: { kind: 'assistant' } })"));
+    expect(view).toContain('onMobileBack?: () => void');
+    expect(view).toContain('<MobileDetailNavigation');
+    expect(view).not.toContain('<MobileOverlayPanel');
+    expect(view).not.toContain('mobileSelectorOpen');
   });
 
   test('hosts the shared ChatContainer shell instead of a forked transcript tree', async () => {
@@ -321,15 +330,21 @@ describe('Assistant UI product contract', () => {
   });
 
   test('keeps Assistant mobile chrome in the shared safe-area header', async () => {
-    const [view, mobileApp, header] = await Promise.all([
+    const [view, mobileApp, header, detailNavigation, mobileStyles] = await Promise.all([
       read('AssistantView.tsx'),
       read('../../apps/MobileApp.tsx'),
       read('../ui/MobileSurfaceHeader.tsx'),
+      read('../../mobile/MobileDetailNavigation.tsx'),
+      read('../../styles/mobile.css'),
     ]);
-    expect(view).toContain('<MobileSurfaceHeader');
+    expect(view).toContain('<MobileDetailNavigation');
     expect(mobileApp).toContain('<MobileSurfaceHeader>');
     expect(header).toContain("paddingTop: 'var(--oc-safe-area-top, 0px)'");
     expect(header).toContain('h-[var(--oc-header-height,56px)]');
+    expect(detailNavigation).toContain('var(--oc-safe-area-top');
+    expect(detailNavigation).toContain('grid-cols-[2.75rem_minmax(0,1fr)_2.75rem]');
+    expect(mobileStyles).toContain('var(--oc-safe-area-top, 0px) +');
+    expect(mobileStyles).toContain('calc(var(--oc-safe-area-top, 0px) + 35%)');
   });
 
   test('shows the native share welcome once when a supported Assistant is opened', async () => {
@@ -387,13 +402,13 @@ describe('Assistant UI product contract', () => {
     expect(backHandler).toContain('return true');
   });
 
-  test('shows retry for an empty stale snapshot and truncates long assistant names in chrome', async () => {
+  test('shows retry for an empty stale snapshot and truncates long assistant names in conversation chrome', async () => {
     const view = await read('AssistantView.tsx');
     expect(view).toContain("snapshotQuery.isError ? t('assistants.state.staleSnapshot')");
     expect(view).toContain('truncate typography-ui-label font-medium');
     expect(view).toContain("assistants.conversation.statelessHint");
     expect(view).toContain('typography-micro leading-none text-muted-foreground/70');
-    expect(view).toContain('min-w-0 max-w-[min(60vw,18rem)]');
+    expect(view).toContain('presentation.displayName || assistant.name');
   });
 
   test('stitches paged Assistant history into the shared ChatContainer host', async () => {

@@ -28,6 +28,7 @@ import { CommandAutocomplete, type CommandAutocompleteHandle, type CommandInfo }
 import { FileMentionAutocomplete, type FileMentionHandle } from '@/components/chat/FileMentionAutocomplete';
 import { SnippetAutocomplete, type SnippetAutocompleteHandle } from '@/components/chat/SnippetAutocomplete';
 import { Icon } from "@/components/icon/Icon";
+import { MobileDetailNavigation } from '@/mobile/MobileDetailNavigation';
 import { useConfigStore } from '@/stores/useConfigStore';
 import { useUIStore } from '@/stores/useUIStore';
 import type { ScheduledTask } from '@/lib/scheduledTasksApi';
@@ -711,7 +712,7 @@ export function ScheduledTaskEditorDialog(props: {
   task: ScheduledTask | null;
   onOpenChange: (open: boolean) => void;
   onSave: (draft: Partial<ScheduledTask>) => Promise<ScheduledTask | void>;
-  presentation?: 'dialog' | 'panel' | 'mobile-panel';
+  presentation?: 'dialog' | 'panel' | 'mobile-panel' | 'mobile-tab';
   onDirtyChange?: (dirty: boolean) => void;
   onRun?: (task: ScheduledTask) => Promise<void>;
   onDelete?: (task: ScheduledTask) => Promise<void>;
@@ -738,9 +739,12 @@ export function ScheduledTaskEditorDialog(props: {
   } = props;
   const desktopPanel = presentation === 'panel';
   const mobilePanel = presentation === 'mobile-panel';
-  const groupedPanel = desktopPanel || mobilePanel;
-  const panelControlClassName = mobilePanel ? MOBILE_PANEL_CONTROL_CLASS : PANEL_CONTROL_CLASS;
-  const panelRowClassName = mobilePanel ? MOBILE_PANEL_ROW_CLASS : PANEL_ROW_CLASS;
+  const mobileTab = presentation === 'mobile-tab';
+  const mobileGroupedPanel = mobilePanel || mobileTab;
+  const compactMobileEditor = mobilePanel || mobileTab;
+  const groupedPanel = desktopPanel || mobileGroupedPanel;
+  const panelControlClassName = mobileGroupedPanel ? MOBILE_PANEL_CONTROL_CLASS : PANEL_CONTROL_CLASS;
+  const panelRowClassName = mobileGroupedPanel ? MOBILE_PANEL_ROW_CLASS : PANEL_ROW_CLASS;
   const { t, locale } = useI18n();
   const loadProviders = useConfigStore((state) => state.loadProviders);
   const loadAgents = useConfigStore((state) => state.loadAgents);
@@ -1247,7 +1251,7 @@ export function ScheduledTaskEditorDialog(props: {
 
   const formBody = (
     <div className={cn('flex flex-col gap-5', groupedPanel && 'gap-6')}>
-      <div className={cn('flex flex-col gap-1', desktopPanel && 'hidden')}>
+      <div className={cn('flex flex-col gap-1', (desktopPanel || mobileTab) && 'hidden')}>
         <FieldLabel htmlFor="sched-name" required>{t('sessions.scheduledTasks.editor.taskName.label')}</FieldLabel>
         <Input
           id="sched-name"
@@ -1307,7 +1311,7 @@ export function ScheduledTaskEditorDialog(props: {
         </div>
 
           {draft.schedule.kind === 'cron' ? (
-            <CronScheduleSection draft={draft} setDraft={setDraft} locale={locale} t={t} panel={desktopPanel} mobilePanel={mobilePanel} />
+            <CronScheduleSection draft={draft} setDraft={setDraft} locale={locale} t={t} panel={desktopPanel} mobilePanel={mobileGroupedPanel} />
           ) : draft.schedule.kind === 'once' ? (
             <div className={cn('grid grid-cols-1 gap-x-4 gap-y-3', groupedPanel && 'flex flex-col gap-0', !isMobile && !groupedPanel && 'sm:grid-cols-2')}>
               <div className={cn('flex min-w-0 flex-col gap-1', groupedPanel && panelRowClassName)} ref={datePickerRef}>
@@ -1328,7 +1332,7 @@ export function ScheduledTaskEditorDialog(props: {
                   {isDatePickerOpen ? (
                     <div className={cn(
                       'absolute top-[calc(100%+6px)] z-50 w-[min(288px,calc(100vw-2rem))] animate-in fade-in zoom-in-95 slide-in-from-top-1 rounded-xl border border-border bg-background p-3 shadow-sm duration-150 motion-reduce:animate-none',
-                      mobilePanel ? 'right-0' : 'left-0',
+                      mobileGroupedPanel ? 'right-0' : 'left-0',
                     )}>
                       <div className="mb-2 flex items-center justify-between">
                         <button
@@ -1424,7 +1428,7 @@ export function ScheduledTaskEditorDialog(props: {
                 <FieldLabel>{t('sessions.scheduledTasks.editor.time.label')}</FieldLabel>
                 <TimePill
                   value={draft.schedule.onceTime}
-                  className={cn(groupedPanel && (mobilePanel
+                  className={cn(groupedPanel && (mobileGroupedPanel
                     ? 'ml-auto w-fit min-w-0 justify-end bg-transparent ring-0 hover:[&:not(:focus-within)]:bg-interactive-hover/70'
                     : 'ml-auto -mr-1.5 w-fit min-w-0 justify-self-end bg-transparent ring-0 hover:[&:not(:focus-within)]:bg-interactive-hover/70'))}
                   use24Hour={use24Hour}
@@ -1471,9 +1475,9 @@ export function ScheduledTaskEditorDialog(props: {
                 </div>
               ) : null}
 
-              <div className={cn('flex min-w-0 flex-col gap-2', groupedPanel && [panelRowClassName, 'justify-start'], mobilePanel && 'flex-col items-stretch')}>
+              <div className={cn('flex min-w-0 flex-col gap-2', groupedPanel && [panelRowClassName, 'justify-start'], mobileGroupedPanel && 'flex-col items-stretch')}>
                 <FieldLabel>{t('sessions.scheduledTasks.editor.times.label')}</FieldLabel>
-                <div className={cn(groupedPanel ? (mobilePanel
+                <div className={cn(groupedPanel ? (mobileGroupedPanel
                   ? 'relative flex w-full flex-wrap items-center justify-end'
                   : 'relative ml-auto -mr-1.5 flex w-fit max-w-[72%] items-center justify-end justify-self-end') : 'contents')}>
                 <div className={cn('flex flex-col gap-2', groupedPanel && 'flex-row flex-wrap justify-end transition-[padding] motion-reduce:transition-none', desktopPanel && 'group-hover:pr-8')}>
@@ -1509,7 +1513,7 @@ export function ScheduledTaskEditorDialog(props: {
                     type="button"
                     size={groupedPanel ? 'icon' : 'sm'}
                     variant={groupedPanel ? 'ghost' : 'outline'}
-                    className={cn('h-9', desktopPanel && 'size-7 opacity-0 transition-opacity group-hover:opacity-100 focus-visible:opacity-100 motion-reduce:transition-none', mobilePanel && 'size-9')}
+                    className={cn('h-9', desktopPanel && 'size-7 opacity-0 transition-opacity group-hover:opacity-100 focus-visible:opacity-100 motion-reduce:transition-none', mobileGroupedPanel && 'size-9')}
                     onClick={addTime}
                     aria-label={t('sessions.scheduledTasks.editor.times.add')}
                   >
@@ -1588,7 +1592,7 @@ export function ScheduledTaskEditorDialog(props: {
             {groupedPanel ? (
               <label className={cn(panelRowClassName, 'cursor-pointer')}>
                 <span className="typography-ui-label text-foreground">{t('sessions.scheduledTasks.editor.goal.label')}</span>
-                <span className={cn('pr-3', desktopPanel && '-mr-1.5 justify-self-end', mobilePanel && 'ml-auto')}>
+                <span className={cn('pr-3', desktopPanel && '-mr-1.5 justify-self-end', mobileGroupedPanel && 'ml-auto')}>
                   <Checkbox
                     checked={draft.execution.goalEnabled}
                     onChange={(goalEnabled) => setDraft((prev) => ({
@@ -1741,7 +1745,7 @@ export function ScheduledTaskEditorDialog(props: {
   );
 
   const footerRow = (
-    <div className={cn('flex flex-wrap items-center justify-between gap-3', presentation === 'panel' && 'justify-end', presentation === 'mobile-panel' && 'flex-nowrap gap-2')}>
+    <div className={cn('flex flex-wrap items-center justify-between gap-3', presentation === 'panel' && 'justify-end', compactMobileEditor && 'flex-nowrap gap-2')}>
       <label className={cn('inline-flex items-center gap-2', presentation === 'panel' && 'hidden')}>
         <Checkbox
           checked={draft.enabled}
@@ -1751,13 +1755,13 @@ export function ScheduledTaskEditorDialog(props: {
         <span className="typography-meta">{t('sessions.scheduledTasks.editor.enabled.label')}</span>
       </label>
 
-      <div className={cn('flex flex-wrap items-center justify-end gap-2', presentation === 'mobile-panel' && 'ml-auto flex-nowrap')}>
-        {presentation !== 'panel' && presentation !== 'mobile-panel' ? (
+      <div className={cn('flex flex-wrap items-center justify-end gap-2', compactMobileEditor && 'ml-auto flex-nowrap')}>
+        {presentation !== 'panel' && !compactMobileEditor ? (
           <Button type="button" variant="ghost" size="sm" onClick={() => onOpenChange(false)} disabled={saving}>
             {t('sessions.scheduledTasks.editor.actions.cancel')}
           </Button>
         ) : null}
-        <Button type="button" size="sm" className={cn(presentation === 'panel' && 'rounded-lg', presentation === 'mobile-panel' && 'min-h-11 px-5')} onClick={handleSubmit} disabled={saving}>
+        <Button type="button" size="sm" className={cn(presentation === 'panel' && 'rounded-lg', compactMobileEditor && 'min-h-11 px-5')} onClick={handleSubmit} disabled={saving}>
           {saving
             ? t('sessions.scheduledTasks.editor.actions.saving')
             : task
@@ -1878,6 +1882,38 @@ export function ScheduledTaskEditorDialog(props: {
           <div className="w-full px-3 pb-6 pt-4">{formBody}</div>
         </ScrollShadow>
         <footer className="shrink-0 border-t border-border/50 bg-background/95 px-3 py-2 pb-[max(0.5rem,env(safe-area-inset-bottom))] backdrop-blur-sm">
+          {footerRow}
+        </footer>
+      </section>
+    );
+  }
+
+  if (presentation === 'mobile-tab') {
+    if (!open) {
+      return null;
+    }
+    return (
+      <section className="flex min-h-0 flex-1 flex-col bg-background" aria-label={title}>
+        <MobileDetailNavigation
+          title={title}
+          backAriaLabel={t('header.actions.backAria')}
+          onBack={() => onOpenChange(false)}
+          backDisabled={saving}
+        />
+        <ScrollShadow className="min-h-0 flex-1 overflow-y-auto overflow-x-hidden" size={48} hideTopShadow>
+          <div className="px-3 pb-5 pt-4">
+            <Input
+              value={draft.name}
+              onChange={(event) => setDraft((prev) => ({ ...prev, name: event.target.value }))}
+              placeholder={t('sessions.scheduledTasks.editor.taskName.placeholder')}
+              aria-label={t('sessions.scheduledTasks.editor.taskName.label')}
+              maxLength={80}
+              className="oc-mobile-detail-editor-title mb-5 !h-auto min-h-0 border-0 bg-transparent px-0 py-0 text-xl font-semibold shadow-none ring-0 hover:!bg-transparent focus:!bg-transparent focus:ring-0"
+            />
+            {formBody}
+          </div>
+        </ScrollShadow>
+        <footer className="shrink-0 border-t border-border/50 bg-background/95 px-3 pb-[calc(1rem+var(--safe-area-inset-bottom,env(safe-area-inset-bottom,0px)))] pt-2 backdrop-blur-sm">
           {footerRow}
         </footer>
       </section>

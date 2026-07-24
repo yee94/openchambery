@@ -25,7 +25,8 @@ export const shouldDismissMobileSheetSnap = (
   height: number,
   viewportHeight: number,
   dismissThresholdPx = DEFAULT_DISMISS_THRESHOLD_PX,
-): boolean => height <= viewportHeight * MOBILE_SHEET_COLLAPSED_SNAP - dismissThresholdPx;
+  collapsedHeight?: number | null,
+): boolean => height <= getMobileSheetCollapsedHeight(viewportHeight, collapsedHeight) - dismissThresholdPx;
 
 export const clampMobileSheetSnapDragHeight = (
   height: number,
@@ -38,12 +39,37 @@ export const clampMobileSheetSnapDragHeight = (
 
 type MobileSheetSnapOptions = {
   initialSnapPoint?: MobileSheetSnapPoint;
+  fitContent?: boolean;
   onDismiss?: () => void;
   dismissThresholdPx?: number;
 };
 
+export const getMobileSheetCollapsedHeight = (
+  viewportHeight: number,
+  contentHeight?: number | null,
+): number => {
+  const maximumHeight = Math.max(1, viewportHeight) * MOBILE_SHEET_COLLAPSED_SNAP;
+  if (contentHeight === null || contentHeight === undefined || !Number.isFinite(contentHeight)) {
+    return maximumHeight;
+  }
+  return Math.min(maximumHeight, Math.max(0, contentHeight));
+};
+
+export const getNearestMobileSheetSnapPoint = (
+  height: number,
+  viewportHeight: number,
+  collapsedHeight?: number | null,
+): MobileSheetSnapPoint => {
+  const resolvedCollapsedHeight = getMobileSheetCollapsedHeight(viewportHeight, collapsedHeight);
+  const expandedHeight = Math.max(1, viewportHeight) * MOBILE_SHEET_EXPANDED_SNAP;
+  return Math.abs(height - resolvedCollapsedHeight) <= Math.abs(height - expandedHeight)
+    ? MOBILE_SHEET_COLLAPSED_SNAP
+    : MOBILE_SHEET_EXPANDED_SNAP;
+};
+
 export const useMobileSheetSnap = ({
   initialSnapPoint = MOBILE_SHEET_COLLAPSED_SNAP,
+  fitContent = false,
   onDismiss,
   dismissThresholdPx = DEFAULT_DISMISS_THRESHOLD_PX,
 }: MobileSheetSnapOptions = {}) => {
@@ -52,6 +78,7 @@ export const useMobileSheetSnap = ({
   const frameRef = React.useRef<number | null>(null);
   const pendingHeightRef = React.useRef<number | null>(null);
   const heightAnimationRef = React.useRef<Animation | null>(null);
+  const collapsedHeightRef = React.useRef<number | null>(null);
   const draggedRef = React.useRef(false);
   const [snapPoint, setSnapPoint] = React.useState<MobileSheetSnapPoint>(initialSnapPoint);
   const snapPointRef = React.useRef<MobileSheetSnapPoint>(initialSnapPoint);
@@ -65,6 +92,7 @@ export const useMobileSheetSnap = ({
 
   const settleAt = React.useCallback((target: MobileSheetSnapPoint, fromHeight?: number) => {
     const surface = surfaceRef.current;
+    const previousSnapPoint = snapPointRef.current;
     snapPointRef.current = target;
     setSnapPoint(target);
     cancelFrame();
@@ -74,7 +102,19 @@ export const useMobileSheetSnap = ({
     if (!surface) return;
 
     const startHeight = fromHeight ?? surface.getBoundingClientRect().height;
-    const targetHeight = getMobileViewportHeight() * target;
+    if (
+      fitContent
+      && previousSnapPoint === MOBILE_SHEET_COLLAPSED_SNAP
+      && collapsedHeightRef.current === null
+    ) {
+      collapsedHeightRef.current = getMobileSheetCollapsedHeight(getMobileViewportHeight(), startHeight);
+    }
+    const targetHeight = target === MOBILE_SHEET_COLLAPSED_SNAP
+      ? getMobileSheetCollapsedHeight(
+        getMobileViewportHeight(),
+        fitContent ? collapsedHeightRef.current : undefined,
+      )
+      : getMobileViewportHeight() * MOBILE_SHEET_EXPANDED_SNAP;
     surface.style.height = '';
     surface.style.willChange = '';
     if (
@@ -95,13 +135,16 @@ export const useMobileSheetSnap = ({
       heightAnimationRef.current = null;
       animation.cancel();
     });
-  }, [cancelFrame]);
+  }, [cancelFrame, fitContent]);
 
   const handlePointerDown = React.useCallback((event: React.PointerEvent<HTMLDivElement>) => {
     if (!event.isPrimary || (event.pointerType === 'mouse' && event.button !== 0)) return;
     const surface = surfaceRef.current;
     if (!surface) return;
     const startHeight = surface.getBoundingClientRect().height;
+    if (fitContent && snapPointRef.current === MOBILE_SHEET_COLLAPSED_SNAP) {
+      collapsedHeightRef.current = getMobileSheetCollapsedHeight(getMobileViewportHeight(), startHeight);
+    }
     heightAnimationRef.current?.cancel();
     heightAnimationRef.current = null;
     surface.style.height = `${startHeight}px`;
@@ -116,7 +159,7 @@ export const useMobileSheetSnap = ({
     draggedRef.current = false;
     event.currentTarget.setPointerCapture(event.pointerId);
     event.preventDefault();
-  }, []);
+  }, [fitContent]);
 
   const handlePointerMove = React.useCallback((event: React.PointerEvent<HTMLDivElement>) => {
     const drag = dragRef.current;
@@ -154,7 +197,12 @@ export const useMobileSheetSnap = ({
     if (
       !cancelled
       && onDismissRef.current
-      && shouldDismissMobileSheetSnap(currentHeight, drag.viewportHeight, dismissThresholdPx)
+      && shouldDismissMobileSheetSnap(
+        currentHeight,
+        drag.viewportHeight,
+        dismissThresholdPx,
+        fitContent ? collapsedHeightRef.current : undefined,
+      )
     ) {
       surface.style.willChange = '';
       onDismissRef.current();
@@ -163,10 +211,12 @@ export const useMobileSheetSnap = ({
     }
     const target = cancelled
       ? drag.startSnapPoint
-      : getNearestMobileWindowMotionSnapPoint(currentHeight, drag.viewportHeight, MOBILE_SHEET_SNAP_POINTS) as MobileSheetSnapPoint;
+      : fitContent
+        ? getNearestMobileSheetSnapPoint(currentHeight, drag.viewportHeight, collapsedHeightRef.current)
+        : getNearestMobileWindowMotionSnapPoint(currentHeight, drag.viewportHeight, MOBILE_SHEET_SNAP_POINTS) as MobileSheetSnapPoint;
     settleAt(target, currentHeight);
     event.preventDefault();
-  }, [cancelFrame, dismissThresholdPx, settleAt]);
+  }, [cancelFrame, dismissThresholdPx, fitContent, settleAt]);
 
   const handleClick = React.useCallback(() => {
     if (draggedRef.current) {
@@ -198,6 +248,7 @@ export const useMobileSheetSnap = ({
     pendingHeightRef.current = null;
     heightAnimationRef.current?.cancel();
     heightAnimationRef.current = null;
+    collapsedHeightRef.current = null;
     snapPointRef.current = initialSnapPoint;
     setSnapPoint(initialSnapPoint);
     if (surfaceRef.current) {

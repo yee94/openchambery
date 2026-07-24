@@ -78,8 +78,12 @@ describe('ScheduledTasksDialog queries', () => {
       readFile(join(directory, 'ScheduledTasksDialog.tsx'), 'utf8'),
       readFile(join(directory, 'ScheduledTaskEditorDialog.tsx'), 'utf8'),
     ]);
-    expect(workspaceContent.match(/mx-auto w-full max-w-4xl/g)?.length).toBeGreaterThanOrEqual(2);
+    expect(workspaceContent.match(/max-w-\[26rem\]/g)?.length).toBeGreaterThanOrEqual(2);
     expect(workspaceContent).toContain('layoutId="scheduled-task-filter-pill"');
+    expect(workspaceContent).toContain("isMobileTab && 'oc-mobile-floating-surface oc-mobile-scheduled-controls'");
+    expect(workspaceContent).toContain("!isMobileTab ? (");
+    expect(workspaceContent).toContain("isMobileTab && 'oc-mobile-project-trigger oc-mobile-scheduled-task-row'");
+    expect(workspaceContent).toContain("formatSchedule(task, t, !isMobileTab)");
     expect(workspaceContent).toContain('<AnimatePresence initial={false} mode="popLayout">');
     expect(workspaceContent).toContain('key="empty"');
     expect(workspaceContent).toContain('key="tasks"');
@@ -89,7 +93,8 @@ describe('ScheduledTasksDialog queries', () => {
     expect(workspaceContent).toContain('motion-reduce:transition-none');
     expect(editorContent).toContain('motion-reduce:animate-none');
     expect(editorContent).toContain('groupedCardClassName');
-    expect(editorContent).toContain('const groupedPanel = desktopPanel || mobilePanel;');
+    expect(editorContent).toContain('const mobileGroupedPanel = mobilePanel || mobileTab;');
+    expect(editorContent).toContain('const groupedPanel = desktopPanel || mobileGroupedPanel;');
     expect(editorContent).toContain('MOBILE_PANEL_ROW_CLASS');
     expect(editorContent).toContain('MOBILE_PANEL_CONTROL_CLASS');
   });
@@ -113,19 +118,24 @@ describe('ScheduledTasksDialog queries', () => {
 
   test('keeps the mobile editor contained and routes close requests through its draft guard', async () => {
     const directory = dirname(fileURLToPath(import.meta.url));
-    const [workspaceContent, overlayContent, mobileAppContent] = await Promise.all([
+    const [workspaceContent, overlayContent, mobileAppContent, phoneShellContent] = await Promise.all([
       readFile(join(directory, 'ScheduledTasksDialog.tsx'), 'utf8'),
       readFile(join(directory, '../ui/MobileOverlayPanel.tsx'), 'utf8'),
       readFile(join(directory, '../../apps/MobileApp.tsx'), 'utf8'),
+      readFile(join(directory, '../../mobile/MobilePhoneShell.tsx'), 'utf8'),
     ]);
     expect(workspaceContent).toContain("presentation?: 'workspace' | 'mobile-panel' | 'mobile-tab'");
-    expect(workspaceContent).toContain("presentation={isMobilePanel ? 'mobile-panel' : undefined}");
+    expect(workspaceContent).toContain("presentation={isMobileTab ? 'mobile-tab' : isMobilePanel ? 'mobile-panel' : undefined}");
     expect(workspaceContent).toContain('if (editorMode !== \'closed\')');
     expect(workspaceContent).toContain('handleCancelEditor(false)');
     // Global close event is exclusive to mobile-panel (dialog); tab uses registerEditorBackHandler.
     expect(workspaceContent).toContain("if (presentation !== 'mobile-panel' || !open) return");
     expect(workspaceContent).toContain("window.addEventListener('oc:scheduled-tasks-close-request', handleCloseRequest)");
     expect(workspaceContent).toContain('registerEditorBackHandler?: (handler: (() => boolean) | null) => void');
+    expect(workspaceContent).toContain("onEditorActiveChange?.(editorMode !== 'closed')");
+    expect(workspaceContent).not.toContain('mobileTaskGroupStarts');
+    expect(mobileAppContent).toContain('onEditorActiveChange={onEditorActiveChange}');
+    expect(phoneShellContent).toContain('showHeader={!scheduledEditorActive}');
     expect(overlayContent).toContain('containedBody?: boolean');
     expect(overlayContent).toContain("'flex min-h-0 flex-1 flex-col overflow-hidden'");
     expect(overlayContent).toContain('openOverlayStack[openOverlayStack.length - 1] === overlayID');
@@ -148,5 +158,28 @@ describe('ScheduledTasksDialog queries', () => {
     expect(mobileModelPickerContent).toContain('allowedModelIdsByProvider');
     expect(mobileModelPickerContent).toContain("setView('variant')");
     expect(editorContent).toContain('if (!selectedModelForVariant || !draft.execution.variant');
+  });
+
+  test('shares one mobile detail navigation across settings, task editing, and chat', async () => {
+    const directory = dirname(fileURLToPath(import.meta.url));
+    const [navigationContent, editorContent, settingsContent, chatHeaderContent, chatScreenContent, mobileStyles] = await Promise.all([
+      readFile(join(directory, '../../mobile/MobileDetailNavigation.tsx'), 'utf8'),
+      readFile(join(directory, 'ScheduledTaskEditorDialog.tsx'), 'utf8'),
+      readFile(join(directory, '../views/SettingsView.tsx'), 'utf8'),
+      readFile(join(directory, '../../mobile/chat/MobileChatHeader.tsx'), 'utf8'),
+      readFile(join(directory, '../../mobile/chat/MobileChatScreen.tsx'), 'utf8'),
+      readFile(join(directory, '../../styles/mobile.css'), 'utf8'),
+    ]);
+    expect(navigationContent).toContain('oc-mobile-detail-navigation-content');
+    expect(navigationContent).toContain('size-10 min-h-10 min-w-10');
+    expect(navigationContent).toContain('max-w-72');
+    expect(mobileStyles).toContain('--oc-mobile-detail-action-edge-inset: 1rem');
+    expect(mobileStyles).toContain('--oc-mobile-detail-navigation-inline-inset');
+    expect(mobileStyles).toContain('padding-inline: var(--oc-mobile-detail-navigation-inline-inset)');
+    expect(mobileStyles).not.toContain('padding-inline: calc(1.125rem + 0.5rem)');
+    expect(editorContent).toContain('<MobileDetailNavigation');
+    expect(settingsContent).toContain('<MobileDetailNavigation');
+    expect(chatHeaderContent).toContain('<MobileDetailNavigation');
+    expect(chatScreenContent).not.toContain("t('miniChat.status.idle')");
   });
 });

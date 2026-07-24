@@ -6,8 +6,6 @@ import { resolveComposerVisibleAgents } from '@/components/chat/chatComposerCata
 import { getCycledPrimaryAgentName, resolveAgentModelSelection } from '@/components/chat/mobileControlsUtils';
 import { Icon } from '@/components/icon/Icon';
 import { Button } from '@/components/ui/button';
-import { MobileSurfaceHeader } from '@/components/ui/MobileSurfaceHeader';
-import { MobileOverlayPanel } from '@/components/ui/MobileOverlayPanel';
 import { useMobileAppActions } from '@/apps/mobileAppContext';
 import { donateNativeAssistantInteraction } from '@/apps/MobileShareBridge';
 import { isMobileShareHandoffMarkerPart } from '@/apps/mobileShareDraftHandoff';
@@ -15,6 +13,7 @@ import { useDeviceInfo } from '@/lib/device';
 import { useI18n } from '@/lib/i18n';
 import { createUuid } from '@/lib/uuid';
 import { cn } from '@/lib/utils';
+import { MobileDetailNavigation } from '@/mobile/MobileDetailNavigation';
 import { getRuntimeGeneration, getRuntimeTransportIdentity, subscribeRuntimeEndpointChanged } from '@/lib/runtime-switch';
 import { abortAssistantSession, compactAssistantSession, ensureAssistantSession, fetchAssistantSnapshot, newAssistantSession, readAssistantSnapshot, sendAssistantMessage, updateAssistant, useAssistantCapabilityQuery, useAssistantSnapshotQuery, type AssistantPart, type SessionBinding } from '@/queries/assistantQueries';
 import { fetchMessagesForSession } from '@/sync/session-actions';
@@ -48,13 +47,44 @@ const assistantParts = (text: string | undefined, parts: readonly { text: string
   ];
 };
 
-export const AssistantView: React.FC = () => {
+type MobileAssistantConversationHeaderProps = {
+  assistant?: { id: string; name: string; mode: 'continuous' | 'stateless' } | null;
+  onBack: () => void;
+};
+
+const MobileAssistantConversationHeader: React.FC<MobileAssistantConversationHeaderProps> = ({ assistant, onBack }) => {
+  const { t } = useI18n();
+  const presentation = assistant ? getAssistantPresentation(assistant.name) : null;
+  const displayName = assistant && presentation ? presentation.displayName || assistant.name : '';
+
+  return (
+    <MobileDetailNavigation
+      title={displayName || t('assistants.title')}
+      backAriaLabel={t('assistants.actions.backToChat')}
+      onBack={onBack}
+    />
+  );
+};
+
+export type AssistantViewProps = {
+  /** Dedicated mobile navigation owns whether this mounted detail page is active. */
+  activeOverride?: boolean;
+  /** When present, mobile renders a second-level conversation header with Back. */
+  onMobileBack?: () => void;
+};
+
+export const AssistantView: React.FC<AssistantViewProps> = ({ activeOverride, onMobileBack }) => {
   const { t } = useI18n();
   const { isMobile } = useDeviceInfo();
   const mobileActions = useMobileAppActions();
   const transport = React.useSyncExternalStore(subscribeRuntimeEndpointChanged, getRuntimeTransportIdentity, getRuntimeTransportIdentity);
   const runtimeGeneration = getRuntimeGeneration();
-  const active = useUIStore((state) => state.activeMainTab === 'assistant');
+  const mainTabActive = useUIStore((state) => state.activeMainTab === 'assistant');
+  const active = activeOverride ?? mainTabActive;
+  const mobileFromStore = useUIStore((state) => state.isMobile);
+  // Dedicated mobile tabs can be rendered in a desktop-width browser during
+  // preview. The app-owned mobile state is authoritative for their layout.
+  const isMobileSurface = isMobile || mobileFromStore;
   const capabilityQuery = useAssistantCapabilityQuery();
   const snapshotQuery = useAssistantSnapshotQuery();
   const snapshot = snapshotQuery.data;
@@ -76,14 +106,12 @@ export const AssistantView: React.FC = () => {
   const history = useUserMessageHistory(sessionID);
   const sync = useSync();
   const [, setSelectionSaving] = React.useState(false);
-  const [mobileSelectorOpen, setMobileSelectorOpen] = React.useState(false);
   const selectionErrorRef = React.useRef<(error: unknown) => void>(() => {});
   selectionErrorRef.current = () => { toast.error(t('assistants.composer.selectionSaveFailed')); };
   const selectionCoordinatorRef = React.useRef<AssistantSelectionCoordinator | null>(null);
   if (!selectionCoordinatorRef.current) selectionCoordinatorRef.current = new AssistantSelectionCoordinator(setSelectionSaving, (error) => selectionErrorRef.current(error));
   const selectionIdentity = React.useMemo<AssistantSelectionIdentity>(() => ({ assistantID, transportIdentity: transport, runtimeGeneration }), [assistantID, runtimeGeneration, transport]);
   const selectionCoordinator = selectionCoordinatorRef.current;
-  const configured = assistant ? (providersQuery.data ?? []).some((provider) => provider.id === assistant.providerID && provider.models?.some((model) => model.id === assistant.modelID)) : false;
 
   React.useEffect(() => { if (!selectedAssistantID && snapshot?.assistants[0]) selectAssistant(snapshot.assistants[0].id); }, [selectAssistant, selectedAssistantID, snapshot?.assistants]);
   React.useEffect(() => { if (snapshotQuery.isSuccess && selectedAssistantID && !assistant) selectAssistant(snapshot?.assistants[0]?.id ?? null); }, [assistant, selectAssistant, selectedAssistantID, snapshot?.assistants, snapshotQuery.isSuccess]);
@@ -169,7 +197,10 @@ export const AssistantView: React.FC = () => {
     consumeSyntheticParts: () => {
       const input = useInputStore.getState();
       const views = new Map(input.getDraftAttachmentViews(draftKey).map((attachment) => [attachment.id, attachment]));
-      return input.consumeDraftSyntheticParts(draftKey, isMobileShareHandoffMarkerPart)?.map((part) => ({ partID: part.partID, text: part.text, synthetic: part.synthetic, attachments: part.attachments.flatMap((attachment) => views.get(attachment.attachmentID) ?? []) })) ?? null;
+      return input.consumeDraftSyntheticParts(draftKey)
+        // A handoff receipt must never cross the assistant transport.
+        ?.filter((part) => !isMobileShareHandoffMarkerPart(part))
+        .map((part) => ({ partID: part.partID, text: part.text, synthetic: part.synthetic, attachments: part.attachments.flatMap((attachment) => views.get(attachment.attachmentID) ?? []) })) ?? null;
     },
     restoreSyntheticParts: (parts) => {
       void (async () => {
@@ -239,16 +270,34 @@ export const AssistantView: React.FC = () => {
 
   const openCreateSettings = useEvent(() => { requestCreate(); if (mobileActions) { mobileActions.openSettings(); return; } const ui = useUIStore.getState(); ui.setSettingsPage('assistants'); ui.setSettingsDialogOpen(true); });
   const returnToChat = useEvent(() => { useUIStore.getState().setActiveMainTab('chat'); });
-  const renderState = (icon: 'cloud-off' | 'error-warning' | 'ai-agent', title: string, description?: string, action?: React.ReactNode) => <div className="flex h-full min-h-0 flex-col">{isMobile ? <MobileSurfaceHeader><Button variant="ghost" size="icon" onClick={returnToChat} aria-label={t('assistants.actions.backToChat')}><Icon name="arrow-left-s" className="size-5" /></Button></MobileSurfaceHeader> : null}<div className="flex min-h-0 flex-1 flex-col items-center justify-center px-6 text-center"><Icon name={icon} className="size-6 text-muted-foreground" /><h1 className="mt-4 typography-ui-header font-semibold">{title}</h1>{description ? <p className="mt-2 max-w-md typography-ui text-muted-foreground">{description}</p> : null}{action ? <div className="mt-5">{action}</div> : null}</div></div>;
+  const handleMobileBack = useEvent(() => {
+    if (onMobileBack) {
+      onMobileBack();
+      return;
+    }
+    returnToChat();
+  });
+  const renderState = (icon: 'cloud-off' | 'error-warning' | 'ai-agent', title: string, description?: string, action?: React.ReactNode) => <div className="flex h-full min-h-0 flex-col">{isMobileSurface ? <MobileAssistantConversationHeader assistant={assistant} onBack={handleMobileBack} /> : null}<div className="flex min-h-0 flex-1 flex-col items-center justify-center px-6 text-center"><Icon name={icon} className="size-6 text-muted-foreground" /><h1 className="mt-4 typography-ui-header font-semibold">{title}</h1>{description ? <p className="mt-2 max-w-md typography-ui text-muted-foreground">{description}</p> : null}{action ? <div className="mt-5">{action}</div> : null}</div></div>;
   if (capabilityQuery.isPending || snapshotQuery.isPending) return renderState('ai-agent', t('assistants.state.unavailable'));
   if (capabilityQuery.isError || !capabilityQuery.data?.supported || !capabilityQuery.data.enabled || !snapshot?.enabled) return renderState('cloud-off', t('assistants.state.unavailable'));
   if (!snapshot.assistants.length) return renderState('ai-agent', t('assistants.onboarding.title'), t('assistants.onboarding.description'), <Button onClick={openCreateSettings}>{t('assistants.onboarding.action')}</Button>);
-  if (!assistant || !surface) return null;
+  if (!assistant) return renderState('ai-agent', t('assistants.state.unavailable'));
+  if (!surface) return (
+    <div className="flex h-full min-h-0 flex-col bg-background">
+      {isMobileSurface ? <MobileAssistantConversationHeader assistant={assistant} onBack={handleMobileBack} /> : null}
+      <div className="flex min-h-0 flex-1 flex-col items-center justify-center gap-3 px-6" aria-busy="true" aria-label={t('assistants.state.unavailable')}>
+        <div className="size-10 animate-pulse rounded-xl bg-[var(--surface-muted)] motion-reduce:animate-none" />
+        <div className="h-3.5 w-36 animate-pulse rounded-md bg-[var(--surface-muted)] motion-reduce:animate-none" />
+      </div>
+    </div>
+  );
   const presentation = getAssistantPresentation(assistant.name);
-  const warning = !assistant.enabled ? t('assistants.state.assistantDisabled') : !configured ? t('assistants.state.invalidConfiguration') : snapshotQuery.isError ? t('assistants.state.staleSnapshot') : null;
+  // Do not surface model-catalog mismatch as a conversation banner: providers may
+  // still be loading or the assistant model may live outside the scoped catalog.
+  const warning = !assistant.enabled ? t('assistants.state.assistantDisabled') : snapshotQuery.isError ? t('assistants.state.staleSnapshot') : null;
   return (
     <div className="relative flex h-full min-h-0 overflow-hidden bg-background" data-presentation="workspace">
-      {isMobile ? null : (
+      {isMobileSurface ? null : (
         <section className="flex h-full min-h-0 w-[clamp(16rem,22vw,20rem)] shrink-0 flex-col overflow-hidden">
           <header className="shrink-0 px-4 pb-3 pt-4 sm:px-5">
             <h1 className="truncate typography-ui-label font-semibold text-foreground">{t('assistants.title')}</h1>
@@ -287,26 +336,9 @@ export const AssistantView: React.FC = () => {
           </div>
         </section>
       )}
-      <div className={cn('flex min-h-0 min-w-0 flex-1 flex-col overflow-hidden bg-background', !isMobile && 'border-l border-border/60')}>
-        {isMobile ? (
-          <MobileSurfaceHeader contentClassName="gap-2 px-2">
-            <Button variant="ghost" size="icon" onClick={returnToChat} aria-label={t('assistants.actions.backToChat')}>
-              <Icon name="arrow-left-s" className="size-5" />
-            </Button>
-            <Button
-              variant="chip"
-              size="sm"
-              className="ml-auto min-w-0 max-w-[min(60vw,18rem)] border-transparent bg-transparent typography-micro font-normal shadow-none"
-              onClick={() => setMobileSelectorOpen(true)}
-              aria-expanded={mobileSelectorOpen}
-              aria-haspopup="dialog"
-              aria-label={t('assistants.selectorAria', { name: presentation.displayName || assistant.name })}
-            >
-              <AgentAvatar name={assistant.id} emoji={presentation.avatarEmoji} size={20} label={presentation.displayName || assistant.name} className="translate-y-0.5 self-center" />
-              <span className="h-5 min-w-0 truncate leading-5">{presentation.displayName}</span>
-              <Icon name="arrow-down-s" className="size-3.5 shrink-0 self-center" />
-            </Button>
-          </MobileSurfaceHeader>
+      <div className={cn('flex min-h-0 min-w-0 flex-1 flex-col overflow-hidden bg-background', !isMobileSurface && 'border-l border-border/60')}>
+        {isMobileSurface ? (
+          <MobileAssistantConversationHeader assistant={assistant} onBack={handleMobileBack} />
         ) : (
           <header className="flex h-14 shrink-0 items-center gap-3 border-b border-border/40 px-4 sm:px-5">
             <AgentAvatar name={assistant.id} emoji={presentation.avatarEmoji} size={24} label={presentation.displayName || assistant.name} />
@@ -320,50 +352,6 @@ export const AssistantView: React.FC = () => {
             </div>
           </header>
         )}
-        {isMobile ? (
-          <MobileOverlayPanel
-            open={mobileSelectorOpen}
-            onClose={() => setMobileSelectorOpen(false)}
-            title={t('assistants.title')}
-            closeAriaLabel={t('mobile.surface.closeAria')}
-            contentMaxHeightClassName="max-h-[min(52dvh,28rem)]"
-          >
-            <div className="flex flex-col gap-2" role="listbox" aria-label={t('assistants.listAria')}>
-              {snapshot.assistants.map((item) => {
-                const selected = item.id === assistant.id;
-                const itemPresentation = getAssistantPresentation(item.name);
-                return (
-                  <button
-                    key={item.id}
-                    type="button"
-                    role="option"
-                    aria-selected={selected}
-                    onClick={() => {
-                      selectAssistant(item.id);
-                      setMobileSelectorOpen(false);
-                    }}
-                    className={cn(
-                      'flex min-h-14 w-full items-center gap-3 rounded-xl border px-3 py-2.5 text-left outline-none transition-colors touch-manipulation focus-visible:ring-2 focus-visible:ring-[var(--interactive-focus-ring)]',
-                      selected
-                        ? 'border-border/60 bg-interactive-selection/20 text-interactive-selection-foreground'
-                        : 'border-border/40 bg-[var(--surface-elevated)] active:bg-interactive-hover',
-                      !item.enabled && 'opacity-65',
-                    )}
-                  >
-                    <AgentAvatar name={item.id} emoji={itemPresentation.avatarEmoji} size={28} label={itemPresentation.displayName || item.name} />
-                    <span className="min-w-0 flex-1">
-                      <span className="block truncate typography-ui-label font-medium text-foreground">{itemPresentation.displayName}</span>
-                      <span className="mt-0.5 block truncate typography-micro text-muted-foreground">
-                        {item.mode === 'stateless' ? t('assistants.mode.stateless') : t('assistants.mode.continuous')}
-                      </span>
-                    </span>
-                    {selected ? <Icon name="check" className="size-4 shrink-0 text-interactive-selection-foreground" /> : null}
-                  </button>
-                );
-              })}
-            </div>
-          </MobileOverlayPanel>
-        ) : null}
         <AssistantConversationSurface
           onRevertMessage={revertAssistantMessage}
           assistant={assistant}

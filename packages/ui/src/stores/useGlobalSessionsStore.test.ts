@@ -528,6 +528,75 @@ describe('useGlobalSessionsStore', () => {
     }
   });
 
+  test('recovers manual session-index sync when the completion tip is missed', async () => {
+    const originalWindow = globalThis.window;
+    const originalFetch = globalThis.fetch;
+    const requests: string[] = [];
+    const pending = {
+      revision: 1,
+      sync: {
+        active: true,
+        completed: 0,
+        total: 1,
+        pendingDirectories: ['/repo/missed-tip'],
+        completedDirectories: [],
+        failedDirectories: [],
+      },
+      directories: [],
+    };
+    const completedSession = buildSession('https://share.example/missed-tip', { directory: '/repo/missed-tip' });
+    const completed = {
+      revision: 2,
+      sync: {
+        active: false,
+        completed: 1,
+        total: 1,
+        pendingDirectories: [],
+        completedDirectories: ['/repo/missed-tip'],
+        failedDirectories: [],
+      },
+      directories: [{
+        directory: '/repo/missed-tip',
+        cursor: null,
+        hasMore: false,
+        lastSyncedAt: 2000,
+        lastFullSyncedAt: 2000,
+        lastAccessedAt: 2000,
+        sessions: [completedSession],
+      }],
+    };
+    try {
+      Object.defineProperty(globalThis, 'window', {
+        configurable: true,
+        value: { location: { origin: 'http://localhost', href: 'http://localhost/' } },
+      });
+      globalThis.fetch = async (input) => {
+        const pathname = new URL(input instanceof Request ? input.url : String(input), 'http://localhost').pathname;
+        requests.push(pathname);
+        if (pathname === '/api/openchamber/session-index/sync') {
+          return new Response(JSON.stringify(pending), {
+            status: 202,
+            headers: { 'Content-Type': 'application/json' },
+          });
+        }
+        // No tip is emitted: safety timeout must re-GET and observe completion.
+        return new Response(JSON.stringify({ available: true, ...completed }), {
+          status: 200,
+          headers: { 'Content-Type': 'application/json' },
+        });
+      };
+
+      await useGlobalSessionsStore.getState().syncSessionsForDirectories(['/repo/missed-tip']);
+
+      expect(requests[0]).toBe('/api/openchamber/session-index/sync');
+      expect(requests).toContain('/api/openchamber/session-index');
+      expect(useGlobalSessionsStore.getState().sessionsByDirectory.get('/repo/missed-tip')).toEqual([completedSession]);
+    } finally {
+      Object.defineProperty(globalThis, 'window', { configurable: true, value: originalWindow });
+      globalThis.fetch = originalFetch;
+    }
+  });
+
   test('drops a session-index snapshot that resolves after a runtime switch', async () => {
     const originalWindow = globalThis.window;
     const originalFetch = globalThis.fetch;
