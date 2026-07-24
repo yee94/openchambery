@@ -45,6 +45,7 @@ import { useI18n } from '@/lib/i18n';
 
 import { AddCatalogDialog } from './AddCatalogDialog';
 import { InstallSkillDialog } from './InstallSkillDialog';
+import { SettingsGroup } from '@/components/sections/shared/SettingsGroup';
 
 type SkillsMode = 'manual' | 'external';
 
@@ -203,10 +204,10 @@ export const SkillsCatalogPage: React.FC<SkillsCatalogPageProps> = ({ mode, onMo
 
   return (
     <ScrollableOverlay outerClassName="h-full" className="w-full">
-      <div className="mx-auto w-full max-w-3xl p-3 sm:p-6 sm:pt-8">
+      <div className="oc-settings-page-content mx-auto w-full max-w-3xl p-3 sm:p-6 sm:pt-8">
 
         {/* Header */}
-        <div className="mb-4">
+        <div>
           {showModeTabs && (
             <div className="mb-4">
               <div className="h-10">
@@ -229,12 +230,12 @@ export const SkillsCatalogPage: React.FC<SkillsCatalogPageProps> = ({ mode, onMo
         </div>
 
         {/* Source & Search */}
-        <div data-settings-item="skills.catalog.source" className="mb-8">
-          <div className="mb-1 px-1">
-            <h3 className="typography-ui-header font-medium text-foreground">{t('settings.skills.catalog.page.section.sourceRepository')}</h3>
-          </div>
-
-          <section className="px-2 pb-2 pt-0 space-y-0">
+        <div data-settings-item="skills.catalog.source">
+          <SettingsGroup
+            label={t('settings.skills.catalog.page.section.sourceRepository')}
+            cardClassName="p-3"
+          >
+            <div className="space-y-3">
             <div className="flex flex-wrap items-center gap-2 py-1.5">
               <Select
                 value={effectiveSelectedSourceId || ''}
@@ -288,7 +289,7 @@ export const SkillsCatalogPage: React.FC<SkillsCatalogPageProps> = ({ mode, onMo
               </Button>
             </div>
 
-            <div data-settings-item="skills.catalog.search" className="py-1.5">
+            <div data-settings-item="skills.catalog.search">
               <div className="relative">
                 <Icon name="search" className="absolute left-2 top-1/2 -translate-y-1/2 h-3.5 w-3.5 text-muted-foreground" />
                 <Input
@@ -304,20 +305,21 @@ export const SkillsCatalogPage: React.FC<SkillsCatalogPageProps> = ({ mode, onMo
                   : t('settings.skills.catalog.page.foundCount', { count: filtered.length })}
               </span>
             </div>
-          </section>
+            </div>
+          </SettingsGroup>
         </div>
 
         {/* Error State */}
         {lastCatalogError && (
-          <div className="mb-8 rounded-lg border border-[var(--status-error-border)] bg-[var(--status-error-background)] px-4 py-3">
+          <div className="rounded-lg border border-[var(--status-error-border)] bg-[var(--status-error-background)] px-4 py-3">
             <div className="typography-ui-label font-medium text-[var(--status-error)]">{t('settings.skills.catalog.page.error.catalogTitle')}</div>
             <div className="typography-meta text-[var(--status-error)]/80 mt-1">{lastCatalogError.message}</div>
           </div>
         )}
 
         {/* Skills List */}
-        <div className="mb-8">
-          <section className="px-2 pb-2 pt-0">
+        <div>
+          <div>
             {filtered.length === 0 && !isLoadingSource ? (
               <div className="py-8 text-center text-muted-foreground">
                 <p className="typography-body">{t('settings.skills.catalog.page.empty.noSkillsTitle')}</p>
@@ -402,7 +404,7 @@ export const SkillsCatalogPage: React.FC<SkillsCatalogPageProps> = ({ mode, onMo
                 })}
               </div>
             )}
-          </section>
+          </div>
 
           {isClawdHubSource && sourceQuery.hasNextPage && !isLoadingSource && filtered.length > 0 && (
             <div className="flex justify-center mt-2 px-2">

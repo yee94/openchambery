@@ -1,5 +1,6 @@
 import React from 'react';
 import { File as PierreFile } from '@pierre/diffs/react';
+import { useEvent } from '@reactuses/core';
 
 import { toast } from '@/components/ui';
 import { Button } from '@/components/ui/button';
@@ -25,6 +26,7 @@ import { refreshRuntimeUrlAuthToken } from '@/lib/runtime-auth';
 import { getRuntimeApiBaseUrl } from '@/lib/runtime-switch';
 import { useFileContentQuery, useFileDirectoryQuery, useFileSearchQuery } from '@/queries/fileQueries';
 import { cn } from '@/lib/utils';
+import { useMobileBackRoute } from '@/mobile/mobileBackNavigation';
 
 type MobileFilesRoute =
   | { type: 'browser'; directory: string }
@@ -88,6 +90,7 @@ export const MobileFilesSurface: React.FC<MobileFilesSurfaceProps> = ({ onClose 
   const { files } = useRuntimeAPIs();
   const root = normalizePath(useEffectiveDirectory() ?? null);
   const [route, setRoute] = React.useState<MobileFilesRoute>(() => ({ type: 'browser', directory: root }));
+  const mobileNavigationSurfaceRef = React.useRef<HTMLDivElement | null>(null);
   const [query, setQuery] = React.useState('');
 
   React.useEffect(() => {
@@ -158,6 +161,20 @@ export const MobileFilesSurface: React.FC<MobileFilesSurfaceProps> = ({ onClose 
     setRoute({ type: 'file', path, returnDirectory: currentDirectory || root });
   };
 
+  const closeFileDetail = useEvent(() => {
+    if (route.type !== 'file') return false;
+    setRoute({ type: 'browser', directory: route.returnDirectory });
+    return true;
+  });
+
+  useMobileBackRoute({
+    id: 'mobile-files-detail',
+    active: route.type === 'file',
+    layer: 'overlay',
+    onBack: closeFileDetail,
+    surfaceRef: mobileNavigationSurfaceRef,
+  });
+
   const handleCopyPath = async (path: string) => {
     const result = await copyTextToClipboard(path);
     if (!result.ok) toast.error(t('mobile.files.toast.copyFailed'));
@@ -175,15 +192,17 @@ export const MobileFilesSurface: React.FC<MobileFilesSurfaceProps> = ({ onClose 
 
   if (route.type === 'file') {
     return (
-      <MobileFileDetail
-        path={route.path}
-        content={fileContent}
-        error={fileError}
-        isLoading={isLoadingFile}
-        onBack={() => setRoute({ type: 'browser', directory: route.returnDirectory })}
-        onCopyPath={() => void handleCopyPath(route.path)}
-        onCopyContent={() => void handleCopyContent()}
-      />
+      <div ref={mobileNavigationSurfaceRef} className="h-full min-h-0">
+        <MobileFileDetail
+          path={route.path}
+          content={fileContent}
+          error={fileError}
+          isLoading={isLoadingFile}
+          onBack={closeFileDetail}
+          onCopyPath={() => void handleCopyPath(route.path)}
+          onCopyContent={() => void handleCopyContent()}
+        />
+      </div>
     );
   }
 

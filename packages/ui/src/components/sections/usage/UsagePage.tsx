@@ -18,6 +18,7 @@ import { Icon } from "@/components/icon/Icon";
 import { useI18n } from '@/lib/i18n';
 import { formatTimeForPreference } from '@/lib/timeFormat';
 import { useUIStore, type TimeFormatPreference } from '@/stores/useUIStore';
+import { SettingsGroup } from '@/components/sections/shared/SettingsGroup';
 
 const formatTime = (timestamp: number | null, timeFormatPreference: TimeFormatPreference) => {
   if (!timestamp) return '-';
@@ -150,10 +151,10 @@ export const UsagePage: React.FC = () => {
 
   return (
     <ScrollableOverlay outerClassName="h-full" className="w-full">
-      <div className="mx-auto w-full max-w-3xl p-3 sm:p-6 sm:pt-8">
+      <div className="oc-settings-page-content mx-auto w-full max-w-3xl p-3 sm:p-6 sm:pt-8">
 
         {/* Header */}
-        <div className="mb-4 flex items-center gap-3">
+        <div className="flex items-center gap-3">
           <ProviderLogo providerId={selectedProviderId} className="h-5 w-5 shrink-0" />
           <div className="min-w-0">
             <h2 className="typography-ui-header font-semibold text-foreground truncate">
@@ -170,9 +171,10 @@ export const UsagePage: React.FC = () => {
         </div>
 
         {/* Options */}
-        <div data-settings-item="usage.header-menu" className="mb-8 px-2">
+        <SettingsGroup>
           <div
-            className="group flex cursor-pointer items-center gap-2 py-1.5"
+            data-settings-item="usage.header-menu"
+            className="oc-settings-group-row oc-settings-split-row group cursor-pointer"
             role="button"
             tabIndex={0}
             aria-pressed={showInDropdown}
@@ -184,41 +186,45 @@ export const UsagePage: React.FC = () => {
               }
             }}
           >
+            <div className="oc-settings-split-row-copy">
+              <div className="flex min-w-0 items-center gap-1.5">
+                <span className="typography-ui-label text-foreground">{t('settings.usage.page.options.showInHeader')}</span>
+                <Tooltip>
+                  <TooltipTrigger asChild>
+                    <Icon name="information" className="h-3.5 w-3.5 cursor-help text-muted-foreground/60" />
+                  </TooltipTrigger>
+                  <TooltipContent sideOffset={8} className="max-w-xs">
+                    {t('settings.usage.page.options.showInHeaderTooltip')}
+                  </TooltipContent>
+                </Tooltip>
+              </div>
+            </div>
+            <div data-settings-value="" className="oc-settings-split-row-control">
               <Checkbox
                 checked={showInDropdown}
                 onChange={handleDropdownToggle}
                 ariaLabel={t('settings.usage.page.options.showInHeaderAria')}
               />
-              <div className="flex min-w-0 items-center gap-1.5">
-              <span className="typography-ui-label text-foreground">{t('settings.usage.page.options.showInHeader')}</span>
-              <Tooltip>
-                <TooltipTrigger asChild>
-                  <Icon name="information" className="h-3.5 w-3.5 text-muted-foreground/60 cursor-help" />
-                </TooltipTrigger>
-                <TooltipContent sideOffset={8} className="max-w-xs">
-                  {t('settings.usage.page.options.showInHeaderTooltip')}
-                </TooltipContent>
-              </Tooltip>
             </div>
           </div>
-        </div>
+        </SettingsGroup>
 
         {/* State Messages */}
         {!selectedResult && (
-          <div className="mb-8 px-2">
+          <div className="px-2">
             <p className="typography-ui-label text-foreground">{t('settings.usage.page.state.noData')}</p>
           </div>
         )}
 
         {error && (
-          <div className="mb-8 rounded-lg border border-[var(--status-error-border)] bg-[var(--status-error-background)] px-4 py-3">
+          <div className="rounded-lg border border-[var(--status-error-border)] bg-[var(--status-error-background)] px-4 py-3">
             <p className="typography-ui-label font-medium text-[var(--status-error)]">{t('settings.usage.page.state.refreshFailedTitle')}</p>
             <p className="typography-meta text-[var(--status-error)]/80 mt-1">{error}</p>
           </div>
         )}
 
         {selectedResult && !selectedResult.configured && (
-          <div className="mb-8 rounded-lg border border-[var(--status-warning-border)] bg-[var(--status-warning-background)] px-4 py-3">
+          <div className="rounded-lg border border-[var(--status-warning-border)] bg-[var(--status-warning-background)] px-4 py-3">
             <p className="typography-ui-label font-medium text-[var(--status-warning)]">{t('settings.usage.page.state.providerNotConfiguredTitle')}</p>
             <p className="typography-meta text-[var(--status-warning)]/80 mt-1">
               {t('settings.usage.page.state.providerNotConfiguredDescription')}
@@ -228,25 +234,20 @@ export const UsagePage: React.FC = () => {
 
         {/* Overall Usage Windows */}
         {usage?.windows && Object.keys(usage.windows).length > 0 && (
-          <div data-settings-item="usage.model-quotas" className="mb-8">
-            <section className="px-2 pb-2 pt-0">
+          <SettingsGroup>
+            <div data-settings-item="usage.model-quotas" className="oc-settings-group-row">
               <div className="divide-y divide-[var(--surface-subtle)]">
                 {Object.entries(usage.windows).map(([label, window]) => (
                   <UsageCard key={label} title={label} window={window} />
                 ))}
               </div>
-            </section>
-          </div>
+            </div>
+          </SettingsGroup>
         )}
 
         {/* Models Section */}
         {providerModels.length > 0 && (
-          <div className="mb-8">
-            <div className="mb-1 px-1">
-              <h3 className="typography-ui-header font-medium text-foreground">{t('settings.usage.page.section.modelQuotas')}</h3>
-            </div>
-
-            <div className="space-y-3">
+          <SettingsGroup label={t('settings.usage.page.section.modelQuotas')}>
               {/* Predefined families */}
               {sortedFamilies.map((family) => {
                 const familyModels = modelsByFamily.get(family.id) ?? [];
@@ -255,7 +256,7 @@ export const UsagePage: React.FC = () => {
                 const isCollapsed = collapsedFamilies[family.id] ?? false;
 
                 return (
-                  <section key={family.id} className="p-2">
+                  <div key={family.id} className="oc-settings-group-row">
                     <Collapsible
                       open={!isCollapsed}
                       onOpenChange={() => toggleFamilyCollapsed(family.id)}
@@ -296,7 +297,7 @@ export const UsagePage: React.FC = () => {
                         </div>
                       </CollapsibleContent>
                     </Collapsible>
-                  </section>
+                  </div>
                 );
               })}
 
@@ -308,7 +309,7 @@ export const UsagePage: React.FC = () => {
                 const isCollapsed = collapsedFamilies['other'] ?? false;
 
                 return (
-                  <section className="p-2">
+                  <div className="oc-settings-group-row">
                     <Collapsible
                       open={!isCollapsed}
                       onOpenChange={() => toggleFamilyCollapsed('other')}
@@ -349,16 +350,15 @@ export const UsagePage: React.FC = () => {
                         </div>
                       </CollapsibleContent>
                     </Collapsible>
-                  </section>
+                  </div>
                 );
               })()}
-            </div>
-          </div>
+          </SettingsGroup>
         )}
 
         {selectedResult?.configured && usage && Object.keys(usage.windows ?? {}).length === 0 &&
           providerModels.length === 0 && (
-          <div className="mb-8 px-2">
+          <div className="px-2">
             <p className="typography-ui-label text-foreground">{t('settings.usage.page.state.noQuotaWindowsTitle')}</p>
             <p className="typography-meta text-muted-foreground mt-1">{t('settings.usage.page.state.noQuotaWindowsDescription')}</p>
           </div>

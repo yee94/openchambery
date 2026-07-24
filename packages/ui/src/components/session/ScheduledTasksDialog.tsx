@@ -34,6 +34,7 @@ import { useMutation, useQuery } from '@tanstack/react-query';
 import { useEvent } from '@reactuses/core';
 import { AnimatePresence, motion, useReducedMotion } from 'motion/react';
 import { queryClient, queryKeys } from '@/lib/queryRuntime';
+import { useMobileBackRoute } from '@/mobile/mobileBackNavigation';
 
 const scheduleTimes = (task: ScheduledTask): string[] => {
   const raw = Array.isArray(task.schedule.times)
@@ -253,6 +254,7 @@ export function ScheduledTasksWorkspace({
   const [mutatingTaskIdentity, setMutatingTaskIdentity] = React.useState<string | null>(null);
   const [contextMenuTaskIdentity, setContextMenuTaskIdentity] = React.useState<string | null>(null);
   const [dropdownMenuTaskIdentity, setDropdownMenuTaskIdentity] = React.useState<string | null>(null);
+  const mobileNavigationSurfaceRef = React.useRef<HTMLDivElement | null>(null);
   // `mobile-tab` shares the mobile layout but is hosted as a root tab page:
   // no panel header (the tab supplies its own large-title header) and no
   // close/back wiring against the dialog open flag.
@@ -450,6 +452,13 @@ export function ScheduledTasksWorkspace({
     return false;
   });
 
+  useMobileBackRoute({
+    id: 'mobile-scheduled-editor',
+    active: isMobileTab && editorMode !== 'closed',
+    onBack: handleEditorBack,
+    surfaceRef: mobileNavigationSurfaceRef,
+  });
+
   React.useEffect(() => {
     if (!registerEditorBackHandler) return;
     registerEditorBackHandler(handleEditorBack);
@@ -560,7 +569,7 @@ export function ScheduledTasksWorkspace({
   }));
 
   return (
-    <div className={cn(
+    <div ref={mobileNavigationSurfaceRef} className={cn(
       'relative flex min-h-0 bg-background',
       isMobileTab ? 'oc-mobile-scheduled-workspace flex-col overflow-visible' : 'h-full overflow-hidden',
       isMobilePanel && 'flex-col',
@@ -640,7 +649,7 @@ export function ScheduledTasksWorkspace({
       )}>
         <header className={cn(
           'shrink-0',
-          isMobileTab ? 'px-3 pb-0 pt-3' : isMobilePanel ? 'px-3 pb-3 pt-3' : 'px-4 pb-5 pt-4 sm:px-6',
+          isMobileTab ? 'pb-0 pt-3' : isMobilePanel ? 'px-3 pb-3 pt-3' : 'px-4 pb-5 pt-4 sm:px-6',
         )}>
           <div className={cn('mx-auto w-full', isMobileTab ? 'max-w-[26rem]' : 'max-w-4xl')}>
           <div className={cn(
@@ -716,7 +725,7 @@ export function ScheduledTasksWorkspace({
           'min-h-0 flex-1',
           isMobileTab ? 'overflow-visible' : 'overflow-y-auto',
           isMobileTab
-            ? 'overscroll-none px-3 pb-[max(1rem,env(safe-area-inset-bottom))] pt-5'
+            ? 'overscroll-none pb-[max(1rem,env(safe-area-inset-bottom))] pt-5'
             : isMobilePanel
               ? 'overscroll-none px-3 pb-[max(1rem,env(safe-area-inset-bottom))]'
               : 'px-6 pb-6 [scrollbar-gutter:stable]',

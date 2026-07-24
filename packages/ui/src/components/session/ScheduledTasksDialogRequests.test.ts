@@ -97,6 +97,10 @@ describe('ScheduledTasksDialog queries', () => {
     expect(editorContent).toContain('const groupedPanel = desktopPanel || mobileGroupedPanel;');
     expect(editorContent).toContain('MOBILE_PANEL_ROW_CLASS');
     expect(editorContent).toContain('MOBILE_PANEL_CONTROL_CLASS');
+    expect(workspaceContent).toContain("isMobileTab ? 'pb-0 pt-3'");
+    expect(workspaceContent).toContain("? 'overscroll-none pb-[max(1rem,env(safe-area-inset-bottom))] pt-5'");
+    expect(editorContent).toContain('<div className="pb-5 pt-4">');
+    expect(editorContent).not.toContain('<div className="px-3 pb-5 pt-4">');
   });
 
   test('exposes scheduled tasks from the dedicated mobile menu and tab', async () => {
@@ -140,6 +144,21 @@ describe('ScheduledTasksDialog queries', () => {
     expect(overlayContent).toContain("'flex min-h-0 flex-1 flex-col overflow-hidden'");
     expect(overlayContent).toContain('openOverlayStack[openOverlayStack.length - 1] === overlayID');
     expect(mobileAppContent).toContain("window.dispatchEvent(new Event('oc:scheduled-tasks-close-request'));");
+  });
+
+  test('lets the scheduled editor replace the root tab dock with its pinned action footer', async () => {
+    const directory = dirname(fileURLToPath(import.meta.url));
+    const [editorContent, phoneShellContent, tabRootContent, scheduledTabContent] = await Promise.all([
+      readFile(join(directory, 'ScheduledTaskEditorDialog.tsx'), 'utf8'),
+      readFile(join(directory, '../../mobile/MobilePhoneShell.tsx'), 'utf8'),
+      readFile(join(directory, '../../mobile/MobileTabsRoot.tsx'), 'utf8'),
+      readFile(join(directory, '../../mobile/scheduled/MobileScheduledTab.tsx'), 'utf8'),
+    ]);
+    expect(phoneShellContent).toContain('showTabBar={!scheduledEditorActive}');
+    expect(tabRootContent).toContain('showTabBar?: boolean;');
+    expect(tabRootContent).toContain(') : showTabBar ? (');
+    expect(scheduledTabContent).toContain('scrollsWithPage={showHeader}');
+    expect(editorContent).toContain('data-scheduled-editor-footer=""');
   });
 
   test('uses the shared model picker for model and thinking mode selection', async () => {

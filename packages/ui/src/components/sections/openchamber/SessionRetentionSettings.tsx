@@ -9,6 +9,7 @@ import { useUIStore } from '@/stores/useUIStore';
 import { useGlobalSessionsStore } from '@/stores/useGlobalSessionsStore';
 import { useSessionAutoCleanup } from '@/hooks/useSessionAutoCleanup';
 import { useI18n } from '@/lib/i18n';
+import { SettingsField, SettingsGroup, SettingsRow } from '@/components/sections/shared/SettingsGroup';
 
 const MIN_DAYS = 1;
 const MAX_DAYS = 365;
@@ -60,27 +61,27 @@ export const SessionRetentionSettings: React.FC = () => {
   }, [runCleanup, t]);
 
   return (
-    <div className="mb-8">
-      <div className="mb-1 px-1">
-        <div className="flex items-center gap-2">
-          <h3 className="typography-ui-header font-medium text-foreground">
+    <div className="oc-settings-section-stack">
+      <SettingsGroup
+        label={(
+          <div className="flex items-center gap-2">
+            <span>
             {t('settings.openchamber.sessionRetention.title')}
-          </h3>
-          <Tooltip>
-            <TooltipTrigger asChild>
-              <Icon name="information" className="h-3.5 w-3.5 text-muted-foreground/60 cursor-help" />
-            </TooltipTrigger>
-            <TooltipContent sideOffset={8} className="max-w-xs">
-              {t('settings.openchamber.sessionRetention.tooltip')}
-            </TooltipContent>
-          </Tooltip>
-        </div>
-      </div>
-
-      <section className="px-2 pb-2 pt-0 space-y-0.5">
+            </span>
+            <Tooltip>
+              <TooltipTrigger asChild>
+                <Icon name="information" className="h-3.5 w-3.5 cursor-help text-muted-foreground/60" />
+              </TooltipTrigger>
+              <TooltipContent sideOffset={8} className="max-w-xs">
+                {t('settings.openchamber.sessionRetention.tooltip')}
+              </TooltipContent>
+            </Tooltip>
+          </div>
+        )}
+      >
         <div
           data-settings-item="sessions.auto-cleanup"
-          className="group flex cursor-pointer items-center gap-2 py-1.5"
+          className="oc-settings-group-row oc-settings-split-row group cursor-pointer"
           role="button"
           tabIndex={0}
           aria-pressed={autoDeleteEnabled}
@@ -92,48 +93,46 @@ export const SessionRetentionSettings: React.FC = () => {
             }
           }}
         >
-          <Checkbox
-            checked={autoDeleteEnabled}
-            onChange={setAutoDeleteEnabled}
-            ariaLabel={t('settings.openchamber.sessionRetention.field.enableAutoCleanupAria')}
-          />
-          <span className="typography-ui-label text-foreground">{t('settings.openchamber.sessionRetention.field.enableAutoCleanup')}</span>
-        </div>
-
-        <div data-settings-item="sessions.retention-period" className="flex flex-col gap-2 py-1.5 sm:flex-row sm:items-center sm:gap-8">
-          <div className="flex min-w-0 flex-col sm:w-56 shrink-0">
-            <span className="typography-ui-label text-foreground">{t('settings.openchamber.sessionRetention.field.retentionPeriod')}</span>
+          <div className="oc-settings-split-row-copy">
+            <div className="typography-ui-label text-foreground">
+              {t('settings.openchamber.sessionRetention.field.enableAutoCleanup')}
+            </div>
           </div>
-          <div className="flex items-center gap-2 sm:w-fit">
-            <NumberInput
-              value={autoDeleteAfterDays}
-              onValueChange={setAutoDeleteAfterDays}
-              min={MIN_DAYS}
-              max={MAX_DAYS}
-              step={1}
-              aria-label={t('settings.openchamber.sessionRetention.field.retentionPeriodAria')}
-              className="w-20 tabular-nums"
+          <div className="oc-settings-split-row-control">
+            <Checkbox
+              checked={autoDeleteEnabled}
+              onChange={setAutoDeleteEnabled}
+              ariaLabel={t('settings.openchamber.sessionRetention.field.enableAutoCleanupAria')}
             />
-            <span className="typography-ui-label text-muted-foreground">{t('settings.openchamber.sessionRetention.field.days')}</span>
-            <Button size="sm"
-              type="button"
-              variant="ghost"
-              onClick={() => setAutoDeleteAfterDays(DEFAULT_RETENTION_DAYS)}
-              disabled={autoDeleteAfterDays === DEFAULT_RETENTION_DAYS}
-              className="h-7 w-7 px-0 text-muted-foreground hover:text-foreground"
-              aria-label={t('settings.openchamber.sessionRetention.actions.resetRetentionAria')}
-              title={t('settings.common.actions.reset')}
-            >
-              <Icon name="restart" className="h-3.5 w-3.5" />
-            </Button>
           </div>
         </div>
 
-        <div data-settings-item="sessions.retention-action" className="flex flex-col gap-2 py-1.5 sm:flex-row sm:items-center sm:gap-8">
-          <div className="flex min-w-0 flex-col sm:w-56 shrink-0">
-            <span className="typography-ui-label text-foreground">{t('settings.openchamber.sessionRetention.field.whenSessionsExpire')}</span>
-          </div>
-          <div className="flex flex-wrap items-center gap-1 sm:w-fit">
+        <SettingsRow itemId="sessions.retention-period" label={t('settings.openchamber.sessionRetention.field.retentionPeriod')}>
+          <NumberInput
+            value={autoDeleteAfterDays}
+            onValueChange={setAutoDeleteAfterDays}
+            min={MIN_DAYS}
+            max={MAX_DAYS}
+            step={1}
+            aria-label={t('settings.openchamber.sessionRetention.field.retentionPeriodAria')}
+            className="w-20 tabular-nums"
+          />
+          <span className="typography-ui-label text-muted-foreground">{t('settings.openchamber.sessionRetention.field.days')}</span>
+          <Button size="sm"
+            type="button"
+            variant="ghost"
+            onClick={() => setAutoDeleteAfterDays(DEFAULT_RETENTION_DAYS)}
+            disabled={autoDeleteAfterDays === DEFAULT_RETENTION_DAYS}
+            className="h-7 w-7 px-0 text-muted-foreground hover:text-foreground"
+            aria-label={t('settings.openchamber.sessionRetention.actions.resetRetentionAria')}
+            title={t('settings.common.actions.reset')}
+          >
+            <Icon name="restart" className="h-3.5 w-3.5" />
+          </Button>
+        </SettingsRow>
+
+        <SettingsRow itemId="sessions.retention-action" label={t('settings.openchamber.sessionRetention.field.whenSessionsExpire')}>
+          <div className="flex flex-wrap items-center justify-end gap-1">
             {RETENTION_ACTION_OPTIONS.map((option) => (
               <Button
                 key={option.value}
@@ -148,66 +147,54 @@ export const SessionRetentionSettings: React.FC = () => {
               </Button>
             ))}
           </div>
-        </div>
-      </section>
+        </SettingsRow>
+      </SettingsGroup>
 
-      <div className="mt-1 px-2 py-1.5 space-y-1">
-        <div className="flex flex-col gap-2 sm:flex-row sm:items-center sm:gap-8">
-          <div className="flex min-w-0 flex-col sm:w-56 shrink-0">
-            <p className="typography-meta text-foreground font-medium">{t('settings.openchamber.sessionRetention.manualCleanup.title')}</p>
-          </div>
-          <div className="flex items-center gap-2 sm:w-fit">
-            <Button
-              type="button"
-              variant="outline"
-              size="xs"
-              onClick={handleRunCleanup}
-              disabled={isRunning}
-              className="!font-normal"
-            >
-              {isRunning ? t('settings.openchamber.sessionRetention.actions.cleaningUp') : t('settings.openchamber.sessionRetention.actions.runCleanupNow')}
-            </Button>
-          </div>
-        </div>
-        <p className="typography-meta text-muted-foreground">
-          {action === 'archive'
-            ? t('settings.openchamber.sessionRetention.manualCleanup.eligibleArchiveNow', { count: pendingCount })
-            : t('settings.openchamber.sessionRetention.manualCleanup.eligibleDeleteNow', { count: pendingCount })}
-        </p>
-      </div>
-
-      <div
-        data-settings-item="sessions.archived"
-        className="mt-4 px-2 py-1.5 space-y-1 border-t border-border/40 pt-4"
+      <SettingsField
+        label={t('settings.openchamber.sessionRetention.manualCleanup.title')}
+        description={action === 'archive'
+          ? t('settings.openchamber.sessionRetention.manualCleanup.eligibleArchiveNow', { count: pendingCount })
+          : t('settings.openchamber.sessionRetention.manualCleanup.eligibleDeleteNow', { count: pendingCount })}
+        descriptionPlacement="outside"
       >
-        <div className="flex flex-col gap-2 sm:flex-row sm:items-center sm:gap-8">
-          <div className="flex min-w-0 flex-col sm:w-56 shrink-0">
-            <p className="typography-meta text-foreground font-medium">
-              {t('settings.openchamber.archivedSessions.title')}
-            </p>
-            <p className="typography-meta text-muted-foreground">
+        <Button
+          type="button"
+          variant="outline"
+          size="xs"
+          onClick={handleRunCleanup}
+          disabled={isRunning}
+          className="!font-normal"
+        >
+          {isRunning ? t('settings.openchamber.sessionRetention.actions.cleaningUp') : t('settings.openchamber.sessionRetention.actions.runCleanupNow')}
+        </Button>
+      </SettingsField>
+
+      <SettingsField
+        itemId="sessions.archived"
+        label={t('settings.openchamber.archivedSessions.title')}
+        description={(
+          <>
+            <span className="block">
               {archivedCount === 1
                 ? t('settings.openchamber.archivedSessions.summarySingle', { count: archivedCount })
                 : t('settings.openchamber.archivedSessions.summaryPlural', { count: archivedCount })}
-            </p>
-          </div>
-          <div className="flex items-center gap-2 sm:w-fit">
-            <Button
-              type="button"
-              variant="outline"
-              size="xs"
-              onClick={() => setArchivedSessionsDialogOpen(true)}
-              className="!font-normal"
-            >
-              <Icon name="archive" className="mr-1 h-3.5 w-3.5" />
-              {t('settings.openchamber.archivedSessions.actions.manage')}
-            </Button>
-          </div>
-        </div>
-        <p className="typography-meta text-muted-foreground">
-          {t('settings.openchamber.archivedSessions.description')}
-        </p>
-      </div>
+            </span>
+            <span className="block">{t('settings.openchamber.archivedSessions.description')}</span>
+          </>
+        )}
+        descriptionPlacement="outside"
+      >
+        <Button
+          type="button"
+          variant="outline"
+          size="xs"
+          onClick={() => setArchivedSessionsDialogOpen(true)}
+          className="!font-normal"
+        >
+          <Icon name="archive" className="mr-1 h-3.5 w-3.5" />
+          {t('settings.openchamber.archivedSessions.actions.manage')}
+        </Button>
+      </SettingsField>
     </div>
   );
 };

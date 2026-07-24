@@ -12,6 +12,7 @@ import { useConfigStore } from '@/stores/useConfigStore';
 import { useThemeSystem } from '@/contexts/useThemeSystem';
 import { createFlexokiCodeMirrorTheme } from '@/lib/codemirror/flexokiTheme';
 import type { Extension } from '@codemirror/state';
+import { SettingsGroup, SettingsRow } from '@/components/sections/shared/SettingsGroup';
 
 const DEFAULT_SUMMARY_COMMIT_PROMPT = 'You are generating a Conventional Commits subject line from the diffs of the selected files.';
 
@@ -191,36 +192,36 @@ export const SummarySettings: React.FC = () => {
   if (isLoading) return null;
 
   return (
-    <div className="mx-auto w-full max-w-4xl space-y-6 px-6 py-6">
-      <div className="space-y-1">
-        <h2 className="typography-ui-header font-semibold text-foreground">{t('settings.openchamber.defaults.summary.title')}</h2>
-        <p className="typography-meta text-muted-foreground">{t('settings.openchamber.defaults.summary.description')}</p>
-      </div>
-
-      <section data-settings-item="summary-ai.configuration" className="space-y-5">
-        <div className="space-y-1">
-          <h3 className="typography-ui-header font-medium text-foreground">{t('settings.openchamber.defaults.summary.modelSourceTitle')}</h3>
-        </div>
-        <div role="radiogroup" aria-label={t('settings.openchamber.defaults.summary.modelSourceAria')} className="space-y-2">
-          <div className="flex items-start gap-2 py-0.5">
-            <Radio checked={summaryModelMode === 'provider'} onChange={() => setSummaryModelMode('provider')} ariaLabel={t('settings.openchamber.defaults.summary.provider')} />
-            <div>
-              <div className={summaryModelMode === 'provider' ? 'typography-ui-label text-foreground' : 'typography-ui-label text-foreground/50'}>{t('settings.openchamber.defaults.summary.provider')}</div>
-              <div className="typography-micro text-muted-foreground">{t('settings.openchamber.defaults.summary.providerDescription')}</div>
+    <div className="oc-settings-section-stack">
+      <SettingsGroup
+        label={t('settings.openchamber.defaults.summary.title')}
+        description={t('settings.openchamber.defaults.summary.description')}
+      >
+        <SettingsRow
+          itemId="summary-ai.configuration"
+          label={t('settings.openchamber.defaults.summary.modelSourceTitle')}
+          controlClassName="items-start"
+        >
+          <div role="radiogroup" aria-label={t('settings.openchamber.defaults.summary.modelSourceAria')} className="flex flex-col gap-2">
+            <div className="flex items-start gap-2 py-0.5">
+              <Radio checked={summaryModelMode === 'provider'} onChange={() => setSummaryModelMode('provider')} ariaLabel={t('settings.openchamber.defaults.summary.provider')} />
+              <div>
+                <div className={summaryModelMode === 'provider' ? 'typography-ui-label text-foreground' : 'typography-ui-label text-foreground/50'}>{t('settings.openchamber.defaults.summary.provider')}</div>
+                <div className="typography-micro text-muted-foreground">{t('settings.openchamber.defaults.summary.providerDescription')}</div>
+              </div>
+            </div>
+            <div className="flex items-start gap-2 py-0.5">
+              <Radio checked={summaryModelMode === 'custom'} onChange={() => setSummaryModelMode('custom')} ariaLabel={t('settings.openchamber.defaults.summary.custom')} />
+              <div>
+                <div className={summaryModelMode === 'custom' ? 'typography-ui-label text-foreground' : 'typography-ui-label text-foreground/50'}>{t('settings.openchamber.defaults.summary.custom')}</div>
+                <div className="typography-micro text-muted-foreground">{t('settings.openchamber.defaults.summary.customDescription')}</div>
+              </div>
             </div>
           </div>
-          <div className="flex items-start gap-2 py-0.5">
-            <Radio checked={summaryModelMode === 'custom'} onChange={() => setSummaryModelMode('custom')} ariaLabel={t('settings.openchamber.defaults.summary.custom')} />
-            <div>
-              <div className={summaryModelMode === 'custom' ? 'typography-ui-label text-foreground' : 'typography-ui-label text-foreground/50'}>{t('settings.openchamber.defaults.summary.custom')}</div>
-              <div className="typography-micro text-muted-foreground">{t('settings.openchamber.defaults.summary.customDescription')}</div>
-            </div>
-          </div>
-        </div>
+        </SettingsRow>
 
         {summaryModelMode === 'provider' ? (
-          <div className="flex flex-col gap-2 sm:flex-row sm:items-center sm:gap-8">
-            <span className="typography-ui-label text-foreground sm:w-56 shrink-0">{t('settings.openchamber.defaults.summary.providerModel')}</span>
+          <SettingsRow label={t('settings.openchamber.defaults.summary.providerModel')}>
             {callableModelsByProvider === null ? null : Object.keys(callableModelsByProvider).length > 0 ? (
               <ModelSelector
                 providerId={summaryProviderID}
@@ -228,57 +229,55 @@ export const SummarySettings: React.FC = () => {
                 onChange={(providerID, modelID) => { setSummaryProviderID(providerID); setSummaryModelID(modelID); }}
                 allowedProviderIds={Object.keys(callableModelsByProvider)}
                 allowedModelIdsByProvider={callableModelsByProvider}
+                className="oc-settings-inline-value"
               />
             ) : (
               <span className="typography-meta text-muted-foreground">{t('settings.openchamber.defaults.summary.providerUnavailable')}</span>
             )}
-          </div>
+          </SettingsRow>
         ) : (
-          <div className="grid grid-cols-1 gap-2 md:grid-cols-2 md:gap-3">
-            <label className="space-y-1">
-              <span className="typography-ui-label text-foreground">{t('settings.openchamber.defaults.summary.baseUrl')}</span>
+          <>
+            <SettingsRow label={t('settings.openchamber.defaults.summary.baseUrl')}>
               <Input value={summaryCustomBaseURL} onChange={(event) => setSummaryCustomBaseURL(event.target.value)} placeholder={t('settings.openchamber.defaults.summary.baseUrlPlaceholder')} />
-            </label>
-            <label className="space-y-1">
-              <span className="typography-ui-label text-foreground">{t('settings.openchamber.defaults.summary.modelId')}</span>
+            </SettingsRow>
+            <SettingsRow label={t('settings.openchamber.defaults.summary.modelId')}>
               <Input value={summaryModelID} onChange={(event) => setSummaryModelID(event.target.value)} placeholder={t('settings.openchamber.defaults.summary.modelIdPlaceholder')} />
-            </label>
-            <label className="space-y-1 md:col-span-2">
-              <span className="typography-ui-label text-foreground">{t('settings.openchamber.defaults.summary.apiToken')}</span>
+            </SettingsRow>
+            <SettingsRow label={t('settings.openchamber.defaults.summary.apiToken')}>
               <div className="flex flex-wrap items-center gap-2">
                 <Input type="password" value={summaryCustomAPIToken} onChange={(event) => setSummaryCustomAPIToken(event.target.value)} placeholder={hasSummaryCustomAPIToken ? t('settings.openchamber.defaults.summary.apiTokenStored') : t('settings.openchamber.defaults.summary.apiTokenPlaceholder')} className="max-w-xl" />
                 {hasSummaryCustomAPIToken ? <Button variant="outline" size="sm" onClick={() => void clearToken()} disabled={isSaving}>{t('settings.openchamber.defaults.summary.clearToken')}</Button> : null}
               </div>
-            </label>
-          </div>
+            </SettingsRow>
+          </>
         )}
+      </SettingsGroup>
 
-        <div className="border-t border-border/40 pt-5 space-y-4">
-          <div className="space-y-1">
-            <h3 className="typography-ui-header font-medium text-foreground">{t('settings.openchamber.defaults.summary.promptTitle')}</h3>
+      <SettingsGroup label={t('settings.openchamber.defaults.summary.promptTitle')}>
+        <SettingsRow
+          label={t('settings.openchamber.defaults.summary.commitPrompt')}
+          description={t('settings.openchamber.defaults.summary.commitPromptDescription')}
+          className="oc-settings-split-row-stacked"
+          controlClassName="w-full max-w-none justify-self-stretch"
+        >
+          <div className="h-64 w-full overflow-hidden rounded-md border border-[var(--surface-subtle)] bg-background">
+            <CodeMirrorEditor value={summaryCommitPrompt} onChange={setSummaryCommitPrompt} extensions={editorExtensions} className="h-full" enableSearch />
           </div>
-          <div className="space-y-5">
-            <div className="space-y-1">
-              <div className="typography-ui-label text-foreground">{t('settings.openchamber.defaults.summary.commitPrompt')}</div>
-              <p className="typography-meta text-muted-foreground">{t('settings.openchamber.defaults.summary.commitPromptDescription')}</p>
-              <div className="h-64 overflow-hidden rounded-md border border-[var(--surface-subtle)] bg-background">
-                <CodeMirrorEditor value={summaryCommitPrompt} onChange={setSummaryCommitPrompt} extensions={editorExtensions} className="h-full" enableSearch />
-              </div>
-            </div>
-            <div className="space-y-1">
-              <div className="typography-ui-label text-foreground">{t('settings.openchamber.defaults.summary.sessionTitlePrompt')}</div>
-              <p className="typography-meta text-muted-foreground">{t('settings.openchamber.defaults.summary.sessionTitlePromptDescription')}</p>
-              <div className="h-64 overflow-hidden rounded-md border border-[var(--surface-subtle)] bg-background">
-                <CodeMirrorEditor value={summarySessionTitlePrompt} onChange={setSummarySessionTitlePrompt} extensions={editorExtensions} className="h-full" enableSearch />
-              </div>
-            </div>
+        </SettingsRow>
+        <SettingsRow
+          label={t('settings.openchamber.defaults.summary.sessionTitlePrompt')}
+          description={t('settings.openchamber.defaults.summary.sessionTitlePromptDescription')}
+          className="oc-settings-split-row-stacked"
+          controlClassName="w-full max-w-none justify-self-stretch"
+        >
+          <div className="h-64 w-full overflow-hidden rounded-md border border-[var(--surface-subtle)] bg-background">
+            <CodeMirrorEditor value={summarySessionTitlePrompt} onChange={setSummarySessionTitlePrompt} extensions={editorExtensions} className="h-full" enableSearch />
           </div>
-        </div>
-
-        <div className="flex items-center justify-end">
+        </SettingsRow>
+        <div className="oc-settings-group-row flex items-center justify-end">
           <Button size="sm" onClick={() => void save()} disabled={isSaving}>{isSaving ? t('settings.common.actions.saving') : t('settings.openchamber.defaults.summary.save')}</Button>
         </div>
-      </section>
+      </SettingsGroup>
     </div>
   );
 };

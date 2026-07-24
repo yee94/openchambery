@@ -134,6 +134,7 @@ export function MobilePhoneShell({
       return {
         key: 'assistant-secondary',
         ariaLabel: t('assistants.title'),
+        onBack: closeSecondary,
         content: <AssistantView activeOverride onMobileBack={closeSecondary} />,
       };
     }
@@ -147,6 +148,7 @@ export function MobilePhoneShell({
       // ChatView (composer focus, IME composition, DOM state are preserved).
       key: 'chat-secondary',
       ariaLabel: t('mobile.nav.secondaryPageAria'),
+      onBack: closeSecondary,
       content: renderChat(
         hasLiveSession
           ? { sessionId: currentSessionId ?? '', directory: currentSessionDirectory ?? null }
@@ -162,6 +164,7 @@ export function MobilePhoneShell({
       onTabChange={setActiveTab}
       tabs={tabs}
       secondaryPage={secondaryPage}
+      showTabBar={!scheduledEditorActive}
     />
   );
 }

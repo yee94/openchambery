@@ -10,6 +10,7 @@ import { reloadOpenCodeConfiguration } from '@/stores/useAgentsStore';
 import { useUIStore } from '@/stores/useUIStore';
 import { useI18n } from '@/lib/i18n';
 import { runtimeFetch } from '@/lib/runtime-fetch';
+import { SettingsGroup, SettingsRow } from '@/components/sections/shared/SettingsGroup';
 
 export const OpenCodeCliSettings: React.FC = () => {
   const { t } = useI18n();
@@ -96,15 +97,15 @@ export const OpenCodeCliSettings: React.FC = () => {
   }, [setShowOpenCodeUpdateNotifications]);
 
   return (
-    <div className="mb-8">
-      <div className="mb-1 px-1">
+    <SettingsGroup
+      label={(
         <div className="flex items-center gap-2">
-          <h3 className="typography-ui-header font-medium text-foreground">
+          <span>
             {t('settings.openchamber.opencodeCli.title')}
-          </h3>
+          </span>
           <Tooltip>
             <TooltipTrigger asChild>
-              <Icon name="information" className="h-3.5 w-3.5 text-muted-foreground/60 cursor-help" />
+              <Icon name="information" className="h-3.5 w-3.5 cursor-help text-muted-foreground/60" />
             </TooltipTrigger>
             <TooltipContent sideOffset={8} className="max-w-xs">
               {t('settings.openchamber.opencodeCli.tooltipPrefix')}
@@ -114,14 +115,22 @@ export const OpenCodeCliSettings: React.FC = () => {
             </TooltipContent>
           </Tooltip>
         </div>
-      </div>
-
-      <section className="px-2 pb-2 pt-0 space-y-0.5">
-        <div data-settings-item="sessions.opencode-binary" className="flex flex-col gap-2 py-1.5 sm:flex-row sm:items-center sm:gap-3">
-          <div className="flex min-w-0 flex-col shrink-0">
-            <span className="typography-ui-label text-foreground">{t('settings.openchamber.opencodeCli.field.binaryPath')}</span>
-          </div>
-          <div className="flex min-w-0 items-center gap-2 sm:w-[20rem]">
+      )}
+      description={(
+        <>
+          {t('settings.openchamber.opencodeCli.tipPrefix')}
+          {' '}
+          <span className="font-mono">OPENCODE_BINARY</span>
+          {' '}
+          {t('settings.openchamber.opencodeCli.tipMiddle')}
+          {' '}
+          <span className="font-mono">~/.config/openchamber/settings.json</span>
+          {'.'}
+        </>
+      )}
+    >
+        <SettingsRow itemId="sessions.opencode-binary" label={t('settings.openchamber.opencodeCli.field.binaryPath')}>
+          <div className="flex min-w-0 flex-1 items-center justify-end gap-2">
             <Input
               value={value}
               onChange={(e) => setValue(e.target.value)}
@@ -142,33 +151,24 @@ export const OpenCodeCliSettings: React.FC = () => {
               <Icon name="folder" className="h-4 w-4" />
             </Button>
           </div>
-        </div>
+        </SettingsRow>
 
-        <div className="py-1.5">
-          <div className="typography-micro text-muted-foreground/70">
-            {t('settings.openchamber.opencodeCli.tipPrefix')}
-            {' '}
-            <span className="font-mono">OPENCODE_BINARY</span>
-            {' '}
-            {t('settings.openchamber.opencodeCli.tipMiddle')}
-            {' '}
-            <span className="font-mono">~/.config/openchamber/settings.json</span>
-            {'.'}
-          </div>
-        </div>
-
-        <label data-settings-item="sessions.opencode-update-notifications" className="flex cursor-pointer items-center gap-2 py-1.5">
-          <Checkbox
-            checked={showOpenCodeUpdateNotifications}
-            onChange={handleShowUpdateNotificationsChange}
-            ariaLabel={t('settings.openchamber.opencodeCli.field.showUpdateNotificationsAria')}
-          />
-          <span className="typography-ui-label text-foreground">
+        <label data-settings-item="sessions.opencode-update-notifications" className="oc-settings-group-row oc-settings-split-row cursor-pointer">
+          <div className="oc-settings-split-row-copy">
+            <span className="typography-ui-label text-foreground">
             {t('settings.openchamber.opencodeCli.field.showUpdateNotifications')}
-          </span>
+            </span>
+          </div>
+          <div className="oc-settings-split-row-control">
+            <Checkbox
+              checked={showOpenCodeUpdateNotifications}
+              onChange={handleShowUpdateNotificationsChange}
+              ariaLabel={t('settings.openchamber.opencodeCli.field.showUpdateNotificationsAria')}
+            />
+          </div>
         </label>
 
-        <div className="flex justify-start py-1.5">
+        <div className="oc-settings-group-row flex justify-end">
           <Button
             type="button"
             size="xs"
@@ -179,7 +179,6 @@ export const OpenCodeCliSettings: React.FC = () => {
             {isSaving ? t('settings.common.actions.saving') : t('settings.openchamber.opencodeCli.actions.saveAndReload')}
           </Button>
         </div>
-      </section>
-    </div>
+    </SettingsGroup>
   );
 };

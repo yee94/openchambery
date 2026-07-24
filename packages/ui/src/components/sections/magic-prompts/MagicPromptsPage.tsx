@@ -15,6 +15,7 @@ import {
 } from '@/lib/magicPrompts';
 import { useMagicPromptsStore } from '@/stores/useMagicPromptsStore';
 import { useI18n } from '@/lib/i18n';
+import { SettingsGroup } from '@/components/sections/shared/SettingsGroup';
 
 type PromptBlock = {
   id: MagicPromptId;
@@ -318,7 +319,7 @@ export const MagicPromptsPage: React.FC = () => {
 
   return (
     <div className="h-full overflow-auto">
-      <div className="mx-auto w-full max-w-4xl px-6 py-6 space-y-4">
+      <div className="oc-settings-page-content mx-auto w-full max-w-4xl px-6 py-6">
         <div className="flex flex-wrap items-start justify-between gap-3">
           <div className="space-y-1">
             <div className="flex items-center gap-2">
@@ -346,7 +347,7 @@ export const MagicPromptsPage: React.FC = () => {
           </Button>
         </div>
 
-        {pageConfig.blocks.map((block, index) => {
+        {pageConfig.blocks.map((block) => {
           const definition = getMagicPromptDefinition(block.id);
           const baseline = getBaseline(block.id);
           const draft = getDraft(block.id);
@@ -357,14 +358,11 @@ export const MagicPromptsPage: React.FC = () => {
           const resetting = resettingIds[block.id] === true;
 
           return (
-            <section
+            <SettingsGroup
               key={block.id}
-              data-settings-item={isVisiblePromptId(block.id) ? 'magic-prompts.visible-prompt' : 'magic-prompts.instructions'}
-              className={index > 0 ? 'space-y-3 pt-5 border-t border-border' : 'space-y-3'}
-            >
-              <div className="space-y-1">
+              label={(
                 <div className="flex flex-wrap items-center gap-2">
-                  <h3 className="typography-ui-label text-foreground">{tUnsafe(block.titleKey)}</h3>
+                  <span>{tUnsafe(block.titleKey)}</span>
                   <Tooltip>
                     <TooltipTrigger asChild>
                       <Icon name="information" className="h-3.5 w-3.5 text-muted-foreground/60 cursor-help" />
@@ -374,54 +372,60 @@ export const MagicPromptsPage: React.FC = () => {
                     </TooltipContent>
                   </Tooltip>
                 </div>
+              )}
+              cardClassName="p-3"
+            >
+              <div
+                data-settings-item={isVisiblePromptId(block.id) ? 'magic-prompts.visible-prompt' : 'magic-prompts.instructions'}
+                className="space-y-3"
+              >
                 {definition.placeholders && definition.placeholders.length > 0 && (
                   <div className="typography-micro text-muted-foreground">
                     {t('settings.magicPrompts.page.placeholdersLabel')}{' '}
                     {definition.placeholders.map((item) => `{{${item.key}}}`).join(', ')}
                   </div>
                 )}
-              </div>
+                <Textarea
+                  value={draft}
+                  onChange={(event) => setDraft(block.id, event.target.value)}
+                  className="min-h-[220px] font-mono text-sm"
+                />
+                {isInvalidEmptyVisiblePrompt && (
+                  <div className="typography-micro text-[var(--status-error)]">{t('settings.magicPrompts.page.validation.visiblePromptRequired')}</div>
+                )}
 
-              <Textarea
-                value={draft}
-                onChange={(event) => setDraft(block.id, event.target.value)}
-                className="min-h-[220px] font-mono text-sm"
-              />
-              {isInvalidEmptyVisiblePrompt && (
-                <div className="typography-micro text-[var(--status-error)]">{t('settings.magicPrompts.page.validation.visiblePromptRequired')}</div>
-              )}
-
-              <div className="flex items-center justify-between gap-2">
-                <span className="typography-micro text-muted-foreground">
-                  {isDirty
-                    ? t('settings.magicPrompts.page.status.unsavedChanges')
-                    : isOverridden
-                      ? t('settings.magicPrompts.page.status.usingSavedOverride')
-                      : t('settings.magicPrompts.page.status.usingBuiltinDefault')}
-                </span>
-                <div className="flex items-center gap-2">
-                  <Button
-                    variant="outline"
-                    size="sm"
-                    onClick={() => {
-                      void resetPrompt(block.id);
-                    }}
-                    disabled={!isOverridden || saving || resetting}
-                  >
-                    {resetting ? t('settings.magicPrompts.page.actions.resetting') : t('settings.magicPrompts.page.actions.resetToDefault')}
-                  </Button>
-                  <Button
-                    size="sm"
-                    onClick={() => {
-                      void savePrompt(block.id);
-                    }}
-                    disabled={!isDirty || saving || resetting || isInvalidEmptyVisiblePrompt}
-                  >
-                    {saving ? t('settings.common.actions.saving') : t('settings.magicPrompts.page.actions.save')}
-                  </Button>
+                <div className="flex items-center justify-between gap-2">
+                  <span className="typography-micro text-muted-foreground">
+                    {isDirty
+                      ? t('settings.magicPrompts.page.status.unsavedChanges')
+                      : isOverridden
+                        ? t('settings.magicPrompts.page.status.usingSavedOverride')
+                        : t('settings.magicPrompts.page.status.usingBuiltinDefault')}
+                  </span>
+                  <div className="flex items-center gap-2">
+                    <Button
+                      variant="outline"
+                      size="sm"
+                      onClick={() => {
+                        void resetPrompt(block.id);
+                      }}
+                      disabled={!isOverridden || saving || resetting}
+                    >
+                      {resetting ? t('settings.magicPrompts.page.actions.resetting') : t('settings.magicPrompts.page.actions.resetToDefault')}
+                    </Button>
+                    <Button
+                      size="sm"
+                      onClick={() => {
+                        void savePrompt(block.id);
+                      }}
+                      disabled={!isDirty || saving || resetting || isInvalidEmptyVisiblePrompt}
+                    >
+                      {saving ? t('settings.common.actions.saving') : t('settings.magicPrompts.page.actions.save')}
+                    </Button>
+                  </div>
                 </div>
               </div>
-            </section>
+            </SettingsGroup>
           );
         })}
       </div>

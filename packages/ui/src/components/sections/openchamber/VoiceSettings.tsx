@@ -22,6 +22,7 @@ import { runtimeFetch } from '@/lib/runtime-fetch';
 import { useI18n } from '@/lib/i18n';
 import { useLocalTTS } from '@/hooks/useLocalTTS';
 import { disposePreviewAudio } from './voicePreviewAudio';
+import { SettingsGroup, SettingsRow } from '@/components/sections/shared/SettingsGroup';
 
 const LOCAL_STT_MODELS = [
     {
@@ -760,36 +761,22 @@ export const VoiceSettings: React.FC = () => {
     const sliderClass = "flex-1 min-w-0 h-1.5 bg-[var(--interactive-border)] rounded-full appearance-none cursor-pointer [&::-webkit-slider-thumb]:appearance-none [&::-webkit-slider-thumb]:w-4 [&::-webkit-slider-thumb]:h-4 [&::-webkit-slider-thumb]:rounded-full [&::-webkit-slider-thumb]:bg-[var(--primary-base)] [&::-moz-range-thumb]:w-4 [&::-moz-range-thumb]:h-4 [&::-moz-range-thumb]:rounded-full [&::-moz-range-thumb]:bg-[var(--primary-base)] [&::-moz-range-thumb]:border-0 disabled:opacity-50";
 
     return (
-        <div className="space-y-8">
+        <div className="oc-settings-section-stack">
 
             {/* Playback (read messages aloud) */}
-            <div data-settings-item="voice.playback" className="oc-settings-group-row mb-8">
-                <div className="mb-1 px-1">
-                    <h3 className="typography-ui-header font-medium text-foreground">
-                        {t('settings.voice.page.section.playbackAndSummary')}
-                    </h3>
-                </div>
+            <div data-settings-item="voice.playback">
+                <SettingsGroup label={t('settings.voice.page.section.playbackAndSummary')}>
 
-                <section className="px-2 pb-2 pt-0 space-y-0">
-
-                    <div
-                        className="group flex cursor-pointer items-center gap-2 py-1.5"
-                        role="button"
-                        tabIndex={0}
-                        aria-pressed={showMessageTTSButtons}
-                        onClick={() => setShowMessageTTSButtons(!showMessageTTSButtons)}
-                        onKeyDown={(e) => { if (e.key === ' ' || e.key === 'Enter') { e.preventDefault(); setShowMessageTTSButtons(!showMessageTTSButtons); } }}
-                    >
+                    <SettingsRow label={t('settings.voice.page.field.messageReadAloudButton')}>
                         <Checkbox checked={showMessageTTSButtons} onChange={setShowMessageTTSButtons} ariaLabel={t('settings.voice.page.field.messageReadAloudButtonAria')} />
-                        <span className="typography-ui-label text-foreground">{t('settings.voice.page.field.messageReadAloudButton')}</span>
-                    </div>
+                    </SettingsRow>
 
                     {showMessageTTSButtons && (
                         <>
-                            <div className="pb-1.5 pt-0.5">
-                                <div className="flex min-w-0 flex-col gap-1.5">
+                            <SettingsRow
+                                label={(
                                     <div className="flex items-center gap-1.5">
-                                        <span className="typography-ui-label text-foreground">{t('settings.voice.page.field.provider')}</span>
+                                        <span>{t('settings.voice.page.field.provider')}</span>
                                         <Tooltip>
                                             <TooltipTrigger asChild>
                                                 <Icon name="information" className="h-3.5 w-3.5 text-muted-foreground/60 cursor-help" />
@@ -805,7 +792,9 @@ export const VoiceSettings: React.FC = () => {
                                             </TooltipContent>
                                         </Tooltip>
                                     </div>
-                                    <div className="flex flex-wrap items-center gap-1">
+                                )}
+                            >
+                                    <div className="flex flex-wrap items-center justify-end gap-1">
                                         <Button
                                             variant="chip"
                                             size="xs"
@@ -855,8 +844,7 @@ export const VoiceSettings: React.FC = () => {
                                             </Button>
                                         )}
                                     </div>
-                                </div>
-                            </div>
+                            </SettingsRow>
 
                             {/* OpenAI API Key */}
                             {voiceProvider === 'openai' && (
@@ -984,9 +972,7 @@ export const VoiceSettings: React.FC = () => {
                             {voiceProvider === 'local' && <LocalTtsModelStatus />}
 
                             {/* Voice Selection */}
-                            <div className="flex items-center gap-8 py-1.5">
-                                <span className="typography-ui-label text-foreground sm:w-56 shrink-0">{t('settings.voice.page.field.voice')}</span>
-                                <div className="ml-auto flex w-fit items-center justify-end gap-2">
+                            <SettingsRow label={t('settings.voice.page.field.voice')}>
                                     {voiceProvider === 'local' && (
                                         <>
                                             <Select
@@ -1071,31 +1057,22 @@ export const VoiceSettings: React.FC = () => {
                                             </Button>
                                         </>
                                     )}
-                                </div>
-                            </div>
+                            </SettingsRow>
 
                             {/* Speech Rate */}
-                            <div className="flex items-center gap-8 py-1.5">
-                                <span className="typography-ui-label text-foreground sm:w-56 shrink-0">{t('settings.voice.page.field.speechRate')}</span>
-                                <div className="ml-auto flex w-fit items-center justify-end gap-2">
+                            <SettingsRow label={t('settings.voice.page.field.speechRate')}>
                                     {!isMobile && <input type="range" min={0.5} max={2} step={0.1} value={speechRate} onChange={(e) => setSpeechRate(Number(e.target.value))} className={sliderClass} />}
                                     <NumberInput value={speechRate} onValueChange={setSpeechRate} min={0.5} max={2} step={0.1} className="w-16 tabular-nums" />
-                                </div>
-                            </div>
+                            </SettingsRow>
 
                             {/* Speech Pitch */}
-                            <div className="flex items-center gap-8 py-1.5">
-                                <span className="typography-ui-label text-foreground sm:w-56 shrink-0">{t('settings.voice.page.field.speechPitch')}</span>
-                                <div className="ml-auto flex w-fit items-center justify-end gap-2">
+                            <SettingsRow label={t('settings.voice.page.field.speechPitch')}>
                                     {!isMobile && <input type="range" min={0.5} max={2} step={0.1} value={speechPitch} onChange={(e) => setSpeechPitch(Number(e.target.value))} className={sliderClass} />}
                                     <NumberInput value={speechPitch} onValueChange={setSpeechPitch} min={0.5} max={2} step={0.1} className="w-16 tabular-nums" />
-                                </div>
-                            </div>
+                            </SettingsRow>
 
                             {/* Speech Volume */}
-                            <div className="flex items-center gap-8 py-1.5">
-                                <span className="typography-ui-label text-foreground sm:w-56 shrink-0">{t('settings.voice.page.field.speechVolume')}</span>
-                                <div className="ml-auto flex w-fit items-center justify-end gap-2">
+                            <SettingsRow label={t('settings.voice.page.field.speechVolume')}>
                                     {!isMobile && <input type="range" min={0} max={1} step={0.1} value={speechVolume} onChange={(e) => setSpeechVolume(Number(e.target.value))} className={sliderClass} />}
                                     {isMobile ? (
                                         <NumberInput value={Math.round(speechVolume * 100)} onValueChange={(v) => setSpeechVolume(v / 100)} min={0} max={100} step={10} className="w-16 tabular-nums" />
@@ -1104,18 +1081,11 @@ export const VoiceSettings: React.FC = () => {
                                             {Math.round(speechVolume * 100)}%
                                         </span>
                                     )}
-                                </div>
-                            </div>
+                            </SettingsRow>
 
                             {/* TTS input mode */}
-                            <div className="pb-1.5 pt-0.5">
-                                <div className="flex min-w-0 flex-col gap-1.5">
-                                    <div className="flex items-center gap-1.5">
-                                        <span className="typography-ui-label text-foreground">
-                                            {t('settings.voice.page.field.ttsInputMode')}
-                                        </span>
-                                    </div>
-                                    <div className="flex flex-wrap items-center gap-1">
+                            <SettingsRow label={t('settings.voice.page.field.ttsInputMode')}>
+                                    <div className="flex flex-wrap items-center justify-end gap-1">
                                         <Button
                                             variant="chip"
                                             size="xs"
@@ -1144,39 +1114,24 @@ export const VoiceSettings: React.FC = () => {
                                             {t('settings.voice.page.field.ttsInputModeSummarized')}
                                         </Button>
                                     </div>
-                                </div>
-                            </div>
+                            </SettingsRow>
                         </>
                     )}
-                </section>
+                </SettingsGroup>
             </div>
 
             {/* Speech Recognition */}
-            <div data-settings-item="voice.speech-recognition" className="oc-settings-group-row mb-8">
-                    <div className="mb-1 px-1">
-                        <h3 className="typography-ui-header font-medium text-foreground">
-                            {t('settings.voice.page.section.speechRecognition')}
-                        </h3>
-                    </div>
-
-                    <section className="px-2 pb-2 pt-0 space-y-0">
-                        <div
-                            className="group flex cursor-pointer items-center gap-2 py-1.5"
-                            role="button"
-                            tabIndex={0}
-                            aria-pressed={dictationEnabled}
-                            onClick={() => setDictationEnabled(!dictationEnabled)}
-                            onKeyDown={(e) => { if (e.key === ' ' || e.key === 'Enter') { e.preventDefault(); setDictationEnabled(!dictationEnabled); } }}
-                        >
+            <div data-settings-item="voice.speech-recognition">
+                    <SettingsGroup label={t('settings.voice.page.section.speechRecognition')}>
+                        <SettingsRow label={t('settings.voice.page.field.enableVoiceInput')}>
                             <Checkbox checked={dictationEnabled} onChange={setDictationEnabled} ariaLabel={t('settings.voice.page.field.enableVoiceInputAria')} />
-                            <span className="typography-ui-label text-foreground">{t('settings.voice.page.field.enableVoiceInput')}</span>
-                        </div>
+                        </SettingsRow>
 
                         {dictationEnabled && (<>
-                        <div className="pb-1.5 pt-0.5">
-                            <div className="flex min-w-0 flex-col gap-1.5">
+                        <SettingsRow
+                            label={(
                                 <div className="flex items-center gap-1.5">
-                                    <span className="typography-ui-label text-foreground">{t('settings.voice.page.field.provider')}</span>
+                                    <span>{t('settings.voice.page.field.provider')}</span>
                                     <Tooltip>
                                         <TooltipTrigger asChild>
                                             <Icon name="information" className="h-3.5 w-3.5 text-muted-foreground/60 cursor-help" />
@@ -1189,7 +1144,9 @@ export const VoiceSettings: React.FC = () => {
                                         </TooltipContent>
                                     </Tooltip>
                                 </div>
-                                <div className="flex flex-wrap items-center gap-1">
+                            )}
+                        >
+                                <div className="flex flex-wrap items-center justify-end gap-1">
                                     <Button
                                         variant="chip"
                                         size="xs"
@@ -1209,14 +1166,12 @@ export const VoiceSettings: React.FC = () => {
                                         {t('settings.voice.page.provider.server')}
                                     </Button>
                                 </div>
-                            </div>
-                        </div>
+                        </SettingsRow>
 
                         {sttProvider === 'local' && (
-                            <div className="py-1.5">
-                                <span className="typography-ui-label text-foreground">{t('settings.voice.page.field.model')}</span>
+                            <SettingsRow label={t('settings.voice.page.field.model')} className="oc-settings-split-row-stacked">
                                 <LocalModelPicker selectedModelId={sttLocalModel} onSelect={setSttLocalModel} />
-                            </div>
+                            </SettingsRow>
                         )}
 
                         {sttProvider === 'openai-compatible' && (
@@ -1302,7 +1257,7 @@ export const VoiceSettings: React.FC = () => {
                         )}
 
                         </>)}
-                    </section>
+                    </SettingsGroup>
             </div>
 
 

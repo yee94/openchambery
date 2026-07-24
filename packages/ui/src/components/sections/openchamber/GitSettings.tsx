@@ -8,6 +8,7 @@ import { getRegisteredRuntimeAPIs } from '@/contexts/runtimeAPIRegistry';
 import { setFilesViewShowGitignored, useFilesViewShowGitignored } from '@/lib/filesViewShowGitignored';
 import { useI18n } from '@/lib/i18n';
 import { runtimeFetch } from '@/lib/runtime-fetch';
+import { SettingsGroup, SettingsRow } from '@/components/sections/shared/SettingsGroup';
 
 export const GitSettings: React.FC = () => {
   const { t } = useI18n();
@@ -116,14 +117,12 @@ export const GitSettings: React.FC = () => {
   }
 
   return (
-    <div className="mb-8">
-      <div className="mb-1 px-1">
-        <h3 className="typography-ui-header font-medium text-foreground">{t('settings.openchamber.git.title')}</h3>
-      </div>
-
-      <section className="px-2 pb-2 pt-0 space-y-0.5">
-        <div data-settings-item="git.changes-view" className="pt-1 pb-1">
-          <h4 className="typography-ui-header font-medium text-foreground">{t('settings.openchamber.git.changesViewTitle')}</h4>
+    <SettingsGroup label={t('settings.openchamber.git.title')}>
+        <SettingsRow
+          itemId="git.changes-view"
+          label={t('settings.openchamber.git.changesViewTitle')}
+          controlClassName="items-end"
+        >
           <div role="radiogroup" aria-label={t('settings.openchamber.git.changesViewAria')} className="mt-0.5 space-y-0">
             {viewOptions.map((option) => {
               const selected = gitChangesViewMode === option.id;
@@ -154,11 +153,11 @@ export const GitSettings: React.FC = () => {
               );
             })}
           </div>
-        </div>
+        </SettingsRow>
 
         <div
           data-settings-item="git.gitmoji"
-          className="group flex cursor-pointer items-center gap-2 py-1.5"
+          className="oc-settings-group-row group flex cursor-pointer items-center gap-2"
           role="button"
           tabIndex={0}
           aria-pressed={settingsGitmojiEnabled}
@@ -184,7 +183,7 @@ export const GitSettings: React.FC = () => {
 
         <div
           data-settings-item="git.gitignored-files"
-          className="group flex cursor-pointer items-center gap-2 py-1.5"
+          className="oc-settings-group-row group flex cursor-pointer items-center gap-2"
           role="button"
           tabIndex={0}
           aria-pressed={showGitignored}
@@ -203,7 +202,6 @@ export const GitSettings: React.FC = () => {
           />
           <span className="typography-ui-label text-foreground">{t('settings.openchamber.git.showGitignored')}</span>
         </div>
-      </section>
-    </div>
+    </SettingsGroup>
   );
 };

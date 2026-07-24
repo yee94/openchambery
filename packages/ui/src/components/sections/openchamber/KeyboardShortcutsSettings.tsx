@@ -4,7 +4,6 @@ import { Input } from '@/components/ui/input';
 import { Tooltip, TooltipContent, TooltipTrigger } from '@/components/ui/tooltip';
 import { Icon } from "@/components/icon/Icon";
 import { useUIStore } from '@/stores/useUIStore';
-import { cn } from '@/lib/utils';
 import { updateDesktopSettings } from '@/lib/persistence';
 import { isVSCodeRuntime } from '@/lib/desktop';
 import {
@@ -18,6 +17,7 @@ import {
   type ShortcutCombo,
 } from '@/lib/shortcuts';
 import { useI18n } from '@/lib/i18n';
+import { SettingsGroup, SettingsRow } from '@/components/sections/shared/SettingsGroup';
 
 const MODIFIER_KEYS = new Set(['shift', 'control', 'alt', 'meta']);
 
@@ -157,10 +157,11 @@ export const KeyboardShortcutsSettings: React.FC = () => {
   }, [clearShortcutOverride, persistShortcutOverrides, shortcutOverrides]);
 
   return (
-    <div data-settings-item="shortcuts.keyboard-shortcuts" className="mb-8">
-      <div className="mb-1 px-1">
+    <div data-settings-item="shortcuts.keyboard-shortcuts">
+      <SettingsGroup
+        label={(
         <div className="flex items-center gap-2">
-          <h3 className="typography-ui-header font-medium text-foreground">{t('settings.openchamber.keyboardShortcuts.title')}</h3>
+          <span>{t('settings.openchamber.keyboardShortcuts.title')}</span>
           <Button
             type="button"
             variant="outline"
@@ -186,7 +187,8 @@ export const KeyboardShortcutsSettings: React.FC = () => {
             </TooltipContent>
           </Tooltip>
         </div>
-      </div>
+        )}
+      >
 
       {(errorText || warningText || pendingOverwrite) && (
         <div className="mb-2 space-y-2 px-1">
@@ -214,25 +216,17 @@ export const KeyboardShortcutsSettings: React.FC = () => {
         </div>
       )}
 
-      <section className="px-2 pb-2 pt-0 space-y-0.5">
-        {actions.map((action, index) => {
+        {actions.map((action) => {
           const effective = getEffectiveShortcutCombo(action.id, shortcutOverrides);
           const draft = draftByAction[action.id];
           const displayCombo = draft ?? effective;
           const hasDraft = typeof draft === 'string' && normalizeCombo(draft) !== normalizeCombo(effective);
 
           return (
-            <div
+            <SettingsRow
               key={action.id}
-              className={cn(
-                "oc-settings-group-row oc-settings-split-row",
-                index > 0 && "border-t border-[var(--surface-subtle)]",
-              )}
+              label={actionLabel(action.id, action.label)}
             >
-              <div className="oc-settings-split-row-copy">
-                <span className="typography-ui-label text-foreground">{actionLabel(action.id, action.label)}</span>
-              </div>
-              <div className="oc-settings-split-row-control">
                 <Input
                   readOnly
                   value={capturingActionId === action.id ? t('settings.openchamber.keyboardShortcuts.field.pressKeys') : formatShortcutForDisplay(displayCombo)}
@@ -289,11 +283,10 @@ export const KeyboardShortcutsSettings: React.FC = () => {
                 <Button type="button" size="xs" className="!font-normal" variant="ghost" onClick={() => resetOne(action.id)}>
                   {t('settings.common.actions.reset')}
                 </Button>
-              </div>
-            </div>
+            </SettingsRow>
           );
         })}
-      </section>
+      </SettingsGroup>
     </div>
   );
 };

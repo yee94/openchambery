@@ -44,6 +44,31 @@ test('Android sharing shortcut contract declares its target and category', async
   assert.match(receiver, /Intent\.EXTRA_SHORTCUT_ID/);
 });
 
+test('native navigation exposes iOS edge progress and Android predictive back', async () => {
+  const [ios, android, activity, manifest, readme] = await Promise.all([
+    source('ios/App/App/OpenChamberBridgeViewController.swift'),
+    source('android/app/src/main/java/com/openchamber/app/OpenChamberNavigationPlugin.java'),
+    source('android/app/src/main/java/com/openchamber/app/MainActivity.java'),
+    source('android/app/src/main/AndroidManifest.xml'),
+    source('README.md'),
+  ]);
+
+  assert.match(ios, /UIScreenEdgePanGestureRecognizer/);
+  assert.match(ios, /edgePan\.edges = \.left/);
+  assert.match(ios, /"backStarted"/);
+  assert.match(ios, /"backProgressed"/);
+  assert.match(ios, /"backInvoked"/);
+  assert.match(ios, /registerPluginInstance\(OpenChamberNavigationPlugin\(\)\)/);
+
+  assert.match(android, /OnBackAnimationCallback/);
+  assert.match(android, /backEvent\.getProgress\(\)/);
+  assert.match(android, /registerOnBackInvokedCallback/);
+  assert.match(activity, /registerPlugin\(OpenChamberNavigationPlugin\.class\)/);
+  assert.match(manifest, /android:enableOnBackInvokedCallback="true"/);
+  assert.match(readme, /Predictive Back/);
+  assert.match(readme, /hosted H5/i);
+});
+
 test('Android share drafts commit only after confirmation and release only after acknowledgement', async () => {
   const [store, plugin, activity] = await Promise.all([
     source('android/app/src/main/java/com/openchamber/app/OpenChamberShareStore.java'),

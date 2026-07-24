@@ -56,6 +56,15 @@ describe('shouldStartSessionSwipe', () => {
       withinHorizontalScroller: true,
     })).toBe(false);
   });
+
+  test('gives the native iOS back edge priority over Composer session switching', () => {
+    expect(shouldStartSessionSwipe({
+      onExplicitSurface: true,
+      onCodeBlock: false,
+      withinHorizontalScroller: false,
+      withinNativeBackEdge: true,
+    })).toBe(false);
+  });
 });
 
 describe('evaluateSwipeDirection', () => {

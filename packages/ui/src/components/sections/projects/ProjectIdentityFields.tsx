@@ -7,10 +7,7 @@ import { PROJECT_COLORS, PROJECT_ICONS, PROJECT_COLOR_MAP as COLOR_MAP, ProjectI
 import { useThemeSystem } from '@/contexts/useThemeSystem';
 import { useI18n } from '@/lib/i18n';
 import { cn } from '@/lib/utils';
-import {
-  PROJECT_SETTINGS_CONTROL_WIDTH,
-  ProjectSettingsSubsection,
-} from '@/components/sections/projects/ProjectSettingsSubsection';
+import { SettingsField } from '@/components/sections/shared/SettingsGroup';
 import type { useProjectIdentityForm } from './useProjectIdentityForm';
 
 type ProjectIdentityFormState = ReturnType<typeof useProjectIdentityForm>;
@@ -60,37 +57,37 @@ export const ProjectIdentityFields: React.FC<ProjectIdentityFieldsProps> = ({ fo
   const currentColorVar = color ? (COLOR_MAP[color] ?? null) : null;
 
   return (
-    <>
-      <ProjectSettingsSubsection
-        title={t('settings.projects.page.field.projectName')}
-        settingsItem="projects.name"
+    <div className="oc-settings-section-stack">
+      <SettingsField
+        label={t('settings.projects.page.field.projectName')}
+        itemId="projects.name"
       >
         <Input
           value={name}
           onChange={(event) => setName(event.target.value)}
           placeholder={t('settings.projects.page.field.projectNamePlaceholder')}
-          className={cn('h-7', PROJECT_SETTINGS_CONTROL_WIDTH)}
         />
-      </ProjectSettingsSubsection>
+      </SettingsField>
 
-      <ProjectSettingsSubsection
-        title={t('settings.projects.page.field.defaultModel')}
+      <SettingsField
+        label={t('settings.projects.page.field.defaultModel')}
         description={t('settings.projects.page.field.defaultModelDescription')}
-        settingsItem="projects.default-model"
+        descriptionPlacement="outside"
+        itemId="projects.default-model"
       >
         <ModelSelector
           providerId={parsedDefaultModel.providerId}
           modelId={parsedDefaultModel.modelId}
           onChange={handleDefaultModelChange}
-          className={PROJECT_SETTINGS_CONTROL_WIDTH}
+          className="oc-settings-inline-value"
         />
-      </ProjectSettingsSubsection>
+      </SettingsField>
 
-      <ProjectSettingsSubsection
-        title={t('settings.projects.page.field.accentColor')}
-        settingsItem="projects.accent-color"
+      <SettingsField
+        label={t('settings.projects.page.field.accentColor')}
+        itemId="projects.accent-color"
       >
-        <div className="flex flex-wrap items-center gap-2">
+        <div className="flex flex-wrap items-center justify-end gap-2">
           <button
             type="button"
             onClick={() => setColor(null)}
@@ -120,24 +117,25 @@ export const ProjectIdentityFields: React.FC<ProjectIdentityFieldsProps> = ({ fo
             />
           ))}
         </div>
-      </ProjectSettingsSubsection>
+      </SettingsField>
 
-      <ProjectSettingsSubsection
-        title={t('settings.projects.page.field.projectIcon')}
-        settingsItem="projects.icon"
+      <SettingsField
+        label={t('settings.projects.page.field.projectIcon')}
+        itemId="projects.icon"
       >
-        <input
-          ref={fileInputRef}
-          type="file"
-          accept="image/png,image/jpeg,image/svg+xml,.png,.jpg,.jpeg,.svg"
-          className="hidden"
-          onChange={(event) => {
-            const file = event.target.files?.[0] ?? null;
-            void handleUploadIcon(file);
-            event.currentTarget.value = '';
-          }}
-        />
-        <div className="flex flex-wrap items-center gap-2">
+        <div className="flex w-full flex-col items-end gap-2">
+          <input
+            ref={fileInputRef}
+            type="file"
+            accept="image/png,image/jpeg,image/svg+xml,.png,.jpg,.jpeg,.svg"
+            className="hidden"
+            onChange={(event) => {
+              const file = event.target.files?.[0] ?? null;
+              void handleUploadIcon(file);
+              event.currentTarget.value = '';
+            }}
+          />
+          <div className="flex flex-wrap items-center justify-end gap-2">
           <button
             type="button"
             onClick={() => setIcon(null)}
@@ -174,9 +172,9 @@ export const ProjectIdentityFields: React.FC<ProjectIdentityFieldsProps> = ({ fo
               </button>
             );
           })}
-        </div>
-        {effectiveHasImageIcon && showImagePreview && (
-          <div className="flex items-center gap-2 pt-1">
+          </div>
+          {effectiveHasImageIcon && showImagePreview && (
+            <div className="flex items-center gap-2 pt-1">
             <span className="typography-meta text-muted-foreground">{t('settings.projects.page.field.preview')}</span>
             <span className="inline-flex h-7 w-7 items-center justify-center rounded-md border border-border/60 bg-[var(--surface-elevated)] p-1">
               <span
@@ -204,10 +202,10 @@ export const ProjectIdentityFields: React.FC<ProjectIdentityFieldsProps> = ({ fo
                 )}
               </span>
             </span>
-          </div>
-        )}
-        {effectiveHasImageIcon && (
-          <div className="flex flex-wrap items-center gap-2">
+            </div>
+          )}
+          {effectiveHasImageIcon && (
+            <div className="flex flex-wrap items-center justify-end gap-2">
             <input
               type="color"
               value={iconBackground ?? '#000000'}
@@ -233,9 +231,9 @@ export const ProjectIdentityFields: React.FC<ProjectIdentityFieldsProps> = ({ fo
             >
               <Icon name="close" className="h-3.5 w-3.5" />
             </Button>
-          </div>
-        )}
-        <div className="flex flex-wrap items-center gap-2">
+            </div>
+          )}
+          <div className="flex flex-wrap items-center justify-end gap-2">
           {!hasCustomIcon && (
             <>
               <Button
@@ -279,8 +277,9 @@ export const ProjectIdentityFields: React.FC<ProjectIdentityFieldsProps> = ({ fo
               {t('settings.projects.page.actions.undoRemove')}
             </Button>
           )}
+          </div>
         </div>
-      </ProjectSettingsSubsection>
-    </>
+      </SettingsField>
+    </div>
   );
 };

@@ -49,6 +49,7 @@ import {
 } from '@/components/ui/select';
 import { Icon } from "@/components/icon/Icon";
 import { useI18n } from '@/lib/i18n';
+import { SettingsGroup, SettingsRow } from '@/components/sections/shared/SettingsGroup';
 
 // ─────────────────────────────────────────────────────────────
 // CommandTextarea  — one arg per line, paste-friendly
@@ -1351,10 +1352,10 @@ export const McpPage: React.FC = () => {
 
   return (
     <ScrollableOverlay outerClassName="h-full" className="w-full">
-      <div className="mx-auto w-full max-w-3xl p-3 sm:p-6 sm:pt-8">
+      <div className="oc-settings-page-content mx-auto w-full max-w-3xl p-3 sm:p-6 sm:pt-8">
 
         {/* Header */}
-        <div className="mb-4">
+        <div>
           <div className="min-w-0">
             {isNewServer ? (
               <h2 className="typography-ui-header font-semibold text-foreground truncate">{t('settings.mcp.page.header.newServer')}</h2>
@@ -1426,7 +1427,7 @@ export const McpPage: React.FC = () => {
 
         {/* Runtime Status - Simplified for connected, expanded for errors */}
         {!isNewServer && shouldShowFullStatusCard(effectiveRuntimeStatus?.status, authUrl, needsAuthorization, isAuthPolling) && (
-          <div className="mb-6 px-2">
+          <div className="px-2">
             <div className={cn('rounded-lg border p-3', statusCardClass(effectiveRuntimeStatus?.status))}>
               <div className="space-y-4">
                 <div className="min-w-0 space-y-1">
@@ -1520,15 +1521,15 @@ export const McpPage: React.FC = () => {
         )}
 
         {/* Server Identity */}
-        <div data-settings-item="mcp.server" className="mb-6">
-          <div className="mb-1 px-1">
-            <h3 className="typography-ui-header font-medium text-foreground">{t('settings.mcp.page.server.title')}</h3>
-          </div>
-
-          <section className="px-2 pb-2 pt-0 space-y-0">
+        <div data-settings-item="mcp.server">
+          <SettingsGroup
+            label={t('settings.mcp.page.server.title')}
+            cardClassName="p-3"
+          >
+            <div className="space-y-3">
 
             {isNewServer && (
-              <div className="flex flex-col gap-2 py-1.5 sm:flex-row sm:items-center sm:gap-8">
+              <div className="flex flex-col gap-2 sm:flex-row sm:items-center sm:gap-8">
                 <div className="flex min-w-0 flex-col sm:w-56 shrink-0">
                   <span className="typography-ui-label text-foreground">{t('settings.mcp.page.server.name')}</span>
                 </div>
@@ -1565,7 +1566,7 @@ export const McpPage: React.FC = () => {
 
             {/* Import JSON - prominent placement for new servers */}
             {isNewServer && (
-              <div className="py-1.5">
+              <div>
                 <Button
                   variant="outline"
                   size="xs"
@@ -1581,7 +1582,7 @@ export const McpPage: React.FC = () => {
             )}
 
             <div
-              className="group flex cursor-pointer items-center gap-2 py-1.5"
+              className="group flex cursor-pointer items-center gap-2"
               role="button"
               tabIndex={0}
               aria-pressed={enabled}
@@ -1601,7 +1602,7 @@ export const McpPage: React.FC = () => {
               <span className="typography-ui-label text-foreground">{t('settings.mcp.page.server.enable')}</span>
             </div>
 
-            <div className="flex flex-col gap-2 py-1.5 sm:flex-row sm:items-center sm:gap-8">
+            <div className="flex flex-col gap-2 sm:flex-row sm:items-center sm:gap-8">
               <div className="flex min-w-0 flex-col sm:w-56 shrink-0">
                 <span className="typography-ui-label text-foreground">{t('settings.mcp.page.server.transportMode')}</span>
                 <div className="flex flex-wrap items-center gap-1">
@@ -1627,19 +1628,17 @@ export const McpPage: React.FC = () => {
               </div>
             </div>
 
-          </section>
+            </div>
+          </SettingsGroup>
         </div>
 
         {/* Connection */}
-        <div data-settings-item="mcp.command" className="mb-6">
-          <div className="mb-1 px-1">
-            <h3 className="typography-ui-header font-medium text-foreground">
-              {mcpType === 'local' ? t('settings.mcp.page.connection.command') : t('settings.mcp.page.connection.serverUrl')}
-            </h3>
-          </div>
-
-          <section className="px-2 pb-2 pt-0">
-            {mcpType === 'local' ? (
+        <div data-settings-item="mcp.command">
+          {mcpType === 'local' ? (
+            <SettingsGroup
+              label={t('settings.mcp.page.connection.command')}
+              cardClassName="p-3"
+            >
               <CommandTextarea
                 value={command}
                 onChange={setCommand}
@@ -1649,24 +1648,27 @@ export const McpPage: React.FC = () => {
                 clipboardReadFailed={t('settings.mcp.page.toast.clipboardReadFailed')}
                 preview={(count) => t('settings.mcp.page.connection.previewArgs', { count })}
               />
-            ) : (
-              <Input
-                value={url}
-                onChange={(e) => setUrl(e.target.value)}
-                placeholder={t('settings.mcp.page.connection.serverUrlPlaceholder')}
-                className="font-mono typography-meta"
-              />
-            )}
-          </section>
+            </SettingsGroup>
+          ) : (
+            <SettingsGroup>
+              <SettingsRow label={t('settings.mcp.page.connection.serverUrl')}>
+                <Input
+                  value={url}
+                  onChange={(e) => setUrl(e.target.value)}
+                  placeholder={t('settings.mcp.page.connection.serverUrlPlaceholder')}
+                  className="font-mono typography-meta"
+                />
+              </SettingsRow>
+            </SettingsGroup>
+          )}
         </div>
 
         {mcpType === 'remote' && (
-          <div data-settings-item="mcp.advanced" className="mb-6">
-            <div className="mb-1 px-1">
-              <h3 className="typography-ui-header font-medium text-foreground">{t('settings.mcp.page.advanced.title')}</h3>
-            </div>
-
-            <section className="px-2 pb-2 pt-0">
+          <div data-settings-item="mcp.advanced">
+            <SettingsGroup
+              label={t('settings.mcp.page.advanced.title')}
+              cardClassName="p-3"
+            >
               <Collapsible
                 open={isAdvancedRemoteOptionsOpen}
                 onOpenChange={setIsAdvancedRemoteOptionsOpen}
@@ -1686,29 +1688,22 @@ export const McpPage: React.FC = () => {
                 </CollapsibleTrigger>
                 <CollapsibleContent className="pt-2">
                   <div className="space-y-4">
-                    <div className="space-y-2">
-                      <div className="flex flex-col gap-2 sm:flex-row sm:items-center sm:gap-8">
-                        <div className="flex min-w-0 flex-col sm:w-56 shrink-0">
-                          <span className="typography-ui-label text-foreground">{t('settings.mcp.page.advanced.timeoutMs')}</span>
-                        </div>
-                        <div className="flex items-center gap-2">
-                          <Input
-                            type="number"
-                            min="1"
-                            step="1"
-                            value={timeout}
-                            onChange={(e) => setTimeoutValue(e.target.value)}
-                            placeholder="5000"
-                            className="h-7 w-32 font-mono px-2"
-                            data-bwignore="true"
-                            data-1p-ignore="true"
-                          />
-                        </div>
-                      </div>
-                      <p className="typography-micro text-muted-foreground sm:pl-64">
-                        {t('settings.mcp.page.advanced.timeoutHint')}
-                      </p>
-                    </div>
+                    <SettingsRow
+                      label={t('settings.mcp.page.advanced.timeoutMs')}
+                      description={t('settings.mcp.page.advanced.timeoutHint')}
+                    >
+                      <Input
+                        type="number"
+                        min="1"
+                        step="1"
+                        value={timeout}
+                        onChange={(e) => setTimeoutValue(e.target.value)}
+                        placeholder="5000"
+                        className="w-32 font-mono"
+                        data-bwignore="true"
+                        data-1p-ignore="true"
+                      />
+                    </SettingsRow>
 
                     <div>
                       <div className="mb-2 typography-ui-label text-foreground">
@@ -1809,24 +1804,25 @@ export const McpPage: React.FC = () => {
                   </div>
                 </CollapsibleContent>
               </Collapsible>
-            </section>
+            </SettingsGroup>
           </div>
         )}
 
         {/* Environment Variables */}
-        <div data-settings-item="mcp.environment" className="mb-2">
-          <div className="mb-1 px-1">
-            <h3 className="typography-ui-header font-medium text-foreground">
-              {t('settings.mcp.page.env.title')}
-              {envEntries.length > 0 && (
-                <span className="ml-1.5 typography-micro text-muted-foreground font-normal">
-                  ({envEntries.length})
-                </span>
-              )}
-            </h3>
-          </div>
-
-          <section className="px-2 pb-2 pt-0">
+        <div data-settings-item="mcp.environment">
+          <SettingsGroup
+            label={(
+              <span>
+                {t('settings.mcp.page.env.title')}
+                {envEntries.length > 0 && (
+                  <span className="ml-1.5 typography-micro text-muted-foreground font-normal">
+                    ({envEntries.length})
+                  </span>
+                )}
+              </span>
+            )}
+            cardClassName="p-3"
+          >
             {envEntries.length === 0 ? (
               <Button
                 variant="outline"
@@ -1857,11 +1853,11 @@ export const McpPage: React.FC = () => {
                 removeVariableAria={t('settings.mcp.page.env.removeVariableAria')}
               />
             )}
-          </section>
+          </SettingsGroup>
         </div>
 
         {/* Actions */}
-        <div className="flex items-center gap-2 px-2 py-1">
+        <div className="flex items-center gap-2">
           <Button
             onClick={handleSave}
             disabled={isSaving || (!isDirty && !isNewServer)}

@@ -21,6 +21,7 @@ import {
 import { Tooltip, TooltipContent, TooltipTrigger } from '@/components/ui/tooltip';
 import { Collapsible, CollapsibleContent, CollapsibleTrigger } from '@/components/ui/collapsible';
 import { SettingsPageLayout } from '@/components/sections/shared/SettingsPageLayout';
+import { SettingsGroup } from '@/components/sections/shared/SettingsGroup';
 import { useDesktopSshStore } from '@/stores/useDesktopSshStore';
 import { useUIStore } from '@/stores/useUIStore';
 import { toast } from '@/components/ui';
@@ -198,6 +199,37 @@ const HintLabel: React.FC<{ label: string; hint: React.ReactNode }> = ({ label, 
     </span>
   );
 };
+
+type RemoteSettingsSectionProps = {
+  itemId?: string;
+  label: React.ReactNode;
+  description?: React.ReactNode;
+  action?: React.ReactNode;
+  children: React.ReactNode;
+};
+
+const RemoteSettingsSection = ({
+  itemId,
+  label,
+  description,
+  action,
+  children,
+}: RemoteSettingsSectionProps) => (
+  <div data-settings-item={itemId}>
+    <SettingsGroup
+      className="oc-settings-detail-group"
+      label={action ? (
+        <div className="flex min-w-0 items-center justify-between gap-3">
+          <div className="min-w-0">{label}</div>
+          <div className="shrink-0">{action}</div>
+        </div>
+      ) : label}
+      description={description}
+    >
+      <div className="oc-settings-group-row">{children}</div>
+    </SettingsGroup>
+  </div>
+);
 
 const forwardTypeDescriptionKey = (type: DesktopSshPortForwardType): I18nKey => {
   switch (type) {
@@ -1381,12 +1413,12 @@ export const RemoteInstancesPage: React.FC = () => {
     return (
       <SettingsPageLayout>
         {clientAuth ? (
-          <div data-settings-item="remote-instances.client-auth" className="mb-8">
-            <div className="mb-1 px-1 space-y-0.5">
-              <h3 className="typography-ui-header font-medium text-foreground">{t('settings.remoteInstances.clientAuth.title')}</h3>
-              <p className="typography-meta text-muted-foreground">{t('settings.remoteInstances.clientAuth.description')}</p>
-            </div>
-            <section className="px-2 pb-2 pt-0 space-y-3">
+          <RemoteSettingsSection
+            itemId="remote-instances.client-auth"
+            label={t('settings.remoteInstances.clientAuth.title')}
+            description={t('settings.remoteInstances.clientAuth.description')}
+          >
+            <div className="space-y-3">
               <div>
                 <Button type="button" size="xs" className="!font-normal" onClick={() => void openAddDevice()}>
                   <Icon name="add" className="h-3.5 w-3.5" />
@@ -1474,19 +1506,18 @@ export const RemoteInstancesPage: React.FC = () => {
                 )}
               </div>
               {remoteClientError ? <p className="typography-meta text-[var(--status-error)]">{remoteClientError}</p> : null}
-            </section>
-          </div>
+            </div>
+          </RemoteSettingsSection>
         ) : null}
 
-        {showInstanceManagement ? <div data-settings-item="remote-instances.direct-hosts" className="mb-8 border-t border-[var(--surface-subtle)] pt-8">
-          <div className="mb-1 flex items-start justify-between gap-3 px-1">
-            <div className="min-w-0 space-y-0.5">
-              <h3 className="typography-ui-header font-medium text-foreground">{t('settings.remoteInstances.direct.title')}</h3>
-              <p className="typography-meta text-muted-foreground">{t('settings.remoteInstances.direct.description')}</p>
-            </div>
-            {/* Importing a pairing link is the flagship path; add-by-address is
-                the manual fallback. The token-storage note lives in the add
-                dialog next to the token field it describes. */}
+        {/* Importing a pairing link is the flagship path; add-by-address is
+            the manual fallback. The token-storage note lives in the add
+            dialog next to the token field it describes. */}
+        {showInstanceManagement ? <RemoteSettingsSection
+          itemId="remote-instances.direct-hosts"
+          label={t('settings.remoteInstances.direct.title')}
+          description={t('settings.remoteInstances.direct.description')}
+          action={(
             <div className="flex shrink-0 items-center gap-2 pt-0.5">
               <Button type="button" size="xs" className="!font-normal" onClick={() => setDirectImportDialogOpen(true)} disabled={directSaving}>
                 {t('settings.remoteInstances.direct.import.action')}
@@ -1496,8 +1527,9 @@ export const RemoteInstancesPage: React.FC = () => {
                 {t('settings.remoteInstances.direct.actions.add')}
               </Button>
             </div>
-          </div>
-          <section className="px-2 pb-2 pt-0 space-y-4">
+          )}
+        >
+          <div className="space-y-4">
             <div className="space-y-1">
               {directLoading ? (
                 <p className="typography-meta text-muted-foreground">{t('settings.remoteInstances.direct.state.loading')}</p>
@@ -1567,8 +1599,8 @@ export const RemoteInstancesPage: React.FC = () => {
             </div>
 
             {directError ? <p className="typography-meta text-[var(--status-error)]">{directError}</p> : null}
-          </section>
-        </div> : null}
+          </div>
+        </RemoteSettingsSection> : null}
 
         {showInstanceManagement ? <Dialog open={directAddDialogOpen} onOpenChange={setDirectAddDialogOpen}>
           <DialogContent className="sm:max-w-lg">
@@ -1757,20 +1789,17 @@ export const RemoteInstancesPage: React.FC = () => {
           </DialogContent>
         </Dialog>
 
-        {showInstanceManagement ? <div className="mb-8 border-t border-[var(--surface-subtle)] pt-8">
-          <div className="mb-1 px-1 space-y-0.5">
-            <div className="flex items-center justify-between gap-3">
-              <div className="min-w-0">
-                <h3 className="typography-ui-header font-medium text-foreground">{t('settings.remoteInstances.sidebar.title')}</h3>
-                <p className="typography-meta text-muted-foreground">{t('settings.remoteInstances.sidebar.total', { count: instances.length })}</p>
-              </div>
+        {showInstanceManagement ? <RemoteSettingsSection
+          label={t('settings.remoteInstances.sidebar.title')}
+          description={t('settings.remoteInstances.sidebar.total', { count: instances.length })}
+          action={(
               <Button type="button" size="xs" className="!font-normal" onClick={() => setSshAddDialogOpen(true)}>
                 <Icon name="add" className="h-3.5 w-3.5" />
                 {t('settings.remoteInstances.sidebar.actions.addSshInstance')}
               </Button>
-            </div>
-          </div>
-          <section className="px-2 pb-2 pt-0 space-y-1">
+          )}
+        >
+          <div className="space-y-1">
             {isLoading ? (
               <p className="typography-meta text-muted-foreground">{t('settings.remoteInstances.page.import.loading')}</p>
             ) : instances.length === 0 ? (
@@ -1819,8 +1848,8 @@ export const RemoteInstancesPage: React.FC = () => {
                 </div>
               );
             })}
-          </section>
-        </div> : null}
+          </div>
+        </RemoteSettingsSection> : null}
 
         {showInstanceManagement ? <Dialog open={sshAddDialogOpen} onOpenChange={setSshAddDialogOpen}>
           <DialogContent className="sm:max-w-lg">
@@ -1839,11 +1868,7 @@ export const RemoteInstancesPage: React.FC = () => {
           </DialogContent>
         </Dialog> : null}
 
-        {showInstanceManagement ? <div className="mb-8 border-t border-[var(--surface-subtle)] pt-8">
-          <div className="mb-1 px-1 space-y-0.5">
-            <h3 className="typography-ui-header font-medium text-foreground">{t('settings.remoteInstances.page.import.sectionTitle')}</h3>
-          </div>
-          <section className="px-2 pb-2 pt-0">
+        {showInstanceManagement ? <RemoteSettingsSection label={t('settings.remoteInstances.page.import.sectionTitle')}>
           {isImportsLoading ? (
             <p className="typography-meta text-muted-foreground">{t('settings.remoteInstances.page.import.loading')}</p>
           ) : importCandidates.length === 0 ? (
@@ -1872,8 +1897,7 @@ export const RemoteInstancesPage: React.FC = () => {
               ))}
             </div>
           )}
-        </section>
-        </div> : null}
+        </RemoteSettingsSection> : null}
 
         <Dialog
           open={Boolean(patternHost)}
@@ -1923,8 +1947,8 @@ export const RemoteInstancesPage: React.FC = () => {
 
   return (
     <Dialog open={Boolean(draft)} onOpenChange={(open) => { if (!open) setSelectedId(null); }}>
-      <DialogContent className="sm:max-w-4xl max-h-[90vh] overflow-auto">
-      <div className="mb-6 px-1">
+      <DialogContent className="oc-settings-section-stack sm:max-w-4xl max-h-[90vh] overflow-auto">
+      <div className="px-1">
         <h2 className="typography-ui-header font-semibold text-foreground truncate">{instanceTitle}</h2>
         <div className="mt-1 flex flex-wrap items-center gap-2 typography-meta text-muted-foreground">
           <span className={`h-2.5 w-2.5 rounded-full ${phaseDotClass(statusPhase)}`} />
@@ -1934,12 +1958,11 @@ export const RemoteInstancesPage: React.FC = () => {
         </div>
       </div>
 
-      <div className="mb-8">
-        <div className="mb-1 px-1 space-y-0.5">
-          <h3 className="typography-ui-header font-medium text-foreground">{t('settings.remoteInstances.page.section.actions')}</h3>
-          <p className="typography-meta text-muted-foreground">{t('settings.remoteInstances.page.section.actionsDescription')}</p>
-        </div>
-        <section className="px-2 pb-2 pt-0 space-y-3">
+      <RemoteSettingsSection
+        label={t('settings.remoteInstances.page.section.actions')}
+        description={t('settings.remoteInstances.page.section.actionsDescription')}
+      >
+        <div className="space-y-3">
           <div className="flex flex-wrap items-center gap-2">
             <Button
               type="button"
@@ -2005,15 +2028,14 @@ export const RemoteInstancesPage: React.FC = () => {
               <span className="font-mono text-foreground/90">{status.localUrl}</span>
             </div>
           ) : null}
-        </section>
-      </div>
-
-      <div className="mb-8">
-        <div className="mb-1 px-1 space-y-0.5">
-          <h3 className="typography-ui-header font-medium text-foreground">{t('settings.remoteInstances.page.section.instance')}</h3>
-          <p className="typography-meta text-muted-foreground">{t('settings.remoteInstances.page.section.instanceDescription')}</p>
         </div>
-        <section className="px-2 pb-2 pt-0 space-y-3">
+      </RemoteSettingsSection>
+
+      <RemoteSettingsSection
+        label={t('settings.remoteInstances.page.section.instance')}
+        description={t('settings.remoteInstances.page.section.instanceDescription')}
+      >
+        <div className="space-y-3">
           <div className="flex flex-col gap-1.5 py-1.5 md:flex-row md:items-center md:gap-8">
             <span className="typography-ui-label text-foreground w-56 shrink-0">{t('settings.remoteInstances.page.field.sshCommand')}</span>
             <Input
@@ -2059,15 +2081,14 @@ export const RemoteInstancesPage: React.FC = () => {
               }}
             />
           </div>
-        </section>
-      </div>
-
-      <div className="mb-8 border-t border-[var(--surface-subtle)] pt-8">
-        <div className="mb-1 px-1 space-y-0.5">
-          <h3 className="typography-ui-header font-medium text-foreground">{t('settings.remoteInstances.page.section.remoteServer')}</h3>
-          <p className="typography-meta text-muted-foreground">{t('settings.remoteInstances.page.section.remoteServerDescription')}</p>
         </div>
-        <section className="px-2 pb-2 pt-0 space-y-3">
+      </RemoteSettingsSection>
+
+      <RemoteSettingsSection
+        label={t('settings.remoteInstances.page.section.remoteServer')}
+        description={t('settings.remoteInstances.page.section.remoteServerDescription')}
+      >
+        <div className="space-y-3">
           <div className="flex flex-col gap-1.5 py-1.5 md:flex-row md:items-center md:gap-8">
             <div className="w-56 shrink-0">
                 <HintLabel
@@ -2193,15 +2214,14 @@ export const RemoteInstancesPage: React.FC = () => {
               </div>
             </div>
           ) : null}
-        </section>
-      </div>
-
-      <div className="mb-8 border-t border-[var(--surface-subtle)] pt-8">
-        <div className="mb-1 px-1 space-y-0.5">
-          <h3 className="typography-ui-header font-medium text-foreground">{t('settings.remoteInstances.page.section.mainTunnel')}</h3>
-          <p className="typography-meta text-muted-foreground">{t('settings.remoteInstances.page.section.mainTunnelDescription')}</p>
         </div>
-        <section className="px-2 pb-2 pt-0 space-y-3">
+      </RemoteSettingsSection>
+
+      <RemoteSettingsSection
+        label={t('settings.remoteInstances.page.section.mainTunnel')}
+        description={t('settings.remoteInstances.page.section.mainTunnelDescription')}
+      >
+        <div className="space-y-3">
           <div className="flex flex-col gap-1.5 py-1.5 md:flex-row md:items-center md:gap-8">
             <div className="w-56 shrink-0">
                 <HintLabel
@@ -2293,15 +2313,14 @@ export const RemoteInstancesPage: React.FC = () => {
               </Button>
             </div>
           </div>
-        </section>
-      </div>
-
-      <div className="mb-8 border-t border-[var(--surface-subtle)] pt-8">
-        <div className="mb-1 px-1 space-y-0.5">
-          <h3 className="typography-ui-header font-medium text-foreground">{t('settings.remoteInstances.page.section.authentication')}</h3>
-          <p className="typography-meta text-muted-foreground">{t('settings.remoteInstances.page.section.authenticationDescription')}</p>
         </div>
-        <section className="px-2 pb-2 pt-0 space-y-3">
+      </RemoteSettingsSection>
+
+      <RemoteSettingsSection
+        label={t('settings.remoteInstances.page.section.authentication')}
+        description={t('settings.remoteInstances.page.section.authenticationDescription')}
+      >
+        <div className="space-y-3">
           <div className="flex flex-col gap-1.5 py-1.5 md:flex-row md:items-center md:gap-8">
             <span className="typography-ui-label text-foreground w-56 shrink-0">{t('settings.remoteInstances.page.field.sshPasswordOptional')}</span>
             <Input
@@ -2347,15 +2366,14 @@ export const RemoteInstancesPage: React.FC = () => {
               placeholder={t('settings.remoteInstances.page.field.uiPasswordPlaceholder')}
             />
           </div>
-        </section>
-      </div>
-
-      <div className="mb-8 border-t border-[var(--surface-subtle)] pt-8">
-        <div className="mb-1 px-1 space-y-0.5">
-          <h3 className="typography-ui-header font-medium text-foreground">{t('settings.remoteInstances.page.section.portForwards')}</h3>
-          <p className="typography-meta text-muted-foreground">{t('settings.remoteInstances.page.section.portForwardsDescription')}</p>
         </div>
-        <section className="px-2 pb-2 pt-0 space-y-2">
+      </RemoteSettingsSection>
+
+      <RemoteSettingsSection
+        label={t('settings.remoteInstances.page.section.portForwards')}
+        description={t('settings.remoteInstances.page.section.portForwardsDescription')}
+      >
+        <div className="space-y-2">
           {draft.portForwards.length === 0 ? (
             <p className="typography-micro text-muted-foreground/80">{t('settings.remoteInstances.page.empty.noExtraForwards')}</p>
           ) : null}
@@ -2619,8 +2637,8 @@ export const RemoteInstancesPage: React.FC = () => {
             <Icon name="add" className="h-3.5 w-3.5" />
             {t('settings.remoteInstances.page.actions.addForward')}
           </Button>
-        </section>
-      </div>
+        </div>
+      </RemoteSettingsSection>
 
       <div className="mt-8 border-t border-[var(--interactive-border)] pt-3">
         <div className="flex items-center gap-2">

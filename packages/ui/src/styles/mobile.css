@@ -521,7 +521,6 @@ button.oc-mobile-group-label-trigger:focus-visible {
 .oc-mobile-assistant-card-shell {
   overflow: hidden;
   border-radius: var(--oc-mobile-surface-radius);
-  transition: transform 150ms ease-out;
 }
 
 .oc-mobile-assistant-card {
@@ -538,16 +537,18 @@ button.oc-mobile-group-label-trigger:focus-visible {
   text-align: left;
   outline: none;
   touch-action: manipulation;
+  /* Keep transparent — press scale lives on the floating shell, not a row fill.
+     feedback=none skips the global tap-highlight rule, so set it here. */
+  -webkit-tap-highlight-color: transparent;
   background: transparent;
-  transition: background-color 150ms ease-out;
+  background-color: transparent;
 }
 
-.oc-mobile-assistant-card:active {
-  background: var(--interactive-active);
-}
-
-.oc-mobile-assistant-card-shell:has(.oc-mobile-assistant-card:active) {
-  transform: scale(0.995);
+.oc-mobile-assistant-card:hover,
+.oc-mobile-assistant-card:active,
+.oc-mobile-assistant-card:focus {
+  background: transparent;
+  background-color: transparent;
 }
 
 .oc-mobile-assistant-avatar {
@@ -557,13 +558,6 @@ button.oc-mobile-group-label-trigger:focus-visible {
   flex: none;
   align-items: center;
   justify-content: center;
-}
-
-@media (prefers-reduced-motion: reduce) {
-  .oc-mobile-assistant-card,
-  .oc-mobile-assistant-card-shell {
-    transition: none;
-  }
 }
 
 .oc-mobile-assistant-content > *,
@@ -1332,6 +1326,8 @@ button.oc-mobile-group-label-trigger:focus-visible {
   :root.mobile-pointer:not(.desktop-runtime) .oc-mobile-session-row,
   :root.mobile-pointer:not(.desktop-runtime) .oc-mobile-settings-card,
   :root.mobile-pointer:not(.desktop-runtime) .oc-mobile-settings-nav-list,
+  :root.mobile-pointer:not(.desktop-runtime) .oc-mobile-assistant-catalog,
+  :root.mobile-pointer:not(.desktop-runtime) .oc-mobile-assistant-card-shell,
   :root.mobile-pointer:not(.desktop-runtime) [data-mobile-composer-surface="true"] {
     container-type: inline-size;
   }

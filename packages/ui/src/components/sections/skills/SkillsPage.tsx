@@ -44,6 +44,7 @@ import { useUIStore } from '@/stores/useUIStore';
 import { cn } from '@/lib/utils';
 import { EditorView } from '@codemirror/view';
 import type { Extension } from '@codemirror/state';
+import { SettingsGroup } from '@/components/sections/shared/SettingsGroup';
 
 export interface SkillsPageProps {
   view?: 'installed' | 'catalog';
@@ -505,10 +506,10 @@ const SkillsInstalledPage: React.FC = () => {
 
   return (
     <ScrollableOverlay outerClassName="h-full" className="w-full">
-      <div className="mx-auto w-full max-w-3xl p-3 sm:p-6 sm:pt-8">
+      <div className="oc-settings-page-content mx-auto w-full max-w-3xl p-3 sm:p-6 sm:pt-8">
 
         {/* Header */}
-        <div className="mb-4">
+        <div>
           <div className="min-w-0">
             <h2 className="typography-ui-header font-semibold text-foreground truncate flex items-center gap-2">
               {isNewSkill ? t('settings.skills.page.title.newSkill') : selectedSkillName}
@@ -524,17 +525,15 @@ const SkillsInstalledPage: React.FC = () => {
         </div>
 
         {/* Basic Information */}
-        <div data-settings-item="skills.basic-information" className="mb-8">
-          <div className="mb-1 px-1">
-            <h3 className="typography-ui-header font-medium text-foreground">
-              {t('settings.skills.page.section.basicInformation')}
-            </h3>
-          </div>
-
-          <section className="px-2 pb-2 pt-0 space-y-0">
+        <div data-settings-item="skills.basic-information">
+          <SettingsGroup
+            label={t('settings.skills.page.section.basicInformation')}
+            cardClassName="p-3"
+          >
+            <div className="space-y-3">
 
             {isNewSkill && (
-              <div className="py-1.5">
+              <div>
                 <span className="typography-ui-label text-foreground">{t('settings.skills.page.field.skillNameLocation')}</span>
                 <span className="typography-meta text-muted-foreground ml-2">{t('settings.skills.page.field.skillNameHint')}</span>
                 <div className="flex items-center gap-2 mt-1.5">
@@ -580,7 +579,7 @@ const SkillsInstalledPage: React.FC = () => {
               </div>
             )}
 
-            <div className="py-1.5">
+            <div>
               <span className="typography-ui-label text-foreground">{t('settings.common.field.description')} <span className="text-[var(--status-error)]">*</span></span>
               <span className="typography-meta text-muted-foreground ml-2">{t('settings.skills.page.field.descriptionHint')}</span>
               <div className="mt-1.5">
@@ -595,22 +594,24 @@ const SkillsInstalledPage: React.FC = () => {
               </div>
             </div>
 
-          </section>
+            </div>
+          </SettingsGroup>
         </div>
 
         {/* Instructions */}
-        <div data-settings-item="skills.instructions" className="mb-8">
-          <div className="mb-1 px-1 flex items-center justify-between gap-2">
-            <h3 className="typography-ui-header font-medium text-foreground">
-              {t('settings.skills.page.section.instructions')}
-            </h3>
-            <PreviewToggleButton
-              currentMode={skillEditorMode === 'preview' ? 'preview' : 'edit'}
-              onToggle={() => setSkillEditorMode((mode) => mode === 'preview' ? 'edit' : 'preview')}
-            />
-          </div>
-
-          <section className="px-2 pb-2 pt-0">
+        <div data-settings-item="skills.instructions">
+          <SettingsGroup
+            label={(
+              <div className="flex items-center justify-between gap-2">
+                <span>{t('settings.skills.page.section.instructions')}</span>
+                <PreviewToggleButton
+                  currentMode={skillEditorMode === 'preview' ? 'preview' : 'edit'}
+                  onToggle={() => setSkillEditorMode((mode) => mode === 'preview' ? 'edit' : 'preview')}
+                />
+              </div>
+            )}
+            cardClassName="p-3"
+          >
             <div
               className={cn(
                 'overflow-hidden rounded-md border border-[var(--surface-subtle)] bg-background',
@@ -639,21 +640,22 @@ const SkillsInstalledPage: React.FC = () => {
                 />
               )}
             </div>
-          </section>
+          </SettingsGroup>
         </div>
 
         {/* Supporting Files */}
-        <div data-settings-item="skills.supporting-files" className="mb-2">
-          <div className="mb-1 px-1 flex items-center gap-2">
-            <h3 className="typography-ui-header font-medium text-foreground">
-              {t('settings.skills.page.section.supportingFiles')}
-            </h3>
-            <Button variant="outline" size="xs" className="!font-normal gap-1" onClick={handleAddFile} disabled={isReadOnlySkill}>
-              <Icon name="add" className="h-3.5 w-3.5" /> {t('settings.skills.page.actions.addFile')}
-            </Button>
-          </div>
-
-          <section className="px-2 pb-2 pt-0">
+        <div data-settings-item="skills.supporting-files">
+          <SettingsGroup
+            label={(
+              <div className="flex items-center justify-between gap-2">
+                <span>{t('settings.skills.page.section.supportingFiles')}</span>
+                <Button variant="outline" size="xs" className="!font-normal gap-1" onClick={handleAddFile} disabled={isReadOnlySkill}>
+                  <Icon name="add" className="h-3.5 w-3.5" /> {t('settings.skills.page.actions.addFile')}
+                </Button>
+              </div>
+            )}
+            cardClassName="p-3"
+          >
             {(() => {
               const filesToShow = isNewSkill ? pendingFiles : supportingFiles;
 
@@ -697,11 +699,11 @@ const SkillsInstalledPage: React.FC = () => {
                 </div>
               );
             })()}
-          </section>
+          </SettingsGroup>
         </div>
 
         {/* Save action */}
-        <div className="px-2 py-1">
+        <div>
           <Button
             onClick={handleSave}
             disabled={isReadOnlySkill || isSaving || !hasSkillChanges}

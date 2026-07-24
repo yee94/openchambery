@@ -9,7 +9,6 @@ import { useAgentsQuery } from '@/queries/agentQueries';
 import { useShallow } from 'zustand/react/shallow';
 import { useDirectorySync } from '@/sync/sync-context';
 import { useDirectoryStore } from '@/stores/useDirectoryStore';
-import { useDeviceInfo } from '@/lib/device';
 import { opencodeClient } from '@/lib/opencode/client';
 import { cn } from '@/lib/utils';
 import { ModelSelector } from './ModelSelector';
@@ -26,6 +25,7 @@ import {
   SelectValue,
 } from '@/components/ui/select';
 import { Icon } from '@/components/icon/Icon';
+import { SettingsField, SettingsGroup, SettingsRow } from '@/components/sections/shared/SettingsGroup';
 
 type PermissionAction = 'allow' | 'ask' | 'deny';
 type PermissionRule = { permission: string; pattern: string; action: PermissionAction };
@@ -217,7 +217,6 @@ const getVariantOptionsForModel = (
 };
 export const AgentsPage: React.FC = () => {
   const { t } = useI18n();
-  const { isMobile } = useDeviceInfo();
   const providers = useConfigStore((state) => state.providers) as AgentVariantProvider[];
   const {
     selectedAgentName,
@@ -677,7 +676,7 @@ export const AgentsPage: React.FC = () => {
 
   return (
     <ScrollableOverlay outerClassName="h-full" className="w-full">
-      <div className="mx-auto w-full max-w-3xl p-3 sm:p-6 sm:pt-8">
+      <div className="oc-settings-page-content mx-auto w-full max-w-3xl p-3 sm:p-6 sm:pt-8">
 
         {/* Header & Actions */}
         <div className="mb-4 flex items-center justify-between gap-4">
@@ -692,21 +691,10 @@ export const AgentsPage: React.FC = () => {
         </div>
 
         {/* Identity & Role */}
-        <div className="mb-8">
-          <div className="mb-1 px-1">
-            <h3 className="typography-ui-header font-medium text-foreground">
-              {t('settings.agents.page.section.identityRole')}
-            </h3>
-          </div>
-
-          <section className="px-2 pb-2 pt-0 space-y-0">
+        <SettingsGroup label={t('settings.agents.page.section.identityRole')}>
 
             {isNewAgent && (
-              <div data-settings-item="agents.name" className="flex flex-col gap-2 py-1.5 sm:flex-row sm:items-center sm:gap-8">
-                <div className="flex min-w-0 flex-col sm:w-56 shrink-0">
-                  <span className="typography-ui-label text-foreground">{t('settings.agents.page.field.agentName')}</span>
-                </div>
-                <div className="flex min-w-0 flex-1 items-center gap-2 sm:w-fit sm:flex-initial">
+              <SettingsRow itemId="agents.name" label={t('settings.agents.page.field.agentName')}>
                   <div className="flex items-center">
                     <span className="typography-ui-label text-muted-foreground mr-1">@</span>
                     <Input
@@ -735,13 +723,10 @@ export const AgentsPage: React.FC = () => {
                       </SelectItem>
                     </SelectContent>
                   </Select>
-                </div>
-              </div>
+              </SettingsRow>
             )}
 
-            <div className="py-1.5">
-              <span className="typography-ui-label text-foreground">{t('settings.common.field.description')}</span>
-              <div className="mt-1.5">
+            <SettingsRow label={t('settings.common.field.description')} className="oc-settings-split-row-stacked">
                 <Textarea
                   value={description}
                   onChange={(e) => setDescription(e.target.value)}
@@ -749,13 +734,13 @@ export const AgentsPage: React.FC = () => {
                   rows={2}
                   className="w-full resize-none min-h-[60px] bg-transparent"
                 />
-              </div>
-            </div>
+            </SettingsRow>
 
-            <div data-settings-item="agents.mode" className="pb-1.5 pt-0.5">
-              <div className="flex min-w-0 flex-col gap-1.5">
+            <SettingsRow
+              itemId="agents.mode"
+              label={(
                 <div className="flex items-center gap-1.5">
-                  <span className="typography-ui-label text-foreground">{t('settings.agents.page.field.mode')}</span>
+                  <span>{t('settings.agents.page.field.mode')}</span>
                   <Tooltip>
                     <TooltipTrigger asChild>
                       <Icon name="information" className="h-3.5 w-3.5 text-muted-foreground/60 cursor-help" />
@@ -765,7 +750,9 @@ export const AgentsPage: React.FC = () => {
                     </TooltipContent>
                   </Tooltip>
                 </div>
-                <div className="flex flex-wrap items-center gap-1">
+              )}
+            >
+                <div className="flex flex-wrap items-center justify-end gap-1">
                 <Button
                   variant="chip"
                   size="xs"
@@ -794,27 +781,17 @@ export const AgentsPage: React.FC = () => {
                   {t('settings.agents.page.mode.all')}
                 </Button>
                 </div>
-              </div>
-            </div>
-
-          </section>
-        </div>
+            </SettingsRow>
+        </SettingsGroup>
 
         {/* Model & Parameters */}
-        <div className="mb-8">
-          <div className="mb-1 px-1">
-            <h3 className="typography-ui-header font-medium text-foreground">
-              {t('settings.agents.page.section.modelParameters')}
-            </h3>
-          </div>
-
-          <section className="px-2 pb-2 pt-0 space-y-0">
-
-            <div data-settings-item="agents.model" className="flex flex-col gap-2 py-1.5 sm:flex-row sm:items-center sm:gap-8">
-              <div className="flex min-w-0 flex-col sm:w-56 shrink-0">
-                <span className="typography-ui-label text-foreground">{t('settings.agents.page.field.overrideModel')}</span>
-              </div>
-              <div className="flex min-w-0 flex-1 items-center gap-2 sm:w-fit sm:flex-initial">
+        <SettingsGroup
+          label={t('settings.agents.page.section.modelParameters')}
+        >
+            <SettingsRow
+              itemId="agents.model"
+              label={t('settings.agents.page.field.overrideModel')}
+            >
                 <ModelSelector
                   providerId={parseModelIdentifier(model)?.providerId ?? ''}
                   modelId={parseModelIdentifier(model)?.modelId ?? ''}
@@ -826,14 +803,15 @@ export const AgentsPage: React.FC = () => {
                     }
                     setVariant('');
                   }}
+                  className="oc-settings-inline-value"
                 />
-              </div>
-            </div>
+            </SettingsRow>
 
-            <div data-settings-item="agents.variant" className={cn("py-1.5", isMobile ? "flex flex-col gap-3" : "flex items-center gap-8")}>
-              <div className={cn("flex min-w-0 flex-col", isMobile ? "w-full" : "sm:w-56 shrink-0")}>
+            <SettingsRow
+              itemId="agents.variant"
+              label={(
                 <div className="flex items-center gap-1.5">
-                  <span className="typography-ui-label text-foreground">{t('settings.agents.page.field.variant')}</span>
+                  <span>{t('settings.agents.page.field.variant')}</span>
                   <Tooltip>
                     <TooltipTrigger asChild>
                       <Icon name="information" className="h-3.5 w-3.5 text-muted-foreground/60 cursor-help" />
@@ -843,15 +821,15 @@ export const AgentsPage: React.FC = () => {
                     </TooltipContent>
                   </Tooltip>
                 </div>
-                <span className="typography-meta text-muted-foreground">{t('settings.agents.page.field.variantHint')}</span>
-              </div>
-              <div className={cn('flex items-center gap-2', isMobile ? 'w-full' : 'w-fit')}>
+              )}
+              description={t('settings.agents.page.field.variantHint')}
+            >
                 {shouldUseVariantSelect ? (
                   <Select
                     value={selectedVariantValue}
                     onValueChange={(value) => setVariant(value === '__default' ? '' : value)}
                   >
-                    <SelectTrigger className={cn('max-w-full', isMobile ? 'w-full' : 'w-fit min-w-[10rem]')}>
+                    <SelectTrigger className="w-fit min-w-[10rem] max-w-full">
                       <SelectValue placeholder={t('settings.agents.page.field.variantPlaceholder')}>
                         {(value) => value === '__default' ? t('chat.modelControls.default') : value}
                       </SelectValue>
@@ -870,7 +848,7 @@ export const AgentsPage: React.FC = () => {
                       onChange={(event) => setVariant(event.target.value)}
                       placeholder={t('settings.agents.page.field.variantPlaceholder')}
                       disabled={!model && !variant}
-                      className={cn('h-7 w-40', isMobile && 'w-full')}
+                      className="h-7 w-40 max-w-full"
                     />
                     {variant && (
                       <Button
@@ -887,13 +865,13 @@ export const AgentsPage: React.FC = () => {
                     )}
                   </>
                 )}
-              </div>
-            </div>
+            </SettingsRow>
 
-            <div data-settings-item="agents.temperature" className={cn("py-1.5", isMobile ? "flex flex-col gap-3" : "flex items-center gap-8")}>
-              <div className={cn("flex min-w-0 flex-col", isMobile ? "w-full" : "sm:w-56 shrink-0")}>
+            <SettingsRow
+              itemId="agents.temperature"
+              label={(
                 <div className="flex items-center gap-1.5">
-                  <span className="typography-ui-label text-foreground">{t('settings.agents.page.field.temperature')}</span>
+                  <span>{t('settings.agents.page.field.temperature')}</span>
                   <Tooltip>
                     <TooltipTrigger asChild>
                       <Icon name="information" className="h-3.5 w-3.5 text-muted-foreground/60 cursor-help" />
@@ -903,9 +881,9 @@ export const AgentsPage: React.FC = () => {
                     </TooltipContent>
                   </Tooltip>
                 </div>
-                <span className="typography-meta text-muted-foreground">{t('settings.agents.page.field.temperatureRange')}</span>
-              </div>
-              <div className={cn("flex items-center gap-2", isMobile ? "w-full" : "w-fit")}>
+              )}
+              description={t('settings.agents.page.field.temperatureRange')}
+            >
                 <NumberInput
                   value={temperature}
                   fallbackValue={0.7}
@@ -931,13 +909,13 @@ export const AgentsPage: React.FC = () => {
                     <Icon name="close" className="h-3.5 w-3.5" />
                   </Button>
                 )}
-              </div>
-            </div>
+            </SettingsRow>
 
-            <div data-settings-item="agents.top-p" className={cn("py-1.5", isMobile ? "flex flex-col gap-3" : "flex items-center gap-8")}>
-              <div className={cn("flex min-w-0 flex-col", isMobile ? "w-full" : "sm:w-56 shrink-0")}>
+            <SettingsRow
+              itemId="agents.top-p"
+              label={(
                 <div className="flex items-center gap-1.5">
-                  <span className="typography-ui-label text-foreground">{t('settings.agents.page.field.topP')}</span>
+                  <span>{t('settings.agents.page.field.topP')}</span>
                   <Tooltip>
                     <TooltipTrigger asChild>
                       <Icon name="information" className="h-3.5 w-3.5 text-muted-foreground/60 cursor-help" />
@@ -947,9 +925,9 @@ export const AgentsPage: React.FC = () => {
                     </TooltipContent>
                   </Tooltip>
                 </div>
-                <span className="typography-meta text-muted-foreground">{t('settings.agents.page.field.topPRange')}</span>
-              </div>
-              <div className={cn("flex items-center gap-2", isMobile ? "w-full" : "w-fit")}>
+              )}
+              description={t('settings.agents.page.field.topPRange')}
+            >
                 <NumberInput
                   value={topP}
                   fallbackValue={0.9}
@@ -975,21 +953,15 @@ export const AgentsPage: React.FC = () => {
                     <Icon name="close" className="h-3.5 w-3.5" />
                   </Button>
                 )}
-              </div>
-            </div>
-
-          </section>
-        </div>
+            </SettingsRow>
+        </SettingsGroup>
 
         {/* System Prompt */}
-        <div data-settings-item="agents.system-prompt" className="mb-8">
-          <div className="mb-1 px-1">
-            <h3 className="typography-ui-header font-medium text-foreground">
-              {t('settings.agents.page.section.systemPrompt')}
-            </h3>
-          </div>
-
-          <section className="px-2 pb-2 pt-0">
+        <SettingsField
+          itemId="agents.system-prompt"
+          label={t('settings.agents.page.section.systemPrompt')}
+          className="oc-settings-split-row-stacked"
+        >
             <Textarea
               value={prompt}
               onChange={(e) => setPrompt(e.target.value)}
@@ -997,15 +969,14 @@ export const AgentsPage: React.FC = () => {
               rows={8}
               className="w-full font-mono typography-meta min-h-[120px] max-h-[60vh] bg-transparent resize-y"
             />
-          </section>
-        </div>
+        </SettingsField>
 
         {/* Tool Permissions */}
-        <div data-settings-item="agents.permissions" className="mb-2">
-          <div className="mb-1 px-1 flex items-center justify-between gap-4">
-            <h3 className="typography-ui-header font-medium text-foreground">
-              {t('settings.agents.page.section.toolPermissions')}
-            </h3>
+        <div data-settings-item="agents.permissions">
+          <SettingsGroup
+            label={(
+            <div className="flex items-center justify-between gap-4">
+              <span>{t('settings.agents.page.section.toolPermissions')}</span>
             <Button
               variant="outline"
               size="xs"
@@ -1014,20 +985,26 @@ export const AgentsPage: React.FC = () => {
             >
               {showPermissionEditor ? t('settings.agents.page.permissions.hideEditor') : t('settings.agents.page.permissions.advancedEditor')}
             </Button>
-          </div>
+            </div>
+            )}
+          >
 
           {!showPermissionEditor ? (
-            <section className="px-2 pb-2 pt-0 space-y-0">
-              {summaryPermissionNames.map((permissionName, index) => {
+            <>
+              {summaryPermissionNames.map((permissionName) => {
                 const { defaultAction, patternRulesCount, patternSummary, hasDefaultHint } = getPermissionSummary(permissionName);
                 const label = formatPermissionLabel(permissionName);
                 const summary = hasDefaultHint ? `${defaultAction} (env blocked)` : defaultAction;
                 return (
-                  <div key={permissionName} className={cn("flex flex-col gap-1 py-1.5 sm:flex-row sm:items-center sm:justify-between sm:gap-8", index > 0 && "border-t border-[var(--surface-subtle)]")}>
-                    <div className="flex items-center gap-2">
-                      <span className="typography-ui-label text-foreground">{label}</span>
+                  <SettingsRow
+                    key={permissionName}
+                    label={(
+                      <div className="flex items-center gap-2">
+                        <span>{label}</span>
                       <span className="typography-micro text-muted-foreground/70 font-mono hidden sm:inline-block">{permissionName}</span>
-                    </div>
+                      </div>
+                    )}
+                  >
                     <div className="flex items-center gap-3">
                       {patternRulesCount > 0 ? (
                         <span className="typography-micro text-muted-foreground bg-[var(--surface-muted)] px-1.5 py-0.5 rounded">{t('settings.agents.page.permissions.globalSummary', { summary })}</span>
@@ -1038,17 +1015,20 @@ export const AgentsPage: React.FC = () => {
                         <span className="typography-micro text-muted-foreground bg-[var(--surface-muted)] px-1.5 py-0.5 rounded">{t('settings.agents.page.permissions.rulesSummary', { summary: patternSummary })}</span>
                       )}
                     </div>
-                  </div>
+                  </SettingsRow>
                 );
               })}
-            </section>
+            </>
           ) : (
-            <div className="space-y-6 px-2">
-              <div className="flex items-center justify-between gap-4 py-1.5">
-                <div className="flex items-center gap-2">
-                  <span className="typography-ui-label text-foreground">{t('settings.agents.page.permissions.globalDefault')}</span>
+            <div className="space-y-6 p-2">
+              <SettingsRow
+                label={(
+                  <div className="flex items-center gap-2">
+                    <span>{t('settings.agents.page.permissions.globalDefault')}</span>
                   <span className="typography-micro text-muted-foreground/70 font-mono">*</span>
-                </div>
+                  </div>
+                )}
+              >
                 <Select
                   value={globalPermission}
                   onValueChange={(value) => setGlobalPermissionAndPrune(value as PermissionAction)}
@@ -1062,7 +1042,7 @@ export const AgentsPage: React.FC = () => {
                     <SelectItem value="deny">{t('settings.common.permission.deny')}</SelectItem>
                   </SelectContent>
                 </Select>
-              </div>
+              </SettingsRow>
 
               <div className="space-y-4">
                 {summaryPermissionNames.filter((name) => name !== '*').map((permissionName) => {
@@ -1207,6 +1187,7 @@ export const AgentsPage: React.FC = () => {
               </div>
             </div>
           )}
+          </SettingsGroup>
         </div>
 
         {/* Save action */}

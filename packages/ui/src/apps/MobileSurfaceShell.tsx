@@ -213,7 +213,7 @@ export const MobileSurfaceShell: React.FC<MobileSurfaceShellProps> = ({
     : dragOffset > 0
       ? `translateY(${dragOffset}px)`
       : 'none';
-  const hasHeaderCopy = Boolean(title || subtitle);
+  const hasHeaderCopy = title != null || subtitle != null;
 
   return createPortal(
     <div

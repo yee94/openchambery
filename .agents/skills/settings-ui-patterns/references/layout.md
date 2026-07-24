@@ -1,53 +1,72 @@
 # Settings Layout
 
+The normative product contract lives at
+`packages/ui/src/components/sections/shared/SETTINGS_DESIGN_SPEC.md`. Read it
+before changing a Settings page.
+
 ## Visual Hierarchy
 
-- Prefer spacing and typography over boxed backgrounds.
-- Avoid wrappers that mix unrelated controls.
-- Omit redundant headings when page context already names the controls.
-- Keep controls compact and row chrome minimal.
+- Compose ordinary configuration from `SettingsGroup`, `SettingsField`, and
+  `SettingsRow`.
+- Use one quiet section label outside one grouped material card.
+- Omit redundant headings when the field label already names a standalone
+  setting.
+- Keep controls compact and let the shared row own card chrome and dividers.
 - Place checkbox/radio state before its label.
 - Dim inactive option labels subtly; do not use transform jumps.
 
 ## Typography
 
-Use classes from `packages/ui/src/lib/typography.ts`:
+Use the shared Settings tokens instead of assigning typography classes to
+section headings:
 
-- Page title: `typography-ui-header font-semibold text-foreground`
-- Section header: `typography-ui-header font-medium text-foreground`
-- Control group: `typography-ui-header font-medium` or `font-normal` when needed
-- Values/labels: `typography-ui-label text-foreground`
-- Helper/meta: `typography-meta text-muted-foreground` or `typography-small text-muted-foreground`
-- Numeric values: add `tabular-nums`
+- Secondary-page title: shared navigation/header component.
+- Section label: `.oc-settings-group-label` and
+  `--oc-settings-section-title-*`.
+- Values/labels: `--oc-settings-row-label-*` through `SettingsRow`.
+- Helper/meta: `--oc-settings-row-meta-*` through `SettingsRow` or the group
+  description.
+- Numeric values: add `tabular-nums` without changing the base size.
+
+Never use `typography-ui-header` for a Settings section label.
 
 ## Spacing
 
-- Keep section-to-section spacing larger than header-to-content spacing.
-- Typical flat section: header `mb-1 px-1`, content `pt-0 pb-2 px-2`, outer `mb-8`.
-- Group related controls with `space-y-3` and modest internal padding such as `p-2`.
-- Avoid elevated backgrounds, rounded rows, and hover fills without explicit UX value.
+- Use `oc-settings-page-content` or `oc-settings-section-stack` between sibling
+  groups.
+- Use `--oc-settings-section-gap` between a section label and its card.
+- Use `--oc-settings-section-stack-gap` between cards.
+- Let `SettingsRow` own row height, padding, divider, and card insets.
+- Do not use local `mb-8`, `space-y-6`, `space-y-8`, or
+  `px-2 pb-2 pt-0` section recipes.
 
 ## Alignment
 
-For consistent desktop columns:
+For consistent desktop and mobile columns:
 
 ```tsx
-<div className="flex items-center gap-8 py-1.5">
-  <span className="w-56 shrink-0 typography-ui-label">{t(labelKey)}</span>
-  <div className="flex w-fit items-center gap-2">...</div>
-</div>
+<SettingsGroup label={t(sectionKey)}>
+  <SettingsRow label={t(labelKey)} description={shortHelper}>
+    {control}
+  </SettingsRow>
+</SettingsGroup>
 ```
 
-- Let narrow layouts stack or wrap.
-- Compare the complete control footprint, including adjacent actions, when matching widths.
-- Disable only the unavailable control; do not dim the entire label row by default.
+- Let the shared responsive grid own narrow-layout collapse.
+- Keep the complete control footprint, including adjacent actions, in the shared
+  value column.
+- Disable only the unavailable control; do not dim the entire label row by
+  default.
 
 ## Responsive Grids
 
-Use a one-column base and introduce columns at a deliberate breakpoint:
+Use a one-column base when several independent groups form a desktop grid, but
+retain the shared group primitive inside each grid cell:
 
 ```tsx
 <div className="grid grid-cols-1 gap-2 md:grid-cols-[14rem_auto] md:gap-x-8" />
 ```
 
-Template fields commonly use `grid grid-cols-1 gap-2 md:grid-cols-2 md:gap-3` with flat `p-2` cells.
+Template/entity editors may use a responsive grid because editing is their
+primary task. Their surrounding group labels, inter-group spacing, helpers, and
+theme tokens still follow the shared Settings specification.

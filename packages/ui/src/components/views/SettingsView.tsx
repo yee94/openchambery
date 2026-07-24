@@ -87,6 +87,7 @@ import {
 import { MobileFloatingSurface } from "@/mobile/MobileSurface";
 import { MobileDetailNavigation } from "@/mobile/MobileDetailNavigation";
 import { MobileSettingsGroup } from "@/mobile/settings/MobileSettingsGroup";
+import { useMobileBackRoute } from "@/mobile/mobileBackNavigation";
 
 // Same constraints as main sidebar
 const SETTINGS_NAV_MIN_WIDTH = 176;
@@ -222,7 +223,7 @@ export function getSettingsNavIcon(slug: SettingsPageSlug): IconName | null {
     case "providers":
       return "cloud";
     case "agents":
-      return "ai-agent";
+      return "node-tree";
     case "assistants":
       return "robot-2";
     case "behavior":
@@ -1113,7 +1114,7 @@ export const SettingsView: React.FC<SettingsViewProps> = ({
   const backButtonTargetsPageSidebar =
     isMobile &&
     mobileStage === "page-content" &&
-    settingsSlug === "skills.installed";
+    activePageMeta?.kind === "split";
   const showOpenPageSidebarButton =
     mobileStage === "page-content" &&
     activePageMeta?.kind === "split" &&
@@ -1153,9 +1154,7 @@ export const SettingsView: React.FC<SettingsViewProps> = ({
 
   const handleMobilePageSidebarItemSelect = React.useCallback(() => {
     setMobileStage("page-content");
-    if (settingsSlug === "skills.installed") {
-      pushMobileSplitDetailHistory(settingsSlug);
-    }
+    pushMobileSplitDetailHistory(settingsSlug);
   }, [pushMobileSplitDetailHistory, settingsSlug]);
 
   const handleBack = React.useCallback(() => {
@@ -1175,18 +1174,25 @@ export const SettingsView: React.FC<SettingsViewProps> = ({
     setMobileStage("nav");
   }, [backButtonTargetsPageSidebar, runtimeCtx.isVSCode, settingsSlug]);
 
+  useMobileBackRoute({
+    id: `mobile-settings:${settingsSlug}`,
+    active: mobileFlow && mobileStage !== "nav",
+    onBack: handleBack,
+    surfaceRef: containerRef,
+  });
+
   React.useEffect(() => {
     if (!isMobile || runtimeCtx.isVSCode) {
       return;
     }
 
     const handlePopState = (event: PopStateEvent) => {
-      if (settingsSlug !== "skills.installed") {
+      if (getSettingsPageMeta(settingsSlug)?.kind !== "split") {
         return;
       }
 
       const detail = getSettingsDetailHistoryEntry(event.state);
-      if (detail?.page === "skills.installed") {
+      if (detail?.page === settingsSlug) {
         setMobileStage("page-content");
         return;
       }
@@ -1367,7 +1373,7 @@ export const SettingsView: React.FC<SettingsViewProps> = ({
                           className={cn(
                             isMobile
                               ? "oc-mobile-settings-row"
-                              : "oc-settings-nav-row flex h-8 w-full items-center gap-2 overflow-hidden rounded-md px-2 text-left",
+                              : "oc-settings-nav-row oc-settings-nav-page-row flex h-8 w-full items-center gap-2 overflow-hidden rounded-md px-2 text-left",
                             selected && !isMobile
                               ? "bg-interactive-selection text-foreground"
                               : "text-foreground hover:bg-interactive-hover",

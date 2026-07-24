@@ -9,6 +9,7 @@ import { Icon } from "@/components/icon/Icon";
 import { OpenChamberLogo } from '@/components/ui/OpenChamberLogo';
 import { useI18n } from '@/lib/i18n';
 import { runtimeFetch } from '@/lib/runtime-fetch';
+import { SettingsGroup, SettingsRow } from '@/components/sections/shared/SettingsGroup';
 
 const GITHUB_URL = 'https://github.com/yee94/openchamber';
 const DISCORD_URL = 'https://discord.gg/ZYRSdnwwKA';
@@ -126,46 +127,50 @@ export const AboutSettings: React.FC<AboutSettingsProps> = ({ initialUpdateDialo
         <div className="flex flex-col items-center text-center">
           <OpenChamberLogo width={72} height={72} />
           <h2 className="mt-4 typography-ui-header font-semibold text-foreground">OpenChamber</h2>
-          <div className="mt-2 space-y-1 typography-ui text-muted-foreground">
-            <p>{t('aboutDialog.openChamberVersionLabel', { version: currentVersion })}</p>
-            <p>{t('aboutDialog.openCodeVersionLabel', { version: openCodeVersion || t('settings.openchamber.about.state.unknown') })}</p>
-          </div>
         </div>
 
-        <div className="flex justify-center">
-          {!updateStore.available && !updateStore.error && (
-            <Button
-              type="button"
-              variant="outline"
-              size="sm"
-              onClick={() => updateStore.checkForUpdates()}
-              disabled={isChecking}
-              className="h-10 w-auto justify-center gap-2 rounded-xl px-4"
-            >
-              {isChecking ? <Icon name="loader" className="size-4 animate-spin" /> : <Icon name="refresh" className="size-4" />}
-              {isChecking ? t('settings.openchamber.about.state.checking') : t('settings.openchamber.about.actions.checkForUpdates')}
-            </Button>
-          )}
+        <SettingsGroup>
+          <SettingsRow label={t('settings.openchamber.about.field.version')}>
+            <span className="typography-ui-label font-mono text-foreground text-right">{currentVersion}</span>
+          </SettingsRow>
+          <SettingsRow label={t('settings.openchamber.about.field.openCodeVersion')}>
+            <span className="typography-ui-label font-mono text-foreground text-right">
+              {openCodeVersion || t('settings.openchamber.about.state.unknown')}
+            </span>
+          </SettingsRow>
+          <SettingsRow>
+            {!updateStore.available && !updateStore.error && (
+              <Button
+                type="button"
+                variant="outline"
+                size="sm"
+                onClick={() => updateStore.checkForUpdates()}
+                disabled={isChecking}
+              >
+                {isChecking ? <Icon name="loader" className="size-4 animate-spin" /> : <Icon name="refresh" className="size-4" />}
+                {isChecking ? t('settings.openchamber.about.state.checking') : t('settings.openchamber.about.actions.checkForUpdates')}
+              </Button>
+            )}
 
-          {!isChecking && updateStore.available && (
-            <Button
-              type="button"
-              variant="default"
-              size="sm"
-              onClick={() => setUpdateDialogOpen(true)}
-              className="h-10 w-auto justify-center gap-2 rounded-xl px-4"
-            >
-              <Icon name="download" className="size-4" />
-              {t('settings.openchamber.about.actions.updateToVersion', { version: updateStore.info?.version || '' })}
-            </Button>
-          )}
-        </div>
+            {!isChecking && updateStore.available && (
+              <Button
+                type="button"
+                variant="default"
+                size="sm"
+                onClick={() => setUpdateDialogOpen(true)}
+              >
+                <Icon name="download" className="size-4" />
+                {t('settings.openchamber.about.actions.updateToVersion', { version: updateStore.info?.version || '' })}
+              </Button>
+            )}
+          </SettingsRow>
 
-        {updateStore.error && (
-          <p className="rounded-xl border border-[var(--status-error-border)] bg-[var(--status-error-background)] px-3 py-2 typography-meta text-[var(--status-error)]">
-            {updateStore.error}
-          </p>
-        )}
+          {updateStore.error && (
+            <SettingsRow>
+              <p className="typography-meta text-[var(--status-error)]">{updateStore.error}</p>
+            </SettingsRow>
+          )}
+        </SettingsGroup>
 
         <div className="flex flex-col items-center gap-3 text-center">
           <div className="flex items-center justify-center gap-5">
@@ -221,27 +226,20 @@ export const AboutSettings: React.FC<AboutSettingsProps> = ({ initialUpdateDialo
     );
   }
 
-  // Desktop layout (redesigned)
+  // Desktop uses the same grouped Settings grammar as other detail pages.
   return (
-    <div className="mb-8">
-      <div className="mb-3 px-1">
-        <h3 className="typography-ui-header font-semibold text-foreground">
-          {t('settings.openchamber.about.title')}
-        </h3>
-      </div>
-
-      <div className="rounded-lg bg-[var(--surface-elevated)]/70 overflow-hidden flex flex-col">
-        <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4 px-4 py-3 border-b border-[var(--surface-subtle)]">
-          <div className="flex min-w-0 flex-col">
-            <span className="typography-ui-label text-foreground">{t('settings.openchamber.about.field.version')}</span>
-            <span className="typography-meta text-muted-foreground font-mono">{currentVersion}</span>
-          </div>
-          <div className="flex min-w-0 flex-col">
-            <span className="typography-ui-label text-foreground">{t('settings.openchamber.about.field.openCodeVersion')}</span>
-            <span className="typography-meta text-muted-foreground font-mono">{openCodeVersion || t('settings.openchamber.about.state.unknown')}</span>
-          </div>
-          
-          <div className="flex items-center gap-3">
+    <>
+      <SettingsGroup label={t('settings.openchamber.about.title')}>
+        <SettingsRow label={t('settings.openchamber.about.field.version')}>
+          <span className="typography-ui-label font-mono text-foreground text-right">{currentVersion}</span>
+        </SettingsRow>
+        <SettingsRow label={t('settings.openchamber.about.field.openCodeVersion')}>
+          <span className="typography-ui-label font-mono text-foreground text-right">
+            {openCodeVersion || t('settings.openchamber.about.state.unknown')}
+          </span>
+        </SettingsRow>
+        <SettingsRow>
+          <div className="flex flex-wrap items-center justify-end gap-3">
             {updateStore.checking && (
               <div className="flex items-center gap-2 text-muted-foreground">
                 <Icon name="loader" className="h-4 w-4 animate-spin" />
@@ -271,15 +269,15 @@ export const AboutSettings: React.FC<AboutSettingsProps> = ({ initialUpdateDialo
               {t('settings.openchamber.about.actions.checkForUpdates')}
             </Button>
           </div>
-        </div>
-        
+        </SettingsRow>
+
         {updateStore.error && (
-          <div className="px-3 py-2 border-b border-[var(--surface-subtle)]">
+          <SettingsRow>
             <p className="typography-meta text-[var(--status-error)]">{updateStore.error}</p>
-          </div>
+          </SettingsRow>
         )}
 
-        <div className="flex items-center gap-4 px-4 py-4">
+        <SettingsRow controlClassName="flex-wrap">
           <a
             href={GITHUB_URL}
             target="_blank"
@@ -299,8 +297,8 @@ export const AboutSettings: React.FC<AboutSettingsProps> = ({ initialUpdateDialo
             <Icon name="twitter-xfill" className="h-4 w-4" />
               <span>@openchamber_dev</span>
             </a>
-        </div>
-      </div>
+        </SettingsRow>
+      </SettingsGroup>
 
       <UpdateDialog
         open={updateDialogOpen}
@@ -314,6 +312,6 @@ export const AboutSettings: React.FC<AboutSettingsProps> = ({ initialUpdateDialo
         onRestart={updateStore.restartToUpdate}
         runtimeType={updateStore.runtimeType}
       />
-    </div>
+    </>
   );
 };

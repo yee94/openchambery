@@ -16,6 +16,7 @@ import {
 } from '@/lib/passkeys';
 import { getCurrentIntlLocale, useI18n } from '@/lib/i18n';
 import { useUIStore, type TimeFormatPreference } from '@/stores/useUIStore';
+import { SettingsGroup, SettingsRow } from '@/components/sections/shared/SettingsGroup';
 
 const formatTimestamp = (timestamp: number | null, neverUsedText: string, timeFormatPreference: TimeFormatPreference) => {
   if (!timestamp || !Number.isFinite(timestamp)) {
@@ -172,17 +173,9 @@ export const PasskeySettings: React.FC = () => {
   }, [t]);
 
   return (
-    <div className="mb-8">
-      <div className="mb-1 px-1">
-        <h3 className="typography-ui-header font-medium text-foreground">{t('settings.openchamber.passkeys.title')}</h3>
-      </div>
-
-      <section className="px-2 pb-2 pt-0 space-y-2">
-        <div className="flex flex-col gap-2 py-1.5 sm:flex-row sm:items-center sm:gap-8">
-          <div className="flex min-w-0 flex-col sm:w-56 shrink-0">
-            <span className="typography-ui-label text-foreground">{t('settings.openchamber.passkeys.field.currentDevice')}</span>
-          </div>
-          <div className="flex items-center gap-2 sm:w-fit">
+    <SettingsGroup label={t('settings.openchamber.passkeys.title')}>
+        <SettingsRow label={t('settings.openchamber.passkeys.field.currentDevice')}>
+          <div className="flex flex-wrap items-center justify-end gap-2">
             <Button
               type="button"
               variant={isRegistering ? 'secondary' : 'outline'}
@@ -204,31 +197,28 @@ export const PasskeySettings: React.FC = () => {
               {isResetting ? t('settings.openchamber.passkeys.actions.signingOut') : t('settings.openchamber.passkeys.actions.signOutEverywhere')}
             </Button>
           </div>
-        </div>
+        </SettingsRow>
 
         {!status.enabled && (
-          <p className="typography-meta text-muted-foreground">
+          <p className="oc-settings-group-row typography-meta text-muted-foreground">
             {t('settings.openchamber.passkeys.state.uiPasswordRequired')}
           </p>
         )}
 
         {status.enabled && !supportsPasskeys && (
-          <p className="typography-meta text-muted-foreground">
+          <p className="oc-settings-group-row typography-meta text-muted-foreground">
             {supportState.reason}
           </p>
         )}
 
         {isLoading ? (
-          <p className="typography-meta text-muted-foreground">{t('settings.openchamber.passkeys.state.loading')}</p>
+          <p className="oc-settings-group-row typography-meta text-muted-foreground">{t('settings.openchamber.passkeys.state.loading')}</p>
         ) : passkeys.length === 0 ? (
-          <p className="typography-meta text-muted-foreground">{t('settings.openchamber.passkeys.state.noneSaved')}</p>
+          <p className="oc-settings-group-row typography-meta text-muted-foreground">{t('settings.openchamber.passkeys.state.noneSaved')}</p>
         ) : (
-          <div className="space-y-1 pt-1">
+          <>
             {passkeys.map((passkey) => (
-              <div key={passkey.id} className="flex flex-col gap-2 py-1.5 sm:flex-row sm:items-center sm:gap-8">
-                <div className="flex min-w-0 flex-col sm:w-56 shrink-0">
-                  <span className="typography-ui-label text-foreground truncate">{passkey.label}</span>
-                </div>
+              <SettingsRow key={passkey.id} label={passkey.label} copyClassName="truncate">
                 <div className="flex min-w-0 flex-1 items-center justify-between gap-3">
                   <span className="typography-meta text-muted-foreground truncate">
                     {passkey.lastUsedAt
@@ -250,17 +240,16 @@ export const PasskeySettings: React.FC = () => {
                     {revokingId === passkey.id ? t('settings.openchamber.passkeys.actions.removing') : t('settings.common.actions.delete')}
                   </Button>
                 </div>
-              </div>
+              </SettingsRow>
             ))}
-          </div>
+          </>
         )}
-      </section>
 
       {errorMessage && (
-        <div className="mt-1 px-2 py-1.5">
+        <div className="oc-settings-group-row">
           <p className="typography-meta text-[var(--status-error)]">{errorMessage}</p>
         </div>
       )}
-    </div>
+    </SettingsGroup>
   );
 };

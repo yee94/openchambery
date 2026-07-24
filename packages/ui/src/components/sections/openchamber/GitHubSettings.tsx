@@ -12,6 +12,7 @@ import { useI18n } from '@/lib/i18n';
 import { Tooltip, TooltipContent, TooltipTrigger } from '@/components/ui/tooltip';
 import { runtimeFetch } from '@/lib/runtime-fetch';
 import { Icon } from "@/components/icon/Icon";
+import { SettingsGroup } from '@/components/sections/shared/SettingsGroup';
 
 type GitHubUser = {
   login: string;
@@ -282,7 +283,7 @@ export const GitHubSettings: React.FC = () => {
 
   if (authQuery.isError && !authQuery.data) {
     return (
-      <div className="mb-8 px-1 typography-meta text-[var(--status-error)]">
+      <div className="oc-settings-group-description text-[var(--status-error)]">
         {authQuery.error.message}
       </div>
     );
@@ -298,10 +299,11 @@ export const GitHubSettings: React.FC = () => {
     : t('settings.github.page.accountSource.oauth');
 
   return (
-    <div className="mb-8">
-      <div className="mb-3 px-1 flex items-start justify-between gap-4">
+    <div className="oc-settings-section-stack">
+      <SettingsGroup
+        label={(
         <div className="flex items-center gap-2">
-          <h3 className="typography-ui-header font-semibold text-foreground">{t('settings.github.page.oauth.title')}</h3>
+          <span>{t('settings.github.page.oauth.title')}</span>
           <Tooltip>
             <TooltipTrigger asChild>
               <Icon name="information" className="h-3.5 w-3.5 text-muted-foreground/60 cursor-help" />
@@ -311,9 +313,10 @@ export const GitHubSettings: React.FC = () => {
             </TooltipContent>
           </Tooltip>
         </div>
-      </div>
+        )}
+      >
 
-      <div className="rounded-lg bg-[var(--surface-elevated)]/70 overflow-hidden flex flex-col">
+      <div className="overflow-hidden flex flex-col">
         {connected ? (
           <div className={cn("px-4 py-3", isMobile ? "flex flex-col gap-3" : "flex items-center justify-between gap-4")}>
             <div className={cn("flex min-w-0 items-center gap-4", isMobile ? "w-full" : undefined)}>
@@ -446,6 +449,7 @@ export const GitHubSettings: React.FC = () => {
           </Button>
         </div>
       )}
+      </SettingsGroup>
 
       {flow && (
         <div className="mt-4 rounded-lg bg-[var(--surface-elevated)]/70 p-4 border border-[var(--interactive-border)]">
@@ -482,11 +486,8 @@ export const GitHubSettings: React.FC = () => {
       )}
 
       {ghCli?.available && !ghCli?.active && (!ghCli.user || ghCli.disabled) && (
-        <div className="mt-6">
-          <h3 className="typography-ui-header font-semibold text-foreground mb-3 px-1">
-            {t('settings.github.page.ghCli.title')}
-          </h3>
-          <div className="rounded-lg bg-[var(--surface-elevated)]/70 overflow-hidden">
+        <SettingsGroup label={t('settings.github.page.ghCli.title')}>
+          <div className="overflow-hidden">
             <div className={cn("px-4 py-3", isMobile ? "flex flex-col gap-3" : "flex items-center justify-between gap-4")}>
               <div className={cn("flex min-w-0 items-center gap-4", isMobile ? "w-full" : undefined)}>
                 {ghCli.user?.avatarUrl ? (
@@ -536,7 +537,7 @@ export const GitHubSettings: React.FC = () => {
               </Button>
             </div>
           </div>
-        </div>
+        </SettingsGroup>
       )}
     </div>
   );

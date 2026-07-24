@@ -25,6 +25,38 @@ import { runtimeFetch } from '@/lib/runtime-fetch';
 import { opencodeClient } from '@/lib/opencode/client';
 import { filterMethodsWithIndex, shouldLoadAvailableProviders } from './providerAvailability';
 import { QuotaCredentials } from './QuotaCredentials';
+import { SettingsGroup } from '@/components/sections/shared/SettingsGroup';
+
+type ProviderSettingsSectionProps = {
+  itemId?: string;
+  label: React.ReactNode;
+  description?: React.ReactNode;
+  action?: React.ReactNode;
+  children: React.ReactNode;
+};
+
+const ProviderSettingsSection = ({
+  itemId,
+  label,
+  description,
+  action,
+  children,
+}: ProviderSettingsSectionProps) => (
+  <div data-settings-item={itemId}>
+    <SettingsGroup
+      className="oc-settings-detail-group"
+      label={action ? (
+        <div className="flex min-w-0 items-center justify-between gap-2">
+          <div className="min-w-0">{label}</div>
+          <div className="shrink-0">{action}</div>
+        </div>
+      ) : label}
+      description={description}
+    >
+      <div className="oc-settings-group-row">{children}</div>
+    </SettingsGroup>
+  </div>
+);
 
 const formatCompactNumber = (value: number) => new Intl.NumberFormat(getCurrentIntlLocale(), {
   notation: 'compact',
@@ -518,17 +550,12 @@ export const ProvidersPage: React.FC = () => {
   if (isAddMode) {
     return (
       <ScrollableOverlay outerClassName="h-full" className="w-full">
-        <div className="mx-auto w-full max-w-3xl p-3 sm:p-6 sm:pt-8">
-          <div data-settings-item="providers.connect" className="mb-4">
+        <div className="oc-settings-section-stack mx-auto w-full max-w-3xl p-3 sm:p-6 sm:pt-8">
+          <div data-settings-item="providers.connect">
             <h1 className="typography-ui-header font-semibold text-foreground">{t('settings.providers.page.connect.title')}</h1>
           </div>
 
-          <div className="mb-8">
-            <div className="mb-1 px-1">
-              <h2 className="typography-ui-header font-medium text-foreground">{t('settings.providers.page.connect.selectProviderTitle')}</h2>
-            </div>
-
-            <section className="px-2 pb-2 pt-0">
+          <ProviderSettingsSection label={t('settings.providers.page.connect.selectProviderTitle')}>
               <div className="flex flex-wrap items-center gap-2 py-1.5">
                 <span className="typography-ui-label text-foreground">{t('settings.providers.page.connect.providerField')}</span>
                   {availableLoading ? (
@@ -614,19 +641,14 @@ export const ProvidersPage: React.FC = () => {
                     </DropdownMenu>
                    )}
               </div>
-            </section>
-          </div>
+          </ProviderSettingsSection>
 
           {candidateProviderId && (
-            <div data-settings-item="providers.auth" className="mb-8">
-              <div className="mb-1 px-1">
-                <h2 className="typography-ui-header font-medium text-foreground">{t('settings.providers.page.auth.title')}</h2>
-              </div>
-
+            <ProviderSettingsSection itemId="providers.auth" label={t('settings.providers.page.auth.title')}>
               {authLoading ? (
-                <p className="typography-meta text-muted-foreground px-2">{t('settings.providers.page.auth.loadingMethods')}</p>
+                <p className="typography-meta text-muted-foreground">{t('settings.providers.page.auth.loadingMethods')}</p>
               ) : (
-                <section className="px-2 pb-2 pt-0 space-y-4">
+                <div className="space-y-4">
                   <div className="py-1.5">
                     <label className="typography-ui-label text-foreground flex items-center gap-1.5">
                       {t('settings.providers.page.auth.apiKeyLabel')}
@@ -759,9 +781,9 @@ export const ProvidersPage: React.FC = () => {
                       </div>
                     );
                   })()}
-                </section>
+                </div>
               )}
-            </div>
+            </ProviderSettingsSection>
           )}
         </div>
       </ScrollableOverlay>
@@ -797,10 +819,10 @@ export const ProvidersPage: React.FC = () => {
 
   return (
     <ScrollableOverlay outerClassName="h-full" className="w-full">
-      <div className="mx-auto w-full max-w-3xl p-3 sm:p-6 sm:pt-8">
+      <div className="oc-settings-section-stack mx-auto w-full max-w-3xl p-3 sm:p-6 sm:pt-8">
 
         {/* Header */}
-        <div className="mb-4 flex items-center gap-3">
+        <div className="flex items-center gap-3">
           <ProviderLogo providerId={selectedProvider.id} className="h-5 w-5 shrink-0" />
           <div className="min-w-0">
             <h2 className="typography-ui-header font-semibold text-foreground truncate">
@@ -813,9 +835,10 @@ export const ProvidersPage: React.FC = () => {
         </div>
 
         {/* Authentication */}
-        <div data-settings-item="providers.auth" className="mb-8">
-          <div className="mb-1 px-1 flex items-center justify-between gap-2">
-            <h3 className="typography-ui-header font-medium text-foreground">{t('settings.providers.page.auth.title')}</h3>
+        <ProviderSettingsSection
+          itemId="providers.auth"
+          label={t('settings.providers.page.auth.title')}
+          action={(
             <Button
               variant="outline"
               size="xs"
@@ -824,9 +847,8 @@ export const ProvidersPage: React.FC = () => {
             >
               {showAuthPanel ? t('settings.providers.page.actions.hide') : t('settings.providers.page.actions.reconnect')}
             </Button>
-          </div>
-
-          <section className="px-2 pb-2 pt-0">
+          )}
+        >
             {!showAuthPanel ? (
               <div className="flex items-center gap-1.5 py-1.5">
                 <Icon name="check" className="w-4 h-4 text-[var(--status-success)] shrink-0" />
@@ -959,20 +981,17 @@ export const ProvidersPage: React.FC = () => {
                 )}
               </div>
             )}
-          </section>
-        </div>
+        </ProviderSettingsSection>
 
         {(selectedProvider.id === 'opencode' || selectedProvider.id === 'opencode-go') && <QuotaCredentials providerId="opencode-go" providerName="OpenCode Go" />}
         {(selectedProvider.id === 'ollama' || selectedProvider.id === 'ollama-cloud') && <QuotaCredentials providerId="ollama-cloud" providerName="Ollama Cloud" />}
         {selectedProvider.id === 'cursor' && <QuotaCredentials providerId="cursor" providerName="Cursor" />}
 
         {/* Connection Details */}
-        <div data-settings-item="providers.connection-details" className="mb-8">
-          <div className="mb-1 px-1">
-            <h3 className="typography-ui-header font-medium text-foreground">{t('settings.providers.page.connectionDetails.title')}</h3>
-          </div>
-
-          <section className="px-2 pb-2 pt-0">
+        <ProviderSettingsSection
+          itemId="providers.connection-details"
+          label={t('settings.providers.page.connectionDetails.title')}
+        >
             <div className="flex flex-col gap-2 py-1.5 sm:flex-row sm:items-center sm:justify-between sm:gap-8">
               <div className="flex min-w-0 flex-col">
                 {selectedSources && (selectedSources.auth.exists || selectedSources.user.exists || selectedSources.project.exists || selectedSources.custom?.exists) ? (
@@ -1000,20 +1019,22 @@ export const ProvidersPage: React.FC = () => {
                 {authBusyKey === `disconnect:${selectedProvider.id}` ? t('settings.providers.page.actions.disconnecting') : t('settings.providers.page.actions.disconnect')}
               </Button>
             </div>
-          </section>
-        </div>
+        </ProviderSettingsSection>
 
         {/* Models */}
-        <div data-settings-item="providers.models" className="mb-8">
-          <div className="mb-1 px-1 flex items-center justify-between gap-2">
-            <h3 className="typography-ui-header font-medium text-foreground">
+        <ProviderSettingsSection
+          itemId="providers.models"
+          label={(
+            <>
               {t('settings.providers.page.models.title')}
               {providerModels.length > 0 && (
                 <span className="ml-1.5 typography-micro text-muted-foreground font-normal">
                   ({providerModels.length})
                 </span>
               )}
-            </h3>
+            </>
+          )}
+          action={(
             <div className="flex items-center gap-1">
               <Button
                 variant="outline"
@@ -1037,9 +1058,8 @@ export const ProvidersPage: React.FC = () => {
                 {t('settings.providers.page.actions.showAll')}
               </Button>
             </div>
-          </div>
-
-          <section className="px-2 pb-2 pt-0">
+          )}
+        >
             <div className="relative mb-2">
               <Icon name="search" className="absolute left-2 top-1/2 -translate-y-1/2 h-3.5 w-3.5 text-muted-foreground" />
               <Input
@@ -1119,8 +1139,7 @@ export const ProvidersPage: React.FC = () => {
                 })}
               </div>
             )}
-          </section>
-        </div>
+        </ProviderSettingsSection>
       </div>
     </ScrollableOverlay>
   );

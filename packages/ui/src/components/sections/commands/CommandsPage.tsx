@@ -19,6 +19,7 @@ import {
 import { Icon } from "@/components/icon/Icon";
 import { useI18n } from '@/lib/i18n';
 import { parseModelIdentifier } from '@/lib/modelIdentifier';
+import { SettingsField, SettingsGroup, SettingsRow } from '@/components/sections/shared/SettingsGroup';
 
 export const CommandsPage: React.FC = () => {
   const { t } = useI18n();
@@ -189,7 +190,7 @@ export const CommandsPage: React.FC = () => {
 
   return (
     <ScrollableOverlay outerClassName="h-full" className="w-full">
-      <div className="mx-auto w-full max-w-3xl p-3 sm:p-6 sm:pt-8">
+      <div className="oc-settings-page-content mx-auto w-full max-w-3xl p-3 sm:p-6 sm:pt-8">
 
         {/* Header */}
         <div className="mb-4 flex items-center justify-between gap-4">
@@ -204,21 +205,10 @@ export const CommandsPage: React.FC = () => {
         </div>
 
         {/* Identity */}
-        <div className="mb-8">
-          <div className="mb-1 px-1">
-            <h3 className="typography-ui-header font-medium text-foreground">
-              {t('settings.commands.page.section.identity')}
-            </h3>
-          </div>
-
-          <section className="px-2 pb-2 pt-0 space-y-0">
+        <SettingsGroup label={t('settings.commands.page.section.identity')}>
 
             {isNewCommand && (
-              <div data-settings-item="commands.name" className="flex flex-col gap-2 py-1.5 sm:flex-row sm:items-center sm:gap-8">
-                <div className="flex min-w-0 flex-col sm:w-56 shrink-0">
-                  <span className="typography-ui-label text-foreground">{t('settings.commands.page.field.commandName')}</span>
-                </div>
-                <div className="flex min-w-0 flex-1 items-center gap-2 sm:w-fit sm:flex-initial">
+              <SettingsRow itemId="commands.name" label={t('settings.commands.page.field.commandName')}>
                   <div className="flex items-center">
                     <span className="typography-ui-label text-muted-foreground mr-1">/</span>
                     <Input
@@ -247,13 +237,10 @@ export const CommandsPage: React.FC = () => {
                       </SelectItem>
                     </SelectContent>
                   </Select>
-                </div>
-              </div>
+              </SettingsRow>
             )}
 
-            <div className="py-1.5">
-              <span className="typography-ui-label text-foreground">{t('settings.common.field.description')}</span>
-              <div className="mt-1.5">
+            <SettingsRow label={t('settings.common.field.description')} className="oc-settings-split-row-stacked">
                 <Textarea
                   value={description}
                   onChange={(e) => setDescription(e.target.value)}
@@ -261,65 +248,57 @@ export const CommandsPage: React.FC = () => {
                   rows={2}
                   className="w-full resize-none min-h-[60px] bg-transparent"
                 />
-              </div>
-            </div>
-
-          </section>
-        </div>
+            </SettingsRow>
+        </SettingsGroup>
 
         {/* Execution Context */}
-        <div className="mb-8">
-          <div className="mb-1 px-1">
-            <h3 className="typography-ui-header font-medium text-foreground">
-              {t('settings.commands.page.section.executionContext')}
-            </h3>
-          </div>
+        <SettingsGroup label={t('settings.commands.page.section.executionContext')}>
 
-          <section className="px-2 pb-2 pt-0 space-y-0">
+            <SettingsRow
+              itemId="commands.agent"
+              label={t('settings.commands.page.field.overrideAgent')}
+            >
+              <AgentSelector
+                agentName={agent}
+                onChange={(agentName: string) => setAgent(agentName)}
+                className="oc-settings-inline-value"
+              />
+            </SettingsRow>
 
-            <div data-settings-item="commands.agent" className="flex flex-col gap-2 py-1.5 sm:flex-row sm:items-center sm:gap-8">
-              <div className="flex min-w-0 flex-col sm:w-56 shrink-0">
-                <span className="typography-ui-label text-foreground">{t('settings.commands.page.field.overrideAgent')}</span>
-              </div>
-              <div className="flex min-w-0 flex-1 items-center gap-2 sm:w-fit sm:flex-initial">
-                <AgentSelector
-                  agentName={agent}
-                  onChange={(agentName: string) => setAgent(agentName)}
-                />
-              </div>
-            </div>
+            <SettingsRow
+              itemId="commands.model"
+              label={t('settings.agents.page.field.overrideModel')}
+            >
+              <ModelSelector
+                providerId={parseModelIdentifier(model)?.providerId ?? ''}
+                modelId={parseModelIdentifier(model)?.modelId ?? ''}
+                onChange={(providerId: string, modelId: string) => {
+                  if (providerId && modelId) {
+                    setModel(`${providerId}/${modelId}`);
+                  } else {
+                    setModel('');
+                  }
+                }}
+                className="oc-settings-inline-value"
+              />
+            </SettingsRow>
 
-            <div data-settings-item="commands.model" className="flex flex-col gap-2 py-1.5 sm:flex-row sm:items-center sm:gap-8">
-              <div className="flex min-w-0 flex-col sm:w-56 shrink-0">
-                <span className="typography-ui-label text-foreground">{t('settings.agents.page.field.overrideModel')}</span>
-              </div>
-              <div className="flex min-w-0 flex-1 items-center gap-2 sm:w-fit sm:flex-initial">
-                <ModelSelector
-                  providerId={parseModelIdentifier(model)?.providerId ?? ''}
-                  modelId={parseModelIdentifier(model)?.modelId ?? ''}
-                  onChange={(providerId: string, modelId: string) => {
-                    if (providerId && modelId) {
-                      setModel(`${providerId}/${modelId}`);
-                    } else {
-                      setModel('');
-                    }
-                  }}
-                />
-              </div>
-            </div>
-
-          </section>
-        </div>
+        </SettingsGroup>
 
         {/* Command Template */}
-        <div data-settings-item="commands.template" className="mb-2">
-          <div className="mb-1 px-1">
-            <h3 className="typography-ui-header font-medium text-foreground">
-              {t('settings.commands.page.section.template')}
-            </h3>
-          </div>
-
-          <section className="px-2 pb-2 pt-0">
+        <SettingsField
+          itemId="commands.template"
+          label={t('settings.commands.page.section.template')}
+          description={(
+            <>
+              <code className="text-foreground">$ARGUMENTS</code> {t('settings.commands.page.templateHint.userInput')} &middot;{' '}
+              <code className="text-foreground">!`cmd`</code> {t('settings.commands.page.templateHint.shellOutput')} &middot;{' '}
+              <code className="text-foreground">@file</code> {t('settings.commands.page.templateHint.fileContents')}
+            </>
+          )}
+          descriptionPlacement="outside"
+          className="oc-settings-split-row-stacked"
+        >
             <Textarea
               value={template}
               onChange={(e) => setTemplate(e.target.value)}
@@ -327,16 +306,7 @@ export const CommandsPage: React.FC = () => {
               rows={12}
               className="w-full font-mono typography-meta min-h-[160px] max-h-[60vh] bg-transparent resize-y"
             />
-          </section>
-
-          <div className="mt-2 px-2">
-            <p className="typography-meta text-muted-foreground">
-              <code className="text-foreground">$ARGUMENTS</code> {t('settings.commands.page.templateHint.userInput')} &middot;{' '}
-              <code className="text-foreground">!`cmd`</code> {t('settings.commands.page.templateHint.shellOutput')} &middot;{' '}
-              <code className="text-foreground">@file</code> {t('settings.commands.page.templateHint.fileContents')}
-            </p>
-          </div>
-        </div>
+        </SettingsField>
 
         {/* Save action */}
         <div className="px-2 py-1">

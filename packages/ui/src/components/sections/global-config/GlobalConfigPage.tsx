@@ -20,6 +20,7 @@ import { getResolvedShikiTheme } from '@/lib/shiki/appThemeRegistry';
 import { useThemeSystem } from '@/contexts/useThemeSystem';
 import { reloadOpenCodeConfiguration } from '@/stores/useAgentsStore';
 import type { Extension } from '@codemirror/state';
+import { SettingsGroup } from '@/components/sections/shared/SettingsGroup';
 
 type ConfigTarget = 'opencode' | 'oh-my-opencode-slim' | 'oh-my-openagent';
 
@@ -171,57 +172,62 @@ export function GlobalConfigPage() {
 
   return (
     <ScrollableOverlay outerClassName="h-full" className="w-full">
-      <div className="mx-auto flex w-full max-w-4xl flex-col gap-5 p-3 sm:p-6 sm:pt-8">
-        <div className="space-y-1">
-          <h2 className="typography-ui-header font-semibold text-foreground">{t('settings.globalConfig.title')}</h2>
-          <p className="typography-meta text-muted-foreground">{t('settings.globalConfig.description')}</p>
-        </div>
-
-        {targets.length > 0 && (
-        <div data-settings-item="global-config.editor" className="space-y-3">
-          <div className="flex flex-wrap items-center gap-1">
-            {targets.map((item) => (
-              <Button
-                key={item.id}
-                variant="chip"
-                size="xs"
-                aria-pressed={target === item.id}
-                onClick={() => setTarget(item.id)}
-              >
-                {item.label}
-              </Button>
-            ))}
-          </div>
-          <div className="flex min-w-0 items-center justify-between gap-3 px-1">
-            <span className="typography-meta truncate text-muted-foreground">{fileName}</span>
-            {target && (
-              <Button variant="ghost" size="xs" onClick={() => void load(target)} disabled={isLoading || isSaving}>
-                {t('settings.globalConfig.actions.reload')}
-              </Button>
+      <div className="oc-settings-page-content mx-auto w-full max-w-4xl p-3 sm:p-6 sm:pt-8">
+        <div data-settings-item="global-config.editor">
+          <SettingsGroup
+            label={t('settings.globalConfig.title')}
+            description={t('settings.globalConfig.description')}
+            cardClassName="p-3"
+          >
+            {targets.length > 0 ? (
+              <div className="space-y-3">
+                <div className="flex flex-wrap items-center gap-1">
+                  {targets.map((item) => (
+                    <Button
+                      key={item.id}
+                      variant="chip"
+                      size="xs"
+                      aria-pressed={target === item.id}
+                      onClick={() => setTarget(item.id)}
+                    >
+                      {item.label}
+                    </Button>
+                  ))}
+                </div>
+                <div className="flex min-w-0 items-center justify-between gap-3 px-1">
+                  <span className="typography-meta truncate text-muted-foreground">{fileName}</span>
+                  {target && (
+                    <Button variant="ghost" size="xs" onClick={() => void load(target)} disabled={isLoading || isSaving}>
+                      {t('settings.globalConfig.actions.reload')}
+                    </Button>
+                  )}
+                </div>
+                {target && (
+                  <>
+                    <div className="h-[clamp(420px,62dvh,760px)] overflow-hidden rounded-md border border-[var(--surface-subtle)] bg-background">
+                      <CodeMirrorEditor
+                        value={content}
+                        onChange={setContent}
+                        readOnly={isLoading}
+                        extensions={editorExtensions}
+                        className="h-full"
+                        enableSearch
+                      />
+                    </div>
+                    <div className="flex flex-wrap items-center gap-3">
+                      <Button onClick={handleSave} disabled={isLoading || isSaving || content === savedContent} size="sm">
+                        {isSaving ? t('settings.common.actions.saving') : t('settings.common.actions.saveChanges')}
+                      </Button>
+                      <p className="typography-meta text-muted-foreground">{t('settings.globalConfig.restartHint')}</p>
+                    </div>
+                  </>
+                )}
+              </div>
+            ) : (
+              <div className="min-h-12" aria-busy={isLoading} />
             )}
-          </div>
-          {target && (
-            <>
-              <div className="h-[clamp(420px,62dvh,760px)] overflow-hidden rounded-md border border-[var(--surface-subtle)] bg-background">
-                <CodeMirrorEditor
-                  value={content}
-                  onChange={setContent}
-                  readOnly={isLoading}
-                  extensions={editorExtensions}
-                  className="h-full"
-                  enableSearch
-                />
-              </div>
-              <div className="flex flex-wrap items-center gap-3">
-                <Button onClick={handleSave} disabled={isLoading || isSaving || content === savedContent} size="sm">
-                  {isSaving ? t('settings.common.actions.saving') : t('settings.common.actions.saveChanges')}
-                </Button>
-                <p className="typography-meta text-muted-foreground">{t('settings.globalConfig.restartHint')}</p>
-              </div>
-            </>
-          )}
+          </SettingsGroup>
         </div>
-        )}
       </div>
       <Dialog open={isRestartDialogOpen} onOpenChange={(open) => !isRestarting && setIsRestartDialogOpen(open)}>
         <DialogContent className="max-w-md">

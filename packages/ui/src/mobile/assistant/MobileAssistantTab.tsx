@@ -70,11 +70,17 @@ export function MobileAssistantTab({ onEnable, onOpenAssistant, className }: Mob
               : t('assistants.conversation.continuousHint'));
 
             return (
-              <MobileFloatingSurface key={assistant.id} className="oc-mobile-assistant-card-shell">
+              <MobileFloatingSurface
+                key={assistant.id}
+                data-mobile-press-surface="soft"
+                className="oc-mobile-assistant-card-shell"
+              >
                 <button
                   type="button"
                   role="option"
                   aria-selected="false"
+                  data-mobile-press-surface-trigger
+                  data-mobile-press-feedback="none"
                   className={cn('oc-mobile-assistant-card', !assistant.enabled && 'opacity-65')}
                   onClick={() => handleOpenAssistant(assistant.id)}
                 >

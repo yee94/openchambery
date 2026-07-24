@@ -1,5 +1,6 @@
 import React from 'react';
 import { cn } from '@/lib/utils';
+import { SettingsGroup } from '@/components/sections/shared/SettingsGroup';
 
 export const PROJECT_SETTINGS_CONTROL_WIDTH = 'w-full max-w-[30rem]';
 
@@ -25,23 +26,25 @@ export const ProjectSettingsSubsection: React.FC<ProjectSettingsSubsectionProps>
   contentClassName,
 }) => {
   return (
-    <section
+    <div
       data-settings-item={settingsItem}
-      className={cn('border-b border-border/50 py-5 first:pt-0 last:border-b-0', className)}
+      className={className}
     >
-      <div className="mb-3 flex items-start justify-between gap-3 px-1">
-        <div className="min-w-0 flex-1">
-          <div className="flex items-center gap-2">
-            <h3 className="typography-ui-header font-medium text-foreground">{title}</h3>
-            {titleAccessory}
+      <SettingsGroup
+        className="oc-settings-detail-group"
+        label={(
+          <div className="flex min-w-0 items-center justify-between gap-3">
+            <div className="flex min-w-0 items-center gap-2">
+              <span className="truncate">{title}</span>
+              {titleAccessory}
+            </div>
+            {headerAction ? <div className="shrink-0">{headerAction}</div> : null}
           </div>
-          {description ? (
-            <p className="mt-0.5 typography-meta text-muted-foreground">{description}</p>
-          ) : null}
-        </div>
-        {headerAction ? <div className="shrink-0">{headerAction}</div> : null}
-      </div>
-      <div className={cn('space-y-2 px-2', contentClassName)}>{children}</div>
-    </section>
+        )}
+        description={description}
+      >
+        <div className={cn('oc-settings-group-row', contentClassName)}>{children}</div>
+      </SettingsGroup>
+    </div>
   );
 };

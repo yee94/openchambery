@@ -1,5 +1,6 @@
 import type { ReactNode } from 'react';
 
+import { Checkbox } from '@/components/ui/checkbox';
 import { cn } from '@/lib/utils';
 
 export type SettingsGroupProps = {
@@ -16,7 +17,9 @@ export type SettingsGroupProps = {
  *
  * The section label sits outside one grouped material card. Consumers compose
  * the card from `SettingsRow` so Settings and editor details keep the same
- * vertical rhythm, separators, and responsive alignment.
+ * vertical rhythm, separators, and responsive alignment. The normative
+ * contract is documented in `SETTINGS_DESIGN_SPEC.md`; feature pages must not
+ * recreate this structure with local typography or spacing.
  */
 export function SettingsGroup({
   label,
@@ -133,6 +136,76 @@ export function SettingsRow({
         className={cn('oc-settings-split-row-control', controlClassName)}
       >
         {children}
+      </div>
+    </div>
+  );
+}
+
+export type SettingsToggleRowProps = {
+  checked: boolean;
+  onChange: (checked: boolean) => void;
+  label: ReactNode;
+  ariaLabel: string;
+  description?: ReactNode;
+  itemId?: string;
+  disabled?: boolean;
+  className?: string;
+};
+
+/** Standard full-row boolean setting with shared pointer and keyboard behavior. */
+export function SettingsToggleRow({
+  checked,
+  onChange,
+  label,
+  ariaLabel,
+  description,
+  itemId,
+  disabled = false,
+  className,
+}: SettingsToggleRowProps) {
+  const toggle = () => {
+    if (!disabled) onChange(!checked);
+  };
+
+  const isInteractiveDescendant = (target: EventTarget | null) => (
+    target instanceof HTMLElement
+      && target.closest('button, a, input, select, textarea') !== null
+  );
+
+  return (
+    <div
+      data-settings-item={itemId}
+      className={cn(
+        'oc-settings-group-row group flex items-center gap-2',
+        disabled ? 'cursor-not-allowed' : 'cursor-pointer',
+        className,
+      )}
+      role="button"
+      tabIndex={disabled ? -1 : 0}
+      aria-pressed={checked}
+      aria-disabled={disabled || undefined}
+      onClick={(event) => {
+        if (!isInteractiveDescendant(event.target)) toggle();
+      }}
+      onKeyDown={(event) => {
+        if (isInteractiveDescendant(event.target)) return;
+        if (event.key === ' ' || event.key === 'Enter') {
+          event.preventDefault();
+          toggle();
+        }
+      }}
+    >
+      <Checkbox
+        checked={checked}
+        onChange={onChange}
+        disabled={disabled}
+        ariaLabel={ariaLabel}
+      />
+      <div className="flex min-w-0 flex-col">
+        <span className="typography-ui-label text-foreground">{label}</span>
+        {description ? (
+          <span className="typography-meta text-muted-foreground">{description}</span>
+        ) : null}
       </div>
     </div>
   );

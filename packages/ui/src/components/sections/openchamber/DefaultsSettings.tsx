@@ -7,10 +7,10 @@ import { updateDesktopSettings } from '@/lib/persistence';
 import { useConfigStore } from '@/stores/useConfigStore';
 import { useUIStore } from '@/stores/useUIStore';
 import { getRegisteredRuntimeAPIs } from '@/contexts/runtimeAPIRegistry';
-import { cn } from '@/lib/utils';
 import { useI18n } from '@/lib/i18n';
 import { parseModelIdentifier } from '@/lib/modelIdentifier';
 import { runtimeFetch } from '@/lib/runtime-fetch';
+import { SettingsGroup, SettingsRow } from '@/components/sections/shared/SettingsGroup';
 
 const getDisplayModel = (
   storedModel: string | undefined
@@ -219,15 +219,10 @@ export const DefaultsSettings: React.FC = () => {
   }
 
   return (
-    <div className="mb-6">
-      <div className="mb-0.5 px-1">
-        <div className="flex items-center gap-2">
-          <h3 className="typography-ui-header font-medium text-foreground">{t('settings.openchamber.defaults.title')}</h3>
-        </div>
-      </div>
-
-      <section className="px-2 pb-2 pt-0 space-y-0">
-        <div className="mt-0 mb-1 typography-meta text-muted-foreground">
+    <SettingsGroup
+      label={t('settings.openchamber.defaults.title')}
+      description={(
+        <>
           {t('settings.openchamber.defaults.summaryPrefix')}
           {' '}
           {parsedModel.providerId ? (
@@ -244,69 +239,67 @@ export const DefaultsSettings: React.FC = () => {
               <span className="text-foreground">{defaultAgent}</span>
             </>
           )}
-        </div>
+        </>
+      )}
+    >
+      <SettingsRow itemId="sessions.default-model" label={t('settings.openchamber.defaults.field.defaultModel')}>
+        <ModelSelector
+          providerId={parsedModel.providerId}
+          modelId={parsedModel.modelId}
+          onChange={handleModelChange}
+          className="oc-settings-inline-value"
+        />
+      </SettingsRow>
 
-        <div data-settings-item="sessions.default-model" className={cn('flex flex-col gap-2 py-1 sm:flex-row sm:items-center sm:gap-8')}>
-          <div className="flex min-w-0 flex-col sm:w-56 shrink-0">
-            <span className="typography-ui-label text-foreground">{t('settings.openchamber.defaults.field.defaultModel')}</span>
-          </div>
-          <div className="flex min-w-0 flex-1 items-center gap-2 sm:w-fit sm:flex-initial">
-            <ModelSelector providerId={parsedModel.providerId} modelId={parsedModel.modelId} onChange={handleModelChange} />
+      <SettingsRow itemId="sessions.default-thinking" label={t('settings.openchamber.defaults.field.defaultThinking')}>
+        <Select value={defaultVariant ?? DEFAULT_VARIANT_VALUE} onValueChange={handleVariantChange} disabled={!supportsVariants}>
+          <SelectTrigger className="w-fit min-w-[120px]">
+            <SelectValue placeholder={t('settings.openchamber.defaults.field.thinkingPlaceholder')}>
+              {formatVariantLabel(defaultVariant ?? DEFAULT_VARIANT_VALUE)}
+            </SelectValue>
+          </SelectTrigger>
+          <SelectContent>
+            <SelectItem value={DEFAULT_VARIANT_VALUE}>{t('settings.openchamber.defaults.option.default')}</SelectItem>
+            {availableVariants.map((variant) => (
+              <SelectItem key={variant} value={variant}>
+                {formatVariantLabel(variant)}
+              </SelectItem>
+            ))}
+          </SelectContent>
+        </Select>
+      </SettingsRow>
+
+      <SettingsRow itemId="sessions.default-agent" label={t('settings.openchamber.defaults.field.defaultAgent')}>
+        <AgentSelector
+          agentName={defaultAgent || ''}
+          onChange={handleAgentChange}
+          className="oc-settings-inline-value"
+        />
+      </SettingsRow>
+
+      <div
+        data-settings-item="sessions.deletion-dialog"
+        className="oc-settings-group-row oc-settings-split-row group cursor-pointer"
+        role="button"
+        tabIndex={0}
+        aria-pressed={showDeletionDialog}
+        onClick={() => setShowDeletionDialog(!showDeletionDialog)}
+        onKeyDown={(event) => {
+          if (event.key === ' ' || event.key === 'Enter') {
+            event.preventDefault();
+            setShowDeletionDialog(!showDeletionDialog);
+          }
+        }}
+      >
+        <div className="oc-settings-split-row-copy">
+          <div className="typography-ui-label text-foreground">
+            {t('settings.openchamber.defaults.field.showDeletionDialog')}
           </div>
         </div>
-
-        <div data-settings-item="sessions.default-thinking" className="flex flex-col gap-2 py-1 sm:flex-row sm:items-center sm:gap-8">
-          <div className="flex min-w-0 flex-col sm:w-56 shrink-0">
-            <span className="typography-ui-label text-foreground">{t('settings.openchamber.defaults.field.defaultThinking')}</span>
-          </div>
-          <div className="flex items-center gap-2 sm:w-fit">
-            <Select value={defaultVariant ?? DEFAULT_VARIANT_VALUE} onValueChange={handleVariantChange} disabled={!supportsVariants}>
-              <SelectTrigger className="w-fit min-w-[120px]">
-                <SelectValue placeholder={t('settings.openchamber.defaults.field.thinkingPlaceholder')}>
-                  {formatVariantLabel(defaultVariant ?? DEFAULT_VARIANT_VALUE)}
-                </SelectValue>
-              </SelectTrigger>
-              <SelectContent>
-                <SelectItem value={DEFAULT_VARIANT_VALUE}>{t('settings.openchamber.defaults.option.default')}</SelectItem>
-                {availableVariants.map((variant) => (
-                  <SelectItem key={variant} value={variant}>
-                    {formatVariantLabel(variant)}
-                  </SelectItem>
-                ))}
-              </SelectContent>
-            </Select>
-          </div>
-        </div>
-
-        <div data-settings-item="sessions.default-agent" className="flex flex-col gap-2 py-1 sm:flex-row sm:items-center sm:gap-8">
-          <div className="flex min-w-0 flex-col sm:w-56 shrink-0">
-            <span className="typography-ui-label text-foreground">{t('settings.openchamber.defaults.field.defaultAgent')}</span>
-          </div>
-          <div className="flex min-w-0 flex-1 items-center gap-2 sm:w-fit sm:flex-initial">
-            <AgentSelector agentName={defaultAgent || ''} onChange={handleAgentChange} />
-          </div>
-        </div>
-
-        <div
-          data-settings-item="sessions.deletion-dialog"
-          className="group flex cursor-pointer items-center gap-2 py-1"
-          role="button"
-          tabIndex={0}
-          aria-pressed={showDeletionDialog}
-          onClick={() => setShowDeletionDialog(!showDeletionDialog)}
-          onKeyDown={(event) => {
-            if (event.key === ' ' || event.key === 'Enter') {
-              event.preventDefault();
-              setShowDeletionDialog(!showDeletionDialog);
-            }
-          }}
-        >
+        <div className="oc-settings-split-row-control">
           <Checkbox checked={showDeletionDialog} onChange={setShowDeletionDialog} ariaLabel={t('settings.openchamber.defaults.field.showDeletionDialogAria')} />
-          <span className="typography-ui-label text-foreground">{t('settings.openchamber.defaults.field.showDeletionDialog')}</span>
         </div>
-
-      </section>
-
-    </div>
+      </div>
+    </SettingsGroup>
   );
 };

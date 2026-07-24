@@ -44,6 +44,7 @@ export const MobileResizableSheet: React.FC<MobileResizableSheetProps> = ({
     fitContent,
     onDismiss: () => onOpenChange(false),
   });
+  const hasHeader = title != null || leading != null;
 
   return (
     <MobileWindowMotion
@@ -65,21 +66,23 @@ export const MobileResizableSheet: React.FC<MobileResizableSheetProps> = ({
       <div className="flex min-h-0 flex-1 flex-col">
         <div className="shrink-0">
           <MobileSheetSnapHandle controller={sheetSnap} ariaLabel={resizeAriaLabel} />
-          <div className="flex min-h-10 items-center gap-2 px-4 pb-2">
-            {leading ? <div className="flex shrink-0 items-center">{leading}</div> : null}
-            <div className="min-w-0 flex-1">{title}</div>
-            <Button
-              type="button"
-              variant="ghost"
-              size="icon"
-              onClick={() => onOpenChange(false)}
-              aria-label={closeAriaLabel}
-              className="shrink-0 text-muted-foreground"
-              style={{ touchAction: 'manipulation' }}
-            >
-              <Icon name="close" className="size-5" />
-            </Button>
-          </div>
+          {hasHeader ? (
+            <div className="flex min-h-10 items-center gap-2 px-4 pb-2">
+              {leading ? <div className="flex shrink-0 items-center">{leading}</div> : null}
+              <div className="min-w-0 flex-1">{title}</div>
+              <Button
+                type="button"
+                variant="ghost"
+                size="icon"
+                onClick={() => onOpenChange(false)}
+                aria-label={closeAriaLabel}
+                className="shrink-0 text-muted-foreground"
+                style={{ touchAction: 'manipulation' }}
+              >
+                <Icon name="close" className="size-5" />
+              </Button>
+            </div>
+          ) : null}
         </div>
         <div className={cn('min-h-0 flex-1 overflow-hidden', bodyClassName)}>{children}</div>
       </div>

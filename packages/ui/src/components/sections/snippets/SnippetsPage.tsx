@@ -9,6 +9,7 @@ import { ScrollableOverlay } from '@/components/ui/ScrollableOverlay';
 import { Icon } from '@/components/icon/Icon';
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
 import { useI18n } from '@/lib/i18n';
+import { SettingsGroup } from '@/components/sections/shared/SettingsGroup';
 
 export const SnippetsPage: React.FC = () => {
   const { t } = useI18n();
@@ -118,16 +119,17 @@ export const SnippetsPage: React.FC = () => {
 
   return (
     <ScrollableOverlay outerClassName="h-full" className="w-full">
-      <div className="mx-auto w-full max-w-3xl p-3 sm:p-6 sm:pt-8">
-        <div className="mb-4 min-w-0">
+      <div className="oc-settings-page-content mx-auto w-full max-w-3xl p-3 sm:p-6 sm:pt-8">
+        <div className="min-w-0">
           <h2 className="typography-ui-header font-semibold text-foreground truncate">
             {isNew ? t('settings.snippets.page.title.new') : `#${selectedSnippetName}`}
           </h2>
           {selectedSnippet ? <p className="typography-meta text-muted-foreground truncate">{selectedSnippet.filePath}</p> : null}
         </div>
 
-        <div className="mb-8 space-y-3 px-2">
-          <div>
+        <SettingsGroup cardClassName="p-3">
+          <div className="space-y-3">
+            <div>
             {isNew ? (
               <div className="mb-3 flex items-center gap-2">
                 <span className="typography-ui-label text-foreground">#</span>
@@ -145,20 +147,25 @@ export const SnippetsPage: React.FC = () => {
             ) : null}
             <span className="typography-ui-label text-foreground">{t('settings.common.field.description')}</span>
             <Input value={description} onChange={(e) => setDescription(e.target.value)} placeholder={t('settings.snippets.page.field.descriptionPlaceholder')} className="mt-1.5 h-7 w-full max-w-sm px-2" />
+            </div>
+            <div>
+              <span className="typography-ui-label text-foreground">{t('settings.snippets.page.field.aliases')}</span>
+              <Input value={aliases} onChange={(e) => setAliases(e.target.value)} placeholder={t('settings.snippets.page.field.aliasesPlaceholder')} className="mt-1.5 h-7 w-full max-w-sm px-2" />
+            </div>
           </div>
-          <div>
-            <span className="typography-ui-label text-foreground">{t('settings.snippets.page.field.aliases')}</span>
-            <Input value={aliases} onChange={(e) => setAliases(e.target.value)} placeholder={t('settings.snippets.page.field.aliasesPlaceholder')} className="mt-1.5 h-7 w-full max-w-sm px-2" />
-          </div>
+        </SettingsGroup>
+
+        <div data-settings-item="snippets.content">
+          <SettingsGroup
+            label={t('settings.snippets.page.field.content')}
+            description={t('settings.snippets.page.hint')}
+            cardClassName="p-3"
+          >
+            <Textarea value={content} onChange={(e) => setContent(e.target.value)} placeholder={t('settings.snippets.page.field.contentPlaceholder')} rows={12} className="w-full font-mono typography-meta min-h-[160px] max-h-[60vh] bg-transparent" />
+          </SettingsGroup>
         </div>
 
-        <div data-settings-item="snippets.content" className="mb-2 px-2">
-          <span className="typography-ui-label text-foreground">{t('settings.snippets.page.field.content')}</span>
-          <Textarea value={content} onChange={(e) => setContent(e.target.value)} placeholder={t('settings.snippets.page.field.contentPlaceholder')} rows={12} className="mt-1.5 w-full font-mono typography-meta min-h-[160px] max-h-[60vh] bg-transparent" />
-          <p className="mt-2 typography-meta text-muted-foreground">{t('settings.snippets.page.hint')}</p>
-        </div>
-
-        <div className="px-2 py-1">
+        <div>
           <Button onClick={handleSave} disabled={isSaving || !isDirty} size="xs" className="!font-normal">
             {isSaving ? t('settings.common.actions.saving') : t('settings.common.actions.saveChanges')}
           </Button>

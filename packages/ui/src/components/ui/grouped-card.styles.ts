@@ -1,5 +1,5 @@
-export const groupedCardClassName = "overflow-hidden rounded-2xl border border-border/60 bg-[var(--surface-elevated)] shadow-none"
+export const groupedCardClassName = "oc-settings-group-card"
 
-export const groupedCardRowClassName = "group min-h-14 border-b border-border/45 px-4 py-2.5 transition-colors duration-150 last:border-b-0 hover:bg-interactive-hover/55 motion-reduce:transition-none"
+export const groupedCardRowClassName = "oc-settings-group-row border-b border-[var(--oc-settings-row-divider)] last:border-b-0"
 
-export const groupedSectionTitleClassName = "typography-ui-label px-1 font-semibold text-muted-foreground"
+export const groupedSectionTitleClassName = "oc-settings-group-label"

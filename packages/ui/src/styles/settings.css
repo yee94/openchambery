@@ -1,17 +1,17 @@
-/* Shared Settings workspace grammar. Navigation and detail surfaces use the
-   same grouped material as Scheduled Tasks; responsive layout only decides
-   whether navigation sits beside detail or is navigated into. */
+/* Shared Settings workspace grammar. Detail surfaces use the grouped material
+   from Scheduled Tasks. Responsive layout also switches navigation between a
+   flat desktop list and grouped mobile cards. */
 .oc-settings-workspace {
   --oc-settings-base-font-size: var(--text-ui-label);
   --oc-settings-base-line-height: var(--form-control-line-height);
   --oc-settings-group-radius: 1rem;
   --oc-settings-section-gap: 0.5rem;
-  /* One roomy vertical rhythm for navigation cards and detail groups across
+  /* One roomy vertical rhythm for navigation sections and detail groups across
      desktop and mobile. Keep this distinct from compact in-card row spacing. */
   --oc-settings-section-stack-gap: 1.25rem;
   --oc-settings-section-title-size: 0.75rem;
   --oc-settings-section-title-line-height: 1rem;
-  --oc-settings-section-title-weight: 600;
+  --oc-settings-section-title-weight: 400;
   --oc-settings-section-title-inset: 0.5rem;
   --oc-settings-section-title-slot: calc(
     var(--oc-settings-section-title-line-height) +
@@ -32,7 +32,7 @@
   --oc-settings-group-border: var(--form-surface-border);
   --oc-settings-row-divider: var(--form-row-divider);
   --oc-settings-row-inset: 0.875rem;
-  --oc-settings-desktop-value-max-width: 18rem;
+  --oc-settings-desktop-value-max-width: 12.5rem;
 }
 
 .oc-settings-section-stack,
@@ -70,7 +70,7 @@
   padding-inline: var(--oc-settings-section-title-inset);
   font-size: var(--oc-settings-section-title-size);
   line-height: var(--oc-settings-section-title-line-height);
-  font-weight: var(--oc-settings-section-title-weight);
+  font-weight: var(--oc-settings-section-title-weight) !important;
   color: var(--surface-muted-foreground);
 }
 
@@ -111,6 +111,38 @@
   border-bottom: 1px solid var(--oc-settings-row-divider);
 }
 
+/* Choice collections may need one semantic radiogroup wrapper. Keep their
+   options on the same row/divider rhythm as direct SettingsRow children. */
+.oc-settings-group-card > [role="radiogroup"] > .oc-settings-group-row:not(:last-child) {
+  border-bottom: 1px solid var(--oc-settings-row-divider);
+}
+
+/* Older boolean settings are direct interactive rows. Once hosted by the
+   shared SettingsGroup, they inherit the exact same tokenized geometry while
+   their existing keyboard and checkbox behavior remains unchanged. */
+.oc-settings-detail-group .oc-settings-group-card > [role="button"] {
+  width: 100%;
+  min-width: 0;
+  min-height: var(--oc-settings-row-min-height);
+  padding: var(--oc-settings-row-block-padding) var(--oc-settings-row-inset);
+  font-size: var(--oc-settings-row-label-size);
+  line-height: var(--oc-settings-row-label-line-height);
+}
+
+.oc-settings-detail-group .oc-settings-group-card > [role="button"]:not(:last-child) {
+  border-bottom: 1px solid var(--oc-settings-row-divider);
+}
+
+.oc-settings-detail-group .oc-settings-group-card > [role="button"] .typography-ui-label {
+  font-size: var(--oc-settings-row-label-size) !important;
+  line-height: var(--oc-settings-row-label-line-height) !important;
+}
+
+.oc-settings-detail-group .oc-settings-group-card > [role="button"] .typography-meta {
+  font-size: var(--oc-settings-row-meta-size) !important;
+  line-height: var(--oc-settings-row-meta-line-height) !important;
+}
+
 .oc-settings-split-row {
   display: grid;
   grid-template-columns: minmax(8.5rem, auto) minmax(0, 1fr);
@@ -134,7 +166,7 @@
   line-height: var(--form-control-line-height) !important;
 }
 
-.oc-settings-split-row-copy .typography-meta {
+.oc-settings-group-row .typography-meta {
   font-size: var(--oc-settings-row-meta-size) !important;
   line-height: var(--oc-settings-row-meta-line-height) !important;
 }
@@ -151,7 +183,6 @@
 
 .oc-settings-split-row-control > [data-slot="select-trigger"],
 .oc-settings-split-row-control > [data-slot="input"],
-.oc-settings-split-row-control > [data-slot="number-input"],
 .oc-settings-split-row-control > .oc-settings-inline-value {
   width: auto;
   min-width: 0;
@@ -159,12 +190,18 @@
   flex: 1 1 10rem;
 }
 
+.oc-settings-split-row-control > [data-slot="number-input"] {
+  width: auto;
+  min-width: 0;
+  max-width: 100%;
+  flex: 0 0 auto;
+}
+
 /* Settings values share the Scheduled Task detail grammar: controls read as
    right-aligned values in their row instead of as permanently outlined input
    boxes. A transparent border is always reserved so the hover/focus affordance
    never changes the control's size or moves surrounding content. */
-.oc-settings-page-content
-  :is(.oc-settings-group-row, section:not(.oc-settings-group) [data-settings-item])
+.oc-settings-workspace .oc-settings-group-row
   :is([data-slot="select-trigger"], [data-slot="input"], [data-slot="number-input"], .oc-settings-inline-value) {
   height: var(--form-control-height) !important;
   min-height: var(--form-control-height) !important;
@@ -179,7 +216,7 @@
   box-shadow: none !important;
 }
 
-.oc-settings-page-content
+.oc-settings-workspace
   [data-settings-value]
   .oc-settings-inline-value > div {
   flex: 0 1 auto !important;
@@ -187,8 +224,7 @@
   text-align: right;
 }
 
-.oc-settings-page-content
-  :is(.oc-settings-group-row, section:not(.oc-settings-group) [data-settings-item])
+.oc-settings-workspace .oc-settings-group-row
   [data-slot="select-trigger"]
   [data-slot="select-value"] {
   min-width: 0;
@@ -196,61 +232,44 @@
   text-align: right;
 }
 
-.oc-settings-page-content
-  :is(.oc-settings-group-row, section:not(.oc-settings-group) [data-settings-item])
+.oc-settings-workspace .oc-settings-group-row
   :is([data-slot="select-trigger"], [data-slot="input"], [data-slot="number-input"], .oc-settings-inline-value):hover:not(:focus),
-.oc-settings-page-content
-  :is(.oc-settings-group-row, section:not(.oc-settings-group) [data-settings-item])
+.oc-settings-workspace .oc-settings-group-row
   [data-slot="select-trigger"][data-popup-open],
-.oc-settings-page-content
-  :is(.oc-settings-group-row, section:not(.oc-settings-group) [data-settings-item])
+.oc-settings-workspace .oc-settings-group-row
+  .oc-settings-inline-value[data-popup-open],
+.oc-settings-workspace .oc-settings-group-row
   [data-slot="number-input"]:focus-within {
   border-color: var(--form-control-border) !important;
   background: var(--form-control-background) !important;
 }
 
-.oc-settings-page-content
-  :is(.oc-settings-group-row, section:not(.oc-settings-group) [data-settings-item])
+.oc-settings-workspace .oc-settings-group-row
   :is([data-slot="select-trigger"], [data-slot="input"], .oc-settings-inline-value):focus-visible {
   box-shadow: 0 0 0 2px var(--interactive-focus-ring) !important;
 }
 
-.oc-settings-page-content
-  :is(.oc-settings-group-row, section:not(.oc-settings-group) [data-settings-item])
+.oc-settings-workspace .oc-settings-group-row
   [data-slot="input"] {
   text-align: right;
 }
 
-.oc-settings-page-content
-  :is(.oc-settings-group-row, section:not(.oc-settings-group) [data-settings-item])
-  [data-slot="number-input-value"] {
-  width: auto !important;
-  min-width: 0 !important;
-  flex: 1 1 auto;
-  font-size: inherit !important;
-  line-height: inherit !important;
-}
-
-.oc-settings-page-content
-  :is(.oc-settings-group-row, section:not(.oc-settings-group) [data-settings-item])
+.oc-settings-workspace .oc-settings-group-row
   [data-slot="number-input"] > button:first-child {
   border-right-color: transparent !important;
 }
 
-.oc-settings-page-content
-  :is(.oc-settings-group-row, section:not(.oc-settings-group) [data-settings-item])
+.oc-settings-workspace .oc-settings-group-row
   [data-slot="number-input"] > button:last-child {
   border-left-color: transparent !important;
 }
 
-.oc-settings-page-content
-  :is(.oc-settings-group-row, section:not(.oc-settings-group) [data-settings-item])
+.oc-settings-workspace .oc-settings-group-row
   [data-slot="number-input"]:is(:hover, :focus-within) > button:first-child {
   border-right-color: var(--form-control-border) !important;
 }
 
-.oc-settings-page-content
-  :is(.oc-settings-group-row, section:not(.oc-settings-group) [data-settings-item])
+.oc-settings-workspace .oc-settings-group-row
   [data-slot="number-input"]:is(:hover, :focus-within) > button:last-child {
   border-left-color: var(--form-control-border) !important;
 }
@@ -278,6 +297,11 @@
   .oc-settings-split-row-control {
     width: 100%;
   }
+}
+
+.oc-settings-workspace-desktop {
+  --oc-settings-section-title-size: var(--text-ui-label);
+  --oc-settings-section-title-line-height: var(--form-control-line-height);
 }
 
 .oc-settings-workspace-desktop .oc-settings-navigation {
@@ -315,12 +339,15 @@
 .oc-settings-workspace-desktop .oc-settings-nav-group-label {
   padding-inline: var(--oc-settings-section-title-inset);
   font-size: 0.6875rem;
-  font-weight: 600;
+  font-weight: 400;
   line-height: 0.875rem;
   color: var(--surface-muted-foreground);
 }
 
 .oc-settings-workspace-desktop .oc-settings-nav-group-card {
+  display: flex;
+  flex-direction: column;
+  gap: 0.25rem;
   overflow: visible;
   border: 0;
   border-radius: 0;
@@ -329,9 +356,14 @@
 }
 
 .oc-settings-workspace-desktop .oc-settings-nav-row {
-  min-height: 2.5rem !important;
+  min-height: 2rem !important;
   border-radius: 0.5rem !important;
-  padding-inline: 0.75rem !important;
+  padding-inline: var(--oc-settings-section-title-inset) !important;
+}
+
+.oc-settings-workspace-desktop .oc-settings-nav-page-row {
+  height: 1.75rem !important;
+  min-height: 1.75rem !important;
 }
 
 .oc-settings-workspace-desktop .oc-settings-nav-row + .oc-settings-nav-row {

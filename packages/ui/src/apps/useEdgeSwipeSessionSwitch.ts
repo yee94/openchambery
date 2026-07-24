@@ -2,6 +2,7 @@ import React from 'react';
 import type { Session } from '@opencode-ai/sdk/v2';
 
 import { evaluateSwipeThresholdHaptic, triggerMobileHaptic } from '@/hooks/streamingHaptics';
+import { getClientPlatform, isCapacitorApp } from '@/lib/platform';
 import { resolveGlobalSessionDirectory, useGlobalSessionsStore } from '@/stores/useGlobalSessionsStore';
 import { useSessionUIStore } from '@/sync/session-ui-store';
 
@@ -32,6 +33,7 @@ import { useSessionUIStore } from '@/sync/session-ui-store';
 const MIN_DISTANCE = 64; // px of dominant-axis travel required to commit a switch
 const MAX_OFF_AXIS_RATIO = 0.6; // off-axis must stay below dominant-axis × this
 const THRESHOLD_HYSTERESIS = 8;
+const NATIVE_IOS_BACK_EDGE_WIDTH = 28;
 
 // ---------------------------------------------------------------------------
 // Interactive / scrollable exclusion helpers
@@ -86,13 +88,21 @@ type SessionSwipeStartInput = {
   onExplicitSurface: boolean;
   onCodeBlock: boolean;
   withinHorizontalScroller: boolean;
+  /** Native iOS owns touches that begin in its system back-gesture edge. */
+  withinNativeBackEdge?: boolean;
 };
 
 /** Gesture ownership policy shared by the DOM hook and focused tests. */
 export const shouldStartSessionSwipe = (input: SessionSwipeStartInput): boolean => {
-  if (input.onCodeBlock || input.withinHorizontalScroller) return false;
+  if (input.onCodeBlock || input.withinHorizontalScroller || input.withinNativeBackEdge) return false;
   return input.onExplicitSurface;
 };
+
+const isNativeIOSBackEdgeStart = (clientX: number): boolean => (
+  isCapacitorApp()
+  && getClientPlatform() === 'ios'
+  && clientX <= NATIVE_IOS_BACK_EDGE_WIDTH
+);
 
 export interface SwipeProgress {
   direction: Exclude<SwipeDirection, null>;
@@ -233,6 +243,7 @@ export const useEdgeSwipeSessionSwitch = (
         onExplicitSurface: target.closest(SESSION_SWIPE_SURFACE_SELECTOR) !== null,
         onCodeBlock: isCodeBlock(target),
         withinHorizontalScroller: hasScrollableAncestorInDirection(target, true),
+        withinNativeBackEdge: isNativeIOSBackEdgeStart(touch.clientX),
       })) {
         tracking = false;
         return;

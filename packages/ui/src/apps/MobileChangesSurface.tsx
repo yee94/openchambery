@@ -22,6 +22,7 @@ import {
   useIsGitRepo,
   useGitLoadingStatus,
 } from '@/stores/useGitStore';
+import { useMobileBackRoute } from '@/mobile/mobileBackNavigation';
 
 type SyncAction = 'fetch' | 'pull' | 'push' | 'sync' | null;
 type CommitAction = 'commit' | 'commitAndPush' | null;
@@ -80,6 +81,7 @@ export const MobileChangesSurface: React.FC<MobileChangesSurfaceProps> = ({ onCl
   const [route, setRoute] = React.useState<{ type: 'list' } | { type: 'diff'; path: string; staged: boolean; targetLine: number | null }>(
     () => (initialDiffPath ? { type: 'diff', path: initialDiffPath, staged: initialDiffStaged, targetLine: initialDiffTargetLine } : { type: 'list' }),
   );
+  const mobileNavigationSurfaceRef = React.useRef<HTMLDivElement | null>(null);
 
   // Allow the host (MobileApp) to push us into a specific diff when the surface
   // is reopened or when an external trigger (e.g. PendingChangesBar tap) requests
@@ -358,6 +360,20 @@ export const MobileChangesSurface: React.FC<MobileChangesSurfaceProps> = ({ onCl
     setRoute({ type: 'diff', path, staged, targetLine: null });
   });
 
+  const closeDiffDetail = useEvent(() => {
+    if (route.type !== 'diff') return false;
+    setRoute({ type: 'list' });
+    return true;
+  });
+
+  useMobileBackRoute({
+    id: 'mobile-changes-diff',
+    active: route.type === 'diff' && !hideDiffHeader,
+    layer: 'overlay',
+    onBack: closeDiffDetail,
+    surfaceRef: mobileNavigationSurfaceRef,
+  });
+
   const handleRevertFile = useEvent(async (filePath: string) => {
     if (!currentDirectory) return;
     const operationDirectory = currentDirectory;
@@ -560,17 +576,19 @@ export const MobileChangesSurface: React.FC<MobileChangesSurfaceProps> = ({ onCl
 
   if (route.type === 'diff') {
     return (
-      <MobileDiffDetail
-        path={route.path}
-        diff={selectedDiff}
-        fileExists={selectedFileExists}
-        error={selectedDiffError}
-        loading={selectedDiffLoading}
-        targetLine={route.targetLine}
-        onBack={() => setRoute({ type: 'list' })}
-        onRetry={() => setDiffRetryNonce((value) => value + 1)}
-        hideHeader={hideDiffHeader}
-      />
+      <div ref={mobileNavigationSurfaceRef} className="h-full min-h-0">
+        <MobileDiffDetail
+          path={route.path}
+          diff={selectedDiff}
+          fileExists={selectedFileExists}
+          error={selectedDiffError}
+          loading={selectedDiffLoading}
+          targetLine={route.targetLine}
+          onBack={closeDiffDetail}
+          onRetry={() => setDiffRetryNonce((value) => value + 1)}
+          hideHeader={hideDiffHeader}
+        />
+      </div>
     );
   }
 

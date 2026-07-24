@@ -42,8 +42,8 @@ export const ProjectSettingsPanel: React.FC<ProjectSettingsPanelProps> = ({
   const headerLabel = project.path.split(/[\\/]/).filter(Boolean).at(-1) ?? t('settings.projects.page.title.default');
 
   return (
-    <div className="space-y-0">
-      <div className="mb-5 px-1">
+    <div className="oc-settings-section-stack">
+      <div className="px-1">
         <h2 className="typography-ui-header font-semibold text-foreground truncate">
           {headerLabel}
         </h2>

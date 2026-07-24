@@ -14,6 +14,7 @@ import {
   SelectValue,
 } from '@/components/ui/select';
 import { Icon } from "@/components/icon/Icon";
+import { SettingsGroup, SettingsRow } from '@/components/sections/shared/SettingsGroup';
 import {
   getResponseStylePresetInstructions,
   isResponseStylePreset,
@@ -312,19 +313,17 @@ export const BehaviorPage: React.FC = () => {
 
   return (
     <ScrollableOverlay outerClassName="h-full" className="w-full">
-      <div className="mx-auto w-full max-w-3xl p-3 sm:p-6 sm:pt-8 space-y-6">
+      <div className="oc-settings-page-content mx-auto w-full max-w-3xl p-3 sm:p-6 sm:pt-8">
         <div className="space-y-1">
           <h2 className="typography-ui-header font-semibold text-foreground">
             {t('settings.behavior.page.title')}
           </h2>
         </div>
 
-        <div data-settings-item="behavior.system-prompt">
-          <div className="mb-1 px-1">
+        <SettingsGroup
+          label={(
             <div className="flex items-center gap-1.5">
-              <h3 className="typography-ui-header font-medium text-foreground">
-                {t('settings.behavior.page.section.systemPrompt')}
-              </h3>
+              <span>{t('settings.behavior.page.section.systemPrompt')}</span>
               <Tooltip>
                 <TooltipTrigger asChild>
                   <Icon name="information" className="h-3.5 w-3.5 text-muted-foreground/60 cursor-help" />
@@ -341,9 +340,9 @@ export const BehaviorPage: React.FC = () => {
                 </TooltipContent>
               </Tooltip>
             </div>
-          </div>
-
-          <section className="px-2 pb-2 pt-0 space-y-3">
+          )}
+        >
+          <div data-settings-item="behavior.system-prompt" className="oc-settings-group-row flex flex-col gap-3">
             <Textarea
               value={prompt}
               onChange={(e) => setPrompt(e.target.value)}
@@ -361,15 +360,14 @@ export const BehaviorPage: React.FC = () => {
             >
               {isSaving ? t('settings.common.actions.saving') : t('settings.common.actions.saveChanges')}
             </Button>
-          </section>
-        </div>
+          </div>
+        </SettingsGroup>
 
         <div data-settings-item="behavior.response-style">
-          <div className="mb-1 px-1">
-            <div className="flex items-center gap-1.5">
-              <h3 className="typography-ui-header font-medium text-foreground">
-                {t('settings.behavior.page.section.responseStyle')}
-              </h3>
+          <SettingsGroup
+            label={(
+              <div className="flex items-center gap-1.5">
+                <span>{t('settings.behavior.page.section.responseStyle')}</span>
               <Tooltip>
                 <TooltipTrigger asChild>
                   <Icon name="information" className="h-3.5 w-3.5 text-muted-foreground/60 cursor-help" />
@@ -378,46 +376,45 @@ export const BehaviorPage: React.FC = () => {
                   {t('settings.behavior.page.responseStyle.tooltip')}
                 </TooltipContent>
               </Tooltip>
-            </div>
-          </div>
-
-          <section className="px-2 pb-2 pt-0 space-y-3">
-            <label className="flex items-center gap-2 typography-ui-label text-foreground">
+              </div>
+            )}
+          >
+            <SettingsRow label={t('settings.behavior.page.responseStyle.enable')}>
               <Checkbox
                 checked={responseStyleEnabled}
                 onChange={setResponseStyleEnabled}
                 disabled={!responseStyleReady}
                 ariaLabel={t('settings.behavior.page.responseStyle.enableAria')}
               />
-              {t('settings.behavior.page.responseStyle.enable')}
-            </label>
-
-            <Select<ResponseStyleValue>
-              value={responseStylePreset}
-              onValueChange={(value) => setResponseStylePreset(value)}
-              disabled={!responseStyleReady || !responseStyleEnabled}
-            >
-              <SelectTrigger className="w-full sm:w-56" size="lg">
-                <SelectValue>
-                  {(value) => {
-                    if (value === 'custom') return t('settings.behavior.page.responseStyle.option.custom');
-                    if (isResponseStylePreset(value)) return t(RESPONSE_STYLE_OPTION_LABEL_KEYS[value]);
-                    return null;
-                  }}
-                </SelectValue>
-              </SelectTrigger>
-              <SelectContent>
-                {RESPONSE_STYLE_PRESETS.map((preset) => (
-                  <SelectItem key={preset} value={preset}>
-                    {t(RESPONSE_STYLE_OPTION_LABEL_KEYS[preset])}
+              <Select<ResponseStyleValue>
+                value={responseStylePreset}
+                onValueChange={(value) => setResponseStylePreset(value)}
+                disabled={!responseStyleReady || !responseStyleEnabled}
+              >
+                <SelectTrigger className="w-full sm:w-56">
+                  <SelectValue>
+                    {(value) => {
+                      if (value === 'custom') return t('settings.behavior.page.responseStyle.option.custom');
+                      if (isResponseStylePreset(value)) return t(RESPONSE_STYLE_OPTION_LABEL_KEYS[value]);
+                      return null;
+                    }}
+                  </SelectValue>
+                </SelectTrigger>
+                <SelectContent>
+                  {RESPONSE_STYLE_PRESETS.map((preset) => (
+                    <SelectItem key={preset} value={preset}>
+                      {t(RESPONSE_STYLE_OPTION_LABEL_KEYS[preset])}
+                    </SelectItem>
+                  ))}
+                  <SelectItem value="custom">
+                    {t('settings.behavior.page.responseStyle.option.custom')}
                   </SelectItem>
-                ))}
-                <SelectItem value="custom">
-                  {t('settings.behavior.page.responseStyle.option.custom')}
-                </SelectItem>
-              </SelectContent>
-            </Select>
+                </SelectContent>
+              </Select>
+            </SettingsRow>
+          </SettingsGroup>
 
+          <section className="px-2 pt-3">
             <Textarea
               value={responseStylePreview}
               onChange={(event) => setResponseStyleCustomInstructions(event.target.value)}

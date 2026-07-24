@@ -20,6 +20,15 @@ The mobile package reuses the web build, then rewrites `mobile.html` to `index.h
 - Android registers the plugin before `BridgeActivity.onCreate`, then runs `WebView.performHapticFeedback(HapticFeedbackConstants.KEYBOARD_TAP)` on the UI thread.
 - Both native methods declare a `none` return type and leave the callback unresolved to keep this input-feedback path free of promise completion work.
 
+## Native Back Navigation
+
+- `OpenChamberNavigation` is a progress-only native input driver for the shared UI navigation coordinator; native code never owns the React page stack.
+- iOS installs a `UIScreenEdgePanGestureRecognizer` on the bridge view and recognizes back only from the physical left edge. It emits start/progress/cancel/invoke events and commits by distance or horizontal velocity.
+- Android 14+ uses `OnBackAnimationCallback` for system Predictive Back progress. Android 13 receives the invoke callback without progress, and older Android versions retain Capacitor App's existing commit-only back-button fallback.
+- The web hot path coalesces native progress to one compositor transform/opacity update per animation frame and performs no per-frame React state writes.
+- Hosted H5 registers no page-back touch gesture. Push-style mobile detail pages mirror their depth into browser history, and `popstate` invokes the same route callback; root history remains owned by the browser.
+- Sheets and dialogs are modal surfaces rather than push pages. Their existing vertical dismissal and explicit close behavior remain separate; a file or Changes detail nested inside an overlay can pop before the overlay closes.
+
 ## Native Share Inbox
 
 - `OpenChamberShare` is the Capacitor bridge for catalog updates, durable inbox consumption, and Android draft handoff. Inbox commits emit `shareReceived`; Android native draft arrivals emit `shareDraftReceived` as a delivery hint while `listPending` and `listDrafts` remain the authoritative recovery reads.

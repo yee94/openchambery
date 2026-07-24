@@ -10,6 +10,7 @@ import { ModelSelector } from '@/components/sections/agents/ModelSelector';
 import { AgentSelector } from '@/components/sections/commands/AgentSelector';
 import { SettingsSidebarItem } from '@/components/sections/shared/SettingsSidebarItem';
 import { SettingsSidebarLayout } from '@/components/sections/shared/SettingsSidebarLayout';
+import { SettingsField, SettingsGroup, SettingsRow } from '@/components/sections/shared/SettingsGroup';
 import { Button } from '@/components/ui/button';
 import { Checkbox } from '@/components/ui/checkbox';
 import { Input } from '@/components/ui/input';
@@ -315,7 +316,7 @@ export const AssistantsSettingsPage: React.FC = () => {
 
   return (
     <ScrollableOverlay outerClassName="h-full" className="w-full">
-      <div className="mx-auto w-full max-w-3xl p-3 sm:p-6 sm:pt-8">
+      <div className="oc-settings-page-content mx-auto w-full max-w-3xl p-3 sm:p-6 sm:pt-8">
         {snapshotQuery.isError && snapshot ? <p className="mb-4 px-2 typography-meta text-[var(--status-warning)]">{t('assistants.state.staleSnapshot')}</p> : null}
 
         {selectedID ? (
@@ -329,58 +330,58 @@ export const AssistantsSettingsPage: React.FC = () => {
               {selected ? <Button variant="ghost" size="sm" onClick={remove} disabled={saving} className="text-[var(--status-error)]"><Icon name="delete-bin" className="size-4" />{t('assistants.settings.delete')}</Button> : null}
             </div>
 
-            <div className="mb-8">
-              <section className="space-y-1 px-2 pb-2 pt-0">
-                <div data-settings-item="assistants.name" className="flex flex-col gap-2 py-1.5 sm:flex-row sm:items-center sm:gap-8">
-                  <label htmlFor="assistant-name" className="shrink-0 typography-ui-label text-foreground sm:w-56">{t('assistants.settings.name')}</label>
+            <SettingsGroup>
+                <SettingsRow itemId="assistants.name" label={t('assistants.settings.name')}>
                   <Input id="assistant-name" value={draft.name} onChange={(event) => patchDraft('name', event.target.value)} className="min-w-0 flex-1" />
-                </div>
-                <label className="flex cursor-pointer items-center gap-2 py-1.5">
+                </SettingsRow>
+                <SettingsRow label={t('assistants.settings.enabled')}>
                   <Checkbox checked={draft.enabled} onChange={(value) => patchDraft('enabled', value)} ariaLabel={t('assistants.settings.enabled')} />
-                  <span className="typography-ui-label">{t('assistants.settings.enabled')}</span>
-                </label>
+                </SettingsRow>
                 {selected ? (
-                  <label data-settings-item="assistants.default-share" className="flex cursor-pointer items-center gap-2 py-1.5">
+                  <SettingsRow itemId="assistants.default-share" label={t('assistants.settings.defaultShare')}>
                     <Checkbox checked={defaultShareAssistant?.assistantID === selected.id && defaultShareAssistant.serverInstanceID === capabilityQuery.data?.serverInstanceID} onChange={(value) => void toggleDefaultShare(selected.id, value)} ariaLabel={t('assistants.settings.defaultShare')} />
-                    <span className="typography-ui-label">{t('assistants.settings.defaultShare')}</span>
-                  </label>
+                  </SettingsRow>
                 ) : null}
-              </section>
-            </div>
+            </SettingsGroup>
 
-            <div data-settings-item="assistants.prompt" className="mb-8">
-              <div className="mb-1 px-1"><label htmlFor="assistant-prompt" className="typography-ui-header font-medium text-foreground">{t('assistants.settings.defaultPrompt')}</label></div>
-              <section className="px-2 pb-2 pt-0"><Textarea id="assistant-prompt" value={draft.defaultPrompt} onChange={(event) => patchDraft('defaultPrompt', event.target.value)} placeholder={t('assistants.settings.defaultPromptPlaceholder')} /></section>
-            </div>
+            <SettingsField
+              itemId="assistants.prompt"
+              label={t('assistants.settings.defaultPrompt')}
+              className="oc-settings-split-row-stacked"
+            >
+              <Textarea id="assistant-prompt" value={draft.defaultPrompt} onChange={(event) => patchDraft('defaultPrompt', event.target.value)} placeholder={t('assistants.settings.defaultPromptPlaceholder')} />
+            </SettingsField>
 
-            <div className="mb-8">
-              <div className="mb-1 px-1"><h3 className="typography-ui-header font-medium text-foreground">{t('assistants.settings.runtime')}</h3></div>
-              <section className="space-y-1 px-2 pb-2 pt-0">
-                <div data-settings-item="assistants.model" className="flex flex-col gap-2 py-1.5 sm:flex-row sm:items-center sm:gap-8">
-                  <span className="shrink-0 typography-ui-label sm:w-56">{t('assistants.settings.model')}</span>
-                  <ModelSelector providerId={draft.providerID} modelId={draft.modelID} providers={catalogProviders} onChange={(providerID, modelID) => setDraft((current) => ({ ...current, providerID, modelID }))} className="h-8 max-w-full" />
-                </div>
-                <div data-settings-item="assistants.agent" className="flex flex-col gap-2 py-1.5 sm:flex-row sm:items-center sm:gap-8">
-                  <span className="shrink-0 typography-ui-label sm:w-56">{t('assistants.settings.agent')}</span>
-                  <AgentSelector agentName={draft.agent ?? ''} agents={catalogAgents} onChange={(agent) => patchDraft('agent', agent || null)} className="h-8" />
-                </div>
-                <div data-settings-item="assistants.mode" className="flex flex-col gap-2 py-1.5 sm:flex-row sm:items-start sm:gap-8">
-                  <span className="shrink-0 pt-1 typography-ui-label sm:w-56">{t('assistants.settings.mode')}</span>
-                  <div className="min-w-0 flex-1 space-y-2">
+            <SettingsGroup
+              label={t('assistants.settings.runtime')}
+            >
+                <SettingsRow itemId="assistants.model" label={t('assistants.settings.model')}>
+                  <ModelSelector providerId={draft.providerID} modelId={draft.modelID} providers={catalogProviders} onChange={(providerID, modelID) => setDraft((current) => ({ ...current, providerID, modelID }))} className="oc-settings-inline-value" />
+                </SettingsRow>
+                <SettingsRow itemId="assistants.agent" label={t('assistants.settings.agent')}>
+                  <AgentSelector agentName={draft.agent ?? ''} agents={catalogAgents} onChange={(agent) => patchDraft('agent', agent || null)} className="oc-settings-inline-value" />
+                </SettingsRow>
+                <SettingsRow
+                  itemId="assistants.mode"
+                  label={t('assistants.settings.mode')}
+                  description={draft.mode === 'stateless' ? t('assistants.conversation.statelessHint') : t('assistants.conversation.continuousHint')}
+                >
+                  <div className="flex min-w-0 flex-wrap justify-end gap-2">
                     <div className="flex flex-wrap gap-2">
                       {(['continuous', 'stateless'] as const).map((mode) => (
                         <Button key={mode} variant="chip" size="xs" aria-pressed={draft.mode === mode} onClick={() => patchDraft('mode', mode)}>{mode === 'continuous' ? t('assistants.mode.continuous') : t('assistants.mode.stateless')}</Button>
                       ))}
                     </div>
-                    <p className="typography-micro leading-snug text-muted-foreground/70">{draft.mode === 'stateless' ? t('assistants.conversation.statelessHint') : t('assistants.conversation.continuousHint')}</p>
                   </div>
-                </div>
-              </section>
-            </div>
+                </SettingsRow>
+            </SettingsGroup>
 
-            <div data-settings-item="assistants.workspace" className="mb-8">
-              <div className="mb-1 px-1"><h3 className="typography-ui-header font-medium text-foreground">{t('assistants.settings.workspace')}</h3></div>
-              <section className="px-2 pb-2 pt-0">
+            <SettingsField
+              itemId="assistants.workspace"
+              label={t('assistants.settings.workspace')}
+              description={t('assistants.settings.workspaceChangeHint')}
+              descriptionPlacement="outside"
+            >
                 <Select value={workspaceValue} onValueChange={(value) => {
                   if (value === MANAGED_WORKSPACE_VALUE) {
                     patchDraft('workspacePath', null);
@@ -389,7 +390,7 @@ export const AssistantsSettingsPage: React.FC = () => {
                   const project = projects.find((candidate) => candidate.id === value);
                   if (project) patchDraft('workspacePath', project.path);
                 }}>
-                  <SelectTrigger size="lg" title={draft.workspacePath ?? t('assistants.settings.workspacePlaceholder')} className="w-full max-w-xl text-left [&_[data-slot=select-value]]:min-w-0 [&_[data-slot=select-value]]:flex-1 [&_[data-slot=select-value]]:overflow-hidden">
+                  <SelectTrigger title={draft.workspacePath ?? t('assistants.settings.workspacePlaceholder')} className="w-full max-w-xl [&_[data-slot=select-value]]:min-w-0 [&_[data-slot=select-value]]:flex-1 [&_[data-slot=select-value]]:overflow-hidden">
                     <SelectValue>{workspaceLabel}</SelectValue>
                   </SelectTrigger>
                   <SelectContent align="start" className="w-[min(32rem,calc(100vw-2rem))]">
@@ -402,11 +403,9 @@ export const AssistantsSettingsPage: React.FC = () => {
                     ) : null}
                   </SelectContent>
                 </Select>
-                <p className="mt-2 max-w-xl typography-meta text-muted-foreground">{t('assistants.settings.workspaceChangeHint')}</p>
-              </section>
-            </div>
+            </SettingsField>
 
-            <div className="flex justify-end border-t border-border pt-4">
+            <div className="flex justify-end">
               <Button onClick={save} disabled={saving}>{saving ? <Icon name="loader-4" className="size-4 animate-spin" /> : null}{t('assistants.settings.save')}</Button>
             </div>
           </>

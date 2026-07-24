@@ -8,6 +8,7 @@ import { useI18n } from '@/lib/i18n';
 import { cn } from '@/lib/utils';
 import { SettingsPageLayout } from '@/components/sections/shared/SettingsPageLayout';
 import { RegistryBanner } from './RegistryBanner';
+import { SettingsGroup } from '@/components/sections/shared/SettingsGroup';
 import {
   usePluginsStore,
   type PluginDraft,
@@ -213,43 +214,40 @@ export const PluginsPage: React.FC = () => {
 
         <RegistryBanner entryId={selectedEntry.id} spec={selectedEntry.spec} />
 
-        <div data-settings-item="plugins.spec" className="space-y-1.5">
-          <label className="typography-meta text-muted-foreground">
-            {t('settings.plugins.page.field.spec')}
-          </label>
-          <Input
-            value={draft.spec}
-            onChange={(e) =>
-              setDraft({ ...draft, spec: e.target.value })
-            }
-            placeholder={t('settings.plugins.page.field.spec.placeholder')}
-            className="font-mono typography-meta"
-            spellCheck={false}
-          />
+        <div data-settings-item="plugins.spec">
+          <SettingsGroup label={t('settings.plugins.page.field.spec')} cardClassName="p-3">
+            <Input
+              value={draft.spec}
+              onChange={(e) =>
+                setDraft({ ...draft, spec: e.target.value })
+              }
+              placeholder={t('settings.plugins.page.field.spec.placeholder')}
+              className="font-mono typography-meta"
+              spellCheck={false}
+            />
+          </SettingsGroup>
         </div>
 
-        <div data-settings-item="plugins.options" className="space-y-1.5">
-          <label className="typography-meta text-muted-foreground">
-            {t('settings.plugins.page.field.options')}
-          </label>
-          <Textarea
-            value={draft.optionsJson}
-            onChange={(e) =>
-              setDraft({ ...draft, optionsJson: e.target.value })
-            }
-            rows={10}
-            className={cn(
-              'font-mono typography-meta min-h-[200px]',
-              !optionsValid && 'border-[var(--status-error-border)]',
-            )}
-            spellCheck={false}
-            placeholder='{ }'
-          />
-          {!optionsValid && (
-            <p className="typography-micro text-[var(--status-error)]">
-              {t('settings.plugins.page.field.options.invalidJson')}
-            </p>
-          )}
+        <div data-settings-item="plugins.options">
+          <SettingsGroup
+            label={t('settings.plugins.page.field.options')}
+            description={!optionsValid ? t('settings.plugins.page.field.options.invalidJson') : undefined}
+            cardClassName="p-3"
+          >
+            <Textarea
+              value={draft.optionsJson}
+              onChange={(e) =>
+                setDraft({ ...draft, optionsJson: e.target.value })
+              }
+              rows={10}
+              className={cn(
+                'font-mono typography-meta min-h-[200px]',
+                !optionsValid && 'border-[var(--status-error-border)]',
+              )}
+              spellCheck={false}
+              placeholder='{ }'
+            />
+          </SettingsGroup>
         </div>
 
         <div className="flex items-center gap-2">
@@ -338,20 +336,19 @@ export const PluginsPage: React.FC = () => {
           </div>
         </div>
 
-        <div data-settings-item="plugins.content" className="space-y-1.5">
-          <label className="typography-meta text-muted-foreground">
-            {t('settings.plugins.page.field.content')}
-          </label>
-          <Textarea
-            value={draft.content}
-            onChange={(e) =>
-              setDraft({ ...draft, content: e.target.value })
-            }
-            rows={16}
-            className="font-mono typography-meta min-h-[320px]"
-            spellCheck={false}
-            disabled={isLoadingFile}
-          />
+        <div data-settings-item="plugins.content">
+          <SettingsGroup label={t('settings.plugins.page.field.content')} cardClassName="p-3">
+            <Textarea
+              value={draft.content}
+              onChange={(e) =>
+                setDraft({ ...draft, content: e.target.value })
+              }
+              rows={16}
+              className="font-mono typography-meta min-h-[320px]"
+              spellCheck={false}
+              disabled={isLoadingFile}
+            />
+          </SettingsGroup>
         </div>
 
         <div className="flex items-center gap-2">

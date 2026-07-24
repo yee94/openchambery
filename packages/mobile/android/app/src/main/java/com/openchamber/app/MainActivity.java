@@ -9,6 +9,7 @@ public class MainActivity extends BridgeActivity {
     @Override
     protected void onCreate(Bundle savedInstanceState) {
         registerPlugin(OpenChamberHapticsPlugin.class);
+        registerPlugin(OpenChamberNavigationPlugin.class);
         registerPlugin(OpenChamberSharePlugin.class);
         super.onCreate(savedInstanceState);
         dispatchShare(getIntent());

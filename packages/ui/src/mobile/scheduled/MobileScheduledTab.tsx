@@ -28,7 +28,7 @@ export function MobileScheduledTab({
       title={t('sessions.scheduledTasks.dialog.title')}
       className={className}
       surface={false}
-      scrollsWithPage
+      scrollsWithPage={showHeader}
       showHeader={showHeader}
       surfaceClassName={cn('oc-mobile-scheduled-content', contentClassName)}
     >

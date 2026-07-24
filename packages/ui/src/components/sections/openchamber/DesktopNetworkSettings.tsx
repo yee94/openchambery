@@ -22,7 +22,7 @@ import { updateDesktopSettings } from '@/lib/persistence';
 import { runtimeFetch } from '@/lib/runtime-fetch';
 import { getRuntimeApiBaseUrl } from '@/lib/runtime-switch';
 import { useUIStore } from '@/stores/useUIStore';
-import { cn } from '@/lib/utils';
+import { SettingsGroup, SettingsRow } from '@/components/sections/shared/SettingsGroup';
 
 const WINDOW_CONTROLS_POSITION_OPTIONS: Array<{ id: DesktopWindowControlsPosition; labelKey: string }> = [
   { id: 'auto', labelKey: 'settings.openchamber.desktopNetwork.option.windowControlsAuto' },
@@ -349,58 +349,43 @@ export const DesktopNetworkSettings: React.FC = () => {
   }
 
   return (
-    <div className="mb-8">
+    <div className="oc-settings-section-stack">
       {showWindowControlsPosition ? (
-        <>
-          <div className="mb-1 px-1">
-            <h3 className="typography-ui-header font-medium text-foreground">{t('settings.openchamber.desktopNetwork.field.windowControlsPosition')}</h3>
-          </div>
-          <section className="space-y-2 px-2 pb-2 pt-0">
-            <div data-settings-item="sessions.desktop-window-controls-position" className="space-y-1 py-1.5">
-              <div className="typography-micro text-muted-foreground/70">
-                {t('settings.openchamber.desktopNetwork.field.windowControlsPositionDescription')}
-              </div>
-              <div
-                className="mt-1 flex flex-wrap items-center gap-1"
-                role="group"
-                aria-label={t('settings.openchamber.desktopNetwork.field.windowControlsPositionAria')}
-              >
-                {WINDOW_CONTROLS_POSITION_OPTIONS.map((option) => {
-                  const selected = desktopWindowControlsPosition === option.id;
-                  return (
-                    <Button
-                      key={option.id}
-                      type="button"
-                      variant="outline"
-                      size="xs"
-                      className={cn(
-                        '!font-normal',
-                        selected ? 'border-[var(--primary-base)] text-[var(--primary-base)] bg-[var(--primary-base)]/10' : 'text-foreground',
-                      )}
-                      aria-pressed={selected}
-                      onClick={() => handleWindowControlsPositionChange(option.id)}
-                    >
-                      {tUnsafe(option.labelKey)}
-                    </Button>
-                  );
-                })}
-              </div>
+        <SettingsGroup label={t('settings.openchamber.desktopNetwork.field.windowControlsPosition')}>
+          <SettingsRow
+            itemId="sessions.desktop-window-controls-position"
+            label={t('settings.openchamber.desktopNetwork.field.windowControlsPosition')}
+            description={t('settings.openchamber.desktopNetwork.field.windowControlsPositionDescription')}
+          >
+            <div
+              className="flex flex-wrap items-center justify-end gap-1"
+              role="group"
+              aria-label={t('settings.openchamber.desktopNetwork.field.windowControlsPositionAria')}
+            >
+              {WINDOW_CONTROLS_POSITION_OPTIONS.map((option) => (
+                <Button
+                  key={option.id}
+                  type="button"
+                  variant="chip"
+                  size="xs"
+                  className="!font-normal"
+                  aria-pressed={desktopWindowControlsPosition === option.id}
+                  onClick={() => handleWindowControlsPositionChange(option.id)}
+                >
+                  {tUnsafe(option.labelKey)}
+                </Button>
+              ))}
             </div>
-          </section>
-        </>
+          </SettingsRow>
+        </SettingsGroup>
       ) : null}
 
       {!isLocalDesktop ? null : (
-        <>
-      <div className="mb-1 px-1">
-        <h3 className="typography-ui-header font-medium text-foreground">{t('settings.openchamber.desktopNetwork.title')}</h3>
-      </div>
-
-      <section className="space-y-2 px-2 pb-2 pt-0">
+        <SettingsGroup label={t('settings.openchamber.desktopNetwork.title')}>
         {launchAtLoginSupported ? (
           <div
             data-settings-item="sessions.desktop-launch-at-login"
-            className="group flex cursor-pointer items-start gap-2 py-1.5"
+            className="oc-settings-group-row oc-settings-split-row group cursor-pointer"
             role="button"
             tabIndex={0}
             onClick={handleLaunchAtLoginToggle}
@@ -411,17 +396,19 @@ export const DesktopNetworkSettings: React.FC = () => {
               }
             }}
           >
-            <Checkbox
-              checked={launchAtLoginEnabled}
-              onChange={handleLaunchAtLoginToggle}
-              ariaLabel={t('settings.openchamber.desktopNetwork.field.launchAtLoginAria')}
-              disabled={isSavingLaunchAtLogin}
-            />
-            <div className="min-w-0 flex-1">
+            <div className="oc-settings-split-row-copy">
               <div className="typography-ui-label text-foreground">{t('settings.openchamber.desktopNetwork.field.launchAtLogin')}</div>
-              <div className="typography-micro text-muted-foreground/70">
+              <div className="typography-meta text-muted-foreground">
                 {t('settings.openchamber.desktopNetwork.field.launchAtLoginDescription')}
               </div>
+            </div>
+            <div className="oc-settings-split-row-control">
+              <Checkbox
+                checked={launchAtLoginEnabled}
+                onChange={handleLaunchAtLoginToggle}
+                ariaLabel={t('settings.openchamber.desktopNetwork.field.launchAtLoginAria')}
+                disabled={isSavingLaunchAtLogin}
+              />
             </div>
           </div>
         ) : null}
@@ -429,7 +416,7 @@ export const DesktopNetworkSettings: React.FC = () => {
         {minimizeToTraySupported ? (
           <div
             data-settings-item="sessions.desktop-minimize-to-tray"
-            className="group flex cursor-pointer items-start gap-2 py-1.5"
+            className="oc-settings-group-row oc-settings-split-row group cursor-pointer"
             role="button"
             tabIndex={0}
             onClick={handleMinimizeToTrayToggle}
@@ -440,17 +427,19 @@ export const DesktopNetworkSettings: React.FC = () => {
               }
             }}
           >
-            <Checkbox
-              checked={minimizeToTrayEnabled}
-              onChange={handleMinimizeToTrayToggle}
-              ariaLabel={t('settings.openchamber.desktopNetwork.field.minimizeToTrayAria')}
-              disabled={isSavingMinimizeToTray}
-            />
-            <div className="min-w-0 flex-1">
+            <div className="oc-settings-split-row-copy">
               <div className="typography-ui-label text-foreground">{t('settings.openchamber.desktopNetwork.field.minimizeToTray')}</div>
-              <div className="typography-micro text-muted-foreground/70">
+              <div className="typography-meta text-muted-foreground">
                 {t('settings.openchamber.desktopNetwork.field.minimizeToTrayDescription')}
               </div>
+            </div>
+            <div className="oc-settings-split-row-control">
+              <Checkbox
+                checked={minimizeToTrayEnabled}
+                onChange={handleMinimizeToTrayToggle}
+                ariaLabel={t('settings.openchamber.desktopNetwork.field.minimizeToTrayAria')}
+                disabled={isSavingMinimizeToTray}
+              />
             </div>
           </div>
         ) : null}
@@ -458,7 +447,7 @@ export const DesktopNetworkSettings: React.FC = () => {
         {keepAwakeSupported ? (
           <div
             data-settings-item="sessions.desktop-keep-awake"
-            className="group flex cursor-pointer items-start gap-2 py-1.5"
+            className="oc-settings-group-row oc-settings-split-row group cursor-pointer"
             role="button"
             tabIndex={0}
             onClick={handleKeepAwakeToggle}
@@ -469,29 +458,32 @@ export const DesktopNetworkSettings: React.FC = () => {
               }
             }}
           >
-            <Checkbox
-              checked={keepAwakeEnabled}
-              onChange={handleKeepAwakeToggle}
-              ariaLabel={t('settings.openchamber.desktopNetwork.field.keepAwakeAria')}
-              disabled={isSavingKeepAwake}
-            />
-            <div className="min-w-0 flex-1">
+            <div className="oc-settings-split-row-copy">
               <div className="typography-ui-label text-foreground">{t('settings.openchamber.desktopNetwork.field.keepAwake')}</div>
-              <div className="typography-micro text-muted-foreground/70">
+              <div className="typography-meta text-muted-foreground">
                 {t('settings.openchamber.desktopNetwork.field.keepAwakeDescription')}
               </div>
+            </div>
+            <div className="oc-settings-split-row-control">
+              <Checkbox
+                checked={keepAwakeEnabled}
+                onChange={handleKeepAwakeToggle}
+                ariaLabel={t('settings.openchamber.desktopNetwork.field.keepAwakeAria')}
+                disabled={isSavingKeepAwake}
+              />
             </div>
           </div>
         ) : null}
 
-        <div data-settings-item="sessions.desktop-ui-password" className="space-y-1 py-1.5">
-          <label className="typography-ui-label text-foreground" htmlFor="desktop-ui-password">
-            {t('settings.openchamber.desktopPassword.field.password')}
-          </label>
+        <SettingsRow
+          itemId="sessions.desktop-ui-password"
+          label={<label htmlFor="desktop-ui-password">{t('settings.openchamber.desktopPassword.field.password')}</label>}
+          description={t('settings.openchamber.desktopPassword.field.passwordDescription')}
+        >
           <Input
             id="desktop-ui-password"
             type="password"
-            className="h-7 max-w-sm"
+            className="max-w-sm"
             value={draftPassword}
             onChange={(event) => handlePasswordChange(event.target.value)}
             placeholder={t('settings.openchamber.desktopPassword.field.passwordPlaceholder')}
@@ -499,14 +491,11 @@ export const DesktopNetworkSettings: React.FC = () => {
             required={draftValue}
             aria-invalid={lanRequiresPassword}
           />
-          <div className="typography-micro text-muted-foreground/70">
-            {t('settings.openchamber.desktopPassword.field.passwordDescription')}
-          </div>
-        </div>
+        </SettingsRow>
 
         <div
           data-settings-item="sessions.desktop-lan-access"
-          className="group flex cursor-pointer items-start gap-2 py-1.5"
+          className="oc-settings-group-row oc-settings-split-row group cursor-pointer"
           role="button"
           tabIndex={0}
           onClick={handleToggle}
@@ -517,34 +506,36 @@ export const DesktopNetworkSettings: React.FC = () => {
             }
           }}
         >
-          <Checkbox
-            checked={draftValue}
-            onChange={handleToggle}
-            ariaLabel={t('settings.openchamber.desktopNetwork.field.allowLanAccessAria')}
-            disabled={isLoading || isSaving}
-          />
-          <div className="min-w-0 flex-1">
+          <div className="oc-settings-split-row-copy">
             <div className="typography-ui-label text-foreground">{t('settings.openchamber.desktopNetwork.field.allowLanAccess')}</div>
-            <div className="typography-micro text-muted-foreground/70">
+            <div className="typography-meta text-muted-foreground">
               {t('settings.openchamber.desktopNetwork.field.allowLanAccessDescription')}
             </div>
-            <div className="typography-micro text-[var(--status-warning)]/85">
+            <div className="typography-meta text-[var(--status-warning)]/85">
               {t('settings.openchamber.desktopNetwork.field.warning')}
             </div>
             {lanRequiresPassword || lanBlockedByMissingPassword ? (
-              <div className="typography-micro text-[var(--status-warning)]/85">
+              <div className="typography-meta text-[var(--status-warning)]/85">
                 {t('settings.openchamber.desktopNetwork.field.passwordRequiredWarning')}
               </div>
             ) : null}
           </div>
+          <div className="oc-settings-split-row-control">
+            <Checkbox
+              checked={draftValue}
+              onChange={handleToggle}
+              ariaLabel={t('settings.openchamber.desktopNetwork.field.allowLanAccessAria')}
+              disabled={isLoading || isSaving}
+            />
+          </div>
         </div>
 
         {error ? (
-          <div className="px-2 typography-micro text-[var(--status-error)]">{error}</div>
+          <div className="oc-settings-group-row typography-meta text-[var(--status-error)]">{error}</div>
         ) : null}
 
         {lanUrl ? (
-          <div className="px-2 typography-micro text-muted-foreground/80">
+          <div className="oc-settings-group-row typography-meta text-muted-foreground">
             {isDirty && !savedValue
               ? t('settings.openchamber.desktopNetwork.hint.openAfterRestart')
               : t('settings.openchamber.desktopNetwork.hint.openNow')}
@@ -552,7 +543,7 @@ export const DesktopNetworkSettings: React.FC = () => {
           </div>
         ) : null}
 
-        <div className="flex justify-start py-1.5">
+        <div className="oc-settings-group-row flex justify-end">
           <Button
             type="button"
             size="xs"
@@ -563,8 +554,7 @@ export const DesktopNetworkSettings: React.FC = () => {
             {isSaving ? t('settings.common.actions.saving') : t('settings.openchamber.desktopNetwork.actions.saveAndRestart')}
           </Button>
         </div>
-      </section>
-        </>
+        </SettingsGroup>
       )}
     </div>
   );

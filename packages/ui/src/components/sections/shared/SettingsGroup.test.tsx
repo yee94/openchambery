@@ -1,7 +1,12 @@
 import { describe, expect, test } from 'bun:test';
 import { renderToStaticMarkup } from 'react-dom/server';
 
-import { SettingsField, SettingsGroup, SettingsRow } from './SettingsGroup';
+import {
+  SettingsField,
+  SettingsGroup,
+  SettingsRow,
+  SettingsToggleRow,
+} from './SettingsGroup';
 
 describe('SettingsGroup', () => {
   test('renders one shared grouped card with responsive split rows', () => {
@@ -65,5 +70,26 @@ describe('SettingsGroup', () => {
     const cardEnd = markup.indexOf('</div><p class="oc-settings-group-description');
     expect(cardEnd).toBeGreaterThan(-1);
     expect(markup.indexOf('A longer explanation', cardEnd)).toBeGreaterThan(cardEnd);
+  });
+
+  test('renders boolean settings with the shared row typography contract', () => {
+    const markup = renderToStaticMarkup(
+      <SettingsGroup label="Notifications">
+        <SettingsToggleRow
+          checked
+          onChange={() => undefined}
+          label="Enable notifications"
+          description="Delivered by the operating system."
+          ariaLabel="Enable notifications"
+          itemId="notifications.delivery"
+        />
+      </SettingsGroup>,
+    );
+
+    expect(markup).toContain('oc-settings-group-row');
+    expect(markup).toContain('typography-ui-label');
+    expect(markup).toContain('typography-meta');
+    expect(markup).toContain('data-settings-item="notifications.delivery"');
+    expect(markup).toContain('aria-pressed="true"');
   });
 });

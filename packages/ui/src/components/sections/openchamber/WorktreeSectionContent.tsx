@@ -387,15 +387,15 @@ export const WorktreeSectionContent: React.FC<WorktreeSectionContentProps> = ({ 
         {isLoadingCommands ? (
           <p className="typography-meta text-muted-foreground">{t('settings.openchamber.worktrees.setup.loading')}</p>
         ) : (
-          <div className={cn('space-y-2', PROJECT_SETTINGS_CONTROL_WIDTH)}>
+          <div className={cn('flex flex-col gap-2', PROJECT_SETTINGS_CONTROL_WIDTH)}>
             {setupCommands.map((command, index) => (
-              <div key={index} className="flex w-full gap-2">
+              <div key={index} className="oc-settings-group-row flex w-full items-center gap-2">
                 <Input
                   value={command}
                   onChange={(e) => handleSetupCommandChange(index, e.target.value)}
                   onBlur={handleCommandBlur}
                   placeholder={t('settings.openchamber.worktrees.setup.commandPlaceholder')}
-                  className="h-7 min-w-0 flex-1 font-mono text-xs"
+                  className="min-w-0 flex-1 font-mono text-xs"
                 />
                 <button
                   type="button"

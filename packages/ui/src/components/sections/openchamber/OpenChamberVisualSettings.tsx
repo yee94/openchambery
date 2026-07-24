@@ -145,6 +145,39 @@ const ResponsiveSettingsRow = ({
     );
 };
 
+type SettingsRadioOptionProps = {
+    selected: boolean;
+    onSelect: () => void;
+    label: React.ReactNode;
+    ariaLabel: string;
+};
+
+const SettingsRadioOption = ({
+    selected,
+    onSelect,
+    label,
+    ariaLabel,
+}: SettingsRadioOptionProps) => (
+    <div
+        className="oc-settings-group-row group flex cursor-pointer items-center gap-2 text-left"
+        role="button"
+        tabIndex={0}
+        aria-pressed={selected}
+        onClick={onSelect}
+        onKeyDown={(event) => {
+            if (event.key === ' ' || event.key === 'Enter') {
+                event.preventDefault();
+                onSelect();
+            }
+        }}
+    >
+        <Radio checked={selected} onChange={onSelect} ariaLabel={ariaLabel} />
+        <span className={cn('typography-ui-label font-normal', selected ? 'text-foreground' : 'text-foreground/50')}>
+            {label}
+        </span>
+    </div>
+);
+
 const THEME_MODE_OPTIONS: Array<{ value: ThemeMode; labelKey: string }> = [
     {
         value: 'system',
@@ -1512,14 +1545,15 @@ export const OpenChamberVisualSettings: React.FC<OpenChamberVisualSettingsProps>
                             label={t('settings.openchamber.visual.section.navigation')}
                         >
                             {shouldShow('fileEditorKeymap') && (
-                                <div data-settings-item="appearance.file-editor-keymap" className="oc-settings-group-row flex flex-col gap-2 sm:flex-row sm:items-start sm:gap-8">
-                                    <span className="typography-ui-label text-foreground sm:w-56 shrink-0">
-                                        {t('settings.openchamber.visual.field.fileEditorKeymap')}
-                                    </span>
+                                <ResponsiveSettingsRow
+                                    isMobile={isMobile}
+                                    itemId="appearance.file-editor-keymap"
+                                    label={t('settings.openchamber.visual.field.fileEditorKeymap')}
+                                >
                                     <div
                                         role="radiogroup"
                                         aria-label={t('settings.openchamber.visual.field.fileEditorKeymap')}
-                                        className="space-y-0"
+                                        className="flex flex-wrap items-center justify-end gap-x-3 gap-y-1"
                                     >
                                         {(['default', 'vim'] as const).map((keymap) => {
                                             const selected = fileEditorKeymap === keymap;
@@ -1551,7 +1585,7 @@ export const OpenChamberVisualSettings: React.FC<OpenChamberVisualSettingsProps>
                                             );
                                         })}
                                     </div>
-                                </div>
+                                </ResponsiveSettingsRow>
                             )}
                             {shouldShow('expandedEditorToolbar') && (
                                 <div
@@ -1617,11 +1651,15 @@ export const OpenChamberVisualSettings: React.FC<OpenChamberVisualSettingsProps>
                     <div className="oc-settings-section-stack">
 
                             {(shouldShow('userMessageRendering') || shouldShow('mermaidRendering') || shouldShow('chatRenderMode') || shouldShow('messageTransport') || (shouldShow('activityRenderMode') && chatRenderMode === 'sorted') || (shouldShow('diffLayout') && !isVSCode) || shouldShow('followUpBehavior')) && (
-                                <div className="grid grid-cols-1 gap-y-2 md:grid-cols-[minmax(0,16rem)_minmax(0,16rem)] md:justify-start md:gap-x-2">
+                                <div className="grid grid-cols-1 gap-y-[var(--oc-settings-section-stack-gap)] md:grid-cols-[minmax(0,16rem)_minmax(0,16rem)] md:justify-start md:gap-x-[var(--oc-settings-section-stack-gap)]">
                                     {shouldShow('chatRenderMode') && (
-                                        <section data-settings-item="chat.render-mode" className="p-2 md:col-span-2">
-                                            <h4 className="typography-ui-header font-medium text-foreground">{t('settings.openchamber.visual.section.chatRenderMode')}</h4>
-                                            <div role="radiogroup" aria-label={t('settings.openchamber.visual.section.chatRenderModeAria')} className="mt-1 grid w-full max-w-[26rem] grid-cols-1 gap-3 sm:grid-cols-2">
+                                        <ResponsiveSettingsGroup
+                                            isMobile={isMobile}
+                                            label={t('settings.openchamber.visual.section.chatRenderMode')}
+                                            className="md:col-span-2"
+                                        >
+                                            <div data-settings-item="chat.render-mode" className="oc-settings-group-row">
+                                            <div role="radiogroup" aria-label={t('settings.openchamber.visual.section.chatRenderModeAria')} className="grid w-full grid-cols-1 gap-3 sm:grid-cols-2">
                                                 {CHAT_RENDER_MODE_OPTIONS.map((option) => {
                                                     const selected = chatRenderMode === option.id;
                                                     const previewPhase = chatRenderPreviewTick % 12;
@@ -1699,13 +1737,17 @@ export const OpenChamberVisualSettings: React.FC<OpenChamberVisualSettingsProps>
                                                     );
                                                 })}
                                             </div>
-                                        </section>
+                                            </div>
+                                        </ResponsiveSettingsGroup>
                                     )}
 
                                     {shouldShow('messageTransport') && (
-                                        <section data-settings-item="chat.message-transport" className="p-2 md:col-span-2">
-                                            <h4 className="typography-ui-header font-medium text-foreground">{t('settings.openchamber.visual.section.messageStreamTransport')}</h4>
-                                            <div className="mt-1 flex max-w-[24rem] flex-col gap-2">
+                                        <ResponsiveSettingsGroup
+                                            isMobile={isMobile}
+                                            label={t('settings.openchamber.visual.section.messageStreamTransport')}
+                                            className="md:col-span-2"
+                                        >
+                                            <div data-settings-item="chat.message-transport" className="oc-settings-group-row flex flex-col gap-2">
                                                 <div className="flex flex-wrap items-center gap-1">
                                                     {MESSAGE_STREAM_TRANSPORT_OPTIONS.map((option) => (
                                                         <Button
@@ -1727,51 +1769,40 @@ export const OpenChamberVisualSettings: React.FC<OpenChamberVisualSettingsProps>
                                                     })()}
                                                 </span>
                                             </div>
-                                        </section>
+                                        </ResponsiveSettingsGroup>
                                     )}
 
                                     {shouldShow('activityRenderMode') && chatRenderMode === 'sorted' && (
-                                        <section className="p-2 md:col-span-2">
-                                            <h4 className="typography-ui-header font-medium text-foreground">{t('settings.openchamber.visual.section.activityDefault')}</h4>
-                                            <div role="radiogroup" aria-label={t('settings.openchamber.visual.section.activityDefaultAria')} className="mt-0.5 space-y-0">
+                                        <ResponsiveSettingsGroup
+                                            isMobile={isMobile}
+                                            label={t('settings.openchamber.visual.section.activityDefault')}
+                                            className="md:col-span-2"
+                                        >
+                                            <div role="radiogroup" aria-label={t('settings.openchamber.visual.section.activityDefaultAria')}>
                                                 {ACTIVITY_RENDER_MODE_OPTIONS.map((option) => {
                                                     const selected = activityRenderMode === option.id;
                                                     return (
-                                                        <div
+                                                        <SettingsRadioOption
                                                             key={option.id}
-                                                            role="button"
-                                                            tabIndex={0}
-                                                            aria-pressed={selected}
-                                                            onClick={() => handleActivityRenderModeChange(option.id)}
-                                                            onKeyDown={(event) => {
-                                                                if (event.key === ' ' || event.key === 'Enter') {
-                                                                    event.preventDefault();
-                                                                    handleActivityRenderModeChange(option.id);
-                                                                }
-                                                            }}
-                                                            className="flex w-full items-center gap-2 py-0 text-left"
-                                                        >
-                                                            <Radio
-                                                                checked={selected}
-                                                                onChange={() => handleActivityRenderModeChange(option.id)}
-                                                                ariaLabel={t('settings.openchamber.visual.field.activityDefaultModeAria', { option: tUnsafe(option.labelKey) })}
-                                                            />
-                                                            <span className={cn('typography-ui-label font-normal', selected ? 'text-foreground' : 'text-foreground/50')}>
-                                                                {tUnsafe(option.labelKey)}
-                                                            </span>
-                                                        </div>
+                                                            selected={selected}
+                                                            onSelect={() => handleActivityRenderModeChange(option.id)}
+                                                            label={tUnsafe(option.labelKey)}
+                                                            ariaLabel={t('settings.openchamber.visual.field.activityDefaultModeAria', { option: tUnsafe(option.labelKey) })}
+                                                        />
                                                     );
                                                 })}
                                             </div>
-                                        </section>
+                                        </ResponsiveSettingsGroup>
                                     )}
 
                                     {shouldShow('expandedTools') && (
-                                        <section className="p-2 md:col-span-2 space-y-0.5">
-                                            <div className="typography-ui-header font-medium text-foreground py-1.5">{t('settings.openchamber.visual.section.showToolsOpenedByDefault')}</div>
-
+                                        <ResponsiveSettingsGroup
+                                            isMobile={isMobile}
+                                            label={t('settings.openchamber.visual.section.showToolsOpenedByDefault')}
+                                            className="md:col-span-2"
+                                        >
                                             <div
-                                                className="group flex cursor-pointer items-center gap-2 py-0.5"
+                                                className="oc-settings-group-row group flex cursor-pointer items-center gap-2"
                                                 role="button"
                                                 tabIndex={0}
                                                 aria-pressed={showExpandedBashTools}
@@ -1790,151 +1821,95 @@ export const OpenChamberVisualSettings: React.FC<OpenChamberVisualSettingsProps>
                                                 />
                                                 <span className="typography-ui-label text-foreground">{t('settings.openchamber.visual.field.bash')}</span>
                                             </div>
-                                        </section>
+                                        </ResponsiveSettingsGroup>
                                     )}
 
                                     {shouldShow('userMessageRendering') && (
-                                        <section className="p-2">
-                                            <h4 className="typography-ui-header font-medium text-foreground">{t('settings.openchamber.visual.section.userMessageRendering')}</h4>
-                                            <div role="radiogroup" aria-label={t('settings.openchamber.visual.section.userMessageRenderingAria')} className="mt-0.5 space-y-0">
+                                        <ResponsiveSettingsGroup
+                                            isMobile={isMobile}
+                                            label={t('settings.openchamber.visual.section.userMessageRendering')}
+                                        >
+                                            <div role="radiogroup" aria-label={t('settings.openchamber.visual.section.userMessageRenderingAria')}>
                                                 {USER_MESSAGE_RENDERING_OPTIONS.map((option) => {
                                                     const selected = normalizeUserMessageRenderingMode(userMessageRenderingMode) === option.id;
                                                     return (
-                                                        <div
+                                                        <SettingsRadioOption
                                                             key={option.id}
-                                                            role="button"
-                                                            tabIndex={0}
-                                                            aria-pressed={selected}
-                                                            onClick={() => handleUserMessageRenderingModeChange(option.id)}
-                                                            onKeyDown={(event) => {
-                                                                if (event.key === ' ' || event.key === 'Enter') {
-                                                                    event.preventDefault();
-                                                                    handleUserMessageRenderingModeChange(option.id);
-                                                                }
-                                                            }}
-                                                            className="flex w-full items-center gap-2 py-0 text-left"
-                                                        >
-                                                            <Radio
-                                                                checked={selected}
-                                                                onChange={() => handleUserMessageRenderingModeChange(option.id)}
-                                                                ariaLabel={t('settings.openchamber.visual.field.userMessageRenderingAria', { option: tUnsafe(option.labelKey) })}
-                                                            />
-                                                            <span className={cn('typography-ui-label font-normal', selected ? 'text-foreground' : 'text-foreground/50')}>
-                                                                {tUnsafe(option.labelKey)}
-                                                            </span>
-                                                        </div>
+                                                            selected={selected}
+                                                            onSelect={() => handleUserMessageRenderingModeChange(option.id)}
+                                                            label={tUnsafe(option.labelKey)}
+                                                            ariaLabel={t('settings.openchamber.visual.field.userMessageRenderingAria', { option: tUnsafe(option.labelKey) })}
+                                                        />
                                                     );
                                                 })}
                                             </div>
-                                        </section>
+                                        </ResponsiveSettingsGroup>
                                     )}
 
                                     {shouldShow('mermaidRendering') && (
-                                        <section className="p-2">
-                                            <h4 className="typography-ui-header font-medium text-foreground">{t('settings.openchamber.visual.section.mermaidRendering')}</h4>
-                                            <div role="radiogroup" aria-label={t('settings.openchamber.visual.section.mermaidRenderingAria')} className="mt-0.5 space-y-0">
+                                        <ResponsiveSettingsGroup
+                                            isMobile={isMobile}
+                                            label={t('settings.openchamber.visual.section.mermaidRendering')}
+                                        >
+                                            <div role="radiogroup" aria-label={t('settings.openchamber.visual.section.mermaidRenderingAria')}>
                                                 {MERMAID_RENDERING_OPTIONS.map((option) => {
                                                     const selected = mermaidRenderingMode === option.id;
                                                     return (
-                                                        <div
+                                                        <SettingsRadioOption
                                                             key={option.id}
-                                                            role="button"
-                                                            tabIndex={0}
-                                                            aria-pressed={selected}
-                                                            onClick={() => handleMermaidRenderingModeChange(option.id)}
-                                                            onKeyDown={(event) => {
-                                                                if (event.key === ' ' || event.key === 'Enter') {
-                                                                    event.preventDefault();
-                                                                    handleMermaidRenderingModeChange(option.id);
-                                                                }
-                                                            }}
-                                                            className="flex w-full items-center gap-2 py-0 text-left"
-                                                        >
-                                                            <Radio
-                                                                checked={selected}
-                                                                onChange={() => handleMermaidRenderingModeChange(option.id)}
-                                                                ariaLabel={t('settings.openchamber.visual.field.mermaidRenderingAria', { option: tUnsafe(option.labelKey) })}
-                                                            />
-                                                            <span className={cn('typography-ui-label font-normal', selected ? 'text-foreground' : 'text-foreground/50')}>
-                                                                {tUnsafe(option.labelKey)}
-                                                            </span>
-                                                        </div>
+                                                            selected={selected}
+                                                            onSelect={() => handleMermaidRenderingModeChange(option.id)}
+                                                            label={tUnsafe(option.labelKey)}
+                                                            ariaLabel={t('settings.openchamber.visual.field.mermaidRenderingAria', { option: tUnsafe(option.labelKey) })}
+                                                        />
                                                     );
                                                 })}
                                             </div>
-                                        </section>
+                                        </ResponsiveSettingsGroup>
                                     )}
 
                                     {shouldShow('diffLayout') && !isVSCode && (
-                                        <section className="p-2">
-                                            <h4 className="typography-ui-header font-medium text-foreground">{t('settings.openchamber.visual.section.diffLayout')}</h4>
-                                            <div role="radiogroup" aria-label={t('settings.openchamber.visual.section.diffLayoutAria')} className="mt-0.5 space-y-0">
+                                        <ResponsiveSettingsGroup
+                                            isMobile={isMobile}
+                                            label={t('settings.openchamber.visual.section.diffLayout')}
+                                        >
+                                            <div role="radiogroup" aria-label={t('settings.openchamber.visual.section.diffLayoutAria')}>
                                                 {DIFF_LAYOUT_OPTIONS.map((option) => {
                                                     const selected = diffLayoutPreference === option.id;
                                                     return (
-                                                        <div
+                                                        <SettingsRadioOption
                                                             key={option.id}
-                                                            role="button"
-                                                            tabIndex={0}
-                                                            aria-pressed={selected}
-                                                            onClick={() => setDiffLayoutPreference(option.id)}
-                                                            onKeyDown={(event) => {
-                                                                if (event.key === ' ' || event.key === 'Enter') {
-                                                                    event.preventDefault();
-                                                                    setDiffLayoutPreference(option.id);
-                                                                }
-                                                            }}
-                                                            className="flex w-full items-center gap-2 py-0 text-left"
-                                                        >
-                                                            <Radio
-                                                                checked={selected}
-                                                                onChange={() => setDiffLayoutPreference(option.id)}
-                                                                ariaLabel={t('settings.openchamber.visual.field.diffLayoutAria', { option: tUnsafe(option.labelKey) })}
-                                                            />
-                                                            <span className={cn('typography-ui-label font-normal', selected ? 'text-foreground' : 'text-foreground/50')}>
-                                                                {tUnsafe(option.labelKey)}
-                                                            </span>
-                                                        </div>
+                                                            selected={selected}
+                                                            onSelect={() => setDiffLayoutPreference(option.id)}
+                                                            label={tUnsafe(option.labelKey)}
+                                                            ariaLabel={t('settings.openchamber.visual.field.diffLayoutAria', { option: tUnsafe(option.labelKey) })}
+                                                        />
                                                     );
                                                 })}
                                             </div>
-                                        </section>
+                                        </ResponsiveSettingsGroup>
                                     )}
 
                                     {shouldShow('followUpBehavior') && (
-                                        <section data-settings-item="chat.follow-up-behavior" className="p-2">
-                                            <h4 className="typography-ui-header font-medium text-foreground">{t('settings.openchamber.visual.section.followUpBehavior')}</h4>
-                                            <div role="radiogroup" aria-label={t('settings.openchamber.visual.section.followUpBehaviorAria')} className="mt-0.5 space-y-0">
+                                        <ResponsiveSettingsGroup
+                                            isMobile={isMobile}
+                                            label={t('settings.openchamber.visual.section.followUpBehavior')}
+                                        >
+                                            <div data-settings-item="chat.follow-up-behavior" role="radiogroup" aria-label={t('settings.openchamber.visual.section.followUpBehaviorAria')}>
                                                 {FOLLOW_UP_BEHAVIOR_OPTIONS.map((option) => {
                                                     const selected = followUpBehavior === option.id;
                                                     return (
-                                                        <div
+                                                        <SettingsRadioOption
                                                             key={option.id}
-                                                            role="button"
-                                                            tabIndex={0}
-                                                            aria-pressed={selected}
-                                                            onClick={() => setFollowUpBehavior(option.id)}
-                                                            onKeyDown={(event) => {
-                                                                if (event.key === ' ' || event.key === 'Enter') {
-                                                                    event.preventDefault();
-                                                                    setFollowUpBehavior(option.id);
-                                                                }
-                                                            }}
-                                                            className="flex w-full items-center gap-2 py-0 text-left"
-                                                        >
-                                                            <Radio
-                                                                checked={selected}
-                                                                onChange={() => setFollowUpBehavior(option.id)}
-                                                                ariaLabel={t('settings.openchamber.visual.field.followUpBehaviorAria', { option: tUnsafe(option.labelKey) })}
-                                                            />
-                                                            <span className={cn('typography-ui-label font-normal', selected ? 'text-foreground' : 'text-foreground/50')}>
-                                                                {tUnsafe(option.labelKey)}
-                                                            </span>
-                                                        </div>
+                                                            selected={selected}
+                                                            onSelect={() => setFollowUpBehavior(option.id)}
+                                                            label={tUnsafe(option.labelKey)}
+                                                            ariaLabel={t('settings.openchamber.visual.field.followUpBehaviorAria', { option: tUnsafe(option.labelKey) })}
+                                                        />
                                                     );
                                                 })}
                                             </div>
-                                        </section>
+                                        </ResponsiveSettingsGroup>
                                     )}
 
                                 </div>
@@ -1999,10 +1974,12 @@ export const OpenChamberVisualSettings: React.FC<OpenChamberVisualSettingsProps>
                             )}
 
                             {(shouldShow('sessionAssist') || shouldShow('collapsibleUserMessages') || shouldShow('stickyUserHeader') || (shouldShow('promptNavigatorEnabled') && !isVSCode) || shouldShow('wideChatLayout') || shouldShow('codeBlockLineWrap') || shouldShow('splitAssistantMessageActions') || shouldShow('subagentReadOnlyBanner') || shouldShow('dotfiles') || shouldShow('fileViewerPreview') || shouldShow('persistDraft') || shouldShow('showToolFileIcons') || shouldShow('showSubagentTaskDetails') || shouldShow('showTurnChangedFiles') || (!isMobile && shouldShow('inputSpellcheck')) || shouldShow('reasoning')) && (
-                                <div className="space-y-6">
+                                <div className="oc-settings-section-stack">
                                     {(shouldShow('sessionAssist') || shouldShow('subagentReadOnlyBanner')) && (
-                                        <section className="p-2 space-y-0.5">
-                                            <h3 data-settings-item="chat.session-assistance" className="typography-ui-header font-medium text-foreground py-1.5">{t('settings.openchamber.visual.section.sessionAssistance')}</h3>
+                                        <ResponsiveSettingsGroup
+                                            isMobile={isMobile}
+                                            label={<span data-settings-item="chat.session-assistance">{t('settings.openchamber.visual.section.sessionAssistance')}</span>}
+                                        >
                                             {shouldShow('sessionAssist') && (
                                         <>
                                         <div
@@ -2093,11 +2070,13 @@ export const OpenChamberVisualSettings: React.FC<OpenChamberVisualSettingsProps>
                                                     <span className="typography-ui-label text-foreground">{t('settings.openchamber.visual.field.allowPromptingSubagentSessions')}</span>
                                                 </div>
                                             )}
-                                        </section>
+                                        </ResponsiveSettingsGroup>
                                     )}
                                     {shouldShow('reasoning') && (
-                                        <section className="p-2 space-y-0.5">
-                                            <h3 data-settings-item="chat.reasoning" className="typography-ui-header font-medium text-foreground py-1.5">{t('settings.openchamber.visual.section.reasoning')}</h3>
+                                        <ResponsiveSettingsGroup
+                                            isMobile={isMobile}
+                                            label={<span data-settings-item="chat.reasoning">{t('settings.openchamber.visual.section.reasoning')}</span>}
+                                        >
                                     {shouldShow('reasoning') && (
                                         <div
                                             data-settings-item="chat.reasoning-traces"
@@ -2144,12 +2123,14 @@ export const OpenChamberVisualSettings: React.FC<OpenChamberVisualSettingsProps>
                                             <span className="typography-ui-label text-foreground">{t('settings.openchamber.visual.field.collapsibleThinkingBlocks')}</span>
                                         </div>
                                     )}
-                                        </section>
+                                        </ResponsiveSettingsGroup>
                                     )}
 
                                     {(shouldShow('collapsibleUserMessages') || shouldShow('stickyUserHeader') || (shouldShow('promptNavigatorEnabled') && !isVSCode) || shouldShow('wideChatLayout') || shouldShow('splitAssistantMessageActions') || shouldShow('codeBlockLineWrap')) && (
-                                        <section className="p-2 space-y-0.5">
-                                            <h3 data-settings-item="chat.message-appearance" className="typography-ui-header font-medium text-foreground py-1.5">{t('settings.openchamber.visual.section.messageAppearance')}</h3>
+                                        <ResponsiveSettingsGroup
+                                            isMobile={isMobile}
+                                            label={<span data-settings-item="chat.message-appearance">{t('settings.openchamber.visual.section.messageAppearance')}</span>}
+                                        >
                                     {shouldShow('collapsibleUserMessages') && (
                                         <div
                                             data-settings-item="chat.collapsible-user-messages"
@@ -2303,12 +2284,14 @@ export const OpenChamberVisualSettings: React.FC<OpenChamberVisualSettingsProps>
                                             <span className="typography-ui-label text-foreground">{t('settings.openchamber.visual.field.codeBlockLineWrap')}</span>
                                         </div>
                                     )}
-                                        </section>
+                                        </ResponsiveSettingsGroup>
                                     )}
 
                                     {(shouldShow('showToolFileIcons') || shouldShow('showTurnChangedFiles') || shouldShow('dotfiles') || shouldShow('fileViewerPreview')) && (
-                                        <section className="p-2 space-y-0.5">
-                                            <h3 data-settings-item="chat.tools-and-files" className="typography-ui-header font-medium text-foreground py-1.5">{t('settings.openchamber.visual.section.toolsAndFiles')}</h3>
+                                        <ResponsiveSettingsGroup
+                                            isMobile={isMobile}
+                                            label={<span data-settings-item="chat.tools-and-files">{t('settings.openchamber.visual.section.toolsAndFiles')}</span>}
+                                        >
                                     {shouldShow('showToolFileIcons') && (
                                         <div
                                             data-settings-item="chat.tool-file-icons"
@@ -2433,12 +2416,14 @@ export const OpenChamberVisualSettings: React.FC<OpenChamberVisualSettingsProps>
                                             <span className="typography-ui-label text-foreground">{t('settings.openchamber.defaults.field.openFilesPreview')}</span>
                                         </div>
                                     )}
-                                        </section>
+                                        </ResponsiveSettingsGroup>
                                     )}
 
                                     {(shouldShow('persistDraft') || (!isMobile && shouldShow('inputSpellcheck'))) && (
-                                        <section className="p-2 space-y-0.5">
-                                            <h3 data-settings-item="chat.composer" className="typography-ui-header font-medium text-foreground py-1.5">{t('settings.openchamber.visual.section.composer')}</h3>
+                                        <ResponsiveSettingsGroup
+                                            isMobile={isMobile}
+                                            label={<span data-settings-item="chat.composer">{t('settings.openchamber.visual.section.composer')}</span>}
+                                        >
                                     {shouldShow('persistDraft') && (
                                         <div
                                             data-settings-item="chat.persist-drafts"
@@ -2486,7 +2471,7 @@ export const OpenChamberVisualSettings: React.FC<OpenChamberVisualSettingsProps>
                                             <span className="typography-ui-label text-foreground">{t('settings.openchamber.visual.field.enableSpellcheckInTextInputs')}</span>
                                         </div>
                                     )}
-                                        </section>
+                                        </ResponsiveSettingsGroup>
                                     )}
 
                                 </div>

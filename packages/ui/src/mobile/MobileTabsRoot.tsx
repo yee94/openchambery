@@ -7,12 +7,15 @@ import { useI18n } from '@/lib/i18n';
 import { cn } from '@/lib/utils';
 
 import { MobileTabBar } from './MobileTabBar';
+import { useMobileBackRoute } from './mobileBackNavigation';
 import type { MobileNavigationState } from './mobileNavigation';
 import { MOBILE_TABS, type MobileTabId } from './mobileTabs';
 
 export type MobileSecondaryPage = {
   key: string;
   content: React.ReactNode;
+  /** Pops this page through its owning state store. */
+  onBack: () => boolean | void;
   /** Accessible page label used for the secondary host landmark. */
   ariaLabel?: string;
 };
@@ -22,6 +25,8 @@ export type MobileTabsRootProps = {
   navigation: MobileNavigationState;
   onTabChange: (tab: MobileTabId) => void;
   secondaryPage?: MobileSecondaryPage | null;
+  /** Allows an in-tab detail editor to replace the root dock with its own footer. */
+  showTabBar?: boolean;
   className?: string;
 };
 
@@ -36,6 +41,7 @@ export function MobileTabsRoot({
   navigation,
   onTabChange,
   secondaryPage,
+  showTabBar = true,
   className,
 }: MobileTabsRootProps) {
   const { t } = useI18n();
@@ -58,6 +64,13 @@ export function MobileTabsRoot({
   const secondaryHostRef = React.useRef<HTMLDivElement | null>(null);
   const restoreFocusRef = React.useRef<HTMLElement | null>(null);
   const hadSecondaryRef = React.useRef(false);
+
+  useMobileBackRoute({
+    id: secondaryPage ? `mobile-secondary:${secondaryPage.key}` : 'mobile-secondary:inactive',
+    active: Boolean(secondaryPage),
+    onBack: () => secondaryPage?.onBack(),
+    surfaceRef: secondaryHostRef,
+  });
 
   // Focus contract: when a secondary page opens, capture the current trigger
   // and move focus into the page; when it closes, restore focus to the row
@@ -95,6 +108,7 @@ export function MobileTabsRoot({
       )}
     >
       <div
+        data-mobile-navigation-underlay="true"
         aria-hidden={secondaryPage ? true : undefined}
         inert={secondaryPage ? true : undefined}
         className={cn('flex h-full min-h-0 flex-1 flex-col transition-opacity duration-200 ease-out motion-reduce:transition-none', secondaryPage && 'opacity-0')}
@@ -109,7 +123,12 @@ export function MobileTabsRoot({
               aria-labelledby={`mobile-tab-${tab.id}`}
               hidden={selectedTab !== tab.id}
               tabIndex={0}
-              className="scrollbar-none h-full min-h-0 flex-1 overflow-y-auto overscroll-contain px-[var(--oc-mobile-page-inline-inset)] pb-[calc(6rem+var(--safe-area-inset-bottom,env(safe-area-inset-bottom,0px)))] pt-[calc(var(--safe-area-inset-top,env(safe-area-inset-top,0px))+1rem)] outline-none"
+              className={cn(
+                'scrollbar-none h-full min-h-0 flex-1 overflow-y-auto overscroll-contain px-[var(--oc-mobile-page-inline-inset)] pt-[calc(var(--safe-area-inset-top,env(safe-area-inset-top,0px))+1rem)] outline-none',
+                showTabBar
+                  ? 'pb-[calc(6rem+var(--safe-area-inset-bottom,env(safe-area-inset-bottom,0px)))]'
+                  : 'pb-0',
+              )}
             >
               {visited ? (tabs?.[tab.id] ?? <MobileTabPlaceholder tab={tab.id} icon={tab.icon} />) : null}
             </section>
@@ -130,9 +149,9 @@ export function MobileTabsRoot({
         >
           {secondaryPage.content}
         </div>
-      ) : (
+      ) : showTabBar ? (
         <MobileTabBar activeTab={selectedTab} onTabChange={handleTabChange} />
-      )}
+      ) : null}
     </div>
   );
 }

@@ -15,12 +15,17 @@ When examples conflict, shared component/theme and localization contracts win. S
 
 ## Canonical Direction
 
-- Prefer flat hierarchy built with spacing and typography.
-- Avoid unnecessary cards, wrappers, row chrome, and redundant headings.
-- Keep controls compact and align related rows consistently.
+- Build ordinary configuration surfaces from shared `SettingsGroup`,
+  `SettingsField`, and `SettingsRow` primitives.
+- Use one section label outside one grouped material card. Do not recreate the
+  contract with local headings, margins, padding, borders, or shadows.
+- Keep controls compact and align stable values in the shared right column.
 - Put checkbox/radio state before labels.
 - Use subtle, stable selected-state styling without layout shifts.
 - Preserve responsive wrapping/stacking and long-text behavior.
+- Treat
+  `packages/ui/src/components/sections/shared/SETTINGS_DESIGN_SPEC.md` as the
+  normative implementation specification.
 
 ## Load References By Task
 
@@ -59,10 +64,15 @@ Dynamic entity rows normally are not indexed. Load `references/search.md` for ex
 
 ## Review Checklist
 
-- Hierarchy reads through spacing and typography without unnecessary boxes.
+- Ordinary settings use shared group/field/row primitives and tokenized cards.
 - Shared controls are used with localized visible/accessibility text.
 - Desktop alignment degrades cleanly on narrow/mobile layouts.
 - Disabled state affects the control, not unrelated labels, unless intentional.
 - Long labels and adjacent actions do not overflow.
 - Search registry, anchor, localization, and availability agree.
 - Nearby Settings precedent and relevant tests remain consistent.
+
+Run `bash scripts/audit-settings-ui.sh <changed-page.tsx> [...]` on revised
+Settings pages. Treat each hit as a required migration unless it is an
+intentional page title or runtime/entity surface allowed by the design
+specification.

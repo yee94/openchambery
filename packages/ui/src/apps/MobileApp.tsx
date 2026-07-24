@@ -74,6 +74,7 @@ import { MobileSurfaceShell } from './MobileSurfaceShell';
 import { MobilePhoneShell } from '@/mobile/MobilePhoneShell';
 import { MobileChatScreen } from '@/mobile/chat';
 import { useMobileNavigationStore } from '@/mobile/useMobileNavigationStore';
+import { mobileBackNavigationCoordinator, useMobileNavigationDriver } from '@/mobile/mobileBackNavigation';
 import { DedicatedMobileAppProvider, type MobileAppActions } from './mobileAppContext';
 import { autoConnectLastInstance, connectionDisplayUrl, getAutoConnectTargetLabel, isActiveRuntimeConnection, reprobeActiveConnection, useMobileConnection } from './mobileConnections';
 import { isRelayModeActive } from '@/lib/relay/runtime-tunnel';
@@ -2160,6 +2161,22 @@ const MobileShell: React.FC<{ onActiveConnectionDeleted: () => void }> = ({ onAc
   const [ipadSidebarOpen, setIpadSidebarOpen] = React.useState(isIPad && !isPortrait);
   const [ipadRightPanel, setIpadRightPanel] = React.useState<'files' | 'changes' | 'turn-diff' | null>(null);
 
+  const rootBackRoutesBlocked = mobileSessionPanelOpen
+    || filesOpen
+    || changesOpen
+    || turnDiffOpen
+    || scheduledTasksDialogOpen
+    || mcpOpen
+    || instancesOpen
+    || settingsOpen
+    || updateOpen
+    || directoryDialogOpen
+    || overflowOpen;
+  useMobileNavigationDriver({
+    enabled: !isIPad,
+    rootRoutesBlocked: rootBackRoutesBlocked,
+  });
+
   const toggleIpadSidebar = useEvent(() => {
     const willOpen = !ipadSidebarOpen;
     // Portrait doesn't fit both side panels next to a usable chat column:
@@ -2306,7 +2323,6 @@ const MobileShell: React.FC<{ onActiveConnectionDeleted: () => void }> = ({ onAc
   const phoneSecondaryBackRef = React.useRef<(() => boolean) | null>(null);
   const chatMainRef = React.useRef<HTMLElement>(null);
   const chatAnimRef = React.useRef<HTMLDivElement>(null);
-  const phoneBackSurfaceRef = React.useRef<HTMLElement | null>(null);
   const previousSessionHolderRef = React.useRef<HTMLDivElement>(null);
   const nextSessionHolderRef = React.useRef<HTMLDivElement>(null);
   const swipeDirectionRef = React.useRef<'prev' | 'next' | null>(null);
@@ -2404,33 +2420,11 @@ const MobileShell: React.FC<{ onActiveConnectionDeleted: () => void }> = ({ onAc
   const renderHeaderSwipeProgress = useEvent((progress: number | null) => {
     if (progress !== null) getMobileWindowMotionController(MOBILE_SESSIONS_WINDOW_ID)?.update(progress);
   });
-  const handleBodySwipeBack = useEvent(() => {
-    phoneSecondaryBackRef.current?.();
-  });
-  const renderBodySwipeBackProgress = useEvent((progress: number | null) => {
-    const surface = phoneBackSurfaceRef.current
-      ?? chatMainRef.current?.closest<HTMLElement>('[data-mobile-secondary-page="true"]')
-      ?? null;
-    if (!surface) return;
-    phoneBackSurfaceRef.current = surface;
-    if (progress === null) {
-      surface.style.transform = '';
-      surface.style.opacity = '';
-      surface.style.willChange = '';
-      phoneBackSurfaceRef.current = null;
-      return;
-    }
-    surface.style.willChange = 'transform, opacity';
-    surface.style.transform = `translate3d(${progress * 35}%, 0, 0)`;
-    surface.style.opacity = String(1 - progress * 0.08);
-  });
   useHeaderSwipeToSessions(chatMainRef, {
     onOpen: handleHeaderSwipeOpen,
     onPreviewStart: handleHeaderSwipePreviewStart,
     onPreviewCancel: handleHeaderSwipePreviewCancel,
     onProgress: renderHeaderSwipeProgress,
-    onBack: isIPad ? undefined : handleBodySwipeBack,
-    onBackProgress: isIPad ? undefined : renderBodySwipeBackProgress,
     disabled: headerSwipeDisabled,
   }, isIPad || phoneChatMounted);
 
@@ -2475,6 +2469,10 @@ const MobileShell: React.FC<{ onActiveConnectionDeleted: () => void }> = ({ onAc
       setMobileSessionPanelOpen(false);
       return true;
     }
+    // Push-style details inside modal surfaces pop before their owning modal.
+    if (mobileBackNavigationCoordinator.backImmediately('overlay')) {
+      return true;
+    }
     if (filesOpen) {
       setFilesOpen(false);
       return true;
@@ -2501,6 +2499,9 @@ const MobileShell: React.FC<{ onActiveConnectionDeleted: () => void }> = ({ onAc
     }
     if (updateOpen) {
       setUpdateOpen(false);
+      return true;
+    }
+    if (mobileBackNavigationCoordinator.backImmediately('root')) {
       return true;
     }
     // Phone chat secondary page closes before the app would minimize or

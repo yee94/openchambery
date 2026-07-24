@@ -23,26 +23,33 @@ Do not couple unrelated toggles beneath a synthetic heading.
 ## Radio Row
 
 ```tsx
-<div role="radiogroup" aria-label={t(groupLabelKey)}>
-  <div className="flex items-center gap-2 py-0.5">
-    <Radio checked={selected} onChange={onSelect} ariaLabel={t(labelKey)} />
-    <span className={cn('typography-ui-label', selected ? 'text-foreground' : 'text-foreground/50')}>
-      {t(labelKey)}
-    </span>
+<SettingsGroup label={t(groupLabelKey)}>
+  <div role="radiogroup" aria-label={t(groupLabelKey)}>
+    <div className="oc-settings-group-row flex items-center gap-2">
+      <Radio checked={selected} onChange={onSelect} ariaLabel={t(labelKey)} />
+      <span className={cn('typography-ui-label', selected ? 'text-foreground' : 'text-foreground/50')}>
+        {t(labelKey)}
+      </span>
+    </div>
   </div>
-</div>
+</SettingsGroup>
 ```
 
 ## Checkbox Row
 
 ```tsx
-<div className="flex cursor-pointer items-center gap-2 py-1.5">
-  <Checkbox checked={value} onChange={setValue} ariaLabel={t(labelKey)} />
-  <span className="typography-ui-label">{t(labelKey)}</span>
-</div>
+<SettingsGroup label={t(sectionKey)}>
+  <SettingsToggleRow
+    checked={value}
+    onChange={setValue}
+    label={t(labelKey)}
+    ariaLabel={t(labelKey)}
+  />
+</SettingsGroup>
 ```
 
-Preserve row click and keyboard behavior when the container is interactive.
+`SettingsToggleRow` owns row click and keyboard behavior and prevents a nested
+checkbox click from toggling twice.
 
 ## Optional Numeric Override
 
