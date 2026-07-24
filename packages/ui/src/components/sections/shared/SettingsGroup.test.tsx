@@ -11,7 +11,12 @@ import {
 describe('SettingsGroup', () => {
   test('renders one shared grouped card with responsive split rows', () => {
     const markup = renderToStaticMarkup(
-      <SettingsGroup label="OpenCode" ariaLabel="OpenCode" description="Appears under the card">
+      <SettingsGroup
+        label="OpenCode"
+        ariaLabel="OpenCode"
+        description="Appears under the card"
+        itemId="provider-group"
+      >
         <SettingsRow label="Provider" description="Choose a provider" itemId="provider">
           <button type="button">Default</button>
         </SettingsRow>
@@ -20,6 +25,7 @@ describe('SettingsGroup', () => {
 
     expect(markup).toContain('class="oc-settings-group"');
     expect(markup).toContain('class="oc-settings-group-card"');
+    expect(markup).toContain('data-settings-item="provider-group" class="oc-settings-group-card"');
     expect(markup).toContain('oc-settings-group-row oc-settings-split-row');
     expect(markup).toContain('data-settings-label-script="latin"');
     expect(markup).toContain('data-settings-item="provider"');

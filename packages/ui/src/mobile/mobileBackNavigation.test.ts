@@ -12,6 +12,7 @@ const route = (id: string, onBack: () => boolean | void, layer: 'root' | 'overla
   layer,
   onBack,
   getSurface: () => null,
+  getUnderlay: () => null,
 });
 
 const historyHarness = () => {

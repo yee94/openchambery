@@ -173,12 +173,12 @@ export function GlobalConfigPage() {
   return (
     <ScrollableOverlay outerClassName="h-full" className="w-full">
       <div className="oc-settings-page-content mx-auto w-full max-w-4xl p-3 sm:p-6 sm:pt-8">
-        <div data-settings-item="global-config.editor">
-          <SettingsGroup
-            label={t('settings.globalConfig.title')}
-            description={t('settings.globalConfig.description')}
-            cardClassName="p-3"
-          >
+        <SettingsGroup
+          itemId="global-config.editor"
+          label={t('settings.globalConfig.title')}
+          description={t('settings.globalConfig.description')}
+          cardClassName="p-3"
+        >
             {targets.length > 0 ? (
               <div className="space-y-3">
                 <div className="flex flex-wrap items-center gap-1">
@@ -204,7 +204,7 @@ export function GlobalConfigPage() {
                 </div>
                 {target && (
                   <>
-                    <div className="h-[clamp(420px,62dvh,760px)] overflow-hidden rounded-md border border-[var(--surface-subtle)] bg-background">
+                    <div className="h-[clamp(420px,62dvh,760px)] overflow-hidden bg-background">
                       <CodeMirrorEditor
                         value={content}
                         onChange={setContent}
@@ -226,8 +226,7 @@ export function GlobalConfigPage() {
             ) : (
               <div className="min-h-12" aria-busy={isLoading} />
             )}
-          </SettingsGroup>
-        </div>
+        </SettingsGroup>
       </div>
       <Dialog open={isRestartDialogOpen} onOpenChange={(open) => !isRestarting && setIsRestartDialogOpen(open)}>
         <DialogContent className="max-w-md">

@@ -6,11 +6,11 @@ import { DropdownMenu, DropdownMenuContent, DropdownMenuItem, DropdownMenuTrigge
 import { ContextMenu, ContextMenuContent, ContextMenuItem, ContextMenuTrigger } from '@/components/ui/context-menu';
 import { useSnippetsStore } from '@/stores/useSnippetsStore';
 import { useShallow } from 'zustand/react/shallow';
-import { ScrollableOverlay } from '@/components/ui/ScrollableOverlay';
 import { cn } from '@/lib/utils';
 import type { Snippet } from '@/types/snippet';
 import { Icon } from '@/components/icon/Icon';
 import { useI18n } from '@/lib/i18n';
+import { SettingsGroup } from '@/components/sections/shared/SettingsGroup';
 
 interface SnippetsSidebarProps {
   onItemSelect?: () => void;
@@ -58,23 +58,27 @@ export const SnippetsSidebar: React.FC<SnippetsSidebarProps> = ({ onItemSelect }
   };
 
   const sortedSnippets = React.useMemo(() => [...snippets].sort((a, b) => a.name.localeCompare(b.name)), [snippets]);
+  const snippetsLabel = (
+    <div className="flex items-center justify-between gap-4">
+      <span>{t('settings.snippets.sidebar.title')}</span>
+      <Button
+        data-settings-item="snippets.create"
+        size="icon"
+        variant="ghost"
+        onClick={handleCreateNew}
+        aria-label={t('settings.snippets.sidebar.actions.create')}
+      >
+        <Icon name="add" className="h-4 w-4" />
+      </Button>
+    </div>
+  );
 
   return (
-    <div className={cn('flex h-full flex-col', 'bg-background')}>
-      <div className="border-b px-3 pt-4 pb-3">
-        <h2 className="text-base font-semibold text-foreground mb-3">{t('settings.snippets.sidebar.title')}</h2>
-        <div className="flex items-center justify-between gap-2">
-          <span className="typography-meta text-muted-foreground">{t('settings.snippets.sidebar.total', { count: snippets.length })}</span>
-          <Button size="sm" data-settings-item="snippets.create" variant="ghost" className="h-7 w-7 px-0 -my-1 text-muted-foreground" onClick={handleCreateNew} aria-label={t('settings.snippets.sidebar.actions.create')}>
-            <Icon name="add" className="h-3.5 w-3.5" />
-          </Button>
-        </div>
-      </div>
-
-      <ScrollableOverlay outerClassName="flex-1 min-h-0" className="space-y-1 px-3 py-2">
+    <div className="oc-settings-page-content h-full overflow-y-auto bg-background p-3">
+      {sortedSnippets.length > 0 ? <SettingsGroup label={snippetsLabel}>
         {sortedSnippets.map((snippet) => (
           <ContextMenu key={`${snippet.source}:${snippet.filePath}`} open={rightClickMenuName === snippet.name} onOpenChange={(open) => setRightClickMenuName(open ? snippet.name : null)}>
-            <ContextMenuTrigger render={<div className={cn('group relative flex items-center rounded-md px-1.5 py-1 transition-all duration-200 select-none', selectedSnippetName === snippet.name ? 'bg-interactive-selection' : 'hover:bg-interactive-hover')} onContextMenu={(event) => { event.preventDefault(); setRightClickMenuName(snippet.name); }} />}>
+            <ContextMenuTrigger render={<div className={cn('oc-settings-group-row group relative flex items-center transition-colors duration-150 select-none', selectedSnippetName === snippet.name ? 'bg-interactive-selection' : 'hover:bg-interactive-hover')} onContextMenu={(event) => { event.preventDefault(); setRightClickMenuName(snippet.name); }} />}>
             <button onClick={() => { setSelectedSnippet(snippet.name); onItemSelect?.(); }} className="flex min-w-0 flex-1 flex-col gap-0 rounded-sm text-left focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-primary/50">
               <div className="flex items-center gap-2">
                 <span className="typography-ui-label font-normal truncate text-foreground">#{snippet.name}</span>
@@ -106,7 +110,11 @@ export const SnippetsSidebar: React.FC<SnippetsSidebarProps> = ({ onItemSelect }
             </ContextMenuContent>
           </ContextMenu>
         ))}
-      </ScrollableOverlay>
+      </SettingsGroup> : (
+        <SettingsGroup label={snippetsLabel} cardClassName="hidden">
+          <span />
+        </SettingsGroup>
+      )}
 
       <Dialog open={confirmDeleteSnippet !== null} onOpenChange={(open) => { if (!open) setConfirmDeleteSnippet(null); }}>
         <DialogContent className="max-w-md">

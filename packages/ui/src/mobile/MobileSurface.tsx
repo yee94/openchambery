@@ -19,6 +19,43 @@ export function MobileFloatingSurface({
   return <Comp className={cn('oc-mobile-floating-surface', className)} {...props} />;
 }
 
+export type MobileFloatingBottomBarProps = Omit<ComponentPropsWithoutRef<'div'>, 'children'> & {
+  as?: 'div' | 'nav' | 'footer';
+  children: ReactNode;
+  variant?: 'navigation' | 'actions';
+  surfaceProps?: Omit<ComponentPropsWithoutRef<'div'>, 'children' | 'className'>;
+};
+
+/**
+ * Shared phone bottom-bar shell. It owns viewport positioning, the floating
+ * glass material, screen-edge clearance, width, height, and outer radius.
+ * Callers only select the inner layout for navigation or page actions.
+ */
+export function MobileFloatingBottomBar({
+  as: Component = 'div',
+  children,
+  className,
+  variant = 'actions',
+  surfaceProps,
+  ...props
+}: MobileFloatingBottomBarProps) {
+  return (
+    <Component className={cn('oc-mobile-floating-bottom-bar-frame', className)} {...props}>
+      <MobileFloatingSurface
+        {...surfaceProps}
+        className={cn(
+          'oc-mobile-floating-bottom-bar',
+          variant === 'navigation'
+            ? 'oc-mobile-floating-bottom-bar-navigation'
+            : 'oc-mobile-floating-bottom-bar-actions',
+        )}
+      >
+        {children}
+      </MobileFloatingSurface>
+    </Component>
+  );
+}
+
 export type MobileTabPageScaffoldProps = {
   title: string;
   children: ReactNode;

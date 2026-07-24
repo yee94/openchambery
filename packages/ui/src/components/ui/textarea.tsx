@@ -20,6 +20,11 @@ type TextareaProps = React.ComponentProps<"textarea"> & {
    */
   simple?: boolean;
   /**
+   * Integrate the compound textarea into an existing Settings card while
+   * retaining its resize handle and focus treatment.
+   */
+  embedded?: boolean;
+  /**
    * Slot rendered in the bottom-right (next to the resize handle).
    * Typically a `<TextareaCharCounter />`.
    */
@@ -74,6 +79,7 @@ const Textarea = React.forwardRef<HTMLTextAreaElement, TextareaProps>(
       onResizeHeightChange,
       disabled,
       simple,
+      embedded = false,
       endSlot,
       ...props
     },
@@ -175,6 +181,11 @@ const Textarea = React.forwardRef<HTMLTextAreaElement, TextareaProps>(
           hasError && [
             "ring-[var(--status-error)]",
             "focus-within:ring-2 focus-within:ring-[var(--status-error)]",
+          ],
+          embedded && [
+            "rounded-none bg-transparent ring-0",
+            "hover:[&:not(:focus-within)]:bg-transparent",
+            "has-[[disabled]]:bg-transparent",
           ],
           outerClassName,
         )}

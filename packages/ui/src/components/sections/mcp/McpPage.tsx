@@ -178,6 +178,7 @@ const CommandTextarea: React.FC<CommandTextareaProps> = ({
       </div>
 
       <Textarea
+        embedded
         value={text}
         onChange={(e) => {
           setText(e.target.value);
@@ -1486,6 +1487,7 @@ export const McpPage: React.FC = () => {
                         </p>
                       </div>
                       <Textarea
+                        embedded
                         value={authCallbackInput}
                         onChange={(event) => setAuthCallbackInput(event.target.value)}
                         placeholder={t('settings.mcp.page.auth.callbackInputPlaceholder')}

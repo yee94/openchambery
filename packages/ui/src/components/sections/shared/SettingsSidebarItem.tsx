@@ -69,20 +69,21 @@ export const SettingsSidebarItem: React.FC<SettingsSidebarItemProps> = ({
   return (
     <div
       className={cn(
-        'group relative flex items-center rounded-md px-1.5 py-0.5 transition-all duration-200',
+        'oc-settings-group-row group relative flex items-center transition-colors duration-150',
         selected
           ? 'bg-interactive-selection'
           : 'hover:bg-interactive-hover',
         className
       )}
     >
-      <div className="flex min-w-0 flex-1 items-center">
+      <div className="flex min-w-0 flex-1 self-stretch items-center">
         <button
           onClick={onSelect}
-          className="flex min-w-0 flex-1 flex-col gap-0 rounded-sm text-left focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-primary/50"
+          data-mobile-press-feedback="soft"
+          className="flex min-w-0 flex-1 self-stretch flex-col justify-center gap-0 rounded-sm text-left focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-primary/50"
           tabIndex={0}
         >
-          <div className="flex items-center gap-1.5">
+          <div className="flex max-w-full min-w-0 items-center gap-1.5">
             {icon}
             <span className="typography-ui-label font-normal truncate text-foreground">
               {title}
@@ -90,7 +91,7 @@ export const SettingsSidebarItem: React.FC<SettingsSidebarItemProps> = ({
           </div>
 
           {metadata && (
-            <div className="typography-micro text-muted-foreground/60 truncate leading-tight">
+            <div className="max-w-full truncate typography-micro leading-tight text-muted-foreground/60">
               {metadata}
             </div>
           )}

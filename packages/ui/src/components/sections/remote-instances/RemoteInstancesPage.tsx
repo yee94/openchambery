@@ -215,20 +215,19 @@ const RemoteSettingsSection = ({
   action,
   children,
 }: RemoteSettingsSectionProps) => (
-  <div data-settings-item={itemId}>
-    <SettingsGroup
-      className="oc-settings-detail-group"
-      label={action ? (
-        <div className="flex min-w-0 items-center justify-between gap-3">
-          <div className="min-w-0">{label}</div>
-          <div className="shrink-0">{action}</div>
-        </div>
-      ) : label}
-      description={description}
-    >
-      <div className="oc-settings-group-row">{children}</div>
-    </SettingsGroup>
-  </div>
+  <SettingsGroup
+    itemId={itemId}
+    className="oc-settings-detail-group"
+    label={action ? (
+      <div className="flex min-w-0 items-center justify-between gap-3">
+        <div className="min-w-0">{label}</div>
+        <div className="shrink-0">{action}</div>
+      </div>
+    ) : label}
+    description={description}
+  >
+    <div className="oc-settings-group-row">{children}</div>
+  </SettingsGroup>
 );
 
 const forwardTypeDescriptionKey = (type: DesktopSshPortForwardType): I18nKey => {

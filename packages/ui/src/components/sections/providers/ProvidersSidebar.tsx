@@ -1,11 +1,11 @@
 import React from 'react';
-import { ScrollableOverlay } from '@/components/ui/ScrollableOverlay';
 import { ProviderLogo } from '@/components/ui/ProviderLogo';
 import { Button } from '@/components/ui/button';
 import { useConfigStore } from '@/stores/useConfigStore';
 import { useProjectsStore } from '@/stores/useProjectsStore';
 import { cn } from '@/lib/utils';
 import { SettingsProjectSelector } from '@/components/sections/shared/SettingsProjectSelector';
+import { SettingsGroup } from '@/components/sections/shared/SettingsGroup';
 import { Icon } from "@/components/icon/Icon";
 import { opencodeClient } from '@/lib/opencode/client';
 import { useI18n } from '@/lib/i18n';
@@ -98,8 +98,6 @@ export const ProvidersSidebar: React.FC<ProvidersSidebarProps> = ({ onItemSelect
     };
   }, [directory, providers]);
 
-  const bgClass = 'bg-background';
-
   const projectProviders = React.useMemo(() => {
     return providers.filter((p) => Boolean(sourcesByProvider[p.id]?.project?.exists));
   }, [providers, sourcesByProvider]);
@@ -108,42 +106,41 @@ export const ProvidersSidebar: React.FC<ProvidersSidebarProps> = ({ onItemSelect
     return providers.filter((p) => !sourcesByProvider[p.id]?.project?.exists);
   }, [providers, sourcesByProvider]);
 
-  return (
-    <div className={cn('flex h-full flex-col', bgClass)}>
-      <div className="border-b px-3 pt-4 pb-3">
-        <h2 className="text-base font-semibold text-foreground mb-3">{t('settings.providers.sidebar.title')}</h2>
-        <SettingsProjectSelector className="mb-3" />
-        <div className="flex items-center justify-between gap-2">
-          <span className="typography-meta text-muted-foreground">{t('settings.providers.sidebar.total', { count: providers.length })}</span>
-          <Button size="sm"
-            variant="ghost"
-            className="h-7 w-7 px-0 -my-1 text-muted-foreground"
-            onClick={() => {
-              setSelectedProvider(ADD_PROVIDER_ID);
-              onItemSelect?.();
-            }}
-            aria-label={t('settings.providers.sidebar.actions.connectProviderAria')}
-            title={t('settings.providers.sidebar.actions.connectProviderTitle')}
-          >
-            <Icon name="add" className="h-3.5 w-3.5" />
-          </Button>
-        </div>
-      </div>
+  const userProvidersLabel = (
+    <div className="flex items-center justify-between gap-4">
+      <span>{t('settings.providers.sidebar.section.userProviders')}</span>
+      <Button
+        size="icon"
+        variant="ghost"
+        onClick={() => {
+          setSelectedProvider(ADD_PROVIDER_ID);
+          onItemSelect?.();
+        }}
+        aria-label={t('settings.providers.sidebar.actions.connectProviderAria')}
+        title={t('settings.providers.sidebar.actions.connectProviderTitle')}
+      >
+        <Icon name="add" className="h-4 w-4" />
+      </Button>
+    </div>
+  );
 
-      <ScrollableOverlay outerClassName="flex-1 min-h-0" className="space-y-1 px-3 py-2 overflow-x-hidden">
+  return (
+    <div className="oc-settings-page-content h-full overflow-y-auto bg-background p-3">
+      <SettingsProjectSelector />
+
+      <>
         {providers.length === 0 ? (
-          <div className="py-12 px-4 text-center text-muted-foreground">
-            <Icon name="stack" className="mx-auto mb-3 h-10 w-10 opacity-50" />
-            <p className="typography-ui-label font-medium">{t('settings.providers.sidebar.empty.title')}</p>
-            <p className="typography-meta mt-1 opacity-75">{t('settings.providers.sidebar.empty.description')}</p>
-          </div>
+          <SettingsGroup label={userProvidersLabel}>
+            <div className="oc-settings-group-row py-12 text-center text-muted-foreground">
+              <Icon name="stack" className="mx-auto mb-3 h-10 w-10 opacity-50" />
+              <p className="typography-ui-label font-medium">{t('settings.providers.sidebar.empty.title')}</p>
+              <p className="typography-meta mt-1 opacity-75">{t('settings.providers.sidebar.empty.description')}</p>
+            </div>
+          </SettingsGroup>
         ) : (
           <>
-            {userProviders.length > 0 && (
-              <>
-                <div className="px-2 pb-1.5 pt-2 text-xs font-semibold uppercase tracking-wide text-muted-foreground">
-                  {t('settings.providers.sidebar.section.userProviders')}
-                </div>
+            {userProviders.length > 0 ? (
+              <SettingsGroup label={userProvidersLabel}>
                 {userProviders.map((provider) => (
                   <ProviderListItem
                     key={provider.id}
@@ -155,14 +152,15 @@ export const ProvidersSidebar: React.FC<ProvidersSidebarProps> = ({ onItemSelect
                     }}
                   />
                 ))}
-              </>
+              </SettingsGroup>
+            ) : (
+              <SettingsGroup label={userProvidersLabel} cardClassName="hidden">
+                <span />
+              </SettingsGroup>
             )}
 
             {projectProviders.length > 0 && (
-              <>
-                <div className={cn('px-2 pb-1.5 text-xs font-semibold uppercase tracking-wide text-muted-foreground', userProviders.length > 0 ? 'pt-3' : 'pt-2')}>
-                  {t('settings.providers.sidebar.section.projectProviders')}
-                </div>
+              <SettingsGroup label={t('settings.providers.sidebar.section.projectProviders')}>
                 {projectProviders.map((provider) => (
                   <ProviderListItem
                     key={provider.id}
@@ -174,11 +172,11 @@ export const ProvidersSidebar: React.FC<ProvidersSidebarProps> = ({ onItemSelect
                     }}
                   />
                 ))}
-              </>
+              </SettingsGroup>
             )}
           </>
         )}
-      </ScrollableOverlay>
+      </>
     </div>
   );
 };
@@ -195,7 +193,7 @@ const ProviderListItem: React.FC<{
     <div
       key={provider.id}
       className={cn(
-        'group relative flex items-center rounded-md px-1.5 py-1 transition-all duration-200',
+        'oc-settings-group-row group relative flex items-center transition-colors duration-150',
         isSelected ? 'bg-interactive-selection' : 'hover:bg-interactive-hover'
       )}
     >

@@ -206,28 +206,22 @@ export const SkillsCatalogPage: React.FC<SkillsCatalogPageProps> = ({ mode, onMo
     <ScrollableOverlay outerClassName="h-full" className="w-full">
       <div className="oc-settings-page-content mx-auto w-full max-w-3xl p-3 sm:p-6 sm:pt-8">
 
-        {/* Header */}
-        <div>
-          {showModeTabs && (
-            <div className="mb-4">
-              <div className="h-10">
-                <SortableTabsStrip
-                  items={[
-                    { id: 'manual', label: t('settings.skills.catalog.page.mode.manual') },
-                    { id: 'external', label: t('settings.skills.catalog.page.mode.external') },
-                  ]}
-                  activeId={mode}
-                  onSelect={(next) => onModeChange(next as 'manual' | 'external')}
-                  layoutMode="fit"
-                  variant="animated"
-                  animateActivePill={false}
-                  className="h-full"
-                />
-              </div>
-            </div>
-          )}
-          <h2 className="typography-ui-header font-semibold text-foreground px-1">{t('settings.skills.catalog.page.title')}</h2>
-        </div>
+        {showModeTabs && (
+          <div className="h-10">
+            <SortableTabsStrip
+              items={[
+                { id: 'manual', label: t('settings.skills.catalog.page.mode.manual') },
+                { id: 'external', label: t('settings.skills.catalog.page.mode.external') },
+              ]}
+              activeId={mode}
+              onSelect={(next) => onModeChange(next as 'manual' | 'external')}
+              layoutMode="fit"
+              variant="animated"
+              animateActivePill={false}
+              className="h-full"
+            />
+          </div>
+        )}
 
         {/* Source & Search */}
         <div data-settings-item="skills.catalog.source">

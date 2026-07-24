@@ -332,6 +332,7 @@ export const ProjectActionsSection: React.FC<ProjectActionsSectionProps> = ({ pr
                     <div className="py-1">
                       <p className="typography-meta mb-0.5 text-muted-foreground">{t('settings.projects.actions.field.command')}</p>
                       <Textarea
+                        embedded
                         value={action.command}
                         onChange={(event) => updateAction(action.id, (current) => ({ ...current, command: event.target.value }))}
                         placeholder={t('settings.projects.actions.field.commandPlaceholder')}

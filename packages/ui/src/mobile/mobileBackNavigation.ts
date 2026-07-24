@@ -12,6 +12,7 @@ export type MobileBackRoute = {
   layer: MobileBackRouteLayer;
   onBack: () => boolean | void;
   getSurface: () => HTMLElement | null;
+  getUnderlay: () => HTMLElement | null;
 };
 
 type RegisteredMobileBackRoute = MobileBackRoute & {
@@ -166,6 +167,7 @@ export type UseMobileBackRouteOptions = {
   layer?: MobileBackRouteLayer;
   onBack: () => boolean | void;
   surfaceRef: React.RefObject<HTMLElement | null>;
+  underlayRef?: React.RefObject<HTMLElement | null>;
 };
 
 export const useMobileBackRoute = ({
@@ -174,6 +176,7 @@ export const useMobileBackRoute = ({
   layer = 'root',
   onBack,
   surfaceRef,
+  underlayRef,
 }: UseMobileBackRouteOptions): void => {
   const handleBack = useEvent(onBack);
 
@@ -184,8 +187,9 @@ export const useMobileBackRoute = ({
       layer,
       onBack: handleBack,
       getSurface: () => surfaceRef.current,
+      getUnderlay: () => underlayRef?.current ?? null,
     });
-  }, [active, handleBack, id, layer, surfaceRef]);
+  }, [active, handleBack, id, layer, surfaceRef, underlayRef]);
 };
 
 type NativeBackEvent = { progress?: number };
@@ -335,9 +339,7 @@ export const useMobileNavigationDriver = ({
       if (!surface) return;
       surface.getAnimations().forEach((animation) => animation.cancel());
       settlingPresentation = null;
-      const underlay = route.layer === 'root'
-        ? surface.parentElement?.querySelector<HTMLElement>('[data-mobile-navigation-underlay="true"]') ?? null
-        : null;
+      const underlay = route.layer === 'root' ? route.getUnderlay() : null;
       const surfaceTransition = surface.style.transition;
       const surfaceAnimation = surface.style.animation;
       const underlayTransition = underlay?.style.transition ?? null;

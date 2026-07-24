@@ -7,9 +7,11 @@ export type SettingsGroupProps = {
   label?: ReactNode;
   children: ReactNode;
   description?: ReactNode;
+  itemId?: string;
   ariaLabel?: string;
   className?: string;
   cardClassName?: string;
+  cardId?: string;
 };
 
 /**
@@ -25,9 +27,11 @@ export function SettingsGroup({
   label,
   children,
   description,
+  itemId,
   ariaLabel,
   className,
   cardClassName,
+  cardId,
 }: SettingsGroupProps) {
   const labelScript = typeof label === 'string'
     && /^[\p{Script=Latin}\p{Number}\p{Punctuation}\p{Separator}]+$/u.test(label)
@@ -44,7 +48,13 @@ export function SettingsGroup({
           {label}
         </div>
       ) : null}
-      <div className={cn('oc-settings-group-card', cardClassName)}>{children}</div>
+      <div
+        id={cardId}
+        data-settings-item={itemId}
+        className={cn('oc-settings-group-card', cardClassName)}
+      >
+        {children}
+      </div>
       {description ? (
         <p className="oc-settings-group-description text-muted-foreground">
           {description}

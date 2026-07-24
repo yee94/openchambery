@@ -18,6 +18,7 @@ export function MobileSettingsTab({ className, contentClassName }: MobileSetting
       className={className}
       surface={false}
       scrollsWithPage
+      showHeader={false}
       surfaceClassName={contentClassName}
     >
       <SettingsView

@@ -386,6 +386,7 @@ export const MagicPromptsPage: React.FC = () => {
                   </div>
                 )}
                 <Textarea
+                  embedded
                   value={draft}
                   onChange={(event) => setDraft(block.id, event.target.value)}
                   className="min-h-[220px] font-mono text-sm"

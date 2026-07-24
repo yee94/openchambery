@@ -136,11 +136,24 @@ placement still follow this specification.
 - Split pages must use the `SettingsView` `nav`, `page-sidebar`, and
   `page-content` stages. Feature pages must not own a competing mobile detail
   flag, history entry, back button, or duplicated mobile-only editor.
+- Split-page collections use `SettingsSidebarLayout` or the same
+  `oc-settings-page-content` contract as their single scroll root. The mobile
+  Settings shell owns the horizontal page gutter, so collection pages must not
+  add a second mobile `px-*` layer. Summary controls and collection sections
+  are `SettingsGroup` cards; the shared `MobileDetailNavigation` is the only
+  secondary-page title, so collections do not repeat a local `h2`.
 - A management page made of independent actions or dialogs is not a split page
   merely because it contains a list. Use `kind: 'single'` until an inline
   selected-entity editor actually exists.
 - Settings may scroll as a page, but feature code must not pin a local title or
   search surface unless the owning navigation component explicitly requires it.
+- A viewport-fixed secondary surface that escapes its parent page gutter must
+  own exactly one `--oc-mobile-page-inline-inset` at its scrolling body
+  boundary. Its header aligns to that token, and descendants must not add
+  another page-level inset. Bottom actions use the shared
+  `MobileFloatingBottomBar` rather than a page-specific full-width footer, so
+  their glass material, screen-edge clearance, and safe-area behavior match the
+  root mobile dock.
 - Labels, controls, helper copy, borders, and gaps must remain identical across
   light, dark, and high-contrast themes by using semantic tokens.
 

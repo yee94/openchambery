@@ -10,7 +10,7 @@ import { ModelSelector } from '@/components/sections/agents/ModelSelector';
 import { AgentSelector } from '@/components/sections/commands/AgentSelector';
 import { SettingsSidebarItem } from '@/components/sections/shared/SettingsSidebarItem';
 import { SettingsSidebarLayout } from '@/components/sections/shared/SettingsSidebarLayout';
-import { SettingsField, SettingsGroup, SettingsRow } from '@/components/sections/shared/SettingsGroup';
+import { SettingsField, SettingsGroup, SettingsRow, SettingsToggleRow } from '@/components/sections/shared/SettingsGroup';
 import { Button } from '@/components/ui/button';
 import { Checkbox } from '@/components/ui/checkbox';
 import { Input } from '@/components/ui/input';
@@ -115,55 +115,74 @@ export const AssistantsSettingsSidebar: React.FC<{ onItemSelect?: () => void }> 
     <SettingsSidebarLayout
       variant="background"
       header={
-        <div className="border-b px-3 pb-3 pt-4">
-          <div className="mb-1 flex items-center justify-between gap-3">
-            <h2 className="min-w-0 truncate text-base font-semibold text-foreground">{t('settings.page.assistants.title')}</h2>
-            <label data-settings-item="assistants.instance-enabled" className="flex shrink-0 cursor-pointer items-center gap-1.5">
-              <Checkbox checked={snapshot?.enabled ?? false} onChange={toggleEnabled} ariaLabel={t('assistants.settings.instanceEnabled')} />
-              <span className="typography-meta text-foreground">{t('assistants.settings.instanceEnabled')}</span>
-            </label>
-          </div>
-          <p className="mb-3 break-all typography-meta text-muted-foreground">
-            {t('assistants.settings.description')}
-            <a
-              href="#assistant-share-welcome"
-              className="underline underline-offset-2"
-              onClick={(event) => {
-                event.preventDefault();
-                setWelcomeOpen(true);
-              }}
-            >
-              {t('assistants.settings.descriptionLearnMore')}
-            </a>
-          </p>
+        <>
+          <SettingsGroup
+            description={(
+              <>
+                {t('assistants.settings.description')}
+                <a
+                  href="#assistant-share-welcome"
+                  className="underline underline-offset-2"
+                  onClick={(event) => {
+                    event.preventDefault();
+                    setWelcomeOpen(true);
+                  }}
+                >
+                  {t('assistants.settings.descriptionLearnMore')}
+                </a>
+              </>
+            )}
+          >
+            <SettingsToggleRow
+              itemId="assistants.instance-enabled"
+              checked={snapshot?.enabled ?? false}
+              onChange={toggleEnabled}
+              label={t('assistants.settings.instanceEnabled')}
+              ariaLabel={t('assistants.settings.instanceEnabled')}
+            />
+          </SettingsGroup>
           <AssistantShareWelcome open={welcomeOpen} onOpenChange={setWelcomeOpen} />
-          <div className="flex items-center justify-between gap-2">
-            <span className="typography-meta text-muted-foreground">{t('assistants.settings.listTitle')}</span>
-            <Button data-settings-item="assistants.create" variant="ghost" size="icon" className="-my-1 size-7 text-muted-foreground" onClick={startCreate} aria-label={t('assistants.settings.create')}>
+        </>
+      }
+    >
+      <SettingsGroup
+        label={(
+          <div className="flex min-w-0 items-center justify-between gap-2">
+            <span className="min-w-0 truncate">{t('assistants.settings.listTitle')}</span>
+            <Button
+              data-settings-item="assistants.create"
+              variant="ghost"
+              size="icon"
+              onClick={startCreate}
+              aria-label={t('assistants.settings.create')}
+            >
               <Icon name="add" className="size-4" />
             </Button>
           </div>
-        </div>
-      }
-    >
-      {snapshotQuery.isPending || capabilityQuery.isPending ? (
-        <div className="flex items-center justify-center py-10 text-muted-foreground"><Icon name="loader-4" className="mr-2 size-4 animate-spin" />{t('common.loading')}</div>
-      ) : snapshot?.assistants.map((assistant) => {
-        const presentation = getAssistantPresentation(assistant.name);
-        return (
-          <SettingsSidebarItem
-            key={assistant.id}
-            title={presentation.displayName}
-            selected={selectedID === assistant.id}
-            className="min-h-11 px-2.5 py-2"
-            onSelect={() => {
-              selectSettingsAssistant(assistant.id);
-              onItemSelect?.();
-            }}
-            icon={<AgentAvatar name={assistant.id} emoji={presentation.avatarEmoji} size={24} label={presentation.displayName || assistant.name} />}
-          />
-        );
-      })}
+        )}
+      >
+        {snapshotQuery.isPending || capabilityQuery.isPending ? (
+          <div className="oc-settings-group-row flex items-center justify-center text-muted-foreground"><Icon name="loader-4" className="mr-2 size-4 animate-spin" />{t('common.loading')}</div>
+        ) : snapshot?.assistants.length ? snapshot.assistants.map((assistant) => {
+          const presentation = getAssistantPresentation(assistant.name);
+          return (
+            <SettingsSidebarItem
+              key={assistant.id}
+              title={presentation.displayName}
+              selected={selectedID === assistant.id}
+              onSelect={() => {
+                selectSettingsAssistant(assistant.id);
+                onItemSelect?.();
+              }}
+              icon={<AgentAvatar name={assistant.id} emoji={presentation.avatarEmoji} size={24} label={presentation.displayName || assistant.name} />}
+            />
+          );
+        }) : (
+          <div className="oc-settings-group-row text-muted-foreground">
+            {t('assistants.settings.empty')}
+          </div>
+        )}
+      </SettingsGroup>
     </SettingsSidebarLayout>
   );
 };
@@ -346,7 +365,7 @@ export const AssistantsSettingsPage: React.FC<AssistantsSettingsPageProps> = ({ 
               label={t('assistants.settings.defaultPrompt')}
               className="oc-settings-split-row-stacked"
             >
-              <Textarea id="assistant-prompt" value={draft.defaultPrompt} onChange={(event) => patchDraft('defaultPrompt', event.target.value)} placeholder={t('assistants.settings.defaultPromptPlaceholder')} />
+              <Textarea embedded id="assistant-prompt" value={draft.defaultPrompt} onChange={(event) => patchDraft('defaultPrompt', event.target.value)} placeholder={t('assistants.settings.defaultPromptPlaceholder')} />
             </SettingsField>
 
             <SettingsGroup

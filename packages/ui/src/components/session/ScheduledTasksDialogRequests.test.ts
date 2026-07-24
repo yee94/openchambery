@@ -97,9 +97,9 @@ describe('ScheduledTasksDialog queries', () => {
     expect(editorContent).toContain('const groupedPanel = desktopPanel || mobileGroupedPanel;');
     expect(editorContent).toContain('MOBILE_PANEL_ROW_CLASS');
     expect(editorContent).toContain('MOBILE_PANEL_CONTROL_CLASS');
-    expect(workspaceContent).toContain("isMobileTab ? 'pb-0 pt-3'");
+    expect(workspaceContent).toContain("isMobileTab ? 'pb-0 pt-0'");
     expect(workspaceContent).toContain("? 'overscroll-none pb-[max(1rem,env(safe-area-inset-bottom))] pt-5'");
-    expect(editorContent).toContain('<div className="pb-[calc(6rem+var(--safe-area-inset-bottom');
+    expect(editorContent).toContain('overflow-y-auto overflow-x-hidden px-[var(--oc-mobile-page-inline-inset)] pb-[calc(var(--oc-mobile-dock-height)+2.5rem');
     expect(editorContent).not.toContain('<div className="px-3 pb-5 pt-4">');
   });
 
@@ -137,27 +137,34 @@ describe('ScheduledTasksDialog queries', () => {
     expect(workspaceContent).toContain("window.addEventListener('oc:scheduled-tasks-close-request', handleCloseRequest)");
     expect(workspaceContent).toContain('registerEditorBackHandler?: (handler: (() => boolean) | null) => void');
     expect(workspaceContent).toContain("onEditorActiveChange?.(editorMode !== 'closed')");
+    expect(workspaceContent).toContain('underlayRef: mobileNavigationUnderlayRef');
+    expect(workspaceContent).toContain("'fixed inset-0 z-50 flex h-[100dvh]");
+    expect(workspaceContent).toContain('gap-[var(--oc-mobile-page-gap)]');
+    expect(workspaceContent).toContain("isMobileTab ? 'pb-0 pt-0'");
+    expect(workspaceContent).toContain("isMobilePanel && !isMobileTab && editorMode !== 'closed' ? 'hidden' : 'flex'");
     expect(workspaceContent).not.toContain('mobileTaskGroupStarts');
     expect(mobileAppContent).toContain('onEditorActiveChange={onEditorActiveChange}');
-    expect(phoneShellContent).toContain('showHeader={!scheduledEditorActive}');
+    expect(phoneShellContent).toContain('<MobileScheduledTab showHeader={false}>');
     expect(overlayContent).toContain('containedBody?: boolean');
     expect(overlayContent).toContain("'flex min-h-0 flex-1 flex-col overflow-hidden'");
     expect(overlayContent).toContain('openOverlayStack[openOverlayStack.length - 1] === overlayID');
     expect(mobileAppContent).toContain("window.dispatchEvent(new Event('oc:scheduled-tasks-close-request'));");
   });
 
-  test('lets the scheduled editor replace the root tab dock with its pinned action footer', async () => {
+  test('keeps the scheduled root and dock mounted behind its pinned editor footer', async () => {
     const directory = dirname(fileURLToPath(import.meta.url));
-    const [editorContent, phoneShellContent, tabRootContent, scheduledTabContent] = await Promise.all([
+    const [editorContent, phoneShellContent, tabRootContent, scheduledTabContent, mobileSurfaceContent, mobileTabBarContent] = await Promise.all([
       readFile(join(directory, 'ScheduledTaskEditorDialog.tsx'), 'utf8'),
       readFile(join(directory, '../../mobile/MobilePhoneShell.tsx'), 'utf8'),
       readFile(join(directory, '../../mobile/MobileTabsRoot.tsx'), 'utf8'),
       readFile(join(directory, '../../mobile/scheduled/MobileScheduledTab.tsx'), 'utf8'),
+      readFile(join(directory, '../../mobile/MobileSurface.tsx'), 'utf8'),
+      readFile(join(directory, '../../mobile/MobileTabBar.tsx'), 'utf8'),
     ]);
-    expect(phoneShellContent).toContain('showTabBar={!scheduledEditorActive}');
+    expect(phoneShellContent).toContain('tabBarCovered={scheduledEditorActive}');
     expect(tabRootContent).toContain('showTabBar?: boolean;');
     expect(tabRootContent).toContain('data-mobile-navigation-dock-underlay="true"');
-    expect(tabRootContent).toContain('inert={secondaryPage ? true : undefined}');
+    expect(tabRootContent).toContain('inert={secondaryPage || tabBarCovered ? true : undefined}');
     expect(tabRootContent).toContain('<MobileTabBar activeTab={selectedTab}');
     expect(tabRootContent).not.toContain(') : showTabBar ? (');
     expect(tabRootContent).toContain('data-mobile-navigation-underlay="true"');
@@ -168,10 +175,17 @@ describe('ScheduledTasksDialog queries', () => {
       .split("if (presentation === 'mobile-tab')")[1]
       ?.split('if (isMobile)')[0] ?? '';
     expect(mobileTabEditorContent).toContain('<MobileDetailNavigation\n          sticky');
+    expect(mobileTabEditorContent).toContain('<section className="flex h-full min-h-0 flex-col bg-background"');
+    expect(mobileTabEditorContent).toContain('min-h-0 flex-1 overflow-y-auto overflow-x-hidden');
     expect(mobileTabEditorContent).toContain('data-scheduled-editor-footer=""');
-    expect(mobileTabEditorContent).toContain('className="fixed inset-x-0 bottom-0 z-40');
-    expect(mobileTabEditorContent).toContain('pb-[calc(6rem+var(--safe-area-inset-bottom');
+    expect(mobileTabEditorContent).toContain('<MobileFloatingBottomBar\n          as="footer"');
+    expect(mobileTabEditorContent).toContain('className="z-[60]"');
+    expect(mobileTabEditorContent).toContain('pb-[calc(var(--oc-mobile-dock-height)+2.5rem');
     expect(mobileTabEditorContent).not.toContain('<ScrollShadow');
+    expect(mobileSurfaceContent).toContain("variant?: 'navigation' | 'actions'");
+    expect(mobileSurfaceContent).toContain("'oc-mobile-floating-bottom-bar'");
+    expect(mobileTabBarContent).toContain('<MobileFloatingBottomBar');
+    expect(mobileTabBarContent).toContain('variant="navigation"');
   });
 
   test('uses the shared model picker for model and thinking mode selection', async () => {
@@ -216,6 +230,8 @@ describe('ScheduledTasksDialog queries', () => {
     expect(mobileStyles).toContain('var(--oc-mobile-detail-action-edge-inset, 1rem)');
     expect(mobileStyles).toContain('var(--oc-safe-area-left, 0px)');
     expect(mobileStyles).toContain('var(--oc-safe-area-right, 0px)');
+    expect(mobileStyles).not.toContain('.oc-mobile-tab-page-flow .oc-mobile-detail-navigation');
+    expect(mobileStyles).not.toContain('margin-inline: calc(-1 * var(--oc-mobile-page-inline-inset))');
     expect(mobileStyles).not.toContain('--oc-mobile-detail-navigation-inline-inset');
     expect(settingsContent).not.toContain('oc-mobile-settings-detail-navigation');
     expect(settingsContent).not.toContain('oc-mobile-settings-detail-header');
@@ -223,9 +239,12 @@ describe('ScheduledTasksDialog queries', () => {
     expect(editorContent).toContain('<MobileDetailNavigation');
     expect(settingsContent).toContain('<MobileDetailNavigation');
     expect(settingsContent).toContain('inert={detailActive ? true : undefined}');
-    expect(settingsContent).not.toContain('<MobileTabPageHeader');
+    expect(settingsContent).toContain('<MobileTabPageHeader');
+    expect(settingsContent).toContain('underlayRef: mobileBackUnderlayRef');
+    expect(settingsContent).toContain('className="fixed inset-0 z-20 flex h-[100dvh]');
+    expect(settingsContent).toContain('flex-col gap-6');
     expect(settingsTabContent).not.toContain('onMobileStageChange');
-    expect(settingsTabContent).not.toContain('showHeader={isRootSettingsPage}');
+    expect(settingsTabContent).toContain('showHeader={false}');
     expect(chatHeaderContent).toContain('<MobileDetailNavigation');
     expect(chatScreenContent).not.toContain("t('miniChat.status.idle')");
   });

@@ -728,6 +728,7 @@ export const AgentsPage: React.FC = () => {
 
             <SettingsRow label={t('settings.common.field.description')} className="oc-settings-split-row-stacked">
                 <Textarea
+                  embedded
                   value={description}
                   onChange={(e) => setDescription(e.target.value)}
                   placeholder={t('settings.agents.page.field.descriptionPlaceholder')}
@@ -963,6 +964,7 @@ export const AgentsPage: React.FC = () => {
           className="oc-settings-split-row-stacked"
         >
             <Textarea
+              embedded
               value={prompt}
               onChange={(e) => setPrompt(e.target.value)}
               placeholder={t('settings.agents.page.field.systemPromptPlaceholder')}

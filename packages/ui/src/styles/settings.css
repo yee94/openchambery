@@ -26,7 +26,7 @@
   --oc-settings-row-block-padding: 0.6875rem;
   --oc-settings-group-background: color-mix(
     in srgb,
-    var(--surface-muted) 28%,
+    var(--surface-muted) 55%,
     var(--surface-elevated)
   );
   --oc-settings-group-border: var(--form-surface-border);
@@ -320,30 +320,65 @@
 }
 
 /* Desktop keeps a stable value column when the detail pane grows. Mobile
-   retains the responsive grid above, while every desktop control footprint —
-   including an adjacent reset action — is capped by the same shared width. */
-.oc-settings-workspace-desktop .oc-settings-split-row,
-.oc-settings-workspace-desktop .oc-settings-split-row-stacked {
+   retains the responsive grid above, while ordinary desktop control
+   footprints — including an adjacent reset action — use the shared cap. */
+.oc-settings-workspace-desktop .oc-settings-split-row {
   grid-template-columns:
     minmax(12rem, 1fr)
     minmax(0, var(--oc-settings-desktop-value-max-width));
   column-gap: 2rem;
 }
 
-.oc-settings-workspace-desktop .oc-settings-split-row-copy,
-.oc-settings-workspace-desktop
-  .oc-settings-split-row-stacked
-  .oc-settings-split-row-copy {
+.oc-settings-workspace-desktop .oc-settings-summary-model-source-row {
+  --oc-settings-desktop-value-max-width: 24rem;
+}
+
+.oc-settings-workspace-desktop .oc-settings-split-row-copy {
   max-width: 24rem;
 }
 
-.oc-settings-workspace-desktop .oc-settings-split-row-control,
+.oc-settings-workspace-desktop .oc-settings-split-row-control {
+  width: 100%;
+  max-width: var(--oc-settings-desktop-value-max-width);
+  justify-self: end;
+}
+
+/* Collection sidebars are narrower than detail panes. Keep Usage settings on
+   one labeled row each instead of reserving the detail pane's 12rem copy
+   column and squeezing the controls out of view. */
+.oc-settings-workspace-desktop
+  .oc-settings-usage-sidebar
+  .oc-settings-split-row {
+  grid-template-columns: minmax(0, 1fr) auto;
+  column-gap: var(--oc-settings-row-gap);
+}
+
+.oc-settings-workspace-desktop
+  .oc-settings-usage-sidebar
+  .oc-settings-split-row-control {
+  width: auto;
+  max-width: none;
+}
+
+/* Complex editors explicitly opt out of the desktop value column. Keep their
+   copy above one full-width control instead of squeezing the editor sideways. */
+.oc-settings-workspace-desktop .oc-settings-split-row-stacked {
+  grid-template-columns: minmax(0, 1fr);
+  row-gap: 0.5rem;
+}
+
+.oc-settings-workspace-desktop
+  .oc-settings-split-row-stacked
+  .oc-settings-split-row-copy {
+  max-width: 32rem;
+}
+
 .oc-settings-workspace-desktop
   .oc-settings-split-row-stacked
   .oc-settings-split-row-control {
   width: 100%;
-  max-width: var(--oc-settings-desktop-value-max-width);
-  justify-self: end;
+  max-width: none;
+  justify-self: stretch;
 }
 
 .oc-settings-workspace-desktop
@@ -367,67 +402,4 @@
 .oc-settings-workspace-desktop .oc-settings-detail-pane .openchamber-page-body {
   width: min(100%, 52rem);
   margin-inline: auto;
-  padding: 0.25rem !important;
-}
-
-.oc-settings-workspace-desktop
-  .oc-settings-page-content
-  section:not(.oc-settings-group),
-.oc-settings-workspace-desktop
-  .oc-settings-page-content
-  > [data-settings-item] {
-  overflow: hidden;
-  padding: 0 !important;
-  border: 1px solid var(--oc-settings-group-border);
-  border-radius: var(--oc-settings-group-radius);
-  background: var(--oc-settings-group-background);
-  box-shadow: none;
-}
-
-.oc-settings-workspace-desktop
-  .oc-settings-page-content
-  section:not(.oc-settings-group)
-  > h3,
-.oc-settings-workspace-desktop
-  .oc-settings-page-content
-  section:not(.oc-settings-group)
-  > h4 {
-  margin: 0 !important;
-  padding: 0.75rem var(--oc-settings-row-inset) 0.5rem !important;
-  font-size: 0.75rem !important;
-  line-height: 1rem !important;
-  font-weight: 650 !important;
-  color: var(--surface-muted-foreground) !important;
-}
-
-.oc-settings-workspace-desktop
-  .oc-settings-page-content
-  section:not(.oc-settings-group)
-  > :not(h3, h4) {
-  margin: 0 !important;
-  padding: 0.625rem var(--oc-settings-row-inset) !important;
-  border-top: 1px solid var(--oc-settings-row-divider);
-}
-
-.oc-settings-workspace-desktop
-  .oc-settings-page-content
-  section:not(.oc-settings-group)
-  > :first-child:not(h3, h4) {
-  border-top: 0;
-}
-
-.oc-settings-workspace-desktop
-  .oc-settings-page-content
-  > [data-settings-item] {
-  padding: var(--oc-settings-row-inset) !important;
-}
-
-.oc-settings-workspace-desktop
-  .oc-settings-page-content
-  > [data-settings-item]
-  > section {
-  padding: 0 !important;
-  border: 0;
-  background: transparent;
-  box-shadow: none;
 }

@@ -29,6 +29,7 @@ import { FileMentionAutocomplete, type FileMentionHandle } from '@/components/ch
 import { SnippetAutocomplete, type SnippetAutocompleteHandle } from '@/components/chat/SnippetAutocomplete';
 import { Icon } from "@/components/icon/Icon";
 import { MobileDetailNavigation } from '@/mobile/MobileDetailNavigation';
+import { MobileFloatingBottomBar } from '@/mobile/MobileSurface';
 import { useConfigStore } from '@/stores/useConfigStore';
 import { useUIStore } from '@/stores/useUIStore';
 import type { ScheduledTask } from '@/lib/scheduledTasksApi';
@@ -1928,7 +1929,7 @@ export function ScheduledTaskEditorDialog(props: {
       return null;
     }
     return (
-      <section className="bg-background" aria-label={title}>
+      <section className="flex h-full min-h-0 flex-col bg-background" aria-label={title}>
         <MobileDetailNavigation
           sticky
           title={title}
@@ -1936,7 +1937,7 @@ export function ScheduledTaskEditorDialog(props: {
           onBack={() => onOpenChange(false)}
           backDisabled={saving}
         />
-        <div className="pb-[calc(6rem+var(--safe-area-inset-bottom,env(safe-area-inset-bottom,0px)))] pt-4">
+        <div className="min-h-0 flex-1 overflow-y-auto overflow-x-hidden px-[var(--oc-mobile-page-inline-inset)] pb-[calc(var(--oc-mobile-dock-height)+2.5rem+var(--safe-area-inset-bottom,env(safe-area-inset-bottom,0px)))] pt-4">
           <Input
             value={draft.name}
             onChange={(event) => setDraft((prev) => ({ ...prev, name: event.target.value }))}
@@ -1947,12 +1948,13 @@ export function ScheduledTaskEditorDialog(props: {
           />
           {formBody}
         </div>
-        <footer
+        <MobileFloatingBottomBar
+          as="footer"
           data-scheduled-editor-footer=""
-          className="fixed inset-x-0 bottom-0 z-40 border-t border-border/50 bg-background/95 px-[var(--oc-mobile-page-inline-inset)] pb-[calc(1rem+var(--safe-area-inset-bottom,env(safe-area-inset-bottom,0px)))] pt-2 backdrop-blur-sm"
+          className="z-[60]"
         >
-          <div className="mx-auto w-full max-w-[26rem]">{footerRow}</div>
-        </footer>
+          {footerRow}
+        </MobileFloatingBottomBar>
       </section>
     );
   }

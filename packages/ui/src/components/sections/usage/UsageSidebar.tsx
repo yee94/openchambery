@@ -1,12 +1,11 @@
 import React from 'react';
-import { ScrollableOverlay } from '@/components/ui/ScrollableOverlay';
 import { ProviderLogo } from '@/components/ui/ProviderLogo';
 import { Button } from '@/components/ui/button';
 import { Checkbox } from '@/components/ui/checkbox';
-import { Tooltip, TooltipTrigger, TooltipContent } from '@/components/ui/tooltip';
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
 import { Icon } from "@/components/icon/Icon";
 import { cn } from '@/lib/utils';
+import { SettingsGroup, SettingsRow, SettingsToggleRow } from '@/components/sections/shared/SettingsGroup';
 import { QUOTA_PROVIDERS, resolveUsageTone } from '@/lib/quota';
 import { useQuotaStore } from '@/stores/useQuotaStore';
 import { updateDesktopSettings } from '@/lib/persistence';
@@ -83,80 +82,76 @@ export const UsageSidebar: React.FC<UsageSidebarProps> = ({ onItemSelect }) => {
     void persistUsageSettings({ usageShowPredValues: enabled });
   }, [persistUsageSettings, setShowPredValues]);
 
-  const bgClass = 'bg-background';
-
   return (
-    <div className={cn('flex h-full flex-col', bgClass)}>
-      <div className="border-b px-3 pt-4 pb-3">
-        <h2 className="text-base font-semibold text-foreground mb-3">{t('settings.usage.sidebar.title')}</h2>
-        <div className="flex items-center justify-between gap-2">
-          <span className="typography-meta text-muted-foreground">{t('settings.usage.sidebar.total', { count: QUOTA_PROVIDERS.length })}</span>
-          <div className="flex items-center gap-2">
-            <Tooltip>
-              <TooltipTrigger asChild>
-                <span className="inline-flex">
-                  <Checkbox
-                    checked={usageAutoRefresh}
-                    onChange={handleUsageAutoRefreshChange}
-                    ariaLabel={t('settings.usage.sidebar.actions.toggleAutoRefreshAria')}
-                  />
-                </span>
-              </TooltipTrigger>
-              <TooltipContent side="bottom">
-                {t('settings.usage.sidebar.tooltip.autoRefresh')}
-              </TooltipContent>
-            </Tooltip>
-            <Select
-              value={String(usageRefreshIntervalMs)}
-              onValueChange={handleUsageRefreshIntervalChange}
-              disabled={!usageAutoRefresh}
-            >
-              <SelectTrigger className="w-fit">
-                <SelectValue placeholder={t('settings.usage.sidebar.field.intervalPlaceholder')} />
-              </SelectTrigger>
-              <SelectContent>
-                <SelectItem value="30000">30s</SelectItem>
-                <SelectItem value="60000">1m</SelectItem>
-                <SelectItem value="300000">5m</SelectItem>
-              </SelectContent>
-            </Select>
-            <Button size="sm"
-              variant="ghost"
-              className="h-7 w-7 px-0 text-muted-foreground"
-              onClick={() => fetchAllQuotas()}
-              aria-label={t('settings.usage.sidebar.actions.refreshAria')}
-              title={t('settings.usage.sidebar.actions.refreshTitle')}
-              disabled={isLoading}
-            >
-              <Icon name="refresh" className={cn('h-3.5 w-3.5', isLoading && 'animate-spin')} />
-            </Button>
-          </div>
-        </div>
-        <div className="mt-2 flex items-center justify-between gap-2">
-          <span className="typography-micro text-muted-foreground">{t('settings.usage.sidebar.field.display')}</span>
+    <div className="oc-settings-page-content oc-settings-usage-sidebar h-full overflow-y-auto bg-background p-3">
+      <SettingsGroup>
+        <SettingsRow label={t('settings.usage.sidebar.title')}>
+          <Button
+            size="icon"
+            variant="ghost"
+            className="text-muted-foreground"
+            onClick={() => fetchAllQuotas()}
+            aria-label={t('settings.usage.sidebar.actions.refreshAria')}
+            title={t('settings.usage.sidebar.actions.refreshTitle')}
+            disabled={isLoading}
+          >
+            <Icon name="refresh" className={cn('h-3.5 w-3.5', isLoading && 'animate-spin')} />
+          </Button>
+        </SettingsRow>
+
+        <SettingsRow label={t('settings.usage.sidebar.field.autoRefresh')}>
+          <Checkbox
+            checked={usageAutoRefresh}
+            onChange={handleUsageAutoRefreshChange}
+            ariaLabel={t('settings.usage.sidebar.actions.toggleAutoRefreshAria')}
+          />
+        </SettingsRow>
+
+        <SettingsRow label={t('settings.usage.sidebar.field.refreshInterval')}>
+          <Select
+            value={String(usageRefreshIntervalMs)}
+            onValueChange={handleUsageRefreshIntervalChange}
+            disabled={!usageAutoRefresh}
+          >
+            <SelectTrigger className="w-fit">
+              <SelectValue placeholder={t('settings.usage.sidebar.field.intervalPlaceholder')}>
+                {(value) => value === '30000' ? '30s' : value === '60000' ? '1m' : value === '300000' ? '5m' : value}
+              </SelectValue>
+            </SelectTrigger>
+            <SelectContent>
+              <SelectItem value="30000">30s</SelectItem>
+              <SelectItem value="60000">1m</SelectItem>
+              <SelectItem value="300000">5m</SelectItem>
+            </SelectContent>
+          </Select>
+        </SettingsRow>
+
+        <SettingsRow label={t('settings.usage.sidebar.field.display')}>
           <Select value={usageDisplayMode} onValueChange={handleUsageDisplayModeChange}>
             <SelectTrigger className="w-fit">
-              <SelectValue placeholder={t('settings.usage.sidebar.field.displayModePlaceholder')} />
+              <SelectValue placeholder={t('settings.usage.sidebar.field.displayModePlaceholder')}>
+                {(value) => value === 'usage'
+                  ? t('settings.usage.sidebar.field.displayModeUsage')
+                  : value === 'remaining'
+                    ? t('settings.usage.sidebar.field.displayModeRemaining')
+                    : value}
+              </SelectValue>
             </SelectTrigger>
             <SelectContent>
               <SelectItem value="usage">{t('settings.usage.sidebar.field.displayModeUsage')}</SelectItem>
               <SelectItem value="remaining">{t('settings.usage.sidebar.field.displayModeRemaining')}</SelectItem>
             </SelectContent>
           </Select>
-        </div>
-        <div className="mt-2 flex items-center justify-between gap-2">
-          <span className="typography-micro text-muted-foreground">
-            {t('settings.usage.sidebar.field.showPredictions')}
-          </span>
-          <Checkbox
-            checked={showPredValues}
-            onChange={handleShowPredValuesChange}
-            ariaLabel={t('settings.usage.sidebar.field.showPredictions')}
-          />
-        </div>
-      </div>
+        </SettingsRow>
+        <SettingsToggleRow
+          checked={showPredValues}
+          onChange={handleShowPredValuesChange}
+          label={t('settings.usage.sidebar.field.showPredictions')}
+          ariaLabel={t('settings.usage.sidebar.field.showPredictions')}
+        />
+      </SettingsGroup>
 
-      <ScrollableOverlay outerClassName="flex-1 min-h-0" className="space-y-1 px-3 py-2 overflow-x-hidden">
+      <SettingsGroup>
         {QUOTA_PROVIDERS.map((provider) => {
           const result = results.find((entry) => entry.providerId === provider.id);
           const percent = getUsagePercent(result?.usage);
@@ -176,7 +171,7 @@ export const UsageSidebar: React.FC<UsageSidebarProps> = ({ onItemSelect }) => {
             <div
               key={provider.id}
               className={cn(
-                'group relative flex items-center rounded-md px-1.5 py-1 transition-all duration-200',
+                'oc-settings-group-row group relative flex items-center transition-colors duration-150',
                 isSelected ? 'bg-interactive-selection' : 'hover:bg-interactive-hover'
               )}
             >
@@ -200,7 +195,7 @@ export const UsageSidebar: React.FC<UsageSidebarProps> = ({ onItemSelect }) => {
           </div>
           );
         })}
-      </ScrollableOverlay>
+      </SettingsGroup>
     </div>
   );
 };

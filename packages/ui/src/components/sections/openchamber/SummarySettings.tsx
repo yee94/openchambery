@@ -200,6 +200,7 @@ export const SummarySettings: React.FC = () => {
         <SettingsRow
           itemId="summary-ai.configuration"
           label={t('settings.openchamber.defaults.summary.modelSourceTitle')}
+          className="oc-settings-summary-model-source-row"
           controlClassName="items-start"
         >
           <div role="radiogroup" aria-label={t('settings.openchamber.defaults.summary.modelSourceAria')} className="flex flex-col gap-2">
@@ -260,7 +261,7 @@ export const SummarySettings: React.FC = () => {
           className="oc-settings-split-row-stacked"
           controlClassName="w-full max-w-none justify-self-stretch"
         >
-          <div className="h-64 w-full overflow-hidden rounded-md border border-[var(--surface-subtle)] bg-background">
+          <div className="h-64 w-full overflow-hidden bg-background">
             <CodeMirrorEditor value={summaryCommitPrompt} onChange={setSummaryCommitPrompt} extensions={editorExtensions} className="h-full" enableSearch />
           </div>
         </SettingsRow>
@@ -270,7 +271,7 @@ export const SummarySettings: React.FC = () => {
           className="oc-settings-split-row-stacked"
           controlClassName="w-full max-w-none justify-self-stretch"
         >
-          <div className="h-64 w-full overflow-hidden rounded-md border border-[var(--surface-subtle)] bg-background">
+          <div className="h-64 w-full overflow-hidden bg-background">
             <CodeMirrorEditor value={summarySessionTitlePrompt} onChange={setSummarySessionTitlePrompt} extensions={editorExtensions} className="h-full" enableSearch />
           </div>
         </SettingsRow>

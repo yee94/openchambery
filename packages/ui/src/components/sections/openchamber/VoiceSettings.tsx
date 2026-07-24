@@ -762,6 +762,11 @@ export const VoiceSettings: React.FC = () => {
 
     return (
         <div className="oc-settings-section-stack">
+            <div className="space-y-1">
+                <h2 className="typography-ui-header font-semibold text-foreground">
+                    {t('settings.page.voice.title')}
+                </h2>
+            </div>
 
             {/* Playback (read messages aloud) */}
             <div data-settings-item="voice.playback">

@@ -46,7 +46,6 @@
       var(--surface-foreground, var(--foreground)) 6%,
       transparent
     );
-
     /* Default Light Theme */
     --background: oklch(0.97 0.02 85); /* Warm sand background */
     --foreground: oklch(0.25 0.02 40); /* Dark warm text */

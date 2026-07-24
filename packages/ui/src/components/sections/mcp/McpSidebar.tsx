@@ -13,8 +13,8 @@ import { useShallow } from 'zustand/react/shallow';
 import { isMobileDeviceViaCSS } from '@/lib/device';
 import { cn } from '@/lib/utils';
 import { toast } from '@/components/ui';
-import { ScrollableOverlay } from '@/components/ui/ScrollableOverlay';
 import { SettingsProjectSelector } from '@/components/sections/shared/SettingsProjectSelector';
+import { SettingsGroup } from '@/components/sections/shared/SettingsGroup';
 import {
   DropdownMenu,
   DropdownMenuContent,
@@ -71,8 +71,6 @@ const StatusDot: React.FC<{ tone: StatusTone; enabled: boolean }> = ({ tone, ena
 
 export const McpSidebar: React.FC<McpSidebarProps> = ({ onItemSelect }) => {
   const { t } = useI18n();
-  const bgClass = 'bg-background';
-
   const { selectedMcpName, setSelectedMcp, setMcpDraft, deleteMcp } =
     useMcpConfigStore(useShallow((s) => ({
       selectedMcpName: s.selectedMcpName,
@@ -184,58 +182,61 @@ export const McpSidebar: React.FC<McpSidebarProps> = ({ onItemSelect }) => {
     </Item>
   );
 
-  return (
-    <div className={cn('flex h-full flex-col', bgClass)}>
-      <div className="border-b px-3 pt-4 pb-3">
-        <div className="mb-3 flex items-center justify-between gap-3">
-          <h2 className="text-base font-semibold text-foreground">{t('settings.mcp.sidebar.title')}</h2>
-          <button
-            type="button"
-            className="inline-flex h-7 w-7 items-center justify-center rounded-md text-muted-foreground transition-colors hover:text-foreground hover:bg-interactive-hover focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-primary"
-            disabled={isRefreshingStatus}
-            onClick={handleRefresh}
-            aria-label={t('settings.mcp.sidebar.actions.refreshStatusAria')}
-            title={t('settings.mcp.sidebar.actions.refreshStatusTitle')}
-          >
-            <Icon name="refresh" className={cn('h-4 w-4', isRefreshingStatus && 'animate-spin')} />
-          </button>
-        </div>
-        <SettingsProjectSelector className="mb-3" />
-        <div className="flex items-center justify-between gap-2">
-          <span className="typography-meta text-muted-foreground">
-            {t('settings.mcp.sidebar.total', { count: mcpServers.length })}
-          </span>
-          <Button size="sm"
-            data-settings-item="mcp.create"
-            variant="ghost"
-            className="h-7 w-7 px-0 -my-1 text-muted-foreground"
-            onClick={handleCreateNew}
-            title={t('settings.mcp.sidebar.actions.addServerTitle')}
-          >
-            <Icon name="add" className="h-3.5 w-3.5" />
-          </Button>
-        </div>
+  const userServersLabel = (
+    <div className="flex items-center justify-between gap-4">
+      <span>{t('settings.mcp.sidebar.group.userServers')}</span>
+      <div className="flex items-center gap-1">
+        <Button
+          type="button"
+          size="icon"
+          variant="ghost"
+          disabled={isRefreshingStatus}
+          onClick={handleRefresh}
+          aria-label={t('settings.mcp.sidebar.actions.refreshStatusAria')}
+          title={t('settings.mcp.sidebar.actions.refreshStatusTitle')}
+        >
+          <Icon name="refresh" className={cn('h-4 w-4', isRefreshingStatus && 'animate-spin')} />
+        </Button>
+        <Button
+          data-settings-item="mcp.create"
+          size="icon"
+          variant="ghost"
+          onClick={handleCreateNew}
+          aria-label={t('settings.mcp.sidebar.actions.addServerTitle')}
+          title={t('settings.mcp.sidebar.actions.addServerTitle')}
+        >
+          <Icon name="add" className="h-4 w-4" />
+        </Button>
       </div>
+    </div>
+  );
+
+  return (
+    <div className="oc-settings-page-content h-full overflow-y-auto bg-background p-3">
+      <SettingsGroup>
+        <div className="oc-settings-group-row"><SettingsProjectSelector /></div>
+      </SettingsGroup>
 
       {/* List */}
-      <ScrollableOverlay outerClassName="flex-1 min-h-0" className="space-y-1 px-3 py-2 overflow-x-hidden">
+      <>
         {configsQuery.isError && !configsQuery.data ? (
-          <div className="py-12 px-4 text-center typography-meta text-[var(--status-error)]">
-            {configsQuery.error.message}
-          </div>
+          <SettingsGroup label={userServersLabel}>
+            <div className="oc-settings-group-row py-12 text-center typography-meta text-[var(--status-error)]">
+              {configsQuery.error.message}
+            </div>
+          </SettingsGroup>
         ) : mcpServers.length === 0 ? (
-          <div className="py-12 px-4 text-center text-muted-foreground">
-            <Icon name="plug" className="mx-auto mb-3 h-10 w-10 opacity-50" />
-            <p className="typography-ui-label font-medium">{t('settings.mcp.sidebar.empty.title')}</p>
-            <p className="typography-meta mt-1 opacity-75">{t('settings.mcp.sidebar.empty.description')}</p>
-          </div>
+          <SettingsGroup label={userServersLabel}>
+            <div className="oc-settings-group-row py-12 text-center text-muted-foreground">
+              <Icon name="plug" className="mx-auto mb-3 h-10 w-10 opacity-50" />
+              <p className="typography-ui-label font-medium">{t('settings.mcp.sidebar.empty.title')}</p>
+              <p className="typography-meta mt-1 opacity-75">{t('settings.mcp.sidebar.empty.description')}</p>
+            </div>
+          </SettingsGroup>
         ) : (
           <>
             {projectServers.length > 0 && (
-              <>
-                <div className="px-2 pb-1.5 pt-2 text-xs font-semibold uppercase tracking-wide text-muted-foreground">
-                  {t('settings.mcp.sidebar.group.projectServers')}
-                </div>
+              <SettingsGroup label={t('settings.mcp.sidebar.group.projectServers')}>
                 {projectServers.map((server) => {
                   const runtimeStatus = mcpStatus[server.name] ?? (
                     statusQuery.isError && !statusQuery.data
@@ -248,7 +249,7 @@ export const McpSidebar: React.FC<McpSidebarProps> = ({ onItemSelect }) => {
 
                   return (
                     <ContextMenu key={server.name} open={rightClickMenuMcp === server.name} onOpenChange={(open) => setRightClickMenuMcp(open ? server.name : null)}>
-                      <ContextMenuTrigger render={<div className={cn('group relative flex items-center rounded-md px-1.5 py-1 transition-all duration-200 select-none', isSelected ? 'bg-interactive-selection' : 'hover:bg-interactive-hover')} onContextMenu={!isMobile ? (e) => { e.preventDefault(); setRightClickMenuMcp(server.name); } : undefined} />}>
+                      <ContextMenuTrigger render={<div className={cn('oc-settings-group-row group relative flex items-center transition-colors duration-150 select-none', isSelected ? 'bg-interactive-selection' : 'hover:bg-interactive-hover')} onContextMenu={!isMobile ? (e) => { e.preventDefault(); setRightClickMenuMcp(server.name); } : undefined} />}>
                       <button
                         onClick={() => {
                           setSelectedMcp(server.name);
@@ -295,14 +296,11 @@ export const McpSidebar: React.FC<McpSidebarProps> = ({ onItemSelect }) => {
                     </ContextMenu>
                   );
                 })}
-              </>
+              </SettingsGroup>
             )}
 
             {userServers.length > 0 && (
-              <>
-                <div className="px-2 pb-1.5 pt-2 text-xs font-semibold uppercase tracking-wide text-muted-foreground">
-                  {t('settings.mcp.sidebar.group.userServers')}
-                </div>
+              <SettingsGroup label={userServersLabel}>
                 {userServers.map((server) => {
                   const runtimeStatus = mcpStatus[server.name] ?? (
                     statusQuery.isError && !statusQuery.data
@@ -315,7 +313,7 @@ export const McpSidebar: React.FC<McpSidebarProps> = ({ onItemSelect }) => {
 
                   return (
                     <ContextMenu key={server.name} open={rightClickMenuMcp === server.name} onOpenChange={(open) => setRightClickMenuMcp(open ? server.name : null)}>
-                      <ContextMenuTrigger render={<div className={cn('group relative flex items-center rounded-md px-1.5 py-1 transition-all duration-200 select-none', isSelected ? 'bg-interactive-selection' : 'hover:bg-interactive-hover')} onContextMenu={!isMobile ? (e) => { e.preventDefault(); setRightClickMenuMcp(server.name); } : undefined} />}>
+                      <ContextMenuTrigger render={<div className={cn('oc-settings-group-row group relative flex items-center transition-colors duration-150 select-none', isSelected ? 'bg-interactive-selection' : 'hover:bg-interactive-hover')} onContextMenu={!isMobile ? (e) => { e.preventDefault(); setRightClickMenuMcp(server.name); } : undefined} />}>
                       <button
                         onClick={() => {
                           setSelectedMcp(server.name);
@@ -362,11 +360,16 @@ export const McpSidebar: React.FC<McpSidebarProps> = ({ onItemSelect }) => {
                     </ContextMenu>
                   );
                 })}
-              </>
+              </SettingsGroup>
+            )}
+            {userServers.length === 0 && (
+              <SettingsGroup label={userServersLabel} cardClassName="hidden">
+                <span />
+              </SettingsGroup>
             )}
           </>
         )}
-      </ScrollableOverlay>
+      </>
 
       {/* Delete confirm dialog */}
       <Dialog

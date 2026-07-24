@@ -161,7 +161,7 @@ export const SnippetsPage: React.FC = () => {
             description={t('settings.snippets.page.hint')}
             cardClassName="p-3"
           >
-            <Textarea value={content} onChange={(e) => setContent(e.target.value)} placeholder={t('settings.snippets.page.field.contentPlaceholder')} rows={12} className="w-full font-mono typography-meta min-h-[160px] max-h-[60vh] bg-transparent" />
+            <Textarea embedded value={content} onChange={(e) => setContent(e.target.value)} placeholder={t('settings.snippets.page.field.contentPlaceholder')} rows={12} className="w-full font-mono typography-meta min-h-[160px] max-h-[60vh] bg-transparent" />
           </SettingsGroup>
         </div>
 

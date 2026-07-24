@@ -4,6 +4,7 @@ import { useUIStore } from '@/stores/useUIStore';
 import { Button } from '@/components/ui/button';
 import { SettingsSidebarLayout } from '@/components/sections/shared/SettingsSidebarLayout';
 import { SettingsSidebarItem } from '@/components/sections/shared/SettingsSidebarItem';
+import { SettingsGroup } from '@/components/sections/shared/SettingsGroup';
 import { Icon } from "@/components/icon/Icon";
 import { cn } from '@/lib/utils';
 import { isVSCodeRuntime } from '@/lib/desktop';
@@ -59,52 +60,53 @@ export const ProjectsSidebar: React.FC<{ onItemSelect?: () => void }> = ({ onIte
     <SettingsSidebarLayout
       variant="background"
       header={
-        <div className={cn('border-b px-3', 'pt-4 pb-3')}>
-          <h2 className="text-base font-semibold text-foreground mb-3">{t('settings.page.projects.title')}</h2>
-          <div className="flex items-center justify-between gap-2">
-            <span className="typography-meta text-muted-foreground">{t('settings.projects.sidebar.total', { count: projects.length })}</span>
-            {!isVSCode && (
-              <Button
-                type="button"
-                variant="ghost"
-                size="icon"
-                className="h-7 w-7 -my-1 text-muted-foreground"
-                onClick={handleAddProject}
-                aria-label={t('settings.projects.sidebar.actions.addProject')}
-              >
-                <Icon name="add" className="size-4" />
-              </Button>
-            )}
-          </div>
+        <div className="flex min-w-0 items-center justify-between gap-2 px-[var(--oc-settings-row-inset)]">
+          <span className="typography-ui-label text-foreground">
+            {t('settings.projects.sidebar.total', { count: projects.length })}
+          </span>
+          {!isVSCode && (
+            <Button
+              type="button"
+              variant="ghost"
+              size="icon"
+              className="h-7 w-7 -my-1 text-muted-foreground"
+              onClick={handleAddProject}
+              aria-label={t('settings.projects.sidebar.actions.addProject')}
+            >
+              <Icon name="add" className="size-4" />
+            </Button>
+          )}
         </div>
       }
     >
-      {projects.map((project) => {
-        const selected = project.id === selectedId;
-        const iconName = project.icon ? PROJECT_ICON_MAP[project.icon] : null;
-        const iconColor = project.color ? PROJECT_COLOR_MAP[project.color] : undefined;
-        const fallback = <Icon name={iconName ?? 'folder'} className="h-4 w-4" style={iconColor ? { color: iconColor } : undefined} />;
-        const icon = (
-          <span
-            className={cn('flex size-5 shrink-0 items-center justify-center overflow-hidden', selected ? 'text-foreground' : 'text-muted-foreground')}
-          >
-            {project.iconImage ? <ProjectIconImage project={project} className="size-full object-contain" fallback={fallback} /> : fallback}
-          </span>
-        );
+      {projects.length > 0 ? <SettingsGroup>
+        {projects.map((project) => {
+          const selected = project.id === selectedId;
+          const iconName = project.icon ? PROJECT_ICON_MAP[project.icon] : null;
+          const iconColor = project.color ? PROJECT_COLOR_MAP[project.color] : undefined;
+          const fallback = <Icon name={iconName ?? 'folder'} className="h-4 w-4" style={iconColor ? { color: iconColor } : undefined} />;
+          const icon = (
+            <span
+              className={cn('flex size-5 shrink-0 items-center justify-center overflow-hidden', selected ? 'text-foreground' : 'text-muted-foreground')}
+            >
+              {project.iconImage ? <ProjectIconImage project={project} className="size-full object-contain" fallback={fallback} /> : fallback}
+            </span>
+          );
 
-        return (
-          <SettingsSidebarItem
-            key={project.id}
-            title={project.path.split(/[\\/]/).filter(Boolean).at(-1) || project.path}
-            icon={icon}
-            selected={selected}
-            onSelect={() => {
-              setSelectedId(project.id);
-              onItemSelect?.();
-            }}
-          />
-        );
-      })}
+          return (
+            <SettingsSidebarItem
+              key={project.id}
+              title={project.path.split(/[\\/]/).filter(Boolean).at(-1) || project.path}
+              icon={icon}
+              selected={selected}
+              onSelect={() => {
+                setSelectedId(project.id);
+                onItemSelect?.();
+              }}
+            />
+          );
+        })}
+      </SettingsGroup> : null}
     </SettingsSidebarLayout>
   );
 };

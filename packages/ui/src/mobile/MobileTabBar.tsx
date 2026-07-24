@@ -6,7 +6,7 @@ import { useI18n } from '@/lib/i18n';
 import { cn } from '@/lib/utils';
 
 import { MOBILE_TABS, type MobileTabId } from './mobileTabs';
-import { MobileFloatingSurface } from './MobileSurface';
+import { MobileFloatingBottomBar } from './MobileSurface';
 
 export type MobileTabBarProps = {
   activeTab: MobileTabId;
@@ -41,62 +41,55 @@ export function MobileTabBar({ activeTab, onTabChange, className }: MobileTabBar
   });
 
   return (
-    <nav
+    <MobileFloatingBottomBar
+      as="nav"
       aria-label={t('mobile.nav.aria')}
-      className={cn(
-        'pointer-events-none fixed inset-x-0 bottom-0 z-40 flex justify-center pb-[max(1.25rem,var(--oc-safe-area-bottom-visual,0px))]',
-        className,
-      )}
+      variant="navigation"
+      surfaceProps={{ role: 'tablist' }}
+      className={className}
     >
-      <MobileFloatingSurface asChild>
-        <div
-          role="tablist"
-          className="oc-mobile-tab-dock pointer-events-auto"
-        >
-        {MOBILE_TABS.map((tab) => {
-          const selected = tab.id === activeTab;
-          const label = t(tab.labelKey);
+      {MOBILE_TABS.map((tab) => {
+        const selected = tab.id === activeTab;
+        const label = t(tab.labelKey);
 
-          return (
-            <Button
-              key={tab.id}
-              id={`mobile-tab-${tab.id}`}
-              data-tab={tab.id}
-              type="button"
-              role="tab"
-              variant="ghost"
-              size="sm"
-              aria-controls={`mobile-tabpanel-${tab.id}`}
-              aria-label={label}
-              aria-selected={selected}
-              tabIndex={selected ? 0 : -1}
-              title={label}
-              onClick={handleTabClick}
-              onKeyDown={handleTabKeyDown}
-              className={cn(
-                // Equal flex slots + min-w-0 so long locale strings truncate, never overflow.
-                'oc-mobile-tab-button min-w-0 flex-1 flex-col overflow-hidden',
-                'text-xs font-medium leading-none tracking-tight text-muted-foreground',
-                // The dock supplies immediate touch-down glass feedback in mobile.css.
-                'transition-[background-color,color,box-shadow,transform] duration-100',
-                'hover:bg-transparent hover:text-foreground',
-                'active:scale-[0.985]',
-                'motion-reduce:transition-none',
-                selected && [
-                  'bg-interactive-selection text-interactive-selection-foreground',
-                  'shadow-[0_5px_14px_color-mix(in_srgb,var(--surface-foreground)_8%,transparent),inset_0_1px_0_color-mix(in_srgb,var(--surface-elevated)_82%,transparent)]',
-                  'hover:bg-interactive-selection hover:text-interactive-selection-foreground',
-                  'font-semibold',
-                ],
-              )}
-            >
-              <Icon name={tab.icon} weight="medium" className="size-[23px] shrink-0" />
-              <span className="block max-w-full overflow-hidden text-ellipsis whitespace-nowrap">{label}</span>
-            </Button>
-          );
-        })}
-        </div>
-      </MobileFloatingSurface>
-    </nav>
+        return (
+          <Button
+            key={tab.id}
+            id={`mobile-tab-${tab.id}`}
+            data-tab={tab.id}
+            type="button"
+            role="tab"
+            variant="ghost"
+            size="sm"
+            aria-controls={`mobile-tabpanel-${tab.id}`}
+            aria-label={label}
+            aria-selected={selected}
+            tabIndex={selected ? 0 : -1}
+            title={label}
+            onClick={handleTabClick}
+            onKeyDown={handleTabKeyDown}
+            className={cn(
+              // Equal flex slots + min-w-0 so long locale strings truncate, never overflow.
+              'oc-mobile-tab-button min-w-0 flex-1 flex-col overflow-hidden',
+              'text-xs font-medium leading-none tracking-tight text-muted-foreground',
+              // The dock supplies immediate touch-down glass feedback in mobile.css.
+              'transition-[background-color,color,box-shadow,transform] duration-100',
+              'hover:bg-transparent hover:text-foreground',
+              'active:scale-[0.985]',
+              'motion-reduce:transition-none',
+              selected && [
+                'bg-interactive-selection text-interactive-selection-foreground',
+                'shadow-[0_5px_14px_color-mix(in_srgb,var(--surface-foreground)_8%,transparent),inset_0_1px_0_color-mix(in_srgb,var(--surface-elevated)_82%,transparent)]',
+                'hover:bg-interactive-selection hover:text-interactive-selection-foreground',
+                'font-semibold',
+              ],
+            )}
+          >
+            <Icon name={tab.icon} weight="medium" className="size-[23px] shrink-0" />
+            <span className="block max-w-full overflow-hidden text-ellipsis whitespace-nowrap">{label}</span>
+          </Button>
+        );
+      })}
+    </MobileFloatingBottomBar>
   );
 }

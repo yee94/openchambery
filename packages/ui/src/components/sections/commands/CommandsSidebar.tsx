@@ -22,9 +22,9 @@ import { isCommandBuiltIn, useCommandsStore } from '@/stores/useCommandsStore';
 import { useCommandsQuery, type Command } from '@/queries/commandQueries';
 import { useInstalledSkillsQuery } from '@/queries/installedSkillsQueries';
 import { useShallow } from 'zustand/react/shallow';
-import { ScrollableOverlay } from '@/components/ui/ScrollableOverlay';
 import { cn } from '@/lib/utils';
 import { SettingsProjectSelector } from '@/components/sections/shared/SettingsProjectSelector';
+import { SettingsGroup } from '@/components/sections/shared/SettingsGroup';
 import { Icon } from "@/components/icon/Icon";
 import { useI18n } from '@/lib/i18n';
 
@@ -79,8 +79,6 @@ export const CommandsSidebar: React.FC<CommandsSidebarProps> = ({ onItemSelect }
       setSelectedCommand(null);
     }
   }, [selectedCommandName, setSelectedCommand, skillNames]);
-
-  const bgClass = 'bg-background';
 
   const handleCreateNew = () => {
     // Generate unique name
@@ -222,39 +220,40 @@ export const CommandsSidebar: React.FC<CommandsSidebarProps> = ({ onItemSelect }
 
   const builtInCommands = commandOnlyItems.filter(isCommandBuiltIn);
   const customCommands = commandOnlyItems.filter((cmd) => !isCommandBuiltIn(cmd));
+  const customCommandsLabel = (
+    <div className="flex items-center justify-between gap-4">
+      <span>{t('settings.commands.sidebar.section.custom')}</span>
+      <Button
+        data-settings-item="commands.create"
+        size="icon"
+        variant="ghost"
+        onClick={handleCreateNew}
+        aria-label={t('settings.commands.page.title.new')}
+      >
+        <Icon name="add" className="h-4 w-4" />
+      </Button>
+    </div>
+  );
 
   return (
-    <div className={cn('flex h-full flex-col', bgClass)}>
-      <div className="border-b px-3 pt-4 pb-3">
-        <h2 className="text-base font-semibold text-foreground mb-3">{t('settings.commands.sidebar.title')}</h2>
-        <SettingsProjectSelector className="mb-3" />
-        <div className="flex items-center justify-between gap-2">
-          <span className="typography-meta text-muted-foreground">{t('settings.commands.sidebar.total', { count: commandOnlyItems.length })}</span>
-          <Button size="sm"
-            data-settings-item="commands.create"
-            variant="ghost"
-            className="h-7 w-7 px-0 -my-1 text-muted-foreground"
-            onClick={handleCreateNew}
-          >
-            <Icon name="add" className="h-3.5 w-3.5" />
-          </Button>
-        </div>
-      </div>
+    <div className="oc-settings-page-content h-full overflow-y-auto bg-background p-3">
+      <SettingsGroup>
+        <div className="oc-settings-group-row"><SettingsProjectSelector /></div>
+      </SettingsGroup>
 
-      <ScrollableOverlay outerClassName="flex-1 min-h-0" className="space-y-1 px-3 py-2">
+      <>
         {commandOnlyItems.length === 0 ? (
-          <div className="py-12 px-4 text-center text-muted-foreground">
-            <Icon name="terminal-box" className="mx-auto mb-3 h-10 w-10 opacity-50" />
-            <p className="typography-ui-label font-medium">{t('settings.commands.sidebar.empty.title')}</p>
-            <p className="typography-meta mt-1 opacity-75">{t('settings.commands.sidebar.empty.description')}</p>
-          </div>
+          <SettingsGroup label={customCommandsLabel}>
+            <div className="oc-settings-group-row py-12 text-center text-muted-foreground">
+              <Icon name="terminal-box" className="mx-auto mb-3 h-10 w-10 opacity-50" />
+              <p className="typography-ui-label font-medium">{t('settings.commands.sidebar.empty.title')}</p>
+              <p className="typography-meta mt-1 opacity-75">{t('settings.commands.sidebar.empty.description')}</p>
+            </div>
+          </SettingsGroup>
         ) : (
           <>
             {builtInCommands.length > 0 && (
-              <>
-                <div className="px-2 pb-1.5 pt-2 text-xs font-semibold uppercase tracking-wide text-muted-foreground">
-                  {t('settings.commands.sidebar.section.builtIn')}
-                </div>
+              <SettingsGroup label={t('settings.commands.sidebar.section.builtIn')}>
                 {[...builtInCommands].sort((a, b) => a.name.localeCompare(b.name)).map((command) => (
                   <CommandListItem
                     key={command.name}
@@ -271,14 +270,11 @@ export const CommandsSidebar: React.FC<CommandsSidebarProps> = ({ onItemSelect }
                     onMenuOpenChange={(open) => setOpenMenuCommand(open ? command.name : null)}
                   />
                 ))}
-              </>
+              </SettingsGroup>
             )}
 
-            {customCommands.length > 0 && (
-              <>
-                <div className="px-2 pb-1.5 pt-3 text-xs font-semibold uppercase tracking-wide text-muted-foreground">
-                  {t('settings.commands.sidebar.section.custom')}
-                </div>
+            {customCommands.length > 0 ? (
+              <SettingsGroup label={customCommandsLabel}>
                 {[...customCommands].sort((a, b) => a.name.localeCompare(b.name)).map((command) => (
                   <CommandListItem
                     key={command.name}
@@ -296,11 +292,15 @@ export const CommandsSidebar: React.FC<CommandsSidebarProps> = ({ onItemSelect }
                     onMenuOpenChange={(open) => setOpenMenuCommand(open ? command.name : null)}
                   />
                 ))}
-              </>
+              </SettingsGroup>
+            ) : (
+              <SettingsGroup label={customCommandsLabel} cardClassName="hidden">
+                <span />
+              </SettingsGroup>
             )}
           </>
         )}
-      </ScrollableOverlay>
+      </>
 
       <Dialog
         open={confirmActionCommand !== null && confirmActionType !== null}
@@ -427,7 +427,7 @@ const CommandListItem: React.FC<CommandListItemProps> = ({
   );
   return (
     <ContextMenu open={isContextMenuOpen} onOpenChange={setIsContextMenuOpen}>
-      <ContextMenuTrigger render={<div className={cn('group relative flex items-center rounded-md px-1.5 py-1 transition-all duration-200 select-none', isSelected ? 'bg-interactive-selection' : 'hover:bg-interactive-hover')} onContextMenu={!isMobile ? (e) => { e.preventDefault(); setIsContextMenuOpen(true); } : undefined} />}>
+      <ContextMenuTrigger render={<div className={cn('oc-settings-group-row group relative flex items-center transition-colors duration-150 select-none', isSelected ? 'bg-interactive-selection' : 'hover:bg-interactive-hover')} onContextMenu={!isMobile ? (e) => { e.preventDefault(); setIsContextMenuOpen(true); } : undefined} />}>
       <div className="flex min-w-0 flex-1 items-center">
         <button
           onClick={onSelect}

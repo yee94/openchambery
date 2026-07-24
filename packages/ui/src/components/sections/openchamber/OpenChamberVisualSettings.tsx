@@ -865,20 +865,25 @@ export const OpenChamberVisualSettings: React.FC<OpenChamberVisualSettingsProps>
                                 isMobile={isMobile}
                                 label={t('settings.openchamber.visual.section.colorMode')}
                             >
-                                <div className="oc-settings-group-row oc-settings-options-row flex flex-wrap items-center gap-1">
-                                    {THEME_MODE_OPTIONS.map((option) => (
-                                        <Button
-                                            key={option.value}
-                                            variant="chip"
-                                            size="xs"
-                                            aria-pressed={themeMode === option.value}
-                                            className="oc-mobile-settings-chip !font-normal"
-                                            onClick={() => setThemeMode(option.value)}
-                                        >
-                                            {tUnsafe(option.labelKey)}
-                                        </Button>
-                                    ))}
-                                </div>
+                                <ResponsiveSettingsRow
+                                    isMobile={isMobile}
+                                    label={t('settings.openchamber.visual.field.display')}
+                                >
+                                    <div className="flex flex-wrap items-center justify-end gap-1">
+                                        {THEME_MODE_OPTIONS.map((option) => (
+                                            <Button
+                                                key={option.value}
+                                                variant="chip"
+                                                size="xs"
+                                                aria-pressed={themeMode === option.value}
+                                                className="oc-mobile-settings-chip !font-normal"
+                                                onClick={() => setThemeMode(option.value)}
+                                            >
+                                                {tUnsafe(option.labelKey)}
+                                            </Button>
+                                        ))}
+                                    </div>
+                                </ResponsiveSettingsRow>
 
                                 <>
                                     <ResponsiveSettingsRow
@@ -927,7 +932,11 @@ export const OpenChamberVisualSettings: React.FC<OpenChamberVisualSettingsProps>
                                     </ResponsiveSettingsRow>
                                 </>
 
-                                <div className="oc-settings-group-row flex items-center gap-2">
+                                <ResponsiveSettingsRow
+                                    isMobile={isMobile}
+                                    label={null}
+                                    mobileLabel={null}
+                                >
                                     <button
                                         type="button"
                                         disabled={customThemesLoading || themesReloading}
@@ -963,7 +972,7 @@ export const OpenChamberVisualSettings: React.FC<OpenChamberVisualSettingsProps>
                                             {t('settings.openchamber.visual.field.themeImportInfoTooltip')}
                                         </TooltipContent>
                                     </Tooltip>
-                                </div>
+                                </ResponsiveSettingsRow>
 
                                 {macVibrancySupported && (
                                     <div data-settings-item="appearance.window-transparency" className="oc-settings-group-row flex flex-col gap-1.5">
@@ -1125,7 +1134,6 @@ export const OpenChamberVisualSettings: React.FC<OpenChamberVisualSettingsProps>
                                 label={t('settings.openchamber.visual.field.sidebarBrand')}
                                 description={t('settings.openchamber.visual.field.sidebarBrandHint')}
                                 descriptionPlacement="outside"
-                                className="oc-settings-split-row-stacked"
                             >
                                 <Input
                                     value={sidebarBrandName}
@@ -1144,7 +1152,6 @@ export const OpenChamberVisualSettings: React.FC<OpenChamberVisualSettingsProps>
                                         itemId="appearance.pwa-install-name"
                                         label={t('settings.openchamber.visual.field.installAppName')}
                                         description={t('settings.openchamber.visual.field.installAppNameHint')}
-                                        className="oc-settings-split-row-stacked"
                                     >
                                         <Input
                                             value={pwaInstallName}
@@ -1186,7 +1193,6 @@ export const OpenChamberVisualSettings: React.FC<OpenChamberVisualSettingsProps>
                                         label={t('settings.openchamber.visual.field.installOrientation')}
                                         description={t('settings.openchamber.visual.field.installOrientationHint')}
                                         descriptionPlacement="outside"
-                                        className="oc-settings-split-row-stacked"
                                     >
                                         <Select
                                             value={pwaOrientation}
@@ -1233,7 +1239,6 @@ export const OpenChamberVisualSettings: React.FC<OpenChamberVisualSettingsProps>
                                         label={t('settings.openchamber.visual.field.mobileKeyboardMode')}
                                         description={t('settings.openchamber.visual.field.mobileKeyboardModeHint')}
                                         descriptionPlacement="outside"
-                                        className="oc-settings-split-row-stacked"
                                     >
                                         <Select
                                             value={mobileKeyboardMode}
@@ -1588,60 +1593,42 @@ export const OpenChamberVisualSettings: React.FC<OpenChamberVisualSettingsProps>
                                 </ResponsiveSettingsRow>
                             )}
                             {shouldShow('expandedEditorToolbar') && (
-                                <div
-                                    data-settings-item="appearance.expanded-editor-toolbar"
-                                    className="oc-settings-group-row group flex cursor-pointer items-center gap-2"
-                                    role="button"
-                                    tabIndex={0}
-                                    aria-pressed={expandedEditorToolbar}
-                                    onClick={() => handleExpandedEditorToolbarChange(!expandedEditorToolbar)}
-                                    onKeyDown={(event) => {
-                                        if (event.key === ' ' || event.key === 'Enter') {
-                                            event.preventDefault();
-                                            handleExpandedEditorToolbarChange(!expandedEditorToolbar);
-                                        }
-                                    }}
+                                <ResponsiveSettingsRow
+                                    isMobile={isMobile}
+                                    itemId="appearance.expanded-editor-toolbar"
+                                    label={t('settings.openchamber.visual.field.expandedEditorToolbar')}
                                 >
                                     <Checkbox
                                         checked={expandedEditorToolbar}
                                         onChange={handleExpandedEditorToolbarChange}
                                         ariaLabel={t('settings.openchamber.visual.field.expandedEditorToolbarAria')}
                                     />
-                                    <span className="typography-ui-label text-foreground">{t('settings.openchamber.visual.field.expandedEditorToolbar')}</span>
-                                </div>
+                                </ResponsiveSettingsRow>
                             )}
                             {shouldShow('terminalQuickKeys') && !isMobile && !isDesktopShell() && (
-                                <div
-                                    data-settings-item="appearance.terminal-quick-keys"
-                                    className="oc-settings-group-row group flex cursor-pointer items-center gap-2"
-                                    role="button"
-                                    tabIndex={0}
-                                    aria-pressed={showTerminalQuickKeysOnDesktop}
-                                    onClick={() => setShowTerminalQuickKeysOnDesktop(!showTerminalQuickKeysOnDesktop)}
-                                    onKeyDown={(event) => {
-                                        if (event.key === ' ' || event.key === 'Enter') {
-                                            event.preventDefault();
-                                            setShowTerminalQuickKeysOnDesktop(!showTerminalQuickKeysOnDesktop);
-                                        }
-                                    }}
+                                <ResponsiveSettingsRow
+                                    isMobile={isMobile}
+                                    itemId="appearance.terminal-quick-keys"
+                                    label={(
+                                        <span className="flex min-w-0 items-center gap-1.5">
+                                            <span>{t('settings.openchamber.visual.field.terminalQuickKeys')}</span>
+                                            <Tooltip>
+                                                <TooltipTrigger asChild>
+                                                    <Icon name="information" className="h-3.5 w-3.5 text-muted-foreground/60 cursor-help" />
+                                                </TooltipTrigger>
+                                                <TooltipContent sideOffset={8} className="max-w-xs">
+                                                    {t('settings.openchamber.visual.field.terminalQuickKeysTooltip')}
+                                                </TooltipContent>
+                                            </Tooltip>
+                                        </span>
+                                    )}
                                 >
                                     <Checkbox
                                         checked={showTerminalQuickKeysOnDesktop}
                                         onChange={setShowTerminalQuickKeysOnDesktop}
                                         ariaLabel={t('settings.openchamber.visual.field.terminalQuickKeysAria')}
                                     />
-                                    <div className="flex min-w-0 items-center gap-1.5">
-                                        <span className="typography-ui-label text-foreground">{t('settings.openchamber.visual.field.terminalQuickKeys')}</span>
-                                        <Tooltip>
-                                            <TooltipTrigger asChild>
-                                                <Icon name="information" className="h-3.5 w-3.5 text-muted-foreground/60 cursor-help" />
-                                            </TooltipTrigger>
-                                            <TooltipContent sideOffset={8} className="max-w-xs">
-                                                {t('settings.openchamber.visual.field.terminalQuickKeysTooltip')}
-                                            </TooltipContent>
-                                        </Tooltip>
-                                    </div>
-                                </div>
+                                </ResponsiveSettingsRow>
                             )}
                         </ResponsiveSettingsGroup>
                     </>

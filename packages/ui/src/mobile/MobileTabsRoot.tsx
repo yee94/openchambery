@@ -25,8 +25,10 @@ export type MobileTabsRootProps = {
   navigation: MobileNavigationState;
   onTabChange: (tab: MobileTabId) => void;
   secondaryPage?: MobileSecondaryPage | null;
-  /** Allows an in-tab detail editor to replace the root dock with its own footer. */
+  /** Controls whether this shell has a root dock at all. Push pages retain it underneath. */
   showTabBar?: boolean;
+  /** Keeps the retained dock non-interactive while an in-tab push page covers it. */
+  tabBarCovered?: boolean;
   className?: string;
 };
 
@@ -42,6 +44,7 @@ export function MobileTabsRoot({
   onTabChange,
   secondaryPage,
   showTabBar = true,
+  tabBarCovered = false,
   className,
 }: MobileTabsRootProps) {
   const { t } = useI18n();
@@ -62,6 +65,7 @@ export function MobileTabsRoot({
   }
 
   const secondaryHostRef = React.useRef<HTMLDivElement | null>(null);
+  const rootUnderlayRef = React.useRef<HTMLDivElement | null>(null);
   const restoreFocusRef = React.useRef<HTMLElement | null>(null);
   const hadSecondaryRef = React.useRef(false);
 
@@ -70,6 +74,7 @@ export function MobileTabsRoot({
     active: Boolean(secondaryPage),
     onBack: () => secondaryPage?.onBack(),
     surfaceRef: secondaryHostRef,
+    underlayRef: rootUnderlayRef,
   });
 
   // Focus contract: when a secondary page opens, capture the current trigger
@@ -108,6 +113,7 @@ export function MobileTabsRoot({
       )}
     >
       <div
+        ref={rootUnderlayRef}
         data-mobile-navigation-underlay="true"
         aria-hidden={secondaryPage ? true : undefined}
         inert={secondaryPage ? true : undefined}
@@ -139,8 +145,8 @@ export function MobileTabsRoot({
       {showTabBar ? (
         <div
           data-mobile-navigation-dock-underlay="true"
-          aria-hidden={secondaryPage ? true : undefined}
-          inert={secondaryPage ? true : undefined}
+          aria-hidden={secondaryPage || tabBarCovered ? true : undefined}
+          inert={secondaryPage || tabBarCovered ? true : undefined}
         >
           <MobileTabBar activeTab={selectedTab} onTabChange={handleTabChange} />
         </div>

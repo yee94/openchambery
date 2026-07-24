@@ -242,6 +242,7 @@ export const CommandsPage: React.FC = () => {
 
             <SettingsRow label={t('settings.common.field.description')} className="oc-settings-split-row-stacked">
                 <Textarea
+                  embedded
                   value={description}
                   onChange={(e) => setDescription(e.target.value)}
                   placeholder={t('settings.commands.page.field.descriptionPlaceholder')}
@@ -300,6 +301,7 @@ export const CommandsPage: React.FC = () => {
           className="oc-settings-split-row-stacked"
         >
             <Textarea
+              embedded
               value={template}
               onChange={(e) => setTemplate(e.target.value)}
               placeholder={t('settings.commands.page.field.templatePlaceholder')}

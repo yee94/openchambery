@@ -99,16 +99,44 @@
   );
 }
 
-.oc-mobile-tab-dock {
+.oc-mobile-floating-bottom-bar-frame {
+  pointer-events: none;
+  position: fixed;
+  right: 0;
+  bottom: 0;
+  left: 0;
+  width: 100vw;
+  z-index: 40;
+  display: flex;
+  justify-content: center;
+  padding-bottom: max(
+    1.25rem,
+    var(--oc-safe-area-bottom-visual, 0px)
+  );
+}
+
+.oc-mobile-floating-bottom-bar {
+  pointer-events: auto;
   display: flex;
   width: calc(100% - (var(--oc-mobile-dock-inline-inset) * 2));
   max-width: var(--oc-mobile-dock-max-width);
   height: var(--oc-mobile-dock-height);
   align-items: center;
-  gap: var(--oc-mobile-dock-gap);
-  padding: var(--oc-mobile-dock-inner-inset);
   border-radius: var(--oc-mobile-dock-radius);
   corner-shape: round;
+}
+
+.oc-mobile-floating-bottom-bar-navigation {
+  gap: var(--oc-mobile-dock-gap);
+  padding: var(--oc-mobile-dock-inner-inset);
+}
+
+.oc-mobile-floating-bottom-bar-actions {
+  padding: 0.5rem 0.875rem;
+}
+
+.oc-mobile-floating-bottom-bar-actions > * {
+  width: 100%;
 }
 
 .oc-mobile-tab-button {
@@ -651,6 +679,10 @@ button.oc-mobile-group-label-trigger:focus-visible {
   background: transparent;
 }
 
+.oc-mobile-settings-root-surface {
+  background: var(--surface-background);
+}
+
 .oc-mobile-settings-search {
   width: 100%;
   padding: 0;
@@ -780,15 +812,11 @@ button.oc-mobile-group-label-trigger:focus-visible {
   z-index: 30;
 }
 
-/* Root tabs keep comfortable page gutters. Secondary pages deliberately
-   escape those gutters: their navigation begins at the physical top edge and
-   owns the safe area plus the full-width fade into scrollable content. */
+/* Root tabs keep comfortable page gutters. Secondary detail surfaces may
+   already be viewport-fixed, so the shared header must not apply a compensating
+   negative margin. Its content owns the physical edge inset and safe area. */
 .oc-mobile-floating-shell [role="tabpanel"]:has(.oc-mobile-detail-navigation) {
   padding-top: 0;
-}
-
-.oc-mobile-tab-page-flow .oc-mobile-detail-navigation {
-  margin-inline: calc(-1 * var(--oc-mobile-page-inline-inset));
 }
 
 .oc-mobile-detail-navigation-content {

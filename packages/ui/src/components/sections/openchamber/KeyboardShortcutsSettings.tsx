@@ -157,9 +157,9 @@ export const KeyboardShortcutsSettings: React.FC = () => {
   }, [clearShortcutOverride, persistShortcutOverrides, shortcutOverrides]);
 
   return (
-    <div data-settings-item="shortcuts.keyboard-shortcuts">
-      <SettingsGroup
-        label={(
+    <SettingsGroup
+      itemId="shortcuts.keyboard-shortcuts"
+      label={(
         <div className="flex items-center gap-2">
           <span>{t('settings.openchamber.keyboardShortcuts.title')}</span>
           <Button
@@ -187,8 +187,8 @@ export const KeyboardShortcutsSettings: React.FC = () => {
             </TooltipContent>
           </Tooltip>
         </div>
-        )}
-      >
+      )}
+    >
 
       {(errorText || warningText || pendingOverwrite) && (
         <div className="mb-2 space-y-2 px-1">
@@ -286,7 +286,6 @@ export const KeyboardShortcutsSettings: React.FC = () => {
             </SettingsRow>
           );
         })}
-      </SettingsGroup>
-    </div>
+    </SettingsGroup>
   );
 };

@@ -35,6 +35,7 @@ import { useEvent } from '@reactuses/core';
 import { AnimatePresence, motion, useReducedMotion } from 'motion/react';
 import { queryClient, queryKeys } from '@/lib/queryRuntime';
 import { useMobileBackRoute } from '@/mobile/mobileBackNavigation';
+import { MobileTabPageHeader } from '@/mobile/MobileTabPageHeader';
 
 const scheduleTimes = (task: ScheduledTask): string[] => {
   const raw = Array.isArray(task.schedule.times)
@@ -255,6 +256,7 @@ export function ScheduledTasksWorkspace({
   const [contextMenuTaskIdentity, setContextMenuTaskIdentity] = React.useState<string | null>(null);
   const [dropdownMenuTaskIdentity, setDropdownMenuTaskIdentity] = React.useState<string | null>(null);
   const mobileNavigationSurfaceRef = React.useRef<HTMLDivElement | null>(null);
+  const mobileNavigationUnderlayRef = React.useRef<HTMLDivElement | null>(null);
   // `mobile-tab` shares the mobile layout but is hosted as a root tab page:
   // no panel header (the tab supplies its own large-title header) and no
   // close/back wiring against the dialog open flag.
@@ -457,6 +459,7 @@ export function ScheduledTasksWorkspace({
     active: isMobileTab && editorMode !== 'closed',
     onBack: handleEditorBack,
     surfaceRef: mobileNavigationSurfaceRef,
+    underlayRef: mobileNavigationUnderlayRef,
   });
 
   React.useEffect(() => {
@@ -569,11 +572,23 @@ export function ScheduledTasksWorkspace({
   }));
 
   return (
-    <div ref={mobileNavigationSurfaceRef} className={cn(
+    <div className={cn(
       'relative flex min-h-0 bg-background',
       isMobileTab ? 'oc-mobile-scheduled-workspace flex-col overflow-visible' : 'h-full overflow-hidden',
       isMobilePanel && 'flex-col',
     )} data-presentation={presentation}>
+      <div
+        ref={isMobileTab ? mobileNavigationUnderlayRef : undefined}
+        data-mobile-navigation-underlay={isMobileTab ? 'true' : undefined}
+        aria-hidden={isMobileTab && editorMode !== 'closed' ? true : undefined}
+        inert={isMobileTab && editorMode !== 'closed' ? true : undefined}
+        className={cn(
+          isMobileTab
+            ? 'fixed inset-0 z-20 flex h-[100dvh] w-full min-w-0 max-w-full flex-col gap-[var(--oc-mobile-page-gap)] overflow-y-auto overflow-x-hidden overscroll-contain bg-background px-[var(--oc-mobile-page-inline-inset)] pb-[calc(var(--oc-mobile-dock-height)+2.5rem+var(--safe-area-inset-bottom,env(safe-area-inset-bottom,0px)))] pt-[calc(var(--safe-area-inset-top,env(safe-area-inset-top,0px))+1rem)] [contain:layout_paint]'
+            : 'contents',
+        )}
+      >
+      {isMobileTab ? <MobileTabPageHeader title={t('sessions.scheduledTasks.dialog.title')} /> : null}
       {isMobilePanel && !isMobileTab ? (
         <header className="flex h-14 shrink-0 items-center gap-2 border-b border-border/40 px-2">
           {editorMode !== 'closed' ? (
@@ -645,11 +660,11 @@ export function ScheduledTasksWorkspace({
       <section className={cn(
         'min-w-0 flex-1 flex-col transition-[width] duration-300 ease-out',
         isMobileTab ? 'overflow-visible' : 'overflow-hidden',
-        isMobilePanel && editorMode !== 'closed' ? 'hidden' : 'flex',
+        isMobilePanel && !isMobileTab && editorMode !== 'closed' ? 'hidden' : 'flex',
       )}>
         <header className={cn(
           'shrink-0',
-          isMobileTab ? 'pb-0 pt-3' : isMobilePanel ? 'px-3 pb-3 pt-3' : 'px-4 pb-5 pt-4 sm:px-6',
+          isMobileTab ? 'pb-0 pt-0' : isMobilePanel ? 'px-3 pb-3 pt-3' : 'px-4 pb-5 pt-4 sm:px-6',
         )}>
           <div className={cn('mx-auto w-full', isMobileTab ? 'max-w-[26rem]' : 'max-w-4xl')}>
           <div className={cn(
@@ -965,6 +980,7 @@ export function ScheduledTasksWorkspace({
           </div>
         </div>
       </section>
+      </div>
 
       {!isMobile ? (
         <AnimatePresence initial={false}>
@@ -998,21 +1014,30 @@ export function ScheduledTasksWorkspace({
           ) : null}
         </AnimatePresence>
       ) : editorMode !== 'closed' ? (
-        <ScheduledTaskEditorDialog
-          open
-          presentation={isMobileTab ? 'mobile-tab' : isMobilePanel ? 'mobile-panel' : undefined}
-          task={editorMode === 'edit' ? selectedTask : null}
-          onOpenChange={handleCancelEditor}
-          onSave={handleSaveTask}
-          onDirtyChange={setDraftDirty}
-          onRun={async () => { if (selectedTaskEntry) await handleRunTask(selectedTaskEntry); }}
-          onDelete={async () => { if (selectedTaskEntry) await handleDeleteTask(selectedTaskEntry); }}
-          onToggleEnabled={async (_task, enabled) => { if (selectedTaskEntry) await handleToggleTask(selectedTaskEntry, enabled); }}
-          actionBusy={Boolean(mutatingTaskIdentity)}
-          projectID={selectedTaskIdentity?.projectId || createProjectID}
-          projectOptions={editorProjectOptions}
-          onProjectChange={editorMode === 'create' ? setCreateProjectID : undefined}
-        />
+        <div
+          ref={isMobileTab ? mobileNavigationSurfaceRef : undefined}
+          className={cn(
+            isMobileTab
+              ? 'fixed inset-0 z-50 flex h-[100dvh] w-full min-w-0 max-w-full flex-col overflow-hidden bg-background [contain:layout_paint]'
+              : 'contents',
+          )}
+        >
+          <ScheduledTaskEditorDialog
+            open
+            presentation={isMobileTab ? 'mobile-tab' : isMobilePanel ? 'mobile-panel' : undefined}
+            task={editorMode === 'edit' ? selectedTask : null}
+            onOpenChange={handleCancelEditor}
+            onSave={handleSaveTask}
+            onDirtyChange={setDraftDirty}
+            onRun={async () => { if (selectedTaskEntry) await handleRunTask(selectedTaskEntry); }}
+            onDelete={async () => { if (selectedTaskEntry) await handleDeleteTask(selectedTaskEntry); }}
+            onToggleEnabled={async (_task, enabled) => { if (selectedTaskEntry) await handleToggleTask(selectedTaskEntry, enabled); }}
+            actionBusy={Boolean(mutatingTaskIdentity)}
+            projectID={selectedTaskIdentity?.projectId || createProjectID}
+            projectOptions={editorProjectOptions}
+            onProjectChange={editorMode === 'create' ? setCreateProjectID : undefined}
+          />
+        </div>
       ) : null}
     </div>
   );

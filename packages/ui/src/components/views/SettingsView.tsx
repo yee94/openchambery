@@ -86,6 +86,7 @@ import {
 } from "@/lib/settings/search";
 import { MobileFloatingSurface } from "@/mobile/MobileSurface";
 import { MobileDetailNavigation } from "@/mobile/MobileDetailNavigation";
+import { MobileTabPageHeader } from "@/mobile/MobileTabPageHeader";
 import { MobileSettingsGroup } from "@/mobile/settings/MobileSettingsGroup";
 import { useMobileBackRoute } from "@/mobile/mobileBackNavigation";
 
@@ -417,6 +418,7 @@ export const SettingsView: React.FC<SettingsViewProps> = ({
   const startWidthRef = React.useRef(navWidth);
   const containerRef = React.useRef<HTMLDivElement>(null);
   const mobileBackSurfaceRef = React.useRef<HTMLDivElement>(null);
+  const mobileBackUnderlayRef = React.useRef<HTMLDivElement>(null);
   const searchResultRefs = React.useRef<(HTMLButtonElement | null)[]>([]);
   const activeSearchResultIndexRef = React.useRef(0);
   const keyboardSearchNavigationRef = React.useRef(false);
@@ -1195,6 +1197,7 @@ export const SettingsView: React.FC<SettingsViewProps> = ({
     active: mobileFlow && mobileStage !== "nav",
     onBack: handleBack,
     surfaceRef: mobileBackSurfaceRef,
+    underlayRef: mobileBackUnderlayRef,
   });
 
   React.useEffect(() => {
@@ -1654,18 +1657,20 @@ export const SettingsView: React.FC<SettingsViewProps> = ({
         className="oc-settings-workspace oc-settings-workspace-mobile h-auto w-full min-w-0 overflow-visible bg-transparent"
       >
         <div
+          ref={mobileBackUnderlayRef}
           data-mobile-navigation-underlay="true"
           aria-hidden={detailActive ? "true" : undefined}
           inert={detailActive ? true : undefined}
-          className="w-full min-w-0"
+          className="oc-mobile-settings-root-surface fixed inset-0 z-20 flex h-[100dvh] w-full min-w-0 max-w-full flex-col gap-6 overflow-y-auto overflow-x-hidden overscroll-contain px-[var(--oc-mobile-page-inline-inset)] pb-[calc(var(--oc-mobile-dock-height)+2.5rem+var(--safe-area-inset-bottom,env(safe-area-inset-bottom,0px)))] pt-[calc(var(--safe-area-inset-top,env(safe-area-inset-top,0px))+1rem)] [contain:layout_paint]"
         >
+          <MobileTabPageHeader title={t("mobile.settings.placeholder.title")} />
           {renderMobileNavStage()}
         </div>
         {detailActive ? (
           <div
             ref={mobileBackSurfaceRef}
             data-mobile-settings-push-surface="true"
-            className="fixed inset-0 z-30 flex h-[100dvh] w-full min-w-0 max-w-full touch-pan-y flex-col overflow-hidden bg-background [contain:layout_paint]"
+            className="fixed inset-0 z-50 flex h-[100dvh] w-full min-w-0 max-w-full touch-pan-y flex-col overflow-hidden bg-background [contain:layout_paint]"
           >
             {renderMobileDetailNavigation()}
             <div className="min-h-0 w-full flex-1 overflow-y-auto overflow-x-hidden overscroll-contain px-[var(--oc-mobile-page-inline-inset)]">

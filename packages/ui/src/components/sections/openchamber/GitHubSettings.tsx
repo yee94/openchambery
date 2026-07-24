@@ -36,7 +36,11 @@ type DeviceFlowCompleteResponse =
   | { connected: true; user: GitHubUser; scope?: string }
   | { connected: false; status?: string; error?: string };
 
-export const GitHubSettings: React.FC = () => {
+type GitHubSettingsProps = {
+  itemId?: string;
+};
+
+export const GitHubSettings: React.FC<GitHubSettingsProps> = ({ itemId }) => {
   const { t } = useI18n();
   const { isMobile } = useDeviceInfo();
   const runtimeGitHub = getRegisteredRuntimeAPIs()?.github;
@@ -301,6 +305,7 @@ export const GitHubSettings: React.FC = () => {
   return (
     <div className="oc-settings-section-stack">
       <SettingsGroup
+        itemId={itemId}
         label={(
         <div className="flex items-center gap-2">
           <span>{t('settings.github.page.oauth.title')}</span>

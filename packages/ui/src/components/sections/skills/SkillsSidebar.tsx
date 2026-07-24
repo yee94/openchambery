@@ -22,9 +22,9 @@ import { useSkillsStore, type DiscoveredSkill } from '@/stores/useSkillsStore';
 import { resolveInstalledSkillsQueryDirectory, useInstalledSkillsQuery } from '@/queries/installedSkillsQueries';
 import { useShallow } from 'zustand/react/shallow';
 import { cn } from '@/lib/utils';
-import { ScrollableOverlay } from '@/components/ui/ScrollableOverlay';
 import { SettingsProjectSelector } from '@/components/sections/shared/SettingsProjectSelector';
 import { SidebarGroup } from '@/components/sections/shared/SidebarGroup';
+import { SettingsGroup } from '@/components/sections/shared/SettingsGroup';
 import { Icon } from "@/components/icon/Icon";
 import { useI18n } from '@/lib/i18n';
 
@@ -230,138 +230,93 @@ export const SkillsSidebar: React.FC<SkillsSidebarProps> = ({ onItemSelect }) =>
 
   const groupedProjectSkills = useMemo(() => groupSkillsByFolder(projectSkills), [projectSkills]);
   const groupedUserSkills = useMemo(() => groupSkillsByFolder(userSkills), [userSkills]);
+  const projectSectionLabel = t('settings.skills.sidebar.section.project');
+  const userSectionLabel = t('settings.skills.sidebar.section.user');
+  const projectSectionLabelWithAdd = (
+    <div className="flex items-center justify-between gap-4">
+      <span>{projectSectionLabel}</span>
+      <Button
+        data-settings-item="skills.create"
+        size="icon"
+        variant="ghost"
+        aria-label={t('settings.skills.page.title.newSkill')}
+        onClick={handleCreateNew}
+      >
+        <Icon name="add" className="h-4 w-4" />
+      </Button>
+    </div>
+  );
+
+  const renderSkillListItem = (skill: DiscoveredSkill) => (
+    <SkillListItem
+      key={skill.name}
+      skill={skill}
+      isSelected={selectedSkillName === skill.name}
+      onSelect={() => {
+        setSelectedSkill(skill.name);
+        onItemSelect?.();
+      }}
+      onRename={() => handleOpenRenameDialog(skill)}
+      onDelete={() => handleDeleteSkill(skill)}
+      onDuplicate={() => handleDuplicateSkill(skill)}
+      isMenuOpen={openMenuSkill === skill.name}
+      onMenuOpenChange={(open) => setOpenMenuSkill(open ? skill.name : null)}
+    />
+  );
 
   return (
-    <div className={cn('flex h-full flex-col', bgClass)}>
-      <div className="border-b px-3 pt-4 pb-3">
-        <h2 className="text-base font-semibold text-foreground mb-3">{t('settings.skills.sidebar.title')}</h2>
-        <SettingsProjectSelector className="mb-3" />
-        <div className="flex items-center justify-between gap-2">
-          <span className="typography-meta text-muted-foreground">{t('settings.skills.sidebar.total', { count: skills.length })}</span>
-          <Button size="sm"
-            data-settings-item="skills.create"
-            variant="ghost"
-            className="h-7 w-7 px-0 -my-1 text-muted-foreground"
-            onClick={handleCreateNew}
-          >
-            <Icon name="add" className="h-3.5 w-3.5" />
-          </Button>
-        </div>
-      </div>
+    <div className={cn('oc-settings-page-content h-full overflow-y-auto p-3', bgClass)}>
+      <SettingsProjectSelector />
 
-      <ScrollableOverlay outerClassName="flex-1 min-h-0" className="space-y-1 px-3 py-2 overflow-x-hidden">
-        {skills.length === 0 ? (
-          <div className="py-12 px-4 text-center text-muted-foreground">
+      {skills.length === 0 ? (
+        <SettingsGroup>
+          <div className="oc-settings-group-row py-12 text-center text-muted-foreground">
             <Icon name="book-open" className="mx-auto mb-3 h-10 w-10 opacity-50" />
             <p className="typography-ui-label font-medium">{t('settings.skills.sidebar.empty.title')}</p>
             <p className="typography-meta mt-1 opacity-75">{t('settings.skills.sidebar.empty.description')}</p>
           </div>
-        ) : (
-          <>
-            {projectSkills.length > 0 && (
-              <>
-                <div className="px-2 pb-1.5 pt-2 text-xs font-semibold uppercase tracking-wide text-muted-foreground">
-                  {t('settings.skills.sidebar.section.project')}
-                </div>
-                {groupedProjectSkills.sortedGroups.map(({ name: groupName, skills: groupSkills }) => (
-                  <SidebarGroup
-                    key={groupName}
-                    label={groupName}
-                    count={groupSkills.length}
-                    storageKey="project-skills"
-                  >
-                    {groupSkills.map((skill) => (
-                      <SkillListItem
-                        key={skill.name}
-                        skill={skill}
-                        isSelected={selectedSkillName === skill.name}
-                        onSelect={() => {
-                          setSelectedSkill(skill.name);
-                          onItemSelect?.();
+        </SettingsGroup>
+      ) : null}
 
-                        }}
-                        onRename={() => handleOpenRenameDialog(skill)}
-                        onDelete={() => handleDeleteSkill(skill)}
-                        onDuplicate={() => handleDuplicateSkill(skill)}
-                        isMenuOpen={openMenuSkill === skill.name}
-                        onMenuOpenChange={(open) => setOpenMenuSkill(open ? skill.name : null)}
-                      />
-                    ))}
-                  </SidebarGroup>
-                ))}
-                {groupedProjectSkills.ungrouped.map((skill) => (
-                  <SkillListItem
-                    key={skill.name}
-                    skill={skill}
-                    isSelected={selectedSkillName === skill.name}
-                    onSelect={() => {
-                      setSelectedSkill(skill.name);
-                      onItemSelect?.();
+      {groupedProjectSkills.ungrouped.length > 0 ? (
+        <SettingsGroup label={projectSectionLabelWithAdd}>
+          {groupedProjectSkills.ungrouped.map(renderSkillListItem)}
+        </SettingsGroup>
+      ) : (
+        <SettingsGroup label={projectSectionLabelWithAdd} cardClassName="hidden">
+          <span />
+        </SettingsGroup>
+      )}
+      {groupedProjectSkills.sortedGroups.map(({ name: groupName, skills: groupSkills }) => (
+        <SidebarGroup
+          key={groupName}
+          label={groupName}
+          labelPrefix={projectSectionLabel}
+          count={groupSkills.length}
+          storageKey="project-skills"
+          variant="settings-card"
+        >
+          {groupSkills.map(renderSkillListItem)}
+        </SidebarGroup>
+      ))}
 
-                    }}
-                    onRename={() => handleOpenRenameDialog(skill)}
-                    onDelete={() => handleDeleteSkill(skill)}
-                    onDuplicate={() => handleDuplicateSkill(skill)}
-                    isMenuOpen={openMenuSkill === skill.name}
-                    onMenuOpenChange={(open) => setOpenMenuSkill(open ? skill.name : null)}
-                  />
-                ))}
-              </>
-            )}
-
-            {userSkills.length > 0 && (
-              <>
-                <div className="px-2 pb-1.5 pt-3 text-xs font-semibold uppercase tracking-wide text-muted-foreground">
-                  {t('settings.skills.sidebar.section.user')}
-                </div>
-                {groupedUserSkills.sortedGroups.map(({ name: groupName, skills: groupSkills }) => (
-                  <SidebarGroup
-                    key={groupName}
-                    label={groupName}
-                    count={groupSkills.length}
-                    storageKey="user-skills"
-                  >
-                    {groupSkills.map((skill) => (
-                      <SkillListItem
-                        key={skill.name}
-                        skill={skill}
-                        isSelected={selectedSkillName === skill.name}
-                        onSelect={() => {
-                          setSelectedSkill(skill.name);
-                          onItemSelect?.();
-
-                        }}
-                        onRename={() => handleOpenRenameDialog(skill)}
-                        onDelete={() => handleDeleteSkill(skill)}
-                        onDuplicate={() => handleDuplicateSkill(skill)}
-                        isMenuOpen={openMenuSkill === skill.name}
-                        onMenuOpenChange={(open) => setOpenMenuSkill(open ? skill.name : null)}
-                      />
-                    ))}
-                  </SidebarGroup>
-                ))}
-                {groupedUserSkills.ungrouped.map((skill) => (
-                  <SkillListItem
-                    key={skill.name}
-                    skill={skill}
-                    isSelected={selectedSkillName === skill.name}
-                    onSelect={() => {
-                      setSelectedSkill(skill.name);
-                      onItemSelect?.();
-
-                    }}
-                    onRename={() => handleOpenRenameDialog(skill)}
-                    onDelete={() => handleDeleteSkill(skill)}
-                    onDuplicate={() => handleDuplicateSkill(skill)}
-                    isMenuOpen={openMenuSkill === skill.name}
-                    onMenuOpenChange={(open) => setOpenMenuSkill(open ? skill.name : null)}
-                  />
-                ))}
-              </>
-            )}
-          </>
-        )}
-      </ScrollableOverlay>
+      {groupedUserSkills.ungrouped.length > 0 ? (
+        <SettingsGroup label={userSectionLabel}>
+          {groupedUserSkills.ungrouped.map(renderSkillListItem)}
+        </SettingsGroup>
+      ) : null}
+      {groupedUserSkills.sortedGroups.map(({ name: groupName, skills: groupSkills }) => (
+        <SidebarGroup
+          key={groupName}
+          label={groupName}
+          labelPrefix={userSectionLabel}
+          count={groupSkills.length}
+          storageKey="user-skills"
+          variant="settings-card"
+        >
+          {groupSkills.map(renderSkillListItem)}
+        </SidebarGroup>
+      ))}
 
       <Dialog
         open={deleteDialogSkill !== null}
@@ -483,7 +438,7 @@ const SkillListItem: React.FC<SkillListItemProps> = ({
   );
   return (
     <ContextMenu open={!isBuiltIn && isContextMenuOpen} onOpenChange={setIsContextMenuOpen}>
-      <ContextMenuTrigger render={<div className={cn('group relative flex items-center rounded-md px-1.5 py-1 transition-all duration-200 select-none', isSelected ? 'bg-interactive-selection' : 'hover:bg-interactive-hover')} onContextMenu={!isMobile && !isBuiltIn ? (e) => { e.preventDefault(); setIsContextMenuOpen(true); } : undefined} />}>
+      <ContextMenuTrigger render={<div className={cn('oc-settings-group-row group relative flex items-center transition-colors duration-150 select-none', isSelected ? 'bg-interactive-selection' : 'hover:bg-interactive-hover')} onContextMenu={!isMobile && !isBuiltIn ? (e) => { e.preventDefault(); setIsContextMenuOpen(true); } : undefined} />}>
       <div className="flex min-w-0 flex-1 items-center">
         <button
           onClick={onSelect}

@@ -119,77 +119,74 @@ export const GitPage: React.FC = () => {
     <>
       <ScrollableOverlay outerClassName="h-full" className="w-full bg-background">
         <div className="oc-settings-page-content mx-auto w-full max-w-3xl p-3 sm:p-6 sm:pt-8">
-          <div data-settings-item="git.github-account">
-            <GitHubSettings />
-          </div>
+          <GitHubSettings itemId="git.github-account" />
 
           {/* Identities Section */}
-          <div data-settings-item="git.identities">
-            <SettingsGroup
-              label={(
-                <div className="flex items-center justify-between gap-4">
-                  <span>{t('settings.gitIdentities.page.section.title')}</span>
-                  <Button size="sm" variant="ghost" onClick={() => openEditor('new')}>
-                    <Icon name="add" className="mr-1 size-3.5" /> {t('settings.common.badge.new')}
-                  </Button>
+          <SettingsGroup
+            itemId="git.identities"
+            label={(
+              <div className="flex items-center justify-between gap-4">
+                <span>{t('settings.gitIdentities.page.section.title')}</span>
+                <Button size="sm" variant="ghost" onClick={() => openEditor('new')}>
+                  <Icon name="add" className="mr-1 size-3.5" /> {t('settings.common.badge.new')}
+                </Button>
+              </div>
+            )}
+            cardClassName="flex flex-col"
+          >
+            {/* Global identity */}
+            {globalIdentity && (
+              <IdentityRow
+                profile={globalIdentity}
+                isDefault={defaultGitIdentityId === 'global'}
+                onEdit={() => openEditor('global')}
+                onToggleDefault={() => handleToggleDefault('global')}
+                isReadOnly
+                hasBorder={profiles.length > 0 || unimportedCredentials.length > 0}
+              />
+            )}
+
+            {/* Custom profiles */}
+            {profiles.map((profile, i) => (
+              <IdentityRow
+                key={profile.id}
+                profile={profile}
+                isDefault={defaultGitIdentityId === profile.id}
+                onEdit={() => openEditor(profile.id)}
+                onToggleDefault={() => handleToggleDefault(profile.id)}
+                onDelete={() => setDeleteDialogProfile(profile)}
+                hasBorder={i < profiles.length - 1 || unimportedCredentials.length > 0}
+              />
+            ))}
+
+            {/* Empty state */}
+            {!globalIdentity && profiles.length === 0 && unimportedCredentials.length === 0 && (
+              <div className="py-8 px-4 text-center text-muted-foreground">
+                <Icon name="shield-keyhole" className="mx-auto mb-2 h-8 w-8 opacity-40" />
+                <p className="typography-ui-label">{t('settings.gitIdentities.page.empty.title')}</p>
+                <p className="typography-meta mt-1 opacity-75">{t('settings.gitIdentities.page.empty.description')}</p>
+              </div>
+            )}
+
+            {/* Discovered credentials */}
+            {unimportedCredentials.length > 0 && (
+              <>
+                <div className="px-4 py-2 border-t border-[var(--surface-subtle)]">
+                  <span className="typography-micro text-muted-foreground">
+                    {t('settings.gitIdentities.page.discoveredCredentials.title')}
+                  </span>
                 </div>
-              )}
-              cardClassName="flex flex-col"
-            >
-              {/* Global identity */}
-              {globalIdentity && (
-                <IdentityRow
-                  profile={globalIdentity}
-                  isDefault={defaultGitIdentityId === 'global'}
-                  onEdit={() => openEditor('global')}
-                  onToggleDefault={() => handleToggleDefault('global')}
-                  isReadOnly
-                  hasBorder={profiles.length > 0 || unimportedCredentials.length > 0}
-                />
-              )}
-
-              {/* Custom profiles */}
-              {profiles.map((profile, i) => (
-                <IdentityRow
-                  key={profile.id}
-                  profile={profile}
-                  isDefault={defaultGitIdentityId === profile.id}
-                  onEdit={() => openEditor(profile.id)}
-                  onToggleDefault={() => handleToggleDefault(profile.id)}
-                  onDelete={() => setDeleteDialogProfile(profile)}
-                  hasBorder={i < profiles.length - 1 || unimportedCredentials.length > 0}
-                />
-              ))}
-
-              {/* Empty state */}
-              {!globalIdentity && profiles.length === 0 && unimportedCredentials.length === 0 && (
-                <div className="py-8 px-4 text-center text-muted-foreground">
-                  <Icon name="shield-keyhole" className="mx-auto mb-2 h-8 w-8 opacity-40" />
-                  <p className="typography-ui-label">{t('settings.gitIdentities.page.empty.title')}</p>
-                  <p className="typography-meta mt-1 opacity-75">{t('settings.gitIdentities.page.empty.description')}</p>
-                </div>
-              )}
-
-              {/* Discovered credentials */}
-              {unimportedCredentials.length > 0 && (
-                <>
-                  <div className="px-4 py-2 border-t border-[var(--surface-subtle)]">
-                    <span className="typography-micro text-muted-foreground">
-                      {t('settings.gitIdentities.page.discoveredCredentials.title')}
-                    </span>
-                  </div>
-                  {unimportedCredentials.map((cred, i) => (
-                    <DiscoveredRow
-                      key={`${cred.host}-${cred.username}`}
-                      credential={cred}
-                      onImport={() => openEditor('new', { host: cred.host, username: cred.username })}
-                      hasBorder={i < unimportedCredentials.length - 1}
-                    />
-                  ))}
-                </>
-              )}
-            </SettingsGroup>
-          </div>
+                {unimportedCredentials.map((cred, i) => (
+                  <DiscoveredRow
+                    key={`${cred.host}-${cred.username}`}
+                    credential={cred}
+                    onImport={() => openEditor('new', { host: cred.host, username: cred.username })}
+                    hasBorder={i < unimportedCredentials.length - 1}
+                  />
+                ))}
+              </>
+            )}
+          </SettingsGroup>
 
           <GitSettings />
         </div>

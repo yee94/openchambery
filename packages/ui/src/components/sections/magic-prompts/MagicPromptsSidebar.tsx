@@ -1,8 +1,8 @@
 import React from 'react';
-import { ScrollableOverlay } from '@/components/ui/ScrollableOverlay';
 import { useMagicPromptsStore } from '@/stores/useMagicPromptsStore';
 import { cn } from '@/lib/utils';
 import { useI18n } from '@/lib/i18n';
+import { SettingsGroup } from '@/components/sections/shared/SettingsGroup';
 
 interface MagicPromptsSidebarProps {
   onItemSelect?: () => void;
@@ -60,16 +60,18 @@ export const MagicPromptsSidebar: React.FC<MagicPromptsSidebarProps> = ({ onItem
   }, []);
 
   return (
-    <div className="flex h-full flex-col bg-background">
-      <div className="border-b px-3 pt-4 pb-3">
-        <h2 className="text-base font-semibold text-foreground">{t('settings.magicPrompts.sidebar.title')}</h2>
-        <p className="typography-meta mt-1 text-muted-foreground">{t('settings.magicPrompts.sidebar.description')}</p>
+    <div className="oc-settings-page-content h-full overflow-y-auto bg-background p-3">
+      <div className="flex flex-col justify-center gap-1 px-2">
+        <span className="typography-ui-label text-foreground">
+          {t('settings.magicPrompts.sidebar.title')}
+        </span>
+        <span className="typography-meta text-muted-foreground">
+          {t('settings.magicPrompts.sidebar.description')}
+        </span>
       </div>
 
-      <ScrollableOverlay outerClassName="flex-1 min-h-0" className="space-y-3 px-3 py-2 overflow-x-hidden">
-        {grouped.map((group) => (
-          <div key={group.groupKey} className="space-y-1">
-            <div className="typography-micro px-1 text-muted-foreground">{t(group.groupKey)}</div>
+      {grouped.map((group) => (
+          <SettingsGroup key={group.groupKey} label={t(group.groupKey)}>
             {group.items.map((item) => {
               const selected = selectedPromptId === item.id;
               return (
@@ -81,7 +83,7 @@ export const MagicPromptsSidebar: React.FC<MagicPromptsSidebarProps> = ({ onItem
                     onItemSelect?.();
                   }}
                   className={cn(
-                    'flex w-full items-center rounded-md px-2 py-1.5 text-left transition-colors',
+                    'oc-settings-group-row flex w-full items-center text-left transition-colors',
                     selected ? 'bg-interactive-selection text-foreground' : 'text-foreground hover:bg-interactive-hover'
                   )}
                 >
@@ -89,9 +91,8 @@ export const MagicPromptsSidebar: React.FC<MagicPromptsSidebarProps> = ({ onItem
                 </button>
               );
             })}
-          </div>
+          </SettingsGroup>
         ))}
-      </ScrollableOverlay>
     </div>
   );
 };

@@ -16,6 +16,7 @@ import { Icon } from '@/components/icon/Icon';
 import type { IconName } from '@/components/icon/icons';
 import { SettingsSidebarLayout } from '@/components/sections/shared/SettingsSidebarLayout';
 import { SettingsSidebarItem } from '@/components/sections/shared/SettingsSidebarItem';
+import { SettingsGroup } from '@/components/sections/shared/SettingsGroup';
 import { useI18n } from '@/lib/i18n';
 import {
   refreshPluginRegistryQuery,
@@ -256,93 +257,93 @@ export const PluginsSidebar: React.FC<PluginsSidebarProps> = ({
     label: string,
     children: React.ReactNode,
     updateCount = 0,
+    actions?: React.ReactNode,
+    hideCard = false,
   ) => (
-    <>
-      <div className="px-2 pb-1.5 pt-2 text-xs font-semibold uppercase tracking-wide text-muted-foreground">
-        {label}
-        {updateCount > 0 && (
-          <span className="ml-2 normal-case font-normal text-[var(--status-success)]">
-            {t(
-              updateCount === 1
-                ? 'settings.plugins.sidebar.group.updatesAvailable_one'
-                : 'settings.plugins.sidebar.group.updatesAvailable_other',
-              { count: updateCount },
+    <SettingsGroup
+      cardClassName={hideCard ? 'hidden' : undefined}
+      label={(
+        <div className="flex items-center justify-between gap-4">
+          <span>
+            {label}
+            {updateCount > 0 && (
+              <span className="ml-2 text-[var(--status-success)]">
+                {t(
+                  updateCount === 1
+                    ? 'settings.plugins.sidebar.group.updatesAvailable_one'
+                    : 'settings.plugins.sidebar.group.updatesAvailable_other',
+                  { count: updateCount },
+                )}
+              </span>
             )}
           </span>
-        )}
-      </div>
+          {actions}
+        </div>
+      )}
+    >
       {children}
-    </>
+    </SettingsGroup>
+  );
+
+  const pluginHeaderActions = (
+    <div className="flex items-center gap-1">
+      <Button
+        type="button"
+        variant="ghost"
+        size="icon"
+        onClick={() => void handleRefresh()}
+        disabled={isFetching}
+        aria-label={t('settings.plugins.sidebar.actions.refresh')}
+        title={t('settings.plugins.sidebar.actions.refresh')}
+      >
+        <Icon name="refresh" className={isFetching ? 'size-4 animate-spin' : 'size-4'} />
+      </Button>
+      <Button
+        data-settings-item="plugins.create"
+        type="button"
+        variant="ghost"
+        size="icon"
+        onClick={handleAdd}
+        aria-label={t('settings.plugins.sidebar.actions.addTitle')}
+        title={t('settings.plugins.sidebar.actions.addTitle')}
+      >
+        <Icon name="add" className="size-4" />
+      </Button>
+    </div>
   );
 
   return (
     <>
-      <SettingsSidebarLayout
-        variant="background"
-        header={
-          <div className="border-b px-3 pt-4 pb-3">
-            <div className="mb-3 flex items-center justify-between gap-3">
-              <h2 className="text-base font-semibold text-foreground">
-                {t('settings.plugins.sidebar.title')}
-              </h2>
-            </div>
-            <div className="flex items-center justify-between gap-2">
-              <span className="typography-meta text-muted-foreground">
-                {t('settings.plugins.sidebar.total', { count: total })}
-              </span>
-              <div className="flex items-center gap-1">
-                <Button
-                  type="button"
-                  data-settings-item="plugins.create"
-                  variant="ghost"
-                  size="icon"
-                  className="h-7 w-7 -my-1 text-muted-foreground"
-                  onClick={() => void handleRefresh()}
-                  disabled={isFetching}
-                  aria-label={t('settings.plugins.sidebar.actions.refresh')}
-                  title={t('settings.plugins.sidebar.actions.refresh')}
-                >
-                  <Icon
-                    name="refresh"
-                    className={
-                      isFetching ? 'size-4 animate-spin' : 'size-4'
-                    }
-                  />
-                </Button>
-                <Button
-                  type="button"
-                  variant="ghost"
-                  size="icon"
-                  className="h-7 w-7 -my-1 text-muted-foreground"
-                  onClick={handleAdd}
-                  aria-label={t('settings.plugins.sidebar.actions.addTitle')}
-                  title={t('settings.plugins.sidebar.actions.addTitle')}
-                >
-                  <Icon name="add" className="size-4" />
-                </Button>
-              </div>
-            </div>
-          </div>
-        }
-      >
+      <SettingsSidebarLayout variant="background">
+        {userEntries.length > 0
+          ? renderGroup(
+              t('settings.plugins.sidebar.group.userEntries'),
+              userEntries.map(renderEntry),
+              updateCounts.userEntries,
+              pluginHeaderActions,
+            )
+          : renderGroup(
+              t('settings.plugins.sidebar.group.userEntries'),
+              <span />,
+              0,
+              pluginHeaderActions,
+              true,
+            )}
+
         {isEmpty ? (
-          <div className="py-12 px-4 text-center text-muted-foreground">
-            <Icon name="plug" className="mx-auto mb-3 h-10 w-10 opacity-50" />
-            <p className="typography-ui-label font-medium">
-              {t('settings.plugins.sidebar.empty.title')}
-            </p>
-            <p className="typography-meta mt-1 opacity-75">
-              {t('settings.plugins.sidebar.empty.description')}
-            </p>
-          </div>
+          <SettingsGroup>
+            <div className="oc-settings-group-row py-12 text-center text-muted-foreground">
+              <Icon name="plug" className="mx-auto mb-3 h-10 w-10 opacity-50" />
+              <p className="typography-ui-label font-medium">
+                {t('settings.plugins.sidebar.empty.title')}
+              </p>
+              <p className="typography-meta mt-1 opacity-75">
+                {t('settings.plugins.sidebar.empty.description')}
+              </p>
+            </div>
+          </SettingsGroup>
         ) : (
           <>
-            {userEntries.length > 0 &&
-              renderGroup(
-                t('settings.plugins.sidebar.group.userEntries'),
-                userEntries.map(renderEntry),
-                updateCounts.userEntries,
-              )}
             {userFiles.length > 0 &&
               renderGroup(
                 t('settings.plugins.sidebar.group.userFiles'),

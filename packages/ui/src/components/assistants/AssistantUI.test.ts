@@ -44,10 +44,11 @@ describe('Assistant UI product contract', () => {
   });
 
   test('uses the standard split settings shell and responsive workspace selector', async () => {
-    const [settings, settingsView, metadata] = await Promise.all([
+    const [settings, settingsView, metadata, sidebarItem] = await Promise.all([
       read('../sections/assistants/AssistantsSettingsPage.tsx'),
       read('../views/SettingsView.tsx'),
       read('../../lib/settings/metadata.ts'),
+      read('../sections/shared/SettingsSidebarItem.tsx'),
     ]);
     expect(settings).toContain('<SettingsSidebarLayout');
     expect(settings).toContain('variant="background"');
@@ -56,12 +57,12 @@ describe('Assistant UI product contract', () => {
     expect(settingsView).toContain('<AssistantsSettingsSidebar onItemSelect={opts.onItemSelect} />');
     expect(settingsView).toContain('onItemDeleted={isMobile ? handleMobileSplitItemDeleted : undefined}');
     expect(metadata.slice(metadata.indexOf("slug: 'assistants'"), metadata.indexOf("slug: 'behavior'"))).toContain("kind: 'split'");
-    expect(settings).toContain('data-settings-item="assistants.instance-enabled"');
+    expect(settings).toContain('<SettingsToggleRow');
+    expect(settings).toContain('itemId="assistants.instance-enabled"');
     expect(settings).toContain('setAssistantsEnabled(enabled, snapshot.revision)');
-    expect(settings).toContain('mb-1 flex items-center justify-between gap-3');
-    expect(settings.indexOf('settings.page.assistants.title')).toBeLessThan(settings.indexOf('data-settings-item="assistants.instance-enabled"'));
-    expect(settings.indexOf('data-settings-item="assistants.instance-enabled"')).toBeLessThan(settings.indexOf('assistants.settings.description'));
-    expect(settings.indexOf('data-settings-item="assistants.instance-enabled"')).toBeLessThan(settings.indexOf('AssistantsSettingsPage'));
+    expect(settings).not.toContain('settings.page.assistants.title');
+    expect(settings).toContain('description={(');
+    expect(settings.indexOf('itemId="assistants.instance-enabled"')).toBeLessThan(settings.indexOf('AssistantsSettingsPage'));
     expect(settings).toContain('useProjectsStore((state) => state.projects)');
     expect(settings).toContain("patchDraft('workspacePath', null)");
     expect(settings).toContain("patchDraft('workspacePath', project.path)");
@@ -69,12 +70,13 @@ describe('Assistant UI product contract', () => {
     expect(settings).toContain('w-[min(32rem,calc(100vw-2rem))]');
     expect(settings).toContain('<SettingsField');
     expect(settings).toContain('descriptionPlacement="outside"');
-    expect(settings).toContain('min-h-11 px-2.5 py-2');
+    expect(settings).toContain('data-settings-item="assistants.create"');
+    expect(settings).not.toContain('itemId="assistants.create"');
+    expect(settings.indexOf('assistants.settings.description')).toBeLessThan(settings.indexOf('data-settings-item="assistants.create"'));
     expect(settings).toContain('flex min-w-0 items-center gap-2');
     expect(settings).toContain('min-w-0 flex-1 truncate typography-micro text-muted-foreground');
     expect(settings).not.toContain('block truncate typography-micro text-muted-foreground');
     expect(settings).not.toContain('h-auto min-h-10');
-    expect(settings).toContain('mb-3 break-all typography-meta text-muted-foreground');
     expect(settings).toContain('href="#assistant-share-welcome"');
     expect(settings).toContain('setWelcomeOpen(true)');
     expect(settings.slice(settings.indexOf('const WorkspaceOption'), settings.indexOf('export const AssistantsSettingsSidebar'))).not.toContain('break-all');
@@ -84,6 +86,10 @@ describe('Assistant UI product contract', () => {
     expect(settings).toContain('interface AssistantsSettingsPageProps');
     expect(settings).toContain('onItemDeleted?: () => void;');
     expect(settings).toContain('selectSettingsAssistant(null);\n      onItemDeleted?.();');
+    expect(sidebarItem).toContain('data-mobile-press-feedback="soft"');
+    expect(sidebarItem).toContain('flex min-w-0 flex-1 self-stretch items-center');
+    expect(sidebarItem).toContain('self-stretch flex-col justify-center');
+    expect(sidebarItem).toContain('rounded-sm text-left');
   });
 
   test('scopes managed Assistant catalogs without consulting the active project', async () => {

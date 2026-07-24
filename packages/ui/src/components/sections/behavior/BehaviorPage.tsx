@@ -321,6 +321,7 @@ export const BehaviorPage: React.FC = () => {
         </div>
 
         <SettingsGroup
+          itemId="behavior.system-prompt"
           label={(
             <div className="flex items-center gap-1.5">
               <span>{t('settings.behavior.page.section.systemPrompt')}</span>
@@ -342,8 +343,9 @@ export const BehaviorPage: React.FC = () => {
             </div>
           )}
         >
-          <div data-settings-item="behavior.system-prompt" className="oc-settings-group-row flex flex-col gap-3">
+          <div className="oc-settings-group-row flex flex-col gap-3">
             <Textarea
+              embedded
               value={prompt}
               onChange={(e) => setPrompt(e.target.value)}
               placeholder={t('settings.behavior.page.field.systemPromptPlaceholder')}
@@ -363,11 +365,11 @@ export const BehaviorPage: React.FC = () => {
           </div>
         </SettingsGroup>
 
-        <div data-settings-item="behavior.response-style">
-          <SettingsGroup
-            label={(
-              <div className="flex items-center gap-1.5">
-                <span>{t('settings.behavior.page.section.responseStyle')}</span>
+        <SettingsGroup
+          itemId="behavior.response-style"
+          label={(
+            <div className="flex items-center gap-1.5">
+              <span>{t('settings.behavior.page.section.responseStyle')}</span>
               <Tooltip>
                 <TooltipTrigger asChild>
                   <Icon name="information" className="h-3.5 w-3.5 text-muted-foreground/60 cursor-help" />
@@ -376,46 +378,46 @@ export const BehaviorPage: React.FC = () => {
                   {t('settings.behavior.page.responseStyle.tooltip')}
                 </TooltipContent>
               </Tooltip>
-              </div>
-            )}
-          >
-            <SettingsRow label={t('settings.behavior.page.responseStyle.enable')}>
-              <Checkbox
-                checked={responseStyleEnabled}
-                onChange={setResponseStyleEnabled}
-                disabled={!responseStyleReady}
-                ariaLabel={t('settings.behavior.page.responseStyle.enableAria')}
-              />
-              <Select<ResponseStyleValue>
-                value={responseStylePreset}
-                onValueChange={(value) => setResponseStylePreset(value)}
-                disabled={!responseStyleReady || !responseStyleEnabled}
-              >
-                <SelectTrigger className="w-full sm:w-56">
-                  <SelectValue>
-                    {(value) => {
-                      if (value === 'custom') return t('settings.behavior.page.responseStyle.option.custom');
-                      if (isResponseStylePreset(value)) return t(RESPONSE_STYLE_OPTION_LABEL_KEYS[value]);
-                      return null;
-                    }}
-                  </SelectValue>
-                </SelectTrigger>
-                <SelectContent>
-                  {RESPONSE_STYLE_PRESETS.map((preset) => (
-                    <SelectItem key={preset} value={preset}>
-                      {t(RESPONSE_STYLE_OPTION_LABEL_KEYS[preset])}
-                    </SelectItem>
-                  ))}
-                  <SelectItem value="custom">
-                    {t('settings.behavior.page.responseStyle.option.custom')}
+            </div>
+          )}
+        >
+          <SettingsRow label={t('settings.behavior.page.responseStyle.enable')}>
+            <Checkbox
+              checked={responseStyleEnabled}
+              onChange={setResponseStyleEnabled}
+              disabled={!responseStyleReady}
+              ariaLabel={t('settings.behavior.page.responseStyle.enableAria')}
+            />
+            <Select<ResponseStyleValue>
+              value={responseStylePreset}
+              onValueChange={(value) => setResponseStylePreset(value)}
+              disabled={!responseStyleReady || !responseStyleEnabled}
+            >
+              <SelectTrigger className="w-full sm:w-56">
+                <SelectValue>
+                  {(value) => {
+                    if (value === 'custom') return t('settings.behavior.page.responseStyle.option.custom');
+                    if (isResponseStylePreset(value)) return t(RESPONSE_STYLE_OPTION_LABEL_KEYS[value]);
+                    return null;
+                  }}
+                </SelectValue>
+              </SelectTrigger>
+              <SelectContent>
+                {RESPONSE_STYLE_PRESETS.map((preset) => (
+                  <SelectItem key={preset} value={preset}>
+                    {t(RESPONSE_STYLE_OPTION_LABEL_KEYS[preset])}
                   </SelectItem>
-                </SelectContent>
-              </Select>
-            </SettingsRow>
-          </SettingsGroup>
+                ))}
+                <SelectItem value="custom">
+                  {t('settings.behavior.page.responseStyle.option.custom')}
+                </SelectItem>
+              </SelectContent>
+            </Select>
+          </SettingsRow>
 
-          <section className="px-2 pt-3">
+          <div className="oc-settings-group-row">
             <Textarea
+              embedded
               value={responseStylePreview}
               onChange={(event) => setResponseStyleCustomInstructions(event.target.value)}
               placeholder={t('settings.behavior.page.responseStyle.customPlaceholder')}
@@ -424,8 +426,8 @@ export const BehaviorPage: React.FC = () => {
               outerClassName="min-h-[120px]"
               className="w-full font-mono typography-meta bg-transparent"
             />
-          </section>
-        </div>
+          </div>
+        </SettingsGroup>
 
       </div>
     </ScrollableOverlay>

@@ -235,6 +235,7 @@ export const PluginsPage: React.FC = () => {
             cardClassName="p-3"
           >
             <Textarea
+              embedded
               value={draft.optionsJson}
               onChange={(e) =>
                 setDraft({ ...draft, optionsJson: e.target.value })
@@ -339,6 +340,7 @@ export const PluginsPage: React.FC = () => {
         <div data-settings-item="plugins.content">
           <SettingsGroup label={t('settings.plugins.page.field.content')} cardClassName="p-3">
             <Textarea
+              embedded
               value={draft.content}
               onChange={(e) =>
                 setDraft({ ...draft, content: e.target.value })

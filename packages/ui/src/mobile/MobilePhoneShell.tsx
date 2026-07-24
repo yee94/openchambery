@@ -121,10 +121,10 @@ export function MobilePhoneShell({
         />
       ),
       assistant: <MobileAssistantTab onEnable={onEnableAssistants} onOpenAssistant={openAssistant} />,
-      scheduled: <MobileScheduledTab showHeader={!scheduledEditorActive}>{scheduledTabBody}</MobileScheduledTab>,
+      scheduled: <MobileScheduledTab showHeader={false}>{scheduledTabBody}</MobileScheduledTab>,
       settings: <MobileSettingsTab />,
     }),
-    [openChat, openAssistant, handleNewSessionDraft, onAddProject, onEnableAssistants, scheduledEditorActive, scheduledTabBody],
+    [openChat, openAssistant, handleNewSessionDraft, onAddProject, onEnableAssistants, scheduledTabBody],
   );
 
   const secondaryKind = navigation.secondary?.kind ?? null;
@@ -164,7 +164,7 @@ export function MobilePhoneShell({
       onTabChange={setActiveTab}
       tabs={tabs}
       secondaryPage={secondaryPage}
-      showTabBar={!scheduledEditorActive}
+      tabBarCovered={scheduledEditorActive}
     />
   );
 }

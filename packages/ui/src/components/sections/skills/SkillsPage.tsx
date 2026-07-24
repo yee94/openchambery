@@ -584,6 +584,7 @@ const SkillsInstalledPage: React.FC = () => {
               <span className="typography-meta text-muted-foreground ml-2">{t('settings.skills.page.field.descriptionHint')}</span>
               <div className="mt-1.5">
                 <Textarea
+                  embedded
                   value={description}
                   onChange={(e) => handleDescriptionChange(e.target.value)}
                   placeholder={t('settings.skills.page.field.descriptionPlaceholder')}
@@ -614,7 +615,7 @@ const SkillsInstalledPage: React.FC = () => {
           >
             <div
               className={cn(
-                'overflow-hidden rounded-md border border-[var(--surface-subtle)] bg-background',
+                'overflow-hidden bg-background',
                 SKILL_EDITOR_HEIGHT_CLASS,
               )}
             >
