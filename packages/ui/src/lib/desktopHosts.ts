@@ -50,6 +50,12 @@ export type DesktopHost = {
   requestHeaders?: Record<string, string>;
   /** When set, this host is reached over the private relay tunnel. */
   relay?: DesktopHostRelay;
+  /**
+   * Optional public HAPI/tunwg HTTPS gateway that also reaches this host.
+   * Kept alongside `apiUrl` (often LAN) so the desktop can fall back away from
+   * home without re-pairing. Plain HTTPS — not the OpenChamber E2EE relay.
+   */
+  hapiUrl?: string;
 };
 
 /** Display-only pseudo-URL for a relay host (never fetched). */
@@ -205,6 +211,7 @@ const parseHost = (value: unknown): DesktopHost | null => {
   const clientToken = readString(value, 'clientToken') || readString(value, 'client_token');
   const requestHeaders = sanitizeRequestHeaders(value.requestHeaders);
   const relay = parseHostRelay(value.relay);
+  const hapiUrl = normalizeHostUrl(readString(value, 'hapiUrl') || readString(value, 'hapi_url') || '');
   if (!id || !label || !url) return null;
   return {
     id,
@@ -214,6 +221,7 @@ const parseHost = (value: unknown): DesktopHost | null => {
     ...(clientToken ? { clientToken } : {}),
     ...(requestHeaders ? { requestHeaders } : {}),
     ...(relay ? { relay } : {}),
+    ...(hapiUrl ? { hapiUrl } : {}),
   };
 };
 

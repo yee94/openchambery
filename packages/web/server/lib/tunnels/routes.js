@@ -377,16 +377,19 @@ export const createTunnelRoutesRuntime = (dependencies) => {
         const activeTunnelHost = tunnelAuthController.getActiveTunnelHost();
         const resolvedTunnelHost = resolveNormalizedTunnelHost(publicUrl);
         const activeTunnelMode = tunnelAuthController.getActiveTunnelMode();
+        const activeTunnelProvider = tunnelAuthController.getActiveTunnelProvider?.() || null;
         const needsActiveTunnelSync = !activeTunnelId
           || !activeTunnelHost
           || !resolvedTunnelHost
           || activeTunnelHost !== resolvedTunnelHost
-          || activeTunnelMode !== activeNormalizedMode;
+          || activeTunnelMode !== activeNormalizedMode
+          || activeTunnelProvider !== provider;
         if (needsActiveTunnelSync) {
           tunnelAuthController.setActiveTunnel({
             tunnelId: activeTunnelId || crypto.randomUUID(),
             publicUrl,
             mode: activeNormalizedMode,
+            provider,
           });
         }
 
@@ -530,6 +533,7 @@ export const createTunnelRoutesRuntime = (dependencies) => {
           tunnelId: replacedTunnel || !previousTunnelId ? crypto.randomUUID() : previousTunnelId,
           publicUrl,
           mode,
+          provider: activeProvider,
         });
 
         const bootstrapToken = tunnelAuthController.issueBootstrapToken({ ttlMs: bootstrapTtlMs });

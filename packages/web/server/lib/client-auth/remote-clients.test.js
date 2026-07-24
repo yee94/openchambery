@@ -64,6 +64,21 @@ describe('remote client auth runtime', () => {
     }
   });
 
+  it('records HAPI as the active channel for authenticated client traffic', async () => {
+    const { dir, runtime } = await createRuntime();
+    try {
+      const created = await runtime.createClient({ label: 'Phone' });
+      const authenticated = await runtime.authenticateBearerToken(created.token, {
+        headers: { 'x-openchamber-transport': 'hapi' },
+      });
+
+      expect(authenticated?.ok).toBe(true);
+      expect((await runtime.listClients())[0].lastTransport).toBe('hapi');
+    } finally {
+      await fs.rm(dir, { recursive: true, force: true });
+    }
+  });
+
   it('keeps one client per dedupe key', async () => {
     const { dir, runtime } = await createRuntime();
     try {

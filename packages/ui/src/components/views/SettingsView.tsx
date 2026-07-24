@@ -1554,8 +1554,15 @@ export const SettingsView: React.FC<SettingsViewProps> = ({
       return renderMobileNavStage();
     }
 
+    const mobileDetailStageClassName = cn(
+      "flex-1 min-h-0 overflow-hidden bg-transparent",
+      mobileFlow
+        ? "w-full flex-none overflow-visible"
+        : "px-[var(--oc-mobile-page-inline-inset)]",
+    );
+
     if (!activePageMeta) {
-      return <div className="flex-1 bg-background" />;
+      return <div className={mobileDetailStageClassName} />;
     }
 
     if (mobileStage === "page-sidebar") {
@@ -1563,12 +1570,7 @@ export const SettingsView: React.FC<SettingsViewProps> = ({
         // No sidebar available; fall back to direct content.
         const fallback = renderPageContent(settingsSlug);
         return (
-          <div
-            className={cn(
-              "flex-1 min-h-0 overflow-hidden bg-background",
-              mobileFlow && "w-full flex-none overflow-visible bg-transparent",
-            )}
-          >
+          <div className={mobileDetailStageClassName}>
             <MobileFloatingSurface className="oc-mobile-settings-detail-card">
               <ErrorBoundary>{fallback}</ErrorBoundary>
             </MobileFloatingSurface>
@@ -1576,16 +1578,7 @@ export const SettingsView: React.FC<SettingsViewProps> = ({
         );
       }
       return (
-        <div
-          className={cn(
-            "flex-1 min-h-0 overflow-hidden",
-            mobileFlow
-              ? "w-full flex-none overflow-visible bg-transparent"
-              : runtimeCtx.isVSCode
-                ? "bg-background"
-                : "bg-sidebar",
-          )}
-        >
+        <div className={mobileDetailStageClassName}>
           <MobileFloatingSurface className="oc-mobile-settings-detail-card">
             <ErrorBoundary>
               {renderPageSidebar(settingsSlug, {
@@ -1601,12 +1594,7 @@ export const SettingsView: React.FC<SettingsViewProps> = ({
     const content = renderPageContent(settingsSlug);
 
     return (
-      <div
-        className={cn(
-          "flex-1 min-h-0 overflow-hidden bg-background",
-          mobileFlow && "w-full flex-none overflow-visible bg-transparent",
-        )}
-      >
+      <div className={mobileDetailStageClassName}>
         <MobileFloatingSurface className="oc-mobile-settings-detail-card">
           <ErrorBoundary>{content}</ErrorBoundary>
         </MobileFloatingSurface>
@@ -1713,11 +1701,11 @@ export const SettingsView: React.FC<SettingsViewProps> = ({
       ref={containerRef}
       data-settings-view="true"
       className={cn(
-        "oc-settings-workspace relative flex h-full min-h-0 flex-col overflow-hidden bg-background",
+        "oc-settings-workspace relative flex h-full min-h-0 flex-col overflow-hidden",
         isMobile
-          ? "oc-settings-workspace-mobile"
-          : "oc-settings-workspace-desktop",
-        mobileFlow && "h-auto w-full overflow-visible bg-transparent",
+          ? "oc-settings-workspace-mobile bg-transparent"
+          : "oc-settings-workspace-desktop bg-background",
+        mobileFlow && "h-auto w-full overflow-visible",
       )}
     >
       {isMobile && !suppressMobileHeader ? (

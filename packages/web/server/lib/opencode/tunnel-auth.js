@@ -217,6 +217,7 @@ export const createTunnelAuth = () => {
   let activeTunnelId = null;
   let activeTunnelHost = null;
   let activeTunnelMode = null;
+  let activeTunnelProvider = null;
   let activeTunnelPublicUrl = null;
   let bootstrapRecord = null;
 
@@ -251,6 +252,10 @@ export const createTunnelAuth = () => {
     const reqHost = normalizeHost(typeof req.hostname === 'string' ? req.hostname : '') || hostHeader;
 
     if (activeTunnelHost && reqHost === activeTunnelHost) {
+      // HAPI/tunwg is a transport-only public origin. Requests keep using the
+      // ordinary OpenChamber UI/client bearer auth, unlike managed tunnel links
+      // that require an oc_tunnel_session bootstrap cookie.
+      if (activeTunnelProvider === 'hapi') return 'local';
       return 'tunnel';
     }
 
@@ -299,9 +304,10 @@ export const createTunnelAuth = () => {
     return { revokedBootstrapCount, invalidatedSessionCount };
   };
 
-  const setActiveTunnel = ({ tunnelId, publicUrl, mode = null }) => {
+  const setActiveTunnel = ({ tunnelId, publicUrl, mode = null, provider = null }) => {
     activeTunnelId = tunnelId;
     activeTunnelMode = mode;
+    activeTunnelProvider = provider;
     activeTunnelPublicUrl = publicUrl || null;
     try {
       activeTunnelHost = normalizeHost(new URL(publicUrl).host);
@@ -317,6 +323,7 @@ export const createTunnelAuth = () => {
     activeTunnelId = null;
     activeTunnelHost = null;
     activeTunnelMode = null;
+    activeTunnelProvider = null;
     activeTunnelPublicUrl = null;
     bootstrapRecord = null;
   };
@@ -582,5 +589,6 @@ export const createTunnelAuth = () => {
     getActiveTunnelId: () => activeTunnelId,
     getActiveTunnelHost: () => activeTunnelHost,
     getActiveTunnelMode: () => activeTunnelMode,
+    getActiveTunnelProvider: () => activeTunnelProvider,
   };
 };

@@ -209,7 +209,7 @@ describe('ScheduledTasksDialog queries', () => {
 
   test('shares one mobile detail navigation across settings, task editing, and chat', async () => {
     const directory = dirname(fileURLToPath(import.meta.url));
-    const [navigationContent, projectsHomeContent, buttonContent, editorContent, settingsContent, settingsTabContent, chatHeaderContent, chatScreenContent, mobileStyles] = await Promise.all([
+    const [navigationContent, projectsHomeContent, buttonContent, editorContent, settingsContent, settingsTabContent, chatHeaderContent, chatScreenContent, mobileStyles, mobileSurfaceShellContent] = await Promise.all([
       readFile(join(directory, '../../mobile/MobileDetailNavigation.tsx'), 'utf8'),
       readFile(join(directory, '../../mobile/projects/MobileProjectsHome.tsx'), 'utf8'),
       readFile(join(directory, '../ui/button.tsx'), 'utf8'),
@@ -219,6 +219,7 @@ describe('ScheduledTasksDialog queries', () => {
       readFile(join(directory, '../../mobile/chat/MobileChatHeader.tsx'), 'utf8'),
       readFile(join(directory, '../../mobile/chat/MobileChatScreen.tsx'), 'utf8'),
       readFile(join(directory, '../../styles/mobile.css'), 'utf8'),
+      readFile(join(directory, '../../apps/MobileSurfaceShell.tsx'), 'utf8'),
     ]);
     expect(navigationContent).toContain('oc-mobile-detail-navigation-content');
     expect(navigationContent).toContain('items-center gap-1 px-4');
@@ -243,7 +244,7 @@ describe('ScheduledTasksDialog queries', () => {
     expect(mobileStyles).toContain('backdrop-filter: blur(16px) saturate(1.25)');
     expect(mobileStyles).toContain('.dark .oc-mobile-floating-action');
     expect(mobileStyles).toContain('background: color-mix(in srgb, var(--surface-elevated) 88%, transparent)');
-    expect(mobileStyles).toContain('color-mix(in srgb, var(--surface-foreground) 6%, transparent)');
+    expect(mobileStyles).toContain('--oc-mobile-border: color-mix(');
     expect(mobileStyles).toContain('box-shadow: none');
     expect(navigationContent).toContain('max-w-72');
     expect(mobileStyles).toContain('--oc-mobile-detail-action-edge-inset: 1rem');
@@ -264,6 +265,18 @@ describe('ScheduledTasksDialog queries', () => {
     expect(settingsContent).toContain('underlayRef: mobileBackUnderlayRef');
     expect(settingsContent).toContain('fixed inset-0 z-20 flex h-[100dvh]');
     expect(settingsContent).toContain('flex-col gap-6');
+    expect(settingsContent).toContain('"flex-1 min-h-0 overflow-hidden bg-transparent"');
+    expect(settingsContent).toContain(': "px-[var(--oc-mobile-page-inline-inset)]"');
+    expect(settingsContent).toContain('"oc-settings-workspace-mobile bg-transparent"');
+    expect(settingsContent).toContain('"oc-settings-workspace-desktop bg-background"');
+    expect(settingsContent.match(/className=\{mobileDetailStageClassName\}/g)).toHaveLength(4);
+    const mobileDetailCardStyles = mobileStyles.slice(
+      mobileStyles.indexOf('.oc-mobile-settings-detail-card {'),
+      mobileStyles.indexOf('.oc-mobile-settings-detail-card > *'),
+    );
+    expect(mobileDetailCardStyles).toContain('background: transparent');
+    expect(mobileDetailCardStyles).toContain('backdrop-filter: none');
+    expect(mobileSurfaceShellContent).toContain('oc-mobile-surface-shell oc-mobile-floating-shell');
     expect(settingsTabContent).not.toContain('onMobileStageChange');
     expect(settingsTabContent).toContain('showHeader={false}');
     expect(chatHeaderContent).toContain('<MobileDetailNavigation');

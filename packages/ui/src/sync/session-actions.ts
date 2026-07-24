@@ -1268,11 +1268,12 @@ export function optimisticInsertUserMessage(input: {
         id: typeof part.id === "string" && part.id ? part.id : ascendingId("prt"),
         messageID: input.messageID,
         sessionID: input.sessionId,
+        __openchamberOptimistic: true,
       } as Part))
-    : [{ id: ascendingId("prt"), type: "text", text: input.content, messageID: input.messageID, sessionID: input.sessionId } as Part]
+    : [{ id: ascendingId("prt"), type: "text", text: input.content, messageID: input.messageID, sessionID: input.sessionId, __openchamberOptimistic: true } as Part]
   if (!input.parts && input.files) {
     for (const f of input.files) {
-      optimisticParts.push({ id: ascendingId("prt"), type: "file", mime: f.mime, url: f.url, filename: f.filename } as Part)
+      optimisticParts.push({ id: ascendingId("prt"), type: "file", mime: f.mime, url: f.url, filename: f.filename, __openchamberOptimistic: true } as Part)
     }
   }
 
@@ -1391,7 +1392,7 @@ export async function abortCurrentOperation(sessionId: string): Promise<void> {
   // sent to the wrong instance cancels nothing while still returning 200 true
   // (the "stop button does nothing" report — sessions in another project/
   // worktree than the UI's current directory could never be aborted).
-  const { directory } = dirStoreForSession(sessionId)
+  const { store, directory } = dirStoreForSession(sessionId)
   const scope = directory ? {
     state: "bound" as const,
     transportIdentity: getRuntimeTransportIdentity(),
@@ -1404,6 +1405,21 @@ export async function abortCurrentOperation(sessionId: string): Promise<void> {
     if (assertSdkData(result, "session.abort") !== true) {
       throw new Error("Session abort failed")
     }
+    // A successful abort response is authoritative for this turn. Commit idle
+    // locally as well as waiting for SSE so a newly materialized session cannot
+    // remain stuck behind an optimistic busy state when its idle event raced
+    // with selection/bootstrap. observed_at covers an incomplete aborted tail.
+    const state = store.getState()
+    store.setState({
+      session_status: {
+        ...state.session_status,
+        [sessionId]: { type: "idle" as const },
+      },
+      session_status_observed_at: {
+        ...state.session_status_observed_at,
+        [sessionId]: Date.now(),
+      },
+    })
   } catch (error) {
     if (scope && blockToken) useSessionUIStore.getState().clearQueueAbortBlock(scope, blockToken)
     console.error("[session-actions] abort failed", error)

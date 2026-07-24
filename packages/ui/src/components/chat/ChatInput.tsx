@@ -1657,8 +1657,8 @@ const ChatInputRuntime: React.FC<ChatInputProps> = ({ onOpenSettings, scrollToBo
     // Mobile fullscreen composer (entered via the drag handle's swipe-up).
     const isMobileExpanded = isExpandedInput && isMobile;
     const isComposerExpanded = isDesktopExpanded || isMobileExpanded;
-    // Rounder composer on mobile (touch UI reads better with a softer corner).
-    const chatInputRadius = isMobile ? '1.5rem' : 'var(--radius-xl)';
+    // The queue/composer stack shares one soft silhouette across desktop and mobile.
+    const chatInputRadius = '1.5rem';
     const useCompactChatPlaceholder = isMobile || isNarrowComposer;
 
     React.useEffect(() => {
@@ -5786,6 +5786,20 @@ const ChatInputRuntime: React.FC<ChatInputProps> = ({ onOpenSettings, scrollToBo
         </>
     );
 
+    const queuedMessageSurface = (
+        <QueuedMessageChips
+            onEditMessage={handleQueuedMessageEdit}
+            onSendMessage={handleQueuedMessageSend}
+            draftKey={draftKey}
+            scope={currentQueueScope}
+            draftResources={{
+                attachments: surfaceResources.attachments,
+                getDraft: surfaceResources.getDraft,
+                setAttachments: surfaceResources.setAttachments,
+            }}
+        />
+    );
+
     return (
         <>
         <form
@@ -5813,17 +5827,6 @@ const ChatInputRuntime: React.FC<ChatInputProps> = ({ onOpenSettings, scrollToBo
             ) : null}
             <div className={cn('chat-input-column relative overflow-visible', isComposerExpanded && 'flex flex-1 min-h-0 flex-col')}>
                 <AttachedFilesList attachments={attachedFiles} onShowPopup={handleShowAttachmentPopup} onRemoveAttachedFile={handleAttachedFileRemove} />
-                <QueuedMessageChips
-                    onEditMessage={handleQueuedMessageEdit}
-                    onSendMessage={handleQueuedMessageSend}
-                    draftKey={draftKey}
-                    scope={currentQueueScope}
-                    draftResources={{
-                        attachments: surfaceResources.attachments,
-                        getDraft: surfaceResources.getDraft,
-                        setAttachments: surfaceResources.setAttachments,
-                    }}
-                />
                 <AutoReviewBanner />
                 {hasDrafts && (
                     <div className="flex flex-wrap items-center gap-2 pb-2">
@@ -6166,10 +6169,11 @@ const ChatInputRuntime: React.FC<ChatInputProps> = ({ onOpenSettings, scrollToBo
                         onApply={applyAssistSuggestion}
                         className="mb-1.5"
                     />
+                    {queuedMessageSurface}
                     <div
                         data-mobile-composer-surface="true"
                         data-session-swipe-surface="true"
-                        className="flex h-11 min-w-0 w-full items-center gap-x-0.5 rounded-full border border-border/80 pl-2 pr-1"
+                        className="relative z-10 flex h-11 min-w-0 w-full items-center gap-x-0.5 rounded-full border border-border/80 pl-2 pr-1"
                         style={{ backgroundColor: currentTheme?.colors?.surface?.subtle }}
                     >
                         <ComposerAttachmentControls
@@ -6238,6 +6242,7 @@ const ChatInputRuntime: React.FC<ChatInputProps> = ({ onOpenSettings, scrollToBo
                     onApply={applyAssistSuggestion}
                     className="mb-1.5"
                 />
+                {queuedMessageSurface}
                 <ChatPromptComposer
                     value={message}
                     attachments={[]}
@@ -6250,6 +6255,7 @@ const ChatInputRuntime: React.FC<ChatInputProps> = ({ onOpenSettings, scrollToBo
                     expanded={isComposerExpanded}
                     focusedTone={inputMode === 'shell' ? 'info' : 'primary'}
                     className={cn(
+                        'relative z-10',
                         isDragging && "ring-2 ring-primary ring-offset-2",
                         // Ctrl+X leader pending: subtle selection ring while waiting for M/A/N/C.
                         isLeaderKeyPending && "ring-1 ring-[var(--interactive-selection)] border-[var(--interactive-selection)]"

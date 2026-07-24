@@ -84,8 +84,13 @@ export function createTunnelService({
       let publicUrl = provider.resolvePublicUrl(getController());
       const activeMode = resolveActiveMode();
       const activeProvider = resolveActiveProvider();
+      const activeController = getController();
 
-      if (publicUrl && (activeMode !== request.mode || activeProvider !== request.provider)) {
+      if (publicUrl && (
+        activeMode !== request.mode
+        || activeProvider !== request.provider
+        || (typeof provider.matchesRequest === 'function' && !provider.matchesRequest(activeController, request))
+      )) {
         stop();
         publicUrl = null;
       }

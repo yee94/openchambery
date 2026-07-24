@@ -234,7 +234,7 @@ export const MobileSurfaceShell: React.FC<MobileSurfaceShellProps> = ({
       {/* Sheet is a normal flex child — mirroring MobileOverlayPanel. */}
       <section
         ref={surfaceRef}
-        className="oc-mobile-surface-shell mt-auto flex min-h-0 w-full flex-col overflow-hidden rounded-t-[20px] border-t border-border/40 bg-background text-foreground"
+        className="oc-mobile-surface-shell oc-mobile-floating-shell mt-auto flex min-h-0 w-full flex-col overflow-hidden rounded-t-[20px] border-t border-border/40 bg-background text-foreground"
         tabIndex={-1}
         onClick={(event) => event.stopPropagation()}
         onTransitionEnd={(event) => {

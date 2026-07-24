@@ -120,8 +120,11 @@ describe('MobileWindowMotion recipe', () => {
     expect(mobileModelPickerPanelSource).toContain('id={`mobile-model-picker-sheet-${mobileSheetId}`}');
     expect(agentSelectorSource).toContain("from '@/components/ui/MobileResizableSheet'");
     expect(agentSelectorSource).toContain('id={`mobile-agent-selector-sheet-${mobileSheetId}`}');
+    expect(agentSelectorSource).toContain('<AgentAvatar name={agent.name} size={16} className="mt-1.5" />');
+    expect(agentSelectorSource).toContain('className="mt-2 h-2 w-2 rounded-full bg-primary"');
     expect(modelControlsSource).toContain('id={`mobile-agent-picker-sheet-${mobileAgentSheetId}`}');
     expect(modelControlsSource).toContain('<MobileResizableSheet');
+    expect(mobileWindowMotionSource).toContain("className={cn('oc-mobile-floating-shell'");
   });
 
   test('lets a dismissible sheet track downward continuously to zero height', () => {

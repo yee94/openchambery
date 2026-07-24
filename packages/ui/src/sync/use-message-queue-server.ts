@@ -34,7 +34,14 @@ export const useMessageQueueServerScope = (input: MessageQueueServerScopeInput, 
     const getSnapshot = (): MessageQueueServerScopeView => {
       const state = runtime.getState(), runtimeCapture = runtime.captureRuntime(), scope = runtime.getScope(scopeInput), pending = runtime.getPendingAdmissions(scopeInput), cutoverState = cutover.getSnapshot();
       const stableRuntimeCapture = previous?.runtimeCapture.transportIdentity === runtimeCapture.transportIdentity && previous.runtimeCapture.generation === runtimeCapture.generation ? previous.runtimeCapture : runtimeCapture;
-      const mode = cutoverState.ownership === 'legacy-unsupported' ? 'legacy' : cutoverState.ownership === 'server-active' || cutoverState.ownership === 'server-paused' ? 'server' : 'frozen';
+      const serverAuthorityConfirmed = state.transportIdentity === scopeInput.transportIdentity
+        && state.capability === 'available'
+        && (state.authority === 'active' || state.authority === 'paused');
+      const mode = cutoverState.ownership === 'legacy-unsupported'
+        ? 'legacy'
+        : cutoverState.ownership === 'server-active' || cutoverState.ownership === 'server-paused' || (cutoverState.ownership === 'probing' && serverAuthorityConfirmed)
+          ? 'server'
+          : 'frozen';
       const hasPendingAdmission = mode === 'server' && pending.length > 0;
       const hasBlockingAdmission = mode === 'server' && pending.some((entry) => entry.phase === 'uploading' || entry.phase === 'admitting' || entry.phase === 'ambiguous');
       const items = previous?.mode === mode && previous.scope === scope && previous.hasPendingAdmission === hasPendingAdmission && previous.hasBlockingAdmission === hasBlockingAdmission && pending === previousPending && localItems === previousLocalItems

@@ -27,11 +27,10 @@ import { useI18n } from '@/lib/i18n';
 import { useQueueScopeDispatchFlight } from '@/hooks/useQueuedMessageAutoSend';
 import { useUIStore } from '@/stores/useUIStore';
 import { Icon } from "@/components/icon/Icon";
-import { Button } from '@/components/ui/button';
 import { cn } from '@/lib/utils';
 import { createUuid } from '@/lib/uuid';
 import { toast } from '@/components/ui';
-import { applyPendingServerQueueOperation, canRemoveQueuedMessage, canSendQueuedMessage, canSendServerQueuedMessage, isServerQueueItemDispatchPending, mergeQueuedMessageScopes, popQueuedMessageForEdit, queueModeAllowsMutations, reorderServerQueueItems, selectPendingServerQueueOperation, serverQueueEditInput, serverQueueItemMutationInput, type ServerQueueOperationIdentity, type ServerQueueOperationKind } from './queuedMessageChipsState';
+import { applyPendingServerQueueOperation, canRemoveQueuedMessage, canSendQueuedMessage, canSendServerQueuedMessage, isServerQueueItemDispatchPending, mergeQueuedMessageScopes, queueModeAllowsMutations, reorderServerQueueItems, selectPendingServerQueueOperation, serverQueueEditInput, serverQueueItemMutationInput, type ServerQueueOperationIdentity, type ServerQueueOperationKind } from './queuedMessageChipsState';
 import { startServerQueueScopeMutationFlight, type ServerQueueScopeMutationFlights } from './queueAdmission';
 
 type BoundQueueScope = Extract<QueueScope, { state: 'bound' }> & {
@@ -119,6 +118,22 @@ const QueuedMessageChip = memo(({ message, server, frozen, hasDispatchLock, scop
 
     const attachmentCount = pendingAdmission ? message.attachmentCount : visibleAttachments?.length ?? 0;
 
+    const removeAction = (
+        <button
+            type="button"
+            onClick={() => onRemove(message)}
+            disabled={!canRemove}
+            aria-busy={removePending || undefined}
+            className={cn(
+                'inline-flex shrink-0 items-center justify-center bg-transparent text-muted-foreground transition-colors hover:text-foreground disabled:pointer-events-none disabled:opacity-50',
+                isMobile ? 'size-[1.625rem]' : 'size-7',
+            )}
+            aria-label={t('chat.queuedMessage.removeAria')}
+        >
+            <Icon name={removePending ? 'loader-4' : 'delete-bin'} className={cn('size-3.5', removePending && 'animate-spin')} aria-hidden="true" />
+        </button>
+    );
+
     return (
         <div
             ref={setNodeRef}
@@ -127,8 +142,8 @@ const QueuedMessageChip = memo(({ message, server, frozen, hasDispatchLock, scop
             className={cn(
                 'flex min-w-0 items-center',
                 isMobile
-                    ? 'gap-0.5 py-1'
-                    : 'flex gap-1.5 py-0.5 md:gap-2 md:py-1',
+                    ? 'gap-0 py-0'
+                    : 'flex gap-1.5 md:gap-2',
                 isDragging && 'z-10 opacity-60',
             )}
         >
@@ -140,111 +155,67 @@ const QueuedMessageChip = memo(({ message, server, frozen, hasDispatchLock, scop
                 aria-busy={reorderPending || undefined}
                 className={cn(
                     'flex flex-shrink-0 touch-none select-none items-center justify-center text-muted-foreground',
-                    isMobile ? '!h-6 !w-4 !min-h-6 !min-w-4' : 'size-auto',
+                    isMobile ? '!h-[1.625rem] !w-3.5 !min-h-[1.625rem] !min-w-3.5' : 'size-auto',
+                    'transition-colors',
                     isDragDisabled ? 'cursor-default opacity-50' : 'cursor-grab hover:text-foreground active:cursor-grabbing',
                 )}
                 aria-label={t('chat.queuedMessage.reorderAria')}
             >
-                <Icon name={reorderPending ? 'loader-4' : 'draggable'} className={cn(isMobile ? 'size-3' : 'size-3.5 md:size-4', reorderPending && 'animate-spin')} aria-hidden="true" />
+                <Icon name={reorderPending ? 'loader-4' : 'draggable'} className={cn(isMobile ? 'size-3' : 'size-3.5', reorderPending && 'animate-spin')} aria-hidden="true" />
             </button>
-            {isMobile ? (
-                <>
-                    <Button
-                        type="button"
-                        variant="ghost"
-                        size="icon"
-                        className="-ml-0.5 !h-6 !w-4 !min-h-6 !min-w-4 rounded-md bg-transparent text-muted-foreground hover:bg-transparent hover:text-foreground active:bg-transparent"
-                        onClick={() => onRemove(message)}
-                        disabled={!canRemove}
-                        aria-busy={removePending || undefined}
-                        aria-label={t('chat.queuedMessage.removeAria')}
-                    >
-                        <Icon name={removePending ? 'loader-4' : 'close'} className={cn('size-3', removePending && 'animate-spin')} aria-hidden="true" />
-                    </Button>
-                    <span className="min-w-0 flex-1 truncate text-xs leading-4 text-foreground">
-                        {firstLine || t('chat.queuedMessage.empty')}
-                        {attachmentCount > 0 && (
-                            <span className="ml-1 text-muted-foreground">{t('chat.queuedMessage.attachments', { count: attachmentCount })}</span>
-                        )}
+            {isMobile ? removeAction : null}
+            <span className={cn(
+                'min-w-0 flex-1 truncate text-foreground',
+                isMobile ? 'text-xs leading-4' : 'typography-ui-label leading-5',
+            )}>
+                {firstLine || t('chat.queuedMessage.empty')}
+                {attachmentCount > 0 && (
+                    <span className="ml-1 text-muted-foreground">{t('chat.queuedMessage.attachments', { count: attachmentCount })}</span>
+                )}
+            </span>
+            <div className="flex shrink-0 items-center gap-1.5 text-muted-foreground">
+                <button
+                    type="button"
+                    onClick={() => onEdit(message)}
+                    disabled={isReadOnly}
+                    aria-busy={editPending || undefined}
+                    aria-label={t('chat.queuedMessage.edit')}
+                    className={cn(
+                        'inline-flex items-center bg-transparent text-muted-foreground transition-colors hover:text-foreground disabled:pointer-events-none disabled:opacity-50',
+                        isMobile ? 'h-[1.625rem] gap-1.5 px-0 text-[11px]' : 'h-7 gap-1 px-0.5',
+                    )}
+                >
+                    <Icon
+                        name={pendingAdmission || editPending ? 'loader-4' : 'edit'}
+                        className={cn(isMobile ? 'size-3' : 'size-3.5', (pendingAdmission || editPending) && 'animate-spin')}
+                        aria-hidden="true"
+                    />
+                    <span className={cn('font-medium', isMobile ? 'leading-none' : 'typography-ui-label')}>
+                        {t('chat.queuedMessage.edit')}
                     </span>
-                    <div className="flex flex-shrink-0 items-center gap-1">
-                        <Button
-                            type="button"
-                            variant="secondary"
-                            size="xs"
-                            className="!h-6 !min-h-6 !min-w-6 gap-0.5 px-1 !text-xs leading-4 min-[360px]:px-1.5"
-                            onClick={() => onEdit(message)}
-                            disabled={isReadOnly}
-                            aria-busy={editPending || undefined}
-                            aria-label={t('chat.queuedMessage.edit')}
-                        >
-                            <Icon name={pendingAdmission || editPending ? 'loader-4' : 'edit'} className={cn('size-3', (pendingAdmission || editPending) && 'animate-spin')} aria-hidden="true" />
-                            <span className="hidden max-w-16 truncate min-[360px]:inline">{t('chat.queuedMessage.edit')}</span>
-                        </Button>
-                        <Button
-                            type="button"
-                            variant="secondary"
-                            size="xs"
-                            className="!h-6 !min-h-6 !min-w-6 gap-0.5 px-1 !text-xs leading-4 min-[360px]:px-1.5"
-                            onClick={() => onSend(message)}
-                            disabled={!canSend}
-                            aria-busy={sendPending || undefined}
-                            aria-label={t('chat.queuedMessage.send')}
-                        >
-                            <Icon name={pendingAdmission || sendPending ? 'loader-4' : 'send-plane'} className={cn('size-3', (pendingAdmission || sendPending) && 'animate-spin')} aria-hidden="true" />
-                            <span className="hidden max-w-16 truncate min-[360px]:inline">{t('chat.queuedMessage.send')}</span>
-                        </Button>
-                    </div>
-                </>
-            ) : (
-                <>
-                    <span className="min-w-0 flex-1 truncate typography-micro leading-4 text-foreground md:typography-ui-label">
-                        {firstLine || t('chat.queuedMessage.empty')}
-                        {attachmentCount > 0 && (
-                            <span className="ml-1 text-muted-foreground">{t('chat.queuedMessage.attachments', { count: attachmentCount })}</span>
-                        )}
+                </button>
+                <button
+                    type="button"
+                    onClick={() => onSend(message)}
+                    disabled={!canSend}
+                    aria-busy={sendPending || undefined}
+                    aria-label={t('chat.queuedMessage.send')}
+                    className={cn(
+                        'inline-flex items-center bg-transparent text-muted-foreground transition-colors hover:text-foreground disabled:pointer-events-none disabled:opacity-50',
+                        isMobile ? 'h-[1.625rem] gap-1.5 px-0 text-[11px]' : 'h-7 gap-1 px-0.5',
+                    )}
+                >
+                    <Icon
+                        name={pendingAdmission || sendPending ? 'loader-4' : 'send-plane'}
+                        className={cn(isMobile ? 'size-3' : 'size-3.5', (pendingAdmission || sendPending) && 'animate-spin')}
+                        aria-hidden="true"
+                    />
+                    <span className={cn('font-medium', isMobile ? 'leading-none' : 'typography-ui-label')}>
+                        {t('chat.queuedMessage.send')}
                     </span>
-                    <div className="flex flex-shrink-0 items-center gap-1.5">
-                        <Button
-                            type="button"
-                            variant="secondary"
-                            size="xs"
-                            onClick={() => onEdit(message)}
-                            disabled={isReadOnly}
-                            aria-busy={editPending || undefined}
-                        >
-                            <Icon name={pendingAdmission || editPending ? 'loader-4' : 'edit'} className={cn('size-3', (pendingAdmission || editPending) && 'animate-spin')} aria-hidden="true" />
-                            {t('chat.queuedMessage.edit')}
-                        </Button>
-                        <Button
-                            type="button"
-                            variant="secondary"
-                            size="xs"
-                            onClick={() => onSend(message)}
-                            disabled={!canSend}
-                            aria-busy={sendPending || undefined}
-                        >
-                            <Icon name={pendingAdmission || sendPending ? 'loader-4' : 'send-plane'} className={cn('size-3', (pendingAdmission || sendPending) && 'animate-spin')} aria-hidden="true" />
-                            {t('chat.queuedMessage.send')}
-                        </Button>
-                        <button
-                            type="button"
-                            onClick={() => onRemove(message)}
-                            disabled={!canRemove}
-                            aria-busy={removePending || undefined}
-                            className={cn(
-                                'flex flex-shrink-0 items-center justify-center text-muted-foreground transition-colors',
-                                'hover:bg-[var(--interactive-hover)] hover:text-foreground',
-                                'disabled:pointer-events-none disabled:opacity-50',
-                                'size-6 rounded-full',
-                            )}
-                            aria-label={t('chat.queuedMessage.removeAria')}
-                        >
-                            <Icon name={removePending ? 'loader-4' : 'close'} className={cn('size-3.5', removePending && 'animate-spin')} aria-hidden="true" />
-                        </button>
-                    </div>
-                </>
-            )}
+                </button>
+                {!isMobile ? removeAction : null}
+            </div>
         </div>
     );
 });
@@ -542,31 +513,14 @@ export const QueuedMessageChips = memo(({ onEditMessage, onSendMessage, draftKey
     }
 
     return (
-        <div className={cn('w-full', isMobile ? 'pb-1' : 'px-0.5 pb-1.5 md:px-1 md:pb-2')}>
-            <div className="overflow-hidden rounded-lg border border-border/60 bg-[var(--surface-elevated)] text-[var(--surface-elevated-foreground)] shadow-sm dark:shadow-none md:rounded-xl">
-                <div className={cn(
-                    'flex w-full items-center text-left',
-                    isMobile
-                        ? 'gap-1.5 border-b border-border/40 px-2 py-1'
-                        : 'gap-1.5 px-2.5 py-1.5 md:gap-2 md:px-3 md:py-2',
-                )}>
-                    <span className={cn(
-                        'flex-shrink-0 font-medium',
-                        isMobile
-                            ? 'text-xs leading-4 text-foreground'
-                            : 'typography-micro leading-4 text-foreground md:typography-ui-label',
-                    )}>
-                        {t('chat.queuedMessage.title')}
-                    </span>
-                    <Icon
-                        name="time"
-                        className={cn(
-                            'ml-auto text-muted-foreground',
-                            isMobile ? 'size-3.5 opacity-80' : 'size-3.5 md:size-4',
-                        )}
-                        aria-hidden="true"
-                    />
-                </div>
+        <div className={cn(
+            'oc-composer-queue relative z-0 -mb-5 w-full',
+            isMobile ? 'px-2' : 'px-4',
+        )}>
+            <div className={cn(
+                'overflow-hidden border border-border/60 bg-[var(--surface-elevated)] text-[var(--surface-elevated-foreground)] shadow-sm dark:shadow-none',
+                isMobile ? 'rounded-[1.25rem]' : 'rounded-2xl',
+            )}>
                 <DndContext
                     sensors={sensors}
                     collisionDetection={closestCenter}
@@ -579,8 +533,8 @@ export const QueuedMessageChips = memo(({ onEditMessage, onSendMessage, draftKey
                         <div className={cn(
                             'flex flex-col overflow-y-auto',
                             isMobile
-                                ? 'max-h-[8rem] divide-y divide-border/30 py-0.5 pl-0 pr-1.5'
-                                : 'max-h-[8rem] gap-1 px-2.5 pb-2 md:max-h-[10.5rem] md:gap-1.5 md:px-3 md:pb-3',
+                                ? 'max-h-[6rem] px-2 py-1'
+                                : 'max-h-[8rem] gap-0.5 px-3 pb-1 pt-1.5 md:max-h-[10.5rem]',
                         )}>
                             {queuedMessages.map((message) => (
                                 <QueuedMessageChip
@@ -602,6 +556,7 @@ export const QueuedMessageChips = memo(({ onEditMessage, onSendMessage, draftKey
                         </div>
                     </SortableContext>
                 </DndContext>
+                <div aria-hidden="true" className={isMobile ? 'h-4' : 'h-5'} />
             </div>
         </div>
     );

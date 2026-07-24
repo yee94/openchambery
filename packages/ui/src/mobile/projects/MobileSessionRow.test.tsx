@@ -1,4 +1,5 @@
 import { describe, expect, test } from 'bun:test';
+import { readFileSync } from 'node:fs';
 import React from 'react';
 import { renderToString } from 'react-dom/server';
 
@@ -11,6 +12,23 @@ import {
 } from './mobileSessionIndicator';
 
 const noop = () => undefined;
+const mobileStyles = readFileSync(new URL('../../styles/mobile.css', import.meta.url), 'utf8');
+
+describe('Mobile project group chrome', () => {
+  test('uses shared mobile border tokens with a quieter dark treatment', () => {
+    expect(mobileStyles).toContain('--oc-mobile-border: color-mix(');
+    expect(mobileStyles).toContain('--oc-mobile-divider: var(--oc-mobile-border)');
+    expect(mobileStyles).toContain('var(--surface-foreground) 3%');
+    expect(mobileStyles).toContain('var(--surface-foreground) 2%');
+    expect(mobileStyles).toContain('border: 1px solid var(--oc-mobile-border)');
+    expect(mobileStyles).toContain('box-shadow: inset 0 -1px 0 var(--oc-mobile-divider)');
+  });
+
+  test('does not stack the label divider on a collapsed group border', () => {
+    expect(mobileStyles).toContain('.oc-mobile-labeled-surface-group-label:last-child');
+    expect(mobileStyles).toContain('.oc-mobile-labeled-surface-group-label:last-child {\n  box-shadow: none;');
+  });
+});
 
 describe('resolveMobileSessionIndicator', () => {
   const resolve = (overrides: Partial<{

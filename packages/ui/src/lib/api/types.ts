@@ -1129,7 +1129,7 @@ export interface RemoteClientRecord {
   devicePlatform?: string | null;
   usesRelay?: boolean;
   /** Transport that carried the device's most recent authenticated request. */
-  lastTransport?: 'relay' | 'direct' | null;
+  lastTransport?: 'relay' | 'hapi' | 'direct' | null;
 }
 
 // A pairing link that has been created but not yet redeemed by a device.
@@ -1198,6 +1198,9 @@ export interface ClientAuthAPI {
   // Direct transports the server can be reached on, for the create-device dialog.
   // LAN reflects the server's actual bind, independent of the UI origin.
   getPairingTransports(): Promise<{ local: string | null; lan: string | null; relayAvailable: boolean }>;
+  // Starts/reuses a HAPI tunwg channel from this PC to the configured relay API
+  // host. The server automatically forwards its active OpenChamber listen port.
+  startHapiTunnel(input: { gatewayUrl: string }): Promise<{ url: string; provider: 'hapi' }>;
 }
 
 export interface RuntimeAPIs {

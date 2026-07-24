@@ -51,6 +51,23 @@ describe('connection payload helpers', () => {
     ]);
   });
 
+  test('round-trips an explicit HAPI gateway candidate', () => {
+    const payload = buildPairingConnectionPayload({
+      pairingId: 'pair_hapi',
+      secret: 'one-time-secret',
+      candidates: [
+        { type: 'lan', url: 'http://192.168.1.20:4096', priority: 10 },
+        { type: 'hapi', url: 'https://xxxx.hapi.run/', priority: 20 },
+      ],
+    });
+
+    const parsed = parsePairingConnectionPayload(encodePairingConnectionPayload(payload));
+    expect(parsed?.candidates).toEqual([
+      { type: 'lan', url: 'http://192.168.1.20:4096', priority: 10 },
+      { type: 'hapi', url: 'https://xxxx.hapi.run', priority: 20 },
+    ]);
+  });
+
   test('relay candidate keeps its path and rejects non-ws relay URLs / bad JWKs', () => {
     const withBadRelay = (candidate: Record<string, unknown>) =>
       Buffer.from(JSON.stringify({ v: 2, pairingId: 'pair_1', secret: 's', candidates: [candidate] })).toString('base64url');

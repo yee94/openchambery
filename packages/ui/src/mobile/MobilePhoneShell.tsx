@@ -6,6 +6,7 @@ import { useI18n } from '@/lib/i18n';
 import { useSessionUIStore } from '@/sync/session-ui-store';
 
 import { MobileAssistantTab } from './assistant/MobileAssistantTab';
+import { MobileDetailNavigation } from './MobileDetailNavigation';
 import {
   resolveMobileSecondaryBackDecision,
   type MobileParentSessionTarget,
@@ -22,8 +23,8 @@ export type MobilePhoneShellProps = {
   onAddProject: () => void;
   /** Enables assistants (opens settings at the assistants section). */
   onEnableAssistants: () => void;
-  /** Opens the saved mobile instances surface. */
-  onOpenInstances?: () => void;
+  /** Saved-instance management content for the standard phone secondary page. */
+  instancesPage?: React.ReactNode;
   /**
    * Authoritative parent of the current chat session (child.parentID). When set
    * on a chat secondary page, back navigates to the parent without closing
@@ -46,14 +47,14 @@ export type MobilePhoneShellProps = {
 };
 
 /**
- * Phone-only mobile navigation host: four root tabs plus a second-level chat
- * page. Session/draft targets are owned by the session-ui store; this host
+ * Phone-only mobile navigation host: four root tabs plus standard second-level
+ * pages. Session/draft targets are owned by the session-ui store; this host
  * only projects that authoritative state into the secondary page.
  */
 export function MobilePhoneShell({
   onAddProject,
   onEnableAssistants,
-  onOpenInstances,
+  instancesPage,
   parentSessionTarget = null,
   registerSecondaryBackHandler,
   scheduledContent,
@@ -66,6 +67,7 @@ export function MobilePhoneShell({
   const openSessionStore = useMobileNavigationStore((state) => state.openSession);
   const openDraftStore = useMobileNavigationStore((state) => state.openDraft);
   const openAssistantStore = useMobileNavigationStore((state) => state.openAssistant);
+  const openInstancesStore = useMobileNavigationStore((state) => state.openInstances);
   const closeSecondaryStore = useMobileNavigationStore((state) => state.closeSecondary);
 
   const setActiveTab = useEvent((tab: MobileTabId) => {
@@ -86,6 +88,10 @@ export function MobilePhoneShell({
 
   const openAssistant = useEvent((assistantID: string) => {
     openAssistantStore(assistantID);
+  });
+
+  const openInstances = useEvent(() => {
+    openInstancesStore();
   });
 
   // Scheduled-tab editor back (open create/edit form) sits above chat secondary
@@ -153,14 +159,35 @@ export function MobilePhoneShell({
       ),
       assistant: <MobileAssistantTab onEnable={onEnableAssistants} onOpenAssistant={openAssistant} />,
       scheduled: <MobileScheduledTab showHeader={false}>{scheduledTabBody}</MobileScheduledTab>,
-      settings: <MobileSettingsTab onOpenInstances={onOpenInstances} />,
+      settings: <MobileSettingsTab onOpenInstances={instancesPage ? openInstances : undefined} />,
     }),
-    [openChat, openAssistant, handleNewSessionDraft, onAddProject, onEnableAssistants, onOpenInstances, scheduledTabBody],
+    [openChat, openAssistant, openInstances, handleNewSessionDraft, onAddProject, onEnableAssistants, instancesPage, scheduledTabBody],
   );
 
   const secondaryKind = navigation.secondary?.kind ?? null;
   const secondaryPage = React.useMemo(() => {
     if (!secondaryKind) return null;
+    if (secondaryKind === 'instances') {
+      if (!instancesPage) return null;
+      return {
+        key: 'instances-secondary',
+        ariaLabel: t('mobile.menu.instances'),
+        onBack: handleSecondaryBack,
+        content: (
+          <div className="flex h-full min-h-0 flex-col bg-background">
+            <MobileDetailNavigation
+              sticky
+              title={t('mobile.menu.instances')}
+              backAriaLabel={t('header.actions.backAria')}
+              onBack={handleSecondaryBack}
+            />
+            <div className="min-h-0 flex-1 overflow-hidden">
+              {instancesPage}
+            </div>
+          </div>
+        ),
+      };
+    }
     if (secondaryKind === 'assistant') {
       return {
         key: 'assistant-secondary',
@@ -186,7 +213,7 @@ export function MobilePhoneShell({
           : { sessionId: '', directory: null },
       ),
     };
-  }, [secondaryKind, handleSecondaryBack, currentSessionId, currentSessionDirectory, renderChat, t]);
+  }, [secondaryKind, handleSecondaryBack, currentSessionId, currentSessionDirectory, instancesPage, renderChat, t]);
 
   return (
     <MobileTabsRoot

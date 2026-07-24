@@ -77,7 +77,7 @@ import { MobileChatScreen } from '@/mobile/chat';
 import { useMobileNavigationStore } from '@/mobile/useMobileNavigationStore';
 import { mobileBackNavigationCoordinator, useMobileNavigationDriver } from '@/mobile/mobileBackNavigation';
 import { DedicatedMobileAppProvider, type MobileAppActions } from './mobileAppContext';
-import { autoConnectLastInstance, connectionDisplayUrl, getAutoConnectTargetLabel, isActiveRuntimeConnection, reprobeActiveConnection, useMobileConnection } from './mobileConnections';
+import { autoConnectLastInstance, connectionDisplayUrl, getAutoConnectTargetLabel, isActiveRuntimeConnection, isHapiRuntimeActive, reprobeActiveConnection, useMobileConnection } from './mobileConnections';
 import { isRelayModeActive } from '@/lib/relay/runtime-tunnel';
 import { isQrScanSupported, parseConnectionPayload, scanConnectionQr } from './mobileQrScan';
 import { reconnectAppForTransportSwitch, resetAppForRuntimeEndpointChange } from './runtimeEndpointReset';
@@ -1131,7 +1131,11 @@ const MobileInstancesSurface: React.FC<{
                 const statusText = isConnectingRow
                   ? t('mobile.connect.connecting')
                   : isActive
-                    ? (isRelayModeActive() ? t('mobile.instances.status.connectedRelay') : t('mobile.instances.status.connectedDirect'))
+                    ? (isRelayModeActive()
+                      ? t('mobile.instances.status.connectedRelay')
+                      : isHapiRuntimeActive(connection)
+                        ? t('mobile.instances.status.connectedHapi')
+                        : t('mobile.instances.status.connectedDirect'))
                     : connection.candidates.some((c) => c.kind === 'direct') ? connectionDisplayUrl(connection) : t('mobile.connect.relay.badge');
                 return (
                   <div
@@ -2115,7 +2119,6 @@ const MobileShell: React.FC<{ onActiveConnectionDeleted: () => void }> = ({ onAc
   const [turnDiffMessageId, setTurnDiffMessageId] = React.useState<string | null>(null);
   const [mcpOpen, setMcpOpen] = React.useState(false);
   const [instancesOpen, setInstancesOpen] = React.useState(false);
-  const [returnToSettingsAfterInstances, setReturnToSettingsAfterInstances] = React.useState(false);
   const [isMcpRefreshing, setIsMcpRefreshing] = React.useState(false);
   const [settingsOpen, setSettingsOpen] = React.useState(false);
   const [updateOpen, setUpdateOpen] = React.useState(false);
@@ -2123,18 +2126,6 @@ const MobileShell: React.FC<{ onActiveConnectionDeleted: () => void }> = ({ onAc
   const [settingsInitialMobileStage, setSettingsInitialMobileStage] = React.useState<'nav' | 'page-content'>('nav');
   const [overflowOpen, setOverflowOpen] = React.useState(false);
   const toggleOverflowMenu = useEvent(() => setOverflowOpen((open) => !open));
-  const openInstancesFromSettings = useEvent(() => {
-    setReturnToSettingsAfterInstances(settingsOpen);
-    setSettingsOpen(false);
-    setInstancesOpen(true);
-  });
-  const closeInstances = useEvent(() => {
-    setInstancesOpen(false);
-    if (returnToSettingsAfterInstances) {
-      setSettingsOpen(true);
-    }
-    setReturnToSettingsAfterInstances(false);
-  });
   // When set, the Changes surface opens directly into the per-file diff for this path.
   const [pendingChangesDiff, setPendingChangesDiff] = React.useState<PendingMobileChangesDiff | null>(null);
   const currentDirectory = useDirectoryStore((state) => state.currentDirectory);
@@ -2158,6 +2149,21 @@ const MobileShell: React.FC<{ onActiveConnectionDeleted: () => void }> = ({ onAc
   const isPortrait = orientation === 'portrait';
   const [ipadSidebarOpen, setIpadSidebarOpen] = React.useState(isIPad && !isPortrait);
   const [ipadRightPanel, setIpadRightPanel] = React.useState<'files' | 'changes' | 'turn-diff' | null>(null);
+  const openInstancesPage = useEvent(() => {
+    setSettingsOpen(false);
+    if (isIPad) {
+      setInstancesOpen(true);
+      return;
+    }
+    useMobileNavigationStore.getState().openInstances();
+  });
+  const closeInstancesPage = useEvent(() => {
+    if (isIPad) {
+      setInstancesOpen(false);
+      return;
+    }
+    useMobileNavigationStore.getState().closeSecondary();
+  });
 
   const rootBackRoutesBlocked = mobileSessionPanelOpen
     || filesOpen
@@ -2295,7 +2301,7 @@ const MobileShell: React.FC<{ onActiveConnectionDeleted: () => void }> = ({ onAc
       openView: (target: 'files' | 'mcp' | 'instances' | 'update') => {
         if (target === 'files') openFilesSurface();
         else if (target === 'mcp') setMcpOpen(true);
-        else if (target === 'instances') setInstancesOpen(true);
+        else if (target === 'instances') openInstancesPage();
         else if (target === 'update') setUpdateOpen(true);
       },
       openChanges: ({ path, staged }: { path?: string; staged?: boolean } = {}) => {
@@ -2311,7 +2317,7 @@ const MobileShell: React.FC<{ onActiveConnectionDeleted: () => void }> = ({ onAc
         useMobileNavigationStore.getState().setActiveTab('settings');
       },
     }),
-    [isIPad, openChangesSurface, openFilesSurface, setSettingsPage],
+    [isIPad, openChangesSurface, openFilesSurface, openInstancesPage, setSettingsPage],
   );
   useDeepLinkHandlers(deepLinkHandlers);
 
@@ -2488,7 +2494,7 @@ const MobileShell: React.FC<{ onActiveConnectionDeleted: () => void }> = ({ onAc
       return true;
     }
     if (instancesOpen) {
-      closeInstances();
+      closeInstancesPage();
       return true;
     }
     if (settingsOpen) {
@@ -2616,7 +2622,7 @@ const MobileShell: React.FC<{ onActiveConnectionDeleted: () => void }> = ({ onAc
           key: 'instances',
           icon: 'server',
           label: t('mobile.menu.instances'),
-          onSelect: () => setInstancesOpen(true),
+          onSelect: openInstancesPage,
         });
       }
       if (showUpdateItem) {
@@ -2638,7 +2644,7 @@ const MobileShell: React.FC<{ onActiveConnectionDeleted: () => void }> = ({ onAc
       });
       return items;
     },
-    [dirtyChangeCount, isIPad, openChangesSurface, openFilesSurface, openNewSessionDraft, setActiveMainTab, showCapacitorOnlyFeatures, showUpdateItem, t],
+    [dirtyChangeCount, isIPad, openChangesSurface, openFilesSurface, openInstancesPage, openNewSessionDraft, setActiveMainTab, showCapacitorOnlyFeatures, showUpdateItem, t],
   );
 
   return (
@@ -2760,7 +2766,12 @@ const MobileShell: React.FC<{ onActiveConnectionDeleted: () => void }> = ({ onAc
                 setSettingsInitialMobileStage('page-content');
                 setSettingsOpen(true);
               }}
-              onOpenInstances={showCapacitorOnlyFeatures ? openInstancesFromSettings : undefined}
+              instancesPage={showCapacitorOnlyFeatures ? (
+                <MobileInstancesSurface
+                  onConnect={closeInstancesPage}
+                  onActiveConnectionDeleted={onActiveConnectionDeleted}
+                />
+              ) : undefined}
               parentSessionTarget={
                 parentSessionTarget
                   ? { id: parentSessionTarget.id, directory: parentSessionTarget.directory }
@@ -3099,15 +3110,12 @@ const MobileShell: React.FC<{ onActiveConnectionDeleted: () => void }> = ({ onAc
         {instancesOpen && showCapacitorOnlyFeatures ? (
           <MobileSurfaceShell
             open
-            onClose={closeInstances}
+            onClose={closeInstancesPage}
             ariaLabel={t('mobile.menu.instances')}
             title={t('mobile.menu.instances')}
           >
             <MobileInstancesSurface
-              onConnect={() => {
-                setReturnToSettingsAfterInstances(false);
-                setInstancesOpen(false);
-              }}
+              onConnect={closeInstancesPage}
               onActiveConnectionDeleted={onActiveConnectionDeleted}
             />
           </MobileSurfaceShell>
@@ -3127,7 +3135,7 @@ const MobileShell: React.FC<{ onActiveConnectionDeleted: () => void }> = ({ onAc
                 initialMobileStage={settingsInitialMobileStage}
                 visiblePageSlugs={[...MOBILE_SETTINGS_PAGE_SLUGS]}
                 onClose={() => setSettingsOpen(false)}
-                onOpenInstances={showCapacitorOnlyFeatures ? openInstancesFromSettings : undefined}
+                onOpenInstances={showCapacitorOnlyFeatures ? openInstancesPage : undefined}
               />
             </ErrorBoundary>
           </MobileSurfaceShell>

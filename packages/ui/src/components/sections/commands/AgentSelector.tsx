@@ -120,7 +120,7 @@ export const AgentSelector: React.FC<AgentSelectorProps> = ({
                                     closeMobilePanel();
                                 }}
                             >
-                                <AgentAvatar name={agent.name} size={16} />
+                                <AgentAvatar name={agent.name} size={16} className="mt-1.5" />
                                 <div className="min-w-0">
                                     <span className="typography-meta font-medium">{agent.name}</span>
                                     {agent.description && (
@@ -130,7 +130,7 @@ export const AgentSelector: React.FC<AgentSelectorProps> = ({
                                     )}
                                 </div>
                                 {isSelected && (
-                                    <div className="h-2 w-2 rounded-full bg-primary" />
+                                    <div className="mt-2 h-2 w-2 rounded-full bg-primary" />
                                 )}
                             </button>
                         );

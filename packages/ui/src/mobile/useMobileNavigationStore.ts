@@ -35,6 +35,8 @@ type MobileNavigationStore = MobileNavigationState & {
   openDraft: (options?: OpenDraftOptions) => void;
   /** Select an Assistant, then open its conversation as the second-level page. */
   openAssistant: (assistantID: string) => void;
+  /** Open saved-instance management as a second-level page. */
+  openInstances: () => void;
   closeSecondary: () => void;
   /** Runtime switch / disconnect: drop all navigation state. */
   reset: () => void;
@@ -60,6 +62,7 @@ export const useMobileNavigationStore = create<MobileNavigationStore>((set) => (
     useAssistantUIStore.getState().selectAssistant(assistantID);
     set({ secondary: { kind: 'assistant' } });
   },
+  openInstances: () => set({ secondary: { kind: 'instances' } }),
   closeSecondary: () =>
     set((state) => (state.secondary ? { ...state, secondary: null } : state)),
   reset: () => set({ ...INITIAL_MOBILE_NAVIGATION_STATE }),

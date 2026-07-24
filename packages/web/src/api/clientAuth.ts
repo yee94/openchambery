@@ -82,6 +82,24 @@ export const createWebClientAuthAPI = (): ClientAuthAPI => ({
     return { local: payload.local ?? null, lan: payload.lan ?? null, relayAvailable: payload.relayAvailable !== false };
   },
 
+  async startHapiTunnel(input): Promise<{ url: string; provider: 'hapi' }> {
+    const response = await runtimeFetch('/api/openchamber/tunnel/start', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json', Accept: 'application/json' },
+      body: JSON.stringify({
+        provider: 'hapi',
+        mode: 'quick',
+        hostname: input.gatewayUrl,
+      }),
+    });
+    const payload = await jsonOrNull<{ ok?: boolean; url?: unknown; provider?: unknown; error?: string }>(response);
+    const url = typeof payload?.url === 'string' ? payload.url.trim() : '';
+    if (!response.ok || payload?.ok !== true || payload?.provider !== 'hapi' || !url) {
+      throw new Error(payload?.error || response.statusText || 'Failed to start HAPI tunnel');
+    }
+    return { url, provider: 'hapi' };
+  },
+
   async cancelPairing(id: string): Promise<{ cancelled: boolean }> {
     const response = await runtimeFetch(`/api/client-auth/pairing/sessions/${encodeURIComponent(id)}`, {
       method: 'DELETE',

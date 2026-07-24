@@ -80,6 +80,32 @@ final result: passed
 
 ---
 
+# Mobile queue density follow-up
+
+## Comparison input
+
+- Source state: `/var/folders/5l/tlc329r51b17td86h3klclbw0000gn/T/codex-clipboard-9b51d0fa-3f31-4cb0-8f56-c00e51cf8d19.png`
+- Surface: dark mobile composer with two queued messages and the expanded composer attached below.
+
+## Density correction
+
+- Mobile queue rows no longer add per-row vertical padding; their interactive controls now resolve to a compact `26px` instead of the original `28px`.
+- Mobile edit/send icons resolve to `12px` and action labels to `11px`.
+- Edit and Send now use the same clearly visible `6px` inter-action gap as each action's icon-to-label gap.
+- The queue list top/bottom padding is now `4px`, its maximum height is `96px`, and the hidden composer-overlap spacer is `16px`.
+- Desktop row density and control sizing remain unchanged.
+- The temporary queue mock route was removed after the user cancelled the mockup request.
+
+## Validation
+
+- Queue state and mutation suite: `17 passed`.
+- Vite accepted the HMR update; the existing non-component exports continue to trigger the repository's known Fast Refresh lint rule.
+- Both the UI server on `5180` and backend on `3902` were listening after validation.
+
+final result: passed
+
+---
+
 # Unified mobile scheduled list and secondary navigation QA
 
 ## Comparison inputs

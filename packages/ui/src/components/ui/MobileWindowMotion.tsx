@@ -374,7 +374,7 @@ export const MobileWindowMotion: React.FC<MobileWindowMotionProps> = ({
       aria-modal={active && isTop ? 'true' : undefined} aria-hidden={isPreview || !active || !isTop || undefined} inert={isPreview || !active || !isTop || undefined}
       onClick={() => { if (active && !isPreview && isTop) onOpenChangeRef.current(false); }}
     >
-      <div ref={setSurfaceRef} tabIndex={-1} className={cn(getMobileWindowMotionSurfaceLayout(presentation, edge), surfaceClassName)} style={{ contain: 'layout paint style' }} onClick={(event) => event.stopPropagation()}>
+      <div ref={setSurfaceRef} tabIndex={-1} className={cn('oc-mobile-floating-shell', getMobileWindowMotionSurfaceLayout(presentation, edge), surfaceClassName)} style={{ contain: 'layout paint style' }} onClick={(event) => event.stopPropagation()}>
         {children}
       </div>
     </div>

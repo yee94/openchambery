@@ -90,8 +90,14 @@ export type MobileRelayConfig = {
 // first — LAN preferred, relay fallback) plus a single client token, and the app
 // re-probes them on every connect/reconnect so the same device works at home
 // (direct) and away (relay) without re-pairing.
+//
+// `surface` labels a direct URL's origin without changing the channel path:
+// plain fetch for lan/tunnel/hapi, E2EE only for relay. HAPI is a public
+// HTTPS gateway (e.g. tunwg) that already terminates at this OpenChamber host.
+type MobileDirectSurface = 'lan' | 'tunnel' | 'hapi';
+
 export type MobileTransportCandidate =
-  | { kind: 'direct'; url: string }
+  | { kind: 'direct'; url: string; surface?: MobileDirectSurface }
   | { kind: 'relay'; relay: MobileRelayConfig };
 
 export type MobileSavedConnection = {
@@ -194,19 +200,33 @@ export const relayConnectionRuntimeKey = (relay: MobileRelayConfig): string =>
 const canonicalRelayUrl = (relay: MobileRelayConfig): string => `relay://${relay.serverId}`;
 
 // --- Transport-candidate helpers on a saved connection ---
-const directCandidates = (connection: { candidates: MobileTransportCandidate[] }): Array<{ kind: 'direct'; url: string }> =>
-  connection.candidates.filter((c): c is { kind: 'direct'; url: string } => c.kind === 'direct');
+const directCandidates = (connection: { candidates: MobileTransportCandidate[] }): Array<Extract<MobileTransportCandidate, { kind: 'direct' }>> =>
+  connection.candidates.filter((c): c is Extract<MobileTransportCandidate, { kind: 'direct' }> => c.kind === 'direct');
 
 const relayCandidateOf = (connection: { candidates: MobileTransportCandidate[] }): MobileRelayConfig | null => {
   const found = connection.candidates.find((c) => c.kind === 'relay');
   return found && found.kind === 'relay' ? found.relay : null;
 };
 
-// Display URL for a saved connection: the first direct URL, else the relay
-// pseudo-URL. Used only for the connections list UI.
+// True when any saved candidate is an explicit HAPI gateway (not inferred from
+// hostname — only the pairing/import path stamps surface: 'hapi').
+export const connectionHasHapiCandidate = (connection: { candidates: MobileTransportCandidate[] }): boolean =>
+  directCandidates(connection).some((c) => c.surface === 'hapi');
+
+export const isHapiRuntimeActive = (connection: { candidates: MobileTransportCandidate[] }): boolean => {
+  if (isRelayModeActive()) return false;
+  const activeUrl = getRuntimeApiBaseUrl();
+  return directCandidates(connection).some((candidate) =>
+    candidate.surface === 'hapi' && isSameConnectionUrl(candidate.url, activeUrl));
+};
+
+// Prefer showing the HAPI gateway URL when present so the list reflects the
+// away-path users care about; otherwise the first direct URL / relay pseudo-URL.
 export const connectionDisplayUrl = (connection: { candidates: MobileTransportCandidate[] }): string => {
-  const direct = directCandidates(connection)[0];
-  if (direct) return direct.url;
+  const directs = directCandidates(connection);
+  const hapi = directs.find((c) => c.surface === 'hapi');
+  if (hapi) return hapi.url;
+  if (directs[0]) return directs[0].url;
   const relay = relayCandidateOf(connection);
   return relay ? canonicalRelayUrl(relay) : '';
 };
@@ -237,7 +257,7 @@ const candidateSetsMatch = (a: MobileTransportCandidate[], b: MobileTransportCan
 };
 
 // Build the ordered candidate set for a newly typed/pasted server URL.
-const directCandidatesFromUrl = (url: string): MobileTransportCandidate[] => {
+const directCandidatesFromUrl = (url: string, surface?: MobileDirectSurface): MobileTransportCandidate[] => {
   const normalized = (() => {
     try {
       return normalizeConnectionUrl(url);
@@ -245,7 +265,8 @@ const directCandidatesFromUrl = (url: string): MobileTransportCandidate[] => {
       return '';
     }
   })();
-  return normalized ? [{ kind: 'direct', url: normalized }] : [];
+  if (!normalized) return [];
+  return surface ? [{ kind: 'direct', url: normalized, surface }] : [{ kind: 'direct', url: normalized }];
 };
 
 // Resolve a connect request into an ordered candidate set: an explicit set
@@ -498,11 +519,18 @@ const switchToRelayRuntime = (
 // Metadata storage (localStorage) — never holds the token on native.
 // ---------------------------------------------------------------------------
 
+const parseDirectSurface = (value: unknown): MobileDirectSurface | undefined => {
+  if (value === 'lan' || value === 'tunnel' || value === 'hapi') return value;
+  return undefined;
+};
+
 const parseCandidate = (value: unknown): MobileTransportCandidate | null => {
   if (!value || typeof value !== 'object') return null;
   const c = value as Record<string, unknown>;
   if (c.kind === 'direct') {
-    return typeof c.url === 'string' && c.url.trim() ? { kind: 'direct', url: c.url } : null;
+    if (typeof c.url !== 'string' || !c.url.trim()) return null;
+    const surface = parseDirectSurface(c.surface);
+    return surface ? { kind: 'direct', url: c.url, surface } : { kind: 'direct', url: c.url };
   }
   if (c.kind === 'relay') {
     const relay = parseRelayConfig(c.relay);
@@ -558,7 +586,11 @@ const readConnections = (): MobileSavedConnection[] => {
 const serializeCandidate = (c: MobileTransportCandidate): unknown =>
   c.kind === 'relay'
     ? { kind: 'relay', relay: { relayUrl: c.relay.relayUrl, serverId: c.relay.serverId, hostEncPubJwk: c.relay.hostEncPubJwk } }
-    : { kind: 'direct', url: c.url };
+    : {
+        kind: 'direct',
+        url: c.url,
+        ...(c.surface ? { surface: c.surface } : {}),
+      };
 
 const writeConnections = (connections: MobileSavedConnection[]): void => {
   if (typeof window === 'undefined') return;
@@ -754,7 +786,7 @@ export const deleteMobileConnection = async (id: string): Promise<MobileSavedCon
 // the already-open probe tunnel; switchToTransport adopts it as the runtime
 // tunnel instead of dialing a fresh one.
 type ChosenTransport =
-  | { kind: 'direct'; url: string }
+  | { kind: 'direct'; url: string; surface?: MobileDirectSurface }
   | { kind: 'relay'; relay: MobileRelayConfig; tunnel?: ReturnType<typeof createRelayTunnelClient> };
 
 type ProbeResult =
@@ -795,7 +827,10 @@ const probeConnectionCandidates = async (
   const probeDirectChain = async (): Promise<ProbeResult> => {
     for (const candidate of directList) {
       const url = normalizeConnectionUrl(candidate.url) || candidate.url;
-      const headers = token ? { Authorization: `Bearer ${token}` } : undefined;
+      const headers = {
+        ...(token ? { Authorization: `Bearer ${token}` } : {}),
+        ...(candidate.surface === 'hapi' ? { 'X-OpenChamber-Transport': 'hapi' } : {}),
+      };
       // /health is unauthenticated by design — never send the bearer token to an
       // address whose identity has not been checked yet.
       const health = await requestWithTimeout(`${url}/health`, { method: 'GET' }, requestOptions);
@@ -818,7 +853,7 @@ const probeConnectionCandidates = async (
       // bearer token, so fall through to the password flow to mint one.
       const authDisabled = status?.disabled === true;
       if (!token && isCapacitorApp() && !authDisabled && status?.scope !== 'client') return { status: 'needs-login' };
-      return { status: 'ok', transport: { kind: 'direct', url } };
+      return { status: 'ok', transport: { kind: 'direct', url, ...(candidate.surface ? { surface: candidate.surface } : {}) } };
     }
     return { status: 'unreachable' };
   };
@@ -917,7 +952,12 @@ const switchToTransport = (
   if (transport.kind === 'relay') {
     switchToRelayRuntime(transport.relay, token, options?.grant, options?.runtimeKey, transport.tunnel);
   } else {
-    switchRuntimeEndpoint({ apiBaseUrl: transport.url, clientToken: token, runtimeKey: options?.runtimeKey });
+    switchRuntimeEndpoint({
+      apiBaseUrl: transport.url,
+      clientToken: token,
+      runtimeKey: options?.runtimeKey,
+      requestHeaders: transport.surface === 'hapi' ? { 'X-OpenChamber-Transport': 'hapi' } : null,
+    });
   }
   // Every live connection is an opportunity to learn the server's CURRENT LAN
   // addresses (pairing-payload candidates go stale when DHCP reassigns the
@@ -1008,7 +1048,7 @@ export const validateMobileConnectionSession = async (input: {
 // A live transport a redeem/login settled on: a reachable direct URL, or an OPEN
 // relay tunnel the caller must close after use.
 type LiveTransport =
-  | { kind: 'direct'; url: string }
+  | { kind: 'direct'; url: string; surface?: MobileDirectSurface }
   | { kind: 'relay'; relay: MobileRelayConfig; tunnel: ReturnType<typeof createRelayTunnelClient> };
 
 // Convert pairing-payload candidates into ordered mobile transport candidates:
@@ -1019,7 +1059,14 @@ const pairingCandidatesToMobile = (candidates: PairingEndpointCandidate[]): Mobi
     .sort((left, right) => {
       const delta = (left.priority ?? 100) - (right.priority ?? 100);
       if (delta !== 0) return delta;
-      const rank = (c: PairingEndpointCandidate): number => (c.type === 'relay' ? 2 : c.url.startsWith('https://') ? 0 : 1);
+      // Prefer LAN over public gateways on ties so "prefer local" QR links try
+      // home Wi-Fi first; HAPI/tunnel still beat relay.
+      const rank = (c: PairingEndpointCandidate): number => {
+        if (c.type === 'relay') return 3;
+        if (c.type === 'lan') return 0;
+        if (c.type === 'hapi') return 1;
+        return c.url.startsWith('https://') ? 1 : 2;
+      };
       return rank(left) - rank(right);
     })
     .flatMap((c): MobileTransportCandidate[] => {
@@ -1027,7 +1074,8 @@ const pairingCandidatesToMobile = (candidates: PairingEndpointCandidate[]): Mobi
         const relay = parseRelayConfig({ relayUrl: c.relayUrl, serverId: c.serverId, hostEncPubJwk: c.hostEncPubJwk });
         return relay ? [{ kind: 'relay', relay }] : [];
       }
-      return directCandidatesFromUrl(c.url);
+      const surface: MobileDirectSurface = c.type === 'hapi' ? 'hapi' : c.type === 'tunnel' ? 'tunnel' : 'lan';
+      return directCandidatesFromUrl(c.url, surface);
     });
 
 // Establish the first reachable LIVE transport for an ordered candidate set:
@@ -1060,7 +1108,7 @@ const establishLiveTransport = async (
         continue;
       }
     }
-    return { kind: 'direct', url };
+    return { kind: 'direct', url, ...(candidate.surface ? { surface: candidate.surface } : {}) };
   }
   return null;
 };
@@ -1187,12 +1235,13 @@ let candidateRefreshInFlight = false;
 //   - fresh `lan` candidates REPLACE the previous http:// (LAN-class) direct
 //     candidates — a LAN address the server no longer holds is dead weight that
 //     slows every future re-probe;
-//   - https:// (tunnel-class) direct candidates are preserved — the server does
-//     not know its own public tunnel hostnames;
+//   - https:// (tunnel/HAPI-class) direct candidates are preserved — the server
+//     does not know its own public tunnel hostnames;
 //   - the relay candidate is preserved as the last-resort transport.
-// Only runs for relay-paired connections: their token/runtime key derives from
-// the stable relay identity, so rewriting direct URLs cannot orphan the stored
-// token. The response must echo the connection's serverId or it is ignored.
+// Runs for relay-paired connections (token key = stable serverId) and for
+// HAPI-paired connections that already carry an https direct candidate (token
+// key = that URL; refresh only rewrites LAN http entries).
+// When a relay is present the response must echo its serverId.
 export const refreshActiveConnectionCandidates = async (): Promise<CandidateRefreshResult> => {
   if (candidateRefreshInFlight) return 'skipped';
   const active = findActiveConnection();
@@ -1201,8 +1250,10 @@ export const refreshActiveConnectionCandidates = async (): Promise<CandidateRefr
     return 'skipped';
   }
   const relay = relayCandidateOf(active);
-  if (!relay) {
-    logConnect('candidates:refresh-skip', { reason: 'no-relay-candidate' });
+  const hasHapi = connectionHasHapiCandidate(active);
+  const hasHttpsDirect = directCandidates(active).some((candidate) => candidate.url.startsWith('https://'));
+  if (!relay && !hasHapi && !hasHttpsDirect) {
+    logConnect('candidates:refresh-skip', { reason: 'no-stable-remote-transport' });
     return 'skipped';
   }
   candidateRefreshInFlight = true;
@@ -1216,10 +1267,15 @@ export const refreshActiveConnectionCandidates = async (): Promise<CandidateRefr
       return 'skipped';
     }
     const payload = await response.json().catch(() => null) as { serverId?: unknown; candidates?: unknown } | null;
-    // Identity gate: the refresh must come from the server this device paired
-    // with. Old servers (no serverId) are skipped rather than trusted blindly.
-    if (!payload || payload.serverId !== relay.serverId) {
+    // Identity gate when the device knows a relay serverId. HAPI-only devices
+    // have no relay pin; they still accept LAN candidates from the live host
+    // they already authenticated to with their client token.
+    if (relay && (!payload || payload.serverId !== relay.serverId)) {
       logConnect('candidates:refresh-skip', { reason: 'server-id-mismatch' });
+      return 'skipped';
+    }
+    if (!payload) {
+      logConnect('candidates:refresh-skip', { reason: 'empty-payload' });
       return 'skipped';
     }
     const reported = Array.isArray(payload.candidates) ? payload.candidates : [];
@@ -1242,11 +1298,13 @@ export const refreshActiveConnectionCandidates = async (): Promise<CandidateRefr
       logConnect('candidates:refresh-skip', { reason: 'no-lan-reported' });
       return 'skipped';
     }
-    const preservedHttps = directCandidates(active).filter((candidate) => candidate.url.startsWith('https://'));
+    // Preserve public gateways (HAPI / tunnel) with their surface tags intact.
+    const preservedRemote = directCandidates(active).filter((candidate) =>
+      candidate.surface === 'hapi' || candidate.surface === 'tunnel' || candidate.url.startsWith('https://'));
     const next: MobileTransportCandidate[] = [
-      ...lanUrls.map((url): MobileTransportCandidate => ({ kind: 'direct', url })),
-      ...preservedHttps,
-      { kind: 'relay', relay },
+      ...lanUrls.map((url): MobileTransportCandidate => ({ kind: 'direct', url, surface: 'lan' })),
+      ...preservedRemote,
+      ...(relay ? [{ kind: 'relay' as const, relay }] : []),
     ];
     const unchanged = JSON.stringify(active.candidates.map(serializeCandidate)) === JSON.stringify(next.map(serializeCandidate));
     if (unchanged) return 'unchanged';
@@ -1470,7 +1528,9 @@ export const useMobileConnection = (onConnected: () => void): UseMobileConnectio
       // A relay transport hands its live redeem tunnel to the runtime (adopted
       // inside switchToTransport) — closing it here would tear down the runtime.
       switchToTransport(
-        chosen.kind === 'relay' ? { kind: 'relay', relay: chosen.relay, tunnel: chosen.tunnel } : { kind: 'direct', url: chosen.url },
+        chosen.kind === 'relay'
+          ? { kind: 'relay', relay: chosen.relay, tunnel: chosen.tunnel }
+          : { kind: 'direct', url: chosen.url, ...(chosen.surface ? { surface: chosen.surface } : {}) },
         issuedToken,
         { runtimeKey: secureTokenKeyOf({ candidates: deviceCandidates }) },
       );
@@ -1531,7 +1591,11 @@ export const useMobileConnection = (onConnected: () => void): UseMobileConnectio
         if (chosen.kind === 'direct' && !isCapacitorApp()) {
           persistMetadata({ id, label, candidates });
           setPendingConnection(null);
-          switchToTransport({ kind: 'direct', url: chosen.url }, null, { runtimeKey: secureTokenKeyOf({ candidates }) });
+          switchToTransport(
+            { kind: 'direct', url: chosen.url, ...(chosen.surface ? { surface: chosen.surface } : {}) },
+            null,
+            { runtimeKey: secureTokenKeyOf({ candidates }) },
+          );
           onConnected();
           return;
         }
@@ -1548,7 +1612,9 @@ export const useMobileConnection = (onConnected: () => void): UseMobileConnectio
       // A relay transport hands its live login tunnel to the runtime (adopted
       // inside switchToTransport) — closing it here would tear down the runtime.
       switchToTransport(
-        chosen.kind === 'relay' ? { kind: 'relay', relay: chosen.relay, tunnel: chosen.tunnel } : { kind: 'direct', url: chosen.url },
+        chosen.kind === 'relay'
+          ? { kind: 'relay', relay: chosen.relay, tunnel: chosen.tunnel }
+          : { kind: 'direct', url: chosen.url, ...(chosen.surface ? { surface: chosen.surface } : {}) },
         issuedToken,
         { runtimeKey: secureTokenKeyOf({ candidates }) },
       );
@@ -1581,11 +1647,15 @@ export const useMobileConnection = (onConnected: () => void): UseMobileConnectio
       // https:// directs and the relay candidate are preserved. Dropping the
       // relay here used to change the token key and orphan the stored token.
       const inputDirects = candidates.filter((c): c is Extract<MobileTransportCandidate, { kind: 'direct' }> => c.kind === 'direct');
-      const preservedHttps = directCandidates(existing).filter(
-        (c) => c.url.startsWith('https://') && !inputDirects.some((n) => isSameConnectionUrl(n.url, c.url)),
+      // Preserve HAPI/tunnel gateways (and any other https directs) the form does
+      // not edit, keeping their surface tags so status UI still shows HAPI.
+      const preservedRemote = directCandidates(existing).filter(
+        (c) =>
+          (c.surface === 'hapi' || c.surface === 'tunnel' || c.url.startsWith('https://'))
+          && !inputDirects.some((n) => isSameConnectionUrl(n.url, c.url)),
       );
       const relay = relayCandidateOf(existing);
-      candidates = [...inputDirects, ...preservedHttps, ...(relay ? [{ kind: 'relay' as const, relay }] : [])];
+      candidates = [...inputDirects, ...preservedRemote, ...(relay ? [{ kind: 'relay' as const, relay }] : [])];
     }
     if (candidates.length === 0) {
       setError(t('mobile.connect.error.urlRequired'));

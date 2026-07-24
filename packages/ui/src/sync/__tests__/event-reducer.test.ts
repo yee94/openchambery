@@ -229,6 +229,30 @@ describe("applyDirectoryEvent", () => {
     expect(result).toBe(true)
   })
 
+  test("replaces a session-scoped optimistic text part instead of rendering it twice", () => {
+    const optimisticPart = {
+      id: "prt_client",
+      messageID: "msg_1",
+      sessionID: "ses_1",
+      type: "text",
+      text: "hello",
+      __openchamberOptimistic: true,
+    } as Part
+    const draft = state({
+      message: { ses_1: [{ id: "msg_1", sessionID: "ses_1", role: "user", time: { created: 1 } } as Message] },
+      part: { msg_1: [optimisticPart] },
+    })
+
+    expect(applyDirectoryEvent(draft, partUpdatedEvent())).toBe(true)
+    expect(draft.part.msg_1).toEqual([{
+      id: "prt_1",
+      messageID: "msg_1",
+      sessionID: "ses_1",
+      type: "text",
+      text: "hello",
+    }])
+  })
+
   test("skips duplicate session status events", () => {
     const draft = state()
     const busyStatus = { type: "busy" } as SessionStatus

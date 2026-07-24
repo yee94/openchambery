@@ -85,6 +85,26 @@ describe('mobile connection storage', () => {
     }
   });
 
+  test('a HAPI device preserves its channel marker across restarts', async () => {
+    try {
+      installTestWindow();
+
+      await upsertMobileConnection({
+        label: 'HAPI Desktop',
+        candidates: [{ kind: 'direct', url: 'https://assigned.relay.example', surface: 'hapi' }],
+        clientToken: 'oc_client_hapi',
+      });
+
+      const [saved] = await loadMobileConnections();
+      expect(saved?.candidates).toEqual([
+        { kind: 'direct', url: 'https://assigned.relay.example', surface: 'hapi' },
+      ]);
+      expect(saved?.clientToken).toBe('oc_client_hapi');
+    } finally {
+      restoreGlobals();
+    }
+  });
+
   test('a multi-transport device persists all candidates in order (LAN then relay)', async () => {
     try {
       installTestWindow();

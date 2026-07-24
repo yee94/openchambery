@@ -496,7 +496,13 @@ describe("abort queue dispatch block", () => {
   })
 
   test("creates the exact-scope block before the SDK abort and rolls back its token on failure", async () => {
-    const store = createStore({}, { session: [{ id: "session-a", time: { created: 1 } } as Session] })
+    const store = createStore({}, {
+      session: [{ id: "session-a", time: { created: 1 } } as Session],
+      message: {
+        "session-a": [{ id: "assistant-pending", sessionID: "session-a", role: "assistant", time: { created: 2 } } as Message],
+      },
+      session_status: { "session-a": { type: "busy" } },
+    })
     const childStores = createChildStores([["/test/project", store]])
     const { abortCurrentOperation, setActionRefs } = await import("./session-actions")
     setActionRefs(mockSdk as unknown as OpencodeClient, childStores, () => "/current/project")
@@ -508,6 +514,8 @@ describe("abort queue dispatch block", () => {
     expect(abortBlockEvents[0]?.scope.sessionID).toBe("session-a")
     expect(abortBlockEvents[0]?.token).toBe("abort-1")
     expect(replyCalls.findIndex((call) => call.method === "session.abort")).toBeGreaterThanOrEqual(0)
+    expect(store.getState().session_status["session-a"]).toEqual({ type: "idle" })
+    expect(typeof store.getState().session_status_observed_at["session-a"]).toBe("number")
 
     abortReject = true
     await abortCurrentOperation("session-a")
@@ -521,7 +529,11 @@ describe("abort queue dispatch block", () => {
   })
 
   test("rolls back the matching block for SDK error and false data responses", async () => {
-    const store = createStore({}, { session: [{ id: "session-a", time: { created: 1 } } as Session] })
+    const store = createStore({}, {
+      session: [{ id: "session-a", time: { created: 1 } } as Session],
+      session_status: { "session-a": { type: "busy" } },
+      session_status_observed_at: { "session-a": 123 },
+    })
     const childStores = createChildStores([["/test/project", store]])
     const { abortCurrentOperation, setActionRefs } = await import("./session-actions")
     setActionRefs(mockSdk as unknown as OpencodeClient, childStores, () => "/current/project")
@@ -536,6 +548,8 @@ describe("abort queue dispatch block", () => {
       expect(begin?.event).toBe("begin")
       expect(clear?.event).toBe("clear")
       expect(clear?.token).toBe(begin?.token)
+      expect(store.getState().session_status["session-a"]).toEqual({ type: "busy" })
+      expect(store.getState().session_status_observed_at["session-a"]).toBe(123)
     }
   })
 })

@@ -20,7 +20,7 @@ export type MessageQueueServerDisplayItem = MessageQueueItem | MessageQueuePendi
 export const isMessageQueuePendingAdmissionItem = (value: unknown): value is MessageQueuePendingAdmissionItem => typeof value === 'object' && value !== null && (value as { kind?: unknown }).kind === 'pending-admission';
 export type MessageQueueServerSurface = { subscribe(listener: () => void): () => void; subscribeScope(scope: { transportIdentity: string; directory: string; sessionID: string }, listener: () => void): () => void; getState(): MessageQueueServerSurfaceState; getScope(scope: { transportIdentity: string; directory: string; sessionID: string }): MessageQueueScope | undefined; getPendingAdmissions(scope: { transportIdentity: string; directory: string; sessionID: string }): readonly MessageQueuePendingAdmissionItem[]; captureRuntime(): MessageQueueServerRuntimeCapture; start(): void; stop(): void; restart(): void; runShadowImport(): Promise<MessageQueueShadowImportState>; pause?(expectedGeneration: number): Promise<void>; resume?(expectedGeneration: number): Promise<void>; admit(input: { requestID: string; scope: { directory: string; sessionID: string }; item: Omit<MessageQueueAdmissionItem, 'attachments'>; attachments?: readonly QueueAttachmentCandidate[] }): Promise<MessageQueueServerMutationResult>; edit(input: { requestID: string; scopeID: string; revision: number; item: MessageQueueItem; patch: Parameters<typeof editTextQueueItem>[1]['item'] }): Promise<MessageQueueServerMutationResult>; remove(input: { requestID: string; scopeID: string; revision: number; item: MessageQueueItem }): Promise<MessageQueueServerMutationResult>; reserveEdit(input: { requestID: string; scopeID: string; revision: number; item: MessageQueueItem; owner: string; ttlMs: number; runtime: MessageQueueServerRuntimeCapture }): Promise<MessageQueueEditReservation | undefined>; renewEdit(input: { item: MessageQueueItem; token: string; generation: number; ttlMs: number; runtime: MessageQueueServerRuntimeCapture; signal?: AbortSignal }): Promise<MessageQueueEditReservationRenewal | undefined>; releaseEdit(input: { item: MessageQueueItem; token: string; runtime: MessageQueueServerRuntimeCapture }): Promise<void>; removeReserved(input: { requestID: string; scopeID: string; revision: number; item: MessageQueueItem; token: string; generation: number; runtime: MessageQueueServerRuntimeCapture }): Promise<boolean>; reorder(input: { requestID: string; scopeID: string; revision: number; queueItemIDs: string[] }): Promise<MessageQueueServerMutationResult>; manualSend(input: { requestID: string; scopeID: string; revision: number; item: MessageQueueItem }): Promise<MessageQueueServerMutationResult>; refresh(): Promise<void> };
 type Client = Pick<typeof queryClient, 'setQueryData' | 'getQueryData' | 'removeQueries' | 'invalidateQueries' | 'fetchQuery'>;
-type Dependencies = { snapshot: typeof fetchMessageQueueSnapshot; status: typeof fetchMessageQueueServerStatus; scope: typeof fetchMessageQueueScope; waitInvalidation: typeof waitForMessageQueueInvalidation; admit: typeof admitTextQueueItem; edit: typeof editTextQueueItem; remove: typeof removeQueueItem; reserve: typeof reserveMessageQueueItemForEdit; renew: typeof renewEditReservation; release: typeof releaseMessageQueueItemEditReservation; removeReserved: typeof removeReservedMessageQueueItem; reorder: typeof reorderQueueScope; manualSend: typeof sendQueueItemNow; upload: typeof uploadQueueAttachments; client: Client; capture: () => MessageQueueServerRuntimeCapture; current: (capture: MessageQueueServerRuntimeCapture) => boolean; legacyManualSend: (item: MessageQueueItem) => Promise<void>; shadowQueue: () => ReturnType<typeof getMessageQueueRuntime> };
+type Dependencies = { snapshot: typeof fetchMessageQueueSnapshot; status: typeof fetchMessageQueueServerStatus; scope: typeof fetchMessageQueueScope; waitInvalidation: typeof waitForMessageQueueInvalidation; admit: typeof admitTextQueueItem; edit: typeof editTextQueueItem; remove: typeof removeQueueItem; reserve: typeof reserveMessageQueueItemForEdit; renew: typeof renewEditReservation; release: typeof releaseMessageQueueItemEditReservation; removeReserved: typeof removeReservedMessageQueueItem; reorder: typeof reorderQueueScope; manualSend: typeof sendQueueItemNow; upload: typeof uploadQueueAttachments; client: Client; capture: () => MessageQueueServerRuntimeCapture; current: (capture: MessageQueueServerRuntimeCapture) => boolean; legacyManualSend: (item: MessageQueueItem) => Promise<void>; shadowQueue: () => ReturnType<typeof getMessageQueueRuntime>; admissionUploadTimeoutMs: number; admissionRequestTimeoutMs: number; admissionReconcileTimeoutMs: number };
 const withAbort = <T>(promise: Promise<T>, signal?: AbortSignal): Promise<T> => promise.then((value) => {
   if (signal?.aborted) throw new DOMException('Aborted', 'AbortError');
   return value;
@@ -48,10 +48,28 @@ const defaults: Dependencies = {
   current: (capture) => capture.transportIdentity === getRuntimeTransportIdentity() && capture.generation === getRuntimeGeneration(),
   legacyManualSend: async () => {},
   shadowQueue: getMessageQueueRuntime,
+  admissionUploadTimeoutMs: 120_000,
+  admissionRequestTimeoutMs: 20_000,
+  admissionReconcileTimeoutMs: 20_000,
 };
 const isConflict = (error: unknown) => error instanceof MessageQueueServerError && (error.code === 'revision_conflict' || error.code === 'row_version_conflict');
 const scopeKey = (scope: { transportIdentity: string; directory: string; sessionID: string }) => `${scope.transportIdentity}\u0000${scope.directory}\u0000${scope.sessionID}`;
 const pause = (ms: number, signal: AbortSignal) => new Promise<void>((resolve) => { const timer = setTimeout(resolve, ms); signal.addEventListener('abort', () => { clearTimeout(timer); resolve(); }, { once: true }); });
+const withDeadline = <T>(run: (signal: AbortSignal) => Promise<T>, parent: AbortSignal | undefined, timeoutMs: number): Promise<T> => {
+  const controller = new AbortController();
+  let timer: ReturnType<typeof setTimeout> | undefined;
+  const abort = () => controller.abort();
+  if (parent?.aborted) abort(); else parent?.addEventListener('abort', abort, { once: true });
+  if (!controller.signal.aborted) timer = setTimeout(abort, timeoutMs);
+  const unavailable = new Promise<never>((_resolve, reject) => {
+    if (controller.signal.aborted) reject(new MessageQueueServerError(0, 'unavailable'));
+    else controller.signal.addEventListener('abort', () => reject(new MessageQueueServerError(0, 'unavailable')), { once: true });
+  });
+  return Promise.race([Promise.resolve().then(() => run(controller.signal)), unavailable]).finally(() => {
+    if (timer !== undefined) clearTimeout(timer);
+    parent?.removeEventListener('abort', abort);
+  });
+};
 
 export const createMessageQueueServerRuntime = (dependencies: Partial<Dependencies> = {}): MessageQueueServerSurface => {
   const deps = { ...defaults, ...dependencies };
@@ -214,13 +232,12 @@ export const createMessageQueueServerRuntime = (dependencies: Partial<Dependenci
     const complete = await loadScope(descriptor, capture, controller?.signal ?? new AbortController().signal);
     return commitScope(complete, capture) ?? readMessageQueueScope(deps.client, scopeID, state.scopes.get(scopeID)?.revision ?? descriptor.revision, capture.transportIdentity);
   };
-  const reconcileAcknowledgedAdmission = async (scopeID: string, revision: number, capture: MessageQueueServerRuntimeCapture) => {
+  const reconcileAcknowledgedAdmission = async (scopeID: string, revision: number, capture: MessageQueueServerRuntimeCapture, signal: AbortSignal) => {
     const descriptor = state.scopes.get(scopeID);
     const authoritative = descriptor && descriptor.revision >= revision
       ? readMessageQueueScope(deps.client, scopeID, descriptor.revision, capture.transportIdentity)
       : undefined;
     if (authoritative) return authoritative;
-    const signal = controller?.signal ?? new AbortController().signal;
     const first = await deps.scope(scopeID, { offset: 0, limit: 8, signal });
     if (!isCaptureCurrent(capture) || first.scopeID !== scopeID || first.revision < revision) return;
     const known = state.scopes.get(scopeID);
@@ -312,27 +329,34 @@ export const createMessageQueueServerRuntime = (dependencies: Partial<Dependenci
       updatePendingAdmissions(pendingKey, (entries) => [...entries, pending]);
       let uploaded;
       try {
-        uploaded = await deps.upload(attachments, controller?.signal);
+        uploaded = await withDeadline((signal) => deps.upload(attachments, signal), controller?.signal, deps.admissionUploadTimeoutMs);
       } catch (error) { removePending(); if (!isCaptureCurrent(capture)) return { status: 'stale' }; throw error; }
       if (!isCaptureCurrent(capture)) { removePending(); return { status: 'stale' }; }
-      const payload = { requestID, scope, item: { ...item, attachments: uploaded.attachments }, signal: controller?.signal };
+      const payload = { requestID, scope, item: { ...item, attachments: uploaded.attachments } };
       replacePending({ ...pending, phase: 'admitting' });
       let acknowledgement: Awaited<ReturnType<typeof admitTextQueueItem>>;
       try {
-        acknowledgement = await deps.admit(payload);
+        acknowledgement = await withDeadline((signal) => deps.admit({ ...payload, signal }), controller?.signal, deps.admissionRequestTimeoutMs);
       } catch (error) {
         if (!isCaptureCurrent(capture)) { removePending(); return { status: 'stale' }; }
         if (!(error instanceof MessageQueueServerError) || error.code !== 'unavailable') { removePending(); throw error; }
         replacePending({ ...pending, phase: 'ambiguous' });
-        try { acknowledgement = await deps.admit(payload); }
+        try { acknowledgement = await withDeadline((signal) => deps.admit({ ...payload, signal }), controller?.signal, deps.admissionRequestTimeoutMs); }
         catch (replayError) { removePending(); if (!isCaptureCurrent(capture)) return { status: 'stale' }; throw replayError; }
       }
       const acknowledged = { ...pending, phase: 'acknowledged' as const, acknowledgedRevision: acknowledgement.revision };
       replacePending(acknowledged);
       if (acknowledgement.scopeID) {
-        const authoritative = reconcileAcknowledgedAdmission(acknowledgement.scopeID, acknowledgement.revision, capture);
-        void authoritative.then((scope) => { if (scope) removePending(); }).catch(() => undefined);
-      }
+        const authoritative = withDeadline(
+          (signal) => reconcileAcknowledgedAdmission(acknowledgement.scopeID!, acknowledgement.revision, capture, signal),
+          controller?.signal,
+          deps.admissionReconcileTimeoutMs,
+        );
+        // The POST acknowledgement is already durable. The shadow only bridges
+        // authoritative convergence, so a failed/hung read must not leave a
+        // permanently locked card; the observer can publish the real row later.
+        void authoritative.then(removePending, removePending);
+      } else removePending();
       return { status: 'committed' };
     },
     edit: ({ requestID, scopeID, revision, item, patch }) => mutate(scopeID, revision, (expected, current) => { const latest = current?.items.find((entry) => entry.queueItemID === item.queueItemID) ?? item; return deps.edit(latest.queueItemID, { requestID, expectedRevision: expected, expectedRowVersion: latest.rowVersion, item: patch, signal: controller?.signal }); }),

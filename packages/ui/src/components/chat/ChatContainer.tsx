@@ -35,6 +35,7 @@ import type { ChatMessageEntry } from './lib/turns/types';
 import { TimelineDialog } from './TimelineDialog';
 import { useChatTurnNavigation } from './hooks/useChatTurnNavigation';
 import { useChatSurfaceMode } from './useChatSurfaceMode';
+import { useMobileAppActions } from '@/apps/mobileAppContext';
 import { useDeviceInfo } from '@/lib/device';
 import { Button } from '@/components/ui/button';
 import { OverlayScrollbar } from '@/components/ui/OverlayScrollbar';
@@ -829,6 +830,7 @@ const ChatContainerContent: React.FC<ChatContainerContentProps> = ({
     }, [assistantHistory?.complete, assistantHistory?.loading, currentSessionId, sessionMessages.length, sessionPrefetchInfo, sync]);
 
     const { isMobile } = useDeviceInfo();
+    const isDedicatedMobileApp = useMobileAppActions() !== null;
     const isVSCode = isVSCodeRuntime();
     const chatSurfaceMode = useChatSurfaceMode();
     const draftOpen = Boolean(newSessionDraft?.open);
@@ -836,7 +838,7 @@ const ChatContainerContent: React.FC<ChatContainerContentProps> = ({
     // Despite the historical name, this now covers mobile too: the mobile
     // composer enters the same fullscreen-input mode via its drag handle.
     const isDesktopExpandedInput = isExpandedInput;
-    const useCompactDraftLayout = isMobile || isVSCode || chatSurfaceMode === 'mini-chat';
+    const useCompactDraftLayout = isDedicatedMobileApp || isMobile || isVSCode || chatSurfaceMode === 'mini-chat';
     const messageListRef = React.useRef<MessageListHandle | null>(null);
     const draftProjectLabel = React.useMemo(() => {
         const selectedProject = newSessionDraft?.selectedProjectId

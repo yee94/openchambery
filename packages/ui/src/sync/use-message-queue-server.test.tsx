@@ -38,17 +38,17 @@ describe('useMessageQueueServerScope', () => {
         expect(renderToStaticMarkup(<Probe surface={runtime('shadow')} />)).toContain('frozen:');
     });
 
-    test('keeps server rows frozen until cutover publishes active ownership', () => {
+    test('uses confirmed active server authority while cutover publication is still probing', () => {
         const reads: Array<{ transportIdentity: string; directory: string; sessionID: string }> = [];
-        expect(renderToStaticMarkup(<Probe surface={runtime('active', (input) => reads.push(input))} />)).toContain('frozen:');
+        expect(renderToStaticMarkup(<Probe surface={runtime('active', (input) => reads.push(input))} />)).toContain('server:false:false:server item');
         expect(reads).toEqual([{ transportIdentity: 'runtime-a', directory: '/project-a', sessionID: 'session-a' }]);
     });
 
     test('keeps frozen scope reads isolated by directory and runtime identity', () => {
         const surface = runtime('active');
-        expect(renderToStaticMarkup(<Probe surface={surface} directory="/project-b" />)).toContain('frozen:');
+        expect(renderToStaticMarkup(<Probe surface={surface} directory="/project-b" />)).toContain('server:false:false:');
         expect(renderToStaticMarkup(<Probe surface={surface} transportIdentity="runtime-b" />)).toContain('frozen:');
-        expect(renderToStaticMarkup(<Probe surface={surface} />)).toContain('frozen:');
+        expect(renderToStaticMarkup(<Probe surface={surface} />)).toContain('server:false:false:server item');
     });
 
     test('uses server scope rows for active and paused authority', () => {

@@ -78,6 +78,30 @@ export const createTunnelWiringRuntime = (dependencies) => {
 
     tunnelRoutesRuntime.registerRoutes(app);
 
+    // HAPI/tunwg keeps its key material and selected relay host under the
+    // OpenChamber data directory. Restore the outbound channel on server start
+    // so already-paired mobile devices keep working after both apps restart.
+    const restoreHapiTunnel = async () => {
+      const provider = tunnelProviderRegistry.get('hapi');
+      const hostname = await provider?.readPersistedHostname?.();
+      if (!hostname || getActiveTunnelController()) return null;
+      try {
+        const result = await tunnelService.start({ provider: 'hapi', mode: TUNNEL_MODE_QUICK, hostname });
+        tunnelAuthController.setActiveTunnel({
+          tunnelId: crypto.randomUUID(),
+          publicUrl: result.publicUrl,
+          mode: TUNNEL_MODE_QUICK,
+          provider: 'hapi',
+        });
+        console.log(`HAPI tunnel restored: ${result.publicUrl}`);
+        return result.publicUrl;
+      } catch (error) {
+        console.warn('Failed to restore HAPI tunnel:', error?.message || error);
+        return null;
+      }
+    };
+    const hapiRestorePromise = restoreHapiTunnel();
+
     return {
       tunnelService,
       startTunnelWithNormalizedRequest: (...args) => tunnelRoutesRuntime.startTunnelWithNormalizedRequest(...args),
@@ -85,6 +109,7 @@ export const createTunnelWiringRuntime = (dependencies) => {
       setActivePort: (value) => {
         activePort = value;
       },
+      hapiRestorePromise,
     };
   };
 

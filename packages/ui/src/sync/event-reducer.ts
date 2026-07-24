@@ -427,13 +427,12 @@ export function applyDirectoryEvent(
           ? { ...part, __dedupeNextDeltaFields: dedupeFields } as unknown as Part
           : part
       } else {
-        // Replace optimistic part (no sessionID) with server part of same type.
-        // Gate: only scan if the first part lacks sessionID (optimistic parts are
-        // always inserted first). Assistant messages never have optimistic parts,
-        // so this check is effectively free during streaming.
-        const hasOptimistic = next.length > 0 && !(next[0] as { sessionID?: string }).sessionID
-        const optimisticIdx = hasOptimistic && (part.type === "text" || part.type === "file")
-          ? next.findIndex((p) => p.type === part.type && !(p as { sessionID?: string }).sessionID)
+        // Replace the matching local optimistic part with the server-owned part.
+        // Optimistic parts carry real session IDs, so sessionID cannot distinguish
+        // them from authoritative parts. The local-only marker is set at insertion
+        // time and disappears when this replacement writes the server part.
+        const optimisticIdx = (part.type === "text" || part.type === "file")
+          ? next.findIndex((p) => p.type === part.type && (p as { __openchamberOptimistic?: boolean }).__openchamberOptimistic === true)
           : -1
         if (optimisticIdx >= 0) {
           next.splice(optimisticIdx, 1)

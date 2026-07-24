@@ -2716,6 +2716,7 @@ export const dict = {
   'mobile.instances.saveNew': 'Enregistrer l\'instance',
   'mobile.instances.status.connectedDirect': 'Connecté · Réseau local',
   'mobile.instances.status.connectedRelay': 'Connecté · Relais privé',
+  'mobile.instances.status.connectedHapi': 'Connecté · Passerelle HAPI',
   'mobile.instances.saveEdit': 'Enregistrer les modifications',
   'mobile.nav.changes': 'Modifications',
   'mobile.nav.settings': 'Paramètres',

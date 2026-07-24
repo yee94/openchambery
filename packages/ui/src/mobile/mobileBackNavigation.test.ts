@@ -7,6 +7,7 @@ import {
   type MobileBackHistory,
 } from './mobileBackNavigation';
 import { resolveMobileSecondaryBackDecision } from './mobileNavigation';
+import { useMobileNavigationStore } from './useMobileNavigationStore';
 
 const route = (id: string, onBack: () => boolean | void, layer: 'root' | 'overlay' = 'root') => ({
   id,
@@ -121,12 +122,29 @@ describe('resolveMobileSecondaryBackDecision', () => {
     })).toEqual({ action: 'closeSecondary' });
   });
 
+  test('instances closes secondary', () => {
+    expect(resolveMobileSecondaryBackDecision({
+      secondary: { kind: 'instances' },
+      parentSessionTarget: null,
+    })).toEqual({ action: 'closeSecondary' });
+  });
+
   test('closed secondary is a no-op', () => {
     expect(resolveMobileSecondaryBackDecision({
       secondary: null,
       parentSessionTarget: parent,
     })).toEqual({ action: 'none' });
   });
+});
+
+test('instance management opens and closes through the standard secondary route', () => {
+  useMobileNavigationStore.getState().reset();
+  useMobileNavigationStore.getState().setActiveTab('settings');
+  useMobileNavigationStore.getState().openInstances();
+  expect(useMobileNavigationStore.getState().secondary).toEqual({ kind: 'instances' });
+
+  useMobileNavigationStore.getState().closeSecondary();
+  expect(useMobileNavigationStore.getState().secondary).toBeNull();
 });
 
 test('clampMobileBackProgress keeps native payloads compositor-safe', () => {

@@ -355,6 +355,12 @@ test('higher authoritative revision clears an acknowledged pending admission whe
   expect(runtime.getPendingAdmissions({ transportIdentity: 'device-a', directory: '/repo', sessionID: 'session-a' })).toEqual([]);
 });
 
+test('a durable acknowledgement without a scope ID cannot strand its pending shadow', async () => {
+  const runtime = createMessageQueueServerRuntime({ capture: () => ({ transportIdentity: 'device-a', generation: 1 }), current: () => true, upload: async () => ({ attachments: [], totalBytes: 0 }), admit: async () => ({ revision: 2 }) } as never);
+  expect(await runtime.admit({ requestID: 'scope-less', scope: { directory: '/repo', sessionID: 'session-a' }, item: { queueItemID: 'queue-a', operationID: 'operation-a', messageID: 'msg_a', content: 'queued', attachmentIssues: [], createdAt: 1 } })).toEqual({ status: 'committed' });
+  expect(runtime.getPendingAdmissions({ transportIdentity: 'device-a', directory: '/repo', sessionID: 'session-a' })).toEqual([]);
+});
+
 test('transport reset notifies pending exact-scope subscribers', async () => {
   let identity = 'device-a', generation = 1;
   const runtime = createMessageQueueServerRuntime({
@@ -401,7 +407,7 @@ test('SSE-authoritative scope before POST acknowledgement clears the pending sha
   const runtime = createMessageQueueServerRuntime({ client: client as never, capture: () => ({ transportIdentity: 'device-a', generation: 1 }), current: () => true, status: async () => ({ capability: true, authority: 'active' }), snapshot: async () => ({ revision: 2, scopes: [{ ...descriptor, revision: 2, itemCount: 0 }], worktreeOrders: [] }), scope: async () => { scopeCalls++; return { ...descriptor, revision: 2, itemCount: 0, items: [] }; }, upload: async () => ({ attachments: [], totalBytes: 0 }), admit: async () => ({ revision: 2, scopeID: 'scope-a' }) } as never);
   await runtime.refresh();
   expect(await runtime.admit({ requestID: 'sse-first', scope: { directory: '/repo', sessionID: 'session-a' }, item: { queueItemID: 'queue-a', operationID: 'operation-a', messageID: 'msg_a', content: 'queued', attachmentIssues: [], createdAt: 1 } })).toEqual({ status: 'committed' });
-  await Promise.resolve();
+  for (let attempt = 0; attempt < 20 && runtime.getPendingAdmissions({ transportIdentity: 'device-a', directory: '/repo', sessionID: 'session-a' }).length; attempt++) await Promise.resolve();
   expect(scopeCalls).toBe(1);
   expect(runtime.getPendingAdmissions({ transportIdentity: 'device-a', directory: '/repo', sessionID: 'session-a' })).toEqual([]);
 });
@@ -428,14 +434,44 @@ test('same-scope pending reads retain their reference until a pending transition
   expect(runtime.getPendingAdmissions({ transportIdentity: 'device-a', directory: '/repo', sessionID: 'session-a' })).toBe(first);
 });
 
-test('an acknowledged admission remains pending while its targeted scope read is unavailable', async () => {
+test('an acknowledged admission drops its locked shadow when targeted reconciliation times out', async () => {
   const runtime = createMessageQueueServerRuntime({
     capture: () => ({ transportIdentity: 'device-a', generation: 1 }), current: () => true,
     upload: async () => ({ attachments: [], totalBytes: 0 }), admit: async () => ({ revision: 2, scopeID: 'scope-a' }),
     scope: async () => new Promise<never>(() => {}),
+    admissionReconcileTimeoutMs: 5,
   } as never);
   await runtime.admit({ requestID: 'ack-pending', scope: { directory: '/repo', sessionID: 'session-a' }, item: { queueItemID: 'queue-a', operationID: 'operation-a', messageID: 'msg_a', content: 'queued', attachmentIssues: [], createdAt: 1 } });
   expect(runtime.getPendingAdmissions({ transportIdentity: 'device-a', directory: '/repo', sessionID: 'session-a' })[0]?.phase).toBe('acknowledged');
+  await new Promise((resolve) => setTimeout(resolve, 10));
+  expect(runtime.getPendingAdmissions({ transportIdentity: 'device-a', directory: '/repo', sessionID: 'session-a' })).toEqual([]);
+});
+
+test('a hung attachment upload times out and removes its locked shadow', async () => {
+  const runtime = createMessageQueueServerRuntime({
+    capture: () => ({ transportIdentity: 'device-a', generation: 1 }), current: () => true,
+    upload: async () => new Promise<never>(() => {}),
+    admissionUploadTimeoutMs: 5,
+  } as never);
+  await expect(runtime.admit({ requestID: 'hung-upload', scope: { directory: '/repo', sessionID: 'session-a' }, item: { queueItemID: 'queue-a', operationID: 'operation-a', messageID: 'msg_a', content: 'queued', attachmentIssues: [], createdAt: 1 } })).rejects.toThrow(MessageQueueServerError);
+  expect(runtime.getPendingAdmissions({ transportIdentity: 'device-a', directory: '/repo', sessionID: 'session-a' })).toEqual([]);
+});
+
+test('a hung admission replay times out and removes its locked shadow', async () => {
+  let calls = 0;
+  const runtime = createMessageQueueServerRuntime({
+    capture: () => ({ transportIdentity: 'device-a', generation: 1 }), current: () => true,
+    upload: async () => ({ attachments: [], totalBytes: 0 }),
+    admit: async () => {
+      calls++;
+      if (calls === 1) throw new MessageQueueServerError(0, 'unavailable');
+      return new Promise<never>(() => {});
+    },
+    admissionRequestTimeoutMs: 5,
+  } as never);
+  await expect(runtime.admit({ requestID: 'hung-replay', scope: { directory: '/repo', sessionID: 'session-a' }, item: { queueItemID: 'queue-a', operationID: 'operation-a', messageID: 'msg_a', content: 'queued', attachmentIssues: [], createdAt: 1 } })).rejects.toThrow(MessageQueueServerError);
+  expect(calls).toBe(2);
+  expect(runtime.getPendingAdmissions({ transportIdentity: 'device-a', directory: '/repo', sessionID: 'session-a' })).toEqual([]);
 });
 
 test('an old multi-page catalog completion preserves newer scope and snapshot state', async () => {
