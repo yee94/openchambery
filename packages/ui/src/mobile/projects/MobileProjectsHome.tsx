@@ -3,8 +3,14 @@ import { useEvent } from '@reactuses/core';
 
 import { Icon } from '@/components/icon/Icon';
 import { Button } from '@/components/ui/button';
+import { Input } from '@/components/ui/input';
 import { useI18n } from '@/lib/i18n';
 import { cn } from '@/lib/utils';
+import {
+  useGlobalSessionStatus,
+  useSessionPermissions,
+  useSessionQuestions,
+} from '@/sync/sync-context';
 
 import { MobileTabPageHeader } from '../MobileTabPageHeader';
 import { MobileFloatingSurface, MobileLabeledSurfaceGroup } from '../MobileSurface';
@@ -15,9 +21,13 @@ import {
 import {
   MobileSessionRow,
   type MobileSessionRowModel,
+  type MobileSessionRowProps,
 } from './MobileSessionRow';
+import { resolveMobileSessionIndicator } from './mobileSessionIndicator';
+import { filterMobileProjectsForSearch } from './mobileProjectSearch';
 
 export type MobileSessionTreeNode = MobileSessionRowModel & {
+  directory?: string;
   children?: MobileSessionTreeNode[];
   expanded?: boolean;
 };
@@ -65,11 +75,35 @@ type SessionTreeProps = Pick<
 > & {
   sessions: MobileSessionTreeNode[];
   depth?: number;
+  forceExpanded?: boolean;
 };
+
+function MobileLiveSessionRow(props: MobileSessionRowProps) {
+  const status = useGlobalSessionStatus(props.session.id);
+  const permissions = useSessionPermissions(
+    props.session.id,
+    (props.session as MobileSessionTreeNode).directory,
+    { bootstrap: false },
+  );
+  const questions = useSessionQuestions(
+    props.session.id,
+    (props.session as MobileSessionTreeNode).directory,
+    { bootstrap: false },
+  );
+  const indicator = resolveMobileSessionIndicator({
+    hasPendingQuestion: questions.length > 0,
+    hasPendingPermission: permissions.length > 0,
+    running: status?.type === 'busy' || status?.type === 'retry',
+    unread: Boolean(props.session.unread),
+  });
+
+  return <MobileSessionRow {...props} indicator={indicator} />;
+}
 
 function SessionTree({
   sessions,
   depth = 0,
+  forceExpanded = false,
   onToggleSessionChildren,
   onSelectSession,
   onPinSession,
@@ -82,24 +116,28 @@ function SessionTree({
         const hasChildren = Boolean(session.children?.length);
         const isFollowedByPagination = session.kind === 'pagination'
           && sessions[index + 1]?.kind === 'pagination';
+        const Row = session.kind === 'pagination' ? MobileSessionRow : MobileLiveSessionRow;
         return (
           <React.Fragment key={session.id}>
-            <MobileSessionRow
+            <Row
               session={session}
               depth={depth}
               hasChildren={hasChildren}
-              expanded={session.expanded}
+              expanded={forceExpanded || session.expanded}
               paginationContinues={isFollowedByPagination}
-              onToggleChildren={hasChildren ? () => onToggleSessionChildren(session) : undefined}
+              onToggleChildren={hasChildren && !forceExpanded
+                ? () => onToggleSessionChildren(session)
+                : undefined}
               onSelect={onSelectSession}
               onPin={onPinSession}
               onArchive={onArchiveSession}
               onOpenActions={onOpenSessionActions}
             />
-            {hasChildren && session.expanded ? (
+            {hasChildren && (forceExpanded || session.expanded) ? (
               <SessionTree
                 sessions={session.children ?? []}
                 depth={depth + 1}
+                forceExpanded={forceExpanded}
                 onToggleSessionChildren={onToggleSessionChildren}
                 onSelectSession={onSelectSession}
                 onPinSession={onPinSession}
@@ -208,9 +246,44 @@ export function MobileProjectsHome({
 }: MobileProjectsHomeProps) {
   const { t } = useI18n();
   const [pinnedExpandedByProject, setPinnedExpandedByProject] = React.useState<Record<string, boolean>>({});
+  const [searchOpen, setSearchOpen] = React.useState(false);
+  const [searchQuery, setSearchQuery] = React.useState('');
+  const normalizedSearchQuery = searchQuery.trim().toLowerCase();
+  const searching = normalizedSearchQuery.length > 0;
+  const visibleProjects = React.useMemo(
+    () => filterMobileProjectsForSearch(projects, normalizedSearchQuery),
+    [normalizedSearchQuery, projects],
+  );
 
   const handleAddProject = useEvent(onAddProject);
   const handleNewSession = useEvent(onNewSession);
+  const closeSearch = useEvent(() => {
+    setSearchQuery('');
+    setSearchOpen(false);
+  });
+  const handleToggleSearch = useEvent(() => {
+    if (searchOpen) {
+      closeSearch();
+      return;
+    }
+    setSearchOpen(true);
+  });
+  const handleSearchProjectOpen = useEvent((project: MobileProjectHomeItem) => {
+    closeSearch();
+    if (!project.expanded) onToggleProject(project);
+  });
+  const handleSearchWorktreeOpen = useEvent((
+    project: MobileProjectHomeItem,
+    worktree: MobileWorktreeGroup,
+  ) => {
+    closeSearch();
+    if (!project.expanded) onToggleProject(project);
+    if (!worktree.expanded) onToggleWorktree(project, worktree);
+  });
+  const handleSelectSearchSession = useEvent((session: MobileSessionTreeNode) => {
+    closeSearch();
+    onSelectSession(session);
+  });
   const handleNewWorktreeSession = useEvent((event: React.MouseEvent<HTMLButtonElement>) => {
     const project = projects.find((candidate) => candidate.id === event.currentTarget.dataset.projectId);
     const worktree = project?.worktrees.find((candidate) => candidate.id === event.currentTarget.dataset.worktreeId);
@@ -225,19 +298,20 @@ export function MobileProjectsHome({
           <>
             <Button
               type="button"
-              variant="outline"
-              size="icon"
-              className="oc-mobile-glass-control oc-mobile-round-control size-10 min-h-10 min-w-10 rounded-full text-muted-foreground"
-              aria-label={t('mobile.sessions.searchAria')}
-              // Search surface is not wired yet — keep the control present for design parity.
-              onClick={() => {}}
+              variant="mobileGlass"
+              size="mobileIcon"
+              aria-label={searchOpen
+                ? t('mobile.sessions.clearSearchAria')
+                : t('mobile.sessions.searchAria')}
+              aria-expanded={searchOpen}
+              onClick={handleToggleSearch}
             >
-              <Icon name="search" className="size-5" />
+              <Icon name={searchOpen ? 'close' : 'search'} className="size-5" />
             </Button>
             <Button
               type="button"
-              size="icon"
-              className="oc-mobile-round-control size-10 min-h-10 min-w-10 rounded-full border-transparent bg-[var(--primary-base)] text-[var(--primary-foreground)] shadow-[0_10px_22px_color-mix(in_srgb,var(--primary-base)_22%,transparent)] hover:bg-[var(--primary-hover)] dark:bg-[var(--primary-base)] dark:hover:bg-[var(--primary-hover)]"
+              size="mobileIcon"
+              className="oc-mobile-round-control border-transparent bg-[var(--primary-base)] text-[var(--primary-foreground)] shadow-[0_10px_22px_color-mix(in_srgb,var(--primary-base)_22%,transparent)] hover:bg-[var(--primary-hover)] dark:bg-[var(--primary-base)] dark:hover:bg-[var(--primary-hover)]"
               aria-label={t('mobile.sessions.newChat')}
               onClick={handleNewSession}
             >
@@ -246,6 +320,41 @@ export function MobileProjectsHome({
           </>
         )}
       />
+
+      {searchOpen ? (
+        <div className="relative mx-1" role="search">
+          <Icon
+            name="search"
+            className="pointer-events-none absolute left-3 top-1/2 z-10 size-4 -translate-y-1/2 text-muted-foreground"
+          />
+          <Input
+            autoFocus
+            type="text"
+            inputMode="search"
+            enterKeyHint="search"
+            value={searchQuery}
+            placeholder={t('mobile.sessions.search.placeholder')}
+            aria-label={t('mobile.sessions.searchAria')}
+            className={cn('h-11 rounded-full pl-9', searchQuery && 'pr-10')}
+            onChange={(event) => setSearchQuery(event.target.value)}
+            onKeyDown={(event) => {
+              if (event.key === 'Escape') closeSearch();
+            }}
+          />
+          {searchQuery ? (
+            <Button
+              type="button"
+              variant="ghost"
+              size="icon"
+              className="absolute right-1.5 top-1/2 size-8 -translate-y-1/2 rounded-full text-muted-foreground"
+              aria-label={t('mobile.sessions.clearSearchAria')}
+              onClick={() => setSearchQuery('')}
+            >
+              <Icon name="close" className="size-4" />
+            </Button>
+          ) : null}
+        </div>
+      ) : null}
 
       {projects.length === 0 ? (
         <section className="flex min-h-[52dvh] flex-col items-center justify-center px-6 text-center">
@@ -259,8 +368,15 @@ export function MobileProjectsHome({
             {t('sessions.sidebar.header.actions.addProject')}
           </Button>
         </section>
+      ) : searching && visibleProjects.length === 0 ? (
+        <section className="flex min-h-[40dvh] flex-col items-center justify-center px-6 text-center">
+          <Icon name="search" className="mb-4 size-6 text-muted-foreground" />
+          <h2 className="typography-ui-label font-semibold text-foreground">{t('mobile.sessions.empty.searchTitle')}</h2>
+          <p className="mt-1.5 max-w-xs typography-small text-muted-foreground">{t('mobile.sessions.empty.searchDescription')}</p>
+        </section>
       ) : (
-        projects.map((project) => {
+        visibleProjects.map((project) => {
+          const projectExpanded = searching || project.expanded;
           const mainWorkspace = project.worktrees.find((entry) => entry.kind === 'main')
             ?? (project.worktrees.length === 1 && !project.worktrees[0]?.kind ? project.worktrees[0] : undefined);
           const linkedWorktrees = project.worktrees.filter((entry) => entry !== mainWorkspace);
@@ -272,7 +388,7 @@ export function MobileProjectsHome({
             collectRootSessions(worktree.sessions).filter((session) => session.pinned),
           );
           const pinnedSessions = [...pinnedFromMain, ...pinnedFromWorktrees];
-          const pinnedExpanded = pinnedExpandedByProject[project.id] ?? true;
+          const pinnedExpanded = searching || (pinnedExpandedByProject[project.id] ?? true);
 
           return (
             <MobileFloatingSurface key={project.id} asChild>
@@ -280,13 +396,15 @@ export function MobileProjectsHome({
               {/* Project header and every workspace/session group share one parent surface. */}
               <MobileProjectCard
                 project={project}
-                expanded={project.expanded}
+                expanded={projectExpanded}
                 embedded
-                onToggle={() => onToggleProject(project)}
+                onToggle={() => searching
+                  ? handleSearchProjectOpen(project)
+                  : onToggleProject(project)}
                 onOpenActions={() => onOpenProjectActions(project)}
               />
 
-              {project.expanded ? (
+              {projectExpanded ? (
                 <div className="oc-mobile-project-groups" role="group" aria-label={project.name}>
                   {/* Pinned group */}
                   {pinnedSessions.length > 0 ? (
@@ -298,7 +416,7 @@ export function MobileProjectsHome({
                           label={t('mobile.sessions.section.pinned')}
                           count={pinnedSessions.length}
                           expanded={pinnedExpanded}
-                          onToggle={() => {
+                          onToggle={searching ? undefined : () => {
                             setPinnedExpandedByProject((previous) => ({
                               ...previous,
                               [project.id]: !(previous[project.id] ?? true),
@@ -310,8 +428,9 @@ export function MobileProjectsHome({
                       {pinnedExpanded ? (
                         <SessionTree
                           sessions={pinnedSessions}
+                          forceExpanded={searching}
                           onToggleSessionChildren={onToggleSessionChildren}
-                          onSelectSession={onSelectSession}
+                          onSelectSession={searching ? handleSelectSearchSession : onSelectSession}
                           onPinSession={onPinSession}
                           onArchiveSession={onArchiveSession}
                           onOpenSessionActions={onOpenSessionActions}
@@ -335,8 +454,9 @@ export function MobileProjectsHome({
                     >
                       <SessionTree
                         sessions={mainRest}
+                        forceExpanded={searching}
                         onToggleSessionChildren={onToggleSessionChildren}
-                        onSelectSession={onSelectSession}
+                        onSelectSession={searching ? handleSelectSearchSession : onSelectSession}
                         onPinSession={onPinSession}
                         onArchiveSession={onArchiveSession}
                         onOpenSessionActions={onOpenSessionActions}
@@ -347,6 +467,7 @@ export function MobileProjectsHome({
                   {/* Every linked worktree gets an independent label + session card. */}
                   {linkedWorktrees.map((worktree) => {
                     const worktreeRest = worktree.sessions.filter((session) => !session.pinned);
+                    const worktreeExpanded = searching || worktree.expanded;
                     return (
                       <MobileLabeledSurfaceGroup
                         key={worktree.id}
@@ -357,8 +478,10 @@ export function MobileProjectsHome({
                             icon={<Icon name="git-branch" className="size-3.5" />}
                             label={worktree.name}
                             count={worktree.sessions.length}
-                            expanded={worktree.expanded}
-                            onToggle={() => onToggleWorktree(project, worktree)}
+                            expanded={worktreeExpanded}
+                            onToggle={() => searching
+                              ? handleSearchWorktreeOpen(project, worktree)
+                              : onToggleWorktree(project, worktree)}
                             actions={onNewWorktreeSession ? (
                               <Button
                                 type="button"
@@ -376,11 +499,12 @@ export function MobileProjectsHome({
                           />
                         )}
                       >
-                        {worktree.expanded && worktreeRest.length > 0 ? (
+                        {worktreeExpanded && worktreeRest.length > 0 ? (
                           <SessionTree
                             sessions={worktreeRest}
+                            forceExpanded={searching}
                             onToggleSessionChildren={onToggleSessionChildren}
-                            onSelectSession={onSelectSession}
+                            onSelectSession={searching ? handleSelectSearchSession : onSelectSession}
                             onPinSession={onPinSession}
                             onArchiveSession={onArchiveSession}
                             onOpenSessionActions={onOpenSessionActions}

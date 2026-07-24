@@ -865,25 +865,24 @@ export const OpenChamberVisualSettings: React.FC<OpenChamberVisualSettingsProps>
                                 isMobile={isMobile}
                                 label={t('settings.openchamber.visual.section.colorMode')}
                             >
-                                <ResponsiveSettingsRow
-                                    isMobile={isMobile}
-                                    label={t('settings.openchamber.visual.field.display')}
+                                <div
+                                    className="oc-settings-group-row flex flex-wrap items-center justify-end gap-1"
+                                    role="group"
+                                    aria-label={t('settings.openchamber.visual.section.colorMode')}
                                 >
-                                    <div className="flex flex-wrap items-center justify-end gap-1">
-                                        {THEME_MODE_OPTIONS.map((option) => (
-                                            <Button
-                                                key={option.value}
-                                                variant="chip"
-                                                size="xs"
-                                                aria-pressed={themeMode === option.value}
-                                                className="oc-mobile-settings-chip !font-normal"
-                                                onClick={() => setThemeMode(option.value)}
-                                            >
-                                                {tUnsafe(option.labelKey)}
-                                            </Button>
-                                        ))}
-                                    </div>
-                                </ResponsiveSettingsRow>
+                                    {THEME_MODE_OPTIONS.map((option) => (
+                                        <Button
+                                            key={option.value}
+                                            variant="chip"
+                                            size="xs"
+                                            aria-pressed={themeMode === option.value}
+                                            className="oc-mobile-settings-chip !font-normal"
+                                            onClick={() => setThemeMode(option.value)}
+                                        >
+                                            {tUnsafe(option.labelKey)}
+                                        </Button>
+                                    ))}
+                                </div>
 
                                 <>
                                     <ResponsiveSettingsRow

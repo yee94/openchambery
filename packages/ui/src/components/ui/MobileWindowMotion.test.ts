@@ -89,6 +89,11 @@ describe('MobileWindowMotion recipe', () => {
     expect(mobileWindowMotionSource).toContain('if (!activeRef.current) return;');
   });
 
+  test('renders the recent conversations title opposite the session actions', () => {
+    expect(mobileSessionStatusBarSource).toContain('flex items-center justify-between gap-2 px-4 pb-2');
+    expect(mobileSessionStatusBarSource).toContain("{t('mobile.sessions.sheet.title')}");
+  });
+
   test('dismisses after dragging below the collapsed sheet threshold', () => {
     expect(shouldDismissMobileSheetSnap(657, 1000, 64)).toBe(false);
     expect(shouldDismissMobileSheetSnap(656, 1000, 64)).toBe(true);

@@ -169,7 +169,7 @@ export const dict: Record<I18nKey, string> = {
   'mobile.header.noSession': 'Brak aktywnej sesji',
   'mobile.sessions.openSheetAria': 'Otwórz sesje i projekty',
   'mobile.sessions.closeSheetAria': 'Zamknij sesje i projekty',
-  'mobile.sessions.sheet.title': 'Sesje',
+  'mobile.sessions.sheet.title': 'Ostatnie rozmowy',
   'mobile.sessions.sheet.resizeAria': 'Zmień rozmiar panelu sesji',
   'mobile.changes.sheet.resizeAria': 'Zmień rozmiar panelu zmian',
   'mobile.sessions.sheet.description': 'Przełączaj projekty, otwieraj sesje albo zacznij nowy czat.',

@@ -2799,7 +2799,7 @@ export const dict = {
   'mobile.header.noSession': 'Aucune session active',
   'mobile.sessions.openSheetAria': 'Ouvrir les sessions et projets',
   'mobile.sessions.closeSheetAria': 'Fermer les sessions et projets',
-  'mobile.sessions.sheet.title': 'Sessions',
+  'mobile.sessions.sheet.title': 'Conversations récentes',
   'mobile.sessions.sheet.resizeAria': 'Redimensionner le panneau des sessions',
   'mobile.changes.sheet.resizeAria': 'Redimensionner le panneau des modifications',
   'mobile.sessions.sheet.description': 'Changez de projet, ouvrez des sessions ou démarrez un nouveau chat.',

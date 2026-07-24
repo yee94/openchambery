@@ -2106,7 +2106,6 @@ const MobileShell: React.FC<{ onActiveConnectionDeleted: () => void }> = ({ onAc
   const mobileSessionPanelOpen = useUIStore((state) => state.mobileSessionPanelOpen);
   const setMobileSessionPanelOpen = useUIStore((state) => state.setMobileSessionPanelOpen);
   const scheduledTasksDialogOpen = useUIStore((state) => state.isScheduledTasksDialogOpen);
-  const setScheduledTasksDialogOpen = useUIStore((state) => state.setScheduledTasksDialogOpen);
   const activeMainTab = useUIStore((state) => state.activeMainTab);
   const assistantCapability = useAssistantCapabilityQuery();
   const setActiveMainTab = useUIStore((state) => state.setActiveMainTab);
@@ -2594,30 +2593,6 @@ const MobileShell: React.FC<{ onActiveConnectionDeleted: () => void }> = ({ onAc
         );
       }
       items.push({
-        key: 'scheduled',
-        icon: 'time',
-        label: t('sessions.sidebar.header.actions.scheduledTasks'),
-        onSelect: () => {
-          if (isIPad) {
-            setScheduledTasksDialogOpen(true);
-            return;
-          }
-          useMobileNavigationStore.getState().setActiveTab('scheduled');
-        },
-      });
-      if (assistantCapability.data?.supported && assistantCapability.data?.enabled) items.push({
-        key: 'assistant',
-        icon: 'ai-agent',
-        label: t('assistants.title'),
-        onSelect: () => {
-          if (isIPad) {
-            setActiveMainTab('assistant');
-            return;
-          }
-          useMobileNavigationStore.getState().setActiveTab('assistant');
-        },
-      });
-      items.push({
         key: 'mcp',
         iconNode: <McpIcon className="size-5 shrink-0 text-muted-foreground" />,
         label: t('mobile.menu.mcp'),
@@ -2650,7 +2625,7 @@ const MobileShell: React.FC<{ onActiveConnectionDeleted: () => void }> = ({ onAc
       });
       return items;
     },
-    [assistantCapability.data?.enabled, assistantCapability.data?.supported, dirtyChangeCount, isIPad, openChangesSurface, openFilesSurface, openNewSessionDraft, setActiveMainTab, setScheduledTasksDialogOpen, showCapacitorOnlyFeatures, showUpdateItem, t],
+    [dirtyChangeCount, isIPad, openChangesSurface, openFilesSurface, openNewSessionDraft, setActiveMainTab, showCapacitorOnlyFeatures, showUpdateItem, t],
   );
 
   return (

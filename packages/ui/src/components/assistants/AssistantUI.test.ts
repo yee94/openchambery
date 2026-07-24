@@ -16,7 +16,7 @@ describe('Assistant UI product contract', () => {
     expect(resolveAgentModelSelection(current, 'missing', agents, providers)).toEqual({ providerID: 'provider-a', modelID: 'model-a', agent: 'missing' });
   });
 
-  test('places Assistant directly after Scheduled Tasks and keeps New Task independent', async () => {
+  test('keeps Assistant in the sidebar while omitting it from the conversation overflow menu', async () => {
     const [sidebar, mobile] = await Promise.all([
       read('../session/SessionSidebar.tsx'),
       read('../../apps/MobileApp.tsx'),
@@ -27,8 +27,8 @@ describe('Assistant UI product contract', () => {
     // Product entry only appears when the host supports Assistants and the global switch is on.
     expect(sidebarMenu).toContain('assistantCapability.data?.supported && assistantCapability.data?.enabled ? <Button');
     expect(sidebarMenu.slice(0, sidebarMenu.indexOf('sessions.sidebar.header.actions.scheduledTasks'))).not.toContain('assistantCapability.data?.supported && assistantCapability.data?.enabled ? <Button');
-    expect(mobile).toContain('assistantCapability.data?.supported && assistantCapability.data?.enabled');
-    expect(mobile.indexOf("key: 'scheduled'")).toBeLessThan(mobile.indexOf("key: 'assistant'"));
+    const overflowMenu = mobile.slice(mobile.indexOf('const overflowItems'), mobile.indexOf('return (', mobile.indexOf('const overflowItems')));
+    expect(overflowMenu).not.toContain("key: 'assistant'");
   });
 
   test('routes empty-list onboarding to Assistant creation and focuses the name field', async () => {

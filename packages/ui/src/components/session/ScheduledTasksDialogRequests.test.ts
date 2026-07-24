@@ -103,19 +103,20 @@ describe('ScheduledTasksDialog queries', () => {
     expect(editorContent).not.toContain('<div className="px-3 pb-5 pt-4">');
   });
 
-  test('exposes scheduled tasks from the dedicated mobile menu and tab', async () => {
-    const content = await readFile(join(dirname(fileURLToPath(import.meta.url)), '../../apps/MobileApp.tsx'), 'utf8');
-    expect(content).toContain("key: 'scheduled'");
-    expect(content).toContain("icon: 'time'");
-    expect(content).toContain("label: t('sessions.sidebar.header.actions.scheduledTasks')");
-    // iPad keeps the dialog; phone routes to the scheduled tab.
-    expect(content).toContain('setScheduledTasksDialogOpen(true);');
-    expect(content).toContain("useMobileNavigationStore.getState().setActiveTab('scheduled');");
+  test('keeps scheduled tasks in their dedicated surfaces and out of the conversation overflow menu', async () => {
+    const directory = dirname(fileURLToPath(import.meta.url));
+    const [content, phoneShellContent] = await Promise.all([
+      readFile(join(directory, '../../apps/MobileApp.tsx'), 'utf8'),
+      readFile(join(directory, '../../mobile/MobilePhoneShell.tsx'), 'utf8'),
+    ]);
+    const overflowMenu = content.slice(content.indexOf('const overflowItems'), content.indexOf('return (', content.indexOf('const overflowItems')));
+    expect(overflowMenu).not.toContain("key: 'scheduled'");
     expect(content).toContain('|| scheduledTasksDialogOpen');
     expect(content).toContain('if (scheduledTasksDialogOpen) {');
     expect(content).toContain("window.dispatchEvent(new Event('oc:scheduled-tasks-close-request'));");
     expect(content).toContain('<ScheduledTasksDialog />');
     // The phone tab hosts the workspace as a root page.
+    expect(phoneShellContent).toContain('scheduled: <MobileScheduledTab');
     expect(content).toContain('<ScheduledTasksWorkspace');
     expect(content).toContain('presentation="mobile-tab"');
   });
@@ -208,8 +209,10 @@ describe('ScheduledTasksDialog queries', () => {
 
   test('shares one mobile detail navigation across settings, task editing, and chat', async () => {
     const directory = dirname(fileURLToPath(import.meta.url));
-    const [navigationContent, editorContent, settingsContent, settingsTabContent, chatHeaderContent, chatScreenContent, mobileStyles] = await Promise.all([
+    const [navigationContent, projectsHomeContent, buttonContent, editorContent, settingsContent, settingsTabContent, chatHeaderContent, chatScreenContent, mobileStyles] = await Promise.all([
       readFile(join(directory, '../../mobile/MobileDetailNavigation.tsx'), 'utf8'),
+      readFile(join(directory, '../../mobile/projects/MobileProjectsHome.tsx'), 'utf8'),
+      readFile(join(directory, '../ui/button.tsx'), 'utf8'),
       readFile(join(directory, 'ScheduledTaskEditorDialog.tsx'), 'utf8'),
       readFile(join(directory, '../views/SettingsView.tsx'), 'utf8'),
       readFile(join(directory, '../../mobile/settings/MobileSettingsTab.tsx'), 'utf8'),
@@ -223,7 +226,21 @@ describe('ScheduledTasksDialog queries', () => {
     expect(navigationContent).not.toContain('contentClassName?: string');
     expect(navigationContent).not.toContain('className?: string');
     expect(navigationContent).not.toContain('trailing?: ReactNode');
-    expect(navigationContent).toContain('size-10 min-h-10 min-w-10');
+    expect(navigationContent.match(/variant="mobileGlass"/g)).toHaveLength(2);
+    expect(navigationContent.match(/size="mobileIcon"/g)).toHaveLength(2);
+    expect(projectsHomeContent.match(/variant="mobileGlass"/g)).toHaveLength(1);
+    expect(projectsHomeContent.match(/size="mobileIcon"/g)).toHaveLength(2);
+    expect(projectsHomeContent).toContain('bg-[var(--primary-base)]');
+    expect(projectsHomeContent).toContain('var(--primary-base)_22%');
+    expect(projectsHomeContent).toContain('filterMobileProjectsForSearch');
+    expect(projectsHomeContent).toContain('inputMode="search"');
+    expect(projectsHomeContent).not.toContain('type="search"');
+    expect(projectsHomeContent).not.toContain('onClick={() => {}}');
+    expect(buttonContent).toContain('mobileGlass:');
+    expect(buttonContent).toContain('mobileIcon: "size-10 min-h-10 min-w-10 rounded-full"');
+    expect(mobileStyles).toContain('.oc-mobile-floating-action');
+    expect(mobileStyles).toContain('background: color-mix(in srgb, var(--surface-elevated) 54%, transparent)');
+    expect(mobileStyles).toContain('backdrop-filter: blur(16px) saturate(1.25)');
     expect(navigationContent).toContain('max-w-72');
     expect(mobileStyles).toContain('--oc-mobile-detail-action-edge-inset: 1rem');
     expect(navigationContent).not.toContain('gap-1 px-2');
@@ -241,7 +258,7 @@ describe('ScheduledTasksDialog queries', () => {
     expect(settingsContent).toContain('inert={detailActive ? true : undefined}');
     expect(settingsContent).toContain('<MobileTabPageHeader');
     expect(settingsContent).toContain('underlayRef: mobileBackUnderlayRef');
-    expect(settingsContent).toContain('className="fixed inset-0 z-20 flex h-[100dvh]');
+    expect(settingsContent).toContain('fixed inset-0 z-20 flex h-[100dvh]');
     expect(settingsContent).toContain('flex-col gap-6');
     expect(settingsTabContent).not.toContain('onMobileStageChange');
     expect(settingsTabContent).toContain('showHeader={false}');

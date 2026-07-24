@@ -11,6 +11,11 @@ import {
 import { useI18n } from '@/lib/i18n';
 import { cn } from '@/lib/utils';
 
+import {
+  resolveMobileSessionIndicator,
+  type MobileSessionIndicator,
+} from './mobileSessionIndicator';
+
 const INTENT_LOCK_PX = 10;
 
 /**
@@ -42,7 +47,6 @@ export type MobileSessionRowModel = {
   subtitle?: string;
   activityLabel?: string;
   unread?: boolean;
-  busy?: boolean;
   pinned?: boolean;
   archived?: boolean;
   active?: boolean;
@@ -61,6 +65,7 @@ export type MobileSessionRowProps = {
   onArchive: (session: MobileSessionRowModel) => void;
   /** Opens the complete action sheet. This is also used by long press and the visible actions button. */
   onOpenActions: (session: MobileSessionRowModel) => void;
+  indicator?: MobileSessionIndicator;
   className?: string;
 };
 
@@ -75,6 +80,7 @@ export function MobileSessionRow({
   onPin,
   onArchive,
   onOpenActions,
+  indicator,
   className,
 }: MobileSessionRowProps) {
   const { t } = useI18n();
@@ -236,6 +242,21 @@ export function MobileSessionRow({
   const pinLabel = session.pinned
     ? t('sessions.sidebar.session.menu.unpin')
     : t('sessions.sidebar.session.menu.pin');
+  const resolvedIndicator = indicator ?? resolveMobileSessionIndicator({
+    hasPendingQuestion: false,
+    hasPendingPermission: false,
+    running: false,
+    unread: Boolean(session.unread),
+  });
+  const indicatorLabel = resolvedIndicator === 'question'
+    ? t('sessions.sidebar.session.status.questionRequired')
+    : resolvedIndicator === 'permission'
+      ? t('sessions.sidebar.session.status.permissionRequired')
+      : resolvedIndicator === 'running'
+        ? t('sessions.sidebar.session.status.active')
+        : resolvedIndicator === 'completed-unread'
+          ? t('sessions.sidebar.session.status.unread')
+          : undefined;
 
   if (session.kind === 'pagination') {
     return (
@@ -355,12 +376,29 @@ export function MobileSessionRow({
           onContextMenu={handleContextMenu}
         >
           <span
-            className={cn(
-              'oc-mobile-session-dot shrink-0 rounded-full',
-              session.unread ? 'bg-[var(--status-info)]' : 'bg-muted-foreground/35',
+            className="oc-mobile-session-status shrink-0"
+            data-session-status={resolvedIndicator}
+            aria-hidden={indicatorLabel ? undefined : true}
+            aria-label={indicatorLabel}
+            title={indicatorLabel}
+          >
+            {resolvedIndicator === 'running' ? (
+              <SessionBusyIndicator className="motion-reduce:[&_svg]:animate-none" />
+            ) : resolvedIndicator === 'question' ? (
+              <Icon name="question" className="size-3.5 text-[var(--status-warning)]" />
+            ) : resolvedIndicator === 'permission' ? (
+              <Icon name="shield" className="size-3.5 text-destructive" />
+            ) : (
+              <span
+                className={cn(
+                  'oc-mobile-session-dot rounded-full',
+                  resolvedIndicator === 'completed-unread'
+                    ? 'bg-[var(--status-info)]'
+                    : 'bg-muted-foreground/35',
+                )}
+              />
             )}
-            aria-hidden
-          />
+          </span>
 
           <span className="flex min-w-0 flex-1 flex-col gap-0.5">
             <span className="flex min-w-0 items-center gap-1.5">
@@ -379,7 +417,6 @@ export function MobileSessionRow({
             {session.activityLabel ? (
               <span className="oc-mobile-session-time tabular-nums">{session.activityLabel}</span>
             ) : null}
-            {session.busy ? <SessionBusyIndicator className="motion-reduce:[&_svg]:animate-none" /> : null}
           </span>
         </button>
 

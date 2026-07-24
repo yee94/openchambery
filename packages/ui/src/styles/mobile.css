@@ -51,7 +51,7 @@
   );
   --oc-mobile-float-background: color-mix(
     in srgb,
-    var(--surface-elevated) 88%,
+    var(--surface-elevated) 45%,
     transparent
   );
   --oc-mobile-field-background: color-mix(
@@ -482,7 +482,16 @@ button.oc-mobile-group-label-trigger:focus-visible {
   padding-right: 0.125rem;
 }
 
+.oc-mobile-session-status {
+  display: inline-flex;
+  width: 0.875rem;
+  height: 0.875rem;
+  align-items: center;
+  justify-content: center;
+}
+
 .oc-mobile-session-dot {
+  display: block;
   width: 0.3125rem;
   height: 0.3125rem;
 }
@@ -838,8 +847,9 @@ button.oc-mobile-group-label-trigger:focus-visible {
   text-align: center;
 }
 
-.oc-mobile-detail-action {
+.oc-mobile-floating-action {
   border-radius: 999px;
+  corner-shape: round;
   background: color-mix(in srgb, var(--surface-elevated) 54%, transparent);
   box-shadow:
     0 4px 12px var(--oc-mobile-shadow-control),
@@ -1186,6 +1196,7 @@ button.oc-mobile-group-label-trigger:focus-visible {
 @media (prefers-reduced-transparency: reduce) {
   .oc-mobile-glass-surface,
   .oc-mobile-floating-surface,
+  .oc-mobile-floating-action,
   .oc-mobile-glass-control {
     background: var(--surface-elevated);
     -webkit-backdrop-filter: none;

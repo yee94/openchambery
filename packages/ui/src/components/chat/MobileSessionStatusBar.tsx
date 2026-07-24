@@ -1188,7 +1188,10 @@ export const MobileSessionStatusBar: React.FC<MobileSessionStatusBarProps> = ({
     <div className="shrink-0">
       <MobileSheetSnapHandle controller={sessionSheetSnap} ariaLabel={t('mobile.sessions.sheet.resizeAria')} />
 
-      <div className="flex items-center justify-end gap-2 px-4 pb-2">
+      <div className="flex items-center justify-between gap-2 px-4 pb-2">
+        <h2 className="min-w-0 flex-1 truncate typography-ui-label font-semibold text-foreground">
+          {t('mobile.sessions.sheet.title')}
+        </h2>
         <div className="flex items-center gap-3">
           <RunningIndicator count={totalRunning} />
           <UnreadIndicator count={totalUnread} />

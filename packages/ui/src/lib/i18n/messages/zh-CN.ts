@@ -168,7 +168,7 @@ export const dict: Record<I18nKey, string> = {
   'mobile.header.noSession': '无活动会话',
   'mobile.sessions.openSheetAria': '打开会话和项目',
   'mobile.sessions.closeSheetAria': '关闭会话和项目',
-  'mobile.sessions.sheet.title': '会话',
+  'mobile.sessions.sheet.title': '最近对话',
   'mobile.sessions.sheet.resizeAria': '调整会话面板大小',
   'mobile.changes.sheet.resizeAria': '调整更改面板大小',
   'mobile.sessions.sheet.description': '切换项目、打开会话或开始新聊天。',

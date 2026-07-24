@@ -18,7 +18,7 @@ import { useSessionPinnedStore } from '@/stores/useSessionPinnedStore';
 import { orderWorktrees, useWorktreeOrderStore } from '@/stores/useWorktreeOrderStore';
 import { useNotificationStore } from '@/sync/notification-store';
 import { useSessionUIStore } from '@/sync/session-ui-store';
-import { useAllLiveSessions, useAllSessionStatuses } from '@/sync/sync-context';
+import { useAllLiveSessions } from '@/sync/sync-context';
 import type { WorktreeMetadata } from '@/types/worktree';
 
 import type {
@@ -177,18 +177,8 @@ export function useMobileProjectsHomeModel(): MobileProjectsHomeModel {
   const worktreeExpandedMap = useMobileSessionTreeStore((state) => state.worktreeExpanded);
   const expandedParents = useMobileSessionExpansionStore((state) => state.expandedParents);
   const unseenBySession = useNotificationStore((state) => state.index.session.unseenCount);
-  const allStatuses = useAllSessionStatuses();
-
   // Ephemeral per-bucket visible root count (mirrors MobileSessionsSheet).
   const [visibleCountByBucket, setVisibleCountByBucket] = React.useState<Map<string, number>>(new Map());
-
-  const runningSessionMap = React.useMemo<Record<string, boolean>>(() => {
-    const map: Record<string, boolean> = {};
-    for (const [id, status] of Object.entries(allStatuses)) {
-      map[id] = status.type === 'busy' || status.type === 'retry';
-    }
-    return map;
-  }, [allStatuses]);
 
   const projectsMeta = React.useMemo<ProjectMeta[]>(
     () =>
@@ -358,10 +348,10 @@ export function useMobileProjectsHomeModel(): MobileProjectsHomeModel {
           const unread = unseen > 0 && !isSubtask;
           return {
             id: session.id,
+            directory: bucket.path,
             title: session.title?.trim() || t('mobile.sessions.untitled'),
             activityLabel: formatRelativeShort(getSessionTimestamp(session)) || undefined,
             unread,
-            busy: Boolean(runningSessionMap[session.id]),
             pinned: pinnedSessionIds.has(session.id),
             archived: isSessionArchived(session),
             active: currentSessionId === session.id,
@@ -445,7 +435,6 @@ export function useMobileProjectsHomeModel(): MobileProjectsHomeModel {
     pinnedSessionIds,
     projectExpandedMap,
     projectNodes,
-    runningSessionMap,
     t,
     unseenBySession,
     visibleCountByBucket,

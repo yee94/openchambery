@@ -168,7 +168,7 @@ export const dict: Record<I18nKey, string> = {
   'mobile.header.noSession': '활성 세션 없음',
   'mobile.sessions.openSheetAria': '세션 및 프로젝트 열기',
   'mobile.sessions.closeSheetAria': '세션 및 프로젝트 닫기',
-  'mobile.sessions.sheet.title': '세션',
+  'mobile.sessions.sheet.title': '최근 대화',
   'mobile.sessions.sheet.resizeAria': '세션 패널 크기 조절',
   'mobile.changes.sheet.resizeAria': '변경사항 패널 크기 조절',
   'mobile.sessions.sheet.description': '프로젝트를 전환하고 세션을 열거나 새 채팅을 시작하세요.',

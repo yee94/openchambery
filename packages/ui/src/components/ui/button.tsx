@@ -53,6 +53,8 @@ const buttonVariants = cva(
           "bg-interactive-hover text-foreground border border-border/60 hover:bg-interactive-active",
         outline:
           "bg-[var(--surface-elevated)] text-foreground border border-border/60 hover:bg-interactive-hover hover:text-foreground",
+        mobileGlass:
+          "oc-mobile-floating-action border-0 text-muted-foreground hover:bg-interactive-hover/50 hover:text-foreground focus-visible:border-transparent focus-visible:ring-2 focus-visible:ring-[var(--interactive-focus-ring)]",
         // Flat chip for "one-of-N" toggles. Unselected: hairline border + hover
         // fill. Selected (aria-pressed): same tinted palette as the default
         // button (pale primary fill + primary text + soft primary border).
@@ -79,6 +81,7 @@ const buttonVariants = cva(
         xs: "h-6 gap-1 px-2 typography-micro has-[>svg]:px-1.5 rounded-[7px] supports-[corner-shape:squircle]:rounded-[50px]",
         lg: "h-10 px-4 has-[>svg]:px-3.5 rounded-[12px] supports-[corner-shape:squircle]:rounded-[50px]",
         icon: "size-9",
+        mobileIcon: "size-10 min-h-10 min-w-10 rounded-full",
       },
     },
     defaultVariants: {

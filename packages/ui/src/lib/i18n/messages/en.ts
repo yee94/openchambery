@@ -168,7 +168,7 @@ export const dict = {
   'mobile.header.noSession': 'No active session',
   'mobile.sessions.openSheetAria': 'Open sessions and projects',
   'mobile.sessions.closeSheetAria': 'Close sessions and projects',
-  'mobile.sessions.sheet.title': 'Sessions',
+  'mobile.sessions.sheet.title': 'Recent conversations',
   'mobile.sessions.sheet.resizeAria': 'Resize sessions panel',
   'mobile.changes.sheet.resizeAria': 'Resize changes panel',
   'mobile.sessions.sheet.description': 'Switch projects, open sessions, or start a new chat.',

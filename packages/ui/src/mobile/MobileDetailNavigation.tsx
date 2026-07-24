@@ -2,6 +2,7 @@ import type { ReactNode } from 'react';
 
 import { Icon } from '@/components/icon/Icon';
 import type { IconName } from '@/components/icon/icons';
+import { Button } from '@/components/ui/button';
 import { cn } from '@/lib/utils';
 
 export type MobileDetailNavigationAction = {
@@ -21,8 +22,6 @@ export type MobileDetailNavigationProps = {
   sticky?: boolean;
   overlay?: boolean;
 };
-
-const mobileDetailActionClassName = 'oc-mobile-detail-action inline-flex size-10 min-h-10 min-w-10 items-center justify-center p-2 text-muted-foreground hover:bg-interactive-hover/50 hover:text-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[var(--interactive-focus-ring)] disabled:opacity-50';
 
 /** Shared safe-area navigation for mobile secondary pages. */
 export function MobileDetailNavigation({
@@ -46,15 +45,17 @@ export function MobileDetailNavigation({
         className="oc-mobile-detail-navigation-content grid grid-cols-[2.75rem_minmax(0,1fr)_2.75rem] items-center gap-1 px-4"
       >
         {onBack ? (
-          <button
+          <Button
             type="button"
-            className={cn(mobileDetailActionClassName, 'justify-self-start')}
+            variant="mobileGlass"
+            size="mobileIcon"
+            className="justify-self-start"
             onClick={onBack}
             disabled={backDisabled}
             aria-label={backAriaLabel}
           >
             <Icon name="arrow-left-s" className="size-5" />
-          </button>
+          </Button>
         ) : <span aria-hidden="true" />}
 
         <div className="oc-mobile-detail-title w-full max-w-72 min-w-0 justify-self-center truncate px-1 typography-ui-label font-medium text-foreground">
@@ -63,17 +64,18 @@ export function MobileDetailNavigation({
 
         <div className="flex min-w-0 items-center justify-end">
           {actions.map((action, index) => (
-            <button
+            <Button
               key={`${action.icon}:${index}`}
               type="button"
-              className={mobileDetailActionClassName}
+              variant="mobileGlass"
+              size="mobileIcon"
               onClick={action.onClick}
               disabled={action.disabled}
               aria-label={action.ariaLabel}
               title={action.title}
             >
               <Icon name={action.icon} className="size-5" />
-            </button>
+            </Button>
           ))}
         </div>
       </div>
