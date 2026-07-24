@@ -44,7 +44,7 @@ export function MobileTabBar({ activeTab, onTabChange, className }: MobileTabBar
     <nav
       aria-label={t('mobile.nav.aria')}
       className={cn(
-        'pointer-events-none fixed inset-x-0 bottom-0 z-40 flex justify-center pb-[max(1.25rem,var(--safe-area-inset-bottom,env(safe-area-inset-bottom,0px)))]',
+        'pointer-events-none fixed inset-x-0 bottom-0 z-40 flex justify-center pb-[max(1.25rem,var(--oc-safe-area-bottom-visual,0px))]',
         className,
       )}
     >
@@ -76,10 +76,11 @@ export function MobileTabBar({ activeTab, onTabChange, className }: MobileTabBar
               className={cn(
                 // Equal flex slots + min-w-0 so long locale strings truncate, never overflow.
                 'oc-mobile-tab-button min-w-0 flex-1 flex-col overflow-hidden',
-                'text-[11px] font-medium leading-none tracking-tight text-muted-foreground',
-                // Scale press feedback comes from mobile.css global default (compact).
-                'transition-[background-color,color,box-shadow] duration-150',
+                'text-xs font-medium leading-none tracking-tight text-muted-foreground',
+                // The dock supplies immediate touch-down glass feedback in mobile.css.
+                'transition-[background-color,color,box-shadow,transform] duration-100',
                 'hover:bg-transparent hover:text-foreground',
+                'active:scale-[0.985]',
                 'motion-reduce:transition-none',
                 selected && [
                   'bg-interactive-selection text-interactive-selection-foreground',
@@ -89,7 +90,7 @@ export function MobileTabBar({ activeTab, onTabChange, className }: MobileTabBar
                 ],
               )}
             >
-              <Icon name={tab.icon} weight="medium" className="size-[21px] shrink-0" />
+              <Icon name={tab.icon} weight="medium" className="size-[23px] shrink-0" />
               <span className="block max-w-full overflow-hidden text-ellipsis whitespace-nowrap">{label}</span>
             </Button>
           );

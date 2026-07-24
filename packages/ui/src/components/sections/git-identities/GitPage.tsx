@@ -20,6 +20,7 @@ import { useGitIdentitiesStore, type GitIdentityProfile, type DiscoveredGitCrede
 import { useShallow } from 'zustand/react/shallow';
 import { GitSettings } from '@/components/sections/openchamber/GitSettings';
 import { GitHubSettings } from '@/components/sections/openchamber/GitHubSettings';
+import { SettingsGroup } from '@/components/sections/shared/SettingsGroup';
 import { GitIdentityEditorDialog } from './GitIdentityEditorDialog';
 import { ScrollableOverlay } from '@/components/ui/ScrollableOverlay';
 import { Icon } from "@/components/icon/Icon";
@@ -117,23 +118,24 @@ export const GitPage: React.FC = () => {
   return (
     <>
       <ScrollableOverlay outerClassName="h-full" className="w-full bg-background">
-        <div className="mx-auto w-full max-w-3xl space-y-6 p-3 sm:p-6 sm:pt-8">
+        <div className="oc-settings-page-content mx-auto w-full max-w-3xl p-3 sm:p-6 sm:pt-8">
           <div data-settings-item="git.github-account">
             <GitHubSettings />
           </div>
 
           {/* Identities Section */}
-          <div data-settings-item="git.identities" className="border-t border-border/40 pt-6">
-            <div className="mb-3 px-1 flex items-start justify-between gap-4">
-              <div className="flex items-center gap-2">
-                <h3 className="typography-ui-header font-semibold text-foreground">{t('settings.gitIdentities.page.section.title')}</h3>
-              </div>
-              <Button size="sm" variant="outline" onClick={() => openEditor('new')}>
-                <Icon name="add" className="w-3.5 h-3.5 mr-1" /> {t('settings.common.badge.new')}
-              </Button>
-            </div>
-
-            <div className="rounded-lg bg-[var(--surface-elevated)]/70 overflow-hidden flex flex-col">
+          <div data-settings-item="git.identities">
+            <SettingsGroup
+              label={(
+                <div className="flex items-center justify-between gap-4">
+                  <span>{t('settings.gitIdentities.page.section.title')}</span>
+                  <Button size="sm" variant="ghost" onClick={() => openEditor('new')}>
+                    <Icon name="add" className="mr-1 size-3.5" /> {t('settings.common.badge.new')}
+                  </Button>
+                </div>
+              )}
+              cardClassName="flex flex-col"
+            >
               {/* Global identity */}
               {globalIdentity && (
                 <IdentityRow
@@ -186,7 +188,7 @@ export const GitPage: React.FC = () => {
                   ))}
                 </>
               )}
-            </div>
+            </SettingsGroup>
           </div>
 
           <GitSettings />

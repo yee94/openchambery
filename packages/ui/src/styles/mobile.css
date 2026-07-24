@@ -5,6 +5,9 @@
   --is-mobile: 0;
   --device-type: "desktop";
   --font-scale: 1;
+  --oc-mobile-detail-title-size: 0.9375rem;
+  --oc-mobile-detail-navigation-height: 3.5rem;
+  --oc-mobile-detail-action-edge-inset: 1rem;
 }
 
 /* Projects home floating material. Project capsule, session container, and
@@ -17,12 +20,6 @@
   --oc-mobile-page-gap: 1.25rem;
   --oc-mobile-page-inline-inset: 1.125rem;
   --oc-mobile-root-title-size: 2rem;
-  --oc-mobile-detail-title-size: 0.9375rem;
-  --oc-mobile-detail-navigation-height: 3.5rem;
-  --oc-mobile-detail-action-edge-inset: 1rem;
-  --oc-mobile-detail-navigation-inline-inset: calc(
-    var(--oc-mobile-detail-action-edge-inset) - 0.5rem
-  );
   --oc-mobile-project-group-gap: 0.75rem;
   --oc-mobile-project-header-height: 5.25rem;
   --oc-mobile-project-icon-size: 2.75rem;
@@ -36,11 +33,15 @@
   --oc-mobile-session-action-width: calc(
     var(--oc-mobile-session-actions-width) / 2
   );
-  --oc-mobile-dock-height: 3.5rem;
-  --oc-mobile-dock-inline-inset: 2.5rem;
-  --oc-mobile-dock-max-width: 22rem;
-  --oc-mobile-dock-inner-inset: 0.25rem;
-  --oc-mobile-dock-gap: 0.125rem;
+  /* The root dock is a primary Liquid Glass navigation layer: let it follow
+     the phone's lower screen curve rather than reading as a small control
+     floating high above it. The larger slots also keep the direct-touch
+     target comfortably above the platform minimum. */
+  --oc-mobile-dock-height: 4.25rem;
+  --oc-mobile-dock-inline-inset: 1rem;
+  --oc-mobile-dock-max-width: 26rem;
+  --oc-mobile-dock-inner-inset: 0.3125rem;
+  --oc-mobile-dock-gap: 0.1875rem;
   --oc-mobile-dock-radius: calc(var(--oc-mobile-dock-height) / 2);
   --oc-mobile-tab-height: calc(
     var(--oc-mobile-dock-height) - (var(--oc-mobile-dock-inner-inset) * 2)
@@ -117,10 +118,24 @@
   padding: var(--oc-mobile-dock-inner-inset);
   border-radius: var(--oc-mobile-tab-radius) !important;
   corner-shape: round;
-  font-size: 0.6875rem !important;
-  line-height: 0.6875rem !important;
+  font-size: 0.75rem !important;
+  line-height: 0.75rem !important;
   overflow: hidden;
   scrollbar-width: none;
+  -webkit-tap-highlight-color: transparent;
+  touch-action: manipulation;
+  transition:
+    background-color 90ms ease-out,
+    color 90ms ease-out,
+    box-shadow 90ms ease-out,
+    transform 90ms ease-out;
+}
+
+/* Direct touch gets a visible, immediate glass-platter response. This is
+   intentionally separate from selection: touching either the current tab or
+   a destination shows feedback before navigation changes the selected state. */
+.oc-mobile-tab-button:active {
+  background: var(--interactive-active);
 }
 
 .oc-mobile-tab-button > span {
@@ -140,8 +155,8 @@
    specificity so 计划任务 remains complete on the 378px native viewport. */
 :root.mobile-pointer:not(.desktop-runtime)
   .oc-mobile-tab-button.typography-ui-label {
-  font-size: 0.6875rem !important;
-  line-height: 0.6875rem !important;
+  font-size: 0.75rem !important;
+  line-height: 0.75rem !important;
 }
 
 .oc-mobile-floating-surface,
@@ -592,7 +607,24 @@ button.oc-mobile-group-label-trigger:focus-visible {
 .oc-mobile-scheduled-task-card .oc-mobile-scheduled-task-row {
   border: 0;
   border-radius: 0;
+  /* Press scale lives on the floating shell; keep the row fill transparent. */
+  -webkit-tap-highlight-color: transparent;
   background: transparent;
+  background-color: transparent;
+}
+
+.oc-mobile-scheduled-task-card .oc-mobile-scheduled-task-row:hover,
+.oc-mobile-scheduled-task-card .oc-mobile-scheduled-task-row:active,
+.oc-mobile-scheduled-task-card .oc-mobile-scheduled-task-row:focus {
+  background: transparent;
+  background-color: transparent;
+}
+
+/* Larger, vertically centered ⋯ on scheduled task cards. */
+.oc-mobile-scheduled-task-action {
+  --oc-mobile-project-action-size: 2.75rem;
+  align-self: center;
+  margin-right: 0.375rem;
 }
 
 .oc-mobile-scheduled-workspace .border-t {
@@ -716,7 +748,6 @@ button.oc-mobile-group-label-trigger:focus-visible {
 
 .oc-mobile-detail-navigation {
   isolation: isolate;
-  padding-inline: var(--oc-mobile-detail-navigation-inline-inset);
   border-bottom: 0;
   background: transparent;
   box-shadow: none;
@@ -760,27 +791,26 @@ button.oc-mobile-group-label-trigger:focus-visible {
   margin-inline: calc(-1 * var(--oc-mobile-page-inline-inset));
 }
 
-.oc-mobile-detail-navigation-content,
-.oc-mobile-settings-detail-header {
+.oc-mobile-detail-navigation-content {
   min-height: var(--oc-mobile-detail-navigation-height);
+  padding-left: max(
+    var(--oc-mobile-detail-action-edge-inset, 1rem),
+    var(--oc-safe-area-left, 0px)
+  );
+  padding-right: max(
+    var(--oc-mobile-detail-action-edge-inset, 1rem),
+    var(--oc-safe-area-right, 0px)
+  );
 }
 
-.oc-mobile-settings-detail-header {
-  margin-bottom: 0.25rem;
-  padding-inline: 0.5rem;
-  border: 0 !important;
-}
-
-.oc-mobile-detail-title,
-.oc-mobile-settings-detail-title {
+.oc-mobile-detail-title {
   font-size: var(--oc-mobile-detail-title-size);
   line-height: 1.125rem;
   font-weight: 650;
   text-align: center;
 }
 
-.oc-mobile-detail-action,
-.oc-mobile-settings-detail-action {
+.oc-mobile-detail-action {
   border-radius: 999px;
   background: color-mix(in srgb, var(--surface-elevated) 54%, transparent);
   box-shadow:
@@ -795,11 +825,6 @@ button.oc-mobile-group-label-trigger:focus-visible {
   border-color: transparent !important;
   background: transparent !important;
   box-shadow: none !important;
-}
-
-.oc-mobile-settings-detail-navigation
-  .oc-mobile-detail-action:first-child {
-  justify-self: start;
 }
 
 .oc-mobile-settings-detail-card {
@@ -1328,6 +1353,7 @@ button.oc-mobile-group-label-trigger:focus-visible {
   :root.mobile-pointer:not(.desktop-runtime) .oc-mobile-settings-nav-list,
   :root.mobile-pointer:not(.desktop-runtime) .oc-mobile-assistant-catalog,
   :root.mobile-pointer:not(.desktop-runtime) .oc-mobile-assistant-card-shell,
+  :root.mobile-pointer:not(.desktop-runtime) .oc-mobile-scheduled-task-card,
   :root.mobile-pointer:not(.desktop-runtime) [data-mobile-composer-surface="true"] {
     container-type: inline-size;
   }

@@ -58,6 +58,9 @@ test('native navigation exposes iOS edge progress and Android predictive back', 
   assert.match(ios, /"backStarted"/);
   assert.match(ios, /"backProgressed"/);
   assert.match(ios, /"backInvoked"/);
+  assert.match(ios, /CADisplayLink/);
+  assert.match(ios, /preferredFrameRateRange = CAFrameRateRange\(minimum: 30, maximum: 60, preferred: 60\)/);
+  assert.match(ios, /progressPending = true/);
   assert.match(ios, /registerPluginInstance\(OpenChamberNavigationPlugin\(\)\)/);
 
   assert.match(android, /OnBackAnimationCallback/);

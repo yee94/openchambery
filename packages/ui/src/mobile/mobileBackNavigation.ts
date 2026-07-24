@@ -1,6 +1,7 @@
 import * as React from 'react';
 import { Capacitor, registerPlugin, type PluginListenerHandle } from '@capacitor/core';
 import { useEvent } from '@reactuses/core';
+import { flushSync } from 'react-dom';
 
 import { isCapacitorApp } from '@/lib/platform';
 
@@ -240,42 +241,58 @@ const clearPresentation = (presentation: InteractivePresentation): void => {
 const renderPresentation = (presentation: InteractivePresentation, rawProgress: number): void => {
   const progress = clampMobileBackProgress(rawProgress);
   const { surface, underlay } = presentation;
-  // Interactive native progress is already time-based. CSS transitions here
-  // would interpolate every bridge update and visibly oscillate behind the finger.
-  surface.style.transition = 'none';
-  surface.style.animation = 'none';
-  surface.style.willChange = 'transform, opacity';
   surface.style.transform = `translate3d(${progress * 100}%, 0, 0)`;
-  surface.style.opacity = String(1 - progress * 0.04);
-  surface.style.boxShadow = '-14px 0 28px color-mix(in srgb, var(--surface-foreground) 12%, transparent)';
   if (underlay) {
-    underlay.style.transition = 'none';
-    underlay.style.animation = 'none';
-    underlay.style.willChange = 'transform, opacity';
     underlay.style.transform = `translate3d(${(progress - 1) * 8}%, 0, 0)`;
-    underlay.style.opacity = String(0.88 + progress * 0.12);
   }
 };
 
-const settlePresentation = async (
-  presentation: InteractivePresentation,
-  commit: boolean,
+const settleMobileBackElement = async (
+  element: HTMLElement,
+  targetPercent: number,
+  duration: number,
+  reducedMotion: boolean,
 ): Promise<void> => {
-  const progress = commit ? 1 : 0;
-  const reducedMotion = typeof window !== 'undefined'
-    && window.matchMedia?.('(prefers-reduced-motion: reduce)').matches;
-  if (!reducedMotion && typeof presentation.surface.animate === 'function') {
-    const currentTransform = presentation.surface.style.transform || 'translate3d(0%, 0, 0)';
-    const animation = presentation.surface.animate(
+  if (!reducedMotion && typeof element.animate === 'function') {
+    const currentTransform = element.style.transform || 'translate3d(0%, 0, 0)';
+    const targetTransform = `translate3d(${targetPercent}%, 0, 0)`;
+    const animation = element.animate(
       [
-        { transform: currentTransform, opacity: presentation.surface.style.opacity || '1' },
-        { transform: `translate3d(${progress * 100}%, 0, 0)`, opacity: commit ? 0.96 : 1 },
+        { transform: currentTransform },
+        { transform: targetTransform },
       ],
-      { duration: commit ? 170 : 210, easing: 'cubic-bezier(0.22, 1, 0.36, 1)', fill: 'forwards' },
+      { duration, easing: 'cubic-bezier(0.22, 1, 0.36, 1)', fill: 'forwards' },
     );
-    await animation.finished.catch(() => undefined);
+    let completed = false;
+    try {
+      await animation.finished;
+      completed = true;
+    } catch {
+      // A newer gesture may intentionally interrupt this settlement.
+    } finally {
+      // Preserve the rendered endpoint in the inline transform before
+      // cancelling fill-forwards. Otherwise WebKit exposes the pre-settlement
+      // transform for one frame while React commits the route pop.
+      if (completed) element.style.transform = targetTransform;
+      // `fill: forwards` must never survive route mutation. A retained or
+      // reused surface would otherwise stay shifted and expand horizontal
+      // overflow after the navigation owner changes state.
+      animation.cancel();
+    }
   }
 };
+
+export const settleMobileBackSurface = async (
+  surface: HTMLElement,
+  commit: boolean,
+  reducedMotion = typeof window !== 'undefined'
+    && window.matchMedia?.('(prefers-reduced-motion: reduce)').matches,
+): Promise<void> => settleMobileBackElement(
+  surface,
+  commit ? 100 : 0,
+  commit ? 170 : 210,
+  reducedMotion,
+);
 
 export type UseMobileNavigationDriverOptions = {
   enabled: boolean;
@@ -321,15 +338,31 @@ export const useMobileNavigationDriver = ({
       const underlay = route.layer === 'root'
         ? surface.parentElement?.querySelector<HTMLElement>('[data-mobile-navigation-underlay="true"]') ?? null
         : null;
+      const surfaceTransition = surface.style.transition;
+      const surfaceAnimation = surface.style.animation;
+      const underlayTransition = underlay?.style.transition ?? null;
+      const underlayAnimation = underlay?.style.animation ?? null;
+      underlay?.getAnimations().forEach((animation) => animation.cancel());
+      // Interactive native progress is already time-based. Set all static
+      // compositor hints once; the animation frame hot path writes transform only.
+      surface.style.transition = 'none';
+      surface.style.animation = 'none';
+      surface.style.willChange = 'transform';
+      surface.style.boxShadow = '-14px 0 28px color-mix(in srgb, var(--surface-foreground) 12%, transparent)';
+      if (underlay) {
+        underlay.style.transition = 'none';
+        underlay.style.animation = 'none';
+        underlay.style.willChange = 'transform';
+      }
       presentationGeneration += 1;
       presentation = {
         route,
         surface,
         underlay,
-        surfaceTransition: surface.style.transition,
-        surfaceAnimation: surface.style.animation,
-        underlayTransition: underlay?.style.transition ?? null,
-        underlayAnimation: underlay?.style.animation ?? null,
+        surfaceTransition,
+        surfaceAnimation,
+        underlayTransition,
+        underlayAnimation,
       };
       renderPresentation(presentation, 0);
     };
@@ -343,10 +376,13 @@ export const useMobileNavigationDriver = ({
       });
     };
 
-    const finish = (commit: boolean) => {
+    const finish = (commit: boolean, finalProgress?: number) => {
       if (frame) {
         window.cancelAnimationFrame(frame);
         frame = 0;
+      }
+      if (presentation && finalProgress !== undefined) {
+        renderPresentation(presentation, finalProgress);
       }
       const current = presentation;
       const generation = presentationGeneration;
@@ -356,11 +392,27 @@ export const useMobileNavigationDriver = ({
         return;
       }
       settlingPresentation = current;
-      void settlePresentation(current, commit).then(() => {
+      const reducedMotion = window.matchMedia?.('(prefers-reduced-motion: reduce)').matches ?? false;
+      const duration = commit ? 170 : 210;
+      void Promise.all([
+        settleMobileBackSurface(current.surface, commit, reducedMotion),
+        current.underlay
+          ? settleMobileBackElement(current.underlay, commit ? 0 : -8, duration, reducedMotion)
+          : Promise.resolve(),
+      ]).then(() => {
         if (generation !== presentationGeneration) return;
-        clearPresentation(current);
         if (settlingPresentation === current) settlingPresentation = null;
-        if (!disposed && commit) current.route.onBack();
+        try {
+          if (!disposed && commit) {
+            // Commit the route while the outgoing surface is still parked at
+            // 100%. Clearing first can reveal it at x=0 for one WebKit frame.
+            flushSync(() => {
+              current.route.onBack();
+            });
+          }
+        } finally {
+          clearPresentation(current);
+        }
       });
     };
 
@@ -368,8 +420,8 @@ export const useMobileNavigationDriver = ({
     const addListeners = async () => {
       const started = await OpenChamberNavigation.addListener('backStarted', begin);
       const progressed = await OpenChamberNavigation.addListener('backProgressed', (event) => update(event.progress ?? 0));
-      const cancelled = await OpenChamberNavigation.addListener('backCancelled', () => finish(false));
-      const invoked = await OpenChamberNavigation.addListener('backInvoked', () => finish(true));
+      const cancelled = await OpenChamberNavigation.addListener('backCancelled', (event) => finish(false, event.progress));
+      const invoked = await OpenChamberNavigation.addListener('backInvoked', (event) => finish(true, event.progress));
       if (disposed) {
         await Promise.all([started.remove(), progressed.remove(), cancelled.remove(), invoked.remove()]);
         return;
@@ -388,6 +440,7 @@ export const useMobileNavigationDriver = ({
       if (presentation) clearPresentation(presentation);
       if (settlingPresentation) {
         settlingPresentation.surface.getAnimations().forEach((animation) => animation.cancel());
+        settlingPresentation.underlay?.getAnimations().forEach((animation) => animation.cancel());
         clearPresentation(settlingPresentation);
       }
       presentation = null;

@@ -54,6 +54,7 @@ describe('Assistant UI product contract', () => {
     expect(settings).toContain('<SettingsSidebarItem');
     expect(settings).not.toContain('bg-sidebar');
     expect(settingsView).toContain('<AssistantsSettingsSidebar onItemSelect={opts.onItemSelect} />');
+    expect(settingsView).toContain('onItemDeleted={isMobile ? handleMobileSplitItemDeleted : undefined}');
     expect(metadata.slice(metadata.indexOf("slug: 'assistants'"), metadata.indexOf("slug: 'behavior'"))).toContain("kind: 'split'");
     expect(settings).toContain('data-settings-item="assistants.instance-enabled"');
     expect(settings).toContain('setAssistantsEnabled(enabled, snapshot.revision)');
@@ -66,7 +67,8 @@ describe('Assistant UI product contract', () => {
     expect(settings).toContain("patchDraft('workspacePath', project.path)");
     expect(settings).toContain('value={LEGACY_WORKSPACE_VALUE} disabled');
     expect(settings).toContain('w-[min(32rem,calc(100vw-2rem))]');
-    expect(settings).toContain('flex-col gap-2 py-1.5 sm:flex-row');
+    expect(settings).toContain('<SettingsField');
+    expect(settings).toContain('descriptionPlacement="outside"');
     expect(settings).toContain('min-h-11 px-2.5 py-2');
     expect(settings).toContain('flex min-w-0 items-center gap-2');
     expect(settings).toContain('min-w-0 flex-1 truncate typography-micro text-muted-foreground');
@@ -77,6 +79,11 @@ describe('Assistant UI product contract', () => {
     expect(settings).toContain('setWelcomeOpen(true)');
     expect(settings.slice(settings.indexOf('const WorkspaceOption'), settings.indexOf('export const AssistantsSettingsSidebar'))).not.toContain('break-all');
     expect(settings.slice(settings.indexOf('const WorkspaceOption'), settings.indexOf('export const AssistantsSettingsSidebar'))).not.toContain('whitespace-normal');
+    expect(settings).toContain('if (!onItemSelect && selectedID === null');
+    expect(settings).toContain('selectSettingsAssistant(onItemSelect ? null :');
+    expect(settings).toContain('interface AssistantsSettingsPageProps');
+    expect(settings).toContain('onItemDeleted?: () => void;');
+    expect(settings).toContain('selectSettingsAssistant(null);\n      onItemDeleted?.();');
   });
 
   test('scopes managed Assistant catalogs without consulting the active project', async () => {
@@ -89,7 +96,7 @@ describe('Assistant UI product contract', () => {
     expect(settings).toContain('draft.workspacePath ?? selected?.managedWorkspacePath ?? null');
     expect(settings).toContain('useScopedProvidersQuery(catalogDirectory, { enabled: true })');
     expect(settings).toContain('useScopedAgentsQuery(catalogDirectory, { enabled: true })');
-    expect(settings).toContain('data-settings-item="assistants.mode"');
+    expect(settings).toContain('itemId="assistants.mode"');
     expect(settings).toContain("patchDraft('mode', mode)");
     expect(settings).not.toContain('activeProjectId');
   });
@@ -118,7 +125,8 @@ describe('Assistant UI product contract', () => {
     ]);
     expect(mobileTab).toContain('role="listbox"');
     expect(mobileTab).toContain("onClick={() => handleOpenAssistant(assistant.id)}");
-    expect(mobileTab).toContain('<MobileFloatingSurface key={assistant.id} className="oc-mobile-assistant-card-shell">');
+    expect(mobileTab).toContain('key={assistant.id}');
+    expect(mobileTab).toContain('className="oc-mobile-assistant-card-shell"');
     expect(mobileTab).toContain('oc-mobile-assistant-card');
     expect(mobileTab).toContain('oc-mobile-entity-title');
     expect(mobileTab).toContain('oc-mobile-entity-meta');
@@ -343,6 +351,7 @@ describe('Assistant UI product contract', () => {
     expect(header).toContain('h-[var(--oc-header-height,56px)]');
     expect(detailNavigation).toContain('var(--oc-safe-area-top');
     expect(detailNavigation).toContain('grid-cols-[2.75rem_minmax(0,1fr)_2.75rem]');
+    expect(mobileStyles).toContain('var(--oc-mobile-detail-action-edge-inset, 1rem)');
     expect(mobileStyles).toContain('var(--oc-safe-area-top, 0px) +');
     expect(mobileStyles).toContain('calc(var(--oc-safe-area-top, 0px) + 35%)');
   });

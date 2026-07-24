@@ -37,6 +37,7 @@ import { opencodeClient } from '@/lib/opencode/client';
 import type { ProjectEntry, RuntimeAPIs } from '@/lib/api/types';
 import { useOrientation } from '@/lib/device';
 import { useI18n } from '@/lib/i18n';
+import { MOBILE_SETTINGS_PAGE_SLUGS } from '@/lib/settings/metadata';
 import { isIPadApp } from '@/lib/platform';
 import { resolveProjectForDirectory, resolveProjectForSessionDirectory } from '@/lib/projectResolution';
 import { clampPercent, formatQuotaResetLabel, formatQuotaValueLabel, formatWindowLabel, QUOTA_PROVIDERS, resolveUsageTone } from '@/lib/quota';
@@ -89,21 +90,6 @@ import { useMobilePressHaptics, useStreamingHaptics } from '@/hooks/streamingHap
 import { useNativePushRegistration } from './useNativePushRegistration';
 import { MobileShareBridge } from './MobileShareBridge';
 
-const MOBILE_SETTINGS_PAGES = [
-  'appearance',
-  'chat',
-  'notifications',
-  'sessions',
-  'git',
-  'magic-prompts',
-  'behavior',
-  'mcp',
-  'providers',
-  'usage',
-  'voice',
-  'about',
-  'assistants',
-] as const;
 const MOBILE_DIRECT_DIFF_WINDOW_ID = 'mobile-direct-diff';
 const MOBILE_TURN_DIFF_WINDOW_ID = 'mobile-turn-diff';
 const MOBILE_OVERFLOW_MENU_ID = 'mobile-overflow-menu';
@@ -3142,7 +3128,7 @@ const MobileShell: React.FC<{ onActiveConnectionDeleted: () => void }> = ({ onAc
                 forceMobile
                 isWindowed
                 initialMobileStage={settingsInitialMobileStage}
-                visiblePageSlugs={[...MOBILE_SETTINGS_PAGES]}
+                visiblePageSlugs={[...MOBILE_SETTINGS_PAGE_SLUGS]}
                 onClose={() => setSettingsOpen(false)}
               />
             </ErrorBoundary>

@@ -71,6 +71,35 @@ const SETTINGS_PAGE_ORDER: readonly SettingsPageSlug[] = [
   'about',
 ] as const;
 
+/**
+ * Settings exposed by the dedicated mobile surfaces.
+ *
+ * Every split collection is included so the shared SettingsView can present
+ * it as Settings home -> entity collection -> entity editor on narrow screens.
+ * Keep this as the single source of truth for MobileApp and MobileSettingsTab.
+ */
+export const MOBILE_SETTINGS_PAGE_SLUGS = [
+  'appearance',
+  'chat',
+  'notifications',
+  'sessions',
+  'projects',
+  'git',
+  'providers',
+  'agents',
+  'assistants',
+  'behavior',
+  'commands',
+  'mcp',
+  'plugins',
+  'magic-prompts',
+  'snippets',
+  'skills.installed',
+  'usage',
+  'voice',
+  'about',
+] as const satisfies readonly SettingsPageSlug[];
+
 export interface SettingsRuntimeContext {
   isVSCode: boolean;
   isWeb: boolean;

@@ -825,6 +825,7 @@ export function ScheduledTasksWorkspace({
                     animate={{ opacity: 1, y: 0 }}
                     exit={reduceMotion ? { opacity: 0 } : { opacity: 0, y: -6 }}
                     transition={{ duration: reduceMotion ? 0 : 0.18, ease: [0.22, 1, 0.36, 1] }}
+                    data-mobile-press-surface={isMobileTab ? 'soft' : undefined}
                     className={cn(isMobileTab && 'oc-mobile-floating-surface oc-mobile-project-shell oc-mobile-scheduled-task-card')}
                   >
                   <ContextMenu
@@ -838,7 +839,7 @@ export function ScheduledTasksWorkspace({
                   >
                     <div className={cn(
                       'group flex w-full items-center gap-1',
-                      isMobileTab && 'oc-mobile-project-card items-stretch',
+                      isMobileTab && 'oc-mobile-project-card',
                     )}>
                     <ContextMenuTrigger
                       render={(
@@ -850,13 +851,17 @@ export function ScheduledTasksWorkspace({
                             setDropdownMenuTaskIdentity(null);
                             setContextMenuTaskIdentity(identityKey);
                           } : undefined}
+                          data-mobile-press-surface-trigger={isMobileTab ? true : undefined}
+                          data-mobile-press-feedback={isMobileTab ? 'none' : undefined}
                           className={cn(
-                            'flex min-h-11 min-w-0 flex-1 items-center rounded-xl border py-3 text-left outline-none transition-[background-color,border-color,box-shadow,transform,opacity] duration-150 ease-out active:scale-[0.995] focus-visible:ring-2 focus-visible:ring-[var(--interactive-focus-ring)] motion-reduce:transition-none',
-                            isMobilePanel ? 'gap-2.5 px-3' : 'gap-3 px-4',
-                            isMobileTab && 'oc-mobile-project-trigger oc-mobile-scheduled-task-row',
-                            selected
+                            'flex min-h-11 min-w-0 flex-1 items-center rounded-xl border py-3 text-left outline-none focus-visible:ring-2 focus-visible:ring-[var(--interactive-focus-ring)] motion-reduce:transition-none',
+                            isMobileTab
+                              ? 'oc-mobile-project-trigger oc-mobile-scheduled-task-row border-0 bg-transparent transition-opacity duration-150'
+                              : 'transition-[background-color,border-color,box-shadow,transform,opacity] duration-150 ease-out active:scale-[0.995]',
+                            isMobilePanel && !isMobileTab ? 'gap-2.5 px-3' : !isMobileTab ? 'gap-3 px-4' : undefined,
+                            !isMobileTab && (selected
                               ? 'border-border/50 bg-[var(--surface-elevated)] shadow-sm'
-                              : 'border-transparent hover:bg-interactive-hover',
+                              : 'border-transparent hover:bg-interactive-hover'),
                             !task.enabled && 'opacity-65',
                           )}
                           aria-pressed={selected}
@@ -923,17 +928,21 @@ export function ScheduledTasksWorkspace({
                           variant="ghost"
                           size="icon"
                           className={cn(
-                            'shrink-0 text-muted-foreground transition-[opacity,transform,background-color] duration-150 ease-out active:scale-95 data-[popup-open]:bg-interactive-hover motion-reduce:transition-none',
-                            isMobileTab ? 'oc-mobile-project-action rounded-full' : 'rounded-lg',
-                            isMobilePanel
-                              ? 'size-11'
-                              : 'size-8 translate-x-1 opacity-0 group-hover:translate-x-0 group-hover:opacity-100 data-[popup-open]:translate-x-0 data-[popup-open]:opacity-100',
-                            selected && 'opacity-100',
+                            'shrink-0 self-center text-muted-foreground transition-[opacity,transform,background-color] duration-150 ease-out active:scale-95 data-[popup-open]:bg-interactive-hover motion-reduce:transition-none',
+                            isMobileTab
+                              ? 'oc-mobile-project-action oc-mobile-scheduled-task-action rounded-full'
+                              : 'rounded-lg',
+                            isMobileTab
+                              ? undefined
+                              : isMobilePanel
+                                ? 'size-11'
+                                : 'size-8 translate-x-1 opacity-0 group-hover:translate-x-0 group-hover:opacity-100 data-[popup-open]:translate-x-0 data-[popup-open]:opacity-100',
+                            selected && !isMobileTab && 'opacity-100',
                           )}
                           onClick={(event) => event.stopPropagation()}
                           aria-label={t('sessions.scheduledTasks.dialog.actions.moreAria', { taskName: task.name })}
                         >
-                          <Icon name="more-2" className="size-4" />
+                          <Icon name="more-2" className={isMobileTab ? 'size-5' : 'size-4'} />
                         </Button>
                       </DropdownMenuTrigger>
                       <DropdownMenuContent align="end" className="min-w-40 motion-reduce:transition-none" onClick={(event) => event.stopPropagation()}>

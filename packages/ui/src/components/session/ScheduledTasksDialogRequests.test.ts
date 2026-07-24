@@ -82,7 +82,7 @@ describe('ScheduledTasksDialog queries', () => {
     expect(workspaceContent).toContain('layoutId="scheduled-task-filter-pill"');
     expect(workspaceContent).toContain("isMobileTab && 'oc-mobile-floating-surface oc-mobile-scheduled-controls'");
     expect(workspaceContent).toContain("!isMobileTab ? (");
-    expect(workspaceContent).toContain("isMobileTab && 'oc-mobile-project-trigger oc-mobile-scheduled-task-row'");
+    expect(workspaceContent).toContain('oc-mobile-project-trigger oc-mobile-scheduled-task-row');
     expect(workspaceContent).toContain("formatSchedule(task, t, !isMobileTab)");
     expect(workspaceContent).toContain('<AnimatePresence initial={false} mode="popLayout">');
     expect(workspaceContent).toContain('key="empty"');
@@ -99,7 +99,7 @@ describe('ScheduledTasksDialog queries', () => {
     expect(editorContent).toContain('MOBILE_PANEL_CONTROL_CLASS');
     expect(workspaceContent).toContain("isMobileTab ? 'pb-0 pt-3'");
     expect(workspaceContent).toContain("? 'overscroll-none pb-[max(1rem,env(safe-area-inset-bottom))] pt-5'");
-    expect(editorContent).toContain('<div className="pb-5 pt-4">');
+    expect(editorContent).toContain('<div className="pb-[calc(6rem+var(--safe-area-inset-bottom');
     expect(editorContent).not.toContain('<div className="px-3 pb-5 pt-4">');
   });
 
@@ -156,9 +156,22 @@ describe('ScheduledTasksDialog queries', () => {
     ]);
     expect(phoneShellContent).toContain('showTabBar={!scheduledEditorActive}');
     expect(tabRootContent).toContain('showTabBar?: boolean;');
-    expect(tabRootContent).toContain(') : showTabBar ? (');
-    expect(scheduledTabContent).toContain('scrollsWithPage={showHeader}');
-    expect(editorContent).toContain('data-scheduled-editor-footer=""');
+    expect(tabRootContent).toContain('data-mobile-navigation-dock-underlay="true"');
+    expect(tabRootContent).toContain('inert={secondaryPage ? true : undefined}');
+    expect(tabRootContent).toContain('<MobileTabBar activeTab={selectedTab}');
+    expect(tabRootContent).not.toContain(') : showTabBar ? (');
+    expect(tabRootContent).toContain('data-mobile-navigation-underlay="true"');
+    expect(tabRootContent).not.toContain("secondaryPage && 'opacity-0'");
+    expect(scheduledTabContent).toContain('scrollsWithPage');
+    expect(scheduledTabContent).not.toContain('scrollsWithPage={showHeader}');
+    const mobileTabEditorContent = editorContent
+      .split("if (presentation === 'mobile-tab')")[1]
+      ?.split('if (isMobile)')[0] ?? '';
+    expect(mobileTabEditorContent).toContain('<MobileDetailNavigation\n          sticky');
+    expect(mobileTabEditorContent).toContain('data-scheduled-editor-footer=""');
+    expect(mobileTabEditorContent).toContain('className="fixed inset-x-0 bottom-0 z-40');
+    expect(mobileTabEditorContent).toContain('pb-[calc(6rem+var(--safe-area-inset-bottom');
+    expect(mobileTabEditorContent).not.toContain('<ScrollShadow');
   });
 
   test('uses the shared model picker for model and thinking mode selection', async () => {
@@ -181,23 +194,38 @@ describe('ScheduledTasksDialog queries', () => {
 
   test('shares one mobile detail navigation across settings, task editing, and chat', async () => {
     const directory = dirname(fileURLToPath(import.meta.url));
-    const [navigationContent, editorContent, settingsContent, chatHeaderContent, chatScreenContent, mobileStyles] = await Promise.all([
+    const [navigationContent, editorContent, settingsContent, settingsTabContent, chatHeaderContent, chatScreenContent, mobileStyles] = await Promise.all([
       readFile(join(directory, '../../mobile/MobileDetailNavigation.tsx'), 'utf8'),
       readFile(join(directory, 'ScheduledTaskEditorDialog.tsx'), 'utf8'),
       readFile(join(directory, '../views/SettingsView.tsx'), 'utf8'),
+      readFile(join(directory, '../../mobile/settings/MobileSettingsTab.tsx'), 'utf8'),
       readFile(join(directory, '../../mobile/chat/MobileChatHeader.tsx'), 'utf8'),
       readFile(join(directory, '../../mobile/chat/MobileChatScreen.tsx'), 'utf8'),
       readFile(join(directory, '../../styles/mobile.css'), 'utf8'),
     ]);
     expect(navigationContent).toContain('oc-mobile-detail-navigation-content');
+    expect(navigationContent).toContain('items-center gap-1 px-4');
+    expect(navigationContent).toContain('actions?: readonly MobileDetailNavigationAction[]');
+    expect(navigationContent).not.toContain('contentClassName?: string');
+    expect(navigationContent).not.toContain('className?: string');
+    expect(navigationContent).not.toContain('trailing?: ReactNode');
     expect(navigationContent).toContain('size-10 min-h-10 min-w-10');
     expect(navigationContent).toContain('max-w-72');
     expect(mobileStyles).toContain('--oc-mobile-detail-action-edge-inset: 1rem');
-    expect(mobileStyles).toContain('--oc-mobile-detail-navigation-inline-inset');
-    expect(mobileStyles).toContain('padding-inline: var(--oc-mobile-detail-navigation-inline-inset)');
-    expect(mobileStyles).not.toContain('padding-inline: calc(1.125rem + 0.5rem)');
+    expect(navigationContent).not.toContain('gap-1 px-2');
+    expect(mobileStyles).toContain('var(--oc-mobile-detail-action-edge-inset, 1rem)');
+    expect(mobileStyles).toContain('var(--oc-safe-area-left, 0px)');
+    expect(mobileStyles).toContain('var(--oc-safe-area-right, 0px)');
+    expect(mobileStyles).not.toContain('--oc-mobile-detail-navigation-inline-inset');
+    expect(settingsContent).not.toContain('oc-mobile-settings-detail-navigation');
+    expect(settingsContent).not.toContain('oc-mobile-settings-detail-header');
+    expect(chatScreenContent).toContain('var(--oc-mobile-detail-navigation-height)');
     expect(editorContent).toContain('<MobileDetailNavigation');
     expect(settingsContent).toContain('<MobileDetailNavigation');
+    expect(settingsContent).toContain('inert={detailActive ? true : undefined}');
+    expect(settingsContent).not.toContain('<MobileTabPageHeader');
+    expect(settingsTabContent).not.toContain('onMobileStageChange');
+    expect(settingsTabContent).not.toContain('showHeader={isRootSettingsPage}');
     expect(chatHeaderContent).toContain('<MobileDetailNavigation');
     expect(chatScreenContent).not.toContain("t('miniChat.status.idle')");
   });

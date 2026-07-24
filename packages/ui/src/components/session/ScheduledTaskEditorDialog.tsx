@@ -1928,31 +1928,30 @@ export function ScheduledTaskEditorDialog(props: {
       return null;
     }
     return (
-      <section className="flex min-h-0 flex-1 flex-col bg-background" aria-label={title}>
+      <section className="bg-background" aria-label={title}>
         <MobileDetailNavigation
+          sticky
           title={title}
           backAriaLabel={t('header.actions.backAria')}
           onBack={() => onOpenChange(false)}
           backDisabled={saving}
         />
-        <ScrollShadow className="min-h-0 flex-1 overflow-y-auto overflow-x-hidden" size={48} hideTopShadow>
-          <div className="pb-5 pt-4">
-            <Input
-              value={draft.name}
-              onChange={(event) => setDraft((prev) => ({ ...prev, name: event.target.value }))}
-              placeholder={t('sessions.scheduledTasks.editor.taskName.placeholder')}
-              aria-label={t('sessions.scheduledTasks.editor.taskName.label')}
-              maxLength={80}
-              className="oc-mobile-detail-editor-title mb-5 !h-auto min-h-0 border-0 bg-transparent px-0 py-0 text-xl font-semibold shadow-none ring-0 hover:!bg-transparent focus:!bg-transparent focus:ring-0"
-            />
-            {formBody}
-          </div>
-        </ScrollShadow>
+        <div className="pb-[calc(6rem+var(--safe-area-inset-bottom,env(safe-area-inset-bottom,0px)))] pt-4">
+          <Input
+            value={draft.name}
+            onChange={(event) => setDraft((prev) => ({ ...prev, name: event.target.value }))}
+            placeholder={t('sessions.scheduledTasks.editor.taskName.placeholder')}
+            aria-label={t('sessions.scheduledTasks.editor.taskName.label')}
+            maxLength={80}
+            className="oc-mobile-detail-editor-title mb-5 !h-auto min-h-0 border-0 bg-transparent px-0 py-0 text-xl font-semibold shadow-none ring-0 hover:!bg-transparent focus:!bg-transparent focus:ring-0"
+          />
+          {formBody}
+        </div>
         <footer
           data-scheduled-editor-footer=""
-          className="relative z-20 shrink-0 border-t border-border/50 bg-background/95 px-3 pb-[calc(1rem+var(--safe-area-inset-bottom,env(safe-area-inset-bottom,0px)))] pt-2 backdrop-blur-sm"
+          className="fixed inset-x-0 bottom-0 z-40 border-t border-border/50 bg-background/95 px-[var(--oc-mobile-page-inline-inset)] pb-[calc(1rem+var(--safe-area-inset-bottom,env(safe-area-inset-bottom,0px)))] pt-2 backdrop-blur-sm"
         >
-          {footerRow}
+          <div className="mx-auto w-full max-w-[26rem]">{footerRow}</div>
         </footer>
       </section>
     );

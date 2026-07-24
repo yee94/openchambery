@@ -1,6 +1,12 @@
 import { describe, expect, test } from 'bun:test';
 
-import { SETTINGS_PAGE_GROUP_ORDER, SETTINGS_PAGE_METADATA, groupSettingsPages } from './metadata';
+import {
+  MOBILE_SETTINGS_PAGE_SLUGS,
+  SETTINGS_PAGE_GROUP_ORDER,
+  SETTINGS_PAGE_METADATA,
+  groupSettingsPages,
+  type SettingsPageSlug,
+} from './metadata';
 
 describe('settings navigation metadata', () => {
   test('keeps the navigation information architecture complete', () => {
@@ -36,5 +42,15 @@ describe('settings navigation metadata', () => {
 
   test('renders assistants through the standard split settings shell', () => {
     expect(SETTINGS_PAGE_METADATA.find((page) => page.slug === 'assistants')?.kind).toBe('split');
+  });
+
+  test('exposes every split collection to the shared three-level mobile flow', () => {
+    const mobilePages = new Set<SettingsPageSlug>(MOBILE_SETTINGS_PAGE_SLUGS);
+    const hiddenSplitPages = SETTINGS_PAGE_METADATA
+      .filter((page) => page.kind === 'split')
+      .map((page) => page.slug)
+      .filter((slug) => !mobilePages.has(slug));
+
+    expect(hiddenSplitPages).toEqual([]);
   });
 });

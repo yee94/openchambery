@@ -78,26 +78,22 @@ export const AssistantsSettingsSidebar: React.FC<{ onItemSelect?: () => void }> 
   const snapshot = snapshotQuery.data;
   const selectedID = useAssistantUIStore((state) => state.settingsSelectedAssistantID);
   const selectSettingsAssistant = useAssistantUIStore((state) => state.selectSettingsAssistant);
-  const createRequestRevision = useAssistantUIStore((state) => state.createRequestRevision);
   const requestCreate = useAssistantUIStore((state) => state.requestCreate);
-  const handledCreateRequestRef = React.useRef(0);
   const [welcomeOpen, setWelcomeOpen] = React.useState(false);
 
   React.useEffect(() => {
-    if (selectedID === null && snapshot?.assistants[0]) selectSettingsAssistant(snapshot.assistants[0].id);
-  }, [selectSettingsAssistant, selectedID, snapshot?.assistants]);
+    // The desktop split view always needs a detail selection. Mobile passes
+    // onItemSelect and must stay on the list until the user opens an item.
+    if (!onItemSelect && selectedID === null && snapshot?.assistants[0]) {
+      selectSettingsAssistant(snapshot.assistants[0].id);
+    }
+  }, [onItemSelect, selectSettingsAssistant, selectedID, snapshot?.assistants]);
 
   React.useEffect(() => {
     if (snapshotQuery.isSuccess && selectedID && selectedID !== 'new' && !snapshot?.assistants.some((assistant) => assistant.id === selectedID)) {
-      selectSettingsAssistant(snapshot?.assistants[0]?.id ?? null);
+      selectSettingsAssistant(onItemSelect ? null : (snapshot?.assistants[0]?.id ?? null));
     }
-  }, [selectSettingsAssistant, selectedID, snapshot?.assistants, snapshotQuery.isSuccess]);
-
-  React.useEffect(() => {
-    if (selectedID !== 'new' || createRequestRevision <= handledCreateRequestRef.current) return;
-    handledCreateRequestRef.current = createRequestRevision;
-    onItemSelect?.();
-  }, [createRequestRevision, onItemSelect, selectedID]);
+  }, [onItemSelect, selectSettingsAssistant, selectedID, snapshot?.assistants, snapshotQuery.isSuccess]);
 
   const startCreate = useEvent(() => {
     requestCreate();
@@ -172,7 +168,11 @@ export const AssistantsSettingsSidebar: React.FC<{ onItemSelect?: () => void }> 
   );
 };
 
-export const AssistantsSettingsPage: React.FC = () => {
+interface AssistantsSettingsPageProps {
+  onItemDeleted?: () => void;
+}
+
+export const AssistantsSettingsPage: React.FC<AssistantsSettingsPageProps> = ({ onItemDeleted }) => {
   const { t } = useI18n();
   const snapshotQuery = useAssistantSnapshotQuery();
   const capabilityQuery = useAssistantCapabilityQuery();
@@ -201,14 +201,10 @@ export const AssistantsSettingsPage: React.FC = () => {
   }, [selected]);
 
   React.useEffect(() => {
-    if (selectedID === null && snapshot?.assistants[0]) selectSettingsAssistant(snapshot.assistants[0].id);
-  }, [selectSettingsAssistant, selectedID, snapshot?.assistants]);
-
-  React.useEffect(() => {
     if (snapshotQuery.isSuccess && selectedID && selectedID !== 'new' && !selected) {
-      selectSettingsAssistant(snapshot?.assistants[0]?.id ?? null);
+      selectSettingsAssistant(null);
     }
-  }, [selectSettingsAssistant, selected, selectedID, snapshot?.assistants, snapshotQuery.isSuccess]);
+  }, [selectSettingsAssistant, selected, selectedID, snapshotQuery.isSuccess]);
 
   React.useEffect(() => {
     if (selectedID !== 'new' || createRequestRevision <= handledCreateRequestRef.current) return;
@@ -261,6 +257,7 @@ export const AssistantsSettingsPage: React.FC = () => {
         if (capability.serverInstanceID && defaultShareAssistant.serverInstanceID === capability.serverInstanceID) setDefaultShareAssistant(null);
       }
       selectSettingsAssistant(null);
+      onItemDeleted?.();
       toast.success(t('assistants.settings.toast.deleted'));
     } catch {
       toast.error(t('assistants.settings.toast.deleteFailed'));

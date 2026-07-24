@@ -111,7 +111,7 @@ export function MobileTabsRoot({
         data-mobile-navigation-underlay="true"
         aria-hidden={secondaryPage ? true : undefined}
         inert={secondaryPage ? true : undefined}
-        className={cn('flex h-full min-h-0 flex-1 flex-col transition-opacity duration-200 ease-out motion-reduce:transition-none', secondaryPage && 'opacity-0')}
+        className="flex h-full min-h-0 flex-1 flex-col"
       >
         {MOBILE_TABS.map((tab) => {
           const visited = visitedTabs.has(tab.id);
@@ -124,9 +124,9 @@ export function MobileTabsRoot({
               hidden={selectedTab !== tab.id}
               tabIndex={0}
               className={cn(
-                'scrollbar-none h-full min-h-0 flex-1 overflow-y-auto overscroll-contain px-[var(--oc-mobile-page-inline-inset)] pt-[calc(var(--safe-area-inset-top,env(safe-area-inset-top,0px))+1rem)] outline-none',
+                'scrollbar-none h-full min-h-0 flex-1 overflow-y-auto overflow-x-hidden overscroll-contain px-[var(--oc-mobile-page-inline-inset)] pt-[calc(var(--safe-area-inset-top,env(safe-area-inset-top,0px))+1rem)] outline-none',
                 showTabBar
-                  ? 'pb-[calc(6rem+var(--safe-area-inset-bottom,env(safe-area-inset-bottom,0px)))]'
+                  ? 'pb-[calc(var(--oc-mobile-dock-height)+2.5rem+var(--safe-area-inset-bottom,env(safe-area-inset-bottom,0px)))]'
                   : 'pb-0',
               )}
             >
@@ -135,6 +135,16 @@ export function MobileTabsRoot({
           );
         })}
       </div>
+
+      {showTabBar ? (
+        <div
+          data-mobile-navigation-dock-underlay="true"
+          aria-hidden={secondaryPage ? true : undefined}
+          inert={secondaryPage ? true : undefined}
+        >
+          <MobileTabBar activeTab={selectedTab} onTabChange={handleTabChange} />
+        </div>
+      ) : null}
 
       {secondaryPage ? (
         <div
@@ -149,8 +159,6 @@ export function MobileTabsRoot({
         >
           {secondaryPage.content}
         </div>
-      ) : showTabBar ? (
-        <MobileTabBar activeTab={selectedTab} onTabChange={handleTabChange} />
       ) : null}
     </div>
   );

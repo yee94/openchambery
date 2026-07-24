@@ -3,6 +3,7 @@ import { describe, expect, test } from 'bun:test';
 import {
   clampMobileBackProgress,
   MobileBackNavigationCoordinator,
+  settleMobileBackSurface,
   type MobileBackHistory,
 } from './mobileBackNavigation';
 
@@ -92,4 +93,30 @@ test('clampMobileBackProgress keeps native payloads compositor-safe', () => {
   expect(clampMobileBackProgress(0.42)).toBe(0.42);
   expect(clampMobileBackProgress(2)).toBe(1);
   expect(clampMobileBackProgress(Number.NaN)).toBe(0);
+});
+
+test('settlement cancels its fill-forwards animation before a route reuses the surface', async () => {
+  let cancelCalls = 0;
+  let receivedKeyframes: Keyframe[] | PropertyIndexedKeyframes | null = null;
+  const surface = {
+    style: { transform: 'translate3d(42%, 0, 0)' },
+    animate: (keyframes: Keyframe[] | PropertyIndexedKeyframes | null) => {
+      receivedKeyframes = keyframes;
+      return {
+        finished: Promise.resolve(),
+        cancel: () => {
+          cancelCalls += 1;
+        },
+      };
+    },
+  } as unknown as HTMLElement;
+
+  await settleMobileBackSurface(surface, true, false);
+
+  expect(cancelCalls).toBe(1);
+  expect(surface.style.transform).toBe('translate3d(100%, 0, 0)');
+  expect(receivedKeyframes).toEqual([
+    { transform: 'translate3d(42%, 0, 0)' },
+    { transform: 'translate3d(100%, 0, 0)' },
+  ]);
 });

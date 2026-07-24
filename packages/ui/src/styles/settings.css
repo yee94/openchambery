@@ -297,88 +297,26 @@
   .oc-settings-split-row-control {
     width: 100%;
   }
+
+  /* Complex pickers and editors opt into a true full-width row. Keep this
+     override after the narrow two-column rule so the generic mobile grid
+     cannot squeeze their content back into the value column. */
+  .oc-settings-split-row.oc-settings-split-row-stacked {
+    grid-template-columns: minmax(0, 1fr);
+    row-gap: 0.5rem;
+  }
+
+  .oc-settings-split-row.oc-settings-split-row-stacked
+    .oc-settings-split-row-control {
+    width: 100%;
+    max-width: none;
+    justify-self: stretch;
+  }
 }
 
 .oc-settings-workspace-desktop {
   --oc-settings-section-title-size: var(--text-ui-label);
   --oc-settings-section-title-line-height: var(--form-control-line-height);
-}
-
-.oc-settings-workspace-desktop .oc-settings-navigation {
-  padding: 0.875rem;
-  border-right: 0 !important;
-  background: var(--surface-background) !important;
-}
-
-.oc-settings-workspace-desktop .oc-settings-navigation-content {
-  gap: var(--oc-settings-section-stack-gap);
-}
-
-.oc-settings-nav-list {
-  display: flex;
-  min-width: 0;
-  flex-direction: column;
-}
-
-.oc-settings-workspace-desktop
-  .oc-settings-navigation-content
-  > .oc-settings-search {
-  padding: 0;
-}
-.oc-settings-workspace-desktop .oc-settings-nav-list {
-  gap: var(--oc-settings-section-stack-gap);
-  padding: 0 !important;
-}
-
-.oc-settings-workspace-desktop .oc-settings-nav-group {
-  display: flex;
-  flex-direction: column;
-  gap: 0.375rem;
-}
-
-.oc-settings-workspace-desktop .oc-settings-nav-group-label {
-  padding-inline: var(--oc-settings-section-title-inset);
-  font-size: 0.6875rem;
-  font-weight: 400;
-  line-height: 0.875rem;
-  color: var(--surface-muted-foreground);
-}
-
-.oc-settings-workspace-desktop .oc-settings-nav-group-card {
-  display: flex;
-  flex-direction: column;
-  gap: 0.25rem;
-  overflow: visible;
-  border: 0;
-  border-radius: 0;
-  background: transparent;
-  box-shadow: none;
-}
-
-.oc-settings-workspace-desktop .oc-settings-nav-row {
-  min-height: 2rem !important;
-  border-radius: 0.5rem !important;
-  padding-inline: var(--oc-settings-section-title-inset) !important;
-}
-
-.oc-settings-workspace-desktop .oc-settings-nav-page-row {
-  height: 1.75rem !important;
-  min-height: 1.75rem !important;
-}
-
-.oc-settings-workspace-desktop .oc-settings-nav-row + .oc-settings-nav-row {
-  box-shadow: none;
-}
-.oc-settings-workspace-desktop .oc-settings-navigation-footer {
-  padding: 0 !important;
-}
-
-.oc-settings-workspace-desktop
-  .oc-settings-navigation-footer
-  > .oc-settings-nav-group-card {
-  padding: 0.25rem;
-  border: 0 !important;
-  background: transparent !important;
 }
 
 /* Desktop keeps a stable value column when the detail pane grows. Mobile
@@ -417,7 +355,6 @@
 .oc-settings-workspace-desktop .oc-settings-detail-pane {
   display: flex;
   min-width: 0;
-  padding: 1.25rem;
   background: var(--surface-background) !important;
 }
 

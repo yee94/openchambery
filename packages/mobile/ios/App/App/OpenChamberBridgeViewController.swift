@@ -11,6 +11,9 @@ class OpenChamberNavigationPlugin: CAPPlugin, CAPBridgedPlugin, UIGestureRecogni
 
     private var edgePan: UIScreenEdgePanGestureRecognizer?
     private var navigationEnabled = false
+    private var progressDisplayLink: CADisplayLink?
+    private var latestProgress: CGFloat = 0
+    private var progressPending = false
 
     override func load() {
         DispatchQueue.main.async { [weak self] in
@@ -30,6 +33,9 @@ class OpenChamberNavigationPlugin: CAPPlugin, CAPBridgedPlugin, UIGestureRecogni
         DispatchQueue.main.async { [weak self] in
             self?.navigationEnabled = enabled
             self?.edgePan?.isEnabled = enabled
+            if !enabled {
+                self?.stopProgressDisplayLink()
+            }
             call.resolve()
         }
     }
@@ -49,18 +55,51 @@ class OpenChamberNavigationPlugin: CAPPlugin, CAPBridgedPlugin, UIGestureRecogni
 
         switch recognizer.state {
         case .began:
+            latestProgress = progress
+            progressPending = false
+            startProgressDisplayLink()
             notifyListeners("backStarted", data: ["progress": progress])
         case .changed:
-            notifyListeners("backProgressed", data: ["progress": progress])
+            // UIKit can deliver touch samples faster than the WebView can
+            // present frames. Keep only the newest value and cross the
+            // Capacitor bridge once per display tick.
+            latestProgress = progress
+            progressPending = true
         case .ended:
+            stopProgressDisplayLink()
             let velocity = recognizer.velocity(in: view).x
             let commit = progress >= 0.35 || (progress >= 0.08 && velocity >= 700)
             notifyListeners(commit ? "backInvoked" : "backCancelled", data: ["progress": progress])
         case .cancelled, .failed:
+            stopProgressDisplayLink()
             notifyListeners("backCancelled", data: ["progress": progress])
         default:
             break
         }
+    }
+
+    private func startProgressDisplayLink() {
+        guard progressDisplayLink == nil else { return }
+        let displayLink = CADisplayLink(target: self, selector: #selector(flushProgress))
+        if #available(iOS 15.0, *) {
+            displayLink.preferredFrameRateRange = CAFrameRateRange(minimum: 30, maximum: 60, preferred: 60)
+        } else {
+            displayLink.preferredFramesPerSecond = 60
+        }
+        displayLink.add(to: .main, forMode: .common)
+        progressDisplayLink = displayLink
+    }
+
+    private func stopProgressDisplayLink() {
+        progressDisplayLink?.invalidate()
+        progressDisplayLink = nil
+        progressPending = false
+    }
+
+    @objc private func flushProgress() {
+        guard navigationEnabled, progressPending else { return }
+        progressPending = false
+        notifyListeners("backProgressed", data: ["progress": latestProgress])
     }
 }
 

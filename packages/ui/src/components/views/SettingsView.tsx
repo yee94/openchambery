@@ -416,6 +416,7 @@ export const SettingsView: React.FC<SettingsViewProps> = ({
   const startXRef = React.useRef(0);
   const startWidthRef = React.useRef(navWidth);
   const containerRef = React.useRef<HTMLDivElement>(null);
+  const mobileBackSurfaceRef = React.useRef<HTMLDivElement>(null);
   const searchResultRefs = React.useRef<(HTMLButtonElement | null)[]>([]);
   const activeSearchResultIndexRef = React.useRef(0);
   const keyboardSearchNavigationRef = React.useRef(false);
@@ -1011,6 +1012,23 @@ export const SettingsView: React.FC<SettingsViewProps> = ({
     [],
   );
 
+  const handleMobileSplitItemDeleted = React.useCallback(() => {
+    if (!isMobile) {
+      return;
+    }
+
+    const currentDetail =
+      typeof window !== "undefined"
+        ? getSettingsDetailHistoryEntry(window.history.state)
+        : null;
+    if (currentDetail?.page === settingsSlug && !runtimeCtx.isVSCode) {
+      window.history.back();
+      return;
+    }
+
+    setMobileStage("page-sidebar");
+  }, [isMobile, runtimeCtx.isVSCode, settingsSlug]);
+
   const renderPageContent = React.useCallback(
     (slug: SettingsPageSlug) => {
       const meta = getSettingsPageMeta(slug);
@@ -1028,7 +1046,11 @@ export const SettingsView: React.FC<SettingsViewProps> = ({
         case "agents":
           return <AgentsPage />;
         case "assistants":
-          return <AssistantsSettingsPage />;
+          return (
+            <AssistantsSettingsPage
+              onItemDeleted={isMobile ? handleMobileSplitItemDeleted : undefined}
+            />
+          );
         case "behavior":
           return <BehaviorPage />;
         case "commands":
@@ -1080,6 +1102,8 @@ export const SettingsView: React.FC<SettingsViewProps> = ({
       }
     },
     [
+      handleMobileSplitItemDeleted,
+      isMobile,
       mobileFlow,
       openChamberSectionBySlug,
       openPage,
@@ -1159,26 +1183,18 @@ export const SettingsView: React.FC<SettingsViewProps> = ({
 
   const handleBack = React.useCallback(() => {
     if (backButtonTargetsPageSidebar) {
-      const currentDetail =
-        typeof window !== "undefined"
-          ? getSettingsDetailHistoryEntry(window.history.state)
-          : null;
-      if (currentDetail?.page === settingsSlug && !runtimeCtx.isVSCode) {
-        window.history.back();
-        return;
-      }
-      setMobileStage("page-sidebar");
+      handleMobileSplitItemDeleted();
       return;
     }
 
     setMobileStage("nav");
-  }, [backButtonTargetsPageSidebar, runtimeCtx.isVSCode, settingsSlug]);
+  }, [backButtonTargetsPageSidebar, handleMobileSplitItemDeleted]);
 
   useMobileBackRoute({
     id: `mobile-settings:${settingsSlug}`,
     active: mobileFlow && mobileStage !== "nav",
     onBack: handleBack,
-    surfaceRef: containerRef,
+    surfaceRef: mobileBackSurfaceRef,
   });
 
   React.useEffect(() => {
@@ -1218,13 +1234,14 @@ export const SettingsView: React.FC<SettingsViewProps> = ({
     return (
       <div
         className={cn(
-          "oc-settings-navigation-content flex h-full flex-col overflow-hidden",
+          "flex h-full flex-col overflow-hidden",
+          isMobile && "oc-settings-navigation-content",
           mobileFlow && "h-auto w-full overflow-visible",
         )}
       >
         <div
           className={cn(
-            "oc-settings-search px-2 pt-3",
+            "px-2 pt-3",
             isMobile && "oc-mobile-settings-search",
           )}
         >
@@ -1265,8 +1282,9 @@ export const SettingsView: React.FC<SettingsViewProps> = ({
         >
           <div
             className={cn(
-              "oc-settings-nav-list",
-              isMobile && "oc-mobile-settings-nav-list",
+              isMobile
+                ? "oc-mobile-settings-nav-list flex min-w-0 flex-col"
+                : "flex flex-col gap-0.5 px-2 pb-2 pt-4",
             )}
           >
             {hasSearchQuery ? (
@@ -1294,7 +1312,7 @@ export const SettingsView: React.FC<SettingsViewProps> = ({
                           className={cn(
                             isMobile
                               ? "oc-mobile-settings-row oc-mobile-settings-search-result"
-                              : "oc-settings-nav-row flex w-full flex-col rounded-md px-2 text-left focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-primary/50",
+                              : "flex w-full flex-col rounded-md px-2 text-left focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-primary/50",
                             hasDescription ? "min-h-11 py-1.5" : "py-2",
                             active
                               ? "bg-interactive-selection"
@@ -1334,16 +1352,11 @@ export const SettingsView: React.FC<SettingsViewProps> = ({
                     }
 
                     return (
-                      <div
-                        key={group.page}
-                        className="oc-settings-nav-group space-y-0.5"
-                      >
-                        <div className="oc-settings-nav-group-label px-2 pb-0.5 pt-2 typography-micro font-medium text-muted-foreground/70">
+                      <div key={group.page} className="space-y-0.5">
+                        <div className="px-2 pb-0.5 pt-2 typography-micro font-medium text-muted-foreground/70">
                           {group.pageTitle}
                         </div>
-                        <div className="oc-settings-nav-group-card">
-                          {resultRows}
-                        </div>
+                        {resultRows}
                       </div>
                     );
                   });
@@ -1354,7 +1367,7 @@ export const SettingsView: React.FC<SettingsViewProps> = ({
                 </div>
               )
             ) : (
-              visiblePageGroups.map(({ group, pages }) => {
+              visiblePageGroups.map(({ group, pages }, groupIndex) => {
                 const groupLabel = t(
                   `settings.view.navigation.groups.${group}`,
                 );
@@ -1373,7 +1386,7 @@ export const SettingsView: React.FC<SettingsViewProps> = ({
                           className={cn(
                             isMobile
                               ? "oc-mobile-settings-row"
-                              : "oc-settings-nav-row oc-settings-nav-page-row flex h-8 w-full items-center gap-2 overflow-hidden rounded-md px-2 text-left",
+                              : "flex h-8 w-full items-center gap-2 overflow-hidden rounded-md px-2 text-left",
                             selected && !isMobile
                               ? "bg-interactive-selection text-foreground"
                               : "text-foreground hover:bg-interactive-hover",
@@ -1422,11 +1435,14 @@ export const SettingsView: React.FC<SettingsViewProps> = ({
                 }
 
                 return (
-                  <div key={group} className="oc-settings-nav-group">
-                    <div className="oc-settings-nav-group-label px-2 pb-0.5 typography-micro font-medium text-muted-foreground/70">
+                  <div
+                    key={group}
+                    className={cn("space-y-0.5", groupIndex > 0 && "pt-3")}
+                  >
+                    <div className="px-2 pb-0.5 typography-micro font-medium text-muted-foreground/70">
                       {groupLabel}
                     </div>
-                    <div className="oc-settings-nav-group-card">{pageRows}</div>
+                    {pageRows}
                   </div>
                 );
               })
@@ -1437,13 +1453,13 @@ export const SettingsView: React.FC<SettingsViewProps> = ({
         {/* Footer */}
         <div
           className={cn(
-            "oc-settings-navigation-footer overflow-hidden transition-opacity duration-150 opacity-100",
+            "overflow-hidden transition-opacity duration-150 opacity-100",
             isMobile && "oc-mobile-settings-footer",
           )}
         >
           <div
             className={cn(
-              "oc-settings-nav-group-card border-t border-border bg-sidebar px-2 py-1 space-y-0.5",
+              "border-t border-border bg-sidebar px-2 py-1 space-y-0.5",
               isMobile && "oc-mobile-floating-surface oc-mobile-settings-card",
             )}
           >
@@ -1482,29 +1498,31 @@ export const SettingsView: React.FC<SettingsViewProps> = ({
     );
   };
 
+  const renderMobileNavStage = () => (
+    <div
+      className={cn(
+        "flex-1 min-h-0 overflow-hidden",
+        mobileFlow
+          ? "w-full flex-none overflow-visible bg-transparent"
+          : runtimeCtx.isVSCode
+            ? "bg-background"
+            : "bg-sidebar",
+      )}
+    >
+      <div
+        className={cn(
+          "flex h-full min-h-0 flex-col",
+          mobileFlow && "h-auto w-full overflow-visible",
+        )}
+      >
+        <ErrorBoundary>{renderSettingsNav()}</ErrorBoundary>
+      </div>
+    </div>
+  );
+
   const renderMobileStage = () => {
     if (mobileStage === "nav") {
-      return (
-        <div
-          className={cn(
-            "flex-1 min-h-0 overflow-hidden",
-            mobileFlow
-              ? "w-full flex-none overflow-visible bg-transparent"
-              : runtimeCtx.isVSCode
-                ? "bg-background"
-                : "bg-sidebar",
-          )}
-        >
-          <div
-            className={cn(
-              "flex h-full min-h-0 flex-col",
-              mobileFlow && "h-auto w-full overflow-visible",
-            )}
-          >
-            <ErrorBoundary>{renderSettingsNav()}</ErrorBoundary>
-          </div>
-        </div>
-      );
+      return renderMobileNavStage();
     }
 
     if (!activePageMeta) {
@@ -1598,6 +1616,67 @@ export const SettingsView: React.FC<SettingsViewProps> = ({
     );
   };
 
+  const renderMobileDetailNavigation = () => (
+    <MobileDetailNavigation
+      sticky
+      title={mobileStage === "nav"
+        ? t("settings.view.home.title")
+        : activePageMeta
+          ? getPageTitle(activePageMeta.slug)
+          : t("settings.view.home.title")}
+      backAriaLabel={mobileBackButtonLabel}
+      onBack={showBackButton ? handleBack : onClose}
+      actions={[
+        ...(showOpenPageSidebarButton ? [{
+          icon: "list-unordered" as const,
+          ariaLabel: t("settings.view.actions.openSectionList"),
+          onClick: handleOpenPageSidebar,
+        }] : []),
+        ...(onClose ? [{
+          icon: "close" as const,
+          ariaLabel: t("settings.view.actions.closeSettings"),
+          title: t("settings.view.actions.closeSettingsWithShortcut", {
+            shortcut: shortcutKey,
+          }),
+          onClick: onClose,
+        }] : []),
+      ]}
+    />
+  );
+
+  if (mobileFlow) {
+    const detailActive = mobileStage !== "nav";
+    return (
+      <div
+        ref={containerRef}
+        data-settings-view="true"
+        data-mobile-settings-detail-active={detailActive ? "true" : undefined}
+        className="oc-settings-workspace oc-settings-workspace-mobile h-auto w-full min-w-0 overflow-visible bg-transparent"
+      >
+        <div
+          data-mobile-navigation-underlay="true"
+          aria-hidden={detailActive ? "true" : undefined}
+          inert={detailActive ? true : undefined}
+          className="w-full min-w-0"
+        >
+          {renderMobileNavStage()}
+        </div>
+        {detailActive ? (
+          <div
+            ref={mobileBackSurfaceRef}
+            data-mobile-settings-push-surface="true"
+            className="fixed inset-0 z-30 flex h-[100dvh] w-full min-w-0 max-w-full touch-pan-y flex-col overflow-hidden bg-background [contain:layout_paint]"
+          >
+            {renderMobileDetailNavigation()}
+            <div className="min-h-0 w-full flex-1 overflow-y-auto overflow-x-hidden overscroll-contain px-[var(--oc-mobile-page-inline-inset)]">
+              {renderMobileStage()}
+            </div>
+          </div>
+        ) : null}
+      </div>
+    );
+  }
+
   return (
     <div
       ref={containerRef}
@@ -1611,46 +1690,7 @@ export const SettingsView: React.FC<SettingsViewProps> = ({
       )}
     >
       {isMobile && !suppressMobileHeader ? (
-        <MobileDetailNavigation
-          sticky
-          className="oc-mobile-settings-detail-navigation"
-          contentClassName="oc-mobile-settings-detail-header"
-          title={mobileStage === "nav"
-            ? t("settings.view.home.title")
-            : activePageMeta
-              ? getPageTitle(activePageMeta.slug)
-              : t("settings.view.home.title")}
-          backAriaLabel={mobileBackButtonLabel}
-          onBack={showBackButton ? handleBack : onClose}
-          trailing={(
-            <>
-            {showOpenPageSidebarButton && (
-              <button
-                type="button"
-                onClick={handleOpenPageSidebar}
-                aria-label={t("settings.view.actions.openSectionList")}
-                className="oc-mobile-detail-action inline-flex size-10 min-h-10 min-w-10 flex-shrink-0 items-center justify-center p-2 text-muted-foreground hover:bg-interactive-hover/50 hover:text-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[var(--interactive-focus-ring)]"
-              >
-                <Icon name="list-unordered" className="h-5 w-5" />
-              </button>
-            )}
-
-            {onClose && (
-              <button
-                type="button"
-                onClick={onClose}
-                aria-label={t("settings.view.actions.closeSettings")}
-                title={t("settings.view.actions.closeSettingsWithShortcut", {
-                  shortcut: shortcutKey,
-                })}
-                className="oc-mobile-detail-action inline-flex size-10 min-h-10 min-w-10 flex-shrink-0 items-center justify-center p-2 text-muted-foreground hover:bg-interactive-hover/50 hover:text-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[var(--interactive-focus-ring)]"
-              >
-                <Icon name="close" className="h-5 w-5" />
-              </button>
-            )}
-            </>
-          )}
-        />
+        renderMobileDetailNavigation()
       ) : !isMobile ? (
         <>
           {showBackButton && (
@@ -1706,7 +1746,7 @@ export const SettingsView: React.FC<SettingsViewProps> = ({
           <>
             <div
               className={cn(
-                "oc-settings-navigation relative flex h-full min-h-0 flex-col overflow-hidden border-r",
+                "relative flex h-full min-h-0 flex-col overflow-hidden border-r",
                 isDesktopApp
                   ? "bg-sidebar"
                   : runtimeCtx.isVSCode

@@ -96,6 +96,11 @@ not change the spacing before or after their group.
 - The desktop value column, including adjacent reset actions, is capped by
   `--oc-settings-desktop-value-max-width`. Mobile uses the same semantic row
   and collapses through the shared responsive grid.
+- Complex collections and editors that cannot fit in a compact value column
+  add `oc-settings-split-row-stacked` to `SettingsRow`. On narrow/mobile
+  surfaces the label occupies the first line and the complete control receives
+  the full card width; the generic mobile two-column rule must not override
+  this layout.
 
 ## Controls
 
