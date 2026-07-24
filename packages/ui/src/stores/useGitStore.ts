@@ -10,10 +10,17 @@ import type {
 import { ensureGitBranchesQuery, refreshGitBranchesQuery, type GitBranchQueryAPI } from '@/queries/gitBranchQueries';
 import { getRuntimeTransportIdentity, subscribeRuntimeEndpointChanged } from '@/lib/runtime-switch';
 
-/** Abort/cancel rejections from superseded or unmounted requests — expected, not failures. */
-const isAbortLikeError = (error: unknown): boolean => (
-  error instanceof Error && (error.name === 'AbortError' || error.name === 'CancelledError')
-);
+/**
+ * Abort/cancel rejections from superseded or unmounted requests — expected,
+ * not failures. Note: TanStack Query's CancelledError sets the MESSAGE
+ * (`super("CancelledError")`), leaving `name` as plain "Error", so matching
+ * must cover both name and message.
+ */
+const isAbortLikeError = (error: unknown): boolean => {
+  if (!(error instanceof Error)) return false;
+  if (error.name === 'AbortError' || error.name === 'CancelledError') return true;
+  return error.name === 'Error' && error.message === 'CancelledError';
+};
 
 const LOG_STALE_THRESHOLD = 10000;
 const REPO_CHECK_STALE_THRESHOLD = 60_000;
