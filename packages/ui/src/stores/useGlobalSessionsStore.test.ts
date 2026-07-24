@@ -1030,6 +1030,300 @@ describe('useGlobalSessionsStore', () => {
     });
   });
 
+  test('authoritative tip snapshot keeps loadMore tail and deeper pagination cursor', async () => {
+    const originalWindow = globalThis.window;
+    const originalFetch = globalThis.fetch;
+    const makePage = (start: number) => Array.from({ length: 20 }, (_, index) => ({
+      id: `ses_${start + index}`,
+      title: `Session ${start + index}`,
+      directory: '/repo/app',
+      time: { created: 100 - start - index, updated: 100 - start - index },
+    } as Session));
+    const list = async (input: Record<string, unknown>) => ({
+      data: input.cursor === undefined ? makePage(0) : makePage(20),
+      error: undefined,
+      response: new Response(null, { status: 200 }),
+    });
+    const sdk = { experimental: { session: { list } } } as unknown as OpencodeClient;
+    const originalGetSdkClient = opencodeClient.getSdkClient;
+    opencodeClient.getSdkClient = () => sdk;
+    restoreGetSdkClient = () => { opencodeClient.getSdkClient = originalGetSdkClient; };
+
+    await useGlobalSessionsStore.getState().refreshSessionsForDirectories(['/repo/app']);
+    await useGlobalSessionsStore.getState().loadMoreSessionsForDirectory('/repo/app');
+    expect(useGlobalSessionsStore.getState().sessionsByDirectory.get('/repo/app')?.length).toBe(40);
+    const deeperPagination = useGlobalSessionsStore.getState().activePaginationByDirectory.get('/repo/app');
+    expect(deeperPagination).toEqual({ cursor: 61, hasMore: true, loadingMore: false });
+
+    const headWindow = [
+      {
+        id: 'ses_new',
+        title: 'New session',
+        directory: '/repo/app',
+        time: { created: 101, updated: 101 },
+      } as Session,
+      ...makePage(0).slice(0, 19),
+    ];
+    const tipSnapshot = {
+      revision: 9,
+      sync: {
+        active: false,
+        completed: 1,
+        total: 1,
+        pendingDirectories: [],
+        completedDirectories: ['/repo/app'],
+        failedDirectories: [],
+      },
+      directories: [{
+        directory: '/repo/app',
+        cursor: 81,
+        hasMore: true,
+        lastSyncedAt: 2000,
+        lastFullSyncedAt: 2000,
+        lastAccessedAt: 2000,
+        sessions: headWindow,
+      }],
+    };
+
+    try {
+      Object.defineProperty(globalThis, 'window', {
+        configurable: true,
+        value: { location: { origin: 'http://localhost', href: 'http://localhost/' } },
+      });
+      globalThis.fetch = async () => new Response(JSON.stringify(tipSnapshot), {
+        status: 202,
+        headers: { 'Content-Type': 'application/json' },
+      });
+
+      await useGlobalSessionsStore.getState().syncSessionsForDirectories(['/repo/app']);
+
+      const ids = useGlobalSessionsStore.getState().sessionsByDirectory.get('/repo/app')?.map((session) => session.id) ?? [];
+      expect(ids[0]).toBe('ses_new');
+      // New head item pushes former ses_19 past the head window; keep it with the loadMore tail.
+      expect(ids).toContain('ses_19');
+      expect(ids).toContain('ses_20');
+      expect(ids).toContain('ses_39');
+      expect(ids.length).toBe(41);
+      expect(useGlobalSessionsStore.getState().activePaginationByDirectory.get('/repo/app')).toEqual({
+        cursor: 61,
+        hasMore: true,
+        loadingMore: false,
+      });
+    } finally {
+      Object.defineProperty(globalThis, 'window', { configurable: true, value: originalWindow });
+      globalThis.fetch = originalFetch;
+    }
+  });
+
+  test('authoritative complete snapshot clears loadMore tail and resets pagination', async () => {
+    const originalWindow = globalThis.window;
+    const originalFetch = globalThis.fetch;
+    const makePage = (start: number) => Array.from({ length: 20 }, (_, index) => ({
+      id: `ses_${start + index}`,
+      title: `Session ${start + index}`,
+      directory: '/repo/app',
+      time: { created: 100 - start - index, updated: 100 - start - index },
+    } as Session));
+    const list = async (input: Record<string, unknown>) => ({
+      data: input.cursor === undefined ? makePage(0) : makePage(20),
+      error: undefined,
+      response: new Response(null, { status: 200 }),
+    });
+    const sdk = { experimental: { session: { list } } } as unknown as OpencodeClient;
+    const originalGetSdkClient = opencodeClient.getSdkClient;
+    opencodeClient.getSdkClient = () => sdk;
+    restoreGetSdkClient = () => { opencodeClient.getSdkClient = originalGetSdkClient; };
+
+    await useGlobalSessionsStore.getState().refreshSessionsForDirectories(['/repo/app']);
+    await useGlobalSessionsStore.getState().loadMoreSessionsForDirectory('/repo/app');
+    expect(useGlobalSessionsStore.getState().sessionsByDirectory.get('/repo/app')?.length).toBe(40);
+
+    const completeHead = makePage(0).slice(0, 5);
+    const tipSnapshot = {
+      revision: 11,
+      sync: {
+        active: false,
+        completed: 1,
+        total: 1,
+        pendingDirectories: [],
+        completedDirectories: ['/repo/app'],
+        failedDirectories: [],
+      },
+      directories: [{
+        directory: '/repo/app',
+        cursor: null,
+        hasMore: false,
+        lastSyncedAt: 3000,
+        lastFullSyncedAt: 3000,
+        lastAccessedAt: 3000,
+        sessions: completeHead,
+      }],
+    };
+
+    try {
+      Object.defineProperty(globalThis, 'window', {
+        configurable: true,
+        value: { location: { origin: 'http://localhost', href: 'http://localhost/' } },
+      });
+      globalThis.fetch = async () => new Response(JSON.stringify(tipSnapshot), {
+        status: 202,
+        headers: { 'Content-Type': 'application/json' },
+      });
+
+      await useGlobalSessionsStore.getState().syncSessionsForDirectories(['/repo/app']);
+
+      expect(useGlobalSessionsStore.getState().sessionsByDirectory.get('/repo/app')?.map((session) => session.id))
+        .toEqual(completeHead.map((session) => session.id));
+      expect(useGlobalSessionsStore.getState().activePaginationByDirectory.get('/repo/app')).toEqual({
+        cursor: null,
+        hasMore: false,
+        loadingMore: false,
+      });
+    } finally {
+      Object.defineProperty(globalThis, 'window', { configurable: true, value: originalWindow });
+      globalThis.fetch = originalFetch;
+    }
+  });
+
+  test('authoritative empty complete snapshot clears directory sessions and pagination', async () => {
+    const originalWindow = globalThis.window;
+    const originalFetch = globalThis.fetch;
+    const kept = buildSession('https://share.example/kept-empty', {
+      id: 'ses_kept_empty',
+      directory: '/repo/empty',
+      time: { created: 2, updated: 20 },
+    });
+    const tail = buildSession('https://share.example/tail-empty', {
+      id: 'ses_tail_empty',
+      directory: '/repo/empty',
+      time: { created: 1, updated: 5 },
+    });
+    useGlobalSessionsStore.setState({
+      activeSessions: [kept, tail],
+      sessionsByDirectory: new Map([['/repo/empty', [kept, tail]]]),
+      loadedDirectories: new Set(['/repo/empty']),
+      activePaginationByDirectory: new Map([
+        ['/repo/empty', { cursor: 4, hasMore: true, loadingMore: false }],
+      ]),
+      hasLoaded: true,
+      status: 'ready',
+    });
+
+    const snapshot = {
+      revision: 12,
+      sync: {
+        active: false,
+        completed: 1,
+        total: 1,
+        pendingDirectories: [],
+        completedDirectories: ['/repo/empty'],
+        failedDirectories: [],
+      },
+      directories: [{
+        directory: '/repo/empty',
+        cursor: null,
+        hasMore: false,
+        lastSyncedAt: 4000,
+        lastFullSyncedAt: 4000,
+        lastAccessedAt: 4000,
+        sessions: [],
+      }],
+    };
+
+    try {
+      Object.defineProperty(globalThis, 'window', {
+        configurable: true,
+        value: { location: { origin: 'http://localhost', href: 'http://localhost/' } },
+      });
+      globalThis.fetch = async () => new Response(JSON.stringify(snapshot), {
+        status: 202,
+        headers: { 'Content-Type': 'application/json' },
+      });
+
+      await useGlobalSessionsStore.getState().syncSessionsForDirectories(['/repo/empty']);
+
+      expect(useGlobalSessionsStore.getState().sessionsByDirectory.get('/repo/empty') ?? []).toEqual([]);
+      expect(useGlobalSessionsStore.getState().activePaginationByDirectory.get('/repo/empty')).toEqual({
+        cursor: null,
+        hasMore: false,
+        loadingMore: false,
+      });
+    } finally {
+      Object.defineProperty(globalThis, 'window', { configurable: true, value: originalWindow });
+      globalThis.fetch = originalFetch;
+    }
+  });
+
+  test('authoritative cold-start snapshot still drops missing head-window sessions', async () => {
+    const originalWindow = globalThis.window;
+    const originalFetch = globalThis.fetch;
+    const kept = buildSession('https://share.example/kept', {
+      id: 'ses_kept',
+      directory: '/repo/cold',
+      time: { created: 2, updated: 20 },
+    });
+    const ghost = buildSession('https://share.example/ghost', {
+      id: 'ses_ghost',
+      directory: '/repo/cold',
+      time: { created: 1, updated: 10 },
+    });
+    useGlobalSessionsStore.setState({
+      activeSessions: [kept, ghost],
+      sessionsByDirectory: new Map([['/repo/cold', [kept, ghost]]]),
+      loadedDirectories: new Set(['/repo/cold']),
+      activePaginationByDirectory: new Map([
+        ['/repo/cold', { cursor: 10, hasMore: true, loadingMore: false }],
+      ]),
+      hasLoaded: true,
+      status: 'ready',
+    });
+
+    const snapshot = {
+      revision: 1,
+      sync: {
+        active: false,
+        completed: 1,
+        total: 1,
+        pendingDirectories: [],
+        completedDirectories: ['/repo/cold'],
+        failedDirectories: [],
+      },
+      directories: [{
+        directory: '/repo/cold',
+        cursor: 20,
+        hasMore: true,
+        lastSyncedAt: 1000,
+        lastFullSyncedAt: 1000,
+        lastAccessedAt: 1000,
+        sessions: [kept],
+      }],
+    };
+
+    try {
+      Object.defineProperty(globalThis, 'window', {
+        configurable: true,
+        value: { location: { origin: 'http://localhost', href: 'http://localhost/' } },
+      });
+      globalThis.fetch = async () => new Response(JSON.stringify(snapshot), {
+        status: 202,
+        headers: { 'Content-Type': 'application/json' },
+      });
+
+      await useGlobalSessionsStore.getState().syncSessionsForDirectories(['/repo/cold']);
+
+      expect(useGlobalSessionsStore.getState().sessionsByDirectory.get('/repo/cold')?.map((session) => session.id))
+        .toEqual(['ses_kept']);
+      expect(useGlobalSessionsStore.getState().activePaginationByDirectory.get('/repo/cold')).toEqual({
+        cursor: 20,
+        hasMore: true,
+        loadingMore: false,
+      });
+    } finally {
+      Object.defineProperty(globalThis, 'window', { configurable: true, value: originalWindow });
+      globalThis.fetch = originalFetch;
+    }
+  });
+
   test('aborts an in-flight directory request on runtime reset', async () => {
     let requestSignal: AbortSignal | undefined;
     const list = (_input: Record<string, unknown>, options?: { signal?: AbortSignal }) => {

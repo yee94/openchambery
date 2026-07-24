@@ -3,6 +3,7 @@ import { settingsDict } from './es.settings';
 
 export const dict: Record<I18nKey, string> = {
   ...settingsDict,
+  "mobile.settings.switchInstance": "Cambiar de instancia",
   "common.loading": "Cargando...",
   "sessions.startupSync.title": "Sincronizando sesiones",
   "sessions.startupSync.progress": "Se cargaron {completed} de {total} proyectos",

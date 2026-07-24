@@ -6,6 +6,10 @@ import { useI18n } from '@/lib/i18n';
 import { useSessionUIStore } from '@/sync/session-ui-store';
 
 import { MobileAssistantTab } from './assistant/MobileAssistantTab';
+import {
+  resolveMobileSecondaryBackDecision,
+  type MobileParentSessionTarget,
+} from './mobileNavigation';
 import type { MobileTabId } from './mobileTabs';
 import { MobileTabsRoot } from './MobileTabsRoot';
 import { MobileProjectsHomeContainer } from './projects';
@@ -18,6 +22,14 @@ export type MobilePhoneShellProps = {
   onAddProject: () => void;
   /** Enables assistants (opens settings at the assistants section). */
   onEnableAssistants: () => void;
+  /** Opens the saved mobile instances surface. */
+  onOpenInstances?: () => void;
+  /**
+   * Authoritative parent of the current chat session (child.parentID). When set
+   * on a chat secondary page, back navigates to the parent without closing
+   * secondary. Host owns the subscription; shell only consumes the snapshot.
+   */
+  parentSessionTarget?: MobileParentSessionTarget | null;
   /** Registers a back handler for the chat secondary page; return true when handled. */
   registerSecondaryBackHandler?: (handler: (() => boolean) | null) => void;
   /**
@@ -41,6 +53,8 @@ export type MobilePhoneShellProps = {
 export function MobilePhoneShell({
   onAddProject,
   onEnableAssistants,
+  onOpenInstances,
+  parentSessionTarget = null,
   registerSecondaryBackHandler,
   scheduledContent,
   renderChat,
@@ -85,19 +99,36 @@ export function MobilePhoneShell({
     setScheduledEditorActive(active);
   });
 
+  // Unified secondary back: scheduled editor → parent chat session → close page.
+  // System / gesture / H5 coordinator / chat header all converge here.
+  const handleSecondaryBack = useEvent(() => {
+    if (scheduledEditorBackRef.current?.()) return true;
+    const decision = resolveMobileSecondaryBackDecision({
+      secondary: useMobileNavigationStore.getState().secondary,
+      parentSessionTarget,
+    });
+    if (decision.action === 'navigateToParent') {
+      void useSessionUIStore.getState().setCurrentSession(
+        decision.parent.id,
+        decision.parent.directory,
+      );
+      return true;
+    }
+    if (decision.action === 'closeSecondary') {
+      closeSecondary();
+      return true;
+    }
+    return false;
+  });
+
   // Android-back / external back coordination: MobileApp's overlay chain keeps
-  // priority; this handler covers scheduled editor then the chat secondary page.
+  // priority; this handler covers scheduled editor then the secondary page.
   const secondaryOpen = navigation.secondary !== null;
   React.useEffect(() => {
     if (!registerSecondaryBackHandler) return;
-    registerSecondaryBackHandler(() => {
-      if (scheduledEditorBackRef.current?.()) return true;
-      if (!useMobileNavigationStore.getState().secondary) return false;
-      closeSecondary();
-      return true;
-    });
+    registerSecondaryBackHandler(() => handleSecondaryBack());
     return () => registerSecondaryBackHandler(null);
-  }, [registerSecondaryBackHandler, secondaryOpen, closeSecondary]);
+  }, [registerSecondaryBackHandler, secondaryOpen, handleSecondaryBack]);
 
   // The chat/draft page renders the authoritative session store state. Read
   // the current target here so the host re-renders when it changes (deep
@@ -122,9 +153,9 @@ export function MobilePhoneShell({
       ),
       assistant: <MobileAssistantTab onEnable={onEnableAssistants} onOpenAssistant={openAssistant} />,
       scheduled: <MobileScheduledTab showHeader={false}>{scheduledTabBody}</MobileScheduledTab>,
-      settings: <MobileSettingsTab />,
+      settings: <MobileSettingsTab onOpenInstances={onOpenInstances} />,
     }),
-    [openChat, openAssistant, handleNewSessionDraft, onAddProject, onEnableAssistants, scheduledTabBody],
+    [openChat, openAssistant, handleNewSessionDraft, onAddProject, onEnableAssistants, onOpenInstances, scheduledTabBody],
   );
 
   const secondaryKind = navigation.secondary?.kind ?? null;
@@ -134,8 +165,8 @@ export function MobilePhoneShell({
       return {
         key: 'assistant-secondary',
         ariaLabel: t('assistants.title'),
-        onBack: closeSecondary,
-        content: <AssistantView activeOverride onMobileBack={closeSecondary} />,
+        onBack: handleSecondaryBack,
+        content: <AssistantView activeOverride onMobileBack={handleSecondaryBack} />,
       };
     }
     // Project the render target from the authoritative session store: once a
@@ -148,14 +179,14 @@ export function MobilePhoneShell({
       // ChatView (composer focus, IME composition, DOM state are preserved).
       key: 'chat-secondary',
       ariaLabel: t('mobile.nav.secondaryPageAria'),
-      onBack: closeSecondary,
+      onBack: handleSecondaryBack,
       content: renderChat(
         hasLiveSession
           ? { sessionId: currentSessionId ?? '', directory: currentSessionDirectory ?? null }
           : { sessionId: '', directory: null },
       ),
     };
-  }, [secondaryKind, closeSecondary, currentSessionId, currentSessionDirectory, renderChat, t]);
+  }, [secondaryKind, handleSecondaryBack, currentSessionId, currentSessionDirectory, renderChat, t]);
 
   return (
     <MobileTabsRoot

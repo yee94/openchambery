@@ -111,6 +111,8 @@ type SettingsDetailHistoryEntry = {
 
 interface SettingsViewProps {
   onClose?: () => void;
+  /** Opens the dedicated mobile instance switcher. */
+  onOpenInstances?: () => void;
   /** Force mobile layout regardless of device detection */
   forceMobile?: boolean;
   /** Rendered inside a window/dialog (skip traffic light padding) */
@@ -365,6 +367,7 @@ const SettingsHome: React.FC<{ onOpen: (slug: SettingsPageSlug) => void }> = ({
 
 export const SettingsView: React.FC<SettingsViewProps> = ({
   onClose,
+  onOpenInstances,
   forceMobile,
   isWindowed,
   visiblePageSlugs,
@@ -1370,7 +1373,29 @@ export const SettingsView: React.FC<SettingsViewProps> = ({
                 </div>
               )
             ) : (
-              visiblePageGroups.map(({ group, pages }, groupIndex) => {
+              <>
+                {isMobile && onOpenInstances ? (
+                  <MobileSettingsGroup
+                    label={null}
+                    ariaLabel={t("mobile.settings.switchInstance")}
+                  >
+                    <button
+                      type="button"
+                      onClick={onOpenInstances}
+                      className="oc-mobile-settings-row text-foreground hover:bg-interactive-hover"
+                    >
+                      <Icon name="server" className="h-4 w-4 shrink-0" />
+                      <span className="min-w-0 flex-1 truncate typography-ui-label font-normal">
+                        {t("mobile.settings.switchInstance")}
+                      </span>
+                      <Icon
+                        name="arrow-right-s"
+                        className="size-4 shrink-0 text-muted-foreground/60"
+                      />
+                    </button>
+                  </MobileSettingsGroup>
+                ) : null}
+                {visiblePageGroups.map(({ group, pages }, groupIndex) => {
                 const groupLabel = t(
                   `settings.view.navigation.groups.${group}`,
                 );
@@ -1448,7 +1473,8 @@ export const SettingsView: React.FC<SettingsViewProps> = ({
                     {pageRows}
                   </div>
                 );
-              })
+                })}
+              </>
             )}
           </div>
         </div>

@@ -92,6 +92,71 @@ export type MessageEditSnapshot = {
   parts: Part[]
 }
 
+export type PendingUserMessagePresentation = {
+  info: Message
+  parts: Part[]
+}
+
+export function createPendingUserMessagePresentation(input: {
+  messageID: string
+  sessionID: string
+  providerID: string
+  modelID: string
+  agent?: string
+  text?: string
+  attachments?: readonly AttachedFile[]
+  additionalParts?: readonly { text: string; attachments?: readonly AttachedFile[]; synthetic?: boolean }[]
+  agentMentionName?: string
+  parts?: readonly Part[]
+}): PendingUserMessagePresentation {
+  const parts: Part[] = input.parts ? input.parts.map((part) => ({ ...part } as Part)) : []
+  if (input.parts) {
+    return {
+      info: {
+        id: input.messageID,
+        role: "user",
+        sessionID: input.sessionID,
+        parentID: "",
+        modelID: input.modelID,
+        providerID: input.providerID,
+        system: "",
+        agent: input.agent ?? "",
+        model: `${input.providerID}/${input.modelID}`,
+        metadata: {},
+        time: { created: Date.now(), completed: 0 },
+      } as unknown as Message,
+      parts,
+    }
+  }
+  if (input.text !== undefined) parts.push({ id: ascendingId("prt"), type: "text", text: input.text } as Part)
+  for (const attachment of input.attachments ?? []) {
+    parts.push({ id: ascendingId("prt"), type: "file", mime: attachment.mimeType, url: attachment.dataUrl, filename: attachment.filename } as Part)
+  }
+  for (const additionalPart of input.additionalParts ?? []) {
+    parts.push({ id: ascendingId("prt"), type: "text", text: additionalPart.text, synthetic: additionalPart.synthetic } as Part)
+    for (const attachment of additionalPart.attachments ?? []) {
+      parts.push({ id: ascendingId("prt"), type: "file", mime: attachment.mimeType, url: attachment.dataUrl, filename: attachment.filename } as Part)
+    }
+  }
+  if (input.agentMentionName) parts.push({ id: ascendingId("prt"), type: "agent", name: input.agentMentionName } as Part)
+  return {
+    info: {
+      id: input.messageID,
+      role: "user",
+      sessionID: input.sessionID,
+      parentID: "",
+      modelID: input.modelID,
+      providerID: input.providerID,
+      system: "",
+      agent: input.agent ?? "",
+      model: `${input.providerID}/${input.modelID}`,
+      metadata: {},
+      time: { created: Date.now(), completed: 0 },
+    } as unknown as Message,
+    parts,
+  }
+}
+
 // ---------------------------------------------------------------------------
 // Send routing — shell mode, slash commands, or normal prompt
 // ---------------------------------------------------------------------------
@@ -108,6 +173,7 @@ export async function routeMessage(params: {
   inputMode?: "normal" | "shell"
   files?: Array<{ type: "file"; mime: string; url: string; filename: string }>
   additionalParts?: Array<{ text: string; synthetic?: boolean; files?: Array<{ type: "file"; mime: string; url: string; filename: string }> }>
+  optimisticParts?: readonly Part[]
   delivery?: 'steer'
   messageID?: string
   preserveOptimisticOnAmbiguous?: boolean
@@ -202,6 +268,7 @@ export async function routeMessage(params: {
     agent: params.agent,
     directory: requestDirectory,
     files: params.files,
+    parts: params.optimisticParts,
     messageID: params.messageID,
     preserveOptimisticOnAmbiguous: params.preserveOptimisticOnAmbiguous,
     onSendConfirmed,
@@ -322,6 +389,8 @@ export type NewSessionDraftState = {
    * Cleared when the real claim takes over or the send aborts.
    */
   draftEstablishing?: boolean
+  /** Stable first-turn presentation shown while createWithPrompt is in flight. */
+  pendingUserMessage?: PendingUserMessagePresentation
 }
 
 export type ForkTransitionStage = "preparing" | "copying" | "opening" | "loading"
@@ -635,13 +704,26 @@ const isCurrentClaimDraft = (draft: NewSessionDraftState, claim: DraftSubmission
  * network preamble (response-style fetch / snippet expand). Does not claim
  * submission — claimDraftSubmission still owns idempotency.
  */
-export async function beginDraftEstablishingPaint(): Promise<boolean> {
+export async function beginDraftEstablishingPaint(input?: {
+  messageID: string
+  providerID: string
+  modelID: string
+  agent?: string
+  text?: string
+  attachments?: readonly AttachedFile[]
+  additionalParts?: readonly { text: string; attachments?: readonly AttachedFile[]; synthetic?: boolean }[]
+  agentMentionName?: string
+}): Promise<boolean> {
   let started = false
   useSessionUIStore.setState((s) => {
     const d = s.newSessionDraft
     if (!d?.open || !d.draftID || d.draftSubmitting || d.draftEstablishing) return {}
     started = true
-    const nextDraft: NewSessionDraftState = { ...d, draftEstablishing: true }
+    const pendingUserMessage = input ? createPendingUserMessagePresentation({
+      ...input,
+      sessionID: "draft:pending",
+    }) : d.pendingUserMessage
+    const nextDraft: NewSessionDraftState = { ...d, draftEstablishing: true, ...(pendingUserMessage ? { pendingUserMessage } : {}) }
     writeRuntimeSessionMemory(runtimeMemoryKey(), { draft: nextDraft })
     return { newSessionDraft: nextDraft }
   })
@@ -662,7 +744,7 @@ export function clearDraftEstablishingPaint(): void {
   })
 }
 
-async function claimDraftSubmission(): Promise<DraftSubmissionClaim | null> {
+async function claimDraftSubmission(pendingUserMessage?: PendingUserMessagePresentation): Promise<DraftSubmissionClaim | null> {
   let draftID: string | null = null
   let token: number | null = null
   let memoryKey: string | null = null
@@ -676,6 +758,7 @@ async function claimDraftSubmission(): Promise<DraftSubmissionClaim | null> {
       draftSubmitting: true,
       draftEstablishing: false,
       submissionToken: nextToken,
+      ...(pendingUserMessage ? { pendingUserMessage } : {}),
     }
     memoryKey = runtimeMemoryKey()
     draftID = nextDraft.draftID
@@ -714,7 +797,7 @@ function restoreDraftSubmission(claim: DraftSubmissionClaim): void {
   useSessionUIStore.setState((s) => {
     const d = s.newSessionDraft
     if (isCurrentClaimDraft(d, claim)) {
-      const restored: NewSessionDraftState = { ...d, draftSubmitting: false, draftEstablishing: false }
+      const restored: NewSessionDraftState = { ...d, draftSubmitting: false, draftEstablishing: false, pendingUserMessage: undefined }
       const memory = runtimeSessionMemory.get(claim.runtimeMemoryKey)
       if (memory && hasClaimDraftIdentity(memory.draft, claim)) {
         writeRuntimeSessionMemory(claim.runtimeMemoryKey, { draft: restored })
@@ -725,7 +808,7 @@ function restoreDraftSubmission(claim: DraftSubmissionClaim): void {
   })
   const memory = runtimeSessionMemory.get(claim.runtimeMemoryKey)
   if (memory && hasClaimDraftIdentity(memory.draft, claim)) {
-    writeRuntimeSessionMemory(claim.runtimeMemoryKey, { draft: { ...memory.draft, draftSubmitting: false, draftEstablishing: false } })
+    writeRuntimeSessionMemory(claim.runtimeMemoryKey, { draft: { ...memory.draft, draftSubmitting: false, draftEstablishing: false, pendingUserMessage: undefined } })
   }
 }
 
@@ -852,8 +935,8 @@ async function resolveDraftDirectory(draft: NewSessionDraftState): Promise<{ dir
 
 async function materializeClaimedDraftSession(selection: {
   providerID: string; modelID: string; agent?: string; variant?: string
-}): Promise<{ materialized: MaterializedDraftSession; claim: DraftSubmissionClaim } | null> {
-  const claimed = await claimDraftSubmission()
+}, pendingUserMessage?: PendingUserMessagePresentation): Promise<{ materialized: MaterializedDraftSession; claim: DraftSubmissionClaim } | null> {
+  const claimed = await claimDraftSubmission(pendingUserMessage)
   if (!claimed) return null
   const { draft } = claimed
   const trimmedAgent = typeof selection.agent === "string" && selection.agent.trim().length > 0 ? selection.agent.trim() : undefined
@@ -862,6 +945,18 @@ async function materializeClaimedDraftSession(selection: {
     const dir = directory ?? opencodeClient.getDirectory()
     const created = await createSessionAction(draft.title, dir, draft.parentID ?? null, undefined)
     if (!created?.id) throw new Error("Failed to create session")
+    if (pendingUserMessage) {
+      optimisticInsertUserMessage({
+        sessionId: created.id,
+        messageID: pendingUserMessage.info.id,
+        content: "",
+        providerID: selection.providerID,
+        modelID: selection.modelID,
+        agent: trimmedAgent,
+        directory: directory ?? (created as { directory?: string }).directory ?? null,
+        parts: pendingUserMessage.parts,
+      })
+    }
     const finalized = await finalizeDraftSession(created, selection, {
       directory: directory ?? (created as { directory?: string }).directory ?? null,
       agent: trimmedAgent,
@@ -897,22 +992,36 @@ async function localizedSendError(key: I18nKey): Promise<Error> {
 async function handleCombinedDraftSend(params: {
   content: string; providerID: string; modelID: string; agent?: string; agentMentionName?: string; variant?: string
   attachments?: AttachedFile[]; additionalParts?: Array<{ text: string; attachments?: AttachedFile[]; synthetic?: boolean }>
+  messageID?: string
 }): Promise<void> {
   const { content, providerID, modelID, agent, agentMentionName, variant, attachments, additionalParts } = params
-  const claimed = await claimDraftSubmission()
+  const draftSnapshot = useSessionUIStore.getState().newSessionDraft
+  const trimmedAgent = typeof agent === "string" && agent.trim().length > 0 ? agent.trim() : undefined
+  const configState = useConfigStore.getState()
+  const effectiveAgent = trimmedAgent ?? configState.currentAgentName
+  const messageID = params.messageID ?? draftSnapshot.pendingUserMessage?.info.id ?? ascendingId("msg")
+  const pendingAdditionalParts = draftSnapshot.syntheticParts?.length ? [...(additionalParts || []), ...draftSnapshot.syntheticParts] : additionalParts
+  const pendingMessage = createPendingUserMessagePresentation({
+    messageID,
+    sessionID: "draft:pending",
+    providerID,
+    modelID,
+    agent: effectiveAgent,
+    text: content,
+    attachments,
+    additionalParts: pendingAdditionalParts,
+    agentMentionName,
+  })
+  const claimed = await claimDraftSubmission(pendingMessage)
   if (!claimed) throw await localizedSendError("chat.chatInput.toast.messageSendFailed")
   const { draft } = claimed
   try {
-    const { directory } = await resolveDraftDirectory(draft)
-    const trimmedAgent = typeof agent === "string" && agent.trim().length > 0 ? agent.trim() : undefined
-    const configState = useConfigStore.getState()
-    const effectiveAgent = trimmedAgent ?? configState.currentAgentName
     const files: Array<{ type: "file"; mime: string; url: string; filename: string }> = attachments?.map((a: AttachedFile) => ({ type: "file" as const, mime: a.mimeType, url: a.dataUrl, filename: a.filename })) ?? []
     const mergedAdditionalParts = draft.syntheticParts?.length ? [...(additionalParts || []), ...draft.syntheticParts] : additionalParts
     const mappedAdditionalParts = mergedAdditionalParts?.map((p) => ({ text: p.text, synthetic: p.synthetic, files: p.attachments?.map((a: AttachedFile) => ({ type: "file" as const, mime: a.mimeType, url: a.dataUrl, filename: a.filename })) }))
     const agentMentions = agentMentionName ? [{ name: agentMentionName }] : undefined
+    const { directory } = await resolveDraftDirectory(draft)
     const parts = await opencodeClient.buildMessageParts({ text: content, files: files.length > 0 ? files : undefined, additionalParts: mappedAdditionalParts, agentMentions })
-    const messageID = ascendingId("msg")
     const api = getRegisteredRuntimeAPIs()?.conversations
     if (!api?.createWithPrompt) { throw await localizedSendError("chat.chatInput.toast.messageSendFailed") }
     const resolvedDir = directory ?? opencodeClient.getDirectory() ?? ""
@@ -932,17 +1041,15 @@ async function handleCombinedDraftSend(params: {
     if (!result) { restoreDraftSubmission(claimed); useInputStore.getState().setPendingInputText(content, "replace"); throw await localizedSendError("chat.chatInput.toast.messageSendFailed") }
     if (result.ok) {
       const session = result.session as Session; const sessionDir = directory ?? (session as { directory?: string }).directory ?? null
+      const dirState = getDirectoryState(sessionDir ?? resolvedDir); const existingMessages = dirState?.message?.[session.id]
+      if (!existingMessages?.some((m: Message) => m.id === messageID)) {
+        const inserted = optimisticInsertUserMessage({ sessionId: session.id, messageID, content, providerID, modelID, agent: effectiveAgent, directory: sessionDir, files, parts: parts as Part[] })
+        if (!inserted && !existingMessages?.length) console.warn("[combined] optimistic insert skipped (refs not mounted), session:", session.id)
+      }
       const finalized = await finalizeDraftSession(session, { providerID, modelID, agent: effectiveAgent, variant }, { directory: sessionDir, agent: effectiveAgent, draftProjectId: draft.selectedProjectId, targetFolderId: draft.targetFolderId, draftSyntheticParts: draft.syntheticParts }, claimed)
       await finalizeClaimedDraftOwnership(claimed, session.id, "consume")
       notifyConfirmedMessageSent(session.id, messageID)
       if (finalized.selected) markPendingUserSendAnimation(session.id)
-      if (finalized.selected && sessionDir) {
-        const dirState = getDirectoryState(sessionDir); const existingMessages = dirState?.message?.[session.id]
-        if (!existingMessages?.some((m: Message) => m.id === messageID)) {
-          const inserted = optimisticInsertUserMessage({ sessionId: session.id, messageID, content, providerID, modelID, agent: effectiveAgent, directory: sessionDir, files })
-          if (!inserted && !existingMessages?.length) console.warn("[combined] optimistic insert skipped (refs not mounted), session:", session.id)
-        }
-      }
       return
     }
     if (!result.ok) {
@@ -1701,16 +1808,30 @@ export const useSessionUIStore = create<SessionUIState>()((set, get) => ({
           variant,
           attachments,
           additionalParts,
+          messageID: options?.messageID,
         })
         return
       }
 
+      const fallbackMessageID = options?.messageID ?? draft.pendingUserMessage?.info.id ?? ascendingId("msg")
+      const fallbackAdditionalParts = draft.syntheticParts?.length ? [...(additionalParts || []), ...draft.syntheticParts] : additionalParts
+      const fallbackPendingMessage = createPendingUserMessagePresentation({
+        messageID: fallbackMessageID,
+        sessionID: "draft:pending",
+        providerID,
+        modelID,
+        agent: trimmedAgent,
+        text: content,
+        attachments,
+        additionalParts: fallbackAdditionalParts,
+        agentMentionName,
+      })
       const materialized = await materializeClaimedDraftSession({
         providerID,
         modelID,
         agent: trimmedAgent,
         variant,
-      })
+      }, fallbackPendingMessage)
       if (!materialized) throw new Error("Failed to create session")
       const { materialized: createdDraftSession, claim } = materialized
 
@@ -1740,7 +1861,8 @@ export const useSessionUIStore = create<SessionUIState>()((set, get) => ({
         inputMode,
         files,
         delivery: options?.delivery,
-        messageID: options?.messageID,
+        messageID: fallbackMessageID,
+        optimisticParts: fallbackPendingMessage.parts,
         preserveOptimisticOnAmbiguous: options?.preserveOptimisticOnAmbiguous,
         onSendConfirmed: options?.onSendConfirmed,
         additionalParts: mergedAdditionalParts?.map((p) => ({

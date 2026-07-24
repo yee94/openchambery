@@ -2115,6 +2115,7 @@ const MobileShell: React.FC<{ onActiveConnectionDeleted: () => void }> = ({ onAc
   const [turnDiffMessageId, setTurnDiffMessageId] = React.useState<string | null>(null);
   const [mcpOpen, setMcpOpen] = React.useState(false);
   const [instancesOpen, setInstancesOpen] = React.useState(false);
+  const [returnToSettingsAfterInstances, setReturnToSettingsAfterInstances] = React.useState(false);
   const [isMcpRefreshing, setIsMcpRefreshing] = React.useState(false);
   const [settingsOpen, setSettingsOpen] = React.useState(false);
   const [updateOpen, setUpdateOpen] = React.useState(false);
@@ -2122,6 +2123,18 @@ const MobileShell: React.FC<{ onActiveConnectionDeleted: () => void }> = ({ onAc
   const [settingsInitialMobileStage, setSettingsInitialMobileStage] = React.useState<'nav' | 'page-content'>('nav');
   const [overflowOpen, setOverflowOpen] = React.useState(false);
   const toggleOverflowMenu = useEvent(() => setOverflowOpen((open) => !open));
+  const openInstancesFromSettings = useEvent(() => {
+    setReturnToSettingsAfterInstances(settingsOpen);
+    setSettingsOpen(false);
+    setInstancesOpen(true);
+  });
+  const closeInstances = useEvent(() => {
+    setInstancesOpen(false);
+    if (returnToSettingsAfterInstances) {
+      setSettingsOpen(true);
+    }
+    setReturnToSettingsAfterInstances(false);
+  });
   // When set, the Changes surface opens directly into the per-file diff for this path.
   const [pendingChangesDiff, setPendingChangesDiff] = React.useState<PendingMobileChangesDiff | null>(null);
   const currentDirectory = useDirectoryStore((state) => state.currentDirectory);
@@ -2475,7 +2488,7 @@ const MobileShell: React.FC<{ onActiveConnectionDeleted: () => void }> = ({ onAc
       return true;
     }
     if (instancesOpen) {
-      setInstancesOpen(false);
+      closeInstances();
       return true;
     }
     if (settingsOpen) {
@@ -2747,6 +2760,12 @@ const MobileShell: React.FC<{ onActiveConnectionDeleted: () => void }> = ({ onAc
                 setSettingsInitialMobileStage('page-content');
                 setSettingsOpen(true);
               }}
+              onOpenInstances={showCapacitorOnlyFeatures ? openInstancesFromSettings : undefined}
+              parentSessionTarget={
+                parentSessionTarget
+                  ? { id: parentSessionTarget.id, directory: parentSessionTarget.directory }
+                  : null
+              }
               registerSecondaryBackHandler={registerPhoneSecondaryBack}
               scheduledContent={(registerEditorBackHandler, onEditorActiveChange) => (
                 <ScheduledTasksWorkspace
@@ -3080,12 +3099,15 @@ const MobileShell: React.FC<{ onActiveConnectionDeleted: () => void }> = ({ onAc
         {instancesOpen && showCapacitorOnlyFeatures ? (
           <MobileSurfaceShell
             open
-            onClose={() => setInstancesOpen(false)}
+            onClose={closeInstances}
             ariaLabel={t('mobile.menu.instances')}
             title={t('mobile.menu.instances')}
           >
             <MobileInstancesSurface
-              onConnect={() => setInstancesOpen(false)}
+              onConnect={() => {
+                setReturnToSettingsAfterInstances(false);
+                setInstancesOpen(false);
+              }}
               onActiveConnectionDeleted={onActiveConnectionDeleted}
             />
           </MobileSurfaceShell>
@@ -3105,6 +3127,7 @@ const MobileShell: React.FC<{ onActiveConnectionDeleted: () => void }> = ({ onAc
                 initialMobileStage={settingsInitialMobileStage}
                 visiblePageSlugs={[...MOBILE_SETTINGS_PAGE_SLUGS]}
                 onClose={() => setSettingsOpen(false)}
+                onOpenInstances={showCapacitorOnlyFeatures ? openInstancesFromSettings : undefined}
               />
             </ErrorBoundary>
           </MobileSurfaceShell>

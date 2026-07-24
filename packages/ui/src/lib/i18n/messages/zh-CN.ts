@@ -104,6 +104,7 @@ export const dict: Record<I18nKey, string> = {
   'mobile.menu.changes': '更改',
   'mobile.menu.mcp': 'MCP',
   'mobile.menu.instances': '实例',
+  'mobile.settings.switchInstance': '切换实例',
   'mobile.menu.update': '更新',
   'mobile.menu.settings': '设置',
   'mobile.sessions.newChatCta': '在 {project} 中新建聊天',

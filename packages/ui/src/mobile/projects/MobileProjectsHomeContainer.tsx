@@ -15,6 +15,8 @@ import { useProjectsStore } from '@/stores/useProjectsStore';
 import { useSessionPinnedStore } from '@/stores/useSessionPinnedStore';
 import { useSessionUIStore } from '@/sync/session-ui-store';
 
+import { useMobileNavigationStore } from '../useMobileNavigationStore';
+
 import {
   MobileProjectsHome,
   type MobileProjectHomeItem,
@@ -72,6 +74,7 @@ export function MobileProjectsHomeContainer({
   const shareSession = useSessionUIStore((state) => state.shareSession);
   const unshareSession = useSessionUIStore((state) => state.unshareSession);
   const openNewSessionDraft = useSessionUIStore((state) => state.openNewSessionDraft);
+  const openDraft = useMobileNavigationStore((state) => state.openDraft);
   const setActiveProjectIdOnly = useProjectsStore((state) => state.setActiveProjectIdOnly);
   const removeProject = useProjectsStore((state) => state.removeProject);
 
@@ -177,7 +180,7 @@ export function MobileProjectsHomeContainer({
 
   const startSessionDraftForDirectory = useEvent((project: ProjectMeta, directory: string) => {
     setActiveProjectIdOnly(project.id);
-    openNewSessionDraft({
+    openDraft({
       selectedProjectId: project.id,
       directoryOverride: directory,
       preserveDirectoryOverride: true,

@@ -543,7 +543,7 @@ export const QueuedMessageChips = memo(({ onEditMessage, onSendMessage, draftKey
 
     return (
         <div className={cn('w-full', isMobile ? 'pb-1' : 'px-0.5 pb-1.5 md:px-1 md:pb-2')}>
-            <div className="overflow-hidden rounded-lg border border-border/60 bg-[var(--surface-elevated)] text-[var(--surface-elevated-foreground)] shadow-sm md:rounded-xl">
+            <div className="overflow-hidden rounded-lg border border-border/60 bg-[var(--surface-elevated)] text-[var(--surface-elevated-foreground)] shadow-sm dark:shadow-none md:rounded-xl">
                 <div className={cn(
                     'flex w-full items-center text-left',
                     isMobile

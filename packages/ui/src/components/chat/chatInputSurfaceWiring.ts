@@ -43,12 +43,14 @@ export const primarySendOptionsFromDeliveryRequest = (
   directoryHint?: string | null;
   delivery?: 'steer';
   commitStagedMessageEdit?: boolean;
+  messageID?: string;
 } => {
   const base = {
     ...(request.options?.delivery === 'steer' ? { delivery: 'steer' as const } : {}),
     ...(request.options?.commitStagedMessageEdit !== undefined
       ? { commitStagedMessageEdit: request.options.commitStagedMessageEdit }
       : {}),
+    ...(request.options?.messageID ? { messageID: request.options.messageID } : {}),
   };
   const sessionId = request.options?.sessionId ?? request.sessionID ?? undefined;
   if (!sessionId) {

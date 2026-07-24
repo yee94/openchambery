@@ -808,6 +808,27 @@ describe('draftEstablishing paint prelude', () => {
     expect(useSessionUIStore.getState().newSessionDraft.draftSubmitting).toBe(false);
   });
 
+  test('beginDraftEstablishingPaint publishes the captured first-turn row immediately', async () => {
+    useSessionUIStore.getState().openNewSessionDraft();
+    const attachment = { id: 'pre-file', filename: 'pre.txt', mimeType: 'text/plain', dataUrl: 'data:text/plain;base64,UA==', size: 1 };
+    const paint = beginDraftEstablishingPaint({
+      messageID: 'msg_preamble',
+      providerID: 'provider-a',
+      modelID: 'model-a',
+      agent: 'build',
+      text: 'raw visible',
+      attachments: [attachment],
+      additionalParts: [{ text: 'raw extra', synthetic: true }],
+      agentMentionName: '@reviewer',
+    });
+
+    const pending = useSessionUIStore.getState().newSessionDraft.pendingUserMessage;
+    expect(pending.info.id).toBe('msg_preamble');
+    expect(pending.parts.map((part) => part.type)).toEqual(['text', 'file', 'text', 'agent']);
+    expect(useSessionUIStore.getState().newSessionDraft.draftSubmitting).toBe(false);
+    expect(await paint).toBe(true);
+  });
+
   test('clearDraftEstablishingPaint drops the prelude', async () => {
     useSessionUIStore.getState().openNewSessionDraft();
     await beginDraftEstablishingPaint();

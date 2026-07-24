@@ -241,6 +241,10 @@ describe('ScheduledTasksDialog queries', () => {
     expect(mobileStyles).toContain('.oc-mobile-floating-action');
     expect(mobileStyles).toContain('background: color-mix(in srgb, var(--surface-elevated) 54%, transparent)');
     expect(mobileStyles).toContain('backdrop-filter: blur(16px) saturate(1.25)');
+    expect(mobileStyles).toContain('.dark .oc-mobile-floating-action');
+    expect(mobileStyles).toContain('background: color-mix(in srgb, var(--surface-elevated) 88%, transparent)');
+    expect(mobileStyles).toContain('color-mix(in srgb, var(--surface-foreground) 6%, transparent)');
+    expect(mobileStyles).toContain('box-shadow: none');
     expect(navigationContent).toContain('max-w-72');
     expect(mobileStyles).toContain('--oc-mobile-detail-action-edge-inset: 1rem');
     expect(navigationContent).not.toContain('gap-1 px-2');

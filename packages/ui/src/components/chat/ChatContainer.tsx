@@ -8,6 +8,7 @@ import { ChatInput } from './ChatInput';
 import type { ChatInputSurface } from './chatInputSurface';
 import {
     resolveChatContainerHostFeatures,
+    mergePendingUserMessagePresentations,
     type ChatContainerHost,
     type ChatContainerHostFeatures,
 } from './chatContainerHost';
@@ -44,7 +45,7 @@ import { useProjectsStore } from '@/stores/useProjectsStore';
 import { useConfigStore } from '@/stores/useConfigStore';
 
 // New sync system imports
-import { useSessionUIStore } from '@/sync/session-ui-store';
+import { useSessionUIStore, type PendingUserMessagePresentation } from '@/sync/session-ui-store';
 import { useStreamingStore } from '@/sync/streaming';
 import {
     useSessionMessageCount,
@@ -546,6 +547,8 @@ type ChatContainerContentProps = Omit<ChatContainerProps, 'host'> & {
     assistantHistory?: ChatContainerHost['assistantHistory'];
     onRevertMessage?: (messageId: string) => Promise<void>;
     warning?: string | null;
+    pendingUserMessages?: readonly PendingUserMessagePresentation[];
+    onPendingUserMessagesMaterialized?: (messageIDs: readonly string[]) => void;
 };
 
 const estimateSessionViewBytes = (messageCount: number): number => {
@@ -568,6 +571,8 @@ const ChatContainerContent: React.FC<ChatContainerContentProps> = ({
     assistantHistory,
     onRevertMessage,
     warning = null,
+    pendingUserMessages = [],
+    onPendingUserMessagesMaterialized,
 }) => {
     const hostFeatures = hostedFeatures ?? resolveChatContainerHostFeatures(undefined);
     const { t } = useI18n();
@@ -658,6 +663,7 @@ const ChatContainerContent: React.FC<ChatContainerContentProps> = ({
         suspendPartUpdatesForMessageId: streamingMessageId,
     });
     const sessionMessages = currentSessionId ? sessionMessageRecords : EMPTY_MESSAGES;
+    const draftPendingMessage = newSessionDraft.pendingUserMessage;
     const sessionExecution = React.useMemo(
         () => resolveContextPanelSessionExecution(sessionMessages),
         [sessionMessages],
@@ -728,6 +734,10 @@ const ChatContainerContent: React.FC<ChatContainerContentProps> = ({
             return false;
         }
 
+        if (pendingUserMessages.length > 0) {
+            return true;
+        }
+
         const statusType = sessionStatusForCurrent.type ?? 'idle';
         if (statusType === 'busy' || statusType === 'retry') {
             return true;
@@ -756,7 +766,7 @@ const ChatContainerContent: React.FC<ChatContainerContentProps> = ({
             && lastMessage.role === 'assistant'
             && typeof (lastMessage as { time?: { completed?: number } }).time?.completed !== 'number',
         );
-    }, [currentSessionId, resolvedSessionStatus, sessionMessages, sessionPermissions.length, sessionQuestions.length, sessionStatusForCurrent.type, sessionStatusObservedAt, sessionStatusSnapshotAt]);
+    }, [currentSessionId, pendingUserMessages.length, resolvedSessionStatus, sessionMessages, sessionPermissions.length, sessionQuestions.length, sessionStatusForCurrent.type, sessionStatusObservedAt, sessionStatusSnapshotAt]);
     const activeRetryStatus = React.useMemo(() => {
         if (!currentSessionId || sessionStatusForCurrent.type !== 'retry') {
             return null;
@@ -966,14 +976,27 @@ const ChatContainerContent: React.FC<ChatContainerContentProps> = ({
         return next;
     }, [assistantHistory?.entries, currentSessionId]);
     const viewportMessages = React.useMemo(() => {
-        if (historyPrefix.length === 0) return sessionMessages;
-        if (!currentSessionId) return historyPrefix;
-        return [
-            ...historyPrefix,
-            createAssistantSessionDivider(currentSessionId),
-            ...sessionMessages,
-        ];
-    }, [currentSessionId, historyPrefix, sessionMessages]);
+        const authoritativeMessages = historyPrefix.length === 0
+            ? sessionMessages
+            : !currentSessionId
+                ? historyPrefix
+                : [
+                    ...historyPrefix,
+                    createAssistantSessionDivider(currentSessionId),
+                    ...sessionMessages,
+                ];
+        return mergePendingUserMessagePresentations(authoritativeMessages, pendingUserMessages);
+    }, [currentSessionId, historyPrefix, pendingUserMessages, sessionMessages]);
+    const materializedPendingMessageIDs = React.useMemo(() => {
+        if (!onPendingUserMessagesMaterialized || pendingUserMessages.length === 0) return [];
+        const authoritativeIDs = new Set([...historyPrefix, ...sessionMessages].map((message) => message.info.id));
+        return pendingUserMessages.map((message) => message.info.id).filter((id) => authoritativeIDs.has(id));
+    }, [historyPrefix, onPendingUserMessagesMaterialized, pendingUserMessages, sessionMessages]);
+    React.useEffect(() => {
+        if (materializedPendingMessageIDs.length > 0) {
+            onPendingUserMessagesMaterialized?.(materializedPendingMessageIDs);
+        }
+    }, [materializedPendingMessageIDs, onPendingUserMessagesMaterialized]);
 
     const timelineController = useChatTimelineController({
         sessionId: currentSessionId,
@@ -1134,6 +1157,7 @@ const ChatContainerContent: React.FC<ChatContainerContentProps> = ({
     const isSessionHydrating =
         Boolean(currentSessionId)
         && !hasUserBoundary
+        && pendingUserMessages.length === 0
         && historyPrefix.length === 0
         && (
             !hasRenderableSessionSnapshot
@@ -1144,6 +1168,7 @@ const ChatContainerContent: React.FC<ChatContainerContentProps> = ({
     const hasSessionHistoryLoadError =
         sessionPrefetchInfo?.status === 'error'
         && !hasUserBoundary
+        && pendingUserMessages.length === 0
         && historyPrefix.length === 0;
 
     React.useEffect(() => {
@@ -1261,6 +1286,37 @@ const ChatContainerContent: React.FC<ChatContainerContentProps> = ({
 		// promotes to draftSubmitting. Combined create+prompt can take a while;
 		// partial draft banners were easy to miss (especially desktop /
 		// expanded-input layouts).
+		if ((draftSubmitting || draftEstablishing) && draftPendingMessage) {
+			return (
+				<div className="relative flex h-full flex-col bg-background">
+					<div className="relative min-h-0 flex-1">
+						<ScrollShadow
+							className="absolute inset-0 overflow-y-auto overflow-x-hidden chat-scroll"
+							style={CHAT_SCROLL_STYLE}
+						>
+							<MessageList
+								sessionKey={`draft:${newSessionDraft.draftID ?? 'pending'}`}
+								messages={[draftPendingMessage]}
+								sessionIsWorking
+								isLoadingOlder={false}
+								onMessageContentChange={handleMessageContentChange}
+								getAnimationHandlers={getAnimationHandlers}
+								scrollToBottom={resumeToLatestInstant}
+							/>
+							<div
+								className="chat-message-column px-4 pb-10 pt-2 typography-ui text-muted-foreground"
+								role="status"
+								aria-live="polite"
+							>
+								<span className="animate-text-shimmer">{t('chat.emptyState.establishingConversation')}</span>
+								<BusyDots />
+							</div>
+						</ScrollShadow>
+					</div>
+				</div>
+			);
+		}
+
 		if (draftSubmitting || draftEstablishing) {
 			return (
 				<div className="flex h-full flex-col items-center justify-center bg-background px-6 text-center">
@@ -1757,6 +1813,8 @@ const HostedChatContainer: React.FC<ChatContainerProps & { host: ChatContainerHo
                     composerSurface={host.composerSurface}
                     hostedFeatures={hostedFeatures}
                     assistantHistory={host.assistantHistory}
+                    pendingUserMessages={host.pendingUserMessages}
+                    onPendingUserMessagesMaterialized={host.onPendingUserMessagesMaterialized}
                     onRevertMessage={host.onRevertMessage}
                     warning={host.warning}
                 />

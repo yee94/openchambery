@@ -9,6 +9,7 @@ import { useAssistantHistoryInfiniteQuery } from '@/queries/assistantQueries';
 import { useEvent } from '@reactuses/core';
 import { useSessionUIStore } from '@/sync/session-ui-store';
 import { useUIStore } from '@/stores/useUIStore';
+import type { PendingUserMessagePresentation } from '@/sync/session-ui-store';
 
 type AssistantConversationSurfaceProps = {
   assistant: AssistantDTO;
@@ -16,6 +17,8 @@ type AssistantConversationSurfaceProps = {
   warning?: string | null;
   surface: ChatInputSecondarySurface;
   onRevertMessage: (messageId: string) => Promise<void>;
+  pendingUserMessages: readonly PendingUserMessagePresentation[];
+  onPendingUserMessagesMaterialized: (messageIDs: readonly string[]) => void;
 };
 
 /**
@@ -31,6 +34,8 @@ export const AssistantConversationSurface: React.FC<AssistantConversationSurface
   warning,
   surface,
   onRevertMessage,
+  pendingUserMessages,
+  onPendingUserMessagesMaterialized,
 }) => {
   const directory = assistant.effectiveWorkspacePath;
   const historyQuery = useAssistantHistoryInfiniteQuery(
@@ -91,6 +96,8 @@ export const AssistantConversationSurface: React.FC<AssistantConversationSurface
     composerSurface: surface,
     sessionSurface,
     warning,
+    pendingUserMessages,
+    onPendingUserMessagesMaterialized,
     assistantHistory: {
       entries: historyEntries,
       complete: historyComplete,
@@ -98,7 +105,7 @@ export const AssistantConversationSurface: React.FC<AssistantConversationSurface
       fetchPrevious: fetchPreviousHistory,
     },
     onRevertMessage,
-  }), [directory, fetchPreviousHistory, historyComplete, historyEntries, historyLoading, onRevertMessage, sessionID, sessionSurface, surface, warning]);
+  }), [directory, fetchPreviousHistory, historyComplete, historyEntries, historyLoading, onPendingUserMessagesMaterialized, onRevertMessage, pendingUserMessages, sessionID, sessionSurface, surface, warning]);
 
   return <ChatContainer autoOpenDraft={false} host={host} />;
 };

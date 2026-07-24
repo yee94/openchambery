@@ -137,7 +137,7 @@ describe('Assistant UI product contract', () => {
     expect(mobileTab).toContain('oc-mobile-entity-title');
     expect(mobileTab).toContain('oc-mobile-entity-meta');
     expect(phoneShell).toContain("secondaryKind === 'assistant'");
-    expect(phoneShell).toContain('<AssistantView activeOverride onMobileBack={closeSecondary} />');
+    expect(phoneShell).toContain('<AssistantView activeOverride onMobileBack={handleSecondaryBack} />');
     expect(navigation).toContain("set({ secondary: { kind: 'assistant' } })");
     expect(navigation.indexOf('selectAssistant(assistantID)')).toBeLessThan(navigation.indexOf("set({ secondary: { kind: 'assistant' } })"));
     expect(view).toContain('onMobileBack?: () => void');
@@ -198,6 +198,9 @@ describe('Assistant UI product contract', () => {
     expect(promptComposer).toContain('data-chat-input-footer="true"');
     expect(promptComposer).toContain('onRemoveAttachment');
     expect(chatInput).toContain('<MemoModelControls');
+    expect(chatInput.indexOf('const painted = await beginDraftEstablishingPaint({')).toBeLessThan(chatInput.indexOf('await fetchResponseStyleInstruction()'));
+    expect(chatInput.indexOf('const painted = await beginDraftEstablishingPaint({')).toBeLessThan(chatInput.indexOf('primaryText = await expandText(primaryText)'));
+    expect(chatInput).toContain("...(draftMessageID ? { messageID: draftMessageID } : {})");
   });
 
   test('loads Assistant history through the binding-scoped paged host', async () => {
@@ -252,6 +255,9 @@ describe('Assistant UI product contract', () => {
     expect(view).toContain("ascendingIdAfter('msg', floor)");
     expect(view).toContain('getSyncMessages(binding.sessionID, binding.directory)');
     expect(view).not.toContain('sendAssistantMessage(assistant.id, binding, createUuid()');
+    expect(view).toContain('createPendingUserMessagePresentation');
+    expect(view).toContain('removePendingMessages(assistant.id, [messageID])');
+    expect(view).not.toContain('fetchMessagesForSession');
     expect(queries).toContain('applyAssistant(result, transport)');
     expect(queries.indexOf('applyAssistant(result, transport)')).toBeLessThan(queries.indexOf('return result; }', queries.indexOf('export const updateAssistant')));
   });
@@ -393,7 +399,10 @@ describe('Assistant UI product contract', () => {
       read('../chat/ChatContainer.tsx'),
       read('../chat/StatusRowContainer.tsx'),
     ]);
-    expect(view).toContain('await refreshBinding(result.binding, { force: result.binding.sessionID !== binding.sessionID || result.binding.sessionGeneration !== binding.sessionGeneration });');
+    expect(view).toContain('reconcileAdmittedAssistantBinding({');
+    expect(view).toContain('rebindPendingMessage(assistant.id, messageID, result.binding.sessionID)');
+    expect(view).toContain('isCurrent: () => pendingRefreshEpochRef.current === refreshEpoch');
+    expect(view).not.toContain('expire: () => removePendingMessages');
     expect(view).toContain('await refreshBinding(await newAssistantSession(assistant.id), { force: true })');
     expect(view).toContain('await refreshBinding((await compactAssistantSession(assistant.id, binding)).binding, { force: true })');
     expect(view).toContain("...(options?.force ? { force: true } : {})");
@@ -435,7 +444,10 @@ describe('Assistant UI product contract', () => {
     expect(host).toContain('assistantHistory?: {');
     expect(surface).toContain('useAssistantHistoryInfiniteQuery');
     expect(surface).toContain('assistantHistory: {');
+    expect(surface).toContain('pendingUserMessages,');
+    expect(host).toContain('onPendingUserMessagesMaterialized?:');
     expect(chat).toContain('stitchHostedSessionHistory');
+    expect(chat).toContain('mergePendingUserMessagePresentations');
     expect(chat).toContain('createAssistantSessionDivider');
   });
 

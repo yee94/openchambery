@@ -111,6 +111,7 @@ export type ChatInputDeliveryRequest = {
     /** First-submit pin; preferred over live surface session when present. */
     sessionId?: string;
     directoryHint?: string | null;
+    messageID?: string;
   };
   queueScope?: ChatInputQueueScope;
 };

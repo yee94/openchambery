@@ -126,11 +126,13 @@ function setupChildStores(dir = PROJECT.path) {
   const sessionList: any[] = []
   const messageMap: Record<string, any[]> = {}
   const statusMap: Record<string, any> = {}
+  const partMap: Record<string, any[]> = {}
   const childStore = {
-    getState: () => ({ session: sessionList, message: messageMap, session_status: statusMap, part: {} }),
+    getState: () => ({ session: sessionList, message: messageMap, session_status: statusMap, part: partMap }),
     setState: (patch: any) => {
       if (patch.session_status) Object.assign(statusMap, patch.session_status)
       if (patch.message) Object.assign(messageMap, patch.message)
+      if (patch.part) Object.assign(partMap, patch.part)
     },
   }
   const childStores = {
@@ -145,10 +147,11 @@ function setupChildStores(dir = PROJECT.path) {
       const current = store.getState()
       const msgs = [...(current.message[input.sessionID] ?? [])]
       if (!msgs.find((m: any) => m.id === input.message.id)) msgs.push(input.message)
-      store.setState({ message: { ...current.message, [input.sessionID]: msgs }, session_status: { ...current.session_status, [input.sessionID]: { type: 'busy' } } })
+      store.setState({ message: { ...current.message, [input.sessionID]: msgs }, part: { ...current.part, [input.message.id]: input.parts }, session_status: { ...current.session_status, [input.sessionID]: { type: 'busy' } } })
     },
     () => {},
   )
+  return childStore
 }
 
 beforeEach(() => {
@@ -225,6 +228,9 @@ describe('handleCombinedDraftSend', () => {
     const sendPromise = useSessionUIStore.getState().sendMessage('hello', 'openai', 'gpt-4o')
 
     expect(useSessionUIStore.getState().newSessionDraft.draftSubmitting).toBe(true)
+    const pending = useSessionUIStore.getState().newSessionDraft.pendingUserMessage
+    expect(pending?.info.role).toBe('user')
+    expect(pending?.parts.some((part: any) => part.type === 'text' && part.text === 'hello')).toBe(true)
 
     // Second send should throw (draft already claimed)
     await useSessionUIStore.getState().sendMessage('hello again', 'openai', 'gpt-4o').catch(() => {})
@@ -255,6 +261,39 @@ describe('handleCombinedDraftSend', () => {
     expect(useSessionUIStore.getState().isOpenChamberCreatedSession(SESSION_ID)).toBe(true)
     expect(useSessionUIStore.getState().currentSessionId).toBe(SESSION_ID)
     expect(useSessionUIStore.getState().newSessionDraft.open).toBe(false)
+  })
+
+  test('combined success keeps every built part on the real-session optimistic row', async () => {
+    const childStore = setupChildStores()
+    registerRuntimeAPIs(makeCombinedAPI(async (input) => successResult(input.messageID)))
+    useSessionUIStore.setState((state) => ({ ...state, newSessionDraft: { open: true, draftID: crypto.randomUUID(), directoryOverride: null, parentID: null, draftSubmitting: false, syntheticParts: [{ text: 'draft synthetic', synthetic: true }] } }))
+    const primaryAttachment = { id: 'primary-file', filename: 'primary.txt', mimeType: 'text/plain', dataUrl: 'data:text/plain;base64,QQ==', size: 1 } as any
+    const partAttachment = { id: 'part-file', filename: 'part.txt', mimeType: 'text/plain', dataUrl: 'data:text/plain;base64,Qg==', size: 1 } as any
+
+    await useSessionUIStore.getState().sendMessage('main', 'openai', 'gpt-4o', 'build', [primaryAttachment], '@reviewer', [{ text: 'extra', attachments: [partAttachment], synthetic: true }], undefined, 'normal', { messageID: 'msg_complete_parts' })
+
+    const optimisticParts = childStore.getState().part.msg_complete_parts
+    expect(optimisticParts.map((part: any) => part.type)).toEqual(['text', 'file', 'text', 'file', 'text', 'agent'])
+    expect(optimisticParts.some((part: any) => part.text === 'draft synthetic' && part.synthetic === true)).toBe(true)
+    expect(optimisticParts.some((part: any) => part.type === 'agent' && part.name === '@reviewer')).toBe(true)
+    expect(optimisticParts.every((part: any) => part.messageID === 'msg_complete_parts' && part.sessionID === SESSION_ID)).toBe(true)
+  })
+
+  test('fallback draft materializes its complete pending row before prompt dispatch', async () => {
+    const childStore = setupChildStores()
+    registerRuntimeAPIs(null)
+    let dispatched = false
+    opencodeClient.sendMessage = (async () => { dispatched = true }) as any
+    useSessionUIStore.setState((state) => ({ ...state, newSessionDraft: { open: true, draftID: crypto.randomUUID(), directoryOverride: null, parentID: null, draftSubmitting: false, syntheticParts: [{ text: 'fallback synthetic', synthetic: true }] } }))
+    const attachment = { id: 'fallback-file', filename: 'fallback.txt', mimeType: 'text/plain', dataUrl: 'data:text/plain;base64,Qw==', size: 1 } as any
+
+    await useSessionUIStore.getState().sendMessage('fallback main', 'openai', 'gpt-4o', 'build', [attachment], '@planner', [{ text: 'fallback extra' }], undefined, 'normal', { messageID: 'msg_fallback_parts' })
+
+    expect(dispatched).toBe(true)
+    const optimisticParts = childStore.getState().part.msg_fallback_parts
+    expect(optimisticParts.map((part: any) => part.type)).toEqual(['text', 'file', 'text', 'text', 'agent'])
+    expect(optimisticParts.some((part: any) => part.text === 'fallback synthetic' && part.synthetic === true)).toBe(true)
+    expect(optimisticParts.every((part: any) => part.messageID === 'msg_fallback_parts' && part.sessionID === SESSION_ID)).toBe(true)
   })
 
   test('success consumes the opened source with its exact runtime, key, and revision', async () => {
@@ -311,6 +350,7 @@ describe('handleCombinedDraftSend', () => {
     expect(error!.message.length).toBeGreaterThan(0)
     expect(useSessionUIStore.getState().newSessionDraft.open).toBe(true)
     expect(useSessionUIStore.getState().newSessionDraft.draftSubmitting).toBe(false)
+    expect(useSessionUIStore.getState().newSessionDraft.pendingUserMessage).toBe(undefined)
     expect(useInputStore.getState().pendingInputText).toBe('will fail')
   })
 

@@ -105,6 +105,7 @@ export const dict: Record<I18nKey, string> = {
   'mobile.menu.changes': 'Zmiany',
   'mobile.menu.mcp': 'MCP',
   'mobile.menu.instances': 'Instancje',
+  'mobile.settings.switchInstance': 'Przełącz instancję',
   'mobile.menu.update': 'Aktualizuj',
   'mobile.menu.settings': 'Ustawienia',
   'mobile.sessions.newChatCta': 'Nowy czat w {project}',

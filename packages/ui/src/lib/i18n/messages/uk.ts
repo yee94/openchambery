@@ -3,6 +3,7 @@ import { settingsDict } from './uk.settings';
 
 export const dict: Record<I18nKey, string> = {
   ...settingsDict,
+  "mobile.settings.switchInstance": "Перемкнути екземпляр",
   "common.loading": "Завантаження...",
   "sessions.startupSync.title": "Синхронізація сеансів",
   "sessions.startupSync.progress": "Завантажено {completed} з {total} проєктів",

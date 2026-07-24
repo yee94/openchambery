@@ -16,9 +16,9 @@ import { cn } from '@/lib/utils';
 import { MobileDetailNavigation } from '@/mobile/MobileDetailNavigation';
 import { getRuntimeGeneration, getRuntimeTransportIdentity, subscribeRuntimeEndpointChanged } from '@/lib/runtime-switch';
 import { abortAssistantSession, compactAssistantSession, ensureAssistantSession, fetchAssistantSnapshot, newAssistantSession, readAssistantSnapshot, sendAssistantMessage, updateAssistant, useAssistantCapabilityQuery, useAssistantSnapshotQuery, type AssistantPart, type SessionBinding } from '@/queries/assistantQueries';
-import { fetchMessagesForSession } from '@/sync/session-actions';
 import { ascendingIdAfter } from '@/sync/message-id';
 import { getSyncMessages } from '@/sync/sync-refs';
+import { createPendingUserMessagePresentation, type PendingUserMessagePresentation } from '@/sync/session-ui-store';
 import { useSessionMessages, useSessionStatus, useUserMessageHistory } from '@/sync/sync-context';
 import { useSync } from '@/sync/use-sync';
 import { surfaceDraftKey, draftKeyString } from '@/sync/input-draft-types';
@@ -34,8 +34,10 @@ import { createAssistantRevertDraftSnapshot } from './assistantRevertDraft';
 import { AssistantSelectionCoordinator, AssistantSelectionStaleError, type AssistantSelection, type AssistantSelectionIdentity } from './assistantSelectionCoordinator';
 import { commitAssistantSelection } from './assistantSelectionBackend';
 import { getAssistantPresentation } from './assistantPresentation';
+import { reconcileAdmittedAssistantBinding, rebindPendingAssistantMessage } from './assistantPendingMessages';
 
 const EMPTY_ATTACHMENTS: Record<string, AttachedFile> = {};
+const EMPTY_PENDING_MESSAGES: PendingUserMessagePresentation[] = [];
 const assistantParts = (text: string | undefined, parts: readonly { text: string; attachments?: readonly AttachedFile[]; synthetic?: boolean }[] | undefined, attachments: readonly AttachedFile[] | undefined): AssistantPart[] => {
   return [
     ...(text === undefined ? [] : [{ type: 'text' as const, text }]),
@@ -105,6 +107,9 @@ export const AssistantView: React.FC<AssistantViewProps> = ({ activeOverride, on
   const status = useSessionStatus(sessionID, directory || undefined);
   const history = useUserMessageHistory(sessionID);
   const sync = useSync();
+  const [pendingMessagesByAssistant, setPendingMessagesByAssistant] = React.useState<Map<string, PendingUserMessagePresentation[]>>(() => new Map());
+  const pendingRefreshEpochRef = React.useRef(0);
+  const pendingMessages = pendingMessagesByAssistant.get(assistantID) ?? EMPTY_PENDING_MESSAGES;
   const [, setSelectionSaving] = React.useState(false);
   const selectionErrorRef = React.useRef<(error: unknown) => void>(() => {});
   selectionErrorRef.current = () => { toast.error(t('assistants.composer.selectionSaveFailed')); };
@@ -116,7 +121,8 @@ export const AssistantView: React.FC<AssistantViewProps> = ({ activeOverride, on
   React.useEffect(() => { if (!selectedAssistantID && snapshot?.assistants[0]) selectAssistant(snapshot.assistants[0].id); }, [selectAssistant, selectedAssistantID, snapshot?.assistants]);
   React.useEffect(() => { if (snapshotQuery.isSuccess && selectedAssistantID && !assistant) selectAssistant(snapshot?.assistants[0]?.id ?? null); }, [assistant, selectAssistant, selectedAssistantID, snapshot?.assistants, snapshotQuery.isSuccess]);
   React.useEffect(() => { if (active && assistantID && !sessionID) void ensureAssistantSession(assistantID); }, [active, assistantID, sessionID]);
-  React.useEffect(() => { if (active && sessionID && directory) { void sync.ensureSessionRenderable(sessionID, { directory }); void fetchMessagesForSession(sessionID, directory); } }, [active, directory, sessionID, sync]);
+  React.useEffect(() => { pendingRefreshEpochRef.current++; setPendingMessagesByAssistant(new Map()); }, [transport, runtimeGeneration]);
+  React.useEffect(() => () => { pendingRefreshEpochRef.current++; }, []);
   React.useEffect(() => { selectionCoordinator.activate(selectionIdentity); }, [selectionCoordinator, selectionIdentity]);
   React.useEffect(() => () => { selectionCoordinator.dispose(); }, [selectionCoordinator]);
 
@@ -157,6 +163,33 @@ export const AssistantView: React.FC<AssistantViewProps> = ({ activeOverride, on
       directory: binding.directory,
       ...(options?.force ? { force: true } : {}),
     });
+  });
+  const removePendingMessages = useEvent((targetAssistantID: string, messageIDs: readonly string[]) => {
+    if (messageIDs.length === 0) return;
+    const removed = new Set(messageIDs);
+    setPendingMessagesByAssistant((current) => {
+      const messagesForAssistant = current.get(targetAssistantID);
+      if (!messagesForAssistant?.some((message) => removed.has(message.info.id))) return current;
+      const next = new Map(current);
+      const remaining = messagesForAssistant.filter((message) => !removed.has(message.info.id));
+      if (remaining.length > 0) next.set(targetAssistantID, remaining);
+      else next.delete(targetAssistantID);
+      return next;
+    });
+  });
+  const rebindPendingMessage = useEvent((targetAssistantID: string, messageID: string, targetSessionID: string) => {
+    setPendingMessagesByAssistant((current) => {
+      const messagesForAssistant = current.get(targetAssistantID);
+      if (!messagesForAssistant) return current;
+      const rebound = rebindPendingAssistantMessage(messagesForAssistant, messageID, targetSessionID);
+      if (rebound === messagesForAssistant) return current;
+      const next = new Map(current);
+      next.set(targetAssistantID, rebound);
+      return next;
+    });
+  });
+  const handlePendingMessagesMaterialized = useEvent((messageIDs: readonly string[]) => {
+    removePendingMessages(assistantID, messageIDs);
   });
   const revertAssistantMessage = useEvent(async (messageID: string) => {
     if (!sessionID || !directory) throw new Error('assistant_unavailable');
@@ -252,12 +285,41 @@ export const AssistantView: React.FC<AssistantViewProps> = ({ activeOverride, on
             const id = typeof message?.id === 'string' ? message.id : '';
             if (/^msg_[0-9a-f]{12}[0-9A-Za-z]{14}$/.test(id) && (!floor || id > floor)) floor = id;
           }
-          const result = await sendAssistantMessage(assistant.id, binding, ascendingIdAfter('msg', floor), assistantParts(request.text, request.parts, request.attachments));
+          const messageID = ascendingIdAfter('msg', floor);
+          const pendingMessage = createPendingUserMessagePresentation({
+            messageID,
+            sessionID: binding.sessionID,
+            providerID: request.providerID ?? assistant.providerID,
+            modelID: request.modelID ?? assistant.modelID,
+            agent: request.agent ?? assistant.agent ?? undefined,
+            text: request.text,
+            attachments: request.attachments,
+            additionalParts: request.parts,
+          });
+          setPendingMessagesByAssistant((current) => {
+            const next = new Map(current);
+            next.set(assistant.id, [...(current.get(assistant.id) ?? []), pendingMessage]);
+            return next;
+          });
+          let result;
+          try {
+            result = await sendAssistantMessage(assistant.id, binding, messageID, assistantParts(request.text, request.parts, request.attachments));
+          } catch (error) {
+            removePendingMessages(assistant.id, [messageID]);
+            throw error;
+          }
           if (capabilityQuery.data?.serverInstanceID) {
             void donateNativeAssistantInteraction({ serverInstanceID: capabilityQuery.data.serverInstanceID, assistantID: assistant.id, name: assistant.name, avatarSeed: assistant.id }).catch(() => undefined);
           }
-          // Stateless mode replaces the binding each turn; force rematerializes onto the fresh session.
-          await refreshBinding(result.binding, { force: result.binding.sessionID !== binding.sessionID || result.binding.sessionGeneration !== binding.sessionGeneration });
+          // Stateless mode replaces the binding each turn. Move the pending row
+          // first so it remains visible while the new binding materializes.
+          if (result.binding.sessionID) rebindPendingMessage(assistant.id, messageID, result.binding.sessionID);
+          const refreshEpoch = pendingRefreshEpochRef.current;
+          reconcileAdmittedAssistantBinding({
+            binding: result.binding,
+            refresh: (admittedBinding) => refreshBinding(admittedBinding, { force: admittedBinding.sessionID !== binding.sessionID || admittedBinding.sessionGeneration !== binding.sessionGeneration }),
+            isCurrent: () => pendingRefreshEpochRef.current === refreshEpoch,
+          });
         },
         sendQueued: async () => { throw new Error('assistant-server-queue-required'); },
         create: async () => { await refreshBinding(await newAssistantSession(assistant.id), { force: true }); },
@@ -266,7 +328,7 @@ export const AssistantView: React.FC<AssistantViewProps> = ({ activeOverride, on
       },
       shortcuts: { cycle, new: async () => { await refreshBinding(await newAssistantSession(assistant.id), { force: true }); }, abort: async () => { await abortAssistantSession(assistant.id, binding); }, submit: () => {} },
     };
-  }, [active, assistant, capabilityQuery.data?.serverInstanceID, changeSelection, cycle, directory, draftKey, hasMessages, providersQuery.data, providersQuery.isError, providersQuery.isPending, providersQuery.isSuccess, agentsQuery.isError, agentsQuery.isPending, agentsQuery.isSuccess, refreshBinding, resources, runtimeGeneration, selectionCoordinator, selectionIdentity, sessionID, status, transport, variants, visibleAgents]);
+  }, [active, assistant, capabilityQuery.data?.serverInstanceID, changeSelection, cycle, directory, draftKey, hasMessages, providersQuery.data, providersQuery.isError, providersQuery.isPending, providersQuery.isSuccess, agentsQuery.isError, agentsQuery.isPending, agentsQuery.isSuccess, refreshBinding, rebindPendingMessage, removePendingMessages, resources, runtimeGeneration, selectionCoordinator, selectionIdentity, sessionID, status, transport, variants, visibleAgents]);
 
   const openCreateSettings = useEvent(() => { requestCreate(); if (mobileActions) { mobileActions.openSettings(); return; } const ui = useUIStore.getState(); ui.setSettingsPage('assistants'); ui.setSettingsDialogOpen(true); });
   const returnToChat = useEvent(() => { useUIStore.getState().setActiveMainTab('chat'); });
@@ -358,6 +420,8 @@ export const AssistantView: React.FC<AssistantViewProps> = ({ activeOverride, on
           sessionID={sessionID}
           warning={warning}
           surface={surface}
+          pendingUserMessages={pendingMessages}
+          onPendingUserMessagesMaterialized={handlePendingMessagesMaterialized}
         />
       </div>
     </div>

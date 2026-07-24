@@ -42,7 +42,7 @@ export const AutoReviewBanner = memo(() => {
   return (
     <div className={cn('w-full px-1', isMobile ? 'pb-1 text-xs' : 'pb-2')}>
       <div className={cn(
-        'border border-border/60 bg-[var(--surface-elevated)] text-[var(--surface-elevated-foreground)] shadow-sm overflow-hidden',
+        'border border-border/60 bg-[var(--surface-elevated)] text-[var(--surface-elevated-foreground)] shadow-sm dark:shadow-none overflow-hidden',
         isMobile ? 'rounded-lg' : 'rounded-xl',
       )}>
         <div className={cn(

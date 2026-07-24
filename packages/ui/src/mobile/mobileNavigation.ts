@@ -50,3 +50,30 @@ export const MOBILE_BACK_PRIORITY = {
   secondaryPage: 1,
   rootTab: 2,
 } as const;
+
+/** Slim parent target for secondary-page back (authoritative child.parentID). */
+export type MobileParentSessionTarget = {
+  id: string;
+  directory: string | null;
+};
+
+/**
+ * Pure back decision for the phone secondary page (after scheduled-editor
+ * handlers). Chat with a parent keeps secondary open and switches session;
+ * draft / assistant / root chat close secondary; no secondary is a no-op.
+ */
+export type MobileSecondaryBackDecision =
+  | { action: 'none' }
+  | { action: 'closeSecondary' }
+  | { action: 'navigateToParent'; parent: MobileParentSessionTarget };
+
+export function resolveMobileSecondaryBackDecision(input: {
+  secondary: MobileSecondaryState | null;
+  parentSessionTarget: MobileParentSessionTarget | null;
+}): MobileSecondaryBackDecision {
+  if (!input.secondary) return { action: 'none' };
+  if (input.secondary.kind === 'chat' && input.parentSessionTarget) {
+    return { action: 'navigateToParent', parent: input.parentSessionTarget };
+  }
+  return { action: 'closeSecondary' };
+}

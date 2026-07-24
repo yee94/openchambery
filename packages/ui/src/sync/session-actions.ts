@@ -1089,6 +1089,7 @@ export async function optimisticSend(input: {
   agent?: string
   directory?: string | null
   files?: Array<{ type: "file"; mime: string; url: string; filename: string }>
+  parts?: readonly Part[]
   /** Pre-generated messageID — if omitted, one is generated via ascendingId */
   messageID?: string
   /** Retains optimistic state after an ambiguous dispatched failure for queue reconciliation. */
@@ -1129,6 +1130,7 @@ export async function optimisticSend(input: {
       agent: input.agent,
       directory: targetDirectory,
       files: input.files,
+      parts: input.parts,
     })
     input.onOptimisticInsert?.()
 
@@ -1246,6 +1248,7 @@ export function optimisticInsertUserMessage(input: {
   agent?: string
   directory?: string | null
   files?: Array<{ type: "file"; mime: string; url: string; filename: string }>
+  parts?: readonly Part[]
 }): boolean {
   if (!_optimisticAdd) return false
 
@@ -1259,11 +1262,15 @@ export function optimisticInsertUserMessage(input: {
     return false
   }
 
-  const textPartId = ascendingId("prt")
-  const optimisticParts: Part[] = [
-    { id: textPartId, type: "text", text: input.content } as Part,
-  ]
-  if (input.files) {
+  const optimisticParts: Part[] = input.parts
+    ? input.parts.map((part) => ({
+        ...part,
+        id: typeof part.id === "string" && part.id ? part.id : ascendingId("prt"),
+        messageID: input.messageID,
+        sessionID: input.sessionId,
+      } as Part))
+    : [{ id: ascendingId("prt"), type: "text", text: input.content, messageID: input.messageID, sessionID: input.sessionId } as Part]
+  if (!input.parts && input.files) {
     for (const f of input.files) {
       optimisticParts.push({ id: ascendingId("prt"), type: "file", mime: f.mime, url: f.url, filename: f.filename } as Part)
     }

@@ -875,7 +875,7 @@ export function ScheduledTasksWorkspace({
                               : 'transition-[background-color,border-color,box-shadow,transform,opacity] duration-150 ease-out active:scale-[0.995]',
                             isMobilePanel && !isMobileTab ? 'gap-2.5 px-3' : !isMobileTab ? 'gap-3 px-4' : undefined,
                             !isMobileTab && (selected
-                              ? 'border-border/50 bg-[var(--surface-elevated)] shadow-sm'
+                              ? 'border-border/50 bg-[var(--surface-elevated)] shadow-sm dark:shadow-none'
                               : 'border-transparent hover:bg-interactive-hover'),
                             !task.enabled && 'opacity-65',
                           )}

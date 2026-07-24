@@ -7,9 +7,10 @@ import { MobileTabPageScaffold } from '../MobileSurface';
 export type MobileSettingsTabProps = {
   className?: string;
   contentClassName?: string;
+  onOpenInstances?: () => void;
 };
 
-export function MobileSettingsTab({ className, contentClassName }: MobileSettingsTabProps) {
+export function MobileSettingsTab({ className, contentClassName, onOpenInstances }: MobileSettingsTabProps) {
   const { t } = useI18n();
 
   return (
@@ -28,6 +29,7 @@ export function MobileSettingsTab({ className, contentClassName }: MobileSetting
         flowMobile
         autoOpenMobilePage={false}
         visiblePageSlugs={[...MOBILE_SETTINGS_PAGE_SLUGS]}
+        onOpenInstances={onOpenInstances}
       />
     </MobileTabPageScaffold>
   );

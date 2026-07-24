@@ -410,27 +410,155 @@ const replaceSessionsForDirectories = (
   return sortSessionsByUpdated([...incomingById.values(), ...kept]);
 };
 
+/** True when client pagination already advanced past the snapshot head-window cursor. */
+const isDeeperPagination = (
+  existing: DirectorySessionPagination,
+  incoming: { cursor: number | null; hasMore: boolean },
+): boolean => {
+  if (existing.cursor === null) {
+    // Exhausted list (or terminal page) is deeper than a head window that still pages.
+    return !existing.hasMore && (incoming.hasMore || incoming.cursor !== null);
+  }
+  if (incoming.cursor === null) return true;
+  return existing.cursor < incoming.cursor;
+};
+
+/**
+ * Activity-time edge of the authoritative head window.
+ * Prefer the page cursor (list "updated strictly before"); fall back to the
+ * oldest session still present in the head page when cursor is null.
+ * Sessions with activity time <= this edge and not in the head page are past
+ * the window (including items newly bumped out that still share the edge time).
+ */
+const getAuthoritativeHeadBoundaryUpdatedAt = (
+  sessions: Session[],
+  cursor: number | null,
+): number | null => {
+  if (typeof cursor === 'number' && Number.isFinite(cursor)) {
+    return cursor;
+  }
+  if (sessions.length === 0) return null;
+  const sorted = sortSessionsByUpdated(sessions);
+  const oldest = sorted[sorted.length - 1];
+  if (!oldest) return null;
+  return getSessionActivityUpdatedAt(oldest);
+};
+
+/** True when activity time is at or past the head edge (loadMore / bumped-out territory). */
+const isSessionBeyondHeadBoundary = (
+  session: Session,
+  boundaryUpdatedAt: number,
+): boolean => getSessionActivityUpdatedAt(session) <= boundaryUpdatedAt;
+
+/**
+ * Authoritative index snapshots only cover the newest head window per directory.
+ * When loadMore has already appended deeper pages and the snapshot still has more
+ * pages (`hasMore`), keep loaded sessions that clearly fall after the new head
+ * boundary (cursor/time), and drop head-window ghosts missing from the snapshot.
+ * A complete authoritative page (`hasMore: false`, including empty directories) replaces
+ * the directory list and does not preserve a stale loadMore tail.
+ */
+const replaceSessionsForDirectoriesPreservingLoadedTail = (
+  existing: Session[],
+  incomingByDirectory: Map<string, Session[]>,
+  directories: Set<string>,
+  headBoundaryByDirectory: Map<string, number | null>,
+  preserveTailDirectories: Set<string>,
+): Session[] => {
+  if (directories.size === 0) {
+    return existing;
+  }
+
+  const existingById = new Map(existing.map((session) => [session.id, session]));
+  const incomingById = new Map<string, Session>();
+  for (const sessions of incomingByDirectory.values()) {
+    for (const session of sessions) {
+      if (!session?.id) continue;
+      incomingById.set(session.id, mergeSessionDirectoryMetadata(session, existingById.get(session.id)));
+    }
+  }
+
+  const kept = existing.filter((session) => {
+    if (incomingById.has(session.id)) return false;
+    const directory = resolveGlobalSessionDirectory(session);
+    if (!directory || !directories.has(directory)) return true;
+    if (!preserveTailDirectories.has(directory)) return false;
+    const boundary = headBoundaryByDirectory.get(directory);
+    if (boundary === undefined || boundary === null) return false;
+    return isSessionBeyondHeadBoundary(session, boundary);
+  });
+
+  return sortSessionsByUpdated([...incomingById.values(), ...kept]);
+};
+
 const applySessionIndexSnapshotState = (
   state: GlobalSessionsState,
   snapshot: SessionIndexSnapshot,
   authoritative: boolean,
 ): Partial<GlobalSessionsState> => {
   const snapshotDirectories = new Set(snapshot.directories.map((entry) => entry.directory));
-  const cachedSessions = filterPendingDeletionSessions(
-    snapshot.directories.flatMap((entry) => entry.sessions),
-    state.pendingDeletionIds,
-  );
+  const cachedByDirectory = new Map<string, Session[]>();
+  for (const entry of snapshot.directories) {
+    cachedByDirectory.set(
+      entry.directory,
+      filterPendingDeletionSessions(entry.sessions, state.pendingDeletionIds),
+    );
+  }
+  const cachedSessions = [...cachedByDirectory.values()].flat();
+  const existingCountByDirectory = new Map<string, number>();
+  if (authoritative) {
+    for (const session of state.activeSessions) {
+      const directory = resolveGlobalSessionDirectory(session);
+      if (!directory || !snapshotDirectories.has(directory)) continue;
+      existingCountByDirectory.set(directory, (existingCountByDirectory.get(directory) ?? 0) + 1);
+    }
+  }
+  const headBoundaryByDirectory = new Map<string, number | null>();
+  const preserveTailDirectories = new Set<string>();
+  if (authoritative) {
+    for (const entry of snapshot.directories) {
+      const incomingPagination = { cursor: entry.cursor, hasMore: entry.hasMore };
+      const existingPagination = state.activePaginationByDirectory.get(entry.directory);
+      const hasLoadedBeyondHead = (existingCountByDirectory.get(entry.directory) ?? 0) > DIRECTORY_SESSION_LIMIT;
+      const preserveTail = Boolean(
+        entry.hasMore
+        && hasLoadedBeyondHead
+        && existingPagination
+        && isDeeperPagination(existingPagination, incomingPagination),
+      );
+      if (preserveTail) preserveTailDirectories.add(entry.directory);
+      headBoundaryByDirectory.set(
+        entry.directory,
+        getAuthoritativeHeadBoundaryUpdatedAt(cachedByDirectory.get(entry.directory) ?? [], entry.cursor),
+      );
+    }
+  }
   const activeSessions = authoritative
-    ? replaceSessionsForDirectories(state.activeSessions, cachedSessions, snapshotDirectories)
+    ? replaceSessionsForDirectoriesPreservingLoadedTail(
+      state.activeSessions,
+      cachedByDirectory,
+      snapshotDirectories,
+      headBoundaryByDirectory,
+      preserveTailDirectories,
+    )
     : sortSessionsByUpdated(mergeSessionLists(state.activeSessions, cachedSessions));
   const nextPagination = new Map(state.activePaginationByDirectory);
   const nextSyncMetadata = new Map(state.sessionIndexSyncByDirectory);
   for (const entry of snapshot.directories) {
-    nextPagination.set(entry.directory, {
+    const incomingPagination = {
       cursor: entry.cursor,
       hasMore: entry.hasMore,
       loadingMore: false,
-    });
+    };
+    const existingPagination = state.activePaginationByDirectory.get(entry.directory);
+    nextPagination.set(
+      entry.directory,
+      authoritative
+        && preserveTailDirectories.has(entry.directory)
+        && existingPagination
+        ? { cursor: existingPagination.cursor, hasMore: existingPagination.hasMore, loadingMore: false }
+        : incomingPagination,
+    );
     nextSyncMetadata.set(entry.directory, {
       lastSyncedAt: entry.lastSyncedAt,
       lastFullSyncedAt: entry.lastFullSyncedAt,

@@ -6,6 +6,7 @@ import {
   settleMobileBackSurface,
   type MobileBackHistory,
 } from './mobileBackNavigation';
+import { resolveMobileSecondaryBackDecision } from './mobileNavigation';
 
 const route = (id: string, onBack: () => boolean | void, layer: 'root' | 'overlay' = 'root') => ({
   id,
@@ -86,6 +87,45 @@ describe('MobileBackNavigationCoordinator', () => {
     harness.history.back();
     expect(calls).toBe(0);
     remove();
+  });
+});
+
+describe('resolveMobileSecondaryBackDecision', () => {
+  const parent = { id: 'ses_parent', directory: '/proj' };
+
+  test('chat with parent navigates to parent and keeps secondary open', () => {
+    expect(resolveMobileSecondaryBackDecision({
+      secondary: { kind: 'chat' },
+      parentSessionTarget: parent,
+    })).toEqual({ action: 'navigateToParent', parent });
+  });
+
+  test('chat root closes secondary', () => {
+    expect(resolveMobileSecondaryBackDecision({
+      secondary: { kind: 'chat' },
+      parentSessionTarget: null,
+    })).toEqual({ action: 'closeSecondary' });
+  });
+
+  test('draft closes secondary even when a parent target is present', () => {
+    expect(resolveMobileSecondaryBackDecision({
+      secondary: { kind: 'draft' },
+      parentSessionTarget: parent,
+    })).toEqual({ action: 'closeSecondary' });
+  });
+
+  test('assistant closes secondary', () => {
+    expect(resolveMobileSecondaryBackDecision({
+      secondary: { kind: 'assistant' },
+      parentSessionTarget: null,
+    })).toEqual({ action: 'closeSecondary' });
+  });
+
+  test('closed secondary is a no-op', () => {
+    expect(resolveMobileSecondaryBackDecision({
+      secondary: null,
+      parentSessionTarget: parent,
+    })).toEqual({ action: 'none' });
   });
 });
 

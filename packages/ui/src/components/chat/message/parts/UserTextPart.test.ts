@@ -1,6 +1,21 @@
 import { describe, expect, test } from 'bun:test';
+import { readFileSync } from 'node:fs';
+import { dirname, join } from 'node:path';
+import { fileURLToPath } from 'node:url';
 
 import { prepareUserMarkdownContent, SKILL_TOKEN_PATTERN } from './userTextPartContent';
+
+const __dirname = dirname(fileURLToPath(import.meta.url));
+const messageBodySource = readFileSync(join(__dirname, '../MessageBody.tsx'), 'utf-8');
+
+describe('mobile primary subtask prompt', () => {
+    test('omits the collapsible prompt disclosure from the primary chat surface', () => {
+        expect(messageBodySource).toContain(
+            "const showPromptDisclosure = Boolean(prompt) && !(isMobile && sessionSurface.kind === 'primary');"
+        );
+        expect(messageBodySource).toContain('{showPromptDisclosure ? (');
+    });
+});
 
 describe('prepareUserMarkdownContent', () => {
     test('keeps fenced code < and -> unescaped for the markdown renderer', () => {

@@ -220,6 +220,7 @@ const UserSubtaskPart: React.FC<{ part: SubtaskPartLike }> = ({ part }) => {
     const prompt = typeof part.prompt === 'string' ? part.prompt.trim() : '';
     const taskSessionID = typeof part.taskSessionID === 'string' ? part.taskSessionID.trim() : '';
     const model = normalizeSubtaskModel(part.model);
+    const showPromptDisclosure = Boolean(prompt) && !(isMobile && sessionSurface.kind === 'primary');
 
     return (
         <div className="mt-2">
@@ -248,7 +249,7 @@ const UserSubtaskPart: React.FC<{ part: SubtaskPartLike }> = ({ part }) => {
                 </div>
             ) : null}
 
-            {prompt ? (
+            {showPromptDisclosure ? (
                 <div className="mt-2 border-t border-border/60 pt-1.5">
                     <button
                         type="button"

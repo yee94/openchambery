@@ -503,14 +503,16 @@ modes, and older runtimes keep the regular SDK sequence.
 
 The client generates the message ID before the request. The server/runtime host
 uses it as the bounded operation key, so reconnect retries reuse the in-flight
-or completed operation instead of creating another session. Claiming a draft
-submission sets `draftSubmitting` and yields one frame so the chat surface can
-paint a full-screen establishing page (same visual pattern as fork transition)
-until a real session ID is returned. ChatInput also sets `draftEstablishing`
-before its response-style / snippet network preamble (composer text is already
-cleared) so the empty draft dialog is not left on screen while those awaits
-run; `claimDraftSubmission` clears `draftEstablishing` when the real claim
-takes over, and failed sends clear it via restore.
+or completed operation instead of creating another session. ChatInput publishes
+the stable-ID pending user-message presentation while it sets `draftEstablishing`,
+before response-style and snippet preprocessing. The row contains the captured
+visible text, primary and per-part attachments, synthetic parts, and agent mention.
+`claimDraftSubmission` reuses that message identity and promotes the draft to
+`draftSubmitting`. The shared MessageList renders the row while create+prompt
+remains in flight, with the existing establishing status below it. A successful
+response inserts the same complete part set into the new session before selection;
+SSE/HTTP materialization wins by ID. Definitive failure clears the pending row
+and restores the claimed draft input.
 
 Send-path prep must not compete for Chromium's per-origin HTTP/1.1 sockets:
 `fetchResponseStyleInstruction` reads an in-memory cache warmed by settings

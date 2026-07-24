@@ -104,6 +104,7 @@ export const dict: Record<I18nKey, string> = {
   'mobile.menu.changes': '변경사항',
   'mobile.menu.mcp': 'MCP',
   'mobile.menu.instances': '인스턴스',
+  'mobile.settings.switchInstance': '인스턴스 전환',
   'mobile.menu.update': '업데이트',
   'mobile.menu.settings': '설정',
   'mobile.sessions.newChatCta': '{project}에서 새 채팅',

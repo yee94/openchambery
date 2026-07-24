@@ -1,5 +1,6 @@
 import { describe, expect, test } from 'bun:test';
-import { resolveChatContainerHostFeatures, type ChatContainerHost } from './chatContainerHost';
+import { mergePendingUserMessagePresentations, resolveChatContainerHostFeatures, type ChatContainerHost } from './chatContainerHost';
+import type { PendingUserMessagePresentation } from '@/sync/session-ui-store';
 
 const sampleHost = (features?: ChatContainerHost['features']): ChatContainerHost => ({
   sessionId: 'ses_test',
@@ -25,6 +26,24 @@ const sampleHost = (features?: ChatContainerHost['features']): ChatContainerHost
 });
 
 describe('chatContainerHost', () => {
+  test('keeps a pending row until its stable message ID is authoritative', () => {
+    const pending = {
+      info: { id: 'msg_pending', role: 'user' },
+      parts: [{ type: 'text', text: 'hello' }],
+    } as PendingUserMessagePresentation;
+    const first = mergePendingUserMessagePresentations([], [pending]);
+    expect(first).toEqual([pending]);
+
+    const authoritative = [{
+      info: { ...pending.info, sessionID: 'ses_real' },
+      parts: [{ type: 'text', text: 'hello from server' }],
+    }] as PendingUserMessagePresentation[];
+    const reconciled = mergePendingUserMessagePresentations(authoritative, [pending]);
+    expect(reconciled).toBe(authoritative);
+    expect(reconciled).toHaveLength(1);
+    expect(reconciled[0]?.parts[0]).toEqual({ type: 'text', text: 'hello from server' });
+  });
+
   test('keeps primary-only features on when no host is provided', () => {
     expect(resolveChatContainerHostFeatures(undefined)).toEqual({
       newSessionDraft: true,

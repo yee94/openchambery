@@ -104,6 +104,7 @@ export const dict = {
   'mobile.menu.changes': 'Changes',
   'mobile.menu.mcp': 'MCP',
   'mobile.menu.instances': 'Instances',
+  'mobile.settings.switchInstance': 'Switch instance',
   'mobile.menu.update': 'Update',
   'mobile.menu.settings': 'Settings',
   'mobile.sessions.newChatCta': 'New Chat in {project}',

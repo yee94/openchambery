@@ -12,6 +12,7 @@ import { useAutoReviewStore } from '@/stores/useAutoReviewStore';
 import { usePermissionStore } from '@/stores/permissionStore';
 import { autoRespondsPermission } from '@/stores/utils/permissionAutoAccept';
 import { beginDraftEstablishingPaint, clearDraftEstablishingPaint, useSessionUIStore } from '@/sync/session-ui-store';
+import { ascendingId } from '@/sync/message-id';
 import { useSelectionStore } from '@/sync/selection-store';
 import { useInputStore } from '@/sync/input-store';
 import { newSessionDraftKey, sessionDraftKey, type DraftKey, type DraftMention } from '@/sync/input-draft-types';
@@ -449,7 +450,7 @@ const RevertedMessageDock: React.FC<RevertedMessageDockProps> = React.memo(({ se
     return (
         <div className={cn('w-full px-1', isMobile ? 'pb-1 text-xs' : 'pb-2')}>
             <div className={cn(
-                'border border-border/60 bg-[var(--surface-elevated)] text-[var(--surface-elevated-foreground)] shadow-sm overflow-hidden',
+                'border border-border/60 bg-[var(--surface-elevated)] text-[var(--surface-elevated-foreground)] shadow-sm dark:shadow-none overflow-hidden',
                 isMobile ? 'rounded-lg' : 'rounded-xl',
             )}>
                 <button
@@ -1346,7 +1347,7 @@ const ChatInputRuntime: React.FC<ChatInputProps> = ({ onOpenSettings, scrollToBo
             : false;
         return resolveChatInputCommandContext(surface, primaryHasMessages, newSessionDraftOpen);
     }, [surface, currentSessionId, currentSessionDirectoryForSync, newSessionDraftOpen]);
-    const sendMessage = (text: string, providerID: string, modelID: string, agent: string | undefined, attachments: readonly AttachedFile[], agentMention: string | undefined, parts: readonly { text: string; attachments?: readonly AttachedFile[]; synthetic?: boolean }[] | undefined, variant: string | undefined, inputMode: 'normal' | 'shell', options: { delivery?: string; commitStagedMessageEdit?: boolean }) => {
+    const sendMessage = (text: string, providerID: string, modelID: string, agent: string | undefined, attachments: readonly AttachedFile[], agentMention: string | undefined, parts: readonly { text: string; attachments?: readonly AttachedFile[]; synthetic?: boolean }[] | undefined, variant: string | undefined, inputMode: 'normal' | 'shell', options: { delivery?: string; commitStagedMessageEdit?: boolean; messageID?: string }) => {
         if (!controllerWiring) return Promise.reject(new Error('chat-input-surface-incomplete'));
         return controllerWiring.send({ providerID, modelID, agent, variant, text, attachments, agentMention, parts, systemContext: parts?.filter((part) => part.synthetic).map((part) => ({ text: part.text, synthetic: true })), inputMode, options });
     };
@@ -2541,9 +2542,13 @@ const ChatInputRuntime: React.FC<ChatInputProps> = ({ onOpenSettings, scrollToBo
         }
 
         // Pin first-submit session/directory so backend cannot re-route after a mid-flight switch.
+        const draftMessageID = !currentSessionId && newSessionDraftOpen && !queuedOnly && !resourcePolicy
+            ? ascendingId('msg')
+            : undefined;
         const sendMessageOptions = {
             ...(delivery ? { delivery } : {}),
             commitStagedMessageEdit: !queuedOnly,
+            ...(draftMessageID ? { messageID: draftMessageID } : {}),
             ...(primarySubmitSessionIdAtStart
                 ? {
                     sessionId: primarySubmitSessionIdAtStart,
@@ -2700,7 +2705,16 @@ const ChatInputRuntime: React.FC<ChatInputProps> = ({ onOpenSettings, scrollToBo
         // input while response-style / snippet prep (and later createWithPrompt)
         // still run — claimDraftSubmission is too late for that gap.
         if (!currentSessionId && newSessionDraftOpen && !queuedOnly && !resourcePolicy) {
-            const painted = await beginDraftEstablishingPaint();
+            const painted = await beginDraftEstablishingPaint({
+                messageID: draftMessageID!,
+                providerID: providerIdToSend,
+                modelID: modelIdToSend,
+                agent: agentNameToSend,
+                text: primaryText,
+                attachments: primaryAttachments,
+                additionalParts,
+                agentMentionName,
+            });
             if (!painted) {
                 return;
             }

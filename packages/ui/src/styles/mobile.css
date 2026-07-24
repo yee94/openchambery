@@ -86,8 +86,7 @@
 }
 
 /* In dark mode, elevation should recede into the page instead of casting a
-   pale halo. Keep all mobile materials on a black shadow scale, including
-   controls and the navigation back affordance. */
+   pale halo. Keep elevated mobile materials on a black shadow scale. */
 .dark .oc-mobile-floating-shell {
   --oc-mobile-shadow-far: rgb(0 0 0 / 0.24);
   --oc-mobile-shadow-near: rgb(0 0 0 / 0.14);
@@ -856,6 +855,14 @@ button.oc-mobile-group-label-trigger:focus-visible {
     inset 0 1px 0 var(--oc-mobile-float-highlight);
   -webkit-backdrop-filter: blur(16px) saturate(1.25);
   backdrop-filter: blur(16px) saturate(1.25);
+}
+
+.dark .oc-mobile-floating-action {
+  border: 1px solid
+    color-mix(in srgb, var(--surface-foreground) 6%, transparent);
+  background: color-mix(in srgb, var(--surface-elevated) 88%, transparent);
+  color: var(--surface-foreground);
+  box-shadow: none;
 }
 
 .oc-mobile-detail-editor-title {

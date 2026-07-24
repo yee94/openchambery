@@ -48,6 +48,7 @@ export const dict: Record<I18nKey, string> = {
   'mobile.tabs.scheduled': '予定',
   'mobile.tabs.settings': '設定',
   'mobile.menu.instances': 'インスタンス',
+  'mobile.settings.switchInstance': 'インスタンスを切り替え',
   'mobile.connect.welcome.title': 'OpenChamber に接続',
   'mobile.connect.welcome.description': 'サーバー URL を追加するか、ペアリング QR コードをスキャンしてモバイルアプリを使い始めましょう。',
   'mobile.connect.url.label': 'サーバー URL',

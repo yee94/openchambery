@@ -80,12 +80,13 @@ describe('primary delivery request helpers', () => {
     expect(primarySendOptionsFromDeliveryRequest({
       sessionID: 'ses_a',
       directory: '/project/a',
-      options: { delivery: 'steer', commitStagedMessageEdit: true },
+      options: { delivery: 'steer', commitStagedMessageEdit: true, messageID: 'msg_draft_first' },
     })).toEqual({
       sessionId: 'ses_a',
       directoryHint: '/project/a',
       delivery: 'steer',
       commitStagedMessageEdit: true,
+      messageID: 'msg_draft_first',
     });
   });
 
