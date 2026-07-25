@@ -35,6 +35,8 @@ describe('ReasoningTimelineBlock', () => {
     expect(markup).toContain('role="button"');
     expect(markup).toContain('aria-expanded="false"');
     expect(markup).toContain('aria-label="Expand reasoning trace"');
+    // Full-width reasoning rows stay on soft press, not the compact icon scale.
+    expect(markup).toContain('data-mobile-press-feedback="soft"');
 
     // Summary preview (beginning of text) is visible in the header
     expect(markup).toContain('First thought');

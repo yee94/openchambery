@@ -2677,6 +2677,7 @@ export const dict = {
   'mobile.connect.url.label': 'URL du serveur',
   'mobile.connect.url.placeholder': 'http://192.168.1.74:2606',
   'mobile.connect.link.divider': 'Ou utilisez un lien d\'appairage',
+  'mobile.connect.address.divider': 'Ou saisissez une adresse de serveur',
   'mobile.connect.link.label': 'Lien d\'appairage',
   'mobile.connect.link.placeholder': 'Collez le lien openchamber://connect',
   'mobile.connect.link.invalid': 'Ce lien d\'appairage n\'est pas valide ou a expiré.',

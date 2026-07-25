@@ -47,6 +47,7 @@ export const dict: Record<I18nKey, string> = {
   "mobile.connect.url.label": "URL del servidor",
   "mobile.connect.url.placeholder": "http://192.168.1.74:2606",
   "mobile.connect.link.divider": "O usa un enlace de emparejamiento",
+  "mobile.connect.address.divider": "O introduce la dirección del servidor",
   "mobile.connect.link.label": "Enlace de emparejamiento",
   "mobile.connect.link.placeholder": "Pega el enlace openchamber://connect",
   "mobile.connect.link.invalid": "Ese enlace de emparejamiento no es válido o ha caducado.",

@@ -18,6 +18,7 @@ import { cn } from '@/lib/utils';
 import { createWorktreeDraft, createWorktreeDraftForBranch } from '@/lib/worktreeSessionCreator';
 import { useGitStore, useIsGitRepo } from '@/stores/useGitStore';
 import { refreshGitBranchesQuery, useGitBranchesQuery, useGitRemotesQuery } from '@/queries/gitBranchQueries';
+import { isDirectoryBasenameLabel } from './draftSessionBranchLabel';
 
 export type DraftSessionBranchSelectorProps = {
   directory: string | null;
@@ -76,7 +77,14 @@ export const DraftSessionBranchSelector: React.FC<DraftSessionBranchSelectorProp
   }, [branches]);
 
   const currentBranch = branches?.current?.trim() || null;
-  const chipLabel = label || currentBranch || t('chat.chatInput.branch');
+  // Parent may still pass a directory basename while branches load (or after a
+  // missing-option fallback). Prefer the live git current branch over that.
+  const chipLabel = (
+    (!isDirectoryBasenameLabel(label, directory) && label)
+    || currentBranch
+    || label
+    || t('chat.chatInput.branch')
+  );
 
   const refreshGit = React.useCallback(async () => {
     if (!directory || !git) return;

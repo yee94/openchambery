@@ -137,3 +137,25 @@ export function clearSessionPrefetch(directory: string, sessionIDs: Iterable<str
     notify(id)
   }
 }
+
+/**
+ * Mark a session's prefetch entry as dirty after an authoritative live event.
+ * Keeps the entry (so we still remember pagination state) but forces the next
+ * TTL / completeness check to fail so the next fetchMessagesForSession /
+ * syncSession performs one bounded tail-page pull instead of reusing a stale
+ * snapshot. No-op when the session was never prefetched.
+ */
+export function markSessionPrefetchDirty(directory: string, sessionIDs: Iterable<string>, runtimeKey = getRuntimeKey()) {
+  for (const sessionID of sessionIDs) {
+    if (!sessionID) continue
+    const id = compositeKey(directory, sessionID, runtimeKey)
+    const current = cache.get(id)
+    if (!current) continue
+    cache.set(id, {
+      ...current,
+      complete: false,
+      at: 0,
+    })
+    notify(id)
+  }
+}

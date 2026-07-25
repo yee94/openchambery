@@ -1,6 +1,6 @@
 {
   "name": "@openchamber/ui",
-  "version": "1.16.61",
+  "version": "1.16.62",
   "private": true,
   "type": "module",
   "main": "src/main.tsx",
@@ -9,6 +9,7 @@
     "build": "tsc --noEmit",
     "type-check": "tsc --noEmit",
     "lint": "eslint \"./src/**/*.{ts,tsx}\" --config ../../eslint.config.js",
+    "test": "bun test --isolate",
     "test:session-operations": "bun scripts/test-session-operations.mjs"
   },
   "dependencies": {

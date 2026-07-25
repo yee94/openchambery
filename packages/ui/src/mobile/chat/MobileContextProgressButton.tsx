@@ -158,7 +158,6 @@ const MobileUsageLimits: React.FC<{
 const SessionMetadataOverlay: React.FC<{
   open: boolean;
   onClose: () => void;
-  anchorRef: React.RefObject<HTMLElement | null>;
   contextDisplay: MobileContextDisplay;
   branchLabel: string;
   usageGroups: MobileUsageProviderGroup[];
@@ -168,7 +167,6 @@ const SessionMetadataOverlay: React.FC<{
 }> = ({
   open,
   onClose,
-  anchorRef,
   contextDisplay,
   branchLabel,
   usageGroups,
@@ -295,7 +293,6 @@ export function MobileContextProgressButton({
 }: MobileContextProgressButtonProps) {
   const { t } = useI18n();
   const { git } = useRuntimeAPIs();
-  const triggerRef = React.useRef<HTMLButtonElement>(null);
   const [uncontrolledOpen, setUncontrolledOpen] = React.useState(false);
   const isControlled = openProp !== undefined;
   const open = isControlled ? openProp : uncontrolledOpen;
@@ -468,7 +465,7 @@ export function MobileContextProgressButton({
 
   return (
     <>
-      <span ref={triggerRef} className="inline-flex">
+      <span className="inline-flex">
         <Button
           type="button"
           variant="mobileGlass"
@@ -483,7 +480,6 @@ export function MobileContextProgressButton({
       <SessionMetadataOverlay
         open={open}
         onClose={handleClose}
-        anchorRef={triggerRef}
         contextDisplay={contextDisplay}
         branchLabel={branchLabel}
         usageGroups={usageGroups}

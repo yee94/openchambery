@@ -130,7 +130,7 @@ describe('session index background transport', () => {
 
   test('coalesces concurrent snapshot GETs then allows a later independent GET', async () => {
     let loads = 0;
-    globalThis.fetch = async (input) => {
+    globalThis.fetch = async () => {
       loads += 1;
       const body = { available: true, ...payload, revision: loads };
       return new Response(JSON.stringify(body), {

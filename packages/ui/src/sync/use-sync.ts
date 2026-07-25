@@ -33,7 +33,14 @@ import { getInitialSessionMessageLimit, getSessionHistoryMessageLimit } from "./
 const SKIP_PARTS = new Set(["patch", "step-start", "step-finish"])
 const MAX_SEEN_DIRS = 30
 const VSCODE_SESSION_CACHE_LIMIT = 4
-const MOBILE_SESSION_CACHE_LIMIT = 4
+// Mobile surfaces keep a slightly larger session cache than VS Code: with the
+// previous limit of 4, routine session switching on a phone evicted sessions
+// aggressively, and each eviction forced a full re-materialization tail-page
+// pull on the next visit. 12 keeps the recency window big enough to cover a
+// typical mobile session-switching session without measurably increasing
+// resident memory (messages/parts remain the dominant footprint and are
+// bounded per session by the tail page size).
+const MOBILE_SESSION_CACHE_LIMIT = 12
 const cmp = (a: string, b: string) => (a < b ? -1 : a > b ? 1 : 0)
 
 // Shared across useSync() instances so cache eviction is based on app-level

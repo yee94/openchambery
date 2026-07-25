@@ -13,7 +13,7 @@ export type MessageQueueSendConfig = {
   variant?: string;
 };
 export type MessageQueueDeliveryTarget = { kind: 'primary' } | { kind: 'assistant'; assistantID: string };
-export type MessageQueueDeliveryPart = { type: 'text'; text: string } | { type: 'file'; mime: string; attachmentID: string } | { type: 'file'; mime: string; url: string };
+export type MessageQueueDeliveryPart = { type: 'text'; text: string; synthetic?: boolean } | { type: 'file'; mime: string; attachmentID: string } | { type: 'file'; mime: string; url: string };
 export type MessageQueueSyntheticPart = { partID: string; text: string; synthetic?: boolean; attachmentIDs: string[]; deliveryPartIndexes: number[] };
 
 export type MessageQueueAttachment = {
@@ -196,8 +196,8 @@ const parseDeliveryParts = (value: unknown): MessageQueueDeliveryPart[] | null =
   let files = 0;
   for (const part of value) {
     if (!plainObject(part)) return null;
-    if (part.type === 'text' && Object.keys(part).length === 2 && typeof part.text === 'string') {
-      parts.push({ type: 'text', text: part.text });
+    if (part.type === 'text' && Object.keys(part).every((key) => key === 'type' || key === 'text' || key === 'synthetic') && typeof part.text === 'string' && (part.synthetic === undefined || typeof part.synthetic === 'boolean')) {
+      parts.push({ type: 'text', text: part.text, ...(part.synthetic === undefined ? {} : { synthetic: part.synthetic }) });
       continue;
     }
     if (part.type === 'file' && Object.keys(part).length === 3 && typeof part.mime === 'string' && typeof part.attachmentID === 'string' && part.attachmentID) {

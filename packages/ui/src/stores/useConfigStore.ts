@@ -95,8 +95,6 @@ const parseModelString = (modelString: string): { providerId: string; modelId: s
     return parseModelIdentifier(modelString);
 };
 
-const normalizeProviderId = (value: string) => value?.toLowerCase?.() ?? '';
-
 type ProviderModel = ConfigCatalogModel;
 type ProviderWithModelList = Omit<ConfigCatalogProvider, "models"> & { models: ProviderModel[] };
 
@@ -578,6 +576,7 @@ const PERSISTED_CONFIG_CATALOG_BYTE_BUDGET = 1_250_000;
 const PERSISTED_AGENT_MODEL_SELECTION_LIMIT = 100;
 const PERSISTED_SELECTION_STRING_LIMIT = 256;
 const PERSISTED_SELECTION_DANGEROUS_KEYS = new Set(["__proto__", "prototype", "constructor"]);
+// eslint-disable-next-line no-control-regex
 const PERSISTED_SELECTION_CONTROL_CHARACTERS = /[\u0000-\u001F\u007F]/u;
 const persistedCatalogTextEncoder = new TextEncoder();
 

@@ -90,7 +90,8 @@ import { mobileBackNavigationCoordinator, useMobileNavigationDriver } from '@/mo
 import { DedicatedMobileAppProvider, type MobileAppActions } from './mobileAppContext';
 import { autoConnectLastInstance, connectionDisplayUrl, getAutoConnectTargetLabel, isActiveRuntimeConnection, reprobeActiveConnection, useMobileConnection, type UseMobileConnection } from './mobileConnections';
 import { isRelayModeActive } from '@/lib/relay/runtime-tunnel';
-import { isQrScanSupported, parseConnectionPayload, scanConnectionQr } from './mobileQrScan';
+import { MobileConnectionMethodDivider, MobilePairingLinkForm } from './MobilePairingLinkForm';
+import { isQrScanSupported, scanConnectionQr } from './mobileQrScan';
 import { reconnectAppForTransportSwitch, resetAppForRuntimeEndpointChange } from './runtimeEndpointReset';
 import { useAppFontEffects } from './useAppFontEffects';
 import { useFontsReady } from './useFontsReady';
@@ -682,6 +683,9 @@ const getProjectDisplayLabel = (project: ProjectEntry | null, fallbackDirectory:
   return getProjectLabel(fallbackDirectory);
 };
 
+const WELCOME_MANUAL_INPUT_CLASS =
+  'h-12 w-full rounded-[16px] border border-border/70 bg-surface-elevated px-4 text-center text-[16px] text-foreground outline-none transition-colors placeholder:text-muted-foreground focus:border-primary focus:ring-2 focus:ring-primary/20';
+
 const MobileConnectionWelcome: React.FC<{ connection: UseMobileConnection }> = ({ connection }) => {
   const { t } = useI18n();
   const conn = connection;
@@ -689,7 +693,6 @@ const MobileConnectionWelcome: React.FC<{ connection: UseMobileConnection }> = (
   const [serverUrl, setServerUrl] = React.useState('');
   const [connectionName, setConnectionName] = React.useState('');
   const [clientToken, setClientToken] = React.useState('');
-  const [pairingLink, setPairingLink] = React.useState('');
   const [isScanning, setIsScanning] = React.useState(false);
   const qrScanSupported = React.useMemo(() => isQrScanSupported(), []);
   // QR pairing is the primary flow; the manual connection forms stay collapsed unless
@@ -704,14 +707,12 @@ const MobileConnectionWelcome: React.FC<{ connection: UseMobileConnection }> = (
     void conn.connect({ url: serverUrl, clientToken, label: connectionName });
   });
 
-  const handlePairingLinkSubmit = useEvent((event: React.FormEvent) => {
-    event.preventDefault();
-    const payload = parseConnectionPayload(pairingLink);
-    if (!payload || !('pairing' in payload)) {
-      conn.setError(t('mobile.connect.link.invalid'));
-      return;
-    }
-    void conn.redeemPairingConnection(payload.pairing);
+  const handlePairingLinkRedeem = useEvent((pairing: PairingConnectionPayload) => {
+    void conn.redeemPairingConnection(pairing);
+  });
+
+  const handlePairingLinkInvalid = useEvent(() => {
+    conn.setError(t('mobile.connect.link.invalid'));
   });
 
   const handleScanQr = useEvent(async () => {
@@ -888,7 +889,20 @@ const MobileConnectionWelcome: React.FC<{ connection: UseMobileConnection }> = (
                 style={{ gridTemplateRows: manualOpen ? '1fr' : '0fr' }}
               >
                 <div className="min-h-0 overflow-hidden">
-                  <form className="flex w-full flex-col gap-3 pt-3" onSubmit={handleSubmit}>
+                  {/* Pairing link first — fewer fields, less error-prone than typing a LAN URL. */}
+                  <div className="pt-3">
+                    <MobilePairingLinkForm
+                      disabled={isBusy || isScanning}
+                      isBusy={isBusy}
+                      tabIndex={manualOpen ? undefined : -1}
+                      inputClassName={WELCOME_MANUAL_INPUT_CLASS}
+                      buttonVariant={qrScanSupported ? 'outline' : 'default'}
+                      onRedeem={handlePairingLinkRedeem}
+                      onInvalid={handlePairingLinkInvalid}
+                    />
+                  </div>
+                  <MobileConnectionMethodDivider label={t('mobile.connect.address.divider')} />
+                  <form className="flex w-full flex-col gap-3" onSubmit={handleSubmit}>
                     <input
                       {...mobileInputKeyboardProps}
                       value={serverUrl}
@@ -899,7 +913,7 @@ const MobileConnectionWelcome: React.FC<{ connection: UseMobileConnection }> = (
                       inputMode="url"
                       autoCapitalize="none"
                       tabIndex={manualOpen ? undefined : -1}
-                      className="h-12 w-full rounded-[16px] border border-border/70 bg-surface-elevated px-4 text-center text-[16px] text-foreground outline-none transition-colors placeholder:text-muted-foreground focus:border-primary focus:ring-2 focus:ring-primary/20"
+                      className={WELCOME_MANUAL_INPUT_CLASS}
                     />
                     <input
                       value={connectionName}
@@ -911,7 +925,7 @@ const MobileConnectionWelcome: React.FC<{ connection: UseMobileConnection }> = (
                       autoCorrect="off"
                       spellCheck={false}
                       tabIndex={manualOpen ? undefined : -1}
-                      className="h-12 w-full rounded-[16px] border border-border/70 bg-surface-elevated px-4 text-center text-[16px] text-foreground outline-none transition-colors placeholder:text-muted-foreground focus:border-primary focus:ring-2 focus:ring-primary/20"
+                      className={WELCOME_MANUAL_INPUT_CLASS}
                     />
                     <input
                       {...mobileInputKeyboardProps}
@@ -921,31 +935,10 @@ const MobileConnectionWelcome: React.FC<{ connection: UseMobileConnection }> = (
                       aria-label={t('mobile.connect.token.label')}
                       tabIndex={manualOpen ? undefined : -1}
                       autoCapitalize="none"
-                      className="h-12 w-full rounded-[16px] border border-border/70 bg-surface-elevated px-4 text-center text-[16px] text-foreground outline-none transition-colors placeholder:text-muted-foreground focus:border-primary focus:ring-2 focus:ring-primary/20"
+                      className={WELCOME_MANUAL_INPUT_CLASS}
                     />
                     <p className="px-1 text-center typography-micro text-muted-foreground">{t('mobile.connect.token.hint')}</p>
-                    <Button type="submit" variant={qrScanSupported ? 'outline' : 'default'} size="lg" className="h-12 w-full" disabled={isBusy || isScanning || !serverUrl.trim()}>
-                      {isBusy ? t('mobile.connect.connecting') : t('mobile.connect.connectButton')}
-                    </Button>
-                  </form>
-                  <div className="flex items-center gap-3 py-3" aria-hidden="true">
-                    <span className="h-px flex-1 bg-border/70" />
-                    <span className="typography-micro text-muted-foreground">{t('mobile.connect.link.divider')}</span>
-                    <span className="h-px flex-1 bg-border/70" />
-                  </div>
-                  <form className="flex w-full flex-col gap-3" onSubmit={handlePairingLinkSubmit}>
-                    <input
-                      {...mobileInputKeyboardProps}
-                      value={pairingLink}
-                      onChange={(event) => setPairingLink(event.target.value)}
-                      placeholder={t('mobile.connect.link.placeholder')}
-                      aria-label={t('mobile.connect.link.label')}
-                      inputMode="url"
-                      autoCapitalize="none"
-                      tabIndex={manualOpen ? undefined : -1}
-                      className="h-12 w-full rounded-[16px] border border-border/70 bg-surface-elevated px-4 text-center text-[16px] text-foreground outline-none transition-colors placeholder:text-muted-foreground focus:border-primary focus:ring-2 focus:ring-primary/20"
-                    />
-                    <Button type="submit" variant="outline" size="lg" className="h-12 w-full" disabled={isBusy || isScanning || !pairingLink.trim()}>
+                    <Button type="submit" variant="outline" size="lg" className="h-12 w-full" disabled={isBusy || isScanning || !serverUrl.trim()}>
                       {isBusy ? t('mobile.connect.connecting') : t('mobile.connect.connectButton')}
                     </Button>
                   </form>
@@ -1013,6 +1006,15 @@ const MobileInstancesSurface: React.FC<{
     void saveConnection({ id: editingId ?? undefined, url, label, clientToken }).then((saved) => {
       if (saved) resetForm();
     });
+  });
+
+  const handlePairingLinkRedeem = useEvent((pairing: PairingConnectionPayload) => {
+    // Same path as the welcome screen: redeem and connect immediately.
+    void conn.redeemPairingConnection(pairing);
+  });
+
+  const handlePairingLinkInvalid = useEvent(() => {
+    setError(t('mobile.connect.link.invalid'));
   });
 
   // Scan a pairing QR into the add/edit form fields (does not change edit mode, so
@@ -1268,55 +1270,70 @@ const MobileInstancesSurface: React.FC<{
               {error ? <p className="px-1 text-center typography-small text-[var(--status-error)]">{error}</p> : null}
           </div>
         ) : (
-          <form className="oc-settings-group-row flex flex-col gap-3" onSubmit={saveInstance}>
+          <div className="oc-settings-group-row flex flex-col gap-3">
               <div className="flex min-h-8 items-center justify-end px-1">
                 <Button type="button" variant="ghost" size="xs" onClick={resetForm}>
                   {t('mobile.instances.cancelEdit')}
                 </Button>
               </div>
-              <label className="block space-y-1.5">
-                <span className="block px-1 typography-ui-label text-foreground">{t('mobile.connect.url.label')}</span>
-                <input
-                  {...mobileInputKeyboardProps}
-                  value={url}
-                  onChange={(event) => setUrl(event.target.value)}
-                  placeholder={t('mobile.connect.url.placeholder')}
-                  type="url"
-                  inputMode="url"
-                  autoCapitalize="none"
-                  className={inputClass}
-                />
-              </label>
-              <label className="block space-y-1.5">
-                <span className="block px-1 typography-ui-label text-foreground">{t('mobile.instances.label.label')}</span>
-                <input
-                  value={label}
-                  onChange={(event) => setLabel(event.target.value)}
-                  placeholder={t('mobile.instances.label.placeholder')}
-                  autoComplete="off"
-                  autoCapitalize="words"
-                  autoCorrect="off"
-                  spellCheck={false}
-                  className={inputClass}
-                />
-              </label>
-              <label className="block space-y-1.5">
-                <span className="block px-1 typography-ui-label text-foreground">{t('mobile.connect.token.label')}</span>
-                <input
-                  {...mobileInputKeyboardProps}
-                  value={clientToken}
-                  onChange={(event) => setClientToken(event.target.value)}
-                  placeholder={t('mobile.connect.token.placeholder')}
-                  autoCapitalize="none"
-                  className={inputClass}
-                />
-                <p className="px-1 typography-micro text-muted-foreground">{t('mobile.connect.token.hint')}</p>
-              </label>
+              <form className="flex flex-col gap-3" onSubmit={saveInstance}>
+                <label className="block space-y-1.5">
+                  <span className="block px-1 typography-ui-label text-foreground">{t('mobile.connect.url.label')}</span>
+                  <input
+                    {...mobileInputKeyboardProps}
+                    value={url}
+                    onChange={(event) => setUrl(event.target.value)}
+                    placeholder={t('mobile.connect.url.placeholder')}
+                    type="url"
+                    inputMode="url"
+                    autoCapitalize="none"
+                    className={inputClass}
+                  />
+                </label>
+                <label className="block space-y-1.5">
+                  <span className="block px-1 typography-ui-label text-foreground">{t('mobile.instances.label.label')}</span>
+                  <input
+                    value={label}
+                    onChange={(event) => setLabel(event.target.value)}
+                    placeholder={t('mobile.instances.label.placeholder')}
+                    autoComplete="off"
+                    autoCapitalize="words"
+                    autoCorrect="off"
+                    spellCheck={false}
+                    className={inputClass}
+                  />
+                </label>
+                <label className="block space-y-1.5">
+                  <span className="block px-1 typography-ui-label text-foreground">{t('mobile.connect.token.label')}</span>
+                  <input
+                    {...mobileInputKeyboardProps}
+                    value={clientToken}
+                    onChange={(event) => setClientToken(event.target.value)}
+                    placeholder={t('mobile.connect.token.placeholder')}
+                    autoCapitalize="none"
+                    className={inputClass}
+                  />
+                  <p className="px-1 typography-micro text-muted-foreground">{t('mobile.connect.token.hint')}</p>
+                </label>
+                <Button type="submit" size="lg" className="mt-1 h-12 w-full">
+                  {editingConnection ? t('mobile.instances.saveEdit') : t('mobile.instances.saveNew')}
+                </Button>
+              </form>
+              {/* Pairing link is available when adding (not while editing an existing row). */}
+              {!editingConnection ? (
+                <>
+                  <MobileConnectionMethodDivider label={t('mobile.connect.link.divider')} />
+                  <MobilePairingLinkForm
+                    disabled={isBusy || isScanning}
+                    isBusy={isBusy}
+                    inputClassName={inputClass}
+                    onRedeem={handlePairingLinkRedeem}
+                    onInvalid={handlePairingLinkInvalid}
+                  />
+                </>
+              ) : null}
               {error ? <p className="px-1 typography-small text-[var(--status-error)]">{error}</p> : null}
-              <Button type="submit" size="lg" className="mt-1 h-12 w-full">
-                {editingConnection ? t('mobile.instances.saveEdit') : t('mobile.instances.saveNew')}
-              </Button>
-          </form>
+          </div>
         )}
       </SettingsGroup>
     </div>

@@ -68,6 +68,8 @@ export function MobileTabBar({ activeTab, onTabChange, className }: MobileTabBar
             title={label}
             onClick={handleTabClick}
             onKeyDown={handleTabKeyDown}
+            // Dock glass fill is the press feedback; skip the shared scale system.
+            data-mobile-press-feedback="none"
             className={cn(
               // Equal flex slots + min-w-0 so long locale strings truncate, never overflow.
               'oc-mobile-tab-button min-w-0 flex-1 flex-col overflow-hidden',

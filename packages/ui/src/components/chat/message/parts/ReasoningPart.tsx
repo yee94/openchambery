@@ -322,6 +322,8 @@ export const ReasoningTimelineBlock: React.FC<ReasoningTimelineBlockProps> = ({
                 aria-expanded={isExpanded}
                 aria-controls={contentId}
                 aria-label={toggleAriaLabel}
+                // Full-width reasoning rows use soft press (default); never compact.
+                data-mobile-press-feedback="soft"
                 className={cn(
                     'group/tool flex gap-1.5 cursor-pointer items-center',
                     TOOL_ROW_INTERACTIVE_CHROME_CLASS,

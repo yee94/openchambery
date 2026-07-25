@@ -1,4 +1,5 @@
 import React from 'react';
+import { Icon } from '@/components/icon/Icon';
 import { useProviderLogo } from '@/hooks/useProviderLogo';
 import { cn } from '@/lib/utils';
 
@@ -8,6 +9,11 @@ interface ProviderLogoProps {
     className?: string;
     onError?: () => void;
 }
+
+/** Generic stack mark when a provider has no local logo asset. */
+const ProviderLogoFallback: React.FC<{ className?: string }> = ({ className }) => (
+    <Icon name="stack" className={cn('text-muted-foreground', className)} />
+);
 
 export const ProviderLogo: React.FC<ProviderLogoProps> = ({
     providerId,
@@ -23,7 +29,7 @@ export const ProviderLogo: React.FC<ProviderLogoProps> = ({
     }, [handleInternalError, externalOnError]);
 
     if (!hasLogo || !src) {
-        return null;
+        return <ProviderLogoFallback className={className} />;
     }
 
     return (

@@ -16,8 +16,12 @@ import { useSessionUIStore } from '@/sync/session-ui-store';
 
 const useIsomorphicLayoutEffect = typeof window !== 'undefined' ? React.useLayoutEffect : React.useEffect;
 
+export type MobileHapticStrength = 'light' | 'medium' | 'heavy';
+
 type OpenChamberHapticsPlugin = {
   impactLight: () => Promise<void>;
+  impactMedium: () => Promise<void>;
+  impactHeavy: () => Promise<void>;
 };
 
 const OpenChamberHaptics = registerPlugin<OpenChamberHapticsPlugin>('OpenChamberHaptics');
@@ -27,6 +31,21 @@ const isNativeHapticsAvailable = (): boolean => {
   nativeHapticsAvailable ??= Capacitor.isPluginAvailable('OpenChamberHaptics');
   return nativeHapticsAvailable;
 };
+
+/** Maps declared strength to the matching native plugin method. */
+export function resolveMobileHapticMethod(
+  strength: MobileHapticStrength,
+): keyof OpenChamberHapticsPlugin {
+  switch (strength) {
+    case 'medium':
+      return 'impactMedium';
+    case 'heavy':
+      return 'impactHeavy';
+    case 'light':
+    default:
+      return 'impactLight';
+  }
+}
 
 // ---------------------------------------------------------------------------
 // Pure logic – tested without Capacitor or React
@@ -135,8 +154,6 @@ export function evaluateSwipeThresholdHaptic(input: {
 
 let lastHapticAt = Number.NEGATIVE_INFINITY;
 
-type MobileHapticStrength = 'light' | 'medium';
-
 /** Fires one haptic while the Capacitor mobile app is visible and active. */
 export function triggerMobileHaptic(
   strength: MobileHapticStrength = 'light',
@@ -150,14 +167,14 @@ export function triggerMobileHaptic(
   if (!options?.bypassCadence && !shouldTriggerHaptic(lastHapticAt, now)) return false;
   lastHapticAt = now;
 
-  void strength;
-  void OpenChamberHaptics.impactLight().catch(() => undefined);
+  const method = resolveMobileHapticMethod(strength);
+  void OpenChamberHaptics[method]().catch(() => undefined);
   return true;
 }
 
 const MOBILE_PRESS_TARGET_SELECTOR = 'button, [role="button"]';
 
-/** Adds feedback when an enabled mobile control completes a tap. */
+/** Adds light feedback when an enabled mobile control completes a tap. */
 export function useMobilePressHaptics(): void {
   React.useEffect(() => {
     if (!isCapacitorMobileNative()) return;
@@ -167,7 +184,9 @@ export function useMobilePressHaptics(): void {
       const control = event.target.closest<HTMLElement>(MOBILE_PRESS_TARGET_SELECTOR);
       if (!control) return;
       if (control.matches(':disabled, [aria-disabled="true"], [data-mobile-press-feedback="none"]')) return;
-      triggerMobileHaptic('medium');
+      // Button taps stay on light; medium/heavy are reserved for threshold
+      // commits and deliberate stronger interactions.
+      triggerMobileHaptic('light');
     };
 
     document.addEventListener('click', handleClick, true);

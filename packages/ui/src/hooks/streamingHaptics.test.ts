@@ -4,6 +4,7 @@ import {
   evaluateSwipeThresholdHaptic,
   isCapacitorMobileNative,
   isCapacitorNativePlatform,
+  resolveMobileHapticMethod,
   shouldTriggerHaptic,
   type HapticsInput,
 } from './streamingHaptics';
@@ -53,6 +54,14 @@ describe('haptic cadence', () => {
   test('allows haptics every 20ms', () => {
     expect(shouldTriggerHaptic(100, 119)).toBe(false);
     expect(shouldTriggerHaptic(100, 120)).toBe(true);
+  });
+});
+
+describe('haptic strength mapping', () => {
+  test('maps light, medium, and heavy to distinct native methods', () => {
+    expect(resolveMobileHapticMethod('light')).toBe('impactLight');
+    expect(resolveMobileHapticMethod('medium')).toBe('impactMedium');
+    expect(resolveMobileHapticMethod('heavy')).toBe('impactHeavy');
   });
 });
 

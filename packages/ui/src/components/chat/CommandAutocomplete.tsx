@@ -80,6 +80,7 @@ export type CommandAutocompleteContext = {
  * tests can exercise the real surface→autocomplete boundary without an
  * isolated helper.
  */
+// eslint-disable-next-line react-refresh/only-export-components
 export const resolveCommandAutocompleteAvailability = (
   context: CommandAutocompleteContext,
   isMobile: boolean,

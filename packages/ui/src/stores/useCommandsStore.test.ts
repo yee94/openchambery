@@ -1,24 +1,13 @@
 import { beforeEach, describe, expect, mock, test } from 'bun:test';
 let activeProjectPath = '/workspace/project';
 let runtimeKey = 'runtime-a';
-let commandRequestDirectory: string | null = null;
-let listCalls = 0;
 type RawCommand = { name: string; source?: string; template?: string };
-let listImpl: () => Promise<RawCommand[]> = async () => [];
 let metadataCalls: Array<RequestInit | undefined> = [];
 let metadataImpl: (init?: RequestInit) => Promise<Response> = async () => new Response(JSON.stringify({ commands: {} }));
 
 mock.module('@/lib/opencode/client', () => ({
   opencodeClient: {
     getDirectory: () => '/fallback/project',
-    withDirectory: async (directory: string | null, callback: () => Promise<unknown>) => {
-      commandRequestDirectory = directory;
-      return callback();
-    },
-    listCommandsWithDetails: async () => {
-      listCalls += 1;
-      return listImpl();
-    },
   },
 }));
 mock.module('@/stores/useProjectsStore', () => ({
@@ -47,25 +36,21 @@ describe('useCommandsStore', () => {
     queryClient.clear();
     activeProjectPath = '/workspace/project';
     runtimeKey = 'runtime-a';
-    commandRequestDirectory = null;
-    listCalls = 0;
-    listImpl = async () => [];
     metadataCalls = [];
-    metadataImpl = async () => new Response(JSON.stringify({ commands: {} }));
+    metadataImpl = async () => new Response(JSON.stringify({ commands: [] }));
     useCommandsStore.setState({ selectedCommandName: null, commandDraft: null });
   });
 
   test('keeps only command UI state and loads through the query cache', async () => {
-    listImpl = async () => [...Array.from({ length: 80 }, (_, index) => ({ name: `command-${index}`, source: 'command' })), { name: 'skill', source: 'skill' }];
-    metadataImpl = async () => new Response(JSON.stringify({ commands: { 'command-0': { scope: 'project' } } }));
+    metadataImpl = async () => new Response(JSON.stringify({ commands: Array.from({ length: 80 }, (_, index) => ({ name: `command-${index}`, source: 'command', ...(index === 0 ? { scope: 'project' } : {}) })) }));
 
     const loaded = await useCommandsStore.getState().loadCommands();
 
     expect(loaded).toBe(true);
     expect(readCommandsSnapshot()).toHaveLength(80);
     expect(readCommandsSnapshot()[0]?.scope).toBe('project');
-    expect(commandRequestDirectory).toBe('/workspace/project');
     expect(metadataCalls).toHaveLength(1);
+    expect((metadataCalls[0]?.headers as Record<string, string>)['x-opencode-directory']).toBe('/workspace/project');
     expect(metadataCalls[0]?.signal).toBeInstanceOf(AbortSignal);
     expect(Object.hasOwn(useCommandsStore.getState(), 'commands')).toBe(false);
     expect(Object.hasOwn(useCommandsStore.getState(), 'isLoading')).toBe(false);
@@ -73,35 +58,37 @@ describe('useCommandsStore', () => {
 
   test('refreshes the captured query after a mutation', async () => {
     let template = 'first';
-    listImpl = async () => [{ name: 'deploy', source: 'command', template }];
+    metadataImpl = async (init) => init?.method === 'PATCH'
+      ? new Response(JSON.stringify({ requiresReload: false }))
+      : new Response(JSON.stringify({ commands: [{ name: 'deploy', source: 'command', template }] }));
     await refreshCommandsQuery(queryClient, activeProjectPath, runtimeKey);
     template = 'second';
     await refreshCommandsQuery(queryClient, activeProjectPath, runtimeKey);
     expect(readCommandsSnapshot()[0]?.template).toBe('second');
 
-    metadataImpl = async (init) => init?.method === 'PATCH'
-      ? new Response(JSON.stringify({ requiresReload: false }))
-      : new Response(JSON.stringify({ commands: {} }));
+    template = 'third';
     await useCommandsStore.getState().updateCommand('deploy', { template: 'third' });
-    expect(listCalls).toBe(3);
+    expect(readCommandsSnapshot()[0]?.template).toBe('third');
+    expect(metadataCalls).toHaveLength(4);
   });
 
   test('keeps a switched runtime query untouched after a mutation completes', async () => {
-    listImpl = async () => [{ name: 'deploy', source: 'command' }];
-    await refreshCommandsQuery(queryClient, activeProjectPath, runtimeKey);
-    const requestRuntime = runtimeKey;
+    let catalogCalls = 0;
     metadataImpl = async (init) => {
       if (init?.method === 'PATCH') {
         runtimeKey = 'runtime-b';
         return new Response(JSON.stringify({ requiresReload: false }));
       }
-      return new Response(JSON.stringify({ commands: {} }));
+      catalogCalls += 1;
+      return new Response(JSON.stringify({ commands: [{ name: 'deploy', source: 'command' }] }));
     };
+    await refreshCommandsQuery(queryClient, activeProjectPath, runtimeKey);
+    const requestRuntime = runtimeKey;
 
     await useCommandsStore.getState().updateCommand('deploy', { template: 'updated' });
 
     expect(runtimeKey).toBe('runtime-b');
-    expect(listCalls).toBe(1);
+    expect(catalogCalls).toBe(1);
     expect((queryClient.getQueryData(['runtime-a', 'commands', '/workspace/project']) as RawCommand[])[0]?.name).toBe('deploy');
     expect(commandQueryOptions('/workspace/project').queryKey).toEqual(['runtime-b', 'commands', '/workspace/project']);
     expect(requestRuntime).toBe('runtime-a');

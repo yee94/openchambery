@@ -21,6 +21,7 @@
             android:theme="@style/AppTheme.NoActionBarLaunch"
             android:launchMode="singleTask"
             android:windowSoftInputMode="adjustResize"
+            android:screenOrientation="portrait"
             android:exported="true">
             <intent-filter>
                 <action android:name="android.intent.action.MAIN" />
@@ -33,7 +34,7 @@
                 <data android:scheme="openchamber" />
             </intent-filter>
         </activity>
-        <activity android:name=".ShareReceiverActivity" android:exported="true" android:theme="@style/AppTheme.ShareReceiver">
+        <activity android:name=".ShareReceiverActivity" android:exported="true" android:theme="@style/AppTheme.ShareReceiver" android:screenOrientation="portrait">
             <meta-data android:name="android.app.shortcuts" android:resource="@xml/share_shortcuts" />
             <intent-filter>
                 <action android:name="android.intent.action.SEND" />

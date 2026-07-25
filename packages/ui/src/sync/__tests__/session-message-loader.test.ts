@@ -2,11 +2,10 @@ import { afterAll, afterEach, beforeEach, describe, expect, mock, test } from "b
 import type { Message, Part } from "@opencode-ai/sdk/v2/client"
 
 import {
-  beginSessionMessageLoad,
-  failSessionMessageLoad,
   getSessionPrefetch,
   setSessionPrefetch,
 } from "../session-prefetch-cache"
+import type { SessionMessageQueryPage } from "../session-message-loader"
 import type { SessionMessageReducerState } from "../session-message-reducer"
 
 // bun's mock.module is process-global and mutates the module record in place.
@@ -412,7 +411,7 @@ describe("loadSessionMessagePage — application orchestration", () => {
       sessionID,
       deps: {
         queryPage: () =>
-          new Promise((resolve) => {
+          new Promise<SessionMessageQueryPage>((resolve) => {
             release = () =>
               resolve({
                 records: [{ info: message("msg_1", "user"), parts: [part("prt_1", "msg_1")] }],

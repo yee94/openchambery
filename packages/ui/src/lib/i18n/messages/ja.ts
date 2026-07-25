@@ -54,6 +54,7 @@ export const dict: Record<I18nKey, string> = {
   'mobile.connect.url.label': 'サーバー URL',
   'mobile.connect.url.placeholder': 'http://192.168.1.74:2606',
   'mobile.connect.link.divider': 'またはペアリングリンクを使用',
+  'mobile.connect.address.divider': 'またはサーバーアドレスを入力',
   'mobile.connect.link.label': 'ペアリングリンク',
   'mobile.connect.link.placeholder': 'openchamber://connect リンクを貼り付け',
   'mobile.connect.link.invalid': 'このペアリングリンクは無効か、有効期限が切れています。',

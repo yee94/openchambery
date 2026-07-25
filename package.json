@@ -1,6 +1,6 @@
 {
   "name": "openchamber-monorepo",
-  "version": "1.16.61",
+  "version": "1.16.62",
   "description": "OpenChamber monorepo workspace for web, ui, and desktop runtimes",
   "private": true,
   "type": "module",
@@ -38,6 +38,8 @@
     "lint:ui": "bun run --cwd packages/ui lint",
     "lint:electron": "bun run --cwd packages/electron lint",
     "lint:mobile": "bun run --cwd packages/mobile lint",
+    "test": "bun test --isolate",
+    "test:ui": "bun run --cwd packages/ui test",
     "clean": "bun run --filter '*' clean",
     "changelog-card": "node scripts/changelog-card/generate.mjs",
     "postinstall": "node ./fix-deprecation.js && patch-package",

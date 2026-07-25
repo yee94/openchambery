@@ -47,6 +47,7 @@ export const dict: Record<I18nKey, string> = {
   'mobile.connect.url.label': 'Adres URL serwera',
   'mobile.connect.url.placeholder': 'http://192.168.1.74:2606',
   'mobile.connect.link.divider': 'Lub użyj linku parowania',
+  'mobile.connect.address.divider': 'Lub wprowadź adres serwera',
   'mobile.connect.link.label': 'Link parowania',
   'mobile.connect.link.placeholder': 'Wklej link openchamber://connect',
   'mobile.connect.link.invalid': 'Ten link parowania jest nieprawidłowy lub wygasł.',

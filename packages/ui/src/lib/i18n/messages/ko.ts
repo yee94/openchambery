@@ -46,6 +46,7 @@ export const dict: Record<I18nKey, string> = {
   'mobile.connect.url.label': '서버 URL',
   'mobile.connect.url.placeholder': 'http://192.168.1.74:2606',
   'mobile.connect.link.divider': '또는 페어링 링크 사용',
+  'mobile.connect.address.divider': '또는 서버 주소 입력',
   'mobile.connect.link.label': '페어링 링크',
   'mobile.connect.link.placeholder': 'openchamber://connect 링크 붙여넣기',
   'mobile.connect.link.invalid': '이 페어링 링크는 유효하지 않거나 만료되었습니다.',

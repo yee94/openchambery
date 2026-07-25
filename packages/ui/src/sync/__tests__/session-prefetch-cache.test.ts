@@ -4,6 +4,7 @@ import {
   beginSessionMessageLoad,
   failSessionMessageLoad,
   getSessionPrefetch,
+  markSessionPrefetchDirty,
   setSessionPrefetch,
   shouldSkipSessionPrefetch,
 } from "../session-prefetch-cache"
@@ -92,5 +93,93 @@ describe("shouldSkipSessionPrefetch", () => {
     beginSessionMessageLoad(directory, sessionID, 16)
 
     expect(getSessionPrefetch(directory, sessionID)?.limit).toBe(30)
+  })
+})
+
+describe("markSessionPrefetchDirty", () => {
+  test("pierces the complete cache so the next fetch is not skipped", () => {
+    const directory = "/dirty-complete"
+    const sessionID = "dirty-complete-session"
+    // A session that previously fetched to completion would be treated as
+    // authoritative forever by shouldSkipSessionPrefetch.
+    setSessionPrefetch({ directory, sessionID, limit: 30, complete: true })
+    expect(shouldSkipSessionPrefetch({
+      hasSession: true,
+      hasMessages: true,
+      info: getSessionPrefetch(directory, sessionID),
+      pageSize: 30,
+    })).toBe(true)
+
+    // An authoritative live event for that session must force one bounded
+    // refetch on the next switch, otherwise a stale transcript survives.
+    markSessionPrefetchDirty(directory, [sessionID])
+
+    const info = getSessionPrefetch(directory, sessionID)
+    expect(info?.complete).toBe(false)
+    expect(shouldSkipSessionPrefetch({
+      hasSession: true,
+      hasMessages: true,
+      info,
+      pageSize: 30,
+    })).toBe(false)
+  })
+
+  test("pierces the TTL cache so an in-window entry no longer skips", () => {
+    const directory = "/dirty-ttl"
+    const sessionID = "dirty-ttl-session"
+    const now = Date.now()
+    setSessionPrefetch({ directory, sessionID, limit: 30, complete: false, at: now })
+    expect(shouldSkipSessionPrefetch({
+      hasSession: true,
+      hasMessages: true,
+      info: getSessionPrefetch(directory, sessionID),
+      pageSize: 30,
+      now: now + 1,
+    })).toBe(true)
+
+    markSessionPrefetchDirty(directory, [sessionID])
+
+    expect(shouldSkipSessionPrefetch({
+      hasSession: true,
+      hasMessages: true,
+      info: getSessionPrefetch(directory, sessionID),
+      pageSize: 30,
+      now: now + 1,
+    })).toBe(false)
+  })
+
+  test("preserves pagination cursor and limit when marking dirty", () => {
+    const directory = "/dirty-preserve"
+    const sessionID = "dirty-preserve-session"
+    setSessionPrefetch({ directory, sessionID, limit: 30, cursor: "cursor-abc", complete: false })
+
+    markSessionPrefetchDirty(directory, [sessionID])
+
+    const info = getSessionPrefetch(directory, sessionID)
+    expect(info?.limit).toBe(30)
+    expect(info?.cursor).toBe("cursor-abc")
+    expect(info?.status).toBe("ready")
+  })
+
+  test("is a no-op for sessions with no prefetch entry", () => {
+    const directory = "/dirty-missing"
+    const sessionID = "dirty-missing-session"
+
+    // Should not throw and should not create an entry.
+    markSessionPrefetchDirty(directory, [sessionID])
+
+    expect(getSessionPrefetch(directory, sessionID)).toBe(undefined)
+  })
+
+  test("scopes dirty marks by runtime key", () => {
+    const directory = "/dirty-runtime"
+    const sessionID = "dirty-runtime-session"
+    setSessionPrefetch({ directory, sessionID, runtimeKey: "runtime-a", limit: 30, complete: true })
+    setSessionPrefetch({ directory, sessionID, runtimeKey: "runtime-b", limit: 30, complete: true })
+
+    markSessionPrefetchDirty(directory, [sessionID], "runtime-a")
+
+    expect(getSessionPrefetch(directory, sessionID, "runtime-a")?.complete).toBe(false)
+    expect(getSessionPrefetch(directory, sessionID, "runtime-b")?.complete).toBe(true)
   })
 })

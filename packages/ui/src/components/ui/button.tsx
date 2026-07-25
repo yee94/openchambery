@@ -91,6 +91,9 @@ const buttonVariants = cva(
   }
 )
 
+/** Icon-sized buttons may use the punchy compact press scale on mobile. */
+const COMPACT_PRESS_SIZES = new Set(["icon", "mobileIcon", "xs"])
+
 function Button({
   className,
   variant,
@@ -106,10 +109,17 @@ function Button({
   const typeProps = asChild
     ? (type === undefined ? {} : { type })
     : { type: type ?? "button" }
+  // Only particularly small controls opt into the punchy compact press scale.
+  // Callers may still override via an explicit data-mobile-press-feedback prop.
+  const compactPress =
+    size != null && COMPACT_PRESS_SIZES.has(size)
+      ? ("compact" as const)
+      : undefined
 
   return (
     <Comp
       data-slot="button"
+      data-mobile-press-feedback={compactPress}
       className={cn(buttonVariants({ variant, size, className }))}
       {...typeProps}
       {...props}

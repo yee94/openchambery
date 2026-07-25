@@ -179,7 +179,7 @@ mock.module("@/lib/opencode/client", () => ({
 const configStoreState = {
   isConnected: true,
   hasEverConnected: true,
-  probeConnection: async (_options?: { timeoutMs?: number }) => configStoreState.isConnected,
+  probeConnection: async () => configStoreState.isConnected,
 }
 mock.module("@/stores/useConfigStore", () => ({
   useConfigStore: {

@@ -4,6 +4,15 @@ All notable changes to this project will be documented in this file.
 
 ## [Unreleased]
 
+## [1.16.62] - 2026-07-25
+
+- **Mobile connections:** make pairing links a first-class connection method on both welcome and instance-management surfaces, with clearer separation from manual server addresses.
+- **Mobile feedback:** add light, medium, and heavy native haptics, refine press scaling for compact controls and full-width rows, and tighten queued-message touch controls.
+- **Mobile layout:** lock the Android and iOS apps to portrait orientation for a consistent phone-first experience.
+- **Session freshness:** invalidate completed message-prefetch snapshots when authoritative live events arrive and retain a larger mobile session cache to keep revisited conversations current and responsive.
+- **Draft branches:** resolve new-session branch chips from live Git and worktree state so they show the real branch name during cold starts.
+- **Provider UI:** add a generic fallback mark for providers without local logos and compact provider rows for faster scanning.
+
 ## [1.16.61] - 2026-07-25
 
 - **Mobile share targets:** add an Android share recipient picker so Share Sheet handoffs can choose an Assistant destination before opening the app.

@@ -123,7 +123,6 @@ export const waitForSessionIndexInvalidation = (
     ? options.safetyTimeoutMs
     : SESSION_INDEX_SAFETY_TIMEOUT_MS;
   let debounceTimer: ReturnType<typeof setTimeout> | undefined;
-  let safetyTimer: ReturnType<typeof setTimeout> | undefined;
   let pendingReason: 'tip' | 'ready' | undefined;
   const finish = (reason: 'tip' | 'ready' | 'aborted' | 'timeout') => {
     if (debounceTimer !== undefined) clearTimeout(debounceTimer);
@@ -141,6 +140,7 @@ export const waitForSessionIndexInvalidation = (
     }, SESSION_INDEX_TIP_DEBOUNCE_MS);
   };
   const onAbort = () => finish('aborted');
+  const safetyTimer = setTimeout(() => finish('timeout'), safetyTimeoutMs);
   const unsubscribe = subscribeOpenchamberEvents((event) => {
     if (event.type === 'event-stream-ready') {
       // Reconnect repair: coalesce with any in-flight tip burst, otherwise wait
@@ -154,7 +154,6 @@ export const waitForSessionIndexInvalidation = (
     }
   });
   signal.addEventListener('abort', onAbort, { once: true });
-  safetyTimer = setTimeout(() => finish('timeout'), safetyTimeoutMs);
 });
 
 export const persistSessionIndexDirectory = async (input: {

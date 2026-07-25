@@ -16,10 +16,11 @@ The mobile package reuses the web build, then rewrites `mobile.html` to `index.h
 
 ## Native Haptics Hot Path
 
-- The `OpenChamberHaptics.impactLight` Capacitor 8 plugin provides a fire-and-forget light impact for mobile interaction feedback.
-- iOS registers the plugin from `OpenChamberBridgeViewController`, reuses one main-thread `UIImpactFeedbackGenerator(.light)`, prepares it on creation, and prepares it after every impact.
-- Android registers the plugin before `BridgeActivity.onCreate`, then runs `WebView.performHapticFeedback(HapticFeedbackConstants.KEYBOARD_TAP)` on the UI thread.
-- Both native methods declare a `none` return type and leave the callback unresolved to keep this input-feedback path free of promise completion work.
+- The `OpenChamberHaptics` Capacitor 8 plugin provides fire-and-forget impact feedback at three strengths: `impactLight`, `impactMedium`, and `impactHeavy`.
+- Shared UI maps `triggerMobileHaptic('light' | 'medium' | 'heavy')` to the matching native method. Button taps use light; swipe threshold commits use medium.
+- iOS registers the plugin from `OpenChamberBridgeViewController` and reuses one main-thread `UIImpactFeedbackGenerator` per style (`.light` / `.medium` / `.heavy`), preparing on creation and after every impact.
+- Android registers the plugin before `BridgeActivity.onCreate`, then runs `WebView.performHapticFeedback` on the UI thread: `CLOCK_TICK` (light), `KEYBOARD_TAP` (medium), and `CONFIRM` / `LONG_PRESS` fallback (heavy).
+- All native methods declare a `none` return type and leave the callback unresolved to keep this input-feedback path free of promise completion work.
 
 ## Native Back Navigation
 

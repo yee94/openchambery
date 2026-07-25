@@ -193,17 +193,18 @@ const ProviderListItem: React.FC<{
     <div
       key={provider.id}
       className={cn(
-        'oc-settings-group-row group relative flex items-center transition-colors duration-150',
+        // Compact single-line entity row: tighter than the default form-row geometry.
+        'oc-settings-group-row group relative flex items-center transition-colors duration-150 !min-h-0 py-2',
         isSelected ? 'bg-interactive-selection' : 'hover:bg-interactive-hover'
       )}
     >
       <button
         type="button"
         onClick={onSelect}
-        className="flex min-w-0 flex-1 items-center gap-2 rounded-sm text-left focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-primary/50"
+        className="flex min-w-0 flex-1 items-center gap-1.5 rounded-sm text-left focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-primary/50"
         tabIndex={0}
       >
-        <ProviderLogo providerId={provider.id} className="h-4 w-4 flex-shrink-0" />
+        <ProviderLogo providerId={provider.id} className="h-3.5 w-3.5 flex-shrink-0" />
         <span className="typography-ui-label font-normal truncate flex-1 min-w-0 text-foreground">
           {provider.name || provider.id}
         </span>

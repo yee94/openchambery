@@ -37,6 +37,7 @@ interface FakeNode {
   ownerDocument: FakeDocument;
   parentNode: FakeNode | null;
   childNodes: FakeNode[];
+  dataset: Record<string, string>;
   style: Record<string, unknown>;
   classList: FakeClassList;
   [key: string]: unknown;
@@ -95,6 +96,7 @@ function makeNode(tag: string, owner: FakeDocument): FakeNode {
     ownerDocument: owner,
     parentNode: null,
     childNodes: [],
+    dataset: {},
     style,
     classList: new FakeClassList(),
     setAttribute() { /* noop */ },
@@ -135,6 +137,7 @@ function installDomStub(): { document: FakeDocument; restore: () => void } {
     tagName: "#document",
     parentNode: null,
     childNodes: [],
+    dataset: {},
     style: {},
     classList: new FakeClassList(),
     setAttribute() { /* noop */ },

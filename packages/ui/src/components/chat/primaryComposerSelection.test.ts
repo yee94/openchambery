@@ -230,7 +230,13 @@ describe('applyPrimaryComposerSessionRestore', () => {
   test('writes session memory but never project agent preferences', () => {
     const { calls, config } = createConfig('build');
     const memoryCalls: string[] = [];
-    const { saveAgentModelSelection: _ignored, ...restoreConfig } = config;
+    const restoreConfig = {
+      currentAgentName: config.currentAgentName,
+      setAgent: config.setAgent,
+      setProvider: config.setProvider,
+      setModel: config.setModel,
+      setCurrentVariant: config.setCurrentVariant,
+    };
 
     applyPrimaryComposerSessionRestore(
       {
@@ -278,7 +284,13 @@ describe('applyPrimaryComposerSessionRestore', () => {
 
   test('clears previous variant when restore has no variant', () => {
     const { calls, config } = createConfig('build');
-    const { saveAgentModelSelection: _ignored, ...restoreConfig } = config;
+    const restoreConfig = {
+      currentAgentName: config.currentAgentName,
+      setAgent: config.setAgent,
+      setProvider: config.setProvider,
+      setModel: config.setModel,
+      setCurrentVariant: config.setCurrentVariant,
+    };
     const memoryCalls: string[] = [];
 
     applyPrimaryComposerSessionRestore(

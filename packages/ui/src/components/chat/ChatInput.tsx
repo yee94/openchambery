@@ -82,7 +82,7 @@ import { matchesModelSearch } from '@/lib/search/modelSearch';
 import { opencodeClient } from '@/lib/opencode/client';
 import { useProjectsStore } from '@/stores/useProjectsStore';
 import { PROJECT_COLOR_MAP, PROJECT_ICON_MAP, ProjectIconImage } from '@/lib/projectMeta';
-import { useGitBranches, useGitStore, useIsGitRepo } from '@/stores/useGitStore';
+import { useGitBranchLabel, useGitBranches, useGitStore, useIsGitRepo } from '@/stores/useGitStore';
 import { useDirectoryStore } from '@/stores/useDirectoryStore';
 import { queryClient } from '@/lib/queryRuntime';
 import { readInstalledSkillsSnapshot, useInstalledSkillsQuery } from '@/queries/installedSkillsQueries';
@@ -91,6 +91,7 @@ import { useRuntimeAPIs } from '@/hooks/useRuntimeAPIs';
 import { useEffectiveDirectory } from '@/hooks/useEffectiveDirectory';
 import { buildSessionTargetOptions } from '@/sync/session-worktree-contract';
 import { DraftSessionBranchSelector } from './DraftSessionBranchSelector';
+import { resolveDraftSessionBranchLabel } from './draftSessionBranchLabel';
 import { extractGitChangedFiles } from './changedFiles';
 import { useI18n } from '@/lib/i18n';
 import { sessionEvents } from '@/lib/sessionEvents';
@@ -4962,7 +4963,14 @@ const ChatInputRuntime: React.FC<ChatInputProps> = ({ onOpenSettings, scrollToBo
         };
     }, [fetchBranches, runtimeGit, selectedDraftProject, selectedDraftProjectBranchesFetchedAt, hasDraftBranchList, selectedDraftProjectIsGitRepo, selectedDraftProjectPath, showDraftTargetSelectors]);
 
-    const selectedDraftProjectCurrentBranch = selectedDraftProjectBranches?.current?.trim() ?? '';
+    // Prefer the branches Query current, then fall back to status.current from
+    // fetchGitStatus (often available sooner on mobile cold start).
+    const selectedDraftProjectStatusBranch = useGitBranchLabel(selectedDraftProjectPath);
+    const selectedDraftProjectCurrentBranch = (
+        selectedDraftProjectBranches?.current?.trim()
+        || selectedDraftProjectStatusBranch?.trim()
+        || ''
+    );
 
     const projectRootBranchOption = React.useMemo(() => {
         if (!selectedDraftProject) {
@@ -5042,13 +5050,17 @@ const ChatInputRuntime: React.FC<ChatInputProps> = ({ onOpenSettings, scrollToBo
         ];
     }, [projectRootBranchOption, selectedDraftDirectory, shouldKeepMissingSelectedDraftDirectory, worktreeBranchOptions]);
 
-    const selectedDraftBranchLabel = React.useMemo(() => {
-        const selectedValue = selectedDraftDirectory ?? draftBranchItems[0]?.value ?? null;
-        if (!selectedValue) {
-            return null;
-        }
-        return draftBranchItems.find((item) => item.value === selectedValue)?.label ?? formatDirectoryName(selectedValue);
-    }, [draftBranchItems, selectedDraftDirectory]);
+    // Chip label must be a real branch/worktree name — never a directory basename.
+    // formatDirectoryName fallback previously painted "openchamber-yee" on the
+    // branch chip and blocked DraftSessionBranchSelector's live currentBranch.
+    const selectedDraftBranchLabel = React.useMemo(
+        () => resolveDraftSessionBranchLabel({
+            selectedDirectory: selectedDraftDirectory,
+            projectRootOption: projectRootBranchOption,
+            worktreeOptions: worktreeBranchOptions,
+        }),
+        [projectRootBranchOption, selectedDraftDirectory, worktreeBranchOptions],
+    );
 
     const chatSurfaceMode = useChatSurfaceMode();
     const isMiniChatSurface = chatSurfaceMode === 'mini-chat';
@@ -5624,6 +5636,7 @@ const ChatInputRuntime: React.FC<ChatInputProps> = ({ onOpenSettings, scrollToBo
                 onOpenModel={() => handleOpenMobilePanel('model')}
                 providerID={surface.selection.value.providerID}
                 modelID={surface.selection.value.modelID}
+                provider={providers.find((p) => p.id === surface.selection.value.providerID)}
                 variant={surface.selection.value.variant}
             />
         </div>

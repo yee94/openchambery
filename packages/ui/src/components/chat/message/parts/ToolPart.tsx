@@ -2549,6 +2549,8 @@ const ToolPartContent: React.FC<ToolPartProps> = ({
                 isTaskTool && 'hover:!bg-[color-mix(in_srgb,var(--surface-foreground)_6%,transparent)]',
                 isMultiFileApplyPatch ? 'flex-wrap items-start' : 'items-center'
             )}
+                // Full-width tool / subagent rows use soft press (default); never compact.
+                data-mobile-press-feedback="soft"
                 onClick={handleMainClick}
                 onKeyDown={handleMainKeyDown}
                 role="button"

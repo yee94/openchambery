@@ -536,12 +536,12 @@ describe('useConfigStore provider persistence', () => {
 
     // Agent catalogs remain memory-only while the active safe Provider catalog persists.
     useConfigStore.setState({
-      providers: [{ ...provider('live'), key: sentinel }],
+      providers: [{ ...provider('live'), key: sentinel } as never],
       agents: [{ name: 'build', mode: 'primary', prompt: sentinel, permission: { secret: sentinel } } as never],
       defaultProviders: { default: 'live' },
       directoryScoped: {
         [DIRECTORY]: {
-          providers: [{ ...provider('live'), headers: { authorization: sentinel } }],
+          providers: [{ ...provider('live'), headers: { authorization: sentinel } } as never],
           agents: [{ name: 'build', mode: 'primary', prompt: sentinel, permission: { secret: sentinel } } as never],
           currentProviderId: 'live',
           currentModelId: 'live-model',
@@ -553,7 +553,7 @@ describe('useConfigStore provider persistence', () => {
       },
     });
     const partial = useConfigStore.persist.getOptions().partialize?.(useConfigStore.getState()) as Record<string, unknown>;
-    expect(partial).not.toHaveProperty('agents');
+    expect(Object.prototype.hasOwnProperty.call(partial, 'agents')).toBe(false);
     expect((partial.directoryScoped as Record<string, { providers: unknown[]; agents: unknown[]; defaultProviders: Record<string, string> }>)[DIRECTORY].providers).toHaveLength(1);
     expect((partial.directoryScoped as Record<string, { providers: unknown[]; agents: unknown[]; defaultProviders: Record<string, string> }>)[DIRECTORY].agents).toEqual([]);
     expect((partial.directoryScoped as Record<string, { providers: unknown[]; agents: unknown[]; defaultProviders: Record<string, string> }>)[DIRECTORY].defaultProviders).toEqual({ default: 'live' });

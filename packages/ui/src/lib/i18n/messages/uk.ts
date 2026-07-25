@@ -47,6 +47,7 @@ export const dict: Record<I18nKey, string> = {
   "mobile.connect.url.label": "Адреса сервера",
   "mobile.connect.url.placeholder": "http://192.168.1.74:2606",
   "mobile.connect.link.divider": "Або скористайтеся посиланням для сполучення",
+  "mobile.connect.address.divider": "Або введіть адресу сервера",
   "mobile.connect.link.label": "Посилання для сполучення",
   "mobile.connect.link.placeholder": "Вставте посилання openchamber://connect",
   "mobile.connect.link.invalid": "Це посилання для сполучення недійсне або прострочене.",

@@ -53,7 +53,7 @@ import { getPermissionToastKey, showPermissionNeededToast } from "./permission-t
 import { getRuntimeLiveStatusSeed, LIVE_STATUS_TTL_MS } from "./runtime-live-memory"
 import { getRuntimeKey } from "@/lib/runtime-switch"
 import { getRegisteredRuntimeAPIs } from "@/contexts/runtimeAPIRegistry"
-import { getSessionPrefetch, subscribeSessionPrefetch, type SessionPrefetchMeta } from "./session-prefetch-cache"
+import { getSessionPrefetch, markSessionPrefetchDirty, subscribeSessionPrefetch, type SessionPrefetchMeta } from "./session-prefetch-cache"
 import { useGlobalSessionsStore } from "@/stores/useGlobalSessionsStore"
 import { areRequestArraysReferentiallyEqual, collectScopedBlockingRequests } from "./scoped-blocking-requests"
 import { EMPTY_USER_MESSAGE_HISTORY_SNAPSHOT, buildUserMessageHistorySnapshot, type UserMessageHistorySnapshot } from "./user-message-history"
@@ -1650,6 +1650,17 @@ function handleEvent(
   }
 
   childStores.mark(resolvedDirectory)
+
+  // Authoritative live activity for a session must pierce the message prefetch
+  // TTL/complete cache. Otherwise a session that was fetched to completion once
+  // would never refetch its tail after background events (e.g. a mobile suspend
+  // gap), leaving a stale transcript on the next switch. Marking dirty keeps
+  // pagination state but fails the next TTL/complete check so the following
+  // fetchMessagesForSession performs one bounded tail-page pull.
+  const prefetchDirtySessionID = resolveStrictDomainSessionID(payload, routingIndex.messageSessionById)
+  if (prefetchDirtySessionID && isSnapshotRevisionEvent(payload)) {
+    markSessionPrefetchDirty(resolvedDirectory, [prefetchDirtySessionID])
+  }
 
   if (payload.type === "permission.asked") {
     const permission = payload.properties as PermissionRequest

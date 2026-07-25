@@ -123,11 +123,12 @@ const QueuedMessageChip = memo(({ message, server, frozen, hasDispatchLock, pend
             aria-busy={removePending || undefined}
             className={cn(
                 'inline-flex shrink-0 items-center justify-center bg-transparent text-muted-foreground transition-colors hover:text-foreground disabled:pointer-events-none disabled:opacity-50',
-                isMobile ? 'size-[1.625rem]' : 'size-7',
+                // Mobile: match the drag handle width so the left cluster stays compact.
+                isMobile ? 'h-[1.625rem] w-3.5 min-h-[1.625rem] min-w-3.5' : 'size-7',
             )}
             aria-label={t('chat.queuedMessage.removeAria')}
         >
-            <Icon name={removePending ? 'loader-4' : 'delete-bin'} className={cn('size-3.5', removePending && 'animate-spin')} aria-hidden="true" />
+            <Icon name={removePending ? 'loader-4' : 'delete-bin'} className={cn(isMobile ? 'size-3' : 'size-3.5', removePending && 'animate-spin')} aria-hidden="true" />
         </button>
     );
 
@@ -139,7 +140,8 @@ const QueuedMessageChip = memo(({ message, server, frozen, hasDispatchLock, pend
             className={cn(
                 'flex min-w-0 items-center',
                 isMobile
-                    ? 'gap-0 py-0'
+                    // Tight left controls; keep a hairline gap so icons don't touch.
+                    ? 'gap-0.5 py-0'
                     : 'flex gap-1.5 md:gap-2',
                 isDragging && 'z-10 opacity-60',
             )}
@@ -152,7 +154,7 @@ const QueuedMessageChip = memo(({ message, server, frozen, hasDispatchLock, pend
                 aria-busy={reorderPending || undefined}
                 className={cn(
                     'flex flex-shrink-0 touch-none select-none items-center justify-center text-muted-foreground',
-                    isMobile ? '!h-[1.625rem] !w-3.5 !min-h-[1.625rem] !min-w-3.5' : 'size-auto',
+                    isMobile ? 'h-[1.625rem] w-3.5 min-h-[1.625rem] min-w-3.5' : 'size-auto',
                     'transition-colors',
                     isDragDisabled ? 'cursor-default opacity-50' : 'cursor-grab hover:text-foreground active:cursor-grabbing',
                 )}
@@ -230,6 +232,7 @@ interface QueuedMessageChipsProps {
 const EMPTY_QUEUE: QueueItem[] = [];
 const EMPTY_PENDING_OPERATION_KINDS: ReadonlySet<ServerQueueOperationKind> = new Set();
 
+// eslint-disable-next-line react-refresh/only-export-components
 export const selectQueuedMessagesForScope = (
     state: Pick<ReturnType<typeof useMessageQueueStore.getState>, 'queuedMessages'>,
     scope: BoundQueueScope | null,
@@ -240,6 +243,7 @@ export const selectQueuedMessagesForScope = (
     return mergeQueuedMessageScopes(legacyMessages, boundMessages);
 };
 
+// eslint-disable-next-line react-refresh/only-export-components
 export const queuedMessageItemScope = (message: QueuedMessage, scope: BoundQueueScope): QueueScope | null => {
     const owner = message.owner;
     if (!owner) return null;

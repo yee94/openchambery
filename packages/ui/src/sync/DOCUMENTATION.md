@@ -353,6 +353,17 @@ Rules that keep this single-sourced:
   identity plus materialized messages only into that target store. Message TTL
   readiness and session identity remain independent: a ready message page with
   missing identity still performs the exact identity read.
+- Live `session.*` / `message.*` events are authoritative change signals for
+  the session message prefetch cache. `handleEvent` calls
+  `markSessionPrefetchDirty(directory, [sessionID])` for any snapshot-revision
+  event before the reducer runs, which flips `complete → false` and `at → 0`
+  while preserving pagination cursor/limit. The next `fetchMessagesForSession`
+  or `syncSession` then fails the TTL/complete short-circuit and performs one
+  bounded tail-page pull. Without this, a session fetched to completion once
+  would reuse its stale transcript forever after a mobile suspend gap, because
+  `shouldSkipSessionPrefetch` treats `complete: true` as a permanent skip.
+  Events missed during the suspend itself (no SSE delivery at all) are out of
+  scope here; they are covered by the reconnect viewed-session recovery path.
 - The client stall timer starts before SSE response headers arrive. Transport
   activity includes SSE comments and heartbeats, iterator events, and every
   WebSocket message frame. A transport stale watchdog reconnects after this

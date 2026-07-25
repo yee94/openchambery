@@ -150,6 +150,16 @@ const reactJsxRuntime = {
 let desktopShell = false;
 let runtimeFetchRejects = true;
 
+Object.assign(globalThis, {
+  window: {
+    setTimeout: (callback: () => void) => {
+      callback();
+      return 1;
+    },
+    clearTimeout: () => undefined,
+  },
+});
+
 mock.module('react/jsx-runtime', () => reactJsxRuntime);
 mock.module('react/jsx-dev-runtime', () => reactJsxRuntime);
 

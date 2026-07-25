@@ -46,6 +46,7 @@ export const dict: Record<I18nKey, string> = {
   'mobile.connect.url.label': '伺服器網址',
   'mobile.connect.url.placeholder': 'http://192.168.1.74:2606',
   'mobile.connect.link.divider': '或使用配對連結',
+  'mobile.connect.address.divider': '或輸入伺服器位址',
   'mobile.connect.link.label': '配對連結',
   'mobile.connect.link.placeholder': '貼上 openchamber://connect 連結',
   'mobile.connect.link.invalid': '該配對連結無效或已過期。',

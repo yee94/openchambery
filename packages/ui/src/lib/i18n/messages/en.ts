@@ -45,6 +45,7 @@ export const dict = {
   'mobile.connect.url.label': 'Server URL',
   'mobile.connect.url.placeholder': 'http://192.168.1.74:2606',
   'mobile.connect.link.divider': 'Or use a pairing link',
+  'mobile.connect.address.divider': 'Or enter a server address',
   'mobile.connect.link.label': 'Pairing link',
   'mobile.connect.link.placeholder': 'Paste openchamber://connect link',
   'mobile.connect.link.invalid': 'That pairing link is not valid or has expired.',

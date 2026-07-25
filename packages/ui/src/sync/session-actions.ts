@@ -1271,11 +1271,11 @@ export function optimisticInsertUserMessage(input: {
         messageID: input.messageID,
         sessionID: input.sessionId,
         __openchamberOptimistic: true,
-      } as Part))
-    : [{ id: ascendingId("prt"), type: "text", text: input.content, messageID: input.messageID, sessionID: input.sessionId, __openchamberOptimistic: true } as Part]
+      } as unknown as Part))
+    : [{ id: ascendingId("prt"), type: "text", text: input.content, messageID: input.messageID, sessionID: input.sessionId, __openchamberOptimistic: true } as unknown as Part]
   if (!input.parts && input.files) {
     for (const f of input.files) {
-      optimisticParts.push({ id: ascendingId("prt"), type: "file", mime: f.mime, url: f.url, filename: f.filename, __openchamberOptimistic: true } as Part)
+      optimisticParts.push({ id: ascendingId("prt"), messageID: input.messageID, sessionID: input.sessionId, type: "file", mime: f.mime, url: f.url, filename: f.filename, __openchamberOptimistic: true } as unknown as Part)
     }
   }
 

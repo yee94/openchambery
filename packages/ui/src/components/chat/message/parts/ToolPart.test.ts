@@ -26,6 +26,12 @@ const diffViewSource = readFileSync(join(__dirname, '../../../views/DiffView.tsx
 const contextPanelSource = readFileSync(join(__dirname, '../../../layout/ContextPanel.tsx'), 'utf-8');
 const progressiveGroupSource = readFileSync(join(__dirname, 'ProgressiveGroup.tsx'), 'utf-8');
 
+describe('mobile press feedback', () => {
+    test('tool rows opt into soft press so full-width subagent/tool rows never use compact scale', () => {
+        expect(toolPartSource).toContain('data-mobile-press-feedback="soft"');
+    });
+});
+
 describe('readTaskTagSessionIdFromOutput', () => {
     test('parses task tags without state attributes', () => {
         expect(readTaskTagSessionIdFromOutput('<task id="ses_abc123">')).toBe('ses_abc123');
