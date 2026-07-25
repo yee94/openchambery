@@ -87,7 +87,7 @@ export const createRemoteClientAuthRuntime = ({ fsPromises, path, crypto, storeP
           clientKind: normalizeOptionalString(client.clientKind),
           dedupeKey: normalizeOptionalString(client.dedupeKey),
           usesRelay: client.usesRelay === true,
-          lastTransport: client.lastTransport === 'relay' || client.lastTransport === 'hapi' || client.lastTransport === 'direct' ? client.lastTransport : null,
+          lastTransport: client.lastTransport === 'relay' || client.lastTransport === 'direct' ? client.lastTransport : null,
           ...normalizeMetadata(client),
         }))
         .filter((client) => client.tokenHash.length > 0)
@@ -238,12 +238,7 @@ export const createRemoteClientAuthRuntime = ({ fsPromises, path, crypto, storeP
     // Which transport carried this request: the relay tunnel proxy stamps every
     // forwarded request with x-openchamber-relay-connection; anything else is a
     // direct (local/LAN/tunnel-URL) request. Display-only device metadata.
-    const transportHint = typeof req?.headers?.['x-openchamber-transport'] === 'string'
-      ? req.headers['x-openchamber-transport'].trim().toLowerCase()
-      : '';
-    const transport = req?.headers?.['x-openchamber-relay-connection']
-      ? 'relay'
-      : transportHint === 'hapi' ? 'hapi' : 'direct';
+    const transport = req?.headers?.['x-openchamber-relay-connection'] ? 'relay' : 'direct';
     return withStoreMutation(async () => {
       const tokenHash = hashToken(token);
       const store = await readStore();

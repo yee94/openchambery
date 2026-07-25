@@ -138,6 +138,42 @@ describe('createGlobalMessageStreamHub', () => {
     }
   });
 
+  it('late-binds a runtime identity to an already connected stream', async () => {
+    const runtimeKey = 'a'.repeat(64);
+    const received = [];
+    const hub = createGlobalMessageStreamHub({
+      buildOpenCodeUrl: (pathname) => `http://127.0.0.1:4096${pathname}`,
+      getOpenCodeAuthHeaders: () => ({}),
+      upstreamReconnectDelayMs: 100,
+      fetchImpl: async () => createSseResponse({
+        blocks: [
+          'id: before-queue\ndata: {"type":"message.updated","properties":{}}\n\n',
+          'id: after-queue\ndata: {"type":"message.updated","properties":{}}\n\n',
+        ],
+      }),
+    });
+
+    hub.subscribeEvent((event) => {
+      received.push(event);
+      if (event.eventId === 'before-queue') {
+        hub.setRuntimeIdentityProvider(() => ({ runtimeKey }));
+      }
+    });
+
+    try {
+      hub.start();
+      await waitForAssertion(() => expect(received).toHaveLength(2));
+      expect(received[0].runtimeIdentity).toBeUndefined();
+      expect(received[1].runtimeIdentity).toEqual({
+        runtimeKey,
+        generation: 1,
+        token: `${runtimeKey}:1`,
+      });
+    } finally {
+      hub.stop();
+    }
+  });
+
   it('keeps the connection runtime fence on late A events after switching to B', async () => {
     let runtime = { runtimeKey: 'a'.repeat(64) };
     let fetchCalls = 0;

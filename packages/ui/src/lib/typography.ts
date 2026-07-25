@@ -8,6 +8,20 @@ export const SEMANTIC_TYPOGRAPHY = {
   micro: '0.875rem',
 } as const;
 
+/**
+ * Mobile body/UI scale (must match mobile.css `:root.mobile-pointer` defaults).
+ * Slightly larger than desktop (14px) for touch readability. Settings
+ * fontSize/codeFontSize percentages multiply these bases on mobile.
+ */
+export const MOBILE_SEMANTIC_TYPOGRAPHY = {
+  markdown: '0.9375rem', // 15px body
+  code: '0.8125rem',
+  uiHeader: '0.875rem',
+  uiLabel: '0.8125rem',
+  meta: '0.8125rem',
+  micro: '0.75rem',
+} as const;
+
 export const VSCODE_TYPOGRAPHY = {
   // Keep VS Code webview typography slightly tighter; VS Code UI chrome already provides density.
   markdown: '0.9063rem',
@@ -22,6 +36,21 @@ export type SemanticTypographyKey = keyof typeof SEMANTIC_TYPOGRAPHY;
 
 export function getTypographyVariable(key: SemanticTypographyKey): string {
   return `--text-${key.replace(/([A-Z])/g, '-$1').toLowerCase()}`;
+}
+
+/** True when mobile.css mobile typography defaults apply (touch + non-desktop shell). */
+export function usesMobileTypographyBase(root: Element = document.documentElement): boolean {
+  return root.classList.contains('mobile-pointer') && !root.classList.contains('desktop-runtime');
+}
+
+export function getSemanticTypographyBase(
+  key: SemanticTypographyKey,
+  options?: { mobile?: boolean },
+): string {
+  if (options?.mobile) {
+    return MOBILE_SEMANTIC_TYPOGRAPHY[key];
+  }
+  return SEMANTIC_TYPOGRAPHY[key];
 }
 
 export const typography = {

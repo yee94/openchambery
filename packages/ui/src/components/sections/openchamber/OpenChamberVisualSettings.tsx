@@ -1293,7 +1293,6 @@ export const OpenChamberVisualSettings: React.FC<OpenChamberVisualSettingsProps>
                             {shouldShow('fontSize') && !isMobile && (
                                 <ResponsiveSettingsRow
                                     isMobile={isMobile}
-                                    itemId="appearance.interface-font-size"
                                     label={t('settings.openchamber.visual.field.interfaceFont')}
                                 >
                                         <Select value={uiFont} onValueChange={(value) => setUiFont(value as UiFontOption)}>
@@ -1354,9 +1353,10 @@ export const OpenChamberVisualSettings: React.FC<OpenChamberVisualSettingsProps>
                                 </ResponsiveSettingsRow>
                             )}
 
-                            {shouldShow('fontSize') && !isMobile && (
+                            {shouldShow('fontSize') && (
                                 <ResponsiveSettingsRow
                                     isMobile={isMobile}
+                                    itemId="appearance.interface-font-size"
                                     label={t('settings.openchamber.visual.field.interfaceFontSize')}
                                 >
                                         <NumberInput
@@ -1382,7 +1382,7 @@ export const OpenChamberVisualSettings: React.FC<OpenChamberVisualSettingsProps>
                                 </ResponsiveSettingsRow>
                             )}
 
-                            {shouldShow('codeFontSize') && !isMobile && (
+                            {shouldShow('codeFontSize') && (
                                 <ResponsiveSettingsRow
                                     isMobile={isMobile}
                                     itemId="appearance.code-font-size"

@@ -1,10 +1,12 @@
 import * as React from 'react';
+import { useEvent } from '@reactuses/core';
 
 import { useI18n } from '@/lib/i18n';
 import { cn } from '@/lib/utils';
 import { useCurrentSessionEntity } from '@/sync/sync-context';
 
 import { MobileChatHeader } from './MobileChatHeader';
+import { MobileContextProgressButton } from './MobileContextProgressButton';
 
 export type MobileChatScreenProps = {
   /** Empty string = new-session draft mode (no entity/status lookups). */
@@ -12,6 +14,9 @@ export type MobileChatScreenProps = {
   title?: string;
   onBack: () => void;
   onOpenMenu: () => void;
+  /** Close the overflow menu without toggling (used when switching to context). */
+  onCloseMenu?: () => void;
+  menuOpen?: boolean;
   children: React.ReactNode;
   className?: string;
 };
@@ -26,6 +31,8 @@ export function MobileChatScreen({
   title,
   onBack,
   onOpenMenu,
+  onCloseMenu,
+  menuOpen = false,
   children,
   className,
 }: MobileChatScreenProps) {
@@ -35,6 +42,23 @@ export function MobileChatScreen({
   const resolvedTitle = isDraft
     ? (title?.trim() || t('mobile.menu.newSession'))
     : (title?.trim() || session?.title?.trim() || t('mobile.sessions.untitled'));
+  const [contextOpen, setContextOpen] = React.useState(false);
+
+  // Overflow menu and context panel are mutually exclusive. Switching from one
+  // trigger to the other closes the first and opens the second in the same tap.
+  const handleContextOpenChange = useEvent((open: boolean) => {
+    if (open && menuOpen) {
+      onCloseMenu?.();
+    }
+    setContextOpen(open);
+  });
+
+  const handleOpenMenu = useEvent(() => {
+    if (contextOpen) setContextOpen(false);
+    onOpenMenu();
+  });
+
+  const headerElevated = menuOpen || contextOpen;
 
   return (
     <main
@@ -46,7 +70,16 @@ export function MobileChatScreen({
       <MobileChatHeader
         title={resolvedTitle}
         onBack={onBack}
-        onOpenMenu={onOpenMenu}
+        onOpenMenu={handleOpenMenu}
+        menuOpen={menuOpen}
+        elevated={headerElevated}
+        trailing={(
+          <MobileContextProgressButton
+            sessionId={sessionId}
+            open={contextOpen}
+            onOpenChange={handleContextOpenChange}
+          />
+        )}
       />
 
       <div

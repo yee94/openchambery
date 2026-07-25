@@ -1129,7 +1129,7 @@ export interface RemoteClientRecord {
   devicePlatform?: string | null;
   usesRelay?: boolean;
   /** Transport that carried the device's most recent authenticated request. */
-  lastTransport?: 'relay' | 'hapi' | 'direct' | null;
+  lastTransport?: 'relay' | 'direct' | null;
 }
 
 // A pairing link that has been created but not yet redeemed by a device.
@@ -1198,34 +1198,6 @@ export interface ClientAuthAPI {
   // Direct transports the server can be reached on, for the create-device dialog.
   // LAN reflects the server's actual bind, independent of the UI origin.
   getPairingTransports(): Promise<{ local: string | null; lan: string | null; relayAvailable: boolean }>;
-  // Starts/reuses a HAPI tunwg channel from this PC to the configured relay API
-  // host. The server automatically forwards its active OpenChamber listen port.
-  // Legacy path — new HAPI private-relay flow uses configureHapiRelay instead.
-  startHapiTunnel(input: { gatewayUrl: string }): Promise<{ url: string; provider: 'hapi' }>;
-  // Relay host status: transport + hasAccessToken only (never the raw token).
-  getRelayStatus?(): Promise<{
-    enabled: boolean;
-    state: string;
-    relayUrl?: string;
-    transport?: 'hapi';
-    hasAccessToken: boolean;
-    serverId?: string;
-    lastError?: string;
-  }>;
-  // Point this PC's private-relay L1 at a HAPI Hub endpoint
-  // (`wss://…/api/openchamber/relay/ws`) and enable the host. accessToken may be
-  // omitted when the server already has one stored (status.hasAccessToken).
-  // Resolves only when host-control is connected (server readiness gate).
-  configureHapiRelay(input: {
-    hubUrl: string;
-    accessToken?: string;
-  }): Promise<{ enabled: boolean; relayUrl: string; transport: 'hapi'; serverId?: string; state?: string }>;
-  // Restore classic OpenChamber Private Relay: clear HAPI transport + token and
-  // restore the saved classic relay URL (or env override / default).
-  configureClassicRelay?(input?: {
-    relayUrl?: string;
-    enabled?: boolean;
-  }): Promise<{ enabled: boolean; relayUrl: string; transport?: 'hapi'; hasAccessToken?: boolean; state?: string }>;
 }
 
 export interface RuntimeAPIs {

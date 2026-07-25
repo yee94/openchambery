@@ -34,17 +34,21 @@ export const canSendServerQueuedMessage = (message: MessageQueueServerDisplayIte
     return ['queued', 'retrying', 'failed', 'unresolved'].includes(message.status);
 };
 
-// Remove stays available while a manual dispatch is only requested (still queued).
-// Server remove is blocked solely for in-flight dispatch statuses; keep edit/send
-// locked separately via isReadOnly / canSend*.
+export const canEditQueuedMessage = (
+    message: QueuedMessage | MessageQueueServerDisplayItem,
+    options: { frozen: boolean },
+): boolean => !options.frozen && !isMessageQueuePendingAdmissionItem(message);
+
+// Remove is always a client-authoritative discard of queue tracking. Once an
+// attempt crossed the POST boundary it cannot unsend the upstream message, but
+// a stale sending/reconciling record must never trap the user in a locked chip.
 export const canRemoveQueuedMessage = (
     message: QueuedMessage | MessageQueueServerDisplayItem,
     options: { frozen: boolean },
 ): boolean => {
     if (options.frozen) return false;
     if (isMessageQueuePendingAdmissionItem(message)) return false;
-    const status = ('status' in message ? message.status : undefined) ?? 'queued';
-    return !isServerQueueItemActiveAttempt({ status } as MessageQueueItem);
+    return true;
 };
 
 export const isServerQueueItemActiveAttempt = (item: Pick<MessageQueueItem, 'status'>): boolean => item.status === 'sending' || item.status === 'reconciling';

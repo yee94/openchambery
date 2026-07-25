@@ -2,7 +2,13 @@ import { create } from 'zustand';
 import { devtools, persist } from 'zustand/middleware';
 import type { SidebarSection } from '@/constants/sidebar';
 import { createDeferredSafeJSONStorage } from './utils/safeStorage';
-import { SEMANTIC_TYPOGRAPHY, getTypographyVariable, type SemanticTypographyKey } from '@/lib/typography';
+import {
+  SEMANTIC_TYPOGRAPHY,
+  getSemanticTypographyBase,
+  getTypographyVariable,
+  usesMobileTypographyBase,
+  type SemanticTypographyKey,
+} from '@/lib/typography';
 import type { ShortcutCombo } from '@/lib/shortcuts';
 import type { DraftStarterRef } from '@/lib/draftStarters';
 import { DEFAULT_MONO_FONT, DEFAULT_UI_FONT, type MonoFontOption, type UiFontOption } from '@/lib/fontOptions';
@@ -2134,18 +2140,21 @@ export const useUIStore = create<UIStore>()(
           // 100 = default (1.0x), 50 = half size (0.5x), 200 = double (2.0x)
           const scale = fontSize / 100;
           const codeScale = codeFontSize / 100;
+          // Mobile uses MOBILE_SEMANTIC_TYPOGRAPHY (CSS + percentage scale); desktop uses SEMANTIC_TYPOGRAPHY.
+          const mobile = typeof document !== 'undefined' && usesMobileTypographyBase(root);
 
-          const entries = Object.entries(SEMANTIC_TYPOGRAPHY) as Array<[SemanticTypographyKey, string]>;
+          const keys = Object.keys(SEMANTIC_TYPOGRAPHY) as SemanticTypographyKey[];
 
-          // Default must be SEMANTIC_TYPOGRAPHY (from CSS). Remove overrides.
+          // Default must come from CSS (desktop design-system / mobile.css). Remove overrides.
           if (scale === 1 && codeScale === 1) {
-            for (const [key] of entries) {
+            for (const key of keys) {
               root.style.removeProperty(getTypographyVariable(key));
             }
             return;
           }
 
-          for (const [key, baseValue] of entries) {
+          for (const key of keys) {
+            const baseValue = getSemanticTypographyBase(key, { mobile });
             const numericValue = parseFloat(baseValue);
             if (!Number.isFinite(numericValue)) {
               continue;

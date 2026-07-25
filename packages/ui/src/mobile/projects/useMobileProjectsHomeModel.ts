@@ -11,7 +11,6 @@ import {
   mergeLiveSessionWithGlobalSession,
   useGlobalSessionsStore,
 } from '@/stores/useGlobalSessionsStore';
-import { useMobileSessionExpansionStore } from '@/stores/useMobileSessionExpansionStore';
 import { useMobileSessionTreeStore } from '@/stores/useMobileSessionTreeStore';
 import { useProjectsStore } from '@/stores/useProjectsStore';
 import { useSessionPinnedStore } from '@/stores/useSessionPinnedStore';
@@ -175,7 +174,6 @@ export function useMobileProjectsHomeModel(): MobileProjectsHomeModel {
   const pinnedSessionIds = useSessionPinnedStore((state) => state.ids);
   const projectExpandedMap = useMobileSessionTreeStore((state) => state.projectExpanded);
   const worktreeExpandedMap = useMobileSessionTreeStore((state) => state.worktreeExpanded);
-  const expandedParents = useMobileSessionExpansionStore((state) => state.expandedParents);
   const unseenBySession = useNotificationStore((state) => state.index.session.unseenCount);
   // Ephemeral per-bucket visible root count (mirrors MobileSessionsSheet).
   const [visibleCountByBucket, setVisibleCountByBucket] = React.useState<Map<string, number>>(new Map());
@@ -325,27 +323,19 @@ export function useMobileProjectsHomeModel(): MobileProjectsHomeModel {
         const worktreeExpanded = worktreeExpandedMap[expandKey] ?? false;
         const visibleCount = visibleCountByBucket.get(expandKey) ?? pageSize;
 
+        // Mobile home is a flat parent-session list only. Subagents stay off the
+        // catalog (and off search). Archive cascade still walks allSessions.
         const idsInBucket = new Set(bucket.sessions.map((entry) => entry.id));
-        const childrenByParent = new Map<string, Session[]>();
-        for (const candidate of bucket.sessions) {
-          const parentId = getParentId(candidate);
-          if (parentId && idsInBucket.has(parentId)) {
-            const list = childrenByParent.get(parentId) ?? [];
-            list.push(candidate);
-            childrenByParent.set(parentId, list);
-          }
-        }
         const rootSessions = bucket.sessions.filter((entry) => {
           const parentId = getParentId(entry);
           return !parentId || !idsInBucket.has(parentId);
         });
 
         const toNode = (session: Session): MobileSessionTreeNode => {
-          const children = (childrenByParent.get(session.id) ?? []).map(toNode);
           const parentId = getParentId(session);
-          const isSubtask = Boolean(parentId);
           const unseen = unseenBySession[session.id] ?? 0;
-          const unread = unseen > 0 && !isSubtask;
+          // Subagents are filtered out of roots; keep unread only for top-level rows.
+          const unread = unseen > 0 && !parentId;
           return {
             id: session.id,
             directory: bucket.path,
@@ -355,8 +345,6 @@ export function useMobileProjectsHomeModel(): MobileProjectsHomeModel {
             pinned: pinnedSessionIds.has(session.id),
             archived: isSessionArchived(session),
             active: currentSessionId === session.id,
-            children: children.length > 0 ? children : undefined,
-            expanded: Boolean(expandedParents[session.id]),
           };
         };
 
@@ -431,7 +419,6 @@ export function useMobileProjectsHomeModel(): MobileProjectsHomeModel {
     activePaginationByDirectory,
     currentDirectory,
     currentSessionId,
-    expandedParents,
     pinnedSessionIds,
     projectExpandedMap,
     projectNodes,

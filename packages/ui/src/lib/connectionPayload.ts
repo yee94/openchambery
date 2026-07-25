@@ -2,17 +2,14 @@ const MAX_PAIRING_PAYLOAD_LENGTH = 16_384;
 
 // A pairing candidate is one way to reach the host's HTTP API. `type`
 // discriminates the transport:
-//   - lan / tunnel / hapi: reach `url` directly (health-check, then redeem over
-//     fetch). `hapi` is a labelled public HTTPS gateway (tunwg / HAPI); runtime
-//     still uses plain HTTP like tunnel — only identity / UI / refresh policy
-//     treat it as its own surface.
+//   - lan / tunnel: reach `url` directly (health-check, then redeem over fetch).
 //   - relay: no reachable URL — open the E2EE relay tunnel to `serverId` via
 //     `relayUrl`, trusting `hostEncPubJwk`, then redeem over the tunnel.
 // The one-time pairing `secret` (payload level) is the single auth credential,
 // redeemed over whichever transport connects first. Relay carries no embedded
 // bearer token — that is the v1 sin this format replaces.
 export type PairingDirectCandidate = {
-  type: 'lan' | 'tunnel' | 'hapi';
+  type: 'lan' | 'tunnel';
   url: string;
   priority?: number;
 };
@@ -26,12 +23,6 @@ export type PairingRelayCandidate = {
   // ignores it (E2EE + the pairing secret are the actual gates). Plumbed for
   // future relay-side per-device/traffic control. Never persisted.
   grant?: string;
-  // When `transport === 'hapi'`, L1 points at a HAPI Hub private-relay endpoint
-  // (`/api/openchamber/relay/ws`) and clients authenticate with `accessToken`
-  // (the HAPI CLI_API_TOKEN, optionally namespace-scoped). L2 E2EE + L3 mux are
-  // unchanged. Both fields are persisted so cold-start reconnect can re-auth.
-  transport?: 'hapi';
-  accessToken?: string;
   priority?: number;
 };
 
@@ -130,7 +121,7 @@ const normalizePairingCandidate = (value: unknown): PairingEndpointCandidate | n
   const record = value as Record<string, unknown>;
   const priority = normalizePriority(record.priority);
 
-  if (record.type === 'lan' || record.type === 'tunnel' || record.type === 'hapi') {
+  if (record.type === 'lan' || record.type === 'tunnel') {
     const url = normalizeHttpUrl(record.url);
     if (!url) return null;
     return priority === undefined ? { type: record.type, url } : { type: record.type, url, priority };
@@ -144,24 +135,12 @@ const normalizePairingCandidate = (value: unknown): PairingEndpointCandidate | n
     const hostEncPubJwk = normalizeEcPublicJwk(record.hostEncPubJwk);
     if (!hostEncPubJwk) return null;
     const grant = typeof record.grant === 'string' && record.grant.trim() ? record.grant.trim() : undefined;
-    // Only the explicit HAPI marker is retained; unknown values are dropped so a
-    // future transport string cannot silently change client auth behavior.
-    const transport = record.transport === 'hapi' ? 'hapi' as const : undefined;
-    const accessToken = typeof record.accessToken === 'string' && record.accessToken.trim()
-      ? record.accessToken.trim()
-      : undefined;
-    // HAPI relay L1 requires a non-empty access token; reject the candidate when
-    // the marker is present without credentials rather than advertising a path
-    // that will always fail AuthFailed at the hub.
-    if (transport === 'hapi' && !accessToken) return null;
     return {
       type: 'relay',
       relayUrl,
       serverId,
       hostEncPubJwk,
       ...(grant ? { grant } : {}),
-      ...(transport ? { transport } : {}),
-      ...(accessToken ? { accessToken } : {}),
       ...(priority === undefined ? {} : { priority }),
     };
   }

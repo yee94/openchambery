@@ -75,6 +75,7 @@ export function createGlobalMessageStreamHub({
   let buildUrlFailed = false;
   let runtimeIdentityProvider = getRuntimeIdentity;
   let runtimeConnectionGeneration = 0;
+  let activeConnectionRuntimeIdentity = null;
 
   const notifySubscriber = (kind, subscriber, payload) => {
     try {
@@ -131,6 +132,7 @@ export function createGlobalMessageStreamHub({
       getHeaders: getOpenCodeAuthHeaders,
       onConnect() {
         const runtimeIdentity = captureRuntimeIdentity(runtimeIdentityProvider, ++runtimeConnectionGeneration);
+        activeConnectionRuntimeIdentity = runtimeIdentity;
         connected = true;
         const wasReady = everConnected;
         everConnected = true;
@@ -139,10 +141,21 @@ export function createGlobalMessageStreamHub({
       },
       onDisconnect({ reason }) {
         connected = false;
+        activeConnectionRuntimeIdentity = null;
         notifyStatus({ type: 'disconnect', reason });
       },
       onEvent(event) {
-        const normalized = normalizeEvent(event);
+        // The queue runtime is initialized after the shared watcher can already
+        // be connected. Late-bind the first available identity to that existing
+        // connection, then keep it fenced for the rest of the connection so a
+        // later runtime switch cannot relabel buffered events.
+        if (!event?.connectionContext && !activeConnectionRuntimeIdentity) {
+          activeConnectionRuntimeIdentity = captureRuntimeIdentity(runtimeIdentityProvider, runtimeConnectionGeneration);
+        }
+        const normalized = normalizeEvent({
+          ...event,
+          connectionContext: event?.connectionContext ?? activeConnectionRuntimeIdentity,
+        });
         if (normalized.eventId) {
           replay.push(normalized);
           if (replay.length > replayLimit) {

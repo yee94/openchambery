@@ -56,14 +56,12 @@ const resolveBatchWindowMs = (option) => {
  *   getLocalPort?: () => number,
  *   onStatus?: (status: { state: string, lastError: string | null, connectedClients: number }) => void,
  *   logger?: Pick<Console, 'warn'>,
- *   accessToken?: string,
  * }} options
  */
-export const startRelayHost = ({ relayUrl, identity, localPort, getLocalPort, onStatus, logger = console, batchWindowMs, batch, accessToken }) => {
+export const startRelayHost = ({ relayUrl, identity, localPort, getLocalPort, onStatus, logger = console, batchWindowMs, batch }) => {
   const resolveLocalPort = typeof getLocalPort === 'function' ? getLocalPort : () => localPort;
   const localBatch = batch !== false;
   const resolvedBatchWindowMs = resolveBatchWindowMs(batchWindowMs);
-  const relayAccessToken = typeof accessToken === 'string' ? accessToken.trim() : '';
 
   let stopped = false;
   let state = 'connecting';
@@ -98,9 +96,6 @@ export const startRelayHost = ({ relayUrl, identity, localPort, getLocalPort, on
     url.searchParams.set('ts', String(auth.ts));
     url.searchParams.set('sig', auth.sig);
     url.searchParams.set('pk', auth.pk);
-    // HAPI Hub private-relay L1 accepts the shared access token alongside the
-    // host signature params; classic openchamber-relay ignores unknown query keys.
-    if (relayAccessToken) url.searchParams.set('token', relayAccessToken);
     return url.toString();
   };
 

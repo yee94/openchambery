@@ -13,7 +13,6 @@ This module contains tunnel provider orchestration for OpenChamber, including pr
 - `packages/web/server/lib/tunnels/types.js`: tunnel constants, normalization, and shared type helpers.
 - `packages/web/server/lib/tunnels/providers/cloudflare.js`: Cloudflare tunnel provider implementation.
 - `packages/web/server/lib/tunnels/providers/ngrok.js`: Ngrok quick tunnel provider implementation.
-- `packages/web/server/lib/tunnels/providers/hapi.js`: HAPI/tunwg provider. The UI supplies the relay service hostname; the PC automatically forwards the active OpenChamber listen port. Persistent tunwg keys live under the OpenChamber data directory so the assigned public URL can survive restarts.
 
 ## Public exports (routes.js)
 - `createTunnelRoutesRuntime(dependencies)`: creates tunnel routes runtime and helpers.

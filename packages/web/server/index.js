@@ -16,7 +16,6 @@ import { createManagedTunnelConfigRuntime } from './lib/tunnels/managed-config.j
 import { createTunnelProviderRegistry } from './lib/tunnels/registry.js';
 import { createCloudflareTunnelProvider } from './lib/tunnels/providers/cloudflare.js';
 import { createNgrokTunnelProvider } from './lib/tunnels/providers/ngrok.js';
-import { createHapiTunnelProvider } from './lib/tunnels/providers/hapi.js';
 import { createRequestSecurityRuntime } from './lib/security/request-security.js';
 import {
   getUnauthenticatedLanErrorMessage,
@@ -511,7 +510,6 @@ let globalWatcherStartPromise = null;
 const tunnelProviderRegistry = createTunnelProviderRegistry([
   createCloudflareTunnelProvider(),
   createNgrokTunnelProvider(),
-  createHapiTunnelProvider({ dataDir: OPENCHAMBER_DATA_DIR }),
 ]);
 tunnelProviderRegistry.seal();
 const tunnelAuthController = createTunnelAuth();

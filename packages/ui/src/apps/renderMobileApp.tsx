@@ -53,9 +53,9 @@ export function renderMobileApp(apis: RuntimeAPIs) {
   installMobileWidgetSnapshotBridge();
 
   // Apply the device classes (`device-mobile`, `mobile-pointer`) to <html> BEFORE the
-  // first React paint. They gate the mobile typography rules in mobile.css (larger
-  // --text-* sizes); applied late from a hook effect, they bumped text size a frame
-  // after mount and shifted the layout (connect / scan / saved-connection labels).
+  // first React paint. They gate the mobile typography defaults in mobile.css
+  // (MOBILE_SEMANTIC_TYPOGRAPHY); applied late from a hook effect, they bumped text
+  // size a frame after mount and shifted the layout (connect / scan / saved-connection labels).
   getDeviceInfo();
 
   const rootElement = document.getElementById('root');

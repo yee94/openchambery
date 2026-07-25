@@ -1,6 +1,6 @@
 import { beforeEach, describe, expect, test } from 'bun:test';
 import { legacyQueueScope, setMessageQueueMutationFence, useMessageQueueStore, type QueueItem, type QueueScope } from '@/stores/messageQueueStore';
-import { applyPendingServerQueueOperation, applyPendingServerQueueOperations, canRemoveQueuedMessage, canSendQueuedMessage, canSendServerQueuedMessage, isServerQueueItemActiveAttempt, isServerQueueItemDispatchPending, mergeQueuedMessageScopes, popQueuedMessageForEdit, queueModeAllowsMutations, reorderServerQueueItems, selectPendingServerQueueOperation, selectPendingServerQueueOperations, serverQueueEditInput, serverQueueItemMutationInput } from './queuedMessageChipsState';import type { ServerQueueOperationIdentity } from './queuedMessageChipsState';
+import { applyPendingServerQueueOperation, applyPendingServerQueueOperations, canEditQueuedMessage, canRemoveQueuedMessage, canSendQueuedMessage, canSendServerQueuedMessage, isServerQueueItemActiveAttempt, isServerQueueItemDispatchPending, mergeQueuedMessageScopes, popQueuedMessageForEdit, queueModeAllowsMutations, reorderServerQueueItems, selectPendingServerQueueOperation, selectPendingServerQueueOperations, serverQueueEditInput, serverQueueItemMutationInput } from './queuedMessageChipsState';import type { ServerQueueOperationIdentity } from './queuedMessageChipsState';
 import type { MessageQueueItem, MessageQueueScope } from '@/lib/message-queue-server';
 import { sessionDraftKey } from '@/sync/input-draft-types';
 import type { MessageQueuePendingAdmissionItem } from '@/sync/message-queue-server-runtime';
@@ -129,7 +129,7 @@ describe('QueuedMessageChips production queue boundary', () => {
         expect(queueModeAllowsMutations('server')).toBe(true);
     });
 
-    test('manual dispatch intent stays clickable while active attempts remain item-locked', () => {
+    test('manual dispatch intent stays clickable while active attempts retain dispatch identity', () => {
         const queued = serverItem('queue-a', 'queued');
         const manual = { ...queued, manualDispatchRequested: true };
         expect(canSendServerQueuedMessage(queued, false)).toBe(true);
@@ -147,15 +147,22 @@ describe('QueuedMessageChips production queue boundary', () => {
         expect(canSendServerQueuedMessage(waiting, false)).toBe(true);
     });
 
-    test('keeps Remove available during manual dispatch pending and only locks sending/reconciling', () => {
+    test('keeps Remove available for manual intent and stale active attempts', () => {
         const queued = serverItem('queue-a', 'queued');
         const manual = { ...queued, manualDispatchRequested: true };
         expect(canRemoveQueuedMessage(queued, { frozen: false })).toBe(true);
         expect(canRemoveQueuedMessage(manual, { frozen: false })).toBe(true);
-        expect(canRemoveQueuedMessage(serverItem('sending', 'sending'), { frozen: false })).toBe(false);
-        expect(canRemoveQueuedMessage(serverItem('reconciling', 'reconciling'), { frozen: false })).toBe(false);
+        expect(canRemoveQueuedMessage(serverItem('sending', 'sending'), { frozen: false })).toBe(true);
+        expect(canRemoveQueuedMessage(serverItem('reconciling', 'reconciling'), { frozen: false })).toBe(true);
         expect(canRemoveQueuedMessage(manual, { frozen: true })).toBe(false);
         expect(canRemoveQueuedMessage(pendingAdmissionItem, { frozen: false })).toBe(false);
+    });
+
+    test('keeps Edit available for stale active attempts but not pending admission', () => {
+        expect(canEditQueuedMessage(serverItem('sending', 'sending'), { frozen: false })).toBe(true);
+        expect(canEditQueuedMessage(serverItem('reconciling', 'reconciling'), { frozen: false })).toBe(true);
+        expect(canEditQueuedMessage(pendingAdmissionItem, { frozen: false })).toBe(false);
+        expect(canEditQueuedMessage(serverItem('queued'), { frozen: true })).toBe(false);
     });
 
     test('selectPendingServerQueueOperation filters by exact scope and isolates runtime switches', () => {

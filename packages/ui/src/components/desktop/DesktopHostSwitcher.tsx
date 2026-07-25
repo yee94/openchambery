@@ -524,8 +524,6 @@ export function DesktopHostSwitcherDialog({
           relayUrl: relay.relayUrl,
           serverId: relay.serverId,
           hostEncPubJwk: relay.hostEncPubJwk,
-          ...(relay.transport ? { transport: relay.transport } : {}),
-          ...(relay.accessToken ? { accessToken: relay.accessToken } : {}),
         }, liveTunnel);
       }
       switchRuntimeEndpoint({

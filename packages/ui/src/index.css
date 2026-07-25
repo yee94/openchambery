@@ -1131,6 +1131,80 @@ html:not(.dark) .chat-scroll {
   font-size: var(--text-code);
 }
 
+/*
+ * Markdown tables: outer wrapper provides vertical rhythm; the scroll surface
+ * owns horizontal overflow so wide tables pan instead of crushing cells.
+ * `width: max-content` + `min-width: 100%` lets short tables fill the column
+ * while long ones grow past the viewport and scroll.
+ */
+.markdown-content [data-markdown='table-wrapper'] {
+  margin-block: var(--markdown-table-spacing, 0.9rem);
+  max-width: 100%;
+  min-width: 0;
+}
+
+.markdown-content [data-markdown='table-scroll'] {
+  display: block;
+  max-width: 100%;
+  min-width: 0;
+  overflow-x: auto;
+  overflow-y: hidden;
+  -webkit-overflow-scrolling: touch;
+  overscroll-behavior-x: contain;
+  border: 1px solid color-mix(in srgb, var(--border, currentColor) 80%, transparent);
+  border-radius: 0.75rem;
+  background: var(--surface-elevated, var(--card));
+  scrollbar-gutter: stable;
+}
+
+.markdown-content [data-markdown='table'] {
+  width: max-content;
+  min-width: 100%;
+  max-width: none;
+  border-collapse: collapse;
+  font-size: inherit;
+  line-height: var(--markdown-body-line-height, 1.625);
+}
+
+.markdown-content [data-markdown='table-row'] {
+  border-bottom: 1px solid color-mix(in srgb, var(--border, currentColor) 60%, transparent);
+}
+
+.markdown-content [data-markdown='table'] tbody tr:last-child {
+  border-bottom: 0;
+}
+
+.markdown-content [data-markdown='table-header-cell'],
+.markdown-content [data-markdown='table-cell'] {
+  border-right: 1px solid color-mix(in srgb, var(--border, currentColor) 60%, transparent);
+  padding: 0.625rem 1rem;
+  text-align: left;
+  vertical-align: middle;
+  white-space: nowrap;
+}
+
+.markdown-content [data-markdown='table-header-cell']:last-child,
+.markdown-content [data-markdown='table-cell']:last-child {
+  border-right: 0;
+}
+
+.markdown-content [data-markdown='table-header-cell'] {
+  font-weight: 600;
+  color: var(--surface-foreground, var(--foreground));
+  background: color-mix(in srgb, var(--surface-muted, var(--muted)) 55%, transparent);
+}
+
+.markdown-content [data-markdown='table-cell'] {
+  color: color-mix(in srgb, var(--surface-foreground, var(--foreground)) 90%, transparent);
+}
+
+/* Long prose cells may wrap once the table already has room; keep code-ish
+   content on one line so horizontal scroll remains useful. */
+.markdown-content [data-markdown='table-cell'] code,
+.markdown-content [data-markdown='table-header-cell'] code {
+  white-space: nowrap;
+}
+
 /* Override Streamdown's hardcoded bg-muted for inline code - use theme colors instead */
 .markdown-content code[data-markdown="inline-code"] {
   background-color: var(

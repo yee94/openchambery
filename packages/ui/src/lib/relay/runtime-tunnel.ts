@@ -10,8 +10,6 @@ export interface RelayRuntimeDescriptor {
   serverId: string;
   hostEncPubJwk: JsonWebKey;
   grant?: string;
-  transport?: 'hapi';
-  accessToken?: string;
 }
 
 let activeTunnel: RelayTunnelClient | null = null;
@@ -21,8 +19,6 @@ const descriptorsEqual = (a: RelayRuntimeDescriptor, b: RelayRuntimeDescriptor):
   a.relayUrl === b.relayUrl &&
   a.serverId === b.serverId &&
   a.grant === b.grant &&
-  a.transport === b.transport &&
-  a.accessToken === b.accessToken &&
   JSON.stringify(a.hostEncPubJwk) === JSON.stringify(b.hostEncPubJwk);
 
 export const getActiveRelayTunnel = (): RelayTunnelClient | null => activeTunnel;

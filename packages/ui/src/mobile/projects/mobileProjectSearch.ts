@@ -7,21 +7,13 @@ import type {
 const matchesQuery = (query: string, ...values: Array<string | undefined>): boolean =>
   values.some((value) => value?.toLowerCase().includes(query));
 
-const filterSessionTree = (
+/** Flat match only — mobile home never surfaces nested subagents. */
+const filterSessions = (
   sessions: MobileSessionTreeNode[],
   query: string,
-): MobileSessionTreeNode[] => sessions.flatMap((session) => {
-  if (session.kind === 'pagination') return [];
-
-  const children = filterSessionTree(session.children ?? [], query);
-  if (!matchesQuery(query, session.title, session.subtitle, session.id) && children.length === 0) {
-    return [];
-  }
-
-  return [{
-    ...session,
-    children: children.length > 0 ? children : undefined,
-  }];
+): MobileSessionTreeNode[] => sessions.filter((session) => {
+  if (session.kind === 'pagination') return false;
+  return matchesQuery(query, session.title, session.subtitle, session.id);
 });
 
 const filterWorktree = (
@@ -35,7 +27,7 @@ const filterWorktree = (
     };
   }
 
-  const sessions = filterSessionTree(worktree.sessions, query);
+  const sessions = filterSessions(worktree.sessions, query);
   return sessions.length > 0 ? { ...worktree, sessions } : null;
 };
 

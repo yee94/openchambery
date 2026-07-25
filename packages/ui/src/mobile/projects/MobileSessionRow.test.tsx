@@ -88,6 +88,23 @@ describe('MobileSessionRow status placement', () => {
     expect(html.slice(timeColumnIndex)).not.toContain('animate-spin');
   });
 
+  test('does not render a subsession chevron without expand props', () => {
+    const html = renderToString(
+      <I18nProvider>
+        <MobileSessionRow
+          session={{ id: 'parent', title: 'Parent session' }}
+          onSelect={noop}
+          onPin={noop}
+          onArchive={noop}
+          onOpenActions={noop}
+        />
+      </I18nProvider>,
+    );
+    expect(html).not.toContain('Expand subsessions');
+    expect(html).not.toContain('Collapse subsessions');
+    expect(html).not.toContain('#oc-arrow-down-s');
+  });
+
   test('renders distinct question, permission, unread, and idle markers', () => {
     const rendered = new Map<string, string>();
     for (const indicator of ['question', 'permission', 'completed-unread', 'idle'] as const) {

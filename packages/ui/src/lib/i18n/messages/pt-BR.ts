@@ -86,7 +86,6 @@ export const dict: Record<I18nKey, string> = {
   "mobile.instances.saveNew": "Salvar instância",
   "mobile.instances.status.connectedDirect": "Conectado · Rede local",
   "mobile.instances.status.connectedRelay": "Conectado · Relay privado",
-  "mobile.instances.status.connectedHapi": "Conectado · Gateway HAPI",
   "mobile.instances.saveEdit": "Salvar alterações",
   "mobile.nav.changes": "Alterações",
   "mobile.nav.settings": "Configurações",

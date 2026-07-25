@@ -30,7 +30,7 @@ import { Icon } from "@/components/icon/Icon";
 import { cn } from '@/lib/utils';
 import { createUuid } from '@/lib/uuid';
 import { toast } from '@/components/ui';
-import { applyPendingServerQueueOperations, canRemoveQueuedMessage, canSendQueuedMessage, canSendServerQueuedMessage, isServerQueueItemActiveAttempt, isServerQueueItemDispatchPending, mergeQueuedMessageScopes, queueModeAllowsMutations, reorderServerQueueItems, selectPendingServerQueueOperations, serverQueueEditInput, serverQueueItemMutationInput, type ServerQueueOperationIdentity, type ServerQueueOperationKind } from './queuedMessageChipsState';
+import { applyPendingServerQueueOperations, canEditQueuedMessage, canRemoveQueuedMessage, canSendQueuedMessage, canSendServerQueuedMessage, isServerQueueItemActiveAttempt, isServerQueueItemDispatchPending, mergeQueuedMessageScopes, queueModeAllowsMutations, reorderServerQueueItems, selectPendingServerQueueOperations, serverQueueEditInput, serverQueueItemMutationInput, type ServerQueueOperationIdentity, type ServerQueueOperationKind } from './queuedMessageChipsState';
 import { enqueueServerQueueScopeMutation, type ServerQueueScopeMutationFlights } from './queueAdmission';
 
 type BoundQueueScope = Extract<QueueScope, { state: 'bound' }> & {
@@ -85,13 +85,15 @@ const QueuedMessageChip = memo(({ message, server, frozen, hasDispatchLock, pend
     const authoritativeDispatchPending = server && !pendingAdmission && isServerQueueItemDispatchPending(message as MessageQueueItem);
     const activeAttempt = server && !pendingAdmission && isServerQueueItemActiveAttempt(message as MessageQueueItem);
     const sendPending = (server && pendingOperationKinds.has('send')) || authoritativeDispatchPending;
-    // Only the row whose POST already crossed the boundary is immutable. A
-    // manual intent is still a waiting row, so client edit/remove/reorder wins.
-    const isReadOnly = frozen || pendingAdmission || activeAttempt;
+    // Client edit/remove remains authoritative even when delivery tracking is
+    // stale. Sending and dragging an already-started attempt stay unavailable
+    // because they would imply a second POST or a movable active slot.
+    const clientMutationBlocked = frozen || pendingAdmission;
+    const canEdit = canEditQueuedMessage(message, { frozen });
     const canRemove = canRemoveQueuedMessage(message, { frozen });
     const legacyMessage = server ? undefined : message as QueuedMessage;
-    const isDragDisabled = legacyMessage?.owner?.state === 'unbound-legacy' || isReadOnly;
-    const canSend = !isReadOnly && (server ? canSendServerQueuedMessage(message as MessageQueueServerDisplayItem, hasDispatchLock) : canSendQueuedMessage(message as QueuedMessage, hasDispatchLock));
+    const isDragDisabled = legacyMessage?.owner?.state === 'unbound-legacy' || clientMutationBlocked || activeAttempt;
+    const canSend = !clientMutationBlocked && (server ? canSendServerQueuedMessage(message as MessageQueueServerDisplayItem, hasDispatchLock) : canSendQueuedMessage(message as QueuedMessage, hasDispatchLock));
     const recovery = legacyMessage?.failure?.recovery;
     const visibleContent = recovery?.content ?? message.content;
     const visibleAttachments = pendingAdmission ? undefined : recovery?.attachments ?? message.attachments;
@@ -172,7 +174,7 @@ const QueuedMessageChip = memo(({ message, server, frozen, hasDispatchLock, pend
                 <button
                     type="button"
                     onClick={() => onEdit(message)}
-                    disabled={isReadOnly}
+                    disabled={!canEdit}
                     aria-busy={editPending || undefined}
                     aria-label={t('chat.queuedMessage.edit')}
                     className={cn(

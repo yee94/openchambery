@@ -18,12 +18,15 @@ import { evaluateSwipeThresholdHaptic, triggerMobileHaptic } from '@/hooks/strea
  *   already-recognized swipe.
  * - Composer surfaces and horizontally-scrollable ancestors are excluded so
  *   the gesture stays separate from session switching and horizontal scrolling.
+ * - Once a leftward open candidate is armed, cancel only by retreating past the
+ *   lower cancel threshold — mild off-axis arcs do not drop an armed candidate.
  */
 
-const MAX_OFF_AXIS_RATIO = 0.55; // |dy| must stay below |dx| × this
+const MAX_OFF_AXIS_RATIO = 0.85; // |dy| must stay below |dx| × this when arming
 const INTENT_DISTANCE = 8;
-const THRESHOLD_HYSTERESIS = 8;
 const OPEN_DISTANCE_RATIO = 0.35;
+/** After arming, retreat below this fraction of the viewport to cancel. */
+const CANCEL_DISTANCE_RATIO = 0.22;
 
 // ---------------------------------------------------------------------------
 // Pure helpers — exported for targeted testing
@@ -72,7 +75,34 @@ export const createHeaderSwipeGestureState = (
   open: false,
 });
 
-/** Updates the opening candidate against the gesture's original touch point. */
+const getHeaderSwipeOpenDistance = (viewportWidth: number): number => (
+  viewportWidth * OPEN_DISTANCE_RATIO
+);
+
+const getHeaderSwipeCancelDistance = (viewportWidth: number): number => (
+  viewportWidth * CANCEL_DISTANCE_RATIO
+);
+
+const getHeaderSwipeLeftwardDistance = (startX: number, currentX: number): number => (
+  Math.max(0, startX - currentX)
+);
+
+const getHeaderSwipeRightwardDistance = (startX: number, currentX: number): number => (
+  Math.max(0, currentX - startX)
+);
+
+const isHeaderSwipeOnAxis = (dx: number, dy: number): boolean => {
+  const absDx = Math.abs(dx);
+  if (absDx < INTENT_DISTANCE) return true;
+  return Math.abs(dy) <= absDx * MAX_OFF_AXIS_RATIO;
+};
+
+/**
+ * Sticky open candidate for continuous tracking.
+ * Arm only on a clean enough leftward pass of the open threshold; once armed,
+ * stay armed until leftward travel drops below the cancel threshold (hysteresis).
+ * Off-axis drift after arming does not cancel — only retreating does.
+ */
 export const updateHeaderSwipeGestureState = (
   state: HeaderSwipeGestureState,
   touch: HeaderSwipePoint,
@@ -80,13 +110,23 @@ export const updateHeaderSwipeGestureState = (
 ): HeaderSwipeGestureState => {
   const dx = touch.clientX - state.segmentStart.clientX;
   const dy = touch.clientY - state.segmentStart.clientY;
-  const exceedsThreshold = Math.abs(dx) >= viewportWidth * OPEN_DISTANCE_RATIO;
-  const staysOnAxis = Math.abs(dy) <= Math.abs(dx) * MAX_OFF_AXIS_RATIO;
+  const leftward = getHeaderSwipeLeftwardDistance(state.segmentStart.clientX, touch.clientX);
+  const openDistance = getHeaderSwipeOpenDistance(viewportWidth);
+  const cancelDistance = getHeaderSwipeCancelDistance(viewportWidth);
+
+  let open = state.open;
+  if (leftward <= 0) {
+    open = false;
+  } else if (state.open) {
+    open = leftward >= cancelDistance;
+  } else {
+    open = leftward >= openDistance && isHeaderSwipeOnAxis(dx, dy);
+  }
 
   return {
     segmentStart: state.segmentStart,
     lastTouch: touch,
-    open: exceedsThreshold && staysOnAxis && dx < 0,
+    open,
   };
 };
 
@@ -94,6 +134,9 @@ export const updateHeaderSwipeGestureState = (
  * Pure function: determine whether a completed touch gesture on the chat body
  * should open the sessions sheet. Callers inject the gate flags; this function
  * only evaluates the geometric and interactive constraints.
+ *
+ * Stateless evaluation uses the open threshold only (no prior arming). Live
+ * tracking uses updateHeaderSwipeGestureState for cancel hysteresis.
  */
 export const evaluateHeaderSwipe = (input: HeaderSwipeInput): HeaderSwipeResult => {
   if (input.disabled) return { open: false, back: false };
@@ -101,12 +144,14 @@ export const evaluateHeaderSwipe = (input: HeaderSwipeInput): HeaderSwipeResult 
 
   const dx = input.endX - input.startX;
   const dy = input.endY - input.startY;
-  const exceedsThreshold = Math.abs(dx) >= input.viewportWidth * OPEN_DISTANCE_RATIO;
-  const staysOnAxis = Math.abs(dy) <= Math.abs(dx) * MAX_OFF_AXIS_RATIO;
+  const leftward = getHeaderSwipeLeftwardDistance(input.startX, input.endX);
+  const rightward = getHeaderSwipeRightwardDistance(input.startX, input.endX);
+  const openDistance = getHeaderSwipeOpenDistance(input.viewportWidth);
+  const onAxis = isHeaderSwipeOnAxis(dx, dy);
 
   return {
-    open: exceedsThreshold && staysOnAxis && dx < 0,
-    back: exceedsThreshold && staysOnAxis && dx > 0,
+    open: leftward >= openDistance && onAxis,
+    back: rightward >= openDistance && onAxis,
   };
 };
 
@@ -115,7 +160,7 @@ export const getHeaderSwipePresentationProgress = (
   currentX: number,
   viewportWidth: number,
 ): number => Math.min(
-  Math.max(0, startX - currentX) / Math.max(1, viewportWidth * OPEN_DISTANCE_RATIO),
+  getHeaderSwipeLeftwardDistance(startX, currentX) / Math.max(1, getHeaderSwipeOpenDistance(viewportWidth)),
   1,
 );
 
@@ -124,7 +169,7 @@ export const getHeaderSwipeBackProgress = (
   currentX: number,
   viewportWidth: number,
 ): number => Math.min(
-  Math.max(0, currentX - startX) / Math.max(1, viewportWidth * OPEN_DISTANCE_RATIO),
+  getHeaderSwipeRightwardDistance(startX, currentX) / Math.max(1, getHeaderSwipeOpenDistance(viewportWidth)),
   1,
 );
 
@@ -208,12 +253,12 @@ export const useHeaderSwipeToSessions = (
     let gestureState: HeaderSwipeGestureState | null = null;
 
     const updateThreshold = (distance: number) => {
-      const enterThreshold = viewportWidth * OPEN_DISTANCE_RATIO;
+      const enterThreshold = getHeaderSwipeOpenDistance(viewportWidth);
       const transition = evaluateSwipeThresholdHaptic({
         thresholdReached,
         distance,
         enterDistance: enterThreshold,
-        cancelDistance: enterThreshold - THRESHOLD_HYSTERESIS,
+        cancelDistance: getHeaderSwipeCancelDistance(viewportWidth),
         available: true,
       });
       thresholdReached = transition.thresholdReached;
@@ -299,7 +344,11 @@ export const useHeaderSwipeToSessions = (
       }
 
       event.preventDefault();
-      latestDistance = Math.abs(dx);
+      // Directional distance only: retreating past the origin must not keep the
+      // opposite-direction magnitude from holding the armed threshold open.
+      latestDistance = horizontalIntent === 'sessions'
+        ? getHeaderSwipeLeftwardDistance(gestureState.segmentStart.clientX, touch.clientX)
+        : getHeaderSwipeRightwardDistance(gestureState.segmentStart.clientX, touch.clientX);
       updateThreshold(latestDistance);
       if (horizontalIntent === 'sessions') {
         onProgressRef.current?.(getHeaderSwipePresentationProgress(
@@ -320,17 +369,26 @@ export const useHeaderSwipeToSessions = (
       if (!tracking || !gestureState) return;
       tracking = false;
       const touch = event.changedTouches[0];
-      if (touch) gestureState = updateHeaderSwipeGestureState(gestureState, touch, viewportWidth);
-      const result = evaluateHeaderSwipe({
-        startX: gestureState.segmentStart.clientX,
-        startY: gestureState.segmentStart.clientY,
-        endX: gestureState.lastTouch.clientX,
-        endY: gestureState.lastTouch.clientY,
-        viewportWidth,
-        disabled: false,
-        startedOnExcludedTarget: false,
-      });
-      const commit = horizontalIntent === 'sessions' ? result.open : result.back;
+      if (touch) {
+        gestureState = updateHeaderSwipeGestureState(gestureState, touch, viewportWidth);
+        latestDistance = horizontalIntent === 'sessions'
+          ? getHeaderSwipeLeftwardDistance(gestureState.segmentStart.clientX, touch.clientX)
+          : getHeaderSwipeRightwardDistance(gestureState.segmentStart.clientX, touch.clientX);
+        updateThreshold(latestDistance);
+      }
+      // Sessions open uses sticky hysteresis from continuous tracking. Back still
+      // uses a one-shot evaluation because it has no preview arming state.
+      const commit = horizontalIntent === 'sessions'
+        ? gestureState.open
+        : evaluateHeaderSwipe({
+          startX: gestureState.segmentStart.clientX,
+          startY: gestureState.segmentStart.clientY,
+          endX: gestureState.lastTouch.clientX,
+          endY: gestureState.lastTouch.clientY,
+          viewportWidth,
+          disabled: false,
+          startedOnExcludedTarget: false,
+        }).back;
       gestureState = null;
       if (!horizontalIntent) return;
       event.preventDefault();

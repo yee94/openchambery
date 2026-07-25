@@ -40,7 +40,7 @@ import { useI18n } from '@/lib/i18n';
 import { MOBILE_SETTINGS_PAGE_SLUGS } from '@/lib/settings/metadata';
 import { isIPadApp } from '@/lib/platform';
 import { resolveProjectForDirectory, resolveProjectForSessionDirectory } from '@/lib/projectResolution';
-import { clampPercent, formatQuotaResetLabel, formatQuotaValueLabel, formatWindowLabel, QUOTA_PROVIDERS, resolveUsageTone } from '@/lib/quota';
+import { formatQuotaResetLabel, formatQuotaValueLabel, formatWindowLabel, QUOTA_PROVIDERS } from '@/lib/quota';
 import { getDisplayModelName } from '@/lib/quota/model-families';
 import { runtimeFetch } from '@/lib/runtime-fetch';
 import { getRuntimeApiBaseUrl, subscribeRuntimeEndpointChanged, switchRuntimeEndpoint } from '@/lib/runtime-switch';
@@ -74,11 +74,19 @@ import { BusyDots } from '@/components/chat/message/parts/BusyDots';
 import { MobileSessionsSheet } from './MobileSessionsSheet';
 import { MobileSurfaceShell } from './MobileSurfaceShell';
 import { MobilePhoneShell } from '@/mobile/MobilePhoneShell';
-import { MobileChatScreen } from '@/mobile/chat';
+import {
+  buildMobileContextDisplay,
+  ContextProgressIcon,
+  getLatestAssistantTotalTokens,
+  getLatestUserMessageModel,
+  getNumericLimit,
+  MobileChatScreen,
+  type MobileContextDisplay,
+} from '@/mobile/chat';
 import { useMobileNavigationStore } from '@/mobile/useMobileNavigationStore';
 import { mobileBackNavigationCoordinator, useMobileNavigationDriver } from '@/mobile/mobileBackNavigation';
 import { DedicatedMobileAppProvider, type MobileAppActions } from './mobileAppContext';
-import { autoConnectLastInstance, connectionDisplayUrl, getAutoConnectTargetLabel, isActiveRuntimeConnection, isHapiRuntimeActive, reprobeActiveConnection, useMobileConnection } from './mobileConnections';
+import { autoConnectLastInstance, connectionDisplayUrl, getAutoConnectTargetLabel, isActiveRuntimeConnection, reprobeActiveConnection, useMobileConnection } from './mobileConnections';
 import { isRelayModeActive } from '@/lib/relay/runtime-tunnel';
 import { isQrScanSupported, parseConnectionPayload, scanConnectionQr } from './mobileQrScan';
 import { reconnectAppForTransportSwitch, resetAppForRuntimeEndpointChange } from './runtimeEndpointReset';
@@ -642,22 +650,6 @@ const useNativeAndroidBackButton = (onBack: () => boolean): void => {
 const normalizePath = (value?: string | null): string =>
   (value || '').replace(/\\/g, '/').replace(/\/+$/g, '');
 
-const getNumericLimit = (limit: unknown, key: 'context' | 'output'): number | undefined => {
-  if (!limit || typeof limit !== 'object') return undefined;
-  const value = (limit as Partial<Record<'context' | 'output', unknown>>)[key];
-  return typeof value === 'number' && Number.isFinite(value) ? value : undefined;
-};
-
-const getTokenCount = (value: unknown): number => (
-  typeof value === 'number' && Number.isFinite(value) ? value : 0
-);
-
-const formatTokens = (value: number): string => {
-  if (value >= 1_000_000) return `${(value / 1_000_000).toFixed(1)}M`;
-  if (value >= 1_000) return `${(value / 1_000).toFixed(1)}K`;
-  return String(value);
-};
-
 const mobileInputKeyboardProps = {
   autoComplete: 'off',
   autoCorrect: 'off',
@@ -681,12 +673,6 @@ type OverflowItem = {
   badge?: number;
   onSelect: () => void;
 };
-
-type ContextDisplay = {
-  percentage: number;
-  tokens: string;
-  colorClass: string;
-} | null;
 
 const getProjectDisplayLabel = (project: ProjectEntry | null, fallbackDirectory: string): string => {
   if (project) return getProjectLabel(project.path);
@@ -1138,9 +1124,7 @@ const MobileInstancesSurface: React.FC<{
               : isActive
                 ? (isRelayModeActive()
                   ? t('mobile.instances.status.connectedRelay')
-                  : isHapiRuntimeActive(connection)
-                    ? t('mobile.instances.status.connectedHapi')
-                    : t('mobile.instances.status.connectedDirect'))
+                  : t('mobile.instances.status.connectedDirect'))
                 : connection.candidates.some((c) => c.kind === 'direct') ? connectionDisplayUrl(connection) : t('mobile.connect.relay.badge');
             return (
               <div
@@ -1338,52 +1322,6 @@ const getWindowValueClass = (window: UsageWindow): string => {
   return 'text-foreground';
 };
 
-const ContextProgressIcon: React.FC<{ percentage: number }> = ({ percentage }) => {
-  const progressPct = clampPercent(percentage) ?? 0;
-  const tone = resolveUsageTone(percentage);
-  const progressColor = tone === 'critical'
-    ? 'var(--status-error)'
-    : tone === 'warn'
-      ? 'var(--status-warning)'
-      : 'var(--status-success)';
-  const size = 18;
-  const stroke = 3;
-  const radius = (size - stroke) / 2;
-  const circumference = 2 * Math.PI * radius;
-
-  return (
-    <svg
-      viewBox={`0 0 ${size} ${size}`}
-      className="size-[18px] -rotate-90"
-      role="progressbar"
-      aria-valuenow={Math.round(progressPct)}
-      aria-valuemin={0}
-      aria-valuemax={100}
-    >
-      <circle
-        cx={size / 2}
-        cy={size / 2}
-        r={radius}
-        fill="none"
-        stroke="var(--interactive-border)"
-        strokeWidth={stroke}
-      />
-      <circle
-        cx={size / 2}
-        cy={size / 2}
-        r={radius}
-        fill="none"
-        stroke={progressColor}
-        strokeWidth={stroke}
-        strokeLinecap="round"
-        strokeDasharray={circumference}
-        strokeDashoffset={circumference * (1 - progressPct / 100)}
-        className="transition-[stroke-dashoffset,stroke] duration-300"
-      />
-    </svg>
-  );
-};
-
 const MetadataRow: React.FC<{
   icon?: IconName;
   iconNode?: React.ReactNode;
@@ -1405,7 +1343,7 @@ const SessionMetadataOverlay: React.FC<{
   open: boolean;
   onClose: () => void;
   anchorRef: React.RefObject<HTMLElement | null>;
-  contextDisplay: ContextDisplay;
+  contextDisplay: MobileContextDisplay;
   branchLabel: string;
   usageGroups: MobileUsageProviderGroup[];
   usageDisplayMode: 'usage' | 'remaining';
@@ -1509,7 +1447,7 @@ const SessionMetadataOverlay: React.FC<{
         role="dialog"
         aria-label={t('mobile.header.openMetadataAria')}
         className={cn(
-          'overflow-y-auto overscroll-contain rounded-[20px] border border-border/40 bg-[var(--surface-elevated)] p-2 shadow-[0_12px_32px_rgb(0_0_0_/_0.2)] will-change-transform',
+          'overflow-y-auto overscroll-contain rounded-[20px] oc-mobile-overlay-surface p-2 will-change-transform',
           ipadPopover ? 'absolute origin-top-left' : 'mx-3 mt-2',
           isExiting ? 'pointer-events-none' : 'pointer-events-auto',
         )}
@@ -1660,30 +1598,41 @@ const MobileOverflowMenu: React.FC<{
 
   if (!open) return null;
 
+  // No second more-2 trigger here: the chat/detail header already owns the
+  // floating glass button. A duplicate close glyph sits slightly off that
+  // control (different safe-area/padding math) and reads as a double ghost.
+  //
+  // Backdrop starts BELOW the header chrome so the original more button stays
+  // hittable. Phone shells use `isolation: isolate`, so raising header z-index
+  // cannot escape above this fixed layer — leaving the header strip open is
+  // what makes "tap again to close" work. Outside taps still dismiss.
   return (
-    <div className="fixed inset-0 z-50" role="dialog" aria-modal="true" aria-label={t('mobile.menu.titleAria')}>
+    <div
+      className="pointer-events-none fixed inset-0 z-50"
+      role="dialog"
+      aria-modal="true"
+      aria-label={t('mobile.menu.titleAria')}
+    >
       <button
         type="button"
-        className="absolute inset-0 cursor-default"
+        className="pointer-events-auto absolute inset-x-0 bottom-0 cursor-default top-[calc(var(--oc-safe-area-top,0px)+var(--oc-mobile-detail-navigation-height,3.5rem)+0.25rem)]"
         aria-label={t('mobile.surface.closeAria')}
-        onClick={onClose}
+        onPointerDown={(event) => {
+          event.preventDefault();
+          onClose();
+        }}
       />
-      <button
-        type="button"
-        className="absolute top-[calc(var(--oc-safe-area-top,0px)+8px)] flex size-10 items-center justify-center rounded-full text-muted-foreground transition-colors hover:bg-interactive-hover hover:text-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-primary"
-        aria-label={t('mobile.surface.closeAria')}
-        onClick={onClose}
-        style={{ right: `${8 + rightOffset}px`, touchAction: 'manipulation' }}
-      >
-        <Icon name="more-2" className="size-5" />
-      </button>
       <div
         id={MOBILE_OVERFLOW_MENU_ID}
-        className="absolute top-[calc(var(--oc-safe-area-top,0px)+56px+4px)] w-[min(220px,calc(100vw-1rem))] origin-top-right overflow-hidden rounded-2xl border border-border/40 bg-background shadow-[0_12px_36px_rgb(0_0_0_/_0.18)]"
+        className="pointer-events-auto absolute top-[calc(var(--oc-safe-area-top,0px)+var(--oc-mobile-detail-navigation-height,3.5rem)+0.25rem)] w-[min(220px,calc(100vw-1rem))] origin-top-right overflow-hidden rounded-2xl oc-mobile-overlay-surface"
         role="menu"
         style={{
-          right: `${8 + rightOffset}px`,
-          animation: 'mobile-menu-in 160ms cubic-bezier(0.32, 0.72, 0, 1)',
+          right: `max(1rem, calc(8px + ${rightOffset}px + var(--oc-safe-area-right, 0px)))`,
+          animation: 'mobile-menu-in 160ms cubic-bezier(0.32, 0.72, 0, 1) forwards',
+        }}
+        onAnimationEnd={(event) => {
+          // Clear the transform after entry so backdrop-filter can sample content.
+          event.currentTarget.style.transform = 'none';
         }}
       >
         {items.map((item, index) => (
@@ -1794,22 +1743,10 @@ const MobileSessionMetadataButton = React.memo(function MobileSessionMetadataBut
     void fetchAllQuotas();
   }, [dropdownProviderIds, fetchAllQuotas, isQuotaLoading, open, quotaResults]);
 
-  const latestMessageModel = React.useMemo(() => {
-    for (let i = activeSessionMessages.length - 1; i >= 0; i -= 1) {
-      const message = activeSessionMessages[i] as typeof activeSessionMessages[number] & {
-        model?: { providerID?: string; modelID?: string };
-      };
-      if (message.role !== 'user') continue;
-      const providerID = typeof message.model?.providerID === 'string' && message.model.providerID.trim().length > 0
-        ? message.model.providerID
-        : undefined;
-      const modelID = typeof message.model?.modelID === 'string' && message.model.modelID.trim().length > 0
-        ? message.model.modelID
-        : undefined;
-      if (providerID && modelID) return { providerID, modelID };
-    }
-    return null;
-  }, [activeSessionMessages]);
+  const latestMessageModel = React.useMemo(
+    () => getLatestUserMessageModel(activeSessionMessages),
+    [activeSessionMessages],
+  );
 
   const modelRef = latestMessageModel
     ?? (savedSessionModel ? { providerID: savedSessionModel.providerId, modelID: savedSessionModel.modelId } : null)
@@ -1820,45 +1757,16 @@ const MobileSessionMetadataButton = React.memo(function MobileSessionMetadataBut
   const contextLimit = getNumericLimit((liveModel as { limit?: unknown } | undefined)?.limit, 'context')
     ?? metadata?.limit?.context
     ?? 0;
-  const totalTokens = React.useMemo(() => {
-    for (let i = activeSessionMessages.length - 1; i >= 0; i -= 1) {
-      const message = activeSessionMessages[i] as typeof activeSessionMessages[number] & {
-        tokens?: {
-          input?: unknown;
-          output?: unknown;
-          reasoning?: unknown;
-          cache?: { read?: unknown; write?: unknown };
-        };
-      };
-      if (message.role !== 'assistant' || !message.tokens) continue;
-      const total = getTokenCount(message.tokens.input)
-        + getTokenCount(message.tokens.output)
-        + getTokenCount(message.tokens.reasoning)
-        + getTokenCount(message.tokens.cache?.read)
-        + getTokenCount(message.tokens.cache?.write);
-      if (total > 0) return total;
-    }
-    return 0;
-  }, [activeSessionMessages]);
+  const totalTokens = React.useMemo(
+    () => getLatestAssistantTotalTokens(activeSessionMessages),
+    [activeSessionMessages],
+  );
 
-  const contextPercentage =
-    !isNewSessionDraftOpen && totalTokens > 0 && contextLimit > 0
-      ? Math.min((totalTokens / contextLimit) * 100, 999)
-      : null;
-  const contextTokens = contextPercentage !== null
-    ? `${formatTokens(totalTokens)}/${formatTokens(contextLimit)}`
-    : null;
-  const contextColorClass =
-    contextPercentage === null
-      ? ''
-      : contextPercentage >= 90
-        ? 'text-[var(--status-error)]'
-        : contextPercentage >= 75
-          ? 'text-[var(--status-warning)]'
-          : 'text-[var(--status-success)]';
-  const contextDisplay: ContextDisplay = contextPercentage !== null && contextTokens
-    ? { percentage: contextPercentage, tokens: contextTokens, colorClass: contextColorClass }
-    : null;
+  const contextDisplay = buildMobileContextDisplay({
+    totalTokens,
+    contextLimit,
+    isDraft: isNewSessionDraftOpen,
+  });
 
   const branchLabel = isGitRepo === true
     ? (gitStatus?.current?.trim() || t('gitView.branch.detachedHead'))
@@ -2129,6 +2037,7 @@ const MobileShell: React.FC<{ onActiveConnectionDeleted: () => void }> = ({ onAc
   const [settingsInitialMobileStage, setSettingsInitialMobileStage] = React.useState<'nav' | 'page-content'>('nav');
   const [overflowOpen, setOverflowOpen] = React.useState(false);
   const toggleOverflowMenu = useEvent(() => setOverflowOpen((open) => !open));
+  const closeOverflowMenu = useEvent(() => setOverflowOpen(false));
   // When set, the Changes surface opens directly into the per-file diff for this path.
   const [pendingChangesDiff, setPendingChangesDiff] = React.useState<PendingMobileChangesDiff | null>(null);
   const currentDirectory = useDirectoryStore((state) => state.currentDirectory);
@@ -2769,6 +2678,8 @@ const MobileShell: React.FC<{ onActiveConnectionDeleted: () => void }> = ({ onAc
                   sessionId={target.sessionId}
                   onBack={() => phoneSecondaryBackRef.current?.()}
                   onOpenMenu={toggleOverflowMenu}
+                  onCloseMenu={closeOverflowMenu}
+                  menuOpen={overflowOpen}
                 >
                   <main ref={chatMainRef} className="relative h-full min-h-0 flex-1 overflow-hidden" data-page-scroll-lock="true">
                     <div

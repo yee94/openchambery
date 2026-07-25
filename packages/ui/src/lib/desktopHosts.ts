@@ -35,10 +35,6 @@ export type DesktopHostRelay = {
   relayUrl: string;
   serverId: string;
   hostEncPubJwk: JsonWebKey;
-  // HAPI Hub private-relay: L1 auth token + transport marker. Persisted so cold
-  // start / probe can re-auth without re-importing the pairing link.
-  transport?: 'hapi';
-  accessToken?: string;
 };
 
 export type DesktopHost = {
@@ -54,12 +50,6 @@ export type DesktopHost = {
   requestHeaders?: Record<string, string>;
   /** When set, this host is reached over the private relay tunnel. */
   relay?: DesktopHostRelay;
-  /**
-   * Optional public HAPI/tunwg HTTPS gateway that also reaches this host.
-   * Kept alongside `apiUrl` (often LAN) so the desktop can fall back away from
-   * home without re-pairing. Plain HTTPS — not the OpenChamber E2EE relay.
-   */
-  hapiUrl?: string;
 };
 
 /** Display-only pseudo-URL for a relay host (never fetched). */
@@ -71,17 +61,7 @@ const parseHostRelay = (value: unknown): DesktopHostRelay | null => {
   const serverId = readString(value, 'serverId') || readString(value, 'server_id');
   const jwk = value.hostEncPubJwk ?? value.host_enc_pub_jwk;
   if (!relayUrl || !serverId || !isRecord(jwk)) return null;
-  const transport = value.transport === 'hapi' ? 'hapi' as const : undefined;
-  const accessTokenRaw = readString(value, 'accessToken') || readString(value, 'access_token');
-  const accessToken = accessTokenRaw?.trim() || undefined;
-  if (transport === 'hapi' && !accessToken) return null;
-  return {
-    relayUrl,
-    serverId,
-    hostEncPubJwk: jwk as JsonWebKey,
-    ...(transport ? { transport } : {}),
-    ...(accessToken ? { accessToken } : {}),
-  };
+  return { relayUrl, serverId, hostEncPubJwk: jwk as JsonWebKey };
 };
 
 export type DesktopHostsConfig = {
@@ -225,7 +205,6 @@ const parseHost = (value: unknown): DesktopHost | null => {
   const clientToken = readString(value, 'clientToken') || readString(value, 'client_token');
   const requestHeaders = sanitizeRequestHeaders(value.requestHeaders);
   const relay = parseHostRelay(value.relay);
-  const hapiUrl = normalizeHostUrl(readString(value, 'hapiUrl') || readString(value, 'hapi_url') || '');
   if (!id || !label || !url) return null;
   return {
     id,
@@ -235,7 +214,6 @@ const parseHost = (value: unknown): DesktopHost | null => {
     ...(clientToken ? { clientToken } : {}),
     ...(requestHeaders ? { requestHeaders } : {}),
     ...(relay ? { relay } : {}),
-    ...(hapiUrl ? { hapiUrl } : {}),
   };
 };
 
@@ -332,8 +310,6 @@ export const probeRelayDesktopHost = async (
     relayUrl: relay.relayUrl,
     serverId: relay.serverId,
     hostEncPubJwk: relay.hostEncPubJwk,
-    ...(relay.transport ? { transport: relay.transport } : {}),
-    ...(relay.accessToken ? { accessToken: relay.accessToken } : {}),
   });
   const startedAt = Date.now();
   let keep = false;

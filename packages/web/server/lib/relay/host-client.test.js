@@ -7,7 +7,7 @@ import http from 'node:http';
 import crypto from 'node:crypto';
 import { WebSocket, WebSocketServer } from 'ws';
 
-import { sanitizeRelayErrorMessage, startRelayHost } from './host-client.js';
+import { startRelayHost } from './host-client.js';
 import {
   bytesToBase64Url,
   createFrameDecryptor,
@@ -39,7 +39,6 @@ const startFakeRelay = () => {
     clients: new Map(), // connectionId -> ws
     buffered: new Map(), // connectionId -> [[data, isBinary]] awaiting host-data
     relayFrames: [], // observed forwarded frames (for plaintext assertions)
-    controlUrls: [], // host-control dial URLs (query string) for auth assertions
   };
 
   wss.on('connection', (ws, req) => {
@@ -48,7 +47,6 @@ const startFakeRelay = () => {
     const connectionId = url.searchParams.get('connectionId');
 
     if (role === 'host-control') {
-      state.controlUrls.push(url);
       state.control = ws;
       // Announce any already-waiting clients.
       ws.send(JSON.stringify({ type: 'sync', connectionIds: [...state.clients.keys()] }));
@@ -278,42 +276,5 @@ describe('relay host-client integration', () => {
     const plaintextForwarded = forwarded.filter((f) => !f.isBinary);
     expect(plaintextForwarded.length).toBe(2); // hello + ready only
     expect(forwarded.filter((f) => f.isBinary).length).toBeGreaterThan(0);
-  });
-
-  it('includes accessToken as token= on host-control URL when provided', async () => {
-    host?.stop();
-    host = null;
-    relay.state.controlUrls = [];
-    const identity = await buildIdentity();
-    host = startRelayHost({
-      relayUrl: `${relay.wsUrl}/`,
-      identity,
-      accessToken: 'cli_tok:ns',
-      getLocalPort: () => origin.port,
-      onStatus: () => {},
-      logger: { warn: () => {} },
-    });
-    await new Promise((r) => setTimeout(r, 200));
-    expect(relay.state.control).not.toBeNull();
-    const controlUrl = relay.state.controlUrls.at(-1);
-    expect(controlUrl).toBeTruthy();
-    expect(controlUrl.searchParams.get('token')).toBe('cli_tok:ns');
-    expect(controlUrl.searchParams.get('role')).toBe('host-control');
-    expect(controlUrl.searchParams.get('sig')).toBeTruthy();
-    expect(controlUrl.searchParams.get('pk')).toBeTruthy();
-    host.stop();
-    host = null;
-  });
-
-  it('sanitizeRelayErrorMessage redacts token/sig/pk/grant from error strings', () => {
-    const secret = 'super-secret-hapi-token-xyz';
-    const raw = `WebSocket failed: ws://hub.example/ws?role=host-data&token=${secret}&sig=abc123&pk=pkval&grant=g1`;
-    const cleaned = sanitizeRelayErrorMessage(raw);
-    expect(cleaned).not.toContain(secret);
-    expect(cleaned).not.toContain('abc123');
-    expect(cleaned).toContain('token=[REDACTED]');
-    expect(cleaned).toContain('sig=[REDACTED]');
-    expect(cleaned).toContain('pk=[REDACTED]');
-    expect(cleaned).toContain('grant=[REDACTED]');
   });
 });

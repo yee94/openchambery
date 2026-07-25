@@ -71,17 +71,22 @@ describe('evaluateHeaderSwipe', () => {
   // Off-axis (vertical) rejection
   // -----------------------------------------------------------------------
   test('rejects primarily vertical swipe', () => {
-    // dx = 100, dy = -200, |dy|/|dx| = 2.0 > 0.55
+    // dx = 100, dy = -200, |dy|/|dx| = 2.0 > 0.85
     expect(evaluateHeaderSwipe(base({ startX: 200, startY: 200, endX: 100, endY: 0 })).open).toBe(false);
   });
 
-  test('rejects diagonal with strong vertical component', () => {
-    // dx = 100, dy = -60, |60/100| = 0.6 > 0.55
-    expect(evaluateHeaderSwipe(base({ startX: 200, startY: 100, endX: 100, endY: 40 })).open).toBe(false);
+  test('rejects diagonal beyond the off-axis tolerance', () => {
+    // dx = 100, dy = -90, |90/100| = 0.9 > 0.85
+    expect(evaluateHeaderSwipe(base({ startX: 200, startY: 100, endX: 100, endY: 10 })).open).toBe(false);
+  });
+
+  test('accepts arced diagonal swipe within off-axis tolerance', () => {
+    // dx = 100, dy = -70, |70/100| = 0.7 < 0.85 (was rejected under the old 0.55 ratio)
+    expect(evaluateHeaderSwipe(base({ startX: 200, startY: 100, endX: 100, endY: 30 })).open).toBe(true);
   });
 
   test('accepts mildly diagonal swipe within off-axis tolerance', () => {
-    // dx = 200, dy = -80, |80/200| = 0.4 < 0.55
+    // dx = 200, dy = -80, |80/200| = 0.4 < 0.85
     expect(evaluateHeaderSwipe(base({ startX: 300, startY: 100, endX: 100, endY: 20 })).open).toBe(true);
   });
 
@@ -130,16 +135,32 @@ describe('updateHeaderSwipeGestureState', () => {
   test('keeps the original origin while tracking rightward travel', () => {
     let state = createHeaderSwipeGestureState({ clientX: 200, clientY: 0 });
     state = update(state, 99);
-    state = update(state, 131);
+    // open = 35% of 200 = 70 → arm at x=130; cancel = 22% of 200 = 44 → still armed at x=156
+    // Retreat past cancel: leftward 43 < 44 → cancel at x=157
+    state = update(state, 157);
 
     expect(state.open).toBe(false);
     expect(state.segmentStart.clientX).toBe(200);
   });
 
-  test('uses the same threshold distance when reopening after rightward travel', () => {
+  test('keeps an armed candidate while retreating only into the hysteresis band', () => {
     let state = createHeaderSwipeGestureState({ clientX: 200, clientY: 0 });
     state = update(state, 99);
-    state = update(state, 131);
+    expect(state.open).toBe(true);
+    // leftward 50 is below open (70) but above cancel (44)
+    state = update(state, 150);
+
+    expect(state.open).toBe(true);
+    expect(state.segmentStart.clientX).toBe(200);
+  });
+
+  test('uses the open threshold when reopening after a cancel retreat', () => {
+    let state = createHeaderSwipeGestureState({ clientX: 200, clientY: 0 });
+    state = update(state, 99);
+    state = update(state, 157);
+    expect(state.open).toBe(false);
+    // must re-cross open (70), not merely cancel (44)
+    state = update(state, 156);
     expect(state.open).toBe(false);
     state = update(state, 130);
 
@@ -147,11 +168,20 @@ describe('updateHeaderSwipeGestureState', () => {
     expect(state.segmentStart.clientX).toBe(200);
   });
 
-  test('keeps the candidate unchanged for an off-axis segment', () => {
+  test('keeps an armed candidate through a mild off-axis arc', () => {
     let state = createHeaderSwipeGestureState({ clientX: 200, clientY: 0 });
     state = update(state, 99);
-    state = update(state, 200);
-    state = update(state, 99, 60);
+    expect(state.open).toBe(true);
+    // leftward still 101, but dy/dx would exceed the old 0.55 ratio
+    state = update(state, 99, 70);
+
+    expect(state.open).toBe(true);
+  });
+
+  test('does not arm on a first pass that is too off-axis', () => {
+    let state = createHeaderSwipeGestureState({ clientX: 200, clientY: 0 });
+    // leftward 101, dy 95 → 95/101 ≈ 0.94 > 0.85
+    state = update(state, 99, 95);
 
     expect(state.open).toBe(false);
   });

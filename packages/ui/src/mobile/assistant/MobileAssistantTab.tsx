@@ -84,7 +84,7 @@ export function MobileAssistantTab({ onEnable, onOpenAssistant, className }: Mob
                   className={cn('oc-mobile-assistant-card', !assistant.enabled && 'opacity-65')}
                   onClick={() => handleOpenAssistant(assistant.id)}
                 >
-                  <span className="oc-mobile-assistant-avatar oc-mobile-glass-control rounded-full">
+                  <span className="oc-mobile-assistant-avatar oc-mobile-glass-control oc-mobile-glass-control--clear rounded-full">
                     <AgentAvatar
                       name={assistant.id}
                       emoji={presentation.avatarEmoji}

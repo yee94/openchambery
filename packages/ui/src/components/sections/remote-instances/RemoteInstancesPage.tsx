@@ -62,7 +62,6 @@ import { getDesktopLanAddress, isDesktopLocalOriginActive, isDesktopShell } from
 import { runtimeFetch } from '@/lib/runtime-fetch';
 import { getRuntimeApiBaseUrl, switchRuntimeEndpoint } from '@/lib/runtime-switch';
 import { createUuid } from '@/lib/uuid';
-import { shouldConfigureClassicRelayForPairing } from './addDevicePairingPlan';
 
 const randomPort = (): number => {
   return Math.floor(20000 + Math.random() * 30000);
@@ -322,60 +321,6 @@ const isLoopbackUrl = (value: string): boolean => {
   }
 };
 
-// Only the Hub URL is remembered in localStorage. The HAPI access token lives
-// in server privateRelay settings (never written to browser storage on PC).
-const HAPI_HUB_STORAGE_KEY = 'openchamber.addDevice.hapiGateway';
-// Legacy key — cleared on open so older installs do not keep a plaintext token.
-const HAPI_ACCESS_TOKEN_LEGACY_STORAGE_KEY = 'openchamber.addDevice.hapiAccessToken';
-
-const normalizeHapiHubUrl = (value: string): string | null => {
-  const trimmed = value.trim();
-  if (!trimmed) return null;
-  const withProtocol = /^[a-zA-Z][a-zA-Z0-9+.-]*:\/\//.test(trimmed) ? trimmed : `https://${trimmed}`;
-  try {
-    const parsed = new URL(withProtocol);
-    if (parsed.protocol !== 'http:' && parsed.protocol !== 'https:') return null;
-    if (isLoopbackUrl(parsed.toString())) return null;
-    parsed.hash = '';
-    parsed.search = '';
-    return parsed.toString().replace(/\/+$/, '');
-  } catch {
-    return null;
-  }
-};
-
-const readStoredHapiHubUrl = (): string => {
-  if (typeof window === 'undefined') return '';
-  try {
-    const raw = window.localStorage.getItem(HAPI_HUB_STORAGE_KEY);
-    return typeof raw === 'string' ? raw : '';
-  } catch {
-    return '';
-  }
-};
-
-const writeStoredHapiHubUrl = (value: string): void => {
-  if (typeof window === 'undefined') return;
-  try {
-    if (!value) {
-      window.localStorage.removeItem(HAPI_HUB_STORAGE_KEY);
-      return;
-    }
-    window.localStorage.setItem(HAPI_HUB_STORAGE_KEY, value);
-  } catch {
-    // Quota / private mode — non-fatal; the create path still works once.
-  }
-};
-
-const clearLegacyHapiAccessTokenStorage = (): void => {
-  if (typeof window === 'undefined') return;
-  try {
-    window.localStorage.removeItem(HAPI_ACCESS_TOKEN_LEGACY_STORAGE_KEY);
-  } catch {
-    // ignore
-  }
-};
-
 const resolvePairingServerUrl = async (): Promise<string> => {
   const fallback = normalizeHostUrl(getRuntimeApiBaseUrl()) || window.location.origin;
   if (!isDesktopShell() || !isDesktopLocalOriginActive()) {
@@ -540,13 +485,8 @@ export const RemoteInstancesPage: React.FC = () => {
   const [addDeviceOpen, setAddDeviceOpen] = React.useState(false);
   const [addDevicePhase, setAddDevicePhase] = React.useState<'configure' | 'result'>('configure');
   const [addDeviceCreating, setAddDeviceCreating] = React.useState(false);
-  const [addDeviceTransport, setAddDeviceTransport] = React.useState<'local' | 'lan' | 'relay' | 'hapi'>('relay');
+  const [addDeviceTransport, setAddDeviceTransport] = React.useState<'local' | 'lan' | 'relay'>('relay');
   const [addDeviceFallback, setAddDeviceFallback] = React.useState(true);
-  const [addDeviceHapiHubUrl, setAddDeviceHapiHubUrl] = React.useState('');
-  const [addDeviceHapiAccessToken, setAddDeviceHapiAccessToken] = React.useState('');
-  // Server already has a HAPI access token in privateRelay settings — password
-  // field may stay empty and shows "saved" semantics.
-  const [hapiTokenSavedOnServer, setHapiTokenSavedOnServer] = React.useState(false);
   const [transportOptions, setTransportOptions] = React.useState<{ localUrl: string | null; lanUrl: string | null; relayAvailable: boolean } | null>(null);
   const revokedClientCount = React.useMemo(() => remoteClients.filter((client) => Boolean(client.revokedAt)).length, [remoteClients]);
   const [sshAddDialogOpen, setSshAddDialogOpen] = React.useState(false);
@@ -668,8 +608,6 @@ export const RemoteInstancesPage: React.FC = () => {
           serverId: candidate.serverId,
           hostEncPubJwk: candidate.hostEncPubJwk,
           ...(candidate.grant ? { grant: candidate.grant } : {}),
-          ...(candidate.transport ? { transport: candidate.transport } : {}),
-          ...(candidate.accessToken ? { accessToken: candidate.accessToken } : {}),
         });
         try {
           const response = await tunnel.fetch('/api/client-auth/pairing/redeem', redeemInit);
@@ -678,13 +616,10 @@ export const RemoteInstancesPage: React.FC = () => {
             redeemed = {
               kind: 'relay',
               // grant is intentionally not persisted (one-time pairing artifact).
-              // HAPI transport + accessToken ARE persisted so cold-start reconnect works.
               relay: {
                 relayUrl: candidate.relayUrl,
                 serverId: candidate.serverId,
                 hostEncPubJwk: candidate.hostEncPubJwk,
-                ...(candidate.transport ? { transport: candidate.transport } : {}),
-                ...(candidate.accessToken ? { accessToken: candidate.accessToken } : {}),
               },
               token,
             };
@@ -734,28 +669,21 @@ export const RemoteInstancesPage: React.FC = () => {
           relayUrl: linkRelayCandidate.relayUrl,
           serverId: linkRelayCandidate.serverId,
           hostEncPubJwk: linkRelayCandidate.hostEncPubJwk,
-          ...(linkRelayCandidate.transport ? { transport: linkRelayCandidate.transport } : {}),
-          ...(linkRelayCandidate.accessToken ? { accessToken: linkRelayCandidate.accessToken } : {}),
         }
         : undefined;
     const directCandidates = payload.candidates
-      .filter((candidate): candidate is Extract<PairingEndpointCandidate, { type: 'lan' | 'tunnel' | 'hapi' }> => candidate.type !== 'relay');
+      .filter((candidate): candidate is Extract<PairingEndpointCandidate, { type: 'lan' | 'tunnel' }> => candidate.type !== 'relay');
     const firstDirectUrl = directCandidates
       .map((candidate) => normalizeHostUrl(candidate.url))
       .find((value): value is string => Boolean(value));
-    const hapiUrl = directCandidates
-      .filter((candidate) => candidate.type === 'hapi')
-      .map((candidate) => normalizeHostUrl(candidate.url))
-      .find((value): value is string => Boolean(value));
     // Prefer LAN/local as the sticky apiUrl when both are present so desktop
-    // stays on the home network; HAPI is stored separately as the away path.
     const lanUrl = directCandidates
       .filter((candidate) => candidate.type === 'lan')
       .map((candidate) => normalizeHostUrl(candidate.url))
       .find((value): value is string => Boolean(value));
     const directUrl = redeemed.kind === 'direct'
       ? redeemed.url
-      : (lanUrl || firstDirectUrl || hapiUrl || null);
+      : (lanUrl || firstDirectUrl || null);
     const { token } = redeemed;
 
     const url = directUrl || (relay ? relayHostDisplayUrl(relay.serverId) : null);
@@ -768,7 +696,6 @@ export const RemoteInstancesPage: React.FC = () => {
       apiUrl: directUrl || undefined,
       clientToken: token,
       ...(relay ? { relay } : {}),
-      ...(hapiUrl ? { hapiUrl } : {}),
     };
     // One host per server: match by relay serverId when the link has a relay
     // leg, else by direct URL — re-importing updates the record in place.
@@ -992,26 +919,13 @@ export const RemoteInstancesPage: React.FC = () => {
     setCreatedPairingId(null);
     setAddDevicePhase('configure');
     setAddDeviceFallback(true);
-    clearLegacyHapiAccessTokenStorage();
-    setAddDeviceHapiHubUrl(readStoredHapiHubUrl());
-    setAddDeviceHapiAccessToken('');
-    setHapiTokenSavedOnServer(false);
     setAddDeviceOpen(true);
     const opts = await resolveTransportOptions();
     setTransportOptions(opts);
     // "Anywhere" (relay, with home-network preference) is the right default for
     // most people; fall back to narrower options only when relay is unavailable.
     setAddDeviceTransport(opts.relayAvailable ? 'relay' : opts.lanUrl ? 'lan' : 'local');
-    // Read server status so HAPI form can leave password empty when token exists.
-    if (clientAuth?.getRelayStatus) {
-      try {
-        const status = await clientAuth.getRelayStatus();
-        setHapiTokenSavedOnServer(status.hasAccessToken === true && status.transport === 'hapi');
-      } catch {
-        setHapiTokenSavedOnServer(false);
-      }
-    }
-  }, [resolveTransportOptions, clientAuth]);
+  }, [resolveTransportOptions]);
 
   const createPairingLink = React.useCallback(async () => {
     if (!clientAuth?.createPairingSession || !transportOptions) return;
@@ -1023,62 +937,20 @@ export const RemoteInstancesPage: React.FC = () => {
       let serverUrl: string | undefined;
       let includeRelay: boolean;
       let includeDirect = true;
-      let hapiHubUrl: string | null = null;
       if (addDeviceTransport === 'local') {
         serverUrl = transportOptions.localUrl ?? undefined;
         includeRelay = false;
       } else if (addDeviceTransport === 'lan') {
         serverUrl = transportOptions.lanUrl ?? undefined;
         includeRelay = addDeviceFallback;
-      } else if (addDeviceTransport === 'hapi') {
-        hapiHubUrl = normalizeHapiHubUrl(addDeviceHapiHubUrl);
-        const hapiAccessToken = addDeviceHapiAccessToken.trim();
-        // First-time config needs a token; re-pair may reuse server-stored token.
-        if (!hapiHubUrl || (!hapiAccessToken && !hapiTokenSavedOnServer)) {
-          setRemoteClientError(t('settings.remoteInstances.clientAuth.addDevice.hapi.invalid'));
-          return;
-        }
-        try {
-          await clientAuth.configureHapiRelay({
-            hubUrl: hapiHubUrl,
-            ...(hapiAccessToken ? { accessToken: hapiAccessToken } : {}),
-          });
-        } catch {
-          // Keep form + error; do not createPairingSession / QR on failed gate.
-          throw new Error(t('settings.remoteInstances.clientAuth.addDevice.hapi.unreachable'));
-        }
+      } else if (addDeviceFallback && transportOptions.lanUrl) {
+        // Relay, but prefer the local network when available: carry both.
+        serverUrl = transportOptions.lanUrl;
         includeRelay = true;
-        if (addDeviceFallback && transportOptions.lanUrl) {
-          serverUrl = transportOptions.lanUrl;
-          includeDirect = true;
-        } else {
-          serverUrl = undefined;
-          includeDirect = false;
-        }
       } else {
-        // Classic Anywhere / relay.
-        if (addDeviceFallback && transportOptions.lanUrl) {
-          // Relay, but prefer the local network when available: carry both.
-          serverUrl = transportOptions.lanUrl;
-          includeRelay = true;
-        } else {
-          // Relay only.
-          includeDirect = false;
-          includeRelay = true;
-        }
-      }
-      // One classic restore for any non-HAPI link that includes a relay candidate
-      // (Anywhere, or LAN + away-relay). Pure LAN/local and HAPI skip this so we
-      // never leave a leftover HAPI token on the host when minting classic links.
-      if (
-        shouldConfigureClassicRelayForPairing(addDeviceTransport, includeRelay)
-        && clientAuth.configureClassicRelay
-      ) {
-        try {
-          await clientAuth.configureClassicRelay({ enabled: true });
-        } catch {
-          // Non-fatal if already classic / route unavailable — pairing still runs.
-        }
+        // Relay only.
+        includeDirect = false;
+        includeRelay = true;
       }
       const { pairing, server } = await clientAuth.createPairingSession({
         label,
@@ -1087,14 +959,6 @@ export const RemoteInstancesPage: React.FC = () => {
         includeRelay,
         includeDirect,
       });
-      const candidates = server.candidates as unknown as PairingEndpointCandidate[];
-      if (addDeviceTransport === 'hapi' && hapiHubUrl) {
-        // Persist Hub URL only — access token stays on the server.
-        writeStoredHapiHubUrl(hapiHubUrl);
-        setAddDeviceHapiHubUrl(hapiHubUrl);
-        setAddDeviceHapiAccessToken('');
-        setHapiTokenSavedOnServer(true);
-      }
       const payload = buildPairingConnectionPayload({
         pairingId: pairing.id,
         secret: pairing.secret,
@@ -1105,7 +969,7 @@ export const RemoteInstancesPage: React.FC = () => {
         label: server.label,
         fingerprint: pairing.fingerprint ?? undefined,
         expiresAt: pairing.expiresAt,
-        candidates,
+        candidates: server.candidates as unknown as PairingEndpointCandidate[],
       });
       const encoded = encodePairingConnectionPayload(payload);
       setPairingUrl(encoded);
@@ -1124,7 +988,7 @@ export const RemoteInstancesPage: React.FC = () => {
     } finally {
       setAddDeviceCreating(false);
     }
-  }, [clientAuth, transportOptions, addDeviceTransport, addDeviceFallback, addDeviceHapiHubUrl, addDeviceHapiAccessToken, hapiTokenSavedOnServer, remoteClientLabel, loadRemoteClients, t]);
+  }, [clientAuth, transportOptions, addDeviceTransport, addDeviceFallback, remoteClientLabel, loadRemoteClients]);
 
   const handleCopyPairing = React.useCallback(() => {
     if (!pairingUrl) return;
@@ -1596,9 +1460,7 @@ export const RemoteInstancesPage: React.FC = () => {
                           <div className="flex min-w-0 items-center gap-2">
                             <span className="h-2 w-2 shrink-0 rounded-full bg-[var(--status-warning)] animate-pulse" />
                             <p className="typography-ui-label text-foreground truncate">{pending.label || t('settings.remoteInstances.clientAuth.field.labelPlaceholder')}</p>
-                            {addDeviceTransport === 'hapi' && createdPairingId === pending.id ? (
-                              <span className="typography-micro text-muted-foreground bg-muted px-1 rounded shrink-0 leading-none pb-px border border-border/50">{t('settings.remoteInstances.clientAuth.state.viaHapi')}</span>
-                            ) : pending.usesRelay ? (
+                            {pending.usesRelay ? (
                               <span className="typography-micro text-muted-foreground bg-muted px-1 rounded shrink-0 leading-none pb-px border border-border/50">{t('settings.remoteInstances.clientAuth.state.viaRelay')}</span>
                             ) : null}
                           </div>
@@ -1623,8 +1485,6 @@ export const RemoteInstancesPage: React.FC = () => {
                         : isOnline
                           ? (client.lastTransport === 'relay' && !isLocalDesktopClient
                             ? t('settings.remoteInstances.clientAuth.state.connectedRelay')
-                            : client.lastTransport === 'hapi' && !isLocalDesktopClient
-                              ? t('settings.remoteInstances.clientAuth.state.connectedHapi')
                               : t('settings.remoteInstances.clientAuth.state.connectedDirect'))
                           : client.lastUsedAt
                             ? t('settings.remoteInstances.clientAuth.lastUsed', { date: client.lastUsedAt })
@@ -1875,7 +1735,6 @@ export const RemoteInstancesPage: React.FC = () => {
                   <div role="radiogroup" aria-label={t('settings.remoteInstances.clientAuth.addDevice.transportLabel')} className="space-y-1.5">
                     {([
                       { key: 'relay' as const, label: t('settings.remoteInstances.clientAuth.addDevice.transport.relay'), hint: t('settings.remoteInstances.clientAuth.addDevice.transport.relayHint'), available: Boolean(transportOptions?.relayAvailable) },
-                      { key: 'hapi' as const, label: t('settings.remoteInstances.clientAuth.addDevice.transport.hapi'), hint: t('settings.remoteInstances.clientAuth.addDevice.transport.hapiHint'), available: true },
                       { key: 'lan' as const, label: t('settings.remoteInstances.clientAuth.addDevice.transport.lan'), hint: t('settings.remoteInstances.clientAuth.addDevice.transport.lanHint'), available: Boolean(transportOptions?.lanUrl) },
                       { key: 'local' as const, label: t('settings.remoteInstances.clientAuth.addDevice.transport.local'), hint: t('settings.remoteInstances.clientAuth.addDevice.transport.localHint'), available: Boolean(transportOptions?.localUrl) },
                     ]).map((option) => {
@@ -1902,49 +1761,6 @@ export const RemoteInstancesPage: React.FC = () => {
                       );
                     })}
                   </div>
-                  {addDeviceTransport === 'hapi' ? (
-                    <div className="space-y-1.5 pt-1">
-                      <label className="block space-y-1">
-                        <span className="typography-meta text-muted-foreground">{t('settings.remoteInstances.clientAuth.addDevice.hapi.hubUrlLabel')}</span>
-                        <Input
-                          className="h-8"
-                          value={addDeviceHapiHubUrl}
-                          onChange={(event) => setAddDeviceHapiHubUrl(event.target.value)}
-                          placeholder={t('settings.remoteInstances.clientAuth.addDevice.hapi.placeholder')}
-                          autoComplete="url"
-                          inputMode="url"
-                          spellCheck={false}
-                        />
-                      </label>
-                      <label className="block space-y-1">
-                        <span className="typography-meta text-muted-foreground">{t('settings.remoteInstances.clientAuth.addDevice.hapi.accessTokenLabel')}</span>
-                        <Input
-                          className="h-8"
-                          value={addDeviceHapiAccessToken}
-                          onChange={(event) => setAddDeviceHapiAccessToken(event.target.value)}
-                          placeholder={
-                            hapiTokenSavedOnServer
-                              ? t('settings.remoteInstances.clientAuth.addDevice.hapi.tokenSavedPlaceholder')
-                              : t('settings.remoteInstances.clientAuth.addDevice.hapi.tokenPlaceholder')
-                          }
-                          type="password"
-                          autoComplete="current-password"
-                          spellCheck={false}
-                        />
-                      </label>
-                      <p className="typography-meta text-muted-foreground">
-                        {hapiTokenSavedOnServer
-                          ? t('settings.remoteInstances.clientAuth.addDevice.hapi.helpSaved')
-                          : t('settings.remoteInstances.clientAuth.addDevice.hapi.help')}
-                      </p>
-                      {transportOptions?.lanUrl ? (
-                        <label className="flex w-fit cursor-pointer items-center gap-2">
-                          <Checkbox checked={addDeviceFallback} onChange={setAddDeviceFallback} ariaLabel={t('settings.remoteInstances.clientAuth.addDevice.fallback.preferLocal')} />
-                          <span className="typography-meta text-muted-foreground">{t('settings.remoteInstances.clientAuth.addDevice.fallback.preferLocal')}</span>
-                        </label>
-                      ) : null}
-                    </div>
-                  ) : null}
                   {addDeviceTransport === 'lan' ? (
                     <label className="flex w-fit cursor-pointer items-center gap-2 pt-1">
                       <Checkbox checked={addDeviceFallback} onChange={setAddDeviceFallback} ariaLabel={t('settings.remoteInstances.clientAuth.addDevice.fallback.relay')} />
@@ -1961,18 +1777,7 @@ export const RemoteInstancesPage: React.FC = () => {
                 {remoteClientError ? <p className="typography-meta text-[var(--status-error)]">{remoteClientError}</p> : null}
                 <div className="flex justify-end gap-2">
                   <Button type="button" variant="outline" size="xs" className="!font-normal" onClick={() => setAddDeviceOpen(false)} disabled={addDeviceCreating}>{t('settings.common.actions.cancel')}</Button>
-                  <Button
-                    type="submit"
-                    size="xs"
-                    className="!font-normal"
-                    disabled={
-                      addDeviceCreating
-                      || !transportOptions
-                      || (addDeviceTransport === 'hapi' && (!addDeviceHapiHubUrl.trim() || (!addDeviceHapiAccessToken.trim() && !hapiTokenSavedOnServer)))
-                    }
-                  >
-                    {t('settings.remoteInstances.clientAuth.addDevice.create')}
-                  </Button>
+                  <Button type="submit" size="xs" className="!font-normal" disabled={addDeviceCreating || !transportOptions}>{t('settings.remoteInstances.clientAuth.addDevice.create')}</Button>
                 </div>
               </form>
             ) : (

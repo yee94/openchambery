@@ -129,14 +129,12 @@ const SETTINGS_SEARCH_ITEMS: readonly SettingsSearchItem[] = [
     page: 'appearance',
     titleKey: 'settings.openchamber.visual.field.interfaceFontSize',
     keywords: ['font', 'text size', 'ui scale'],
-    isAvailable: (ctx) => !ctx.isMobile,
   },
   {
     id: 'appearance.code-font-size',
     page: 'appearance',
     titleKey: 'settings.openchamber.visual.field.codeFontSize',
     keywords: ['code', 'font', 'text size', 'diff'],
-    isAvailable: (ctx) => !ctx.isMobile,
   },
   {
     id: 'appearance.terminal-font-size',

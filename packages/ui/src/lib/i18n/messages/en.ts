@@ -84,7 +84,6 @@ export const dict = {
   'mobile.instances.saveNew': 'Save instance',
   'mobile.instances.status.connectedDirect': 'Connected · Local network',
   'mobile.instances.status.connectedRelay': 'Connected · Private relay',
-  'mobile.instances.status.connectedHapi': 'Connected · HAPI gateway',
   'mobile.instances.saveEdit': 'Save changes',
   'mobile.nav.changes': 'Changes',
   'mobile.nav.settings': 'Settings',

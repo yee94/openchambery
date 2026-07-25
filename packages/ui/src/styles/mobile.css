@@ -87,12 +87,29 @@
   );
   --oc-mobile-shadow-control: color-mix(
     in srgb,
-    var(--surface-foreground) 5%,
+    var(--surface-foreground) 10%,
     transparent
   );
+  /* Floating glass disc: keep the INSIDE clean (whiter than the page, no
+     dark inner shading — that's what made it look dirty). Depth comes from
+     outside-only shadows: a near-contact all-around shade defines the top
+     arc, a soft halo + gentle drop give lift. Blur does the glass. */
+  --oc-mobile-glass-fill: rgb(255 255 255 / 0.68);
+  --oc-mobile-glass-highlight: rgb(255 255 255 / 0.6);
+  --oc-mobile-glass-blur: 20px;
+  --oc-mobile-glass-saturate: 1.25;
+  --oc-mobile-glass-shadow:
+    0 0 2px rgb(0 0 0 / 0.05),
+    0 0 12px rgb(0 0 0 / 0.06),
+    0 8px 20px -6px rgb(0 0 0 / 0.12),
+    inset 0 1px 0 var(--oc-mobile-glass-highlight);
+  /* Card-scale surfaces (project shells, settings cards) share the floating
+     control's outside-only shading, softened for the larger footprint. The
+     background token stays untouched — only elevation unifies. */
   --oc-mobile-float-shadow:
-    0 12px 30px var(--oc-mobile-shadow-far),
-    0 1px 4px var(--oc-mobile-shadow-near),
+    0 0 2px rgb(0 0 0 / 0.04),
+    0 0 12px rgb(0 0 0 / 0.05),
+    0 10px 24px -6px rgb(0 0 0 / 0.1),
     inset 0 1px 0 var(--oc-mobile-float-highlight);
 }
 
@@ -120,23 +137,25 @@
   --form-row-divider: var(--oc-mobile-divider);
   --oc-mobile-shadow-far: rgb(0 0 0 / 0.24);
   --oc-mobile-shadow-near: rgb(0 0 0 / 0.14);
-  --oc-mobile-shadow-control: rgb(0 0 0 / 0.18);
+  --oc-mobile-shadow-control: rgb(0 0 0 / 0.22);
+  --oc-mobile-glass-fill: rgb(38 38 44 / 0.66);
+  --oc-mobile-glass-highlight: rgb(255 255 255 / 0.18);
+  --oc-mobile-glass-blur: 20px;
+  --oc-mobile-glass-saturate: 1.2;
+  --oc-mobile-glass-shadow:
+    0 0 2px rgb(0 0 0 / 0.3),
+    0 0 12px rgb(0 0 0 / 0.28),
+    0 8px 20px -6px rgb(0 0 0 / 0.4),
+    inset 0 1px 0 var(--oc-mobile-glass-highlight);
   --oc-mobile-float-highlight: color-mix(
     in srgb,
     var(--surface-elevated) 24%,
     transparent
   );
   --oc-mobile-float-shadow:
-    0 9px 24px color-mix(
-      in srgb,
-      var(--oc-mobile-shadow-far) 65%,
-      transparent
-    ),
-    0 1px 3px color-mix(
-      in srgb,
-      var(--oc-mobile-shadow-near) 55%,
-      transparent
-    ),
+    0 0 2px rgb(0 0 0 / 0.26),
+    0 0 12px rgb(0 0 0 / 0.24),
+    0 10px 24px -6px rgb(0 0 0 / 0.34),
     inset 0 1px 0 var(--oc-mobile-float-highlight);
 }
 
@@ -237,14 +256,88 @@
   backdrop-filter: blur(22px) saturate(1.35);
 }
 
+/* The bottom dock is a control-scale glass layer (like the header back disc),
+   not a content card: it shares the control token for blur/shadow/highlight
+   while keeping its own translucent float background. */
+.oc-mobile-floating-bottom-bar {
+  box-shadow: var(--oc-mobile-glass-shadow);
+  -webkit-backdrop-filter:
+    blur(var(--oc-mobile-glass-blur))
+    saturate(var(--oc-mobile-glass-saturate));
+  backdrop-filter:
+    blur(var(--oc-mobile-glass-blur))
+    saturate(var(--oc-mobile-glass-saturate));
+}
+
+/* Filled glass control (project icon disc, search field): same clean recipe
+   as the header floating action — light milky fill, outside-only shading. */
 .oc-mobile-glass-control {
   border: 0;
-  background: color-mix(in srgb, var(--surface-elevated) 74%, transparent);
+  background: var(--oc-mobile-glass-fill);
+  box-shadow: var(--oc-mobile-glass-shadow);
+  -webkit-backdrop-filter:
+    blur(var(--oc-mobile-glass-blur))
+    saturate(var(--oc-mobile-glass-saturate));
+  backdrop-filter:
+    blur(var(--oc-mobile-glass-blur))
+    saturate(var(--oc-mobile-glass-saturate));
+}
+
+/* Clear variant (assistant big avatar): no milky base, only the ambient
+   shadow ring + backdrop blur define the disc. */
+.oc-mobile-glass-control--clear {
+  background: transparent;
   box-shadow:
-    0 6px 16px var(--oc-mobile-shadow-control),
-    inset 0 1px 0 var(--oc-mobile-float-highlight);
-  -webkit-backdrop-filter: blur(16px) saturate(1.25);
-  backdrop-filter: blur(16px) saturate(1.25);
+    0 0 2px rgb(0 0 0 / 0.05),
+    0 0 12px rgb(0 0 0 / 0.06),
+    0 8px 20px -6px rgb(0 0 0 / 0.12);
+}
+
+.dark .oc-mobile-glass-control--clear {
+  box-shadow:
+    0 0 2px rgb(0 0 0 / 0.3),
+    0 0 12px rgb(0 0 0 / 0.28),
+    0 8px 20px -6px rgb(0 0 0 / 0.4);
+}
+
+/* Floating overlay (metadata popover, overflow menu): frosted glass with
+   STRONG elevation — the panel must clearly float above the content layer.
+   NOTE: fixed-position overlays can't backdrop-filter content in a
+   different stacking context, so we use a semi-opaque fill as the base
+   and keep backdrop-filter as progressive enhancement. */
+.oc-mobile-overlay-surface {
+  border: 0;
+  background: color-mix(in srgb, var(--surface-elevated) 95%, transparent);
+  box-shadow:
+    0 0 0 1px rgb(0 0 0 / 0.04),
+    0 8px 24px -4px rgb(0 0 0 / 0.16),
+    0 20px 48px -12px rgb(0 0 0 / 0.18),
+    inset 0 1px 0 rgb(255 255 255 / 0.8);
+  -webkit-backdrop-filter:
+    blur(var(--oc-mobile-glass-blur))
+    saturate(var(--oc-mobile-glass-saturate));
+  backdrop-filter:
+    blur(var(--oc-mobile-glass-blur))
+    saturate(var(--oc-mobile-glass-saturate));
+}
+
+.dark .oc-mobile-overlay-surface {
+  background: color-mix(in srgb, var(--surface-elevated) 95%, transparent);
+  box-shadow:
+    0 0 0 1px rgb(0 0 0 / 0.2),
+    0 8px 24px -4px rgb(0 0 0 / 0.4),
+    0 20px 48px -12px rgb(0 0 0 / 0.45),
+    inset 0 1px 0 rgb(255 255 255 / 0.08);
+}
+
+/* Translucent variant for panels that sit inside the same stacking context
+   as their backdrop (e.g. phone metadata sheet). */
+.oc-mobile-overlay-surface--translucent {
+  background: color-mix(in srgb, var(--surface-elevated) 48%, transparent);
+}
+
+.dark .oc-mobile-overlay-surface--translucent {
+  background: color-mix(in srgb, var(--surface-elevated) 48%, transparent);
 }
 
 .oc-mobile-round-control {
@@ -667,9 +760,7 @@ button.oc-mobile-group-label-trigger:focus-visible {
 .oc-mobile-scheduled-workspace [data-slot="input"]:not(:focus) {
   border-color: transparent;
   background: var(--oc-mobile-field-background);
-  box-shadow:
-    0 5px 14px var(--oc-mobile-shadow-control),
-    inset 0 1px 0 var(--oc-mobile-float-highlight);
+  box-shadow: var(--oc-mobile-glass-shadow);
 }
 
 .oc-mobile-scheduled-controls {
@@ -739,15 +830,15 @@ button.oc-mobile-group-label-trigger:focus-visible {
   padding: 0;
 }
 
+/* Settings search field keeps its filled base (it is an input), but shares
+   the same clean outside-shadow recipe as the floating glass controls. */
 .oc-mobile-settings-search-field {
   width: 100%;
   min-height: 2.75rem;
   border: 0;
   border-radius: var(--oc-mobile-control-radius);
   background: var(--oc-mobile-field-background);
-  box-shadow:
-    0 5px 14px var(--oc-mobile-shadow-control),
-    inset 0 1px 0 var(--oc-mobile-float-highlight);
+  box-shadow: var(--oc-mobile-glass-shadow);
 }
 
 .oc-mobile-settings-nav-list {
@@ -889,22 +980,35 @@ button.oc-mobile-group-label-trigger:focus-visible {
   text-align: center;
 }
 
+/*
+ * Floating glass control: clean translucent disc + backdrop frost.
+ * All shading lives OUTSIDE the disc (ambient + drop); inside only keeps
+ * a single top light line. No inner dark shadow — that reads as dirt.
+ */
 .oc-mobile-floating-action {
+  position: relative;
+  isolation: isolate;
+  overflow: hidden;
   border-radius: 999px;
   corner-shape: round;
-  background: color-mix(in srgb, var(--surface-elevated) 54%, transparent);
-  box-shadow:
-    0 4px 12px var(--oc-mobile-shadow-control),
-    inset 0 1px 0 var(--oc-mobile-float-highlight);
-  -webkit-backdrop-filter: blur(16px) saturate(1.25);
-  backdrop-filter: blur(16px) saturate(1.25);
+  border: 0;
+  background: var(--oc-mobile-glass-fill);
+  box-shadow: var(--oc-mobile-glass-shadow);
+  -webkit-backdrop-filter:
+    blur(var(--oc-mobile-glass-blur))
+    saturate(var(--oc-mobile-glass-saturate));
+  backdrop-filter:
+    blur(var(--oc-mobile-glass-blur))
+    saturate(var(--oc-mobile-glass-saturate));
+}
+
+.oc-mobile-floating-action > * {
+  position: relative;
+  z-index: 1;
 }
 
 .dark .oc-mobile-floating-action {
-  border: 1px solid var(--oc-mobile-border);
-  background: color-mix(in srgb, var(--surface-elevated) 88%, transparent);
   color: var(--surface-foreground);
-  box-shadow: none;
 }
 
 .oc-mobile-detail-editor-title {
@@ -1253,6 +1357,17 @@ button.oc-mobile-group-label-trigger:focus-visible {
     -webkit-backdrop-filter: none;
     backdrop-filter: none;
   }
+
+  .oc-mobile-floating-action {
+    box-shadow:
+      0 6px 14px -5px rgb(0 0 0 / 0.12),
+      0 2px 4px -2px rgb(0 0 0 / 0.08);
+  }
+
+  .oc-mobile-glass-control--clear {
+    background: var(--surface-elevated);
+  }
+
 }
 
 @media (max-width: 1024px) {
@@ -1288,31 +1403,26 @@ button.oc-mobile-group-label-trigger:focus-visible {
 
 /* General mobile improvements for all mobile devices */
 @media (max-width: 1024px) {
-  /* Override CSS custom properties for mobile */
+  /*
+   * Mobile typography defaults (must match MOBILE_SEMANTIC_TYPOGRAPHY).
+   * Do NOT use !important on these variables — Settings fontSize/codeFontSize
+   * write scaled values on :root via applyTypography() and must win when ≠100%.
+   * At 100%, applyTypography removes inline overrides so these defaults apply.
+   */
   :root.mobile-pointer:not(.desktop-runtime) {
-    --text-markdown: 1rem;
-    --text-code: 0.875rem;
-    --text-ui-header: 0.9375rem;
-    --text-ui-label: 0.875rem;
-    --text-meta: 0.875rem;
-    --text-micro: 0.8125rem;
-  }
-
-  /* Force override with higher specificity */
-  :root.mobile-pointer:not(.desktop-runtime) * {
-    --text-markdown: 1rem !important;
-    --text-code: 0.875rem !important;
-    --text-ui-header: 0.9375rem !important;
-    --text-ui-label: 0.875rem !important;
-    --text-meta: 0.875rem !important;
-    --text-micro: 0.8125rem !important;
+    --text-markdown: 0.9375rem;
+    --text-code: 0.8125rem;
+    --text-ui-header: 0.875rem;
+    --text-ui-label: 0.8125rem;
+    --text-meta: 0.8125rem;
+    --text-micro: 0.75rem;
   }
 
   :root.mobile-pointer:not(.desktop-runtime) .markdown-content ul > li::before {
     left: -1rem;
   }
 
-  /* Additional override for elements using typography classes */
+  /* Typography utility classes hardcode font-size; unset so they inherit --text-* */
   :root.mobile-pointer:not(.desktop-runtime) .typography-markdown,
   :root.mobile-pointer:not(.desktop-runtime) .typography-code,
   :root.mobile-pointer:not(.desktop-runtime) .typography-ui-header,
@@ -1322,10 +1432,9 @@ button.oc-mobile-group-label-trigger:focus-visible {
     font-size: unset !important;
   }
 
-  /* Fix font size for tool displays */
+  /* Tool/code surfaces: consume shared --text-code (respects Settings scale) */
   :root.mobile-pointer:not(.desktop-runtime) [class*="tool"],
   :root.mobile-pointer:not(.desktop-runtime) [class*="code"] {
-    --text-code: 0.875rem !important;
     font-size: var(--text-code) !important;
   }
 
@@ -1583,6 +1692,39 @@ button.oc-mobile-group-label-trigger:focus-visible {
     overflow-x: auto !important;
     overflow-y: hidden !important;
     -webkit-overflow-scrolling: touch;
+  }
+
+  /*
+   * Generic `.overflow-hidden { overflow-x: hidden !important }` above would
+   * crush table scroll surfaces. Re-assert horizontal pan for markdown tables
+   * (same pattern as code-block-body).
+   */
+  :root.mobile-pointer:not(.desktop-runtime)
+    .markdown-content
+    [data-markdown="table-scroll"] {
+    overflow-x: auto !important;
+    overflow-y: hidden !important;
+    -webkit-overflow-scrolling: touch;
+    overscroll-behavior-x: contain;
+  }
+
+  :root.mobile-pointer:not(.desktop-runtime)
+    .markdown-content
+    [data-markdown="table"] {
+    width: max-content !important;
+    min-width: 100%;
+    max-width: none;
+  }
+
+  :root.mobile-pointer:not(.desktop-runtime)
+    .markdown-content
+    [data-markdown="table-header-cell"],
+  :root.mobile-pointer:not(.desktop-runtime)
+    .markdown-content
+    [data-markdown="table-cell"] {
+    /* Slightly denser padding on phone; still keep one-line cells so swipe works */
+    padding: 0.5rem 0.75rem;
+    white-space: nowrap;
   }
 
   /* Fix mobile viewport height */

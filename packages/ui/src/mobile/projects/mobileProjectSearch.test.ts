@@ -17,10 +17,13 @@ const projects: MobileProjectHomeItem[] = [{
     sessions: [{
       id: 'parent',
       title: 'Parent session',
-      children: [{ id: 'child', title: 'Fix mobile search', subtitle: 'Follow-up' }],
     }, {
       id: 'other',
       title: 'Unrelated session',
+    }, {
+      id: 'search-hit',
+      title: 'Fix mobile search',
+      subtitle: 'Follow-up',
     }, {
       id: '__show_more__',
       kind: 'pagination',
@@ -46,14 +49,14 @@ describe('filterMobileProjectsForSearch', () => {
     expect(result[0]?.worktrees).toEqual([]);
   });
 
-  test('keeps parent context for a matching child session and removes unrelated rows', () => {
+  test('matches only flat parent sessions and removes unrelated rows', () => {
     const result = filterMobileProjectsForSearch(projects, 'mobile search');
     expect(result).toHaveLength(1);
     expect(result[0]?.worktrees).toHaveLength(1);
     expect(result[0]?.worktrees[0]?.sessions).toEqual([{
-      id: 'parent',
-      title: 'Parent session',
-      children: [{ id: 'child', title: 'Fix mobile search', subtitle: 'Follow-up' }],
+      id: 'search-hit',
+      title: 'Fix mobile search',
+      subtitle: 'Follow-up',
     }]);
   });
 

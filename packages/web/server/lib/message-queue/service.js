@@ -502,7 +502,7 @@ export const createMessageQueueService = ({ dbPath, getRuntimeConfig = () => nul
     touchScopes([scope.scope_id], revision); return { revision, scopeID: scope.scope_id, queueItemID: row.queue_item_id, rowVersion: itemRow(row.queue_item_id).row_version };
   });
   const remove = (input) => transaction(input?.requestID, input, 'queue', (revision, key) => {
-    if (!plainObject(input) || Object.keys(input).some((key) => !REMOVE_REQUEST_KEYS.has(key))) fail('validation_error'); const row = itemRow(input?.queueItemID); if (!row) fail('not_found'); const scope = scopeRow(row.scope_id); if (scope.runtime_key !== key) fail('not_found'); assertScopeRevision(scope, input.expectedRevision); assertRowVersion(row, input.expectedRowVersion); if (row.status === 'sending' || row.status === 'reconciling') fail('scope_locked'); assertUnreserved(row.queue_item_id);
+    if (!plainObject(input) || Object.keys(input).some((key) => !REMOVE_REQUEST_KEYS.has(key))) fail('validation_error'); const row = itemRow(input?.queueItemID); if (!row) fail('not_found'); const scope = scopeRow(row.scope_id); if (scope.runtime_key !== key) fail('not_found'); assertScopeRevision(scope, input.expectedRevision); assertRowVersion(row, input.expectedRowVersion); assertUnreserved(row.queue_item_id);
     db.prepare('DELETE FROM queue_item WHERE queue_item_id = ?').run(row.queue_item_id); touchScopes([scope.scope_id], revision); return { revision, scopeID: scope.scope_id, removedQueueItemID: row.queue_item_id };
   });
   const manualSend = (input) => transaction(input?.requestID, input, 'queue:manual-send', (revision, key) => {
@@ -519,7 +519,7 @@ export const createMessageQueueService = ({ dbPath, getRuntimeConfig = () => nul
   });
   const reserveForEdit = (input) => transaction(input?.requestID, input, 'queue:edit-reserve', (revision, key) => {
     if (!plainObject(input) || !['requestID', 'expectedRevision', 'rowVersion', 'owner', 'ttlMs', 'queueItemID'].every((field) => Object.hasOwn(input, field)) || !nonEmptyString(input.owner) || !Number.isSafeInteger(input.ttlMs) || input.ttlMs < 1_000 || input.ttlMs > 300_000) fail('validation_error');
-    const row = itemRow(input.queueItemID); if (!row) fail('not_found'); const scope = scopeRow(row.scope_id); if (scope.runtime_key !== key) fail('not_found'); assertScopeRevision(scope, input.expectedRevision); assertRowVersion(row, input.rowVersion); if (!['queued', 'retrying', 'failed', 'unresolved'].includes(row.status)) fail('scope_locked');
+    const row = itemRow(input.queueItemID); if (!row) fail('not_found'); const scope = scopeRow(row.scope_id); if (scope.runtime_key !== key) fail('not_found'); assertScopeRevision(scope, input.expectedRevision); assertRowVersion(row, input.rowVersion);
     const authority = authorityRow(key); const attempt = db.prepare('SELECT * FROM queue_attempt WHERE queue_item_id=?').get(row.queue_item_id); if (attempt.edit_reservation_expires_at >= now() && attempt.edit_reservation_token) fail('reserved');
     const token = crypto.randomUUID(); const expiresAt = now() + input.ttlMs;
     db.prepare('UPDATE queue_attempt SET edit_reservation_token=?,edit_reservation_owner=?,edit_reservation_expires_at=?,edit_reservation_generation=? WHERE queue_item_id=?').run(token, input.owner, expiresAt, authority.generation, row.queue_item_id);
@@ -535,7 +535,7 @@ export const createMessageQueueService = ({ dbPath, getRuntimeConfig = () => nul
     if (!nonEmptyString(queueItemID) || !nonEmptyString(token) || !Number.isInteger(generation) || generation < 0 || !Number.isSafeInteger(ttlMs) || ttlMs < 1_000 || ttlMs > 300_000) fail('validation_error');
     db.exec('BEGIN IMMEDIATE');
     try {
-      const row = itemRow(queueItemID); if (!row || scopeRow(row.scope_id)?.runtime_key !== key) fail('not_found'); if (!['queued', 'retrying', 'failed', 'unresolved'].includes(row.status)) fail('scope_locked');
+      const row = itemRow(queueItemID); if (!row || scopeRow(row.scope_id)?.runtime_key !== key) fail('not_found');
       const authority = authorityRow(key); if (authority.generation !== generation) fail('reservation_generation_conflict');
       const attempt = db.prepare('SELECT edit_reservation_token,edit_reservation_expires_at,edit_reservation_generation FROM queue_attempt WHERE queue_item_id=?').get(queueItemID);
       if (attempt?.edit_reservation_token !== token) fail('reservation_token_mismatch'); if (attempt.edit_reservation_generation !== generation) fail('reservation_generation_conflict'); if (attempt.edit_reservation_expires_at <= now()) fail('reservation_expired');

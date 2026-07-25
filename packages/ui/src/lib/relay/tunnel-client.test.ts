@@ -309,52 +309,6 @@ const track = (client: RelayTunnelClient): RelayTunnelClient => {
   return client;
 };
 
-describe('createRelayTunnelClient HAPI L1', () => {
-  test('puts accessToken on the client WebSocket URL as token=', async () => {
-    const hostKeyPair = await generateEcdhKeyPair();
-    const hostPubJwk = await exportPublicKeyJwk(hostKeyPair.publicKey);
-    let openedUrl = '';
-    const client = createRelayTunnelClient({
-      relayUrl: 'wss://hub.example/api/openchamber/relay/ws',
-      serverId: 'server-1',
-      hostEncPubJwk: hostPubJwk,
-      transport: 'hapi',
-      accessToken: 'cli_tok:ns',
-      helloRetryMs: 20,
-      reconnectBaseDelayMs: 20,
-      reconnectMaxDelayMs: 80,
-      createWireSocket: (url) => {
-        openedUrl = url;
-        const clientEndpoint = new FakeEndpoint();
-        const hostEndpoint = new FakeEndpoint();
-        clientEndpoint.peer = hostEndpoint;
-        hostEndpoint.peer = clientEndpoint;
-        attachMiniHost(hostEndpoint, hostKeyPair.privateKey);
-        queueMicrotask(() => clientEndpoint.onopen?.());
-        return clientEndpoint;
-      },
-    });
-    track(client);
-    await client.fetch('/health');
-    const parsed = new URL(openedUrl);
-    expect(parsed.searchParams.get('token')).toBe('cli_tok:ns');
-    expect(parsed.searchParams.get('role')).toBe('client');
-    expect(parsed.searchParams.get('serverId')).toBe('server-1');
-    client.close();
-  });
-
-  test('injects X-OpenChamber-Transport: hapi on tunneled HTTP when transport=hapi', async () => {
-    const requests: Array<{ path: string; method: string; headers: Record<string, string> }> = [];
-    const { client } = await setupClient(
-      { onHttpRequest: (request) => requests.push(request) },
-      { transport: 'hapi', accessToken: 'cli_tok' },
-    );
-    track(client);
-    await client.fetch('/health');
-    expect(requests[0]?.headers['x-openchamber-transport']).toBe('hapi');
-  });
-});
-
 describe('createRelayTunnelClient', () => {
   test('performs concurrent fetches over one tunnel', async () => {
     const { client } = await setupClient();

@@ -362,7 +362,9 @@ describe('Assistant UI product contract', () => {
     expect(header).toContain("paddingTop: 'var(--oc-safe-area-top, 0px)'");
     expect(header).toContain('h-[var(--oc-header-height,56px)]');
     expect(detailNavigation).toContain('var(--oc-safe-area-top');
-    expect(detailNavigation).toContain('grid-cols-[2.75rem_minmax(0,1fr)_2.75rem]');
+    expect(detailNavigation).toContain("grid-cols-[2.75rem_minmax(0,1fr)_2.75rem]");
+    expect(detailNavigation).toContain("grid-cols-[2.75rem_minmax(0,1fr)_auto]");
+    expect(detailNavigation).toContain('trailing?: ReactNode');
     expect(mobileStyles).toContain('var(--oc-mobile-detail-action-edge-inset, 1rem)');
     expect(mobileStyles).toContain('var(--oc-safe-area-top, 0px) +');
     expect(mobileStyles).toContain('calc(var(--oc-safe-area-top, 0px) + 35%)');

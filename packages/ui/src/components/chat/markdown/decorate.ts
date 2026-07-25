@@ -308,29 +308,27 @@ const decorateTables = (root: HTMLElement): void => {
     if (existing) continue;
 
     const wrapper = document.createElement('div');
+    // Layout chrome lives in index.css / mobile.css via data-markdown hooks so
+    // wide tables can grow beyond the message column and scroll horizontally.
     wrapper.className = 'my-4';
     wrapper.setAttribute('data-markdown', 'table-wrapper');
 
     const scroll = document.createElement('div');
-    scroll.className = 'overflow-x-auto rounded-lg border border-border/80 bg-[var(--surface-elevated)]';
+    scroll.setAttribute('data-markdown', 'table-scroll');
 
     const parent = table.parentElement;
     if (!parent) continue;
     parent.replaceChild(wrapper, table);
     table.setAttribute('data-markdown', 'table');
-    table.classList.add('w-full', 'border-collapse', 'text-sm');
 
     for (const tr of Array.from(table.querySelectorAll('tr'))) {
-      tr.classList.add('border-b', 'border-border/60');
+      tr.setAttribute('data-markdown', 'table-row');
     }
-    const lastBodyRow = table.querySelector('tbody tr:last-child');
-    lastBodyRow?.classList.remove('border-b');
-    lastBodyRow?.classList.add('border-0');
     for (const th of Array.from(table.querySelectorAll('th'))) {
-      th.classList.add('border-r', 'border-border/60', 'px-4', 'py-2.5', 'text-left', 'align-middle', 'font-semibold', 'text-foreground', 'last:border-r-0');
+      th.setAttribute('data-markdown', 'table-header-cell');
     }
     for (const td of Array.from(table.querySelectorAll('td'))) {
-      td.classList.add('border-r', 'border-border/60', 'px-4', 'py-2.5', 'align-middle', 'text-foreground/90', 'last:border-r-0');
+      td.setAttribute('data-markdown', 'table-cell');
     }
 
     scroll.appendChild(table);

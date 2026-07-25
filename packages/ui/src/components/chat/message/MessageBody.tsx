@@ -1982,8 +1982,8 @@ const AssistantMessageBody = React.memo(({
                                     'min-w-0 break-words',
                                     errorVariant === 'info'
                                         ? cn(
-                                            // 关键：.markdown-content 默认 --text-markdown（移动端 1rem），
-                                            // 必须 ! 压回 meta，否则 14px 图标对着 16px 正文会失调.
+                                            // 关键：.markdown-content 默认 --text-markdown（移动端 0.9375rem），
+                                            // 必须 ! 压回 meta，否则图标对着正文字号会失调.
                                             'text-muted-foreground [&_.markdown-content]:text-muted-foreground [&_p]:m-0',
                                             '[&_.markdown-content]:!leading-5',
                                             isMobile

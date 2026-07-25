@@ -28,6 +28,10 @@ import { filterMobileProjectsForSearch } from './mobileProjectSearch';
 
 export type MobileSessionTreeNode = MobileSessionRowModel & {
   directory?: string;
+  /**
+   * Nested subagents may exist for archive/cascade helpers, but the mobile home
+   * list is intentionally flat: never render children or expand chrome.
+   */
   children?: MobileSessionTreeNode[];
   expanded?: boolean;
 };
@@ -57,7 +61,6 @@ export type MobileProjectsHomeProps = {
   onToggleWorktree: (project: MobileProjectHomeItem, worktree: MobileWorktreeGroup) => void;
   /** Worktrees currently expose one direct action: start a session in that directory. */
   onNewWorktreeSession?: (project: MobileProjectHomeItem, worktree: MobileWorktreeGroup) => void;
-  onToggleSessionChildren: (session: MobileSessionTreeNode) => void;
   onSelectSession: (session: MobileSessionTreeNode) => void;
   onPinSession: (session: MobileSessionTreeNode) => void;
   onArchiveSession: (session: MobileSessionTreeNode) => void;
@@ -65,17 +68,14 @@ export type MobileProjectsHomeProps = {
   className?: string;
 };
 
-type SessionTreeProps = Pick<
+type SessionListProps = Pick<
   MobileProjectsHomeProps,
-  | 'onToggleSessionChildren'
   | 'onSelectSession'
   | 'onPinSession'
   | 'onArchiveSession'
   | 'onOpenSessionActions'
 > & {
   sessions: MobileSessionTreeNode[];
-  depth?: number;
-  forceExpanded?: boolean;
 };
 
 function MobileLiveSessionRow(props: MobileSessionRowProps) {
@@ -100,52 +100,30 @@ function MobileLiveSessionRow(props: MobileSessionRowProps) {
   return <MobileSessionRow {...props} indicator={indicator} />;
 }
 
-function SessionTree({
+/** Flat session list only — no subagent nesting or expand/collapse chevrons. */
+function SessionList({
   sessions,
-  depth = 0,
-  forceExpanded = false,
-  onToggleSessionChildren,
   onSelectSession,
   onPinSession,
   onArchiveSession,
   onOpenSessionActions,
-}: SessionTreeProps) {
+}: SessionListProps) {
   return (
     <>
       {sessions.map((session, index) => {
-        const hasChildren = Boolean(session.children?.length);
         const isFollowedByPagination = session.kind === 'pagination'
           && sessions[index + 1]?.kind === 'pagination';
         const Row = session.kind === 'pagination' ? MobileSessionRow : MobileLiveSessionRow;
         return (
-          <React.Fragment key={session.id}>
-            <Row
-              session={session}
-              depth={depth}
-              hasChildren={hasChildren}
-              expanded={forceExpanded || session.expanded}
-              paginationContinues={isFollowedByPagination}
-              onToggleChildren={hasChildren && !forceExpanded
-                ? () => onToggleSessionChildren(session)
-                : undefined}
-              onSelect={onSelectSession}
-              onPin={onPinSession}
-              onArchive={onArchiveSession}
-              onOpenActions={onOpenSessionActions}
-            />
-            {hasChildren && (forceExpanded || session.expanded) ? (
-              <SessionTree
-                sessions={session.children ?? []}
-                depth={depth + 1}
-                forceExpanded={forceExpanded}
-                onToggleSessionChildren={onToggleSessionChildren}
-                onSelectSession={onSelectSession}
-                onPinSession={onPinSession}
-                onArchiveSession={onArchiveSession}
-                onOpenSessionActions={onOpenSessionActions}
-              />
-            ) : null}
-          </React.Fragment>
+          <Row
+            key={session.id}
+            session={session}
+            paginationContinues={isFollowedByPagination}
+            onSelect={onSelectSession}
+            onPin={onPinSession}
+            onArchive={onArchiveSession}
+            onOpenActions={onOpenSessionActions}
+          />
         );
       })}
     </>
@@ -237,7 +215,6 @@ export function MobileProjectsHome({
   onOpenProjectActions,
   onToggleWorktree,
   onNewWorktreeSession,
-  onToggleSessionChildren,
   onSelectSession,
   onPinSession,
   onArchiveSession,
@@ -426,10 +403,8 @@ export function MobileProjectsHome({
                       )}
                     >
                       {pinnedExpanded ? (
-                        <SessionTree
+                        <SessionList
                           sessions={pinnedSessions}
-                          forceExpanded={searching}
-                          onToggleSessionChildren={onToggleSessionChildren}
                           onSelectSession={searching ? handleSelectSearchSession : onSelectSession}
                           onPinSession={onPinSession}
                           onArchiveSession={onArchiveSession}
@@ -452,10 +427,8 @@ export function MobileProjectsHome({
                         />
                       )}
                     >
-                      <SessionTree
+                      <SessionList
                         sessions={mainRest}
-                        forceExpanded={searching}
-                        onToggleSessionChildren={onToggleSessionChildren}
                         onSelectSession={searching ? handleSelectSearchSession : onSelectSession}
                         onPinSession={onPinSession}
                         onArchiveSession={onArchiveSession}
@@ -500,10 +473,8 @@ export function MobileProjectsHome({
                         )}
                       >
                         {worktreeExpanded && worktreeRest.length > 0 ? (
-                          <SessionTree
+                          <SessionList
                             sessions={worktreeRest}
-                            forceExpanded={searching}
-                            onToggleSessionChildren={onToggleSessionChildren}
                             onSelectSession={searching ? handleSelectSearchSession : onSelectSession}
                             onPinSession={onPinSession}
                             onArchiveSession={onArchiveSession}

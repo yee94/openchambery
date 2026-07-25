@@ -9,7 +9,6 @@ import { toast } from '@/components/ui';
 import { copyTextToClipboard } from '@/lib/clipboard';
 import { useI18n } from '@/lib/i18n';
 import { deleteSessionsWithUndo, showArchivedSessionsUndoToast } from '@/lib/sessionMutationUndo';
-import { useMobileSessionExpansionStore } from '@/stores/useMobileSessionExpansionStore';
 import { useMobileSessionTreeStore } from '@/stores/useMobileSessionTreeStore';
 import { useProjectsStore } from '@/stores/useProjectsStore';
 import { useSessionPinnedStore } from '@/stores/useSessionPinnedStore';
@@ -66,7 +65,6 @@ export function MobileProjectsHomeContainer({
 
   const setProjectExpanded = useMobileSessionTreeStore((state) => state.setProjectExpanded);
   const setWorktreeExpanded = useMobileSessionTreeStore((state) => state.setWorktreeExpanded);
-  const toggleParent = useMobileSessionExpansionStore((state) => state.toggleParent);
   const togglePinnedSession = useSessionPinnedStore((state) => state.toggle);
   const pinnedSessionIds = useSessionPinnedStore((state) => state.ids);
   const archiveSessions = useSessionUIStore((state) => state.archiveSessions);
@@ -160,11 +158,6 @@ export function MobileProjectsHomeContainer({
     if (!raw) return;
     setActionTarget({ kind: 'session', session: raw });
     setActionsOpen(true);
-  });
-
-  const handleToggleSessionChildren = useEvent((session: MobileSessionTreeNode) => {
-    if (isPaginationNodeId(session.id)) return;
-    toggleParent(session.id);
   });
 
   const handleToggleProject = useEvent((project: MobileProjectHomeItem) => {
@@ -374,7 +367,6 @@ export function MobileProjectsHomeContainer({
         onOpenProjectActions={handleOpenProjectActions}
         onToggleWorktree={handleToggleWorktree}
         onNewWorktreeSession={handleNewWorktreeSession}
-        onToggleSessionChildren={handleToggleSessionChildren}
         onSelectSession={handleSelectSession}
         onPinSession={handlePinSession}
         onArchiveSession={(session) => {

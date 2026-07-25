@@ -35,7 +35,7 @@ const TINT_DESTRUCTIVE = [
 const buttonVariants = cva(
   [
     "group relative inline-flex items-center justify-center gap-2 whitespace-nowrap rounded-[10px] [corner-shape:squircle] supports-[corner-shape:squircle]:rounded-[50px] typography-ui-label font-medium tracking-[0.01em] shrink-0 select-none",
-    "transition-[background-color,border-color,color,opacity] duration-150 ease-out outline-none",
+    "transition-[background-color,border-color,color,opacity,filter,transform] duration-150 ease-out outline-none",
     "focus-visible:border-ring focus-visible:ring-ring/50 focus-visible:ring-[3px]",
     "aria-invalid:ring-destructive/20 dark:aria-invalid:ring-destructive/40 aria-invalid:border-destructive",
     "disabled:pointer-events-none disabled:opacity-50",
@@ -54,7 +54,7 @@ const buttonVariants = cva(
         outline:
           "bg-[var(--surface-elevated)] text-foreground border border-border/60 hover:bg-interactive-hover hover:text-foreground",
         mobileGlass:
-          "oc-mobile-floating-action border-0 text-muted-foreground hover:bg-interactive-hover/50 hover:text-foreground focus-visible:border-transparent focus-visible:ring-2 focus-visible:ring-[var(--interactive-focus-ring)]",
+          "oc-mobile-floating-action text-foreground hover:brightness-105 active:scale-[0.96] focus-visible:border-transparent focus-visible:ring-2 focus-visible:ring-[var(--interactive-focus-ring)]",
         // Flat chip for "one-of-N" toggles. Unselected: hairline border + hover
         // fill. Selected (aria-pressed): same tinted palette as the default
         // button (pale primary fill + primary text + soft primary border).

@@ -372,6 +372,32 @@ describe('message queue service', () => {
     expect(service.getScope(admitted.scopeID).items).toEqual([]); service.close();
   });
 
+  it('lets a client discard or edit an active delivery tracking row', () => {
+    const service = createService(dbPath());
+    const first = service.admit(admission('active-remove', 'active-remove'));
+    service.setAuthority({ authority: 'active', expectedGeneration: 0 });
+    const firstClaim = service.claimNext({ owner: 'worker' });
+    service.beginAttempt({ queueItemID: first.queueItemID, leaseToken: firstClaim.leaseToken, fenceGeneration: firstClaim.fenceGeneration, messageID: 'msg_active_remove' });
+    const activeRemoveScope = service.getScope(first.scopeID);
+    const activeRemoveItem = activeRemoveScope.items[0];
+    expect(activeRemoveItem.status).toBe('sending');
+    expect(service.remove({ requestID: 'discard-active', queueItemID: first.queueItemID, expectedRevision: activeRemoveScope.revision, expectedRowVersion: activeRemoveItem.rowVersion })).toMatchObject({ removedQueueItemID: first.queueItemID });
+    expect(service.getScope(first.scopeID).items).toEqual([]);
+    expect(service.confirmByMessage({ directory: '/repo', sessionID: 'session-1', messageID: 'msg_active_remove' })).toMatchObject({ completed: false });
+
+    const secondInput = admission('active-edit', 'active-edit');
+    const second = service.admit(secondInput);
+    const secondClaim = service.claimNext({ owner: 'worker' });
+    service.beginAttempt({ queueItemID: second.queueItemID, leaseToken: secondClaim.leaseToken, fenceGeneration: secondClaim.fenceGeneration, messageID: 'msg_active_edit' });
+    const activeEditScope = service.getScope(second.scopeID);
+    const activeEditItem = activeEditScope.items[0];
+    const reservation = service.reserveForEdit({ requestID: 'reserve-active', queueItemID: second.queueItemID, expectedRevision: activeEditScope.revision, rowVersion: activeEditItem.rowVersion, owner: 'editor', ttlMs: 10_000 });
+    expect(reservation).toMatchObject({ queueItemID: second.queueItemID });
+    expect(service.reservedRemove({ requestID: 'edit-active', queueItemID: second.queueItemID, expectedRevision: activeEditScope.revision, expectedRowVersion: activeEditItem.rowVersion, token: reservation.token, generation: reservation.generation })).toMatchObject({ removedQueueItemID: second.queueItemID });
+    expect(service.getScope(second.scopeID).items).toEqual([]);
+    service.close();
+  });
+
   it('normalizes sending records as one durable revision with matching scope revision', () => {
     const pathname = dbPath(); const service = createService(pathname); const admitted = service.admit(admission()); service.close();
     const raw = new Database(pathname); raw.prepare("UPDATE queue_item SET status = 'sending'").run(); raw.close();

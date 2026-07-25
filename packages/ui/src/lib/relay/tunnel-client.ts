@@ -151,11 +151,6 @@ export interface RelayTunnelClientOptions {
   serverId: string;
   hostEncPubJwk: JsonWebKey;
   grant?: string;
-  // HAPI Hub private-relay L1: authenticate the client WebSocket with the
-  // shared access token (CLI_API_TOKEN[:namespace]). Also marks tunneled HTTP
-  // with X-OpenChamber-Transport: hapi so the host records lastTransport=hapi.
-  transport?: 'hapi';
-  accessToken?: string;
   /** Test hook: replaces native WebSocket construction with a fake wire. */
   createWireSocket?: (url: string) => TunnelWireSocket;
   helloRetryMs?: number;
@@ -342,8 +337,6 @@ export const createRelayTunnelClient = (options: RelayTunnelClientOptions): Rela
     url.searchParams.set('role', 'client');
     url.searchParams.set('serverId', options.serverId);
     if (options.grant) url.searchParams.set('grant', options.grant);
-    const accessToken = typeof options.accessToken === 'string' ? options.accessToken.trim() : '';
-    if (accessToken) url.searchParams.set('token', accessToken);
     return url.toString();
   };
 
@@ -690,12 +683,6 @@ export const createRelayTunnelClient = (options: RelayTunnelClientOptions): Rela
 
   const tunnelFetch = async (input: string | URL | Request, init?: RequestInit): Promise<Response> => {
     const request = await normalizeTunnelRequest(input, init);
-    // HAPI private-relay: stamp every tunneled HTTP request so the host records
-    // lastTransport=hapi (mirrors the direct HAPI gateway surface header). WS
-    // substreams keep their own open payload and do not carry this header.
-    if (options.transport === 'hapi') {
-      request.headers['x-openchamber-transport'] = 'hapi';
-    }
     const signal = request.signal;
     if (signal?.aborted) throw abortError();
     const channel = await waitForChannel(signal);
