@@ -75,11 +75,72 @@ describe('mobile connection storage', () => {
       // Web surface: token stays inline like direct connections.
       expect(saved.clientToken).toBe('oc_client_secret');
 
-      // Persisted metadata carries only the three transport fields — no grant/token.
+      // Classic relay metadata carries only the three transport fields — no grant/client token.
       const raw = JSON.parse(window.localStorage.getItem(STORAGE_KEY) || '[]') as Array<Record<string, unknown>>;
       const rawCandidate = (raw[0]?.candidates as Array<Record<string, unknown>>)[0];
       expect(rawCandidate.kind).toBe('relay');
       expect(Object.keys(rawCandidate.relay as object).sort()).toEqual(['hostEncPubJwk', 'relayUrl', 'serverId']);
+    } finally {
+      restoreGlobals();
+    }
+  });
+
+  test('web mobile: HAPI private-relay persists transport + accessToken inline', async () => {
+    try {
+      installTestWindow();
+      const hapiRelay: MobileRelayConfig = {
+        ...testRelay,
+        relayUrl: 'wss://hub.example/api/openchamber/relay/ws',
+        transport: 'hapi',
+        accessToken: 'cli_api_token:ns',
+      };
+
+      await upsertMobileConnection({
+        label: 'HAPI Relay Desktop',
+        candidates: [{ kind: 'relay', relay: hapiRelay }],
+        clientToken: 'oc_client_secret',
+      });
+
+      const [saved] = await loadMobileConnections();
+      expect(saved?.candidates).toEqual([{ kind: 'relay', relay: hapiRelay }]);
+
+      const raw = JSON.parse(window.localStorage.getItem(STORAGE_KEY) || '[]') as Array<Record<string, unknown>>;
+      const rawRelay = ((raw[0]?.candidates as Array<Record<string, unknown>>)[0]?.relay) as Record<string, unknown>;
+      expect(rawRelay.transport).toBe('hapi');
+      // Web surface: accessToken stays inline (same risk model as clientToken).
+      expect(rawRelay.accessToken).toBe('cli_api_token:ns');
+      expect(Object.keys(rawRelay).sort()).toEqual(['accessToken', 'hostEncPubJwk', 'relayUrl', 'serverId', 'transport']);
+    } finally {
+      restoreGlobals();
+    }
+  });
+
+  test('native-style metadata with hasAccessToken (no inline token) still loads HAPI relay', async () => {
+    try {
+      installTestWindow();
+      // Simulate native write: metadata only has hasAccessToken, not the secret.
+      window.localStorage.setItem(STORAGE_KEY, JSON.stringify([{
+        id: 'native-hapi',
+        label: 'Native HAPI',
+        lastUsedAt: 10,
+        hasToken: true,
+        candidates: [{
+          kind: 'relay',
+          relay: {
+            ...testRelay,
+            relayUrl: 'wss://hub.example/api/openchamber/relay/ws',
+            transport: 'hapi',
+            hasAccessToken: true,
+          },
+        }],
+      }]));
+
+      const connections = await loadMobileConnections();
+      expect(connections).toHaveLength(1);
+      const relay = connections[0]?.candidates.find((c) => c.kind === 'relay');
+      expect(relay && relay.kind === 'relay' ? relay.relay.transport : null).toBe('hapi');
+      expect(relay && relay.kind === 'relay' ? relay.relay.hasAccessToken : null).toBe(true);
+      expect(relay && relay.kind === 'relay' ? relay.relay.accessToken : 'x').toEqual(undefined);
     } finally {
       restoreGlobals();
     }

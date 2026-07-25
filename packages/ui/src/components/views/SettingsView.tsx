@@ -111,8 +111,8 @@ type SettingsDetailHistoryEntry = {
 
 interface SettingsViewProps {
   onClose?: () => void;
-  /** Opens the dedicated mobile instance switcher. */
-  onOpenInstances?: () => void;
+  /** Native-mobile instance management rendered as a standard Settings page. */
+  mobileInstancesPage?: React.ReactNode;
   /** Force mobile layout regardless of device detection */
   forceMobile?: boolean;
   /** Rendered inside a window/dialog (skip traffic light padding) */
@@ -204,6 +204,8 @@ export function getSettingsNavIcon(slug: SettingsPageSlug): IconName | null {
   switch (slug) {
     case "projects":
       return "folders";
+    case "instances":
+      return "server";
     case "remote-instances":
       return "server";
     case "appearance":
@@ -367,7 +369,7 @@ const SettingsHome: React.FC<{ onOpen: (slug: SettingsPageSlug) => void }> = ({
 
 export const SettingsView: React.FC<SettingsViewProps> = ({
   onClose,
-  onOpenInstances,
+  mobileInstancesPage,
   forceMobile,
   isWindowed,
   visiblePageSlugs,
@@ -463,9 +465,10 @@ export const SettingsView: React.FC<SettingsViewProps> = ({
     return SETTINGS_PAGE_METADATA.filter((page) => page.slug !== "home")
       .filter((page) => !allowedPages || allowedPages.has(page.slug))
       .filter((page) => isPageAvailable(page, runtimeCtx))
+      .filter((page) => page.slug !== "instances" || Boolean(mobileInstancesPage))
       .filter((page) => !(runtimeCtx.isVSCode && page.slug === "projects"))
       .filter((page) => !(isMobile && page.slug === "shortcuts"));
-  }, [runtimeCtx, isMobile, visiblePageSlugs]);
+  }, [runtimeCtx, isMobile, mobileInstancesPage, visiblePageSlugs]);
 
   const visiblePageGroups = React.useMemo(() => {
     return groupSettingsPages(visiblePages);
@@ -623,6 +626,8 @@ export const SettingsView: React.FC<SettingsViewProps> = ({
       switch (slug) {
         case "projects":
           return t("settings.page.projects.title");
+        case "instances":
+          return t("mobile.settings.switchInstance");
         case "remote-instances":
           return t("settings.page.remoteInstances.title");
         case "providers":
@@ -683,7 +688,7 @@ export const SettingsView: React.FC<SettingsViewProps> = ({
     return buildSettingsSearchResults({
       query: settingsSearchQuery,
       runtimeCtx: { ...runtimeCtx, isDesktopLocalOrigin, isMac, isWindows },
-      visiblePageSlugs,
+      visiblePageSlugs: visiblePages.map((page) => page.slug),
       t,
       getPageTitle,
     });
@@ -695,7 +700,7 @@ export const SettingsView: React.FC<SettingsViewProps> = ({
     runtimeCtx,
     settingsSearchQuery,
     t,
-    visiblePageSlugs,
+    visiblePages,
   ]);
 
   const prepareSettingsSearchTarget = React.useCallback(
@@ -1046,6 +1051,8 @@ export const SettingsView: React.FC<SettingsViewProps> = ({
           return <SettingsHome onOpen={openPage} />;
         case "projects":
           return <ProjectsPage />;
+        case "instances":
+          return mobileInstancesPage ?? renderUnavailable();
         case "remote-instances":
           return <RemoteInstancesPage />;
         case "agents":
@@ -1109,6 +1116,7 @@ export const SettingsView: React.FC<SettingsViewProps> = ({
     [
       handleMobileSplitItemDeleted,
       isMobile,
+      mobileInstancesPage,
       mobileFlow,
       openChamberSectionBySlug,
       openPage,
@@ -1374,27 +1382,6 @@ export const SettingsView: React.FC<SettingsViewProps> = ({
               )
             ) : (
               <>
-                {isMobile && onOpenInstances ? (
-                  <MobileSettingsGroup
-                    label={null}
-                    ariaLabel={t("mobile.settings.switchInstance")}
-                  >
-                    <button
-                      type="button"
-                      onClick={onOpenInstances}
-                      className="oc-mobile-settings-row text-foreground hover:bg-interactive-hover"
-                    >
-                      <Icon name="server" className="h-4 w-4 shrink-0" />
-                      <span className="min-w-0 flex-1 truncate typography-ui-label font-normal">
-                        {t("mobile.settings.switchInstance")}
-                      </span>
-                      <Icon
-                        name="arrow-right-s"
-                        className="size-4 shrink-0 text-muted-foreground/60"
-                      />
-                    </button>
-                  </MobileSettingsGroup>
-                ) : null}
                 {visiblePageGroups.map(({ group, pages }, groupIndex) => {
                 const groupLabel = t(
                   `settings.view.navigation.groups.${group}`,

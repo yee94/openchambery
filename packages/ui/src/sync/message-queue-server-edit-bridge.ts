@@ -88,7 +88,7 @@ export const createMessageQueueServerEditBridge = (overrides: Partial<Dependenci
         if (!draft.durable) return diagnostic('draft-rejected', 'draft', draft.status);
         if (!deps.current(queueRuntime) || leaseLost) return diagnostic('queue-retained', 'remove', leaseLost ? 'lease-lost' : 'runtime-stale', true);
         try {
-          const removed = await deps.queue.removeReserved({ requestID: requestID(), scopeID: input.scopeID, revision: input.scopeRevision, item: input.item, token: reservation.token, generation: reservation.generation, runtime: queueRuntime });
+          const removed = await deps.queue.removeReserved({ requestID: requestID(), scopeID: input.scopeID, revision: reservation.revision, item: { ...input.item, rowVersion: reservation.rowVersion }, token: reservation.token, generation: reservation.generation, runtime: queueRuntime });
           if (!removed) return diagnostic('queue-retained', 'remove', 'remove-rejected', true);
           released = true;
           return { status: 'committed', current: draft.current, draftDurable: true, queueDurablyRemoved: true, attachmentIssues: [], diagnostics: [] };

@@ -54,6 +54,60 @@ describe('resolveDesktopHostUrl', () => {
   });
 });
 
+describe('desktop host relay persistence', () => {
+  test('parses HAPI private-relay transport + accessToken from desktop config', async () => {
+    await withDesktopBridge(async (cmd) => {
+      expect(cmd).toBe('desktop_hosts_get');
+      return {
+        hosts: [{
+          id: 'remote-hapi',
+          label: 'HAPI Host',
+          url: 'relay://srv_hapi',
+          relay: {
+            relayUrl: 'wss://hub.example/api/openchamber/relay/ws',
+            serverId: 'srv_hapi',
+            hostEncPubJwk: { kty: 'EC', crv: 'P-256', x: 'eHhY', y: 'eVlZ' },
+            transport: 'hapi',
+            accessToken: 'cli_tok:ns',
+          },
+        }],
+        defaultHostId: 'remote-hapi',
+        initialHostChoiceCompleted: true,
+      };
+    }, async () => {
+      const config = await desktopHostsGet();
+      expect(config.hosts[0]?.relay).toEqual({
+        relayUrl: 'wss://hub.example/api/openchamber/relay/ws',
+        serverId: 'srv_hapi',
+        hostEncPubJwk: { kty: 'EC', crv: 'P-256', x: 'eHhY', y: 'eVlZ' },
+        transport: 'hapi',
+        accessToken: 'cli_tok:ns',
+      });
+    });
+  });
+
+  test('drops HAPI relay without accessToken', async () => {
+    await withDesktopBridge(async () => ({
+      hosts: [{
+        id: 'bad',
+        label: 'Broken',
+        url: 'relay://srv',
+        relay: {
+          relayUrl: 'wss://hub.example/api/openchamber/relay/ws',
+          serverId: 'srv',
+          hostEncPubJwk: { kty: 'EC', crv: 'P-256', x: 'eHhY', y: 'eVlZ' },
+          transport: 'hapi',
+        },
+      }],
+      defaultHostId: null,
+      initialHostChoiceCompleted: true,
+    }), async () => {
+      const config = await desktopHostsGet();
+      expect(config.hosts[0]?.relay).toEqual(undefined);
+    });
+  });
+});
+
 describe('desktop host runtime headers', () => {
   test('parses persisted request headers from desktop config', async () => {
     await withDesktopBridge(async (cmd) => {

@@ -76,13 +76,18 @@ const MOBILE_FAST_PROBE_TIMEOUT_MS = 2500;
 
 export type MobileConnectionMode = 'direct' | 'relay';
 
-// Persisted relay transport config. This is connection metadata, not a secret
-// (the host public key is public by construction) — but never log it raw; mask
-// the key coordinates in any debug output.
+// Persisted relay transport config. hostEncPubJwk is public-by-construction.
+// On native, HAPI accessToken lives in SecureStorage (key hapi-token.<connectionKey>);
+// metadata only stores hasAccessToken. On web mobile, accessToken may stay inline
+// (same risk model as clientToken). Never log the raw token — only a boolean.
 export type MobileRelayConfig = {
   relayUrl: string;
   serverId: string;
   hostEncPubJwk: JsonWebKey;
+  transport?: 'hapi';
+  accessToken?: string;
+  // Native metadata flag when the HAPI L1 token is in SecureStorage (not inline).
+  hasAccessToken?: boolean;
 };
 
 // One reachable transport for a saved device: a direct HTTP URL, or the E2EE
@@ -208,13 +213,18 @@ const relayCandidateOf = (connection: { candidates: MobileTransportCandidate[] }
   return found && found.kind === 'relay' ? found.relay : null;
 };
 
-// True when any saved candidate is an explicit HAPI gateway (not inferred from
-// hostname — only the pairing/import path stamps surface: 'hapi').
+// True when any saved candidate is an explicit HAPI path: a direct HAPI gateway
+// (surface: 'hapi') or a private-relay candidate pointed at a HAPI Hub
+// (transport: 'hapi'). Not inferred from hostname — only pairing/import stamps these.
 export const connectionHasHapiCandidate = (connection: { candidates: MobileTransportCandidate[] }): boolean =>
-  directCandidates(connection).some((c) => c.surface === 'hapi');
+  directCandidates(connection).some((c) => c.surface === 'hapi')
+  || connection.candidates.some((c) => c.kind === 'relay' && c.relay.transport === 'hapi');
 
 export const isHapiRuntimeActive = (connection: { candidates: MobileTransportCandidate[] }): boolean => {
-  if (isRelayModeActive()) return false;
+  if (isRelayModeActive()) {
+    // Active E2EE tunnel over a HAPI Hub private-relay endpoint.
+    return connection.candidates.some((c) => c.kind === 'relay' && c.relay.transport === 'hapi');
+  }
   const activeUrl = getRuntimeApiBaseUrl();
   return directCandidates(connection).some((candidate) =>
     candidate.surface === 'hapi' && isSameConnectionUrl(candidate.url, activeUrl));
@@ -292,10 +302,22 @@ const parseRelayConfig = (value: unknown): MobileRelayConfig | null => {
   const key = jwk as Record<string, unknown>;
   if (key.kty !== 'EC' || key.crv !== 'P-256') return null;
   if (typeof key.x !== 'string' || !key.x || typeof key.y !== 'string' || !key.y) return null;
+  const transport = record.transport === 'hapi' ? 'hapi' as const : undefined;
+  const accessToken = typeof record.accessToken === 'string' && record.accessToken.trim()
+    ? record.accessToken.trim()
+    : undefined;
+  const hasAccessTokenFlag = record.hasAccessToken === true || Boolean(accessToken);
+  // HAPI private-relay L1 needs the access token on every reconnect. Web metadata
+  // may carry it inline; native may only have hasAccessToken until SecureStorage
+  // hydrate. Drop only when neither form of credential evidence is present.
+  if (transport === 'hapi' && !accessToken && !hasAccessTokenFlag) return null;
   return {
     relayUrl: record.relayUrl,
     serverId: record.serverId,
     hostEncPubJwk: { kty: 'EC', crv: 'P-256', x: key.x, y: key.y },
+    ...(transport ? { transport } : {}),
+    ...(accessToken ? { accessToken } : {}),
+    ...(transport === 'hapi' && hasAccessTokenFlag && !accessToken ? { hasAccessToken: true } : {}),
   };
 };
 
@@ -458,6 +480,8 @@ const probeRelaySession = async (
     serverId: relay.serverId,
     hostEncPubJwk: relay.hostEncPubJwk,
     ...(grant ? { grant } : {}),
+    ...(relay.transport ? { transport: relay.transport } : {}),
+    ...(relay.accessToken ? { accessToken: relay.accessToken } : {}),
   });
   const finish = (outcome: RelayProbeOutcome): RelayProbeResult => {
     if (outcome === 'ok' && options?.keepTunnel) return { outcome, tunnel };
@@ -467,7 +491,14 @@ const probeRelaySession = async (
   try {
     const headers = token ? { Authorization: `Bearer ${token}` } : undefined;
     const session = await raceWithTimeout(timeoutMs, tunnel.fetch('/auth/session', { headers }).catch(() => null));
-    logConnect('relay:session', { ok: session?.ok === true, status: session?.status ?? null, hasToken: Boolean(token) });
+    // Never log accessToken or full relay URLs that embed it — only a boolean.
+    logConnect('relay:session', {
+      ok: session?.ok === true,
+      status: session?.status ?? null,
+      hasToken: Boolean(token),
+      hasAccessToken: Boolean(relay.accessToken),
+      transport: relay.transport ?? null,
+    });
     if (!session) return finish('unreachable');
     if (session.status === 401) return finish(token ? 'auth-failed' : 'needs-login');
     if (!session.ok && session.status !== 404) return finish('auth-failed');
@@ -500,6 +531,8 @@ const switchToRelayRuntime = (
     serverId: relay.serverId,
     hostEncPubJwk: relay.hostEncPubJwk,
     ...(grant ? { grant } : {}),
+    ...(relay.transport ? { transport: relay.transport } : {}),
+    ...(relay.accessToken ? { accessToken: relay.accessToken } : {}),
   };
   // Adopt the probe/redeem tunnel as the runtime tunnel BEFORE the switch: the
   // activate call inside switchRuntimeEndpoint sees an equal descriptor and
@@ -583,24 +616,42 @@ const readConnections = (): MobileSavedConnection[] => {
     .sort((a, b) => b.lastUsedAt - a.lastUsedAt);
 };
 
-const serializeCandidate = (c: MobileTransportCandidate): unknown =>
-  c.kind === 'relay'
-    ? { kind: 'relay', relay: { relayUrl: c.relay.relayUrl, serverId: c.relay.serverId, hostEncPubJwk: c.relay.hostEncPubJwk } }
-    : {
-        kind: 'direct',
-        url: c.url,
-        ...(c.surface ? { surface: c.surface } : {}),
-      };
+// Serialize relay metadata for localStorage. On native, HAPI accessToken is
+// NEVER written here (SecureStorage holds it); only hasAccessToken. Web keeps
+// inline accessToken like clientToken.
+const serializeCandidate = (c: MobileTransportCandidate, options?: { native?: boolean }): unknown => {
+  if (c.kind !== 'relay') {
+    return {
+      kind: 'direct',
+      url: c.url,
+      ...(c.surface ? { surface: c.surface } : {}),
+    };
+  }
+  const native = options?.native === true;
+  const hasHapiToken = Boolean(c.relay.accessToken) || c.relay.hasAccessToken === true;
+  return {
+    kind: 'relay',
+    relay: {
+      relayUrl: c.relay.relayUrl,
+      serverId: c.relay.serverId,
+      hostEncPubJwk: c.relay.hostEncPubJwk,
+      ...(c.relay.transport ? { transport: c.relay.transport } : {}),
+      ...(native
+        ? (c.relay.transport === 'hapi' && hasHapiToken ? { hasAccessToken: true } : {})
+        : (c.relay.accessToken ? { accessToken: c.relay.accessToken } : {})),
+    },
+  };
+};
 
 const writeConnections = (connections: MobileSavedConnection[]): void => {
   if (typeof window === 'undefined') return;
   const native = isCapacitorApp();
   const serialized = connections.slice(0, MOBILE_CONNECTIONS_LIMIT).map((c) => {
-    // grant/token never land here — only transport metadata.
+    // grant/clientToken never land here on native — only transport metadata.
     const shared = {
       id: c.id,
       label: c.label,
-      candidates: c.candidates.map(serializeCandidate),
+      candidates: c.candidates.map((cand) => serializeCandidate(cand, { native })),
       lastUsedAt: c.lastUsedAt,
     };
     return native
@@ -663,6 +714,10 @@ const KEYCHAIN_ACCESS_WHEN_UNLOCKED = 0; // KeychainAccess.whenUnlocked
 const prefixedTokenKey = (key: string): string =>
   `${MOBILE_SECURE_STORAGE_PREFIX}token.${encodeURIComponent(key)}`;
 
+// Independent SecureStorage key for HAPI private-relay L1 access tokens.
+const prefixedHapiTokenKey = (connectionKey: string): string =>
+  `${MOBILE_SECURE_STORAGE_PREFIX}hapi-token.${encodeURIComponent(connectionKey)}`;
+
 const withTimeout = async <T,>(operation: Promise<T>, fallback: T): Promise<T> => {
   let timeoutId: number | undefined;
   const timeout = new Promise<T>((resolve) => {
@@ -721,6 +776,111 @@ const deleteSecureToken = async (key: string): Promise<void> => {
   }, false);
 };
 
+const readSecureHapiToken = async (connectionKey: string): Promise<string | undefined> => {
+  logStorage('secure:hapi-read-start', { key: connectionKey });
+  const value = await boundedSecure(
+    'secure:hapi-read',
+    async () => (await nativeSecure.internalGetItem({
+      prefixedKey: prefixedHapiTokenKey(connectionKey),
+      sync: false,
+    })).data,
+    null,
+  );
+  const token = typeof value === 'string' && value.trim() ? value : undefined;
+  logStorage('secure:hapi-read', { key: connectionKey, hasAccessToken: Boolean(token) });
+  return token;
+};
+
+const writeSecureHapiToken = async (connectionKey: string, token: string): Promise<boolean> => {
+  logStorage('secure:hapi-write-start', { key: connectionKey });
+  const ok = await boundedSecure('secure:hapi-write', async () => {
+    await nativeSecure.internalSetItem({
+      prefixedKey: prefixedHapiTokenKey(connectionKey),
+      data: token,
+      sync: false,
+      access: KEYCHAIN_ACCESS_WHEN_UNLOCKED,
+    });
+    return true;
+  }, false);
+  logStorage('secure:hapi-write', { key: connectionKey, ok });
+  return ok;
+};
+
+const deleteSecureHapiToken = async (connectionKey: string): Promise<void> => {
+  await boundedSecure('secure:hapi-delete', async () => {
+    await nativeSecure.internalRemoveItem({
+      prefixedKey: prefixedHapiTokenKey(connectionKey),
+      sync: false,
+    });
+    return true;
+  }, false);
+};
+
+// Hydrate HAPI accessToken from SecureStorage into candidate copies for
+// connect/reprobe/cold-start. Web path is a no-op (token already inline).
+const hydrateHapiAccessTokens = async (
+  candidates: MobileTransportCandidate[],
+  connectionKey?: string,
+): Promise<MobileTransportCandidate[]> => {
+  if (!isCapacitorApp()) return candidates;
+  const key = connectionKey || secureTokenKeyOf({ candidates });
+  if (!key) return candidates;
+  let hydrated: string | undefined;
+  return Promise.all(candidates.map(async (c) => {
+    if (c.kind !== 'relay' || c.relay.transport !== 'hapi') return c;
+    if (c.relay.accessToken) return c;
+    if (hydrated === undefined) hydrated = (await readSecureHapiToken(key)) ?? '';
+    if (!hydrated) return c;
+    return {
+      kind: 'relay' as const,
+      relay: { ...c.relay, accessToken: hydrated, hasAccessToken: true },
+    };
+  }));
+};
+
+// Persist HAPI L1 tokens for native: SecureStorage write first, then metadata
+// with hasAccessToken only. Returns candidates safe for writeConnections.
+// Throws (no token in message) if secure write fails — never emit hasAccessToken:true
+// without a confirmed Keychain/Keystore write.
+export const persistHapiAccessTokensForNative = async (
+  candidates: MobileTransportCandidate[],
+): Promise<MobileTransportCandidate[]> => {
+  if (!isCapacitorApp()) return candidates;
+  const connectionKey = secureTokenKeyOf({ candidates });
+  const out: MobileTransportCandidate[] = [];
+  for (const c of candidates) {
+    if (c.kind !== 'relay' || c.relay.transport !== 'hapi') {
+      out.push(c);
+      continue;
+    }
+    const token = c.relay.accessToken?.trim();
+    if (token) {
+      const ok = await writeSecureHapiToken(connectionKey, token);
+      if (!ok) {
+        // Safe error: never include the token value in message/logs.
+        throw new Error('Failed to store HAPI access token securely');
+      }
+      out.push({
+        kind: 'relay',
+        relay: {
+          relayUrl: c.relay.relayUrl,
+          serverId: c.relay.serverId,
+          hostEncPubJwk: c.relay.hostEncPubJwk,
+          transport: 'hapi',
+          hasAccessToken: true,
+          // Keep in-memory for the current connect; serialize strips it.
+          accessToken: token,
+        },
+      });
+    } else if (c.relay.hasAccessToken) {
+      out.push(c);
+    } else {
+      out.push(c);
+    }
+  }
+  return out;
+};
+
 // ---------------------------------------------------------------------------
 // Public storage API
 // ---------------------------------------------------------------------------
@@ -758,10 +918,15 @@ export const loadMobileConnections = async (): Promise<MobileSavedConnection[]> 
 export const upsertMobileConnection = async (
   connection: { id?: string; label: string; candidates: MobileTransportCandidate[]; clientToken?: string },
 ): Promise<MobileSavedConnection[]> => {
-  const next = upsertConnectionInList(readConnections(), connection);
+  // Native: secure-write HAPI tokens before metadata so cold-start can hydrate.
+  const candidates = await persistHapiAccessTokensForNative(connection.candidates);
+  const next = upsertConnectionInList(readConnections(), {
+    ...connection,
+    candidates,
+  });
   writeConnections(next);
   if (isCapacitorApp() && connection.clientToken) {
-    await writeSecureToken(secureTokenKeyOf({ candidates: connection.candidates }), connection.clientToken);
+    await writeSecureToken(secureTokenKeyOf({ candidates }), connection.clientToken);
   }
   return next;
 };
@@ -771,7 +936,11 @@ export const deleteMobileConnection = async (id: string): Promise<MobileSavedCon
   const removed = connections.find((connection) => connection.id === id) ?? null;
   const next = connections.filter((connection) => connection.id !== id);
   writeConnections(next);
-  if (removed && isCapacitorApp()) await deleteSecureToken(secureTokenKeyOf(removed));
+  if (removed && isCapacitorApp()) {
+    const connectionKey = secureTokenKeyOf(removed);
+    await deleteSecureToken(connectionKey);
+    await deleteSecureHapiToken(connectionKey);
+  }
   if (removed) {
     const connectionKey = secureTokenKeyOf(removed);
     const { useAssistantUIStore } = await import('@/stores/useAssistantUIStore');
@@ -810,10 +979,12 @@ const RELAY_RACE_HEADSTART_MS = 1_500;
 // authenticated:false) applies to every transport (same token), so it
 // short-circuits to needs-login; a merely unreachable candidate is skipped.
 const probeConnectionCandidates = async (
-  candidates: MobileTransportCandidate[],
+  candidatesInput: MobileTransportCandidate[],
   token: string | undefined,
   options?: { fast?: boolean },
 ): Promise<ProbeResult> => {
+  // Native HAPI: hydrate L1 accessToken from SecureStorage before dialing.
+  const candidates = await hydrateHapiAccessTokens(candidatesInput);
   const requestOptions = options?.fast ? { totalTimeoutMs: MOBILE_FAST_PROBE_TIMEOUT_MS } : undefined;
   // Identity gate for direct probes: when the device knows its server's identity
   // (via its relay pairing), a direct candidate must report the SAME serverId in
@@ -1071,7 +1242,13 @@ const pairingCandidatesToMobile = (candidates: PairingEndpointCandidate[]): Mobi
     })
     .flatMap((c): MobileTransportCandidate[] => {
       if (c.type === 'relay') {
-        const relay = parseRelayConfig({ relayUrl: c.relayUrl, serverId: c.serverId, hostEncPubJwk: c.hostEncPubJwk });
+        const relay = parseRelayConfig({
+          relayUrl: c.relayUrl,
+          serverId: c.serverId,
+          hostEncPubJwk: c.hostEncPubJwk,
+          ...(c.transport ? { transport: c.transport } : {}),
+          ...(c.accessToken ? { accessToken: c.accessToken } : {}),
+        });
         return relay ? [{ kind: 'relay', relay }] : [];
       }
       const surface: MobileDirectSurface = c.type === 'hapi' ? 'hapi' : c.type === 'tunnel' ? 'tunnel' : 'lan';
@@ -1082,16 +1259,28 @@ const pairingCandidatesToMobile = (candidates: PairingEndpointCandidate[]): Mobi
 // health-check a direct URL, or open + health-check a relay tunnel. A returned
 // relay transport owns an OPEN tunnel the caller must close.
 const establishLiveTransport = async (
-  candidates: MobileTransportCandidate[],
+  candidatesInput: MobileTransportCandidate[],
 ): Promise<LiveTransport | null> => {
+  const candidates = await hydrateHapiAccessTokens(candidatesInput);
   // Same identity gate as probeConnectionCandidates: a redeem/login must not send
   // its secret to a direct address that reports a different server identity.
   const expectedServerId = relayCandidateOf({ candidates })?.serverId ?? null;
   for (const candidate of candidates) {
     if (candidate.kind === 'relay') {
-      const tunnel = createRelayTunnelClient(candidate.relay);
+      const tunnel = createRelayTunnelClient({
+        relayUrl: candidate.relay.relayUrl,
+        serverId: candidate.relay.serverId,
+        hostEncPubJwk: candidate.relay.hostEncPubJwk,
+        ...(candidate.relay.transport ? { transport: candidate.relay.transport } : {}),
+        ...(candidate.relay.accessToken ? { accessToken: candidate.relay.accessToken } : {}),
+      });
       const health = await raceWithTimeout(RELAY_CONNECT_TIMEOUT_MS, tunnel.fetch('/health').catch(() => null));
-      logConnect('establish:relay:health', { ok: health?.ok === true, status: health?.status ?? null });
+      logConnect('establish:relay:health', {
+        ok: health?.ok === true,
+        status: health?.status ?? null,
+        hasAccessToken: Boolean(candidate.relay.accessToken),
+        transport: candidate.relay.transport ?? null,
+      });
       if (health?.ok) return { kind: 'relay', relay: candidate.relay, tunnel };
       tunnel.close();
       continue;
@@ -1306,7 +1495,9 @@ export const refreshActiveConnectionCandidates = async (): Promise<CandidateRefr
       ...preservedRemote,
       ...(relay ? [{ kind: 'relay' as const, relay }] : []),
     ];
-    const unchanged = JSON.stringify(active.candidates.map(serializeCandidate)) === JSON.stringify(next.map(serializeCandidate));
+    const native = isCapacitorApp();
+    const unchanged = JSON.stringify(active.candidates.map((c) => serializeCandidate(c, { native })))
+      === JSON.stringify(next.map((c) => serializeCandidate(c, { native })));
     if (unchanged) return 'unchanged';
     logConnect('candidates:refreshed', { lanCount: lanUrls.length });
     await upsertMobileConnection({ id: active.id, label: active.label, candidates: next });
@@ -1515,16 +1706,17 @@ export const useMobileConnection = (onConnected: () => void): UseMobileConnectio
       const label = payload.label || serverLabel || getConnectionLabel(connectionDisplayUrl({ candidates: deviceCandidates }));
 
       // 3. Persist the device with ALL its candidates + one token, then switch to
-      // whichever transport answered. Reconnect re-probes the full set so the
-      // device works at home (direct) and away (relay) with no re-pairing.
+      // whichever transport answered. Native: HAPI accessToken → SecureStorage
+      // first, then metadata with hasAccessToken only.
+      const candidatesToStore = await persistHapiAccessTokensForNative(deviceCandidates);
       if (isCapacitorApp()) {
-        const stored = await writeSecureToken(secureTokenKeyOf({ candidates: deviceCandidates }), issuedToken);
+        const stored = await writeSecureToken(secureTokenKeyOf({ candidates: candidatesToStore }), issuedToken);
         if (!stored) {
           setError(t('mobile.connect.error.authRequired'));
           return;
         }
       }
-      persistMetadata({ label, candidates: deviceCandidates, clientToken: issuedToken });
+      persistMetadata({ label, candidates: candidatesToStore, clientToken: issuedToken });
       // A relay transport hands its live redeem tunnel to the runtime (adopted
       // inside switchToTransport) — closing it here would tear down the runtime.
       switchToTransport(
@@ -1532,7 +1724,7 @@ export const useMobileConnection = (onConnected: () => void): UseMobileConnectio
           ? { kind: 'relay', relay: chosen.relay, tunnel: chosen.tunnel }
           : { kind: 'direct', url: chosen.url, ...(chosen.surface ? { surface: chosen.surface } : {}) },
         issuedToken,
-        { runtimeKey: secureTokenKeyOf({ candidates: deviceCandidates }) },
+        { runtimeKey: secureTokenKeyOf({ candidates: candidatesToStore }) },
       );
       adopted = chosen.kind === 'relay';
       onConnected();

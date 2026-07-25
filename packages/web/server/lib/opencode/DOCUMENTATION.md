@@ -363,6 +363,7 @@ When adding or changing Host HTTP APIs that mobile/desktop clients reach over Pr
 
 ## Public exports (proxy.js)
 - `registerOpenCodeProxy(app, dependencies)`: registers OpenCode proxy routes and middleware.
+- `resolveSessionTurnAdmissionRequest(req)`: extracts the directory/session scope for client POST turn endpoints so queue automatic admission can be invalidated without delaying the proxied request.
 - Owns:
   - SSE forwarders: `GET /api/global/event`, `GET /api/event`
   - Session message forwarder: `POST /api/session/:sessionId/message`

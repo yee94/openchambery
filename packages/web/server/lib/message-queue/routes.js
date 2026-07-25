@@ -6,12 +6,21 @@ const send = (res, action) => { try { res.json(action()); } catch (error) { res.
 
 export const registerMessageQueueRoutes = (app, { messageQueueService, messageQueueRuntime }) => {
   const runtime = () => messageQueueRuntime ?? (messageQueueService ? { service: messageQueueService, status: () => ({ capability: true, ...messageQueueService.getAuthority(), worker: { paused: true, active: 0 } }) } : null);
+  const noteClientMutation = (result) => {
+    if (!result?.scopeID || !messageQueueService) return result;
+    try {
+      const scope = messageQueueService.getScope(result.scopeID, { offset: 0, limit: 1 });
+      runtime()?.noteClientOperation?.({ directory: scope.directory, sessionID: scope.sessionID });
+    } catch { /* A client mutation must never fail because the advisory gate failed. */ }
+    return result;
+  };
+  const sendClientMutation = (res, action) => send(res, () => noteClientMutation(action()));
   app.get(`${prefix}/status`, (_req, res) => runtime() ? send(res, () => runtime().status()) : unsupported(res));
   app.get(prefix, (_req, res) => messageQueueService ? send(res, () => messageQueueService.snapshot()) : unsupported(res));
   app.get(`${prefix}/scopes/:scopeID`, (req, res) => messageQueueService ? send(res, () => messageQueueService.getScope(req.params.scopeID, { offset: Number(req.query?.offset ?? 0), limit: Number(req.query?.limit ?? 8), expectedRevision: req.query?.expectedRevision === undefined ? undefined : Number(req.query.expectedRevision) })) : unsupported(res));
   app.post(`${prefix}/items`, (req, res) => {
     if (!messageQueueService) return unsupported(res);
-    try { const result = messageQueueService.admit(req.body); runtime()?.wake?.(); res.json(result); } catch (error) { res.status(statusFor(error)).json({ code: publicCode(error) }); }
+    try { const result = noteClientMutation(messageQueueService.admit(req.body)); runtime()?.wake?.(); res.json(result); } catch (error) { res.status(statusFor(error)).json({ code: publicCode(error) }); }
   });
   app.post(`${prefix}/imports`, (req, res) => messageQueueService ? send(res, () => messageQueueService.createImport(req.body)) : unsupported(res));
   app.get(`${prefix}/imports/:importID`, (req, res) => messageQueueService ? send(res, () => messageQueueService.getImportDetails(req.params.importID)) : unsupported(res));
@@ -22,20 +31,20 @@ export const registerMessageQueueRoutes = (app, { messageQueueService, messageQu
   app.post(`${prefix}/imports/:importID/abandon`, (req, res) => messageQueueService ? send(res, () => messageQueueService.abandonImport({ ...(req.body ?? {}), importID:req.params.importID })) : unsupported(res));
   app.post(`${prefix}/authority/pause`, async (req, res) => { if (!messageQueueService) return unsupported(res); try { const result=messageQueueService.pauseAuthority(req.body); await runtime()?.worker?.stop?.(); res.json(result); } catch(error) { res.status(statusFor(error)).json({ code: publicCode(error) }); } });
   app.post(`${prefix}/authority/resume`, async (req, res) => { if (!messageQueueService) return unsupported(res); try { const result=messageQueueService.resumeAuthority(req.body); await runtime()?.start?.(); runtime()?.wake?.(); res.json(result); } catch(error) { res.status(statusFor(error)).json({ code: publicCode(error) }); } });
-  app.patch(`${prefix}/items/:queueItemID`, (req, res) => messageQueueService ? send(res, () => messageQueueService.edit({ ...(req.body ?? {}), queueItemID: req.params.queueItemID })) : unsupported(res));
-  app.delete(`${prefix}/items/:queueItemID`, (req, res) => messageQueueService ? send(res, () => messageQueueService.remove({ ...(req.body ?? {}), queueItemID: req.params.queueItemID })) : unsupported(res));
-  app.post(`${prefix}/items/:queueItemID/reserve`, (req, res) => messageQueueService ? send(res, () => messageQueueService.reserveForEdit({ ...(req.body ?? {}), queueItemID: req.params.queueItemID })) : unsupported(res));
+  app.patch(`${prefix}/items/:queueItemID`, (req, res) => messageQueueService ? sendClientMutation(res, () => messageQueueService.edit({ ...(req.body ?? {}), queueItemID: req.params.queueItemID })) : unsupported(res));
+  app.delete(`${prefix}/items/:queueItemID`, (req, res) => messageQueueService ? sendClientMutation(res, () => messageQueueService.remove({ ...(req.body ?? {}), queueItemID: req.params.queueItemID })) : unsupported(res));
+  app.post(`${prefix}/items/:queueItemID/reserve`, (req, res) => messageQueueService ? sendClientMutation(res, () => messageQueueService.reserveForEdit({ ...(req.body ?? {}), queueItemID: req.params.queueItemID })) : unsupported(res));
   app.post(`${prefix}/items/:queueItemID/release`, (req, res) => {
     if (!messageQueueService) return unsupported(res);
     try { const result = messageQueueService.releaseEditReservation({ ...(req.body ?? {}), queueItemID: req.params.queueItemID }); runtime()?.wake?.(); res.json(result); } catch (error) { res.status(statusFor(error)).json({ code: publicCode(error) }); }
   });
   app.post(`${prefix}/items/:queueItemID/edit-reservations/:token/renew`, (req, res) => messageQueueService ? send(res, () => messageQueueService.renewEditReservation({ ...(req.body ?? {}), queueItemID: req.params.queueItemID, token: req.params.token })) : unsupported(res));
-  app.delete(`${prefix}/items/:queueItemID/reserved-remove`, (req, res) => messageQueueService ? send(res, () => messageQueueService.reservedRemove({ ...(req.body ?? {}), queueItemID: req.params.queueItemID })) : unsupported(res));
+  app.delete(`${prefix}/items/:queueItemID/reserved-remove`, (req, res) => messageQueueService ? sendClientMutation(res, () => messageQueueService.reservedRemove({ ...(req.body ?? {}), queueItemID: req.params.queueItemID })) : unsupported(res));
   app.post(`${prefix}/items/:queueItemID/send`, (req, res) => {
     if (!messageQueueService) return unsupported(res);
-    try { const result = messageQueueService.manualSend({ ...(req.body ?? {}), queueItemID: req.params.queueItemID }); runtime()?.wake?.(); res.json(result); } catch (error) { res.status(statusFor(error)).json({ code: publicCode(error) }); }
+    try { const result = noteClientMutation(messageQueueService.manualSend({ ...(req.body ?? {}), queueItemID: req.params.queueItemID })); runtime()?.wake?.(); res.json(result); } catch (error) { res.status(statusFor(error)).json({ code: publicCode(error) }); }
   });
-  app.put(`${prefix}/scopes/:scopeID/order`, (req, res) => messageQueueService ? send(res, () => messageQueueService.reorder({ ...(req.body ?? {}), scopeID: req.params.scopeID })) : unsupported(res));
+  app.put(`${prefix}/scopes/:scopeID/order`, (req, res) => messageQueueService ? sendClientMutation(res, () => messageQueueService.reorder({ ...(req.body ?? {}), scopeID: req.params.scopeID })) : unsupported(res));
   app.get(`${prefix}/items/:queueItemID/attachments/:attachmentID/content`, async (req, res) => {
     const current = runtime(); if (!current) return unsupported(res);
     try {

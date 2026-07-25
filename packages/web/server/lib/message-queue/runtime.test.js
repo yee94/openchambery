@@ -125,4 +125,21 @@ describe('message queue runtime ownership', () => {
     expect(worker.start).not.toHaveBeenCalled();
     expect(worker.wake).toHaveBeenCalledTimes(1);
   });
+
+  it('routes current-runtime session events and client operations into the turn gate', () => {
+    const runtimeKey = 'a'.repeat(64);
+    const service = { getRuntimeKey: vi.fn(() => runtimeKey), getAuthority: vi.fn(() => ({ authority: 'paused', generation: 0 })), close: vi.fn(), listAttachmentObjectsForGC: vi.fn(() => []), listLiveAttachmentStorageKeys: vi.fn(() => new Set()) };
+    const adapter = { observeSessionEvent: vi.fn(), noteClientOperation: vi.fn() };
+    const worker = { status: () => ({ paused: true, active: 0 }), stop: vi.fn() };
+    const store = { stop: vi.fn(), gc: vi.fn() };
+    const runtime = createMessageQueueRuntime({ dbPath: '/tmp/queue.sqlite', service, attachmentStore: store, adapter, worker });
+    const event = { runtimeIdentity: { runtimeKey }, directory: '/repo', payload: { type: 'session.status', properties: { sessionID: 'ses_1', status: { type: 'busy' } } } };
+
+    expect(runtime.observeSessionEvent(event)).toBe(true);
+    expect(adapter.observeSessionEvent).toHaveBeenCalledWith({ directory: '/repo', sessionID: 'ses_1' }, 'busy');
+    expect(runtime.noteClientOperation({ directory: '/repo', sessionID: 'ses_1' })).toBe(true);
+    expect(adapter.noteClientOperation).toHaveBeenCalledWith({ directory: '/repo', sessionID: 'ses_1' });
+    expect(runtime.observeSessionEvent({ ...event, runtimeIdentity: { runtimeKey: 'b'.repeat(64) } })).toBe(false);
+    expect(adapter.observeSessionEvent).toHaveBeenCalledTimes(1);
+  });
 });

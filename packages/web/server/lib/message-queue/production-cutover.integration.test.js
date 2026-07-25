@@ -123,7 +123,7 @@ describe('Phase 2 decisive production cutover fixture', () => {
     } finally { await f.close(); }
   }, 10_000);
 
-  it('HTTP 在发送挂起时锁定同 scope promote 与 reorder，同时保持另一 scope 并发', async () => {
+  it('HTTP 在发送挂起时接受客户端 promote 与 waiting reorder，同时保持另一 scope 并发', async () => {
     const releases = []; const activeBySession = new Map(); const maxBySession = new Map(); let active = 0; let maximum = 0;
     const f = await fixture({ adapter: { send: async (context) => {
       const session = `${context.directory}\0${context.sessionID}`; const count = (activeBySession.get(session) ?? 0) + 1; activeBySession.set(session, count); maxBySession.set(session, Math.max(maxBySession.get(session) ?? 0, count)); active += 1; maximum = Math.max(maximum, active);
@@ -132,9 +132,11 @@ describe('Phase 2 decisive production cutover fixture', () => {
     try {
       const first = f.service.admit(item('locked-head')); f.service.admit(item('locked-tail')); f.service.admit(item('locked-other', '/other', 'other'));
       f.service.setAuthority({ authority: 'active', expectedGeneration: 0 }); const running = f.runtime.startActive(); await eventually(() => expect(releases).toHaveLength(2));
-      const scope = f.service.getScope(first.scopeID); const tail = scope.items.find((entry) => entry.queueItemID === 'item-locked-tail');
-      await expect(f.request(`${prefix}/items/${tail.queueItemID}/send`, { method: 'POST', headers: { 'content-type': 'application/json' }, body: JSON.stringify({ requestID: 'locked-promote', expectedRevision: scope.revision, expectedRowVersion: tail.rowVersion }) })).rejects.toMatchObject({ status: 409, code: 'scope_locked' });
-      await expect(f.request(`${prefix}/scopes/${first.scopeID}/order`, { method: 'PUT', headers: { 'content-type': 'application/json' }, body: JSON.stringify({ requestID: 'locked-reorder', expectedRevision: scope.revision, queueItemIDs: scope.items.map((entry) => entry.queueItemID).reverse() }) })).rejects.toMatchObject({ status: 409, code: 'scope_locked' });
+      let scope = f.service.getScope(first.scopeID); const tail = scope.items.find((entry) => entry.queueItemID === 'item-locked-tail');
+      await expect(f.request(`${prefix}/items/${tail.queueItemID}/send`, { method: 'POST', headers: { 'content-type': 'application/json' }, body: JSON.stringify({ requestID: 'locked-promote', expectedRevision: scope.revision, expectedRowVersion: tail.rowVersion }) })).resolves.toMatchObject({ queueItemID: tail.queueItemID });
+      scope = f.service.getScope(first.scopeID);
+      await expect(f.request(`${prefix}/scopes/${first.scopeID}/order`, { method: 'PUT', headers: { 'content-type': 'application/json' }, body: JSON.stringify({ requestID: 'locked-reorder', expectedRevision: scope.revision, queueItemIDs: scope.items.map((entry) => entry.queueItemID).reverse() }) })).resolves.toMatchObject({ scopeID: first.scopeID });
+      expect(f.service.getScope(first.scopeID).items.map((entry) => entry.queueItemID)).toEqual(['item-locked-head', 'item-locked-tail']);
       expect(maxBySession.get('/repo\0session')).toBe(1); expect(maxBySession.get('/other\0other')).toBe(1); expect(maximum).toBe(2);
       releases.splice(0).forEach((release) => release()); await running;
     } finally { await f.close(); }

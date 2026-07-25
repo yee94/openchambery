@@ -3,6 +3,7 @@ import { describe, expect, it, vi } from 'vitest';
 vi.mock('@opencode-ai/sdk/v2', () => ({ createOpencodeClient: vi.fn() }));
 const { createOpencodeClient } = await import('@opencode-ai/sdk/v2');
 const { createOpenCodeMessageQueueAdapter } = await import('./opencode-adapter.js');
+const { createSessionTurnGate } = await import('./session-turn-gate.js');
 
 describe('OpenCode message queue adapter', () => {
   it('waits for readiness without forwarding worker options', async () => {
@@ -48,8 +49,20 @@ describe('OpenCode message queue adapter', () => {
     const messages = vi.fn(() => ({ data: [] })); createOpencodeClient.mockReturnValue({ session: { messages, status: vi.fn(() => ({ data: {} })) } });
     const adapter = createOpenCodeMessageQueueAdapter({ buildOpenCodeUrl: () => 'http://open.code/', getOpenCodeAuthHeaders: () => ({}), readAttachment: () => null });
     expect(await adapter.checkEligibility({ sessionID: 's', directory: '/d' })).toMatchObject({ idle: true, settled: true });
-    messages.mockReturnValueOnce({ data: [{ info: { role: 'user' } }] }); expect((await adapter.checkEligibility({ sessionID: 's', directory: '/d' })).settled).toBe(false);
-    messages.mockReturnValueOnce({ data: [{ info: { role: 'assistant', time: { completed: 1 } } }] }); expect((await adapter.checkEligibility({ sessionID: 's', directory: '/d' })).settled).toBe(true);
+    messages.mockReturnValueOnce({ data: [{ info: { id: 'user', role: 'user' } }] }); expect((await adapter.checkEligibility({ sessionID: 's', directory: '/d' })).settled).toBe(false);
+    messages.mockReturnValueOnce({ data: [{ info: { id: 'assistant', role: 'assistant', time: { completed: 1 } } }] }); expect((await adapter.checkEligibility({ sessionID: 's', directory: '/d' })).settled).toBe(true);
+  });
+  it('recovers an idle incomplete assistant tail without treating fetch failure as empty', async () => {
+    let now = 0; const turnGate = createSessionTurnGate({ clock: () => now });
+    const messages = vi.fn(() => ({ data: [{ info: { id: 'assistant', role: 'assistant', time: { created: 1 } } }] }));
+    const status = vi.fn(() => ({ data: {} })); createOpencodeClient.mockReturnValue({ session: { messages, status } });
+    const adapter = createOpenCodeMessageQueueAdapter({ buildOpenCodeUrl: () => 'http://open.code/', getOpenCodeAuthHeaders: () => ({}), readAttachment: () => null, turnGate });
+    expect(await adapter.checkEligibility({ sessionID: 's', directory: '/d' })).toMatchObject({ settled: false, settlementReason: 'tail_unsettled' });
+    status.mockReturnValueOnce({ error: {} }); now = 3_000;
+    await expect(adapter.checkEligibility({ sessionID: 's', directory: '/d' })).resolves.toEqual({ available: false, idle: false, settled: false });
+    expect(await adapter.checkEligibility({ sessionID: 's', directory: '/d' })).toMatchObject({ settled: false, settlementReason: 'tail_unsettled' });
+    now = 6_000;
+    expect(await adapter.checkEligibility({ sessionID: 's', directory: '/d' })).toMatchObject({ settled: true, settlementReason: 'stopped_assistant' });
   });
   it('marks malformed or failed authoritative eligibility reads unavailable', async () => {
     createOpencodeClient.mockReturnValue({ session: { messages: vi.fn(() => ({ data: [] })), status: vi.fn(() => ({ error: {} })) } });

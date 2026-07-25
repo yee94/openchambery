@@ -3,6 +3,7 @@ import type { SidebarSection } from '@/constants/sidebar';
 export type SettingsPageSlug =
   | 'home'
   | 'projects'
+  | 'instances'
   | 'remote-instances'
   | 'providers'
   | 'usage'
@@ -52,6 +53,7 @@ const SETTINGS_PAGE_ORDER: readonly SettingsPageSlug[] = [
   'shortcuts',
   'projects',
   'git',
+  'instances',
   'remote-instances',
   'providers',
   'agents',
@@ -84,6 +86,7 @@ export const MOBILE_SETTINGS_PAGE_SLUGS = [
   'notifications',
   'sessions',
   'projects',
+  'instances',
   'git',
   'providers',
   'agents',
@@ -132,6 +135,14 @@ export const SETTINGS_PAGE_METADATA: readonly SettingsPageMeta[] = [
     group: 'workspace',
     kind: 'split',
     keywords: ['project', 'projects', 'worktree', 'worktrees', 'repo', 'repository', 'directory'],
+  },
+  {
+    slug: 'instances',
+    title: 'Switch instance',
+    group: 'workspace',
+    kind: 'single',
+    keywords: ['instance', 'instances', 'server', 'connection', 'switch'],
+    isAvailable: (ctx) => ctx.isMobile,
   },
   {
     slug: 'remote-instances',

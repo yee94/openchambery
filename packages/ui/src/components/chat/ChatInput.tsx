@@ -135,7 +135,7 @@ import type { Part } from '@opencode-ai/sdk/v2/client';
 import { consumesImmediateCommandText, getLocalChatCommand, preservesComposerResources } from './localCommandClassifier';
 import { consumeImmediateCommandText } from './immediateCommandTextConsumption';
 import { runImmediateSessionCommand } from './immediateSessionCommandAction';
-import { admitChatInputQueueMessageAndConsumeResources, admitServerQueueMessageAndConsumeResources, assistantQueueAdmissionAvailable, attachedFilesToQueueCandidates, createServerQueueAdmissionCapture, createServerQueueAdmissionIdentity, isCompleteQueueSendConfig, isQueueAdmissionRuntimeCurrent, isServerQueueAdmissionEventBlocked } from './queueAdmission';
+import { admitChatInputQueueMessageAndConsumeResources, admitServerQueueMessageAndConsumeResources, assistantQueueAdmissionAvailable, attachedFilesToQueueCandidates, createServerQueueAdmissionCapture, createServerQueueAdmissionIdentity, isCompleteQueueSendConfig, isQueueAdmissionRuntimeCurrent } from './queueAdmission';
 import { shouldShowPermissionAutoAcceptControl, togglePermissionAutoAccept } from './permissionAutoAccept';
 import { getSlashTokenRange } from './commandSelection';
 import { isCommandAllowedForSubmission } from './commandSelection';
@@ -742,7 +742,6 @@ type ComposerActionButtonsProps = {
     draftSubmitting?: boolean;
     submissionBlocked: boolean;
     queueFrozen: boolean;
-    hasBlockingAdmission: boolean;
     onPrimaryAction: () => void;
     onQueueMessage: () => void;
     onAbort: () => void;
@@ -762,7 +761,6 @@ const ComposerActionButtons = React.memo(function ComposerActionButtons(props: C
         draftSubmitting,
         submissionBlocked,
         queueFrozen,
-        hasBlockingAdmission,
         onPrimaryAction,
         onQueueMessage,
         onAbort,
@@ -774,13 +772,22 @@ const ComposerActionButtons = React.memo(function ComposerActionButtons(props: C
         draftSubmitting: Boolean(draftSubmitting),
         submissionBlocked,
         queueFrozen,
-        hasBlockingAdmission,
     });
 
     const sendButton = (
         <button
             type={isMobile ? 'button' : 'submit'}
             disabled={actionAvailability.sendDisabled}
+            onMouseDown={(event) => {
+                if (isMobile) {
+                    event.preventDefault();
+                }
+            }}
+            onPointerDownCapture={(event) => {
+                if (isMobile && event.pointerType === 'touch') {
+                    event.preventDefault();
+                }
+            }}
             onClick={(event) => {
                 if (!isMobile) {
                     return;
@@ -855,7 +862,6 @@ const ComposerActionButtons = React.memo(function ComposerActionButtons(props: C
     && prev.draftSubmitting === next.draftSubmitting
     && prev.submissionBlocked === next.submissionBlocked
     && prev.queueFrozen === next.queueFrozen
-    && prev.hasBlockingAdmission === next.hasBlockingAdmission
     && prev.onPrimaryAction === next.onPrimaryAction
     && prev.onQueueMessage === next.onQueueMessage
     && prev.onAbort === next.onAbort
@@ -2084,7 +2090,6 @@ const ChatInputRuntime: React.FC<ChatInputProps> = ({ onOpenSettings, scrollToBo
     const hasContent = message.trim().length > 0 || sendableAttachedFiles.length > 0 || hasDrafts;
     const hasQueuedMessages = serverQueue.mode === 'server' ? serverQueue.items.length > 0 : queuedMessages.length > 0;
     const queueFrozen = !queueModeAllowsMutations(serverQueue.mode);
-    const hasBlockingAdmission = serverQueue.hasBlockingAdmission;
     const canSend = hasContent || hasQueuedMessages;
 
     const sessionIsRunning = sessionPhase === 'busy' || sessionPhase === 'retry';
@@ -2115,8 +2120,6 @@ const ChatInputRuntime: React.FC<ChatInputProps> = ({ onOpenSettings, scrollToBo
         presetText?: string;
     };
     const handleSubmitRef = React.useRef<(options?: SubmitOptions) => Promise<void>>(async () => {});
-    const serverAdmissionFlightRef = React.useRef(false);
-
     // Add message to queue instead of sending
     const handleQueueMessage = useEvent(async () => {
         if (!surface.active) return;
@@ -2133,7 +2136,7 @@ const ChatInputRuntime: React.FC<ChatInputProps> = ({ onOpenSettings, scrollToBo
             name: command.name,
             source: 'openchamber',
         }))) return;
-        if (submissionBlocked || isServerQueueAdmissionEventBlocked(serverQueue.mode, hasBlockingAdmission, serverAdmissionFlightRef.current)) return;
+        if (submissionBlocked) return;
         if (!inputSnapshot.hasContent || !currentSessionId) return;
         // Invariant: Assistant never dead-ends in queue. Legacy/frozen ownership
         // cannot admit assistant deliveries — falling back keeps the conversation
@@ -2277,7 +2280,6 @@ const ChatInputRuntime: React.FC<ChatInputProps> = ({ onOpenSettings, scrollToBo
             const assistantSyntheticSidecar = assistantDeliveryParts && assistantSyntheticParts
                 ? buildAssistantQueueSyntheticSidecar(assistantDeliveryParts, assistantSyntheticParts.map((part) => ({ ...part, partID: part.partID })))
                 : undefined;
-            serverAdmissionFlightRef.current = true;
             void admitServerQueueMessageAndConsumeResources({
                 capture: admissionCapture,
                 admit: () => serverQueue.actions.admit({
@@ -2314,8 +2316,6 @@ const ChatInputRuntime: React.FC<ChatInputProps> = ({ onOpenSettings, scrollToBo
             }).catch((error) => {
                 if (assistantSyntheticParts) surfaceResources.restoreSyntheticParts(assistantSyntheticParts);
                 toast.error(t(error instanceof RangeError ? 'chat.chatInput.toast.attachmentsTooLarge' : 'chat.chatInput.toast.messageSendFailed'));
-            }).finally(() => {
-                serverAdmissionFlightRef.current = false;
             });
             return;
         }
@@ -2380,7 +2380,7 @@ const ChatInputRuntime: React.FC<ChatInputProps> = ({ onOpenSettings, scrollToBo
 
     const handleSubmit = async (options?: SubmitOptions) => {
         if (!surface.active) return;
-        if (submissionBlocked || isServerQueueAdmissionEventBlocked(serverQueue.mode, hasBlockingAdmission, serverAdmissionFlightRef.current)) return;
+        if (submissionBlocked) return;
         const queuedOnly = options?.queuedOnly ?? false;
         const queuedMessageId = options?.queuedMessageId;
         const delivery = options?.delivery === 'steer' && sessionIsRunning ? 'steer' : undefined;
@@ -2785,10 +2785,6 @@ const ChatInputRuntime: React.FC<ChatInputProps> = ({ onOpenSettings, scrollToBo
             replacePlainDocument,
         });
 
-        if (isMobile) {
-            textareaRef.current?.blur();
-        }
-
         // Handle local slash commands only in normal mode
         const normalizedCommand = primaryText.trimStart();
         if (inputMode === 'normal' && normalizedCommand.startsWith('/')) {
@@ -3186,7 +3182,6 @@ const ChatInputRuntime: React.FC<ChatInputProps> = ({ onOpenSettings, scrollToBo
 
     // Primary action for send/queue button — respects selected follow-up behavior
     const handlePrimaryAction = React.useCallback(() => {
-        if (isServerQueueAdmissionEventBlocked(serverQueue.mode, hasBlockingAdmission, serverAdmissionFlightRef.current)) return;
         const inputSnapshot = getCurrentInputSnapshot();
         // Only authoritative busy/retry (or an active auto-review) may queue/steer.
         // `unknown` must not count as running — assistant surfaces used to emit it
@@ -3203,7 +3198,7 @@ const ChatInputRuntime: React.FC<ChatInputProps> = ({ onOpenSettings, scrollToBo
         } else {
             void handleSubmitRef.current();
         }
-    }, [inputMode, getCurrentInputSnapshot, currentSessionId, sessionIsRunning, autoReviewRunning, followUpBehavior, handleQueueMessage, serverQueue.mode, hasBlockingAdmission, surface.deliveryTarget?.kind]);
+    }, [inputMode, getCurrentInputSnapshot, currentSessionId, sessionIsRunning, autoReviewRunning, followUpBehavior, handleQueueMessage, serverQueue.mode, surface.deliveryTarget?.kind]);
 
     // Draft welcome presets: submit immediately.
     const submitPresetPrompt = React.useCallback((text: string) => {
@@ -5700,7 +5695,6 @@ const ChatInputRuntime: React.FC<ChatInputProps> = ({ onOpenSettings, scrollToBo
                     draftSubmitting={resolvedDraftBusy}
                     submissionBlocked={submissionBlocked}
                     queueFrozen={queueFrozen}
-                    hasBlockingAdmission={hasBlockingAdmission}
                     onPrimaryAction={handlePrimaryAction}
                     onQueueMessage={handleQueueMessage}
                     onAbort={handleAbort}
@@ -5777,7 +5771,6 @@ const ChatInputRuntime: React.FC<ChatInputProps> = ({ onOpenSettings, scrollToBo
                     draftSubmitting={resolvedDraftBusy}
                     submissionBlocked={submissionBlocked}
                     queueFrozen={queueFrozen}
-                    hasBlockingAdmission={hasBlockingAdmission}
                     onPrimaryAction={handlePrimaryAction}
                     onQueueMessage={handleQueueMessage}
                     onAbort={handleAbort}
@@ -6220,7 +6213,6 @@ const ChatInputRuntime: React.FC<ChatInputProps> = ({ onOpenSettings, scrollToBo
                                 draftSubmitting={resolvedDraftBusy}
                                 submissionBlocked={submissionBlocked}
                                 queueFrozen={queueFrozen}
-                                hasBlockingAdmission={hasBlockingAdmission}
                                 onPrimaryAction={handlePrimaryAction}
                                 onQueueMessage={handleQueueMessage}
                                 onAbort={handleAbort}

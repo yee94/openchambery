@@ -27,6 +27,30 @@ export const createMessageQueueRuntime = ({ dbPath, attachmentRoot, service, att
     }
     catch (error) { console.error('message_queue_runtime_wake_failed', error); return Promise.resolve(status()); }
   };
+  const isCurrentRuntimeEvent = (event) => {
+    const eventKey = event?.runtimeIdentity?.runtimeKey;
+    if (typeof eventKey !== 'string') return false;
+    try { return eventKey === queue.getRuntimeKey(); } catch { return false; }
+  };
+  const observeSessionEvent = (event) => {
+    if (!isCurrentRuntimeEvent(event)) return false;
+    const payload = event?.payload?.payload ?? event?.payload;
+    const properties = payload?.properties;
+    const directory = typeof event?.directory === 'string' && event.directory !== 'global' ? event.directory : '';
+    const sessionID = typeof properties?.sessionID === 'string' ? properties.sessionID : '';
+    if (!directory || !sessionID) return false;
+    const phase = payload.type === 'session.status'
+      ? properties?.status?.type ?? properties?.info?.type
+      : payload.type === 'session.idle' ? 'idle' : payload.type === 'session.error' ? 'error' : '';
+    if (typeof phase !== 'string' || !phase) return false;
+    openCodeAdapter.observeSessionEvent?.({ directory, sessionID }, phase);
+    return true;
+  };
+  const noteClientOperation = (scope) => {
+    if (typeof scope?.directory !== 'string' || !scope.directory || typeof scope?.sessionID !== 'string' || !scope.sessionID) return false;
+    openCodeAdapter.noteClientOperation?.(scope);
+    return true;
+  };
   const stop = async () => { if (stopped) return; stopped = true; clearInterval(gcTimer); await queueWorker.stop(); await gc(); await store.stop(); queue.close(); };
-  return { service: queue, attachmentStore: store, adapter: openCodeAdapter, worker: queueWorker, setAssistantDeliveryService: (assistantService) => queue.setAssistantDeliveryService?.(assistantService), status, start, startPaused, startActive, wake, stop };
+  return { service: queue, attachmentStore: store, adapter: openCodeAdapter, worker: queueWorker, setAssistantDeliveryService: (assistantService) => queue.setAssistantDeliveryService?.(assistantService), status, start, startPaused, startActive, wake, observeSessionEvent, noteClientOperation, stop };
 };

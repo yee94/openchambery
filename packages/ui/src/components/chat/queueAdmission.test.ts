@@ -1,5 +1,5 @@
 import { beforeEach, describe, expect, test } from 'bun:test';
-import { admitChatInputQueueMessageAndConsumeResources, admitQueueMessageAndConsumeResources, admitServerQueueMessageAndConsumeResources, assistantQueueAdmissionAvailable, attachedFilesToQueueCandidates, createServerQueueAdmissionCapture, createServerQueueAdmissionIdentity, isCompleteQueueSendConfig, isQueueAdmissionRuntimeCurrent, isServerQueueAdmissionEventBlocked, startServerQueueScopeMutationFlight, type ServerQueueScopeMutationFlights } from './queueAdmission';
+import { admitChatInputQueueMessageAndConsumeResources, admitQueueMessageAndConsumeResources, admitServerQueueMessageAndConsumeResources, assistantQueueAdmissionAvailable, attachedFilesToQueueCandidates, createServerQueueAdmissionCapture, createServerQueueAdmissionIdentity, enqueueServerQueueScopeMutation, isCompleteQueueSendConfig, isQueueAdmissionRuntimeCurrent, type ServerQueueScopeMutationFlights } from './queueAdmission';
 import { legacyQueueScope, setMessageQueueMutationFence, useMessageQueueStore, type QueueItem, type QueueScope } from '@/stores/messageQueueStore';
 import { sessionDraftKey, type DraftRecord } from '@/sync/input-draft-types';
 import type { AttachedFile } from '@/stores/types/sessionTypes';
@@ -52,14 +52,6 @@ const serverAdmissionFixture = () => {
 
 describe('admitQueueMessageAndConsumeResources', () => {
     beforeEach(() => { setMessageQueueMutationFence('open'); });
-    test('blocks server admission events for runtime blocking state or a component-local flight', () => {
-        expect(isServerQueueAdmissionEventBlocked('server', false, false)).toBe(false);
-        expect(isServerQueueAdmissionEventBlocked('server', true, false)).toBe(true);
-        expect(isServerQueueAdmissionEventBlocked('server', false, true)).toBe(true);
-        expect(isServerQueueAdmissionEventBlocked('frozen', false, true)).toBe(true);
-        expect(isServerQueueAdmissionEventBlocked('legacy', false, true)).toBe(false);
-    });
-
     test('isCompleteQueueSendConfig requires non-empty providerID and modelID for new admissions', () => {
         expect(isCompleteQueueSendConfig({ providerID: 'openai', modelID: 'gpt-5.5' })).toBe(true);
         expect(isCompleteQueueSendConfig({
@@ -98,31 +90,56 @@ describe('admitQueueMessageAndConsumeResources', () => {
         expect(assistantQueueAdmissionAvailable(undefined, 'legacy')).toBe(true);
     });
 
-    test('runs one server queue mutation per scope flight and keeps its request ID until settlement', async () => {
+    test('serializes every server queue mutation per scope without rejecting later client intent', async () => {
         const flightRef: { current: ServerQueueScopeMutationFlights } = { current: new Map() };
-        let settle!: () => void;
-        const pending = new Promise<void>((resolve) => { settle = resolve; });
-        const requestIDs: string[] = [];
-        let sequence = 0;
-        const start = () => startServerQueueScopeMutationFlight(
-            flightRef,
-            'runtime-a:scope-a',
-            () => `request-${++sequence}`,
-            (requestID) => {
-                requestIDs.push(requestID);
-                return pending;
-            },
-        );
+        let settleFirst!: () => void;
+        let settleSecond!: () => void;
+        const calls: string[] = [];
+        const first = enqueueServerQueueScopeMutation(flightRef, 'runtime-a:scope-a', async () => {
+            calls.push('first');
+            await new Promise<void>((resolve) => { settleFirst = resolve; });
+            return 'first-result';
+        });
+        const second = enqueueServerQueueScopeMutation(flightRef, 'runtime-a:scope-a', async () => {
+            calls.push('second');
+            await new Promise<void>((resolve) => { settleSecond = resolve; });
+            return 'second-result';
+        });
 
-        const first = start();
-        expect(first).not.toBeNull();
-        expect(start()).toBeNull();
-        expect(requestIDs).toEqual(['request-1']);
-        expect(flightRef.current.get('runtime-a:scope-a')).toBe('request-1');
-
-        settle();
+        await Promise.resolve();
+        await Promise.resolve();
+        expect(calls).toEqual(['first']);
+        expect(flightRef.current.has('runtime-a:scope-a')).toBe(true);
+        settleFirst();
         await first;
+        await Promise.resolve();
+        await Promise.resolve();
+        expect(calls).toEqual(['first', 'second']);
+        settleSecond();
+        expect(await second).toBe('second-result');
         expect(flightRef.current.has('runtime-a:scope-a')).toBe(false);
+    });
+
+    test('runs mutations for different session scopes in parallel', async () => {
+        const flightRef: { current: ServerQueueScopeMutationFlights } = { current: new Map() };
+        const calls: string[] = [];
+        let settleA!: () => void;
+        let settleB!: () => void;
+        const a = enqueueServerQueueScopeMutation(flightRef, 'runtime-a:session-a', async () => {
+            calls.push('a');
+            await new Promise<void>((resolve) => { settleA = resolve; });
+        });
+        const b = enqueueServerQueueScopeMutation(flightRef, 'runtime-a:session-b', async () => {
+            calls.push('b');
+            await new Promise<void>((resolve) => { settleB = resolve; });
+        });
+
+        await Promise.resolve();
+        await Promise.resolve();
+        expect(calls.sort()).toEqual(['a', 'b']);
+        settleA();
+        settleB();
+        await Promise.all([a, b]);
     });
 
     test('admits before consuming drafts, body, and attachments', () => {

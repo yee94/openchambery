@@ -31,7 +31,6 @@ export const canSendQueuedMessage = (message: QueuedMessage, hasDispatchLock: bo
 export const canSendServerQueuedMessage = (message: MessageQueueServerDisplayItem, hasDispatchLock: boolean): boolean => {
     if (isMessageQueuePendingAdmissionItem(message)) return false;
     if (hasDispatchLock) return false;
-    if (message.manualDispatchRequested === true) return false;
     return ['queued', 'retrying', 'failed', 'unresolved'].includes(message.status);
 };
 
@@ -40,14 +39,15 @@ export const canSendServerQueuedMessage = (message: MessageQueueServerDisplayIte
 // locked separately via isReadOnly / canSend*.
 export const canRemoveQueuedMessage = (
     message: QueuedMessage | MessageQueueServerDisplayItem,
-    options: { frozen: boolean; scopeOperationPending?: boolean },
+    options: { frozen: boolean },
 ): boolean => {
     if (options.frozen) return false;
-    if (options.scopeOperationPending) return false;
     if (isMessageQueuePendingAdmissionItem(message)) return false;
     const status = ('status' in message ? message.status : undefined) ?? 'queued';
-    return status !== 'sending' && status !== 'reconciling';
+    return !isServerQueueItemActiveAttempt({ status } as MessageQueueItem);
 };
+
+export const isServerQueueItemActiveAttempt = (item: Pick<MessageQueueItem, 'status'>): boolean => item.status === 'sending' || item.status === 'reconciling';
 
 // Authoritative server item is dispatch-pending when an explicit manual dispatch
 // was requested (POST ack acknowledged but the worker has not yet started) or the
@@ -87,20 +87,35 @@ export const selectPendingServerQueueOperation = (
     && operation.scopeID === exactScope.scopeID
 );
 
+export const selectPendingServerQueueOperations = (
+    operations: readonly ServerQueueOperationIdentity[],
+    exactScope: ServerQueueExactScope,
+): readonly ServerQueueOperationIdentity[] => operations.filter((operation) =>
+    operation.transportIdentity === exactScope.transportIdentity
+    && operation.runtimeGeneration === exactScope.runtimeGeneration
+    && operation.directory === exactScope.directory
+    && operation.sessionID === exactScope.sessionID
+    && operation.scopeID === exactScope.scopeID
+);
+
 // Pure optimistic reordering over authoritative server items. Only existing item
 // references are reused; no item is recreated and pending admission rows are
 // preserved untouched.
-//   - send: moves the existing target item reference to position 0.
+//   - send: moves the existing target immediately after already-active rows.
 //   - reorder: reorders existing items to match queueItemIDs order; returns the
 //     original array reference when the existing order already matches.
-//   - edit/remove: return the original array reference (overlay-only).
+//   - edit/remove: hide the target immediately and restore it on failure.
 // When the target is missing or the reorder order already matches, the original
 // array reference is returned so React skips re-rendering.
 export const applyPendingServerQueueOperation = (
     items: readonly MessageQueueServerDisplayItem[],
     operation: ServerQueueOperationIdentity,
 ): readonly MessageQueueServerDisplayItem[] => {
-    if (operation.kind === 'edit' || operation.kind === 'remove') return items;
+    if (operation.kind === 'edit' || operation.kind === 'remove') {
+        const index = items.findIndex((item) => !isMessageQueuePendingAdmissionItem(item) && item.queueItemID === operation.queueItemID);
+        if (index < 0) return items;
+        return [...items.slice(0, index), ...items.slice(index + 1)];
+    }
     if (operation.kind === 'reorder') {
         const order = operation.queueItemIDs;
         if (!order) return items;
@@ -133,15 +148,23 @@ export const applyPendingServerQueueOperation = (
         if (next.every((item, index) => item === items[index])) return items;
         return next;
     }
-    // send: move the existing target item reference to the front.
-    const index = items.findIndex((item) => !isMessageQueuePendingAdmissionItem(item) && item.queueItemID === operation.queueItemID);
-    if (index <= 0) return items;
-    const next = [...items];
-    const [moved] = next.splice(index, 1);
+    // send: match the server's promotion rule. A POST that already crossed the
+    // boundary stays pinned; the selected waiting row becomes the next row.
+    const authoritative = items.filter((item): item is MessageQueueItem => !isMessageQueuePendingAdmissionItem(item));
+    const moved = authoritative.find((item) => item.queueItemID === operation.queueItemID);
     if (!moved) return items;
-    next.unshift(moved);
+    const active = authoritative.filter((item) => item.queueItemID !== moved.queueItemID && isServerQueueItemActiveAttempt(item));
+    const waiting = authoritative.filter((item) => item.queueItemID !== moved.queueItemID && !isServerQueueItemActiveAttempt(item));
+    const pending = items.filter(isMessageQueuePendingAdmissionItem);
+    const next = [...active, moved, ...waiting, ...pending];
+    if (next.every((item, index) => item === items[index])) return items;
     return next;
 };
+
+export const applyPendingServerQueueOperations = (
+    items: readonly MessageQueueServerDisplayItem[],
+    operations: readonly ServerQueueOperationIdentity[],
+): readonly MessageQueueServerDisplayItem[] => operations.reduce(applyPendingServerQueueOperation, items);
 
 export const serverQueueItemMutationInput = (scope: MessageQueueScope, item: MessageQueueItem, requestID: string) => ({
     requestID,
@@ -163,11 +186,12 @@ export const reorderServerQueueItems = (
     activeID: string,
     overID: string,
     requestID: string,
+    visibleItems: readonly MessageQueueServerDisplayItem[] = scope.items,
 ): { requestID: string; scopeID: string; revision: number; queueItemIDs: string[] } | null => {
-    const from = scope.items.findIndex((item) => item.queueItemID === activeID);
-    const to = scope.items.findIndex((item) => item.queueItemID === overID);
+    const queueItemIDs = visibleItems.filter((item): item is MessageQueueItem => !isMessageQueuePendingAdmissionItem(item)).map((item) => item.queueItemID);
+    const from = queueItemIDs.indexOf(activeID);
+    const to = queueItemIDs.indexOf(overID);
     if (from < 0 || to < 0 || from === to) return null;
-    const queueItemIDs = scope.items.map((item) => item.queueItemID);
     const [moved] = queueItemIDs.splice(from, 1);
     if (!moved) return null;
     queueItemIDs.splice(to, 0, moved);

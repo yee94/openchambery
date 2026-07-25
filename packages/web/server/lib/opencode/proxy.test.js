@@ -4,6 +4,7 @@ import {
   createDirectoryQueryCanonicalizer,
   isInteractiveSessionRequest,
   normalizeForwardedDirectoryHeaders,
+  resolveSessionTurnAdmissionRequest,
 } from './proxy.js';
 
 describe('createDirectoryQueryCanonicalizer', () => {
@@ -108,5 +109,18 @@ describe('isInteractiveSessionRequest', () => {
   it('prioritizes session mutations but not background session lists', () => {
     expect(isInteractiveSessionRequest('GET', '/api/session?roots=true&limit=20')).toBe(false);
     expect(isInteractiveSessionRequest('POST', '/api/session/ses_1/message')).toBe(true);
+  });
+});
+
+describe('resolveSessionTurnAdmissionRequest', () => {
+  it('recognizes direct client turn endpoints with a directory scope', () => {
+    expect(resolveSessionTurnAdmissionRequest({ method: 'POST', originalUrl: '/api/session/ses_1/message?directory=%2Frepo', query: { directory: '/repo' } })).toEqual({ directory: '/repo', sessionID: 'ses_1' });
+    expect(resolveSessionTurnAdmissionRequest({ method: 'POST', url: '/session/ses%2F2/prompt_async', headers: { 'x-opencode-directory': '%2Frepo', 'x-opencode-directory-encoding': 'uri' } })).toEqual({ directory: '/repo', sessionID: 'ses/2' });
+  });
+
+  it('ignores reads, unrelated routes, and unscoped admissions', () => {
+    expect(resolveSessionTurnAdmissionRequest({ method: 'GET', url: '/api/session/ses_1/message', query: { directory: '/repo' } })).toBeNull();
+    expect(resolveSessionTurnAdmissionRequest({ method: 'POST', url: '/api/session', query: { directory: '/repo' } })).toBeNull();
+    expect(resolveSessionTurnAdmissionRequest({ method: 'POST', url: '/api/session/ses_1/message' })).toBeNull();
   });
 });

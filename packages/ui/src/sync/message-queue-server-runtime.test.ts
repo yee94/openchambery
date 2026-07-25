@@ -142,6 +142,42 @@ test('manual send reconciles the latest snapshot so a worker bump cannot empty t
   expect(result.scope?.items[0]?.status).toBe('sending');
 });
 
+test('reorder overwrites the visible order and preserves rows appended by another client', async () => {
+  const cache = new Map<string, unknown>();
+  const client = { setQueryData: (key: readonly unknown[], value: unknown) => cache.set(JSON.stringify(key), value), getQueryData: <T>(key: readonly unknown[]) => cache.get(JSON.stringify(key)) as T | undefined, removeQueries: () => {}, invalidateQueries: async () => {} };
+  const second = { ...item, queueItemID: 'queue-b', operationID: 'operation-b', messageID: 'msg_b', content: 'second', position: 1 };
+  const remote = { ...item, queueItemID: 'queue-c', operationID: 'operation-c', messageID: 'msg_c', content: 'remote', position: 2 };
+  let revision = 1;
+  let serverItems = [item, second];
+  const orders: string[][] = [];
+  const runtime = createMessageQueueServerRuntime({
+    client: client as never,
+    capture: () => ({ transportIdentity: 'device-a', generation: 1 }),
+    current: () => true,
+    status: async () => ({ capability: true, authority: 'active' }),
+    snapshot: async () => ({ revision, scopes: [{ ...descriptor, revision, itemCount: serverItems.length }], worktreeOrders: [] }),
+    scope: async () => ({ ...descriptor, revision, itemCount: serverItems.length, items: serverItems }),
+    reorder: async (_scopeID, payload) => {
+      orders.push([...payload.queueItemIDs]);
+      if (revision === 1) {
+        revision = 2;
+        serverItems = [item, second, remote];
+        throw new MessageQueueServerError(409, 'revision_conflict');
+      }
+      revision = 3;
+      serverItems = payload.queueItemIDs.map((id, position) => ({ ...serverItems.find((entry) => entry.queueItemID === id)!, position }));
+      return { revision };
+    },
+  });
+  await runtime.refresh();
+
+  const result = await runtime.reorder({ requestID: 'visible-overwrite', scopeID: descriptor.scopeID, revision: 1, queueItemIDs: ['queue-b', 'queue-a'] });
+
+  expect(orders).toEqual([['queue-b', 'queue-a'], ['queue-b', 'queue-a', 'queue-c']]);
+  expect(result.status).toBe('committed');
+  expect(result.scope?.items.map((entry) => entry.queueItemID)).toEqual(['queue-b', 'queue-a', 'queue-c']);
+});
+
 test('failed manual send reloads the authoritative scope instead of leaving an empty chip list', async () => {
   const cache = new Map<string, unknown>();
   const client = { setQueryData: (key: readonly unknown[], value: unknown) => cache.set(JSON.stringify(key), value), getQueryData: <T>(key: readonly unknown[]) => cache.get(JSON.stringify(key)) as T | undefined, removeQueries: () => {}, invalidateQueries: async () => {} };
@@ -304,6 +340,80 @@ test('conflict reload keeps sibling scope pages while advancing only the mutated
   expect(runtime.getScope({ transportIdentity: 'device-a', directory: '/repo', sessionID: 'session-b' })?.items).toEqual([siblingItem]);
   expect(runtime.getState().scopes.get(sibling.scopeID)?.revision).toBe(1);
   expect(runtime.getState().scopes.get(descriptor.scopeID)?.revision).toBe(2);
+});
+
+test('replays repeated revision conflicts internally until the client intent commits', async () => {
+  const cache = new Map<string, unknown>();
+  const client = { setQueryData: (key: readonly unknown[], value: unknown) => cache.set(JSON.stringify(key), value), getQueryData: <T>(key: readonly unknown[]) => cache.get(JSON.stringify(key)) as T | undefined, removeQueries: () => {}, invalidateQueries: async () => {} };
+  let revision = 1, calls = 0;
+  const runtime = createMessageQueueServerRuntime({
+    client: client as never,
+    capture: () => ({ transportIdentity: 'device-a', generation: 1 }),
+    current: () => true,
+    status: async () => ({ capability: true, authority: 'paused' }),
+    snapshot: async () => ({ revision, scopes: [{ ...descriptor, revision }], worktreeOrders: [] }),
+    scope: async () => ({ ...descriptor, revision, items: [{ ...item, rowVersion: revision }] }),
+    edit: async () => {
+      calls++;
+      if (calls < 4) {
+        revision++;
+        throw new MessageQueueServerError(409, calls % 2 ? 'revision_conflict' : 'row_version_conflict');
+      }
+      return { revision };
+    },
+  });
+  await runtime.refresh();
+
+  const result = await runtime.edit({ requestID: 'edit-replay', scopeID: descriptor.scopeID, revision: 1, item, patch: { content: 'client-wins' } });
+
+  expect(result.status).toBe('committed');
+  expect(calls).toBe(4);
+  expect(result.scope?.revision).toBe(4);
+});
+
+test('replays edit reservation and reserved removal conflicts without exposing a scope lock', async () => {
+  const cache = new Map<string, unknown>();
+  const client = { setQueryData: (key: readonly unknown[], value: unknown) => cache.set(JSON.stringify(key), value), getQueryData: <T>(key: readonly unknown[]) => cache.get(JSON.stringify(key)) as T | undefined, removeQueries: () => {}, invalidateQueries: async () => {} };
+  let revision = 1, reserveCalls = 0, removeCalls = 0, removed = false;
+  const reserveExpected: number[] = [], removeExpected: number[] = [];
+  const runtime = createMessageQueueServerRuntime({
+    client: client as never,
+    capture: () => ({ transportIdentity: 'device-a', generation: 1 }),
+    current: () => true,
+    status: async () => ({ capability: true, authority: 'paused' }),
+    snapshot: async () => ({ revision, scopes: [{ ...descriptor, revision, itemCount: removed ? 0 : 1 }], worktreeOrders: [] }),
+    scope: async () => ({ ...descriptor, revision, itemCount: removed ? 0 : 1, items: removed ? [] : [{ ...item, rowVersion: revision }] }),
+    reserve: async (_queueItemID, input) => {
+      reserveCalls++;
+      reserveExpected.push(input.expectedRevision);
+      if (reserveCalls < 3) {
+        revision++;
+        throw new MessageQueueServerError(409, 'revision_conflict');
+      }
+      return { revision, scopeID: descriptor.scopeID, queueItemID: item.queueItemID, rowVersion: revision, token: 'token', expiresAt: Date.now() + 60_000, generation: 1 };
+    },
+    removeReserved: async (_queueItemID, input) => {
+      removeCalls++;
+      removeExpected.push(input.expectedRevision);
+      if (removeCalls < 3) {
+        revision++;
+        throw new MessageQueueServerError(409, 'row_version_conflict');
+      }
+      revision++;
+      removed = true;
+      return { revision };
+    },
+  });
+  await runtime.refresh();
+  const capture = runtime.captureRuntime();
+
+  const reservation = await runtime.reserveEdit({ requestID: 'reserve-replay', scopeID: descriptor.scopeID, revision: 1, item, owner: 'ui-edit', ttlMs: 60_000, runtime: capture });
+  const didRemove = await runtime.removeReserved({ requestID: 'remove-replay', scopeID: descriptor.scopeID, revision: reservation!.revision, item: { ...item, rowVersion: reservation!.rowVersion }, token: reservation!.token, generation: reservation!.generation, runtime: capture });
+
+  expect(reserveExpected).toEqual([1, 2, 3]);
+  expect(removeExpected).toEqual([3, 4, 5]);
+  expect(didRemove).toBe(true);
+  expect(runtime.getScope({ transportIdentity: 'device-a', directory: '/repo', sessionID: 'session-a' })?.items).toEqual([]);
 });
 
 test('admission publishes an exact-scope uploading shadow before upload settles', async () => {

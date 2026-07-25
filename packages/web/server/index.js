@@ -1410,7 +1410,8 @@ async function main(options = {}) {
     const payload = event?.payload?.payload ?? event?.payload;
     if (!payload || typeof payload !== 'object' || !messageQueueRuntime) return;
     confirmMessageQueueEvent(messageQueueService, event);
-    if (payload.type === 'session.status' || payload.type === 'session.idle') void messageQueueRuntime.wake();
+    messageQueueRuntime.observeSessionEvent?.(event);
+    if (payload.type === 'session.status' || payload.type === 'session.idle' || payload.type === 'session.error') void messageQueueRuntime.wake();
   });
 
   console.log(`Starting OpenChamber on port ${port === 0 ? 'auto' : port}`);
@@ -1699,6 +1700,7 @@ async function main(options = {}) {
     terminalMaxRebindsPerWindow: TERMINAL_INPUT_WS_MAX_REBINDS_PER_WINDOW,
     setupProxy: (proxyApp) => setupProxy(proxyApp, {
       onInteractiveSessionRequest: () => sessionIndexSyncRuntime?.noteInteractiveRequest(),
+      onSessionTurnAdmission: (scope) => messageQueueRuntime?.noteClientOperation(scope),
     }),
     scheduleOpenCodeApiDetection,
     bootstrapOpenCodeAtStartup,

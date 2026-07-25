@@ -35,6 +35,10 @@ export type DesktopHostRelay = {
   relayUrl: string;
   serverId: string;
   hostEncPubJwk: JsonWebKey;
+  // HAPI Hub private-relay: L1 auth token + transport marker. Persisted so cold
+  // start / probe can re-auth without re-importing the pairing link.
+  transport?: 'hapi';
+  accessToken?: string;
 };
 
 export type DesktopHost = {
@@ -67,7 +71,17 @@ const parseHostRelay = (value: unknown): DesktopHostRelay | null => {
   const serverId = readString(value, 'serverId') || readString(value, 'server_id');
   const jwk = value.hostEncPubJwk ?? value.host_enc_pub_jwk;
   if (!relayUrl || !serverId || !isRecord(jwk)) return null;
-  return { relayUrl, serverId, hostEncPubJwk: jwk as JsonWebKey };
+  const transport = value.transport === 'hapi' ? 'hapi' as const : undefined;
+  const accessTokenRaw = readString(value, 'accessToken') || readString(value, 'access_token');
+  const accessToken = accessTokenRaw?.trim() || undefined;
+  if (transport === 'hapi' && !accessToken) return null;
+  return {
+    relayUrl,
+    serverId,
+    hostEncPubJwk: jwk as JsonWebKey,
+    ...(transport ? { transport } : {}),
+    ...(accessToken ? { accessToken } : {}),
+  };
 };
 
 export type DesktopHostsConfig = {
@@ -318,6 +332,8 @@ export const probeRelayDesktopHost = async (
     relayUrl: relay.relayUrl,
     serverId: relay.serverId,
     hostEncPubJwk: relay.hostEncPubJwk,
+    ...(relay.transport ? { transport: relay.transport } : {}),
+    ...(relay.accessToken ? { accessToken: relay.accessToken } : {}),
   });
   const startedAt = Date.now();
   let keep = false;

@@ -29,6 +29,16 @@ const CONTROL_PING_INTERVAL_MS = 30_000;
 const CONTROL_PONG_GRACE_MS = 10_000;
 const DEFAULT_BATCH_WINDOW_MS = 150;
 
+// WebSocket error messages often embed the full dial URL (incl. token=).
+// Strip sensitive query keys before surfacing lastError / logs.
+export const sanitizeRelayErrorMessage = (value) => {
+  const text = value == null ? '' : String(value);
+  if (!text) return text;
+  return text
+    .replace(/([?&](?:token|sig|pk|grant)=)[^&\s'"]+/gi, '$1[REDACTED]')
+    .replace(/(token|sig|pk|grant)=[^&\s'"]+/gi, '$1=[REDACTED]');
+};
+
 // Resolve the frame-batching flush window: explicit option wins, then env, then
 // the 150 ms default. Only applies on directions where batching was negotiated.
 const resolveBatchWindowMs = (option) => {
@@ -46,12 +56,14 @@ const resolveBatchWindowMs = (option) => {
  *   getLocalPort?: () => number,
  *   onStatus?: (status: { state: string, lastError: string | null, connectedClients: number }) => void,
  *   logger?: Pick<Console, 'warn'>,
+ *   accessToken?: string,
  * }} options
  */
-export const startRelayHost = ({ relayUrl, identity, localPort, getLocalPort, onStatus, logger = console, batchWindowMs, batch }) => {
+export const startRelayHost = ({ relayUrl, identity, localPort, getLocalPort, onStatus, logger = console, batchWindowMs, batch, accessToken }) => {
   const resolveLocalPort = typeof getLocalPort === 'function' ? getLocalPort : () => localPort;
   const localBatch = batch !== false;
   const resolvedBatchWindowMs = resolveBatchWindowMs(batchWindowMs);
+  const relayAccessToken = typeof accessToken === 'string' ? accessToken.trim() : '';
 
   let stopped = false;
   let state = 'connecting';
@@ -86,8 +98,16 @@ export const startRelayHost = ({ relayUrl, identity, localPort, getLocalPort, on
     url.searchParams.set('ts', String(auth.ts));
     url.searchParams.set('sig', auth.sig);
     url.searchParams.set('pk', auth.pk);
+    // HAPI Hub private-relay L1 accepts the shared access token alongside the
+    // host signature params; classic openchamber-relay ignores unknown query keys.
+    if (relayAccessToken) url.searchParams.set('token', relayAccessToken);
     return url.toString();
   };
+
+  // WebSocket error messages often embed the full dial URL (incl. token=).
+  // Strip sensitive query keys before surfacing lastError / logs.
+  // (Also exported as sanitizeRelayErrorMessage for unit tests.)
+  const sanitizeErrorMessage = sanitizeRelayErrorMessage;
 
   const teardownDataSocket = (connectionId, closeCode, reason) => {
     const entry = dataSockets.get(connectionId);
@@ -114,7 +134,7 @@ export const startRelayHost = ({ relayUrl, identity, localPort, getLocalPort, on
     try {
       socket = new WebSocket(buildSocketUrl('host-data', connectionId));
     } catch (error) {
-      logger.warn(`[Relay] host-data dial failed: ${error?.message ?? error}`);
+      logger.warn(`[Relay] host-data dial failed: ${sanitizeErrorMessage(error?.message ?? error)}`);
       return;
     }
 
@@ -143,7 +163,7 @@ export const startRelayHost = ({ relayUrl, identity, localPort, getLocalPort, on
           socket.send(encrypted, { binary: true });
         })
         .catch((error) => {
-          logger.warn(`[Relay] host-data send failed: ${error?.message ?? error}`);
+          logger.warn(`[Relay] host-data send failed: ${sanitizeErrorMessage(error?.message ?? error)}`);
         });
     };
 
@@ -211,7 +231,7 @@ export const startRelayHost = ({ relayUrl, identity, localPort, getLocalPort, on
           await entry.tunnel.handleFrame(plaintext);
         }
       } catch (error) {
-        logger.warn(`[Relay] tunnel frame handling failed: ${error?.message ?? error}`);
+        logger.warn(`[Relay] tunnel frame handling failed: ${sanitizeErrorMessage(error?.message ?? error)}`);
       }
     };
 
@@ -226,7 +246,7 @@ export const startRelayHost = ({ relayUrl, identity, localPort, getLocalPort, on
       processing = processing
         .then(() => handleMessage(data, isBinary))
         .catch((error) => {
-          logger.warn(`[Relay] data socket message failed: ${error?.message ?? error}`);
+          logger.warn(`[Relay] data socket message failed: ${sanitizeErrorMessage(error?.message ?? error)}`);
           failChannel(RelayCloseCode.ChannelFailure, 'internal error');
         });
     });
@@ -234,7 +254,7 @@ export const startRelayHost = ({ relayUrl, identity, localPort, getLocalPort, on
       teardownDataSocket(connectionId);
     });
     socket.on('error', (error) => {
-      logger.warn(`[Relay] host-data socket error: ${error?.message ?? error}`);
+      logger.warn(`[Relay] host-data socket error: ${sanitizeErrorMessage(error?.message ?? error)}`);
     });
   };
 
@@ -284,7 +304,7 @@ export const startRelayHost = ({ relayUrl, identity, localPort, getLocalPort, on
     try {
       socket = new WebSocket(buildSocketUrl('host-control'));
     } catch (error) {
-      lastError = error?.message ?? String(error);
+      lastError = sanitizeErrorMessage(error?.message ?? String(error));
       scheduleReconnect();
       return;
     }
@@ -329,7 +349,7 @@ export const startRelayHost = ({ relayUrl, identity, localPort, getLocalPort, on
     });
     socket.on('error', (error) => {
       if (controlSocket !== socket) return;
-      lastError = error?.message ?? String(error);
+      lastError = sanitizeErrorMessage(error?.message ?? String(error));
     });
     socket.on('close', (code, reasonBuffer) => {
       clearInterval(pingTimer);
@@ -337,7 +357,7 @@ export const startRelayHost = ({ relayUrl, identity, localPort, getLocalPort, on
       controlSocket = null;
       const reason = reasonBuffer ? reasonBuffer.toString('utf8') : '';
       if (!lastError && code && code !== 1000) {
-        lastError = `control socket closed (${code}${reason ? `: ${reason}` : ''})`;
+        lastError = sanitizeErrorMessage(`control socket closed (${code}${reason ? `: ${reason}` : ''})`);
       }
       // Data sockets ride their own relay connections; the relay keeps clients
       // alive through a 30 s control-reconnect grace window, so leave them up.

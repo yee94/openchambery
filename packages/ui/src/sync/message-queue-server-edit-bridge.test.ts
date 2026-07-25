@@ -16,14 +16,15 @@ const item = {
 };
 
 test('downloads canonical mixed attachments, retains sidecars, commits then removes', async () => {
-  let snapshot: DraftCommitInput['snapshot'] | undefined, removed = 0;
+  let snapshot: DraftCommitInput['snapshot'] | undefined, removed = 0, removalInput: { revision: number; item: { rowVersion: number } } | undefined;
   const bridge = createMessageQueueServerEditBridge({
-    queue: { captureRuntime: () => runtime, reserveEdit: async () => ({ revision: 4, scopeID: 'scope', queueItemID: 'queue', rowVersion: 3, token: 'token', expiresAt: 2, generation: 1 }), renewEdit: async () => ({ queueItemID: 'queue', token: 'token', generation: 1, expiresAt: Date.now() + 60_000 }), releaseEdit: async () => {}, removeReserved: async () => { removed++; return true; }, refresh: async () => {} },
+    queue: { captureRuntime: () => runtime, reserveEdit: async () => ({ revision: 7, scopeID: 'scope', queueItemID: 'queue', rowVersion: 9, token: 'token', expiresAt: 2, generation: 1 }), renewEdit: async () => ({ queueItemID: 'queue', token: 'token', generation: 1, expiresAt: Date.now() + 60_000 }), releaseEdit: async () => {}, removeReserved: async (input: { revision: number; item: { rowVersion: number } }) => { removalInput = input; removed++; return true; }, refresh: async () => {} },
     input: { captureDraftRuntime: () => runtime, commitDraftSnapshot: async (input: DraftCommitInput) => { snapshot = input.snapshot; return { status: 'committed', durable: true, current: true, errors: [], cleanupErrors: [] }; } },
     download: async (_queue: string, attachment: Pick<MessageQueueAttachment, 'attachmentID' | 'size' | 'mimeType'>) => new Blob([new Uint8Array(attachment.size)], { type: attachment.mimeType }), current: () => true,
   } as never);
   const result = await bridge.editServerQueueItemIntoDraft({ scopeID: 'scope', scopeRevision: 4, item, targetKey: sessionDraftKey(runtime, 'session'), expectedRevision: 'absent' });
   expect(result.diagnostics).toEqual([]); expect(result.status).toBe('committed'); expect(removed).toBe(1);
+  expect(removalInput?.revision).toBe(7); expect(removalInput?.item.rowVersion).toBe(9);
   expect(snapshot?.attachments.map((attachment) => attachment.attachmentID)).toEqual(['one', 'two']);
   expect(snapshot?.composerReferences).toEqual([]); expect(snapshot?.mentions).toEqual(item.composerMentions);
 });

@@ -186,6 +186,22 @@ export const isInteractiveSessionRequest = (method, requestUrl) => {
   return /^\/api\/session\/[^/]+(?:\/(?:message|children|todo|diff))?$/.test(pathname);
 };
 
+export const resolveSessionTurnAdmissionRequest = (req) => {
+  if (req?.method !== 'POST') return null;
+  const requestUrl = typeof req.originalUrl === 'string' && req.originalUrl ? req.originalUrl : req.url;
+  const pathname = new URL(requestUrl || '/', 'http://openchamber.local').pathname;
+  const match = pathname.match(/\/session\/([^/]+)\/(?:message|prompt_async|command|shell)\/?$/i);
+  if (!match) return null;
+  const directory = extractDirectoryFromRequest(req);
+  if (!directory) return null;
+  try {
+    const sessionID = decodeURIComponent(match[1]).trim();
+    return sessionID ? { directory, sessionID } : null;
+  } catch {
+    return null;
+  }
+};
+
 export const registerOpenCodeProxy = (app, deps) => {
   const {
     fs,
@@ -200,6 +216,7 @@ export const registerOpenCodeProxy = (app, deps) => {
     buildOpenCodeUrl,
     ensureOpenCodeApiPrefix,
     onInteractiveSessionRequest,
+    onSessionTurnAdmission,
   } = deps;
 
   if (app.get('opencodeProxyConfigured')) {
@@ -612,6 +629,10 @@ export const registerOpenCodeProxy = (app, deps) => {
   app.use('/api', (req, _res, next) => {
     if (isInteractiveSessionRequest(req.method, req.originalUrl || req.url)) {
       onInteractiveSessionRequest?.();
+    }
+    const turn = resolveSessionTurnAdmissionRequest(req);
+    if (turn) {
+      try { onSessionTurnAdmission?.(turn); } catch { /* Admission remains client-owned and must never be blocked. */ }
     }
     next();
   });

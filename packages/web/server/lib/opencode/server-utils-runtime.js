@@ -214,6 +214,7 @@ export const createServerUtilsRuntime = (dependencies) => {
       ensureOpenCodeApiPrefix,
       getUiNotificationClients,
       onInteractiveSessionRequest: options.onInteractiveSessionRequest,
+      onSessionTurnAdmission: options.onSessionTurnAdmission,
     });
   };
 

@@ -102,7 +102,6 @@ describe('resolveComposerActionAvailability', () => {
             draftSubmitting: false,
             submissionBlocked: true,
             queueFrozen: false,
-            hasBlockingAdmission: false,
         })).toEqual({
             sendDisabled: true,
             queueDisabled: true,
@@ -117,7 +116,6 @@ describe('resolveComposerActionAvailability', () => {
             draftSubmitting: false,
             submissionBlocked: false,
             queueFrozen: true,
-            hasBlockingAdmission: false,
         })).toEqual({
             sendDisabled: false,
             queueDisabled: true,
@@ -125,17 +123,16 @@ describe('resolveComposerActionAvailability', () => {
         });
     });
 
-    test('disables Send and Queue while server admission is blocking', () => {
+    test('keeps Send and Queue available while an earlier server admission is pending', () => {
         expect(resolveComposerActionAvailability({
             canSend: true,
             hasSessionTarget: true,
             draftSubmitting: false,
             submissionBlocked: false,
             queueFrozen: false,
-            hasBlockingAdmission: true,
         })).toEqual({
-            sendDisabled: true,
-            queueDisabled: true,
+            sendDisabled: false,
+            queueDisabled: false,
             disabledClass: 'opacity-30 pointer-events-none',
         });
     });
@@ -147,7 +144,6 @@ describe('resolveComposerActionAvailability', () => {
             draftSubmitting: false,
             submissionBlocked: false,
             queueFrozen: false,
-            hasBlockingAdmission: false,
         })).toEqual({
             sendDisabled: false,
             queueDisabled: false,

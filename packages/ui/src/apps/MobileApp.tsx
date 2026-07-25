@@ -64,6 +64,7 @@ import { useSessionUIStore } from '@/sync/session-ui-store';
 import { SessionStartupCoordinator } from '@/components/session/SessionStartupCoordinator';
 import { DirectoryExplorerDialog } from '@/components/session/DirectoryExplorerDialog';
 import { ScheduledTasksDialog, ScheduledTasksWorkspace } from '@/components/session/ScheduledTasksDialog';
+import { SettingsGroup } from '@/components/sections/shared/SettingsGroup';
 import { SyncProvider, useCurrentSessionEntity, useParentSessionTarget, useSessionMessages } from '@/sync/sync-context';
 
 import { SyncAppEffects } from './AppEffects';
@@ -1079,9 +1080,12 @@ const MobileInstancesSurface: React.FC<{
 
   if (pendingConnection) {
     return (
-      <div className="flex h-full flex-col overflow-hidden">
-        <form className="flex-1 overflow-y-auto px-5 py-4" onSubmit={handlePasswordSubmit}>
-          <div className="flex flex-col gap-3">
+      <div className="oc-settings-page-content">
+        <SettingsGroup
+          label={t('mobile.connect.password.label')}
+          itemId="instances.manage"
+        >
+          <form className="oc-settings-group-row flex flex-col gap-3" onSubmit={handlePasswordSubmit}>
             <div className="flex items-center gap-3 rounded-[18px] border border-border/70 bg-surface-elevated px-3.5 py-3">
               <span className="flex size-9 shrink-0 items-center justify-center rounded-[12px] bg-interactive-hover text-foreground">
                 <Icon name="lock" className="size-[18px]" />
@@ -1110,124 +1114,128 @@ const MobileInstancesSurface: React.FC<{
             <Button type="button" variant="ghost" size="sm" className="w-full" onClick={cancelPasswordPrompt}>
               {t('mobile.connect.cancelPassword')}
             </Button>
-          </div>
-        </form>
+          </form>
+        </SettingsGroup>
       </div>
     );
   }
 
   return (
-    <div className="flex h-full flex-col overflow-hidden">
-      <div className="flex-1 overflow-y-auto px-5 py-4">
-        <div className="space-y-6">
-          {connections.length > 0 ? (
-            <div className="overflow-hidden rounded-[18px] border border-border/70 bg-surface-elevated">
-              {connections.map((connection) => {
-                const confirming = confirmingDeleteId === connection.id;
-                const isActive = isActiveRuntimeConnection(connection);
-                const isConnectingRow = connectingId === connection.id;
-                // Status line: the active instance says HOW it is connected right
-                // now (direct vs relay); others show their address.
-                const statusText = isConnectingRow
-                  ? t('mobile.connect.connecting')
-                  : isActive
-                    ? (isRelayModeActive()
-                      ? t('mobile.instances.status.connectedRelay')
-                      : isHapiRuntimeActive(connection)
-                        ? t('mobile.instances.status.connectedHapi')
-                        : t('mobile.instances.status.connectedDirect'))
-                    : connection.candidates.some((c) => c.kind === 'direct') ? connectionDisplayUrl(connection) : t('mobile.connect.relay.badge');
-                return (
-                  <div
-                    key={connection.id}
-                    className={cn(
-                      'flex items-center border-b border-border/60 transition-colors last:border-b-0',
-                      confirming && 'bg-[color-mix(in_srgb,var(--destructive)_8%,transparent)]',
-                    )}
-                  >
+    <div className="oc-settings-page-content">
+      <SettingsGroup
+        label={t('mobile.connect.saved.title')}
+        itemId="instances.manage"
+      >
+        {connections.length > 0 ? (
+          connections.map((connection) => {
+            const confirming = confirmingDeleteId === connection.id;
+            const isActive = isActiveRuntimeConnection(connection);
+            const isConnectingRow = connectingId === connection.id;
+            // Status line: the active instance says HOW it is connected right
+            // now (direct vs relay); others show their address.
+            const statusText = isConnectingRow
+              ? t('mobile.connect.connecting')
+              : isActive
+                ? (isRelayModeActive()
+                  ? t('mobile.instances.status.connectedRelay')
+                  : isHapiRuntimeActive(connection)
+                    ? t('mobile.instances.status.connectedHapi')
+                    : t('mobile.instances.status.connectedDirect'))
+                : connection.candidates.some((c) => c.kind === 'direct') ? connectionDisplayUrl(connection) : t('mobile.connect.relay.badge');
+            return (
+              <div
+                key={connection.id}
+                className={cn(
+                  'oc-settings-group-row flex items-center transition-colors',
+                  confirming && 'bg-[color-mix(in_srgb,var(--destructive)_8%,transparent)]',
+                )}
+              >
+                <button
+                  type="button"
+                  className="flex min-w-0 flex-1 items-center gap-3 text-left transition-colors active:bg-interactive-hover focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-inset focus-visible:ring-primary disabled:opacity-60"
+                  onClick={() => {
+                    if (isActive) return;
+                    setConnectingId(connection.id);
+                    void connect({ id: connection.id, candidates: connection.candidates, clientToken: connection.clientToken, label: connection.label })
+                      .finally(() => setConnectingId(null));
+                  }}
+                  disabled={(isBusy && !isConnectingRow) || confirming}
+                >
+                  <span className="relative flex size-9 shrink-0 items-center justify-center rounded-[12px] bg-interactive-hover text-foreground">
+                    <Icon name="server" className="size-[18px]" />
+                    {isActive ? (
+                      <span className="absolute -right-0.5 -top-0.5 size-2.5 rounded-full border-2 border-[var(--surface-elevated)] bg-[var(--status-success)]" aria-hidden />
+                    ) : null}
+                  </span>
+                  <span className="min-w-0 flex-1">
+                    <span className="block truncate typography-ui-label text-foreground">{connection.label}</span>
+                    <span className={cn(
+                      'block truncate typography-small',
+                      isActive && !isConnectingRow ? 'text-[var(--status-success)]' : 'text-muted-foreground',
+                    )}>
+                      {statusText}
+                    </span>
+                  </span>
+                  {isConnectingRow ? <Icon name="loader-4" className="size-5 shrink-0 animate-spin text-muted-foreground" /> : null}
+                </button>
+                <div className="flex items-center gap-0.5 pr-2">
+                  {confirming ? (
                     <button
                       type="button"
-                      className="flex min-w-0 flex-1 items-center gap-3 px-3.5 py-3 text-left transition-colors active:bg-interactive-hover focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-inset focus-visible:ring-primary disabled:opacity-60"
-                      onClick={() => {
-                        if (isActive) return;
-                        setConnectingId(connection.id);
-                        void connect({ id: connection.id, candidates: connection.candidates, clientToken: connection.clientToken, label: connection.label })
-                          .finally(() => setConnectingId(null));
-                      }}
-                      disabled={(isBusy && !isConnectingRow) || confirming}
+                      aria-label={t('mobile.instances.confirmDeleteAria', { label: connection.label })}
+                      className="flex h-9 shrink-0 items-center gap-1.5 rounded-full bg-destructive px-3 text-destructive-foreground transition-opacity active:opacity-90 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-destructive"
+                      onClick={() => confirmDelete(connection.id)}
+                      style={{ touchAction: 'manipulation' }}
                     >
-                      <span className="relative flex size-9 shrink-0 items-center justify-center rounded-[12px] bg-interactive-hover text-foreground">
-                        <Icon name="server" className="size-[18px]" />
-                        {isActive ? (
-                          <span className="absolute -right-0.5 -top-0.5 size-2.5 rounded-full border-2 border-[var(--surface-elevated)] bg-[var(--status-success)]" aria-hidden />
-                        ) : null}
-                      </span>
-                      <span className="min-w-0 flex-1">
-                        <span className="block truncate typography-ui-label text-foreground">{connection.label}</span>
-                        <span className={cn(
-                          'block truncate typography-small',
-                          isActive && !isConnectingRow ? 'text-[var(--status-success)]' : 'text-muted-foreground',
-                        )}>
-                          {statusText}
-                        </span>
-                      </span>
-                      {isConnectingRow ? <Icon name="loader-4" className="size-5 shrink-0 animate-spin text-muted-foreground" /> : null}
+                      <Icon name="delete-bin" className="size-[18px]" />
+                      <span className="typography-ui-label">{t('mobile.instances.delete')}</span>
                     </button>
-                    <div className="flex items-center gap-0.5 pr-2">
-                      {confirming ? (
-                        <button
-                          type="button"
-                          aria-label={t('mobile.instances.confirmDeleteAria', { label: connection.label })}
-                          className="flex h-9 shrink-0 items-center gap-1.5 rounded-full bg-destructive px-3 text-destructive-foreground transition-opacity active:opacity-90 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-destructive"
-                          onClick={() => confirmDelete(connection.id)}
-                          style={{ touchAction: 'manipulation' }}
-                        >
-                          <Icon name="delete-bin" className="size-[18px]" />
-                          <span className="typography-ui-label">{t('mobile.instances.delete')}</span>
-                        </button>
-                      ) : !connection.candidates.some((c) => c.kind === 'direct') ? null : (
-                        <button
-                          type="button"
-                          aria-label={t('mobile.instances.edit')}
-                          className="flex size-9 items-center justify-center rounded-full text-muted-foreground transition-colors active:bg-interactive-hover focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-primary"
-                          onClick={() => {
-                            setEditingId(connection.id);
-                            setUrl(connectionDisplayUrl(connection));
-                            setLabel(connection.label);
-                            setClientToken(connection.clientToken || '');
-                            setError(null);
-                          }}
-                          style={{ touchAction: 'manipulation' }}
-                        >
-                          <Icon name="edit" className="size-[18px]" />
-                        </button>
-                      )}
-                      <button
-                        type="button"
-                        aria-label={confirming
-                          ? t('mobile.instances.cancelDeleteAria', { label: connection.label })
-                          : t('mobile.instances.deleteAria', { label: connection.label })}
-                        className="flex size-9 items-center justify-center rounded-full text-muted-foreground transition-colors active:bg-interactive-hover focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-primary"
-                        onClick={() => toggleConfirmDelete(connection.id)}
-                        style={{ touchAction: 'manipulation' }}
-                      >
-                        <Icon name={confirming ? 'close' : 'delete-bin'} className="size-[18px]" />
-                      </button>
-                    </div>
-                  </div>
-                );
-              })}
-            </div>
-          ) : (
-            <p className="rounded-[18px] border border-dashed border-border/70 px-4 py-6 text-center typography-small text-muted-foreground">
-              {t('mobile.connect.saved.empty')}
-            </p>
-          )}
+                  ) : !connection.candidates.some((c) => c.kind === 'direct') ? null : (
+                    <button
+                      type="button"
+                      aria-label={t('mobile.instances.edit')}
+                      className="flex size-9 items-center justify-center rounded-full text-muted-foreground transition-colors active:bg-interactive-hover focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-primary"
+                      onClick={() => {
+                        setEditingId(connection.id);
+                        setUrl(connectionDisplayUrl(connection));
+                        setLabel(connection.label);
+                        setClientToken(connection.clientToken || '');
+                        setError(null);
+                      }}
+                      style={{ touchAction: 'manipulation' }}
+                    >
+                      <Icon name="edit" className="size-[18px]" />
+                    </button>
+                  )}
+                  <button
+                    type="button"
+                    aria-label={confirming
+                      ? t('mobile.instances.cancelDeleteAria', { label: connection.label })
+                      : t('mobile.instances.deleteAria', { label: connection.label })}
+                    className="flex size-9 items-center justify-center rounded-full text-muted-foreground transition-colors active:bg-interactive-hover focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-primary"
+                    onClick={() => toggleConfirmDelete(connection.id)}
+                    style={{ touchAction: 'manipulation' }}
+                  >
+                    <Icon name={confirming ? 'close' : 'delete-bin'} className="size-[18px]" />
+                  </button>
+                </div>
+              </div>
+            );
+          })
+        ) : (
+          <div className="oc-settings-group-row flex items-center justify-center text-center typography-small text-muted-foreground">
+            {t('mobile.connect.saved.empty')}
+          </div>
+        )}
+      </SettingsGroup>
 
-          {/* Add actions: QR pairing is the primary path; the manual form stays
-              hidden until asked for (or until a row's edit button opens it). */}
-          {!formOpen && !editingConnection ? (
-            <div className="space-y-2">
+      {/* QR pairing is the primary path; the manual form stays hidden until
+          asked for (or until a row's edit button opens it). */}
+      <SettingsGroup
+        label={editingConnection ? t('mobile.instances.editTitle') : t('mobile.instances.addTitle')}
+      >
+        {!formOpen && !editingConnection ? (
+          <div className="oc-settings-group-row flex flex-col items-stretch gap-2">
               {qrScanSupported ? (
                 <Button
                   type="button"
@@ -1251,13 +1259,10 @@ const MobileInstancesSurface: React.FC<{
                 {t('mobile.instances.addManual')}
               </Button>
               {error ? <p className="px-1 text-center typography-small text-[var(--status-error)]">{error}</p> : null}
-            </div>
-          ) : (
-            <form className="space-y-3" onSubmit={saveInstance}>
-              <div className="flex h-8 items-center justify-between gap-3 px-1">
-                <h3 className="typography-ui-label text-foreground">
-                  {editingConnection ? t('mobile.instances.editTitle') : t('mobile.instances.addTitle')}
-                </h3>
+          </div>
+        ) : (
+          <form className="oc-settings-group-row flex flex-col gap-3" onSubmit={saveInstance}>
+              <div className="flex min-h-8 items-center justify-end px-1">
                 <Button type="button" variant="ghost" size="xs" onClick={resetForm}>
                   {t('mobile.instances.cancelEdit')}
                 </Button>
@@ -1304,10 +1309,9 @@ const MobileInstancesSurface: React.FC<{
               <Button type="submit" size="lg" className="mt-1 h-12 w-full">
                 {editingConnection ? t('mobile.instances.saveEdit') : t('mobile.instances.saveNew')}
               </Button>
-            </form>
-          )}
-        </div>
-      </div>
+          </form>
+        )}
+      </SettingsGroup>
     </div>
   );
 };
@@ -2118,7 +2122,6 @@ const MobileShell: React.FC<{ onActiveConnectionDeleted: () => void }> = ({ onAc
   const [turnDiffOpen, setTurnDiffOpen] = React.useState(false);
   const [turnDiffMessageId, setTurnDiffMessageId] = React.useState<string | null>(null);
   const [mcpOpen, setMcpOpen] = React.useState(false);
-  const [instancesOpen, setInstancesOpen] = React.useState(false);
   const [isMcpRefreshing, setIsMcpRefreshing] = React.useState(false);
   const [settingsOpen, setSettingsOpen] = React.useState(false);
   const [updateOpen, setUpdateOpen] = React.useState(false);
@@ -2149,20 +2152,10 @@ const MobileShell: React.FC<{ onActiveConnectionDeleted: () => void }> = ({ onAc
   const isPortrait = orientation === 'portrait';
   const [ipadSidebarOpen, setIpadSidebarOpen] = React.useState(isIPad && !isPortrait);
   const [ipadRightPanel, setIpadRightPanel] = React.useState<'files' | 'changes' | 'turn-diff' | null>(null);
-  const openInstancesPage = useEvent(() => {
-    setSettingsOpen(false);
-    if (isIPad) {
-      setInstancesOpen(true);
-      return;
-    }
-    useMobileNavigationStore.getState().openInstances();
-  });
-  const closeInstancesPage = useEvent(() => {
-    if (isIPad) {
-      setInstancesOpen(false);
-      return;
-    }
-    useMobileNavigationStore.getState().closeSecondary();
+  const openInstancesSettingsPage = useEvent(() => {
+    setSettingsPage('instances');
+    setSettingsInitialMobileStage('page-content');
+    setSettingsOpen(true);
   });
 
   const rootBackRoutesBlocked = mobileSessionPanelOpen
@@ -2171,7 +2164,6 @@ const MobileShell: React.FC<{ onActiveConnectionDeleted: () => void }> = ({ onAc
     || turnDiffOpen
     || scheduledTasksDialogOpen
     || mcpOpen
-    || instancesOpen
     || settingsOpen
     || updateOpen
     || directoryDialogOpen
@@ -2301,7 +2293,7 @@ const MobileShell: React.FC<{ onActiveConnectionDeleted: () => void }> = ({ onAc
       openView: (target: 'files' | 'mcp' | 'instances' | 'update') => {
         if (target === 'files') openFilesSurface();
         else if (target === 'mcp') setMcpOpen(true);
-        else if (target === 'instances') openInstancesPage();
+        else if (target === 'instances') openInstancesSettingsPage();
         else if (target === 'update') setUpdateOpen(true);
       },
       openChanges: ({ path, staged }: { path?: string; staged?: boolean } = {}) => {
@@ -2317,7 +2309,7 @@ const MobileShell: React.FC<{ onActiveConnectionDeleted: () => void }> = ({ onAc
         useMobileNavigationStore.getState().setActiveTab('settings');
       },
     }),
-    [isIPad, openChangesSurface, openFilesSurface, openInstancesPage, setSettingsPage],
+    [isIPad, openChangesSurface, openFilesSurface, openInstancesSettingsPage, setSettingsPage],
   );
   useDeepLinkHandlers(deepLinkHandlers);
 
@@ -2407,7 +2399,6 @@ const MobileShell: React.FC<{ onActiveConnectionDeleted: () => void }> = ({ onAc
     || turnDiffOpen
     || scheduledTasksDialogOpen
     || mcpOpen
-    || instancesOpen
     || settingsOpen
     || updateOpen
     || directoryDialogOpen
@@ -2491,10 +2482,6 @@ const MobileShell: React.FC<{ onActiveConnectionDeleted: () => void }> = ({ onAc
     }
     if (mcpOpen) {
       setMcpOpen(false);
-      return true;
-    }
-    if (instancesOpen) {
-      closeInstancesPage();
       return true;
     }
     if (settingsOpen) {
@@ -2617,14 +2604,6 @@ const MobileShell: React.FC<{ onActiveConnectionDeleted: () => void }> = ({ onAc
         label: t('mobile.menu.mcp'),
         onSelect: () => setMcpOpen(true),
       });
-      if (showCapacitorOnlyFeatures) {
-        items.push({
-          key: 'instances',
-          icon: 'server',
-          label: t('mobile.menu.instances'),
-          onSelect: openInstancesPage,
-        });
-      }
       if (showUpdateItem) {
         items.push({
           key: 'update',
@@ -2644,7 +2623,7 @@ const MobileShell: React.FC<{ onActiveConnectionDeleted: () => void }> = ({ onAc
       });
       return items;
     },
-    [dirtyChangeCount, isIPad, openChangesSurface, openFilesSurface, openInstancesPage, openNewSessionDraft, setActiveMainTab, showCapacitorOnlyFeatures, showUpdateItem, t],
+    [dirtyChangeCount, isIPad, openChangesSurface, openFilesSurface, openNewSessionDraft, setActiveMainTab, showUpdateItem, t],
   );
 
   return (
@@ -2768,7 +2747,7 @@ const MobileShell: React.FC<{ onActiveConnectionDeleted: () => void }> = ({ onAc
               }}
               instancesPage={showCapacitorOnlyFeatures ? (
                 <MobileInstancesSurface
-                  onConnect={closeInstancesPage}
+                  onConnect={() => undefined}
                   onActiveConnectionDeleted={onActiveConnectionDeleted}
                 />
               ) : undefined}
@@ -3107,20 +3086,6 @@ const MobileShell: React.FC<{ onActiveConnectionDeleted: () => void }> = ({ onAc
           </MobileOverlayPanel>
         ) : null}
 
-        {instancesOpen && showCapacitorOnlyFeatures ? (
-          <MobileSurfaceShell
-            open
-            onClose={closeInstancesPage}
-            ariaLabel={t('mobile.menu.instances')}
-            title={t('mobile.menu.instances')}
-          >
-            <MobileInstancesSurface
-              onConnect={closeInstancesPage}
-              onActiveConnectionDeleted={onActiveConnectionDeleted}
-            />
-          </MobileSurfaceShell>
-        ) : null}
-
         {settingsOpen ? (
           <MobileSurfaceShell
             open
@@ -3135,7 +3100,12 @@ const MobileShell: React.FC<{ onActiveConnectionDeleted: () => void }> = ({ onAc
                 initialMobileStage={settingsInitialMobileStage}
                 visiblePageSlugs={[...MOBILE_SETTINGS_PAGE_SLUGS]}
                 onClose={() => setSettingsOpen(false)}
-                onOpenInstances={showCapacitorOnlyFeatures ? openInstancesPage : undefined}
+                mobileInstancesPage={showCapacitorOnlyFeatures ? (
+                  <MobileInstancesSurface
+                    onConnect={() => setSettingsOpen(false)}
+                    onActiveConnectionDeleted={onActiveConnectionDeleted}
+                  />
+                ) : undefined}
               />
             </ErrorBoundary>
           </MobileSurfaceShell>

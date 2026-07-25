@@ -103,11 +103,46 @@ describe('message queue worker', () => {
     await worker.stop();
   });
 
+  it('rechecks authoritative session state after claiming and before beginning the POST', async () => {
+    const checkEligibility = vi.fn()
+      .mockReturnValueOnce({ available: true, idle: true, settled: true, latestMessageID: 'msg_0000000000' })
+      .mockReturnValueOnce({ available: true, idle: false, settled: false, latestMessageID: 'msg_0000000000' });
+    const { worker, service, adapter } = setup({ adapter: { checkEligibility } });
+
+    worker.start(); await worker.wake();
+
+    expect(service.claimNext).toHaveBeenCalledTimes(1);
+    expect(checkEligibility).toHaveBeenCalledTimes(2);
+    expect(service.releaseIneligible).toHaveBeenCalledWith(expect.objectContaining({ queueItemID: 'item', dueAt: expect.any(Number) }));
+    expect(service.beginAttempt).not.toHaveBeenCalled();
+    expect(adapter.send).not.toHaveBeenCalled();
+    await worker.stop();
+  });
+
+  it('lets a client operation invalidate an automatic admission before POST', async () => {
+    const token = { key: 'scope', epoch: 1 };
+    const { worker, service, adapter } = setup({ adapter: {
+      acquireAutomaticAdmission: vi.fn(() => token),
+      validateAutomaticAdmission: vi.fn(() => false),
+      finishAutomaticAdmission: vi.fn(),
+    } });
+
+    worker.start(); await worker.wake();
+
+    expect(adapter.acquireAutomaticAdmission).toHaveBeenCalledTimes(1);
+    expect(adapter.validateAutomaticAdmission).toHaveBeenCalledWith(token);
+    expect(service.releaseIneligible).toHaveBeenCalledTimes(1);
+    expect(service.beginAttempt).not.toHaveBeenCalled();
+    expect(adapter.send).not.toHaveBeenCalled();
+    expect(adapter.finishAutomaticAdmission).toHaveBeenCalledWith(token, { accepted: false });
+    await worker.stop();
+  });
+
   it('sends a manual available claim once while busy and unsettled', async () => {
     const manualClaim = { ...claim, dispatchMode: 'manual' };
     const { worker, service, adapter } = setup({ service: { reserveEligibilityCandidate: vi.fn().mockReturnValueOnce({ ...candidate, item: manualClaim.item, dispatchMode: 'manual' }).mockReturnValue(null), claimNext: vi.fn().mockReturnValueOnce(manualClaim).mockReturnValue(null) }, adapter: { checkEligibility: vi.fn(() => ({ available: true, idle: false, settled: false, latestMessageID: 'msg_0000000000' })) } });
     worker.start(); await worker.wake();
-    expect(service.beginAttempt).toHaveBeenCalledTimes(1); expect(adapter.send).toHaveBeenCalledTimes(1); expect(service.releaseIneligible).toHaveBeenCalledTimes(0);
+    expect(service.beginAttempt).toHaveBeenCalledTimes(1); expect(adapter.send).toHaveBeenCalledTimes(1); expect(service.releaseIneligible).toHaveBeenCalledTimes(0); expect(adapter.checkEligibility).toHaveBeenCalledTimes(1);
     await worker.stop();
   });
 

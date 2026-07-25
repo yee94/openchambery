@@ -520,7 +520,13 @@ export function DesktopHostSwitcherDialog({
       // activate call inside switchRuntimeEndpoint sees an equal descriptor and
       // reuses it — no second WebSocket connect + E2EE handshake.
       if (liveTunnel) {
-        adoptRelayTunnel({ relayUrl: relay.relayUrl, serverId: relay.serverId, hostEncPubJwk: relay.hostEncPubJwk }, liveTunnel);
+        adoptRelayTunnel({
+          relayUrl: relay.relayUrl,
+          serverId: relay.serverId,
+          hostEncPubJwk: relay.hostEncPubJwk,
+          ...(relay.transport ? { transport: relay.transport } : {}),
+          ...(relay.accessToken ? { accessToken: relay.accessToken } : {}),
+        }, liveTunnel);
       }
       switchRuntimeEndpoint({
         apiBaseUrl: typeof window !== 'undefined' ? window.location.origin : '',

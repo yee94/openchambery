@@ -31,12 +31,6 @@ type QueueAdmissionSelectionReader = {
 
 const nonEmptyString = (value: string | null | undefined): string | undefined => value?.trim() || undefined;
 
-export const isServerQueueAdmissionEventBlocked = (
-    queueMode: 'legacy' | 'server' | 'frozen',
-    hasBlockingAdmission: boolean,
-    hasServerAdmissionFlight: boolean,
-): boolean => hasBlockingAdmission || (queueMode !== 'legacy' && hasServerAdmissionFlight);
-
 /**
  * Assistant deliveries only admit through the server-backed queue. Legacy and
  * frozen modes reject assistant queue admission (or no-op when frozen), so a
@@ -48,25 +42,24 @@ export const assistantQueueAdmissionAvailable = (
     queueMode: 'legacy' | 'server' | 'frozen',
 ): boolean => deliveryTargetKind !== 'assistant' || queueMode === 'server';
 
-export type ServerQueueScopeMutationFlights = Map<string, string>;
+export type ServerQueueScopeMutationFlights = Map<string, Promise<void>>;
 
-export const startServerQueueScopeMutationFlight = <T>(
+/**
+ * Queue server mutations by exact scope without rejecting later client intent.
+ * The caller creates its TanStack mutation before entering this lane, so every
+ * click is visible optimistically while the network writes remain serial.
+ */
+export const enqueueServerQueueScopeMutation = <T>(
     flightRef: { current: ServerQueueScopeMutationFlights },
     scopeKey: string,
-    createRequestID: () => string,
-    mutate: (requestID: string) => Promise<T>,
-): Promise<T> | null => {
-    if (flightRef.current.has(scopeKey)) return null;
-    const requestID = createRequestID();
-    flightRef.current.set(scopeKey, requestID);
-    let mutation: Promise<T>;
-    try {
-        mutation = mutate(requestID);
-    } catch (error) {
-        mutation = Promise.reject(error);
-    }
-    return mutation.finally(() => {
-        if (flightRef.current.get(scopeKey) === requestID) flightRef.current.delete(scopeKey);
+    mutate: () => Promise<T>,
+): Promise<T> => {
+    const previous = flightRef.current.get(scopeKey) ?? Promise.resolve();
+    const result = previous.catch(() => undefined).then(mutate);
+    const settled = result.then(() => undefined, () => undefined);
+    flightRef.current.set(scopeKey, settled);
+    return result.finally(() => {
+        if (flightRef.current.get(scopeKey) === settled) flightRef.current.delete(scopeKey);
     });
 };
 

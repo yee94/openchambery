@@ -1,4 +1,7 @@
 import { describe, expect, test } from 'bun:test';
+import { readFile } from 'node:fs/promises';
+import { dirname, join } from 'node:path';
+import { fileURLToPath } from 'node:url';
 
 import {
   MOBILE_SETTINGS_PAGE_SLUGS,
@@ -24,7 +27,7 @@ describe('settings navigation metadata', () => {
 
     expect(pagesByGroup).toEqual({
       personalization: ['appearance', 'chat', 'notifications', 'sessions', 'summary-ai', 'shortcuts'],
-      workspace: ['projects', 'git', 'remote-instances'],
+      workspace: ['projects', 'git', 'instances', 'remote-instances'],
       opencode: ['providers', 'agents', 'assistants', 'behavior', 'commands', 'mcp', 'plugins', 'global-config'],
       content: ['magic-prompts', 'snippets', 'skills.installed', 'skills.catalog'],
       system: ['usage', 'voice', 'tunnel', 'about'],
@@ -52,5 +55,39 @@ describe('settings navigation metadata', () => {
       .filter((slug) => !mobilePages.has(slug));
 
     expect(hiddenSplitPages).toEqual([]);
+  });
+
+  test('models native instance switching as a standard mobile Settings page', () => {
+    const instancesPage = SETTINGS_PAGE_METADATA.find((page) => page.slug === 'instances');
+
+    expect(instancesPage?.kind).toBe('single');
+    expect(instancesPage?.isAvailable?.({
+      isVSCode: false,
+      isWeb: true,
+      isDesktop: false,
+      isMobile: true,
+    })).toBe(true);
+    expect(MOBILE_SETTINGS_PAGE_SLUGS).toContain('instances');
+  });
+
+  test('keeps native instance switching inside Settings and out of the main mobile surface', async () => {
+    const directory = dirname(fileURLToPath(import.meta.url));
+    const [mobileApp, settingsView, phoneShell, settingsTab] = await Promise.all([
+      readFile(join(directory, '../../apps/MobileApp.tsx'), 'utf8'),
+      readFile(join(directory, '../../components/views/SettingsView.tsx'), 'utf8'),
+      readFile(join(directory, '../../mobile/MobilePhoneShell.tsx'), 'utf8'),
+      readFile(join(directory, '../../mobile/settings/MobileSettingsTab.tsx'), 'utf8'),
+    ]);
+    const overflowMenu = mobileApp.slice(
+      mobileApp.indexOf('const overflowItems'),
+      mobileApp.indexOf('return (', mobileApp.indexOf('const overflowItems')),
+    );
+
+    expect(overflowMenu).not.toContain("key: 'instances'");
+    expect(settingsView).toContain('case "instances":');
+    expect(settingsView).toContain('return mobileInstancesPage ?? renderUnavailable();');
+    expect(settingsTab).toContain('mobileInstancesPage={instancesPage}');
+    expect(phoneShell).not.toContain('instances-secondary');
+    expect(phoneShell).not.toContain('openInstances');
   });
 });

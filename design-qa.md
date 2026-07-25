@@ -92,7 +92,7 @@ final result: passed
 - Mobile queue rows no longer add per-row vertical padding; their interactive controls now resolve to a compact `26px` instead of the original `28px`.
 - Mobile edit/send icons resolve to `12px` and action labels to `11px`.
 - Edit and Send now use the same clearly visible `6px` inter-action gap as each action's icon-to-label gap.
-- The queue list top/bottom padding is now `4px`, its maximum height is `96px`, and the hidden composer-overlap spacer is `16px`.
+- The queue list top/bottom padding is `4px`, the hidden composer-overlap spacer is `16px`, and the queue has no maximum height or internal scrollbar; additional rows grow naturally upward from the composer.
 - Desktop row density and control sizing remain unchanged.
 - The temporary queue mock route was removed after the user cancelled the mockup request.
 

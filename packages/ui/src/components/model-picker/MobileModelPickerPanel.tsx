@@ -19,7 +19,7 @@ type PickerView = 'model' | 'variant';
 type VariantTarget = { providerID: string; modelID: string };
 type MetadataIcon = { key: string; icon: IconName; label: string };
 
-const MAX_INLINE_VARIANT_OPTIONS = 6;
+const MAX_INLINE_VARIANT_OPTIONS = 8;
 
 const formatTokens = (value?: number | null) => {
     if (typeof value !== 'number' || Number.isNaN(value)) return '';

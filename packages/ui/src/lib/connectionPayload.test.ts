@@ -51,6 +51,53 @@ describe('connection payload helpers', () => {
     ]);
   });
 
+  test('round-trips a HAPI private-relay candidate with accessToken', () => {
+    const payload = buildPairingConnectionPayload({
+      pairingId: 'pair_hapi_relay',
+      secret: 'one-time-secret',
+      candidates: [
+        {
+          type: 'relay',
+          relayUrl: 'wss://hub.example/api/openchamber/relay/ws',
+          serverId: 'srv_hapi',
+          hostEncPubJwk,
+          transport: 'hapi',
+          accessToken: '  cli_tok:ns  ',
+          priority: 30,
+        },
+      ],
+    });
+
+    const parsed = parsePairingConnectionPayload(encodePairingConnectionPayload(payload));
+    expect(parsed?.candidates).toEqual([
+      {
+        type: 'relay',
+        relayUrl: 'wss://hub.example/api/openchamber/relay/ws',
+        serverId: 'srv_hapi',
+        hostEncPubJwk,
+        transport: 'hapi',
+        accessToken: 'cli_tok:ns',
+        priority: 30,
+      },
+    ]);
+  });
+
+  test('rejects HAPI relay candidate without accessToken', () => {
+    const encoded = Buffer.from(JSON.stringify({
+      v: 2,
+      pairingId: 'pair_1',
+      secret: 's',
+      candidates: [{
+        type: 'relay',
+        relayUrl: 'wss://hub.example/api/openchamber/relay/ws',
+        serverId: 'srv',
+        hostEncPubJwk,
+        transport: 'hapi',
+      }],
+    })).toString('base64url');
+    expect(parsePairingConnectionPayload(`openchamber://connect?v=2&p=${encoded}`)).toBeNull();
+  });
+
   test('round-trips an explicit HAPI gateway candidate', () => {
     const payload = buildPairingConnectionPayload({
       pairingId: 'pair_hapi',

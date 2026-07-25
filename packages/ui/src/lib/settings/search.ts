@@ -28,6 +28,13 @@ interface SettingsSearchAvailabilityContext extends SettingsRuntimeContext {
 
 const SETTINGS_SEARCH_ITEMS: readonly SettingsSearchItem[] = [
   {
+    id: 'instances.manage',
+    page: 'instances',
+    titleKey: 'mobile.settings.switchInstance',
+    keywords: ['instance', 'server', 'connection', 'switch'],
+    isAvailable: (ctx) => ctx.isMobile,
+  },
+  {
     id: 'global-config.editor',
     page: 'global-config',
     titleKey: 'settings.globalConfig.title',

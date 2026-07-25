@@ -53,6 +53,15 @@ const defaults: Dependencies = {
   admissionReconcileTimeoutMs: 20_000,
 };
 const isConflict = (error: unknown) => error instanceof MessageQueueServerError && (error.code === 'revision_conflict' || error.code === 'row_version_conflict');
+const MAX_CLIENT_MUTATION_CONFLICT_ATTEMPTS = 8;
+const mergeVisibleQueueOrder = (queueItemIDs: readonly string[], current: MessageQueueScope | undefined): string[] => {
+  if (!current) return [...queueItemIDs];
+  const currentIDs = current.items.map((item) => item.queueItemID);
+  const currentSet = new Set(currentIDs);
+  const requested = queueItemIDs.filter((id) => currentSet.has(id));
+  const requestedSet = new Set(requested);
+  return [...requested, ...currentIDs.filter((id) => !requestedSet.has(id))];
+};
 const scopeKey = (scope: { transportIdentity: string; directory: string; sessionID: string }) => `${scope.transportIdentity}\u0000${scope.directory}\u0000${scope.sessionID}`;
 const pause = (ms: number, signal: AbortSignal) => new Promise<void>((resolve) => { const timer = setTimeout(resolve, ms); signal.addEventListener('abort', () => { clearTimeout(timer); resolve(); }, { once: true }); });
 const withDeadline = <T>(run: (signal: AbortSignal) => Promise<T>, parent: AbortSignal | undefined, timeoutMs: number): Promise<T> => {
@@ -251,11 +260,11 @@ export const createMessageQueueServerRuntime = (dependencies: Partial<Dependenci
   // still best-effort reload so a raced tip cannot strand the UI.
   const mutate = async (scopeID: string, revision: number, action: (expectedRevision: number, scope: MessageQueueScope | undefined) => Promise<{ revision: number }>): Promise<MessageQueueServerMutationResult> => {
     const capture = synchronizeTransport(); let expected = revision;
-    for (let attempt = 0; attempt < 2; attempt++) {
+    for (let attempt = 0; attempt < MAX_CLIENT_MUTATION_CONFLICT_ATTEMPTS; attempt++) {
       const descriptor = state.scopes.get(scopeID); const current = descriptor ? readMessageQueueScope(deps.client, scopeID, descriptor.revision, capture.transportIdentity) : undefined;
       try { await action(expected, current); }
       catch (error) {
-        if (isConflict(error) && !attempt) {
+        if (isConflict(error) && attempt + 1 < MAX_CLIENT_MUTATION_CONFLICT_ATTEMPTS) {
           const reloaded = await reloadScope(scopeID, capture, error); if (!reloaded) return { status: 'stale' };
           expected = reloaded.revision; continue;
         }
@@ -376,12 +385,23 @@ export const createMessageQueueServerRuntime = (dependencies: Partial<Dependenci
     }),
     reserveEdit: async ({ requestID, scopeID, revision, item, owner, ttlMs, runtime }) => {
       if (!isCaptureCurrent(runtime)) return undefined;
-      const current = readMessageQueueScope(deps.client, scopeID, revision, runtime.transportIdentity);
-      const latest = current?.items.find((entry) => entry.queueItemID === item.queueItemID);
-      if (!latest) return undefined;
-      const reserved = await deps.reserve(latest.queueItemID, { requestID, expectedRevision: revision, rowVersion: latest.rowVersion, owner, ttlMs, signal: controller?.signal });
-      if (!isCaptureCurrent(runtime)) { await deps.release(latest.queueItemID, { token: reserved.token, signal: controller?.signal }).catch(() => {}); return undefined; }
-      return reserved;
+      let expected = revision;
+      for (let attempt = 0; attempt < MAX_CLIENT_MUTATION_CONFLICT_ATTEMPTS; attempt++) {
+        const descriptor = state.scopes.get(scopeID);
+        const current = descriptor ? readMessageQueueScope(deps.client, scopeID, descriptor.revision, runtime.transportIdentity) : undefined;
+        const latest = current?.items.find((entry) => entry.queueItemID === item.queueItemID) ?? item;
+        try {
+          const reserved = await deps.reserve(latest.queueItemID, { requestID, expectedRevision: expected, rowVersion: latest.rowVersion, owner, ttlMs, signal: controller?.signal });
+          if (!isCaptureCurrent(runtime)) { await deps.release(latest.queueItemID, { token: reserved.token, signal: controller?.signal }).catch(() => {}); return undefined; }
+          return reserved;
+        } catch (error) {
+          if (!isConflict(error) || attempt + 1 >= MAX_CLIENT_MUTATION_CONFLICT_ATTEMPTS) throw error;
+          const reloaded = await reloadScope(scopeID, runtime, error);
+          if (!reloaded || !reloaded.items.some((entry) => entry.queueItemID === item.queueItemID)) return undefined;
+          expected = reloaded.revision;
+        }
+      }
+      return undefined;
     },
     renewEdit: async ({ item, token, generation, ttlMs, runtime, signal }) => {
       if (!isCaptureCurrent(runtime)) return undefined;
@@ -392,15 +412,30 @@ export const createMessageQueueServerRuntime = (dependencies: Partial<Dependenci
     releaseEdit: async ({ item, token, runtime }) => { if (!isCaptureCurrent(runtime)) return; await deps.release(item.queueItemID, { token, signal: controller?.signal.aborted ? undefined : controller?.signal }); if (isCaptureCurrent(runtime)) await refresh(); },
     removeReserved: async ({ requestID, scopeID, revision, item, token, generation, runtime }) => {
       if (!isCaptureCurrent(runtime)) return false;
-      const current = readMessageQueueScope(deps.client, scopeID, revision, runtime.transportIdentity);
-      const latest = current?.items.find((entry) => entry.queueItemID === item.queueItemID);
-      if (!latest) return false;
-      await deps.removeReserved(latest.queueItemID, { requestID, expectedRevision: revision, expectedRowVersion: latest.rowVersion, token, generation, signal: controller?.signal });
-      if (!isCaptureCurrent(runtime)) return false;
-      await reloadScope(scopeID, runtime, new MessageQueueServerError(404, 'not_found')).catch(() => undefined);
-      await refresh(); return true;
+      let expected = revision;
+      for (let attempt = 0; attempt < MAX_CLIENT_MUTATION_CONFLICT_ATTEMPTS; attempt++) {
+        const descriptor = state.scopes.get(scopeID);
+        const current = descriptor ? readMessageQueueScope(deps.client, scopeID, descriptor.revision, runtime.transportIdentity) : undefined;
+        const latest = current?.items.find((entry) => entry.queueItemID === item.queueItemID) ?? item;
+        try {
+          await deps.removeReserved(latest.queueItemID, { requestID, expectedRevision: expected, expectedRowVersion: latest.rowVersion, token, generation, signal: controller?.signal });
+          if (!isCaptureCurrent(runtime)) return false;
+          await reloadScope(scopeID, runtime, new MessageQueueServerError(404, 'not_found')).catch(() => undefined);
+          await refresh(); return true;
+        } catch (error) {
+          if (!isConflict(error) || attempt + 1 >= MAX_CLIENT_MUTATION_CONFLICT_ATTEMPTS) throw error;
+          const reloaded = await reloadScope(scopeID, runtime, error);
+          if (!reloaded || !reloaded.items.some((entry) => entry.queueItemID === item.queueItemID)) return false;
+          expected = reloaded.revision;
+        }
+      }
+      return false;
     },
-    reorder: ({ requestID, scopeID, revision, queueItemIDs }) => mutate(scopeID, revision, (expected) => deps.reorder(scopeID, { requestID, expectedRevision: expected, queueItemIDs, signal: controller?.signal })),
+    // A drag operation overwrites the order the client actually saw. If another
+    // device appended rows before the CAS retry, preserve those unseen rows after
+    // the requested order instead of rejecting the client with validation_error.
+    // The server independently pins any already-active attempt in its slot.
+    reorder: ({ requestID, scopeID, revision, queueItemIDs }) => mutate(scopeID, revision, (expected, current) => deps.reorder(scopeID, { requestID, expectedRevision: expected, queueItemIDs: mergeVisibleQueueOrder(queueItemIDs, current), signal: controller?.signal })),
     manualSend: async ({ requestID, scopeID, revision, item }) => {
       if (state.authority === 'active' || state.authority === 'paused') return mutate(scopeID, revision, (expected, current) => { const latest = current?.items.find((entry) => entry.queueItemID === item.queueItemID) ?? item; return deps.manualSend(latest.queueItemID, { requestID, expectedRevision: expected, expectedRowVersion: latest.rowVersion, signal: controller?.signal }); });
       if (state.authority === 'shadow' || state.capability === 'unsupported') { const capture = synchronizeTransport(); if (!isCaptureCurrent(capture)) return { status: 'stale' }; await deps.legacyManualSend(item); return isCaptureCurrent(capture) ? { status: 'committed' } : { status: 'stale' }; }

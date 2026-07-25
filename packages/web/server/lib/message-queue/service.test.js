@@ -359,15 +359,16 @@ describe('message queue service', () => {
     service.close();
   });
 
-  it('fences ordinary mutations behind an active edit reservation and deletes with the reservation CAS', () => {
+  it('fences only the reserved item while scope reorder remains client-mutable', () => {
     const service = createService(dbPath()); const admitted = service.admit(admission());
     const reservation = service.reserveForEdit({ requestID: 'reserve', queueItemID: 'item-1', expectedRevision: admitted.revision, rowVersion: admitted.rowVersion, owner: 'editor', ttlMs: 10_000 });
     expect(() => service.edit({ requestID: 'reserved-edit', queueItemID: 'item-1', expectedRevision: admitted.revision, expectedRowVersion: admitted.rowVersion, item: { content: 'updated' } })).toThrow(expect.objectContaining({ code: 'reserved' }));
     expect(() => service.remove({ requestID: 'reserved-remove-ordinary', queueItemID: 'item-1', expectedRevision: admitted.revision, expectedRowVersion: admitted.rowVersion })).toThrow(expect.objectContaining({ code: 'reserved' }));
     expect(() => service.manualSend({ requestID: 'reserved-send', queueItemID: 'item-1', expectedRevision: admitted.revision, expectedRowVersion: admitted.rowVersion })).toThrow(expect.objectContaining({ code: 'reserved' }));
-    expect(() => service.reorder({ requestID: 'reserved-order', scopeID: admitted.scopeID, expectedRevision: admitted.revision, queueItemIDs: ['item-1'] })).toThrow(expect.objectContaining({ code: 'reserved' }));
-    expect(() => service.reservedRemove({ requestID: 'reserved-remove-stale', queueItemID: 'item-1', expectedRevision: admitted.revision, expectedRowVersion: admitted.rowVersion, token: reservation.token, generation: reservation.generation + 1 })).toThrow(expect.objectContaining({ code: 'reserved' }));
-    expect(service.reservedRemove({ requestID: 'reserved-remove', queueItemID: 'item-1', expectedRevision: admitted.revision, expectedRowVersion: admitted.rowVersion, token: reservation.token, generation: reservation.generation })).toMatchObject({ removedQueueItemID: 'item-1' });
+    const reordered = service.reorder({ requestID: 'reserved-order', scopeID: admitted.scopeID, expectedRevision: admitted.revision, queueItemIDs: ['item-1'] });
+    expect(reordered).toMatchObject({ scopeID: admitted.scopeID });
+    expect(() => service.reservedRemove({ requestID: 'reserved-remove-stale', queueItemID: 'item-1', expectedRevision: reordered.revision, expectedRowVersion: admitted.rowVersion + 1, token: reservation.token, generation: reservation.generation + 1 })).toThrow(expect.objectContaining({ code: 'reserved' }));
+    expect(service.reservedRemove({ requestID: 'reserved-remove', queueItemID: 'item-1', expectedRevision: reordered.revision, expectedRowVersion: admitted.rowVersion + 1, token: reservation.token, generation: reservation.generation })).toMatchObject({ removedQueueItemID: 'item-1' });
     expect(service.getScope(admitted.scopeID).items).toEqual([]); service.close();
   });
 
@@ -650,6 +651,29 @@ describe('message queue service', () => {
     expect(service.claimNext({ owner: 'worker-b', queueItemID: resumedProbe.item.queueItemID, eligibilityToken: resumedProbe.eligibilityToken })).toBeNull();
     const manualProbe = service.reserveEligibilityCandidate({ owner: 'worker-c' });
     expect(manualProbe).toMatchObject({ item: { queueItemID: 'item-tail' }, dispatchMode: 'manual' });
+    service.close();
+  });
+
+  it('lets client manual-send and reorder overwrite the waiting segment while an attempt is active', () => {
+    const service = createService(dbPath());
+    const head = service.admit(admission('head-request', 'head'));
+    service.admit(admission('middle-request', 'middle'));
+    service.admit(admission('tail-request', 'tail'));
+    service.setAuthority({ authority: 'active', expectedGeneration: 0 });
+    const probe = service.reserveEligibilityCandidate({ owner: 'worker' });
+    const active = service.claimNext({ owner: 'worker', queueItemID: probe.item.queueItemID, eligibilityToken: probe.eligibilityToken });
+    service.beginAttempt({ queueItemID: active.item.queueItemID, leaseToken: active.leaseToken, fenceGeneration: active.fenceGeneration, messageID: 'msg_0000000001' });
+
+    let scope = service.getScope(head.scopeID); const tail = scope.items.find((entry) => entry.queueItemID === 'item-tail');
+    service.manualSend({ requestID: 'client-promote-tail', queueItemID: tail.queueItemID, expectedRevision: scope.revision, expectedRowVersion: tail.rowVersion });
+    scope = service.getScope(head.scopeID);
+    expect(scope.items.map((entry) => entry.queueItemID)).toEqual(['item-head', 'item-tail', 'item-middle']);
+    expect(scope.items[1]).toMatchObject({ manualDispatchRequested: true, status: 'queued' });
+
+    service.reorder({ requestID: 'client-reorder-waiting', scopeID: scope.scopeID, expectedRevision: scope.revision, queueItemIDs: ['item-middle', 'item-tail', 'item-head'] });
+    scope = service.getScope(head.scopeID);
+    expect(scope.items.map((entry) => entry.queueItemID)).toEqual(['item-head', 'item-middle', 'item-tail']);
+    expect(scope.items[0].status).toBe('sending');
     service.close();
   });
 

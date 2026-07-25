@@ -52,7 +52,7 @@ const surface = (client: any) => createMessageQueueServerRuntime({ client, captu
 afterEach(() => { for (const root of roots) fs.rmSync(root, { recursive: true, force: true }); roots.clear(); });
 
 describe('UI scope dispatch and edit reservation integration', () => {
-  it('通过真实 HTTP/UI 锁住 sending scope 的 tail，同时保持跨 scope 并发与 FIFO', async () => {
+  it('通过真实 HTTP/UI 覆盖 sending scope 的 waiting tail，同时保持跨 scope 并发与 FIFO', async () => {
     const releases: Array<() => void> = [], sent: string[] = [], messageIDs = new Map<string, string>();
     const f = await fixture({ send: async (context) => { sent.push(context.queueItemID); messageIDs.set(context.queueItemID, context.messageID); await new Promise<void>((resolve) => releases.push(resolve)); return { ok: true }; } });
     const ui = surface(new QueryClient());
@@ -61,8 +61,8 @@ describe('UI scope dispatch and edit reservation integration', () => {
       f.service.setAuthority({ authority: 'active', expectedGeneration: 0 }); await ui.refresh();
       const run = f.runtime.startActive(); await eventually(() => expect(releases).toHaveLength(2));
       const scopeA = ui.getScope({ transportIdentity: 'device-a', directory: '/repo', sessionID: 'session' })!; const tail = scopeA.items.find((item: any) => item.queueItemID === 'item-a-tail')!;
-      await expect(ui.manualSend({ requestID: 'ui-send-tail', scopeID: scopeA.scopeID, revision: scopeA.revision, item: tail })).rejects.toMatchObject({ status: 409, code: 'scope_locked' });
-      await expect(ui.reorder({ requestID: 'ui-reorder-tail', scopeID: scopeA.scopeID, revision: scopeA.revision, queueItemIDs: scopeA.items.map((item: any) => item.queueItemID).reverse() })).rejects.toMatchObject({ status: 409, code: 'scope_locked' });
+      await expect(ui.manualSend({ requestID: 'ui-send-tail', scopeID: scopeA.scopeID, revision: scopeA.revision, item: tail })).resolves.toMatchObject({ status: 'committed' });
+      await expect(ui.reorder({ requestID: 'ui-reorder-tail', scopeID: scopeA.scopeID, revision: scopeA.revision, queueItemIDs: scopeA.items.map((item: any) => item.queueItemID).reverse() })).resolves.toMatchObject({ status: 'committed' });
       expect(sent).toEqual(expect.arrayContaining(['item-a-head', 'item-b-head'])); expect(sent).not.toContain('item-a-tail');
       releases.splice(0).forEach((release) => release()); f.runtime.worker.confirmByMessage({ directory: '/repo', sessionID: 'session', messageID: messageIDs.get('item-a-head')! }); f.runtime.worker.confirmByMessage({ directory: '/scope-b', sessionID: 'b', messageID: messageIDs.get('item-b-head')! }); await f.runtime.wake(); await eventually(() => expect(sent).toContain('item-a-tail'));
       expect(sent.indexOf('item-a-head')).toBeLessThan(sent.indexOf('item-a-tail')); releases.splice(0).forEach((release) => release()); await run;

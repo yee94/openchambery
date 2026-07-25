@@ -255,22 +255,27 @@ describe('core-routes', () => {
 
   it('should parse JSON bodies for message queue scope and worktree order updates', async () => {
     const app = express();
-    const reorder = vi.fn(() => ({ updated: 'scope' }));
+    const reorder = vi.fn(() => ({ updated: 'scope', scopeID: 'scope_1' }));
+    const getScope = vi.fn(() => ({ directory: '/repo', sessionID: 'session_1', items: [] }));
+    const noteClientOperation = vi.fn();
     const setWorktreeOrder = vi.fn(() => ({ updated: 'worktree' }));
     registerCommonRequestMiddleware(app, { express });
     registerMessageQueueRoutes(app, {
       messageQueueService: {
         reorder,
+        getScope,
         setWorktreeOrder,
       },
+      messageQueueRuntime: { noteClientOperation },
     });
 
     const scopePayload = { queueItemIDs: ['item_2', 'item_1'], expectedRevision: 4 };
     await request(app)
       .put('/api/openchamber/message-queue/scopes/scope_1/order')
       .send(scopePayload)
-      .expect(200, { updated: 'scope' });
+      .expect(200, { updated: 'scope', scopeID: 'scope_1' });
     expect(reorder).toHaveBeenCalledWith({ ...scopePayload, scopeID: 'scope_1' });
+    expect(noteClientOperation).toHaveBeenCalledWith({ directory: '/repo', sessionID: 'session_1' });
 
     const worktreePayload = { projectDirectory: '/repo', worktreePaths: ['/repo/a', '/repo/b'] };
     await request(app)

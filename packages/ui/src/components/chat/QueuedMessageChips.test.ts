@@ -1,6 +1,6 @@
 import { beforeEach, describe, expect, test } from 'bun:test';
 import { legacyQueueScope, setMessageQueueMutationFence, useMessageQueueStore, type QueueItem, type QueueScope } from '@/stores/messageQueueStore';
-import { applyPendingServerQueueOperation, canRemoveQueuedMessage, canSendQueuedMessage, canSendServerQueuedMessage, isServerQueueItemDispatchPending, mergeQueuedMessageScopes, popQueuedMessageForEdit, queueModeAllowsMutations, reorderServerQueueItems, selectPendingServerQueueOperation, serverQueueEditInput, serverQueueItemMutationInput } from './queuedMessageChipsState';import type { ServerQueueOperationIdentity } from './queuedMessageChipsState';
+import { applyPendingServerQueueOperation, applyPendingServerQueueOperations, canRemoveQueuedMessage, canSendQueuedMessage, canSendServerQueuedMessage, isServerQueueItemActiveAttempt, isServerQueueItemDispatchPending, mergeQueuedMessageScopes, popQueuedMessageForEdit, queueModeAllowsMutations, reorderServerQueueItems, selectPendingServerQueueOperation, selectPendingServerQueueOperations, serverQueueEditInput, serverQueueItemMutationInput } from './queuedMessageChipsState';import type { ServerQueueOperationIdentity } from './queuedMessageChipsState';
 import type { MessageQueueItem, MessageQueueScope } from '@/lib/message-queue-server';
 import { sessionDraftKey } from '@/sync/input-draft-types';
 import type { MessageQueuePendingAdmissionItem } from '@/sync/message-queue-server-runtime';
@@ -129,15 +129,22 @@ describe('QueuedMessageChips production queue boundary', () => {
         expect(queueModeAllowsMutations('server')).toBe(true);
     });
 
-    test('manual dispatch intent and dispatched statuses keep server Send disabled and mark dispatch pending', () => {
+    test('manual dispatch intent stays clickable while active attempts remain item-locked', () => {
         const queued = serverItem('queue-a', 'queued');
         const manual = { ...queued, manualDispatchRequested: true };
         expect(canSendServerQueuedMessage(queued, false)).toBe(true);
-        expect(canSendServerQueuedMessage(manual, false)).toBe(false);
+        expect(canSendServerQueuedMessage(manual, false)).toBe(true);
         expect(isServerQueueItemDispatchPending(manual)).toBe(true);
         expect(isServerQueueItemDispatchPending(queued)).toBe(false);
         expect(isServerQueueItemDispatchPending(serverItem('sending', 'sending'))).toBe(true);
         expect(isServerQueueItemDispatchPending(serverItem('reconciling', 'reconciling'))).toBe(true);
+        expect(isServerQueueItemActiveAttempt(manual)).toBe(false);
+        expect(isServerQueueItemActiveAttempt(serverItem('sending', 'sending'))).toBe(true);
+    });
+
+    test('an active server attempt does not globally disable waiting-row send', () => {
+        const waiting = serverItem('waiting');
+        expect(canSendServerQueuedMessage(waiting, false)).toBe(true);
     });
 
     test('keeps Remove available during manual dispatch pending and only locks sending/reconciling', () => {
@@ -148,7 +155,6 @@ describe('QueuedMessageChips production queue boundary', () => {
         expect(canRemoveQueuedMessage(serverItem('sending', 'sending'), { frozen: false })).toBe(false);
         expect(canRemoveQueuedMessage(serverItem('reconciling', 'reconciling'), { frozen: false })).toBe(false);
         expect(canRemoveQueuedMessage(manual, { frozen: true })).toBe(false);
-        expect(canRemoveQueuedMessage(manual, { frozen: false, scopeOperationPending: true })).toBe(false);
         expect(canRemoveQueuedMessage(pendingAdmissionItem, { frozen: false })).toBe(false);
     });
 
@@ -164,6 +170,11 @@ describe('QueuedMessageChips production queue boundary', () => {
         expect(selectPendingServerQueueOperation(sameScope, { ...exact, runtimeGeneration: 2 })).toBe(undefined);
         expect(selectPendingServerQueueOperation(sameScope, { ...exact, scopeID: 'scope-b' })).toBe(undefined);
         expect(selectPendingServerQueueOperation([], exact)).toBe(undefined);
+        expect(selectPendingServerQueueOperations([
+            ...sameScope,
+            { kind: 'remove', ...exact, queueItemID: 'queue-b' },
+            { kind: 'edit', ...exact, sessionID: 'session-b', queueItemID: 'foreign' },
+        ], exact).map((operation) => operation.queueItemID)).toEqual(['queue-a', 'queue-b']);
     });
 
     test('applyPendingServerQueueOperation optimistically moves the target to first on send and keeps stable references', () => {
@@ -234,7 +245,7 @@ describe('QueuedMessageChips production queue boundary', () => {
         expect(result[2047]).toBe(items[0]);
     });
 
-    test('applyPendingServerQueueOperation edit and remove return the original array reference without mutation', () => {
+    test('applyPendingServerQueueOperation edit and remove hide the target immediately without mutating source', () => {
         const first = serverItem('first');
         const second = serverItem('second');
         const items: readonly MessageQueueItem[] = [first, second];
@@ -242,7 +253,26 @@ describe('QueuedMessageChips production queue boundary', () => {
         const remove: ServerQueueOperationIdentity = { kind: 'remove', transportIdentity: 'runtime-a', runtimeGeneration: 1, directory: '/project', sessionID: 'session-a', scopeID: 'scope-a', queueItemID: 'second' };
         const editResult = applyPendingServerQueueOperation(items, edit);
         const removeResult = applyPendingServerQueueOperation(items, remove);
-        expect(editResult).toBe(items);
-        expect(removeResult).toBe(items);
+        expect(editResult).toEqual([second]);
+        expect(removeResult).toEqual([first]);
+        expect(items).toEqual([first, second]);
+    });
+
+    test('applies rapid client operations in order so the visible queue is latest-intent-first', () => {
+        const first = serverItem('first');
+        const sending = serverItem('sending', 'sending');
+        const second = serverItem('second');
+        const third = serverItem('third');
+        const exact = { transportIdentity: 'runtime-a', runtimeGeneration: 1, directory: '/project', sessionID: 'session-a', scopeID: 'scope-a' };
+        const operations: ServerQueueOperationIdentity[] = [
+            { kind: 'send', ...exact, queueItemID: 'third' },
+            { kind: 'remove', ...exact, queueItemID: 'first' },
+            { kind: 'reorder', ...exact, queueItemID: 'second', queueItemIDs: ['sending', 'second', 'third'] },
+        ];
+
+        const result = applyPendingServerQueueOperations([first, sending, second, third], operations);
+
+        expect(result.map((item) => item.queueItemID)).toEqual(['sending', 'second', 'third']);
+        expect(result[0]).toBe(sending);
     });
 });

@@ -383,7 +383,6 @@ export const createMessageQueueService = ({ dbPath, getRuntimeConfig = () => nul
   const assertRowVersion = (row, expectedRowVersion) => { if (!Number.isInteger(expectedRowVersion)) fail('validation_error'); if (row.row_version !== expectedRowVersion) fail('row_version_conflict'); };
   const assertEditable = (scope, row) => { if (scope.worktree_state !== 'active') fail('scope_locked'); if (row && (row.status === 'sending' || row.status === 'reconciling')) fail('scope_locked'); };
   const assertUnreserved = (queueItemID) => { const attempt = db.prepare('SELECT edit_reservation_token,edit_reservation_expires_at FROM queue_attempt WHERE queue_item_id=?').get(queueItemID); if (attempt?.edit_reservation_token && attempt.edit_reservation_expires_at > now()) fail('reserved'); };
-  const assertScopeDispatchIdle = (scopeID) => { if (db.prepare("SELECT 1 FROM queue_item WHERE scope_id=? AND status IN ('sending','reconciling')").get(scopeID)) fail('scope_locked'); };
   const clearScopeEligibilityLeases = (scopeID) => db.prepare(`UPDATE queue_attempt SET lease_owner=NULL,lease_token=NULL,lease_expires_at=NULL,lease_generation=NULL,fence_generation=NULL WHERE queue_item_id IN (
     SELECT queue_item_id FROM queue_item WHERE scope_id=? AND status IN ('queued','retrying')
   )`).run(scopeID);
@@ -508,9 +507,13 @@ export const createMessageQueueService = ({ dbPath, getRuntimeConfig = () => nul
   });
   const manualSend = (input) => transaction(input?.requestID, input, 'queue:manual-send', (revision, key) => {
     if (!plainObject(input) || Object.keys(input).some((entry) => !MANUAL_SEND_REQUEST_KEYS.has(entry))) fail('validation_error');
-    const row = itemRow(input.queueItemID); if (!row) fail('not_found'); const scope = scopeRow(row.scope_id); if (scope.runtime_key !== key) fail('not_found'); assertScopeRevision(scope, input.expectedRevision); assertRowVersion(row, input.expectedRowVersion); if (!['queued', 'retrying', 'failed', 'unresolved'].includes(row.status)) fail('scope_locked'); assertUnreserved(row.queue_item_id); assertScopeDispatchIdle(scope.scope_id); clearScopeEligibilityLeases(scope.scope_id);
-    db.prepare('UPDATE queue_item SET position=position+1 WHERE scope_id=? AND position<?').run(scope.scope_id, row.position);
-    db.prepare("UPDATE queue_item SET position=0,status='queued',due_at=?,reconciliation_due_at=NULL,dispatch_generation=NULL,manual_dispatch_requested=1,last_error_code=NULL,row_version=row_version+1,updated_at=? WHERE queue_item_id=?").run(now(), now(), row.queue_item_id);
+    const row = itemRow(input.queueItemID); if (!row) fail('not_found'); const scope = scopeRow(row.scope_id); if (scope.runtime_key !== key) fail('not_found'); assertScopeRevision(scope, input.expectedRevision); assertRowVersion(row, input.expectedRowVersion); if (!['queued', 'retrying', 'failed', 'unresolved'].includes(row.status)) fail('scope_locked'); assertUnreserved(row.queue_item_id); clearScopeEligibilityLeases(scope.scope_id);
+    const rows = db.prepare('SELECT queue_item_id,status FROM queue_item WHERE scope_id=? ORDER BY position,queue_item_id').all(scope.scope_id);
+    const active = rows.filter((entry) => entry.status === 'sending' || entry.status === 'reconciling');
+    const waiting = rows.filter((entry) => entry.queue_item_id !== row.queue_item_id && entry.status !== 'sending' && entry.status !== 'reconciling');
+    const order = [...active, { queue_item_id: row.queue_item_id }, ...waiting];
+    const position = db.prepare('UPDATE queue_item SET position=? WHERE queue_item_id=?'); order.forEach((entry, index) => position.run(index, entry.queue_item_id));
+    db.prepare("UPDATE queue_item SET status='queued',due_at=?,reconciliation_due_at=NULL,dispatch_generation=NULL,manual_dispatch_requested=1,last_error_code=NULL,row_version=row_version+1,updated_at=? WHERE queue_item_id=?").run(now(), now(), row.queue_item_id);
     db.prepare('UPDATE queue_attempt SET lease_owner=NULL,lease_token=NULL,lease_expires_at=NULL,reconciliation_state=NULL,reconciliation_started_at=NULL,reconciliation_deadline_at=NULL,reconciliation_next_check_at=NULL,last_error_code=NULL WHERE queue_item_id=?').run(row.queue_item_id);
     touchScopes([scope.scope_id], revision); return { revision, scopeID: scope.scope_id, queueItemID: row.queue_item_id, rowVersion: itemRow(row.queue_item_id).row_version };
   });
@@ -549,10 +552,12 @@ export const createMessageQueueService = ({ dbPath, getRuntimeConfig = () => nul
     if (!deleted.changes) fail('reserved'); touchScopes([scope.scope_id], revision); return { revision, scopeID: scope.scope_id, removedQueueItemID: row.queue_item_id };
   });
   const reorder = (input) => transaction(input?.requestID, input, 'queue', (revision, key) => {
-    if (!plainObject(input) || Object.keys(input).some((key) => !REORDER_REQUEST_KEYS.has(key))) fail('validation_error'); const scope = scopeRow(input?.scopeID); if (!scope || scope.runtime_key !== key) fail('not_found'); assertEditable(scope); assertScopeRevision(scope, input.expectedRevision); assertScopeDispatchIdle(scope.scope_id);
-    const ids = input?.queueItemIDs; const current = db.prepare('SELECT queue_item_id FROM queue_item WHERE scope_id = ? ORDER BY position, queue_item_id').all(scope.scope_id).map((row) => row.queue_item_id); if (db.prepare('SELECT 1 FROM queue_attempt attempt JOIN queue_item item ON item.queue_item_id=attempt.queue_item_id WHERE item.scope_id=? AND attempt.edit_reservation_token IS NOT NULL AND attempt.edit_reservation_expires_at>?').get(scope.scope_id, now())) fail('reserved');
+    if (!plainObject(input) || Object.keys(input).some((key) => !REORDER_REQUEST_KEYS.has(key))) fail('validation_error'); const scope = scopeRow(input?.scopeID); if (!scope || scope.runtime_key !== key) fail('not_found'); assertEditable(scope); assertScopeRevision(scope, input.expectedRevision);
+    const ids = input?.queueItemIDs; const currentRows = db.prepare('SELECT queue_item_id,status FROM queue_item WHERE scope_id = ? ORDER BY position, queue_item_id').all(scope.scope_id); const current = currentRows.map((row) => row.queue_item_id);
     if (!Array.isArray(ids) || new Set(ids).size !== ids.length || ids.length !== current.length || ids.some((id) => !current.includes(id))) fail('validation_error'); clearScopeEligibilityLeases(scope.scope_id);
-    const update = db.prepare('UPDATE queue_item SET position = ?, row_version = row_version + 1, updated_at = ? WHERE queue_item_id = ?'); ids.forEach((id, index) => update.run(index, now(), id)); touchScopes([scope.scope_id], revision); return { revision, scopeID: scope.scope_id };
+    const active = new Set(currentRows.filter((row) => row.status === 'sending' || row.status === 'reconciling').map((row) => row.queue_item_id)); const waiting = ids.filter((id) => !active.has(id)); let waitingIndex = 0;
+    const order = currentRows.map((row) => active.has(row.queue_item_id) ? row.queue_item_id : waiting[waitingIndex++]);
+    const update = db.prepare('UPDATE queue_item SET position = ?, row_version = row_version + 1, updated_at = ? WHERE queue_item_id = ?'); order.forEach((id, index) => update.run(index, now(), id)); touchScopes([scope.scope_id], revision); return { revision, scopeID: scope.scope_id };
   });
   const getWorktreeOrderFor = (key, projectDirectory) => { const normalized = normalizeDirectory(projectDirectory); if (!normalized) fail('validation_error'); const row = db.prepare('SELECT * FROM worktree_order WHERE runtime_key = ? AND project_directory = ?').get(key, normalized); return { projectDirectory: normalized, orderedPaths: row ? parse(row.ordered_paths) : [], revision: row?.revision ?? 0 }; };
   const getWorktreeOrder = (projectDirectory) => getWorktreeOrderFor(runtimeKey(), projectDirectory);

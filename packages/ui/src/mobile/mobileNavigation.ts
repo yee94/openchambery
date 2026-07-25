@@ -21,10 +21,6 @@ export type MobileSecondaryState =
       /** Assistant conversation page. The selected Assistant is owned by the
           Assistant UI store; navigation only owns the page depth. */
       kind: 'assistant';
-    }
-  | {
-      /** Saved-instance management is a standard phone secondary page. */
-      kind: 'instances';
     };
 
 export type MobileNavigationState = {
@@ -36,7 +32,6 @@ export type MobileNavigationActions = {
   setActiveTab: (tab: MobileTabId) => void;
   openChat: (target: { sessionId: string; directory?: string | null }) => void;
   openAssistant: (assistantID: string) => void;
-  openInstances: () => void;
   closeSecondary: () => void;
 };
 
