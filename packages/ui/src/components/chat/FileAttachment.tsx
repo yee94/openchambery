@@ -454,12 +454,47 @@ export const AttachedFilesList = memo(({ attachments, onShowPopup, onRemoveAttac
 
 AttachedFilesList.displayName = 'AttachedFilesList';
 
-export const ActiveEditorFileSuggestion = memo(() => {
+type ActiveEditorFileSuggestionProps = {
+  /** Composer-owned attachment views (DraftKey for primary). Avoid reading legacy attachedFiles. */
+  attachedFiles: readonly AttachedFile[]
+  onAddVSCodeFile: (path: string, name: string, fileSize: number | null) => void
+  onAddVSCodeSelection: (path: string, file: File) => void | Promise<void>
+}
+
+/** Pure helpers for ActiveEditorFileSuggestion attach-state (testable without React). */
+export const isActiveEditorFileAttached = (
+  attachedFiles: readonly AttachedFile[],
+  filePath: string,
+): boolean => attachedFiles.some(
+  (f) => f.source === 'vscode' && f.vscodeSource === 'file' && (f.vscodePath || '') === filePath,
+)
+
+export const isActiveEditorSelectionAttached = (
+  attachedFiles: readonly AttachedFile[],
+  filePath: string,
+  selectionLabel: string,
+): boolean => !!selectionLabel && attachedFiles.some(
+  (f) => f.source === 'vscode' && f.vscodeSource === 'selection' && f.filename === selectionLabel && f.vscodePath === filePath,
+)
+
+export const activeEditorSelectionLabel = (
+  relativePath: string,
+  selection: { startLine: number; endLine: number } | null | undefined,
+): string => {
+  if (!selection) return ''
+  const selectionRange = selection.startLine === selection.endLine
+    ? `${selection.startLine}`
+    : `${selection.startLine}-${selection.endLine}`
+  return `${relativePath}:${selectionRange}`
+}
+
+export const ActiveEditorFileSuggestion = memo(({
+  attachedFiles,
+  onAddVSCodeFile,
+  onAddVSCodeSelection,
+}: ActiveEditorFileSuggestionProps) => {
   const { t } = useI18n();
   const activeEditorFile = useInputStore((s) => s.activeEditorFile);
-  const attachedFiles = useInputStore((s) => s.attachedFiles)
-  const addVSCodeFileAttachment = useInputStore((s) => s.addVSCodeFileAttachment)
-  const addVSCodeSelectionAttachment = useInputStore((s) => s.addVSCodeSelectionAttachment)
   const setPendingInputText = useInputStore((s) => s.setPendingInputText)
   const isVSCodeRuntime = useRuntimeAPIs().runtime.isVSCode;
 
@@ -468,9 +503,7 @@ export const ActiveEditorFileSuggestion = memo(() => {
   const { filePath, fileName, relativePath, selection, fileSize } = activeEditorFile;
 
   // Normalize to forward slashes for comparison
-  const isFileAttached = attachedFiles.some(
-    (f) => f.source === 'vscode' && f.vscodeSource === 'file' && (f.vscodePath || '') === filePath
-  )
+  const isFileAttached = isActiveEditorFileAttached(attachedFiles, filePath)
 
   // Compute selection label using a compact range (single line shown as "N" not "N-N")
   let selectionRange = ''
@@ -480,9 +513,7 @@ export const ActiveEditorFileSuggestion = memo(() => {
       : `${selection.startLine}-${selection.endLine}`
   }
   const selectionLabel = selection ? `${relativePath}:${selectionRange}` : ''
-  const isSelectionAttached = !!selectionLabel && attachedFiles.some(
-    (f) => f.source === 'vscode' && f.vscodeSource === 'selection' && f.filename === selectionLabel && f.vscodePath === filePath
-  )
+  const isSelectionAttached = isActiveEditorSelectionAttached(attachedFiles, filePath, selectionLabel)
 
   // Nothing to show — file is already attached and there's no (or already-attached) selection
   if (isFileAttached && (!selection || isSelectionAttached)) return null;
@@ -492,7 +523,7 @@ export const ActiveEditorFileSuggestion = memo(() => {
   const displayName = fileName;
 
   const handleAddFile = () => {
-    addVSCodeFileAttachment(filePath, fileName, fileSize);
+    onAddVSCodeFile(filePath, fileName, fileSize);
     setPendingInputText(attachmentCitationDisplay(fileName), 'append-inline');
   };
 
@@ -500,7 +531,7 @@ export const ActiveEditorFileSuggestion = memo(() => {
     if (!selection) return;
     const blob = new Blob([selection.text], { type: 'text/plain' });
     const file = new File([blob], selectionLabel, { type: 'text/plain' });
-    await addVSCodeSelectionAttachment(filePath, file);
+    await onAddVSCodeSelection(filePath, file);
     setPendingInputText(attachmentCitationDisplay(selectionLabel), 'append-inline');
   };
 

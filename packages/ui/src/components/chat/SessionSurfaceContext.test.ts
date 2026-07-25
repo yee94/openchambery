@@ -129,6 +129,22 @@ describe('SessionSurfaceContext', () => {
         expect(getSessionSurfaceActionAvailability(surface).revert).toBe(true);
     });
 
+    test('allows hosted surfaces to carry a custom sent-message edit handler', () => {
+        const onEditMessage = async () => {};
+        const surface: SessionSurfaceContextValue = {
+            kind: 'embedded',
+            surfaceId: 'assistant:test',
+            sessionId: 'ses_test',
+            directory: '/workspace',
+            active: true,
+            capabilities: PRIMARY_SESSION_SURFACE.capabilities,
+            onEditMessage,
+        };
+
+        expect(surface.onEditMessage).toBe(onEditMessage);
+        expect(getSessionSurfaceActionAvailability(surface).edit).toBe(true);
+    });
+
     test('exposes openSourceSession only when the host provides a jump handler', () => {
         const openSourceSession = () => {};
         const surface: SessionSurfaceContextValue = {

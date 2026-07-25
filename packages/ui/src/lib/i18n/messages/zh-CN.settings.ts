@@ -1832,8 +1832,6 @@ export const settingsDict = {
   'settings.openchamber.visual.field.diffLayoutAria': '差异布局：{option}',
   'settings.openchamber.visual.field.sessionRecap': '生成会话回顾',
   'settings.openchamber.visual.field.sessionRecapAria': '代理完成后生成回顾',
-  'settings.openchamber.visual.field.sessionSuggestion': '生成下一条用户消息建议',
-  'settings.openchamber.visual.field.sessionSuggestionAria': '代理完成后生成下一条用户消息建议',
   'settings.openchamber.visual.field.sessionTitleRefresh': '根据最新对话刷新会话标题',
   'settings.openchamber.visual.field.sessionTitleRefreshAria': '空闲后每 5 分钟根据最新话题刷新会话标题',
   'settings.openchamber.visual.field.sessionGoal': '启用会话目标',

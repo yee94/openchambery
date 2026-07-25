@@ -1,4 +1,5 @@
 import React from 'react';
+import type { Message, Part } from '@opencode-ai/sdk/v2/client';
 
 export interface SessionSurfaceCapabilities {
     compose: boolean;
@@ -12,6 +13,12 @@ export interface SessionSurfaceCapabilities {
 
 export type SessionSurfaceKind = 'primary' | 'panel' | 'embedded';
 
+/** Lightweight snapshot for surface-owned sent-message edit; avoids UI→Zustand coupling. */
+export type SessionSurfaceMessageEditSnapshot = {
+    info: Message;
+    parts: Part[];
+};
+
 export interface SessionSurfaceContextValue {
     kind: SessionSurfaceKind;
     surfaceId: string;
@@ -22,6 +29,11 @@ export interface SessionSurfaceContextValue {
     navigateSession?: (sessionId: string, directory: string) => void;
     /** Hosted surfaces (Assistant) restore into their own draft partition. */
     onRevertMessage?: (messageId: string) => Promise<void>;
+    /**
+     * Hosted surfaces (Assistant continuous) stage a sent-message edit into the
+     * surface draft partition and keep primary stagedMessageEdit untouched.
+     */
+    onEditMessage?: (messageId: string, snapshot: SessionSurfaceMessageEditSnapshot) => Promise<void>;
     /**
      * Hosted surfaces (Assistant) jump from a stitched reply into the underlying
      * OpenCode session so the user can continue that turn outside the Assistant tab.

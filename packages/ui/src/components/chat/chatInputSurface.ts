@@ -63,15 +63,12 @@ export const resolveChatInputSelectionVariantOptions = (
 };
 
 /**
- * Queue scope/delivery target and draft resource adapter supplied to the
- * queue chips. Surfaces own this scope end-to-end so the chips never read
- * primary session/directory stores to construct a bound scope.
+ * Queue scope/delivery target supplied to the queue chips. Surfaces own this
+ * scope end-to-end so the chips never read primary session/directory stores to
+ * construct a bound scope. Draft CAS revision is passed separately as draftTarget.
  */
 export type ChatInputQueueChips = {
   scope: ChatInputQueueScope | null;
-  draftResourceAdapter: {
-    getDraftRevision: () => string;
-  };
 };
 
 /**

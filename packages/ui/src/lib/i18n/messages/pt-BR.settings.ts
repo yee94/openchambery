@@ -1832,8 +1832,6 @@ export const settingsDict = {
   "settings.openchamber.visual.field.diffLayoutAria": "Layout de comparação: {option}",
   "settings.openchamber.visual.field.sessionRecap": "Gerar resumo da sessão",
   "settings.openchamber.visual.field.sessionRecapAria": "Gerar um resumo quando o agente termina",
-  "settings.openchamber.visual.field.sessionSuggestion": "Gerar sugestão da próxima mensagem do usuário",
-  "settings.openchamber.visual.field.sessionSuggestionAria": "Gerar uma próxima mensagem sugerida do usuário quando o agente termina",
   "settings.openchamber.visual.field.sessionTitleRefresh": "Atualizar o título da sessão com base na conversa recente",
   "settings.openchamber.visual.field.sessionTitleRefreshAria": "A cada 5 minutos após ociosidade, atualizar o título com base no tópico mais recente",
   "settings.openchamber.visual.field.sessionGoal": "Habilitar objetivos de sessão",

@@ -13,6 +13,12 @@
         <item name="windowActionBar">false</item>
         <item name="windowNoTitle">true</item>
         <item name="android:background">@null</item>
+        <!-- Edge-to-edge keyboard gap paints this surface (not the DOM). Match
+             app warm sand / dark defaults so the strip above the IME is not gray. -->
+        <item name="android:windowBackground">#fffdf4</item>
+        <item name="android:navigationBarColor">#fffdf4</item>
+        <item name="android:statusBarColor">@android:color/transparent</item>
+        <item name="android:navigationBarDividerColor">#fffdf4</item>
     </style>
 
     <style name="AppTheme.ShareReceiver" parent="Theme.AppCompat.DayNight.NoActionBar">

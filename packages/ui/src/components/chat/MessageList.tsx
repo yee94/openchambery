@@ -155,6 +155,21 @@ export const syncCurrentHistoryVirtualization = (
     state.current = historyVirtualized;
 };
 
+// eslint-disable-next-line react-refresh/only-export-components
+export const shouldAdjustHistoryScrollForSizeChange = (input: {
+    atEnd: boolean;
+    firstMeasurement: boolean;
+    itemStart: number;
+    itemEnd: number;
+    scrollOffset: number;
+    scrollDirection: 'forward' | 'backward' | null;
+}): boolean => {
+    if (input.atEnd) return false;
+    if (input.firstMeasurement) return input.itemStart < input.scrollOffset;
+    if (input.scrollDirection === 'backward') return false;
+    return input.itemEnd <= input.scrollOffset;
+};
+
 const readTanstackTimelineCache = (sessionKey: string, keys: readonly string[]): VirtualItem[] | undefined => {
     return tanstackTimelineCache.read(sessionKey, keys);
 };
@@ -459,6 +474,9 @@ const MessageRow = React.memo<MessageRowProps>(({
             sessionId: message.sourceSessionID,
             directory: message.sourceDirectory ?? null,
             // Archived assistant history is read-only; only copy/selection stay on.
+            // Drop hosted mutation callbacks so edit/revert cannot target a prior binding.
+            onRevertMessage: undefined,
+            onEditMessage: undefined,
             capabilities: {
                 ...sessionSurface.capabilities,
                 compose: false,
@@ -1135,16 +1153,21 @@ const StaticHistoryList = React.memo(({ entries, engine, contentRef, scrollRef, 
         initialOffset: () => Number.MAX_SAFE_INTEGER,
         initialMeasurementsCache: initialMeasurements,
     });
-    // Only compensate scroll for rows growing ABOVE the viewport (history
-    // remeasures, prepended pages). A row growing inside the viewport —
-    // expanding a tool call or thinking block — must grow DOWNWARD naturally;
-    // the end-anchored default made it expand upward. At the bottom,
-    // app-level auto-follow owns pinning, so skip there too instead of
-    // double-writing. (This is an instance field, not a constructor option.)
+    // A newly measured history row that starts above the effective scroll
+    // offset owns its full estimate-to-actual delta, including rows crossing
+    // the fold. Later remeasures compensate only rows fully above the viewport
+    // so visible tool/thinking expansion grows downward. Backward scrolling
+    // leaves geometry under the user's gesture, while app-level auto-follow
+    // owns bottom pinning. (This is an instance field, not a constructor option.)
     tanstackVirtualizer.shouldAdjustScrollPositionOnItemSizeChange = (item, _delta, instance) => {
-        if (instance.isAtEnd(TANSTACK_AT_END_THRESHOLD_PX)) return false;
-        const firstVisibleIndex = instance.range?.startIndex;
-        return firstVisibleIndex !== undefined && item.index < firstVisibleIndex;
+        return shouldAdjustHistoryScrollForSizeChange({
+            atEnd: instance.isAtEnd(TANSTACK_AT_END_THRESHOLD_PX),
+            firstMeasurement: !instance.itemSizeCache.has(item.key),
+            itemStart: item.start,
+            itemEnd: item.end,
+            scrollOffset: instance.scrollOffset ?? 0,
+            scrollDirection: instance.scrollDirection,
+        });
     };
     const virtualItems = tanstackVirtualizer.getVirtualItems();
     const mountedIndexes = virtualItems.map((item) => item.index);

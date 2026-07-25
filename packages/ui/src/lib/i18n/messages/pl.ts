@@ -2274,8 +2274,6 @@ export const dict: Record<I18nKey, string> = {
   'chat.goal.cancelDialog.description': 'Agent przestanie automatycznie pracować nad tym celem.',
   'chat.goal.cancelDialog.keep': 'Zachowaj cel',
   'chat.goal.cancelDialog.confirm': 'Anuluj cel',
-  'chat.suggestion.applyAria': 'Użyj sugerowanej wiadomości',
-  'chat.suggestion.dismissAria': 'Odrzuć sugestię',
   'header.actions.toggleRightSidebarAria': 'Przełącz prawy panel boczny',
   'header.actions.toggleTerminalPanel': 'Panel terminala',
   'header.actions.toggleTerminalPanelAria': 'Przełącz panel terminala',

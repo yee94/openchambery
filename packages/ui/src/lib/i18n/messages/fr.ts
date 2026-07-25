@@ -1312,8 +1312,6 @@ export const dict = {
   'chat.goal.cancelDialog.description': 'L\'agent cessera de travailler automatiquement vers cet objectif.',
   'chat.goal.cancelDialog.keep': 'Garder l\'objectif',
   'chat.goal.cancelDialog.confirm': 'Annuler l\'objectif',
-  'chat.suggestion.applyAria': 'Utiliser le message suggéré',
-  'chat.suggestion.dismissAria': 'Ignorer la suggestion',
   'header.actions.toggleTerminalPanel': 'Panneau terminal',
   'header.actions.toggleTerminalPanelAria': 'Basculer le panneau à bornes',
   'terminalView.stream.processExitedMessage': '[Processus terminé{exitCodeSegment}{signalSegment}]',

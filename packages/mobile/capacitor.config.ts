@@ -17,12 +17,11 @@ const config: CapacitorConfig = {
   },
   plugins: {
     Keyboard: {
-      // 'none' leaves the WebView at full height; the UI follows the keyboard
-      // itself via the --oc-keyboard-inset CSS variable driven by keyboardWillShow
-      // (see useNativeMobileChrome). The built-in 'native' resize lands only after
-      // the keyboard animation finishes, which looked like a ~1.5s lag.
+      // iOS: resize none + JS transform FLIP. Android: adjustNothing +
+      // ImeSyncBridge translationY (no JS geometry). resizeOnFullScreen off —
+      // SystemBars/ImeSync own insets; Capacitor resize would double-count.
       resize: 'none',
-      resizeOnFullScreen: true,
+      resizeOnFullScreen: false,
       autoBackdropColor: 'dom',
     },
     StatusBar: {

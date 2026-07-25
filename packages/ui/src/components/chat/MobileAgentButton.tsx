@@ -29,11 +29,10 @@ export const MobileAgentButton: React.FC<MobileAgentButtonProps> = ({ onCycleAge
     const isLongPressRef = React.useRef(false);
 
     const handlePointerDown = (event: React.PointerEvent) => {
-        // Same pattern as PermissionAutoAcceptButton: block the focus transfer
-        // iOS performs on touch so cycling the agent keeps the keyboard open.
-        if (event.pointerType === 'touch') {
-            event.preventDefault();
-        }
+        // Always block default focus transfer (not only touch): mouse/stylus
+        // must not focus the neighbouring textarea either, or the pill expands
+        // / IME opens as if the user tapped the field.
+        event.preventDefault();
         if (disabled) return;
         isLongPressRef.current = false;
         longPressTimerRef.current = setTimeout(() => {

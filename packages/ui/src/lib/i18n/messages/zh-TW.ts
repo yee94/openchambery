@@ -1482,8 +1482,6 @@ export const dict: Record<I18nKey, string> = {
   'chat.goal.cancelDialog.description': '代理將停止自動朝此目標工作。',
   'chat.goal.cancelDialog.keep': '保留目標',
   'chat.goal.cancelDialog.confirm': '取消目標',
-  'chat.suggestion.applyAria': '使用建議的訊息',
-  'chat.suggestion.dismissAria': '關閉建議',
   'header.actions.toggleTerminalPanel': '終端機面板',
   'header.actions.toggleTerminalPanelAria': '切換終端機面板',
   'terminalView.stream.processExitedMessage': '\r\n[處理程序已結束{exitCodeSegment}{signalSegment}]\r\n',

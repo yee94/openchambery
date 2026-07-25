@@ -108,6 +108,8 @@ export type DraftCommitResult = {
 export type DraftOwnershipCommitResult = Omit<DraftCommitResult, "record"> & { source?: DraftRecord; destination?: DraftRecord }
 export type DraftSnapshot = Pick<DraftRecord, "text" | "attachments" | "syntheticParts" | "mentions" | "composerReferences">
 export type DraftCommitInput = { key: DraftKey; expectedRevision: number | "absent"; snapshot: DraftSnapshot; values?: ReadonlyMap<string, Blob | string>; runtime: InputDraftRuntimeCapture }
+/** Durable CAS delete: tombstone + remove draft; result omits record. */
+export type DraftDeleteInput = { key: DraftKey; expectedRevision: number; runtime: InputDraftRuntimeCapture }
 export type InputDraftServices = {
   sink?: InputDraftMetadataSink
   repository?: InputDraftMetadataRepository
@@ -149,6 +151,8 @@ export type InputState = {
   migration: InputDraftMetadataMigration
   captureDraftRuntime: () => InputDraftRuntimeCapture
   commitDraftSnapshot: (input: DraftCommitInput) => Promise<DraftCommitResult>
+  /** Durable CAS delete restoring true absence (tombstone + metadata delete). */
+  deleteDraftSnapshot: (input: DraftDeleteInput) => Promise<DraftCommitResult>
   finalizeDraftOwnership: (input: { source: DraftKey; destination: DraftKey; expectedSourceRevision: number; disposition: "preserve" | "consume"; runtime: InputDraftRuntimeCapture }) => Promise<DraftOwnershipCommitResult>
   ensureDraft: (key: DraftKey) => DraftRecord
   getDraft: (key: DraftKey) => DraftRecord | undefined
@@ -202,6 +206,10 @@ export type InputState = {
   removeAttachedFile: (id: string) => void
   setAttachedFiles: (files: AttachedFile[]) => void
   clearAttachedFiles: () => void
+  /** Explicit DraftKey VS Code file attach (no activeAttachmentDraft routing). */
+  addDraftVSCodeFileAttachment: (key: DraftKey, path: string, name: string, fileSize: number | null) => void
+  /** Explicit DraftKey VS Code selection attach (duplicate/in-flight protected). */
+  addDraftVSCodeSelectionAttachment: (key: DraftKey, path: string, file: File) => Promise<void>
   addVSCodeFileAttachment: (path: string, name: string, fileSize: number | null) => void
   addVSCodeSelectionAttachment: (path: string, file: File) => Promise<void>
   addCodeSelectionAttachment: (path: string, label: string, text: string) => Promise<void>
@@ -479,6 +487,61 @@ export const createInputStore = (services: InputDraftServices = {}) => {
       draftAttachmentPersistence: runtimeCurrent ? { ...currentState.draftAttachmentPersistence, [id]: result.cleanupErrors.length ? { status: "error", revision: cloned.revision, errorCode: persistenceErrorCode(result) } : { status: "saved", revision: cloned.revision } } : clearDraftEphemeralState(currentState.draftAttachmentPersistence, id),
     }))
     return actionResult(runtimeCurrent ? "committed" : "stale", result, cloned, runtimeCurrent, true)
+  },
+  deleteDraftSnapshot: async (input) => {
+    // Result intentionally omits record (absence has no draft snapshot).
+    const id = draftKeyString(input.key)
+    const capture = input.runtime
+    if (capture.transportIdentity !== input.key.transportIdentity || !runtimeMatches(capture)) return actionResult("stale", undefined)
+    const state = get()
+    const existing = state.drafts[id]
+    const tombstone = state.tombstones[id] ?? 0
+    if (!positiveSafeInteger(input.expectedRevision) || !Number.isSafeInteger(tombstone) || tombstone < 0) return actionResult("failed", undefined)
+    if (!existing || existing.revision !== input.expectedRevision) return actionResult("conflict", undefined)
+    const revision = input.expectedRevision + 1
+    if (!positiveSafeInteger(revision)) return actionResult("failed", undefined)
+    const epoch = keyEpoch.get(id) ?? 0
+    const baselineRevision = existing.revision
+    const nextTombstone = Math.max(tombstone, revision)
+    const result = await durability.commit({
+      tombstones: { [id]: nextTombstone },
+      delete: [id],
+      isCurrent: () => runtimeMatches(capture)
+        && (keyEpoch.get(id) ?? 0) === epoch
+        && get().drafts[id]?.revision === baselineRevision
+        && (get().tombstones[id] ?? 0) === tombstone,
+    })
+    if (result.status !== "committed") return actionResult(actionStatus(result), result)
+    const memoryCurrent = (keyEpoch.get(id) ?? 0) === epoch
+      && get().drafts[id]?.revision === baselineRevision
+      && (get().tombstones[id] ?? 0) === tombstone
+    const runtimeCurrent = runtimeMatches(capture)
+    if (!memoryCurrent) {
+      if (!runtimeCurrent) set((currentState) => ({
+        draftAttachmentViews: clearDraftEphemeralState(currentState.draftAttachmentViews, id),
+        draftMissingAttachmentRefIDs: clearDraftEphemeralState(currentState.draftMissingAttachmentRefIDs, id),
+        draftHydration: clearDraftEphemeralState(currentState.draftHydration, id),
+        draftPersistence: clearDraftEphemeralState(currentState.draftPersistence, id),
+        draftAttachmentPersistence: clearDraftEphemeralState(currentState.draftAttachmentPersistence, id),
+      }))
+      return actionResult("stale", result, undefined, false, true)
+    }
+    bump(id)
+    invalidateAttachmentHydration(id)
+    set((currentState) => {
+      const drafts = { ...currentState.drafts }
+      delete drafts[id]
+      return {
+        drafts,
+        tombstones: { ...currentState.tombstones, [id]: Math.max(currentState.tombstones[id] ?? 0, nextTombstone) },
+        draftAttachmentViews: clearDraftEphemeralState(currentState.draftAttachmentViews, id),
+        draftMissingAttachmentRefIDs: clearDraftEphemeralState(currentState.draftMissingAttachmentRefIDs, id),
+        draftHydration: clearDraftEphemeralState(currentState.draftHydration, id),
+        draftPersistence: clearDraftEphemeralState(currentState.draftPersistence, id),
+        draftAttachmentPersistence: clearDraftEphemeralState(currentState.draftAttachmentPersistence, id),
+      }
+    })
+    return actionResult(runtimeCurrent ? "committed" : "stale", result, undefined, runtimeCurrent, true)
   },
   finalizeDraftOwnership: async (input) => {
     const sourceID = draftKeyString(input.source)
@@ -975,8 +1038,18 @@ export const createInputStore = (services: InputDraftServices = {}) => {
   },
 
   addAttachedFile: async (file: File) => {
+    const draftKey = get().activeAttachmentDraft
+    if (draftKey) {
+      const bucketID = attachmentBucketID(draftKey)
+      const generation = attachmentReadEpoch(bucketID)
+      const attachment = await get().addDraftLocalAttachment(draftKey, file)
+      if (generation !== attachmentReadEpoch(bucketID) && attachment) {
+        void get().removeDraftAttachment(draftKey, attachment.attachmentRefID)
+      }
+      return
+    }
     const id = `${Date.now()}-${Math.random().toString(36).slice(2)}`
-    const bucketID = attachmentBucketID(get().activeAttachmentDraft)
+    const bucketID = attachmentBucketID(null)
     const generation = attachmentReadEpoch(bucketID)
     let dataUrl: string
     try {
@@ -997,22 +1070,92 @@ export const createInputStore = (services: InputDraftServices = {}) => {
     updateAttachmentBucket(bucketID, (files) => [...files, attached])
   },
 
-  removeAttachedFile: (id) =>
-    updateAttachmentBucket(attachmentBucketID(get().activeAttachmentDraft), (files) => files.filter((file) => file.id !== id)),
+  removeAttachedFile: (id) => {
+    const draftKey = get().activeAttachmentDraft
+    if (draftKey) {
+      const record = get().getDraft(draftKey)
+      const attachment = record
+        ? [...record.attachments, ...record.syntheticParts.flatMap((part) => part.attachments)]
+          .find((item) => item.attachmentID === id)
+        : undefined
+      if (attachment) void get().removeDraftAttachment(draftKey, attachment.attachmentRefID)
+      return
+    }
+    updateAttachmentBucket(attachmentBucketID(null), (files) => files.filter((file) => file.id !== id))
+  },
 
   setAttachedFiles: (files) => {
+    // Production composers use DraftKey APIs; this remains a legacy-bucket write.
     updateAttachmentBucket(attachmentBucketID(get().activeAttachmentDraft), () => files, true)
   },
 
   clearAttachedFiles: () => {
-    updateAttachmentBucket(attachmentBucketID(get().activeAttachmentDraft), () => [], true)
+    const draftKey = get().activeAttachmentDraft
+    if (draftKey) {
+      // Root attachments only — preserve synthetic-part ownership.
+      bumpAttachmentReadEpoch(attachmentBucketID(draftKey))
+      if (!get().getDraft(draftKey)) get().ensureDraft(draftKey)
+      get().setDraftAttachments(draftKey, [])
+      return
+    }
+    updateAttachmentBucket(attachmentBucketID(null), () => [], true)
+  },
+
+  addDraftVSCodeFileAttachment: (key, path, name, fileSize) => {
+    const isDuplicate = get().getDraftAttachmentViews(key).some(
+      (f) => f.source === "vscode" && f.vscodeSource === "file" && (f.vscodePath || "") === path,
+    ) || (get().getDraft(key)?.attachments.some(
+      (f) => f.source === "vscode" && f.vscodeSource === "file" && (f.vscodePath || "") === path,
+    ) ?? false)
+    if (isDuplicate) return
+    const dataUrl = toFileUrl(path)
+    // Durable file:// locators match server-source attachment contract on send.
+    get().addDraftDurableAttachment(key, {
+      filename: name,
+      mimeType: "text/plain",
+      size: fileSize || 0,
+      source: "vscode",
+      vscodePath: path,
+      vscodeSource: "file",
+      url: dataUrl,
+    })
+  },
+
+  addDraftVSCodeSelectionAttachment: async (key, path, file) => {
+    const draftID = draftKeyString(key)
+    const generation = attachmentReadEpoch(draftID)
+    const selectionKey = `${draftID}\u0000${getVSCodeSelectionKey(path, file.name)}`
+    const isDuplicate = get().getDraftAttachmentViews(key).some(
+      (f) => f.source === "vscode" && f.vscodeSource === "selection" && f.filename === file.name && f.vscodePath === path,
+    ) || (get().getDraft(key)?.attachments.some(
+      (f) => f.source === "vscode" && f.vscodeSource === "selection" && f.filename === file.name && f.vscodePath === path,
+    ) ?? false)
+    if (isDuplicate || pendingVSCodeSelectionKeys.has(selectionKey)) return
+    pendingVSCodeSelectionKeys.add(selectionKey)
+    try {
+      const attachment = await get().addDraftLocalAttachment(key, file, {
+        source: "vscode",
+        vscodePath: path,
+        vscodeSource: "selection",
+      })
+      if (generation !== attachmentReadEpoch(draftID) && attachment) {
+        void get().removeDraftAttachment(key, attachment.attachmentRefID)
+      }
+    } finally {
+      pendingVSCodeSelectionKeys.delete(selectionKey)
+    }
   },
 
   addVSCodeFileAttachment: (path: string, name: string, fileSize: number | null) => {
+    const draftKey = get().activeAttachmentDraft
+    if (draftKey) {
+      get().addDraftVSCodeFileAttachment(draftKey, path, name, fileSize)
+      return
+    }
     const id = `${Date.now()}-${Math.random().toString(36).slice(2)}`
-    const bucketID = attachmentBucketID(get().activeAttachmentDraft)
+    const bucketID = attachmentBucketID(null)
     const isDuplicate = (get().attachmentBuckets[bucketID] ?? []).some(
-      (f) => f.source === 'vscode' && f.vscodeSource === 'file' && (f.vscodePath || '') === path
+      (f) => f.source === "vscode" && f.vscodeSource === "file" && (f.vscodePath || "") === path,
     )
     if (isDuplicate) return
     const dataUrl = toFileUrl(path)
@@ -1021,25 +1164,30 @@ export const createInputStore = (services: InputDraftServices = {}) => {
     // server, which resolves `file://` paths natively. No base64 encoding needed.
     const attached: AttachedFile = {
       id,
-      file: new File([], name, { type: 'text/plain' }),
+      file: new File([], name, { type: "text/plain" }),
       dataUrl,
-      mimeType: 'text/plain',
+      mimeType: "text/plain",
       filename: name,
       size: fileSize || 0,
-      source: 'vscode',
+      source: "vscode",
       vscodePath: path,
-      vscodeSource: 'file',
+      vscodeSource: "file",
     }
     updateAttachmentBucket(bucketID, (files) => [...files, attached])
   },
 
   addVSCodeSelectionAttachment: async (path: string, file: File) => {
+    const draftKey = get().activeAttachmentDraft
+    if (draftKey) {
+      await get().addDraftVSCodeSelectionAttachment(draftKey, path, file)
+      return
+    }
     const id = `${Date.now()}-${Math.random().toString(36).slice(2)}`
-    const bucketID = attachmentBucketID(get().activeAttachmentDraft)
+    const bucketID = attachmentBucketID(null)
     const generation = attachmentReadEpoch(bucketID)
     const selectionKey = `${bucketID}\u0000${getVSCodeSelectionKey(path, file.name)}`
     const isDuplicate = (get().attachmentBuckets[bucketID] ?? []).some(
-      (f) => f.source === 'vscode' && f.vscodeSource === 'selection' && f.filename === file.name && f.vscodePath === path
+      (f) => f.source === "vscode" && f.vscodeSource === "selection" && f.filename === file.name && f.vscodePath === path,
     )
     if (isDuplicate || pendingVSCodeSelectionKeys.has(selectionKey)) return
     pendingVSCodeSelectionKeys.add(selectionKey)
@@ -1059,15 +1207,15 @@ export const createInputStore = (services: InputDraftServices = {}) => {
       mimeType: file.type,
       filename: file.name,
       size: file.size,
-      source: 'vscode',
+      source: "vscode",
       vscodePath: path,
-      vscodeSource: 'selection',
+      vscodeSource: "selection",
     }
     updateAttachmentBucket(bucketID, (files) => [...files, attached])
   },
 
   addCodeSelectionAttachment: async (path, label, text) => {
-    const file = new File([text], label, { type: 'text/plain' })
+    const file = new File([text], label, { type: "text/plain" })
     await get().addVSCodeSelectionAttachment(path, file)
   },
 
@@ -1077,6 +1225,37 @@ export const createInputStore = (services: InputDraftServices = {}) => {
   },
 
   addRestoredAttachment: ({ url, mimeType, filename }) => {
+    const draftKey = get().activeAttachmentDraft
+    if (draftKey) {
+      if (url.startsWith("data:")) {
+        const expectedKey = draftKeyString(draftKey)
+        void (async () => {
+          try {
+            const response = await fetch(url)
+            const blob = await response.blob()
+            const file = new File([blob], filename, { type: mimeType || blob.type || "application/octet-stream" })
+            const active = get().activeAttachmentDraft
+            if (!active || draftKeyString(active) !== expectedKey) return
+            await get().addDraftLocalAttachment(draftKey, file)
+          } catch {
+            // ignore decode/read failures for restored data URLs
+          }
+        })()
+        return
+      }
+      if (!isDurableURL(url)) return
+      // Use "local" source so the file renders in AttachedFilesList.
+      // serverPath mirrors legacy restore so ImagePreview can use the URL.
+      get().addDraftDurableAttachment(draftKey, {
+        filename,
+        mimeType,
+        size: getDataUrlByteSize(url),
+        source: "local",
+        serverPath: url,
+        url,
+      })
+      return
+    }
     const id = `restored-${Date.now()}-${Math.random().toString(36).slice(2)}`
     // Use "local" source so the file renders in AttachedFilesList.
     // Set serverPath to the URL so ImagePreview can use it as the img src
@@ -1092,7 +1271,7 @@ export const createInputStore = (services: InputDraftServices = {}) => {
       source: "local",
       serverPath: url,
     }
-    updateAttachmentBucket(attachmentBucketID(get().activeAttachmentDraft), (files) => [...files, attached])
+    updateAttachmentBucket(attachmentBucketID(null), (files) => [...files, attached])
   },
 })
   })

@@ -1832,8 +1832,6 @@ export const settingsDict = {
   "settings.openchamber.visual.field.diffLayoutAria": "Компонування diff: {option}",
   "settings.openchamber.visual.field.sessionRecap": "Генерувати підсумок сесії",
   "settings.openchamber.visual.field.sessionRecapAria": "Генерувати підсумок після завершення роботи агента",
-  "settings.openchamber.visual.field.sessionSuggestion": "Генерувати пропозицію наступного повідомлення користувача",
-  "settings.openchamber.visual.field.sessionSuggestionAria": "Генерувати запропоноване наступне повідомлення користувача після завершення роботи агента",
   "settings.openchamber.visual.field.sessionTitleRefresh": "Оновлювати назву сесії за останньою розмовою",
   "settings.openchamber.visual.field.sessionTitleRefreshAria": "Кожні 5 хвилин після простою оновлювати назву сесії за найновішою темою",
   "settings.openchamber.visual.field.sessionGoal": "Увімкнути цілі сесії",

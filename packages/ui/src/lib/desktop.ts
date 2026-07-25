@@ -123,7 +123,6 @@ export type DesktopSettings = {
   defaultAgent?: string;
   smallModelUseDefault?: boolean;
   sessionRecapEnabled?: boolean;
-  sessionSuggestionEnabled?: boolean;
   sessionTitleRefreshEnabled?: boolean;
   sessionGoalEnabled?: boolean;
   sessionGoalDefaultBudgetEnabled?: boolean;

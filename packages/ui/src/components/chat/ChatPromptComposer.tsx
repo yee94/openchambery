@@ -179,8 +179,17 @@ export const ChatPromptComposer: React.FC<ChatPromptComposerProps> = ({
 
   return (
     <ChatComposerSurface className={className} expanded={expanded} {...surfaceProps}>
+      {/* Autocomplete / overlays (CommandAutocomplete, @-mention, …) are
+          absolute bottom-full siblings of the content column — keep them as
+          direct surface children so overflow rules on the content column
+          cannot clip the slash-command picker. */}
       {children}
-      <div className={cn('relative flex min-h-0 flex-col', expanded && 'flex-1', contentClassName)}>
+      {/* data-composer-content: stable path for the textarea so mobile pill/full
+          is CSS-only (same DOM node) rather than a remounting conditional tree. */}
+      <div
+        data-composer-content="true"
+        className={cn('relative flex min-h-0 flex-col', expanded && 'flex-1', contentClassName)}
+      >
         <div className={cn('overflow-hidden', expanded && 'flex min-h-0 flex-1 flex-col', inputSectionClassName)}>
           {inputHeader}
           {attachmentContent}
@@ -210,7 +219,7 @@ export const ChatPromptComposer: React.FC<ChatPromptComposerProps> = ({
               ))}
             </div>
           ) : null}
-          <div className={cn('relative overflow-hidden', expanded && 'flex min-h-0 flex-1 flex-col')}>
+          <div className={cn('relative overflow-hidden', expanded && 'flex min-h-0 flex-1 flex-col')} data-composer-input-shell="true">
             {highlightedContent ? (
               <div
                 ref={highlightRef}

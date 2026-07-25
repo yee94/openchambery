@@ -190,7 +190,7 @@ describe('Assistant UI product contract', () => {
     expect(chatInput).not.toContain('<ChatPromptTextarea');
     expect(chatInput).not.toContain('<ChatPromptFooter');
     expect(chatInput).toContain('inputHeader={composerInputHeader}');
-    expect(chatInput).toContain('attachmentContent={composerAttachmentContent}');
+    expect(chatInput).toContain('attachmentContent={isMobile && !mobileComposerExpanded ? undefined : composerAttachmentContent}');
     expect(chatInput).toContain('footerContent={composerFooterContent}');
     expect(chatInput).not.toContain('<Textarea');
     expect(promptComposer).toContain('<Textarea');
@@ -275,10 +275,12 @@ describe('Assistant UI product contract', () => {
   });
 
   test('disables edit/revert for stateless Assistants and opens source sessions in their own workspace', async () => {
-    const [conversation, sessionSurface, messageBody] = await Promise.all([
+    const [conversation, sessionSurface, messageBody, view, chatMessage] = await Promise.all([
       read('AssistantConversationSurface.tsx'),
       read('../chat/SessionSurfaceContext.tsx'),
       read('../chat/message/MessageBody.tsx'),
+      read('AssistantView.tsx'),
+      read('../chat/ChatMessage.tsx'),
     ]);
     expect(conversation).toContain("const mutateSession = assistant.mode === 'continuous'");
     expect(conversation).toContain('mutateSession,');
@@ -290,8 +292,39 @@ describe('Assistant UI product contract', () => {
     expect(conversation).toContain('expectedDirectory !== targetDirectory');
     expect(sessionSurface).toContain('openSourceSession?: (sessionId: string, directory: string) => void');
     expect(sessionSurface).toContain('openSourceSession: Boolean(surface.openSourceSession)');
+    expect(sessionSurface).toContain('onEditMessage?: (messageId: string, snapshot: SessionSurfaceMessageEditSnapshot) => Promise<void>');
     expect(messageBody).toContain("t('chat.messageBody.actions.openSourceSession')");
     expect(messageBody).toContain('sessionId={sessionId}');
+    // ChatMessage prefers surface edit callback over primary staged edit store.
+    expect(chatMessage).toContain('sessionSurface.onEditMessage');
+    expect(chatMessage).toContain('editMessagePreservingChanges(sessionId, message.info.id, snapshot)');
+    // Continuous only; stateless never injects onEditMessage.
+    expect(view).toContain("onEditMessage={assistant.mode === 'continuous' ? editAssistantMessage : undefined}");
+    expect(view).toContain("assistant.mode !== 'continuous'");
+    expect(view).toContain('stageMessageEdit(sessionID, messageID, snapshot, { directory, draftKey })');
+    expect(view).toContain('createAssistantStagedMessageEditRegistry');
+    expect(view).toContain('stagedMessageEditRegistryRef');
+    expect(view).toContain('commitBeforeSend');
+    expect(view).toContain('commitMessageEdit(staged.sessionID, staged.messageID, { directory: staged.directory })');
+    expect(view).toContain('register(identity, () => stageHandle.rollback())');
+    expect(view).toContain('rollbackAndClearIfBindingMismatch');
+    expect(view).toContain('rollbackAllBestEffort');
+    expect(view).toContain('stageHandle.rollback()');
+    // Binding invalidation uses async helper (not identity-only clearIfBindingMismatch).
+    expect(view).not.toContain('clearIfBindingMismatch');
+    // new/compact clear staged only after remote success
+    expect(view).toContain('const next = await newAssistantSession(assistant.id)');
+    expect(view).toContain('clearStagedMessageEdit(assistant.id)');
+    const newIdx = view.indexOf('const next = await newAssistantSession(assistant.id)');
+    const clearAfterNew = view.indexOf('clearStagedMessageEdit(assistant.id)', newIdx);
+    expect(clearAfterNew).toBeGreaterThan(newIdx);
+    // commitBeforeSend before sendAssistantMessage
+    const commitIdx = view.indexOf('commitBeforeSend');
+    const sendIdx = view.indexOf('sendAssistantMessage(assistant.id, binding, messageID');
+    expect(commitIdx).toBeGreaterThan(-1);
+    expect(sendIdx).toBeGreaterThan(commitIdx);
+    expect(view).toContain('assistant_staged_message_edit_rollback_failed');
+    expect(conversation).toContain('onEditMessage');
   });
 
   test('keeps compiled Assistant queue delivery and timeline reads scoped to the Assistant binding', async () => {
@@ -405,8 +438,10 @@ describe('Assistant UI product contract', () => {
     expect(view).toContain('rebindPendingMessage(assistant.id, messageID, result.binding.sessionID)');
     expect(view).toContain('isCurrent: () => pendingRefreshEpochRef.current === refreshEpoch');
     expect(view).not.toContain('expire: () => removePendingMessages');
-    expect(view).toContain('await refreshBinding(await newAssistantSession(assistant.id), { force: true })');
-    expect(view).toContain('await refreshBinding((await compactAssistantSession(assistant.id, binding)).binding, { force: true })');
+    expect(view).toContain('const next = await newAssistantSession(assistant.id)');
+    expect(view).toContain('await refreshBinding(next, { force: true })');
+    expect(view).toContain('const result = await compactAssistantSession(assistant.id, binding)');
+    expect(view).toContain('await refreshBinding(result.binding, { force: true })');
     expect(view).toContain("...(options?.force ? { force: true } : {})");
     expect(view).toContain('const hasMessages = messages.length > 0;');
     expect(view).toContain('useSessionStatus(sessionID, directory || undefined)');

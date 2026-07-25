@@ -84,16 +84,17 @@ export function MobileChatScreen({
 
       <div
         className={cn(
+          // Keep the prompt host transparent so the ambient frosted strip
+          // (.oc-mobile-composer::before/::after) can sample chat content.
+          // The input CARD itself is solid again (.oc-mobile-composer-surface).
           'mobile-chat-screen__content relative h-full min-h-0 flex-1',
           '[&_[data-scrollbar=chat]>div]:pt-[calc(max(0.625rem,var(--oc-safe-area-top,0px))+var(--oc-mobile-detail-navigation-height)+1.25rem)]',
-          '[&_:has(>.oc-mobile-composer)]:!bg-transparent [&_.oc-mobile-composer]:bg-transparent',
+          '[&_:has(>.oc-mobile-composer)]:!bg-transparent',
+          '[&_.oc-mobile-composer]:!bg-transparent',
+          '[&_.relative.z-10:has(.oc-mobile-composer)]:!bg-transparent',
         )}
       >
         {children}
-        <div
-          aria-hidden="true"
-          className="pointer-events-none absolute inset-x-0 bottom-0 z-[5] h-[calc(7rem+var(--safe-area-inset-bottom,env(safe-area-inset-bottom,0px)))] bg-gradient-to-t from-background via-background/85 to-transparent"
-        />
       </div>
     </main>
   );

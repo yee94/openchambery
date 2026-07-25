@@ -208,9 +208,14 @@ export const StatusRow: React.FC<StatusRowProps> = ({
 
   return (
     <div className={cn("mb-1", !hasLeftAccessory && "chat-column")} style={STATUS_ROW_CONTAINER_STYLE}>
-      <div className={cn("flex items-center justify-between py-0.5 gap-2 h-[1.2rem]", hasLeftAccessory && "px-0.5")}>
+      {/*
+        When leftAccessory is set (ChatInput pending-changes row), the parent is
+        already `chat-input-column`. Use the same horizontal inset as the composer
+        textarea (`px-3`) so the status triggers align with input content.
+      */}
+      <div className={cn("flex items-center justify-between py-0.5 gap-2 h-[1.2rem]", hasLeftAccessory && "px-3")}>
         {/* Left: Abort prompt | Abort status | Working placeholder | leftAccessory */}
-        <div className={cn("flex-1 flex items-center min-w-0 gap-2", hasLeftAccessory ? "pl-1.5" : "overflow-x-hidden")}>
+        <div className={cn("flex-1 flex items-center min-w-0 gap-2", !hasLeftAccessory && "overflow-x-hidden")}>
           {hasAbortPrompt ? (
             <div
               className="flex min-w-0 items-center text-muted-foreground pl-0.5"
@@ -248,7 +253,7 @@ export const StatusRow: React.FC<StatusRowProps> = ({
         </div>
 
         {/* Right: Todo */}
-        <div className={cn("relative flex items-center gap-2 flex-shrink-0", hasLeftAccessory ? "pr-1.5" : "-mr-3")} ref={popoverRef}>
+        <div className={cn("relative flex items-center gap-2 flex-shrink-0", !hasLeftAccessory && "-mr-3")} ref={popoverRef}>
           {todoTrigger}
 
           {/* Popover dropdown */}

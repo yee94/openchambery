@@ -1076,8 +1076,6 @@ export const settingsDict = {
   'settings.openchamber.visual.field.showExpandedBashToolsAria': 'Pokaż rozwinięte narzędzia bash',
   'settings.openchamber.visual.field.sessionRecap': 'Generuj podsumowanie sesji',
   'settings.openchamber.visual.field.sessionRecapAria': 'Generuj podsumowanie po zakończeniu pracy agenta',
-  'settings.openchamber.visual.field.sessionSuggestion': 'Generuj sugestię następnej wiadomości użytkownika',
-  'settings.openchamber.visual.field.sessionSuggestionAria': 'Generuj sugerowaną następną wiadomość użytkownika po zakończeniu pracy agenta',
   'settings.openchamber.visual.field.sessionTitleRefresh': 'Odświeżaj tytuł sesji na podstawie najnowszej rozmowy',
   'settings.openchamber.visual.field.sessionTitleRefreshAria': 'Co 5 minut po bezczynności odświeżaj tytuł sesji na podstawie najnowszego tematu',
   'settings.openchamber.visual.field.sessionGoal': 'Włącz cele sesji',

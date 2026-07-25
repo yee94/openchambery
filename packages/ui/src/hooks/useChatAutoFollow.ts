@@ -221,11 +221,17 @@ export const useChatAutoFollow = ({
     // ANIMATION_GUARD_MS). 0 = no animation guard active.
     const animationGuardUntilRef = React.useRef(0);
 
-    // True while the native (Capacitor iOS) keyboard slide choreography is in
-    // flight (between 'oc:keyboard-anim' and 'oc:keyboard-settled' from
-    // useNativeMobileChrome). During that window the pinned content is moved by a
-    // transform on the inner wrapper, so the ResizeObserver chase must stand down.
-    const keyboardAnimRef = React.useRef(false);
+    // True while the native (Capacitor) keyboard geometry is changing or the
+    // keyboard is open. Composer expand + IME resize must not chase the chat
+    // scroller to the bottom — the message list keeps its scrollTop (IM-style
+    // stable main view); only the composer/shell follow the keyboard.
+    // Content-growth follow (streaming, notifyContentChange) stays independent.
+    const keyboardGeometryFreezeRef = React.useRef(false);
+    // Settled keyboard open (from oc:keyboard-settled). Distinct from freeze:
+    // expand freezes provisionally before willShow; only settled open keeps the
+    // freeze for the whole IME session.
+    const keyboardOpenRef = React.useRef(false);
+    const keyboardExpandFreezeTimerRef = React.useRef<ReturnType<typeof setTimeout> | null>(null);
 
     // Last observed scrollTop, used to derive scroll DIRECTION in the scroll
     // handler so the bottom-zone re-engage only fires when arriving at the bottom
@@ -655,11 +661,15 @@ export const useChatAutoFollow = ({
 
         // Our own geometry change (programmatic write, height animation, or
         // content growth that left scrollTop alone) — keep following, re-pin.
+        // Keyboard geometry freeze is the exception: keep scrollTop stable so
+        // the main chat does not jump when the IME or composer resizes.
         if (
             stateRef.current === 'following'
             && (isAuto(el) || isAnimationGuardActive() || scrollTopUnchanged)
         ) {
-            scrollToBottom(false);
+            if (!keyboardGeometryFreezeRef.current) {
+                scrollToBottom(false);
+            }
             queueSave();
             return;
         }
@@ -750,10 +760,10 @@ export const useChatAutoFollow = ({
         if (!container || typeof ResizeObserver === 'undefined') return;
 
         const observer = new ResizeObserver(() => {
-            // Keyboard slide in flight: the container/composer resizes it reports
-            // are part of the transform choreography — the settle handler does the
-            // single deterministic re-pin, so chasing here would just fight it.
-            if (keyboardAnimRef.current) {
+            // Keyboard open / animating / composer expand: viewport and composer
+            // height changes must not re-pin the message list. Keeping scrollTop
+            // leaves the main chat stable while the keyboard and input ride up.
+            if (keyboardGeometryFreezeRef.current) {
                 updateOverflowAndButton();
                 return;
             }
@@ -791,56 +801,108 @@ export const useChatAutoFollow = ({
     }, [armEntryStickQuiet, containerEl, scrollToBottom, setStateValue, updateOverflowAndButton]);
 
     // ── native keyboard transitions (Capacitor choreography) ────────────────
-    // The chat scroller gets NO transforms during the keyboard transition:
-    // transforming the scroll container (or its content) forces WebKit to
-    // rebuild the composited scrolling layers, which stalls for seconds on
-    // long chats. Instead the chat repositions with instant snaps that hide
-    // behind the keyboard itself:
-    //   show: content stays put while the keyboard/composer slide over it; the
-    //         settled event (shell layout snap) does ONE instant re-pin.
-    //   hide: the shell layout is restored up-front — the scrollTop clamp
-    //         happens while the keyboard still covers that region — and the
-    //         settled event re-pins once at the end.
-    // During the window we only guard the scroll heuristics and the observer
-    // chase. These events never fire outside the Capacitor app.
+    // The chat scroller gets NO transforms and NO auto re-pin for keyboard
+    // geometry. Transforming the scroller rebuilds WebKit compositing layers
+    // on long chats; re-pinning to the bottom on show/hide is the IM anti-pattern
+    // (main view jumps while the keyboard rises). Contract:
+    //   show / open: freeze geometry-driven chase; keep scrollTop; composer and
+    //                shell follow the keyboard on their own paths.
+    //   hide / close: keep freeze through the reverse transition, then clear.
+    // Streaming / send still pin via notifyContentChange and scrollToBottomOnSend.
+    // These events never fire outside the Capacitor app (except intent from
+    // composer expand, which only freezes chase).
     React.useEffect(() => {
         if (typeof window === 'undefined') return;
+
+        const clearExpandFreezeTimer = () => {
+            if (keyboardExpandFreezeTimerRef.current === null) return;
+            clearTimeout(keyboardExpandFreezeTimerRef.current);
+            keyboardExpandFreezeTimerRef.current = null;
+        };
+
+        const freezeGeometry = (durationMs?: number) => {
+            keyboardGeometryFreezeRef.current = true;
+            // Clamp/resize can dispatch scroll events away from the auto marker —
+            // never read those as a user scroll-away while the keyboard moves.
+            if (typeof durationMs === 'number' && durationMs > 0) {
+                animationGuardUntilRef.current = now() + durationMs + ANIMATION_GUARD_MS;
+            } else {
+                animationGuardUntilRef.current = Math.max(
+                    animationGuardUntilRef.current,
+                    now() + ANIMATION_GUARD_MS,
+                );
+            }
+        };
+
+        const handleKeyboardIntent = (event: Event) => {
+            const detail = (event as CustomEvent<{ open?: boolean }>).detail;
+            if (!detail) return;
+            // Expand path: freeze before the pill→full composer DOM swap so the
+            // ResizeObserver does not chase the bottom on the first jump. This
+            // is provisional — if the IME never opens, drop the freeze so
+            // streaming / history growth can re-pin again.
+            if (detail.open === true) {
+                freezeGeometry();
+                clearExpandFreezeTimer();
+                keyboardExpandFreezeTimerRef.current = setTimeout(() => {
+                    keyboardExpandFreezeTimerRef.current = null;
+                    if (!keyboardOpenRef.current) {
+                        keyboardGeometryFreezeRef.current = false;
+                    }
+                }, 1500);
+                return;
+            }
+            // Collapse path still freezes through the hide transition; settled
+            // (open:false) clears the freeze when the keyboard is fully gone.
+            clearExpandFreezeTimer();
+            freezeGeometry();
+        };
 
         const handleKeyboardAnim = (event: Event) => {
             const detail = (event as CustomEvent<{ phase: 'show' | 'hide'; slide: number; durationMs: number; easing: string }>).detail;
             if (!detail) return;
-            keyboardAnimRef.current = true;
-            // The clamp/resize during the choreography can dispatch scroll events
-            // that land away from the auto marker — never read those as a user
-            // scroll-away.
-            animationGuardUntilRef.current = now() + detail.durationMs + ANIMATION_GUARD_MS;
+            clearExpandFreezeTimer();
+            freezeGeometry(detail.durationMs);
         };
 
-        const handleKeyboardSettled = () => {
-            keyboardAnimRef.current = false;
-            const el = scrollRef.current;
-            if (!el) {
-                updateOverflowAndButton();
-                return;
+        const handleKeyboardSettled = (event: Event) => {
+            const detail = (event as CustomEvent<{ open?: boolean }>).detail;
+            clearExpandFreezeTimer();
+            // Keep freeze while the keyboard remains open so residual layout
+            // (SystemBars, safe-area, late composer measure) cannot re-pin.
+            // Only unfreeze after hide has settled.
+            if (detail?.open === true) {
+                keyboardOpenRef.current = true;
+                keyboardGeometryFreezeRef.current = true;
+            } else {
+                keyboardOpenRef.current = false;
+                // Keep freeze briefly after hide so residual shell/composer
+                // ResizeObserver callbacks cannot re-pin when the viewport grows.
+                keyboardGeometryFreezeRef.current = true;
+                keyboardExpandFreezeTimerRef.current = setTimeout(() => {
+                    keyboardExpandFreezeTimerRef.current = null;
+                    if (!keyboardOpenRef.current) {
+                        keyboardGeometryFreezeRef.current = false;
+                    }
+                }, ANIMATION_GUARD_MS);
             }
-            // Single deterministic re-pin, same task as the layout swap → lands
-            // before paint. (scrollToBottomNow, not scrollToBottom: this must not
-            // be gated on working/settling — the keyboard resize is a viewport
-            // change, not content growth.)
-            if (stateRef.current === 'following' && canScroll(el)) {
-                scrollToBottomNow('auto');
-            }
+            // Never re-pin on keyboard settle — scrollTop stays where the user
+            // left it; overflow UI still needs a refresh for the new viewport.
             updateOverflowAndButton();
         };
 
+        window.addEventListener('oc:keyboard-intent', handleKeyboardIntent);
         window.addEventListener('oc:keyboard-anim', handleKeyboardAnim);
         window.addEventListener('oc:keyboard-settled', handleKeyboardSettled);
         return () => {
+            window.removeEventListener('oc:keyboard-intent', handleKeyboardIntent);
             window.removeEventListener('oc:keyboard-anim', handleKeyboardAnim);
             window.removeEventListener('oc:keyboard-settled', handleKeyboardSettled);
-            keyboardAnimRef.current = false;
+            clearExpandFreezeTimer();
+            keyboardGeometryFreezeRef.current = false;
+            keyboardOpenRef.current = false;
         };
-    }, [scrollToBottomNow, updateOverflowAndButton]);
+    }, [updateOverflowAndButton]);
 
     React.useEffect(() => {
         updateOverflowAndButton();

@@ -1865,8 +1865,6 @@ export const settingsDict = {
   'settings.openchamber.visual.field.diffLayoutAria': 'Diff layout: {option}',
   'settings.openchamber.visual.field.sessionRecap': 'Generate Session Recap',
   'settings.openchamber.visual.field.sessionRecapAria': 'Generate a recap after the agent finishes',
-  'settings.openchamber.visual.field.sessionSuggestion': 'Generate Next User Message Suggestion',
-  'settings.openchamber.visual.field.sessionSuggestionAria': 'Generate a suggested next user message after the agent finishes',
   'settings.openchamber.visual.field.sessionTitleRefresh': 'Refresh Session Title From Latest Chat',
   'settings.openchamber.visual.field.sessionTitleRefreshAria': 'Every 5 minutes after idle, refresh the session title from the latest conversation topic',
   'settings.openchamber.visual.field.sessionGoal': 'Enable Session Goals',

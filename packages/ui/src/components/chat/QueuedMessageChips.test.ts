@@ -1,6 +1,6 @@
 import { beforeEach, describe, expect, test } from 'bun:test';
 import { legacyQueueScope, setMessageQueueMutationFence, useMessageQueueStore, type QueueItem, type QueueScope } from '@/stores/messageQueueStore';
-import { applyPendingServerQueueOperation, applyPendingServerQueueOperations, canEditQueuedMessage, canRemoveQueuedMessage, canSendQueuedMessage, canSendServerQueuedMessage, isServerQueueItemActiveAttempt, isServerQueueItemDispatchPending, mergeQueuedMessageScopes, popQueuedMessageForEdit, queueModeAllowsMutations, reorderServerQueueItems, selectPendingServerQueueOperation, selectPendingServerQueueOperations, serverQueueEditInput, serverQueueItemMutationInput } from './queuedMessageChipsState';import type { ServerQueueOperationIdentity } from './queuedMessageChipsState';
+import { applyPendingServerQueueOperation, applyPendingServerQueueOperations, canEditQueuedMessage, canRemoveQueuedMessage, canSendQueuedMessage, canSendServerQueuedMessage, isServerQueueItemActiveAttempt, isServerQueueItemDispatchPending, legacyQueueEditRestoreSource, mergeQueuedMessageScopes, popQueuedMessageForEdit, queueModeAllowsMutations, reorderServerQueueItems, selectPendingServerQueueOperation, selectPendingServerQueueOperations, serverQueueEditInput, serverQueueItemMutationInput, shouldRemoveQueueItemAfterEditCommit } from './queuedMessageChipsState';import type { ServerQueueOperationIdentity } from './queuedMessageChipsState';
 import type { MessageQueueItem, MessageQueueScope } from '@/lib/message-queue-server';
 import { sessionDraftKey } from '@/sync/input-draft-types';
 import type { MessageQueuePendingAdmissionItem } from '@/sync/message-queue-server-runtime';
@@ -45,6 +45,20 @@ describe('QueuedMessageChips production queue boundary', () => {
         expect(popQueuedMessageForEdit(visible[0]!, actions.popToInput)).toBe(legacy);
         expect(actions.getQueueForScope(legacyScope)).toEqual([]);
         expect(actions.getQueueForScope(scope)).toEqual([bound]);
+    });
+
+    test('legacy queue edit removes only after committed+current; restores recovery content without pop-first', () => {
+        expect(shouldRemoveQueueItemAfterEditCommit({ status: 'committed', current: true })).toBe(true);
+        expect(shouldRemoveQueueItemAfterEditCommit({ status: 'committed', current: false })).toBe(false);
+        expect(shouldRemoveQueueItemAfterEditCommit({ status: 'stale', current: false, durable: true })).toBe(false);
+        expect(shouldRemoveQueueItemAfterEditCommit({ status: 'conflict', current: true })).toBe(false);
+        const withRecovery = {
+            id: 'q1',
+            content: 'visible',
+            failure: { recovery: { content: 'recovered', attachments: undefined, composerDocument: { text: 'recovered', references: [] }, composerMentions: [] } },
+        } as unknown as QueueItem;
+        expect(legacyQueueEditRestoreSource(withRecovery).content).toBe('recovered');
+        expect(legacyQueueEditRestoreSource({ id: 'q2', content: 'plain' } as unknown as QueueItem).content).toBe('plain');
     });
 
     test('selects rows only from the supplied complete surface scope', () => {

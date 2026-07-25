@@ -83,7 +83,7 @@ const BRAND_LOGO_CANDIDATES: Record<string, readonly string[]> = {
   gpt: ['gpt', 'openai'],
   gemini: ['google', 'gemini'],
   gemma: ['google', 'gemma', 'gemini'],
-  grok: ['xai', 'grok'],
+  grok: ['grok'],
   kimi: ['kimi'],
   glm: ['zai-coding-plan', 'zhipuai-coding-plan', 'glm'],
   qwen: ['qwen'],

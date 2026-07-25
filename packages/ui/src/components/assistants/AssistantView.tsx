@@ -22,6 +22,7 @@ import { createPendingUserMessagePresentation, type PendingUserMessagePresentati
 import { useSessionMessages, useSessionStatus, useUserMessageHistory } from '@/sync/sync-context';
 import { useSync } from '@/sync/use-sync';
 import { surfaceDraftKey, draftKeyString } from '@/sync/input-draft-types';
+import { createDraftAttachmentResourceAdapter } from '@/sync/draft-attachment-resource-adapter';
 import { useInputStore } from '@/sync/input-store';
 import { useScopedAgentsQuery, useScopedProvidersQuery } from '@/queries/agentQueries';
 import { useAssistantUIStore } from '@/stores/useAssistantUIStore';
@@ -29,12 +30,17 @@ import { useUIStore } from '@/stores/useUIStore';
 import type { AttachedFile } from '@/stores/types/sessionTypes';
 import { AssistantConversationSurface } from './AssistantConversationSurface';
 import { toast } from 'sonner';
-import { revertToMessage as revertSessionToMessage } from '@/sync/session-actions';
-import { createAssistantRevertDraftSnapshot } from './assistantRevertDraft';
+import { commitMessageEdit, revertToMessage as revertSessionToMessage, stageMessageEdit } from '@/sync/session-actions';
+import type { SessionSurfaceMessageEditSnapshot } from '@/components/chat/SessionSurfaceContext';
+
 import { AssistantSelectionCoordinator, AssistantSelectionStaleError, type AssistantSelection, type AssistantSelectionIdentity } from './assistantSelectionCoordinator';
 import { commitAssistantSelection } from './assistantSelectionBackend';
 import { getAssistantPresentation } from './assistantPresentation';
 import { reconcileAdmittedAssistantBinding, rebindPendingAssistantMessage } from './assistantPendingMessages';
+import {
+  createAssistantStagedMessageEditRegistry,
+  type AssistantStagedMessageEditIdentity,
+} from './assistantStagedMessageEdit';
 
 const EMPTY_ATTACHMENTS: Record<string, AttachedFile> = {};
 const EMPTY_PENDING_MESSAGES: PendingUserMessagePresentation[] = [];
@@ -109,6 +115,8 @@ export const AssistantView: React.FC<AssistantViewProps> = ({ activeOverride, on
   const sync = useSync();
   const [pendingMessagesByAssistant, setPendingMessagesByAssistant] = React.useState<Map<string, PendingUserMessagePresentation[]>>(() => new Map());
   const pendingRefreshEpochRef = React.useRef(0);
+  /** Per-assistant continuous staged sent-message edit registry; no render subscription. */
+  const stagedMessageEditRegistryRef = React.useRef(createAssistantStagedMessageEditRegistry());
   const pendingMessages = pendingMessagesByAssistant.get(assistantID) ?? EMPTY_PENDING_MESSAGES;
   const [, setSelectionSaving] = React.useState(false);
   const selectionErrorRef = React.useRef<(error: unknown) => void>(() => {});
@@ -118,13 +126,39 @@ export const AssistantView: React.FC<AssistantViewProps> = ({ activeOverride, on
   const selectionIdentity = React.useMemo<AssistantSelectionIdentity>(() => ({ assistantID, transportIdentity: transport, runtimeGeneration }), [assistantID, runtimeGeneration, transport]);
   const selectionCoordinator = selectionCoordinatorRef.current;
 
+  /** Drop staged identity only (no draft rollback). Used after user-explicit history replace. */
+  const clearStagedMessageEdit = useEvent((targetAssistantID: string) => {
+    stagedMessageEditRegistryRef.current.clear(targetAssistantID);
+  });
+  /** Runtime switch / unmount: rollback drafts first; never clearAll before rollback. */
+  const invalidateAllStagedMessageEdits = useEvent(() => {
+    void stagedMessageEditRegistryRef.current.rollbackAllBestEffort().catch(() => undefined);
+  });
+
   React.useEffect(() => { if (!selectedAssistantID && snapshot?.assistants[0]) selectAssistant(snapshot.assistants[0].id); }, [selectAssistant, selectedAssistantID, snapshot?.assistants]);
   React.useEffect(() => { if (snapshotQuery.isSuccess && selectedAssistantID && !assistant) selectAssistant(snapshot?.assistants[0]?.id ?? null); }, [assistant, selectAssistant, selectedAssistantID, snapshot?.assistants, snapshotQuery.isSuccess]);
   React.useEffect(() => { if (active && assistantID && !sessionID) void ensureAssistantSession(assistantID); }, [active, assistantID, sessionID]);
-  React.useEffect(() => { pendingRefreshEpochRef.current++; setPendingMessagesByAssistant(new Map()); }, [transport, runtimeGeneration]);
-  React.useEffect(() => () => { pendingRefreshEpochRef.current++; }, []);
+  React.useEffect(() => {
+    pendingRefreshEpochRef.current++;
+    setPendingMessagesByAssistant(new Map());
+    // Runtime switch: best-effort rollback every staged edit; retain failed entries for send block.
+    invalidateAllStagedMessageEdits();
+  }, [transport, runtimeGeneration, invalidateAllStagedMessageEdits]);
+  React.useEffect(() => () => { pendingRefreshEpochRef.current++; invalidateAllStagedMessageEdits(); }, [invalidateAllStagedMessageEdits]);
   React.useEffect(() => { selectionCoordinator.activate(selectionIdentity); }, [selectionCoordinator, selectionIdentity]);
   React.useEffect(() => () => { selectionCoordinator.dispose(); }, [selectionCoordinator]);
+  // Binding identity change: CAS-rollback draft then clear only on safe status (retain on failure).
+  React.useEffect(() => {
+    if (!assistantID) return;
+    void stagedMessageEditRegistryRef.current.rollbackAndClearIfBindingMismatch(assistantID, {
+      assistantID,
+      sessionID,
+      directory,
+      sessionGeneration: assistant?.sessionGeneration ?? -1,
+      transport,
+      runtimeGeneration,
+    }).catch(() => undefined);
+  }, [assistant?.sessionGeneration, assistantID, directory, runtimeGeneration, sessionID, transport]);
 
   const changeSelection = useEvent((selection: AssistantSelection) => {
     if (!selectionIdentity.assistantID) return Promise.reject(new Error('assistant_unavailable'));
@@ -195,34 +229,69 @@ export const AssistantView: React.FC<AssistantViewProps> = ({ activeOverride, on
     if (!sessionID || !directory) throw new Error('assistant_unavailable');
     // History segments from prior bindings are read-only in the stitched transcript.
     if (!getSyncMessages(sessionID, directory).some((message) => message?.id === messageID)) return;
-    const restoration = await revertSessionToMessage(sessionID, messageID, { directory, restorePrimaryInput: false });
-    const input = useInputStore.getState();
-    const current = input.getDraft(draftKey);
-    const restorationDraft = await createAssistantRevertDraftSnapshot(restoration, createUuid);
-    const result = await input.commitDraftSnapshot({
-      key: draftKey,
-      expectedRevision: current?.revision ?? 'absent',
-      runtime: input.captureDraftRuntime(),
-      snapshot: restorationDraft.snapshot,
-      values: restorationDraft.values,
-    });
-    if (!result.durable) throw new Error(`assistant-revert-draft-${result.status}`);
+    // Surface DraftKey isolation: restore into the Assistant partition, not primary.
+    await revertSessionToMessage(sessionID, messageID, { directory, draftKey, restorePrimaryInput: false });
+    // Revert retires any staged edit for this assistant (same binding may still exist).
+    clearStagedMessageEdit(assistantID);
+  });
+  const editAssistantMessage = useEvent(async (messageID: string, snapshot: SessionSurfaceMessageEditSnapshot) => {
+    // Stateless turns cannot rewrite history; continuous only, live binding only.
+    if (!assistant || assistant.mode !== 'continuous') return;
+    if (!sessionID || !directory) throw new Error('assistant_unavailable');
+    if (!getSyncMessages(sessionID, directory).some((message) => message?.id === messageID)) return;
+    if (snapshot.info.id !== messageID || snapshot.info.sessionID !== sessionID || snapshot.info.role !== 'user') {
+      throw new Error('The selected user message is unavailable');
+    }
+    const identity: AssistantStagedMessageEditIdentity = {
+      assistantID: assistant.id,
+      sessionID,
+      directory,
+      sessionGeneration: assistant.sessionGeneration,
+      messageID,
+      transport,
+      runtimeGeneration,
+    };
+    // Stage into surfaceDraftKey; primary session draft / stagedMessageEdit stay untouched.
+    const stageHandle = await stageMessageEdit(sessionID, messageID, snapshot, { directory, draftKey });
+    // Re-validate runtime + this assistant's live binding after the async draft commit.
+    // Selection may have moved to another assistant; Map still supports A while B is selected.
+    const runtimeOk =
+      getRuntimeTransportIdentity() === identity.transport
+      && getRuntimeGeneration() === identity.runtimeGeneration;
+    const live = runtimeOk
+      ? readAssistantSnapshot(undefined, identity.transport)?.assistants.find((item) => item.id === identity.assistantID)
+      : undefined;
+    const bindingOk = Boolean(
+      live
+      && live.mode === 'continuous'
+      && live.sessionID === identity.sessionID
+      && live.sessionGeneration === identity.sessionGeneration
+      && (live.effectiveWorkspacePath ?? '') === identity.directory,
+    );
+    if (runtimeOk && bindingOk) {
+      stagedMessageEditRegistryRef.current.register(identity, () => stageHandle.rollback());
+      return;
+    }
+    // Stale runtime/binding: CAS-rollback the restored draft; conflict keeps user edits.
+    const rolled = await stageHandle.rollback();
+    if (rolled.status === 'failed') {
+      stagedMessageEditRegistryRef.current.clear(identity.assistantID);
+      throw new Error('assistant_stage_message_edit_rollback_failed');
+    }
+    stagedMessageEditRegistryRef.current.clear(identity.assistantID);
   });
   // selectionSaving must NOT drive composer busy/disabled. Primary Tab agent
   // cycling never disables the textarea; mapping PATCH-in-flight onto resources.busy
   // made Assistant Tab blur the input (browser drops focus from disabled fields).
-  const resources = React.useMemo<ChatInputSurfaceResources>(() => ({
+  const resources = React.useMemo<ChatInputSurfaceResources>(() => {
+    const attachmentAdapter = createDraftAttachmentResourceAdapter(draftKey, () => useInputStore.getState());
+    return {
     busy: false,
     attachments,
-    addAttachment: async (file) => { await useInputStore.getState().addDraftLocalAttachment(draftKey, file); },
-    removeAttachment: (id) => { void useInputStore.getState().removeDraftAttachment(draftKey, id); },
-    clearAttachments: () => { for (const attachment of useInputStore.getState().getDraftAttachmentViews(draftKey)) void useInputStore.getState().removeDraftAttachment(draftKey, attachment.id); },
-    setAttachments: (nextAttachments) => {
-      void (async () => {
-        for (const attachment of useInputStore.getState().getDraftAttachmentViews(draftKey)) await useInputStore.getState().removeDraftAttachment(draftKey, attachment.id);
-        for (const attachment of nextAttachments) await useInputStore.getState().addDraftLocalAttachment(draftKey, attachment.file, { filename: attachment.filename, source: attachment.source === 'vscode' ? 'vscode' : 'local', vscodePath: attachment.vscodePath, vscodeSource: attachment.vscodeSource === 'selection' ? 'selection' : undefined });
-      })();
-    },
+    addAttachment: (file) => attachmentAdapter.addLocal(file),
+    removeAttachment: (id) => attachmentAdapter.removeByAttachmentID(id),
+    clearAttachments: () => attachmentAdapter.clearRootAttachments(),
+    setAttachments: (nextAttachments) => attachmentAdapter.replaceRootAttachments(nextAttachments),
     pendingInput: null,
     consumePendingInput: () => null,
     pendingPreset: null,
@@ -230,10 +299,9 @@ export const AssistantView: React.FC<AssistantViewProps> = ({ activeOverride, on
     consumeSyntheticParts: () => {
       const input = useInputStore.getState();
       const views = new Map(input.getDraftAttachmentViews(draftKey).map((attachment) => [attachment.id, attachment]));
-      return input.consumeDraftSyntheticParts(draftKey)
-        // A handoff receipt must never cross the assistant transport.
-        ?.filter((part) => !isMobileShareHandoffMarkerPart(part))
-        .map((part) => ({ partID: part.partID, text: part.text, synthetic: part.synthetic, attachments: part.attachments.flatMap((attachment) => views.get(attachment.attachmentID) ?? []) })) ?? null;
+      // Retain handoff receipt in the draft via retain predicate; only non-marker parts are returned for send.
+      return input.consumeDraftSyntheticParts(draftKey, isMobileShareHandoffMarkerPart)
+        ?.map((part) => ({ partID: part.partID, text: part.text, synthetic: part.synthetic, attachments: part.attachments.flatMap((attachment) => views.get(attachment.attachmentID) ?? []) })) ?? null;
     },
     restoreSyntheticParts: (parts) => {
       void (async () => {
@@ -290,6 +358,29 @@ export const AssistantView: React.FC<AssistantViewProps> = ({ activeOverride, on
             if (/^msg_[0-9a-f]{12}[0-9A-Za-z]{14}$/.test(id) && (!floor || id > floor)) floor = id;
           }
           const messageID = ascendingIdAfter('msg', floor);
+          // Commit surface staged edit only when request asks; mismatch rolls back then blocks send.
+          const stagedCommit = await stagedMessageEditRegistryRef.current.commitBeforeSend(
+            assistant.id,
+            {
+              assistantID: assistant.id,
+              sessionID: binding.sessionID,
+              directory: binding.directory,
+              sessionGeneration: binding.sessionGeneration,
+              transport,
+              runtimeGeneration,
+            },
+            async (staged) => {
+              await commitMessageEdit(staged.sessionID, staged.messageID, { directory: staged.directory });
+            },
+            { commitStagedMessageEdit: request.options?.commitStagedMessageEdit },
+          );
+          if (stagedCommit.kind === 'commit_failed') throw stagedCommit.error;
+          if (stagedCommit.kind === 'rollback_failed') {
+            throw new Error('assistant_staged_message_edit_rollback_failed');
+          }
+          if (stagedCommit.kind === 'mismatch') {
+            throw new Error('assistant_staged_message_edit_binding_mismatch');
+          }
           const pendingMessage = createPendingUserMessagePresentation({
             messageID,
             sessionID: binding.sessionID,
@@ -326,13 +417,30 @@ export const AssistantView: React.FC<AssistantViewProps> = ({ activeOverride, on
           });
         },
         sendQueued: async () => { throw new Error('assistant-server-queue-required'); },
-        create: async () => { await refreshBinding(await newAssistantSession(assistant.id), { force: true }); },
-        compact: async () => { await refreshBinding((await compactAssistantSession(assistant.id, binding)).binding, { force: true }); },
+        create: async () => {
+          const next = await newAssistantSession(assistant.id);
+          clearStagedMessageEdit(assistant.id);
+          await refreshBinding(next, { force: true });
+        },
+        compact: async () => {
+          const result = await compactAssistantSession(assistant.id, binding);
+          clearStagedMessageEdit(assistant.id);
+          await refreshBinding(result.binding, { force: true });
+        },
         abort: async () => { await abortAssistantSession(assistant.id, binding); },
       },
-      shortcuts: { cycle, new: async () => { await refreshBinding(await newAssistantSession(assistant.id), { force: true }); }, abort: async () => { await abortAssistantSession(assistant.id, binding); }, submit: () => {} },
+      shortcuts: {
+        cycle,
+        new: async () => {
+          const next = await newAssistantSession(assistant.id);
+          clearStagedMessageEdit(assistant.id);
+          await refreshBinding(next, { force: true });
+        },
+        abort: async () => { await abortAssistantSession(assistant.id, binding); },
+        submit: () => {},
+      },
     };
-  }, [active, assistant, capabilityQuery.data?.serverInstanceID, changeSelection, cycle, directory, draftKey, hasMessages, providersQuery.data, providersQuery.isError, providersQuery.isPending, providersQuery.isSuccess, agentsQuery.isError, agentsQuery.isPending, agentsQuery.isSuccess, refreshBinding, rebindPendingMessage, removePendingMessages, resources, runtimeGeneration, selectionCoordinator, selectionIdentity, sessionID, status, transport, variants, visibleAgents]);
+  }, [active, assistant, capabilityQuery.data?.serverInstanceID, changeSelection, clearStagedMessageEdit, cycle, directory, draftKey, hasMessages, providersQuery.data, providersQuery.isError, providersQuery.isPending, providersQuery.isSuccess, agentsQuery.isError, agentsQuery.isPending, agentsQuery.isSuccess, refreshBinding, rebindPendingMessage, removePendingMessages, resources, runtimeGeneration, selectionCoordinator, selectionIdentity, sessionID, status, transport, variants, visibleAgents]);
 
   const openCreateSettings = useEvent(() => { requestCreate(); if (mobileActions) { mobileActions.openSettings(); return; } const ui = useUIStore.getState(); ui.setSettingsPage('assistants'); ui.setSettingsDialogOpen(true); });
   const returnToChat = useEvent(() => { useUIStore.getState().setActiveMainTab('chat'); });
@@ -420,6 +528,7 @@ export const AssistantView: React.FC<AssistantViewProps> = ({ activeOverride, on
         )}
         <AssistantConversationSurface
           onRevertMessage={revertAssistantMessage}
+          onEditMessage={assistant.mode === 'continuous' ? editAssistantMessage : undefined}
           assistant={assistant}
           sessionID={sessionID}
           warning={warning}

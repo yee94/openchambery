@@ -1962,22 +1962,32 @@ const AssistantMessageBody = React.memo(({
                                     )
                                     : 'mt-3 flex items-center gap-2 rounded-lg border border-[var(--status-error-border)] bg-[var(--status-error-background)] p-3',
                             )}>
-                                <Icon
-                                    name={errorIconName}
-                                    weight={errorVariant === 'info' ? MESSAGE_ACTION_ICON_WEIGHT : undefined}
-                                    className={cn(
-                                        'shrink-0',
-                                        errorVariant === 'info'
-                                            ? cn(
-                                                // 与底栏 copy/edit/time 同尺寸 + medium stroke，避免相对正文感图标过细
-                                                MESSAGE_ACTION_ICON_CLASS,
-                                                'text-[var(--status-info)]/80',
-                                                // 首行 leading-5 光学居中：图标略下移贴齐首行字心
-                                                isMobile && 'mt-0.5',
-                                            )
-                                            : 'h-4 w-4 text-[var(--status-error)]',
-                                    )}
-                                />
+                                {/* Mobile info: first-line slot (h-5 = leading-5) + slight optical
+                                    offset so the glyph center sits on the text midline. */}
+                                {errorVariant === 'info' && isMobile ? (
+                                    <span className="inline-flex h-5 w-3.5 shrink-0 items-center justify-center translate-y-[2px]" aria-hidden="true">
+                                        <Icon
+                                            name={errorIconName}
+                                            weight={MESSAGE_ACTION_ICON_WEIGHT}
+                                            className={cn(MESSAGE_ACTION_ICON_CLASS, 'text-[var(--status-info)]/80')}
+                                        />
+                                    </span>
+                                ) : (
+                                    <Icon
+                                        name={errorIconName}
+                                        weight={errorVariant === 'info' ? MESSAGE_ACTION_ICON_WEIGHT : undefined}
+                                        className={cn(
+                                            'shrink-0',
+                                            errorVariant === 'info'
+                                                ? cn(
+                                                    // 与底栏 copy/edit/time 同尺寸 + medium stroke，避免相对正文感图标过细
+                                                    MESSAGE_ACTION_ICON_CLASS,
+                                                    'text-[var(--status-info)]/80',
+                                                )
+                                                : 'h-4 w-4 text-[var(--status-error)]',
+                                        )}
+                                    />
+                                )}
                                 <div className={cn(
                                     'min-w-0 break-words',
                                     errorVariant === 'info'

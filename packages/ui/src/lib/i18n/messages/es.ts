@@ -1490,8 +1490,6 @@ export const dict: Record<I18nKey, string> = {
   "chat.goal.cancelDialog.description": "El agente dejará de trabajar automáticamente hacia este objetivo.",
   "chat.goal.cancelDialog.keep": "Mantener objetivo",
   "chat.goal.cancelDialog.confirm": "Cancelar objetivo",
-  "chat.suggestion.applyAria": "Usar mensaje sugerido",
-  "chat.suggestion.dismissAria": "Descartar sugerencia",
   "header.actions.toggleTerminalPanel": "Panel de terminal",
   "header.actions.toggleTerminalPanelAria": "Mostrar u ocultar panel de terminal",
   "terminalView.stream.processExitedMessage": "\r\n[Proceso terminado{exitCodeSegment}{signalSegment}]\r\n",

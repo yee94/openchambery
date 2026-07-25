@@ -36,14 +36,13 @@ export const MobileModelButton: React.FC<MobileModelButtonProps> = ({
             disabled={disabled}
             onClick={onOpenModel}
             // Same guard as PermissionAutoAcceptButton/MobileAgentButton: block
-            // the focus transfer so the tap doesn't dismiss the keyboard. With
-            // interactive-widget=resizes-content (Android), the keyboard-close
-            // relayout moves this button mid-tap and the click never lands.
+            // the focus transfer so the tap is never treated as focusing the
+            // neighbouring textarea (pill expand / IME open). Also keeps the
+            // keyboard stable when already open; with resizes-content (Android)
+            // a keyboard-close relayout would move this button mid-tap.
             onMouseDown={(event) => event.preventDefault()}
             onPointerDownCapture={(event) => {
-                if (event.pointerType === 'touch') {
-                    event.preventDefault();
-                }
+                event.preventDefault();
             }}
             className={cn(
                 // Keep the footer controls compact on narrow phones. The text
@@ -51,7 +50,6 @@ export const MobileModelButton: React.FC<MobileModelButtonProps> = ({
                 // through the accessible label and native title.
                 'inline-flex min-w-0 max-w-36 items-stretch',
                 'rounded-lg',
-                'typography-micro font-medium text-foreground/80',
                 'focus:outline-none hover:bg-[var(--interactive-hover)] disabled:cursor-not-allowed disabled:opacity-40',
                 className
             )}
@@ -64,9 +62,10 @@ export const MobileModelButton: React.FC<MobileModelButtonProps> = ({
                     <ModelLogo modelId={modelID} providerId={providerID} className="size-4 flex-shrink-0" />
                 ) : null}
                 <span className="inline-flex min-w-0 items-center gap-1">
-                    <span className="truncate">{modelLabel}</span>
+                    {/* Slightly under typography-micro (12px) so the label stays quiet without looking tiny. */}
+                    <span className="truncate text-[11px] leading-none font-medium text-foreground/80">{modelLabel}</span>
                     {variantLabel ? (
-                        <span className="shrink-0 font-normal text-muted-foreground">{variantLabel}</span>
+                        <span className="shrink-0 text-[11px] leading-none font-normal text-muted-foreground">{variantLabel}</span>
                     ) : null}
                 </span>
             </span>

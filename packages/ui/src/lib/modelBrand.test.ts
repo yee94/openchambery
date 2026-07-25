@@ -70,7 +70,7 @@ describe('modelBrand', () => {
   test('resolves grok and gemini logo candidates', () => {
     expect(resolveModelBrand('grok-4-1-fast', 'xai')).toBe('grok');
     expect(resolveModelBrand('gemini-2.5-flash', 'google')).toBe('gemini');
-    expect(getModelBrandLogoCandidates('grok')).toEqual(['xai', 'grok']);
+    expect(getModelBrandLogoCandidates('grok')).toEqual(['grok']);
     expect(getModelBrandLogoCandidates('gemini')).toEqual(['google', 'gemini']);
   });
 });

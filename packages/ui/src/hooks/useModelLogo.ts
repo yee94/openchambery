@@ -38,7 +38,14 @@ const LOGO_ALIAS = new Map<string, string>([
   ['api-for-cursor', 'cursor'],
 ]);
 
-for (const [path, url] of Object.entries(modelLogoModules)) {
+// Prefer PNG over SVG when both exist for the same stem (official raster marks
+// like Grok need the pixel-accurate asset, not a simplified path SVG).
+const modelLogoEntries = Object.entries(modelLogoModules).sort(([a], [b]) => {
+  const aPng = a.toLowerCase().endsWith('.png') ? 1 : 0;
+  const bPng = b.toLowerCase().endsWith('.png') ? 1 : 0;
+  return aPng - bPng;
+});
+for (const [path, url] of modelLogoEntries) {
   const match = path.match(/model-icons\/([^/]+)\.(?:svg|png)$/i);
   if (match?.[1] && url) {
     LOCAL_MODEL_LOGO_MAP.set(match[1].toLowerCase(), url);

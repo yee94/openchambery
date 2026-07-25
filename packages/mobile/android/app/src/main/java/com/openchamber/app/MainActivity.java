@@ -7,6 +7,9 @@ public class MainActivity extends BridgeActivity {
     static final String ACTION_SHARE_READY = "com.openchamber.app.SHARE_READY";
     static final String ACTION_SHARE_DRAFT_READY = "com.openchamber.app.SHARE_DRAFT_READY";
     static final String ACTION_ASSISTANT_OPEN_READY = "com.openchamber.app.ASSISTANT_OPEN_READY";
+
+    private ImeSyncBridge imeSyncBridge;
+
     @Override
     protected void onCreate(Bundle savedInstanceState) {
         registerPlugin(OpenChamberHapticsPlugin.class);
@@ -14,8 +17,47 @@ public class MainActivity extends BridgeActivity {
         registerPlugin(OpenChamberSharePlugin.class);
         super.onCreate(savedInstanceState);
         dispatchShare(getIntent());
+        // After Keyboard plugin installs its (empty) root animation callback,
+        // replace it so translationY can track the IME. Double-post = after load.
+        if (getBridge() != null && getBridge().getWebView() != null) {
+            getBridge().getWebView().post(() ->
+                getBridge().getWebView().post(() -> {
+                    imeSyncBridge = new ImeSyncBridge(this);
+                    imeSyncBridge.attach();
+                })
+            );
+        }
     }
 
-    @Override protected void onNewIntent(android.content.Intent intent) { super.onNewIntent(intent); setIntent(intent); dispatchShare(intent); }
-    private void dispatchShare(android.content.Intent intent) { if (ACTION_SHARE_READY.equals(intent.getAction())) { String id = intent.getStringExtra("operationID"); if (id != null && getBridge() != null) ((OpenChamberSharePlugin) getBridge().getPlugin("OpenChamberShare").getInstance()).emitReceived(id); intent.setAction(null); intent.removeExtra("operationID"); } else if (ACTION_SHARE_DRAFT_READY.equals(intent.getAction())) { String id = intent.getStringExtra("draftID"); if (id != null && getBridge() != null) ((OpenChamberSharePlugin) getBridge().getPlugin("OpenChamberShare").getInstance()).emitDraftReceived(id); intent.setAction(null); intent.removeExtra("draftID"); } else if (ACTION_ASSISTANT_OPEN_READY.equals(intent.getAction())) { String id = intent.getStringExtra("requestID"); if (id != null && getBridge() != null) ((OpenChamberSharePlugin) getBridge().getPlugin("OpenChamberShare").getInstance()).emitAssistantOpenRequested(id); intent.setAction(null); intent.removeExtra("requestID"); } }
+    @Override
+    protected void onNewIntent(android.content.Intent intent) {
+        super.onNewIntent(intent);
+        setIntent(intent);
+        dispatchShare(intent);
+    }
+
+    private void dispatchShare(android.content.Intent intent) {
+        if (ACTION_SHARE_READY.equals(intent.getAction())) {
+            String id = intent.getStringExtra("operationID");
+            if (id != null && getBridge() != null) {
+                ((OpenChamberSharePlugin) getBridge().getPlugin("OpenChamberShare").getInstance()).emitReceived(id);
+            }
+            intent.setAction(null);
+            intent.removeExtra("operationID");
+        } else if (ACTION_SHARE_DRAFT_READY.equals(intent.getAction())) {
+            String id = intent.getStringExtra("draftID");
+            if (id != null && getBridge() != null) {
+                ((OpenChamberSharePlugin) getBridge().getPlugin("OpenChamberShare").getInstance()).emitDraftReceived(id);
+            }
+            intent.setAction(null);
+            intent.removeExtra("draftID");
+        } else if (ACTION_ASSISTANT_OPEN_READY.equals(intent.getAction())) {
+            String id = intent.getStringExtra("requestID");
+            if (id != null && getBridge() != null) {
+                ((OpenChamberSharePlugin) getBridge().getPlugin("OpenChamberShare").getInstance()).emitAssistantOpenRequested(id);
+            }
+            intent.setAction(null);
+            intent.removeExtra("requestID");
+        }
+    }
 }

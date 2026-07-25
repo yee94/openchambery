@@ -390,10 +390,8 @@ export const OpenChamberVisualSettings: React.FC<OpenChamberVisualSettingsProps>
     const directoryShowHidden = useDirectoryShowHidden();
     const showReasoningTraces = useUIStore(state => state.showReasoningTraces);
     const sessionRecapEnabled = useUIStore(state => state.sessionRecapEnabled);
-    const sessionSuggestionEnabled = useUIStore(state => state.sessionSuggestionEnabled);
     const sessionTitleRefreshEnabled = useUIStore(state => state.sessionTitleRefreshEnabled);
     const setSessionRecapEnabled = useUIStore(state => state.setSessionRecapEnabled);
-    const setSessionSuggestionEnabled = useUIStore(state => state.setSessionSuggestionEnabled);
     const setSessionTitleRefreshEnabled = useUIStore(state => state.setSessionTitleRefreshEnabled);
     const sessionGoalEnabled = useUIStore(state => state.sessionGoalEnabled);
     const setSessionGoalEnabled = useUIStore(state => state.setSessionGoalEnabled);
@@ -1988,27 +1986,6 @@ export const OpenChamberVisualSettings: React.FC<OpenChamberVisualSettingsProps>
                                                 ariaLabel={t('settings.openchamber.visual.field.sessionRecapAria')}
                                             />
                                             <span className="typography-ui-label text-foreground">{t('settings.openchamber.visual.field.sessionRecap')}</span>
-                                        </div>
-                                        <div
-                                            data-settings-item="chat.session-suggestion"
-                                            className="group flex cursor-pointer items-center gap-2 py-0.5"
-                                            role="button"
-                                            tabIndex={0}
-                                            aria-pressed={sessionSuggestionEnabled}
-                                            onClick={() => setSessionSuggestionEnabled(!sessionSuggestionEnabled)}
-                                            onKeyDown={(event) => {
-                                                if (event.key === ' ' || event.key === 'Enter') {
-                                                    event.preventDefault();
-                                                    setSessionSuggestionEnabled(!sessionSuggestionEnabled);
-                                                }
-                                            }}
-                                        >
-                                            <Checkbox
-                                                checked={sessionSuggestionEnabled}
-                                                onChange={setSessionSuggestionEnabled}
-                                                ariaLabel={t('settings.openchamber.visual.field.sessionSuggestionAria')}
-                                            />
-                                            <span className="typography-ui-label text-foreground">{t('settings.openchamber.visual.field.sessionSuggestion')}</span>
                                         </div>
                                         <div
                                             data-settings-item="chat.session-title-refresh"

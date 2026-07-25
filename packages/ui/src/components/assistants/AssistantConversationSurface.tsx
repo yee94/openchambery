@@ -3,7 +3,7 @@ import { ChatContainer } from '@/components/chat/ChatContainer';
 import { flattenAssistantHistoryPages } from '@/components/chat/hostedSessionHistory';
 import type { ChatContainerHost } from '@/components/chat/chatContainerHost';
 import type { ChatInputSecondarySurface } from '@/components/chat/chatInputSurface';
-import { PRIMARY_SESSION_SURFACE_CAPABILITIES } from '@/components/chat/SessionSurfaceContext';
+import { PRIMARY_SESSION_SURFACE_CAPABILITIES, type SessionSurfaceMessageEditSnapshot } from '@/components/chat/SessionSurfaceContext';
 import type { AssistantDTO } from '@/queries/assistantQueries';
 import { useAssistantHistoryInfiniteQuery } from '@/queries/assistantQueries';
 import { useEvent } from '@reactuses/core';
@@ -17,6 +17,7 @@ type AssistantConversationSurfaceProps = {
   warning?: string | null;
   surface: ChatInputSecondarySurface;
   onRevertMessage: (messageId: string) => Promise<void>;
+  onEditMessage?: (messageId: string, snapshot: SessionSurfaceMessageEditSnapshot) => Promise<void>;
   pendingUserMessages: readonly PendingUserMessagePresentation[];
   onPendingUserMessagesMaterialized: (messageIDs: readonly string[]) => void;
 };
@@ -34,6 +35,7 @@ export const AssistantConversationSurface: React.FC<AssistantConversationSurface
   warning,
   surface,
   onRevertMessage,
+  onEditMessage,
   pendingUserMessages,
   onPendingUserMessagesMaterialized,
 }) => {
@@ -82,8 +84,10 @@ export const AssistantConversationSurface: React.FC<AssistantConversationSurface
       mutateSession,
     },
     onRevertMessage,
+    // Continuous Assistants stage edits into surfaceDraftKey; history segments are read-only via MessageList.
+    ...(onEditMessage ? { onEditMessage } : {}),
     openSourceSession,
-  }), [directory, mutateSession, onRevertMessage, openSourceSession, sessionID, surface.active, surface.surfaceID]);
+  }), [directory, mutateSession, onEditMessage, onRevertMessage, openSourceSession, sessionID, surface.active, surface.surfaceID]);
 
   // Terminal error: stop load-older from spinning forever. Background refetches
   // must not flip loading (near-top controller). Only initial/next-page fetches load.

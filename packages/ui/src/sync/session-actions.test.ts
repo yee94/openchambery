@@ -7,6 +7,7 @@ const replyCalls: Array<{ method: string; params: Record<string, unknown> }> = [
 const scopedClientDirectories: string[] = []
 const registeredSessionDirectories: Array<{ sessionID: string; directory: string }> = []
 let sessionRevertResult: { data?: unknown; error?: unknown; response?: { status?: number } } = {}
+let sessionUnrevertResult: { data?: unknown; error?: unknown; response?: { status?: number } } = {}
 let questionReplyError: unknown | null = null
 let questionRejectError: unknown | null = null
 let sessionShareResult: { data?: unknown; error?: unknown; response?: { status?: number } } = {}
@@ -73,6 +74,10 @@ const mockSdk = {
     revert: mock((params: Record<string, unknown>) => {
       replyCalls.push({ method: "session.revert", params })
       return Promise.resolve(sessionRevertResult)
+    }),
+    unrevert: mock((params: Record<string, unknown>) => {
+      replyCalls.push({ method: "session.unrevert", params })
+      return Promise.resolve(sessionUnrevertResult)
     }),
     abort: mock((params: Record<string, unknown>) => {
       replyCalls.push({ method: "session.abort", params })
@@ -212,11 +217,24 @@ mock.module("./session-ui-store", () => ({
 
 // Mock useInputStore
 type RestoredAttachment = { url: string; mimeType: string; filename: string }
+type DraftCommitCall = {
+  key: { transportIdentity: string; owner: { kind: string; ownerID: string } }
+  expectedRevision: number | "absent"
+  snapshot: { text: string; attachments: Array<{ filename?: string; locator?: { kind: string; url?: string } }> }
+  values?: ReadonlyMap<string, Blob | string>
+}
+
+const draftCommits: DraftCommitCall[] = []
+let draftRevisionByKey = new Map<string, number>()
+let draftCommitShouldFail = false
+let draftCommitFailAfter = 0
+let draftCommitCount = 0
 
 const inputState = {
   pendingInputText: "",
   pendingInputMode: "normal" as const,
   attachedFiles: [] as RestoredAttachment[],
+  drafts: {} as Record<string, { revision: number; text: string }>,
   clearAttachedFiles: () => {
     clearAttachedFilesCalls += 1
     inputState.attachedFiles = []
@@ -226,6 +244,59 @@ const inputState = {
   },
   addRestoredAttachment: (attachment: RestoredAttachment) => {
     inputState.attachedFiles = [...inputState.attachedFiles, attachment]
+  },
+  captureDraftRuntime: () => {
+    // Keep mock transport aligned with real getRuntimeTransportIdentity() used by sessionDraftKey.
+    try {
+      // Lazy require avoids circular import at mock setup time.
+      const { getRuntimeTransportIdentity } = require("../lib/runtime-switch") as typeof import("../lib/runtime-switch")
+      return { transportIdentity: getRuntimeTransportIdentity(), generation: 1 }
+    } catch {
+      return { transportIdentity: "direct:url:default", generation: 1 }
+    }
+  },
+  getDraft: (key: { transportIdentity: string; owner: { kind: string; ownerID: string } }) => {
+    const id = JSON.stringify([key.transportIdentity, key.owner.kind, key.owner.ownerID])
+    const revision = draftRevisionByKey.get(id)
+    if (!revision) return undefined
+    return { version: 1, key, revision, text: inputState.drafts[id]?.text ?? "", attachments: [], syntheticParts: [], mentions: [] }
+  },
+  draftAttachmentViews: {} as Record<string, Record<string, never>>,
+  commitDraftSnapshot: async (request: DraftCommitCall) => {
+    draftCommitCount += 1
+    draftCommits.push(request)
+    if (draftCommitShouldFail && draftCommitCount > draftCommitFailAfter) {
+      return { status: "failed", durable: false, current: false, errors: [], cleanupErrors: [] }
+    }
+    const id = JSON.stringify([request.key.transportIdentity, request.key.owner.kind, request.key.owner.ownerID])
+    const existing = draftRevisionByKey.get(id)
+    if (request.expectedRevision === "absent" ? existing !== undefined : existing !== request.expectedRevision) {
+      return { status: "conflict", durable: false, current: true, errors: [], cleanupErrors: [] }
+    }
+    const revision = request.expectedRevision === "absent" ? 1 : request.expectedRevision + 1
+    draftRevisionByKey.set(id, revision)
+    inputState.drafts[id] = { revision, text: request.snapshot.text }
+    return {
+      status: "committed",
+      durable: true,
+      current: true,
+      record: { version: 1, key: request.key, revision, text: request.snapshot.text, attachments: request.snapshot.attachments ?? [], syntheticParts: [], mentions: [] },
+      errors: [],
+      cleanupErrors: [],
+    }
+  },
+  deleteDraftSnapshot: async (request: {
+    key: { transportIdentity: string; owner: { kind: string; ownerID: string } }
+    expectedRevision: number
+  }) => {
+    const id = JSON.stringify([request.key.transportIdentity, request.key.owner.kind, request.key.owner.ownerID])
+    const existing = draftRevisionByKey.get(id)
+    if (existing !== request.expectedRevision) {
+      return { status: "conflict", durable: false, current: true, errors: [], cleanupErrors: [] }
+    }
+    draftRevisionByKey.delete(id)
+    delete inputState.drafts[id]
+    return { status: "committed", durable: true, current: true, errors: [], cleanupErrors: [] }
   },
 }
 
@@ -262,6 +333,7 @@ mock.module("./sync-refs", () => ({
   registerSessionDirectory: (sessionID: string, directory: string) => {
     registeredSessionDirectories.push({ sessionID, directory })
   },
+  getAllSyncSessionMap: () => new Map(),
 }))
 
 import { create, type StoreApi } from "zustand"
@@ -1351,10 +1423,16 @@ describe("revertToMessage passes session directory", () => {
     replyCalls.length = 0
     scopedClientDirectories.length = 0
     sessionRevertResult = {}
+    draftCommits.length = 0
+    draftRevisionByKey = new Map()
+    draftCommitShouldFail = false
+    draftCommitFailAfter = 0
+    draftCommitCount = 0
     Object.assign(inputState, {
       pendingInputText: "previous draft",
       pendingInputMode: "normal" as const,
       attachedFiles: [],
+      drafts: {},
     })
   })
 
@@ -1382,23 +1460,43 @@ describe("revertToMessage passes session directory", () => {
     expect(replyCalls.find((call) => call.method === "session.revert")?.params.directory).toBe("/test/project")
     expect((sessionStore.getState().session[0] as Session & { revert?: { messageID?: string } }).revert?.messageID).toBe("msg_2")
     expect(currentStore.getState().session).toHaveLength(0)
-    expect(inputState.pendingInputText).toBe("edit this")
+    expect(draftCommits.at(-1)?.snapshot.text).toBe("edit this")
   })
 
-  test("returns a scoped restoration snapshot without mutating primary input", async () => {
+  test("throws before mutating marker or draft when the target user message is missing", async () => {
+    const session = { id: "session-a", time: { created: 1 } } as Session
+    const sessionStore = createStore({}, {
+      session: [session],
+      message: { "session-a": [] },
+      part: {},
+    })
+    const childStores = createChildStores([["/test/project", sessionStore]])
+    const { setActionRefs, revertToMessage } = await import("./session-actions")
+    setActionRefs(mockSdk as unknown as OpencodeClient, childStores, () => "/test/project")
+
+    await expect(revertToMessage("session-a", "missing")).rejects.toThrow("The selected user message is unavailable")
+    expect(replyCalls.find((call) => call.method === "session.revert")).toBe(undefined)
+    expect((sessionStore.getState().session[0] as Session & { revert?: unknown }).revert).toBe(undefined)
+    expect(draftCommits).toHaveLength(0)
+  })
+
+  test("returns a scoped restoration snapshot into an explicit DraftKey", async () => {
     const session = { id: "session-a", time: { created: 1 } } as Session
     const targetMessage = { id: "msg_2", sessionID: "session-a", role: "user", time: { created: 2 } } as Message
     const sessionStore = createStore({}, { session: [session], message: { "session-a": [targetMessage] }, part: { "msg_2": [{ id: "text", messageID: "msg_2", type: "text", text: "assistant draft" } as Part, { id: "file", messageID: "msg_2", type: "file", url: "https://files.example/a", mime: "text/plain", filename: "a.txt" } as Part] } })
     sessionRevertResult = { data: { id: "session-a", time: { created: 1, updated: 2 }, revert: { messageID: "msg_2" } } }
     const { setActionRefs, revertToMessage } = await import("./session-actions")
     setActionRefs(mockSdk as unknown as OpencodeClient, createChildStores([["/test/project", sessionStore]]), () => "/current/project")
-    const snapshot = await revertToMessage("session-a", "msg_2", { directory: "/test/project", restorePrimaryInput: false })
-    expect(snapshot).toEqual({ text: "assistant draft", attachments: [{ url: "https://files.example/a", mimeType: "text/plain", filename: "a.txt" }] })
+    const { getRuntimeTransportIdentity } = await import("../lib/runtime-switch")
+    const surfaceKey = { transportIdentity: getRuntimeTransportIdentity(), owner: { kind: "surface" as const, ownerID: "assistant:a" } }
+    const snapshot = await revertToMessage("session-a", "msg_2", { directory: "/test/project", draftKey: surfaceKey, restorePrimaryInput: false })
+    expect(snapshot.snapshot.text).toBe("assistant draft")
+    expect(snapshot.snapshot.attachments.some((attachment) => attachment.locator.kind === "url" && attachment.locator.url === "https://files.example/a")).toBe(true)
+    expect(draftCommits.at(-1)?.key.owner).toEqual({ kind: "surface", ownerID: "assistant:a" })
     expect(inputState.pendingInputText).toBe("previous draft")
-    expect(inputState.attachedFiles).toEqual([])
   })
 
-  test("rolls back optimistic revert when the SDK returns an error", async () => {
+  test("rolls back optimistic revert and draft when the SDK returns an error", async () => {
     const session = { id: "session-a", time: { created: 1 } } as Session
     const targetMessage = { id: "msg_2", sessionID: "session-a", role: "user", time: { created: 2 } } as Message
     const targetPart = { id: "prt_2", messageID: "msg_2", type: "text", text: "edit this" } as Part
@@ -1409,6 +1507,12 @@ describe("revertToMessage passes session directory", () => {
     })
     const childStores = createChildStores([["/test/project", sessionStore]])
     sessionRevertResult = { error: { message: "rejected" }, response: { status: 500 } }
+    const { getRuntimeTransportIdentity } = await import("../lib/runtime-switch")
+    const transportIdentity = getRuntimeTransportIdentity()
+    const draftKeyId = JSON.stringify([transportIdentity, "session", "session-a"])
+    draftRevisionByKey.set(draftKeyId, 2)
+    inputState.drafts[draftKeyId] = { revision: 2, text: "previous draft" }
+    inputState.captureDraftRuntime = () => ({ transportIdentity, generation: 1 })
 
     const { setActionRefs, revertToMessage } = await import("./session-actions")
     setActionRefs(mockSdk as unknown as OpencodeClient, childStores, () => "/test/project")
@@ -1423,7 +1527,9 @@ describe("revertToMessage passes session directory", () => {
     expect(thrown).toBeInstanceOf(Error)
     expect((thrown as Error).message).toContain("session.revert failed (500)")
     expect((sessionStore.getState().session[0] as Session & { revert?: { messageID?: string } }).revert).toBe(undefined)
-    expect(inputState.pendingInputText).toBe("previous draft")
+    // First commit restores message; second commit rolls back previous draft.
+    expect(draftCommits.length).toBeGreaterThanOrEqual(2)
+    expect(draftCommits.at(-1)?.snapshot.text).toBe("previous draft")
   })
 })
 
@@ -1432,10 +1538,16 @@ describe("message edit staging", () => {
     replyCalls.length = 0
     sessionDeleteMessageFailureID = null
     sessionMessagesResult = { data: [] }
+    draftCommits.length = 0
+    draftRevisionByKey = new Map()
+    draftCommitShouldFail = false
+    draftCommitFailAfter = 0
+    draftCommitCount = 0
     Object.assign(inputState, {
       pendingInputText: "previous draft",
       pendingInputMode: "normal" as const,
       attachedFiles: [{ url: "file:///previous.txt", mimeType: "text/plain", filename: "previous.txt" }],
+      drafts: {},
     })
   })
 
@@ -1462,14 +1574,14 @@ describe("message edit staging", () => {
     const { stageMessageEdit, setActionRefs } = await import("./session-actions")
     setActionRefs(mockSdk as unknown as OpencodeClient, childStores, () => "/current/project")
 
-    stageMessageEdit("session-a", "msg_2")
+    await stageMessageEdit("session-a", "msg_2")
 
     expect(replyCalls.filter((call) => call.method === "session.deleteMessage")).toHaveLength(0)
     expect(sessionStore.getState().message["session-a"].map((message) => message.id)).toEqual(["msg_2", "msg_3", "msg_4"])
     expect(sessionStore.getState().part["msg_2"]).toEqual(targetParts)
-    expect(inputState.pendingInputText).toBe("edit this")
-    expect(inputState.pendingInputMode).toBe("replace")
-    expect(inputState.attachedFiles).toEqual([{ url: "file:///attached.txt", mimeType: "text/plain", filename: "attached.txt" }])
+    expect(draftCommits).toHaveLength(1)
+    expect(draftCommits[0]?.snapshot.text).toBe("edit this")
+    expect(draftCommits[0]?.snapshot.attachments.some((attachment) => attachment.locator?.kind === "url" && attachment.locator.url === "file:///attached.txt")).toBe(true)
   })
 
   test("restores a visible user snapshot when the child store lacks its message and parts", async () => {
@@ -1491,11 +1603,11 @@ describe("message edit staging", () => {
     const { stageMessageEdit, setActionRefs } = await import("./session-actions")
     setActionRefs(mockSdk as unknown as OpencodeClient, childStores, () => "/current/project")
 
-    stageMessageEdit("session-a", "msg_2", snapshot)
+    await stageMessageEdit("session-a", "msg_2", snapshot)
 
-    expect(inputState.pendingInputText).toBe("edit this")
-    expect(inputState.pendingInputMode).toBe("replace")
-    expect(inputState.attachedFiles).toEqual([{ url: "file:///attached.txt", mimeType: "text/plain", filename: "attached.txt" }])
+    expect(draftCommits).toHaveLength(1)
+    expect(draftCommits[0]?.snapshot.text).toBe("edit this")
+    expect(draftCommits[0]?.snapshot.attachments.some((attachment) => attachment.locator?.kind === "url" && attachment.locator.url === "file:///attached.txt")).toBe(true)
   })
 
   test("preserves the composer when a visible snapshot identity does not match", async () => {
@@ -1509,7 +1621,8 @@ describe("message edit staging", () => {
     const { stageMessageEdit, setActionRefs } = await import("./session-actions")
     setActionRefs(mockSdk as unknown as OpencodeClient, childStores, () => "/current/project")
 
-    expect(() => stageMessageEdit("session-a", "msg_2", snapshot)).toThrow("The selected user message is unavailable")
+    await expect(stageMessageEdit("session-a", "msg_2", snapshot)).rejects.toThrow("The selected user message is unavailable")
+    expect(draftCommits).toHaveLength(0)
     expect(inputState.pendingInputText).toBe("previous draft")
     expect(inputState.pendingInputMode).toBe("normal")
     expect(inputState.attachedFiles).toEqual([{ url: "file:///previous.txt", mimeType: "text/plain", filename: "previous.txt" }])
@@ -1571,6 +1684,356 @@ describe("message edit staging", () => {
     expect(inputState.pendingInputText).toBe("previous draft")
     expect(inputState.pendingInputMode).toBe("normal")
     expect(inputState.attachedFiles).toEqual([{ url: "file:///previous.txt", mimeType: "text/plain", filename: "previous.txt" }])
+  })
+
+  test("stages into an explicit surfaceDraftKey without touching the primary session draft key", async () => {
+    const sessionStore = createStore({}, {
+      session: [{ id: "session-a", time: { created: 1 } } as Session],
+      message: { "session-a": [{ id: "msg_2", sessionID: "session-a", role: "user", time: { created: 2 } } as Message] },
+      part: { "msg_2": [{ id: "prt_2", messageID: "msg_2", type: "text", text: "surface edit" } as Part] },
+    })
+    const childStores = createChildStores([["/test/project", sessionStore]])
+    const { stageMessageEdit, setActionRefs } = await import("./session-actions")
+    setActionRefs(mockSdk as unknown as OpencodeClient, childStores, () => "/current/project")
+    const { getRuntimeTransportIdentity } = await import("../lib/runtime-switch")
+    const surfaceKey = { transportIdentity: getRuntimeTransportIdentity(), owner: { kind: "surface" as const, ownerID: "assistant:a" } }
+    const primaryKey = { transportIdentity: getRuntimeTransportIdentity(), owner: { kind: "session" as const, ownerID: "session-a" } }
+
+    await stageMessageEdit("session-a", "msg_2", undefined, { directory: "/test/project", draftKey: surfaceKey })
+
+    expect(draftCommits).toHaveLength(1)
+    expect(draftCommits[0]?.key.owner).toEqual({ kind: "surface", ownerID: "assistant:a" })
+    expect(draftCommits[0]?.snapshot.text).toBe("surface edit")
+    expect(draftRevisionByKey.has(JSON.stringify([primaryKey.transportIdentity, "session", "session-a"]))).toBe(false)
+  })
+
+  test("returns an opaque rollback handle that restores prior absence via CAS", async () => {
+    const sessionStore = createStore({}, {
+      session: [{ id: "session-a", time: { created: 1 } } as Session],
+      message: { "session-a": [{ id: "msg_2", sessionID: "session-a", role: "user", time: { created: 2 } } as Message] },
+      part: { "msg_2": [{ id: "prt_2", messageID: "msg_2", type: "text", text: "edit body" } as Part] },
+    })
+    const childStores = createChildStores([["/test/project", sessionStore]])
+    const { stageMessageEdit, setActionRefs } = await import("./session-actions")
+    setActionRefs(mockSdk as unknown as OpencodeClient, childStores, () => "/current/project")
+    const { getRuntimeTransportIdentity } = await import("../lib/runtime-switch")
+    const key = { transportIdentity: getRuntimeTransportIdentity(), owner: { kind: "session" as const, ownerID: "session-a" } }
+    const id = JSON.stringify([key.transportIdentity, "session", "session-a"])
+
+    const handle = await stageMessageEdit("session-a", "msg_2")
+    expect(draftRevisionByKey.get(id)).toBe(1)
+    expect(typeof handle.rollback).toBe("function")
+    // Handle must not expose DraftRecord / attachment internals.
+    expect(Object.keys(handle).sort()).toEqual(["rollback"])
+
+    const rolled = await handle.rollback()
+    expect(rolled.status).toBe("rolled-back")
+    expect(draftRevisionByKey.has(id)).toBe(false)
+
+    // Conflict: user continued editing after stage — keep newer revision.
+    const handle2 = await stageMessageEdit("session-a", "msg_2")
+    const revision = draftRevisionByKey.get(id)!
+    draftRevisionByKey.set(id, revision + 1)
+    inputState.drafts[id] = { revision: revision + 1, text: "user continued" }
+    const conflict = await handle2.rollback()
+    expect(conflict.status).toBe("conflict")
+    expect(draftRevisionByKey.get(id)).toBe(revision + 1)
+    expect(inputState.drafts[id]?.text).toBe("user continued")
+  })
+
+  test("commitMessageEdit accepts an explicit directory override for the child store", async () => {
+    const sessionStore = createStore({}, {
+      session: [{ id: "session-a", time: { created: 1 } } as Session],
+      message: {
+        "session-a": [
+          { id: "msg_2", sessionID: "session-a", role: "user", time: { created: 2 } } as Message,
+          { id: "msg_3", sessionID: "session-a", role: "assistant", time: { created: 3 } } as Message,
+        ],
+      },
+      part: {
+        "msg_2": [{ id: "prt_2", messageID: "msg_2", type: "text", text: "edit" } as Part],
+        "msg_3": [{ id: "prt_3", messageID: "msg_3", type: "text", text: "answer" } as Part],
+      },
+    })
+    const wrongStore = createStore({})
+    const childStores = createChildStores([
+      ["/assistant/workspace", sessionStore],
+      ["/current/project", wrongStore],
+    ])
+    const { commitMessageEdit, setActionRefs } = await import("./session-actions")
+    setActionRefs(mockSdk as unknown as OpencodeClient, childStores, () => "/current/project")
+
+    await commitMessageEdit("session-a", "msg_2", { directory: "/assistant/workspace" })
+
+    expect(replyCalls.filter((call) => call.method === "session.deleteMessage").every((call) => call.params.directory === "/assistant/workspace")).toBe(true)
+    expect(sessionStore.getState().message["session-a"]).toEqual([])
+    expect(wrongStore.getState().message["session-a"]).toBe(undefined)
+  })
+})
+
+describe("session history mutation serial coordinator", () => {
+  const flushAsync = async (ticks = 20) => {
+    for (let i = 0; i < ticks; i += 1) await Promise.resolve()
+  }
+  const waitUntil = async (predicate: () => boolean, ticks = 100) => {
+    for (let i = 0; i < ticks; i += 1) {
+      if (predicate()) return
+      await Promise.resolve()
+    }
+  }
+
+  beforeEach(() => {
+    replyCalls.length = 0
+    sessionRevertResult = {}
+    sessionUnrevertResult = {}
+    draftCommits.length = 0
+    draftRevisionByKey = new Map()
+    draftCommitShouldFail = false
+    draftCommitFailAfter = 0
+    draftCommitCount = 0
+    Object.assign(inputState, {
+      pendingInputText: "",
+      pendingInputMode: "normal" as const,
+      attachedFiles: [],
+      drafts: {},
+    })
+  })
+
+  test("same-session second revert waits for the first and the later marker wins", async () => {
+    const session = { id: "session-a", time: { created: 1 } } as Session
+    const msg2 = { id: "msg_2", sessionID: "session-a", role: "user", time: { created: 2 } } as Message
+    const msg4 = { id: "msg_4", sessionID: "session-a", role: "user", time: { created: 4 } } as Message
+    const sessionStore = createStore({}, {
+      session: [session],
+      message: { "session-a": [msg2, msg4] },
+      part: {
+        "msg_2": [{ id: "prt_2", messageID: "msg_2", type: "text", text: "first" } as Part],
+        "msg_4": [{ id: "prt_4", messageID: "msg_4", type: "text", text: "second" } as Part],
+      },
+    })
+    const childStores = createChildStores([["/test/project", sessionStore]])
+    let releaseFirst!: () => void
+    const firstGate = new Promise<void>((resolve) => { releaseFirst = resolve })
+    let firstStarted = false
+    let secondStarted = false
+    const order: string[] = []
+    let callCount = 0
+
+    const { setActionRefs, revertToMessage } = await import("./session-actions")
+    setActionRefs(mockSdk as unknown as OpencodeClient, childStores, () => "/test/project")
+
+    const client = (await import("@/lib/opencode/client")).opencodeClient as {
+      revertSession: (sessionId: string, messageId: string, partId?: string, directory?: string | null) => Promise<unknown>
+    }
+    const realRevert = client.revertSession
+    client.revertSession = (async (sessionId: string, messageId: string) => {
+      callCount += 1
+      if (callCount === 1) {
+        firstStarted = true
+        order.push(`start:${messageId}`)
+        await firstGate
+        order.push(`end:${messageId}`)
+      } else {
+        secondStarted = true
+        order.push(`start:${messageId}`)
+        order.push(`end:${messageId}`)
+      }
+      return { id: sessionId, time: { created: 1, updated: 2 }, revert: { messageID: messageId } }
+    }) as typeof client.revertSession
+
+    try {
+      const first = revertToMessage("session-a", "msg_2")
+      await waitUntil(() => firstStarted)
+      expect(firstStarted).toBe(true)
+      const second = revertToMessage("session-a", "msg_4")
+      await flushAsync()
+      // Second must not start remote until first completes.
+      expect(secondStarted).toBe(false)
+      releaseFirst()
+      await Promise.all([first, second])
+      expect(order).toEqual(["start:msg_2", "end:msg_2", "start:msg_4", "end:msg_4"])
+      expect((sessionStore.getState().session[0] as Session & { revert?: { messageID?: string } }).revert?.messageID).toBe("msg_4")
+    } finally {
+      client.revertSession = realRevert
+    }
+  })
+
+  test("first revert failure does not block the second same-session revert", async () => {
+    const session = { id: "session-a", time: { created: 1 } } as Session
+    const msg2 = { id: "msg_2", sessionID: "session-a", role: "user", time: { created: 2 } } as Message
+    const msg4 = { id: "msg_4", sessionID: "session-a", role: "user", time: { created: 4 } } as Message
+    const sessionStore = createStore({}, {
+      session: [session],
+      message: { "session-a": [msg2, msg4] },
+      part: {
+        "msg_2": [{ id: "prt_2", messageID: "msg_2", type: "text", text: "first" } as Part],
+        "msg_4": [{ id: "prt_4", messageID: "msg_4", type: "text", text: "second" } as Part],
+      },
+    })
+    const childStores = createChildStores([["/test/project", sessionStore]])
+    const { setActionRefs, revertToMessage } = await import("./session-actions")
+    setActionRefs(mockSdk as unknown as OpencodeClient, childStores, () => "/test/project")
+
+    const client = (await import("@/lib/opencode/client")).opencodeClient as {
+      revertSession: (sessionId: string, messageId: string, partId?: string, directory?: string | null) => Promise<unknown>
+    }
+    const realRevert = client.revertSession
+    let callCount = 0
+    client.revertSession = (async (sessionId: string, messageId: string, partId?: string, directory?: string | null) => {
+      callCount += 1
+      if (callCount === 1) {
+        throw new Error("session.revert failed (500): rejected")
+      }
+      return { id: sessionId, time: { created: 1, updated: 2 }, revert: { messageID: messageId } }
+    }) as typeof client.revertSession
+
+    try {
+      await expect(revertToMessage("session-a", "msg_2")).rejects.toThrow("session.revert failed")
+      await revertToMessage("session-a", "msg_4")
+      expect((sessionStore.getState().session[0] as Session & { revert?: { messageID?: string } }).revert?.messageID).toBe("msg_4")
+      expect(callCount).toBe(2)
+    } finally {
+      client.revertSession = realRevert
+    }
+  })
+
+  test("different sessions run revert in parallel", async () => {
+    const storeA = createStore({}, {
+      session: [{ id: "session-a", time: { created: 1 } } as Session],
+      message: { "session-a": [{ id: "msg_a", sessionID: "session-a", role: "user", time: { created: 2 } } as Message] },
+      part: { "msg_a": [{ id: "prt_a", messageID: "msg_a", type: "text", text: "a" } as Part] },
+    })
+    const storeB = createStore({}, {
+      session: [{ id: "session-b", time: { created: 1 } } as Session],
+      message: { "session-b": [{ id: "msg_b", sessionID: "session-b", role: "user", time: { created: 2 } } as Message] },
+      part: { "msg_b": [{ id: "prt_b", messageID: "msg_b", type: "text", text: "b" } as Part] },
+    })
+    const childStores = createChildStores([
+      ["/test/project", storeA],
+      ["/other/project", storeB],
+    ])
+    const { setActionRefs, revertToMessage } = await import("./session-actions")
+    setActionRefs(mockSdk as unknown as OpencodeClient, childStores, () => "/test/project")
+
+    const client = (await import("@/lib/opencode/client")).opencodeClient as {
+      revertSession: (sessionId: string, messageId: string, partId?: string, directory?: string | null) => Promise<unknown>
+    }
+    const realRevert = client.revertSession
+    let active = 0
+    let maxActive = 0
+    const gates: Array<() => void> = []
+    client.revertSession = (async (sessionId: string, messageId: string) => {
+      active += 1
+      maxActive = Math.max(maxActive, active)
+      await new Promise<void>((resolve) => { gates.push(resolve) })
+      active -= 1
+      return { id: sessionId, time: { created: 1, updated: 2 }, revert: { messageID: messageId } }
+    }) as typeof client.revertSession
+
+    try {
+      const first = revertToMessage("session-a", "msg_a")
+      const second = revertToMessage("session-b", "msg_b")
+      await waitUntil(() => maxActive === 2)
+      expect(maxActive).toBe(2)
+      for (const release of gates) release()
+      await Promise.all([first, second])
+      expect((storeA.getState().session[0] as Session & { revert?: { messageID?: string } }).revert?.messageID).toBe("msg_a")
+      expect((storeB.getState().session[0] as Session & { revert?: { messageID?: string } }).revert?.messageID).toBe("msg_b")
+    } finally {
+      client.revertSession = realRevert
+    }
+  })
+
+  test("runtime switch prevents a stale revert from publishing its marker", async () => {
+    const session = { id: "session-a", time: { created: 1 } } as Session
+    const msg2 = { id: "msg_2", sessionID: "session-a", role: "user", time: { created: 2 } } as Message
+    const sessionStore = createStore({}, {
+      session: [session],
+      message: { "session-a": [msg2] },
+      part: { "msg_2": [{ id: "prt_2", messageID: "msg_2", type: "text", text: "stale" } as Part] },
+    })
+    const childStores = createChildStores([["/test/project", sessionStore]])
+    const { switchRuntimeEndpoint } = await import("../lib/runtime-switch")
+    switchRuntimeEndpoint({ apiBaseUrl: "http://runtime-a.test", runtimeKey: "runtime-a" })
+    const { setActionRefs, revertToMessage } = await import("./session-actions")
+    setActionRefs(mockSdk as unknown as OpencodeClient, childStores, () => "/test/project")
+
+    const client = (await import("@/lib/opencode/client")).opencodeClient as {
+      revertSession: (sessionId: string, messageId: string, partId?: string, directory?: string | null) => Promise<unknown>
+    }
+    const realRevert = client.revertSession
+    let releaseRemote!: () => void
+    const remoteGate = new Promise<void>((resolve) => { releaseRemote = resolve })
+    client.revertSession = (async (sessionId: string, messageId: string) => {
+      switchRuntimeEndpoint({ apiBaseUrl: "http://runtime-b.test", runtimeKey: "runtime-b" })
+      await remoteGate
+      return { id: sessionId, time: { created: 1, updated: 2 }, revert: { messageID: messageId } }
+    }) as typeof client.revertSession
+
+    try {
+      const pending = revertToMessage("session-a", "msg_2")
+      await waitUntil(() => true)
+      // Wait until remote is entered (runtime already switched inside the mock).
+      await flushAsync(30)
+      releaseRemote()
+      await expect(pending).rejects.toThrow("runtime changed")
+      expect((sessionStore.getState().session[0] as Session & { revert?: { messageID?: string } }).revert).toBe(undefined)
+    } finally {
+      client.revertSession = realRevert
+      switchRuntimeEndpoint({ apiBaseUrl: "http://runtime-a.test", runtimeKey: "runtime-a" })
+    }
+  })
+
+  test("unrevert and revert on the same session serialize", async () => {
+    const session = { id: "session-a", time: { created: 1 }, revert: { messageID: "msg_2" } } as Session
+    const msg2 = { id: "msg_2", sessionID: "session-a", role: "user", time: { created: 2 } } as Message
+    const sessionStore = createStore({}, {
+      session: [session],
+      message: { "session-a": [msg2] },
+      part: { "msg_2": [{ id: "prt_2", messageID: "msg_2", type: "text", text: "body" } as Part] },
+    })
+    const childStores = createChildStores([["/test/project", sessionStore]])
+    const { setActionRefs, revertToMessage, unrevertSession } = await import("./session-actions")
+    setActionRefs(mockSdk as unknown as OpencodeClient, childStores, () => "/test/project")
+
+    const order: string[] = []
+    let releaseUnrevert!: () => void
+    const unrevertGate = new Promise<void>((resolve) => { releaseUnrevert = resolve })
+
+    // Patch SDK unrevert path used by unrevertSession.
+    const originalUnrevert = mockSdk.session.unrevert
+    mockSdk.session.unrevert = mock(async (params: Record<string, unknown>) => {
+      order.push("unrevert-start")
+      replyCalls.push({ method: "session.unrevert", params })
+      await unrevertGate
+      order.push("unrevert-end")
+      return { data: { id: "session-a", time: { created: 1, updated: 3 } } }
+    })
+
+    const client = (await import("@/lib/opencode/client")).opencodeClient as {
+      revertSession: (sessionId: string, messageId: string, partId?: string, directory?: string | null) => Promise<unknown>
+    }
+    const realRevert = client.revertSession
+    client.revertSession = (async (sessionId: string, messageId: string) => {
+      order.push("revert-start")
+      order.push("revert-end")
+      return { id: sessionId, time: { created: 1, updated: 4 }, revert: { messageID: messageId } }
+    }) as typeof client.revertSession
+
+    try {
+      const first = unrevertSession("session-a")
+      await waitUntil(() => order.includes("unrevert-start"))
+      const second = revertToMessage("session-a", "msg_2")
+      await flushAsync()
+      expect(order).toEqual(["unrevert-start"])
+      releaseUnrevert()
+      await Promise.all([first, second])
+      expect(order).toEqual(["unrevert-start", "unrevert-end", "revert-start", "revert-end"])
+      expect((sessionStore.getState().session[0] as Session & { revert?: { messageID?: string } }).revert?.messageID).toBe("msg_2")
+    } finally {
+      mockSdk.session.unrevert = originalUnrevert
+      client.revertSession = realRevert
+    }
   })
 })
 

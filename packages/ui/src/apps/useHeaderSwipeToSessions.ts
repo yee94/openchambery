@@ -368,6 +368,13 @@ export const useHeaderSwipeToSessions = (
     const onTouchEnd = (event: TouchEvent) => {
       if (!tracking || !gestureState) return;
       tracking = false;
+      // No horizontal intent means this direction has no owner (e.g. body
+      // left-to-right after page-back moved to the native edge driver). Do not
+      // evaluate threshold haptics for an unclaimed swipe.
+      if (!horizontalIntent) {
+        gestureState = null;
+        return;
+      }
       const touch = event.changedTouches[0];
       if (touch) {
         gestureState = updateHeaderSwipeGestureState(gestureState, touch, viewportWidth);
@@ -390,7 +397,6 @@ export const useHeaderSwipeToSessions = (
           startedOnExcludedTarget: false,
         }).back;
       gestureState = null;
-      if (!horizontalIntent) return;
       event.preventDefault();
       if (commit && !thresholdHapticDelivered) triggerMobileHaptic('medium', { bypassCadence: true });
       if (horizontalIntent === 'sessions') finishPreview(commit);

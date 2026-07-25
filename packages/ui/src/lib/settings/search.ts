@@ -210,13 +210,7 @@ const SETTINGS_SEARCH_ITEMS: readonly SettingsSearchItem[] = [
     id: 'chat.session-assistance',
     page: 'chat',
     titleKey: 'settings.openchamber.visual.section.sessionAssistance',
-    keywords: ['recap', 'suggestion', 'subagent'],
-  },
-  {
-    id: 'chat.session-suggestion',
-    page: 'chat',
-    titleKey: 'settings.openchamber.visual.field.sessionSuggestion',
-    keywords: ['suggestion', 'assist', 'small model', 'follow up'],
+    keywords: ['recap', 'assist', 'subagent'],
   },
   {
     id: 'chat.session-title-refresh',

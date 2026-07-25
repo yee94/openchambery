@@ -14,7 +14,7 @@
   "scripts": {
     "dev": "bun run build:watch",
     "dev:server": "node ../../scripts/ensure-node-better-sqlite3.mjs && node server/index.js --port ${OPENCHAMBER_PORT:-3001}",
-    "dev:server:watch": "node ../../scripts/ensure-node-better-sqlite3.mjs && nodemon --watch server --ext js --exec \"node server/index.js --port ${OPENCHAMBER_PORT:-3001}\"",
+    "dev:server:watch": "nodemon --exitcrash --watch server --ext js --exec \"node ../../scripts/ensure-node-better-sqlite3.mjs && node server/index.js --port ${OPENCHAMBER_PORT:-3001}\"",
     "build": "vite build",
     "build:watch": "vite build --watch",
     "type-check": "tsc --noEmit",

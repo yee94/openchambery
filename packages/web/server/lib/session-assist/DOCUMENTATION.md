@@ -1,9 +1,8 @@
 # Session Assist
 
 Server-side watcher that generates a short recap of the agent's last reply
-and one suggested user follow-up with the small model
-(`lib/small-model`), storing both on the session's metadata under
-`metadata.openchamber.assist`.
+with the small model (`lib/small-model`), storing it on the session's metadata
+under `metadata.openchamber.assist`.
 
 ## Flow
 
@@ -24,7 +23,7 @@ and one suggested user follow-up with the small model
    conversation content never goes to a provider the user didn't pick for
    the session, unless the small model was chosen explicitly (settings
    override or opencode config). A resolver 404 is silently skipped.
-4. The requested JSON fields (`recap`, `suggestion`, or both) are clamped and
+4. The requested JSON field (`recap`) is clamped and
    PATCHed onto the session metadata together with `forMessageID` (the last
    assistant message id) and `generatedAt`. Before writing, the session tail is
    re-checked (a stale result is dropped) and the metadata is merged from a
@@ -33,11 +32,9 @@ and one suggested user follow-up with the small model
 
 ## Settings gate
 
-`sessionRecapEnabled` and `sessionSuggestionEnabled` in OpenChamber settings
-(Settings → Chat, default on) are hard generation switches checked at fire
-time. When both are off, no small-model calls run and nothing is written. When
-one is on, the runtime still makes at most one small-model call and asks only
-for that field. The UI also hides disabled payload types immediately.
+`sessionRecapEnabled` in OpenChamber settings (Settings → Chat, default on) is
+a hard generation switch checked at fire time. When off, no small-model calls
+run and nothing is written. The UI also hides the recap when the setting is off.
 
 ## Freshness contract (no clearing writes)
 
@@ -53,14 +50,11 @@ everywhere instantly and offline; the next idle cycle overwrites it.
   for the recap (single timeout to the boundary, no polling).
 - `components/chat/SessionRecapSpacer.tsx` — renders the recap inside the
   fixed-height reserved gap under the last message (height never changes).
-- `components/chat/SessionSuggestionChip.tsx` — one tappable suggestion chip
-  near the composer (desktop chips row + above the mobile pill); hidden as
-  soon as the composer has any content. Tap fills the input, never sends.
 
 ## Limitations
 
 - The watcher lives in the web server, so VS Code (extension-only, no web
   server) does not generate assists; it still renders payloads produced by a
   web/desktop instance of the same OpenCode server via `session.updated`.
-- Metadata payloads ride every `session.updated` event — keep the clamps
-  (`RECAP_CHAR_LIMIT`, `SUGGESTION_CHAR_LIMIT`) small.
+- Metadata payloads ride every `session.updated` event — keep the clamp
+  (`RECAP_CHAR_LIMIT`) small.

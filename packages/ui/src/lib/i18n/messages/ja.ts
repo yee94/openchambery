@@ -1508,8 +1508,6 @@ export const dict: Record<I18nKey, string> = {
   'chat.goal.cancelDialog.description': 'エージェントはこのゴールへの自動作業を停止します。',
   'chat.goal.cancelDialog.keep': 'ゴールを維持',
   'chat.goal.cancelDialog.confirm': 'ゴールをキャンセル',
-  'chat.suggestion.applyAria': '提案されたメッセージを使用',
-  'chat.suggestion.dismissAria': '提案を閉じる',
   'header.actions.toggleTerminalPanel': 'ターミナルパネル',
   'header.actions.toggleTerminalPanelAria': 'ターミナルパネルの切り替え',
   'terminalView.stream.processExitedMessage': '\r\n[プロセスが終了しました{exitCodeSegment}{signalSegment}]\r\n',

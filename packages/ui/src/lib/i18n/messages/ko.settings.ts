@@ -1832,8 +1832,6 @@ export const settingsDict = {
   'settings.openchamber.visual.field.diffLayoutAria': 'Diff 레이아웃: {option}',
   'settings.openchamber.visual.field.sessionRecap': '세션 요약 생성',
   'settings.openchamber.visual.field.sessionRecapAria': '에이전트가 완료되면 요약을 생성합니다',
-  'settings.openchamber.visual.field.sessionSuggestion': '다음 사용자 메시지 제안 생성',
-  'settings.openchamber.visual.field.sessionSuggestionAria': '에이전트가 완료되면 다음 사용자 메시지 제안을 생성합니다',
   'settings.openchamber.visual.field.sessionTitleRefresh': '최신 대화로 세션 제목 새로고침',
   'settings.openchamber.visual.field.sessionTitleRefreshAria': '유휴 후 5분마다 최신 주제로 세션 제목을 새로고침합니다',
   'settings.openchamber.visual.field.sessionGoal': '세션 목표 사용',

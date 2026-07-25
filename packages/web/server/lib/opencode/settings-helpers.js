@@ -329,9 +329,6 @@ export const createSettingsHelpers = (dependencies) => {
     if (typeof candidate.sessionRecapEnabled === 'boolean') {
       result.sessionRecapEnabled = candidate.sessionRecapEnabled;
     }
-    if (typeof candidate.sessionSuggestionEnabled === 'boolean') {
-      result.sessionSuggestionEnabled = candidate.sessionSuggestionEnabled;
-    }
     if (typeof candidate.sessionTitleRefreshEnabled === 'boolean') {
       result.sessionTitleRefreshEnabled = candidate.sessionTitleRefreshEnabled;
     }

@@ -12,8 +12,9 @@ bundled copy of the web build; native capabilities are added via Capacitor plugi
 extensions.
 
 - App id / package: `com.openchamber.app`; app name `OpenChamber`.
-- Capacitor config: `capacitor.config.ts` (Keyboard `resize: 'none'`, StatusBar overlay, Push
-  `presentationOptions: []`).
+- Capacitor config: `capacitor.config.ts` (Keyboard `resize: 'none'`; Android
+  `adjustNothing` + `ImeSyncBridge` native `translationY`, StatusBar overlay,
+  Push `presentationOptions: []`).
 - Renderer: the web build's `mobile.html` entry (`MobileApp`), copied into `dist/` and served by
   Capacitor. Mobile-only surfaces (connection onboarding, `Instances`, QR pairing, widgets) exist
   only in the Capacitor shell — hosted `mobile.html` in a plain browser does not expose them.
@@ -93,7 +94,7 @@ iOS Simulator helpers: `mobile:sim:{boot,install,launch,run,serve,list,kill}` (s
   (`OpenChamberWidget`), a Control Center control, and an NSE (`OpenChamberNotificationService`)
   that refreshes widgets from push. All share the App Group `group.com.openchamber.app`.
 - **Native chrome** — status bar (iOS overlay + safe-area; Android inset + themed background),
-  keyboard handling (iOS CSS inset; Android native `adjustResize`), edge-swipe session switch,
+  keyboard handling (iOS transform FLIP; Android native IME translationY), edge-swipe session switch,
   back-button handling, app-icon badge.
 - **App icons** — iOS `AppIcon`; Android adaptive launcher icon; notification small icon
   (`ic_stat_notify`).
@@ -127,7 +128,10 @@ iOS Simulator helpers: `mobile:sim:{boot,install,launch,run,serve,list,kill}` (s
   Gradle plugin is applied conditionally when the file exists; `@capacitor/push-notifications`
   brings `firebase-messaging`.
 - Manifest: permissions `INTERNET`, `CAMERA` (+ optional camera feature), `POST_NOTIFICATIONS`
-  (Android 13+; older versions allow notifications by default). `windowSoftInputMode=adjustResize`.
+  (Android 13+; older versions allow notifications by default). `windowSoftInputMode=adjustNothing`.
+  `ImeSyncBridge` sets WebView-parent `translationY = −imeBottom` on IME progress
+  (compositor only). JS is notified only on start/end for auto-follow freeze —
+  no per-frame bridge traffic (that janked half-sheets).
   ML Kit `com.google.mlkit.vision.DEPENDENCIES=barcode_ui` meta (preloads the code scanner). FCM
   `default_notification_icon=@drawable/ic_stat_notify`.
 - Adaptive launcher icon: full-bleed color background + `ic_launcher_foreground` (sources under

@@ -2,9 +2,12 @@
 
 ## Getting Started
 
+Repository development uses Node.js 24. Activate the version from `.nvmrc` before installing dependencies or running development commands.
+
 ```bash
 git clone https://github.com/yee94/openchamber.git
 cd openchamber
+nvm use
 bun install
 ```
 
@@ -22,6 +25,7 @@ Run commands from the project root unless a section says otherwise.
 | `bun run start:web` | Start the packaged web server. | `3000` by default |
 
 Both are configurable via env vars: `OPENCHAMBER_PORT`, `OPENCHAMBER_HMR_UI_PORT`, `OPENCHAMBER_HMR_API_PORT`.
+The watched API validates and repairs the active Node.js `better-sqlite3` binding before every restart.
 
 ### Desktop (Electron)
 

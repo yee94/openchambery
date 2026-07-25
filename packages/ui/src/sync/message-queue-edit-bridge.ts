@@ -1,6 +1,7 @@
 import type { QueueAttachmentIssueDTO, QueueAttachmentRefDTO } from "@/stores/message-queue-ledger"
 import { isDurableURL, type DraftAttachmentMetadata, type DraftKey } from "./input-draft-types"
 import { type DraftCommitInput, type DraftCommitResult, type InputDraftRuntimeCapture, useInputStore } from "./input-store"
+import { buildQueueComposerRestoration, commitComposerRestoration } from "./message-composer-restoration"
 import { getMessageQueueRuntime } from "./message-queue-runtime"
 import type { MessageQueueRemoveResult, MessageQueueRuntimeController, MessageQueueRuntimeResult, QueueRuntimeCapture, ScopedQueueIdentity } from "./message-queue-runtime-controller"
 
@@ -88,7 +89,25 @@ export const createMessageQueueEditBridge = ({ queue, commitDraftSnapshot }: Mes
         const mapped = draftAttachments(materialized.item.attachments, materialized.values)
         if (!mapped.payload) return withCleanup(invalid([{ stage: "attachments", code: mapped.code ?? "invalid" }]), queue, identity, materialized.token, queueRuntime)
         let draft: DraftCommitResult
-        try { draft = await commitDraftSnapshot({ key: targetKey, expectedRevision, runtime: inputRuntime, values: mapped.payload.values, snapshot: { text: materialized.item.composerDocument?.text ?? materialized.item.content, composerReferences: materialized.item.composerDocument?.references ?? [], attachments: mapped.payload.attachments, syntheticParts: [], mentions: materialized.item.composerMentions ?? [] } }) } catch { return withCleanup(result("draft-rejected", { current: false, draftDurable: false, queueDurablyRemoved: false, attachmentIssues: [], diagnostics: [{ stage: "draft", code: "threw" }] }), queue, identity, materialized.token, queueRuntime) }
+        try {
+          const restoration = await buildQueueComposerRestoration({
+            content: materialized.item.content,
+            composerDocument: materialized.item.composerDocument,
+            composerMentions: materialized.item.composerMentions,
+            draftAttachments: mapped.payload.attachments,
+            draftValues: mapped.payload.values,
+          })
+          const committed = await commitComposerRestoration({
+            key: targetKey,
+            expectedRevision,
+            payload: restoration,
+            runtime: inputRuntime,
+            input: { captureDraftRuntime: () => inputRuntime, commitDraftSnapshot },
+          })
+          draft = committed.result ?? { status: committed.status, durable: committed.durable, current: committed.current, errors: [], cleanupErrors: [] }
+          if (committed.status === "failed" && !committed.result) throw new Error("draft-threw")
+        } catch { return withCleanup(result("draft-rejected", { current: false, draftDurable: false, queueDurablyRemoved: false, attachmentIssues: [], diagnostics: [{ stage: "draft", code: "threw" }] }), queue, identity, materialized.token, queueRuntime) }
+        // Durable-before-remove: only remove queue item after draft.durable is true.
         if (!draft.durable) return withCleanup(result("draft-rejected", { current: false, draftDurable: false, queueDurablyRemoved: false, attachmentIssues: [], diagnostics: [{ stage: "draft", code: draft.status }] }), queue, identity, materialized.token, queueRuntime)
         let removal: MessageQueueRemoveResult
         try { removal = await queue.removeEditReservation(identity, materialized.token, queueRuntime) } catch { return withCleanup(result("queue-retained", { current: false, draftDurable: true, queueDurablyRemoved: false, attachmentIssues: [], diagnostics: [{ stage: "remove", code: "threw" }] }), queue, identity, materialized.token, queueRuntime) }

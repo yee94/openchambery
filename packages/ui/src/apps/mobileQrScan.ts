@@ -5,11 +5,11 @@
 // redeemed server-side over whichever candidate connects first. We also accept a
 // bare http(s) URL so a QR encoding only the server address works.
 //
-// QR scanning is delegated to a Capacitor barcode-scanner plugin if the native
-// shell registered one (`window.Capacitor.Plugins.BarcodeScanner`). We resolve it
-// at runtime instead of importing the package so the web build stays dependency-free
-// and the browser-hosted mobile UI degrades to `unsupported` cleanly.
+// QR scanning is delegated to the native BarcodeScanner plugin. Capacitor 8 exposes
+// its JavaScript proxy through registerPlugin(); capability checks still require a
+// native platform with the corresponding native plugin installed.
 
+import { Capacitor, registerPlugin } from '@capacitor/core';
 import { parsePairingConnectionPayload, type PairingConnectionPayload } from '@/lib/connectionPayload';
 
 export type MobileConnectionPayload = {
@@ -48,6 +48,8 @@ type BarcodeScannerPlugin = {
     cb: (info: ModuleInstallProgress) => void,
   ) => Promise<ListenerHandle>;
 };
+
+const BarcodeScanner = registerPlugin<BarcodeScannerPlugin>('BarcodeScanner');
 
 // Google's ModuleInstallProgress states: 4 = COMPLETED, 3 = CANCELED, 5 = FAILED.
 const MODULE_STATE_COMPLETED = 4;
@@ -103,12 +105,7 @@ const ensureScannerModule = async (plugin: BarcodeScannerPlugin): Promise<void> 
 };
 
 const getScannerPlugin = (): BarcodeScannerPlugin | null => {
-  if (typeof window === 'undefined') return null;
-  const capacitor = (window as typeof window & {
-    Capacitor?: { Plugins?: Record<string, unknown> };
-  }).Capacitor;
-  const plugin = capacitor?.Plugins?.BarcodeScanner as BarcodeScannerPlugin | undefined;
-  return plugin && typeof plugin.scan === 'function' ? plugin : null;
+  return isQrScanSupported() ? BarcodeScanner : null;
 };
 
 export const parseConnectionPayload = (raw: string): MobileConnectionPayload | MobilePairingPayload | null => {
@@ -135,7 +132,15 @@ const isModuleUnavailableError = (error: unknown): boolean => {
   return /module/i.test(message) && /not\s*available|unavailable/i.test(message);
 };
 
-export const isQrScanSupported = (): boolean => getScannerPlugin() !== null;
+export const evaluateQrScanSupport = (input: {
+  isNativePlatform: boolean;
+  isPluginAvailable: boolean;
+}): boolean => input.isNativePlatform && input.isPluginAvailable;
+
+export const isQrScanSupported = (): boolean => evaluateQrScanSupport({
+  isNativePlatform: Capacitor.isNativePlatform(),
+  isPluginAvailable: Capacitor.isPluginAvailable('BarcodeScanner'),
+});
 
 export const scanConnectionQr = async (): Promise<QrScanResult> => {
   const plugin = getScannerPlugin();

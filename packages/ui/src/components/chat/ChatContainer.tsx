@@ -1376,7 +1376,7 @@ const ChatContainerContent: React.FC<ChatContainerContentProps> = ({
 						isDesktopExpandedInput
 							? 'flex-1 bg-background'
 							: useCompactDraftLayout
-								? 'bg-background px-0'
+								? cn(isMobile ? 'bg-transparent' : 'bg-background', 'px-0')
 								: 'flex-1 items-center justify-center bg-background px-0 pb-[6vh]'
 					)}
 				>
@@ -1436,7 +1436,9 @@ const ChatContainerContent: React.FC<ChatContainerContentProps> = ({
 						'relative z-10',
 						isDesktopExpandedInput
 							? 'flex-1 min-h-0 bg-background'
-							: 'bg-background',
+							: isMobile
+								? 'bg-transparent'
+								: 'bg-background',
 					)}
 				>
 					{promptSurface}
@@ -1492,7 +1494,9 @@ const ChatContainerContent: React.FC<ChatContainerContentProps> = ({
                         'relative z-10',
 						isDesktopExpandedInput
 							? 'flex-1 min-h-0 bg-background'
-							: 'bg-background'
+							: isMobile
+								? 'bg-transparent'
+								: 'bg-background'
 					)}
 				>
                     {promptSurface}
@@ -1527,7 +1531,9 @@ const ChatContainerContent: React.FC<ChatContainerContentProps> = ({
                         'relative z-10',
 						isDesktopExpandedInput
 							? 'flex-1 min-h-0 bg-background'
-							: 'bg-background'
+							: isMobile
+								? 'bg-transparent'
+								: 'bg-background'
 					)}
 				>
                     {promptSurface}
@@ -1584,7 +1590,11 @@ const ChatContainerContent: React.FC<ChatContainerContentProps> = ({
                     'relative z-10',
                     isDesktopExpandedInput
                         ? 'flex-1 min-h-0 bg-background'
-                        : 'bg-background'
+                        // Mobile: transparent host so the frosted composer can
+                        // sample chat content underneath (no solid slab).
+                        : isMobile
+                            ? 'bg-transparent'
+                            : 'bg-background'
                 )}
             >
                 {!isDesktopExpandedInput && viewportMessages.length > 0 && (

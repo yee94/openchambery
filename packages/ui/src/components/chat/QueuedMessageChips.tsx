@@ -30,7 +30,7 @@ import { Icon } from "@/components/icon/Icon";
 import { cn } from '@/lib/utils';
 import { createUuid } from '@/lib/uuid';
 import { toast } from '@/components/ui';
-import { applyPendingServerQueueOperations, canEditQueuedMessage, canRemoveQueuedMessage, canSendQueuedMessage, canSendServerQueuedMessage, isServerQueueItemActiveAttempt, isServerQueueItemDispatchPending, mergeQueuedMessageScopes, queueModeAllowsMutations, reorderServerQueueItems, selectPendingServerQueueOperations, serverQueueEditInput, serverQueueItemMutationInput, type ServerQueueOperationIdentity, type ServerQueueOperationKind } from './queuedMessageChipsState';
+import { applyPendingServerQueueOperations, canEditQueuedMessage, canRemoveQueuedMessage, canSendQueuedMessage, canSendServerQueuedMessage, isServerQueueItemActiveAttempt, isServerQueueItemDispatchPending, legacyQueueEditRestoreSource, mergeQueuedMessageScopes, queueModeAllowsMutations, reorderServerQueueItems, selectPendingServerQueueOperations, serverQueueEditInput, serverQueueItemMutationInput, type ServerQueueOperationIdentity, type ServerQueueOperationKind } from './queuedMessageChipsState';
 import { enqueueServerQueueScopeMutation, type ServerQueueScopeMutationFlights } from './queueAdmission';
 
 type BoundQueueScope = Extract<QueueScope, { state: 'bound' }> & {
@@ -222,11 +222,17 @@ const QueuedMessageChip = memo(({ message, server, frozen, hasDispatchLock, pend
 QueuedMessageChip.displayName = 'QueuedMessageChip';
 
 interface QueuedMessageChipsProps {
-    onEditMessage: (content: string, attachments?: QueuedMessage['attachments'], composerDocument?: QueuedMessage['composerDocument'], composerMentions?: QueuedMessage['composerMentions']) => void;
+    /**
+     * Legacy queue edit: commit into the target DraftKey.
+     * Resolves true only when the draft is status=committed and current=true;
+     * the chip removes the queue item only after a successful true result.
+     */
+    onEditMessage: (content: string, attachments?: QueuedMessage['attachments'], composerDocument?: QueuedMessage['composerDocument'], composerMentions?: QueuedMessage['composerMentions']) => boolean | Promise<boolean>;
     onSendMessage: (messageId: string) => void;
     draftKey: DraftKey | null;
     scope: BoundQueueScope | null;
-    draftResources: Pick<ChatInputSurfaceResources, 'attachments' | 'getDraft' | 'setAttachments'>;
+    /** Explicit draft target for server queue edit CAS (revision only). */
+    draftTarget: { key: DraftKey; expectedRevision: () => number | 'absent' } | null;
 }
 
 const EMPTY_QUEUE: QueueItem[] = [];
@@ -251,7 +257,7 @@ export const queuedMessageItemScope = (message: QueuedMessage, scope: BoundQueue
     return queueScopeKey(owner) === queueScopeKey(scope) ? scope : null;
 };
 
-export const QueuedMessageChips = memo(({ onEditMessage, onSendMessage, draftKey, scope: queueScope, draftResources }: QueuedMessageChipsProps) => {
+export const QueuedMessageChips = memo(({ onEditMessage, onSendMessage, draftKey, scope: queueScope, draftTarget }: QueuedMessageChipsProps) => {
     const { t } = useI18n();
     const isMobile = useUIStore((state) => state.isMobile);
     const serverQueue = useMessageQueueServerScope({
@@ -343,7 +349,7 @@ export const QueuedMessageChips = memo(({ onEditMessage, onSendMessage, draftKey
     const hasDispatchLock = serverQueue.mode === 'server'
         ? false
         : hasScopeDispatchFlight || queuedMessages.some((item) => !isMessageQueuePendingAdmissionItem(item) && (item.status === 'sending' || item.status === 'reconciling'));
-    const popToInput = useMessageQueueStore((state) => state.popToInput);
+
     const reorderQueue = useMessageQueueStore((state) => state.reorderQueue);
 
     const sensors = useSensors(
@@ -399,9 +405,9 @@ export const QueuedMessageChips = memo(({ onEditMessage, onSendMessage, draftKey
     const handleEdit = useEvent((message: QueuedMessage | MessageQueueServerDisplayItem) => {
         if (frozen) return;
         if (serverQueue.mode === 'server') {
-            if (!queueScope || !serverQueue.scope || !draftKey || isMessageQueuePendingAdmissionItem(message)) return;
+            if (!queueScope || !serverQueue.scope || !draftKey || !draftTarget || isMessageQueuePendingAdmissionItem(message)) return;
             const serverMessage = message as MessageQueueItem;
-            const currentDraft = draftResources.getDraft(draftKey);
+            const expectedRevision = draftTarget.expectedRevision();
             const scope = serverQueue.scope;
             const runtime = serverQueue.actions.captureRuntime();
             if (runtime.transportIdentity !== queueScope.transportIdentity || runtime.generation !== queueScope.runtimeGeneration) return;
@@ -415,7 +421,7 @@ export const QueuedMessageChips = memo(({ onEditMessage, onSendMessage, draftKey
                 requestID: createUuid(),
                 runtime,
                 runtimeGeneration: runtime.generation,
-                input: serverQueueEditInput(scope, serverMessage, draftKey, currentDraft?.revision ?? 'absent'),
+                input: serverQueueEditInput(scope, serverMessage, draftTarget.key, expectedRevision),
             }).catch(() => {});
             return;
         }
@@ -423,16 +429,26 @@ export const QueuedMessageChips = memo(({ onEditMessage, onSendMessage, draftKey
         const legacyMessage = message as QueuedMessage;
         const itemScope = queuedMessageItemScope(legacyMessage, queueScope);
         if (!itemScope) return;
-        const popped = popToInput(itemScope, legacyMessage.queueItemID ?? legacyMessage.id, legacyMessage.operationID);
-        if (popped) {
-            const recovery = popped.failure?.recovery;
-            const content = recovery?.content ?? popped.content;
-            const attachments = recovery?.attachments ?? popped.attachments;
-            if (attachments && attachments.length > 0) {
-                draftResources.setAttachments([...draftResources.attachments, ...attachments]);
+        const queueItemID = legacyMessage.queueItemID ?? legacyMessage.id;
+        const operationID = legacyMessage.operationID;
+        // Restore from the live queue item first; only remove after a current committed draft.
+        const restore = legacyQueueEditRestoreSource(legacyMessage);
+        void (async () => {
+            let ok = false;
+            try {
+                ok = await Promise.resolve(onEditMessage(
+                    restore.content,
+                    restore.attachments,
+                    restore.composerDocument,
+                    restore.composerMentions,
+                ));
+            } catch {
+                ok = false;
             }
-            onEditMessage(content, attachments, recovery?.composerDocument ?? popped.composerDocument, recovery?.composerMentions ?? popped.composerMentions);
-        }
+            if (!ok) return;
+            // Safe against concurrent remove/edit races: remove is idempotent when already gone.
+            useMessageQueueStore.getState().removeFromQueue(itemScope, queueItemID, operationID);
+        })();
     });
 
     const handleSend = useEvent((message: QueuedMessage | MessageQueueServerDisplayItem) => {

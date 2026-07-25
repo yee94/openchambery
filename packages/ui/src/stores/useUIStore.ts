@@ -725,7 +725,6 @@ interface UIStore {
   eventStreamHint: string | null;
   showReasoningTraces: boolean;
   sessionRecapEnabled: boolean;
-  sessionSuggestionEnabled: boolean;
   sessionTitleRefreshEnabled: boolean;
   sessionGoalEnabled: boolean;
   sessionGoalDefaultBudgetEnabled: boolean;
@@ -898,7 +897,6 @@ interface UIStore {
   setEventStreamStatus: (status: EventStreamStatus, hint?: string | null) => void;
   setShowReasoningTraces: (value: boolean) => void;
   setSessionRecapEnabled: (value: boolean) => void;
-  setSessionSuggestionEnabled: (value: boolean) => void;
   setSessionTitleRefreshEnabled: (value: boolean) => void;
   setSessionGoalEnabled: (value: boolean) => void;
   setSessionGoalDefaultBudgetEnabled: (value: boolean) => void;
@@ -1062,7 +1060,6 @@ export const useUIStore = create<UIStore>()(
         eventStreamHint: null,
         showReasoningTraces: true,
         sessionRecapEnabled: true,
-        sessionSuggestionEnabled: true,
         sessionTitleRefreshEnabled: true,
         sessionGoalEnabled: true,
         sessionGoalDefaultBudgetEnabled: false,
@@ -2027,10 +2024,6 @@ export const useUIStore = create<UIStore>()(
           set({ sessionRecapEnabled: value });
         },
 
-        setSessionSuggestionEnabled: (value) => {
-          set({ sessionSuggestionEnabled: value });
-        },
-
         setSessionTitleRefreshEnabled: (value) => {
           set({ sessionTitleRefreshEnabled: value });
         },
@@ -2766,7 +2759,6 @@ export const useUIStore = create<UIStore>()(
           // Note: isSettingsDialogOpen intentionally NOT persisted
           showReasoningTraces: state.showReasoningTraces,
           sessionRecapEnabled: state.sessionRecapEnabled,
-          sessionSuggestionEnabled: state.sessionSuggestionEnabled,
           sessionTitleRefreshEnabled: state.sessionTitleRefreshEnabled,
           sessionGoalEnabled: state.sessionGoalEnabled,
           sessionGoalDefaultBudgetEnabled: state.sessionGoalDefaultBudgetEnabled,

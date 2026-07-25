@@ -1514,8 +1514,6 @@ export const dict: Record<I18nKey, string> = {
   'chat.goal.cancelDialog.description': '에이전트가 이 목표를 향한 자동 작업을 중단합니다.',
   'chat.goal.cancelDialog.keep': '목표 유지',
   'chat.goal.cancelDialog.confirm': '목표 취소',
-  'chat.suggestion.applyAria': '제안된 메시지 사용',
-  'chat.suggestion.dismissAria': '제안 닫기',
   'header.actions.toggleTerminalPanel': '터미널 패널',
   'header.actions.toggleTerminalPanelAria': '토글 터미널 패널',
   'terminalView.stream.processExitedMessage': '\r\n[Process exited{exitCodeSegment}{signalSegment}]\r\n',

@@ -7,7 +7,6 @@ import type { MobileKeyboardMode } from '@/lib/mobileKeyboardMode';
 type AppearanceSlice = {
   showReasoningTraces: boolean;
   sessionRecapEnabled: boolean;
-  sessionSuggestionEnabled: boolean;
   sessionTitleRefreshEnabled: boolean;
   sessionGoalEnabled: boolean;
   sessionGoalDefaultBudgetEnabled: boolean;
@@ -58,7 +57,6 @@ export const startAppearanceAutoSave = (): void => {
   let previous: AppearanceSlice = {
     showReasoningTraces: useUIStore.getState().showReasoningTraces,
     sessionRecapEnabled: useUIStore.getState().sessionRecapEnabled,
-    sessionSuggestionEnabled: useUIStore.getState().sessionSuggestionEnabled,
     sessionTitleRefreshEnabled: useUIStore.getState().sessionTitleRefreshEnabled,
     sessionGoalEnabled: useUIStore.getState().sessionGoalEnabled,
     sessionGoalDefaultBudgetEnabled: useUIStore.getState().sessionGoalDefaultBudgetEnabled,
@@ -116,7 +114,6 @@ export const startAppearanceAutoSave = (): void => {
     const current: AppearanceSlice = {
       showReasoningTraces: state.showReasoningTraces,
       sessionRecapEnabled: state.sessionRecapEnabled,
-      sessionSuggestionEnabled: state.sessionSuggestionEnabled,
       sessionTitleRefreshEnabled: state.sessionTitleRefreshEnabled,
       sessionGoalEnabled: state.sessionGoalEnabled,
       sessionGoalDefaultBudgetEnabled: state.sessionGoalDefaultBudgetEnabled,
@@ -157,9 +154,6 @@ export const startAppearanceAutoSave = (): void => {
     }
     if (current.sessionRecapEnabled !== previous.sessionRecapEnabled) {
       diff.sessionRecapEnabled = current.sessionRecapEnabled;
-    }
-    if (current.sessionSuggestionEnabled !== previous.sessionSuggestionEnabled) {
-      diff.sessionSuggestionEnabled = current.sessionSuggestionEnabled;
     }
     if (current.sessionTitleRefreshEnabled !== previous.sessionTitleRefreshEnabled) {
       diff.sessionTitleRefreshEnabled = current.sessionTitleRefreshEnabled;

@@ -498,4 +498,97 @@ describe("input draft committed actions", () => {
     expect(writes()).toBe(0)
     expect(blobCalls()).toBe(0)
   })
+
+  test("deleteDraftSnapshot commits durable absence and clears attachment ephemeral state", async () => {
+    const { store, blobs } = await setup()
+    const key = sessionDraftKey({ transportIdentity: "runtime" }, "session")
+    const ref = draftRootAttachmentOccurrenceRefID("blob")
+    const created = await store.getState().commitDraftSnapshot({
+      key,
+      expectedRevision: "absent",
+      runtime: store.getState().captureDraftRuntime(),
+      snapshot: {
+        text: "gone",
+        mentions: [],
+        syntheticParts: [],
+        attachments: [{ attachmentID: "blob", attachmentRefID: ref, filename: "a.txt", mimeType: "text/plain", size: 1, locator: { kind: "blob", blobID: "blob" }, source: "local" }],
+      },
+      values: new Map([[ref, new Blob(["a"])]]),
+    })
+    expect(created.status).toBe("committed")
+    expect(store.getState().getDraftAttachmentViews(key)).toHaveLength(1)
+    const deleted = await store.getState().deleteDraftSnapshot({
+      key,
+      expectedRevision: created.record!.revision,
+      runtime: store.getState().captureDraftRuntime(),
+    })
+    expect({ status: deleted.status, current: deleted.current, durable: deleted.durable }).toEqual({ status: "committed", current: true, durable: true })
+    expect("record" in deleted && deleted.record).toBeFalsy()
+    expect(store.getState().getDraft(key)).toBe(undefined)
+    expect(store.getState().tombstones[draftKeyString(key)]).toBe(created.record!.revision + 1)
+    expect(store.getState().draftAttachmentViews[draftKeyString(key)]).toBe(undefined)
+    expect(store.getState().draftMissingAttachmentRefIDs[draftKeyString(key)]).toBe(undefined)
+    expect(store.getState().draftHydration[draftKeyString(key)]).toBe(undefined)
+    expect(store.getState().draftPersistence[draftKeyString(key)]).toBe(undefined)
+    expect(store.getState().draftAttachmentPersistence[draftKeyString(key)]).toBe(undefined)
+    expect((await blobs.read("blob")).ok).toBe(false)
+  })
+
+  test("deleteDraftSnapshot returns revision conflict and runtime stale without mutating", async () => {
+    const { store, setRuntime } = await setup()
+    const key = sessionDraftKey({ transportIdentity: "runtime" }, "session")
+    const created = await store.getState().commitDraftSnapshot({ key, expectedRevision: "absent", snapshot: snapshot("keep"), runtime: store.getState().captureDraftRuntime() })
+    const conflict = await store.getState().deleteDraftSnapshot({ key, expectedRevision: 99, runtime: store.getState().captureDraftRuntime() })
+    expect(conflict.status).toBe("conflict")
+    expect(store.getState().getDraft(key)?.text).toBe("keep")
+    setRuntime({ transportIdentity: "next", generation: 2 })
+    const stale = await store.getState().deleteDraftSnapshot({
+      key,
+      expectedRevision: created.record!.revision,
+      runtime: { transportIdentity: "runtime", generation: 1 },
+    })
+    expect({ status: stale.status, durable: stale.durable, current: stale.current }).toEqual({ status: "stale", durable: false, current: false })
+    expect(store.getState().getDraft(key)?.text).toBe("keep")
+  })
+
+  test("deleteDraftSnapshot reports durable stale when memory changes after metadata commit", async () => {
+    const { store, block, release, resetWrite, waitForWrite } = await deferredSetup()
+    const key = sessionDraftKey({ transportIdentity: "runtime" }, "session")
+    const created = await store.getState().commitDraftSnapshot({ key, expectedRevision: "absent", snapshot: snapshot("old"), runtime: store.getState().captureDraftRuntime() })
+    resetWrite()
+    block()
+    const pending = store.getState().deleteDraftSnapshot({ key, expectedRevision: created.record!.revision, runtime: store.getState().captureDraftRuntime() })
+    await waitForWrite()
+    store.getState().setDraftText(key, "newer")
+    release()
+    const result = await pending
+    expect({ status: result.status, durable: result.durable, current: result.current }).toEqual({ status: "stale", durable: true, current: false })
+    expect(store.getState().getDraft(key)?.text).toBe("newer")
+  })
+
+  test("deleteDraftSnapshot clears ephemeral state after simultaneous memory and runtime staleness", async () => {
+    const { store, block, release, resetWrite, waitForWrite, setRuntime } = await deferredSetup()
+    const key = sessionDraftKey({ transportIdentity: "runtime" }, "session")
+    const created = await store.getState().commitDraftSnapshot({ key, expectedRevision: "absent", snapshot: snapshot("old"), runtime: store.getState().captureDraftRuntime() })
+    resetWrite()
+    block()
+    const pending = store.getState().deleteDraftSnapshot({ key, expectedRevision: created.record!.revision, runtime: store.getState().captureDraftRuntime() })
+    await waitForWrite()
+    store.getState().setDraftText(key, "newer")
+    const id = draftKeyString(key)
+    store.setState({
+      draftAttachmentViews: { [id]: {} }, draftMissingAttachmentRefIDs: { [id]: ["missing"] }, draftHydration: { [id]: "ready" },
+      draftPersistence: { [id]: { status: "saved", revision: 2 } }, draftAttachmentPersistence: { [id]: { status: "saved", revision: 2 } },
+    })
+    setRuntime({ transportIdentity: "next", generation: 2 })
+    release()
+    const result = await pending
+    expect({ status: result.status, durable: result.durable, current: result.current }).toEqual({ status: "stale", durable: true, current: false })
+    expect(store.getState().getDraft(key)?.text).toBe("newer")
+    expect(store.getState().draftAttachmentViews[id]).toBe(undefined)
+    expect(store.getState().draftMissingAttachmentRefIDs[id]).toBe(undefined)
+    expect(store.getState().draftHydration[id]).toBe(undefined)
+    expect(store.getState().draftPersistence[id]).toBe(undefined)
+    expect(store.getState().draftAttachmentPersistence[id]).toBe(undefined)
+  })
 })

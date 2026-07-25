@@ -15,9 +15,18 @@ import { mergeSessionDirectoryMetadata, useGlobalSessionsStore } from "@/stores/
 import { useConfigStore } from "@/stores/useConfigStore"
 import { registerSessionDirectory } from "./sync-refs"
 import { isSyntheticPart } from "@/lib/messages/synthetic"
+import { getAllSyncSessionMap } from "./sync-refs"
+import { sessionDraftKey, type DraftKey } from "./input-draft-types"
+import {
+  buildSentMessageComposerRestoration,
+  commitComposerRestoration,
+  rollbackComposerRestoration,
+  type ComposerRestorationPayload,
+} from "./message-composer-restoration"
 import { getSessionMaterializationStatus, materializeSessionSnapshots } from "./materialization"
 import { retry } from "./retry"
 import { getRuntimeGeneration, getRuntimeKey, getRuntimeTransportIdentity } from "@/lib/runtime-switch"
+import { runSessionHistoryMutation } from "./session-history-mutation-coordinator"
 import { loadSessionMessage, loadSessionMessagePage, recoverAssistantTailBoundary } from "./session-message-loader"
 import {
   getInitialSessionMessageLimit,
@@ -531,6 +540,7 @@ function getSessionReplyClient(sessionId?: string): OpencodeClient {
 }
 
 function restoreFilePartsToInput(fileParts: Array<Record<string, unknown>>): void {
+  // Fork path still uses legacy pendingInput + attachment buckets.
   useInputStore.getState().clearAttachedFiles()
   for (const filePart of fileParts) {
     const url = typeof filePart.url === "string" ? filePart.url : ""
@@ -540,6 +550,29 @@ function restoreFilePartsToInput(fileParts: Array<Record<string, unknown>>): voi
       useInputStore.getState().addRestoredAttachment({ url, mimeType: mime, filename })
     }
   }
+}
+
+const sessionTitlesForRestoration = (): ReadonlyMap<string, string> =>
+  new Map(Array.from(getAllSyncSessionMap(), ([id, session]) => [id, session.title || id]))
+
+async function commitSentPartsToDraftKey(input: {
+  key: DraftKey
+  parts: readonly Record<string, unknown>[]
+  directory?: string | null
+}): Promise<{ payload: ComposerRestorationPayload; commit: Awaited<ReturnType<typeof commitComposerRestoration>> }> {
+  const payload = await buildSentMessageComposerRestoration(input.parts, {
+    sessionTitles: sessionTitlesForRestoration(),
+    directory: input.directory,
+  })
+  const store = useInputStore.getState()
+  const current = store.getDraft(input.key)
+  const commit = await commitComposerRestoration({
+    key: input.key,
+    expectedRevision: current?.revision ?? "absent",
+    payload,
+    runtime: store.captureDraftRuntime(),
+  })
+  return { payload, commit }
 }
 
 function resolveDirectoryForBlockingRequest(
@@ -1602,141 +1635,234 @@ export async function dismissOpenQuestionsForSession(sessionId: string): Promise
  * Revert to a specific user message.
  *
  * 1. Abort if session is busy
- * 2. Extract text from the target message for prompt restoration
+ * 2. Build a complete Composer restoration payload from target parts
  * 3. Optimistically set revert marker so messages hide immediately
- * 4. Call the runtime revert endpoint and merge returned session
- * 5. Set pendingInputText so the reverted message text appears in the input
+ * 4. Commit the payload into the target DraftKey (CAS)
+ * 5. Call the runtime revert endpoint; on failure roll back marker + draft
+ *
+ * Same-session revert/unrevert share a per-session serial flight so concurrent
+ * HTTP cannot invert server marker order. Runtime-stale ops never publish.
  */
-export type RevertedComposerSnapshot = {
-  text: string
-  attachments: Array<{ url: string; mimeType: string; filename: string }>
-}
+export type RevertedComposerSnapshot = ComposerRestorationPayload
 
 export async function revertToMessage(
   sessionId: string,
   messageId: string,
-  options?: string | { directory?: string; restorePrimaryInput?: boolean },
+  options?: string | {
+    directory?: string
+    /** When omitted, restores into the primary session DraftKey. Pass a DraftKey for surface isolation. */
+    draftKey?: DraftKey | null
+    /** @deprecated Prefer draftKey. When false and draftKey is omitted, skips draft restoration. */
+    restorePrimaryInput?: boolean
+  },
 ): Promise<RevertedComposerSnapshot> {
   const directoryOverride = typeof options === "string" ? options : options?.directory
+  const explicitDraftKey = typeof options === "string" ? undefined : options?.draftKey
   const restorePrimaryInput = typeof options === "string" || options?.restorePrimaryInput !== false
-  const { store, directory } = dirStoreForSession(sessionId, directoryOverride)
-  const state = store.getState()
+  const shouldRestoreDraft = explicitDraftKey !== null && (explicitDraftKey !== undefined || restorePrimaryInput)
 
-  // Abort if busy before mutating session state
-  const status = state.session_status[sessionId]
-  if (status && status.type !== "idle") {
+  // Resolve directory for the serial key before waiting; store reads happen after the flight starts.
+  const directoryForKey = directoryOverride ?? (() => {
     try {
-      await sdk().session.abort({ sessionID: sessionId, directory })
+      return dirStoreForSession(sessionId, directoryOverride).directory
     } catch {
-      // ignore abort errors
+      return directoryOverride
     }
-  }
-
-  // Extract message text for prompt restoration (only non-synthetic text parts —
-  // the server adds file content as synthetic text parts that should not be restored)
-  const messages = state.message[sessionId] ?? []
-  const targetMsg = messages.find((m) => m.id === messageId)
-  let messageText = ""
-  let submittedFileParts: Array<Record<string, unknown>> = []
-  if (targetMsg && targetMsg.role === "user") {
-    const parts = state.part[messageId] ?? []
-    const textParts = parts.filter((p) => p.type === "text" && !isSyntheticPart(p))
-    messageText = textParts
-      .map((p: Record<string, unknown>) => (p as { text?: string }).text || (p as { content?: string }).content || "")
-      .join("\n")
-      .trim()
-    // Snapshot file parts for later restoration to the input.
-    // Exclude synthetic file parts (server-generated file content that should
-    // not be restored to the composer).
-    submittedFileParts = parts.filter((p) => p.type === "file" && !isSyntheticPart(p)) as Array<Record<string, unknown>>
-  }
-  const restoration: RevertedComposerSnapshot = {
-    text: messageText,
-    attachments: submittedFileParts.flatMap((part) => {
-      const url = typeof part.url === "string" ? part.url : ""
-      if (!url) return []
-      return [{
-        url,
-        mimeType: typeof part.mime === "string" ? part.mime : "application/octet-stream",
-        filename: typeof part.filename === "string" ? part.filename : "attachment",
-      }]
-    }),
-  }
-
-  // Optimistically set only the revert marker. Keep messages and parts in the
-  // local store; visible-message selectors derive the displayed timeline from
-  // session.revert. This matches the server model and preserves reverted
-  // messages for the restore dock without maintaining a separate shadow copy.
-  const prevRevert = (() => {
-    const s = state.session.find((s) => s.id === sessionId)
-    return (s as Session & { revert?: unknown })?.revert
   })()
-  const sessions = [...state.session]
-  const sessionIdx = sessions.findIndex((s) => s.id === sessionId)
 
-  const patch: Record<string, unknown> = {}
-
-  if (sessionIdx >= 0) {
-    sessions[sessionIdx] = { ...sessions[sessionIdx], revert: { messageID: messageId } } as Session
-    patch.session = sessions
-  }
-
-  store.setState(patch)
-
-  // Save input store state before mutations — if the API fails we need to
-  // roll back both text and attachments to their previous values.
-  const prevInputAttachments = [...useInputStore.getState().attachedFiles]
-  const prevInputText = useInputStore.getState().pendingInputText
-  const prevInputMode = useInputStore.getState().pendingInputMode
-
-  // Restore reverted message text and file attachments to input
-  if (restorePrimaryInput && messageText) {
-    useInputStore.setState({
-      pendingInputText: messageText,
-      pendingInputMode: "replace" as const,
-    })
-  }
-
-  // Restore file/image attachments from the target message.
-  // Clear existing attachments first — previous revert's attachments
-  // must not carry over, even when the current message has no files.
-  if (restorePrimaryInput) restoreFilePartsToInput(submittedFileParts)
-
-  // Call SDK and merge authoritative result into store
-  try {
-    const revertedSession = await opencodeClient.revertSession(sessionId, messageId, undefined, directory)
-    const current = store.getState()
-    const updated = [...current.session]
-    const idx = updated.findIndex((s) => s.id === sessionId)
-    if (idx >= 0) {
-      updated[idx] = revertedSession
-      store.setState({ session: updated })
+  return runSessionHistoryMutation(sessionId, directoryForKey, async ({ isCurrent }) => {
+    // Read current store state after the queue wait so a concurrent op cannot leave us with a stale snapshot.
+    const { store, directory } = dirStoreForSession(sessionId, directoryOverride)
+    if (!isCurrent()) {
+      throw new Error("Session history mutation aborted because the runtime changed")
     }
-    if (directory) {
-      sessionEvents.requestGitRefresh({ directory })
+    const state = store.getState()
+
+    // Abort if busy before mutating session state
+    const status = state.session_status[sessionId]
+    if (status && status.type !== "idle") {
+      try {
+        await sdk().session.abort({ sessionID: sessionId, directory })
+      } catch {
+        // ignore abort errors
+      }
+      if (!isCurrent()) {
+        throw new Error("Session history mutation aborted because the runtime changed")
+      }
     }
-    return restoration
-  } catch (err) {
-    // Rollback: restore removed messages + revert marker
-    const current = store.getState()
-    const rollback = [...current.session]
-    const idx = rollback.findIndex((s) => s.id === sessionId)
-    if (idx >= 0) {
-      rollback[idx] = { ...rollback[idx], revert: prevRevert } as Session
+
+    const messages = state.message[sessionId] ?? []
+    const targetMsg = messages.find((m) => m.id === messageId)
+    // Fail before mutating marker/draft/API when the target user message is missing.
+    // Re-read after abort awaits in case another mutation changed the store.
+    const liveMessages = store.getState().message[sessionId] ?? []
+    const liveTarget = liveMessages.find((m) => m.id === messageId) ?? targetMsg
+    if (!liveTarget || liveTarget.role !== "user") {
+      throw new Error("The selected user message is unavailable")
     }
-    store.setState({
-      session: rollback,
-    })
-    // Rollback input store: restore previous text and attachments
-    if (restorePrimaryInput) {
-      useInputStore.setState({
-        pendingInputText: prevInputText,
-        pendingInputMode: prevInputMode,
+    const targetParts = (store.getState().part[messageId] ?? []) as Array<Record<string, unknown>>
+
+    const targetDraftKey = explicitDraftKey === undefined
+      ? (shouldRestoreDraft
+        ? sessionDraftKey({ transportIdentity: getRuntimeTransportIdentity() }, sessionId)
+        : null)
+      : explicitDraftKey
+
+    let restoration: RevertedComposerSnapshot = {
+      snapshot: { text: "", attachments: [], syntheticParts: [], mentions: [] },
+      values: new Map(),
+    }
+    let restoredRevision: number | undefined
+    let previousDraft: Awaited<ReturnType<typeof commitComposerRestoration>>["previous"]
+
+    if (targetDraftKey) {
+      try {
+        restoration = await buildSentMessageComposerRestoration(targetParts, {
+          sessionTitles: sessionTitlesForRestoration(),
+          directory,
+        })
+      } catch {
+        // Invalid payload must not overwrite the live draft.
+        throw new Error("composer-restoration-invalid-payload")
+      }
+      if (!isCurrent()) {
+        throw new Error("Session history mutation aborted because the runtime changed")
+      }
+    }
+
+    // Optimistically set only the revert marker. Keep messages and parts in the
+    // local store; visible-message selectors derive the displayed timeline from
+    // session.revert. This matches the server model and preserves reverted
+    // messages for the restore dock without maintaining a separate shadow copy.
+    const liveState = store.getState()
+    const prevRevert = (() => {
+      const s = liveState.session.find((s) => s.id === sessionId)
+      return (s as Session & { revert?: unknown })?.revert
+    })()
+    const sessions = [...liveState.session]
+    const sessionIdx = sessions.findIndex((s) => s.id === sessionId)
+
+    const patch: Record<string, unknown> = {}
+
+    if (sessionIdx >= 0) {
+      sessions[sessionIdx] = { ...sessions[sessionIdx], revert: { messageID: messageId } } as Session
+      patch.session = sessions
+    }
+
+    if (!isCurrent()) {
+      throw new Error("Session history mutation aborted because the runtime changed")
+    }
+    store.setState(patch)
+
+    if (targetDraftKey) {
+      const input = useInputStore.getState()
+      const current = input.getDraft(targetDraftKey)
+      const committed = await commitComposerRestoration({
+        key: targetDraftKey,
+        expectedRevision: current?.revision ?? "absent",
+        payload: restoration,
+        runtime: input.captureDraftRuntime(),
       })
-      useInputStore.getState().setAttachedFiles(prevInputAttachments)
+      if (!isCurrent()) {
+        // Stale runtime: roll back marker if we wrote it; do not leave foreign marker.
+        const currentState = store.getState()
+        const rollback = [...currentState.session]
+        const idx = rollback.findIndex((s) => s.id === sessionId)
+        if (idx >= 0) {
+          rollback[idx] = { ...rollback[idx], revert: prevRevert } as Session
+        }
+        store.setState({ session: rollback })
+        if (committed.status === "committed" && committed.current && committed.previous && committed.result?.record?.revision !== undefined) {
+          await rollbackComposerRestoration({
+            key: targetDraftKey,
+            restoredRevision: committed.result.record.revision,
+            previous: committed.previous,
+          }).catch(() => undefined)
+        }
+        throw new Error("Session history mutation aborted because the runtime changed")
+      }
+      previousDraft = committed.previous
+      // User-facing restore requires a current committed memory snapshot (not durable-stale alone).
+      if (committed.status !== "committed" || !committed.current) {
+        // Roll back marker only; leave the live draft untouched.
+        const currentState = store.getState()
+        const rollback = [...currentState.session]
+        const idx = rollback.findIndex((s) => s.id === sessionId)
+        if (idx >= 0) {
+          rollback[idx] = { ...rollback[idx], revert: prevRevert } as Session
+        }
+        store.setState({ session: rollback })
+        throw new Error(`composer-restoration-commit-${committed.status}`)
+      }
+      restoredRevision = committed.result?.record?.revision
     }
-    throw err
-  }
+
+    // Call SDK and merge authoritative result into store
+    try {
+      const revertedSession = await opencodeClient.revertSession(sessionId, messageId, undefined, directory)
+      if (!isCurrent()) {
+        // Stale runtime must not leave its optimistic marker or adopt the remote session.
+        const stale = store.getState()
+        const rollback = [...stale.session]
+        const rollbackIdx = rollback.findIndex((s) => s.id === sessionId)
+        if (rollbackIdx >= 0) {
+          rollback[rollbackIdx] = { ...rollback[rollbackIdx], revert: prevRevert } as Session
+        }
+        store.setState({ session: rollback })
+        if (targetDraftKey && previousDraft && restoredRevision !== undefined) {
+          await rollbackComposerRestoration({
+            key: targetDraftKey,
+            restoredRevision,
+            previous: previousDraft,
+          }).catch(() => undefined)
+        }
+        throw new Error("Session history mutation aborted because the runtime changed")
+      }
+      const current = store.getState()
+      const updated = [...current.session]
+      const idx = updated.findIndex((s) => s.id === sessionId)
+      if (idx >= 0) {
+        updated[idx] = revertedSession
+        store.setState({ session: updated })
+      }
+      if (directory) {
+        sessionEvents.requestGitRefresh({ directory })
+      }
+      return restoration
+    } catch (err) {
+      // Rollback: restore revert marker (including after remote failure under a still-current runtime).
+      const current = store.getState()
+      const rollback = [...current.session]
+      const idx = rollback.findIndex((s) => s.id === sessionId)
+      if (idx >= 0) {
+        rollback[idx] = { ...rollback[idx], revert: prevRevert } as Session
+      }
+      if (isCurrent()) {
+        store.setState({
+          session: rollback,
+        })
+        // CAS-restore the previous full draft when the user has not continued editing.
+        if (targetDraftKey && previousDraft && restoredRevision !== undefined) {
+          await rollbackComposerRestoration({
+            key: targetDraftKey,
+            restoredRevision,
+            previous: previousDraft,
+          })
+        }
+      } else if (!(err instanceof Error && err.message.includes("runtime changed"))) {
+        // Runtime switched mid-failure (not already handled above): undo our optimistic local write.
+        store.setState({ session: rollback })
+        if (targetDraftKey && previousDraft && restoredRevision !== undefined) {
+          await rollbackComposerRestoration({
+            key: targetDraftKey,
+            restoredRevision,
+            previous: previousDraft,
+          }).catch(() => undefined)
+        }
+      }
+      throw err
+    }
+  })
 }
 
 function removeSessionMessageFromStore(store: DirectoryStoreApi, sessionId: string, messageId: string): void {
@@ -1760,9 +1886,39 @@ function removeSessionMessageFromStore(store: DirectoryStoreApi, sessionId: stri
   store.setState({ message, part })
 }
 
-export function stageMessageEdit(sessionId: string, messageId: string, snapshot?: MessageEditSnapshot): void {
+export type StageMessageEditOptions = {
+  /** Explicit directory for the correct child store and file-mention relativization. */
+  directory?: string
+  /**
+   * Target draft partition. Defaults to the primary `sessionDraftKey` for this session.
+   * Assistant continuous edit passes a `surfaceDraftKey` so primary drafts stay untouched.
+   */
+  draftKey?: DraftKey
+}
+
+/**
+ * Opaque handle for rolling back a staged message-edit draft restore.
+ * Primary callers may ignore the return value; Assistant uses rollback when
+ * binding/runtime is stale after the async stage completes.
+ */
+export type StageMessageEditHandle = {
+  /**
+   * CAS-rollback the draft to the pre-stage record (or true absence).
+   * Conflict means the user continued editing — keep their newer revision.
+   */
+  rollback: () => Promise<{ status: "rolled-back" | "conflict" | "failed" | "skipped" }>
+}
+
+export async function stageMessageEdit(
+  sessionId: string,
+  messageId: string,
+  snapshot?: MessageEditSnapshot,
+  options?: StageMessageEditOptions,
+): Promise<StageMessageEditHandle> {
   let targetMessage = snapshot?.info
   let targetParts = snapshot?.parts
+  const directoryOverride = options?.directory
+  let directory: string | undefined
 
   if (snapshot) {
     const visibleMessage = snapshot.info
@@ -1773,9 +1929,11 @@ export function stageMessageEdit(sessionId: string, messageId: string, snapshot?
     ) {
       throw new Error("The selected user message is unavailable")
     }
+    directory = dirStoreForSession(sessionId, directoryOverride).directory
   } else {
-    const { store } = dirStoreForSession(sessionId)
-    const state = store.getState()
+    const resolved = dirStoreForSession(sessionId, directoryOverride)
+    directory = resolved.directory
+    const state = resolved.store.getState()
     const messages = state.message[sessionId] ?? []
     const targetIndex = messages.findIndex((message) => message.id === messageId)
     const storedMessage = targetIndex >= 0 ? messages[targetIndex] : undefined
@@ -1790,18 +1948,32 @@ export function stageMessageEdit(sessionId: string, messageId: string, snapshot?
     throw new Error("The selected user message is unavailable")
   }
 
-  const messageText = targetParts
-    .filter((part) => part.type === "text" && !isSyntheticPart(part))
-    .map((part: Record<string, unknown>) => (part as { text?: string }).text || (part as { content?: string }).content || "")
-    .join("\n")
-    .trim()
-  const submittedFileParts = targetParts.filter((part) => part.type === "file" && !isSyntheticPart(part)) as Array<Record<string, unknown>>
-
-  useInputStore.setState({
-    pendingInputText: messageText,
-    pendingInputMode: "replace" as const,
+  const key = options?.draftKey
+    ?? sessionDraftKey({ transportIdentity: getRuntimeTransportIdentity() }, sessionId)
+  const { commit } = await commitSentPartsToDraftKey({
+    key,
+    parts: targetParts as Array<Record<string, unknown>>,
+    directory,
   })
-  restoreFilePartsToInput(submittedFileParts)
+  if (commit.status !== "committed" || !commit.current) {
+    throw new Error(`composer-restoration-commit-${commit.status}`)
+  }
+  const restoredRevision = commit.result?.record?.revision
+  const previous = commit.previous
+  if (restoredRevision === undefined || !previous) {
+    // Committed without rollback material — noop handle (should not happen for durable commits).
+    return { rollback: async () => ({ status: "skipped" as const }) }
+  }
+  return {
+    rollback: async () => {
+      const rolled = await rollbackComposerRestoration({
+        key,
+        restoredRevision,
+        previous,
+      })
+      return { status: rolled.status }
+    },
+  }
 }
 
 /**
@@ -1809,8 +1981,12 @@ export function stageMessageEdit(sessionId: string, messageId: string, snapshot?
  * The official delete-message endpoint removes conversation data only, so the
  * action deletes the target turn and every later message while retaining files.
  */
-export async function commitMessageEdit(sessionId: string, messageId: string): Promise<void> {
-  const { store, directory } = dirStoreForSession(sessionId)
+export async function commitMessageEdit(
+  sessionId: string,
+  messageId: string,
+  options?: { directory?: string },
+): Promise<void> {
+  const { store, directory } = dirStoreForSession(sessionId, options?.directory)
   const status = store.getState().session_status[sessionId]
   if (status && status.type !== "idle") {
     try {
@@ -1820,7 +1996,7 @@ export async function commitMessageEdit(sessionId: string, messageId: string): P
     }
   }
 
-  await refetchSessionMessages(sessionId)
+  await refetchSessionMessages(sessionId, options?.directory)
   const messages = store.getState().message[sessionId] ?? []
   const targetIndex = messages.findIndex((message) => message.id === messageId)
   const targetMessage = targetIndex >= 0 ? messages[targetIndex] : undefined
@@ -1862,37 +2038,65 @@ export async function refetchSessionMessages(sessionId: string, directoryOverrid
 /**
  * Unrevert — restore all previously reverted messages.
  * Restore all previously reverted messages. Aborts if busy, merges result.
+ * Shares the per-session history mutation serial flight with revertToMessage.
  */
-export async function unrevertSession(sessionId: string): Promise<void> {
-  const { store, directory } = dirStoreForSession(sessionId)
-  const state = store.getState()
-  const previousMessageCount = state.message[sessionId]?.length ?? 0
-
-  // Abort if busy
-  const status = state.session_status[sessionId]
-  if (status && status.type !== "idle") {
+export async function unrevertSession(sessionId: string, directoryOverride?: string): Promise<void> {
+  const directoryForKey = directoryOverride ?? (() => {
     try {
-      await sdk().session.abort({ sessionID: sessionId, directory })
+      return dirStoreForSession(sessionId, directoryOverride).directory
     } catch {
-      // ignore
+      return directoryOverride
     }
-  }
+  })()
 
-  const result = await sdk().session.unrevert({ sessionID: sessionId, directory })
-  const unrevertedSession = assertSdkData(result, "session.unrevert")
-  const current = store.getState()
-  const sessions = [...current.session]
-  const idx = sessions.findIndex((s) => s.id === sessionId)
-  if (idx >= 0) {
-    sessions[idx] = unrevertedSession
-    store.setState({ session: sessions })
-  }
-  for (let attempt = 0; attempt < UNREVERT_REFETCH_ATTEMPTS; attempt += 1) {
-    if (attempt > 0) await wait(UNREVERT_REFETCH_RETRY_MS)
-    await refetchSessionMessages(sessionId)
-    const nextMessageCount = store.getState().message[sessionId]?.length ?? 0
-    if (nextMessageCount > previousMessageCount) return
-  }
+  return runSessionHistoryMutation(sessionId, directoryForKey, async ({ isCurrent }) => {
+    const { store, directory } = dirStoreForSession(sessionId, directoryOverride)
+    if (!isCurrent()) {
+      throw new Error("Session history mutation aborted because the runtime changed")
+    }
+    const state = store.getState()
+    const previousMessageCount = state.message[sessionId]?.length ?? 0
+
+    // Abort if busy
+    const status = state.session_status[sessionId]
+    if (status && status.type !== "idle") {
+      try {
+        await sdk().session.abort({ sessionID: sessionId, directory })
+      } catch {
+        // ignore
+      }
+      if (!isCurrent()) {
+        throw new Error("Session history mutation aborted because the runtime changed")
+      }
+    }
+
+    const result = await sdk().session.unrevert({ sessionID: sessionId, directory })
+    if (!isCurrent()) {
+      throw new Error("Session history mutation aborted because the runtime changed")
+    }
+    const unrevertedSession = assertSdkData(result, "session.unrevert")
+    const current = store.getState()
+    const sessions = [...current.session]
+    const idx = sessions.findIndex((s) => s.id === sessionId)
+    if (idx >= 0) {
+      sessions[idx] = unrevertedSession
+      store.setState({ session: sessions })
+    }
+    for (let attempt = 0; attempt < UNREVERT_REFETCH_ATTEMPTS; attempt += 1) {
+      if (attempt > 0) {
+        await wait(UNREVERT_REFETCH_RETRY_MS)
+        if (!isCurrent()) {
+          throw new Error("Session history mutation aborted because the runtime changed")
+        }
+      }
+      await refetchSessionMessages(sessionId, directoryOverride)
+      if (!isCurrent()) {
+        throw new Error("Session history mutation aborted because the runtime changed")
+      }
+      const nextMessageCount = store.getState().message[sessionId]?.length ?? 0
+      if (nextMessageCount > previousMessageCount) return
+    }
+  })
 }
 
 /**

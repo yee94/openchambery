@@ -2,9 +2,23 @@ import { describe, expect, test } from 'bun:test';
 
 import { encodePairingConnectionPayload, buildPairingConnectionPayload } from '@/lib/connectionPayload';
 
-import { parseConnectionPayload } from './mobileQrScan';
+import { evaluateQrScanSupport, parseConnectionPayload } from './mobileQrScan';
 
 const hostEncPubJwk = { kty: 'EC', crv: 'P-256', x: 'eHhY', y: 'eVlZ' } as const;
+
+describe('evaluateQrScanSupport', () => {
+  test('supports an available plugin on a native platform', () => {
+    expect(evaluateQrScanSupport({ isNativePlatform: true, isPluginAvailable: true })).toBe(true);
+  });
+
+  test('does not support scanning on web', () => {
+    expect(evaluateQrScanSupport({ isNativePlatform: false, isPluginAvailable: true })).toBe(false);
+  });
+
+  test('does not support scanning when the native plugin is absent', () => {
+    expect(evaluateQrScanSupport({ isNativePlatform: true, isPluginAvailable: false })).toBe(false);
+  });
+});
 
 describe('parseConnectionPayload', () => {
   test('parses bare http(s) URLs', () => {

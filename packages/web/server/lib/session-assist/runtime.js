@@ -1,8 +1,7 @@
 // Session assist: after a session goes idle and stays quiet, generate a short
-// recap of the agent's last reply plus one suggested user follow-up with the
-// small model, and store both on the session's metadata
-// (metadata.openchamber.assist). Clients decide visibility from
-// assist.forMessageID — a new message makes the payload stale everywhere
+// recap of the agent's last reply with the small model, and store it on the
+// session's metadata (metadata.openchamber.assist). Clients decide visibility
+// from assist.forMessageID — a new message makes the payload stale everywhere
 // without any extra writes.
 //
 // Purely event-driven: only sessions that transition busy→idle while the
@@ -19,19 +18,16 @@ const OPENCHAMBER_SETTINGS_FILE = path.join(
   'settings.json',
 );
 
-// The Chat settings are hard generation switches (default on): when both are
-// off, no small-model calls and no metadata writes happen at all. Existing
-// payloads stay untouched — clients keep showing them and dismissal still works.
-const getSessionAssistTargets = () => {
+// The Chat setting is a hard generation switch (default on): when off, no
+// small-model calls and no metadata writes happen at all. Existing payloads
+// stay untouched — clients hide them through the same setting.
+const isSessionRecapEnabled = () => {
   try {
     const raw = fs.readFileSync(OPENCHAMBER_SETTINGS_FILE, 'utf8');
     const settings = JSON.parse(raw);
-    return {
-      recap: settings?.sessionRecapEnabled !== false,
-      suggestion: settings?.sessionSuggestionEnabled !== false,
-    };
+    return settings?.sessionRecapEnabled !== false;
   } catch {
-    return { recap: true, suggestion: true };
+    return true;
   }
 };
 
@@ -39,55 +35,15 @@ const IDLE_QUIET_MS = 60_000;
 const TRANSCRIPT_MESSAGE_LIMIT = 12;
 const TRANSCRIPT_PART_CHAR_LIMIT = 6_000;
 const RECAP_CHAR_LIMIT = 320;
-const SUGGESTION_CHAR_LIMIT = 500;
 const FETCH_TIMEOUT_MS = 5_000;
 
-const buildAssistSystemPrompt = ({ recap, suggestion }) => [
+const ASSIST_SYSTEM_PROMPT = [
   'You assist a user who chats with a coding agent. Based on the conversation transcript, return exactly one JSON object and nothing else — no prose, no markdown, no code fences.',
-  `Shape: {${[recap ? '"recap": string' : '', suggestion ? '"suggestion": string' : ''].filter(Boolean).join(', ')}}`,
-  recap
-    ? 'recap: at most 20 words. State the substance directly — the facts, result, or conclusion, plus the next move if there is one. NEVER narrate ("The assistant explained…", "The agent did…") — write the content itself, like a note the user jotted down.'
-    : '',
-  suggestion ? 'suggestion: write ONE immediately sendable next user message addressed TO the coding agent.' : '',
-  suggestion ? 'The suggestion should be the most useful next step after the assistant\'s latest reply. It should help the user continue productively, not inspect already-known details.' : '',
-  suggestion ? 'Prefer suggestions that ask the agent to make a concrete improvement, implement something specific, validate the latest change, explain tradeoffs, improve the current approach, or continue from the current result.' : '',
-  suggestion ? 'Rules for suggestion:' : '',
-  suggestion ? '- Output exactly one message the user could click and send without editing.' : '',
-  suggestion ? '- Pick one best next action yourself.' : '',
-  suggestion ? '- Do not include alternatives, choices, slash-separated options, or "or".' : '',
-  suggestion ? '- Do not write "Do X or Y", "Ask whether...", "Maybe...", or "You could...".' : '',
-  suggestion ? '- Do not ask for information the assistant already provided.' : '',
-  suggestion ? '- Do not ask to see exact code, file paths, prompt locations, or implementation internals unless the assistant did not provide them and they are necessary for the next step.' : '',
-  suggestion ? '- Do not produce generic workflow commands like "Run tests" unless testing is clearly the next unresolved step.' : '',
-  suggestion ? '- Do not produce meta/debug requests that merely inspect the implementation.' : '',
-  suggestion ? '- Use imperative or question form.' : '',
-  suggestion ? '- Keep it concise.' : '',
-  suggestion ? 'Use these examples to understand how to choose the suggestion. Do not copy their topic or wording unless the current conversation is about the same thing.' : '',
-  suggestion ? 'Example 1:' : '',
-  suggestion ? 'Assistant reply summary:' : '',
-  suggestion ? 'The assistant already identified the file where the feature is implemented, explained what context is sent to the small model, and summarized the current prompt.' : '',
-  suggestion ? 'Bad suggestion:' : '',
-  suggestion ? '"Show me the exact runtime.js code and where the prompt is built."' : '',
-  suggestion ? 'Why bad:' : '',
-  suggestion ? 'It asks for information the assistant already provided. It repeats inspection instead of moving to an improvement or decision.' : '',
-  suggestion ? 'Good suggestion:' : '',
-  suggestion ? '"Suggest how to improve the prompt and context so the generated suggestion is more useful."' : '',
-  suggestion ? 'Why good:' : '',
-  suggestion ? 'It naturally continues from the analysis and asks for a concrete improvement.' : '',
-  suggestion ? 'Example 2:' : '',
-  suggestion ? 'Assistant reply summary:' : '',
-  suggestion ? 'The assistant implemented a timeline dialog redesign, listed concrete UI changes, and reported that type-check and lint passed.' : '',
-  suggestion ? 'Bad suggestion:' : '',
-  suggestion ? '"Check whether scrolling or loading older messages works without jumps."' : '',
-  suggestion ? 'Why bad:' : '',
-  suggestion ? 'It contains an alternative. A suggestion chip must be one sendable message, not a choice the user has to edit.' : '',
-  suggestion ? 'Good suggestion:' : '',
-  suggestion ? '"Check whether scrolling and loading older messages work without jumps."' : '',
-  suggestion ? 'Why good:' : '',
-  suggestion ? 'It picks a single validation request that the user can send immediately.' : '',
+  'Shape: {"recap": string}',
+  'recap: at most 20 words. State the substance directly — the facts, result, or conclusion, plus the next move if there is one. NEVER narrate ("The assistant explained…", "The agent did…") — write the content itself, like a note the user jotted down.',
   'All requested values MUST be written in the same language as the conversation text itself. Ignore any other language preferences or personalization you may have — only the conversation text decides the language.',
   'Use double quotes for JSON strings, no trailing commas.',
-].filter(Boolean).join('\n');
+].join('\n');
 
 const extractJsonObject = (value) => {
   const text = String(value ?? '').trim();
@@ -197,8 +153,7 @@ export const createSessionAssistRuntime = ({
   };
 
   const generateAssist = async (sessionId, directory) => {
-    const targets = getSessionAssistTargets();
-    if (!targets.recap && !targets.suggestion) return;
+    if (!isSessionRecapEnabled()) return;
     const session = await openCodeFetch(`/session/${encodeURIComponent(sessionId)}`, { directory })
       .catch((error) => {
         console.warn(`[session-assist] session fetch failed: ${error?.message || error}`);
@@ -227,7 +182,7 @@ export const createSessionAssistRuntime = ({
 
     // Only the last exchange: the assistant reply plus the user message it
     // answered (assistant info.parentID → user info.id). Everything else is
-    // token waste for a one-line recap and a single suggestion.
+    // token waste for a one-line recap.
     const parentUserMessage = typeof lastAssistantInfo.parentID === 'string' && lastAssistantInfo.parentID
       ? messages.find((message) => message?.info?.id === lastAssistantInfo.parentID && message?.info?.role === 'user')
       : null;
@@ -240,9 +195,6 @@ export const createSessionAssistRuntime = ({
     if (!transcript) return;
 
     const { generateSmallModelText } = await getSmallModelService();
-    const requestedFields = [targets.recap ? 'recap' : '', targets.suggestion ? 'suggestion' : '']
-      .filter(Boolean)
-      .join(' and ');
     // Instruct the language by example, not by description — account-side
     // personalization (e.g. the ChatGPT backend knowing the user's locale)
     // otherwise leaks a different language into the output.
@@ -254,8 +206,8 @@ export const createSessionAssistRuntime = ({
         // session's own provider unless the user explicitly picked a small
         // model (settings override / opencode config).
         restrictToPreferredProvider: true,
-        prompt: `The latest exchange in the conversation:\n\n${transcript}\n\nWrite ${requestedFields} in the SAME language as this sample from the conversation: "${languageSample}"`,
-        system: buildAssistSystemPrompt(targets),
+        prompt: `The latest exchange in the conversation:\n\n${transcript}\n\nWrite recap in the SAME language as this sample from the conversation: "${languageSample}"`,
+        system: ASSIST_SYSTEM_PROMPT,
         directory,
         preferredProviderID: typeof lastAssistantInfo.providerID === 'string' ? lastAssistantInfo.providerID : undefined,
         preferredModelID: typeof lastAssistantInfo.modelID === 'string' ? lastAssistantInfo.modelID : undefined,
@@ -270,12 +222,10 @@ export const createSessionAssistRuntime = ({
     }
 
     const structured = extractJsonObject(generated?.text);
-    let recap = targets.recap && typeof structured?.recap === 'string' ? structured.recap.trim().slice(0, RECAP_CHAR_LIMIT) : '';
-    let suggestion = targets.suggestion && typeof structured?.suggestion === 'string' ? structured.suggestion.trim().slice(0, SUGGESTION_CHAR_LIMIT) : '';
+    let recap = typeof structured?.recap === 'string' ? structured.recap.trim().slice(0, RECAP_CHAR_LIMIT) : '';
 
     // Hard guard against language hallucination: if the conversation contains
-    // no Cyrillic/CJK at all, the output must not either (and drop per-field,
-    // so one hallucinated field doesn't kill the other).
+    // no Cyrillic/CJK at all, the output must not either.
     const hasCyrillic = (text) => /[\u0400-\u04FF]/.test(text);
     const hasCjk = (text) => /[\u3040-\u30FF\u4E00-\u9FFF\uAC00-\uD7AF]/.test(text);
     const inputText = `${userText}\n${assistantText}`;
@@ -285,11 +235,7 @@ export const createSessionAssistRuntime = ({
       console.warn('[session-assist] dropped recap: language mismatch with conversation');
       recap = '';
     }
-    if (suggestion && scriptMismatch(suggestion)) {
-      console.warn('[session-assist] dropped suggestion: language mismatch with conversation');
-      suggestion = '';
-    }
-    if (!recap && !suggestion) return;
+    if (!recap) return;
 
     // The session may have moved on while we generated — a stale patch would
     // flash outdated content, so re-check the tail before writing.
@@ -310,7 +256,7 @@ export const createSessionAssistRuntime = ({
 
     // Merge from a FRESH read: generation takes tens of seconds, and merging
     // from the session snapshot fetched before it would clobber any metadata
-    // written meanwhile (suggestion dismissals, review links, …).
+    // written meanwhile (review links, …).
     const freshSession = await openCodeFetch(`/session/${encodeURIComponent(sessionId)}`, { directory })
       .catch(() => null);
     const currentMetadata = freshSession?.metadata && typeof freshSession.metadata === 'object'
@@ -331,7 +277,6 @@ export const createSessionAssistRuntime = ({
             ...currentNamespace,
             assist: {
               recap,
-              suggestion,
               forMessageID: lastAssistantInfo.id,
               generatedAt: Date.now(),
             },

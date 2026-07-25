@@ -1513,8 +1513,6 @@ export const dict = {
   'chat.goal.cancelDialog.description': 'The agent will stop working toward this goal automatically.',
   'chat.goal.cancelDialog.keep': 'Keep goal',
   'chat.goal.cancelDialog.confirm': 'Cancel goal',
-  'chat.suggestion.applyAria': 'Use suggested message',
-  'chat.suggestion.dismissAria': 'Dismiss suggestion',
   'header.actions.toggleTerminalPanel': 'Terminal panel',
   'header.actions.toggleTerminalPanelAria': 'Toggle terminal panel',
   'terminalView.stream.processExitedMessage': '\r\n[Process exited{exitCodeSegment}{signalSegment}]\r\n',

@@ -502,7 +502,7 @@ export type SessionUIState = {
   shareSession: (sessionId: string) => Promise<Session | null>
   unshareSession: (sessionId: string) => Promise<Session | null>
   revertToMessage: (sessionId: string, messageId: string, options?: { skipRedoPush?: boolean; directory?: string }) => Promise<void>
-  editMessagePreservingChanges: (sessionId: string, messageId: string, snapshot?: MessageEditSnapshot) => void
+  editMessagePreservingChanges: (sessionId: string, messageId: string, snapshot?: MessageEditSnapshot) => Promise<void>
   forkFromMessage: (sessionId: string, messageId: string, options?: { directory?: string }) => Promise<void>
   forkCurrentSession: (sessionId: string) => Promise<void>
   handleSlashUndo: (sessionId: string) => Promise<void>
@@ -2061,8 +2061,10 @@ export const useSessionUIStore = create<SessionUIState>()((set, get) => ({
     await revertToMessageAction(sessionId, messageId, options?.directory)
   },
 
-  editMessagePreservingChanges: (sessionId, messageId, snapshot) => {
-    stageMessageEdit(sessionId, messageId, snapshot)
+  editMessagePreservingChanges: async (sessionId, messageId, snapshot) => {
+    // Stage only after the draft commit succeeds so a failed restore cannot
+    // leave a staged edit pointing at an unchanged composer.
+    await stageMessageEdit(sessionId, messageId, snapshot)
     set({ stagedMessageEdit: { sessionId, messageId } })
   },
 

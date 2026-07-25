@@ -93,7 +93,8 @@
   /* Floating glass disc: keep the INSIDE clean (whiter than the page, no
      dark inner shading — that's what made it look dirty). Depth comes from
      outside-only shadows: a near-contact all-around shade defines the top
-     arc, a soft halo + gentle drop give lift. Blur does the glass. */
+     arc, a soft halo + gentle drop give lift. Blur does the glass.
+     Composer uses a more translucent fill so chat content reads through. */
   --oc-mobile-glass-fill: rgb(255 255 255 / 0.68);
   --oc-mobile-glass-highlight: rgb(255 255 255 / 0.6);
   --oc-mobile-glass-blur: 20px;
@@ -1369,6 +1370,8 @@ button.oc-mobile-group-label-trigger:focus-visible {
     background: var(--surface-elevated);
   }
 
+  /* Composer glass is defined near the keyboard block; reduced-transparency
+     fallback lives next to those rules so the selectors stay co-located. */
 }
 
 @media (max-width: 1024px) {
@@ -1469,6 +1472,18 @@ button.oc-mobile-group-label-trigger:focus-visible {
      cascade layer or specificity. */
   .composer-mobile-actions button {
     width: 1.5rem !important;
+    min-width: 0 !important;
+  }
+
+  /* Agent cycle + model name chip: keep compact label sizing; do not inflate
+     to the generic 36px touch min (would enlarge "GPT-…" text row). */
+  :root.mobile-pointer:not(.desktop-runtime)
+    .composer-mobile-model-controls
+    button,
+  :root.mobile-pointer:not(.desktop-runtime)
+    .composer-mobile-model-controls
+    [role="button"] {
+    min-height: 0 !important;
     min-width: 0 !important;
   }
 
@@ -1648,6 +1663,7 @@ button.oc-mobile-group-label-trigger:focus-visible {
     scale: var(--oc-press-soft-scale);
     transition-duration: 0ms;
   }
+
 
   @media (prefers-reduced-motion: reduce) {
     :root.mobile-pointer:not(.desktop-runtime)
@@ -2161,35 +2177,19 @@ button.oc-mobile-group-label-trigger:focus-visible {
   background-color: var(--background) !important;
 }
 
-/* Native (Capacitor) keyboard handling.
-   The Keyboard plugin runs in `resize: 'none'` mode so the WebView keeps its full
-   height; instead we shrink the app shell by the keyboard frame height. Two vars,
-   both set by useNativeMobileChrome: --oc-keyboard-inset is the keyboard's target
-   height from the moment `keyboardWillShow` fires (overlay surfaces below animate
-   against it as before), while --oc-kb-layout is the same height applied to the
-   shell's LAYOUT only at the choreography point where a resize is invisible.
-   Scoped to .oc-capacitor-app so the browser PWA keeps its dvh / interactive-widget
-   behaviour untouched.
+/* Native (Capacitor) keyboard handling (iOS + Android).
+   Message list keeps scrollTop (auto-follow freezes geometry chase).
+   Scoped to .oc-capacitor-app so the browser PWA keeps its dvh behaviour.
 
-   The shell height is NOT transitioned. Animating `height` reflows the whole shell
-   every frame and forces the chat's ResizeObserver to chase the bottom on each of
-   those frames — the source of the visible micro-jitter on the composer/chat while
-   pinned. Instead the visual rise is transform-only (compositor) — a FLIP
-   choreography driven by useNativeMobileChrome:
+   iOS: Keyboard resize:none + transform FLIP (~250ms); --oc-kb-layout settles
+   the shell once at the end of the rise.
 
-     show: shell keeps its full height for the whole 0.25s; the composer (and, when
-           pinned, the chat scroll container — see useChatAutoFollow) slides up via
-           inline transforms in sync with the keyboard; at the end the shell snaps to
-           its final height (--oc-kb-layout, one reflow) and the shift is removed
-           in the same frame — visually identical, so the swap is invisible.
-     hide: the shell snaps back to full height immediately (still hidden behind the
-           keyboard), the composer/content are FLIP-offset to their raised position
-           and slide down with the keyboard.
+   Android: ImeSyncBridge sets WebView-parent translationY = −imeBottom each IME
+   frame (compositor only). JS does not animate geometry — only freezes
+   auto-follow and snaps --oc-keyboard-inset at start/end for portal sheets.
+   https://developer.android.com/develop/ui/views/layout/sw-keyboard
 
-   `keyboardWillShow` fires at the start of the iOS keyboard animation with the final
-   height, and the duration/curve mimic the native keyboard (≈0.25s,
-   cubic-bezier(0.38, 0.7, 0.125, 1)). (visualViewport live-tracking would be exact
-   but doesn't report under WKWebView's `resize: 'none'`, so this is the best signal.) */
+   --oc-keyboard-inset: portal overlays. --oc-kb-layout: iOS shell settle only. */
 :root.oc-capacitor-app .oc-mobile-app-shell {
   height: calc(100dvh - var(--oc-kb-layout, 0px));
   /* Reserve the bottom safe area only while the keyboard is down — when it's up the
@@ -2267,10 +2267,9 @@ button.oc-mobile-group-label-trigger:focus-visible {
    transform changes via a CSS custom property, which parked the composer until
    the keyboard finished. Only the sliding backdrop lives here. */
 :root.oc-capacitor-app.oc-kb-animating .oc-mobile-composer {
-  /* While sliding, the composer passes over chat content that hasn't moved (user
-     scrolled up) — give it an opaque backdrop so text doesn't show through the
-     form's transparent padding. */
-  background: var(--background);
+  /* While sliding, keep the frosted host (not an opaque slab) so messages under
+     the glass fade stay readable mid-choreography. */
+  background: transparent !important;
 }
 
 /* Constant-viewport trick for the chat scroller: when the keyboard settles the
@@ -2279,9 +2278,9 @@ button.oc-mobile-group-label-trigger:focus-visible {
    keyboard — and converts the covered strip into its own bottom padding. For
    the virtualizer NOTHING resizes across keyboard transitions: clientHeight is
    constant, every row that can become visible is already mounted, and the
-   open/close reposition is a single cheap scrollTop change (the settle re-pin /
-   the clamp) instead of a viewport resize that mounts rows with a visible
-   pause on long chats. */
+   open/close keeps clientHeight stable (padding + bottom extension) so the
+   virtualizer does not remount rows; scrollTop is intentionally left alone
+   (IM-style stable main view) instead of a settle re-pin. */
 :root.oc-capacitor-app .oc-mobile-app-shell .chat-scroll {
   /* The shell shrinks by the keyboard height BUT also gives up its bottom
      safe-area padding at the same moment (see the shell's padding-bottom
@@ -2291,12 +2290,11 @@ button.oc-mobile-group-label-trigger:focus-visible {
   bottom: calc(
     -1 * max(var(--oc-kb-layout, 0px) - var(--oc-app-bottom-safe, 0px), 0px)
   );
-  /* The padding leg is driven by its own variable so it can be applied at the
-     very START of the keyboard rise (with an immediate re-pin — the bottom of
-     the chat moves up as the keyboard begins, not after it finishes), while
-     the bottom-extension leg still tracks the shell's settle-time shrink. Both
-     legs equal the keyboard height once settled, so the settle snap is
-     geometry-neutral for the scroller. */
+   /* The padding leg is driven by its own variable so it can be applied at the
+      very START of the keyboard rise. Auto-follow keeps scrollTop stable (no
+      re-pin) so the main chat does not jump; the bottom-extension leg still
+      tracks the shell's settle-time shrink. Both legs equal the keyboard height
+      once settled, so the settle snap is geometry-neutral for the scroller. */
   padding-bottom: var(--oc-kb-scroll-inset, var(--oc-kb-layout, 0px));
 }
 
@@ -2316,6 +2314,267 @@ button.oc-mobile-group-label-trigger:focus-visible {
    every frame). */
 :root.oc-capacitor-app.oc-keyboard-open .oc-mobile-composer {
   padding-bottom: 12px;
+}
+
+/* Composer host stays transparent so chat can scroll under the ambient glass
+   backdrop. The INPUT CARD itself is a solid floating surface again (see
+   .oc-mobile-composer-surface). Frost lives only in ::before / ::after. */
+.oc-mobile-composer {
+  background: transparent !important;
+  isolation: auto;
+}
+
+/* Ambient frosted strip above the floating card — short (~2.25rem), grows out
+   of the composer top edge. This is the "毛玻璃背景", not the input fill. */
+.oc-mobile-composer::before {
+  content: "";
+  position: absolute;
+  z-index: 0;
+  left: 0;
+  right: 0;
+  bottom: 100%;
+  height: 2.25rem;
+  pointer-events: none;
+  background: linear-gradient(
+    to top,
+    color-mix(in srgb, var(--background) 78%, transparent) 0%,
+    color-mix(in srgb, var(--background) 42%, transparent) 55%,
+    transparent 100%
+  );
+  -webkit-backdrop-filter:
+    blur(var(--oc-mobile-glass-blur, 20px))
+    saturate(var(--oc-mobile-glass-saturate, 1.2));
+  backdrop-filter:
+    blur(var(--oc-mobile-glass-blur, 20px))
+    saturate(var(--oc-mobile-glass-saturate, 1.2));
+  -webkit-mask-image: linear-gradient(to top, black 0%, black 45%, transparent 100%);
+  mask-image: linear-gradient(to top, black 0%, black 45%, transparent 100%);
+}
+
+/* Floor under form padding + home-indicator: frosted so messages can peek
+   through beside the solid card, without making the card itself glass. */
+.oc-mobile-composer::after {
+  content: "";
+  position: absolute;
+  z-index: -1;
+  left: 0;
+  right: 0;
+  top: 0;
+  bottom: 0;
+  pointer-events: none;
+  background: linear-gradient(
+    to top,
+    color-mix(in srgb, var(--background) 72%, transparent) 0%,
+    color-mix(in srgb, var(--background) 48%, transparent) 100%
+  );
+  -webkit-backdrop-filter:
+    blur(var(--oc-mobile-glass-blur, 20px))
+    saturate(var(--oc-mobile-glass-saturate, 1.2));
+  backdrop-filter:
+    blur(var(--oc-mobile-glass-blur, 20px))
+    saturate(var(--oc-mobile-glass-saturate, 1.2));
+}
+
+.oc-mobile-composer.bottom-safe-area::after {
+  bottom: calc(-1 * var(--oc-safe-area-bottom-visual, var(--oc-safe-area-bottom, 0px)));
+}
+
+/* Floating input card: solid elevated surface + soft lift (not translucent).
+   Class name kept for expand motion hooks; fill is opaque on purpose. */
+.oc-mobile-composer-surface {
+  background: var(--surface-subtle) !important;
+  background-color: var(--surface-subtle) !important;
+  -webkit-backdrop-filter: none !important;
+  backdrop-filter: none !important;
+  box-shadow: var(--oc-mobile-glass-shadow);
+  /* Stacking context so slash-command / @-mention popovers (z-100) paint
+     above chat content and the ambient frosted strip. */
+  z-index: 20;
+  position: relative;
+}
+
+/* Android shell foot: solid page bg, no elevation halo under safe-area. */
+:root.oc-capacitor-app.oc-platform-android .oc-mobile-app-shell {
+  background: var(--background);
+  background-color: var(--background);
+  box-shadow: none;
+  filter: none;
+}
+
+/* Bottom sheets: no drop shadow under the rounded top / handle row on Android. */
+:root.oc-capacitor-app.oc-platform-android .oc-mobile-floating-shell.pwa-overlay-panel,
+:root.oc-capacitor-app.oc-platform-android .oc-mobile-surface-shell {
+  box-shadow: none !important;
+  filter: none;
+}
+
+@media (prefers-reduced-transparency: reduce) {
+  .oc-mobile-composer::before {
+    background: linear-gradient(
+      to top,
+      var(--background) 0%,
+      color-mix(in srgb, var(--background) 70%, transparent) 55%,
+      transparent 100%
+    );
+    -webkit-backdrop-filter: none;
+    backdrop-filter: none;
+    -webkit-mask-image: none;
+    mask-image: none;
+  }
+
+  .oc-mobile-composer::after {
+    background: var(--background);
+    -webkit-backdrop-filter: none;
+    backdrop-filter: none;
+  }
+
+  .oc-mobile-composer-surface {
+    box-shadow: none;
+  }
+}
+
+/* Expand/collapse motion (~200ms). Same DOM node; only silhouette + chrome
+   change. Keep it short and ease-out so it reads as a soft open, not a bounce.
+   IMPORTANT: overflow stays visible when expanded so slash-command /
+   @-mention / skill autocomplete (absolute bottom-full) is not clipped. */
+.oc-mobile-composer-surface {
+  overflow: visible;
+  transform-origin: bottom center;
+  transition:
+    border-radius 200ms cubic-bezier(0.32, 0.72, 0, 1),
+    max-height 200ms cubic-bezier(0.32, 0.72, 0, 1),
+    min-height 200ms cubic-bezier(0.32, 0.72, 0, 1),
+    padding 200ms cubic-bezier(0.32, 0.72, 0, 1);
+  min-height: 2.75rem;
+  max-height: min(70vh, 22rem);
+}
+
+.oc-mobile-composer-surface:not(.oc-mobile-composer-collapsed) {
+  animation: oc-mobile-composer-expand 200ms cubic-bezier(0.32, 0.72, 0, 1);
+  /* Popovers (CommandAutocomplete etc.) render as absolute children above
+     the card; never clip them after expand. */
+  overflow: visible;
+}
+
+@keyframes oc-mobile-composer-expand {
+  from {
+    opacity: 0.92;
+    transform: scaleY(0.96);
+  }
+  to {
+    opacity: 1;
+    transform: scaleY(1);
+  }
+}
+
+.oc-mobile-composer-surface:not(.oc-mobile-composer-collapsed)
+  [data-chat-input-footer="true"] {
+  animation: oc-mobile-composer-footer-in 160ms ease-out 40ms both;
+}
+
+@keyframes oc-mobile-composer-footer-in {
+  from {
+    opacity: 0;
+  }
+  to {
+    opacity: 1;
+  }
+}
+
+/* Mobile collapsed composer: same ChatPromptComposer + textarea DOM as expanded.
+   Only chrome/layout shrinks into a pill silhouette so soft-keyboard focus is
+   continuous (no remount). Footer slots re-flow beside the field via
+   display:contents → attach | textarea | stop. */
+.oc-mobile-composer-collapsed {
+  height: 2.75rem; /* h-11 */
+  min-height: 2.75rem;
+  max-height: 2.75rem;
+  /* Clip only while pill-shaped; expanded must stay overflow:visible for
+     slash-command autocomplete above the card. */
+  overflow: hidden;
+  /* Match the old pill surface: pl-2 pr-1 so attach is not flush left. */
+  padding-left: 0.5rem;
+  padding-right: 0.25rem;
+  /* Kill expand keyframes while collapsed so reopen always plays cleanly. */
+  animation: none;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .oc-mobile-composer-surface {
+    transition: none;
+    animation: none;
+  }
+
+  .oc-mobile-composer-surface:not(.oc-mobile-composer-collapsed)
+    [data-chat-input-footer="true"] {
+    animation: none;
+  }
+}
+
+.oc-mobile-composer-collapsed [data-composer-content="true"],
+.oc-mobile-composer-collapsed-content {
+  display: flex !important;
+  flex-direction: row !important;
+  align-items: center !important;
+  min-height: 0 !important;
+  height: 100%;
+  width: 100%;
+  gap: 0;
+}
+
+/* Input column (textarea host) sits between attach and action slots. */
+.oc-mobile-composer-collapsed [data-composer-content="true"] > div:first-child {
+  order: 2;
+  flex: 1 1 auto;
+  min-width: 0;
+  min-height: 0;
+  height: 100%;
+  display: flex;
+  align-items: center;
+  overflow: hidden;
+}
+
+.oc-mobile-composer-collapsed [data-composer-input-shell="true"] {
+  flex: 1 1 auto;
+  min-width: 0;
+  height: 100%;
+  display: flex;
+  align-items: center;
+}
+
+.oc-mobile-composer-collapsed [data-chat-input-footer="true"],
+.oc-mobile-composer-collapsed-footer {
+  display: contents;
+}
+
+.oc-mobile-composer-collapsed [data-mobile-composer-collapsed-slot="attach"] {
+  order: 1;
+  flex: 0 0 auto;
+  /* Surface already has pl-2; keep the control itself unpadded. */
+  padding-left: 0;
+}
+
+.oc-mobile-composer-collapsed [data-mobile-composer-collapsed-slot="action"] {
+  order: 3;
+  flex: 0 0 auto;
+  padding-right: 0;
+}
+
+/* Override the generic mobile-pointer textarea min-height: 36px for the pill line. */
+.oc-mobile-composer-collapsed-text,
+.oc-mobile-composer-collapsed textarea[data-chat-input="true"] {
+  min-height: 0 !important;
+  max-height: 1.25rem !important;
+  height: 1.25rem !important;
+  overflow: hidden !important;
+  white-space: nowrap !important;
+  text-overflow: ellipsis;
+  padding-top: 0 !important;
+  padding-bottom: 0 !important;
+  padding-left: 0.375rem !important;
+  padding-right: 0.375rem !important;
+  line-height: 1.25rem !important;
+  resize: none !important;
 }
 
 /* Draft starter chips leave the moment the keyboard starts rising

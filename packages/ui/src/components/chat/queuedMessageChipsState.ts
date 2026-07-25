@@ -23,6 +23,35 @@ export const popQueuedMessageForEdit = (
     return popToInput(message.owner, message.queueItemID ?? message.id, message.operationID);
 };
 
+/**
+ * Legacy queue edit: commit restoration first, then remove only when the draft
+ * is current+committed. Avoids pop-before-async-restore data loss.
+ * Returns true when the queue item may be removed; false keeps the queue item.
+ */
+export const shouldRemoveQueueItemAfterEditCommit = (result: {
+    status: string
+    current: boolean
+    durable?: boolean
+}): boolean => result.status === 'committed' && result.current === true;
+
+/** Snapshot fields needed to restore a queue row into the composer without popping first. */
+type LegacyQueueEditRestoreSource = {
+    content: string
+    attachments?: QueuedMessage['attachments']
+    composerDocument?: QueuedMessage['composerDocument']
+    composerMentions?: QueuedMessage['composerMentions']
+};
+
+export const legacyQueueEditRestoreSource = (message: QueuedMessage): LegacyQueueEditRestoreSource => {
+    const recovery = message.failure?.recovery;
+    return {
+        content: recovery?.content ?? message.content,
+        attachments: recovery?.attachments ?? message.attachments,
+        composerDocument: recovery?.composerDocument ?? message.composerDocument,
+        composerMentions: recovery?.composerMentions ?? message.composerMentions,
+    };
+};
+
 export const canSendQueuedMessage = (message: QueuedMessage, hasDispatchLock: boolean): boolean => {
     const status = message.status ?? 'queued';
     return !hasDispatchLock && (status === 'queued' || status === 'retrying' || status === 'failed' || status === 'unresolved');

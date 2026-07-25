@@ -767,9 +767,19 @@ const ChatMessage: React.FC<ChatMessageProps> = ({
 
     const handleEdit = useEvent(() => {
         if (!sessionId || !message.info.id || pendingMessageActionRef.current) return;
-        editMessagePreservingChanges(sessionId, message.info.id, {
+        const snapshot = {
             info: message.info,
             parts: message.parts,
+        };
+        // Hosted surfaces (Assistant) own staged edit + surface DraftKey isolation.
+        if (sessionSurface.onEditMessage) {
+            void sessionSurface.onEditMessage(message.info.id, snapshot).catch(() => {
+                // Avoid unhandled rejection; visual state stays unchanged on failure.
+            });
+            return;
+        }
+        void editMessagePreservingChanges(sessionId, message.info.id, snapshot).catch(() => {
+            // Avoid unhandled rejection; visual state stays unchanged on failure.
         });
     });
 

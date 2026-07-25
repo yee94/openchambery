@@ -45,6 +45,7 @@ mock.module('./lib/shellBridge', () => ({
 const {
     createTanstackTimelineSnapshotCache,
     resolveMessageListKeys,
+    shouldAdjustHistoryScrollForSizeChange,
     syncCurrentHistoryVirtualization,
 } = await import('./MessageList');
 
@@ -83,4 +84,58 @@ describe('MessageList history virtualization handle state', () => {
 
         expect(existingHandleReader()).toBe(true);
     });
+});
+
+describe('history row size-change scroll adjustment', () => {
+    const base = {
+        atEnd: false,
+        firstMeasurement: false,
+        itemStart: 600,
+        itemEnd: 1_200,
+        scrollOffset: 1_000,
+        scrollDirection: 'forward' as const,
+    };
+
+    const cases: Array<{
+        name: string;
+        input: Parameters<typeof shouldAdjustHistoryScrollForSizeChange>[0];
+        expected: boolean;
+    }> = [
+        {
+            name: 'adjusts the full delta when a first measurement crosses the fold',
+            input: { ...base, firstMeasurement: true },
+            expected: true,
+        },
+        {
+            name: 'lets a crossing row grow downward on remeasure',
+            input: base,
+            expected: false,
+        },
+        {
+            name: 'adjusts a remeasured row fully above the viewport',
+            input: { ...base, itemEnd: 900 },
+            expected: true,
+        },
+        {
+            name: 'adjusts a first measurement crossing the fold under backward scrolling',
+            input: { ...base, firstMeasurement: true, scrollDirection: 'backward' as const },
+            expected: true,
+        },
+        {
+            name: 'leaves a remeasured row fully above the viewport under backward scrolling',
+            input: { ...base, itemEnd: 900, scrollDirection: 'backward' as const },
+            expected: false,
+        },
+        {
+            name: 'leaves bottom pinning to auto-follow',
+            input: { ...base, firstMeasurement: true, atEnd: true },
+            expected: false,
+        },
+    ];
+
+    for (const { name, input, expected } of cases) {
+        test(name, () => {
+            expect(shouldAdjustHistoryScrollForSizeChange(input)).toBe(expected);
+        });
+    }
 });

@@ -1,6 +1,7 @@
 import { downloadMessageQueueAttachment, type MessageQueueItem } from '@/lib/message-queue-server';
-import { parseDraftComposerDocument, parseDraftMentions, type DraftAttachmentMetadata, type DraftKey } from './input-draft-types';
+import { type DraftAttachmentMetadata, type DraftKey } from './input-draft-types';
 import { useInputStore, type DraftCommitInput } from './input-store';
+import { buildQueueComposerRestoration, commitComposerRestoration } from './message-composer-restoration';
 import type { MessageQueueEditResult } from './message-queue-edit-bridge';
 import { getMessageQueueServerRuntime, type MessageQueueServerRuntimeCapture, type MessageQueueServerSurface } from './message-queue-server-runtime';
 
@@ -78,13 +79,29 @@ export const createMessageQueueServerEditBridge = (overrides: Partial<Dependenci
           draftValues.set(attachmentRefID, value.blob);
         }
         if (!deps.current(queueRuntime)) return diagnostic('materialize-failed', 'identity', 'runtime-stale');
-        const text = input.item.composerDocument?.text ?? input.item.content;
-        const composer = parseDraftComposerDocument(text, input.item.composerDocument?.references ?? []), mentions = parseDraftMentions(text, input.item.composerMentions ?? []);
-        if (!composer || !mentions) return diagnostic('draft-rejected', 'draft', 'invalid-sidecars');
         if (!await renew()) return diagnostic('materialize-failed', 'identity', 'lease-lost');
         let draft;
         const syntheticParts = (input.item.syntheticParts ?? []).map((part) => ({ partID: part.partID, text: part.text, attachments: syntheticAttachments.get(part.partID) ?? [], ...(part.synthetic === true ? { synthetic: true } : {}) }));
-        try { draft = await deps.input.commitDraftSnapshot({ key: input.targetKey, expectedRevision: input.expectedRevision, runtime: inputRuntime, values: draftValues, snapshot: { text, composerReferences: composer.references, attachments: draftAttachments, syntheticParts, mentions } }); } catch { return diagnostic('draft-rejected', 'draft', 'commit-threw'); }
+        try {
+          const restoration = await buildQueueComposerRestoration({
+            content: input.item.content,
+            composerDocument: input.item.composerDocument,
+            composerMentions: input.item.composerMentions,
+            draftAttachments,
+            draftValues,
+            syntheticParts,
+          });
+          const committed = await commitComposerRestoration({
+            key: input.targetKey,
+            expectedRevision: input.expectedRevision,
+            payload: restoration,
+            runtime: inputRuntime,
+            input: deps.input,
+          });
+          draft = committed.result ?? { status: committed.status, durable: committed.durable, current: committed.current, errors: [], cleanupErrors: [] };
+          if (committed.status === 'failed' && !committed.result) return diagnostic('draft-rejected', 'draft', 'commit-threw');
+        } catch { return diagnostic('draft-rejected', 'draft', 'commit-threw'); }
+        // Durable-before-remove: only remove reserved queue item after draft.durable is true.
         if (!draft.durable) return diagnostic('draft-rejected', 'draft', draft.status);
         if (!deps.current(queueRuntime) || leaseLost) return diagnostic('queue-retained', 'remove', leaseLost ? 'lease-lost' : 'runtime-stale', true);
         try {
