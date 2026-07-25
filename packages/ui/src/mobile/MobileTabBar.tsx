@@ -78,9 +78,9 @@ export function MobileTabBar({ activeTab, onTabChange, className }: MobileTabBar
               'active:scale-[0.985]',
               'motion-reduce:transition-none',
               selected && [
-                'bg-interactive-selection text-interactive-selection-foreground',
-                'shadow-[0_5px_14px_color-mix(in_srgb,var(--surface-foreground)_8%,transparent),inset_0_1px_0_color-mix(in_srgb,var(--surface-elevated)_82%,transparent)]',
-                'hover:bg-interactive-selection hover:text-interactive-selection-foreground',
+                // Lighter than full interactive-selection so the pill is soft on glass.
+                'bg-interactive-selection/55 text-primary',
+                'hover:bg-interactive-selection/55 hover:text-primary',
                 'font-semibold',
               ],
             )}

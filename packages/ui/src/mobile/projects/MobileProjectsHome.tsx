@@ -179,6 +179,7 @@ function WorkspaceGroupLabel({
       {onToggle ? (
         <button
           type="button"
+          data-mobile-press-feedback="soft"
           className="oc-mobile-group-label-trigger"
           aria-expanded={expanded}
           onClick={onToggle}

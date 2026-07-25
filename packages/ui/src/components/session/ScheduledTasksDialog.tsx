@@ -680,7 +680,10 @@ export function ScheduledTasksWorkspace({
                   variant="ghost"
                   size="sm"
                   className={cn(
-                    'active:scale-[0.97] overflow-hidden border-0 bg-transparent text-muted-foreground shadow-none transition-[color,background-color,transform] duration-150 ease-out motion-reduce:transition-none',
+                    // overflow-clip (not overflow-hidden): mobile.css rewrites
+                    // .overflow-hidden → overflow-y:auto, which flashes a
+                    // scrollbar on the filter pill during layout animation.
+                    'active:scale-[0.97] overflow-clip border-0 bg-transparent text-muted-foreground shadow-none transition-[color,background-color,transform] duration-150 ease-out motion-reduce:transition-none',
                     isMobileTab ? 'rounded-[var(--oc-mobile-inset-radius)]' : 'rounded-xl',
                     isMobilePanel ? 'h-11 min-h-11 min-w-0 flex-1 px-2' : '!h-9 !min-h-9 px-3',
                     filter === value

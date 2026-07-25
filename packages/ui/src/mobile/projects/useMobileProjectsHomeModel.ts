@@ -356,19 +356,20 @@ export function useMobileProjectsHomeModel(): MobileProjectsHomeModel {
           && (visibleRoots.length > pageSize || visibleCount > pageSize);
 
         const sessionsTree: MobileSessionTreeNode[] = [...visibleRoots];
+        // Fewer sits above More when both appear (collapse before expand).
+        if (canShowFewer) {
+          sessionsTree.push({
+            id: `${SHOW_FEWER_ID_PREFIX}${node.project.id}::${bucket.key}`,
+            kind: 'pagination',
+            title: t('sessions.sidebar.group.showFewer'),
+          });
+        }
         if (remaining > 0 || hasRemoteSessions) {
           sessionsTree.push({
             id: `${SHOW_MORE_ID_PREFIX}${node.project.id}::${bucket.key}`,
             kind: 'pagination',
             title: t('sessions.sidebar.group.showMore'),
             subtitle: pagination?.loadingMore ? '…' : undefined,
-          });
-        }
-        if (canShowFewer) {
-          sessionsTree.push({
-            id: `${SHOW_FEWER_ID_PREFIX}${node.project.id}::${bucket.key}`,
-            kind: 'pagination',
-            title: t('sessions.sidebar.group.showFewer'),
           });
         }
 

@@ -441,6 +441,16 @@ const PaginationRow: React.FC<{
       className="flex min-h-10 w-full items-center gap-3 py-1.5 pr-3 text-muted-foreground"
       style={{ paddingLeft: indent, touchAction: 'manipulation' }}
     >
+      {showFewer ? (
+        <button
+          type="button"
+          className="inline-flex items-center gap-1.5 text-left transition-colors hover:text-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-primary focus-visible:ring-inset"
+          onClick={onShowFewer}
+        >
+          <Icon name="arrow-up-s" className="size-4" />
+          <span className="typography-micro">{t('sessions.sidebar.group.showFewer')}</span>
+        </button>
+      ) : null}
       {showMore ? (
         <button
           type="button"
@@ -453,16 +463,6 @@ const PaginationRow: React.FC<{
         >
           <Icon name="arrow-down-s" className="size-4" />
           <span className="typography-micro">{t('sessions.sidebar.group.showMore')}</span>
-        </button>
-      ) : null}
-      {showFewer ? (
-        <button
-          type="button"
-          className="inline-flex items-center gap-1.5 text-left transition-colors hover:text-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-primary focus-visible:ring-inset"
-          onClick={onShowFewer}
-        >
-          <Icon name="arrow-up-s" className="size-4" />
-          <span className="typography-micro">{t('sessions.sidebar.group.showFewer')}</span>
         </button>
       ) : null}
     </div>

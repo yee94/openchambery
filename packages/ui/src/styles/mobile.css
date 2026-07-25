@@ -221,9 +221,10 @@
 
 /* Direct touch gets a visible, immediate glass-platter response. This is
    intentionally separate from selection: touching either the current tab or
-   a destination shows feedback before navigation changes the selected state. */
+   a destination shows feedback before navigation changes the selected state.
+   Match the selected-tab selection gray so press and selection read as one system. */
 .oc-mobile-tab-button:active {
-  background: var(--interactive-active);
+  background: color-mix(in srgb, var(--interactive-selection) 55%, transparent);
 }
 
 .oc-mobile-tab-button > span {
