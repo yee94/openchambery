@@ -12,6 +12,7 @@ The mobile package reuses the web build, then rewrites `mobile.html` to `index.h
 - The connection screen and `Switch instance` Settings page are Capacitor-only. Hosted `mobile.html` in a normal browser keeps the regular web behavior.
 - Password-protected OpenChamber servers can be unlocked from the mobile app. The app stores the issued client token with the saved connection.
 - Chat `edit` and `multiedit` rows open their exact single-file tool patch in a resizable phone sheet or the iPad Changes panel. An `apply_patch` row opens every renderable file patch from that invocation. The initial target focuses its first changed line, and apply-patch turn-snapshot records open the owning turn diff.
+- iOS and Android register the `openchamber://` URL scheme. Opening a validated `openchamber://connect?v=2&p=...` link invokes the same one-time pairing redemption used by the QR scanner, including on cold launch; pairing secrets remain transient and are never logged or persisted.
 
 ## Native Haptics Hot Path
 
@@ -40,6 +41,7 @@ The mobile package reuses the web build, then rewrites `mobile.html` to `index.h
 - iOS declares `INSendMessageIntent` support in the app and Share Extension. Successful Assistant composer sends and Share Extension submissions donate an outgoing conversation interaction with the Assistant's generated avatar; a suggested-recipient launch resolves the exact Assistant from `conversationIdentifier`. iOS owns suggestion eligibility and ranking, while disabled or removed Assistant catalog entries delete their donated conversation groups.
 - The iOS Share Extension presents its native confirmation screen. Android shows a short native opening state and uses the existing Assistant Composer for preview, editing, attachment changes, and manual sending.
 - Android uses a hybrid share path: native durable ingress stages the draft, the WebView durably hands it to the existing Assistant Composer, native draft cancellation follows that handoff, and the user edits attachments or text then sends through the standard Assistant Composer flow.
+- Android Assistant launcher shortcuts durably stage their exact `serverInstanceID`, `connectionKey`, and `assistantID` target before opening the app. The WebView switches to that saved instance, validates a fresh Assistant snapshot, opens the phone conversation page, and acknowledges the native request only after navigation succeeds. Generic Android shares use the explicit default Assistant when configured, otherwise the first enabled Assistant in the published catalog.
 - iOS resolves every shared image to `image/jpeg`, `image/png`, `image/gif`, `image/webp`, or `image/heic` from the copied file extension and matching file signature. Android preserves the content resolver's concrete image MIME, including `image/heic`. Shares with an unrecognized iOS image format return an attachment error and clean up copied temporary files.
 - The share extension requires the existing `group.com.openchamber.app` App Group entitlement for the app and `OpenChamberShareExtension` target. The release signing profile must enable that App Group for `com.openchamber.app.OpenChamberShareExtension`.
 

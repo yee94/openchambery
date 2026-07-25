@@ -77,23 +77,23 @@ const MODEL_CHANNEL_SUFFIXES = [
   '-preview',
 ] as const;
 
-/** 品牌 → models.dev / 本地 provider-logos 候选 ID（远程兜底） */
+/** 品牌 → 本地 model-icons / provider-logos 候选 ID */
 const BRAND_LOGO_CANDIDATES: Record<string, readonly string[]> = {
   claude: ['claude', 'anthropic'],
   gpt: ['gpt', 'openai'],
   gemini: ['google', 'gemini'],
   gemma: ['google', 'gemma', 'gemini'],
   grok: ['xai', 'grok'],
-  kimi: ['kimi', 'moonshot'],
-  glm: ['zhipuai', 'zai', 'zai-coding-plan', 'zhipuai-coding-plan', 'glm'],
-  qwen: ['qwen', 'alibaba'],
-  hy: ['hunyuan', 'hy', 'tencent'],
-  hunyuan: ['hunyuan', 'hy', 'tencent'],
-  llama: ['llama', 'meta'],
-  mistral: ['mistral'],
+  kimi: ['kimi'],
+  glm: ['zai-coding-plan', 'zhipuai-coding-plan', 'glm'],
+  qwen: ['qwen'],
+  hy: ['hunyuan', 'hy'],
+  hunyuan: ['hunyuan', 'hy'],
   deepseek: ['deepseek'],
   minimax: ['minimax'],
   doubao: ['doubao'],
+  longcat: ['longcat'],
+  seed: ['seed'],
   cursor: ['cursor', 'composer'],
   composer: ['cursor', 'composer'],
 };
@@ -225,15 +225,12 @@ export const resolveModelBrand = (
 };
 
 /**
- * 品牌对应的 logo 查找候选（本地 model-icons / provider-logos / models.dev）
- * 有显式候选表时按表内顺序优先（glm 先 zhipuai 再 glm 文件）
+ * 品牌对应的本地 logo 查找候选（model-icons / provider-logos）
+ * 按候选表顺序查找；表外品牌交由通用 fallback 展示
  */
 export const getModelBrandLogoCandidates = (brand: string | null | undefined): string[] => {
   if (!brand) return [];
   const mapped = applyBrandAlias(brand);
   const extras = BRAND_LOGO_CANDIDATES[mapped];
-  if (extras && extras.length > 0) {
-    return [...new Set(extras.filter(Boolean))];
-  }
-  return [mapped];
+  return extras ? [...new Set(extras.filter(Boolean))] : [];
 };

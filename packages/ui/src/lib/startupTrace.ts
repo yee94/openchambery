@@ -55,7 +55,6 @@ const getStartupTraceSummary = () => {
     || event.name.includes('loadProviders')
     || event.name.includes('loadAgents')
     || event.name.includes('config.defaults')
-    || event.name.includes('modelsMetadata')
     || event.name.includes('ModelControls')
     || event.name.includes('activateDirectory')
     || event.name.includes('opencodeClient:setDirectory')

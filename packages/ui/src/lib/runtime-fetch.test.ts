@@ -92,6 +92,43 @@ describe('runtime request priority', () => {
     expect(getRuntimeRequestPriority('POST', '/api/session/ses_1/message')).toBe(undefined);
     expect(getRuntimeRequestPriority('GET', 'https://external.example/api/session/ses_1/message')).toBe(undefined);
   });
+
+  test('runtimeFetch applies inferred priority: low on session-index GET', async () => {
+    const previous = getRuntimeUrlResolver();
+    const originalWindow = globalThis.window;
+    const calls: Array<{ url: string; priority: RequestPriority | undefined }> = [];
+
+    try {
+      configureRuntimeUrlResolver({});
+      Object.defineProperty(globalThis, 'window', {
+        configurable: true,
+        value: { location: { origin: 'https://app.example', href: 'https://app.example/' } },
+      });
+
+      globalThis.fetch = (async (input: RequestInfo | URL, init?: RequestInit) => {
+        const url = input instanceof Request ? input.url : String(input);
+        calls.push({
+          url,
+          priority: (init?.priority ?? (input instanceof Request ? (input as Request & { priority?: RequestPriority }).priority : undefined)) as RequestPriority | undefined,
+        });
+        // Request constructor may drop priority; also inspect init when present.
+        if (init && 'priority' in init) {
+          calls[calls.length - 1].priority = init.priority as RequestPriority | undefined;
+        }
+        return new Response(JSON.stringify({}), { status: 200 });
+      }) as typeof fetch;
+
+      await runtimeFetch('/api/openchamber/session-index', { method: 'GET' });
+
+      expect(calls).toHaveLength(1);
+      expect(calls[0].url).toContain('/api/openchamber/session-index');
+      expect(calls[0].priority).toBe('low');
+    } finally {
+      setRuntimeUrlResolver(previous);
+      Object.defineProperty(globalThis, 'window', { configurable: true, value: originalWindow });
+      globalThis.fetch = originalFetch;
+    }
+  });
 });
 
 describe('runtimeFetch transport contract', () => {

@@ -1,5 +1,6 @@
 import React from 'react';
 import { useEvent } from '@reactuses/core';
+import { toast } from 'sonner';
 
 import { Icon } from '@/components/icon/Icon';
 import type { IconName } from '@/components/icon/icons';
@@ -35,6 +36,7 @@ import { useRouter } from '@/hooks/useRouter';
 import { useWindowTitle } from '@/hooks/useWindowTitle';
 import { opencodeClient } from '@/lib/opencode/client';
 import type { ProjectEntry, RuntimeAPIs } from '@/lib/api/types';
+import type { PairingConnectionPayload } from '@/lib/connectionPayload';
 import { useOrientation } from '@/lib/device';
 import { useI18n } from '@/lib/i18n';
 import { MOBILE_SETTINGS_PAGE_SLUGS } from '@/lib/settings/metadata';
@@ -86,18 +88,19 @@ import {
 import { useMobileNavigationStore } from '@/mobile/useMobileNavigationStore';
 import { mobileBackNavigationCoordinator, useMobileNavigationDriver } from '@/mobile/mobileBackNavigation';
 import { DedicatedMobileAppProvider, type MobileAppActions } from './mobileAppContext';
-import { autoConnectLastInstance, connectionDisplayUrl, getAutoConnectTargetLabel, isActiveRuntimeConnection, reprobeActiveConnection, useMobileConnection } from './mobileConnections';
+import { autoConnectLastInstance, connectionDisplayUrl, getAutoConnectTargetLabel, isActiveRuntimeConnection, reprobeActiveConnection, useMobileConnection, type UseMobileConnection } from './mobileConnections';
 import { isRelayModeActive } from '@/lib/relay/runtime-tunnel';
 import { isQrScanSupported, parseConnectionPayload, scanConnectionQr } from './mobileQrScan';
 import { reconnectAppForTransportSwitch, resetAppForRuntimeEndpointChange } from './runtimeEndpointReset';
 import { useAppFontEffects } from './useAppFontEffects';
 import { useFontsReady } from './useFontsReady';
-import { useDeepLinkHandlers, useDeepLinkSource } from './deepLinkNavigation';
+import { useDeepLinkHandlers, useDeepLinkSource, usePairingDeepLinkHandler } from './deepLinkNavigation';
 import { useEdgeSwipeSessionSwitch, type SwipeProgress } from './useEdgeSwipeSessionSwitch';
 import { useHeaderSwipeToSessions } from './useHeaderSwipeToSessions';
 import { useMobilePressHaptics, useStreamingHaptics } from '@/hooks/streamingHaptics';
 import { useNativePushRegistration } from './useNativePushRegistration';
 import { MobileShareBridge } from './MobileShareBridge';
+import { handlePendingNativeAssistantOpen } from './nativeAssistantShortcut';
 
 const MOBILE_DIRECT_DIFF_WINDOW_ID = 'mobile-direct-diff';
 const MOBILE_TURN_DIFF_WINDOW_ID = 'mobile-turn-diff';
@@ -679,13 +682,14 @@ const getProjectDisplayLabel = (project: ProjectEntry | null, fallbackDirectory:
   return getProjectLabel(fallbackDirectory);
 };
 
-const MobileConnectionWelcome: React.FC<{ onConnected: () => void }> = ({ onConnected }) => {
+const MobileConnectionWelcome: React.FC<{ connection: UseMobileConnection }> = ({ connection }) => {
   const { t } = useI18n();
-  const conn = useMobileConnection(onConnected);
+  const conn = connection;
   const { connections, isBusy, isPasswordBusy, error, pendingConnection } = conn;
   const [serverUrl, setServerUrl] = React.useState('');
   const [connectionName, setConnectionName] = React.useState('');
   const [clientToken, setClientToken] = React.useState('');
+  const [pairingLink, setPairingLink] = React.useState('');
   const [isScanning, setIsScanning] = React.useState(false);
   const qrScanSupported = React.useMemo(() => isQrScanSupported(), []);
   // QR pairing is the primary flow; the manual URL form stays collapsed unless
@@ -700,23 +704,14 @@ const MobileConnectionWelcome: React.FC<{ onConnected: () => void }> = ({ onConn
     void conn.connect({ url: serverUrl, clientToken, label: connectionName });
   });
 
-  // Accept a pasted pairing link (openchamber://connect?...) in the URL field and
-  // split it back into the server URL + token.
-  const handleUrlChange = useEvent((value: string) => {
-    if (/^openchamber:\/\//i.test(value.trim())) {
-      const payload = parseConnectionPayload(value);
-      if (payload) {
-        if ('pairing' in payload) {
-          void conn.redeemPairingConnection(payload.pairing);
-          return;
-        }
-        setServerUrl(payload.url);
-        if (payload.label) setConnectionName(payload.label);
-        if (payload.clientToken) setClientToken(payload.clientToken);
-        return;
-      }
+  const handlePairingLinkSubmit = useEvent((event: React.FormEvent) => {
+    event.preventDefault();
+    const payload = parseConnectionPayload(pairingLink);
+    if (!payload || !('pairing' in payload)) {
+      conn.setError(t('mobile.connect.link.invalid'));
+      return;
     }
-    setServerUrl(value);
+    void conn.redeemPairingConnection(payload.pairing);
   });
 
   const handleScanQr = useEvent(async () => {
@@ -897,7 +892,7 @@ const MobileConnectionWelcome: React.FC<{ onConnected: () => void }> = ({ onConn
                     <input
                       {...mobileInputKeyboardProps}
                       value={serverUrl}
-                      onChange={(event) => handleUrlChange(event.target.value)}
+                      onChange={(event) => setServerUrl(event.target.value)}
                       placeholder={t('mobile.connect.url.placeholder')}
                       aria-label={t('mobile.connect.url.label')}
                       type="url"
@@ -929,11 +924,32 @@ const MobileConnectionWelcome: React.FC<{ onConnected: () => void }> = ({ onConn
                       className="h-12 w-full rounded-[16px] border border-border/70 bg-surface-elevated px-4 text-center text-[16px] text-foreground outline-none transition-colors placeholder:text-muted-foreground focus:border-primary focus:ring-2 focus:ring-primary/20"
                     />
                     <p className="px-1 text-center typography-micro text-muted-foreground">{t('mobile.connect.token.hint')}</p>
-                    {error ? <p className="px-1 text-center typography-small text-[var(--status-error)]">{error}</p> : null}
                     <Button type="submit" variant={qrScanSupported ? 'outline' : 'default'} size="lg" className="h-12 w-full" disabled={isBusy || isScanning || !serverUrl.trim()}>
                       {isBusy ? t('mobile.connect.connecting') : t('mobile.connect.connectButton')}
                     </Button>
                   </form>
+                  <div className="flex items-center gap-3 py-3" aria-hidden="true">
+                    <span className="h-px flex-1 bg-border/70" />
+                    <span className="typography-micro text-muted-foreground">{t('mobile.connect.link.divider')}</span>
+                    <span className="h-px flex-1 bg-border/70" />
+                  </div>
+                  <form className="flex w-full flex-col gap-3" onSubmit={handlePairingLinkSubmit}>
+                    <input
+                      {...mobileInputKeyboardProps}
+                      value={pairingLink}
+                      onChange={(event) => setPairingLink(event.target.value)}
+                      placeholder={t('mobile.connect.link.placeholder')}
+                      aria-label={t('mobile.connect.link.label')}
+                      inputMode="url"
+                      autoCapitalize="none"
+                      tabIndex={manualOpen ? undefined : -1}
+                      className="h-12 w-full rounded-[16px] border border-border/70 bg-surface-elevated px-4 text-center text-[16px] text-foreground outline-none transition-colors placeholder:text-muted-foreground focus:border-primary focus:ring-2 focus:ring-primary/20"
+                    />
+                    <Button type="submit" variant="outline" size="lg" className="h-12 w-full" disabled={isBusy || isScanning || !pairingLink.trim()}>
+                      {isBusy ? t('mobile.connect.connecting') : t('mobile.connect.connectButton')}
+                    </Button>
+                  </form>
+                  {error ? <p className="px-1 pt-3 text-center typography-small text-[var(--status-error)]">{error}</p> : null}
                 </div>
               </div>
             </div>
@@ -945,14 +961,15 @@ const MobileConnectionWelcome: React.FC<{ onConnected: () => void }> = ({ onConn
 };
 
 const MobileInstancesSurface: React.FC<{
+  connection: UseMobileConnection;
   onConnect: () => void;
   onActiveConnectionDeleted: () => void;
-}> = ({ onActiveConnectionDeleted, onConnect }) => {
+}> = ({ connection, onActiveConnectionDeleted, onConnect }) => {
   const { t } = useI18n();
-  const conn = useMobileConnection(onConnect);
+  const conn = connection;
   const {
     connections, isBusy, isPasswordBusy, error, pendingConnection,
-    connect, submitPassword, cancelPassword, saveConnection, removeConnection, setError,
+    connect, submitPassword, cancelPassword, saveConnection, removeConnection, subscribeConnected, setError,
   } = conn;
   const [editingId, setEditingId] = React.useState<string | null>(null);
   const editingConnection = editingId ? connections.find((connection) => connection.id === editingId) ?? null : null;
@@ -968,6 +985,12 @@ const MobileInstancesSurface: React.FC<{
   const [formOpen, setFormOpen] = React.useState(false);
   // Which row is being connected to, for the per-row spinner.
   const [connectingId, setConnectingId] = React.useState<string | null>(null);
+  const handleConnected = useEvent(onConnect);
+
+  React.useEffect(
+    () => subscribeConnected(handleConnected),
+    [handleConnected, subscribeConnected],
+  );
 
   // Populate/clear the form imperatively (on edit tap / cancel / save) rather than via
   // an effect keyed on the derived connection object. With an effect, any churn of the
@@ -1694,7 +1717,6 @@ const MobileSessionMetadataButton = React.memo(function MobileSessionMetadataBut
   const currentProviderId = useConfigStore((state) => state.currentProviderId);
   const currentModelId = useConfigStore((state) => state.currentModelId);
   const getModelMetadata = useConfigStore((state) => state.getModelMetadata);
-  useConfigStore((state) => state.modelsMetadata.size);
   const savedSessionModelSelector = React.useMemo(
     () => (state: ReturnType<typeof useSelectionStore.getState>) => (
       currentSessionId ? state.sessionModelSelections.get(currentSessionId) ?? null : null
@@ -2015,7 +2037,10 @@ type PendingMobileChangesDiff = {
   toolPatches?: ReadonlyArray<{ path: string; patch: string }>;
 };
 
-const MobileShell: React.FC<{ onActiveConnectionDeleted: () => void }> = ({ onActiveConnectionDeleted }) => {
+const MobileShell: React.FC<{
+  connection: UseMobileConnection;
+  onActiveConnectionDeleted: () => void;
+}> = ({ connection, onActiveConnectionDeleted }) => {
   const { t } = useI18n();
   useStreamingHaptics();
   useMobilePressHaptics();
@@ -2656,6 +2681,7 @@ const MobileShell: React.FC<{ onActiveConnectionDeleted: () => void }> = ({ onAc
               }}
               instancesPage={showCapacitorOnlyFeatures ? (
                 <MobileInstancesSurface
+                  connection={connection}
                   onConnect={() => undefined}
                   onActiveConnectionDeleted={onActiveConnectionDeleted}
                 />
@@ -3013,6 +3039,7 @@ const MobileShell: React.FC<{ onActiveConnectionDeleted: () => void }> = ({ onAc
                 onClose={() => setSettingsOpen(false)}
                 mobileInstancesPage={showCapacitorOnlyFeatures ? (
                   <MobileInstancesSurface
+                    connection={connection}
                     onConnect={() => setSettingsOpen(false)}
                     onActiveConnectionDeleted={onActiveConnectionDeleted}
                   />
@@ -3086,6 +3113,20 @@ export function MobileApp({ apis }: MobileAppProps) {
   const isNativeMobileApp = React.useMemo(() => isCapacitorMobileApp(), []);
   const lastNativeResumeSyncEventAtRef = React.useRef(0);
   const nativeResumeValidationSeqRef = React.useRef(0);
+  const pairingConnection = useMobileConnection(() => {
+    setAutoConnectPhase('done');
+    setConnectionEpoch((value) => value + 1);
+  });
+  const handlePairingDeepLink = useEvent((pairing: PairingConnectionPayload) => {
+    void pairingConnection.redeemPairingConnection(pairing);
+  });
+  usePairingDeepLinkHandler(handlePairingDeepLink);
+  const initialDeepLinkKind = useDeepLinkSource({ ready: isNativeMobileApp && isConnected && isInitialized });
+
+  React.useEffect(() => {
+    if (!pairingConnection.error || !getRuntimeApiBaseUrl()) return;
+    toast.error(pairingConnection.error);
+  }, [pairingConnection.error]);
 
   const handleNativeResume = useEvent(() => {
     const apiBaseUrl = getRuntimeApiBaseUrl();
@@ -3226,13 +3267,19 @@ export function MobileApp({ apis }: MobileAppProps) {
   // to the connect screen. A successful switchRuntimeEndpoint fires the endpoint-
   // changed subscription above, which bumps the epochs and bootstraps the app.
   React.useEffect(() => {
+    if (initialDeepLinkKind === 'pending') return;
+    if (initialDeepLinkKind === 'connect') {
+      setAutoConnectPhase('done');
+      return;
+    }
     if (!isNativeMobileApp || isConnected || getRuntimeApiBaseUrl()) {
       setAutoConnectPhase('done');
       return;
     }
     let cancelled = false;
     setAutoConnectPhase('attempting');
-    void autoConnectLastInstance()
+    void handlePendingNativeAssistantOpen()
+      .then((handled) => handled ? true : autoConnectLastInstance())
       .catch(() => false)
       .then(() => {
         if (!cancelled) setAutoConnectPhase('done');
@@ -3242,7 +3289,7 @@ export function MobileApp({ apis }: MobileAppProps) {
     };
     // Run once on mount — auto-connect is a cold-launch concern only.
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, []);
+  }, [initialDeepLinkKind]);
 
   React.useEffect(() => {
     setIsMobile(true);
@@ -3380,11 +3427,6 @@ export function MobileApp({ apis }: MobileAppProps) {
   // (document.hasFocus() is unreliable) and leaked while the app was open; the in-app SSE
   // notification dispatch is no-op'd for native in renderMobileApp.
   useNativePushRegistration({ enabled: isNativeMobileApp && isConnected });
-  // Single native deep-link entry point: notification taps AND the openchamber:// URL
-  // scheme (widgets, Live Activities, external links). Registered unconditionally so a
-  // cold-launch tap/open isn't lost on the connect/splash screen; intents stash until
-  // the app is ready (connected + initialized) and shell handlers are registered.
-  useDeepLinkSource({ ready: isNativeMobileApp && isConnected && isInitialized });
   const fontsReady = useFontsReady();
 
   // `isConnected` is a LIVE flag that flips false on every transient SSE/WS drop and
@@ -3461,7 +3503,7 @@ export function MobileApp({ apis }: MobileAppProps) {
         </main>
       );
     }
-    return <MobileConnectionWelcome onConnected={() => setConnectionEpoch((value) => value + 1)} />;
+    return <MobileConnectionWelcome connection={pairingConnection} />;
   }
 
   if (!isConnected && !isReconnecting) {
@@ -3496,7 +3538,7 @@ export function MobileApp({ apis }: MobileAppProps) {
               <SyncAppEffects embeddedBackgroundWorkEnabled={isInitialized} />
               <OpenCodeUpdateToast />
               <MobileAppUpdateToast />
-              <MobileShell onActiveConnectionDeleted={() => {
+              <MobileShell connection={pairingConnection} onActiveConnectionDeleted={() => {
                 switchRuntimeEndpoint({ apiBaseUrl: '', clientToken: null, runtimeKey: 'mobile-disconnected' });
                 useMobileNavigationStore.getState().reset();
                 setConnectionEpoch((value) => value + 1);

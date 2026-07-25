@@ -47,6 +47,15 @@ export type NativeShareDraft = {
   expiresAt: number;
 };
 
+export type NativeAssistantOpenRequest = {
+  requestID: string;
+  serverInstanceID: string;
+  assistantID: string;
+  connectionKey: string;
+  createdAt: number;
+  expiresAt: number;
+};
+
 export interface OpenChamberSharePlugin {
   updateCatalog(options: { entries: NativeAssistantCatalogEntry[] }): Promise<void>;
   donateAssistantInteraction(options: { serverInstanceID: string; assistantID: string; name: string; avatarSeed: string }): Promise<void>;
@@ -55,8 +64,11 @@ export interface OpenChamberSharePlugin {
   releaseFiles(options: { operationID: string }): Promise<void>;
   listDrafts(): Promise<{ drafts: NativeShareDraft[] }>;
   cancelDraft(options: { draftID: string }): Promise<void>;
+  pendingAssistantOpen(): Promise<{ request?: NativeAssistantOpenRequest | null }>;
+  ackAssistantOpen(options: { requestID: string }): Promise<void>;
   addListener(eventName: 'shareReceived', listenerFunc: (event: { operationID: string }) => void): Promise<{ remove: () => Promise<void> }>;
   addListener(eventName: 'shareDraftReceived', listenerFunc: (event: { draftID: string }) => void): Promise<{ remove: () => Promise<void> }>;
+  addListener(eventName: 'assistantOpenRequested', listenerFunc: (event: { requestID: string }) => void): Promise<{ remove: () => Promise<void> }>;
 }
 
 export const OpenChamberShare = registerPlugin<OpenChamberSharePlugin>('OpenChamberShare');

@@ -276,6 +276,67 @@ export function registerGitRoutes(app, { messageQueueService = null, createReque
     }
   });
 
+  // Batch discovery: one request for N directories instead of N×check + N×primary-root.
+  // Per-directory failures stay isolated; the overall response remains 200.
+  app.get('/api/git/discover', async (req, res) => {
+    const { isGitRepository, resolvePrimaryWorktreeRoot } = await getGitLibraries();
+    try {
+      const raw = req.query.directories;
+      const directories = Array.isArray(raw)
+        ? raw.map((value) => (typeof value === 'string' ? value : String(value ?? ''))).filter(Boolean)
+        : typeof raw === 'string' && raw
+          ? [raw]
+          : [];
+
+      if (directories.length === 0) {
+        return res.status(400).json({ error: 'directories parameter is required' });
+      }
+
+      const results = await Promise.all(directories.map(async (directory) => {
+        try {
+          const isRepo = await isGitRepository(directory);
+          if (!isRepo) {
+            return {
+              directory,
+              isGitRepository: false,
+              primaryRoot: null,
+            };
+          }
+          try {
+            const resolved = await resolvePrimaryWorktreeRoot(directory);
+            const primaryRoot = typeof resolved?.root === 'string' && resolved.root
+              ? resolved.root
+              : directory;
+            return {
+              directory,
+              isGitRepository: true,
+              primaryRoot,
+            };
+          } catch (error) {
+            return {
+              directory,
+              isGitRepository: true,
+              primaryRoot: null,
+              error: error?.message || 'Failed to resolve git primary root',
+            };
+          }
+        } catch (error) {
+          return {
+            directory,
+            isGitRepository: false,
+            primaryRoot: null,
+            error: error?.message || 'Failed to check git repository',
+          };
+        }
+      }));
+
+      res.json(results);
+    } catch (error) {
+      console.error('Failed to batch-discover git repositories:', error);
+      res.status(500).json({ error: error.message || 'Failed to discover git repositories' });
+    }
+  });
+
   app.get('/api/git/toplevel', async (req, res) => {
     const { resolveWorktreeTopLevel } = await getGitLibraries();
     try {

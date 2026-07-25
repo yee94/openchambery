@@ -32,7 +32,6 @@ Keep `bridge.ts` as a thin orchestration layer that delegates message handling t
     - file search
     - file read path safety checks
     - dropped-file parsing and attachment reading
-    - models metadata fetch helper
 
 - `bridge-localfs-proxy-runtime.ts`
   - Local `/api/fs/read` and `/api/fs/raw` proxy helpers and shared proxy utility helpers.

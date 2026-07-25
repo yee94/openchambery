@@ -1,8 +1,28 @@
 import { describe, expect, test } from 'bun:test';
 
+import { buildPairingConnectionPayload, encodePairingConnectionPayload } from '@/lib/connectionPayload';
+
 import { buildDeepLink, parseDeepLink } from './deepLinks';
 
+const pairing = buildPairingConnectionPayload({
+  pairingId: 'pair_deep_link',
+  secret: 'one-time-secret',
+  candidates: [{ type: 'lan', url: 'http://192.168.1.20:4096' }],
+});
+
 describe('parseDeepLink (OpenCode-aligned)', () => {
+  test('parses a v2 connect link into a validated pairing intent', () => {
+    expect(parseDeepLink(encodePairingConnectionPayload(pairing))).toEqual({
+      type: 'connect',
+      pairing,
+    });
+  });
+
+  test('rejects malformed and legacy connect links', () => {
+    expect(parseDeepLink('openchamber://connect?v=2&p=not-json')).toBeNull();
+    expect(parseDeepLink('openchamber://connect?v=1&server=https%3A%2F%2Fexample.com&token=secret')).toBeNull();
+  });
+
   test('parses new-session with directory query like OpenCode', () => {
     expect(parseDeepLink('openchamber://new-session?directory=/tmp/demo')).toEqual({
       type: 'new-session',
@@ -53,6 +73,10 @@ describe('parseDeepLink (OpenCode-aligned)', () => {
 });
 
 describe('buildDeepLink (OpenCode-aligned)', () => {
+  test('rebuilds a canonical v2 connect link', () => {
+    expect(buildDeepLink({ type: 'connect', pairing })).toBe(encodePairingConnectionPayload(pairing));
+  });
+
   test('emits new-session?directory= for external openers', () => {
     expect(buildDeepLink({ type: 'new-session', directory: '/tmp/demo', prompt: 'ship it' })).toBe(
       'openchamber://new-session?directory=%2Ftmp%2Fdemo&prompt=ship+it',

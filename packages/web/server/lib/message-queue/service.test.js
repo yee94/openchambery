@@ -58,6 +58,21 @@ describe('message queue service', () => {
     reopened.close();
   });
 
+  it('does not let a failed queue row block later serial work in the same scope', () => {
+    const service = createService(dbPath());
+    service.setAuthority({ authority: 'active', expectedGeneration: 0 });
+    service.admit(admission('first-request', 'first'));
+    service.admit(admission('second-request', 'second'));
+    const runtimeKey = service.getRuntimeKey();
+    const reserved = service.reserveEligibilityCandidate({ runtimeKey, owner: 'worker', leaseMs: 15_000 });
+    const claimed = service.claimNext({ runtimeKey, owner: 'worker', leaseMs: 15_000, queueItemID: reserved.item.queueItemID, eligibilityToken: reserved.eligibilityToken });
+    service.beginAttempt({ runtimeKey, queueItemID: claimed.item.queueItemID, leaseToken: claimed.leaseToken, fenceGeneration: claimed.fenceGeneration, messageID: 'msg_00000000000000000000000000' });
+    service.markFailed({ runtimeKey, queueItemID: claimed.item.queueItemID, leaseToken: claimed.leaseToken, fenceGeneration: claimed.fenceGeneration, errorCode: 'delivery_unknown' });
+
+    expect(service.reserveEligibilityCandidate({ runtimeKey, owner: 'worker', leaseMs: 15_000 }).item.queueItemID).toBe('item-second');
+    service.close();
+  });
+
   it('returns the public Assistant scope-page DTO consumed by the UI fixture', () => {
     const pathname = dbPath(); const service = createService(pathname);
     service.setAssistantDeliveryService({ captureQueueDeliveryTarget: ({ assistantID, scope }) => ({ kind: 'assistant', assistantID, binding: { sessionID: scope.sessionID, directory: scope.directory, sessionGeneration: 7 }, sessionID: scope.sessionID, directory: scope.directory, sessionGeneration: 7, providerID: 'provider', modelID: 'model', agent: 'agent', variant: 'fast', defaultPrompt: 'default', system: 'default' }) });
@@ -792,14 +807,14 @@ describe('message queue service', () => {
     expect(reopened.getScope(reopened.snapshot().scopes[0].scopeID).items[0].status).toBe('unresolved'); reopened.close();
   });
 
-  it('keeps failed and unresolved heads ahead of later rows', () => {
+  it('keeps failed rows client-mutable without blocking later rows', () => {
     let time = 1_000; const service = createMessageQueueService({ dbPath: dbPath(), getRuntimeConfig: () => ({ apiBaseUrl: 'http://runtime' }), clock: () => time });
     const first = service.admit({ ...admission(), item: { ...admission().item, dueAt: time } }); service.admit({ ...admission('second', '2'), item: { ...admission('second', '2').item, dueAt: time } }); service.setAuthority({ authority: 'active', expectedGeneration: 0 });
     const claim = service.claimNext({ owner: 'worker' }); service.markFailed({ queueItemID: 'item-1', leaseToken: claim.leaseToken, fenceGeneration: claim.fenceGeneration });
-    expect(service.claimNext({ owner: 'worker' })).toBeNull(); expect(service.getScope(first.scopeID).items[0].status).toBe('failed'); service.close();
+    expect(service.claimNext({ owner: 'worker' }).item.queueItemID).toBe('item-2'); expect(service.getScope(first.scopeID).items[0].status).toBe('failed'); service.close();
   });
 
-  it('recovers expired sending leases, fences superseded authorities, preserves attempt history, and blocks terminal heads', () => {
+  it('recovers expired sending leases, fences superseded authorities, preserves attempt history, and advances past terminal rows', () => {
     let time = 1_000;
     const pathname = dbPath();
     const service = createMessageQueueService({ dbPath: pathname, getRuntimeConfig: () => ({ apiBaseUrl: 'http://runtime' }), clock: () => time });
@@ -837,7 +852,7 @@ describe('message queue service', () => {
     blocked.setAuthority({ authority: 'active', expectedGeneration: 0 });
     const failedClaim = blocked.claimNext({ owner: 'worker' });
     blocked.markFailed({ queueItemID: failedClaim.item.queueItemID, leaseToken: failedClaim.leaseToken, fenceGeneration: failedClaim.fenceGeneration });
-    expect(blocked.claimNext({ owner: 'worker' })).toBeNull();
+    expect(blocked.claimNext({ owner: 'worker' }).item.queueItemID).toBe('item-failed-later');
     expect(blocked.getScope(failed.scopeID).items[0].status).toBe('failed');
     blocked.close();
 
@@ -847,7 +862,7 @@ describe('message queue service', () => {
     unresolved.setAuthority({ authority: 'active', expectedGeneration: 0 });
     const unresolvedClaim = unresolved.claimNext({ owner: 'worker' });
     unresolved.markUnresolved({ queueItemID: unresolvedClaim.item.queueItemID, leaseToken: unresolvedClaim.leaseToken, fenceGeneration: unresolvedClaim.fenceGeneration });
-    expect(unresolved.claimNext({ owner: 'worker' })).toBeNull();
+    expect(unresolved.claimNext({ owner: 'worker' }).item.queueItemID).toBe('item-unresolved-later');
     expect(unresolved.getScope(unresolvedHead.scopeID).items[0].status).toBe('unresolved');
     unresolved.close();
   });

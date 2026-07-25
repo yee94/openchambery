@@ -67,7 +67,7 @@ So:
 
 ### Keyed draft metadata
 
-`input-store.ts` owns memory-first validated `DraftRecord` state keyed by transport identity and draft owner. `DraftRecord` stores textarea-visible text, Composer Session/Paste sidecars, and attachment metadata; per-occurrence `AttachedFile` views, missing blob occurrence IDs, and attachment hydration/persistence state remain runtime memory. `packages/ui/src/composer/use-composer-controller.ts` projects the active `DraftKey` record into ChatInput and commits document plus file/agent mentions through `setDraftComposerState` as one revision. Primary session and new-draft keys retain their durable shape; an explicit `surface` owner isolates a secondary ChatInput surface. Persistence enablement controls the durability lane while memory editing remains available. Composer ranges use UTF-16 offsets, and durable sidecars validate sorted non-overlapping ranges, unique IDs, bounded per-reference and cumulative Paste payloads, and stable Session IDs. Blob put and draft-reference retain complete before a snapshot containing that metadata enters the durability lane; quota and storage failures preserve editable memory views for explicit retry. Removal and replacement persist metadata before releasing old blob references. `moveDraftWithAttachments()` retains destination references, moves metadata, persists, then releases source references; synchronous `moveDraft()` remains URL-only. Hydration isolates transport generation, key epoch, and record identity, so delayed blob reads cannot replace newer attachment views. Disabled persistence keeps drafts and attachment views in memory without IndexedDB work. Legacy session drafts import into the migration's claimed transport; legacy Composer envelopes become visible text plus validated sidecars, and the legacy `new` record remains staged until `claimLegacyNewDraft()` receives its destination key. Queue admission and send ownership transfers remain outside this store.
+`input-store.ts` owns memory-first validated `DraftRecord` state keyed by transport identity and draft owner. `DraftRecord` stores textarea-visible text, Composer Session/Paste sidecars, and attachment metadata; per-occurrence `AttachedFile` views, missing blob occurrence IDs, and attachment hydration/persistence state remain runtime memory. `packages/ui/src/composer/use-composer-controller.ts` projects the active `DraftKey` record into ChatInput and commits document plus file/agent mentions through `setDraftComposerState` as one revision. Primary session and new-draft keys retain their durable shape; an explicit `surface` owner isolates a secondary ChatInput surface. The durability and blob-reconciliation lanes admit all three owner kinds (`session`, `draft`, and `surface`) so Assistant surface attachments survive handoff and restart. Persistence enablement controls the durability lane while memory editing remains available. Composer ranges use UTF-16 offsets, and durable sidecars validate sorted non-overlapping ranges, unique IDs, bounded per-reference and cumulative Paste payloads, and stable Session IDs. Blob put and draft-reference retain complete before a snapshot containing that metadata enters the durability lane; quota and storage failures preserve editable memory views for explicit retry. Removal and replacement persist metadata before releasing old blob references. `moveDraftWithAttachments()` retains destination references, moves metadata, persists, then releases source references; synchronous `moveDraft()` remains URL-only. Hydration isolates transport generation, key epoch, and record identity, so delayed blob reads cannot replace newer attachment views. Disabled persistence keeps drafts and attachment views in memory without IndexedDB work. Legacy session drafts import into the migration's claimed transport; legacy Composer envelopes become visible text plus validated sidecars, and the legacy `new` record remains staged until `claimLegacyNewDraft()` receives its destination key. Queue admission and send ownership transfers remain outside this store.
 
 The legacy composer attachment view uses in-memory buckets keyed by runtime `DraftKey`, with an independent unowned bucket. Session selection activates its bucket; every legacy attachment mutation and delayed FileReader completion remains scoped to its captured source key. A clear or replacement invalidates reads for that same bucket.
 
@@ -177,12 +177,26 @@ source. The legacy per-directory `localStorage` session list is removed
 on child-store creation and must not be reintroduced. `main.tsx` establishes a
 startup barrier before React effects; `SessionStartupCoordinator` starts the
 session-index flow after registered settings hydration, restores the SQLite snapshot,
-refreshes each known root/worktree directory through the bounded scheduler,
-writes one transaction batch, then releases normal global and directory
-bootstrap. A runtime that reports the capability as unsupported uses the
-existing bounded SDK-backed path. A successful
-empty root page replaces stale index rows; a failed page preserves its last
-good cache.
+refreshes known root/worktree directories through the bounded scheduler (with
+priority — see below), writes one transaction batch, then releases normal global
+and directory bootstrap. A runtime that reports the capability as unsupported
+uses the existing bounded SDK-backed path. A successful empty root page replaces
+stale index rows; a failed page preserves its last good cache.
+
+**Startup directory priority** (`planSessionStartupDirectories` +
+`startSessionIndexStartup`):
+
+| Condition | Immediate POST `/session-index/sync` set | Blocking `startupSyncProgress` | Deferred (P1) |
+|---|---|---|---|
+| No SQLite cache (`hasCachedSessionIndex=false`) | Full catalog (all registered projects + worktrees + cached dirs) | Yes — wait until root sync settles | None |
+| Cache hit + resolvable active directory | **P0 only**: project that owns `useDirectoryStore.currentDirectory` + that project's known worktrees | No — hydrate returns cache; progress stays idle after restore | Remaining catalog directories via `syncSessionsForDirectories` after a `setTimeout(0)` yield |
+| Cache hit but active directory missing/unmatched | Full catalog (safe fallback) | No | None |
+
+P1 reuses the existing server enqueue + tip/GET observer path
+(`startSessionIndexBackgroundSync` / `syncSessionsForDirectories`); it must not
+introduce a second browser cache or a parallel sync pipeline. Runtime switches
+still discard in-flight work through `captureSessionIndexRuntime` /
+`isCurrentSessionIndexRuntime`.
 
 Every global session-index asynchronous entry captures the runtime generation
 and transport identity. Snapshot hydration, startup sync, persistence, and
@@ -198,6 +212,45 @@ becoming the cached startup result consumed by the session coordinator.
 
 ## Session message loading
 
+### Module map
+
+Session transcript data flows through two independent paths that converge only
+at the directory child store. HTTP pull and SSE push never write through each
+other's channel:
+
+```
+HTTP pull (initial / prepend / recovery / materialize)
+  session-message-policy.ts     limit per runtime + purpose (single source)
+  session-message-query.ts      TanStack Query: immutable HTTP page cache
+  session-message-loader.ts     loadSessionMessagePage — the ONLY entry that
+                                orchestrates policy → query → tail recovery →
+                                reducer → store commit (single-flight)
+  session-message-reducer.ts    reduceSessionMessagePage — pure page → state
+  session-prefetch-cache.ts     loading / ready / error + TTL meta
+                │
+                ▼
+        directory child store (message / part)
+
+SSE push (live increments)
+  event-pipeline.ts             WS/SSE transport, coalescing, reconnect
+  event-reducer.ts              applyDirectoryEvent — live event semantics
+                │
+                ▼
+        directory child store (message / part)
+```
+
+Rules that keep this single-sourced:
+
+- `session-message-loader.ts` (`loadSessionMessagePage` with `purpose`) is the
+  only place an HTTP message page is committed to a store. No callsite fetches
+  `session.messages` and writes the store directly.
+- `session-message-policy.ts` is the only place a page-size number appears.
+  Purpose (`initial` / `prepend` / `recovery` / `materialize`) determines the
+  limit; no `RECONNECT_MESSAGE_LIMIT`-style constants exist elsewhere.
+- `session-message-reducer.ts` holds no SDK/Query/store side effects; it is a
+  pure function so all four modes stay unit-testable.
+- UI transcript selectors read the directory child store, never TanStack Query.
+
 ### Context panel session transcripts
 
 - Web and Electron ContextPanel chat tabs render an in-realm strict-read-only transcript through the root `SyncProvider`. They read the same directory-scoped live stores as the primary chat and do not create an independent sync lifecycle.
@@ -209,6 +262,32 @@ becoming the cached startup result consumed by the session coordinator.
 - Context panel transcript capabilities are strict read-only: nested-session navigation is available within the panel directory; composer, session mutation, and primary-selection ownership remain outside the surface. Once a viewed session is authoritatively confirmed as a child session, its fixed read-only execution footer remains mounted through temporary session-identity gaps and resets with the panel view identity.
 - Cover planner, navigation, geometry key, cache touch/estimate/close, render-mode, and viewed-session behavior in `components/layout/contextPanelSessionSurface.test.ts`.
 
+- HTTP page → store message/part conversion is owned by the pure reducer
+  `session-message-reducer.ts` (`reduceSessionMessagePage`). Modes:
+  `initial` (first load / replace), `prepend` (history pagination),
+  `recovery` (reconnect; keep local history outside the bounded tail), and
+  `materialize` (repair orphan / missing parts). It wraps
+  `materializeSessionSnapshots` plus optimistic merge, returns reference-stable
+  state when unchanged, and emits commands such as `clear-optimistic`. Callers
+  own store writes and side effects; the reducer never touches SDK/Query/store.
+  Stale HTTP vs SSE races drop the page when `liveRevision > capturedRevision`.
+  Fetch errors (`ok: false`) preserve prior state and never write empty success.
+- Application orchestration for message pages is owned by
+  `session-message-loader.ts` (`loadSessionMessagePage` with `purpose`). It
+  resolves limit from `session-message-policy`, single-flights the HTTP query,
+  recovers assistant-only tails via exact parent message IDs, runs the pure
+  reducer, and commits through caller-supplied store deps so a remounted
+  provider always writes into its own store. Loading / ready / error status
+  flows through `session-prefetch-cache`. The legacy transport overload
+  (`request` without `purpose`) remains for gradual migration.
+- HTTP page pulls for TanStack Query are owned by `session-message-query.ts`.
+  Query keys include transport identity, directory, sessionID, limit, and
+  cursor. Cache entries store immutable HTTP page snapshots only; SSE/WS never
+  enter Query. Transport single-flight reuses `session-message-loader.ts` so
+  imperative and Query paths share the same in-flight promise. UI transcript
+  selectors continue to read the directory child store, not Query. Before a
+  commit, callers capture child-store identity plus runtime generation and
+  re-validate; runtime switches discard stale generation results.
 - The imperative session-selection path and the reactive `useSync()` path share
   one app-wide single-flight request keyed by runtime, directory, session,
   requested limit, and pagination cursor. They must not issue duplicate tail
@@ -221,9 +300,14 @@ becoming the cached startup result consumed by the session coordinator.
   reuse a promise that only commits into a detached store.
 - Initial history is a 5-message tail page on relay mobile surfaces, a 16-message
   tail page on direct mobile surfaces, and a 30-message tail page on Web,
-  Electron, and VS Code. The imperative selection path and
-  reactive sync path resolve the page size from one runtime-aware helper, so
-  both share the same transport flight. A failed first load retains its requested
+  Electron, and VS Code. All message page limits live in
+  `session-message-policy.ts` (initial, history, recovery, materialization,
+  refetch, send-confirmation). Every caller — the imperative selection path, the
+  reactive sync path, reconnect recovery, and orphan/ensure materialization —
+  resolves its page size directly from that policy, so they share the same
+  transport flight and never diverge into per-callsite hardcoded numbers.
+  Recovery and materialization use the same limit as initial
+  for the active runtime. A failed first load retains its requested
   page size; retries never degrade into an unbounded `limit=0` history read. An assistant-only
   partial tail fetches up to eight missing parent user messages by exact message
   ID, then commits the merged records; it never expands to a 100/150-message
@@ -248,14 +332,20 @@ becoming the cached startup result consumed by the session coordinator.
   explicit/reactive attempt can retry; failure must never be cached as an empty
   authoritative history.
 - Reconnect recovery may poll lightweight status for multiple active sessions,
-  but it materializes `session.get + session.messages` only for the currently
-  viewed session. Viewed-session materialization requires only a matching
-  directory; it must not depend on the session already appearing in the
-  reconnect candidate list or child store. Background busy/incomplete sessions
-  wait until selection and continue receiving live events without fetching their
-  bodies. `statusOnly` reconnect (first stream ready / recent boot) still runs
-  this bounded viewed-body recovery; it only suppresses extra reconnect work such
-  as blocking-request resync, never viewed transcript reconciliation.
+  but it materializes `session.get` plus one message page only for the currently
+  viewed session. Message pages for reconnect (`purpose: "recovery"`) and
+  orphan/ensure materialization (`purpose: "materialize"`) go through
+  `loadSessionMessagePage` in `session-message-loader.ts` (policy limit,
+  single-flight, assistant-tail recovery, reducer, prefetch meta, stale/live
+  revision). Callers in `sync-context.tsx` supply store commit deps; failure and
+  skipped loads preserve the existing transcript. Viewed-session materialization
+  requires only a matching directory; it must not depend on the session already
+  appearing in the reconnect candidate list or child store. Background
+  busy/incomplete sessions wait until selection and continue receiving live
+  events without fetching their bodies. `statusOnly` reconnect (first stream
+  ready / recent boot) still runs this bounded viewed-body recovery; it only
+  suppresses extra reconnect work such as blocking-request resync, never viewed
+  transcript reconciliation.
 - A bounded bootstrap may omit a selected session. `ensureSessionRenderable()`
   accepts an explicit target directory for this exact materialization path. It
   creates that directory child store with `bootstrap: false`, uses that
@@ -330,7 +420,7 @@ becoming the cached startup result consumed by the session coordinator.
 
 Each TanStack card mutation variable and exact scope key include the runtime transport and generation. Its mutation function compares that capture with the current runtime before calling a headless action, and an old runtime resolves as stale. An A→B→A transport sequence receives a fresh generation for the final A lifetime, so pending mutations from the earlier A lifetime never lock the new generation.
 
-`messageQueueQueries.ts` owns server queue catalog, revision-pinned scope pages, and capability reads through TanStack Query, including imperative `ensure`/`refresh` helpers so non-React observers share in-flight GETs. Queue query keys start with transport identity; scope pages contain at most eight items and fetch every `nextOffset` under the first-page revision. Failed page sequences retain the prior complete scope snapshot. `message-queue-server-runtime.ts` is a headless attachment surface with exact-scope reads only. Production status and snapshot pulls go through those Query helpers (status honors staleTime; tip/mutation snapshot pulls force network but still coalesce). Successful status, catalog, and scope reads write their transport-scoped Query keys. Descriptor state and stable scope snapshots bind their captured transport identity, and a direct identity read clears them before a delayed runtime-switch callback runs. `getScope()` reads a stable complete current-scope reference from Query data. A successful empty catalog clears queue scope cache, and removal of one catalog scope clears every revision key for that transport and scope; failed polls and failed later pages preserve prior complete data. Local attachments upload bytes, server attachments retain their canonical server path and authoritative byte size, and VS Code attachments close server admission. SSE revision tips (`openchamber:message-queue-changed`) arrive through the shared `runtimeFetch` streamed-response transport, including Relay tunnels, then trigger a snapshot GET; only scopes with a changed revision are page-loaded, with abortable exponential backoff on failures. Its lazy singleton performs no fetch or storage work at import; AppEffects starts it, installs one ref-counted runtime-switch observer, and releases both on cleanup. `useMessageQueueServerScope()` subscribes to its exact scope and returns capability, authority, import state, hydration, scope items, and actions. Available active authority selects server mode directly; `canActivate` remains the Phase 3 activation gate. Shadow and unsupported states expose legacy mode. Phase 2 keeps v3 production authority and auto-send active. Client queue mutations are overwrite intent for the scope the client saw: after each commit the runtime replaces display state with a complete authoritative scope, and a reorder conflict reapplies the visible order while retaining rows appended by another device after that visible subset. Removing an active attempt discards queue tracking only; it cannot unsend a request that already crossed the upstream boundary.
+`messageQueueQueries.ts` owns server queue catalog, revision-pinned scope pages, and capability reads through TanStack Query, including imperative `ensure`/`refresh` helpers so non-React observers share in-flight GETs. Queue query keys start with transport identity; scope pages contain at most eight items and fetch every `nextOffset` under the first-page revision. Failed page sequences retain the prior complete scope snapshot. `message-queue-server-runtime.ts` is a headless attachment surface with exact-scope reads only. Production status and snapshot pulls go through those Query helpers (status honors staleTime; tip/mutation snapshot pulls force network but still coalesce). Scope page GETs (`fetchMessageQueueScope`) single-flight by scopeID+offset+limit+expectedRevision so concurrent startup observer and cutover refresh share one network request per page. Successful status, catalog, and scope reads write their transport-scoped Query keys. Descriptor state and stable scope snapshots bind their captured transport identity, and a direct identity read clears them before a delayed runtime-switch callback runs. `getScope()` reads a stable complete current-scope reference from Query data. A successful empty catalog clears queue scope cache, and removal of one catalog scope clears every revision key for that transport and scope; failed polls and failed later pages preserve prior complete data. Local attachments upload bytes, server attachments retain their canonical server path and authoritative byte size, and VS Code attachments close server admission. SSE revision tips (`openchamber:message-queue-changed`) arrive through the shared `runtimeFetch` streamed-response transport, including Relay tunnels, then trigger a snapshot GET; only scopes with a changed revision are page-loaded, with abortable exponential backoff on failures. Its lazy singleton performs no fetch or storage work at import; AppEffects starts it, installs one ref-counted runtime-switch observer, and releases both on cleanup. `useMessageQueueServerScope()` subscribes to its exact scope and returns capability, authority, import state, hydration, scope items, and actions. Available active authority selects server mode directly; `canActivate` remains the Phase 3 activation gate. Shadow and unsupported states expose legacy mode. Phase 2 keeps v3 production authority and auto-send active. Client queue mutations are overwrite intent for the scope the client saw: after each commit the runtime replaces display state with a complete authoritative scope, and a reorder conflict reapplies the visible order while retaining rows appended by another device after that visible subset. Removing an active attempt discards queue tracking only; it cannot unsend a request that already crossed the upstream boundary.
 
 Server admission publishes an exact-scope, headless pending shadow synchronously before attachment upload. The shadow is outside TanStack Query and carries only display-safe admission fields plus an uploading, admitting, ambiguous, or acknowledged phase. `hasPendingAdmission` includes every shadow for visibility and diagnostics; `hasBlockingAdmission` identifies uploading, admitting, and ambiguous phases for telemetry only and never disables Composer send, queue admission, or existing queue controls. Multiple client admissions may coexist; each owns its immutable request identity and resource capture. Upload, each idempotent POST attempt, and acknowledged reconciliation have independent bounded deadlines; failure removes only that shadow and preserves its captured Composer resources. Its acknowledged shadow remains visible through authoritative convergence or until the bounded reconciliation attempt settles. Targeted background scope paging reconciles the authoritative projection without status/catalog refreshes or global hydration/error updates. An acknowledgement reuses an already complete authoritative scope at its revision and skips a duplicate targeted GET. Authoritative rows win duplicate queue IDs, and a complete scope revision at or beyond the acknowledgement revision clears its acknowledged shadow, including worker-claimed or completed rows. Scope cache publication precedes pending cleanup, so exact-scope readers retain a readable authoritative scope through convergence. Runtime transport reset clears pending shadows, notifies every pending exact scope, and delayed work remains generation-scoped.
 
@@ -400,8 +490,9 @@ Cutover refreshes are single-flight, and `start`/`stop` use the same deferred-st
   and `reconciliationNextCheckAt`. In-flight checks own no timer; each miss writes
   the next persistent check time, which drives the single global scheduler wake.
 Exhausted checks or a reached deadline resolve to editable `unresolved` items.
-Auto-send never re-POSTs unresolved heads (ambiguous delivery). Explicit manual
-Send may select any recoverable row, atomically promote it to the scoped head, and POST once; automatic dispatch retains FIFO head selection. Edit and Remove still
+Auto-send never re-POSTs unresolved rows (ambiguous delivery), but terminal
+`failed` and `unresolved` rows no longer block later dispatchable FIFO work. Explicit manual
+Send may select any recoverable row, atomically promote it to the scoped head, and POST once; automatic dispatch retains FIFO order among dispatchable rows. Edit and Remove still
 release the terminal state without another POST. `running` auto-review runs
 block queue drain only when their stable `runtimeKey` matches the active runtime;
 legacy records without a runtime key allow drain. Completed, stopped, and error
@@ -520,6 +611,10 @@ bootstrap / Behavior saves; `expandText` expands from the loaded snippet
 catalog locally when every `#token` resolves. Git discovery
 (`primary-root` / `worktrees`) is capped at 2 concurrent network calls with a
 short TTL + in-flight dedupe so sidebar fan-out cannot starve create/prompt.
+Cold-start project lists use `GET /api/git/discover` (via
+`discoverGitRepositories`) once from `SessionStartupCoordinator` to seed the
+check/primary-root caches; on 501/network failure the client falls back to
+the existing single-request path.
 
 After success, commit the real session to directory routing, global session
 state, selection state, and the optimistic shadow map. If SSE delivered the

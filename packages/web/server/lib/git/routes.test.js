@@ -6,6 +6,8 @@ const gitLibraries = {
   createWorktree: vi.fn(),
   removeWorktree: vi.fn(),
   getWorktrees: vi.fn(),
+  isGitRepository: vi.fn(),
+  resolvePrimaryWorktreeRoot: vi.fn(),
 };
 
 vi.mock('./index.js', () => ({
@@ -14,6 +16,8 @@ vi.mock('./index.js', () => ({
   createWorktree: gitLibraries.createWorktree,
   removeWorktree: gitLibraries.removeWorktree,
   getWorktrees: gitLibraries.getWorktrees,
+  isGitRepository: gitLibraries.isGitRepository,
+  resolvePrimaryWorktreeRoot: gitLibraries.resolvePrimaryWorktreeRoot,
 }));
 
 const { registerGitRoutes } = await import('./routes.js');
@@ -64,6 +68,108 @@ const createMockResponse = () => {
     },
   };
 };
+
+describe('git routes batch discover', () => {
+  beforeEach(() => {
+    gitLibraries.isGitRepository.mockReset();
+    gitLibraries.resolvePrimaryWorktreeRoot.mockReset();
+  });
+
+  it('returns per-directory results for multi-directory discover', async () => {
+    gitLibraries.isGitRepository.mockImplementation(async (directory) => directory === '/repo');
+    gitLibraries.resolvePrimaryWorktreeRoot.mockResolvedValue({ root: '/repo' });
+
+    const { app, getRoute } = createRouteRegistry();
+    registerGitRoutes(app);
+    const response = createMockResponse();
+
+    await getRoute('GET', '/api/git/discover')(
+      { query: { directories: ['/repo', '/not-git'] } },
+      response,
+    );
+
+    expect(response.statusCode).toBe(200);
+    expect(response.body).toEqual([
+      { directory: '/repo', isGitRepository: true, primaryRoot: '/repo' },
+      { directory: '/not-git', isGitRepository: false, primaryRoot: null },
+    ]);
+  });
+
+  it('isolates per-directory failures without failing the batch', async () => {
+    gitLibraries.isGitRepository.mockImplementation(async (directory) => {
+      if (directory === '/boom') {
+        throw new Error('permission denied');
+      }
+      // /ok and /root-fail are repos; only primary-root fails for the latter.
+      return directory === '/ok' || directory === '/root-fail';
+    });
+    gitLibraries.resolvePrimaryWorktreeRoot.mockImplementation(async (directory) => {
+      if (directory === '/root-fail') {
+        throw new Error('rev-parse failed');
+      }
+      return { root: directory };
+    });
+
+    const { app, getRoute } = createRouteRegistry();
+    registerGitRoutes(app);
+    const response = createMockResponse();
+
+    await getRoute('GET', '/api/git/discover')(
+      { query: { directories: ['/ok', '/boom', '/root-fail'] } },
+      response,
+    );
+
+    expect(response.statusCode).toBe(200);
+    expect(response.body).toEqual([
+      { directory: '/ok', isGitRepository: true, primaryRoot: '/ok' },
+      {
+        directory: '/boom',
+        isGitRepository: false,
+        primaryRoot: null,
+        error: 'permission denied',
+      },
+      {
+        directory: '/root-fail',
+        isGitRepository: true,
+        primaryRoot: null,
+        error: 'rev-parse failed',
+      },
+    ]);
+  });
+
+  it('accepts a single directories query value', async () => {
+    gitLibraries.isGitRepository.mockResolvedValue(false);
+
+    const { app, getRoute } = createRouteRegistry();
+    registerGitRoutes(app);
+    const response = createMockResponse();
+
+    await getRoute('GET', '/api/git/discover')(
+      { query: { directories: '/solo' } },
+      response,
+    );
+
+    expect(response.statusCode).toBe(200);
+    expect(response.body).toEqual([
+      { directory: '/solo', isGitRepository: false, primaryRoot: null },
+    ]);
+  });
+
+  it('rejects missing directories', async () => {
+    const { app, getRoute } = createRouteRegistry();
+    registerGitRoutes(app);
+    const response = createMockResponse();
+
+    await getRoute('GET', '/api/git/discover')(
+      { query: {} },
+      response,
+    );
+
+    expect(response.statusCode).toBe(400);
+    expect(response.body).toEqual({ error: 'directories parameter is required' });
+    expect(gitLibraries.isGitRepository).not.toHaveBeenCalled();
+  });
+});
 
 describe('git routes index mutations', () => {
   beforeEach(() => {

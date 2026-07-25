@@ -314,9 +314,33 @@ const mutationInit = <T extends { signal?: AbortSignal }>(method: string, input:
 };
 
 export const fetchMessageQueueSnapshot = async (signal?: AbortSignal): Promise<MessageQueueSnapshot> => parseSnapshot(await request(ROUTE, { signal }));
+
+/** Concurrent identical scope page GETs (startup observer + cutover) share one in-flight request. */
+const messageQueueScopeFlights = new Map<string, Promise<MessageQueueScope>>();
+const messageQueueScopeFlightKey = (scopeID: string, options: { offset?: number; limit?: number; expectedRevision?: number }) =>
+  `${scopeID}\u0000${options.offset ?? ''}\u0000${options.limit ?? ''}\u0000${options.expectedRevision ?? ''}`;
+
 export const fetchMessageQueueScope = async (scopeID: string, options: { offset?: number; limit?: number; expectedRevision?: number; signal?: AbortSignal } = {}): Promise<MessageQueueScope> => {
-  const value = parseScope(await request(`${ROUTE}/scopes/${encodeURIComponent(scopeID)}`, { query: { offset: options.offset, limit: options.limit, expectedRevision: options.expectedRevision }, signal: options.signal }));
-  return value ?? malformed();
+  if (options.signal?.aborted) throw new MessageQueueServerError(0, 'unavailable');
+  const key = messageQueueScopeFlightKey(scopeID, options);
+  const existing = messageQueueScopeFlights.get(key);
+  // Joiners share the leader's network request; only the leader attaches its signal.
+  // Callers still honor their own abort after the shared result settles.
+  if (existing) {
+    const value = await existing;
+    if (options.signal?.aborted) throw new MessageQueueServerError(0, 'unavailable');
+    return value;
+  }
+  const flight = (async (): Promise<MessageQueueScope> => {
+    const value = parseScope(await request(`${ROUTE}/scopes/${encodeURIComponent(scopeID)}`, { query: { offset: options.offset, limit: options.limit, expectedRevision: options.expectedRevision }, signal: options.signal }));
+    return value ?? malformed();
+  })();
+  // Clear by the shared promise identity (the finally-wrapped handle), not the raw flight.
+  const shared = flight.finally(() => {
+    if (messageQueueScopeFlights.get(key) === shared) messageQueueScopeFlights.delete(key);
+  });
+  messageQueueScopeFlights.set(key, shared);
+  return shared;
 };
 /**
  * Wait until a message-queue tip arrives with revision > afterRevision, or the

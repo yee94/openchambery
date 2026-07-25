@@ -367,7 +367,6 @@ async function performConfigRefresh(options: ConfigRefreshOptions = {}) {
     }
 
     if (refreshProviders) {
-      useConfigStore.getState().invalidateModelMetadataCache();
       useConfigStore.getState().invalidateProviderCache(mode === "active" ? currentDirectory : undefined);
     }
 

@@ -118,8 +118,6 @@ const uiNotificationWsClients = new Set();
 const uiOpenChamberEventClients = new Set();
 const HEALTH_CHECK_INTERVAL = 15000;
 const SHUTDOWN_TIMEOUT = 10000;
-const MODELS_DEV_API_URL = 'https://models.dev/api.json';
-const MODELS_METADATA_CACHE_TTL = 5 * 60 * 1000;
 const CLIENT_RELOAD_DELAY_MS = 800;
 const OPEN_CODE_READY_GRACE_MS = 12000;
 const LONG_REQUEST_TIMEOUT_MS = 4 * 60 * 1000;
@@ -739,22 +737,37 @@ const maybeSendPushForTrigger = (...args) => notificationTriggerRuntime.maybeSen
 const setAutoAcceptSession = (sessionId, enabled) => permissionAutoAcceptRuntime.setSessionPolicy(sessionId, enabled);
 clearPendingPushBadge = () => notificationTriggerRuntime.clearPendingPushBadge();
 
+// Single lazy small-model service for all consumers (feature routes, session
+// assist/title/goal, scheduled tasks). Catalog loader is directory-scoped and
+// never requests models.dev.
+let smallModelServiceInstance = null;
+const getSmallModelService = async () => {
+  if (!smallModelServiceInstance) {
+    const { createSmallModelService } = await import('./lib/small-model/index.js');
+    smallModelServiceInstance = createSmallModelService({
+      buildOpenCodeUrl,
+      getOpenCodeAuthHeaders,
+    });
+  }
+  return smallModelServiceInstance;
+};
+
 const sessionAssistRuntime = createSessionAssistRuntime({
   buildOpenCodeUrl,
   getOpenCodeAuthHeaders,
-  getSmallModelService: async () => import('./lib/small-model/index.js'),
+  getSmallModelService,
 });
 
 const sessionTitleRuntime = createSessionTitleRuntime({
   buildOpenCodeUrl,
   getOpenCodeAuthHeaders,
-  getSmallModelService: async () => import('./lib/small-model/index.js'),
+  getSmallModelService,
 });
 
 const sessionGoalRuntime = createSessionGoalRuntime({
   buildOpenCodeUrl,
   getOpenCodeAuthHeaders,
-  getSmallModelService: async () => import('./lib/small-model/index.js'),
+  getSmallModelService,
   emitGoalNotification: async ({ sessionId, directory, status, goal }) => {
     // The goal settle notification replaces the per-turn ready notifications
     // (suppressed while the goal is active) — so it obeys the same toggle.
@@ -968,6 +981,7 @@ const clientPairingRuntime = createClientPairingRuntime({
 });
 const featureRoutesRuntime = createFeatureRoutesRuntime({
   clientReloadDelayMs: CLIENT_RELOAD_DELAY_MS,
+  getSmallModelService,
 });
 const bootstrapRuntime = createBootstrapRuntime({
   createUiAuth,
@@ -1106,6 +1120,7 @@ const scheduledTasksRuntime = createScheduledTasksRuntime({
   },
   buildOpenCodeUrl,
   getOpenCodeAuthHeaders,
+  getSmallModelService,
   waitForOpenCodeReady,
   emitTaskRunEvent: (event) => {
     for (const client of uiOpenChamberEventClients) {
@@ -1564,8 +1579,6 @@ async function main(options = {}) {
     server,
     __dirname,
     openchamberDataDir: OPENCHAMBER_DATA_DIR,
-    modelsDevApiUrl: MODELS_DEV_API_URL,
-    modelsMetadataCacheTtl: MODELS_METADATA_CACHE_TTL,
     fetchFreeZenModels,
     getCachedZenModels,
     setAutoAcceptSession,
@@ -1645,6 +1658,7 @@ async function main(options = {}) {
     isUnsafeSkillRelativePath,
     buildOpenCodeUrl,
     getOpenCodeAuthHeaders,
+    getSmallModelService,
     getOpenCodePort: () => openCodePort,
     buildAugmentedPath,
     projectConfigRuntime,

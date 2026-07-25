@@ -66,6 +66,7 @@ export const createWorktreeTopologyBroadcaster = createOpenChamberEventBroadcast
 export const createFeatureRoutesRuntime = (dependencies) => {
   const {
     clientReloadDelayMs,
+    getSmallModelService: injectedGetSmallModelService,
   } = dependencies;
 
   let quotaProviders = null;
@@ -76,14 +77,7 @@ export const createFeatureRoutesRuntime = (dependencies) => {
     return quotaProviders;
   };
 
-  let smallModelService = null;
   let assistantRoutesRuntime = null;
-  const getSmallModelService = async () => {
-    if (!smallModelService) {
-      smallModelService = await import('../small-model/index.js');
-    }
-    return smallModelService;
-  };
 
   const registerRoutes = async (app, routeDependencies) => {
     const {
@@ -115,6 +109,7 @@ export const createFeatureRoutesRuntime = (dependencies) => {
       isUnsafeSkillRelativePath,
       buildOpenCodeUrl,
       getOpenCodeAuthHeaders,
+      getSmallModelService: routeGetSmallModelService,
       getOpenCodePort,
       buildAugmentedPath,
       projectConfigRuntime,
@@ -314,6 +309,11 @@ export const createFeatureRoutesRuntime = (dependencies) => {
     });
 
     registerQuotaRoutes(app, { getQuotaProviders });
+    const getSmallModelService = routeGetSmallModelService
+      || injectedGetSmallModelService
+      || (async () => {
+        throw new Error('Small model service is not configured');
+      });
     registerSmallModelRoutes(app, { getSmallModelService });
     registerSessionGoalRoutes(app);
     registerGitHubRoutes(app);

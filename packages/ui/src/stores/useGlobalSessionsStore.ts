@@ -95,7 +95,18 @@ type GlobalSessionsState = {
   refreshArchivedSessionsForDirectories: (directories: Iterable<string>) => Promise<LoadResult>;
   loadMoreSessionsForDirectory: (directory: string) => Promise<LoadResult>;
   hydrateSessionIndex: () => Promise<void>;
-  startSessionIndexStartup: (directories: Iterable<string>) => Promise<LoadResult>;
+  /**
+   * Cold-start session-index restore + refresh.
+   * When `priorityDirectories` is set and a SQLite cache exists, only those
+   * directories enter the immediate POST /sync; remaining directories are
+   * enqueued via `syncSessionsForDirectories` after the first-screen path
+   * returns (idle/deferred). Without a cache, every directory blocks until
+   * the full set finishes (legacy empty-first-screen behavior).
+   */
+  startSessionIndexStartup: (
+    directories: Iterable<string>,
+    options?: { priorityDirectories?: Iterable<string> },
+  ) => Promise<LoadResult>;
   applySnapshot: (activeSessions: Session[], archivedSessions: Session[], status?: GlobalSessionsStatus) => void;
   upsertSession: (session: Session) => void;
   markSessionsPendingDeletion: (ids: Iterable<string>) => void;
@@ -893,7 +904,7 @@ export const useGlobalSessionsStore = create<GlobalSessionsState>((set, get) => 
     }
   },
 
-  startSessionIndexStartup: async (directories) => {
+  startSessionIndexStartup: async (directories, options) => {
     const runtime = captureSessionIndexRuntime();
     set({ startupSyncProgress: { active: true, phase: 'restoring', completed: 0, total: 0 } });
     await get().hydrateSessionIndex();
@@ -910,11 +921,29 @@ export const useGlobalSessionsStore = create<GlobalSessionsState>((set, get) => 
       return { activeSessions: state.activeSessions, archivedSessions: state.archivedSessions };
     }
     const hasCachedSnapshot = get().hasCachedSessionIndex;
+    // With a SQLite cache, only P0 directories hit the immediate /sync POST.
+    // Without a cache (first install), keep the full blocking set so the
+    // first screen is never empty.
+    const prioritySet = options?.priorityDirectories
+      ? normalizeDirectorySet(options.priorityDirectories)
+      : null;
+    const canPrioritize = Boolean(
+      hasCachedSnapshot
+      && prioritySet
+      && prioritySet.size > 0
+      && [...prioritySet].some((directory) => directorySet.has(directory)),
+    );
+    const immediateDirectorySet = canPrioritize
+      ? new Set([...directorySet].filter((directory) => prioritySet!.has(directory)))
+      : directorySet;
+    const deferredDirectorySet = canPrioritize
+      ? new Set([...directorySet].filter((directory) => !prioritySet!.has(directory)))
+      : new Set<string>();
     const snapshot = { activeSessions: get().activeSessions, archivedSessions: get().archivedSessions };
     let initial: SessionIndexSnapshot | null = null;
     const startRuntime = captureSessionIndexRuntime();
     try {
-      initial = await startSessionIndexBackgroundSync([...directorySet]);
+      initial = await startSessionIndexBackgroundSync([...immediateDirectorySet]);
       if (!isCurrentSessionIndexRuntime(runtime) || !isCurrentSessionIndexRuntime(startRuntime)) {
         return { activeSessions: [], archivedSessions: [] };
       }
@@ -925,10 +954,26 @@ export const useGlobalSessionsStore = create<GlobalSessionsState>((set, get) => 
       console.warn('[GlobalSessions] Failed to start server-side session index sync:', error);
     }
 
+    const scheduleDeferredSessionIndexSync = () => {
+      if (deferredDirectorySet.size === 0) return;
+      const deferredDirectories = [...deferredDirectorySet];
+      const schedule = () => {
+        if (!isCurrentSessionIndexRuntime(runtime)) return;
+        // Reuse the shared server-queue path (POST /sync + tip/GET observer).
+        void get().syncSessionsForDirectories(deferredDirectories, snapshot.activeSessions);
+      };
+      // Yield past first paint / P0 snapshot apply before enqueuing P1 work.
+      if (typeof globalThis.setTimeout === 'function') {
+        globalThis.setTimeout(schedule, 0);
+      } else {
+        void Promise.resolve().then(schedule);
+      }
+    };
+
     // Web and VS Code explicitly return unsupported and keep their existing
     // SDK-backed path. Electron never falls through this branch.
     if (!initial) {
-      const refresh = refreshStartupGlobalSessionsForDirectories(directorySet, snapshot.activeSessions, {
+      const refresh = refreshStartupGlobalSessionsForDirectories(immediateDirectorySet, snapshot.activeSessions, {
         retryFailed: !hasCachedSnapshot,
       });
       if (!hasCachedSnapshot) {
@@ -936,8 +981,12 @@ export const useGlobalSessionsStore = create<GlobalSessionsState>((set, get) => 
         if (!isCurrentSessionIndexRuntime(runtime)) {
           return { activeSessions: [], archivedSessions: [] };
         }
+        scheduleDeferredSessionIndexSync();
+      } else {
+        void refresh.then(() => {
+          scheduleDeferredSessionIndexSync();
+        });
       }
-      else void refresh;
       return snapshot;
     }
 
@@ -1008,8 +1057,11 @@ export const useGlobalSessionsStore = create<GlobalSessionsState>((set, get) => 
       if (!isCurrentSessionIndexRuntime(runtime)) {
         return { activeSessions: [], archivedSessions: [] };
       }
+      scheduleDeferredSessionIndexSync();
+    } else {
+      void polling;
+      scheduleDeferredSessionIndexSync();
     }
-    else void polling;
     return { activeSessions: get().activeSessions, archivedSessions: get().archivedSessions };
   },
 
@@ -1615,7 +1667,8 @@ export const refreshGlobalSessions = async (fallbackActive?: Session[]): Promise
 
 export const startGlobalSessionIndexStartup = async (
   directories: Iterable<string>,
-): Promise<LoadResult> => useGlobalSessionsStore.getState().startSessionIndexStartup(directories);
+  options?: { priorityDirectories?: Iterable<string> },
+): Promise<LoadResult> => useGlobalSessionsStore.getState().startSessionIndexStartup(directories, options);
 
 export const refreshGlobalSessionsForDirectories = async (
   directories: Iterable<string>,

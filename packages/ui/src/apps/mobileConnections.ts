@@ -1293,6 +1293,7 @@ export type UseMobileConnection = {
   cancelPassword: () => void;
   saveConnection: (input: MobileConnectInput) => Promise<MobileSavedConnection | null>;
   removeConnection: (id: string) => Promise<MobileSavedConnection | null>;
+  subscribeConnected: (listener: () => void) => () => void;
   setError: (message: string | null) => void;
 };
 
@@ -1306,6 +1307,17 @@ export const useMobileConnection = (onConnected: () => void): UseMobileConnectio
   const [pendingConnection, setPendingConnection] = React.useState<MobilePendingConnection | null>(null);
   const connectionsRef = React.useRef(connections);
   const busyRef = React.useRef<'connect' | 'password' | 'pairing' | null>(null);
+  const connectedListenersRef = React.useRef(new Set<() => void>());
+
+  const notifyConnected = useEvent(() => {
+    onConnected();
+    connectedListenersRef.current.forEach((listener) => listener());
+  });
+
+  const subscribeConnected = useEvent((listener: () => void) => {
+    connectedListenersRef.current.add(listener);
+    return () => connectedListenersRef.current.delete(listener);
+  });
 
   const applyConnections = useEvent((next: MobileSavedConnection[]) => {
     connectionsRef.current = next;
@@ -1393,7 +1405,7 @@ export const useMobileConnection = (onConnected: () => void): UseMobileConnectio
       }
       persistMetadata({ id: saved?.id, label, candidates, clientToken: token });
       switchToTransport(result.transport, token ?? null, { runtimeKey: secureTokenKeyOf({ candidates }), grant });
-      onConnected();
+      notifyConnected();
     } catch (error) {
       console.warn('[mobile-connect] connect threw', error);
       setError(t('mobile.connect.error.invalidUrl'));
@@ -1475,7 +1487,7 @@ export const useMobileConnection = (onConnected: () => void): UseMobileConnectio
         { runtimeKey: secureTokenKeyOf({ candidates: deviceCandidates }) },
       );
       adopted = chosen.kind === 'relay';
-      onConnected();
+      notifyConnected();
     } catch (error) {
       console.warn('[mobile-connect] pairing threw', error);
       setError(t('mobile.connect.error.authRequired'));
@@ -1532,7 +1544,7 @@ export const useMobileConnection = (onConnected: () => void): UseMobileConnectio
           persistMetadata({ id, label, candidates });
           setPendingConnection(null);
           switchToTransport({ kind: 'direct', url: chosen.url }, null, { runtimeKey: secureTokenKeyOf({ candidates }) });
-          onConnected();
+          notifyConnected();
           return;
         }
         setError(t('mobile.connect.error.authRequired'));
@@ -1553,7 +1565,7 @@ export const useMobileConnection = (onConnected: () => void): UseMobileConnectio
         { runtimeKey: secureTokenKeyOf({ candidates }) },
       );
       adopted = chosen.kind === 'relay';
-      onConnected();
+      notifyConnected();
     } catch (error) {
       console.warn('[mobile-connect] password threw', error);
       setError(t('mobile.connect.error.passwordFailed'));
@@ -1632,6 +1644,7 @@ export const useMobileConnection = (onConnected: () => void): UseMobileConnectio
     cancelPassword,
     saveConnection,
     removeConnection,
+    subscribeConnected,
     setError,
   };
 };

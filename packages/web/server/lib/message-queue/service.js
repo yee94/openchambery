@@ -144,7 +144,7 @@ export const createMessageQueueService = ({ dbPath, getRuntimeConfig = () => nul
           deliveryTarget: { kind: 'assistant', assistantID: target.assistantID },
           deliveryParts: target.deliveryParts,
           ...(target.syntheticParts?.length ? { syntheticParts: target.syntheticParts } : {}),
-          ...(includeDeliveryConfig ? { deliveryConfig: target } : {}),
+          ...(includeDeliveryConfig ? { deliveryConfig: target, lastErrorCode: row.last_error_code } : {}),
         };
         return { deliveryTarget: { kind: 'primary' } };
       })(),
@@ -620,7 +620,7 @@ export const createMessageQueueService = ({ dbPath, getRuntimeConfig = () => nul
       const row = db.prepare(`SELECT item.* FROM queue_item AS item JOIN queue_scope AS scope ON scope.scope_id=item.scope_id
         WHERE scope.runtime_key=? AND scope.worktree_state='active' AND item.status IN ('queued','retrying') AND item.due_at<=? AND NOT EXISTS (SELECT 1 FROM queue_attempt reserved WHERE reserved.queue_item_id=item.queue_item_id AND reserved.edit_reservation_token IS NOT NULL AND reserved.edit_reservation_expires_at>?)
         AND NOT EXISTS (SELECT 1 FROM queue_item active_item JOIN queue_attempt active_attempt ON active_attempt.queue_item_id=active_item.queue_item_id WHERE active_item.scope_id=item.scope_id AND (active_item.status IN ('sending','reconciling') OR (active_attempt.lease_token IS NOT NULL AND active_attempt.lease_expires_at>? AND active_attempt.lease_generation=?)))
-        AND item.position=(SELECT MIN(peer.position) FROM queue_item AS peer WHERE peer.scope_id=item.scope_id)
+        AND item.position=(SELECT MIN(peer.position) FROM queue_item AS peer WHERE peer.scope_id=item.scope_id AND peer.status IN ('queued','retrying'))
         ORDER BY item.due_at,item.created_at,item.queue_item_id LIMIT 1`).get(key, timestamp, timestamp, timestamp, authority.generation);
       if (!row) return { value: null, scopeIDs: [] };
       const token = crypto.randomUUID(); const expires = timestamp + leaseMs;
@@ -650,7 +650,7 @@ export const createMessageQueueService = ({ dbPath, getRuntimeConfig = () => nul
         AND (? IS NOT NULL OR NOT EXISTS (SELECT 1 FROM queue_attempt worker_reserved WHERE worker_reserved.queue_item_id=item.queue_item_id AND worker_reserved.lease_token IS NOT NULL AND worker_reserved.lease_expires_at>? AND worker_reserved.lease_generation=?))
         AND (? IS NULL OR EXISTS (SELECT 1 FROM queue_attempt probe WHERE probe.queue_item_id=item.queue_item_id AND probe.lease_token=? AND probe.lease_expires_at>? AND probe.fence_generation=? AND probe.lease_generation=?))
         AND NOT EXISTS (SELECT 1 FROM queue_item active_item JOIN queue_attempt active_attempt ON active_attempt.queue_item_id=active_item.queue_item_id WHERE active_item.scope_id=item.scope_id AND active_item.queue_item_id<>item.queue_item_id AND (active_item.status IN ('sending','reconciling') OR (active_attempt.lease_token IS NOT NULL AND active_attempt.lease_expires_at>? AND active_attempt.lease_generation=?)))
-        AND item.position=(SELECT MIN(peer.position) FROM queue_item AS peer WHERE peer.scope_id=item.scope_id)
+        AND item.position=(SELECT MIN(peer.position) FROM queue_item AS peer WHERE peer.scope_id=item.scope_id AND peer.status IN ('queued','retrying'))
         ORDER BY item.due_at,item.created_at,item.queue_item_id LIMIT 1`).get(key, timestamp, queueItemID ?? null, queueItemID ?? null, timestamp, eligibilityToken ?? null, timestamp, authority.generation, eligibilityToken ?? null, eligibilityToken ?? null, timestamp, authority.generation, authority.generation, timestamp, authority.generation);
       if (!row) return { value: null, scopeIDs: [] };
       const token = eligibilityToken ?? crypto.randomUUID(); const expires = timestamp + leaseMs;
@@ -713,7 +713,7 @@ export const createMessageQueueService = ({ dbPath, getRuntimeConfig = () => nul
       const claimed = db.prepare("UPDATE queue_attempt SET lease_owner=?,lease_token=?,lease_expires_at=?,lease_generation=?,fence_generation=? WHERE queue_item_id=? AND (lease_expires_at IS NULL OR lease_expires_at<=?)").run(owner, token, expires, authority.generation, authority.generation, row.queue_item_id, now());
       if (!claimed.changes) return { value: null, scopeIDs: [] };
       db.prepare('UPDATE queue_item SET dispatch_generation=?,updated_at=? WHERE queue_item_id=?').run(authority.generation, now(), row.queue_item_id);
-      return { scopeIDs: [row.scope_id], value: { item: itemOutput(itemRow(row.queue_item_id)), leaseToken: token, leaseExpiresAt: expires, fenceGeneration: authority.generation } };
+      return { scopeIDs: [row.scope_id], value: { item: itemOutput(itemRow(row.queue_item_id), { includeDeliveryConfig: true }), leaseToken: token, leaseExpiresAt: expires, fenceGeneration: authority.generation } };
     });
   };
   const completeAttempt = ({ queueItemID, operationID, messageID, leaseToken, fenceGeneration, completion = {}, source = 'worker', runtimeKey: override } = {}) => workerMutation(capturedRuntimeKey(override), () => {

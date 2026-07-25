@@ -49,7 +49,7 @@ export const ModelSelector: React.FC<ModelSelectorProps> = ({
     const { isReady, isUnavailable } = useOpenCodeReadiness();
     const storedProviders = useConfigStore((state) => state.providers) as ModelPickerProvider[];
     const providers = catalogProviders ?? storedProviders;
-    const modelsMetadata = useConfigStore((state) => state.modelsMetadata);
+    const getModelMetadata = useConfigStore((state) => state.getModelMetadata);
     const isMobile = useUIStore((state) => state.isMobile);
     const hiddenModels = useUIStore((state) => state.hiddenModels);
     const toggleFavoriteModel = useUIStore((state) => state.toggleFavoriteModel);
@@ -160,7 +160,7 @@ export const ModelSelector: React.FC<ModelSelectorProps> = ({
             providerOrder={providerOrder}
             favoriteModels={favoriteModelsList}
             recentModels={recentModelsList}
-            modelsMetadata={modelsMetadata}
+            getMetadata={getModelMetadata}
             searchQuery={searchQuery}
             onSearchQueryChange={setSearchQuery}
             onSelect={handleSelect}
@@ -257,7 +257,7 @@ export const ModelSelector: React.FC<ModelSelectorProps> = ({
                     providers={providers}
                     favoriteModels={favoriteModelsList}
                     recentModels={recentModelsList}
-                    modelsMetadata={modelsMetadata}
+                    getMetadata={getModelMetadata}
                     hiddenModels={hiddenModels}
                     allowedProviderIds={allowedProviderIds}
                     allowedModelIdsByProvider={allowedModelIdsByProvider}

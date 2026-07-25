@@ -1,4 +1,5 @@
-import { useState, useCallback, useEffect, useMemo } from 'react';
+import { useEvent } from '@reactuses/core';
+import { useState, useEffect, useMemo } from 'react';
 import { getModelBrandLogoCandidates, resolveModelBrand } from '@/lib/modelBrand';
 
 interface UseModelLogoReturn {
@@ -73,7 +74,7 @@ const buildProviderLogoCandidates = (providerId: string | null | undefined): str
   return [...new Set(candidates)];
 };
 
-/** 构建有序 logo URL 列表：本地 model → 本地 provider → models.dev 品牌 → models.dev provider */
+/** 构建有序 logo URL 列表：本地 model → 品牌对应的本地 provider → Provider 对应的本地 logo */
 const buildLogoSrcChain = (
   modelId: string | null | undefined,
   providerId?: string | null,
@@ -93,17 +94,9 @@ const buildLogoSrcChain = (
     if (localProvider) chain.push(localProvider);
   }
 
-  for (const candidate of brandCandidates) {
-    chain.push(`https://models.dev/logos/${candidate}.svg`);
-  }
-
   for (const candidate of providerCandidates) {
     const localProvider = LOCAL_PROVIDER_LOGO_MAP.get(candidate);
     if (localProvider) chain.push(localProvider);
-  }
-
-  for (const candidate of providerCandidates) {
-    chain.push(`https://models.dev/logos/${candidate}.svg`);
   }
 
   return { brand, chain: [...new Set(chain)] };
@@ -151,12 +144,12 @@ export function useModelLogo(
     setIndex(0);
   }, [modelId, providerId]);
 
-  const handleError = useCallback(() => {
+  const handleError = useEvent(() => {
     setIndex((current) => {
       const next = current + 1;
       return next < chain.length ? next : chain.length;
     });
-  }, [chain.length]);
+  });
 
   const src = index < chain.length ? chain[index] ?? null : null;
 

@@ -41,7 +41,34 @@ test('Android sharing shortcut contract declares its target and category', async
   assert.match(xml, /com\.openchamber\.app\.SHARE_ASSISTANT/);
   assert.match(manifest, /<activity android:name="\.ShareReceiverActivity"[\s\S]*android\.app\.shortcuts/);
   assert.match(store, /setCategories\(java\.util\.Collections\.singleton\(ShareReceiverActivity\.SHARE_TARGET_CATEGORY\)\)/);
+  assert.match(store, /if \(firstEnabled == null\) firstEnabled = entry/);
+  assert.match(store, /return fallback != null \? fallback : firstEnabled/);
+  assert.match(store, /stageAssistantOpen\(Context context, JSONObject target\)/);
+  assert.match(store, /pendingAssistantOpen\(Context context\)/);
   assert.match(receiver, /Intent\.EXTRA_SHORTCUT_ID/);
+  assert.match(receiver, /OpenChamberShareStore\.stageAssistantOpen\(this, selectedTarget\)/);
+  assert.match(receiver, /setAction\(MainActivity\.ACTION_ASSISTANT_OPEN_READY\)/);
+  const destroy = receiver.match(/protected void onDestroy\(\)[\s\S]*?(?=\n    @Override)/)?.[0];
+  assert.ok(destroy);
+  assert.match(destroy, /if \(draftID != null\) \{[\s\S]*ACTIVE\.get\(draftID\)/);
+});
+
+test('Android Assistant shortcut delivery is durable and acknowledged only by the WebView', async () => {
+  const [store, plugin, activity, bridge] = await Promise.all([
+    source('android/app/src/main/java/com/openchamber/app/OpenChamberShareStore.java'),
+    source('android/app/src/main/java/com/openchamber/app/OpenChamberSharePlugin.java'),
+    source('android/app/src/main/java/com/openchamber/app/MainActivity.java'),
+    source('../ui/src/apps/nativeAssistantShortcut.ts'),
+  ]);
+  assert.match(store, /putString\(PENDING_ASSISTANT_OPEN, request\.toString\(\)\)\.commit\(\)/);
+  assert.match(store, /requestID\.equals\(pending\.optString\("requestID"\)\)/);
+  assert.match(plugin, /pendingAssistantOpen\(PluginCall call\)/);
+  assert.match(plugin, /ackAssistantOpen\(PluginCall call\)/);
+  assert.match(plugin, /notifyListeners\("assistantOpenRequested", event, true\)/);
+  assert.match(activity, /ACTION_ASSISTANT_OPEN_READY/);
+  assert.match(activity, /emitAssistantOpenRequested\(id\)/);
+  assert.match(bridge, /await connectMobileShareConnection\(request\.connectionKey\)/);
+  assert.match(bridge, /openNativeAssistantConversation\(request\.assistantID\)[\s\S]*ackAssistantOpen/);
 });
 
 test('native navigation exposes iOS edge progress and Android predictive back', async () => {

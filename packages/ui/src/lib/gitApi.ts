@@ -96,6 +96,13 @@ export async function checkIsGitRepository(directory: string): Promise<boolean> 
   return gitHttp.checkIsGitRepository(directory);
 }
 
+/** Batch-discover repo + primary root; seeds HTTP discovery caches. */
+export async function discoverGitRepositories(
+  directories: string[],
+): Promise<Map<string, gitHttp.GitDiscoverEntry>> {
+  return gitHttp.discoverGitRepositories(directories);
+}
+
 export async function getGitStatus(directory: string, options?: { mode?: 'light' }): Promise<import('./api/types').GitStatus> {
   const runtime = getRuntimeGit();
   if (runtime) return runtime.getGitStatus(directory, options);

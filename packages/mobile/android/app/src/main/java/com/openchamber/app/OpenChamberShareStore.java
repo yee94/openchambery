@@ -13,6 +13,7 @@ import java.nio.charset.StandardCharsets;
 import java.util.ArrayList;
 import java.util.Collections;
 import java.util.Comparator;
+import java.util.UUID;
 
 final class OpenChamberShareStore {
     static final long MAX_IMAGE_BYTES = 8L * 1024 * 1024;
@@ -22,6 +23,7 @@ final class OpenChamberShareStore {
     private static final long DRAFT_TTL_MILLIS = 60L * 60 * 1000;
     private static final Object LOCK = new Object();
     private static final String CATALOG = "openchamberShareCatalog";
+    private static final String PENDING_ASSISTANT_OPEN = "openchamberPendingAssistantOpen";
     private static final String CANCELLATIONS = "openchamber-share-cancellations";
 
     static File inbox(Context context) { return new File(context.getFilesDir(), "openchamber-share-inbox"); }
@@ -35,13 +37,60 @@ final class OpenChamberShareStore {
     static JSONObject defaultTarget(Context context, String serverID, String assistantID) throws Exception {
         JSONArray entries = new JSONArray(context.getSharedPreferences("openchamber-share", Context.MODE_PRIVATE).getString(CATALOG, "[]"));
         JSONObject fallback = null;
+        JSONObject firstEnabled = null;
         for (int i = 0; i < entries.length(); i++) {
             JSONObject entry = entries.getJSONObject(i);
             if (!entry.optBoolean("enabled")) continue;
+            if (firstEnabled == null) firstEnabled = entry;
             if (serverID != null && assistantID != null && serverID.equals(entry.optString("serverInstanceID")) && assistantID.equals(entry.optString("assistantID"))) return entry;
             if (entry.optBoolean("isDefaultShareTarget")) fallback = entry;
         }
-        return fallback;
+        return fallback != null ? fallback : firstEnabled;
+    }
+
+    static JSONObject stageAssistantOpen(Context context, JSONObject target) throws Exception {
+        if (!validTarget(target)) throw new IllegalArgumentException("A valid Assistant target is required.");
+        synchronized (LOCK) {
+            long now = System.currentTimeMillis();
+            JSONObject request = new JSONObject()
+                .put("requestID", UUID.randomUUID().toString())
+                .put("serverInstanceID", target.getString("serverInstanceID"))
+                .put("assistantID", target.getString("assistantID"))
+                .put("connectionKey", target.getString("connectionKey"))
+                .put("createdAt", now)
+                .put("expiresAt", now + TTL_MILLIS);
+            boolean committed = sharePreferences(context).edit().putString(PENDING_ASSISTANT_OPEN, request.toString()).commit();
+            if (!committed) throw new IllegalStateException("Could not save the Assistant shortcut request.");
+            return request;
+        }
+    }
+
+    static JSONObject pendingAssistantOpen(Context context) {
+        synchronized (LOCK) {
+            String raw = sharePreferences(context).getString(PENDING_ASSISTANT_OPEN, null);
+            if (raw == null) return null;
+            try {
+                JSONObject request = new JSONObject(raw);
+                if (!validID(request.optString("requestID")) || !nonEmpty(request.optString("serverInstanceID")) || !nonEmpty(request.optString("assistantID")) || !nonEmpty(request.optString("connectionKey")) || request.optLong("expiresAt") <= System.currentTimeMillis()) {
+                    sharePreferences(context).edit().remove(PENDING_ASSISTANT_OPEN).commit();
+                    return null;
+                }
+                return request;
+            } catch (Exception ignored) {
+                sharePreferences(context).edit().remove(PENDING_ASSISTANT_OPEN).commit();
+                return null;
+            }
+        }
+    }
+
+    static void acknowledgeAssistantOpen(Context context, String requestID) {
+        requireID(requestID);
+        synchronized (LOCK) {
+            JSONObject pending = pendingAssistantOpen(context);
+            if (pending != null && requestID.equals(pending.optString("requestID"))) {
+                sharePreferences(context).edit().remove(PENDING_ASSISTANT_OPEN).commit();
+            }
+        }
     }
 
     static JSONObject prepareDraft(Context context, String draftID, JSONObject target, String text, java.util.List<Uri> images) throws Exception {
@@ -244,6 +293,7 @@ final class OpenChamberShareStore {
     }
 
     private static SharedPreferences cancellations(Context context) { return context.getSharedPreferences(CANCELLATIONS, Context.MODE_PRIVATE); }
+    private static SharedPreferences sharePreferences(Context context) { return context.getSharedPreferences("openchamber-share", Context.MODE_PRIVATE); }
     private static void throwIfDraftCancelled(Context context, String draftID) {
         if (isDraftCancelled(context, draftID)) throw new IllegalStateException("The share draft was cancelled.");
     }
@@ -286,8 +336,8 @@ final class OpenChamberShareStore {
     private static boolean nonEmpty(String value) { return value != null && !value.trim().isEmpty(); }
     private static JSONObject readJSON(File file) throws Exception { return new JSONObject(new String(java.nio.file.Files.readAllBytes(file.toPath()), StandardCharsets.UTF_8)); }
     private static long copyLimited(InputStream input, File output, long maximum) throws Exception { if (input == null) throw new IllegalArgumentException("The shared image could not be read."); long count = 0; byte[] buffer = new byte[32768]; try (InputStream in = input; FileOutputStream out = new FileOutputStream(output)) { int read; while ((read = in.read(buffer)) != -1) { count += read; if (count > maximum) throw new IllegalArgumentException("An image exceeds 8 MB."); out.write(buffer, 0, read); } out.getFD().sync(); } return count; }
-    private static String displayName(Context context, Uri uri) { try (android.database.Cursor cursor = context.getContentResolver().query(uri, null, null, null, null)) { if (cursor != null && cursor.moveToFirst()) { int i = cursor.getColumnIndex(OpenableColumns.DISPLAY_NAME); if (i >= 0) return cursor.getString(i); } } return "shared-image"; }
-    private static String safeName(String name) { return name.replaceAll("[^A-Za-z0-9._-]", "_"); }
+    private static String displayName(Context context, Uri uri) { try (android.database.Cursor cursor = context.getContentResolver().query(uri, null, null, null, null)) { if (cursor != null && cursor.moveToFirst()) { int i = cursor.getColumnIndex(OpenableColumns.DISPLAY_NAME); if (i >= 0) { String value = cursor.getString(i); if (nonEmpty(value)) return value; } } } return "shared-image"; }
+    private static String safeName(String name) { return nonEmpty(name) ? name.replaceAll("[^A-Za-z0-9._-]", "_") : "shared-image"; }
     private static void writeAtomic(File file, byte[] bytes) throws Exception { File tmp = new File(file.getParentFile(), "." + file.getName()); try (FileOutputStream out = new FileOutputStream(tmp)) { out.write(bytes); out.getFD().sync(); } if (!tmp.renameTo(file)) throw new IllegalStateException("Could not write share envelope."); }
     private static void delete(File file) { if (file.isDirectory()) { File[] files = file.listFiles(); if (files != null) for (File child : files) delete(child); } file.delete(); }
     private static void refreshShortcuts(Context context, JSONArray entries) { if (android.os.Build.VERSION.SDK_INT < 25) return; java.util.ArrayList<android.content.pm.ShortcutInfo> shortcuts = new java.util.ArrayList<>(); for (int i = 0; i < entries.length() && shortcuts.size() < 4; i++) { try { JSONObject entry = entries.getJSONObject(i); if (!entry.optBoolean("enabled")) continue; String serverID = entry.getString("serverInstanceID"), assistantID = entry.getString("assistantID"), id = "share-" + serverID + "-" + assistantID; android.os.PersistableBundle target = new android.os.PersistableBundle(); target.putString("serverInstanceID", serverID); target.putString("assistantID", assistantID); android.content.Intent launcherIntent = new android.content.Intent(context, ShareReceiverActivity.class).setAction(ShareReceiverActivity.ACTION_OPEN_ASSISTANT).putExtra("serverInstanceID", serverID).putExtra("assistantID", assistantID); shortcuts.add(new android.content.pm.ShortcutInfo.Builder(context, id).setShortLabel(entry.getString("name")).setLongLabel(entry.getString("name") + " · " + entry.optString("serverLabel")).setIcon(android.graphics.drawable.Icon.createWithResource(context, com.openchamber.app.R.mipmap.ic_launcher)).setCategories(java.util.Collections.singleton(ShareReceiverActivity.SHARE_TARGET_CATEGORY)).setExtras(target).setIntent(launcherIntent).build()); } catch (Exception ignored) {} } ((android.content.pm.ShortcutManager) context.getSystemService(android.content.pm.ShortcutManager.class)).setDynamicShortcuts(shortcuts); }

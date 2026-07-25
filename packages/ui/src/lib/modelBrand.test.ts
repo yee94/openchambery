@@ -44,11 +44,14 @@ describe('modelBrand', () => {
     expect(resolveModelBrand('mystery-model-xyz', 'my-aggregator')).toBeNull();
   });
 
-  test('exposes logo candidates for remote/local lookup', () => {
+  test('exposes logo candidates for local lookup', () => {
     expect(getModelBrandLogoCandidates('claude')).toEqual(['claude', 'anthropic']);
     expect(getModelBrandLogoCandidates('gpt')).toEqual(['gpt', 'openai']);
-    expect(getModelBrandLogoCandidates('hy')).toEqual(['hunyuan', 'hy', 'tencent']);
-    expect(getModelBrandLogoCandidates('glm')).toEqual(['zhipuai', 'zai', 'zai-coding-plan', 'zhipuai-coding-plan', 'glm']);
+    expect(getModelBrandLogoCandidates('hy')).toEqual(['hunyuan', 'hy']);
+    expect(getModelBrandLogoCandidates('glm')).toEqual(['zai-coding-plan', 'zhipuai-coding-plan', 'glm']);
+    expect(getModelBrandLogoCandidates('kimi')).toEqual(['kimi']);
+    expect(getModelBrandLogoCandidates('qwen')).toEqual(['qwen']);
+    expect(getModelBrandLogoCandidates('llama')).toEqual([]);
   });
 
   test('resolves glm from z.ai coding plan provider id', () => {
@@ -60,7 +63,7 @@ describe('modelBrand', () => {
     expect(resolveModelBrand('hy3-free', 'poe')).toBe('hy');
     expect(resolveModelBrand('composer-2.5', 'api-for-cursor')).toBe('composer');
     expect(resolveModelBrand('composer-2.5-fast', 'api-for-cursor')).toBe('composer');
-    expect(getModelBrandLogoCandidates('hy')).toEqual(['hunyuan', 'hy', 'tencent']);
+    expect(getModelBrandLogoCandidates('hy')).toEqual(['hunyuan', 'hy']);
     expect(getModelBrandLogoCandidates('composer')).toEqual(['cursor', 'composer']);
   });
 

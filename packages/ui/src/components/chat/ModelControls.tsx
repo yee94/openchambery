@@ -196,8 +196,6 @@ const formatUsdCurrency = (value: number) => new Intl.NumberFormat(getCurrentInt
     minimumFractionDigits: 2,
 }).format(value);
 
-const formatKnowledgeDate = (value: Date) => new Intl.DateTimeFormat(getCurrentIntlLocale(), { month: 'short', year: 'numeric' }).format(value);
-
 const formatReleaseDate = (value: Date) => new Intl.DateTimeFormat(getCurrentIntlLocale(), {
     month: 'short',
     day: 'numeric',
@@ -264,24 +262,6 @@ const getCapabilityIcons = (metadata?: ModelMetadata) => {
         }
     }
     return result;
-};
-
-const formatKnowledge = (knowledge?: string) => {
-    if (!knowledge) {
-        return '—';
-    }
-
-    const match = knowledge.match(/^(\d{4})-(\d{2})$/);
-    if (match) {
-        const year = Number.parseInt(match[1], 10);
-        const monthIndex = Number.parseInt(match[2], 10) - 1;
-        const knowledgeDate = new Date(Date.UTC(year, monthIndex, 1));
-        if (!Number.isNaN(knowledgeDate.getTime())) {
-            return formatKnowledgeDate(knowledgeDate);
-        }
-    }
-
-    return knowledge;
 };
 
 const formatDate = (value?: string) => {
@@ -363,7 +343,6 @@ export const ModelControls: React.FC<ModelControlsProps> = ({
     const setAgent = useConfigStore((state) => state.setAgent);
     const getCurrentProvider = useConfigStore((state) => state.getCurrentProvider);
     const getModelMetadata = useConfigStore((state) => state.getModelMetadata);
-    const modelsMetadata = useConfigStore((state) => state.modelsMetadata);
     const getCurrentAgent = useConfigStore((state) => state.getCurrentAgent);
     const getVisibleAgents = useConfigStore((state) => state.getVisibleAgents);
 
@@ -1587,20 +1566,17 @@ export const ModelControls: React.FC<ModelControlsProps> = ({
                         </div>
                     </div>
 
-                    {}
-                    <div className="rounded-xl border border-border/40 bg-sidebar/30 px-2 py-1.5">
-                        <div className="typography-micro text-muted-foreground mb-1">{t('chat.modelControls.metadata')}</div>
-                        <div className="flex flex-col gap-0.5">
-                            <div className="flex items-center justify-between">
-                                <span className="typography-meta text-muted-foreground/80">{t('chat.modelControls.knowledge')}</span>
-                                <span className="typography-meta font-medium text-foreground">{formatKnowledge(currentMetadata?.knowledge)}</span>
-                            </div>
-                            <div className="flex items-center justify-between">
-                                <span className="typography-meta text-muted-foreground/80">{t('chat.modelControls.release')}</span>
-                                <span className="typography-meta font-medium text-foreground">{formatDate(currentMetadata?.release_date)}</span>
+                    {currentMetadata?.release_date ? (
+                        <div className="rounded-xl border border-border/40 bg-sidebar/30 px-2 py-1.5">
+                            <div className="typography-micro text-muted-foreground mb-1">{t('chat.modelControls.metadata')}</div>
+                            <div className="flex flex-col gap-0.5">
+                                <div className="flex items-center justify-between">
+                                    <span className="typography-meta text-muted-foreground/80">{t('chat.modelControls.release')}</span>
+                                    <span className="typography-meta font-medium text-foreground">{formatDate(currentMetadata.release_date)}</span>
+                                </div>
                             </div>
                         </div>
-                    </div>
+                    ) : null}
                 </div>
             </MobileOverlayPanel>
         );
@@ -1780,7 +1756,6 @@ export const ModelControls: React.FC<ModelControlsProps> = ({
                 providers={providers as ModelPickerProvider[]}
                 favoriteModels={favoriteModelsList}
                 recentModels={recentModelsList}
-                modelsMetadata={modelsMetadata}
                 hiddenModels={hiddenModels}
                 providerOrder={providerOrder}
                 isFavorite={isFavoriteModel}
@@ -1916,17 +1891,15 @@ export const ModelControls: React.FC<ModelControlsProps> = ({
                             </div>
                         ))}
                     </div>
-                    <div className="flex flex-col gap-1.5">
-                        <span className="typography-meta font-semibold uppercase tracking-wide text-muted-foreground/90">{t('chat.modelControls.metadata')}</span>
-                        <div className="flex items-center justify-between gap-3">
-                            <span className="typography-meta font-medium text-muted-foreground/80">{t('chat.modelControls.knowledge')}</span>
-                            <span className="typography-meta font-medium text-foreground">{formatKnowledge(currentMetadata.knowledge)}</span>
+                    {currentMetadata.release_date ? (
+                        <div className="flex flex-col gap-1.5">
+                            <span className="typography-meta font-semibold uppercase tracking-wide text-muted-foreground/90">{t('chat.modelControls.metadata')}</span>
+                            <div className="flex items-center justify-between gap-3">
+                                <span className="typography-meta font-medium text-muted-foreground/80">{t('chat.modelControls.release')}</span>
+                                <span className="typography-meta font-medium text-foreground">{formatDate(currentMetadata.release_date)}</span>
+                            </div>
                         </div>
-                        <div className="flex items-center justify-between gap-3">
-                            <span className="typography-meta font-medium text-muted-foreground/80">{t('chat.modelControls.release')}</span>
-                            <span className="typography-meta font-medium text-foreground">{formatDate(currentMetadata.release_date)}</span>
-                        </div>
-                    </div>
+                    ) : null}
                 </div>
             ) : (
                 <div className="min-w-[200px] typography-meta text-muted-foreground">{t('chat.modelControls.metadataUnavailable')}</div>
@@ -2288,7 +2261,7 @@ export const ModelControls: React.FC<ModelControlsProps> = ({
                                         providers={providers as ModelPickerProvider[]}
                                         favoriteModels={favoriteModelsList}
                                         recentModels={recentModelsList}
-                                        modelsMetadata={useConfigStore.getState().modelsMetadata}
+                                        getMetadata={getModelMetadata}
                                         searchQuery={desktopModelQuery}
                                         onSearchQueryChange={setDesktopModelQuery}
                                         onSelect={handleSharedModelSelect}

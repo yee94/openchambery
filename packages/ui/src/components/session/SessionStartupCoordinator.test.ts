@@ -8,6 +8,7 @@ import {
 
 import {
   collectSessionStartupDirectories,
+  planSessionStartupDirectories,
   runSessionStartup,
   runSessionStartupAfterSettingsHydration,
 } from './runSessionStartup';
@@ -29,6 +30,29 @@ describe('runSessionStartup', () => {
     expect(calls).toEqual([['/repo/a', '/repo/b']]);
   });
 
+  test('forwards priority directories when provided', async () => {
+    const calls: Array<{ directories: string[]; priority?: string[] }> = [];
+    const start = async (
+      directories: Iterable<string>,
+      options?: { priorityDirectories?: Iterable<string> },
+    ) => {
+      calls.push({
+        directories: [...directories],
+        priority: options?.priorityDirectories ? [...options.priorityDirectories] : undefined,
+      });
+      return { activeSessions: [], archivedSessions: [] };
+    };
+
+    await runSessionStartup(['/repo/a', '/repo/b', '/repo/a-feature'], start, {
+      priorityDirectories: ['/repo/a', '/repo/a-feature'],
+    });
+
+    expect(calls).toEqual([{
+      directories: ['/repo/a', '/repo/b', '/repo/a-feature'],
+      priority: ['/repo/a', '/repo/a-feature'],
+    }]);
+  });
+
   test('collects persisted worktree directories for registered projects', () => {
     const directories = collectSessionStartupDirectories(
       ['/repo/a/', '/repo/b'],
@@ -41,26 +65,70 @@ describe('runSessionStartup', () => {
     expect(directories).toEqual(['/repo/a', '/repo/a-feature', '/repo/b']);
   });
 
+  test('plans priority directories for the active project and its worktrees', () => {
+    const plan = planSessionStartupDirectories(
+      ['/repo/a', '/repo/b'],
+      new Map([
+        ['/repo/a', [{ path: '/repo/a-feature' }]],
+        ['/repo/b', [{ path: '/repo/b-feature' }]],
+      ]),
+      { currentDirectory: '/repo/a/src' },
+    );
+
+    expect(plan.directories).toEqual(['/repo/a', '/repo/a-feature', '/repo/b', '/repo/b-feature']);
+    expect(plan.priorityDirectories).toEqual(['/repo/a', '/repo/a-feature']);
+  });
+
+  test('plans priority from a worktree current directory', () => {
+    const plan = planSessionStartupDirectories(
+      ['/repo/a', '/repo/b'],
+      new Map([['/repo/a', [{ path: '/repo/a-feature' }]]]),
+      { currentDirectory: '/repo/a-feature' },
+    );
+
+    expect(plan.priorityDirectories).toEqual(['/repo/a', '/repo/a-feature']);
+  });
+
+  test('omits priority when current directory is unknown (full-set fallback)', () => {
+    const plan = planSessionStartupDirectories(
+      ['/repo/a', '/repo/b'],
+      new Map(),
+      { currentDirectory: '/unrelated' },
+    );
+
+    expect(plan.directories).toEqual(['/repo/a', '/repo/b']);
+    expect(plan.priorityDirectories).toEqual(undefined);
+  });
+
   test('reads project directories after settings hydration completes', async () => {
     let releaseSettings: (() => void) | undefined;
     const settingsHydration = new Promise<void>((resolve) => { releaseSettings = resolve; });
-    let directories = [] as string[];
-    const calls: string[][] = [];
+    let plan: { directories: string[]; priorityDirectories?: string[] } = { directories: [] };
+    const calls: Array<{ directories: string[]; priority?: string[] }> = [];
     const startup = runSessionStartupAfterSettingsHydration(
       settingsHydration,
-      () => directories,
-      async (nextDirectories) => {
-        calls.push([...nextDirectories]);
+      () => plan,
+      async (nextDirectories, options) => {
+        calls.push({
+          directories: [...nextDirectories],
+          priority: options?.priorityDirectories ? [...options.priorityDirectories] : undefined,
+        });
         return { activeSessions: [], archivedSessions: [] };
       },
     );
 
-    directories = ['/repo/restored'];
+    plan = {
+      directories: ['/repo/restored', '/repo/other'],
+      priorityDirectories: ['/repo/restored'],
+    };
     expect(calls).toEqual([]);
     releaseSettings?.();
     await startup;
 
-    expect(calls).toEqual([['/repo/restored']]);
+    expect(calls).toEqual([{
+      directories: ['/repo/restored', '/repo/other'],
+      priority: ['/repo/restored'],
+    }]);
   });
 
   test('releases the startup barrier after success', async () => {

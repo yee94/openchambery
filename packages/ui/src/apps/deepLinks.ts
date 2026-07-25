@@ -15,17 +15,25 @@
  * context — including, eventually, a tiny encoder shared with the native widget/extension.
  */
 
+import {
+  encodePairingConnectionPayload,
+  parsePairingConnectionPayload,
+  type PairingConnectionPayload,
+} from '@/lib/connectionPayload';
+
 export const DEEP_LINK_SCHEME = 'openchamber';
 
 export type SessionsFilter = 'all' | 'attention' | 'recent';
 export type ViewTarget = 'files' | 'mcp' | 'instances' | 'update';
 
 /**
- * Every navigable destination the app exposes to the outside world. New widget/notification
- * ideas should add a variant here first, then teach deepLinkNavigation how to apply it —
- * that keeps the "blocks" composable without leaking ad-hoc URL parsing into features.
+ * Every external intent the app exposes, including connection handoff and navigation.
+ * New widget/notification ideas should add a variant here first, then teach
+ * deepLinkNavigation how to apply it — that keeps the "blocks" composable without
+ * leaking ad-hoc URL parsing into features.
  */
 export type DeepLinkIntent =
+  | { type: 'connect'; pairing: PairingConnectionPayload }
   | { type: 'session'; sessionId: string; directory?: string }
   | { type: 'new-session'; directory?: string; projectId?: string; agent?: string; model?: string; prompt?: string }
   | { type: 'open-project'; directory: string }
@@ -83,6 +91,11 @@ export function parseDeepLink(raw: string | null | undefined): DeepLinkIntent | 
   const query = url.searchParams;
 
   switch (route) {
+    case 'connect': {
+      const pairing = parsePairingConnectionPayload(raw);
+      return pairing ? { type: 'connect', pairing } : null;
+    }
+
     case 'session': {
       const sessionId = rest[0] || query.get('id') || '';
       if (!sessionId) {
@@ -180,6 +193,8 @@ export function buildDeepLink(intent: DeepLinkIntent): string {
   };
 
   switch (intent.type) {
+    case 'connect':
+      return encodePairingConnectionPayload(intent.pairing);
     case 'session':
       // Emit OpenCode-aligned `directory=` (parse still accepts legacy `dir` / `path`).
       return withQuery(`session/${encodeURIComponent(intent.sessionId)}`, { directory: intent.directory });

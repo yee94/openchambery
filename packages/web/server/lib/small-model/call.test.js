@@ -12,13 +12,16 @@ const { callSmallModel } = await import('./call.js');
 const { readConfig } = await import('../opencode/shared.js');
 
 // Minimal catalog fragment used by the catalog-based base URL resolution case.
+// Base URL comes from model.api.url (OpenCode SDK shape), not provider.api.
 const CATALOG = {
   mistral: {
     id: 'mistral',
     name: 'Mistral',
-    api: 'https://api.mistral.ai/v1',
     models: {
-      'mistral-small-latest': { id: 'mistral-small-latest' },
+      'mistral-small-latest': {
+        id: 'mistral-small-latest',
+        api: { url: 'https://api.mistral.ai/v1' },
+      },
     },
   },
 };
@@ -268,7 +271,7 @@ describe('callSmallModel — custom provider config', () => {
   });
 
   describe('catalog-based base URL (no config override)', () => {
-    it('uses the catalog api field when no config baseURL is set', async () => {
+    it('uses the model api.url from the catalog when no config baseURL is set', async () => {
       readConfig.mockReturnValue({});
       fetchMock.mockResolvedValue(ok('ok'));
 
@@ -286,7 +289,25 @@ describe('callSmallModel — custom provider config', () => {
       expect(init.headers.Authorization).toBe('Bearer mistral-key');
     });
 
-    it('throws when a non-openai provider has no catalog api and no config baseURL', async () => {
+    it('prefers config baseURL over model api.url', async () => {
+      readConfig.mockReturnValue({
+        provider: { mistral: { options: { baseURL: 'https://gateway.example.test/v1' } } },
+      });
+      fetchMock.mockResolvedValue(ok('ok'));
+
+      await callSmallModel({
+        auth: { mistral: { type: 'api', key: 'mistral-key' } },
+        catalog: CATALOG,
+        workingDirectory: '/proj',
+        providerID: 'mistral',
+        modelID: 'mistral-small-latest',
+        prompt: 'hi',
+      });
+
+      expect(lastCall(fetchMock).url).toBe('https://gateway.example.test/v1/chat/completions');
+    });
+
+    it('throws when a non-openai provider has no model api.url and no config baseURL', async () => {
       readConfig.mockReturnValue({});
 
       await expect(callSmallModel({

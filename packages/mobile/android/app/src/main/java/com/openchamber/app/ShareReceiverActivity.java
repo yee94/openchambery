@@ -48,7 +48,7 @@ public class ShareReceiverActivity extends Activity {
         super.onCreate(state);
         Intent intent = getIntent();
         if (ACTION_OPEN_ASSISTANT.equals(intent.getAction())) {
-            openMainActivity();
+            openRequestedAssistant(intent);
             return;
         }
         if (!readShareIntent(intent)) {
@@ -72,8 +72,10 @@ public class ShareReceiverActivity extends Activity {
     @Override
     protected void onDestroy() {
         destroyed = true;
-        WeakReference<ShareReceiverActivity> reference = ACTIVE.get(draftID);
-        if (reference != null && reference.get() == this) ACTIVE.remove(draftID, reference);
+        if (draftID != null) {
+            WeakReference<ShareReceiverActivity> reference = ACTIVE.get(draftID);
+            if (reference != null && reference.get() == this) ACTIVE.remove(draftID, reference);
+        }
         super.onDestroy();
     }
 
@@ -172,8 +174,22 @@ public class ShareReceiverActivity extends Activity {
         finish();
     }
 
-    private void openMainActivity() {
-        startActivity(new Intent(this, MainActivity.class).addFlags(Intent.FLAG_ACTIVITY_CLEAR_TOP | Intent.FLAG_ACTIVITY_SINGLE_TOP));
+    private void openRequestedAssistant(Intent intent) {
+        JSONObject request = null;
+        try {
+            String serverID = intent.getStringExtra("serverInstanceID");
+            String assistantID = intent.getStringExtra("assistantID");
+            JSONObject selectedTarget = OpenChamberShareStore.defaultTarget(this, serverID, assistantID);
+            if (serverID != null && assistantID != null && selectedTarget != null && serverID.equals(selectedTarget.optString("serverInstanceID")) && assistantID.equals(selectedTarget.optString("assistantID"))) {
+                request = OpenChamberShareStore.stageAssistantOpen(this, selectedTarget);
+            }
+        } catch (Exception ignored) {
+        }
+        Intent main = new Intent(this, MainActivity.class).addFlags(Intent.FLAG_ACTIVITY_CLEAR_TOP | Intent.FLAG_ACTIVITY_SINGLE_TOP);
+        if (request != null) {
+            main.setAction(MainActivity.ACTION_ASSISTANT_OPEN_READY).putExtra("requestID", request.optString("requestID"));
+        }
+        startActivity(main);
         finish();
     }
 

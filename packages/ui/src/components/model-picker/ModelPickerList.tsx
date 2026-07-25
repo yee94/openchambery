@@ -318,7 +318,7 @@ interface ModelPickerListProps {
   providers: ModelPickerProvider[];
   favoriteModels: ModelPickerFavoriteEntry[];
   recentModels: ModelPickerFavoriteEntry[];
-  modelsMetadata: Map<string, ModelMetadata>;
+  getMetadata?: (providerID: string, modelID: string) => ModelMetadata | undefined;
   searchQuery: string;
   onSearchQueryChange: (value: string) => void;
   onSelect: (entry: ModelPickerEntry) => void;
@@ -374,7 +374,7 @@ export const ModelPickerList: React.FC<ModelPickerListProps> = ({
   providers,
   favoriteModels,
   recentModels,
-  modelsMetadata,
+  getMetadata,
   searchQuery,
   onSearchQueryChange,
   onSelect,
@@ -586,7 +586,7 @@ export const ModelPickerList: React.FC<ModelPickerListProps> = ({
   let currentFlatIndex = 0;
 
   const renderRow = (entry: ModelPickerEntry, keyPrefix: string, showProviderLogo: boolean, rowIndex: number, dragHandleProps?: SortableFavoriteHandleProps | null) => {
-    const metadata = mergeModelMetadataWithLiveModel(entry.providerID, entry.model, modelsMetadata.get(`${entry.providerID}/${entry.modelID}`));
+    const metadata = mergeModelMetadataWithLiveModel(entry.providerID, entry.model, getMetadata?.(entry.providerID, entry.modelID));
     const contextTokens = formatModelContextTokens(metadata?.limit?.context);
     const count = selectionCount?.(entry) ?? 0;
     const isSelected = selectedModel?.providerID === entry.providerID && selectedModel.modelID === entry.modelID;

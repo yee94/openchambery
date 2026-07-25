@@ -198,6 +198,28 @@ describe('assistants service', () => {
     service.close();
   });
 
+  it('keeps stateless queued delivery bound to the Assistant after earlier turns replace the live Session', async () => {
+    let creates = 0; let activePrompts = 0; let maxActivePrompts = 0; const prompts = [];
+    const service = setup(root(), { create: async () => ({ data: { id: `ses_${++creates}` } }), promptAsync: async (input) => { activePrompts++; maxActivePrompts = Math.max(maxActivePrompts, activePrompts); await Promise.resolve(); prompts.push(input); activePrompts--; return { response: { status: 204 } }; } });
+    const assistant = service.createAssistant({ ...assistantInput, mode: 'stateless' });
+    const initial = await service.ensure(assistant.id);
+    const scope = { sessionID: `assistant:${assistant.id}`, directory: initial.directory };
+    const first = service.captureQueueDeliveryTarget({ assistantID: assistant.id, scope });
+    const second = service.captureQueueDeliveryTarget({ assistantID: assistant.id, scope });
+
+    const [firstResult, secondResult] = await Promise.all([
+      service.sendWithCapturedConfig({ deliveryTarget: first, messageID: 'queued-stateless-1', parts: [{ type: 'text', text: 'one' }] }),
+      service.sendWithCapturedConfig({ deliveryTarget: second, messageID: 'queued-stateless-2', parts: [{ type: 'text', text: 'two' }] }),
+    ]);
+
+    expect(firstResult.binding.sessionID).not.toBe(initial.sessionID);
+    expect(secondResult.binding.sessionID).not.toBe(firstResult.binding.sessionID);
+    expect(prompts.map((prompt) => prompt.sessionID)).toEqual([firstResult.binding.sessionID, secondResult.binding.sessionID]);
+    expect(maxActivePrompts).toBe(1);
+    await expect(service.send(assistant.id, { ...initial, messageID: 'stale-client-stateless', parts: [{ type: 'text', text: 'client wins' }] })).resolves.toMatchObject({ admitted: true });
+    service.close();
+  });
+
   it('archives replaced bindings for continuous /new and workspace moves', async () => {
     let creates = 0;
     const directory = root();

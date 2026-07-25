@@ -269,6 +269,10 @@ export const AssistantView: React.FC<AssistantViewProps> = ({ activeOverride, on
     const binding = { sessionID, directory, sessionGeneration: assistant.sessionGeneration };
     return {
       kind: 'secondary', surfaceID: `assistant:${assistant.id}`, active, sessionID, directory, draftKey, transportIdentity: transport, runtimeGeneration, deliveryTarget: { kind: 'assistant', assistantID: assistant.id }, resources,
+      // Stateless delivery belongs to the Assistant, not to the disposable
+      // OpenCode Session created for one turn. Keep queue lookup stable while
+      // the live transcript binding advances after every accepted prompt.
+      ...(assistant.mode === 'stateless' ? { queueSessionID: `assistant:${assistant.id}` } : {}),
       selection: { value: { providerID: assistant.providerID, modelID: assistant.modelID, agent: assistant.agent ?? undefined, variant: assistant.variant ?? undefined }, catalog: { providers: providersQuery.data ?? [], agents: visibleAgents, variants, variantsReady: providersQuery.isSuccess, ready: providersQuery.isSuccess && agentsQuery.isSuccess, loading: providersQuery.isPending || agentsQuery.isPending, error: providersQuery.isError || agentsQuery.isError }, change: changeSelection, flush: () => selectionCoordinator.flush(selectionIdentity) },
       // Mirror primary chat: missing status is idle, never `unknown`. Unknown was
       // treated as "not idle" by composer queue/steer gates and diverted idle

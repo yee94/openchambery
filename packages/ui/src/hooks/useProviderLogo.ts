@@ -1,6 +1,7 @@
-import { useState, useCallback, useEffect } from 'react';
+import { useEvent } from '@reactuses/core';
+import { useState, useEffect } from 'react';
 
-type LogoSource = 'local' | 'remote' | 'none';
+type LogoSource = 'local' | 'none';
 
 interface UseProviderLogoReturn {
     src: string | null;
@@ -54,13 +55,7 @@ const buildLogoCandidates = (providerId: string | null | undefined) => {
 const resolveProviderLogoSrc = (providerId: string | null | undefined): string | null => {
     const candidates = buildLogoCandidates(providerId);
     const localResolvedId = candidates.find((candidate) => LOCAL_PROVIDER_LOGO_MAP.has(candidate)) ?? null;
-    const localLogoSrc = localResolvedId ? LOCAL_PROVIDER_LOGO_MAP.get(localResolvedId) ?? null : null;
-    if (localLogoSrc) {
-        return localLogoSrc;
-    }
-
-    const remoteResolvedId = candidates[0] ?? null;
-    return remoteResolvedId ? `https://models.dev/logos/${remoteResolvedId}.svg` : null;
+    return localResolvedId ? LOCAL_PROVIDER_LOGO_MAP.get(localResolvedId) ?? null : null;
 };
 
 const preloadProviderLogo = (providerId: string | null | undefined): void => {
@@ -94,35 +89,26 @@ for (const [path, url] of Object.entries(localLogoModules)) {
 export function useProviderLogo(providerId: string | null | undefined): UseProviderLogoReturn {
     const candidates = buildLogoCandidates(providerId);
     const localResolvedId = candidates.find((candidate) => LOCAL_PROVIDER_LOGO_MAP.has(candidate)) ?? null;
-    const remoteResolvedId = candidates[0] ?? null;
     const hasLocalLogo = Boolean(localResolvedId);
     const localLogoSrc = localResolvedId ? LOCAL_PROVIDER_LOGO_MAP.get(localResolvedId) ?? null : null;
 
-    const [source, setSource] = useState<LogoSource>(hasLocalLogo ? 'local' : 'remote');
+    const [source, setSource] = useState<LogoSource>(hasLocalLogo ? 'local' : 'none');
 
     useEffect(() => {
-        setSource(hasLocalLogo ? 'local' : 'remote');
-    }, [hasLocalLogo, localResolvedId, remoteResolvedId]);
+        setSource(hasLocalLogo ? 'local' : 'none');
+    }, [hasLocalLogo, localResolvedId]);
 
-    const handleError = useCallback(() => {
-        setSource((current) => (current === 'local' && hasLocalLogo ? 'remote' : 'none'));
-    }, [hasLocalLogo]);
+    const handleError = useEvent(() => {
+        setSource('none');
+    });
 
-    if (!localResolvedId && !remoteResolvedId) {
+    if (!localResolvedId) {
         return { src: null, onError: handleError, hasLogo: false };
     }
 
     if (source === 'local' && localLogoSrc) {
         return {
             src: localLogoSrc,
-            onError: handleError,
-            hasLogo: true,
-        };
-    }
-
-    if (source === 'remote' && remoteResolvedId) {
-        return {
-            src: `https://models.dev/logos/${remoteResolvedId}.svg`,
             onError: handleError,
             hasLogo: true,
         };

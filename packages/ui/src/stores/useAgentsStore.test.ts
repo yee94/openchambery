@@ -25,7 +25,7 @@ mock.module('@/queries/agentQueries', () => ({
 }));
 mock.module('@/lib/configUpdate', () => ({ startConfigUpdate: mock(() => undefined), finishConfigUpdate: mock(() => undefined), updateConfigUpdateMessage: mock(() => undefined) }));
 mock.module('@/lib/configSync', () => ({ emitConfigChange: () => { configChangeCalls += 1; }, scopeMatches: mock(() => false), subscribeToConfigChanges: mock(() => () => undefined) }));
-mock.module('@/stores/useConfigStore', () => ({ useConfigStore: { getState: () => ({ loadAgents: async () => undefined, loadProviders: async () => undefined, invalidateModelMetadataCache: () => undefined, invalidateProviderCache: () => undefined }) } }));
+mock.module('@/stores/useConfigStore', () => ({ useConfigStore: { getState: () => ({ loadAgents: async () => undefined, loadProviders: async () => undefined, invalidateProviderCache: () => undefined }) } }));
 mock.module('@/queries/installedSkillsQueries', () => ({
   refreshInstalledSkillsQuery: async (_client: unknown, directory: string | null, transport: string) => { installedRefreshes.push([directory, transport]); return []; },
 }));

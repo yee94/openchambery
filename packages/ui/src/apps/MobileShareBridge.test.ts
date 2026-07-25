@@ -62,7 +62,7 @@ describe('MobileShareBridge contract', () => {
     const completed = source.indexOf('const completedOperation = await waitForAssistantShare');
     const refresh = source.indexOf('refreshedSnapshot = await forceRefreshAssistantSnapshot()');
     const binding = source.indexOf('refreshedAssistant.sessionID !== completedOperation.sessionID');
-    const open = source.indexOf('openAssistant(deliveredAssistantID)');
+    const open = source.indexOf('openNativeAssistantConversation(deliveredAssistantID)');
     expect(completed).toBeGreaterThan(-1);
     expect(refresh).toBeGreaterThan(completed);
     expect(binding).toBeGreaterThan(refresh);
@@ -83,7 +83,7 @@ describe('MobileShareBridge contract', () => {
     const source = await readFile(join(directory, 'MobileShareBridge.tsx'), 'utf8');
     const admission = source.indexOf("messageID: ascendingId('msg')");
     const save = source.indexOf('save(item); // Durable admission precedes every native share mutation.');
-    const connect = source.indexOf('await connectMobileShareConnection');
+    const connect = source.indexOf('await connectMobileShareConnection', save);
     expect(source).toContain("import { ascendingId } from '@/sync/message-id';");
     expect(source).toContain('type OutboxItem = { envelope: NativeShareEnvelope; messageID: string;');
     expect(admission).toBeGreaterThan(-1);
@@ -109,12 +109,34 @@ describe('MobileShareBridge contract', () => {
     const source = await readFile(join(directory, 'MobileShareBridge.tsx'), 'utf8');
     const retry = source.indexOf('const recoveredTargets = await retryMobileShareDraftCancellations');
     const connect = source.indexOf('const openRecoveredNativeDraftTarget');
-    const open = source.indexOf('openAssistant(target.assistantID)');
+    const open = source.indexOf('openNativeAssistantConversation(target.assistantID)');
     const finalize = source.indexOf('finalizeMobileShareDraftHandoff(target)');
     expect(retry).toBeGreaterThan(-1);
     expect(connect).toBeGreaterThan(-1);
     expect(open).toBeGreaterThan(connect);
     expect(finalize).toBeGreaterThan(retry);
+  });
+
+  test('switches to the shortcut instance and opens the phone Assistant conversation before acknowledging', async () => {
+    const [bridge, shortcut, app] = await Promise.all([
+      readFile(join(directory, 'MobileShareBridge.tsx'), 'utf8'),
+      readFile(join(directory, 'nativeAssistantShortcut.ts'), 'utf8'),
+      readFile(join(directory, 'MobileApp.tsx'), 'utf8'),
+    ]);
+    const pending = shortcut.indexOf('const pending = await OpenChamberShare.pendingAssistantOpen()');
+    const connect = shortcut.indexOf('await connectMobileShareConnection(request.connectionKey)', pending);
+    const snapshot = shortcut.indexOf('forceRefreshAssistantSnapshot()', connect);
+    const open = shortcut.indexOf('openNativeAssistantConversation(request.assistantID)', snapshot);
+    const acknowledge = shortcut.indexOf('ackAssistantOpen({ requestID: request.requestID })', open);
+    expect(pending).toBeGreaterThan(-1);
+    expect(connect).toBeGreaterThan(pending);
+    expect(snapshot).toBeGreaterThan(connect);
+    expect(open).toBeGreaterThan(snapshot);
+    expect(acknowledge).toBeGreaterThan(open);
+    expect(shortcut).toContain("navigation.setActiveTab('assistant')");
+    expect(shortcut).toContain('navigation.openAssistant(assistantID)');
+    expect(bridge).toContain("addListener('assistantOpenRequested'");
+    expect(app).toContain('handled ? true : autoConnectLastInstance()');
   });
 
   test('hydrates the target draft metadata before handoff and drains a trailing native event', async () => {

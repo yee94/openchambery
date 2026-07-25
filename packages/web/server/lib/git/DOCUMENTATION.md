@@ -15,6 +15,12 @@ This module provides Git repository operations for the web server runtime, inclu
 
 The following functions are exported and used by the web server:
 
+### HTTP routes (discovery)
+
+- `GET /api/git/check?directory=...`: Single-directory repo probe. Returns `{ isGitRepository }`.
+- `GET /api/git/primary-root?directory=...`: Single-directory primary worktree root. Returns `{ root }`.
+- `GET /api/git/discover?directories=a&directories=b...`: Batch discovery for cold-start project lists. Accepts one or more `directories` query values (Express may surface a single value as a string). Returns a JSON array of `{ directory, isGitRepository, primaryRoot, error? }`. Per-directory failures are isolated: that entry gets `isGitRepository: false` / `primaryRoot: null` (or `isGitRepository: true` with `primaryRoot: null` when only root resolution fails) plus `error`, and the overall response stays HTTP 200. Empty/missing `directories` is HTTP 400. Legacy `/check` and `/primary-root` remain for other callers.
+
 ### Repository Operations
 - `isGitRepository(directory)`: Check if a directory is a Git repository.
 - `getGlobalIdentity()`: Get global Git user.name, user.email, and core.sshCommand.

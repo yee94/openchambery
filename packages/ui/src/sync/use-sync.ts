@@ -28,7 +28,7 @@ import { sessionSyncCoordinator } from "./session-sync-coordinator"
 import { loadSessionChildrenOnDemand, mergeSessionChildren } from "./session-children"
 import { opencodeClient } from "@/lib/opencode/client"
 import { waitForSessionStartupBarrier } from "@/lib/session-startup-barrier"
-import { getInitialSessionMessagePageSize, getSessionHistoryMessagePageSize } from "./session-message-page-size"
+import { getInitialSessionMessageLimit, getSessionHistoryMessageLimit } from "./session-message-policy"
 
 const SKIP_PARTS = new Set(["patch", "step-start", "step-finish"])
 const MAX_SEEN_DIRS = 30
@@ -82,7 +82,7 @@ const getEffectiveSessionCacheLimit = () => {
   if (isMobileSurfaceRuntime()) return MOBILE_SESSION_CACHE_LIMIT
   return SESSION_CACHE_LIMIT
 }
-const getDefaultMeta = (): SyncMeta => ({ limit: getInitialSessionMessagePageSize(), cursor: undefined, complete: false, loading: false })
+const getDefaultMeta = (): SyncMeta => ({ limit: getInitialSessionMessageLimit(), cursor: undefined, complete: false, loading: false })
 
 function getPrefetchMeta(directory: string, sessionID: string): SyncMeta | undefined {
   const info = getSessionPrefetch(directory, sessionID)
@@ -102,7 +102,7 @@ function sortParts(parts: Part[]) {
 function isHeavyConstrainedSessionCache(state: Pick<State, "message" | "part">, sessionID: string): boolean {
   const messages = state.message[sessionID]
   if (!messages || messages.length === 0) return false
-  return messages.length > getInitialSessionMessagePageSize()
+  return messages.length > getInitialSessionMessageLimit()
 }
 
 function isUserMessage(message: Message): boolean {
@@ -132,8 +132,8 @@ export function getReactiveSessionMessageRequestLimit(input: {
   recordedLimit: number
   renderedMessageCount: number
 }): number {
-  if (input.before) return getSessionHistoryMessagePageSize()
-  return Math.max(getInitialSessionMessagePageSize(), input.recordedLimit, input.renderedMessageCount)
+  if (input.before) return getSessionHistoryMessageLimit()
+  return Math.max(getInitialSessionMessageLimit(), input.recordedLimit, input.renderedMessageCount)
 }
 
 export function getConstrainedCacheStateAfterPrefetchEviction<T>(input: {
@@ -548,7 +548,7 @@ export function useSync() {
             hasSession,
             hasMessages: cachedReady,
             info: prefetchInfo,
-            pageSize: getInitialSessionMessagePageSize(),
+            pageSize: getInitialSessionMessageLimit(),
           })) return
 
           const shouldLoadMessages = Boolean(!cachedReady || force)

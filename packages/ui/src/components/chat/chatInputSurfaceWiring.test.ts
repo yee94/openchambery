@@ -53,6 +53,18 @@ describe('ChatInput surface controller wiring', () => {
     expect(createChatInputControllerWiring(surface('B', false))).toBeNull();
   });
 
+  test('uses an explicit Assistant queue identity instead of the disposable live Session', () => {
+    const stateless = surface('B');
+    stateless.queueSessionID = 'assistant:assistant-B';
+    expect(createChatInputControllerWiring(stateless)?.queueScope).toEqual({
+      deliveryTarget: { kind: 'assistant', assistantID: 'assistant-B' },
+      sessionID: 'assistant:assistant-B',
+      directory: '/dir/B',
+      transportIdentity: 'runtime-B',
+      runtimeGeneration: 2,
+    });
+  });
+
   test('pins request session and directory identity before selection flush', async () => {
     lastSendRequest = null;
     const mutable: ChatInputSurface = surface('A');

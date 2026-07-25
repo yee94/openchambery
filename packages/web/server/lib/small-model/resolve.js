@@ -58,16 +58,30 @@ const pickByFamily = (models, family) => {
 // Small-model candidates within ONE provider, by family priority. Copilot and
 // ChatGPT-plan OpenAI have fixed small models that never appear in the
 // catalog; everyone else is scanned through the catalog families.
+// Auth-type constraints for the four minimal hardcoded providers:
+// OpenAI OAuth → hardcoded codex-small only; OpenAI API key → catalog families;
+// Anthropic/Google require API keys; Copilot supports auth aliases.
 const pickWithinProvider = (providerID, auth, catalog, family) => {
   if (providerID === 'openai' && auth.openai?.type === 'oauth') {
+    if (!isUsableAuthEntry(auth.openai)) return null;
     return family === 'gpt-nano'
       ? { providerID, modelID: OPENAI_OAUTH_SMALL_MODEL, source: 'codex-small' }
       : null;
   }
   if (providerID === 'github-copilot') {
+    if (!isUsableAuthEntry(getAuthEntryForProvider(auth, 'github-copilot'))) return null;
     return family === 'gpt-nano'
       ? { providerID, modelID: COPILOT_UTILITY_MODELS[0], source: 'copilot-utility' }
       : null;
+  }
+  if (providerID === 'openai') {
+    if (auth.openai?.type !== 'api' || !isUsableAuthEntry(auth.openai)) return null;
+  }
+  if (providerID === 'anthropic') {
+    if (auth.anthropic?.type !== 'api' || !isUsableAuthEntry(auth.anthropic)) return null;
+  }
+  if (providerID === 'google') {
+    if (auth.google?.type !== 'api' || !isUsableAuthEntry(auth.google)) return null;
   }
   const provider = getCatalogProvider(catalog, providerID);
   if (!provider || !provider.models || typeof provider.models !== 'object') return null;

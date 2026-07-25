@@ -14,7 +14,10 @@ other runtime API.
 
 ## Files
 
-- `index.js` — orchestration: `generateSmallModelText()` / `describeSmallModel()`.
+- `index.js` — `createSmallModelService(dependencies)` factory. Production
+  obtains a single lazy instance from `server/index.js` (`getSmallModelService`)
+  and injects it into feature routes, session assist/title/goal, and scheduled
+  tasks. Tests may call the factory with a mock `getModelCatalog`.
 - `resolve.js` — model selection, mirroring OpenCode's `getSmallModel` chain:
   0. OpenChamber's own settings override (Settings → Sessions → Small Model):
      when `smallModelUseDefault` is `false`, `smallModelOverride`
@@ -24,13 +27,17 @@ other runtime API.
   1. `small_model` from the merged OpenCode config layers (`provider/model`).
   2. Family-priority scan (`gemini-flash` → `gpt-nano` → `claude-haiku`)
      **within the session's provider first** (`preferredProviderID`, like
-     OpenCode resolves within the current provider), then over the other
-     providers with a usable auth entry, newest `release_date` first.
+     OpenCode resolves within the current provider), then the session model,
+     then other authenticated providers' catalog families, then the four
+     minimal hardcoded candidates.
   3. GitHub Copilot hidden utility models (`gpt-*-nano/mini`) — these never
      appear in the catalog, so they participate as the `gpt-nano` family entry
      and as a final utility fallback.
-  4. Last resort: the session's own model (`preferredModelID`) when no small
-     model resolves anywhere — costlier, but always valid.
+  4. Session model (`preferredModelID`) when the session provider has auth but
+     no small family match.
+  Auth-type constraints for the four minimal providers: OpenAI OAuth →
+  hardcoded codex-small; OpenAI API key → catalog families; Anthropic/Google
+  require API keys; Copilot supports auth aliases (`copilot` / `github-copilot`).
 - Input clamp: the prompt is truncated to the resolved model's catalog
   `limit.context` (minus an output reserve, ~4 chars/token estimate;
   conservative default when the model is not in the catalog). Truncation is
@@ -46,23 +53,33 @@ other runtime API.
     `auth.openai.com` (single-flight) and written back to `auth.json`.
   - **Anthropic** (`type: api`): `/v1/messages` with `x-api-key`.
   - **Google** (`type: api`): `generateContent` with `x-goog-api-key`.
-  - Everything else: OpenAI-compatible `/chat/completions` against the
-    provider's base URL, resolved from (1) `provider.<id>.options.baseURL`
-    in the OpenCode config, (2) the hardcoded `https://api.openai.com/v1`
-    endpoint, or (3) the provider's `api` field from the models.dev catalog.
-- `catalog.js` — models.dev catalog via the shared in-process cache
-  (`../opencode/models-metadata.js`, also serving
-  `/api/openchamber/models-metadata`).
+  - Everything else: OpenAI-compatible `/chat/completions`. Base URL order:
+    (1) `provider.<id>.options.baseURL` in the OpenCode merged config,
+    (2) the target model's `api.url` from the directory catalog (OpenCode SDK),
+    (3) known provider constants (`https://api.openai.com/v1` for openai).
+    Never uses provider-level models.dev `api` fields.
+- `catalog.js` — directory-scoped provider catalog via official
+  `@opencode-ai/sdk/v2` `client.config.providers()`. Base URL/auth come from
+  the composition root (`buildOpenCodeUrl` / `getOpenCodeAuthHeaders`).
+  Per-directory short TTL (~30s) with single-flight. OpenCode failure returns
+  an **explicit** minimal fallback catalog (OpenAI OAuth / GitHub Copilot /
+  Google API / Anthropic API candidates only) — never an authoritative empty
+  map. Raw small-model fields kept: `family`, `release_date`, `limit`,
+  `model.api.url`, provider `name`. Client-safe provider catalog projection
+  remains in `opencode/provider-catalog.js` for `/api/config/catalog/providers`.
 - `routes.js` — `GET /api/small-model` (resolution preview) and
   `POST /api/small-model/generate` (`{ prompt, system?, maxOutputTokens?,
   model?, directory? }` → `{ text, providerID, modelID, source }`).
   The preview response includes `callableModels`, the Provider/model allowlist
-  consumed by Settings → Summary AI.
+  consumed by Settings → Summary AI. Callable lists receive the same
+  `directory` as describe/generate so they share the directory catalog.
 
 ## Registration
 
-Mounted lazily from `feature-routes-runtime.js` (same pattern as quota): the
-module is imported on first request, not at server startup.
+`server/index.js` creates one lazy `getSmallModelService` and injects it into
+session assist/title/goal, scheduled tasks, and `createFeatureRoutesRuntime`.
+Feature routes no longer import `small-model/index.js` top-level exports
+directly.
 
 ## Summary AI settings
 
@@ -103,3 +120,5 @@ dedicated adapter. Custom mode is an explicit OpenAI-compatible API client.
   of scope; they need more than a key/token (regions, resource names).
 - Responses from the codex backend are collected from the SSE stream; the
   endpoint itself is non-streaming by design (small utility calls).
+- The server never requests models.dev. When OpenCode is down, only the four
+  minimal hardcoded candidates remain available.

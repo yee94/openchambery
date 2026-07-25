@@ -19,7 +19,6 @@ type BridgeMessageInput = {
 
 type SystemRuntimeDeps = {
   resolveUserPath: (value: string, baseDirectory: string) => string;
-  fetchModelsMetadata: () => Promise<unknown>;
   updateCheckUrl: string;
   clientReloadDelayMs: number;
 };
@@ -231,16 +230,6 @@ export async function handleSystemBridgeMessage(
         return { id, type, success: false, error: 'OpenCode manager unavailable' };
       }
       return { id, type, success: true, data: result };
-    }
-
-    case 'api:models/metadata': {
-      try {
-        const data = await deps.fetchModelsMetadata();
-        return { id, type, success: true, data };
-      } catch (error) {
-        const errorMessage = error instanceof Error ? error.message : String(error);
-        return { id, type, success: false, error: errorMessage };
-      }
     }
 
     case 'api:opencode/version': {

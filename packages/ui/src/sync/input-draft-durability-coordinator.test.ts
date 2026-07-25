@@ -69,6 +69,25 @@ describe("input draft durability coordinator", () => {
     expect((await commit(coordinator, value)).status).toBe("committed")
   })
 
+  test("persists and restores Assistant surface attachments", async () => {
+    const blobs = createInputDraftBlobStore(new MemoryInputDraftBlobDriver())
+    const coordinator = createInputDraftDurabilityCoordinator(blobs, metadata().coordinator)
+    await coordinator.seed(null)
+    const value: DraftRecord = {
+      ...record(1, "assistant:first", [attachment("shared", "native-share")]),
+      key: { transportIdentity: "runtime", owner: { kind: "surface", ownerID: "assistant:first" } },
+    }
+    expect((await commit(coordinator, value)).status).toBe("committed")
+    const reference = { transportIdentity: "runtime", owner: value.key.owner, attachmentOccurrenceRefID: draftRootAttachmentOccurrenceRefID("shared") }
+    expect(await blobs.readReference(reference)).toEqual({ ok: true, value: "native-share" })
+
+    const restored = createInputDraftDurabilityCoordinator(blobs, metadata().coordinator)
+    const seeded = await restored.seed(snapshot([value]))
+    expect(seeded.status).toBe("committed")
+    expect(seeded.errors).toEqual([])
+    expect(await blobs.readReference(reference)).toEqual({ ok: true, value: "native-share" })
+  })
+
   test("persists removal before releasing and retries failed release from the cleanup ledger", async () => {
     const base = createInputDraftBlobStore(new MemoryInputDraftBlobDriver())
     let failRelease = false

@@ -225,6 +225,7 @@ export const createScheduledTasksRuntime = (deps) => {
     listProjects,
     buildOpenCodeUrl,
     getOpenCodeAuthHeaders,
+    getSmallModelService,
     waitForOpenCodeReady,
     emitTaskRunEvent,
     logger = console,
@@ -501,8 +502,13 @@ export const createScheduledTasksRuntime = (deps) => {
     if (objectiveText.length > 5000) {
       let distilled = null;
       try {
-        const { generateSmallModelText } = await import('../small-model/index.js');
-        const generated = await generateSmallModelText({
+        const service = typeof getSmallModelService === 'function'
+          ? await getSmallModelService()
+          : null;
+        if (!service?.generateSmallModelText) {
+          throw new Error('Small model service is not configured');
+        }
+        const generated = await service.generateSmallModelText({
           restrictToPreferredProvider: true,
           prompt: objectiveText,
           system: [

@@ -22,7 +22,7 @@ export const createMessageQueueWorker = ({ service, adapter, workerID, concurren
     } finally { clearTimeout(timeout); }
   };
   const process = async (claim, eligibility, runtimeKey, runtime, { dispatchMode, admissionToken } = {}) => {
-    const { item } = claim; const args = leaseArgs(claim, runtimeKey); let begun = false; let leaseLost = false; let admissionAccepted = false; const controller = new AbortController(); controllers.add(controller);
+    const { item } = claim; const args = leaseArgs(claim, runtimeKey); const statelessAssistantDelivery = item.deliveryTarget?.kind === 'assistant' && item.deliveryConfig?.mode === 'stateless'; let begun = false; let leaseLost = false; let admissionAccepted = false; const controller = new AbortController(); controllers.add(controller);
     const renew = () => { try { settle(service.renewLease({ ...args, leaseMs })).catch((error) => { if (error?.code === 'lease_lost') { leaseLost = true; controller.abort(); } }); } catch (error) { if (error?.code === 'lease_lost') { leaseLost = true; controller.abort(); } } };
     const heartbeat = setInterval(renew, Math.max(1, Math.floor(leaseMs / 3)));
     try {
@@ -40,7 +40,7 @@ export const createMessageQueueWorker = ({ service, adapter, workerID, concurren
       if (assistantDelivery && !validAssistantDeliveryParts(parts)) return settle(service.markFailed({ ...args, errorCode: 'malformed_target' }));
       if (leaseLost) return;
       if (paused || stopping || controller.signal.aborted) return settle(service.releaseIneligible({ ...args, dueAt: clock() + 1_000 }));
-      if (dispatchMode !== 'manual') {
+      if (dispatchMode !== 'manual' && !statelessAssistantDelivery) {
         const latest = await readEligibility({ scopeID: item.scopeID, directory: item.directory, sessionID: item.sessionID }, runtime, controller);
         const admissionCurrent = typeof adapter.validateAutomaticAdmission !== 'function' || adapter.validateAutomaticAdmission(admissionToken);
         if (latest?.available !== true || latest.idle !== true || latest.settled !== true || !admissionCurrent || paused || stopping || controller.signal.aborted) return settle(service.releaseIneligible({ ...args, dueAt: clock() + 1_000 }));
@@ -52,27 +52,31 @@ export const createMessageQueueWorker = ({ service, adapter, workerID, concurren
         : adapter.send({ ...context, parts }, { signal: controller.signal })); const status = statusOf(result);
       admissionAccepted = Boolean(result?.ok || result?.accepted || result?.ambiguous || result?.kind === 'ambiguous' || status === 408 || status === 429 || status >= 500);
       if (leaseLost) return;
-      if (result?.ok || result?.accepted) return settle(service.markAmbiguous({ ...args, dueAt: clock() }));
+      if (result?.ok || result?.accepted) return settle(statelessAssistantDelivery
+        ? service.completeAttempt({ ...args, operationID: item.operationID, messageID: attempt.messageID, source: 'assistant_prompt_admitted' })
+        : service.markAmbiguous({ ...args, dueAt: clock() }));
       if (Number.isInteger(status) && status >= 400 && status < 500 && status !== 408 && status !== 429) return settle(service.markFailed({ ...args, errorCode: `http_${status}` }));
-      if (result?.ambiguous || result?.kind === 'ambiguous' || status === 408 || status === 429 || status >= 500) return settle(service.markAmbiguous({ ...args, errorCode: result?.code ?? 'transport', dueAt: clock() }));
+      if (result?.ambiguous || result?.kind === 'ambiguous' || status === 408 || status === 429 || status >= 500) return settle(statelessAssistantDelivery
+        ? service.markFailed({ ...args, errorCode: 'delivery_unknown' })
+        : service.markAmbiguous({ ...args, errorCode: result?.code ?? 'transport', dueAt: clock() }));
       return settle(service.scheduleRetry({ ...args, dueAt: clock() + retryDelay(attempt.attemptCount), errorCode: result?.code ?? 'pre_dispatch' }));
     } catch (error) {
       if (error?.code === 'lease_lost') return;
       if (begun && error?.code !== 'stale_target') admissionAccepted = true;
-      const action = error?.code === 'stale_target' ? service.markFailed({ ...args, errorCode: 'stale_target' }) : begun ? service.markAmbiguous({ ...args, errorCode: 'transport', dueAt: clock() }) : paused || stopping || controller.signal.aborted ? service.releaseIneligible({ ...args, dueAt: clock() + 1_000 }) : service.scheduleRetry({ ...args, dueAt: clock() + retryDelay(item.attemptCount || 1), errorCode: 'pre_dispatch' });
+      const action = error?.code === 'stale_target' ? service.markFailed({ ...args, errorCode: 'stale_target' }) : begun ? (statelessAssistantDelivery ? service.markFailed({ ...args, errorCode: 'delivery_unknown' }) : service.markAmbiguous({ ...args, errorCode: 'transport', dueAt: clock() })) : paused || stopping || controller.signal.aborted ? service.releaseIneligible({ ...args, dueAt: clock() + 1_000 }) : service.scheduleRetry({ ...args, dueAt: clock() + retryDelay(item.attemptCount || 1), errorCode: 'pre_dispatch' });
       await settle(action).catch(() => {});
-    } finally { clearInterval(heartbeat); controllers.delete(controller); if (dispatchMode !== 'manual') adapter.finishAutomaticAdmission?.(admissionToken, { accepted: admissionAccepted }); }
+    } finally { clearInterval(heartbeat); controllers.delete(controller); if (dispatchMode !== 'manual' && !statelessAssistantDelivery) adapter.finishAutomaticAdmission?.(admissionToken, { accepted: admissionAccepted }); }
   };
   const probe = async (candidate, runtimeKey, runtime) => {
-    const controller = new AbortController(); controllers.add(controller); let claimed = false; let admissionToken = null;
+    const controller = new AbortController(); controllers.add(controller); const statelessAssistantDelivery = candidate.item.deliveryTarget?.kind === 'assistant' && candidate.item.deliveryConfig?.mode === 'stateless'; let claimed = false; let admissionToken = null;
     try {
       const { item } = candidate;
       const scope = { scopeID: item.scopeID, directory: item.directory, sessionID: item.sessionID };
-      const eligibility = await readEligibility(scope, runtime, controller);
+      const eligibility = statelessAssistantDelivery ? { available: true, idle: true, settled: true } : await readEligibility(scope, runtime, controller);
       if (paused || stopping || controller.signal.aborted) return;
       const dispatchable = candidate.dispatchMode === 'manual' ? eligibility?.available === true : eligibility?.available === true && eligibility.idle === true && eligibility.settled === true;
       if (!dispatchable) return;
-      if (candidate.dispatchMode !== 'manual' && typeof adapter.acquireAutomaticAdmission === 'function') {
+      if (candidate.dispatchMode !== 'manual' && !statelessAssistantDelivery && typeof adapter.acquireAutomaticAdmission === 'function') {
         admissionToken = adapter.acquireAutomaticAdmission(scope, runtime);
         if (!admissionToken) return;
       }
@@ -82,7 +86,7 @@ export const createMessageQueueWorker = ({ service, adapter, workerID, concurren
       return await process(claim, eligibility, runtimeKey, runtime, { dispatchMode: candidate.dispatchMode, admissionToken });
     } finally {
       controllers.delete(controller);
-      if (!claimed && candidate.dispatchMode !== 'manual') adapter.finishAutomaticAdmission?.(admissionToken, { accepted: false });
+      if (!claimed && candidate.dispatchMode !== 'manual' && !statelessAssistantDelivery) adapter.finishAutomaticAdmission?.(admissionToken, { accepted: false });
       if (!claimed) await settle(service.deferEligibilityCandidate({ runtimeKey, queueItemID: candidate.item.queueItemID, eligibilityToken: candidate.eligibilityToken, fenceGeneration: candidate.fenceGeneration, delayMs: 1_000 })).catch(() => {});
     }
   };
@@ -90,6 +94,12 @@ export const createMessageQueueWorker = ({ service, adapter, workerID, concurren
     const entry = claim.item;
     const controller = new AbortController(); controllers.add(controller); let timeout;
     try {
+      if (entry.deliveryTarget?.kind === 'assistant' && entry.deliveryConfig?.mode === 'stateless') {
+        const identity = { queueItemID: entry.queueItemID, operationID: entry.operationID, messageID: entry.messageID, leaseToken: claim.leaseToken, fenceGeneration: claim.fenceGeneration, runtimeKey };
+        return settle(entry.lastErrorCode
+          ? service.markFailed({ ...identity, errorCode: entry.lastErrorCode })
+          : service.recordReconcileConfirmed({ ...identity, source: 'assistant_prompt_admitted_recovery' }));
+      }
       const result = await Promise.race([settle(adapter.findMessage({ directory: entry.directory, sessionID: entry.sessionID }, entry.messageID, { runtime, signal: controller.signal })), new Promise((resolve) => { timeout = setTimeout(() => { controller.abort(); resolve({ unavailable: true, code: 'reconcile_timeout' }); }, RECONCILE_TIMEOUT_MS); })]);
       if (result?.found) return settle(service.recordReconcileConfirmed({ queueItemID: entry.queueItemID, operationID: entry.operationID, messageID: entry.messageID, leaseToken: claim.leaseToken, fenceGeneration: claim.fenceGeneration, runtimeKey, source: 'query' }));
       const args = { queueItemID: entry.queueItemID, leaseToken: claim.leaseToken, fenceGeneration: claim.fenceGeneration, runtimeKey };

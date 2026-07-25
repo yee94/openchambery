@@ -1657,3 +1657,115 @@ describe('useConfigStore provider persistence', () => {
     expect(state.selectionSource).toBe('manual');
   });
 });
+
+describe('useConfigStore model metadata from live providers', () => {
+  beforeEach(() => {
+    queryClient.clear();
+    storage = new Map<string, string>();
+    Object.defineProperty(globalThis, 'localStorage', {
+      configurable: true,
+      value: makeStorage(),
+    });
+    liveProviderId = 'live';
+    liveProviderIdsByDirectory = new Map<string, string>();
+    liveProviderVariants = undefined;
+    getProvidersForConfigImpl = null;
+    getProvidersCalls = 0;
+    listAgentsImpl = null;
+    liveAgents = [];
+    withDirectoryCalls = [];
+    currentFetchDirectory = DIRECTORY;
+    runtimeGeneration = 0;
+    runtimeIdentity = 'test-runtime';
+    setSyncRefs({} as never, { children: new Map(), getState: () => undefined } as never, DIRECTORY);
+    useConfigStore.setState({
+      activeDirectoryKey: DIRECTORY,
+      directoryScoped: {},
+      providerConfigLoadingByDirectory: {},
+      agentConfigLoadingByDirectory: {},
+      providers: [provider('live')],
+      defaultProviders: {},
+      currentProviderId: 'live',
+      currentModelId: 'live-model',
+      currentVariant: undefined,
+      selectedProviderId: 'live',
+      currentAgentName: undefined,
+      agents: [],
+      agentModelSelections: {},
+      lastSelectedAgentName: undefined,
+      opencodeDefaultAgent: undefined,
+      opencodeDefaultModel: undefined,
+      selectionSource: 'auto',
+      isConnected: true,
+      isInitialized: false,
+    });
+  });
+
+  test('loadProviders and getModelMetadata only use live provider catalog', async () => {
+    await useConfigStore.getState().loadProviders({ directory: DIRECTORY, source: 'test:live-model-metadata' });
+    expect(getProvidersCalls).toBe(1);
+
+    const providersCallsAfterLoad = getProvidersCalls;
+    const metadata = useConfigStore.getState().getModelMetadata('live', 'live-model');
+    expect(metadata?.id).toBe('live-model');
+    expect(metadata?.providerId).toBe('live');
+    expect(metadata?.name).toBe('live-model');
+    expect(metadata?.tool_call).toBe(true);
+    expect(metadata?.reasoning).toBe(false);
+    expect(metadata?.modalities?.input).toEqual(['text']);
+    expect(metadata?.modalities?.output).toEqual(['text']);
+
+    useConfigStore.getState().getModelMetadata('live', 'live-model');
+    useConfigStore.getState().getModelMetadata('missing', 'missing-model');
+
+    // getModelMetadata is pure over current providers — no catalog refetch.
+    expect(getProvidersCalls).toBe(providersCallsAfterLoad);
+  });
+
+  test('getModelMetadata derives only from current live providers', () => {
+    useConfigStore.setState({
+      providers: [{
+        ...provider('live', 'live-model'),
+        models: [{
+          ...provider('live', 'live-model').models[0],
+          name: 'Live Model From Provider',
+          capabilities: {
+            temperature: true,
+            reasoning: true,
+            attachment: true,
+            toolcall: true,
+            input: { text: true, audio: false, image: true, video: false, pdf: false },
+            output: { text: true, audio: false, image: false, video: false, pdf: false },
+          },
+          cost: { input: 1.5, output: 2.5, cache: { read: 0.1, write: 0.2 } },
+          limit: { context: 128000, output: 8192 },
+          release_date: '2025-01-15',
+        }],
+      }],
+    });
+
+    const metadata = useConfigStore.getState().getModelMetadata('live', 'live-model');
+    expect(metadata).toEqual({
+      id: 'live-model',
+      providerId: 'live',
+      name: 'Live Model From Provider',
+      tool_call: true,
+      reasoning: true,
+      temperature: true,
+      attachment: true,
+      modalities: {
+        input: ['text', 'image'],
+        output: ['text'],
+      },
+      cost: {
+        input: 1.5,
+        output: 2.5,
+        cache_read: 0.1,
+        cache_write: 0.2,
+      },
+      limit: { context: 128000, output: 8192 },
+      release_date: '2025-01-15',
+    });
+    expect(useConfigStore.getState().getModelMetadata('other', 'live-model')).toBe(undefined);
+  });
+});

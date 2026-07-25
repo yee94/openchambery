@@ -51,12 +51,13 @@ const parseSnapshot = (value: unknown): InputDraftMetadataSnapshot => {
 }
 const entries = <T>(value: ReadonlyMap<string, T> | Readonly<Record<string, T>> | undefined): Array<[string, T]> => value instanceof Map ? [...value.entries()] : Object.entries(value ?? {})
 const keyString = (key: DraftKey | string): string => typeof key === "string" ? key : draftKeyString(key)
+const durableOwnerKinds: DraftKey["owner"]["kind"][] = ["session", "draft", "surface"]
 const cloneReference = (reference: DraftAttachmentReference): DraftAttachmentReference => ({ transportIdentity: reference.transportIdentity, owner: { kind: reference.owner.kind, ownerID: reference.owner.ownerID }, attachmentOccurrenceRefID: reference.attachmentOccurrenceRefID })
 const cloneAttachment = (attachment: DraftAttachmentMetadata): DraftAttachmentMetadata => JSON.parse(JSON.stringify(attachment)) as DraftAttachmentMetadata
 const cloneError = (error: InputDraftDurabilityError): InputDraftDurabilityError => error.phase === "metadata" ? { phase: "metadata", error: { code: error.error.code } } : { phase: "blob", error: { ...error.error }, ...(error.reference ? { reference: cloneReference(error.reference) } : {}) }
 const detachResult = (result: InputDraftDurabilityResult): InputDraftDurabilityResult => ({ status: result.status, keys: [...result.keys], errors: result.errors.map(cloneError), cleanupErrors: result.cleanupErrors.map(cloneError) })
 const positiveSafeInteger = (value: unknown): value is number => typeof value === "number" && Number.isSafeInteger(value) && value > 0
-const validKey = (value: string): boolean => { try { const parsed: unknown = JSON.parse(value); return Array.isArray(parsed) && parsed.length === 3 && typeof parsed[0] === "string" && (parsed[1] === "session" || parsed[1] === "draft") && typeof parsed[2] === "string" && parsed[0].length > 0 && parsed[2].length > 0 } catch { return false } }
+const validKey = (value: string): boolean => { try { const parsed: unknown = JSON.parse(value); return Array.isArray(parsed) && parsed.length === 3 && typeof parsed[0] === "string" && durableOwnerKinds.includes(parsed[1] as DraftKey["owner"]["kind"]) && typeof parsed[2] === "string" && parsed[0].length > 0 && parsed[2].length > 0 } catch { return false } }
 const attachmentReferences = (record: DraftRecord): Array<{ reference: DraftAttachmentReference; attachment: DraftAttachmentMetadata }> => {
   const attachments = [...record.attachments, ...record.syntheticParts.flatMap((part) => part.attachments)]
   return attachments.flatMap((attachment) => attachment.locator.kind === "blob" ? [{ reference: { transportIdentity: record.key.transportIdentity, owner: { kind: record.key.owner.kind, ownerID: record.key.owner.ownerID }, attachmentOccurrenceRefID: attachment.attachmentRefID }, attachment: cloneAttachment(attachment) }] : [])
@@ -142,7 +143,7 @@ export const createInputDraftDurabilityCoordinator = (blobStore: InputDraftBlobS
         return { ...emptyResult("failed"), errors: [blobError({ code: "invalid-record" })] }
       }
       const baselineRefs = refMap(baseline.drafts)
-      const reconciled = await blobStore.reconcileReferences(new Map([...baselineRefs].map(([id, item]) => [id, itemBlobID(item)])), { ownerKinds: ["session", "draft"] })
+      const reconciled = await blobStore.reconcileReferences(new Map([...baselineRefs].map(([id, item]) => [id, itemBlobID(item)])), { ownerKinds: durableOwnerKinds })
       if (!reconciled.ok) return { ...emptyResult("failed"), errors: [blobError(reconciled.error)] }
       durable = baseline
       seeded = true
@@ -227,7 +228,7 @@ export const createInputDraftDurabilityCoordinator = (blobStore: InputDraftBlobS
       if (!enabled) return emptyResult("disabled")
       const cleanupErrors = await cleanupPending()
       const desired = new Map([...refMap(durable.drafts)].map(([id, item]) => [id, item.attachment.locator.kind === "blob" ? item.attachment.locator.blobID : ""]))
-      const result = await blobStore.reconcileReferences(desired, { ownerKinds: ["session", "draft"] })
+      const result = await blobStore.reconcileReferences(desired, { ownerKinds: durableOwnerKinds })
       const errors = result.ok ? result.value.missing.map((id) => blobError({ code: "missing-blob" }, refMap(durable.drafts).get(id)?.reference)) : [blobError(result.error)]
       return { status: result.ok ? "committed" : "failed", keys: [], errors, cleanupErrors }
     }),

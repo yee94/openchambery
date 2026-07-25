@@ -1044,16 +1044,6 @@ const handleLocalApiRequest = async (input: RequestInfo | URL, url: URL, init: R
     }
   }
 
-  if (pathname.startsWith('/api/openchamber/models-metadata')) {
-    try {
-      const data = await sendBridgeMessage('api:models/metadata');
-      return new Response(JSON.stringify(data), { status: 200, headers: { 'Content-Type': 'application/json' } });
-    } catch (error) {
-      console.warn('[OpenChamber] Failed to fetch models metadata via bridge, returning empty set:', error);
-      return new Response(JSON.stringify({}), { status: 200, headers: { 'Content-Type': 'application/json' } });
-    }
-  }
-
   if (pathname === '/api/opencode/version' && method === 'GET') {
     try {
       const data = await sendBridgeMessage('api:opencode/version');
@@ -1310,16 +1300,6 @@ window.fetch = async (input: RequestInfo | URL, init?: RequestInit) => {
     const response = buildProxiedResponse(proxied);
     maybeHideLoadingOverlay();
     return response;
-  }
-
-  if (targetUrl && targetUrl.hostname.includes('models.dev')) {
-    try {
-      const data = await sendBridgeMessage('api:models/metadata');
-      return new Response(JSON.stringify(data), { status: 200, headers: { 'Content-Type': 'application/json' } });
-    } catch (error) {
-      console.warn('[OpenChamber] models.dev request failed via bridge, returning empty metadata:', error);
-      return new Response(JSON.stringify({}), { status: 200, headers: { 'Content-Type': 'application/json' } });
-    }
   }
 
   return originalFetch(input as RequestInfo, init);

@@ -57,7 +57,7 @@ const normalize = async (tx: InputDraftBlobTransaction, prune = false): Promise<
 const parseRefID = (id: string): { transportIdentity: string; ownerKind: DraftAttachmentOwner["kind"]; ownerID: string } | undefined => {
   try {
     const value: unknown = JSON.parse(id)
-    if (!Array.isArray(value) || value.length !== 4 || typeof value[0] !== "string" || typeof value[2] !== "string" || (value[1] !== "session" && value[1] !== "draft" && value[1] !== "queue" && value[1] !== "send")) return undefined
+    if (!Array.isArray(value) || value.length !== 4 || typeof value[0] !== "string" || typeof value[2] !== "string" || (value[1] !== "session" && value[1] !== "draft" && value[1] !== "surface" && value[1] !== "queue" && value[1] !== "send")) return undefined
     return { transportIdentity: value[0], ownerKind: value[1], ownerID: value[2] }
   } catch { return undefined }
 }

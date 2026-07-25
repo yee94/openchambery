@@ -323,7 +323,6 @@ export function MobileContextProgressButton({
   const currentProviderId = useConfigStore((state) => state.currentProviderId);
   const currentModelId = useConfigStore((state) => state.currentModelId);
   const getModelMetadata = useConfigStore((state) => state.getModelMetadata);
-  useConfigStore((state) => state.modelsMetadata.size);
   const savedSessionModelSelector = React.useMemo(
     () => (state: ReturnType<typeof useSelectionStore.getState>) => (
       sessionId ? state.sessionModelSelections.get(sessionId) ?? null : null

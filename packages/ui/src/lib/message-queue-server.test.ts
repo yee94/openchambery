@@ -101,6 +101,28 @@ describe('message queue server adapter', () => {
     ]);
   });
 
+  test('coalesces concurrent identical scope GETs then allows a later independent GET', async () => {
+    let loads = 0;
+    let release!: () => void;
+    const gate = new Promise<void>((resolve) => { release = resolve; });
+    responseImplementation = async () => {
+      loads += 1;
+      await gate;
+      return new Response(JSON.stringify({ ...scope, revision: loads }));
+    };
+    const first = api.fetchMessageQueueScope('scope/a', { offset: 0, limit: 8, expectedRevision: 4 });
+    const second = api.fetchMessageQueueScope('scope/a', { offset: 0, limit: 8, expectedRevision: 4 });
+    release();
+    const [a, b] = await Promise.all([first, second]);
+    expect(loads).toBe(1);
+    expect(a.revision).toBe(1);
+    expect(b.revision).toBe(1);
+    expect(a).toBe(b);
+    const third = await api.fetchMessageQueueScope('scope/a', { offset: 0, limit: 8, expectedRevision: 4 });
+    expect(loads).toBe(2);
+    expect(third.revision).toBe(2);
+  });
+
   test('resolves tip, ready, and aborted invalidation without long-poll HTTP', async () => {
     const tip = api.waitForMessageQueueInvalidation(3);
     emitTip({ type: 'message-queue-changed', revision: 4, occurredAt: 1 });

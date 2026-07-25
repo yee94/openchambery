@@ -8,8 +8,6 @@ export const registerOpenChamberRoutes = (app, dependencies) => {
     server,
     __dirname,
     openchamberDataDir,
-    modelsDevApiUrl,
-    modelsMetadataCacheTtl,
     readSettingsFromDiskMigrated,
     fetchFreeZenModels,
     getCachedZenModels,
@@ -253,22 +251,6 @@ export const registerOpenChamberRoutes = (app, dependencies) => {
       res.status(500).json({
         error: error instanceof Error ? error.message : 'Failed to install update',
       });
-    }
-  });
-
-  app.get('/api/openchamber/models-metadata', async (_req, res) => {
-    try {
-      const { getModelsMetadata } = await import('./models-metadata.js');
-      const { metadata, fromCache, stale } = await getModelsMetadata({
-        url: modelsDevApiUrl,
-        ttlMs: modelsMetadataCacheTtl,
-      });
-      res.setHeader('Cache-Control', fromCache && !stale ? 'public, max-age=60' : 'public, max-age=300');
-      res.json(metadata);
-    } catch (error) {
-      console.warn('Failed to fetch models.dev metadata via server:', error);
-      const statusCode = error?.name === 'TimeoutError' || error?.name === 'AbortError' ? 504 : 502;
-      res.status(statusCode).json({ error: 'Failed to retrieve model metadata' });
     }
   });
 

@@ -120,6 +120,153 @@ function buildUrl(
   return getRuntimeUrlResolver().api(path, query);
 }
 
+const writeGitDiscoveryCaches = (
+  directory: string,
+  isGitRepository: boolean,
+  primaryRoot: string | null,
+): void => {
+  const key = normalizeDirectoryKey(directory);
+  if (!key) return;
+  const expiresAt = Date.now() + GIT_DISCOVERY_CACHE_TTL_MS;
+  gitRepoCache.set(key, {
+    value: isGitRepository,
+    expiresAt,
+  });
+  const root = typeof primaryRoot === 'string' && primaryRoot
+    ? primaryRoot
+    : directory;
+  gitPrimaryRootCache.set(key, {
+    value: { root },
+    expiresAt,
+  });
+};
+
+export type GitDiscoverEntry = {
+  isGitRepository: boolean;
+  primaryRoot: string | null;
+};
+
+/**
+ * Batch-discover git repo + primary root for many directories in one request.
+ * Seeds gitRepoCache / gitPrimaryRootCache so subsequent single lookups hit TTL
+ * cache with zero network. Falls back to per-directory check + primary-root when
+ * the batch endpoint is missing (501) or fails.
+ */
+export async function discoverGitRepositories(
+  directories: string[],
+): Promise<Map<string, GitDiscoverEntry>> {
+  const unique = Array.from(
+    new Set(
+      directories
+        .map((directory) => normalizeDirectoryKey(directory))
+        .filter(Boolean),
+    ),
+  );
+  const result = new Map<string, GitDiscoverEntry>();
+  if (unique.length === 0) {
+    return result;
+  }
+
+  const now = Date.now();
+  const missing: string[] = [];
+  for (const directory of unique) {
+    const repoCached = gitRepoCache.get(directory);
+    const rootCached = gitPrimaryRootCache.get(directory);
+    if (
+      repoCached && repoCached.expiresAt > now
+      && rootCached && rootCached.expiresAt > now
+    ) {
+      result.set(directory, {
+        isGitRepository: repoCached.value,
+        primaryRoot: rootCached.value.root,
+      });
+      continue;
+    }
+    missing.push(directory);
+  }
+
+  if (missing.length === 0) {
+    return result;
+  }
+
+  const applyBatchEntries = (
+    entries: Array<{
+      directory?: unknown;
+      isGitRepository?: unknown;
+      primaryRoot?: unknown;
+    }>,
+  ): void => {
+    for (const entry of entries) {
+      const directory = typeof entry.directory === 'string'
+        ? normalizeDirectoryKey(entry.directory)
+        : '';
+      if (!directory) continue;
+      const isGitRepository = Boolean(entry.isGitRepository);
+      const primaryRoot = typeof entry.primaryRoot === 'string' && entry.primaryRoot
+        ? entry.primaryRoot
+        : null;
+      writeGitDiscoveryCaches(directory, isGitRepository, primaryRoot);
+      result.set(directory, { isGitRepository, primaryRoot });
+    }
+  };
+
+  const discoverViaSingles = async (dirs: string[]): Promise<void> => {
+    await Promise.all(dirs.map(async (directory) => {
+      try {
+        const [isGitRepository, primary] = await Promise.all([
+          checkIsGitRepository(directory),
+          resolveGitPrimaryRoot(directory).then((value) => value.root).catch(() => directory),
+        ]);
+        writeGitDiscoveryCaches(directory, isGitRepository, isGitRepository ? primary : null);
+        result.set(directory, {
+          isGitRepository,
+          primaryRoot: isGitRepository ? primary : null,
+        });
+      } catch {
+        writeGitDiscoveryCaches(directory, false, null);
+        result.set(directory, { isGitRepository: false, primaryRoot: null });
+      }
+    }));
+  };
+
+  try {
+    await withGitDiscoveryNetworkSlot(async () => {
+      const params = new URLSearchParams();
+      for (const directory of missing) {
+        params.append('directories', directory);
+      }
+      const base = getRuntimeUrlResolver().api(`${API_BASE}/discover`);
+      const qs = params.toString();
+      const url = qs
+        ? (base.includes('?') ? `${base}&${qs}` : `${base}?${qs}`)
+        : base;
+      const response = await runtimeFetch(url);
+      if (response.status === 501 || !response.ok) {
+        throw new Error(
+          `Batch git discover unavailable: ${response.status} ${response.statusText}`,
+        );
+      }
+      const payload = await response.json().catch(() => null);
+      const entries = Array.isArray(payload) ? payload : [];
+      if (entries.length === 0 && missing.length > 0) {
+        throw new Error('Batch git discover returned empty payload');
+      }
+      applyBatchEntries(entries);
+    });
+  } catch {
+    // Batch failed / 501 / network — fall back below.
+  }
+
+  // Fill any directories the batch omitted or that never ran (after slot release
+  // so single primary-root lookups do not nest under the batch slot).
+  const stillMissing = missing.filter((directory) => !result.has(directory));
+  if (stillMissing.length > 0) {
+    await discoverViaSingles(stillMissing);
+  }
+
+  return result;
+}
+
 export async function checkIsGitRepository(directory: string): Promise<boolean> {
   const key = normalizeDirectoryKey(directory);
   const now = Date.now();

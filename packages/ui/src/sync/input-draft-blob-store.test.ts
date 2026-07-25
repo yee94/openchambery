@@ -81,6 +81,18 @@ describe("input draft blob store", () => {
     expect(await store.readReference(send)).toEqual({ ok: true, value: "shared" })
   })
 
+  test("reconciles Assistant surface references as managed drafts", async () => {
+    const store = createInputDraftBlobStore(new MemoryInputDraftBlobDriver())
+    const surface = reference("runtime-a", "assistant:first", "shared", "surface")
+    await store.put("shared", "https://example.test/shared")
+    const result = await store.reconcileReferences(
+      new Map([[draftAttachmentRefID(surface), "shared"]]),
+      { ownerKinds: ["session", "draft", "surface"] },
+    )
+    expect(result).toEqual({ ok: true, value: { released: [], repaired: [draftAttachmentRefID(surface)], missing: [] } })
+    expect(await store.readReference(surface)).toEqual({ ok: true, value: "shared" })
+  })
+
   test("calibrates corrupted reference counts during operations and reconciliation", async () => {
     const driver = new MemoryInputDraftBlobDriver()
     const store = createInputDraftBlobStore(driver)

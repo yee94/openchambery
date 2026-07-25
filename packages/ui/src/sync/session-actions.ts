@@ -19,7 +19,11 @@ import { getSessionMaterializationStatus, materializeSessionSnapshots } from "./
 import { retry } from "./retry"
 import { getRuntimeGeneration, getRuntimeKey, getRuntimeTransportIdentity } from "@/lib/runtime-switch"
 import { loadSessionMessage, loadSessionMessagePage, recoverAssistantTailBoundary } from "./session-message-loader"
-import { getInitialSessionMessagePageSize } from "./session-message-page-size"
+import {
+  getInitialSessionMessageLimit,
+  getMessageRefetchLimit,
+  getSendConfirmationRefetchLimit,
+} from "./session-message-policy"
 import { beginSessionMessageLoad, failSessionMessageLoad, getSessionPrefetch, setSessionPrefetch } from "./session-prefetch-cache"
 import { stripMessageDiffSnapshots, stripSessionDiffSnapshots } from "./sanitize"
 import { sessionEvents } from "@/lib/sessionEvents"
@@ -31,8 +35,6 @@ import {
   type SessionMetadataRecord,
 } from "@/lib/sessionReviewMetadata"
 
-const MESSAGE_REFETCH_LIMIT = 100
-const SEND_CONFIRMATION_REFETCH_LIMIT = 30
 const SEND_CONFIRMATION_REFETCH_ATTEMPTS = 2
 const SEND_CONFIRMATION_REFETCH_RETRY_MS = 150
 const MESSAGE_REFETCH_SKIP_PARTS = new Set(["patch", "step-start", "step-finish"])
@@ -1334,7 +1336,7 @@ export async function fetchRecentSendConfirmationRecords(
         const result = await sdk().session.messages({
           sessionID: sessionId,
           directory: directory ?? undefined,
-          limit: SEND_CONFIRMATION_REFETCH_LIMIT,
+          limit: getSendConfirmationRefetchLimit(),
           ...(controller ? { signal: controller.signal } : {}),
         } as Parameters<ReturnType<typeof sdk>["session"]["messages"]>[0] & { signal?: AbortSignal })
         const records = (assertSdkSuccess(result, "session.messages") ?? [])
@@ -1834,7 +1836,11 @@ export async function commitMessageEdit(sessionId: string, messageId: string): P
 
 export async function refetchSessionMessages(sessionId: string, directoryOverride?: string): Promise<void> {
   const { store, directory } = dirStoreForSession(sessionId, directoryOverride)
-  const result = await sdk().session.messages({ sessionID: sessionId, directory, limit: MESSAGE_REFETCH_LIMIT })
+  const result = await sdk().session.messages({
+    sessionID: sessionId,
+    directory,
+    limit: getMessageRefetchLimit(),
+  })
   const records = (assertSdkSuccess(result, "session.messages") ?? [])
     .filter((record: { info?: { id?: string } }) => !!record?.info?.id)
   if (records.length === 0) return
@@ -2078,7 +2084,7 @@ export async function fetchMessagesForSession(sessionID: string, directory?: str
   if (!resolvedDir) return
 
   const runtimeKey = getRuntimeKey()
-  const limit = getInitialSessionMessagePageSize()
+  const limit = getInitialSessionMessageLimit()
   const loadingKey = `${runtimeKey}:${resolvedDir}:${sessionID}:${limit}`
   if (!_sdk || !_childStores) {
     PENDING_MESSAGE_FETCHES.set(loadingKey, { sessionID, directory: resolvedDir })

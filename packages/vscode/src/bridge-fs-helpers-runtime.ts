@@ -519,25 +519,6 @@ export const searchDirectory = async (
   return searchFilesystemFiles(rootPath, sanitizedQuery, limit, includeHidden, respectGitignore, 1500);
 };
 
-export const fetchModelsMetadata = async () => {
-  const controller = typeof AbortController !== 'undefined' ? new AbortController() : undefined;
-  const timeout = controller ? setTimeout(() => controller.abort(), 8000) : undefined;
-  try {
-    const response = await fetch('https://models.dev/api.json', {
-      signal: controller?.signal,
-      headers: { Accept: 'application/json' },
-    });
-    if (!response.ok) {
-      throw new Error(`models.dev responded with ${response.status}`);
-    }
-    return await response.json();
-  } finally {
-    if (timeout) {
-      clearTimeout(timeout);
-    }
-  }
-};
-
 const getFsAccessRoot = (): string => vscode.workspace.workspaceFolders?.[0]?.uri.fsPath || os.homedir();
 
 export const getFsMimeType = (filePath: string): string => {

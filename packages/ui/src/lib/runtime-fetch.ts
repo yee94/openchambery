@@ -119,7 +119,6 @@ const BACKGROUND_READ_EXACT_PATHS = new Set([
   '/api/session/status',
   '/api/session-folders',
   '/api/github/pr/status',
-  '/api/openchamber/models-metadata',
   '/api/openchamber/session-index',
 ]);
 const BACKGROUND_READ_PREFIXES = [
@@ -132,6 +131,7 @@ const BACKGROUND_READ_PREFIXES = [
   '/api/permission',
   '/api/git/check',
   '/api/git/primary-root',
+  '/api/git/discover',
   '/api/git/status',
   '/api/git/worktrees',
   '/api/quota',

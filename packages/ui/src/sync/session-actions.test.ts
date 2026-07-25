@@ -31,6 +31,14 @@ mock.module("@/lib/desktop", () => ({
   isVSCodeRuntime: () => vscodeRuntime,
 }))
 
+mock.module("@/lib/relay/runtime-tunnel", () => ({
+  isRelayModeActive: () => false,
+  getActiveRelayTunnel: () => null,
+  activateRelayTunnel: () => null,
+  adoptRelayTunnel: () => {},
+  deactivateRelayTunnel: () => {},
+}))
+
 const mockScopedClient = {
   permission: {
     reply: mock((params: Record<string, unknown>) => {

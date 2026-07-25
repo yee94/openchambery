@@ -382,22 +382,21 @@ export async function callSmallModel({ auth, catalog, workingDirectory, provider
     return callGoogle({ apiKey, modelID, prompt, system, maxOutputTokens: tokens });
   }
 
-  // Everything else: OpenAI-compatible chat completions against the catalog's
-  // base URL for that provider (openai itself included). When a custom provider
-  // is not in the catalog (e.g. a user-configured OpenAI-compatible proxy),
-  // fall back to its baseURL from the OpenCode provider config. The openai
-  // provider also respects provider.openai.options.baseURL — OpenCode itself
-  // uses the same config for all providers including openai.
+  // Everything else: OpenAI-compatible chat completions. Base URL order:
+  // (1) OpenCode merged config provider.<id>.options.baseURL
+  // (2) target model api.url from the directory catalog (OpenCode SDK)
+  // (3) known provider constants (openai only — other adapters are above)
+  // Never uses provider-level models.dev `api` fields.
   const provider = getCatalogProvider(catalog, providerID);
   const providerConfigUrl = providerConfig?.baseURL;
+  const modelApiUrl = typeof catalog?.[providerID]?.models?.[modelID]?.api?.url === 'string'
+    ? catalog[providerID].models[modelID].api.url.trim()
+    : '';
   const defaultOpenaiUrl = 'https://api.openai.com/v1';
+  const knownProviderUrl = providerID === 'openai' ? defaultOpenaiUrl : null;
   const baseURL = typeof providerConfigUrl === 'string' && providerConfigUrl
     ? providerConfigUrl
-    : providerID === 'openai'
-      ? defaultOpenaiUrl
-      : typeof provider?.api === 'string' && provider.api
-        ? provider.api
-        : null;
+    : modelApiUrl || knownProviderUrl;
   if (!baseURL) {
     throw new Error(`Provider "${providerID}" has no known API base URL`);
   }

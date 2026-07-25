@@ -41,6 +41,31 @@ describe('message queue worker', () => {
     await worker.stop();
   });
 
+  it('dispatches stateless Assistant work without OpenCode eligibility and completes on prompt admission', async () => {
+    const deliveryParts = [{ type: 'text', text: 'stateless' }];
+    const deliveryConfig = { kind: 'assistant', assistantID: 'assistant-1', mode: 'stateless', providerID: 'provider', modelID: 'model', binding: { sessionID: 'old-session', directory: '/repo', sessionGeneration: 1 }, deliveryParts };
+    const assistantItem = { ...claim.item, operationID: 'operation-1', deliveryTarget: { kind: 'assistant', assistantID: 'assistant-1' }, deliveryParts, deliveryConfig };
+    const { worker, service, adapter } = setup({ service: { reserveEligibilityCandidate: vi.fn().mockReturnValueOnce({ ...candidate, item: assistantItem }).mockReturnValue(null), claimNext: vi.fn().mockReturnValueOnce({ ...claim, item: assistantItem }).mockReturnValue(null), sendAssistantDelivery: vi.fn(() => ({ accepted: true })) } });
+
+    worker.start(); await worker.wake();
+
+    expect(adapter.checkEligibility).not.toHaveBeenCalled();
+    expect(service.completeAttempt).toHaveBeenCalledWith(expect.objectContaining({ queueItemID: 'item', operationID: 'operation-1', messageID: 'msg_0000000001', source: 'assistant_prompt_admitted' }));
+    expect(service.markAmbiguous).not.toHaveBeenCalled();
+    await worker.stop();
+  });
+
+  it('settles legacy stateless reconciliation without querying a disposable OpenCode Session', async () => {
+    const item = { ...reconcileClaim.item, operationID: 'operation-reconcile', deliveryTarget: { kind: 'assistant', assistantID: 'assistant-1' }, deliveryConfig: { kind: 'assistant', assistantID: 'assistant-1', mode: 'stateless' }, lastErrorCode: null };
+    const { worker, service, adapter } = setup({ service: { claimDueReconcile: vi.fn().mockReturnValueOnce({ ...reconcileClaim, item }).mockReturnValue(null), reserveEligibilityCandidate: vi.fn(() => null) } });
+
+    worker.start(); await worker.wake();
+
+    expect(adapter.findMessage).not.toHaveBeenCalled();
+    expect(service.recordReconcileConfirmed).toHaveBeenCalledWith(expect.objectContaining({ queueItemID: 'reconcile-item', operationID: 'operation-reconcile', messageID: 'msg_0000000001', source: 'assistant_prompt_admitted_recovery' }));
+    await worker.stop();
+  });
+
   it('settles stale and malformed Assistant targets as isolated failed items', async () => {
     const staleItem = { ...claim.item, deliveryTarget: { kind: 'assistant', assistantID: 'assistant-1' }, deliveryParts: [{ type: 'text', text: 'captured' }], deliveryConfig: { kind: 'assistant', assistantID: 'assistant-1' } };
     const { worker, service } = setup({ service: { reserveEligibilityCandidate: vi.fn().mockReturnValueOnce({ ...candidate, item: staleItem }).mockReturnValue(null), claimNext: vi.fn().mockReturnValueOnce({ ...claim, item: staleItem }).mockReturnValue(null), sendAssistantDelivery: vi.fn(() => { throw Object.assign(new Error('stale'), { code: 'stale_target' }); }) } });

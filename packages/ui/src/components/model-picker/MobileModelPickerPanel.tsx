@@ -46,7 +46,6 @@ interface MobileModelPickerPanelProps {
     providers: ModelPickerProvider[];
     favoriteModels: ModelPickerEntry[];
     recentModels: ModelPickerEntry[];
-    modelsMetadata: Map<string, ModelMetadata>;
     hiddenModels?: HiddenModel[];
     allowedProviderIds?: string[];
     allowedModelIdsByProvider?: Record<string, readonly string[]>;
@@ -69,7 +68,6 @@ export const MobileModelPickerPanel: React.FC<MobileModelPickerPanelProps> = ({
     providers,
     favoriteModels,
     recentModels,
-    modelsMetadata,
     hiddenModels = [],
     allowedProviderIds,
     allowedModelIdsByProvider,
@@ -213,7 +211,7 @@ export const MobileModelPickerPanel: React.FC<MobileModelPickerPanelProps> = ({
         const metadata = mergeModelMetadataWithLiveModel(
             providerID,
             model,
-            getMetadata?.(providerID, modelID) ?? modelsMetadata.get(`${providerID}/${modelID}`),
+            getMetadata?.(providerID, modelID),
         );
         const variants = variantSelectionEnabled ? getVariantOptions(providers, providerID, modelID) : [];
         const selectedVariant = resolveSelectedVariant(providerID, modelID);

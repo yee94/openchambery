@@ -304,6 +304,189 @@ describe('useGlobalSessionsStore', () => {
     await new Promise((resolve) => setTimeout(resolve, 0));
   });
 
+  test('with cache, syncs only priority directories immediately and defers the rest', async () => {
+    const originalWindow = globalThis.window;
+    const originalFetch = globalThis.fetch;
+    const originalGetSdkClient = opencodeClient.getSdkClient;
+    const syncBodies: string[][] = [];
+    const cachedA = buildSession('https://share.example/a', { id: 'ses_a', directory: '/repo/a' });
+    const cachedB = buildSession('https://share.example/b', { id: 'ses_b', directory: '/repo/b' });
+    const snapshot = {
+      revision: 1,
+      sync: {
+        active: false,
+        completed: 1,
+        total: 1,
+        pendingDirectories: [] as string[],
+        completedDirectories: ['/repo/a'],
+        failedDirectories: [] as string[],
+      },
+      directories: [
+        {
+          directory: '/repo/a',
+          cursor: 2,
+          hasMore: false,
+          lastSyncedAt: 1000,
+          lastFullSyncedAt: 1000,
+          lastAccessedAt: 1000,
+          sessions: [cachedA],
+        },
+        {
+          directory: '/repo/b',
+          cursor: 2,
+          hasMore: false,
+          lastSyncedAt: 1000,
+          lastFullSyncedAt: 1000,
+          lastAccessedAt: 1000,
+          sessions: [cachedB],
+        },
+      ],
+    };
+    try {
+      Object.defineProperty(globalThis, 'window', {
+        configurable: true,
+        value: { location: { origin: 'http://localhost', href: 'http://localhost/' } },
+      });
+      globalThis.fetch = async (input, init) => {
+        const url = input instanceof Request ? input.url : String(input);
+        const pathname = new URL(url, 'http://localhost').pathname;
+        if (pathname === '/api/openchamber/session-index') {
+          return new Response(JSON.stringify({ available: true, ...snapshot }), {
+            status: 200,
+            headers: { 'Content-Type': 'application/json' },
+          });
+        }
+        if (pathname === '/api/openchamber/session-index/sync') {
+          const body = typeof init?.body === 'string' ? JSON.parse(init.body) as { directories?: string[] } : {};
+          syncBodies.push([...(body.directories ?? [])].sort());
+          return new Response(JSON.stringify(snapshot), {
+            status: 202,
+            headers: { 'Content-Type': 'application/json' },
+          });
+        }
+        return new Response(JSON.stringify(snapshot), {
+          status: 200,
+          headers: { 'Content-Type': 'application/json' },
+        });
+      };
+      opencodeClient.getSdkClient = () => ({
+        experimental: { session: { list: async () => ({ data: [], error: undefined, response: new Response(null, { status: 200 }) }) } },
+      } as unknown as OpencodeClient);
+
+      // Seed cache flag the way hydrate would after a non-empty snapshot GET.
+      useGlobalSessionsStore.setState({ hasCachedSessionIndex: true });
+
+      let finished = false;
+      await useGlobalSessionsStore.getState().startSessionIndexStartup(
+        ['/repo/a', '/repo/b'],
+        { priorityDirectories: ['/repo/a'] },
+      ).then(() => { finished = true; });
+
+      expect(finished).toBe(true);
+      expect(useGlobalSessionsStore.getState().startupSyncProgress.active).toBe(false);
+      expect(syncBodies).toEqual([['/repo/a']]);
+
+      await new Promise((resolve) => setTimeout(resolve, 0));
+      await new Promise((resolve) => setTimeout(resolve, 0));
+
+      expect(syncBodies).toEqual([['/repo/a'], ['/repo/b']]);
+    } finally {
+      useGlobalSessionsStore.getState().resetForRuntimeSwitch();
+      opencodeClient.getSdkClient = originalGetSdkClient;
+      Object.defineProperty(globalThis, 'window', { configurable: true, value: originalWindow });
+      globalThis.fetch = originalFetch;
+    }
+  });
+
+  test('without cache, still blocks on a full-directory sync even when priority is provided', async () => {
+    const originalWindow = globalThis.window;
+    const originalFetch = globalThis.fetch;
+    const originalGetSdkClient = opencodeClient.getSdkClient;
+    const syncBodies: string[][] = [];
+    let revision = 1;
+    let syncActive = true;
+    const emptySnapshot = {
+      revision: 1,
+      sync: {
+        active: true,
+        completed: 0,
+        total: 2,
+        pendingDirectories: ['/repo/a', '/repo/b'],
+        completedDirectories: [] as string[],
+        failedDirectories: [] as string[],
+      },
+      directories: [] as Array<{ directory: string; sessions: Session[] }>,
+    };
+    const completedSnapshot = {
+      revision: 2,
+      sync: {
+        active: false,
+        completed: 2,
+        total: 2,
+        pendingDirectories: [] as string[],
+        completedDirectories: ['/repo/a', '/repo/b'],
+        failedDirectories: [] as string[],
+      },
+      directories: [] as Array<{ directory: string; sessions: Session[] }>,
+    };
+    try {
+      Object.defineProperty(globalThis, 'window', {
+        configurable: true,
+        value: { location: { origin: 'http://localhost', href: 'http://localhost/' } },
+      });
+      globalThis.fetch = async (input, init) => {
+        const url = input instanceof Request ? input.url : String(input);
+        const pathname = new URL(url, 'http://localhost').pathname;
+        if (pathname === '/api/openchamber/session-index') {
+          const payload = syncActive ? emptySnapshot : completedSnapshot;
+          return new Response(JSON.stringify({ available: true, ...payload, revision }), {
+            status: 200,
+            headers: { 'Content-Type': 'application/json' },
+          });
+        }
+        if (pathname === '/api/openchamber/session-index/sync') {
+          const body = typeof init?.body === 'string' ? JSON.parse(init.body) as { directories?: string[] } : {};
+          syncBodies.push([...(body.directories ?? [])].sort());
+          return new Response(JSON.stringify(emptySnapshot), {
+            status: 202,
+            headers: { 'Content-Type': 'application/json' },
+          });
+        }
+        return new Response(JSON.stringify(emptySnapshot), {
+          status: 200,
+          headers: { 'Content-Type': 'application/json' },
+        });
+      };
+      opencodeClient.getSdkClient = () => ({
+        experimental: { session: { list: async () => ({ data: [], error: undefined, response: new Response(null, { status: 200 }) }) } },
+      } as unknown as OpencodeClient);
+
+      let finished = false;
+      const startup = useGlobalSessionsStore.getState().startSessionIndexStartup(
+        ['/repo/a', '/repo/b'],
+        { priorityDirectories: ['/repo/a'] },
+      ).then(() => { finished = true; });
+
+      while (tipListeners.size === 0) await new Promise((resolve) => setTimeout(resolve, 0));
+      expect(finished).toBe(false);
+      expect(syncBodies).toEqual([['/repo/a', '/repo/b']]);
+
+      syncActive = false;
+      revision = 2;
+      emitOpenchamberTip({ type: 'session-index-changed', revision: 2, occurredAt: 1 });
+      await startup;
+      expect(finished).toBe(true);
+      // No deferred second sync when cache miss forces full immediate set.
+      await new Promise((resolve) => setTimeout(resolve, 0));
+      expect(syncBodies).toEqual([['/repo/a', '/repo/b']]);
+    } finally {
+      useGlobalSessionsStore.getState().resetForRuntimeSwitch();
+      opencodeClient.getSdkClient = originalGetSdkClient;
+      Object.defineProperty(globalThis, 'window', { configurable: true, value: originalWindow });
+      globalThis.fetch = originalFetch;
+    }
+  });
+
   test('uses the Electron server job without issuing browser-side OpenCode session lists', async () => {
     const originalWindow = globalThis.window;
     const originalFetch = globalThis.fetch;

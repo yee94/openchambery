@@ -91,7 +91,23 @@ export const createAssistantsService = ({ dbPath, dataDir, buildOpenCodeUrl, get
   const createSession = async (row) => { const directory = effectiveWorkspace(row); const result = await client().session.create({ directory, title: row.name, metadata: metadata(row) }); if (result.error || !result.data?.id) fail('upstream_error'); return { sessionID: result.data.id, directory }; };
   const sessionExists = async (row) => { if (!row.current_session_id) return false; const result = await client().session.get({ sessionID: row.current_session_id, directory: effectiveWorkspace(row) }); if (isMissing(result)) return false; if (result.error) fail('upstream_error'); return Boolean(result.data); };
   const replaceBinding = (row, created) => { if (row.current_session_id && row.current_session_id !== created.sessionID) archiveSession(row.assistant_id, row.current_session_id, effectiveWorkspace(row)); const result = db.prepare('UPDATE assistant_v2 SET current_session_id=?,session_generation=session_generation+1,updated_at=? WHERE assistant_id=? AND session_generation=? AND tombstone_at IS NULL').run(created.sessionID, now(), row.assistant_id, row.session_generation); if (result.changes) bump(); return result.changes ? assistant(row.assistant_id) : null; };
-  const prepareExecutionBinding = async (row) => { if (row.mode !== 'stateless') return row; const created = await createSession(row); const won = replaceBinding(row, created); if (!won) fail('revision_conflict'); return won; };
+  const statelessLanes = new Map();
+  const inStatelessLane = (assistantID, task) => {
+    const previous = statelessLanes.get(assistantID) ?? Promise.resolve();
+    let tail;
+    const run = previous.catch(() => {}).then(task);
+    tail = run.catch(() => {}).finally(() => { if (statelessLanes.get(assistantID) === tail) statelessLanes.delete(assistantID); });
+    statelessLanes.set(assistantID, tail);
+    return run;
+  };
+  const createStatelessExecutionBinding = async (assistantID) => {
+    for (let attempt = 0; attempt < 4; attempt++) {
+      const current = active(assistantID); const created = await createSession(current); const won = replaceBinding(current, created);
+      if (won) return won;
+    }
+    fail('revision_conflict');
+  };
+  const prepareExecutionBinding = async (row) => row.mode === 'stateless' ? createStatelessExecutionBinding(row.assistant_id) : row;
   const ensure = async (assistantID) => { for (let attempt = 0; attempt < 4; attempt++) { const row = active(assistantID); if (await sessionExists(row)) return binding(row); const created = await createSession(row); const won = replaceBinding(row, created); if (won) return binding(won); const authoritative = active(assistantID); if (authoritative.current_session_id) return binding(authoritative); } fail('revision_conflict'); };
   const restoreOnce = async (row, expectedSessionID, expectedGeneration) => { for (let attempt = 0; attempt < 3; attempt++) { const current = active(row.assistant_id); if (current.current_session_id !== expectedSessionID || current.session_generation !== expectedGeneration) return binding(current); const created = await createSession(current); const won = replaceBinding(current, created); if (won) return binding(won); } return binding(active(row.assistant_id)); };
   const configuration = (row) => ({ model: { providerID: row.provider_id, modelID: row.model_id }, ...(row.agent ? { agent: row.agent } : {}), ...(row.variant ? { variant: row.variant } : {}), ...(row.default_prompt ? { system: row.default_prompt } : {}) });
@@ -229,22 +245,25 @@ export const createAssistantsService = ({ dbPath, dataDir, buildOpenCodeUrl, get
     }
     return { result, binding: binding(row) };
   };
-  const send = async (assistantID, input) => { if (!plainObject(input)) fail('validation_error'); validateParts(input.parts); const messageID = string(input.messageID, 256, true); const row = active(assistantID); if (input.sessionID !== row.current_session_id || input.sessionGeneration !== row.session_generation) fail('revision_conflict'); const target = await prepareExecutionBinding(row); const sent = await sendWithConfig({ row: target, sessionID: target.current_session_id, directory: effectiveWorkspace(target), config: configuration(target), parts: input.parts, messageID, restore: target.mode !== 'stateless' }); if (!promptAdmitted(sent.result)) fail('upstream_error'); return { binding: sent.binding, messageID, admitted: true }; };
+  const send = async (assistantID, input) => { if (!plainObject(input)) fail('validation_error'); validateParts(input.parts); const messageID = string(input.messageID, 256, true); const row = active(assistantID); if (row.mode !== 'stateless' && (input.sessionID !== row.current_session_id || input.sessionGeneration !== row.session_generation)) fail('revision_conflict'); const submit = async () => { const latest = active(assistantID); const target = await prepareExecutionBinding(latest); const sent = await sendWithConfig({ row: target, sessionID: target.current_session_id, directory: effectiveWorkspace(target), config: configuration(target), parts: input.parts, messageID, restore: target.mode !== 'stateless' }); if (!promptAdmitted(sent.result)) fail('upstream_error'); return { binding: sent.binding, messageID, admitted: true }; }; return row.mode === 'stateless' ? inStatelessLane(assistantID, submit) : submit(); };
   const captureQueueDeliveryTarget = ({ assistantID, scope }) => {
     const row = active(assistantID); const current = binding(row);
-    if (scope.sessionID !== current.sessionID || scope.directory !== current.directory) fail('revision_conflict');
+    const expectedSessionID = row.mode === 'stateless' ? `assistant:${assistantID}` : current.sessionID;
+    if (scope.sessionID !== expectedSessionID || scope.directory !== current.directory) fail('revision_conflict');
     return { kind: 'assistant', assistantID, binding: current, sessionID: current.sessionID, sessionGeneration: current.sessionGeneration, directory: current.directory, providerID: row.provider_id, modelID: row.model_id, agent: row.agent, variant: row.variant, mode: row.mode === 'stateless' ? 'stateless' : 'continuous', defaultPrompt: row.default_prompt, system: row.default_prompt };
   };
   const sendWithCapturedConfig = async ({ deliveryTarget, messageID, parts }) => {
     const capturedBinding = deliveryTarget?.binding ?? { sessionID: deliveryTarget?.sessionID, sessionGeneration: deliveryTarget?.sessionGeneration, directory: deliveryTarget?.directory };
     const mode = deliveryTarget?.mode === 'stateless' ? 'stateless' : deliveryTarget?.mode === 'continuous' || deliveryTarget?.mode == null ? 'continuous' : fail('validation_error');
     if (!plainObject(deliveryTarget) || deliveryTarget.kind !== 'assistant' || !nonEmptyString(deliveryTarget.assistantID) || !nonEmptyString(capturedBinding.sessionID) || !Number.isSafeInteger(capturedBinding.sessionGeneration) || !nonEmptyString(capturedBinding.directory) || !nonEmptyString(deliveryTarget.providerID) || !nonEmptyString(deliveryTarget.modelID) || (deliveryTarget.agent != null && !nonEmptyString(deliveryTarget.agent)) || (deliveryTarget.variant != null && !nonEmptyString(deliveryTarget.variant)) || (deliveryTarget.defaultPrompt != null && typeof deliveryTarget.defaultPrompt !== 'string') || (deliveryTarget.system != null && typeof deliveryTarget.system !== 'string')) fail('validation_error');
-    validateParts(parts); const row = active(deliveryTarget.assistantID); const current = binding(row);
-    if (current.sessionID !== capturedBinding.sessionID || current.sessionGeneration !== capturedBinding.sessionGeneration || current.directory !== capturedBinding.directory) fail('stale_target');
-    const target = mode === 'stateless' ? await prepareExecutionBinding(row) : row;
-    const sent = await sendWithConfig({ row: target, sessionID: target.current_session_id, directory: effectiveWorkspace(target), config: capturedConfiguration(deliveryTarget), parts, messageID, restore: false });
-    if (!promptAdmitted(sent.result)) return { ok: false, status: sent.result?.status ?? sent.result?.response?.status, code: 'upstream_error' };
-    return { ok: true, accepted: true, binding: binding(target), messageID };
+    validateParts(parts); const submit = async () => { const row = active(deliveryTarget.assistantID); const current = binding(row);
+      if (mode !== 'stateless' && (current.sessionID !== capturedBinding.sessionID || current.sessionGeneration !== capturedBinding.sessionGeneration || current.directory !== capturedBinding.directory)) fail('stale_target');
+      const target = mode === 'stateless' ? await createStatelessExecutionBinding(deliveryTarget.assistantID) : row;
+      const sent = await sendWithConfig({ row: target, sessionID: target.current_session_id, directory: effectiveWorkspace(target), config: capturedConfiguration(deliveryTarget), parts, messageID, restore: false });
+      if (!promptAdmitted(sent.result)) return { ok: false, status: sent.result?.status ?? sent.result?.response?.status, code: 'upstream_error' };
+      return { ok: true, accepted: true, binding: binding(target), messageID };
+    };
+    return mode === 'stateless' ? inStatelessLane(deliveryTarget.assistantID, submit) : submit();
   };
   const abort = async (assistantID, input) => { const row = active(assistantID); if (!plainObject(input) || input.sessionID !== row.current_session_id || input.sessionGeneration !== row.session_generation || !row.current_session_id) fail('revision_conflict'); const result = await client().session.abort({ sessionID: row.current_session_id, directory: effectiveWorkspace(row) }); if (isMissing(result)) fail('not_found'); if (result.error) fail('upstream_error'); return { binding: binding(row), aborted: true }; };
   const createNew = async (assistantID) => { for (let attempt = 0; attempt < 3; attempt++) { const row = active(assistantID); const created = await createSession(row); const won = replaceBinding(row, created); if (won) return binding(won); } return binding(active(assistantID)); };

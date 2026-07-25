@@ -178,6 +178,8 @@ type ChatInputSurfaceBase = {
     submit: () => void | Promise<void>;
   };
   deliveryTarget: ChatInputDeliveryTarget;
+  /** Optional stable queue identity when delivery is not owned by the live Session. */
+  queueSessionID?: string;
 };
 
 export type ChatInputPrimarySurface = ChatInputSurfaceBase & {
@@ -232,11 +234,11 @@ export const resolveChatInputDraftBusy = (
   primaryDraftBusy: boolean,
 ): boolean => surface.kind === 'secondary' ? surface.resources?.busy ?? false : primaryDraftBusy;
 
-export const chatInputQueueScope = (surface: Pick<ChatInputSurface, 'deliveryTarget' | 'sessionID' | 'directory' | 'transportIdentity' | 'runtimeGeneration'>): ChatInputQueueScope | null => {
+export const chatInputQueueScope = (surface: Pick<ChatInputSurface, 'deliveryTarget' | 'sessionID' | 'directory' | 'transportIdentity' | 'runtimeGeneration' | 'queueSessionID'>): ChatInputQueueScope | null => {
   if (!surface.sessionID || !surface.directory) return null;
   return {
     deliveryTarget: surface.deliveryTarget,
-    sessionID: surface.sessionID,
+    sessionID: surface.queueSessionID ?? surface.sessionID,
     directory: surface.directory,
     transportIdentity: surface.transportIdentity,
     runtimeGeneration: surface.runtimeGeneration,

@@ -1,6 +1,7 @@
 import React from 'react';
 
 import { isCapacitorApp, isIPadApp } from '@/lib/platform';
+import type { PairingConnectionPayload } from '@/lib/connectionPayload';
 import { useMobileNavigationStore } from '@/mobile/useMobileNavigationStore';
 import { useSessionUIStore } from '@/sync/session-ui-store';
 import { useUIStore } from '@/stores/useUIStore';
@@ -32,11 +33,17 @@ export interface DeepLinkHandlers {
 }
 
 let handlers: DeepLinkHandlers = {};
+let pairingHandler: ((pairing: PairingConnectionPayload) => void) | null = null;
 let ready = false;
 let pending: DeepLinkIntent | null = null;
 
 const execute = (intent: DeepLinkIntent): boolean => {
   switch (intent.type) {
+    case 'connect':
+      if (!pairingHandler) return false;
+      pairingHandler(intent.pairing);
+      return true;
+
     case 'session': {
       // Phone: route through the navigation coordinator so the chat page opens
       // (single authority: coordinator runs setCurrentSession synchronously).
@@ -127,7 +134,7 @@ const execute = (intent: DeepLinkIntent): boolean => {
 };
 
 const flush = (): void => {
-  if (!ready || !pending) return;
+  if (!pending || (!ready && pending.type !== 'connect')) return;
   const intent = pending;
   // Drop the stash before executing; if the handler isn't registered yet, execute() returns
   // false and we re-stash so a later registerDeepLinkHandlers() flush can retry it.
@@ -174,14 +181,34 @@ export const useDeepLinkHandlers = (next: DeepLinkHandlers): void => {
 };
 
 /**
+ * Register the native mobile pairing consumer separately from navigation handlers.
+ * Pairing links must work on the disconnected welcome screen, before navigation is ready.
+ */
+export const usePairingDeepLinkHandler = (handler: (pairing: PairingConnectionPayload) => void): void => {
+  React.useEffect(() => {
+    pairingHandler = handler;
+    flush();
+    return () => {
+      if (pairingHandler === handler) pairingHandler = null;
+    };
+  }, [handler]);
+};
+
+export type InitialDeepLinkKind = 'pending' | 'none' | 'connect' | 'other';
+
+/**
  * Single native entry point for deep links. Subscribes to both the custom URL scheme
  * (`App.appUrlOpen` — widgets, Live Activities, external links) and notification taps
  * (`pushNotificationActionPerformed`), normalising each into a {@link DeepLinkIntent}.
  * Both listeners are registered UNCONDITIONALLY so a cold-launch tap/open isn't lost while
- * the app is still connecting; intents stash until `ready` (connected + initialized).
+ * the app is still connecting. Navigation intents stash until `ready` (connected +
+ * initialized); validated pairing intents may run immediately on the disconnected screen.
  */
-export const useDeepLinkSource = (options: { ready: boolean }): void => {
+export const useDeepLinkSource = (options: { ready: boolean }): InitialDeepLinkKind => {
   const { ready: isReady } = options;
+  const [initialKind, setInitialKind] = React.useState<InitialDeepLinkKind>(() => (
+    isCapacitorApp() ? 'pending' : 'none'
+  ));
 
   React.useEffect(() => {
     setReady(isReady);
@@ -203,8 +230,19 @@ export const useDeepLinkSource = (options: { ready: boolean }): void => {
           return;
         }
         cleanup.push(() => void handle.remove());
+
+        // appUrlOpen covers links received while the WebView is alive. A cold
+        // launch can happen before JavaScript subscribes, so recover the launch
+        // URL explicitly after the listener is installed.
+        const launch = await App.getLaunchUrl().catch(() => undefined);
+        if (disposed) return;
+        const intent = parseDeepLink(launch?.url);
+        setInitialKind(intent?.type === 'connect' ? 'connect' : intent ? 'other' : 'none');
+        if (intent) applyDeepLinkIntent(intent);
       })
-      .catch(() => undefined);
+      .catch(() => {
+        if (!disposed) setInitialKind('none');
+      });
 
     void import('@capacitor/push-notifications')
       .then(async ({ PushNotifications }) => {
@@ -236,6 +274,8 @@ export const useDeepLinkSource = (options: { ready: boolean }): void => {
       cleanup.forEach((remove) => remove());
     };
   }, []);
+
+  return initialKind;
 };
 
 // Re-export so producers (notifications, future widgets) have one import for the whole vocabulary.

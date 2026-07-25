@@ -6427,7 +6427,10 @@ const ChatInputRuntime: React.FC<ChatInputProps> = ({ onOpenSettings, scrollToBo
                 >
                     <LeaderKeyHint />
                     {isDragging && (
-                        <div className="absolute inset-0 z-50 flex items-center justify-center bg-background/90 rounded-xl">
+                        <div
+                            className="absolute inset-0 z-50 flex items-center justify-center bg-background/90"
+                            style={{ borderRadius: chatInputRadius }}
+                        >
                             <div className="text-center">
                                 <div className="inline-flex justify-center">
                                     <button

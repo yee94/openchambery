@@ -341,7 +341,6 @@ When adding or changing Host HTTP APIs that mobile/desktop clients reach over Pr
 - `registerOpenChamberRoutes(app, dependencies)`: registers OpenChamber endpoints:
   - `GET /api/openchamber/update-check`
   - `POST /api/openchamber/update-install`
-  - `GET /api/openchamber/models-metadata`
   - `GET /api/zen/models`
 
 ## Public exports (pwa-manifest-routes.js)

@@ -1,5 +1,7 @@
 import { describe, expect, test } from 'bun:test';
 import {
+  checkIsGitRepository,
+  discoverGitRepositories,
   getGitStatus,
   getGitBranches,
   getRemotes,
@@ -216,6 +218,102 @@ describe('gitApiHttp discovery fan-out', () => {
       expect(a.root).toBe('/same');
       expect(b.root).toBe('/same');
       expect(calls).toBe(1);
+    } finally {
+      restoreMocks();
+    }
+  });
+
+  test('batch discover writes caches so subsequent single lookups skip network', async () => {
+    installWindowMock();
+    const calls: string[] = [];
+    globalThis.fetch = (async (input) => {
+      const url = String(input);
+      calls.push(url);
+      if (url.includes('/api/git/discover')) {
+        return new Response(JSON.stringify([
+          { directory: '/batch-a', isGitRepository: true, primaryRoot: '/batch-a' },
+          { directory: '/batch-b', isGitRepository: false, primaryRoot: null },
+        ]), {
+          status: 200,
+          headers: { 'Content-Type': 'application/json' },
+        });
+      }
+      return new Response(JSON.stringify({ error: 'unexpected single lookup' }), {
+        status: 500,
+        headers: { 'Content-Type': 'application/json' },
+      });
+    }) as typeof fetch;
+
+    try {
+      const discovered = await discoverGitRepositories(['/batch-a', '/batch-b', '/batch-a']);
+      expect(discovered.get('/batch-a')).toEqual({
+        isGitRepository: true,
+        primaryRoot: '/batch-a',
+      });
+      expect(discovered.get('/batch-b')).toEqual({
+        isGitRepository: false,
+        primaryRoot: null,
+      });
+      expect(calls).toHaveLength(1);
+      expect(calls[0]).toContain('/api/git/discover');
+      expect(calls[0]).toContain('directories=%2Fbatch-a');
+      expect(calls[0]).toContain('directories=%2Fbatch-b');
+
+      const isRepoA = await checkIsGitRepository('/batch-a');
+      const isRepoB = await checkIsGitRepository('/batch-b');
+      const rootA = await resolveGitPrimaryRoot('/batch-a');
+      expect(isRepoA).toBe(true);
+      expect(isRepoB).toBe(false);
+      expect(rootA.root).toBe('/batch-a');
+      // Cache hits only — no extra check / primary-root network calls.
+      expect(calls).toHaveLength(1);
+    } finally {
+      restoreMocks();
+    }
+  });
+
+  test('batch discover falls back to single requests when endpoint is unavailable', async () => {
+    installWindowMock();
+    const calls: string[] = [];
+    globalThis.fetch = (async (input) => {
+      const url = String(input);
+      calls.push(url);
+      if (url.includes('/api/git/discover')) {
+        return new Response(JSON.stringify({ error: 'not implemented' }), {
+          status: 501,
+          headers: { 'Content-Type': 'application/json' },
+        });
+      }
+      if (url.includes('/api/git/check')) {
+        return new Response(JSON.stringify({ isGitRepository: true }), {
+          status: 200,
+          headers: { 'Content-Type': 'application/json' },
+        });
+      }
+      if (url.includes('/api/git/primary-root')) {
+        return new Response(JSON.stringify({ root: '/fallback-root' }), {
+          status: 200,
+          headers: { 'Content-Type': 'application/json' },
+        });
+      }
+      return new Response('{}', { status: 200 });
+    }) as typeof fetch;
+
+    try {
+      const discovered = await discoverGitRepositories(['/fallback-dir']);
+      expect(discovered.get('/fallback-dir')).toEqual({
+        isGitRepository: true,
+        primaryRoot: '/fallback-root',
+      });
+      expect(calls.some((url) => url.includes('/api/git/discover'))).toBe(true);
+      expect(calls.some((url) => url.includes('/api/git/check'))).toBe(true);
+      expect(calls.some((url) => url.includes('/api/git/primary-root'))).toBe(true);
+
+      // Fallback also seeds caches.
+      const cached = await checkIsGitRepository('/fallback-dir');
+      expect(cached).toBe(true);
+      const checkCallsAfter = calls.filter((url) => url.includes('/api/git/check')).length;
+      expect(checkCallsAfter).toBe(1);
     } finally {
       restoreMocks();
     }

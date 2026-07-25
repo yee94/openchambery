@@ -45,13 +45,15 @@ import type { SessionStatus } from "@opencode-ai/sdk/v2/client"
 import type { PermissionRequest } from "@/types/permission"
 import type { QuestionRequest } from "@/types/question"
 import * as sessionActions from "./session-actions"
-import { getSessionMaterializationStatus, materializeSessionSnapshots } from "./materialization"
+import { getSessionMaterializationStatus } from "./materialization"
+import { loadSessionMessagePage } from "./session-message-loader"
+import type { ReduceSessionMessagePageResult } from "./session-message-reducer"
 import { openSessionFromToast } from "./session-opener"
 import { getPermissionToastKey, showPermissionNeededToast } from "./permission-toast"
 import { getRuntimeLiveStatusSeed, LIVE_STATUS_TTL_MS } from "./runtime-live-memory"
 import { getRuntimeKey } from "@/lib/runtime-switch"
 import { getRegisteredRuntimeAPIs } from "@/contexts/runtimeAPIRegistry"
-import { getSessionPrefetch, setSessionPrefetch, subscribeSessionPrefetch, type SessionPrefetchMeta } from "./session-prefetch-cache"
+import { getSessionPrefetch, subscribeSessionPrefetch, type SessionPrefetchMeta } from "./session-prefetch-cache"
 import { useGlobalSessionsStore } from "@/stores/useGlobalSessionsStore"
 import { areRequestArraysReferentiallyEqual, collectScopedBlockingRequests } from "./scoped-blocking-requests"
 import { EMPTY_USER_MESSAGE_HISTORY_SNAPSHOT, buildUserMessageHistorySnapshot, type UserMessageHistorySnapshot } from "./user-message-history"
@@ -229,8 +231,6 @@ let bootingRoot = false
 let bootedAt = 0
 let globalBootstrapGeneration = 0
 const BOOT_DEBOUNCE_MS = 1500
-const RECONNECT_MESSAGE_LIMIT = 30
-const SESSION_MATERIALIZATION_MESSAGE_LIMIT = 30
 const RECONNECT_SKIP_PARTS = new Set(["patch", "step-start", "step-finish"])
 const ACTIVE_SESSION_WATCHDOG_INTERVAL_MS = 5_000
 const ACTIVE_SESSION_STALE_EVENT_MS = 40_000
@@ -307,7 +307,7 @@ function enqueueSessionMaterialization(
   })
 }
 
-async function materializeSessionFromServer(
+export async function materializeSessionFromServer(
   directory: string,
   sessionID: string,
   store: StoreApi<DirectoryStore>,
@@ -322,39 +322,76 @@ async function materializeSessionFromServer(
     partID: options?.partID,
   })
   const scopedClient = opencodeClient.getScopedSdkClient(directory)
-  const result = await retry(async () => {
-    const response = await scopedClient.session.messages({ sessionID, limit: SESSION_MATERIALIZATION_MESSAGE_LIMIT })
-    assertSdkSuccess(response, "session.messages")
-    return response
-  })
-  const records = (result.data ?? []).filter((record: { info?: { id?: string } }) => !!record?.info?.id)
-  if (records.length === 0) return
-  const cursor = result.response?.headers?.get?.("x-next-cursor") ?? undefined
-  setSessionPrefetch({
+  const runtimeKey = getRuntimeKey()
+
+  const loadResult = await loadSessionMessagePage({
+    purpose: "materialize",
+    runtimeKey,
     directory,
     sessionID,
-    limit: records.length,
-    cursor,
-    complete: !cursor,
+    deps: {
+      queryPage: async ({ limit, before }) => {
+        const response = await retry(async () => {
+          const result = await scopedClient.session.messages({
+            sessionID,
+            directory,
+            limit,
+            before,
+          })
+          assertSdkSuccess(result, "session.messages")
+          return result
+        })
+        const records = (response.data ?? [])
+          .filter((record: { info?: { id?: string } }) => !!record?.info?.id)
+          .map((record: { info: Message; parts?: Part[] }) => ({
+            info: stripMessageDiffSnapshots(record.info),
+            parts: record.parts ?? [],
+          }))
+        const cursor = response.response?.headers?.get?.("x-next-cursor") ?? undefined
+        return { records, cursor, complete: !cursor }
+      },
+      queryMessage: async ({ messageID }) => {
+        const response = await retry(async () => {
+          const result = await scopedClient.session.message({
+            sessionID,
+            messageID,
+            directory,
+          })
+          assertSdkSuccess(result, "session.message")
+          return result
+        })
+        const record = response.data
+        if (!record?.info?.id) throw new Error("session.message failed: empty response")
+        return {
+          info: stripMessageDiffSnapshots(record.info),
+          parts: record.parts ?? [],
+        }
+      },
+      getStoreState: () => {
+        const state = store.getState()
+        return { message: state.message, part: state.part }
+      },
+      commitStore: (reduced: ReduceSessionMessagePageResult) => {
+        if (!reduced.applied || !reduced.changed) return
+        store.setState((state: DirectoryStore) => {
+          if (!reduced.messagesChanged && !reduced.partsChanged) return state
+          return {
+            ...(reduced.messagesChanged ? { message: reduced.message } : {}),
+            ...(reduced.partsChanged ? { part: reduced.part } : {}),
+          }
+        })
+      },
+      isStale: () => options?.isStale?.() ?? false,
+      skipPartTypes: RECONNECT_SKIP_PARTS,
+    },
   })
 
-  if (options?.isStale?.()) return
-
-  store.setState((state: DirectoryStore) => {
-    const materialized = materializeSessionSnapshots(
-      state,
-      sessionID,
-      records.map((record: { info: Message; parts?: Part[] }) => ({
-        info: stripMessageDiffSnapshots(record.info),
-        parts: record.parts ?? [],
-      })),
-      { skipPartTypes: RECONNECT_SKIP_PARTS },
-    )
-    if (!materialized.messagesChanged && !materialized.partsChanged) {
-      return state
-    }
-    return { message: materialized.message, part: materialized.part }
-  })
+  // Preserve prior transcript on error / skipped; ready commits via deps.
+  // Match prior empty-page behavior: do not treat an empty successful page as
+  // enough to resync status (old path returned before any write when records
+  // were empty). Prefetch meta for non-empty pages is owned by the loader.
+  if (loadResult.status !== "ready" || !loadResult.applied) return
+  if (loadResult.messages.length === 0) return
 
   if (statusBeforeMaterialization && statusBeforeMaterialization.type !== "idle" && !options?.isStale?.()) {
     await resyncDirectorySessionStatuses(directory, store, [sessionID])
@@ -1352,7 +1389,7 @@ export async function resyncBlockingRequestsForDirectory(
   }
 }
 
-async function resyncDirectoryAfterReconnect(
+export async function resyncDirectoryAfterReconnect(
   directory: string,
   store: StoreApi<DirectoryStore>,
   routingIndex: EventRoutingIndex,
@@ -1379,40 +1416,23 @@ async function resyncDirectoryAfterReconnect(
   })
   if (materializationSessionIds.length > 0) {
     const scopedClient = opencodeClient.getScopedSdkClient(directory)
+    const runtimeKey = getRuntimeKey()
     await Promise.all(materializationSessionIds.map(async (sessionId) => {
       const capturedRevision = getLiveRevision(sessionId)
       syncDebug.recovery.materializing({ reason, directory, sessionID: sessionId })
-      const [sessionResponse, messageResponse] = await Promise.all([
-        retry(async () => {
-          const response = await scopedClient.session.get({ sessionID: sessionId })
-          assertSdkSuccess(response, "session.get")
-          return response
-        }).catch(() => null),
-        retry(async () => {
-          const response = await scopedClient.session.messages({ sessionID: sessionId, limit: RECONNECT_MESSAGE_LIMIT })
-          assertSdkSuccess(response, "session.messages")
-          return response
-        }).catch(() => null),
-      ])
+      const sessionResponse = await retry(async () => {
+        const response = await scopedClient.session.get({ sessionID: sessionId })
+        assertSdkSuccess(response, "session.get")
+        return response
+      }).catch(() => null)
       const session = sessionResponse?.data
-      const records = messageResponse?.data
-      if (!session || !records) return
+      if (!session) return
       if (!isLiveRevisionCurrent(capturedRevision, getLiveRevision(sessionId))) return
-      const cursor = messageResponse.response?.headers?.get?.("x-next-cursor") ?? undefined
-      setSessionPrefetch({
-        directory,
-        sessionID: sessionId,
-        limit: records.length,
-        cursor,
-        complete: !cursor,
-      })
 
       const nextSession = stripSessionDiffSnapshots(session)
-      const nextMessages = records
-        .filter((record) => !!record?.info?.id)
-        .map((record) => stripMessageDiffSnapshots(record.info))
-        .sort((a, b) => cmp(a.id, b.id))
 
+      // Session identity is independent of the message page; apply it first so a
+      // later message error/skip still leaves identity current when possible.
       store.setState((state: DirectoryStore) => {
         const sessionIndex = state.session.findIndex((item) => item.id === nextSession.id)
         let sessions = state.session
@@ -1433,29 +1453,78 @@ async function resyncDirectoryAfterReconnect(
           sessionChanged = true
         }
 
-        const materialized = materializeSessionSnapshots(
-          state,
-          sessionId,
-          records.map((record) => ({
-            info: stripMessageDiffSnapshots(record.info),
-            parts: record.parts ?? [],
-          })),
-          { skipPartTypes: RECONNECT_SKIP_PARTS, mode: "recovery" },
-        )
-        const messagesChanged = materialized.messagesChanged
-        const partsChanged = materialized.partsChanged
-        if (!sessionChanged && !messagesChanged && !partsChanged) {
-          return state
-        }
+        if (!sessionChanged) return state
+        return { session: sessions, sessionTotal }
+      })
+      setIndexedSessionDirectory(routingIndex, nextSession.id, directory)
 
-        return {
-          ...(sessionChanged ? { session: sessions, sessionTotal } : {}),
-          ...(messagesChanged ? { message: materialized.message } : {}),
-          ...(partsChanged ? { part: materialized.part } : {}),
-        }
+      const loadResult = await loadSessionMessagePage({
+        purpose: "recovery",
+        runtimeKey,
+        directory,
+        sessionID: sessionId,
+        deps: {
+          queryPage: async ({ limit, before }) => {
+            const response = await retry(async () => {
+              const result = await scopedClient.session.messages({
+                sessionID: sessionId,
+                directory,
+                limit,
+                before,
+              })
+              assertSdkSuccess(result, "session.messages")
+              return result
+            })
+            const records = (response.data ?? [])
+              .filter((record: { info?: { id?: string } }) => !!record?.info?.id)
+              .map((record: { info: Message; parts?: Part[] }) => ({
+                info: stripMessageDiffSnapshots(record.info),
+                parts: record.parts ?? [],
+              }))
+            const cursor = response.response?.headers?.get?.("x-next-cursor") ?? undefined
+            return { records, cursor, complete: !cursor }
+          },
+          queryMessage: async ({ messageID }) => {
+            const response = await retry(async () => {
+              const result = await scopedClient.session.message({
+                sessionID: sessionId,
+                messageID,
+                directory,
+              })
+              assertSdkSuccess(result, "session.message")
+              return result
+            })
+            const record = response.data
+            if (!record?.info?.id) throw new Error("session.message failed: empty response")
+            return {
+              info: stripMessageDiffSnapshots(record.info),
+              parts: record.parts ?? [],
+            }
+          },
+          getStoreState: () => {
+            const state = store.getState()
+            return { message: state.message, part: state.part }
+          },
+          commitStore: (reduced: ReduceSessionMessagePageResult) => {
+            if (!reduced.applied || !reduced.changed) return
+            store.setState((state: DirectoryStore) => {
+              if (!reduced.messagesChanged && !reduced.partsChanged) return state
+              return {
+                ...(reduced.messagesChanged ? { message: reduced.message } : {}),
+                ...(reduced.partsChanged ? { part: reduced.part } : {}),
+              }
+            })
+          },
+          getLiveRevision: () => getLiveRevision(sessionId),
+          isStale: () => !isLiveRevisionCurrent(capturedRevision, getLiveRevision(sessionId)),
+          skipPartTypes: RECONNECT_SKIP_PARTS,
+        },
       })
 
-      setIndexedSessionDirectory(routingIndex, nextSession.id, directory)
+      // Error / skipped preserve transcript; prefetch meta is owned by the loader.
+      if (loadResult.status !== "ready" || !loadResult.applied) return
+
+      const nextMessages = loadResult.messages
       setIndexedSessionMessages(routingIndex, sessionId, directory, nextMessages)
     }))
   }
