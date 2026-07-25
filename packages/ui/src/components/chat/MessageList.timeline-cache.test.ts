@@ -42,7 +42,11 @@ mock.module('./lib/shellBridge', () => ({
     getShellBridgeAssistantDetails: () => ({ hide: false, details: null }),
 }));
 
-const { createTanstackTimelineSnapshotCache, resolveMessageListKeys } = await import('./MessageList');
+const {
+    createTanstackTimelineSnapshotCache,
+    resolveMessageListKeys,
+    syncCurrentHistoryVirtualization,
+} = await import('./MessageList');
 
 describe('TanStack timeline snapshot cache', () => {
     test('keeps snapshots isolated by virtualizer key', () => {
@@ -67,5 +71,16 @@ describe('TanStack timeline snapshot cache', () => {
             sessionKey: 'ses_1',
             virtualizerKey: 'panel:ses_1',
         });
+    });
+});
+
+describe('MessageList history virtualization handle state', () => {
+    test('an existing handle reader observes the current render virtualization state', () => {
+        const state = { current: false };
+        const existingHandleReader = () => state.current;
+
+        syncCurrentHistoryVirtualization(state, true);
+
+        expect(existingHandleReader()).toBe(true);
     });
 });

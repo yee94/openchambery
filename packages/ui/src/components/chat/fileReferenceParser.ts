@@ -184,3 +184,30 @@ export const parseFileReference = (value: string): ParsedFileReference | null =>
 // uses forward slashes, so this is a niche gap. The inline-code pipeline is not
 // affected — it reads full text content rather than matching with a regex.
 export const BLOCK_PATH_TOKEN_RE = /(?:[A-Za-z]:[\\/])?[\w.\-/@+]*[\w\-/@+]\.[A-Za-z0-9]{1,8}(?::\d+(?:-\d+)?(?::\d+)?)?/g;
+
+// Matches a path-like token inside ordinary paragraph text. Compared to
+// BLOCK_PATH_TOKEN_RE this is stricter: the token must contain at least one
+// `/` separator (so single bare filenames do not qualify), or be an absolute
+// path, or start with `./`/`../`. The trailing segment must carry a file
+// extension (1-8 alphanumerics) — this is what the file-existence stat probe
+// ultimately validates, so a misidentified token just never becomes a link.
+//
+// Segment rules:
+// - A segment without spaces may use word chars, `-`, `.`, `@`, `+`, and
+//   CJK ideographs.
+// - A segment with internal spaces must contain at least one CJK ideograph
+//   or start with a digit (covers `20 Projects` and `小店乐高周边文创`
+//   without absorbing plain English prose like `the quick brown fox`).
+// - URL schemes (`https://`, `ftp://`, ...) are excluded by rejecting
+//   candidates whose first segment ends with `:` after the regex match.
+//
+// The optional `:line[:col]` / `:start-end` suffix mirrors the block-code
+// form. The regex is intentionally global and stateless — callers must
+// reset `lastIndex` before each pass.
+const PARAGRAPH_PATH_SEGMENT_PLAIN = "[\\w.@+\\-一-鿿]+";
+const PARAGRAPH_PATH_SEGMENT_SPACED = "(?:[0-9][\\w.@+\\- 一-鿿]*|[一-鿿][\\w.@+\\- 一-鿿]*)";
+const PARAGRAPH_PATH_SEGMENT = `(?:${PARAGRAPH_PATH_SEGMENT_SPACED}|${PARAGRAPH_PATH_SEGMENT_PLAIN})`;
+export const PARAGRAPH_PATH_TOKEN_RE = new RegExp(
+  `(?:[A-Za-z]:[\\\\/]|\\.{1,2}\\/|\\/)?(?:${PARAGRAPH_PATH_SEGMENT}\\/)+${PARAGRAPH_PATH_SEGMENT}\\.[A-Za-z0-9]{1,8}(?::\\d+(?:-\\d+)?(?::\\d+)?)?`,
+  'g',
+);

@@ -6199,12 +6199,12 @@ const ChatInputRuntime: React.FC<ChatInputProps> = ({ onOpenSettings, scrollToBo
                         >
                             <span
                                 className={cn(
-                                    'truncate typography-ui-label',
+                                    'truncate whitespace-nowrap typography-ui-label',
                                     message.trim() ? 'text-foreground' : 'text-muted-foreground',
                                 )}
                             >
                                 {message.trim()
-                                    ? message
+                                    ? (composerHighlightedContent ?? message.replace(/\s+/g, ' '))
                                     : currentSessionId || newSessionDraftOpen
                                         ? t('chat.chatInput.placeholder.chatCompact')
                                         : t('chat.chatInput.placeholder.selectSession')}

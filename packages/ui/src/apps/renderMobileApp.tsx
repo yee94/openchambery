@@ -20,6 +20,7 @@ import { preloadMarkdownRenderer } from '@/components/chat/markdownRendererLoade
 import { SessionAuthGate } from '@/components/auth/SessionAuthGate';
 import { QueryRuntimeProvider } from '@/lib/QueryRuntimeProvider';
 import { MobileApp } from './MobileApp';
+import { useUIStore } from '@/stores/useUIStore';
 
 const initializeSharedPreferences = () => {
   initializeLocale();
@@ -47,6 +48,10 @@ const initializeSharedPreferences = () => {
 export function renderMobileApp(apis: RuntimeAPIs) {
   preloadMarkdownRenderer();
   initializeSharedPreferences();
+
+  // Set isMobile synchronously before any component renders — MobileApp's useEffect
+  // is too late for children that read isMobile on first render.
+  useUIStore.getState().setIsMobile(true);
 
   // Expose the widget snapshot builder so the native shell can read the session overview
   // (attention count + recent sessions) and feed the home/lock-screen/Control Center widgets.

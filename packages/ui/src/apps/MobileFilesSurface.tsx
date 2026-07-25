@@ -27,6 +27,7 @@ import { getRuntimeApiBaseUrl } from '@/lib/runtime-switch';
 import { useFileContentQuery, useFileDirectoryQuery, useFileSearchQuery } from '@/queries/fileQueries';
 import { cn } from '@/lib/utils';
 import { useMobileBackRoute } from '@/mobile/mobileBackNavigation';
+import { useUIStore } from '@/stores/useUIStore';
 
 type MobileFilesRoute =
   | { type: 'browser'; directory: string }
@@ -92,6 +93,8 @@ export const MobileFilesSurface: React.FC<MobileFilesSurfaceProps> = ({ onClose 
   const [route, setRoute] = React.useState<MobileFilesRoute>(() => ({ type: 'browser', directory: root }));
   const mobileNavigationSurfaceRef = React.useRef<HTMLDivElement | null>(null);
   const [query, setQuery] = React.useState('');
+  const pendingFileFocusPath = useUIStore((state) => state.pendingFileFocusPath);
+  const setPendingFileFocusPath = useUIStore((state) => state.setPendingFileFocusPath);
 
   React.useEffect(() => {
     if (!root) return;
@@ -100,6 +103,27 @@ export const MobileFilesSurface: React.FC<MobileFilesSurfaceProps> = ({ onClose 
       return { type: 'browser', directory: root };
     });
   }, [root]);
+
+  // Respond to uiStore.openContextFile(...) issued outside this surface (for
+  // example from a file-reference link inside a chat markdown message). The
+  // pending focus path carries the absolute file path; route the surface
+  // directly into the file detail view and clear the pending entry so the
+  // same navigation is not re-applied on remount.
+  React.useEffect(() => {
+    if (!pendingFileFocusPath || !root) {
+      return;
+    }
+
+    const targetPath = normalizePath(pendingFileFocusPath);
+    if (!targetPath) {
+      setPendingFileFocusPath(null);
+      return;
+    }
+
+    setQuery('');
+    setRoute({ type: 'file', path: targetPath, returnDirectory: getParentDirectory(targetPath) ?? root });
+    setPendingFileFocusPath(null);
+  }, [pendingFileFocusPath, root, setPendingFileFocusPath]);
 
   const currentDirectory = route.type === 'browser' ? route.directory : route.returnDirectory;
   const browserDirectory = route.type === 'browser' ? route.directory : '';

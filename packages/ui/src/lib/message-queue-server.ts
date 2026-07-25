@@ -1,5 +1,6 @@
 import { subscribeOpenchamberEvents } from '@/lib/openchamberEvents';
 import { runtimeFetch } from '@/lib/runtime-fetch';
+import { getRuntimeUrlResolver } from '@/lib/runtime-url';
 
 export type MessageQueueComposerReference = Record<string, unknown>;
 export type MessageQueueComposerDocument = { text: string; references: MessageQueueComposerReference[] };
@@ -318,7 +319,7 @@ export const fetchMessageQueueSnapshot = async (signal?: AbortSignal): Promise<M
 /** Concurrent identical scope page GETs (startup observer + cutover) share one in-flight request. */
 const messageQueueScopeFlights = new Map<string, Promise<MessageQueueScope>>();
 const messageQueueScopeFlightKey = (scopeID: string, options: { offset?: number; limit?: number; expectedRevision?: number }) =>
-  `${scopeID}\u0000${options.offset ?? ''}\u0000${options.limit ?? ''}\u0000${options.expectedRevision ?? ''}`;
+  `${getRuntimeUrlResolver().api(ROUTE)}\u0000${scopeID}\u0000${options.offset ?? ''}\u0000${options.limit ?? ''}\u0000${options.expectedRevision ?? ''}`;
 
 export const fetchMessageQueueScope = async (scopeID: string, options: { offset?: number; limit?: number; expectedRevision?: number; signal?: AbortSignal } = {}): Promise<MessageQueueScope> => {
   if (options.signal?.aborted) throw new MessageQueueServerError(0, 'unavailable');

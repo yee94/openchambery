@@ -149,7 +149,7 @@ describe('Gate 2 UI production cutover E2E', () => {
       fail = false; await ui.refresh();
       expect(ui.getScope({ transportIdentity: 'device-a', directory: '/repo', sessionID: 'session' })?.items).toHaveLength(0);
       expect(readMessageQueueScope(client, descriptor.scopeID, f.service.getScope(descriptor.scopeID).revision, 'device-a')?.items).toHaveLength(0);
-    } finally { ui.stop(); await f.close(); }
+    } finally { ui.stop(); await wait(); await f.close(); }
   }, 15_000);
 
   it('两个真实 surface 经 tip/snapshot 收敛，并以 CAS 刷新重试 edit、reorder、remove、manual send', async () => {
@@ -168,23 +168,24 @@ describe('Gate 2 UI production cutover E2E', () => {
       f.service.setAuthority({ authority: 'active', expectedGeneration: 0 }); await a.refresh(); scope = a.getScope({ transportIdentity: 'device-a', directory: '/repo', sessionID: 'session' })!;
       await a.manualSend({ requestID: 'ui-send', scopeID: scope.scopeID, revision: scope.revision, item: scope.items[0]! });
       await eventually(() => expect(b.getScope({ transportIdentity: 'device-b', directory: '/repo', sessionID: 'session' })?.items).toHaveLength(1));
-    } finally { a.stop(); b.stop(); await f.close(); }
+    } finally { a.stop(); b.stop(); await wait(); await f.close(); }
   }, 15_000);
 
   it('paused authority 经真实 HTTP promotion tail，resume 后由 worker 先发送 promoted tail', async () => {
     const sent: string[] = []; const f = await fixture({ send: async (context) => { sent.push(context.queueItemID); return { ok: true }; } }); const client = new QueryClient(); const ui = surface(client, 'device-a');
     try {
-      const head = f.service.admit(admission('paused-head')), tail = f.service.admit(admission('paused-tail'));
+      const head = f.service.admit(admission('paused-head', '/repo', 'paused-session')), tail = f.service.admit(admission('paused-tail', '/repo', 'paused-session'));
       const active = f.service.setAuthority({ authority: 'active', expectedGeneration: 0 });
       await ui.refresh(); await ui.pause!(active.generation);
-      const scope = ui.getScope({ transportIdentity: 'device-a', directory: '/repo', sessionID: 'session' })!;
+      const scope = ui.getScope({ transportIdentity: 'device-a', directory: '/repo', sessionID: 'paused-session' })!;
       const tailItem = scope.items.find((entry: any) => entry.queueItemID === tail.queueItemID)!;
-      await expect(ui.manualSend({ requestID: 'paused-send-tail', scopeID: scope.scopeID, revision: scope.revision, item: tailItem })).resolves.toMatchObject({ status: 'committed' });
-      expect(ui.getScope({ transportIdentity: 'device-a', directory: '/repo', sessionID: 'session' })?.items.map((entry: any) => entry.queueItemID)).toEqual([tail.queueItemID, head.queueItemID]);
+      const promoted = await ui.manualSend({ requestID: 'paused-send-tail', scopeID: scope.scopeID, revision: scope.revision, item: tailItem });
+      expect(promoted).toMatchObject({ status: 'committed' });
+      expect(f.service.getScope(scope.scopeID).items.map((entry: any) => entry.queueItemID)).toEqual([tail.queueItemID, head.queueItemID]);
       expect(f.runtime.worker.status().paused).toBe(true); expect(sent).toEqual([]);
       await ui.resume!(active.generation + 1);
       await eventually(() => expect(sent[0]).toBe(tail.queueItemID));
-    } finally { ui.stop(); await f.close(); }
+    } finally { ui.stop(); await wait(); await f.close(); }
   }, 15_000);
 
   it('上传期间 runtime 切换返回 stale，admission consumption 保留捕获外新增资源', async () => {

@@ -70,6 +70,12 @@ import { Icon } from '@/components/icon/Icon';
 
 Use `IconName` for icon values stored in arrays, objects, state, or config. `Icon` has no `size` prop. Run `bun run icons:generate` when introducing a sprite name, and never edit `sprite.ts` manually. Load `references/icons.md` for the complete workflow.
 
+## Mobile / touch sizing trap
+
+`useUIStore.isMobile` (React layout) is **not** the same as `html.mobile-pointer` (global CSS). Under `mobile-pointer`, `packages/ui/src/styles/mobile.css` forces generic `button` / `[role="button"]` to **min 36×36**. Compact Tailwind sizes (`h-6`, `w-3`, …) are overridden unless the surface has an opt-out next to the existing exceptions (`.oc-tool-row`, `.composer-mobile-actions`, `[data-message-action-group]`, `.oc-composer-queue`).
+
+DevTools inspect open/close can flip `(pointer: coarse)` / `(hover: none)` and toggle `mobile-pointer` while `isMobile` stays true — that is why spacing can look normal only while inspecting. Full contract: `packages/ui/src/styles/DOCUMENTATION.md`.
+
 ## Verification
 
 - No hardcoded/palette colors were introduced.
@@ -77,4 +83,5 @@ Use `IconName` for icon values stored in arrays, objects, state, or config. `Ico
 - Icons use `Icon`/`IconName`, and generated sprite changes are intentional.
 - Hover, selection, primary, and status semantics are distinct.
 - Light/dark/high-contrast and long-text states remain legible.
+- Dense mobile controls either accept the 36px touch min or opt out under `mobile-pointer` (do not rely on Tailwind height alone).
 - Relevant visual/runtime validation and generated-asset checks ran.

@@ -441,6 +441,10 @@ export const listConfiguredQuotaProviders = () => {
     configured.add('wafer');
   }
 
+  if (isXaiConfigured()) {
+    configured.add('xai');
+  }
+
   return Array.from(configured);
 };
 
@@ -1758,6 +1762,295 @@ const fetchNanoGptQuota = async (): Promise<ProviderResult> => {
 const WAFER_QUOTA_URL = 'https://pass.wafer.ai/v1/inference/quota';
 const WAFER_WINDOW_SECONDS = 5 * 3600;
 
+const DEFAULT_GROK_CLI_PROXY_ORIGIN = 'https://cli-chat-proxy.grok.com';
+const DEFAULT_GROK_CLIENT_VERSION = '1.0.0';
+
+type GrokBuildAuth = {
+  key: string;
+  userId: string;
+  teamId: string | null;
+  email: string | null;
+  expiresAt: string | null;
+  createTime: string | null;
+  entryKey: string;
+  authPath: string;
+};
+
+const firstNonEmptyString = (...values: unknown[]): string | null => {
+  for (const value of values) {
+    if (typeof value === 'string' && value.trim()) return value.trim();
+  }
+  return null;
+};
+
+const resolveGrokAuthPath = (): string => {
+  return (
+    firstNonEmptyString(
+      process.env.OPENCHAMBER_GROK_AUTH_PATH,
+      process.env.GROK_AUTH_PATH
+    ) ||
+    path.join(
+      firstNonEmptyString(process.env.GROK_HOME) || path.join(os.homedir(), '.grok'),
+      'auth.json'
+    )
+  );
+};
+
+const isGrokAuthExpired = (expiresAt: string | null, now = Date.now()): boolean => {
+  if (!expiresAt) return false;
+  const ts = Date.parse(expiresAt);
+  if (!Number.isFinite(ts)) return false;
+  return ts <= now;
+};
+
+const parseGrokCents = (value: unknown): number | null => {
+  if (typeof value === 'number' && Number.isFinite(value)) return Math.trunc(value);
+  if (typeof value === 'string' && value.trim()) {
+    const parsed = Number(value.trim());
+    return Number.isFinite(parsed) ? Math.trunc(parsed) : null;
+  }
+  if (value && typeof value === 'object' && 'val' in value) {
+    return parseGrokCents((value as { val?: unknown }).val);
+  }
+  if (value && typeof value === 'object' && Object.keys(value as object).length === 0) {
+    return 0;
+  }
+  return null;
+};
+
+const readGrokBuildAuth = (authPath = resolveGrokAuthPath()): GrokBuildAuth | null => {
+  let raw: unknown;
+  try {
+    raw = JSON.parse(fs.readFileSync(authPath, 'utf8'));
+  } catch {
+    return null;
+  }
+  if (!raw || typeof raw !== 'object' || Array.isArray(raw)) return null;
+
+  type AuthCandidate = {
+    entryKey: string;
+    key: string;
+    userId: string;
+    teamId: string | null;
+    email: string | null;
+    expiresAt: string | null;
+    createTime: string | null;
+  };
+
+  const entries: AuthCandidate[] = [];
+  for (const [entryKey, value] of Object.entries(raw as Record<string, unknown>)) {
+    if (!value || typeof value !== 'object' || Array.isArray(value)) continue;
+    const record = value as Record<string, unknown>;
+    const key = firstNonEmptyString(record.key, record.access_token, record.accessToken);
+    const userId = firstNonEmptyString(
+      record.user_id,
+      record.userId,
+      record.principal_id,
+      record.principalId
+    );
+    if (!key || !userId) continue;
+    entries.push({
+      entryKey,
+      key,
+      userId,
+      teamId: firstNonEmptyString(record.team_id, record.teamId),
+      email: firstNonEmptyString(record.email),
+      expiresAt: firstNonEmptyString(record.expires_at, record.expiresAt),
+      createTime: firstNonEmptyString(record.create_time, record.createTime),
+    });
+  }
+
+  if (entries.length === 0) return null;
+
+  const now = Date.now();
+  entries.sort((a, b) => {
+    const aExpired = isGrokAuthExpired(a.expiresAt, now);
+    const bExpired = isGrokAuthExpired(b.expiresAt, now);
+    if (aExpired !== bExpired) return aExpired ? 1 : -1;
+    const ta = Date.parse(a.expiresAt || a.createTime || '') || 0;
+    const tb = Date.parse(b.expiresAt || b.createTime || '') || 0;
+    return tb - ta;
+  });
+
+  const chosen = entries[0];
+  return {
+    ...chosen,
+    authPath,
+  };
+};
+
+const isXaiConfigured = (): boolean => {
+  const auth = readGrokBuildAuth();
+  return Boolean(auth?.key && auth?.userId);
+};
+
+const buildXaiUsageWindows = (body: unknown): Record<string, UsageWindow> | null => {
+  const root = body && typeof body === 'object' ? (body as Record<string, unknown>) : null;
+  if (!root) return null;
+  const config =
+    root.config && typeof root.config === 'object'
+      ? (root.config as Record<string, unknown>)
+      : root;
+
+  const creditUsagePercent = toNumber(
+    config.creditUsagePercent ?? config.credit_usage_percent
+  );
+  const prepaidCents = parseGrokCents(config.prepaidBalance ?? config.prepaid_balance);
+  const monthlyLimitCents = parseGrokCents(config.monthlyLimit ?? config.monthly_limit);
+  const usedCents = parseGrokCents(config.used);
+
+  const currentPeriod =
+    config.currentPeriod && typeof config.currentPeriod === 'object'
+      ? (config.currentPeriod as Record<string, unknown>)
+      : config.current_period && typeof config.current_period === 'object'
+        ? (config.current_period as Record<string, unknown>)
+        : null;
+
+  const periodStart = firstNonEmptyString(
+    currentPeriod?.start,
+    config.billingPeriodStart,
+    config.billing_period_start
+  );
+  const periodEnd = firstNonEmptyString(
+    currentPeriod?.end,
+    config.billingPeriodEnd,
+    config.billing_period_end
+  );
+  const periodType = firstNonEmptyString(
+    currentPeriod?.type,
+    currentPeriod?.period_type
+  );
+
+  let usedPercent: number | null = null;
+  if (creditUsagePercent != null) {
+    usedPercent = Math.max(0, Math.min(100, creditUsagePercent));
+  } else if (monthlyLimitCents != null && monthlyLimitCents > 0 && usedCents != null) {
+    usedPercent = Math.max(0, Math.min(100, (Math.max(0, usedCents) / monthlyLimitCents) * 100));
+  } else if (prepaidCents != null && prepaidCents > 0) {
+    usedPercent = null;
+  } else {
+    return null;
+  }
+
+  const startTs = toTimestamp(periodStart);
+  const endTs = toTimestamp(periodEnd);
+  const windowSeconds =
+    startTs != null && endTs != null
+      ? Math.max(0, Math.round((endTs - startTs) / 1000))
+      : null;
+
+  let windowKey: string;
+  if (windowSeconds != null && windowSeconds > 0) {
+    windowKey = resolveWindowLabel(windowSeconds);
+  } else if (periodType) {
+    const normalized = periodType.toLowerCase();
+    if (normalized.includes('week')) windowKey = 'weekly';
+    else if (normalized.includes('month')) windowKey = 'monthly';
+    else if (normalized.includes('day')) windowKey = 'daily';
+    else windowKey = periodType;
+  } else {
+    windowKey = 'credits';
+  }
+
+  const prepaidUsd = prepaidCents == null ? null : Math.max(0, prepaidCents) / 100;
+  const valueLabel = usedPercent == null && prepaidUsd != null
+    ? `$${formatMoney(prepaidUsd)} prepaid`
+    : null;
+
+  return {
+    [windowKey]: toUsageWindow({
+      usedPercent,
+      windowSeconds: windowSeconds && windowSeconds > 0 ? windowSeconds : null,
+      resetAt: endTs,
+      valueLabel,
+    }),
+  };
+};
+
+const fetchXaiQuota = async (): Promise<ProviderResult> => {
+  const grokAuth = readGrokBuildAuth();
+  if (!grokAuth?.key || !grokAuth?.userId) {
+    return buildResult({
+      providerId: 'xai',
+      providerName: 'Grok',
+      ok: false,
+      configured: false,
+      error: 'Not configured — run `grok login` (Grok Build CLI)',
+    });
+  }
+
+  const origin =
+    firstNonEmptyString(process.env.OPENCHAMBER_GROK_CLI_PROXY_ORIGIN) ||
+    DEFAULT_GROK_CLI_PROXY_ORIGIN;
+  const creditsUrl = `${origin}/v1/billing?format=credits`;
+
+  try {
+    const response = await fetch(creditsUrl, {
+      method: 'GET',
+      headers: {
+        Authorization: `Bearer ${grokAuth.key}`,
+        'x-xai-token-auth': 'xai-grok-cli',
+        accept: 'application/json',
+        'user-agent': 'OpenChamber/xai-quota',
+        'x-userid': String(grokAuth.userId),
+        'x-grok-client-version':
+          firstNonEmptyString(process.env.OPENCHAMBER_GROK_CLIENT_VERSION) ||
+          DEFAULT_GROK_CLIENT_VERSION,
+      },
+      signal: AbortSignal.timeout(15_000),
+    });
+
+    if (response.status === 401 || response.status === 403) {
+      return buildResult({
+        providerId: 'xai',
+        providerName: 'Grok',
+        ok: false,
+        configured: true,
+        error:
+          'Grok access token was rejected — start Grok once to refresh access, then retry',
+      });
+    }
+
+    if (!response.ok) {
+      return buildResult({
+        providerId: 'xai',
+        providerName: 'Grok',
+        ok: false,
+        configured: true,
+        error: `API error: ${response.status}`,
+      });
+    }
+
+    const body = await response.json();
+    const windows = buildXaiUsageWindows(body);
+    if (!windows || Object.keys(windows).length === 0) {
+      return buildResult({
+        providerId: 'xai',
+        providerName: 'Grok',
+        ok: false,
+        configured: true,
+        error: 'No quota data in response',
+      });
+    }
+
+    return buildResult({
+      providerId: 'xai',
+      providerName: 'Grok',
+      ok: true,
+      configured: true,
+      usage: { windows },
+    });
+  } catch (error) {
+    return buildResult({
+      providerId: 'xai',
+      providerName: 'Grok',
+      ok: false,
+      configured: true,
+      error: error instanceof Error ? error.message : 'Request failed',
+    });
+  }
+};
+
 const fetchWaferQuota = async (): Promise<ProviderResult> => {
   const auth = readAuthFile();
   const entry = normalizeAuthEntry(getAuthEntry(auth, ['wafer', 'wafer-ai', 'wafer_ai', 'wafer.ai'])) as Record<string, unknown> | null;
@@ -1895,6 +2188,8 @@ export const fetchQuotaForProvider = async (providerId: string): Promise<Provide
       return fetchZhipuaiCodingPlanQuota();
     case 'wafer':
       return fetchWaferQuota();
+    case 'xai':
+      return fetchXaiQuota();
     case 'opencode-go': {
       const credential = readCredential('opencode-go') as { workspaceId: string; authCookie: string } | null;
       if (!credential) return buildResult({ providerId, providerName: 'OpenCode Go', ok: false, configured: false, error: 'Not configured' });

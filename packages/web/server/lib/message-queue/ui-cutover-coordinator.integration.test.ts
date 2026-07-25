@@ -6,7 +6,7 @@ import path from 'node:path';
 import express from 'express';
 import { afterEach, describe, expect, it, vi } from 'vitest';
 import { createRuntimeUrlResolver, getRuntimeUrlResolver, setRuntimeUrlResolver } from '../../../../ui/src/lib/runtime-url';
-import { MessageQueueServerError, activateMessageQueueImport, commitLateMessageQueueImport, createMessageQueueImport, sealMessageQueueImport, stageMessageQueueImport } from '../../../../ui/src/lib/message-queue-server';
+import { MessageQueueServerError, activateMessageQueueImport, commitLateMessageQueueImport, createMessageQueueImport, fetchMessageQueueServerStatus, sealMessageQueueImport, stageMessageQueueImport } from '../../../../ui/src/lib/message-queue-server';
 import { createMessageQueueCutover } from '../../../../ui/src/sync/message-queue-cutover';
 import { createMessageQueueRuntime as createLocalRuntime } from '../../../../ui/src/sync/message-queue-runtime';
 import { createMessageQueueRuntimeController } from '../../../../ui/src/sync/message-queue-runtime-controller';
@@ -93,7 +93,7 @@ describe('UI cutover coordinator integration', () => {
 
   it('两个真实 coordinator 并发刷新时保留两份本地行，并将竞争方改为 late import', async () => {
     const f = await fixture(async () => ({ ok: false, code: 'retry' })); const first = local('/repo', 'device-a', 'first'), second = local('/repo', 'device-b', 'second');
-    const coordinator = (queue: ReturnType<typeof local>['runtime'], transportIdentity: string) => createMessageQueueCutover({ queue, server: { refresh: async () => {} } as never, capture: () => ({ transportIdentity, generation: 1 }), current: () => true, quiesce: async () => {}, flush: async () => {}, prepare: () => ({ ok: true, unresolvedSessionIDs: [] }), resolveDirectory: () => '/repo' });
+    const coordinator = (queue: ReturnType<typeof local>['runtime'], transportIdentity: string) => createMessageQueueCutover({ queue, server: { refresh: async () => {} } as never, status: fetchMessageQueueServerStatus, capture: () => ({ transportIdentity, generation: 1 }), current: () => true, quiesce: async () => {}, flush: async () => {}, prepare: () => ({ ok: true, unresolvedSessionIDs: [] }), resolveDirectory: () => '/repo' });
     const a = coordinator(first.runtime, 'device-a'), b = coordinator(second.runtime, 'device-b');
     try {
       await Promise.all([a.refresh(), b.refresh()]);

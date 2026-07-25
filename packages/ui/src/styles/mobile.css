@@ -1439,7 +1439,10 @@ button.oc-mobile-group-label-trigger:focus-visible {
     font-size: var(--text-code) !important;
   }
 
-  /* Improve touch targets for mobile */
+  /* Improve touch targets for mobile.
+     Gate: html.mobile-pointer from device.ts (pointer:coarse / hover:none /
+     maxTouchPoints) — independent of React isMobile. Dense clusters must opt
+     out below; see packages/ui/src/styles/DOCUMENTATION.md. */
   :root.mobile-pointer:not(.desktop-runtime)
     button:not([role="radio"]):not([role="checkbox"]):not([role="switch"]),
   :root.mobile-pointer:not(.desktop-runtime) .btn,
@@ -1476,6 +1479,19 @@ button.oc-mobile-group-label-trigger:focus-visible {
     button,
   :root.mobile-pointer:not(.desktop-runtime)
     [data-message-action-group="true"]
+    [role="button"] {
+    min-height: 0 !important;
+    min-width: 0 !important;
+  }
+
+  /* Composer queue chips intentionally use compact icon-sized controls.
+     The generic 36px touch-target rule would stretch drag/delete/edit/send
+     and make left-cluster gaps look huge under mobile-pointer. */
+  :root.mobile-pointer:not(.desktop-runtime)
+    .oc-composer-queue
+    button,
+  :root.mobile-pointer:not(.desktop-runtime)
+    .oc-composer-queue
     [role="button"] {
     min-height: 0 !important;
     min-width: 0 !important;

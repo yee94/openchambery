@@ -147,6 +147,14 @@ export const resolveMessageListKeys = (sessionKey: string, virtualizerKey?: stri
     virtualizerKey: virtualizerKey ?? sessionKey,
 });
 
+// eslint-disable-next-line react-refresh/only-export-components
+export const syncCurrentHistoryVirtualization = (
+    state: { current: boolean },
+    historyVirtualized: boolean,
+): void => {
+    state.current = historyVirtualized;
+};
+
 const readTanstackTimelineCache = (sessionKey: string, keys: readonly string[]): VirtualItem[] | undefined => {
     return tanstackTimelineCache.read(sessionKey, keys);
 };
@@ -1585,6 +1593,8 @@ const MessageList = React.forwardRef<MessageListHandle, MessageListProps>(({
     // note at the top of the file). An unvirtualized list is kept only for
     // tiny histories where windowing overhead is not worth it.
     const shouldVirtualizeHistory = historyEntries.length >= MESSAGE_LIST_VIRTUALIZE_THRESHOLD;
+    const currentHistoryVirtualizationRef = React.useRef(shouldVirtualizeHistory);
+    syncCurrentHistoryVirtualization(currentHistoryVirtualizationRef, shouldVirtualizeHistory);
     const historyEngine: HistoryEngine = shouldVirtualizeHistory ? 'tanstack' : 'none';
     const tanstackVirtualizerRef = React.useRef<TanstackVirtualizerInstance | null>(null);
     const registerTanstackVirtualizer = React.useCallback((virtualizer: TanstackVirtualizerInstance | null) => {
@@ -1808,7 +1818,7 @@ const MessageList = React.forwardRef<MessageListHandle, MessageListProps>(({
                 window.requestAnimationFrame(step);
             },
 
-            isHistoryVirtualized: () => shouldVirtualizeHistory,
+            isHistoryVirtualized: () => currentHistoryVirtualizationRef.current,
 
             captureViewportAnchor: () => {
                 const container = resolveScrollContainer();

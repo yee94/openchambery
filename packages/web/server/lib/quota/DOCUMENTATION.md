@@ -32,6 +32,7 @@ These provider IDs are currently dispatchable via `fetchQuotaForProvider(provide
 | `ollama-cloud` | Ollama Cloud | `providers/ollama-cloud.js` | Manual cookie stored under `~/.config/openchamber/quota/` |
 | `wafer` | Wafer.ai | `providers/wafer.js` | `wafer`, `wafer-ai`, `wafer_ai`, `wafer.ai` |
 | `opencode-go` | OpenCode Go | `providers/opencode-go.js` | Manual workspace ID and auth cookie stored under `~/.config/openchamber/quota/` |
+| `xai` | Grok | `providers/xai.js` | Grok Build CLI login state (`~/.grok/auth.json`; override via `GROK_HOME`, `GROK_AUTH_PATH`, or `OPENCHAMBER_GROK_AUTH_PATH`) |
 
 ## Internal-only provider module
 - `providers/openai.js` exists for logic parity/reuse but is intentionally not registered for dispatcher ID routing.

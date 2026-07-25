@@ -123,8 +123,8 @@ const QueuedMessageChip = memo(({ message, server, frozen, hasDispatchLock, pend
             aria-busy={removePending || undefined}
             className={cn(
                 'inline-flex shrink-0 items-center justify-center bg-transparent text-muted-foreground transition-colors hover:text-foreground disabled:pointer-events-none disabled:opacity-50',
-                // Mobile: match the drag handle width so the left cluster stays compact.
-                isMobile ? 'h-[1.625rem] w-3.5 min-h-[1.625rem] min-w-3.5' : 'size-7',
+                // Mobile: compact hit target; slightly taller than pure icon size.
+                isMobile ? 'h-7 w-3' : 'size-7',
             )}
             aria-label={t('chat.queuedMessage.removeAria')}
         >
@@ -140,8 +140,8 @@ const QueuedMessageChip = memo(({ message, server, frozen, hasDispatchLock, pend
             className={cn(
                 'flex min-w-0 items-center',
                 isMobile
-                    // Tight left controls; keep a hairline gap so icons don't touch.
-                    ? 'gap-0.5 py-0'
+                    // Uniform gap; light vertical padding for a slightly taller row.
+                    ? 'gap-1 py-0.5'
                     : 'flex gap-1.5 md:gap-2',
                 isDragging && 'z-10 opacity-60',
             )}
@@ -154,7 +154,7 @@ const QueuedMessageChip = memo(({ message, server, frozen, hasDispatchLock, pend
                 aria-busy={reorderPending || undefined}
                 className={cn(
                     'flex flex-shrink-0 touch-none select-none items-center justify-center text-muted-foreground',
-                    isMobile ? 'h-[1.625rem] w-3.5 min-h-[1.625rem] min-w-3.5' : 'size-auto',
+                    isMobile ? 'h-7 w-3' : 'size-auto',
                     'transition-colors',
                     isDragDisabled ? 'cursor-default opacity-50' : 'cursor-grab hover:text-foreground active:cursor-grabbing',
                 )}
@@ -165,7 +165,7 @@ const QueuedMessageChip = memo(({ message, server, frozen, hasDispatchLock, pend
             {isMobile ? removeAction : null}
             <span className={cn(
                 'min-w-0 flex-1 truncate text-foreground',
-                isMobile ? 'text-xs leading-4' : 'typography-ui-label leading-5',
+                isMobile ? 'text-xs leading-5' : 'typography-ui-label leading-5',
             )}>
                 {firstLine || t('chat.queuedMessage.empty')}
                 {attachmentCount > 0 && (
@@ -181,7 +181,7 @@ const QueuedMessageChip = memo(({ message, server, frozen, hasDispatchLock, pend
                     aria-label={t('chat.queuedMessage.edit')}
                     className={cn(
                         'inline-flex items-center bg-transparent text-muted-foreground transition-colors hover:text-foreground disabled:pointer-events-none disabled:opacity-50',
-                        isMobile ? 'h-[1.625rem] gap-1.5 px-0 text-[11px]' : 'h-7 gap-1 px-0.5',
+                        isMobile ? 'h-7 gap-1.5 px-0 text-[11px]' : 'h-7 gap-1 px-0.5',
                     )}
                 >
                     <Icon
@@ -201,7 +201,7 @@ const QueuedMessageChip = memo(({ message, server, frozen, hasDispatchLock, pend
                     aria-label={t('chat.queuedMessage.send')}
                     className={cn(
                         'inline-flex items-center bg-transparent text-muted-foreground transition-colors hover:text-foreground disabled:pointer-events-none disabled:opacity-50',
-                        isMobile ? 'h-[1.625rem] gap-1.5 px-0 text-[11px]' : 'h-7 gap-1 px-0.5',
+                        isMobile ? 'h-7 gap-1.5 px-0 text-[11px]' : 'h-7 gap-1 px-0.5',
                     )}
                 >
                     <Icon
@@ -518,7 +518,8 @@ export const QueuedMessageChips = memo(({ onEditMessage, onSendMessage, draftKey
                         <div className={cn(
                             'flex flex-col',
                             isMobile
-                                ? 'px-2 py-1'
+                                // Match composer footer left inset.
+                                ? 'px-1.5 py-1'
                                 : 'gap-0.5 px-3 pb-1 pt-1.5',
                         )}>
                             {queuedMessages.map((message) => (

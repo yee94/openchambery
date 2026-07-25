@@ -2,6 +2,7 @@ import { describe, expect, test } from 'bun:test';
 
 import {
     isOlderHistoryPrependCommit,
+    resolveHistoryPrependCompensation,
 } from './useChatTimelineController';
 
 describe('isOlderHistoryPrependCommit', () => {
@@ -27,5 +28,19 @@ describe('isOlderHistoryPrependCommit', () => {
             currentOldestId: 'msg_1',
             currentNewestId: 'msg_5',
         })).toBe(false);
+    });
+});
+
+describe('resolveHistoryPrependCompensation', () => {
+    test('assigns virtualized prepend compensation exclusively to TanStack core', () => {
+        expect(resolveHistoryPrependCompensation(true)).toEqual({
+            owner: 'tanstack-core',
+        });
+    });
+
+    test('keeps manual delta and anchor restoration with the non-virtualized controller', () => {
+        expect(resolveHistoryPrependCompensation(false)).toEqual({
+            owner: 'controller',
+        });
     });
 });

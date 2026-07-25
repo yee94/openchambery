@@ -16,7 +16,6 @@ import { useEffectiveDirectory } from '@/hooks/useEffectiveDirectory';
 import { useRuntimeAPIs } from '@/hooks/useRuntimeAPIs';
 import type { EditorAPI } from '@/lib/api/types';
 import { isDesktopLocalOriginActive, isDesktopShell, isVSCodeRuntime } from '@/lib/desktop';
-import { isMobileSurfaceRuntime } from '@/lib/runtimeSurface';
 import { ensureOutsideFileGrantForDesktop } from '@/lib/outsideFileGrants';
 import { getDirectoryForFilePath, isFilePathWithinDirectory, toAbsoluteFilePath } from '@/lib/path-utils';
 import { renderMarkdownBlocks, renderMarkdownSync } from './markdown/markdownCore';
@@ -38,6 +37,7 @@ import { scheduleAfterPaintTask } from '@/lib/afterPaintTaskQueue';
 import { DualLimitLru } from '@/lib/dualLimitLru';
 import {
   BLOCK_PATH_TOKEN_RE,
+  PARAGRAPH_PATH_TOKEN_RE,
   isAbsoluteReferencePath,
   isLikelyFileReferencePath,
   normalizeReferencePath,
@@ -148,6 +148,7 @@ const FILE_LINK_SELECTOR = '[data-openchamber-file-link="true"]';
 const BLOCK_PATH_TOKEN_ATTR = 'data-openchamber-block-path-token';
 const BLOCK_PATH_TOKEN_SELECTOR = `[${BLOCK_PATH_TOKEN_ATTR}]`;
 const CODE_BLOCK_PATH_SCANNED_ATTR = 'data-openchamber-block-paths-scanned';
+const PARAGRAPH_BLOCK_PATH_SCANNED_ATTR = 'data-openchamber-paragraph-paths-scanned';
 // Matches `path[:line[:col]]` or `path:start-end` inside shell/grep-style
 // output. The regex is defined in `./fileReferenceParser`; the inline-code
 // pipeline reads full text content rather than using this regex.
@@ -219,6 +220,12 @@ const unwrapBlockCodePathTokens = (container: HTMLElement): void => {
   for (const codeBlock of Array.from(scannedBlocks)) {
     codeBlock.removeAttribute(CODE_BLOCK_PATH_SCANNED_ATTR);
     codeBlock.normalize();
+  }
+
+  const scannedParagraphs = container.querySelectorAll<HTMLElement>(`[${PARAGRAPH_BLOCK_PATH_SCANNED_ATTR}]`);
+  for (const paragraph of Array.from(scannedParagraphs)) {
+    paragraph.removeAttribute(PARAGRAPH_BLOCK_PATH_SCANNED_ATTR);
+    paragraph.normalize();
   }
 };
 
@@ -311,6 +318,133 @@ const wrapBlockCodePathTokens = (container: HTMLElement): void => {
     }
 
     codeBlock.setAttribute(CODE_BLOCK_PATH_SCANNED_ATTR, 'true');
+  }
+};
+
+const PARAGRAPH_SCAN_EXCLUDE_SELECTOR = 'pre, code, a, script, style, button, [data-openchamber-file-link], [data-openchamber-block-path-token]';
+
+// Walks ordinary paragraph / heading / list-item / blockquote / table-cell
+// subtrees and wraps any substring that looks like a `path[:line[:col]]`
+// reference in a span carrying `data-openchamber-block-path-token`. This
+// covers the common case where the assistant emits a bare path as regular
+// prose (no backticks, no markdown link), e.g.
+// `完整规格已更新至：domains/venture/.../最终方案.md`.
+//
+// The pass is intentionally conservative:
+// - Skips any text node inside an excluded subtree (code, existing links,
+//   previously-annotated tokens).
+// - Only matches tokens that contain a `/` separator and an extension-bearing
+//   final segment (see PARAGRAPH_PATH_TOKEN_RE).
+// - Each candidate is then filtered through `isLikelyFilePath` and, later,
+//   `fileReferenceExists` — so a false positive never becomes a clickable
+//   link, it just produces a bounded stat probe.
+//
+// Idempotent per element: each block-level container is marked with
+// `data-openchamber-paragraph-paths-scanned` once processed. The mutation
+// observer clears the marker via `unwrapBlockCodePathTokens` (which also
+// unwraps paragraph tokens, since they share the same attribute).
+const wrapParagraphPathTokens = (container: HTMLElement): void => {
+  const doc = container.ownerDocument;
+  if (!doc) {
+    return;
+  }
+
+  const blockContainers = container.querySelectorAll<HTMLElement>(
+    'p, li, blockquote, h1, h2, h3, h4, h5, h6, td, th',
+  );
+  if (blockContainers.length === 0) {
+    return;
+  }
+
+  for (const block of Array.from(blockContainers)) {
+    if (block.getAttribute(PARAGRAPH_BLOCK_PATH_SCANNED_ATTR) === 'true') {
+      continue;
+    }
+    if (block.closest(PARAGRAPH_SCAN_EXCLUDE_SELECTOR)) {
+      block.setAttribute(PARAGRAPH_BLOCK_PATH_SCANNED_ATTR, 'true');
+      continue;
+    }
+
+    const walker = doc.createTreeWalker(block, NodeFilter.SHOW_TEXT, {
+      acceptNode: (node) => {
+        const parent = node.parentElement;
+        if (!parent) {
+          return NodeFilter.FILTER_REJECT;
+        }
+        if (parent.closest(PARAGRAPH_SCAN_EXCLUDE_SELECTOR)) {
+          return NodeFilter.FILTER_REJECT;
+        }
+        return NodeFilter.FILTER_ACCEPT;
+      },
+    });
+
+    const textNodes: Text[] = [];
+    let currentNode = walker.nextNode();
+    while (currentNode) {
+      textNodes.push(currentNode as Text);
+      currentNode = walker.nextNode();
+    }
+
+    if (textNodes.length === 0) {
+      block.setAttribute(PARAGRAPH_BLOCK_PATH_SCANNED_ATTR, 'true');
+      continue;
+    }
+
+    const fullText = textNodes.map((node) => node.data).join('');
+    if (!fullText.includes('/') || !fullText.includes('.')) {
+      block.setAttribute(PARAGRAPH_BLOCK_PATH_SCANNED_ATTR, 'true');
+      continue;
+    }
+
+    PARAGRAPH_PATH_TOKEN_RE.lastIndex = 0;
+    const matches: Array<{ start: number; end: number; raw: string }> = [];
+    let match: RegExpExecArray | null = PARAGRAPH_PATH_TOKEN_RE.exec(fullText);
+    while (match) {
+      const raw = match[0];
+      if (!raw) {
+        match = PARAGRAPH_PATH_TOKEN_RE.exec(fullText);
+        continue;
+      }
+
+      // Reject candidates that are actually the tail of a URL scheme
+      // (`https://example.com/path/file.md` → `/example.com/path/file.md`).
+      // A real URL has `scheme://` before the candidate, so the two
+      // characters before the match are `:/` (when the candidate itself
+      // starts with `/`) or the single character before is `:` (when the
+      // candidate does not start with `/`).
+      const prevTwo = match.index >= 2 ? fullText.slice(match.index - 2, match.index) : '';
+      const prevChar = match.index >= 1 ? fullText.charAt(match.index - 1) : '';
+      if (prevChar === ':' || prevTwo === ':/') {
+        match = PARAGRAPH_PATH_TOKEN_RE.exec(fullText);
+        continue;
+      }
+
+      if (isLikelyFilePath(raw)) {
+        matches.push({ start: match.index, end: match.index + raw.length, raw });
+      }
+      match = PARAGRAPH_PATH_TOKEN_RE.exec(fullText);
+    }
+
+    for (const { start, end, raw } of matches.reverse()) {
+      const startPosition = findTextPosition(textNodes, start);
+      const endPosition = findTextPosition(textNodes, end);
+      if (!startPosition || !endPosition) {
+        continue;
+      }
+
+      const range = doc.createRange();
+      range.setStart(startPosition.node, startPosition.offset);
+      range.setEnd(endPosition.node, endPosition.offset);
+
+      const span = doc.createElement('span');
+      span.setAttribute(BLOCK_PATH_TOKEN_ATTR, 'true');
+      span.textContent = raw;
+
+      range.deleteContents();
+      range.insertNode(span);
+    }
+
+    block.setAttribute(PARAGRAPH_BLOCK_PATH_SCANNED_ATTR, 'true');
   }
 };
 
@@ -414,11 +548,13 @@ const useFileReferenceInteractions = ({
     }
     let cancelled = false;
     const fileReferenceLinkLimit = getFileReferenceLinkLimit();
-    // On mobile surfaces, file-reference highlighting is disabled entirely — not
-    // just visually. The annotation pass is what issues the filesystem `stat`
-    // probes (fileReferenceExists → /api/fs/stat), so skipping it here guarantees
-    // no probe requests are ever sent from a mobile runtime.
-    const fileReferencesEnabled = enabled && !isMobileSurfaceRuntime();
+    // File-reference highlighting runs on every surface. The annotation pass
+    // issues filesystem `stat` probes (fileReferenceExists → /api/fs/stat);
+    // concurrency (FILE_REFERENCE_STAT_CONCURRENCY) and the bounded
+    // FILE_REFERENCE_STAT_CACHE keep the request volume in check on
+    // constrained runtimes, so there is no need to disable the feature
+    // entirely on mobile.
+    const fileReferencesEnabled = enabled;
 
     const clearFileLinkAttributes = (candidate: HTMLElement) => {
       candidate.removeAttribute('data-openchamber-file-link');
@@ -467,6 +603,7 @@ const useFileReferenceInteractions = ({
     const annotateFileLinks = () => {
       if (fileReferencesEnabled) {
         wrapBlockCodePathTokens(container);
+        wrapParagraphPathTokens(container);
       }
       const candidates = container.querySelectorAll<HTMLElement>(
         `[data-markdown="inline-code"], a, ${BLOCK_PATH_TOKEN_SELECTOR}`,

@@ -152,6 +152,11 @@ let runtimeFetchRejects = true;
 
 Object.assign(globalThis, {
   window: {
+    localStorage: {
+      getItem: () => null,
+      setItem: () => undefined,
+      removeItem: () => undefined,
+    },
     setTimeout: (callback: () => void) => {
       callback();
       return 1;

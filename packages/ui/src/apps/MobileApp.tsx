@@ -2155,6 +2155,18 @@ const MobileShell: React.FC<{
     setFilesOpen(true);
   });
 
+  // When a file-reference link inside chat markdown triggers
+  // uiStore.openContextFile(...), the pending focus path is set even while
+  // the Files surface is closed. Open the surface so MobileFilesSurface can
+  // consume the pending entry and route directly into the file preview.
+  const pendingFileFocusPath = useUIStore((state) => state.pendingFileFocusPath);
+  React.useEffect(() => {
+    if (!pendingFileFocusPath) {
+      return;
+    }
+    openFilesSurface();
+  }, [pendingFileFocusPath, openFilesSurface]);
+
   const openChangesSurface = useEvent((diff: PendingMobileChangesDiff | null = null) => {
     setTurnDiffOpen(false);
     setTurnDiffMessageId(null);

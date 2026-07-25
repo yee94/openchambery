@@ -81,7 +81,12 @@ const withDeadline = <T>(run: (signal: AbortSignal) => Promise<T>, parent: Abort
 };
 
 export const createMessageQueueServerRuntime = (dependencies: Partial<Dependencies> = {}): MessageQueueServerSurface => {
-  const deps = { ...defaults, ...dependencies };
+  const merged = { ...defaults, ...dependencies };
+  const deps: Dependencies = {
+    ...merged,
+    snapshot: dependencies.snapshot ?? ((signal) => withAbort(refreshMessageQueueSnapshot(merged.client, merged.capture().transportIdentity), signal)),
+    status: dependencies.status ?? ((signal) => withAbort(ensureMessageQueueStatus(merged.client, merged.capture().transportIdentity), signal)),
+  };
   let state: MessageQueueServerSurfaceState = { transportIdentity: deps.capture().transportIdentity, scopes: new Map(), hydration: 'idle', capability: 'idle', authority: undefined, isFetching: false, error: undefined, importState: { status: 'idle', imported: 0, total: 0, issues: [], canActivate: false } };
   let controller: AbortController | undefined, users = 0, importFlight: Promise<MessageQueueShadowImportState> | undefined;
   const listeners = new Set<() => void>(), scopeListeners = new Map<string, Set<() => void>>();

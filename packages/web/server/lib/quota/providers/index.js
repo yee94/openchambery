@@ -23,6 +23,7 @@ import * as minimaxCnCodingPlan from './minimax-cn-coding-plan.js';
 import * as ollamaCloud from './ollama-cloud.js';
 import * as wafer from './wafer.js';
 import * as opencodeGo from './opencode-go.js';
+import * as xai from './xai.js';
 
 const registry = {
   claude: {
@@ -120,6 +121,12 @@ const registry = {
     providerName: opencodeGo.providerName,
     isConfigured: opencodeGo.isConfigured,
     fetchQuota: opencodeGo.fetchQuota
+  },
+  xai: {
+    providerId: xai.providerId,
+    providerName: xai.providerName,
+    isConfigured: xai.isConfigured,
+    fetchQuota: xai.fetchQuota
   }
 };
 
@@ -182,3 +189,4 @@ export const fetchMinimaxCnCodingPlanQuota = minimaxCnCodingPlan.fetchQuota;
 export const fetchOllamaCloudQuota = ollamaCloud.fetchQuota;
 export const fetchWaferQuota = wafer.fetchQuota;
 export const fetchZhipuaiQuota = zhipuaiCodingPlan.fetchQuota;
+export const fetchXaiQuota = xai.fetchQuota;
