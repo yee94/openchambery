@@ -4,6 +4,15 @@ All notable changes to this project will be documented in this file.
 
 ## [Unreleased]
 
+## [1.16.61] - 2026-07-25
+
+- **Mobile share targets:** add an Android share recipient picker so Share Sheet handoffs can choose an Assistant destination before opening the app.
+- **Mobile pairing & shortcuts:** add mobile pairing deep links and Android Assistant shortcuts for faster reconnect and share entry.
+- **Mobile sessions:** refine session and tab interactions, including stronger header swipe-to-sessions handling and smoother surface navigation.
+- **Mobile connections:** simplify connection setup and swipe handling, and move instance management into Settings while relaxing queue blocking on share-busy turns.
+- **HAPI gateway:** add HAPI gateway support for mobile and remote instances so hosted surfaces can reach configured backends more reliably.
+- **Mobile polish:** continue session and Assistant flow polish across the mobile chrome and conversation surfaces.
+
 ## [1.16.60] - 2026-07-24
 
 - **Mobile navigation:** redesign phone flows around tab-based navigation with stronger back handling, primary composer restore from session history, and send/queue runtime identity pinning so stale cross-session dispatch cannot fire.
