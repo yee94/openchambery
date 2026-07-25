@@ -50,6 +50,7 @@ export const settingsDict = {
   'settings.view.actions.closeSettingsWithShortcut': '설정 닫기 ({shortcut}+,)',
   'settings.view.actions.back': '뒤로',
   'settings.view.actions.resizeNavigation': '설정 내비게이션 크기 조정',
+  'settings.view.navigation.groups.connection': '연결',
   'settings.view.navigation.groups.personalization': '개인화',
   'settings.view.navigation.groups.workspace': '작업 공간',
   'settings.view.navigation.groups.opencode': 'OpenCode',

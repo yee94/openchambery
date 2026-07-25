@@ -198,6 +198,32 @@ describe('assistants service', () => {
     service.close();
   });
 
+  it('persists every stateless admission in Assistant SQLite before OpenCode history is available', async () => {
+    let creates = 0; const directory = root(); const tips = [];
+    const service = setup(directory, {
+      create: async () => ({ data: { id: `ses_${++creates}` } }),
+      promptAsync: async () => ({ response: { status: 204 } }),
+    }, { onRevisionTip: (tip) => tips.push(tip) });
+    const assistant = service.createAssistant({ ...assistantInput, mode: 'stateless' });
+    const initial = await service.ensure(assistant.id);
+    const first = await service.send(assistant.id, { ...initial, messageID: 'msg_stateless_1', parts: [{ type: 'text', text: 'one' }] });
+    service.processEvent({ type: 'message.updated', properties: { info: { id: 'msg_stateless_1', sessionID: first.binding.sessionID, role: 'user', time: { created: 10 } } } });
+    const second = await service.send(assistant.id, { ...first.binding, messageID: 'msg_stateless_2', parts: [{ type: 'text', text: 'two' }] });
+    const page = await service.historicalMessages(assistant.id, { limit: 10 });
+    expect(page.entries.map((entry) => [entry.sessionID, entry.info.id, entry.parts[0]?.text])).toEqual([
+      [first.binding.sessionID, 'msg_stateless_1', 'one'],
+      [second.binding.sessionID, 'msg_stateless_2', 'two'],
+    ]);
+    expect(page.entries.every((entry) => entry.info.role === 'user')).toBe(true);
+    await new Promise((resolve) => setImmediate(resolve));
+    expect(tips.at(-1)?.revision).toBe(service.snapshot().revision);
+    service.close();
+
+    const restarted = setup(directory);
+    expect((await restarted.historicalMessages(assistant.id, { limit: 10 })).entries.map((entry) => entry.info.id)).toEqual(['msg_stateless_1', 'msg_stateless_2']);
+    restarted.close();
+  });
+
   it('keeps stateless queued delivery bound to the Assistant after earlier turns replace the live Session', async () => {
     let creates = 0; let activePrompts = 0; let maxActivePrompts = 0; const prompts = [];
     const service = setup(root(), { create: async () => ({ data: { id: `ses_${++creates}` } }), promptAsync: async (input) => { activePrompts++; maxActivePrompts = Math.max(maxActivePrompts, activePrompts); await Promise.resolve(); prompts.push(input); activePrompts--; return { response: { status: 204 } }; } });

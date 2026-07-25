@@ -14,6 +14,7 @@ import {
 describe('settings navigation metadata', () => {
   test('keeps the navigation information architecture complete', () => {
     expect(SETTINGS_PAGE_GROUP_ORDER).toEqual([
+      'connection',
       'personalization',
       'workspace',
       'opencode',
@@ -26,8 +27,9 @@ describe('settings navigation metadata', () => {
     ).map(({ group, pages }) => [group, pages.map((page) => page.slug)]));
 
     expect(pagesByGroup).toEqual({
+      connection: ['instances'],
       personalization: ['appearance', 'chat', 'notifications', 'sessions', 'summary-ai', 'shortcuts'],
-      workspace: ['projects', 'git', 'instances', 'remote-instances'],
+      workspace: ['projects', 'git', 'remote-instances'],
       opencode: ['providers', 'agents', 'assistants', 'behavior', 'commands', 'mcp', 'plugins', 'global-config'],
       content: ['magic-prompts', 'snippets', 'skills.installed', 'skills.catalog'],
       system: ['usage', 'voice', 'tunnel', 'about'],
@@ -84,9 +86,13 @@ describe('settings navigation metadata', () => {
     );
 
     expect(overflowMenu).not.toContain("key: 'instances'");
+    // Phone overflow must not re-open Settings as a half-sheet; Settings is a root tab.
+    expect(mobileApp).toContain("setActiveTab('settings')");
+    expect(mobileApp).toContain('settingsOpen && isIPad');
     expect(settingsView).toContain('case "instances":');
     expect(settingsView).toContain('return mobileInstancesPage ?? renderUnavailable();');
     expect(settingsTab).toContain('mobileInstancesPage={instancesPage}');
+    expect(settingsTab).toContain('autoOpenMobilePage');
     expect(phoneShell).not.toContain('instances-secondary');
     expect(phoneShell).not.toContain('openInstances');
   });

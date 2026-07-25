@@ -91,9 +91,12 @@ public class ShareReceiverActivity extends Activity {
             android.os.PersistableBundle shortcut = shortcutTarget(intent);
             String serverID = shortcut == null ? null : shortcut.getString("serverInstanceID");
             String assistantID = shortcut == null ? null : shortcut.getString("assistantID");
-            target = OpenChamberShareStore.defaultTarget(this, serverID, assistantID);
-            if (shortcut != null && target != null && (serverID == null || assistantID == null || !serverID.equals(target.optString("serverInstanceID")) || !assistantID.equals(target.optString("assistantID")))) {
-                target = null;
+            target = null;
+            if (shortcut != null) {
+                JSONObject shortcutTarget = OpenChamberShareStore.defaultTarget(this, serverID, assistantID);
+                if (shortcutTarget != null && serverID != null && assistantID != null && serverID.equals(shortcutTarget.optString("serverInstanceID")) && assistantID.equals(shortcutTarget.optString("assistantID"))) {
+                    target = shortcutTarget;
+                }
             }
 
             if (Intent.ACTION_SEND_MULTIPLE.equals(action)) {

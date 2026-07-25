@@ -60,7 +60,7 @@ export const dict = {
   'mobile.connect.scanQr': 'Scan QR code',
   'mobile.connect.welcome.scanHint': 'On your computer, open «Add a device» to show a QR code, then scan it here.',
   'mobile.connect.advanced': 'Advanced',
-  'mobile.connect.manual.toggle': 'Connect by address',
+  'mobile.connect.manual.toggle': 'Manual connection',
   'mobile.connect.scan.permissionDenied': 'Camera access is off. Enable it in Settings to scan a QR code.',
   'mobile.connect.scan.failed': 'Could not scan that QR code. Try again or enter the URL manually.',
   'mobile.connect.scan.invalid': 'That QR code is not an OpenChamber connection code.',

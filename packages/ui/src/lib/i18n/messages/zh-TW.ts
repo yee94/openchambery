@@ -61,7 +61,7 @@ export const dict: Record<I18nKey, string> = {
   'mobile.connect.scanQr': '掃描 QR code',
   'mobile.connect.welcome.scanHint': '在電腦上開啟「新增裝置」顯示 QR 代碼，然後在這裡掃描。',
   'mobile.connect.advanced': '進階',
-  'mobile.connect.manual.toggle': '透過位址連線',
+  'mobile.connect.manual.toggle': '手動連線',
   'mobile.connect.scan.permissionDenied': '相機存取已關閉。請在「設定」中開啟以掃描 QR code。',
   'mobile.connect.scan.failed': '無法掃描該 QR code。請重試或手動輸入網址。',
   'mobile.connect.scan.invalid': '此 QR code 不是 OpenChamber 連線代碼。',

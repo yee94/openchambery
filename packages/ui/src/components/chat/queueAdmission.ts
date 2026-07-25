@@ -2,7 +2,6 @@ import type { AttachedFile } from '@/stores/types/sessionTypes';
 import type { InlineCommentDraft } from '@/stores/useInlineCommentDraftStore';
 import type { QueueAttachmentCandidate } from '@/sync/message-queue-server-attachment-adapter';
 import { draftKeyString, type DraftKey } from '@/sync/input-draft-types';
-import type { DraftRecord } from '@/sync/input-draft-types';
 import type { InputDraftRuntimeCapture } from '@/sync/input-store';
 import type { ComposerDocument } from '@/composer/document';
 import { createUuid } from '@/lib/uuid';
@@ -112,8 +111,6 @@ type ChatInputQueueAdmission<TDraft, TQueueItem> = Omit<QueueAdmissionConsumptio
 type ServerQueueAdmissionCapture = {
     draftKey: DraftKey;
     draftKeyID: string;
-    draftRevision: number;
-    draftRecord: DraftRecord | undefined;
     runtime: InputDraftRuntimeCapture;
     documentFingerprint: string;
     attachments: ReadonlyMap<string, AttachedFile>;
@@ -125,7 +122,6 @@ type ServerQueueAdmissionConsumption = {
     admit: () => Promise<{ status: 'committed' | 'stale' }>;
     captureRuntime: () => InputDraftRuntimeCapture;
     getCurrentDraftKey: () => DraftKey | null;
-    getDraft: (key: DraftKey) => DraftRecord | undefined;
     getDocument: () => ComposerDocument;
     consumeBody: () => void;
     getAttachments: () => readonly AttachedFile[];
@@ -199,14 +195,12 @@ export const admitChatInputQueueMessageAndConsumeResources = <TDraft, TQueueItem
 
 export const createServerQueueAdmissionCapture = ({
     draftKey,
-    draftRecord,
     runtime,
     document,
     attachments,
     inlineDrafts,
 }: {
     draftKey: DraftKey;
-    draftRecord: DraftRecord | undefined;
     runtime: InputDraftRuntimeCapture;
     document: ComposerDocument;
     attachments: readonly AttachedFile[];
@@ -214,8 +208,6 @@ export const createServerQueueAdmissionCapture = ({
 }): ServerQueueAdmissionCapture => ({
     draftKey: { transportIdentity: draftKey.transportIdentity, owner: { ...draftKey.owner } },
     draftKeyID: draftKeyString(draftKey),
-    draftRevision: draftRecord?.revision ?? 0,
-    draftRecord,
     runtime: { ...runtime },
     documentFingerprint: documentFingerprint(document),
     attachments: new Map(attachments.map((attachment) => [attachment.id, attachment])),
@@ -227,7 +219,6 @@ export const admitServerQueueMessageAndConsumeResources = async ({
     admit,
     captureRuntime,
     getCurrentDraftKey,
-    getDraft,
     getDocument,
     consumeBody,
     getAttachments,
@@ -241,10 +232,11 @@ export const admitServerQueueMessageAndConsumeResources = async ({
         return { status: 'stale', bodyConsumed: false, attachmentIDsConsumed: [], inlineDraftIDsConsumed: [] };
     }
 
-    const currentDraft = getDraft(capture.draftKey);
-    const bodyConsumed = currentDraft === capture.draftRecord
-        && (currentDraft?.revision ?? 0) === capture.draftRevision
-        && documentFingerprint(getDocument()) === capture.documentFingerprint;
+    // Durable draft persistence can legitimately settle while the admission is
+    // in flight, replacing the DraftRecord object (or creating its first row)
+    // without changing the authored document. The live document identity is the
+    // authority for body consumption; any continued input changes its fingerprint.
+    const bodyConsumed = documentFingerprint(getDocument()) === capture.documentFingerprint;
     if (bodyConsumed) consumeBody();
 
     const attachmentIDsConsumed: string[] = [];

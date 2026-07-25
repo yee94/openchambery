@@ -29,6 +29,14 @@ describe('Assistant query contract', () => {
     expect(source).toContain('assertCurrent(transport, runtimeGeneration)');
   });
 
+  test('repairs worker-driven binding changes from shared revision tips and rejects older bindings', async () => {
+    const source = await readFile(join(directory, 'assistantQueries.ts'), 'utf8');
+    expect(source).toContain("event.type !== 'assistants-changed'");
+    expect(source).toContain("event.type === 'event-stream-ready'");
+    expect(source).toContain('event.revision > snapshot.revision');
+    expect(source).toContain('assistant.sessionGeneration > binding.sessionGeneration');
+  });
+
   test('uses one initial history request and follows only server cursors', async () => {
     const source = await readFile(join(directory, 'assistantQueries.ts'), 'utf8');
     const history = source.slice(source.indexOf('export const assistantHistoryInfiniteQueryOptions'), source.indexOf('export const useAssistantHistoryInfiniteQuery'));

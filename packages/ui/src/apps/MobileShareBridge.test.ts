@@ -102,7 +102,37 @@ describe('MobileShareBridge contract', () => {
     const source = await readFile(join(directory, 'MobileShareBridge.tsx'), 'utf8');
     expect(source).toContain("sort((left, right) => left.createdAt - right.createdAt)");
     expect(source).toContain('for (const draft of drafts)');
-    expect(source).toContain('The native draft remains durable and subsequent drafts continue independently.');
+    expect(source).toContain('A failed native draft remains durable and subsequent drafts continue independently.');
+  });
+
+  test('queues untargeted Android shares for recipient selection and assigns the chosen assistant before handoff', async () => {
+    const [bridge, picker] = await Promise.all([
+      readFile(join(directory, 'MobileShareBridge.tsx'), 'utf8'),
+      readFile(join(directory, 'MobileShareRecipientPicker.tsx'), 'utf8'),
+    ]);
+    expect(bridge).toContain('drafts.filter((draft) => !isAssignedNativeShareDraft(draft))');
+    expect(bridge).toContain('selectRecipient = useEvent((pendingDraft: NativeShareDraft, entry: AssistantCatalogEntry)');
+    expect(bridge).toContain('selectedDraftIDRef.current = pendingDraft.draftID');
+    expect(bridge).toContain('const assigned: AssignedNativeShareDraft = { ...pendingDraft');
+    expect(bridge.indexOf('const assigned: AssignedNativeShareDraft')).toBeLessThan(bridge.indexOf('processAssignedNativeDraft(assigned)'));
+    expect(picker).toContain("t('assistants.shareWelcome.example.note.title')");
+    expect(picker).toContain('entries.map((entry) =>');
+    expect(picker).toContain('h-[100dvh]');
+    expect(picker).toContain('rounded-none border-0');
+    expect(picker).toContain('<MobileDetailNavigation');
+    expect(picker).toContain('overlay');
+    expect(picker).not.toContain('<DialogHeader');
+    expect(picker).not.toContain('max-h-[min(75dvh,36rem)]');
+  });
+
+  test('validates the active server identity before switching a stable connection that may currently use direct transport', async () => {
+    const source = await readFile(join(directory, 'MobileShareBridge.tsx'), 'utf8');
+    const process = source.indexOf('const processAssignedNativeDraftOne');
+    const activeCheck = source.indexOf('validateNativeDraftTargetOnCurrentRuntime(draft)', process);
+    const connect = source.indexOf("connectMobileShareConnection(partition.connectionKey, { transportPreference: 'relay' })", process);
+    expect(activeCheck).toBeGreaterThan(process);
+    expect(connect).toBeGreaterThan(activeCheck);
+    expect(source).toContain('capability.serverInstanceID !== target.serverInstanceID');
   });
 
   test('validates each recovered journal target before opening and finalizing it', async () => {
@@ -110,7 +140,7 @@ describe('MobileShareBridge contract', () => {
     const retry = source.indexOf('const recoveredTargets = await retryMobileShareDraftCancellations');
     const connect = source.indexOf('const openRecoveredNativeDraftTarget');
     const open = source.indexOf('openNativeAssistantConversation(target.assistantID)');
-    const finalize = source.indexOf('finalizeMobileShareDraftHandoff(target)');
+    const finalize = source.indexOf('finalizeMobileShareDraftHandoff(target)', retry);
     expect(retry).toBeGreaterThan(-1);
     expect(connect).toBeGreaterThan(-1);
     expect(open).toBeGreaterThan(connect);

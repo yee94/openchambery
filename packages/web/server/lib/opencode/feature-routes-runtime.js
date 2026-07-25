@@ -202,6 +202,10 @@ export const createFeatureRoutesRuntime = (dependencies) => {
         .filter((value) => typeof value === 'string'));
     };
     await refreshAssistantAllowedRoots();
+    const broadcastAssistantRevisionTip = createOpenChamberEventBroadcaster({
+      getOpenChamberEventClients,
+      writeSseEvent,
+    });
     assistantRoutesRuntime = registerAssistantRoutes(app, {
       openchamberDataDir,
       dbPath: path.join(openchamberDataDir, 'assistants.sqlite'),
@@ -211,6 +215,10 @@ export const createFeatureRoutesRuntime = (dependencies) => {
       getAllowedRoots: () => assistantAllowedRoots,
       refreshAllowedRoots: refreshAssistantAllowedRoots,
       globalEventHub: globalMessageStreamHub,
+      onRevisionTip: (tip) => broadcastAssistantRevisionTip({
+        type: 'openchamber:assistants-changed',
+        properties: tip,
+      }),
     });
     messageQueueRuntime?.setAssistantDeliveryService?.(assistantRoutesRuntime.service);
 

@@ -6,6 +6,7 @@ import {
   createAssistantSessionDivider,
   flattenAssistantHistoryPages,
   isAssistantSessionDivider,
+  mergeHostedCurrentSessionHistory,
   stitchHostedSessionHistory,
   toChatMessageEntries,
 } from './hostedSessionHistory';
@@ -101,5 +102,18 @@ describe('hostedSessionHistory', () => {
 
     expect(stitchHostedSessionHistory([source], 'ses_live')[0]?.sourceSessionID).toBe('ses_a');
     expect(stitchHostedSessionHistory([source], 'ses_live')[0]?.sourceDirectory).toBeNull();
+  });
+
+  test('keeps SQLite current-session admissions until live sync replaces the same identity', () => {
+    const persisted = historyEntry('ses_live', 'msg_user');
+    const persistedReply = historyEntry('ses_live', 'msg_reply');
+    const liveReply = entry('msg_reply');
+
+    const merged = mergeHostedCurrentSessionHistory([persisted, persistedReply], 'ses_live', [liveReply]);
+
+    expect(merged.map((item) => item.info.id)).toEqual(['msg_user', 'msg_reply']);
+    expect(merged[0]?.info).toBe(persisted.info);
+    expect(merged[1]).toBe(liveReply);
+    expect(mergeHostedCurrentSessionHistory([persisted, persistedReply], 'ses_live', [liveReply], merged)).toBe(merged);
   });
 });

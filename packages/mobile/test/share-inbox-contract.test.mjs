@@ -120,6 +120,8 @@ test('Android share drafts commit only after confirmation and release only after
   assert.match(prepare, /synchronized \(LOCK\) \{[\s\S]*File temp[\s\S]*copyLimited\(context\.getContentResolver\(\)\.openInputStream\(uri\), output, MAX_IMAGE_BYTES\)[\s\S]*writeAtomic\(new File\(temp, "draft\.json"\)[\s\S]*temp\.renameTo\(ready\)/);
   assert.match(prepare, /copyLimited[\s\S]*throwIfDraftCancelled\(context, draftID\)[\s\S]*temp\.renameTo\(ready\)/);
   assert.match(prepare, /writeAtomic[\s\S]*throwIfDraftCancelled\(context, draftID\)[\s\S]*temp\.renameTo\(ready\)/);
+  assert.doesNotMatch(prepare, /target == null[^\n]*throw/);
+  assert.match(prepare, /if \(target != null\) draft\.put\("target", target\)/);
   const markCancelled = store.match(/static void markDraftCancelled[\s\S]*?(?=\n    private static SharedPreferences cancellations)/)?.[0];
   assert.ok(markCancelled);
   assert.doesNotMatch(markCancelled, /synchronized \(LOCK\)/);
@@ -142,6 +144,8 @@ test('Android draft delivery exposes complete draft copies and clears draft-read
   assert.match(store, /new JSONObject\(attachments\.getJSONObject\(i\)\.toString\(\)\)/);
   assert.match(store, /attachment\.put\("stagedPath", new File\(dir, attachment\.getString\("stagedPath"\)\)\.getAbsolutePath\(\)\)/);
   assert.match(store, /completeAttachments\(dir, attachments\)/);
+  assert.match(store, /target != null && !validTarget\(target\)/);
+  assert.match(store, /if \(target != null\) result\.put\("serverInstanceID"/);
   assert.match(store, /private static boolean isDraftCancelled\(Context context, String draftID\)/);
   assert.match(store, /if \(isDraftCancelled\(context, dir\.getName\(\)\)\) \{\s*delete\(dir\);\s*continue;/);
   assert.match(store, /Collections\.sort\(draftsByCreatedAt/);
@@ -158,6 +162,8 @@ test('Android share ingress opens the WebView composer and the delivery bridge a
     source('../ui/src/apps/MobileShareBridge.tsx'),
   ]);
   assert.match(receiver, /OpenChamberShareStore\.prepareDraft\(context, id, selectedTarget, text, images\)/);
+  assert.match(receiver, /target = null;\s*if \(shortcut != null\)/);
+  assert.doesNotMatch(receiver, /target = OpenChamberShareStore\.defaultTarget\(this, serverID, assistantID\)/);
   assert.match(receiver, /setAction\(MainActivity\.ACTION_SHARE_DRAFT_READY\)[\s\S]*putExtra\("draftID", draftID\)/);
   assert.doesNotMatch(receiver, /EditText|previewRow|sendButton/);
   assert.match(receiver, /destroyed \|\| terminalNavigation/);

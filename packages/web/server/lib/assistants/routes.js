@@ -4,7 +4,7 @@ const respond = (res, work, success = 200) => Promise.resolve().then(work).then(
 const gone = (_req, res) => res.status(410).json({ ok: false, error: 'assistant_topics_retired' });
 
 export const registerAssistantRoutes = (app, dependencies) => {
-  const service = createAssistantsService({ dbPath: dependencies.dbPath, dataDir: dependencies.openchamberDataDir, buildOpenCodeUrl: dependencies.buildOpenCodeUrl, getOpenCodeAuthHeaders: dependencies.getOpenCodeAuthHeaders, getServerId: dependencies.getServerId, getAllowedRoots: dependencies.getAllowedRoots, globalEventHub: dependencies.globalEventHub });
+  const service = createAssistantsService({ dbPath: dependencies.dbPath, dataDir: dependencies.openchamberDataDir, buildOpenCodeUrl: dependencies.buildOpenCodeUrl, getOpenCodeAuthHeaders: dependencies.getOpenCodeAuthHeaders, getServerId: dependencies.getServerId, getAllowedRoots: dependencies.getAllowedRoots, globalEventHub: dependencies.globalEventHub, onRevisionTip: dependencies.onRevisionTip });
   app.use('/api/openchamber/assistants', (req, res, next) => Promise.resolve(dependencies.refreshAllowedRoots?.()).then(next).catch((error) => respond(res, () => { throw error; })));
   app.get('/api/openchamber/assistants/capability', (_req, res) => respond(res, () => service.capability()));
   app.get('/api/openchamber/assistants', (_req, res) => respond(res, () => service.snapshot())); app.get('/api/openchamber/assistants/snapshot', (_req, res) => respond(res, () => service.snapshot())); app.put('/api/openchamber/assistants/settings', (req, res) => respond(res, () => service.setEnabled(req.body)));

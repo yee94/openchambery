@@ -50,6 +50,7 @@ export const settingsDict = {
   'settings.view.actions.closeSettingsWithShortcut': '設定を閉じる ({shortcut}+,)',
   'settings.view.actions.back': '戻る',
   'settings.view.actions.resizeNavigation': '設定ナビゲーションのサイズ変更',
+  'settings.view.navigation.groups.connection': '接続',
   'settings.view.navigation.groups.personalization': 'パーソナライズ',
   'settings.view.navigation.groups.workspace': 'ワークスペース',
   'settings.view.navigation.groups.opencode': 'OpenCode',

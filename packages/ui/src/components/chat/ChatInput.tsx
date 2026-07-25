@@ -2231,7 +2231,6 @@ const ChatInputRuntime: React.FC<ChatInputProps> = ({ onOpenSettings, scrollToBo
             }
             const admissionCapture = createServerQueueAdmissionCapture({
                 draftKey,
-                draftRecord: surfaceResources.getDraft(draftKey),
                 runtime: draftRuntimeAtStart,
                 document: inputSnapshot.document,
                 attachments: sendableAttachedFiles,
@@ -2303,7 +2302,6 @@ const ChatInputRuntime: React.FC<ChatInputProps> = ({ onOpenSettings, scrollToBo
                 }),
                 captureRuntime: surfaceResources.captureRuntime,
                 getCurrentDraftKey: () => draftKey,
-                getDraft: surfaceResources.getDraft,
                 getDocument,
                 consumeBody: () => replacePlainDocument(''),
                 getAttachments: () => surfaceResources.attachments,

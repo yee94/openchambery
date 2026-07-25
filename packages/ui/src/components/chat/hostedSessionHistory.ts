@@ -64,6 +64,39 @@ export const stitchHostedSessionHistory = (
   return samePrefix(previousPrefix, result) ? previousPrefix : result;
 };
 
+/**
+ * Assistant SQLite includes the current binding as a durable fallback. Live
+ * directory sync wins per message ID, while a not-yet-materialized admitted
+ * user row remains visible across binding changes and remounts.
+ */
+export const mergeHostedCurrentSessionHistory = (
+  entries: readonly AssistantHistoryEntry[],
+  currentSessionID: string | null | undefined,
+  liveMessages: readonly ChatMessageEntry[],
+  previous: ChatMessageEntry[] = EMPTY_PREFIX,
+): ChatMessageEntry[] => {
+  if (!currentSessionID) return liveMessages.length > 0 ? Array.from(liveMessages) : EMPTY_PREFIX;
+  const byID = new Map<string, { message: ChatMessageEntry; order: number }>();
+  let order = 0;
+  for (const entry of entries) {
+    if (entry.sessionID !== currentSessionID) continue;
+    byID.set(entry.info.id, { message: { info: entry.info, parts: entry.parts }, order: order++ });
+  }
+  for (const message of liveMessages) {
+    const existing = byID.get(message.info.id);
+    byID.set(message.info.id, { message, order: existing?.order ?? order++ });
+  }
+  if (byID.size === 0) return EMPTY_PREFIX;
+  const result = [...byID.values()]
+    .sort((left, right) => {
+      const leftCreated = Number((left.message.info as { time?: { created?: number } }).time?.created ?? 0);
+      const rightCreated = Number((right.message.info as { time?: { created?: number } }).time?.created ?? 0);
+      return leftCreated - rightCreated || left.order - right.order;
+    })
+    .map(({ message }) => message);
+  return samePrefix(previous, result) ? previous : result;
+};
+
 const sameAssistantSessionDivider = (
   left: ChatMessageEntry,
   right: ChatMessageEntry,

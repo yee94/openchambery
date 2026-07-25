@@ -1907,6 +1907,7 @@ export const settingsDict = {
   'settings.view.actions.reloadOpenCode': 'Przeładuj OpenCode',
   'settings.view.actions.reloadOpenCodeTooltip': 'Uruchom ponownie OpenCode i przeładuj jego konfigurację.',
   'settings.view.actions.resizeNavigation': 'Zmień rozmiar nawigacji',
+  'settings.view.navigation.groups.connection': 'Połączenie',
   'settings.view.navigation.groups.personalization': 'Personalizacja',
   'settings.view.navigation.groups.workspace': 'Obszar roboczy',
   'settings.view.navigation.groups.opencode': 'OpenCode',

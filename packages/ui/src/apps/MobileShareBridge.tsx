@@ -1,5 +1,7 @@
+/* eslint-disable react-refresh/only-export-components */
 import React from 'react';
 import { Capacitor, registerPlugin } from '@capacitor/core';
+import { useEvent } from '@reactuses/core';
 
 import { connectMobileShareConnection, loadMobileConnections, mobileConnectionKey } from './mobileConnections';
 import { getRuntimeGeneration, getRuntimeKey, getRuntimeTransportIdentity, subscribeRuntimeEndpointChanged } from '@/lib/runtime-switch';
@@ -8,9 +10,10 @@ import { AssistantShareOperationError, fetchAssistantCapability, forceRefreshAss
 import { useAssistantUIStore, type AssistantCatalogEntry } from '@/stores/useAssistantUIStore';
 import { drainMobileShareItems, retryMobileShareCleanupStage, type MobileShareDrainItem } from './mobileShareDrain';
 import { ascendingId } from '@/sync/message-id';
-import { clearMobileShareDraftHandoffMarker, finalizeMobileShareDraftHandoff, handoffMobileShareDraft, retryMobileShareDraftCancellations, type MobileShareDraftHandoffTarget, type NativeShareDraft } from './mobileShareDraftHandoff';
+import { clearMobileShareDraftHandoffMarker, finalizeMobileShareDraftHandoff, handoffMobileShareDraft, isAssignedNativeShareDraft, retryMobileShareDraftCancellations, type AssignedNativeShareDraft, type MobileShareDraftHandoffTarget, type NativeShareDraft } from './mobileShareDraftHandoff';
 import { useInputStore } from '@/sync/input-store';
 import { handlePendingNativeAssistantOpen, openNativeAssistantConversation } from './nativeAssistantShortcut';
+import { MobileShareRecipientPicker } from './MobileShareRecipientPicker';
 
 type NativeAssistantCatalogEntry = AssistantCatalogEntry;
 type NativeShareAttachment = { stagedPath: string; originalName: string; mime: string; byteSize: number };
@@ -37,7 +40,7 @@ const nativeAvailable = (): boolean => Capacitor.isNativePlatform();
 const readOutbox = (): Record<string, OutboxItem> => {
   try { return JSON.parse(window.localStorage.getItem(OUTBOX_KEY) || '{}') as Record<string, OutboxItem>; } catch { return {}; }
 };
-const writeOutbox = (items: Record<string, OutboxItem>): void => { try { window.localStorage.setItem(OUTBOX_KEY, JSON.stringify(items)); } catch {} };
+const writeOutbox = (items: Record<string, OutboxItem>): void => { try { window.localStorage.setItem(OUTBOX_KEY, JSON.stringify(items)); } catch { /* Local storage may be unavailable. */ } };
 const save = (item: OutboxItem): void => {
   const all = readOutbox();
   const existing = all[item.envelope.operationID];
@@ -51,7 +54,23 @@ const deliveryFlights = new Map<string, Promise<void>>();
 let drainFlight: Promise<void> | null = null;
 let nativeDraftDrainFlight: Promise<void> | null = null;
 let nativeDraftDrainRequested = false;
+let pendingNativeRecipientDrafts: readonly NativeShareDraft[] = [];
+let pendingNativeRecipientDraftRevision = 0;
+const pendingNativeRecipientDraftListeners = new Set<() => void>();
+const nativeDraftHandoffFlights = new Map<string, Promise<boolean>>();
 const DRAIN_CONCURRENCY = 1;
+
+const setPendingNativeRecipientDrafts = (drafts: readonly NativeShareDraft[]): void => {
+  const nextIDs = drafts.map((draft) => draft.draftID).join('\n');
+  const currentIDs = pendingNativeRecipientDrafts.map((draft) => draft.draftID).join('\n');
+  if (nextIDs === currentIDs) return;
+  pendingNativeRecipientDrafts = drafts;
+  pendingNativeRecipientDraftRevision += 1;
+  pendingNativeRecipientDraftListeners.forEach((listener) => listener());
+};
+const removePendingNativeRecipientDraft = (draftID: string): void => setPendingNativeRecipientDrafts(pendingNativeRecipientDrafts.filter((draft) => draft.draftID !== draftID));
+const subscribePendingNativeRecipientDrafts = (listener: () => void): (() => void) => { pendingNativeRecipientDraftListeners.add(listener); return () => pendingNativeRecipientDraftListeners.delete(listener); };
+const getPendingNativeRecipientDraftRevision = (): number => pendingNativeRecipientDraftRevision;
 
 const stagedImageBlob = async (attachment: NativeShareAttachment): Promise<Blob> => {
   if (!attachment.mime.startsWith('image/')) throw new Error('unsupported_share_attachment');
@@ -235,8 +254,10 @@ const drainNativeDrafts = async (): Promise<void> => {
 };
 
 const openRecoveredNativeDraftTarget = async (target: MobileShareDraftHandoffTarget): Promise<boolean> => {
-  const result = await connectMobileShareConnection(target.connectionKey);
-  if (result !== 'connected') return false;
+  if (getRuntimeKey() !== target.connectionKey) {
+    const result = await connectMobileShareConnection(target.connectionKey);
+    if (result !== 'connected') return false;
+  }
   const generation = getRuntimeGeneration();
   if (!current(target.connectionKey, generation) || getRuntimeTransportIdentity() !== target.transportIdentity) return false;
   await runtimeFetch('/api/config/settings').catch(() => undefined);
@@ -247,6 +268,62 @@ const openRecoveredNativeDraftTarget = async (target: MobileShareDraftHandoffTar
   if (!current(target.connectionKey, generation) || getRuntimeTransportIdentity() !== target.transportIdentity || !capability.supported || !capability.enabled || capability.serverInstanceID !== target.serverInstanceID || !snapshot.assistants.some((assistant) => assistant.id === target.assistantID && assistant.enabled)) return false;
   openNativeAssistantConversation(target.assistantID);
   return true;
+};
+
+type ValidatedNativeDraftRuntime = { runtimeKey: string; generation: number; transportIdentity: string };
+
+const validateNativeDraftTargetOnCurrentRuntime = async (target: { serverInstanceID: string; assistantID: string }): Promise<ValidatedNativeDraftRuntime | null> => {
+  const runtimeKey = getRuntimeKey();
+  const generation = getRuntimeGeneration();
+  await runtimeFetch('/api/config/settings').catch(() => undefined);
+  if (!current(runtimeKey, generation)) return null;
+  try {
+    const [capability, snapshot] = await Promise.all([fetchAssistantCapability(), forceRefreshAssistantSnapshot()]);
+    if (!current(runtimeKey, generation) || !capability.supported || !capability.enabled || capability.serverInstanceID !== target.serverInstanceID || !snapshot.assistants.some((assistant) => assistant.id === target.assistantID && assistant.enabled)) return null;
+    return { runtimeKey, generation, transportIdentity: getRuntimeTransportIdentity() };
+  } catch {
+    return null;
+  }
+};
+
+const processAssignedNativeDraftOne = async (draft: AssignedNativeShareDraft): Promise<boolean> => {
+  const partition = Object.values(useAssistantUIStore.getState().assistantCatalogByConnection).find((entry) => entry.serverInstanceID === draft.serverInstanceID && entry.connectionKey === draft.connectionKey && entry.entries.some((candidate) => candidate.assistantID === draft.assistantID));
+  if (!partition) return false;
+  let runtime = await validateNativeDraftTargetOnCurrentRuntime(draft);
+  if (!runtime) {
+    // Android WebView can reject an otherwise reachable plain-HTTP LAN runtime
+    // as mixed content. The persisted catalog's relay identity gives this
+    // share-specific recovery path an authenticated HTTPS transport.
+    const result = await connectMobileShareConnection(partition.connectionKey, { transportPreference: 'relay' });
+    if (result !== 'connected') return false;
+    runtime = await validateNativeDraftTargetOnCurrentRuntime(draft);
+    if (!runtime) return false;
+  }
+  const { runtimeKey, generation, transportIdentity } = runtime;
+  const hydrated = await useInputStore.getState().hydrateDraftMetadata(transportIdentity);
+  if (!hydrated) return false;
+  if (!current(runtimeKey, generation) || getRuntimeTransportIdentity() !== transportIdentity) return false;
+  const handoff = await handoffMobileShareDraft(draft, {
+    input: useInputStore.getState(),
+    transportIdentity,
+    cancelDraft: (draftID) => OpenChamberShare.cancelDraft({ draftID }),
+    readAttachment: stagedImageBlob,
+  });
+  if (!handoff.durable || !handoff.cancelled || !current(runtimeKey, generation) || getRuntimeTransportIdentity() !== transportIdentity) return false;
+  const target = { draftID: draft.draftID, serverInstanceID: draft.serverInstanceID, connectionKey: draft.connectionKey, assistantID: draft.assistantID, transportIdentity };
+  openNativeAssistantConversation(draft.assistantID);
+  if (await clearMobileShareDraftHandoffMarker(target, useInputStore.getState())) finalizeMobileShareDraftHandoff(target);
+  return true;
+};
+
+const processAssignedNativeDraft = (draft: AssignedNativeShareDraft): Promise<boolean> => {
+  const active = nativeDraftHandoffFlights.get(draft.draftID);
+  if (active) return active;
+  const flight = processAssignedNativeDraftOne(draft).catch(() => false).finally(() => {
+    if (nativeDraftHandoffFlights.get(draft.draftID) === flight) nativeDraftHandoffFlights.delete(draft.draftID);
+  });
+  nativeDraftHandoffFlights.set(draft.draftID, flight);
+  return flight;
 };
 
 const drainNativeDraftsOne = async (): Promise<void> => {
@@ -260,41 +337,43 @@ const drainNativeDraftsOne = async (): Promise<void> => {
     }
   }
   const pending = await OpenChamberShare.listDrafts().catch(() => null);
+  if (!pending) return;
   const drafts = [...(pending?.drafts ?? [])].sort((left, right) => left.createdAt - right.createdAt);
+  setPendingNativeRecipientDrafts(drafts.filter((draft) => !isAssignedNativeShareDraft(draft)));
   for (const draft of drafts) {
-    try {
-      const partition = Object.values(useAssistantUIStore.getState().assistantCatalogByConnection).find((entry) => entry.serverInstanceID === draft.serverInstanceID && entry.connectionKey === draft.connectionKey && entry.entries.some((candidate) => candidate.assistantID === draft.assistantID));
-      if (!partition) continue;
-      const result = await connectMobileShareConnection(partition.connectionKey);
-      if (result !== 'connected') continue;
-      const generation = getRuntimeGeneration();
-      if (!current(partition.connectionKey, generation)) continue;
-      await runtimeFetch('/api/config/settings').catch(() => undefined);
-      if (!current(partition.connectionKey, generation)) continue;
-      const [capability, snapshot] = await Promise.all([fetchAssistantCapability(), forceRefreshAssistantSnapshot()]);
-      if (!current(partition.connectionKey, generation) || !capability.supported || !capability.enabled || capability.serverInstanceID !== draft.serverInstanceID || !snapshot.assistants.some((assistant) => assistant.id === draft.assistantID && assistant.enabled)) continue;
-      const transportIdentity = getRuntimeTransportIdentity();
-      const hydrated = await useInputStore.getState().hydrateDraftMetadata(transportIdentity);
-      if (!hydrated) continue;
-      if (!current(partition.connectionKey, generation) || getRuntimeTransportIdentity() !== transportIdentity) continue;
-      const handoff = await handoffMobileShareDraft(draft, {
-        input: useInputStore.getState(),
-        transportIdentity,
-        cancelDraft: (draftID) => OpenChamberShare.cancelDraft({ draftID }),
-        readAttachment: stagedImageBlob,
-      });
-      if (handoff.durable && handoff.cancelled && current(partition.connectionKey, generation) && getRuntimeTransportIdentity() === transportIdentity) {
-        const target = { draftID: draft.draftID, serverInstanceID: draft.serverInstanceID, connectionKey: draft.connectionKey, assistantID: draft.assistantID, transportIdentity };
-        openNativeAssistantConversation(draft.assistantID);
-        if (await clearMobileShareDraftHandoffMarker(target, useInputStore.getState())) finalizeMobileShareDraftHandoff(target);
-      }
-    } catch {
-      // The native draft remains durable and subsequent drafts continue independently.
-    }
+    if (!isAssignedNativeShareDraft(draft)) continue;
+    await processAssignedNativeDraft(draft);
+    // A failed native draft remains durable and subsequent drafts continue independently.
   }
 };
 
 export const MobileShareBridge: React.FC = () => {
+  React.useSyncExternalStore(subscribePendingNativeRecipientDrafts, getPendingNativeRecipientDraftRevision, getPendingNativeRecipientDraftRevision);
+  const catalog = useAssistantUIStore((state) => state.assistantCatalogByConnection);
+  const [selectedDraftID, setSelectedDraftID] = React.useState<string | null>(null);
+  const selectedDraftIDRef = React.useRef<string | null>(null);
+  const entries = React.useMemo(() => Object.values(catalog)
+    .flatMap((partition) => partition.entries)
+    .filter((entry) => entry.enabled)
+    .sort((left, right) => Number(right.isDefaultShareTarget) - Number(left.isDefaultShareTarget) || left.serverLabel.localeCompare(right.serverLabel) || left.name.localeCompare(right.name)), [catalog]);
+  const draft = pendingNativeRecipientDrafts[0] ?? null;
+  const selectRecipient = useEvent((pendingDraft: NativeShareDraft, entry: AssistantCatalogEntry): void => {
+    if (selectedDraftIDRef.current) return;
+    selectedDraftIDRef.current = pendingDraft.draftID;
+    setSelectedDraftID(pendingDraft.draftID);
+    const assigned: AssignedNativeShareDraft = { ...pendingDraft, serverInstanceID: entry.serverInstanceID, assistantID: entry.assistantID, name: entry.name, avatarSeed: entry.avatarSeed, serverLabel: entry.serverLabel, connectionKey: entry.connectionKey };
+    void processAssignedNativeDraft(assigned).then((completed) => {
+      if (completed) removePendingNativeRecipientDraft(pendingDraft.draftID);
+    }).finally(() => {
+      if (selectedDraftIDRef.current === pendingDraft.draftID) selectedDraftIDRef.current = null;
+      setSelectedDraftID((currentDraftID) => currentDraftID === pendingDraft.draftID ? null : currentDraftID);
+    });
+  });
+  const cancelRecipientSelection = useEvent((pendingDraft: NativeShareDraft): void => {
+    if (selectedDraftID === pendingDraft.draftID) return;
+    removePendingNativeRecipientDraft(pendingDraft.draftID);
+    void OpenChamberShare.cancelDraft({ draftID: pendingDraft.draftID }).catch(() => { void drainNativeDrafts(); });
+  });
   React.useEffect(() => {
     if (!nativeAvailable()) return;
     void refreshNativeAssistantCatalog();
@@ -313,5 +392,5 @@ export const MobileShareBridge: React.FC = () => {
     void OpenChamberShare.addListener('assistantOpenRequested', () => { void handlePendingNativeAssistantOpen(); }).then((value) => { if (removed) void value.remove(); else assistantOpenListener = value; }).catch(() => undefined);
     return () => { removed = true; unsubscribe(); window.removeEventListener('openchamber:system-resume', resume); if (listener) void listener.remove(); if (draftListener) void draftListener.remove(); if (assistantOpenListener) void assistantOpenListener.remove(); };
   }, []);
-  return null;
+  return <MobileShareRecipientPicker draft={draft} entries={entries} busy={selectedDraftID === draft?.draftID} onSelect={selectRecipient} onCancel={cancelRecipientSelection} />;
 };

@@ -60,7 +60,7 @@ export const dict: Record<I18nKey, string> = {
   'mobile.connect.scanQr': 'QR コードをスキャン',
   'mobile.connect.welcome.scanHint': 'コンピュータで「デバイスを追加」を開いてQRコードを表示し、ここでスキャンしてください。',
   'mobile.connect.advanced': '詳細設定',
-  'mobile.connect.manual.toggle': 'アドレスで接続',
+  'mobile.connect.manual.toggle': '手動接続',
   'mobile.connect.token.label': 'クライアントトークン',
   'mobile.connect.token.placeholder': 'アクセストークンを貼り付け',
   'mobile.connect.token.hint': 'サーバーがパスワードの代わりにトークンを必要とする場合のみ必要です。',

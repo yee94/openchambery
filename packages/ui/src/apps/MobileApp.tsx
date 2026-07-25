@@ -692,7 +692,7 @@ const MobileConnectionWelcome: React.FC<{ connection: UseMobileConnection }> = (
   const [pairingLink, setPairingLink] = React.useState('');
   const [isScanning, setIsScanning] = React.useState(false);
   const qrScanSupported = React.useMemo(() => isQrScanSupported(), []);
-  // QR pairing is the primary flow; the manual URL form stays collapsed unless
+  // QR pairing is the primary flow; the manual connection forms stay collapsed unless
   // scanning is unavailable (web build) or the user asks for it.
   const [manualOpen, setManualOpen] = React.useState(() => !isQrScanSupported());
   // Which saved connection is being connected to, for the per-row spinner.
@@ -870,7 +870,7 @@ const MobileConnectionWelcome: React.FC<{ connection: UseMobileConnection }> = (
               </section>
             ) : null}
 
-            {/* Manual URL entry, collapsed by default — most people pair by QR. */}
+            {/* Manual address and pairing-link entry, collapsed by default — most people pair by QR. */}
             <div className="flex w-full flex-col">
               {qrScanSupported ? (
                 <button
@@ -2086,10 +2086,21 @@ const MobileShell: React.FC<{
   const isPortrait = orientation === 'portrait';
   const [ipadSidebarOpen, setIpadSidebarOpen] = React.useState(isIPad && !isPortrait);
   const [ipadRightPanel, setIpadRightPanel] = React.useState<'files' | 'changes' | 'turn-diff' | null>(null);
+  // Phone: Settings is a root tab. iPad keeps the half-sheet Settings surface.
+  const openSettingsSurface = useEvent((section?: string) => {
+    if (section) {
+      setSettingsPage(section as Parameters<typeof setSettingsPage>[0]);
+    }
+    if (isIPad) {
+      setSettingsInitialMobileStage(section ? 'page-content' : 'nav');
+      setSettingsOpen(true);
+      return;
+    }
+    useMobileNavigationStore.getState().setActiveTab('settings');
+  });
+
   const openInstancesSettingsPage = useEvent(() => {
-    setSettingsPage('instances');
-    setSettingsInitialMobileStage('page-content');
-    setSettingsOpen(true);
+    openSettingsSurface('instances');
   });
 
   const rootBackRoutesBlocked = mobileSessionPanelOpen
@@ -2195,12 +2206,10 @@ const MobileShell: React.FC<{
       openTurnDiff: openTurnDiffSurface,
       openFiles: () => openFilesSurface(),
       openSettings: (section?: string) => {
-        if (section) setSettingsPage(section as Parameters<typeof setSettingsPage>[0]);
-        setSettingsInitialMobileStage(section ? 'page-content' : 'nav');
-        setSettingsOpen(true);
+        openSettingsSurface(section);
       },
     }),
-    [openChangesSurface, openFilesSurface, openTurnDiffSurface, setSettingsPage],
+    [openChangesSurface, openFilesSurface, openSettingsSurface, openTurnDiffSurface],
   );
 
   const closeChanges = useEvent(() => {
@@ -2234,16 +2243,10 @@ const MobileShell: React.FC<{
         openChangesSurface(path ? { path, staged: staged === true } : null);
       },
       openSettings: (section?: string) => {
-        if (section) setSettingsPage(section as Parameters<typeof setSettingsPage>[0]);
-        if (isIPad) {
-          setSettingsInitialMobileStage(section ? 'page-content' : 'nav');
-          setSettingsOpen(true);
-          return;
-        }
-        useMobileNavigationStore.getState().setActiveTab('settings');
+        openSettingsSurface(section);
       },
     }),
-    [isIPad, openChangesSurface, openFilesSurface, openInstancesSettingsPage, setSettingsPage],
+    [isIPad, openChangesSurface, openFilesSurface, openInstancesSettingsPage, openSettingsSurface],
   );
   useDeepLinkHandlers(deepLinkHandlers);
 
@@ -2317,6 +2320,16 @@ const MobileShell: React.FC<{
   // secondary page is open; on iPad it is always mounted.
   const phoneSecondaryKind = useMobileNavigationStore((state) => state.secondary?.kind ?? null);
   const phoneChatMounted = !isIPad && (phoneSecondaryKind === 'chat' || phoneSecondaryKind === 'draft');
+  // Overflow menu is anchored to the chat/detail header. Leaving that page or
+  // switching sessions must dismiss it so it cannot float over another surface.
+  React.useEffect(() => {
+    if (!isIPad && !phoneChatMounted) {
+      setOverflowOpen(false);
+    }
+  }, [isIPad, phoneChatMounted]);
+  React.useEffect(() => {
+    setOverflowOpen(false);
+  }, [currentSessionId]);
   useEdgeSwipeSessionSwitch(chatMainRef, {
     onSwitch: recordSwipeDirection,
     onProgress: renderSwipeProgress,
@@ -2477,10 +2490,8 @@ const MobileShell: React.FC<{
 
     setMcpDraft(draft);
     setSelectedMcp(newName);
-    setSettingsPage('mcp');
     setMcpOpen(false);
-    setSettingsInitialMobileStage('page-content');
-    setSettingsOpen(true);
+    openSettingsSurface('mcp');
   });
 
   const refreshMcpOverlay = useEvent(() => {
@@ -2546,18 +2557,19 @@ const MobileShell: React.FC<{
           onSelect: () => setUpdateOpen(true),
         });
       }
-      items.push({
-        key: 'settings',
-        icon: 'settings-3',
-        label: t('mobile.menu.settings'),
-        onSelect: () => {
-          setSettingsInitialMobileStage('nav');
-          setSettingsOpen(true);
-        },
-      });
+      // Phone Settings lives on the root tab bar; only iPad still opens Settings
+      // from the chat overflow menu (no bottom Settings tab there).
+      if (isIPad) {
+        items.push({
+          key: 'settings',
+          icon: 'settings-3',
+          label: t('mobile.menu.settings'),
+          onSelect: () => openSettingsSurface(),
+        });
+      }
       return items;
     },
-    [dirtyChangeCount, isIPad, openChangesSurface, openFilesSurface, openNewSessionDraft, setActiveMainTab, showUpdateItem, t],
+    [dirtyChangeCount, isIPad, openChangesSurface, openFilesSurface, openNewSessionDraft, openSettingsSurface, setActiveMainTab, showUpdateItem, t],
   );
 
   return (
@@ -2675,9 +2687,7 @@ const MobileShell: React.FC<{
               className="min-h-0 flex-1"
               onAddProject={() => setDirectoryDialogOpen(true)}
               onEnableAssistants={() => {
-                setSettingsPage('assistants');
-                setSettingsInitialMobileStage('page-content');
-                setSettingsOpen(true);
+                openSettingsSurface('assistants');
               }}
               instancesPage={showCapacitorOnlyFeatures ? (
                 <MobileInstancesSurface
@@ -2702,7 +2712,10 @@ const MobileShell: React.FC<{
               renderChat={(target) => (
                 <MobileChatScreen
                   sessionId={target.sessionId}
-                  onBack={() => phoneSecondaryBackRef.current?.()}
+                  onBack={() => {
+                    closeOverflowMenu();
+                    phoneSecondaryBackRef.current?.();
+                  }}
                   onOpenMenu={toggleOverflowMenu}
                   onCloseMenu={closeOverflowMenu}
                   menuOpen={overflowOpen}
@@ -3023,7 +3036,7 @@ const MobileShell: React.FC<{
           </MobileOverlayPanel>
         ) : null}
 
-        {settingsOpen ? (
+        {settingsOpen && isIPad ? (
           <MobileSurfaceShell
             open
             onClose={() => setSettingsOpen(false)}

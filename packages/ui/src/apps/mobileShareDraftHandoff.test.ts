@@ -1,9 +1,9 @@
 import { describe, expect, test } from 'bun:test';
 import { draftRootAttachmentOccurrenceRefID, type DraftAttachmentMetadata, type DraftKey } from '@/sync/input-draft-types';
-import { clearMobileShareDraftHandoffMarker, finalizeMobileShareDraftHandoff, handoffMobileShareDraft, mobileShareHandoffMarkerPartID, MOBILE_SHARE_DRAFT_HANDOFF_JOURNAL_KEY, retryMobileShareDraftCancellations, type NativeShareDraft } from './mobileShareDraftHandoff';
+import { clearMobileShareDraftHandoffMarker, finalizeMobileShareDraftHandoff, handoffMobileShareDraft, mobileShareHandoffMarkerPartID, MOBILE_SHARE_DRAFT_HANDOFF_JOURNAL_KEY, retryMobileShareDraftCancellations, type AssignedNativeShareDraft } from './mobileShareDraftHandoff';
 import type { DraftCommitResult } from '@/sync/input-store';
 
-const draft = (overrides: Partial<NativeShareDraft> = {}): NativeShareDraft => ({ version: 1, draftID: 'share-1', serverInstanceID: 'server', assistantID: 'assistant', name: 'Assistant', avatarSeed: 'assistant', serverLabel: 'Server', connectionKey: 'connection', text: 'shared', attachments: [{ stagedPath: '/native/image.png', originalName: 'image.png', mime: 'image/png', byteSize: 3 }], source: 'android-share', createdAt: 1, expiresAt: 2, ...overrides });
+const draft = (overrides: Partial<AssignedNativeShareDraft> = {}): AssignedNativeShareDraft => ({ version: 1, draftID: 'share-1', serverInstanceID: 'server', assistantID: 'assistant', name: 'Assistant', avatarSeed: 'assistant', serverLabel: 'Server', connectionKey: 'connection', text: 'shared', attachments: [{ stagedPath: '/native/image.png', originalName: 'image.png', mime: 'image/png', byteSize: 3 }], source: 'android-share', createdAt: 1, expiresAt: 2, ...overrides });
 const storage = () => {
   const values = new Map<string, string>();
   return { getItem: (key: string) => values.get(key) ?? null, setItem: (key: string, value: string) => values.set(key, value), removeItem: (key: string) => values.delete(key), values };

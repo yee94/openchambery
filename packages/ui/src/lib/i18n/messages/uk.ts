@@ -62,7 +62,7 @@ export const dict: Record<I18nKey, string> = {
   "mobile.connect.scanQr": "Сканувати QR-код",
   "mobile.connect.welcome.scanHint": "На компʼютері відкрийте «Додати пристрій», щоб показати QR-код, і відскануйте його тут.",
   "mobile.connect.advanced": "Додатково",
-  "mobile.connect.manual.toggle": "Підключитися за адресою",
+  "mobile.connect.manual.toggle": "Підключення вручну",
   "mobile.connect.scan.permissionDenied": "Доступ до камери вимкнено. Увімкни його в Налаштуваннях, щоб сканувати QR-код.",
   "mobile.connect.scan.failed": "Не вдалося відсканувати QR-код. Спробуй ще раз або введи адресу вручну.",
   "mobile.connect.scan.invalid": "Це не QR-код підключення OpenChamber.",

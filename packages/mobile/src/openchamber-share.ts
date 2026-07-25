@@ -34,12 +34,12 @@ export type NativeShareEnvelope = {
 export type NativeShareDraft = {
   version: 1;
   draftID: string;
-  serverInstanceID: string;
-  assistantID: string;
-  name: string;
-  avatarSeed: string;
-  serverLabel: string;
-  connectionKey: string;
+  serverInstanceID?: string;
+  assistantID?: string;
+  name?: string;
+  avatarSeed?: string;
+  serverLabel?: string;
+  connectionKey?: string;
   text?: string;
   attachments: NativeShareAttachment[];
   source: 'android-share';

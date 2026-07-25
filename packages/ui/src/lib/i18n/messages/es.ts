@@ -62,7 +62,7 @@ export const dict: Record<I18nKey, string> = {
   "mobile.connect.scanQr": "Escanear código QR",
   "mobile.connect.welcome.scanHint": "En tu ordenador, abre «Añadir un dispositivo» para mostrar un código QR y escanéalo aquí.",
   "mobile.connect.advanced": "Avanzado",
-  "mobile.connect.manual.toggle": "Conectar por dirección",
+  "mobile.connect.manual.toggle": "Conexión manual",
   "mobile.connect.scan.permissionDenied": "El acceso a la cámara está desactivado. Actívalo en Ajustes para escanear un código QR.",
   "mobile.connect.scan.failed": "No se pudo escanear ese código QR. Inténtalo de nuevo o introduce la URL manualmente.",
   "mobile.connect.scan.invalid": "Ese código QR no es un código de conexión de OpenChamber.",

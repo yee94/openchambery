@@ -38,13 +38,20 @@ type MessageQueueChangedEvent = {
   revision: number;
   occurredAt: number;
 };
+/** Assistants SQLite revision tip — clients GET the authoritative snapshot/history. */
+type AssistantsChangedEvent = {
+  type: 'assistants-changed';
+  revision: number;
+  occurredAt: number;
+};
 type OpenChamberEvent =
   | ScheduledTaskRanEvent
   | EventStreamReadyEvent
   | WorktreeTopologyChangedEvent
   | WorktreeBootstrapStatusEvent
   | SessionIndexChangedEvent
-  | MessageQueueChangedEvent;
+  | MessageQueueChangedEvent
+  | AssistantsChangedEvent;
 type Listener = (event: OpenChamberEvent) => void;
 
 type ConnectionAttempt = { controller: AbortController };
@@ -180,6 +187,14 @@ export const parseOpenchamberEventEnvelope = (envelope: { type: string; properti
     if (typeof revision !== 'number' || !Number.isSafeInteger(revision) || revision < 0) return null;
     if (typeof occurredAt !== 'number' || !Number.isFinite(occurredAt)) return null;
     return { type: 'message-queue-changed', revision, occurredAt };
+  }
+
+  if (envelope.type === 'openchamber:assistants-changed') {
+    const revision = parsed?.revision;
+    const occurredAt = parsed?.occurredAt;
+    if (typeof revision !== 'number' || !Number.isSafeInteger(revision) || revision < 0) return null;
+    if (typeof occurredAt !== 'number' || !Number.isFinite(occurredAt)) return null;
+    return { type: 'assistants-changed', revision, occurredAt };
   }
 
   if (envelope.type !== 'openchamber:scheduled-task-ran') {

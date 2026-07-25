@@ -61,7 +61,7 @@ export const dict: Record<I18nKey, string> = {
   'mobile.connect.scanQr': '扫描二维码',
   'mobile.connect.welcome.scanHint': '在电脑上打开「添加设备」显示二维码，然后在这里扫描。',
   'mobile.connect.advanced': '高级',
-  'mobile.connect.manual.toggle': '通过地址连接',
+  'mobile.connect.manual.toggle': '手动连接',
   'mobile.connect.scan.permissionDenied': '相机访问已关闭。请在“设置”中开启以扫描二维码。',
   'mobile.connect.scan.failed': '无法扫描该二维码。请重试或手动输入网址。',
   'mobile.connect.scan.invalid': '该二维码不是 OpenChamber 连接码。',

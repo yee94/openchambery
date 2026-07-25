@@ -48,6 +48,7 @@
   'settings.view.actions.closeSettingsWithShortcut': '關閉設定（{shortcut}+,）',
   'settings.view.actions.back': '返回',
   'settings.view.actions.resizeNavigation': '調整設定導覽寬度',
+  'settings.view.navigation.groups.connection': '連線',
   'settings.view.navigation.groups.personalization': '個人化',
   'settings.view.navigation.groups.workspace': '工作區',
   'settings.view.navigation.groups.opencode': 'OpenCode',

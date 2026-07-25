@@ -99,6 +99,29 @@ describe("input draft committed actions", () => {
     expect(store.getState().getDraftAttachmentViews(key).map((view) => view.filename)).toEqual(["blob.txt", "url.txt"])
   })
 
+  test("preserves existing attachment views when a later snapshot changes only metadata", async () => {
+    const { store } = await setup()
+    const key = sessionDraftKey({ transportIdentity: "runtime" }, "session")
+    const attachmentRefID = draftRootAttachmentOccurrenceRefID("shared")
+    const attachment = { attachmentID: "shared", attachmentRefID, filename: "shared.png", mimeType: "image/png", size: 3, locator: { kind: "blob" as const, blobID: "shared" }, source: "local" as const }
+    const created = await store.getState().commitDraftSnapshot({
+      key,
+      expectedRevision: "absent",
+      runtime: store.getState().captureDraftRuntime(),
+      snapshot: { text: "shared", attachments: [attachment], syntheticParts: [{ partID: "receipt", text: "", attachments: [], synthetic: true }], mentions: [] },
+      values: new Map([[attachmentRefID, new Blob(["img"], { type: "image/png" })]]),
+    })
+    const cleared = await store.getState().commitDraftSnapshot({
+      key,
+      expectedRevision: created.record!.revision,
+      runtime: store.getState().captureDraftRuntime(),
+      snapshot: { text: "shared", attachments: [attachment], syntheticParts: [], mentions: [] },
+      values: new Map(),
+    })
+    expect(cleared.status).toBe("committed")
+    expect(store.getState().getDraftAttachmentViews(key).map((view) => view.filename)).toEqual(["shared.png"])
+  })
+
   test("moves preserve and consume ownership through durable destination commits", async () => {
     const { store } = await setup()
     const source = newSessionDraftKey({ transportIdentity: "runtime" }, "new")

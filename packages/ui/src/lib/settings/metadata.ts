@@ -30,6 +30,7 @@ export type SettingsPageSlug =
   | 'about';
 
 export type SettingsPageGroup =
+  | 'connection'
   | 'personalization'
   | 'workspace'
   | 'opencode'
@@ -37,6 +38,8 @@ export type SettingsPageGroup =
   | 'system';
 
 export const SETTINGS_PAGE_GROUP_ORDER: readonly SettingsPageGroup[] = [
+  // Mobile instance switching sits above personalization so it appears under search.
+  'connection',
   'personalization',
   'workspace',
   'opencode',
@@ -45,6 +48,7 @@ export const SETTINGS_PAGE_GROUP_ORDER: readonly SettingsPageGroup[] = [
 ] as const;
 
 const SETTINGS_PAGE_ORDER: readonly SettingsPageSlug[] = [
+  'instances',
   'appearance',
   'chat',
   'notifications',
@@ -53,7 +57,6 @@ const SETTINGS_PAGE_ORDER: readonly SettingsPageSlug[] = [
   'shortcuts',
   'projects',
   'git',
-  'instances',
   'remote-instances',
   'providers',
   'agents',
@@ -81,12 +84,12 @@ const SETTINGS_PAGE_ORDER: readonly SettingsPageSlug[] = [
  * Keep this as the single source of truth for MobileApp and MobileSettingsTab.
  */
 export const MOBILE_SETTINGS_PAGE_SLUGS = [
+  'instances',
   'appearance',
   'chat',
   'notifications',
   'sessions',
   'projects',
-  'instances',
   'git',
   'providers',
   'agents',
@@ -139,7 +142,7 @@ export const SETTINGS_PAGE_METADATA: readonly SettingsPageMeta[] = [
   {
     slug: 'instances',
     title: 'Switch instance',
-    group: 'workspace',
+    group: 'connection',
     kind: 'single',
     keywords: ['instance', 'instances', 'server', 'connection', 'switch'],
     isAvailable: (ctx) => ctx.isMobile,

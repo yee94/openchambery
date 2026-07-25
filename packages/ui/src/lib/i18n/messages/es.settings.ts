@@ -50,6 +50,7 @@ export const settingsDict = {
   "settings.view.actions.closeSettingsWithShortcut": "Cerrar configuración ({shortcut}+,)",
   "settings.view.actions.back": "Atrás",
   "settings.view.actions.resizeNavigation": "Ajustar tamaño de la navegación",
+  "settings.view.navigation.groups.connection": "Conexión",
   "settings.view.navigation.groups.personalization": "Personalización",
   "settings.view.navigation.groups.workspace": "Espacio de trabajo",
   "settings.view.navigation.groups.opencode": "OpenCode",

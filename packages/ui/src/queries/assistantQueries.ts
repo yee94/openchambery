@@ -1,5 +1,7 @@
+import React from 'react';
 import { useInfiniteQuery, useQuery, type QueryClient } from '@tanstack/react-query';
 import { queryClient } from '@/lib/queryRuntime';
+import { subscribeOpenchamberEvents } from '@/lib/openchamberEvents';
 import { runtimeFetch } from '@/lib/runtime-fetch';
 import { getRuntimeGeneration, getRuntimeTransportIdentity } from '@/lib/runtime-switch';
 import { AssistantAPIError, AssistantShareOperationError, parseAssistantCapabilityDTO, parseAssistantDTO, parseAssistantHistoryPage, parseAssistantSnapshotDTO, parseCompactResponse, parseMessageAdmission, parseSessionBinding, parseShareOperation, type AssistantCapabilityDTO, type AssistantDTO, type AssistantHistoryPage, type AssistantMode, type AssistantPart, type AssistantSnapshotDTO, type AssistantSource, type CompactResponse, type MessageAdmission, type SessionBinding, type ShareOperation } from './assistantDTO';
@@ -20,6 +22,7 @@ const assertCurrent = (transport: string, generation: number) => { if (getRuntim
 const applyBinding = (assistantID: string, binding: SessionBinding, transport: string) => {
   queryClient.setQueryData<AssistantSnapshot>(key.snapshot(transport), (snapshot) => snapshot && ({ ...snapshot, assistants: snapshot.assistants.map((assistant) => {
     if (assistant.id !== assistantID) return assistant;
+    if (assistant.sessionGeneration > binding.sessionGeneration) return assistant;
     return { ...assistant, sessionID: binding.sessionID, sessionGeneration: binding.sessionGeneration, effectiveWorkspacePath: binding.directory };
   }) }));
   void queryClient.invalidateQueries({ queryKey: key.snapshot(transport) });
@@ -29,7 +32,23 @@ const applyAssistant = (assistant: AssistantDTO, transport: string) => {
   void queryClient.invalidateQueries({ queryKey: key.snapshot(transport) });
 };
 export const assistantSnapshotQueryOptions = (transport = getRuntimeTransportIdentity()) => ({ queryKey: key.snapshot(transport), queryFn: async ({ signal }: { signal: AbortSignal }) => parseAssistantSnapshotDTO(await requestJSON<unknown>('/api/openchamber/assistants/snapshot', { signal })), retry: 2 });
-export const useAssistantSnapshotQuery = () => useQuery(assistantSnapshotQueryOptions());
+export const useAssistantSnapshotQuery = () => {
+  const transport = getRuntimeTransportIdentity();
+  const query = useQuery(assistantSnapshotQueryOptions(transport));
+  React.useEffect(() => subscribeOpenchamberEvents((event) => {
+    if (getRuntimeTransportIdentity() !== transport) return;
+    if (event.type === 'event-stream-ready') {
+      void queryClient.invalidateQueries({ queryKey: key.snapshot(transport), exact: true });
+      return;
+    }
+    if (event.type !== 'assistants-changed') return;
+    const snapshot = queryClient.getQueryData<AssistantSnapshot>(key.snapshot(transport));
+    if (!snapshot || event.revision > snapshot.revision) {
+      void queryClient.invalidateQueries({ queryKey: key.snapshot(transport), exact: true });
+    }
+  }), [transport]);
+  return query;
+};
 export const assistantHistoryInfiniteQueryOptions = (
   assistantID: string,
   sessionID: string,

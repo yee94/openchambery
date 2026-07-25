@@ -30,7 +30,7 @@ import { PromptNavigatorRail } from './components/PromptNavigatorRail';
 import { ScrollShadow } from '@/components/ui/ScrollShadow';
 import { useChatAutoFollow, type AnimationHandlers, type ContentChangeReason } from '@/hooks/useChatAutoFollow';
 import { useChatTimelineController } from './hooks/useChatTimelineController';
-import { createAssistantSessionDivider, stitchHostedSessionHistory } from './hostedSessionHistory';
+import { createAssistantSessionDivider, mergeHostedCurrentSessionHistory, stitchHostedSessionHistory } from './hostedSessionHistory';
 import type { ChatMessageEntry } from './lib/turns/types';
 import { TimelineDialog } from './TimelineDialog';
 import { useChatTurnNavigation } from './hooks/useChatTurnNavigation';
@@ -977,23 +977,35 @@ const ChatContainerContent: React.FC<ChatContainerContentProps> = ({
         historyPrefixCacheRef.current = next;
         return next;
     }, [assistantHistory?.entries, currentSessionId]);
+    const currentAssistantHistoryCacheRef = React.useRef<ChatMessageEntry[]>([]);
+    const currentSessionMessages = React.useMemo(() => {
+        if (!assistantHistory) return sessionMessages;
+        const next = mergeHostedCurrentSessionHistory(
+            assistantHistory.entries,
+            currentSessionId,
+            sessionMessages,
+            currentAssistantHistoryCacheRef.current,
+        );
+        currentAssistantHistoryCacheRef.current = next;
+        return next;
+    }, [assistantHistory, currentSessionId, sessionMessages]);
     const viewportMessages = React.useMemo(() => {
         const authoritativeMessages = historyPrefix.length === 0
-            ? sessionMessages
+            ? currentSessionMessages
             : !currentSessionId
                 ? historyPrefix
                 : [
                     ...historyPrefix,
                     createAssistantSessionDivider(currentSessionId),
-                    ...sessionMessages,
+                    ...currentSessionMessages,
                 ];
         return mergePendingUserMessagePresentations(authoritativeMessages, pendingUserMessages);
-    }, [currentSessionId, historyPrefix, pendingUserMessages, sessionMessages]);
+    }, [currentSessionId, currentSessionMessages, historyPrefix, pendingUserMessages]);
     const materializedPendingMessageIDs = React.useMemo(() => {
         if (!onPendingUserMessagesMaterialized || pendingUserMessages.length === 0) return [];
-        const authoritativeIDs = new Set([...historyPrefix, ...sessionMessages].map((message) => message.info.id));
+        const authoritativeIDs = new Set([...historyPrefix, ...currentSessionMessages].map((message) => message.info.id));
         return pendingUserMessages.map((message) => message.info.id).filter((id) => authoritativeIDs.has(id));
-    }, [historyPrefix, onPendingUserMessagesMaterialized, pendingUserMessages, sessionMessages]);
+    }, [currentSessionMessages, historyPrefix, onPendingUserMessagesMaterialized, pendingUserMessages]);
     React.useEffect(() => {
         if (materializedPendingMessageIDs.length > 0) {
             onPendingUserMessagesMaterialized?.(materializedPendingMessageIDs);
@@ -1489,7 +1501,7 @@ const ChatContainerContent: React.FC<ChatContainerContentProps> = ({
         );
     }
 
-	if (sessionMessages.length === 0 && historyPrefix.length === 0 && !sessionIsWorking) {
+	if (viewportMessages.length === 0 && !sessionIsWorking) {
 		return (
 			// No transform here either — same fixed-positioning constraint as the
 			// draft branch above.

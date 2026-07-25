@@ -100,7 +100,6 @@ final class OpenChamberShareStore {
             throwIfDraftCancelled(context, draftID);
             JSONObject existing = loadDraftLocked(context, draftID);
             if (existing != null) return existing;
-            if (target == null) throw new IllegalStateException("Choose a default share assistant in OpenChamber before sharing.");
             if (images.size() > MAX_IMAGES) throw new IllegalArgumentException("A share supports up to 10 images.");
             if ((text == null || text.trim().isEmpty()) && images.isEmpty()) throw new IllegalArgumentException("Share text or at least one image.");
 
@@ -125,7 +124,8 @@ final class OpenChamberShareStore {
                     attachments.put(new JSONObject().put("stagedPath", output.getName()).put("originalName", name).put("mime", mime).put("byteSize", size));
                 }
                 long now = System.currentTimeMillis();
-                JSONObject draft = new JSONObject().put("target", target).put("text", text == null ? "" : text.trim()).put("attachments", attachments).put("createdAt", now).put("expiresAt", now + DRAFT_TTL_MILLIS);
+                JSONObject draft = new JSONObject().put("text", text == null ? "" : text.trim()).put("attachments", attachments).put("createdAt", now).put("expiresAt", now + DRAFT_TTL_MILLIS);
+                if (target != null) draft.put("target", target);
                 writeAtomic(new File(temp, "draft.json"), draft.toString().getBytes(StandardCharsets.UTF_8));
                 throwIfDraftCancelled(context, draftID);
                 File ready = new File(drafts(context), draftID);
@@ -227,14 +227,15 @@ final class OpenChamberShareStore {
                 long createdAt = draft.optLong("createdAt");
                 long expiresAt = draft.optLong("expiresAt");
                 String text = draft.optString("text", "").trim();
-                if (createdAt <= 0 || expiresAt <= createdAt || expiresAt <= System.currentTimeMillis() || !validTarget(target) || !completeAttachments(dir, attachments) || (text.isEmpty() && attachments.length() == 0)) continue;
+                if (createdAt <= 0 || expiresAt <= createdAt || expiresAt <= System.currentTimeMillis() || (target != null && !validTarget(target)) || !completeAttachments(dir, attachments) || (text.isEmpty() && attachments.length() == 0)) continue;
                 JSONArray attachmentCopies = new JSONArray();
                 for (int i = 0; i < attachments.length(); i++) {
                     JSONObject attachment = new JSONObject(attachments.getJSONObject(i).toString());
                     attachment.put("stagedPath", new File(dir, attachment.getString("stagedPath")).getAbsolutePath());
                     attachmentCopies.put(attachment);
                 }
-                JSONObject result = new JSONObject().put("version", 1).put("draftID", dir.getName()).put("serverInstanceID", target.getString("serverInstanceID")).put("assistantID", target.getString("assistantID")).put("name", target.getString("name")).put("avatarSeed", target.getString("avatarSeed")).put("serverLabel", target.getString("serverLabel")).put("connectionKey", target.getString("connectionKey")).put("attachments", attachmentCopies).put("source", "android-share").put("createdAt", createdAt).put("expiresAt", expiresAt);
+                JSONObject result = new JSONObject().put("version", 1).put("draftID", dir.getName()).put("attachments", attachmentCopies).put("source", "android-share").put("createdAt", createdAt).put("expiresAt", expiresAt);
+                if (target != null) result.put("serverInstanceID", target.getString("serverInstanceID")).put("assistantID", target.getString("assistantID")).put("name", target.getString("name")).put("avatarSeed", target.getString("avatarSeed")).put("serverLabel", target.getString("serverLabel")).put("connectionKey", target.getString("connectionKey"));
                 if (!text.isEmpty()) result.put("text", text);
                 if (isDraftCancelled(context, dir.getName())) {
                     delete(dir);

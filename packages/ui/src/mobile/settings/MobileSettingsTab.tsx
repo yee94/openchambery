@@ -29,7 +29,9 @@ export function MobileSettingsTab({ className, contentClassName, instancesPage }
         isWindowed
         hideMobileHeader
         flowMobile
-        autoOpenMobilePage={false}
+        // Deep links / enable-assistants / MCP create set settingsPage before
+        // switching to this tab; auto-open lands on that page instead of nav.
+        autoOpenMobilePage
         visiblePageSlugs={[...MOBILE_SETTINGS_PAGE_SLUGS]}
         mobileInstancesPage={instancesPage}
       />

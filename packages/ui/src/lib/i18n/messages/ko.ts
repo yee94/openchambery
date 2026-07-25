@@ -61,7 +61,7 @@ export const dict: Record<I18nKey, string> = {
   'mobile.connect.scanQr': 'QR 코드 스캔',
   'mobile.connect.welcome.scanHint': '컴퓨터에서 「기기 추가」를 열어 QR 코드를 표시한 뒤 여기에서 스캔하세요.',
   'mobile.connect.advanced': '고급',
-  'mobile.connect.manual.toggle': '주소로 연결',
+  'mobile.connect.manual.toggle': '수동 연결',
   'mobile.connect.scan.permissionDenied': '카메라 접근이 꺼져 있습니다. QR 코드를 스캔하려면 설정에서 사용 설정하세요.',
   'mobile.connect.scan.failed': 'QR 코드를 스캔하지 못했습니다. 다시 시도하거나 URL을 직접 입력하세요.',
   'mobile.connect.scan.invalid': '이 QR 코드는 OpenChamber 연결 코드가 아닙니다.',

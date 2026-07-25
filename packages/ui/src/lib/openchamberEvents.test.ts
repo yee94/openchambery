@@ -39,7 +39,7 @@ describe('parseOpenchamberEventEnvelope', () => {
     })).toBeNull();
   });
 
-  test('parses session-index and message-queue tip envelopes', () => {
+  test('parses session-index, message-queue, and Assistant tip envelopes', () => {
     expect(parseOpenchamberEventEnvelope({
       type: 'openchamber:session-index-changed',
       properties: { revision: 3, occurredAt: 10, sync: { active: true, enriching: false } },
@@ -53,6 +53,10 @@ describe('parseOpenchamberEventEnvelope', () => {
       type: 'openchamber:message-queue-changed',
       properties: { revision: 7, occurredAt: 20 },
     })).toEqual({ type: 'message-queue-changed', revision: 7, occurredAt: 20 });
+    expect(parseOpenchamberEventEnvelope({
+      type: 'openchamber:assistants-changed',
+      properties: { revision: 8, occurredAt: 21 },
+    })).toEqual({ type: 'assistants-changed', revision: 8, occurredAt: 21 });
   });
 
   test('rejects malformed session-index and message-queue tip payloads', () => {
@@ -62,6 +66,7 @@ describe('parseOpenchamberEventEnvelope', () => {
     expect(parseOpenchamberEventEnvelope({ type: 'openchamber:message-queue-changed', properties: { revision: 1, occurredAt: Number.NaN } })).toBeNull();
     expect(parseOpenchamberEventEnvelope({ type: 'openchamber:session-index-changed', properties: { revision: 1.5, occurredAt: 1 } })).toBeNull();
     expect(parseOpenchamberEventEnvelope({ type: 'openchamber:message-queue-changed', properties: { revision: Number.MAX_SAFE_INTEGER + 1, occurredAt: 1 } })).toBeNull();
+    expect(parseOpenchamberEventEnvelope({ type: 'openchamber:assistants-changed', properties: { revision: 2, occurredAt: 'later' } })).toBeNull();
   });
 });
 

@@ -2,7 +2,10 @@ import { draftKeyString, draftRootAttachmentOccurrenceRefID, surfaceDraftKey, ty
 import type { DraftCommitResult, DraftSnapshot, InputDraftRuntimeCapture } from '@/sync/input-store';
 
 export type NativeShareDraftAttachment = { stagedPath: string; originalName: string; mime: string; byteSize: number };
-export type NativeShareDraft = { version: 1; draftID: string; serverInstanceID: string; assistantID: string; name: string; avatarSeed: string; serverLabel: string; connectionKey: string; text?: string; attachments: NativeShareDraftAttachment[]; source: 'android-share'; createdAt: number; expiresAt: number };
+export type NativeShareDraftTarget = { serverInstanceID: string; assistantID: string; name: string; avatarSeed: string; serverLabel: string; connectionKey: string };
+export type NativeShareDraft = { version: 1; draftID: string; text?: string; attachments: NativeShareDraftAttachment[]; source: 'android-share'; createdAt: number; expiresAt: number } & Partial<NativeShareDraftTarget>;
+export type AssignedNativeShareDraft = NativeShareDraft & NativeShareDraftTarget;
+export const isAssignedNativeShareDraft = (draft: NativeShareDraft): draft is AssignedNativeShareDraft => Boolean(draft.serverInstanceID && draft.assistantID && draft.name && draft.avatarSeed && draft.serverLabel && draft.connectionKey);
 
 export type MobileShareDraftHandoffTarget = { draftID: string; serverInstanceID: string; connectionKey: string; assistantID: string; transportIdentity: string };
 type JournalRecord = MobileShareDraftHandoffTarget & { targetDraftKey: DraftKey; baseRevision: number | 'absent'; resultText: string; attachmentIDs: string[]; phase: 'materializing' | 'materialized' | 'cancelled' };
@@ -127,7 +130,7 @@ export const clearMobileShareDraftHandoffMarker = async (target: MobileShareDraf
 };
 
 /** Materializes one native Android draft exactly once before cancelling its native durable copy. */
-export const handoffMobileShareDraft = async (draft: NativeShareDraft, dependencies: MobileShareDraftHandoffDependencies): Promise<{ durable: boolean; cancelled: boolean }> => {
+export const handoffMobileShareDraft = async (draft: AssignedNativeShareDraft, dependencies: MobileShareDraftHandoffDependencies): Promise<{ durable: boolean; cancelled: boolean }> => {
   if (draft.attachments.length > 10 || !draft.attachments.every(isValidAttachment) || draft.attachments.reduce((sum, attachment) => sum + attachment.byteSize, 0) > 16 * 1024 * 1024) throw new Error('invalid_share_attachment');
   const storage = storageFor(dependencies.storage);
   const key = surfaceDraftKey({ transportIdentity: dependencies.transportIdentity }, `assistant:${draft.assistantID}`);

@@ -33,13 +33,12 @@ const serverAdmissionFixture = () => {
         inlineDrafts: [inlineDraft] as InlineCommentDraft[],
         bodyConsumed: false,
     };
-    const capture = createServerQueueAdmissionCapture({ draftKey: key, draftRecord: record, runtime: state.runtime, document, attachments: state.attachments, inlineDrafts: state.inlineDrafts });
+    const capture = createServerQueueAdmissionCapture({ draftKey: key, runtime: state.runtime, document, attachments: state.attachments, inlineDrafts: state.inlineDrafts });
     const input = (admit: () => Promise<{ status: 'committed' | 'stale' }>) => ({
         capture,
         admit,
         captureRuntime: () => state.runtime,
         getCurrentDraftKey: () => state.currentKey,
-        getDraft: () => state.record,
         getDocument: () => state.document,
         consumeBody: () => { state.bodyConsumed = true; },
         getAttachments: () => state.attachments,
@@ -224,6 +223,16 @@ describe('admitQueueMessageAndConsumeResources', () => {
         expect(fixture.state.bodyConsumed).toBe(true);
         expect(fixture.state.attachments).toEqual([]);
         expect(fixture.state.inlineDrafts).toEqual([]);
+    });
+
+    test('delayed draft persistence cannot restore an unchanged admitted body', async () => {
+        const fixture = serverAdmissionFixture();
+        const result = await admitServerQueueMessageAndConsumeResources(fixture.input(async () => {
+            fixture.state.record = { ...fixture.record, revision: fixture.record.revision + 1 };
+            return { status: 'committed' };
+        }));
+        expect(result.bodyConsumed).toBe(true);
+        expect(fixture.state.bodyConsumed).toBe(true);
     });
 
     test('server admission preserves every resource when runtime becomes stale', async () => {

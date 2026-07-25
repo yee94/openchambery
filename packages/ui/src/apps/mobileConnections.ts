@@ -967,12 +967,19 @@ export const autoConnectLastInstance = async (): Promise<boolean> => {
 export type MobileShareConnectionResult = 'connected' | 'auth-required' | 'offline' | 'missing';
 
 /** Narrow headless entry point for native share delivery. Tokens stay inside this module. */
-export const connectMobileShareConnection = async (connectionKey: string): Promise<MobileShareConnectionResult> => {
+export const connectMobileShareConnection = async (
+  connectionKey: string,
+  options?: { transportPreference?: 'relay' },
+): Promise<MobileShareConnectionResult> => {
   const connection = (await loadMobileConnections()).find((item) => secureTokenKeyOf(item) === connectionKey);
   if (!connection) return 'missing';
   const token = isCapacitorApp() ? (connection.hasToken ? await readSecureToken(connectionKey) : undefined) : connection.clientToken;
   if (!token) return 'auth-required';
-  const result = await probeConnectionCandidates(connection.candidates, token, { fast: true });
+  const candidates = options?.transportPreference === 'relay'
+    ? connection.candidates.filter((candidate) => candidate.kind === 'relay')
+    : connection.candidates;
+  if (candidates.length === 0) return 'offline';
+  const result = await probeConnectionCandidates(candidates, token, { fast: true });
   if (result.status === 'needs-login') return 'auth-required';
   if (result.status !== 'ok') return 'offline';
   switchToTransport(result.transport, token, { runtimeKey: connectionKey });

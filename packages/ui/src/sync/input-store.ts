@@ -396,8 +396,9 @@ export const createInputStore = (services: InputDraftServices = {}) => {
     }
     const snapshotViews = async (record: DraftRecord, values?: ReadonlyMap<string, Blob | string>): Promise<Record<string, AttachedFile> | undefined> => {
       const views: Record<string, AttachedFile> = {}
+      const existingViews = get().draftAttachmentViews[draftKeyString(record.key)] ?? {}
       for (const attachment of attachmentList(record)) {
-        const value = values?.get(attachment.attachmentRefID) ?? (attachment.locator.kind === "url" ? attachment.locator.url : undefined)
+        const value = values?.get(attachment.attachmentRefID) ?? existingViews[attachment.attachmentRefID]?.file ?? (attachment.locator.kind === "url" ? attachment.locator.url : undefined)
         if (attachment.locator.kind === "url" && value !== undefined && (value !== attachment.locator.url || !isDurableURL(value))) return undefined
         if (attachment.locator.kind === "blob" && value !== undefined && !(value instanceof Blob) && !(typeof value === "string" && isDurableURL(value))) return undefined
         if (value !== undefined) views[attachment.attachmentRefID] = await makeView(attachment, value)

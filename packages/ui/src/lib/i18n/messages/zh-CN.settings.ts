@@ -50,6 +50,7 @@ export const settingsDict = {
   'settings.view.actions.closeSettingsWithShortcut': '关闭设置（{shortcut}+,）',
   'settings.view.actions.back': '返回',
   'settings.view.actions.resizeNavigation': '调整设置导航宽度',
+  'settings.view.navigation.groups.connection': '连接',
   'settings.view.navigation.groups.personalization': '个性化',
   'settings.view.navigation.groups.workspace': '工作区',
   'settings.view.navigation.groups.opencode': 'OpenCode',
