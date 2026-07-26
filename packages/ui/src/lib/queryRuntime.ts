@@ -54,6 +54,10 @@ export const queryKeys = {
     branches: (directory: string | null | undefined, transport = getRuntimeTransportIdentity()): readonly [string, 'git', 'branches', string | null] => [transport, 'git', 'branches', normalizeQueryDirectory(directory)],
     remotes: (directory: string | null | undefined, transport = getRuntimeTransportIdentity()): readonly [string, 'git', 'remotes', string | null] => [transport, 'git', 'remotes', normalizeQueryDirectory(directory)],
   },
+  sessionIndex: {
+    snapshot: (transport = getRuntimeTransportIdentity()): readonly [string, 'sessionIndex', 'snapshot'] => [transport, 'sessionIndex', 'snapshot'],
+  },
+
   plugins: {
     list: (directory: string | null, transport = getRuntimeTransportIdentity()): readonly [string, 'plugins', 'list', string | null] => [transport, 'plugins', 'list', directory],
     registry: (

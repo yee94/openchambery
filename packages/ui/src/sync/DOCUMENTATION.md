@@ -189,17 +189,26 @@ on child-store creation and must not be reintroduced. `main.tsx` establishes a
 startup barrier before React effects; `SessionStartupCoordinator` starts the
 session-index flow immediately: SQLite hydrate (`GET /session-index`) is fired
 without waiting for settings so the last snapshot can paint first (local-first /
-server-cache-first). Directory planning and background root refresh still wait
-for registered settings hydration so the project catalog and active directory
-are complete, then refresh known root/worktree directories through the bounded
-scheduler (with priority — see below), write one transaction batch, and release
-normal global and directory bootstrap. Concurrent early + startup hydrate
-callers share one in-flight GET. A runtime that reports the capability as
-unsupported uses the existing bounded SDK-backed path. A successful empty root
-page replaces stale index rows; a failed page preserves its last good cache.
-Desktop main splash dismisses when a cached snapshot is restored, or when both
-OpenCode init and hydrate have settled (so an empty list is not shown before
-the restore attempt finishes).
+server-cache-first). On the client, TanStack Query owns that GET as transport-
+scoped SWR (`queryKeys.sessionIndex.snapshot(transport)`), while a separate
+runtimeKey-scoped persistent snapshot (`oc.sessionIndexStartupCache`, at most
+eight runtime entries and 1 MiB) seeds
+stale first paint so a paired host can reuse LAN↔relay cold-start rows. The
+persistent payload is only the public session-index summary (revision, sync
+progress, directory session rows) — never credentials, tokens, messages, or
+attachments. Query/local storage accelerate paint only; server SQLite + GET
+remain authoritative. A failed authoritative GET keeps the last good seed; a
+successful empty snapshot clears rows under the existing merge rules; a
+501/unsupported `null` must not be written as a successful empty storage entry.
+Directory planning and background root refresh still wait for registered
+settings hydration so the project catalog and active directory are complete,
+then refresh known root/worktree directories through the bounded scheduler
+(with priority — see below), write one transaction batch, and release normal
+global and directory bootstrap. Concurrent early + startup hydrate callers
+share one in-flight GET. A runtime that reports the capability as unsupported
+uses the existing bounded SDK-backed path. Desktop main splash dismisses when a
+cached snapshot is restored, or when both OpenCode init and hydrate have
+settled (so an empty list is not shown before the restore attempt finishes).
 
 **Startup directory priority** (`planSessionStartupDirectories` +
 `startSessionIndexStartup`):
@@ -212,16 +221,22 @@ the restore attempt finishes).
 
 P1 reuses the existing server enqueue + tip/GET observer path
 (`startSessionIndexBackgroundSync` / `syncSessionsForDirectories`); it must not
-introduce a second browser cache or a parallel sync pipeline. Runtime switches
-still discard in-flight work through `captureSessionIndexRuntime` /
-`isCurrentSessionIndexRuntime`.
+introduce a parallel sync pipeline. The only allowed client-side browser cache
+for session-index is the transport/runtime-scoped Query + startup snapshot
+above (stale paint only). Runtime switches still discard in-flight work through
+`captureSessionIndexRuntime` / `isCurrentSessionIndexRuntime`, and Query memory
+clears on transport identity change via the shared query lifecycle.
 
 Every global session-index asynchronous entry captures the runtime generation
 and transport identity. Snapshot hydration, startup sync, persistence, and
 tip-driven snapshot reloads commit only while that capture remains current.
-`loadSessionIndexSnapshot` shares one in-flight GET across concurrent callers,
-and `waitForSessionIndexInvalidation` debounces dense revision tips (and
-stream-ready edges) before consumers issue the next full snapshot GET.
+Authoritative GET traffic goes through session-index Query helpers (which call
+`loadSessionIndexSnapshot` via `runtimeFetch` so relay stays transparent).
+`loadSessionIndexSnapshot` still shares one in-flight GET across concurrent
+callers, and `waitForSessionIndexInvalidation` debounces dense revision tips
+(and stream-ready edges) before consumers issue the next full snapshot GET.
+Successful non-null POST/GET snapshots write back through the Query helper so
+memory and the runtimeKey persistent seed stay aligned.
 
 Password-gated runtimes force a fresh settings hydration after authentication
 and keep the app tree behind the auth gate until persisted project paths have

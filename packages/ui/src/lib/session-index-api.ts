@@ -66,11 +66,15 @@ let sessionIndexSnapshotInflight: Promise<SessionIndexSnapshot | null> | undefin
  * Authoritative session-index GET. Concurrent callers share one in-flight request
  * so hydrate + tip consumers cannot fan out identical snapshots.
  */
-export const loadSessionIndexSnapshot = async (): Promise<SessionIndexSnapshot | null> => {
+export const loadSessionIndexSnapshot = async (
+  options?: { signal?: AbortSignal },
+): Promise<SessionIndexSnapshot | null> => {
   if (typeof window === 'undefined') return null;
   if (sessionIndexSnapshotInflight) return sessionIndexSnapshotInflight;
   const flight = (async (): Promise<SessionIndexSnapshot | null> => {
-    const response = await runtimeFetch('/api/openchamber/session-index');
+    const response = await runtimeFetch('/api/openchamber/session-index', {
+      signal: options?.signal,
+    });
     if (response.status === 501) return null;
     await ensureOk(response);
     const payload = await response.json() as Partial<SessionIndexSnapshot> & { available?: boolean };

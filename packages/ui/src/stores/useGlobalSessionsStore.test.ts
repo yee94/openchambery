@@ -1583,6 +1583,145 @@ describe('useGlobalSessionsStore', () => {
   });
 });
 
+describe('session-index client SWR + cold startup seed', () => {
+  test('projects a runtimeKey storage seed before GET and keeps it when GET fails', async () => {
+    const originalWindow = globalThis.window;
+    const originalFetch = globalThis.fetch;
+    const { writeSessionIndexSnapshotQuery } = await import('@/queries/sessionIndexQueries');
+    const { queryClient } = await import('@/lib/queryRuntime');
+    const cached = buildSession('https://share.example/stale-seed', {
+      id: 'ses_stale_seed',
+      directory: '/repo/seed',
+    });
+    const seedSnapshot = {
+      revision: 4,
+      sync: {
+        active: false,
+        completed: 1,
+        total: 1,
+        pendingDirectories: [] as string[],
+        completedDirectories: ['/repo/seed'],
+        failedDirectories: [] as string[],
+      },
+      directories: [{
+        directory: '/repo/seed',
+        cursor: null as number | null,
+        hasMore: false,
+        lastSyncedAt: 1000,
+        lastFullSyncedAt: 1000,
+        lastAccessedAt: 1000,
+        sessions: [cached],
+      }],
+    };
+    try {
+      Object.defineProperty(globalThis, 'window', {
+        configurable: true,
+        value: { location: { origin: 'http://localhost', href: 'http://localhost/' } },
+      });
+      // Seed Query memory + persistent cache through the same helper the store uses.
+      writeSessionIndexSnapshotQuery(seedSnapshot);
+      globalThis.fetch = async () => {
+        throw new Error('offline');
+      };
+
+      const hydrate = useGlobalSessionsStore.getState().hydrateSessionIndex();
+      // Seed projection is synchronous before the failed GET settles.
+      expect(useGlobalSessionsStore.getState().sessionsByDirectory.get('/repo/seed')).toEqual([cached]);
+      expect(useGlobalSessionsStore.getState().hasCachedSessionIndex).toBe(true);
+      expect(useGlobalSessionsStore.getState().hasHydratedSessionIndex).toBe(false);
+
+      await hydrate;
+      expect(useGlobalSessionsStore.getState().sessionsByDirectory.get('/repo/seed')).toEqual([cached]);
+      expect(useGlobalSessionsStore.getState().hasCachedSessionIndex).toBe(true);
+      // Transport failure leaves hasHydrated false so startup can retry.
+      expect(useGlobalSessionsStore.getState().hasHydratedSessionIndex).toBe(false);
+    } finally {
+      useGlobalSessionsStore.getState().resetForRuntimeSwitch();
+      queryClient.clear();
+      Object.defineProperty(globalThis, 'window', { configurable: true, value: originalWindow });
+      globalThis.fetch = originalFetch;
+    }
+  });
+
+  test('authoritative GET success replaces the storage seed projection', async () => {
+    const originalWindow = globalThis.window;
+    const originalFetch = globalThis.fetch;
+    const { writeSessionIndexSnapshotQuery, readSessionIndexSnapshotQuery } = await import('@/queries/sessionIndexQueries');
+    const { readSessionIndexStartupSnapshot } = await import('@/queries/sessionIndexStartupCache');
+    const { queryClient } = await import('@/lib/queryRuntime');
+    const { getRuntimeKey } = await import('@/lib/runtime-switch');
+    const { getDeferredSafeStorage } = await import('@/stores/utils/safeStorage');
+    const stale = buildSession('https://share.example/stale', {
+      id: 'ses_stale',
+      directory: '/repo/live',
+    });
+    const live = buildSession('https://share.example/live', {
+      id: 'ses_live',
+      directory: '/repo/live',
+    });
+    const seedSnapshot = {
+      revision: 1,
+      sync: {
+        active: false,
+        completed: 1,
+        total: 1,
+        pendingDirectories: [] as string[],
+        completedDirectories: ['/repo/live'],
+        failedDirectories: [] as string[],
+      },
+      directories: [{
+        directory: '/repo/live',
+        cursor: null as number | null,
+        hasMore: false,
+        lastSyncedAt: 1,
+        lastFullSyncedAt: 1,
+        lastAccessedAt: 1,
+        sessions: [stale],
+      }],
+    };
+    const liveSnapshot = {
+      ...seedSnapshot,
+      revision: 2,
+      directories: [{
+        ...seedSnapshot.directories[0],
+        sessions: [live],
+      }],
+    };
+    try {
+      Object.defineProperty(globalThis, 'window', {
+        configurable: true,
+        value: { location: { origin: 'http://localhost', href: 'http://localhost/' } },
+      });
+      writeSessionIndexSnapshotQuery(seedSnapshot);
+      globalThis.fetch = async (input) => {
+        const pathname = new URL(input instanceof Request ? input.url : String(input), 'http://localhost').pathname;
+        if (pathname === '/api/openchamber/session-index') {
+          return new Response(JSON.stringify({ available: true, ...liveSnapshot }), {
+            status: 200,
+            headers: { 'Content-Type': 'application/json' },
+          });
+        }
+        return new Response('{}', { status: 404 });
+      };
+
+      await useGlobalSessionsStore.getState().hydrateSessionIndex();
+
+      // Non-authoritative hydrate merges; live row must appear after the GET.
+      const liveDirectory = useGlobalSessionsStore.getState().sessionsByDirectory.get('/repo/live') ?? [];
+      expect(liveDirectory.some((session) => session.id === live.id)).toBe(true);
+      expect(useGlobalSessionsStore.getState().hasCachedSessionIndex).toBe(true);
+      expect(useGlobalSessionsStore.getState().hasHydratedSessionIndex).toBe(true);
+      expect(readSessionIndexSnapshotQuery()?.revision).toBe(2);
+      expect(readSessionIndexStartupSnapshot(getRuntimeKey(), getDeferredSafeStorage())?.revision).toBe(2);
+    } finally {
+      useGlobalSessionsStore.getState().resetForRuntimeSwitch();
+      queryClient.clear();
+      Object.defineProperty(globalThis, 'window', { configurable: true, value: originalWindow });
+      globalThis.fetch = originalFetch;
+    }
+  });
+});
+
 describe('mergeLiveSessionWithGlobalSession', () => {
   test('preserves global share over live share', () => {
     const live = buildSession('https://live.example/s', { time: { created: 1, updated: 5 } });

@@ -7,7 +7,6 @@ import { getReviewTransferDirection, type ReviewTransferDirection } from '@/lib/
 import { getOriginalSessionID, getReviewSessionID } from '@/lib/sessionReviewMetadata';
 import { resetOpenCodeReadiness, waitForOpenCodeReadiness } from '@/lib/runtime-readiness';
 import {
-  loadSessionIndexSnapshot,
   persistSessionIndexDirectory,
   persistSessionIndexDirectories,
   startSessionIndexBackgroundSync,
@@ -15,7 +14,12 @@ import {
   type SessionIndexSnapshot,
 } from '@/lib/session-index-api';
 import { normalizePath } from '@/lib/pathNormalization';
-import { getRuntimeGeneration, getRuntimeTransportIdentity } from '@/lib/runtime-switch';
+import { getRuntimeGeneration, getRuntimeKey, getRuntimeTransportIdentity } from '@/lib/runtime-switch';
+import {
+  refreshSessionIndexSnapshotQuery,
+  seedSessionIndexSnapshotQuery,
+  writeSessionIndexSnapshotQuery,
+} from '@/queries/sessionIndexQueries';
 
 type GlobalSessionsStatus = 'idle' | 'loading' | 'ready' | 'error';
 
@@ -893,13 +897,38 @@ export const useGlobalSessionsStore = create<GlobalSessionsState>((set, get) => 
     if (get().hasHydratedSessionIndex) return;
 
     const runtime = captureSessionIndexRuntime();
+    const transport = getRuntimeTransportIdentity();
+    const runtimeKey = getRuntimeKey();
+    // Synchronous cold paint from runtimeKey-scoped storage via Query initialData.
+    const stale = seedSessionIndexSnapshotQuery(undefined, transport, runtimeKey);
+    if (stale && isCurrentSessionIndexRuntime(runtime)) {
+      set((state) => ({
+        ...applySessionIndexSnapshotState(state, stale, false),
+        hasCachedSessionIndex: true,
+        // Keep hasHydrated false until the live GET settles or definitively
+        // reports unsupported, so startup can still retry on transport failure.
+      }));
+    }
     const flight = (async () => {
       try {
-        const snapshot = await loadSessionIndexSnapshot();
+        let snapshot: SessionIndexSnapshot | null;
+        try {
+          snapshot = await refreshSessionIndexSnapshotQuery(undefined, transport, runtimeKey);
+        } catch (error) {
+          // Authoritative GET failed: keep the storage seed projection and leave
+          // hasHydrated false so startup can retry after transport readiness.
+          if (!isCurrentSessionIndexRuntime(runtime)) return;
+          if (stale) {
+            console.warn('[GlobalSessions] Failed to refresh runtime session index; keeping stale seed:', error);
+            return;
+          }
+          throw error;
+        }
         if (!isCurrentSessionIndexRuntime(runtime)) return;
         if (!snapshot) {
           // 501 / unavailable is definitive for this runtime; mark hydrated so
           // splash and startup can proceed without waiting on a retry.
+          // Do not clear a prior storage seed — null is unsupported, not empty success.
           set((state) => (state.hasHydratedSessionIndex ? state : { hasHydratedSessionIndex: true }));
           return;
         }
@@ -920,6 +949,7 @@ export const useGlobalSessionsStore = create<GlobalSessionsState>((set, get) => 
     });
     return sessionIndexHydrateInflight;
   },
+
 
   startSessionIndexStartup: async (directories, options) => {
     const runtime = captureSessionIndexRuntime();
@@ -970,6 +1000,7 @@ export const useGlobalSessionsStore = create<GlobalSessionsState>((set, get) => 
       if (!isCurrentSessionIndexRuntime(runtime) || !isCurrentSessionIndexRuntime(startRuntime)) {
         return { activeSessions: [], archivedSessions: [] };
       }
+      if (initial) writeSessionIndexSnapshotQuery(initial);
     } catch (error) {
       if (!isCurrentSessionIndexRuntime(runtime) || !isCurrentSessionIndexRuntime(startRuntime)) {
         return { activeSessions: [], archivedSessions: [] };
@@ -1051,7 +1082,12 @@ export const useGlobalSessionsStore = create<GlobalSessionsState>((set, get) => 
         if (!isCurrentSessionIndexRuntime(runtime) || !isCurrentSessionIndexRuntime(waitRuntime)) break;
         if (reason === 'aborted') break;
         const loadRuntime = captureSessionIndexRuntime();
-        const next = await loadSessionIndexSnapshot();
+        let next: SessionIndexSnapshot | null;
+        try {
+          next = await refreshSessionIndexSnapshotQuery();
+        } catch {
+          break;
+        }
         if (!isCurrentSessionIndexRuntime(runtime) || !isCurrentSessionIndexRuntime(loadRuntime)) break;
         if (!next) break;
         current = next;
@@ -1326,6 +1362,7 @@ export const useGlobalSessionsStore = create<GlobalSessionsState>((set, get) => 
       if (!isCurrentSessionIndexRuntime(runtime) || !isCurrentSessionIndexRuntime(startRuntime)) {
         return { activeSessions: [], archivedSessions: [] };
       }
+      if (snapshot) writeSessionIndexSnapshotQuery(snapshot);
     } catch (error) {
       if (!isCurrentSessionIndexRuntime(runtime) || !isCurrentSessionIndexRuntime(startRuntime)) {
         return { activeSessions: [], archivedSessions: [] };
@@ -1349,7 +1386,12 @@ export const useGlobalSessionsStore = create<GlobalSessionsState>((set, get) => 
         if (!isCurrentSessionIndexRuntime(runtime) || !isCurrentSessionIndexRuntime(waitRuntime)) break;
         if (reason === 'aborted') break;
         const loadRuntime = captureSessionIndexRuntime();
-        const next = await loadSessionIndexSnapshot();
+        let next: SessionIndexSnapshot | null;
+        try {
+          next = await refreshSessionIndexSnapshotQuery();
+        } catch {
+          break;
+        }
         if (!isCurrentSessionIndexRuntime(runtime) || !isCurrentSessionIndexRuntime(loadRuntime)) break;
         if (!next) break;
         current = next;

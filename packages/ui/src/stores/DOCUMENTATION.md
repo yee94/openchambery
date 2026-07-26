@@ -229,19 +229,26 @@ and then one. A failed readiness probe also enters a short runtime-scoped
 cooldown, so queued directories share the same failure instead of starting a
 new health-probe chain each time.
 
-On Electron, `useGlobalSessionsStore` is also the UI owner for the SQLite
-session-index startup state. The root coordinator restores summaries first
-(early hydrate, independent of settings) and then starts one server-owned
-background job after settings hydration supplies the directory plan. Concurrent
-hydrate callers share one in-flight GET; a transport failure leaves
-`hasHydratedSessionIndex` false so startup can retry, while a definitive
-unsupported/empty snapshot marks hydrated. Progress is observed through
-OpenChamber SSE revision tips (`openchamber:session-index-changed`) followed by
-an authoritative GET; it must not issue per-directory OpenCode requests from
-the renderer. Tip waits include a short safety timeout so a completed server
-job whose tip arrived before the consumer subscribed cannot hang manual or
-startup sync forever. Do not add a second session-summary cache to browser
-storage or a sidebar-local startup refresh.
+On Electron, `useGlobalSessionsStore` remains the sole UI projection and
+mutation/realtime owner for SessionSidebar/Mobile. TanStack Query owns the
+session-index GET as client-side SWR (transport-scoped memory key); a
+runtimeKey-scoped persistent cold-start snapshot seeds stale first paint so the
+same paired host can reuse rows across LAN↔relay. The root coordinator restores
+summaries first (early hydrate, independent of settings): seed the Query entry
+from storage, project it into the store (`authoritative=false`,
+`hasCachedSessionIndex=true`), then await the live GET refresh and merge under
+the existing runtime gates. Concurrent hydrate callers share one in-flight GET;
+a transport failure leaves `hasHydratedSessionIndex` false so startup can retry
+(and must keep the seed projection), while a definitive unsupported (`null`)
+marks hydrated without writing storage as an empty success. Progress is observed
+through OpenChamber SSE revision tips (`openchamber:session-index-changed`)
+followed by an authoritative GET via the Query helper; it must not issue
+per-directory OpenCode requests from the renderer. Tip waits include a short
+safety timeout so a completed server job whose tip arrived before the consumer
+subscribed cannot hang manual or startup sync forever. Successful non-null
+POST/GET snapshots write back through the Query helper (memory + persistent
+seed). Do not add a second session-summary cache outside that Query/startup
+path or a sidebar-local startup refresh.
 Every global session-index asynchronous entry captures runtime generation and
 transport identity, then applies its result only while both still match. This
 covers snapshot hydration, startup sync, persistence, and tip-driven revisions.
