@@ -10,6 +10,7 @@ import android.graphics.Color;
 import android.net.Uri;
 import android.os.Bundle;
 import android.text.TextUtils;
+import android.util.Log;
 import android.util.TypedValue;
 import android.view.Gravity;
 import android.view.ViewGroup;
@@ -21,6 +22,8 @@ import android.widget.Toast;
 
 import org.json.JSONObject;
 
+import java.io.FileNotFoundException;
+import java.io.IOException;
 import java.lang.ref.WeakReference;
 import java.util.ArrayList;
 import java.util.UUID;
@@ -29,6 +32,7 @@ import java.util.concurrent.ExecutorService;
 import java.util.concurrent.Executors;
 
 public class ShareReceiverActivity extends Activity {
+    private static final String TAG = "OpenChamberShare";
     static final String SHARE_TARGET_CATEGORY = "com.openchamber.app.SHARE_ASSISTANT";
     static final String ACTION_OPEN_ASSISTANT = "com.openchamber.app.action.OPEN_SHARE_ASSISTANT";
 
@@ -137,6 +141,7 @@ public class ShareReceiverActivity extends Activity {
                 OpenChamberShareStore.prepareDraft(context, id, selectedTarget, text, images);
                 dispatchDraftReady(id);
             } catch (Exception error) {
+                Log.w(TAG, "Draft preparation failed: " + shareFailureCode(error) + "; attachments=" + images.size());
                 OpenChamberShareStore.cancelDraft(context, id);
                 dispatchFailure(id);
             }
@@ -268,6 +273,18 @@ public class ShareReceiverActivity extends Activity {
         WeakReference<ShareReceiverActivity> reference = ACTIVE.get(id);
         ShareReceiverActivity activity = reference == null ? null : reference.get();
         return activity == null || activity.destroyed ? null : activity;
+    }
+
+    private static String shareFailureCode(Exception error) {
+        if (error instanceof SecurityException) return "uri-permission";
+        if (error instanceof FileNotFoundException) return "uri-unavailable";
+        if (error instanceof IOException) return "uri-read";
+        if ("An image exceeds 20 MB.".equals(error.getMessage())) return "image-too-large";
+        if ("Shared images exceed 20 MB.".equals(error.getMessage())) return "images-too-large";
+        if ("Only image attachments are supported.".equals(error.getMessage())) return "unsupported-mime";
+        if ("The shared image could not be read.".equals(error.getMessage())) return "empty-stream";
+        if ("A share supports up to 10 images.".equals(error.getMessage())) return "too-many-images";
+        return "prepare-failed";
     }
 
     private int dp(int value) {

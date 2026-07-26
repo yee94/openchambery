@@ -16,8 +16,8 @@ import java.util.Comparator;
 import java.util.UUID;
 
 final class OpenChamberShareStore {
-    static final long MAX_IMAGE_BYTES = 8L * 1024 * 1024;
-    static final long MAX_TOTAL_BYTES = 16L * 1024 * 1024;
+    static final long MAX_IMAGE_BYTES = 20L * 1024 * 1024;
+    static final long MAX_TOTAL_BYTES = 20L * 1024 * 1024;
     static final int MAX_IMAGES = 10;
     static final long TTL_MILLIS = 24L * 60 * 60 * 1000;
     private static final long DRAFT_TTL_MILLIS = 60L * 60 * 1000;
@@ -120,7 +120,7 @@ final class OpenChamberShareStore {
                     long size = copyLimited(context.getContentResolver().openInputStream(uri), output, MAX_IMAGE_BYTES);
                     throwIfDraftCancelled(context, draftID);
                     total += size;
-                    if (total > MAX_TOTAL_BYTES) throw new IllegalArgumentException("Shared images exceed 16 MB.");
+                    if (total > MAX_TOTAL_BYTES) throw new IllegalArgumentException("Shared images exceed 20 MB.");
                     attachments.put(new JSONObject().put("stagedPath", output.getName()).put("originalName", name).put("mime", mime).put("byteSize", size));
                 }
                 long now = System.currentTimeMillis();
@@ -336,7 +336,7 @@ final class OpenChamberShareStore {
     private static boolean validTarget(JSONObject target) { return target != null && nonEmpty(target.optString("serverInstanceID")) && nonEmpty(target.optString("assistantID")) && nonEmpty(target.optString("name")) && nonEmpty(target.optString("avatarSeed")) && nonEmpty(target.optString("serverLabel")) && nonEmpty(target.optString("connectionKey")); }
     private static boolean nonEmpty(String value) { return value != null && !value.trim().isEmpty(); }
     private static JSONObject readJSON(File file) throws Exception { return new JSONObject(new String(java.nio.file.Files.readAllBytes(file.toPath()), StandardCharsets.UTF_8)); }
-    private static long copyLimited(InputStream input, File output, long maximum) throws Exception { if (input == null) throw new IllegalArgumentException("The shared image could not be read."); long count = 0; byte[] buffer = new byte[32768]; try (InputStream in = input; FileOutputStream out = new FileOutputStream(output)) { int read; while ((read = in.read(buffer)) != -1) { count += read; if (count > maximum) throw new IllegalArgumentException("An image exceeds 8 MB."); out.write(buffer, 0, read); } out.getFD().sync(); } return count; }
+    private static long copyLimited(InputStream input, File output, long maximum) throws Exception { if (input == null) throw new IllegalArgumentException("The shared image could not be read."); long count = 0; byte[] buffer = new byte[32768]; try (InputStream in = input; FileOutputStream out = new FileOutputStream(output)) { int read; while ((read = in.read(buffer)) != -1) { count += read; if (count > maximum) throw new IllegalArgumentException("An image exceeds 20 MB."); out.write(buffer, 0, read); } out.getFD().sync(); } return count; }
     private static String displayName(Context context, Uri uri) { try (android.database.Cursor cursor = context.getContentResolver().query(uri, null, null, null, null)) { if (cursor != null && cursor.moveToFirst()) { int i = cursor.getColumnIndex(OpenableColumns.DISPLAY_NAME); if (i >= 0) { String value = cursor.getString(i); if (nonEmpty(value)) return value; } } } return "shared-image"; }
     private static String safeName(String name) { return nonEmpty(name) ? name.replaceAll("[^A-Za-z0-9._-]", "_") : "shared-image"; }
     private static void writeAtomic(File file, byte[] bytes) throws Exception { File tmp = new File(file.getParentFile(), "." + file.getName()); try (FileOutputStream out = new FileOutputStream(tmp)) { out.write(bytes); out.getFD().sync(); } if (!tmp.renameTo(file)) throw new IllegalStateException("Could not write share envelope."); }

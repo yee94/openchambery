@@ -39,6 +39,19 @@ describe('mobile share draft handoff', () => {
     expect(cancels).toBe(1);
   });
 
+  test('accepts an Android image above the legacy 8 MiB cap', async () => {
+    const byteSize = 8 * 1024 * 1024 + 1;
+    const state = input();
+    await handoffMobileShareDraft(draft({ attachments: [{ stagedPath: '/native/image.jpg', originalName: 'image.jpg', mime: 'image/jpeg', byteSize }] }), {
+      input: state,
+      transportIdentity: 'runtime',
+      cancelDraft: async () => undefined,
+      readAttachment: async () => new Blob([new Uint8Array(byteSize)], { type: 'image/jpeg' }),
+      storage: storage(),
+    });
+    expect(state.commits).toHaveLength(1);
+  });
+
   test('retains the native draft while durable commit fails', async () => {
     const state = input();
     state.commitDraftSnapshot = async () => ({ ...result(), durable: false, current: false, status: 'failed' });

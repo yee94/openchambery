@@ -12,6 +12,8 @@ type JournalRecord = MobileShareDraftHandoffTarget & { targetDraftKey: DraftKey;
 type Storage = Pick<globalThis.Storage, 'getItem' | 'setItem' | 'removeItem'>;
 export const MOBILE_SHARE_DRAFT_HANDOFF_JOURNAL_KEY = 'openchamber.mobile-share.draft-handoff.v1';
 export const MOBILE_SHARE_HANDOFF_MARKER_PREFIX = 'mobile-share-handoff:';
+const MAX_ANDROID_SHARE_ATTACHMENT_BYTES = 20 * 1024 * 1024;
+const MAX_ANDROID_SHARE_TOTAL_BYTES = 20 * 1024 * 1024;
 export const mobileShareHandoffMarkerPartID = (draftID: string): string => `${MOBILE_SHARE_HANDOFF_MARKER_PREFIX}${draftID}`;
 export const isMobileShareHandoffMarkerPart = (part: { partID?: string }): boolean => typeof part.partID === 'string' && part.partID.startsWith(MOBILE_SHARE_HANDOFF_MARKER_PREFIX);
 
@@ -57,7 +59,7 @@ const deleteJournal = (storage: Storage | null, draftID: string): void => {
 const persistJournal = (storage: Storage | null, record: JournalRecord): boolean => writeJournal(storage, { ...readJournal(storage), [record.draftID]: record });
 const attachmentIDFor = (draftID: string, index: number): string => `native-share:${draftID}:${index}`;
 const resultTextFor = (existing: string, incoming: string | undefined): string => incoming ? (existing ? `${existing}\n\n${incoming}` : incoming) : existing;
-const isValidAttachment = (attachment: NativeShareDraftAttachment): boolean => attachment.mime.startsWith('image/') && attachment.byteSize > 0 && attachment.byteSize <= 8 * 1024 * 1024;
+const isValidAttachment = (attachment: NativeShareDraftAttachment): boolean => attachment.mime.startsWith('image/') && attachment.byteSize > 0 && attachment.byteSize <= MAX_ANDROID_SHARE_ATTACHMENT_BYTES;
 const materialized = (record: JournalRecord, current: ReturnType<MobileShareDraftInput['getDraft']>): boolean => Boolean(current?.syntheticParts.some((part) => part.partID === mobileShareHandoffMarkerPartID(record.draftID) && part.text === '' && part.attachments.length === 0 && part.synthetic === true));
 const assistantIDFor = (record: JournalRecord): string | null => {
   const owner = record.targetDraftKey?.owner;
@@ -131,7 +133,7 @@ export const clearMobileShareDraftHandoffMarker = async (target: MobileShareDraf
 
 /** Materializes one native Android draft exactly once before cancelling its native durable copy. */
 export const handoffMobileShareDraft = async (draft: AssignedNativeShareDraft, dependencies: MobileShareDraftHandoffDependencies): Promise<{ durable: boolean; cancelled: boolean }> => {
-  if (draft.attachments.length > 10 || !draft.attachments.every(isValidAttachment) || draft.attachments.reduce((sum, attachment) => sum + attachment.byteSize, 0) > 16 * 1024 * 1024) throw new Error('invalid_share_attachment');
+  if (draft.attachments.length > 10 || !draft.attachments.every(isValidAttachment) || draft.attachments.reduce((sum, attachment) => sum + attachment.byteSize, 0) > MAX_ANDROID_SHARE_TOTAL_BYTES) throw new Error('invalid_share_attachment');
   const storage = storageFor(dependencies.storage);
   const key = surfaceDraftKey({ transportIdentity: dependencies.transportIdentity }, `assistant:${draft.assistantID}`);
   let journal = readJournal(storage)[draft.draftID];

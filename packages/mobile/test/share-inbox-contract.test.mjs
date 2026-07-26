@@ -15,13 +15,14 @@ test('share inbox persists relative paths and enforces decoded image upload limi
     source('android/app/src/main/java/com/openchamber/app/OpenChamberShareStore.java'),
   ]);
   for (const content of [ios, android]) {
-    assert.match(content, /8L? \* 1024 \* 1024/);
-    assert.match(content, /16L? \* 1024 \* 1024/);
     assert.match(content, /consumedAt/);
   }
+  assert.match(ios, /8 \* 1024 \* 1024/);
+  assert.match(ios, /16 \* 1024 \* 1024/);
+  assert.match(android, /20L \* 1024 \* 1024/);
   assert.match(ios, /copyLimited\(from: item\.0, to: destination, maximum: maximumImageBytes\)/);
   assert.match(android, /copyLimited\(context\.getContentResolver\(\)\.openInputStream\(uri\), output, MAX_IMAGE_BYTES\)/);
-  assert.match(readme, /base64-decoded image to 8 MiB and each operation to 16 MiB/);
+  assert.match(readme, /iOS share extension limits each base64-decoded image to 8 MiB and each operation to 16 MiB; Android native drafts allow one image or all images together up to 20 MiB/);
   assert.match(ios, /destination\.lastPathComponent/);
   assert.match(android, /output\.getName\(\)/);
   assert.match(android, /getContentResolver\(\)\.getType\(uri\)/);
@@ -130,7 +131,7 @@ test('Android share drafts commit only after confirmation and release only after
   assert.match(store, /releaseAcknowledged[\s\S]*\.has\("consumedAt"\)/);
   assert.match(store, /readJSON\(committedDraft\)\.put\("committed", true\)/);
   assert.match(plugin, /OpenChamberShareStore\.releaseAcknowledged\(getContext\(\), id\)/);
-  assert.match(activity, /intent\.setAction\(null\); intent\.removeExtra\("operationID"\);/);
+  assert.match(activity, /intent\.setAction\(null\);\s*intent\.removeExtra\("operationID"\);/);
 });
 
 test('Android draft delivery exposes complete draft copies and clears draft-ready intents', async () => {
@@ -153,7 +154,7 @@ test('Android draft delivery exposes complete draft copies and clears draft-read
   assert.match(plugin, /@PluginMethod public void cancelDraft\(PluginCall call\)[\s\S]*OpenChamberShareStore\.cancelDraft\(getContext\(\), id\)/);
   assert.match(plugin, /void emitDraftReceived\(String draftID\)[\s\S]*notifyListeners\("shareDraftReceived", event\)/);
   assert.match(activity, /ACTION_SHARE_DRAFT_READY = "com\.openchamber\.app\.SHARE_DRAFT_READY"/);
-  assert.match(activity, /getStringExtra\("draftID"\)[\s\S]*emitDraftReceived\(id\)[\s\S]*intent\.setAction\(null\); intent\.removeExtra\("draftID"\);/);
+  assert.match(activity, /getStringExtra\("draftID"\)[\s\S]*emitDraftReceived\(id\)[\s\S]*intent\.setAction\(null\);\s*intent\.removeExtra\("draftID"\);/);
 });
 
 test('Android share ingress opens the WebView composer and the delivery bridge accepts the native image limit', async () => {
@@ -168,6 +169,16 @@ test('Android share ingress opens the WebView composer and the delivery bridge a
   assert.doesNotMatch(receiver, /EditText|previewRow|sendButton/);
   assert.match(receiver, /destroyed \|\| terminalNavigation/);
   assert.match(bridge, /envelope\.attachments\.length > 10/);
+});
+
+test('Android share preparation logs a safe failure category without shared content', async () => {
+  const receiver = await source('android/app/src/main/java/com/openchamber/app/ShareReceiverActivity.java');
+  assert.match(receiver, /Log\.w\(TAG, "Draft preparation failed: " \+ shareFailureCode\(error\) \+ "; attachments=" \+ images\.size\(\)\)/);
+  assert.match(receiver, /SecurityException\) return "uri-permission"/);
+  assert.match(receiver, /FileNotFoundException\) return "uri-unavailable"/);
+  assert.match(receiver, /"An image exceeds 20 MB\."\.equals\(error\.getMessage\(\)\)\) return "image-too-large"/);
+  assert.doesNotMatch(receiver, /Log\.w\(TAG,[\s\S]*uri\.toString\(\)/);
+  assert.doesNotMatch(receiver, /Log\.w\(TAG,[\s\S]*sharedText/);
 });
 
 test('iOS sharing resolves public.image files to concrete, signature-verified MIME types', async () => {
