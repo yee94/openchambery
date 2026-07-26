@@ -44,6 +44,8 @@ export type MobileWorktreeGroup = {
   kind?: 'main' | 'worktree';
   active?: boolean;
   expanded?: boolean;
+  /** Total top-level sessions in this bucket (not the visible slice). */
+  sessionCount: number;
   sessions: MobileSessionTreeNode[];
 };
 
@@ -424,7 +426,7 @@ export function MobileProjectsHome({
                         <WorkspaceGroupLabel
                           icon={<Icon name="git-branch" className="size-3.5" />}
                           label={t('mobile.sessions.mainWorkspace')}
-                          count={mainSessions.length}
+                          count={mainWorkspace?.sessionCount ?? mainSessions.length}
                         />
                       )}
                     >
@@ -451,7 +453,7 @@ export function MobileProjectsHome({
                           <WorkspaceGroupLabel
                             icon={<Icon name="git-branch" className="size-3.5" />}
                             label={worktree.name}
-                            count={worktree.sessions.length}
+                            count={worktree.sessionCount}
                             expanded={worktreeExpanded}
                             onToggle={() => searching
                               ? handleSearchWorktreeOpen(project, worktree)

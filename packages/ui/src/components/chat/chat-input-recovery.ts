@@ -17,3 +17,13 @@ export const mergeFailedAttachments = (
         ...currentAttachments.filter((file) => !failedIds.has(file.id)),
     ];
 };
+
+/**
+ * Whether submit should trigger root attachment cleanup.
+ * Only when non-queued, non-resource-preserving, and captured root attachments exist.
+ */
+export const shouldConsumeRootAttachmentsOnSubmit = (input: {
+    queuedOnly: boolean;
+    resourcePolicy: boolean;
+    rootAttachmentCount: number;
+}): boolean => !input.queuedOnly && !input.resourcePolicy && input.rootAttachmentCount > 0;

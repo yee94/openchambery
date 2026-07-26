@@ -13,7 +13,8 @@ extensions.
 
 - App id / package: `com.openchamber.app`; app name `OpenChamber`.
 - Capacitor config: `capacitor.config.ts` (Keyboard `resize: 'none'`; Android
-  `adjustNothing` + `ImeSyncBridge` native `translationY`, StatusBar overlay,
+  `adjustNothing` + cached-height composer CSS FLIP + `ImeSyncBridge`
+  (zero parent padding, backdrop, state/height bookends), StatusBar overlay,
   Push `presentationOptions: []`).
 - Renderer: the web build's `mobile.html` entry (`MobileApp`), copied into `dist/` and served by
   Capacitor. Mobile-only surfaces (connection onboarding, `Instances`, QR pairing, widgets) exist
@@ -94,7 +95,7 @@ iOS Simulator helpers: `mobile:sim:{boot,install,launch,run,serve,list,kill}` (s
   (`OpenChamberWidget`), a Control Center control, and an NSE (`OpenChamberNotificationService`)
   that refreshes widgets from push. All share the App Group `group.com.openchamber.app`.
 - **Native chrome** — status bar (iOS overlay + safe-area; Android inset + themed background),
-  keyboard handling (iOS transform FLIP; Android native IME translationY), edge-swipe session switch,
+  keyboard handling (iOS Keyboard-event FLIP; Android pre-focus cached-height FLIP), edge-swipe session switch,
   back-button handling, app-icon badge.
 - **App icons** — iOS `AppIcon`; Android adaptive launcher icon; notification small icon
   (`ic_stat_notify`).
@@ -129,9 +130,20 @@ iOS Simulator helpers: `mobile:sim:{boot,install,launch,run,serve,list,kill}` (s
   brings `firebase-messaging`.
 - Manifest: permissions `INTERNET`, `CAMERA` (+ optional camera feature), `POST_NOTIFICATIONS`
   (Android 13+; older versions allow notifications by default). `windowSoftInputMode=adjustNothing`.
-  `ImeSyncBridge` sets WebView-parent `translationY = −imeBottom` on IME progress
-  (compositor only). JS is notified only on start/end for auto-follow freeze —
-  no per-frame bridge traffic (that janked half-sheets).
+  Android WebView on the current Capacitor host reports a full-height visual/layout
+  viewport while IME is open, and VirtualKeyboard geometry reports 0. Android
+  therefore starts a 250ms composer-only CSS FLIP from `oc:keyboard-intent` /
+  `focusin`, using the previous measured IME-height ratio (39dvh first-open
+  fallback). `ImeSyncBridge` keeps WebView-parent padding at 0, paints the
+  edge-to-edge backdrop, removes Capacitor's empty root animation callback, and
+  emits state + settled height once per transition for calibration/cache. There
+  is no progress bridge. The translated distance subtracts the shell's measured
+  bottom-safe padding. The composer keeps its ambient mask while a separate
+  negative-stack curtain paints the temporary gap down to the IME. Cached hidden
+  Session views may retain their own composer nodes, so keyboard choreography
+  selects the visible composer; every native textarea tap repairs a replaced node
+  whose inline transform is missing, and keyboard close clears all cached movers.
+  The close transform runs for 160ms so dismissal clears promptly.
   ML Kit `com.google.mlkit.vision.DEPENDENCIES=barcode_ui` meta (preloads the code scanner). FCM
   `default_notification_icon=@drawable/ic_stat_notify`.
 - Adaptive launcher icon: full-bleed color background + `ic_launcher_foreground` (sources under

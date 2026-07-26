@@ -60,8 +60,11 @@ So:
 | `session-ui-store.ts` | Session selection, draft lifecycle, abort prompts, worktree metadata, SDK-facing action entrypoints | App UI state |
 | `useGlobalSessionsStore.ts` | Global active sessions, global archived sessions, `sessionsByDirectory` | All opened project/worktree session lists |
 | `viewport-store.ts` | Scroll anchors, session memory, loading indicators | App UI state |
-| `input-store.ts` | Legacy pending input state plus keyed draft metadata, hydration, persistence state, and DraftKey-scoped attachment views | App UI state |
-| `message-composer-restoration.ts` | Shared queue/revert/sent-message Composer restoration payloads and CAS commit/rollback helpers (prior absence uses durable `deleteDraftSnapshot`) | App UI state |
+| `input-store.ts` | Legacy pending input state plus keyed draft metadata, hydration, persistence state, and DraftKey-scoped attachment views; explicit-key VS Code attach primitives (`addDraftVSCodeFileAttachment` / `addDraftVSCodeSelectionAttachment`); atomic root attachment replace via `replaceDraftRootAttachments` (single `commitDraftSnapshot` CAS, preserves text/composer/mentions/synthetic) | App UI state |
+| `draft-attachment-resource-adapter.ts` | Explicit DraftKey attachment resource adapter for ChatInput/Assistant surfaces (add local, remove by attachmentID, root-only clear, replace root AttachedFile[] via single CAS + per-draftKeyString serial flight, VS Code file/selection); owns `resolveDraftAttachmentRefID` | App UI state |
+| `message-composer-restoration.ts` | Thin facade re-exporting restoration builders + CAS (see sources/cas modules) | App UI state |
+| `message-composer-restoration-sources.ts` | Sent/queue Composer restoration payload builders (path/mention/data-URL helpers) | App UI state |
+| `message-composer-restoration-cas.ts` | Composer restoration CAS capture/commit/rollback (prior absence uses durable `deleteDraftSnapshot`) | App UI state |
 | `session-history-mutation-coordinator.ts` | Serial flight for same-session revert/unrevert keyed by transport/generation/directory/session; failures never block the next op | App UI state |
 | `input-draft-metadata-store.ts` | Validated durable draft metadata, legacy staging, migration markers | Browser storage |
 | `selection-store.ts` | Model/agent/variant selections | App UI state |
@@ -71,13 +74,19 @@ So:
 
 `input-store.ts` owns memory-first validated `DraftRecord` state keyed by transport identity and draft owner. `DraftRecord` stores textarea-visible text, Composer Session/Paste sidecars, and attachment metadata; per-occurrence `AttachedFile` views, missing blob occurrence IDs, and attachment hydration/persistence state remain runtime memory. `packages/ui/src/composer/use-composer-controller.ts` projects the active `DraftKey` record into ChatInput and commits document plus file/agent mentions through `setDraftComposerState` as one revision. Primary session and new-draft keys retain their durable shape; an explicit `surface` owner isolates a secondary ChatInput surface. The durability and blob-reconciliation lanes admit all three owner kinds (`session`, `draft`, and `surface`) so Assistant surface attachments survive handoff and restart. Persistence enablement controls the durability lane while memory editing remains available. Composer ranges use UTF-16 offsets, and durable sidecars validate sorted non-overlapping ranges, unique IDs, bounded per-reference and cumulative Paste payloads, and stable Session IDs. Blob put and draft-reference retain complete before a snapshot containing that metadata enters the durability lane; quota and storage failures preserve editable memory views for explicit retry. Removal and replacement persist metadata before releasing old blob references. `moveDraftWithAttachments()` retains destination references, moves metadata, persists, then releases source references; synchronous `moveDraft()` remains URL-only. Hydration isolates transport generation, key epoch, and record identity, so delayed blob reads cannot replace newer attachment views. Disabled persistence keeps drafts and attachment views in memory without IndexedDB work. Legacy session drafts import into the migration's claimed transport; legacy Composer envelopes become visible text plus validated sidecars, and the legacy `new` record remains staged until `claimLegacyNewDraft()` receives its destination key. Queue admission and send ownership transfers remain outside this store.
 
-Legacy imperative attachment actions route into the active `DraftKey` record and attachment views; an independent unowned in-memory bucket remains for callers without an active draft. Delayed FileReader completion stays scoped to its captured source key, and clearing that key invalidates the pending read.
+Legacy imperative attachment actions route into the active `DraftKey` record and attachment views; an independent unowned in-memory bucket remains for callers without an active draft. Delayed FileReader completion stays scoped to its captured source key, and clearing that key invalidates the pending read. Legacy migration treats the durable staged snapshot claim as authoritative; a valid marker carrying another transport identity is repaired to that captured claim before cleanup, while malformed markers and failed repair writes preserve the staged data and fail closed.
 
 `input-draft-durability-coordinator.ts` owns serialized draft durability. `input-store.ts` keeps memory-first records and submits scoped candidates through the coordinator; blob materialization, references, metadata ordering, rollback, release cleanup, and move transfers stay behind that boundary. Hydration seeds the coordinator once after migration, persists every touched snapshot, flushes durability before completion, and replays locally dirty keys after the durable baseline is available. Disabled persistence keeps editable memory records and blocks durable admission until re-enabled.
 
 Text and Composer-state bursts use one per-store 40ms latest-wins persistence window. Memory revisions publish synchronously and persistence reports `saving`; flush drains the window before coordinator flush. Attachment, ownership, move, delete, retry, and other durability barriers absorb a pending Composer request for their keys and persist the latest complete record immediately. Disable clears pending timers and preserves dirty memory for a later enabled persistence pass.
 
 Committed draft snapshot, durable delete (`deleteDraftSnapshot`), and ownership actions use per-key CAS epochs plus a captured runtime generation. The durability lane validates candidate currentness before every blob, cleanup, or metadata operation and validates it again before metadata persistence. A metadata-committed action adopts its durable draft or tombstone keys independently after post-write epoch changes; runtime-stale completions clear attachment views, missing-ref IDs, hydration, and both persistence maps in one publication while preserving newer memory records. Durable delete commits tombstone + metadata delete first, then removes the memory draft and clears ephemeral attachment/hydration/persistence maps when the key epoch is still current; revision/runtime races return conflict/stale and leave newer memory intact, while durable-stale reports `durable=true` with `current=false`. Ownership finalization evaluates source and destination epochs independently, so one durable source tombstone can coexist with a newer destination record. Composer restoration rollback requires `status=committed` and `current=true`; prior absence restores true absence through `deleteDraftSnapshot` rather than an empty snapshot. Revision increments require positive safe integers, including delete tombstones. Synchronous `deleteDraft` remains for in-memory-first paths that schedule deferred persist.
+
+`snapshotViews` always resolves URL locators from `locator.url` (or an explicit same-value entry in `values`); existing attachment views never override a URL locator with a placeholder File/Blob. Blob locators may reuse `values`, existing view files, or durable data URLs. `replaceDraftRootAttachments` re-supplies every preserved synthetic URL locator into `values` so a root-only clear/replace keeps hydrated synthetic durable URLs.
+
+Cross-runtime restoration rollback (`message-composer-restoration-cas.ts`) writes only through a capture matching the draft key transport. A missing matching capture or stale write returns `failed` and ends the best-effort attempt. Revision conflicts preserve the user's newer draft, and no retry queue or runtime subscription participates in restoration.
+
+Root attachment send consumption (`draft-attachment-resource-adapter.ts`) serializes clear/restore/replace on the same per-`draftKeyString` lane across factory instances. `clearRootAttachments` clears root metadata in memory first through `setDraftAttachments`, so sent chips disappear immediately while store persistence continues. `restoreRootAttachments` merges failed-send attachments with live root metadata through one CAS.
 
 Draft metadata hydration is single-flight per transport and returns an explicit success signal; external durable handoffs proceed only after that authoritative hydration succeeds. Android share handoff commits text, image blobs, and a hidden synthetic receipt in the same draft CAS. Composer submission atomically retains that receipt until native cancellation and runtime-correct Assistant navigation finish, then the bridge durably removes the receipt before finalizing its handoff journal.
 
@@ -178,12 +187,19 @@ The runtime session index (SQLite-backed) provides one durable session-summary
 source. The legacy per-directory `localStorage` session list is removed
 on child-store creation and must not be reintroduced. `main.tsx` establishes a
 startup barrier before React effects; `SessionStartupCoordinator` starts the
-session-index flow after registered settings hydration, restores the SQLite snapshot,
-refreshes known root/worktree directories through the bounded scheduler (with
-priority — see below), writes one transaction batch, then releases normal global
-and directory bootstrap. A runtime that reports the capability as unsupported
-uses the existing bounded SDK-backed path. A successful empty root page replaces
-stale index rows; a failed page preserves its last good cache.
+session-index flow immediately: SQLite hydrate (`GET /session-index`) is fired
+without waiting for settings so the last snapshot can paint first (local-first /
+server-cache-first). Directory planning and background root refresh still wait
+for registered settings hydration so the project catalog and active directory
+are complete, then refresh known root/worktree directories through the bounded
+scheduler (with priority — see below), write one transaction batch, and release
+normal global and directory bootstrap. Concurrent early + startup hydrate
+callers share one in-flight GET. A runtime that reports the capability as
+unsupported uses the existing bounded SDK-backed path. A successful empty root
+page replaces stale index rows; a failed page preserves its last good cache.
+Desktop main splash dismisses when a cached snapshot is restored, or when both
+OpenCode init and hydrate have settled (so an empty list is not shown before
+the restore attempt finishes).
 
 **Startup directory priority** (`planSessionStartupDirectories` +
 `startSessionIndexStartup`):

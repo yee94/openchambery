@@ -17,9 +17,9 @@ const config: CapacitorConfig = {
   },
   plugins: {
     Keyboard: {
-      // iOS: resize none + JS transform FLIP. Android: adjustNothing +
-      // ImeSyncBridge translationY (no JS geometry). resizeOnFullScreen off —
-      // SystemBars/ImeSync own insets; Capacitor resize would double-count.
+      // iOS: resize none + JS composer transform FLIP. Android: adjustNothing +
+      // pre-focus cached-height composer CSS FLIP; ImeSyncBridge keeps parent
+      // padding zero and reports state/settled height. resizeOnFullScreen stays off.
       resize: 'none',
       resizeOnFullScreen: false,
       autoBackdropColor: 'dom',

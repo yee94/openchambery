@@ -304,26 +304,27 @@ describe('Assistant UI product contract', () => {
     expect(view).toContain('stageMessageEdit(sessionID, messageID, snapshot, { directory, draftKey })');
     expect(view).toContain('createAssistantStagedMessageEditRegistry');
     expect(view).toContain('stagedMessageEditRegistryRef');
-    expect(view).toContain('commitBeforeSend');
-    expect(view).toContain('commitMessageEdit(staged.sessionID, staged.messageID, { directory: staged.directory })');
-    expect(view).toContain('register(identity, () => stageHandle.rollback())');
+    expect(view).toContain('Delivery always follows the');
+    // Continuous stage uses stageExclusive (scope transport+assistant) not bare register overwrite.
+    expect(view).toContain('stageExclusive');
+    expect(view).toContain('assistantStagedScopeOf');
     expect(view).toContain('rollbackAndClearIfBindingMismatch');
     expect(view).toContain('rollbackAllBestEffort');
-    expect(view).toContain('stageHandle.rollback()');
+    expect(view).toContain('excludeTransport');
+    expect(view).toContain('projectRootAttachmentViews');
+    expect(view).toContain('hydrateDraftAttachments(draftKey)');
+    expect(view).toContain('draftAttachmentMetadataIdentity');
+    expect(view).toContain('mergeSyntheticPartsByPartID');
     // Binding invalidation uses async helper (not identity-only clearIfBindingMismatch).
     expect(view).not.toContain('clearIfBindingMismatch');
     // new/compact clear staged only after remote success
     expect(view).toContain('const next = await newAssistantSession(assistant.id)');
-    expect(view).toContain('clearStagedMessageEdit(assistant.id)');
+    expect(view).toContain('await clearStagedMessageEdit(assistant.id)');
+    expect(view).toContain('clearExclusive');
     const newIdx = view.indexOf('const next = await newAssistantSession(assistant.id)');
-    const clearAfterNew = view.indexOf('clearStagedMessageEdit(assistant.id)', newIdx);
+    const clearAfterNew = view.indexOf('await clearStagedMessageEdit(assistant.id)', newIdx);
     expect(clearAfterNew).toBeGreaterThan(newIdx);
-    // commitBeforeSend before sendAssistantMessage
-    const commitIdx = view.indexOf('commitBeforeSend');
-    const sendIdx = view.indexOf('sendAssistantMessage(assistant.id, binding, messageID');
-    expect(commitIdx).toBeGreaterThan(-1);
-    expect(sendIdx).toBeGreaterThan(commitIdx);
-    expect(view).toContain('assistant_staged_message_edit_rollback_failed');
+    expect(view).toContain('sendAssistantMessage(assistant.id, binding, messageID');
     expect(conversation).toContain('onEditMessage');
   });
 

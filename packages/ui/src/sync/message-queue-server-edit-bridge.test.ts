@@ -15,6 +15,47 @@ const item = {
   ],
 };
 
+test('edits a text-only queue item with portable request IDs', async () => {
+  const requestIDs: string[] = [];
+  let snapshot: DraftCommitInput['snapshot'] | undefined;
+  const bridge = createMessageQueueServerEditBridge({
+    queue: {
+      captureRuntime: () => runtime,
+      reserveEdit: async (input: { requestID: string }) => {
+        requestIDs.push(input.requestID);
+        return { revision: 7, scopeID: 'scope', queueItemID: 'queue', rowVersion: 9, token: 'token', expiresAt: Date.now() + 60_000, generation: 1 };
+      },
+      renewEdit: async () => ({ queueItemID: 'queue', token: 'token', generation: 1, expiresAt: Date.now() + 60_000 }),
+      releaseEdit: async () => {},
+      removeReserved: async (input: { requestID: string }) => { requestIDs.push(input.requestID); return true; },
+      refresh: async () => {},
+    },
+    input: {
+      captureDraftRuntime: () => runtime,
+      commitDraftSnapshot: async (input: DraftCommitInput) => {
+        snapshot = input.snapshot;
+        return { status: 'committed', durable: true, current: true, errors: [], cleanupErrors: [] };
+      },
+    },
+    download: async () => { throw new Error('unexpected-download'); },
+    current: () => true,
+  } as never);
+
+  const result = await bridge.editServerQueueItemIntoDraft({
+    scopeID: 'scope',
+    scopeRevision: 4,
+    item: { ...item, content: 'plain queued text', composerDocument: { text: 'plain queued text', references: [] }, composerMentions: [], attachments: [] },
+    targetKey: sessionDraftKey(runtime, 'session'),
+    expectedRevision: 'absent',
+  });
+
+  const uuidV4Pattern = /^[0-9a-f]{8}-[0-9a-f]{4}-4[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/;
+  expect(result.status).toBe('committed');
+  expect(snapshot?.text).toBe('plain queued text');
+  expect(requestIDs).toHaveLength(2);
+  expect(requestIDs.every((value) => uuidV4Pattern.test(value))).toBe(true);
+});
+
 test('downloads canonical mixed attachments, retains sidecars, commits then removes', async () => {
   let snapshot: DraftCommitInput['snapshot'] | undefined, removed = 0, removalInput: { revision: number; item: { rowVersion: number } } | undefined;
   const bridge = createMessageQueueServerEditBridge({

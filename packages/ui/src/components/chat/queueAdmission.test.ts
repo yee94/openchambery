@@ -42,7 +42,7 @@ const serverAdmissionFixture = () => {
         getDocument: () => state.document,
         consumeBody: () => { state.bodyConsumed = true; },
         getAttachments: () => state.attachments,
-        removeAttachment: (id: string) => { state.attachments = state.attachments.filter((entry) => entry.id !== id); },
+        removeAttachment: async (id: string) => { state.attachments = state.attachments.filter((entry) => entry.id !== id); return true; },
         getInlineDrafts: () => state.inlineDrafts,
         removeInlineDraft: (id: string) => { state.inlineDrafts = state.inlineDrafts.filter((entry) => entry.id !== id); },
     });
@@ -141,35 +141,36 @@ describe('admitQueueMessageAndConsumeResources', () => {
         await Promise.all([a, b]);
     });
 
-    test('admits before consuming drafts, body, and attachments', () => {
+    test('admits before consuming drafts, body, and attachments', async () => {
         const calls: string[] = [];
 
-        admitQueueMessageAndConsumeResources({
-            admit: () => calls.push('admit'),
+        const result = await admitQueueMessageAndConsumeResources({
+            admit: () => { calls.push('admit'); },
             drafts: ['first', 'second'],
-            consumeDraft: (draft) => calls.push(`draft:${draft}`),
-            consumeBody: () => calls.push('body'),
-            consumeAttachments: () => calls.push('attachments'),
+            consumeDraft: (draft) => { calls.push(`draft:${draft}`); },
+            consumeBody: () => { calls.push('body'); },
+            consumeAttachments: () => { calls.push('attachments'); },
         });
 
+        expect(result).toBe(undefined);
         expect(calls).toEqual(['admit', 'draft:first', 'draft:second', 'body', 'attachments']);
     });
 
-    test('preserves every composer resource when admission throws', () => {
+    test('preserves every composer resource when admission throws', async () => {
         const calls: string[] = [];
         const failure = new Error('admission failed');
 
         let thrown: unknown;
         try {
-            admitQueueMessageAndConsumeResources({
+            await admitQueueMessageAndConsumeResources({
                 admit: () => {
                     calls.push('admit');
                     throw failure;
                 },
                 drafts: ['first'],
-                consumeDraft: () => calls.push('draft'),
-                consumeBody: () => calls.push('body'),
-                consumeAttachments: () => calls.push('attachments'),
+                consumeDraft: () => { calls.push('draft'); },
+                consumeBody: () => { calls.push('body'); },
+                consumeAttachments: () => { calls.push('attachments'); },
             });
         } catch (error) {
             thrown = error;
@@ -179,13 +180,13 @@ describe('admitQueueMessageAndConsumeResources', () => {
         expect(calls).toEqual(['admit']);
     });
 
-    test('ChatInput admits legacy rows before existing bound and composer rows with stable identities', () => {
+    test('ChatInput admits legacy rows before existing bound and composer rows with stable identities', async () => {
         useMessageQueueStore.setState({ queuedMessages: {}, followUpBehavior: 'queue' });
         const actions = useMessageQueueStore.getState();
         const legacyScope = legacyQueueScope(scope.sessionID);
         const legacy = add(legacyScope, 'legacy');
         const bound = add(scope, 'bound');
-        const composer = admitChatInputQueueMessageAndConsumeResources({
+        const composer = await admitChatInputQueueMessageAndConsumeResources({
             bindLegacy: () => actions.bindLegacyQueue(legacyScope, scope),
             addComposer: () => actions.addToQueue(scope, { content: 'composer' }),
             drafts: [],
@@ -202,15 +203,15 @@ describe('admitQueueMessageAndConsumeResources', () => {
         expect(queue.map((item) => item.messageID)).toEqual([legacy.messageID, bound.messageID, composer.item.messageID]);
     });
 
-    test('preserves resources when composer admission fails', () => {
+    test('preserves resources when composer admission fails', async () => {
         const calls: string[] = [];
-        const result = admitChatInputQueueMessageAndConsumeResources({
-            bindLegacy: () => calls.push('bind'),
+        const result = await admitChatInputQueueMessageAndConsumeResources({
+            bindLegacy: () => { calls.push('bind'); },
             addComposer: () => ({ ok: false as const, reason: 'invalid-composer-document' as const }),
             drafts: ['draft'],
-            consumeDraft: () => calls.push('draft'),
-            consumeBody: () => calls.push('body'),
-            consumeAttachments: () => calls.push('attachments'),
+            consumeDraft: () => { calls.push('draft'); },
+            consumeBody: () => { calls.push('body'); },
+            consumeAttachments: () => { calls.push('attachments'); },
         });
         expect(result).toEqual({ ok: false, reason: 'invalid-composer-document' });
         expect(calls).toEqual([]);

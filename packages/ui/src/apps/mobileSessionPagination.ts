@@ -1,8 +1,25 @@
 import { worktreeMapsEqual } from '@/lib/worktrees/worktreeManager';
 import type { WorktreeMetadata } from '@/types/worktree';
 
-export const getMobileSessionPageSize = (hasWorktrees: boolean): number =>
-  hasWorktrees ? 5 : 20;
+/**
+ * Initial visible root sessions per mobile bucket (home + sessions sheet).
+ * Matches PC sidebar compact cold-start slice.
+ */
+export const getMobileSessionDefaultVisibleCount = (): number => 3;
+
+/**
+ * How many additional root sessions each "Show more" reveals.
+ * Matches PC sidebar show-more step.
+ */
+export const getMobileSessionShowMoreIncrement = (): number => 7;
+
+/**
+ * @deprecated Prefer {@link getMobileSessionDefaultVisibleCount} and
+ * {@link getMobileSessionShowMoreIncrement}. Kept as the default visible count
+ * so older call sites that treated "page size" as the initial slice stay correct.
+ */
+export const getMobileSessionPageSize = (_hasWorktrees = false): number =>
+  getMobileSessionDefaultVisibleCount();
 
 type MobileWorktreeRefreshResult = {
   path: string;

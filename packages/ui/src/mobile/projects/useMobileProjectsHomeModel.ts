@@ -1,7 +1,10 @@
 import * as React from 'react';
 import type { Session } from '@opencode-ai/sdk/v2/client';
 
-import { getMobileSessionPageSize } from '@/apps/mobileSessionPagination';
+import {
+  getMobileSessionDefaultVisibleCount,
+  getMobileSessionShowMoreIncrement,
+} from '@/apps/mobileSessionPagination';
 import type { IconName } from '@/components/icon/icons';
 import { useI18n } from '@/lib/i18n';
 import { PROJECT_ICON_MAP } from '@/lib/projectMeta';
@@ -312,8 +315,7 @@ export function useMobileProjectsHomeModel(): MobileProjectsHomeModel {
 
     return projectNodes.map((node) => {
       const projectExpanded = projectExpandedMap[node.project.id] ?? true;
-      const hasWorktrees = node.project.worktrees.length > 0;
-      const pageSize = getMobileSessionPageSize(hasWorktrees);
+      const defaultVisible = getMobileSessionDefaultVisibleCount();
       const iconName: IconName | undefined = node.project.icon
         ? PROJECT_ICON_MAP[node.project.icon]
         : undefined;
@@ -321,7 +323,7 @@ export function useMobileProjectsHomeModel(): MobileProjectsHomeModel {
       const worktrees: MobileWorktreeGroup[] = node.buckets.map((bucket) => {
         const expandKey = `${node.project.id}::${bucket.key}`;
         const worktreeExpanded = worktreeExpandedMap[expandKey] ?? false;
-        const visibleCount = visibleCountByBucket.get(expandKey) ?? pageSize;
+        const visibleCount = visibleCountByBucket.get(expandKey) ?? defaultVisible;
 
         // Mobile home is a flat parent-session list only. Subagents stay off the
         // catalog (and off search). Archive cascade still walks allSessions.
@@ -352,8 +354,9 @@ export function useMobileProjectsHomeModel(): MobileProjectsHomeModel {
         const remaining = rootSessions.length - visibleRoots.length;
         const pagination = activePaginationByDirectory.get(normalizePath(bucket.path));
         const hasRemoteSessions = pagination?.hasMore === true;
-        const canShowFewer = rootSessions.length > pageSize
-          && (visibleRoots.length > pageSize || visibleCount > pageSize);
+        // Match PC: Fewer only after the user expands past the default 3-row slice.
+        const canShowFewer = rootSessions.length > defaultVisible
+          && visibleCount > defaultVisible;
 
         const sessionsTree: MobileSessionTreeNode[] = [...visibleRoots];
         // Fewer sits above More when both appear (collapse before expand).
@@ -400,6 +403,7 @@ export function useMobileProjectsHomeModel(): MobileProjectsHomeModel {
           // Main workspace is always open when the project is expanded; only
           // linked worktrees remember an independent expand toggle.
           expanded: isMainWorkspace ? true : worktreeExpanded,
+          sessionCount: rootSessions.length,
           sessions: sessionsTree,
         };
       });
@@ -439,8 +443,8 @@ export function useMobileProjectsHomeModel(): MobileProjectsHomeModel {
   const getBucketRootCount = (projectId: string, bucketKey: string): number =>
     bucketIndex.get(`${projectId}::${bucketKey}`)?.rootCount ?? 0;
 
-  const getBucketPageSize = (projectId: string): number =>
-    getMobileSessionPageSize(projectHasWorktrees(projectId));
+  const getBucketPageSize = (_projectId: string): number =>
+    getMobileSessionDefaultVisibleCount();
 
   const getBucketVisibleCount = (projectId: string, bucketKey: string): number => {
     const fullKey = `${projectId}::${bucketKey}`;
@@ -453,18 +457,25 @@ export function useMobileProjectsHomeModel(): MobileProjectsHomeModel {
   const showMoreBucketSessions = (projectId: string, bucketKey: string) => {
     const fullKey = `${projectId}::${bucketKey}`;
     const info = bucketIndex.get(fullKey);
-    const pageSize = getMobileSessionPageSize(info?.hasWorktrees ?? false);
-    const currentVisibleCount = visibleCountByBucket.get(fullKey) ?? pageSize;
+    const defaultVisible = getMobileSessionDefaultVisibleCount();
+    const showMoreStep = getMobileSessionShowMoreIncrement();
+    const currentVisibleCount = visibleCountByBucket.get(fullKey) ?? defaultVisible;
     const totalRoots = info?.rootCount ?? 0;
 
     setVisibleCountByBucket((previous) => {
       const next = new Map(previous);
-      const current = Math.max(pageSize, previous.get(fullKey) ?? pageSize, currentVisibleCount);
-      next.set(fullKey, current + pageSize);
+      const current = Math.max(
+        defaultVisible,
+        previous.get(fullKey) ?? defaultVisible,
+        currentVisibleCount,
+      );
+      next.set(fullKey, current + showMoreStep);
       return next;
     });
 
-    const nextVisibleCount = Math.max(pageSize, currentVisibleCount) + pageSize;
+    // Match PC: only request the next remote page once the expanded slice
+    // reaches (or passes) the already-cached root count.
+    const nextVisibleCount = Math.max(defaultVisible, currentVisibleCount) + showMoreStep;
     if (nextVisibleCount < totalRoots) return;
     const directory = info?.path;
     const normalizedBucketDirectory = normalizePath(directory);

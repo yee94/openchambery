@@ -1,4 +1,5 @@
 import { downloadMessageQueueAttachment, type MessageQueueItem } from '@/lib/message-queue-server';
+import { createUuid } from '@/lib/uuid';
 import { type DraftAttachmentMetadata, type DraftKey } from './input-draft-types';
 import { useInputStore, type DraftCommitInput } from './input-store';
 import { buildQueueComposerRestoration, commitComposerRestoration } from './message-composer-restoration';
@@ -11,7 +12,6 @@ const defaults: Dependencies = { queue: getMessageQueueServerRuntime(), input: u
 const diagnostic = (status: MessageQueueEditResult['status'], stage: MessageQueueEditResult['diagnostics'][number]['stage'], code: string, draftDurable = false): MessageQueueEditResult => ({ status, current: false, draftDurable, queueDurablyRemoved: false, attachmentIssues: [], diagnostics: [{ stage, code }] });
 const occurrence = (value: readonly string[]): string => JSON.stringify(value);
 const sameOccurrence = (left: readonly string[], right: readonly string[]) => left.length === right.length && left.every((value, index) => value === right[index]);
-const requestID = () => `queue-edit-${crypto.randomUUID()}`;
 const MAX_EDIT_ATTACHMENT_BYTES = 50 * 1024 * 1024;
 const EDIT_DOWNLOAD_CONCURRENCY = 4;
 
@@ -28,7 +28,7 @@ export const createMessageQueueServerEditBridge = (overrides: Partial<Dependenci
       if (queueRuntime.transportIdentity !== inputRuntime.transportIdentity || queueRuntime.generation !== inputRuntime.generation || input.targetKey.transportIdentity !== queueRuntime.transportIdentity) return diagnostic('materialize-failed', 'identity', 'runtime-mismatch');
       if ((input.item.attachmentIssues?.length ?? 0) > 0) return { ...diagnostic('materialize-failed', 'attachments', 'attachment-issues'), attachmentIssues: input.item.attachmentIssues as unknown as MessageQueueEditResult['attachmentIssues'] };
       let reservation: Awaited<ReturnType<Dependencies['queue']['reserveEdit']>>;
-      try { reservation = await deps.queue.reserveEdit({ requestID: requestID(), scopeID: input.scopeID, revision: input.scopeRevision, item: input.item, owner: 'ui-edit', ttlMs: 60_000, runtime: queueRuntime }); } catch { return diagnostic('materialize-failed', 'materialize', 'reserve-failed'); }
+      try { reservation = await deps.queue.reserveEdit({ requestID: createUuid(), scopeID: input.scopeID, revision: input.scopeRevision, item: input.item, owner: 'ui-edit', ttlMs: 60_000, runtime: queueRuntime }); } catch { return diagnostic('materialize-failed', 'materialize', 'reserve-failed'); }
       if (!reservation) return diagnostic('materialize-failed', 'materialize', 'reserve-rejected');
       let released = false, leaseLost = false;
       const controller = new AbortController();
@@ -105,7 +105,7 @@ export const createMessageQueueServerEditBridge = (overrides: Partial<Dependenci
         if (!draft.durable) return diagnostic('draft-rejected', 'draft', draft.status);
         if (!deps.current(queueRuntime) || leaseLost) return diagnostic('queue-retained', 'remove', leaseLost ? 'lease-lost' : 'runtime-stale', true);
         try {
-          const removed = await deps.queue.removeReserved({ requestID: requestID(), scopeID: input.scopeID, revision: reservation.revision, item: { ...input.item, rowVersion: reservation.rowVersion }, token: reservation.token, generation: reservation.generation, runtime: queueRuntime });
+          const removed = await deps.queue.removeReserved({ requestID: createUuid(), scopeID: input.scopeID, revision: reservation.revision, item: { ...input.item, rowVersion: reservation.rowVersion }, token: reservation.token, generation: reservation.generation, runtime: queueRuntime });
           if (!removed) return diagnostic('queue-retained', 'remove', 'remove-rejected', true);
           released = true;
           return { status: 'committed', current: draft.current, draftDurable: true, queueDurablyRemoved: true, attachmentIssues: [], diagnostics: [] };

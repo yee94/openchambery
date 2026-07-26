@@ -2,9 +2,18 @@
  * Per-assistant continuous staged sent-message edit registry.
  * Composite identity: assistantID + session binding + runtime. No React.
  *
+ * Scope (Map key): transport + assistantID. Entry identity still carries
+ * runtimeGeneration / message / session / directory so same assistant on a
+ * different transport keeps independent cleanup state, and returning to an old
+ * transport re-enters best-effort binding rollback for that entry.
+ *
  * Entries pair identity with a CAS rollback adapter so binding invalidation
- * never clears the registry while leaving a restored edit body in the surface
- * draft (which would admit as a plain new message on the next send).
+ * can clean the restored edit body while preserving concurrent draft changes.
+ *
+ * Same-scope mutations serialize via runExclusive so continuous stage cannot
+ * overwrite an unretired entry while cleanup is in flight.
+ * Binding-changing clear paths use clearExclusive; ordinary send uses immediate
+ * clear so restoration coordination stays outside delivery.
  */
 
 export type AssistantStagedMessageEditIdentity = {
@@ -22,9 +31,16 @@ export type AssistantStagedMessageEditRollback = () => Promise<{
   status: "rolled-back" | "conflict" | "failed" | "skipped"
 }>
 
-export type AssistantStagedMessageEditEntry = {
+export type AssistantStagedMessageEditScope = {
+  transport: string
+  assistantID: string
+}
+
+type AssistantStagedMessageEditEntry = {
   identity: AssistantStagedMessageEditIdentity
   rollback: AssistantStagedMessageEditRollback
+  /** Monotonic token for this scope; rollback cleanup compares token and identity. */
+  token: number
 }
 
 type AssistantStagedBinding = {
@@ -36,20 +52,31 @@ type AssistantStagedBinding = {
   runtimeGeneration: number
 }
 
-export type AssistantStagedCommitBeforeSendResult =
-  | { kind: "none" }
-  | { kind: "mismatch"; cleared: true }
-  | { kind: "rollback_failed"; retained: true; status: "failed" | "skipped" }
-  | { kind: "committed"; messageID: string; sessionID: string }
-  | { kind: "commit_failed"; error: unknown; retained: true }
-
-export type AssistantStagedRollbackClearResult =
+type AssistantStagedRollbackClearResult =
   | { kind: "none" }
   | { kind: "match" }
   /** Concurrent register replaced this entry; old rollback must not clear the new one. */
   | { kind: "superseded" }
   | { kind: "cleared"; status: "rolled-back" | "conflict" }
   | { kind: "rollback_failed"; retained: true; status: "failed" | "skipped" }
+
+/** Outcome of retiring the previous same-scope entry before a new stage. */
+type AssistantStagedRetireResult =
+  | { kind: "none" }
+  | { kind: "cleared"; status: "rolled-back" | "conflict" }
+  | { kind: "blocked"; status: "failed" | "skipped" }
+  | { kind: "superseded" }
+
+export const assistantStagedScopeKey = (
+  scope: AssistantStagedMessageEditScope,
+): string => `${scope.transport}\u0000${scope.assistantID}`
+
+export const assistantStagedScopeOf = (
+  identity: Pick<AssistantStagedMessageEditIdentity, "transport" | "assistantID">,
+): AssistantStagedMessageEditScope => ({
+  transport: identity.transport,
+  assistantID: identity.assistantID,
+})
 
 export const assistantStagedEditMatchesBinding = (
   staged: AssistantStagedMessageEditIdentity,
@@ -63,7 +90,7 @@ export const assistantStagedEditMatchesBinding = (
   && staged.runtimeGeneration === binding.runtimeGeneration
 )
 
-export const assistantStagedIdentityEquals = (
+const assistantStagedIdentityEquals = (
   a: AssistantStagedMessageEditIdentity,
   b: AssistantStagedMessageEditIdentity,
 ): boolean => (
@@ -77,85 +104,126 @@ export const assistantStagedIdentityEquals = (
 )
 
 export const createAssistantStagedMessageEditRegistry = () => {
-  const byAssistant = new Map<string, AssistantStagedMessageEditEntry>()
+  const byScope = new Map<string, AssistantStagedMessageEditEntry>()
+  /** Per-scope serial chain so stage and rollback share one order. */
+  const exclusiveTails = new Map<string, Promise<unknown>>()
+  let nextToken = 1
 
+  const scopeKeyOf = (scope: AssistantStagedMessageEditScope): string =>
+    assistantStagedScopeKey(scope)
+
+  const runExclusive = async <T>(
+    scope: AssistantStagedMessageEditScope,
+    fn: () => Promise<T> | T,
+  ): Promise<T> => {
+    const key = scopeKeyOf(scope)
+    const previous = exclusiveTails.get(key) ?? Promise.resolve()
+    let release!: () => void
+    const gate = new Promise<void>((resolve) => {
+      release = resolve
+    })
+    const tail = previous.catch(() => undefined).then(() => gate)
+    exclusiveTails.set(key, tail)
+    await previous.catch(() => undefined)
+    try {
+      return await fn()
+    } finally {
+      release()
+      if (exclusiveTails.get(key) === tail) exclusiveTails.delete(key)
+    }
+  }
+
+  /**
+   * Unconditional register for the scope (overwrites Map slot).
+   * Continuous stage paths use stageExclusive.
+   */
   const register = (
     identity: AssistantStagedMessageEditIdentity,
     rollback: AssistantStagedMessageEditRollback,
-  ): void => {
-    byAssistant.set(identity.assistantID, { identity, rollback })
+  ): number => {
+    const key = scopeKeyOf(assistantStagedScopeOf(identity))
+    const token = nextToken++
+    byScope.set(key, { identity, rollback, token })
+    return token
   }
 
-  /** Public read returns identity only; use readEntry when the rollback handle is needed. */
-  const read = (assistantID: string): AssistantStagedMessageEditIdentity | undefined =>
-    byAssistant.get(assistantID)?.identity
-
-  const readEntry = (assistantID: string): AssistantStagedMessageEditEntry | undefined =>
-    byAssistant.get(assistantID)
-
-  const clear = (assistantID: string): boolean => byAssistant.delete(assistantID)
-
-  const clearAll = (): void => {
-    byAssistant.clear()
-  }
+  /** Read the staged identity for diagnostics and coordination tests. */
+  const read = (scope: AssistantStagedMessageEditScope): AssistantStagedMessageEditIdentity | undefined =>
+    byScope.get(scopeKeyOf(scope))?.identity
 
   /**
-   * Clears only when the registered identity still matches the expected one
-   * (same message/session). A newer stage for the same assistant is retained.
+   * Immediate marker clear used by ordinary send so cleanup cannot delay delivery.
    */
-  const clearIfMatches = (
-    assistantID: string,
-    expected: Pick<AssistantStagedMessageEditIdentity, "messageID" | "sessionID">,
-  ): boolean => {
-    const still = byAssistant.get(assistantID)
-    if (!still) return false
-    if (still.identity.messageID !== expected.messageID || still.identity.sessionID !== expected.sessionID) {
-      return false
-    }
-    byAssistant.delete(assistantID)
-    return true
-  }
+  const clear = (scope: AssistantStagedMessageEditScope): boolean =>
+    byScope.delete(scopeKeyOf(scope))
 
   /**
-   * Clears identity only when live binding diverges (no draft rollback).
-   * Prefer rollbackAndClearIfBindingMismatch for invalidation paths that must
-   * not leave a restored edit body unprotected in the surface draft.
+   * Production clear: run under the scope exclusive lane so an in-flight stage
+   * cannot complete and re-register after this clear returns.
    */
-  const clearIfBindingMismatch = (
-    assistantID: string,
-    live: AssistantStagedBinding,
-  ): boolean => {
-    const staged = byAssistant.get(assistantID)
-    if (!staged) return false
-    if (assistantStagedEditMatchesBinding(staged.identity, live)) return false
-    byAssistant.delete(assistantID)
-    return true
-  }
-
+  const clearExclusive = async (scope: AssistantStagedMessageEditScope): Promise<boolean> =>
+    runExclusive(scope, () => clear(scope))
   /**
-   * When the registered entry no longer matches live binding/runtime:
-   * invoke its CAS rollback, then clear only if the same identity is still
-   * registered. rolled-back/conflict → safe clear; failed/skipped → retain.
-   * Concurrent register of a newer identity is never cleared by an older rollback.
+   * Safely retire the current same-scope entry before a new stage.
+   * rolled-back/conflict → clear; failed/skipped → retain and block new stage.
    */
-  const rollbackAndClearIfBindingMismatch = async (
-    assistantID: string,
-    live: AssistantStagedBinding,
-  ): Promise<AssistantStagedRollbackClearResult> => {
-    const entry = byAssistant.get(assistantID)
+  const retireCurrent = async (
+    scope: AssistantStagedMessageEditScope,
+  ): Promise<AssistantStagedRetireResult> => {
+    const key = scopeKeyOf(scope)
+    const entry = byScope.get(key)
     if (!entry) return { kind: "none" }
-    if (assistantStagedEditMatchesBinding(entry.identity, live)) return { kind: "match" }
 
-    const expected = entry.identity
-    const rolled = await entry.rollback()
+    const expectedToken = entry.token
+    const expectedIdentity = entry.identity
+    let rolled: { status: "rolled-back" | "conflict" | "failed" | "skipped" }
+    try {
+      rolled = await entry.rollback()
+    } catch {
+      return { kind: "blocked", status: "failed" }
+    }
 
-    const current = byAssistant.get(assistantID)
-    if (!current || !assistantStagedIdentityEquals(current.identity, expected)) {
+    const current = byScope.get(key)
+    if (!current || current.token !== expectedToken || !assistantStagedIdentityEquals(current.identity, expectedIdentity)) {
       return { kind: "superseded" }
     }
 
     if (rolled.status === "rolled-back" || rolled.status === "conflict") {
-      byAssistant.delete(assistantID)
+      byScope.delete(key)
+      return { kind: "cleared", status: rolled.status }
+    }
+
+    return { kind: "blocked", status: rolled.status }
+  }
+
+  /**
+   * Unlocked body for binding-mismatch rollback+clear (must run under runExclusive
+   * for the scope.
+   */
+  const rollbackAndClearIfBindingMismatchUnlocked = async (
+    scope: AssistantStagedMessageEditScope,
+    live: AssistantStagedBinding,
+  ): Promise<AssistantStagedRollbackClearResult> => {
+    const key = scopeKeyOf(scope)
+    const entry = byScope.get(key)
+    if (!entry) return { kind: "none" }
+    if (assistantStagedEditMatchesBinding(entry.identity, live)) return { kind: "match" }
+
+    const expectedToken = entry.token
+    const expected = entry.identity
+    const rolled = await entry.rollback()
+
+    const current = byScope.get(key)
+    if (
+      !current
+      || current.token !== expectedToken
+      || !assistantStagedIdentityEquals(current.identity, expected)
+    ) {
+      return { kind: "superseded" }
+    }
+
+    if (rolled.status === "rolled-back" || rolled.status === "conflict") {
+      byScope.delete(key)
       return { kind: "cleared", status: rolled.status }
     }
 
@@ -163,73 +231,112 @@ export const createAssistantStagedMessageEditRegistry = () => {
   }
 
   /**
-   * Best-effort rollback every entry, clearing only safe outcomes.
-   * failed/skipped entries stay registered so send continues to block.
+   * When the registered entry no longer matches live binding/runtime:
+   * invoke its CAS rollback, then clear only if the same identity/token is still
+   * registered. rolled-back/conflict → safe clear; failed/skipped → retain.
+   * Concurrent register of a newer identity is never cleared by an older rollback.
+   * Serialized per scope with stage.
    */
-  const rollbackAllBestEffort = async (): Promise<void> => {
-    const snapshot = [...byAssistant.entries()]
-    await Promise.all(snapshot.map(async ([assistantID, entry]) => {
-      const expected = entry.identity
-      try {
-        const rolled = await entry.rollback()
-        const current = byAssistant.get(assistantID)
-        if (!current || !assistantStagedIdentityEquals(current.identity, expected)) return
-        if (rolled.status === "rolled-back" || rolled.status === "conflict") {
-          byAssistant.delete(assistantID)
-        }
-      } catch {
-        // Retain entry on rejection so backend can keep blocking mismatch sends.
+  const rollbackAndClearIfBindingMismatch = async (
+    scope: AssistantStagedMessageEditScope,
+    live: AssistantStagedBinding,
+  ): Promise<AssistantStagedRollbackClearResult> => (
+    runExclusive(scope, () => rollbackAndClearIfBindingMismatchUnlocked(scope, live))
+  )
+
+  /**
+   * Best-effort rollback every entry, clearing only safe outcomes.
+   * failed/skipped entries stay registered for later best-effort cleanup.
+   * Optional transport filter: runtime switch may pass all transports;
+   * callers that only care about foreign transports can filter.
+   * Each entry runs under that scope's exclusive lane.
+   */
+  const rollbackAllBestEffort = async (
+    options?: { excludeTransport?: string },
+  ): Promise<void> => {
+    const snapshot = [...byScope.entries()]
+    await Promise.all(snapshot.map(async ([, entry]) => {
+      if (options?.excludeTransport !== undefined && entry.identity.transport === options.excludeTransport) {
+        return
       }
+      const scope = assistantStagedScopeOf(entry.identity)
+      await runExclusive(scope, async () => {
+        const key = scopeKeyOf(scope)
+        const live = byScope.get(key)
+        if (!live || live.token !== entry.token) return
+        const expectedToken = live.token
+        const expected = live.identity
+        try {
+          const rolled = await live.rollback()
+          const current = byScope.get(key)
+          if (
+            !current
+            || current.token !== expectedToken
+            || !assistantStagedIdentityEquals(current.identity, expected)
+          ) {
+            return
+          }
+          if (rolled.status === "rolled-back" || rolled.status === "conflict") {
+            byScope.delete(key)
+          }
+        } catch {
+          // Retain entry for a later best-effort cleanup attempt.
+        }
+      })
     }))
   }
 
   /**
-   * Commit-before-send coordination for continuous Assistant backend.send.
-   * - no staged → none
-   * - staged but binding mismatch → rollback then clear on safe status (mismatch);
-   *   rollback failure retains entry (rollback_failed) so the next send cannot
-   *   admit the restored body as a plain new message
-   * - match → commit; on failure retain stage and surface error
-   * - success → conditional clear of the committed identity
+   * Continuous stage path: exclusive per scope, retire prior entry safely, then
+   * run stageFn and register the new handle. failed/skipped prior blocks new stage.
    */
-  const commitBeforeSend = async (
-    assistantID: string,
-    live: AssistantStagedBinding,
-    commit: (staged: AssistantStagedMessageEditIdentity) => Promise<void>,
-    options?: { commitStagedMessageEdit?: boolean },
-  ): Promise<AssistantStagedCommitBeforeSendResult> => {
-    if (!options?.commitStagedMessageEdit) return { kind: "none" }
-    const entry = byAssistant.get(assistantID)
-    if (!entry) return { kind: "none" }
-    if (!assistantStagedEditMatchesBinding(entry.identity, live)) {
-      const rolled = await rollbackAndClearIfBindingMismatch(assistantID, live)
-      if (rolled.kind === "rollback_failed") {
-        return { kind: "rollback_failed", retained: true, status: rolled.status }
+  const stageExclusive = async (
+    scope: AssistantStagedMessageEditScope,
+    stageFn: () => Promise<{
+      identity: AssistantStagedMessageEditIdentity
+      rollback: AssistantStagedMessageEditRollback
+      /** When true, register even if live binding is stale (protect restored body). */
+      protectOnStale?: boolean
+    } | null>,
+  ): Promise<
+    | { kind: "registered"; token: number; identity: AssistantStagedMessageEditIdentity }
+    | { kind: "blocked"; status: "failed" | "skipped" }
+    | { kind: "skipped" }
+    | { kind: "stale_protected"; token: number; identity: AssistantStagedMessageEditIdentity }
+  > => {
+    return runExclusive(scope, async () => {
+      const retired = await retireCurrent(scope)
+      if (retired.kind === "blocked") {
+        return { kind: "blocked" as const, status: retired.status }
       }
-      // cleared | none | superseded | match-after-race: block this send.
-      // A concurrent re-stage can be committed on the next send attempt.
-      return { kind: "mismatch", cleared: true }
-    }
-    const staged = entry.identity
-    try {
-      await commit(staged)
-    } catch (error) {
-      return { kind: "commit_failed", error, retained: true }
-    }
-    clearIfMatches(assistantID, { messageID: staged.messageID, sessionID: staged.sessionID })
-    return { kind: "committed", messageID: staged.messageID, sessionID: staged.sessionID }
+
+      const staged = await stageFn()
+      if (!staged) return { kind: "skipped" as const }
+
+      const token = register(staged.identity, staged.rollback)
+      if (staged.protectOnStale) {
+        return {
+          kind: "stale_protected" as const,
+          token,
+          identity: staged.identity,
+        }
+      }
+      return {
+        kind: "registered" as const,
+        token,
+        identity: staged.identity,
+      }
+    })
   }
 
   return {
     register,
     read,
-    readEntry,
     clear,
-    clearAll,
-    clearIfMatches,
-    clearIfBindingMismatch,
+    clearExclusive,
+    retireCurrent,
     rollbackAndClearIfBindingMismatch,
     rollbackAllBestEffort,
-    commitBeforeSend,
+    stageExclusive,
   }
 }

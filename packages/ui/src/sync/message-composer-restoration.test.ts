@@ -383,6 +383,41 @@ describe('commitComposerRestoration and rollback', () => {
   })
 })
 
+describe('cross-runtime restoration rollback', () => {
+  test('ends best-effort without writing through a foreign transport capture', async () => {
+    const rollbackKey = sessionDraftKey({ transportIdentity: 'runtime-a' }, 'session-a')
+    let writes = 0
+    const result = await rollbackComposerRestoration({
+      key: rollbackKey,
+      restoredRevision: 2,
+      previous: { record: null, views: {}, expectedRevision: 'absent' },
+      input: {
+        captureDraftRuntime: () => ({ transportIdentity: 'runtime-b', generation: 2 }),
+        getDraft: () => ({
+          version: 1,
+          key: rollbackKey,
+          revision: 2,
+          text: 'restored',
+          attachments: [],
+          syntheticParts: [],
+          mentions: [],
+        }),
+        commitDraftSnapshot: async () => {
+          writes += 1
+          throw new Error('unexpected-write')
+        },
+        deleteDraftSnapshot: async () => {
+          writes += 1
+          throw new Error('unexpected-write')
+        },
+      } as never,
+    })
+
+    expect(result).toEqual({ status: 'failed', current: false })
+    expect(writes).toBe(0)
+  })
+})
+
 describe('resolveDraftAttachmentRefID', () => {
   test('maps attachmentID to attachmentRefID for primary and synthetic parts', () => {
     const draftKey = key()

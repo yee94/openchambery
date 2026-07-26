@@ -173,6 +173,22 @@ export type InputState = {
   retryDraftAttachmentPersistence: (key: DraftKey) => Promise<void>
   removeDraftAttachment: (key: DraftKey, attachmentRefID: string) => Promise<boolean>
   replaceDraftAttachment: (key: DraftKey, attachmentRefID: string, file: File | Blob, options?: { filename?: string; source?: "local" | "vscode"; vscodePath?: string; vscodeSource?: "selection" }) => Promise<DraftAttachmentMetadata | undefined>
+  /**
+   * Atomically replace root AttachedFile[] via one commitDraftSnapshot CAS.
+   * Preserves text / composerReferences / mentions / syntheticParts; synthetic
+   * attachment ownership stays on synthetic parts and is never rewritten here.
+   * Conflict/failure publishes no partial root state.
+   */
+  replaceDraftRootAttachments: (key: DraftKey, attachments: readonly AttachedFile[]) => Promise<DraftCommitResult>
+  /**
+   * Restore failed-send root attachments via one CAS on the live DraftRecord revision.
+   * Failed AttachedFiles become root metadata/values first; live root metadata whose
+   * attachmentID is not in the failed set is retained as-is (including rows missing a view).
+   * URL locators supply locator.url values; blob rows with a view supply File/dataUrl;
+   * blob rows without a view keep the original locator for later hydrate. Preserves
+   * text/composer/mentions/synthetic. Conflict/failure publishes no partial root state.
+   */
+  restoreDraftRootAttachments: (key: DraftKey, failedAttachments: readonly AttachedFile[]) => Promise<DraftCommitResult>
   deleteDraft: (key: DraftKey, expectedRevision?: number) => boolean
   moveDraft: (source: DraftKey, destination: DraftKey, expectedRevision?: number) => DraftRecord | undefined
   moveDraftWithAttachments: (source: DraftKey, destination: DraftKey, expectedRevision?: number) => Promise<DraftRecord | undefined>
@@ -406,7 +422,26 @@ export const createInputStore = (services: InputDraftServices = {}) => {
       const views: Record<string, AttachedFile> = {}
       const existingViews = get().draftAttachmentViews[draftKeyString(record.key)] ?? {}
       for (const attachment of attachmentList(record)) {
-        const value = values?.get(attachment.attachmentRefID) ?? existingViews[attachment.attachmentRefID]?.file ?? (attachment.locator.kind === "url" ? attachment.locator.url : undefined)
+        // URL locators always use the authoritative locator URL (or an explicit same-value
+        // entry in values). Never prefer an existing view.file placeholder that may be a
+        // non-durable Blob/File from a prior hydrate of a different occurrence.
+        // Blob locators may reuse values / existing view.file / durable dataUrl.
+        let value: Blob | string | undefined
+        if (attachment.locator.kind === "url") {
+          const provided = values?.get(attachment.attachmentRefID)
+          if (provided !== undefined) {
+            value = provided
+          } else {
+            value = attachment.locator.url
+          }
+        } else {
+          value = values?.get(attachment.attachmentRefID)
+            ?? existingViews[attachment.attachmentRefID]?.file
+            ?? (typeof existingViews[attachment.attachmentRefID]?.dataUrl === "string"
+              && isDurableURL(existingViews[attachment.attachmentRefID]!.dataUrl)
+              ? existingViews[attachment.attachmentRefID]!.dataUrl
+              : undefined)
+        }
         if (attachment.locator.kind === "url" && value !== undefined && (value !== attachment.locator.url || !isDurableURL(value))) return undefined
         if (attachment.locator.kind === "blob" && value !== undefined && !(value instanceof Blob) && !(typeof value === "string" && isDurableURL(value))) return undefined
         if (value !== undefined) views[attachment.attachmentRefID] = await makeView(attachment, value)
@@ -791,6 +826,196 @@ export const createInputStore = (services: InputDraftServices = {}) => {
     })
     const result = await persist([id])
     return result.status === "committed" ? replacement : undefined
+  },
+  replaceDraftRootAttachments: async (key, attachments) => {
+    const id = draftKeyString(key)
+    const runtime = runtimeCapture()
+    if (runtime.transportIdentity !== key.transportIdentity || !runtimeMatches(runtime)) {
+      return actionResult("stale", undefined)
+    }
+    const existing = get().drafts[id]
+    const expectedRevision: number | "absent" = existing ? existing.revision : "absent"
+    const rootAttachments: DraftAttachmentMetadata[] = []
+    const values = new Map<string, Blob | string>()
+    for (const attachment of attachments) {
+      const attachmentID = attachment.id
+      const attachmentRefID = draftRootAttachmentOccurrenceRefID(attachmentID)
+      if (attachment.source === "server" && attachment.dataUrl && isDurableURL(attachment.dataUrl)) {
+        rootAttachments.push({
+          attachmentID,
+          attachmentRefID,
+          filename: attachment.filename,
+          mimeType: attachment.mimeType,
+          size: attachment.size,
+          source: "server",
+          locator: { kind: "url", url: attachment.dataUrl },
+          ...(attachment.serverPath ? { serverPath: attachment.serverPath } : {}),
+        })
+        values.set(attachmentRefID, attachment.dataUrl)
+      } else if (
+        attachment.source === "vscode"
+        && attachment.vscodeSource === "file"
+        && attachment.dataUrl
+        && isDurableURL(attachment.dataUrl)
+      ) {
+        // Preserve durable file:// vscode file metadata (not blob-local selection).
+        rootAttachments.push({
+          attachmentID,
+          attachmentRefID,
+          filename: attachment.filename,
+          mimeType: attachment.mimeType,
+          size: attachment.size,
+          source: "vscode",
+          locator: { kind: "url", url: attachment.dataUrl },
+          ...(attachment.vscodePath ? { vscodePath: attachment.vscodePath } : {}),
+          vscodeSource: "file",
+        })
+        values.set(attachmentRefID, attachment.dataUrl)
+      } else {
+        const fileView = attachment.file instanceof File
+          ? attachment.file
+          : new File([attachment.file], attachment.filename, { type: attachment.mimeType })
+        const blobID = createID()
+        rootAttachments.push({
+          attachmentID,
+          attachmentRefID,
+          filename: attachment.filename,
+          mimeType: attachment.mimeType,
+          size: attachment.size,
+          source: attachment.source === "vscode" ? "vscode" : "local",
+          locator: { kind: "blob", blobID },
+          ...(attachment.vscodePath ? { vscodePath: attachment.vscodePath } : {}),
+          ...(attachment.vscodeSource === "selection" ? { vscodeSource: "selection" as const } : {}),
+        })
+        values.set(attachmentRefID, fileView)
+      }
+    }
+    const syntheticParts = existing?.syntheticParts ?? []
+    // Explicitly re-supply preserved synthetic URL locators so snapshotViews never
+    // falls back to a stale non-URL existing view for those refs.
+    for (const part of syntheticParts) {
+      for (const attachment of part.attachments) {
+        if (attachment.locator.kind === "url" && !values.has(attachment.attachmentRefID)) {
+          values.set(attachment.attachmentRefID, attachment.locator.url)
+        }
+      }
+    }
+    const snapshot: DraftSnapshot = {
+      text: existing?.text ?? "",
+      attachments: rootAttachments,
+      syntheticParts,
+      mentions: existing?.mentions ?? [],
+      ...(existing?.composerReferences !== undefined ? { composerReferences: existing.composerReferences } : {}),
+    }
+    // Single CAS commit: no intermediate per-item remove/add; synthetic refs stay via snapshot + existing views.
+    return get().commitDraftSnapshot({
+      key,
+      expectedRevision,
+      snapshot,
+      values,
+      runtime,
+    })
+  },
+  restoreDraftRootAttachments: async (key, failedAttachments) => {
+    const id = draftKeyString(key)
+    const runtime = runtimeCapture()
+    if (runtime.transportIdentity !== key.transportIdentity || !runtimeMatches(runtime)) {
+      return actionResult("stale", undefined)
+    }
+    const existing = get().drafts[id]
+    const expectedRevision: number | "absent" = existing ? existing.revision : "absent"
+    const failedIds = new Set(failedAttachments.map((attachment) => attachment.id))
+    const rootAttachments: DraftAttachmentMetadata[] = []
+    const values = new Map<string, Blob | string>()
+    // Failed send snapshot first (AttachedFile → root metadata/values).
+    for (const attachment of failedAttachments) {
+      const attachmentID = attachment.id
+      const attachmentRefID = draftRootAttachmentOccurrenceRefID(attachmentID)
+      if (attachment.source === "server" && attachment.dataUrl && isDurableURL(attachment.dataUrl)) {
+        rootAttachments.push({
+          attachmentID,
+          attachmentRefID,
+          filename: attachment.filename,
+          mimeType: attachment.mimeType,
+          size: attachment.size,
+          source: "server",
+          locator: { kind: "url", url: attachment.dataUrl },
+          ...(attachment.serverPath ? { serverPath: attachment.serverPath } : {}),
+        })
+        values.set(attachmentRefID, attachment.dataUrl)
+      } else if (
+        attachment.source === "vscode"
+        && attachment.vscodeSource === "file"
+        && attachment.dataUrl
+        && isDurableURL(attachment.dataUrl)
+      ) {
+        rootAttachments.push({
+          attachmentID,
+          attachmentRefID,
+          filename: attachment.filename,
+          mimeType: attachment.mimeType,
+          size: attachment.size,
+          source: "vscode",
+          locator: { kind: "url", url: attachment.dataUrl },
+          ...(attachment.vscodePath ? { vscodePath: attachment.vscodePath } : {}),
+          vscodeSource: "file",
+        })
+        values.set(attachmentRefID, attachment.dataUrl)
+      } else {
+        const fileView = attachment.file instanceof File
+          ? attachment.file
+          : new File([attachment.file], attachment.filename, { type: attachment.mimeType })
+        const blobID = createID()
+        rootAttachments.push({
+          attachmentID,
+          attachmentRefID,
+          filename: attachment.filename,
+          mimeType: attachment.mimeType,
+          size: attachment.size,
+          source: attachment.source === "vscode" ? "vscode" : "local",
+          locator: { kind: "blob", blobID },
+          ...(attachment.vscodePath ? { vscodePath: attachment.vscodePath } : {}),
+          ...(attachment.vscodeSource === "selection" ? { vscodeSource: "selection" as const } : {}),
+        })
+        values.set(attachmentRefID, fileView)
+      }
+    }
+    // Live root metadata not in the failed set — keep original metadata even when view is missing.
+    const liveViews = get().draftAttachmentViews[id] ?? {}
+    for (const meta of existing?.attachments ?? []) {
+      if (failedIds.has(meta.attachmentID)) continue
+      rootAttachments.push(JSON.parse(JSON.stringify(meta)) as DraftAttachmentMetadata)
+      if (meta.locator.kind === "url") {
+        values.set(meta.attachmentRefID, meta.locator.url)
+      } else {
+        const view = liveViews[meta.attachmentRefID]
+        if (view?.file instanceof Blob) values.set(meta.attachmentRefID, view.file)
+        else if (typeof view?.dataUrl === "string" && isDurableURL(view.dataUrl)) values.set(meta.attachmentRefID, view.dataUrl)
+        // Missing view: retain original locator; hydrate recovers later.
+      }
+    }
+    const syntheticParts = existing?.syntheticParts ?? []
+    for (const part of syntheticParts) {
+      for (const attachment of part.attachments) {
+        if (attachment.locator.kind === "url" && !values.has(attachment.attachmentRefID)) {
+          values.set(attachment.attachmentRefID, attachment.locator.url)
+        }
+      }
+    }
+    const snapshot: DraftSnapshot = {
+      text: existing?.text ?? "",
+      attachments: rootAttachments,
+      syntheticParts,
+      mentions: existing?.mentions ?? [],
+      ...(existing?.composerReferences !== undefined ? { composerReferences: existing.composerReferences } : {}),
+    }
+    return get().commitDraftSnapshot({
+      key,
+      expectedRevision,
+      snapshot,
+      values,
+      runtime,
+    })
   },
   deleteDraft: (key, expectedRevision) => {
     const id = draftKeyString(key)

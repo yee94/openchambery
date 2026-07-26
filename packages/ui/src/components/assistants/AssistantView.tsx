@@ -30,7 +30,7 @@ import { useUIStore } from '@/stores/useUIStore';
 import type { AttachedFile } from '@/stores/types/sessionTypes';
 import { AssistantConversationSurface } from './AssistantConversationSurface';
 import { toast } from 'sonner';
-import { commitMessageEdit, revertToMessage as revertSessionToMessage, stageMessageEdit } from '@/sync/session-actions';
+import { revertToMessage as revertSessionToMessage, stageMessageEdit } from '@/sync/session-actions';
 import type { SessionSurfaceMessageEditSnapshot } from '@/components/chat/SessionSurfaceContext';
 
 import { AssistantSelectionCoordinator, AssistantSelectionStaleError, type AssistantSelection, type AssistantSelectionIdentity } from './assistantSelectionCoordinator';
@@ -39,10 +39,18 @@ import { getAssistantPresentation } from './assistantPresentation';
 import { reconcileAdmittedAssistantBinding, rebindPendingAssistantMessage } from './assistantPendingMessages';
 import {
   createAssistantStagedMessageEditRegistry,
+  assistantStagedScopeOf,
   type AssistantStagedMessageEditIdentity,
 } from './assistantStagedMessageEdit';
+import {
+  mapSyntheticPartsWithViews,
+  mergeSyntheticPartsByPartID,
+  projectRootAttachmentViews,
+} from './assistantDraftAttachments';
+import type { DraftSyntheticPart } from '@/sync/input-draft-types';
 
-const EMPTY_ATTACHMENTS: Record<string, AttachedFile> = {};
+const EMPTY_ATTACHMENT_VIEWS: Record<string, AttachedFile> = {};
+const EMPTY_ROOT_ATTACHMENTS: AttachedFile[] = [];
 const EMPTY_PENDING_MESSAGES: PendingUserMessagePresentation[] = [];
 const assistantParts = (text: string | undefined, parts: readonly { text: string; attachments?: readonly AttachedFile[]; synthetic?: boolean }[] | undefined, attachments: readonly AttachedFile[] | undefined): AssistantPart[] => {
   return [
@@ -105,8 +113,33 @@ export const AssistantView: React.FC<AssistantViewProps> = ({ activeOverride, on
   const directory = assistant?.effectiveWorkspacePath ?? '';
   const draftKey = React.useMemo(() => surfaceDraftKey({ transportIdentity: transport }, `assistant:${assistantID}`), [assistantID, transport]);
   const draftID = draftKeyString(draftKey);
-  const attachmentViews = useInputStore((state) => state.draftAttachmentViews[draftID] ?? EMPTY_ATTACHMENTS);
-  const attachments = React.useMemo(() => Object.values(attachmentViews), [attachmentViews]);
+  // Mirror primary: subscribe DraftRecord + views; project root attachments only (record.attachments order).
+  const draftAttachmentViewsMap = useInputStore((state) => state.draftAttachmentViews[draftID] ?? EMPTY_ATTACHMENT_VIEWS);
+  const draftRecord = useInputStore((state) => state.drafts[draftID]);
+  const attachments = React.useMemo(
+    () => {
+      const ordered = projectRootAttachmentViews(draftRecord, draftAttachmentViewsMap);
+      return ordered.length === 0 ? EMPTY_ROOT_ATTACHMENTS : ordered;
+    },
+    [draftAttachmentViewsMap, draftRecord],
+  );
+  // Hydrate when draftKey changes or attachment metadata identity arrives/changes
+  // (late metadata after first empty record). Avoid full draft revision so typing
+  // does not re-hydrate.
+  const draftRootAttachmentMetadata = draftRecord?.attachments;
+  const draftSyntheticPartMetadata = draftRecord?.syntheticParts;
+  const draftAttachmentMetadataIdentity = React.useMemo(() => {
+    if (!draftRootAttachmentMetadata || !draftSyntheticPartMetadata) return '';
+    const root = draftRootAttachmentMetadata.map((attachment) => attachment.attachmentRefID).join('\u0001');
+    const synthetic = draftSyntheticPartMetadata
+      .map((part) => `${part.partID}\u0002${part.attachments.map((attachment) => attachment.attachmentRefID).join('\u0001')}`)
+      .join('\u0003');
+    return `${root}\u0004${synthetic}`;
+  }, [draftRootAttachmentMetadata, draftSyntheticPartMetadata]);
+  React.useEffect(() => {
+    if (!assistantID) return;
+    void useInputStore.getState().hydrateDraftAttachments(draftKey);
+  }, [assistantID, draftKey, draftAttachmentMetadataIdentity]);
   const providersQuery = useScopedProvidersQuery(directory || null, { enabled: Boolean(directory) && active });
   const agentsQuery = useScopedAgentsQuery(directory || null, { enabled: Boolean(directory) && active });
   const messages = useSessionMessages(sessionID, directory || undefined);
@@ -115,7 +148,7 @@ export const AssistantView: React.FC<AssistantViewProps> = ({ activeOverride, on
   const sync = useSync();
   const [pendingMessagesByAssistant, setPendingMessagesByAssistant] = React.useState<Map<string, PendingUserMessagePresentation[]>>(() => new Map());
   const pendingRefreshEpochRef = React.useRef(0);
-  /** Per-assistant continuous staged sent-message edit registry; no render subscription. */
+  /** Per-assistant continuous staged sent-message edit registry; no render subscription. Scope = transport + assistantID. */
   const stagedMessageEditRegistryRef = React.useRef(createAssistantStagedMessageEditRegistry());
   const pendingMessages = pendingMessagesByAssistant.get(assistantID) ?? EMPTY_PENDING_MESSAGES;
   const [, setSelectionSaving] = React.useState(false);
@@ -125,14 +158,19 @@ export const AssistantView: React.FC<AssistantViewProps> = ({ activeOverride, on
   if (!selectionCoordinatorRef.current) selectionCoordinatorRef.current = new AssistantSelectionCoordinator(setSelectionSaving, (error) => selectionErrorRef.current(error));
   const selectionIdentity = React.useMemo<AssistantSelectionIdentity>(() => ({ assistantID, transportIdentity: transport, runtimeGeneration }), [assistantID, runtimeGeneration, transport]);
   const selectionCoordinator = selectionCoordinatorRef.current;
+  const stagedScope = React.useMemo(() => ({ transport, assistantID }), [assistantID, transport]);
 
-  /** Drop staged identity only (no draft rollback). Used after user-explicit history replace. */
-  const clearStagedMessageEdit = useEvent((targetAssistantID: string) => {
-    stagedMessageEditRegistryRef.current.clear(targetAssistantID);
+  /** Drop staged identity only (no draft rollback). Serialized so in-flight stage cannot re-register after clear. */
+  const clearStagedMessageEdit = useEvent(async (targetAssistantID: string, targetTransport = transport) => {
+    await stagedMessageEditRegistryRef.current.clearExclusive({ transport: targetTransport, assistantID: targetAssistantID });
   });
-  /** Runtime switch / unmount: rollback drafts first; never clearAll before rollback. */
-  const invalidateAllStagedMessageEdits = useEvent(() => {
-    void stagedMessageEditRegistryRef.current.rollbackAllBestEffort().catch(() => undefined);
+  /**
+   * Runtime switch / unmount: best-effort rollback other-transport entries (or all on unmount).
+   * Ordinary send clears its current staged marker synchronously and remains independent
+   * from these cleanup attempts.
+   */
+  const invalidateAllStagedMessageEdits = useEvent((options?: { excludeTransport?: string }) => {
+    void stagedMessageEditRegistryRef.current.rollbackAllBestEffort(options).catch(() => undefined);
   });
 
   React.useEffect(() => { if (!selectedAssistantID && snapshot?.assistants[0]) selectAssistant(snapshot.assistants[0].id); }, [selectAssistant, selectedAssistantID, snapshot?.assistants]);
@@ -141,16 +179,17 @@ export const AssistantView: React.FC<AssistantViewProps> = ({ activeOverride, on
   React.useEffect(() => {
     pendingRefreshEpochRef.current++;
     setPendingMessagesByAssistant(new Map());
-    // Runtime switch: best-effort rollback every staged edit; retain failed entries for send block.
-    invalidateAllStagedMessageEdits();
+    // Runtime switch: best-effort rollback entries on other transports.
+    invalidateAllStagedMessageEdits({ excludeTransport: transport });
   }, [transport, runtimeGeneration, invalidateAllStagedMessageEdits]);
   React.useEffect(() => () => { pendingRefreshEpochRef.current++; invalidateAllStagedMessageEdits(); }, [invalidateAllStagedMessageEdits]);
   React.useEffect(() => { selectionCoordinator.activate(selectionIdentity); }, [selectionCoordinator, selectionIdentity]);
   React.useEffect(() => () => { selectionCoordinator.dispose(); }, [selectionCoordinator]);
   // Binding identity change: CAS-rollback draft then clear only on safe status (retain on failure).
+  // Scope is transport+assistantID so returning to an old transport retries its retained entry.
   React.useEffect(() => {
     if (!assistantID) return;
-    void stagedMessageEditRegistryRef.current.rollbackAndClearIfBindingMismatch(assistantID, {
+    void stagedMessageEditRegistryRef.current.rollbackAndClearIfBindingMismatch(stagedScope, {
       assistantID,
       sessionID,
       directory,
@@ -158,7 +197,7 @@ export const AssistantView: React.FC<AssistantViewProps> = ({ activeOverride, on
       transport,
       runtimeGeneration,
     }).catch(() => undefined);
-  }, [assistant?.sessionGeneration, assistantID, directory, runtimeGeneration, sessionID, transport]);
+  }, [assistant?.sessionGeneration, assistantID, directory, runtimeGeneration, sessionID, stagedScope, transport]);
 
   const changeSelection = useEvent((selection: AssistantSelection) => {
     if (!selectionIdentity.assistantID) return Promise.reject(new Error('assistant_unavailable'));
@@ -232,7 +271,7 @@ export const AssistantView: React.FC<AssistantViewProps> = ({ activeOverride, on
     // Surface DraftKey isolation: restore into the Assistant partition, not primary.
     await revertSessionToMessage(sessionID, messageID, { directory, draftKey, restorePrimaryInput: false });
     // Revert retires any staged edit for this assistant (same binding may still exist).
-    clearStagedMessageEdit(assistantID);
+    await clearStagedMessageEdit(assistantID);
   });
   const editAssistantMessage = useEvent(async (messageID: string, snapshot: SessionSurfaceMessageEditSnapshot) => {
     // Stateless turns cannot rewrite history; continuous only, live binding only.
@@ -251,34 +290,48 @@ export const AssistantView: React.FC<AssistantViewProps> = ({ activeOverride, on
       transport,
       runtimeGeneration,
     };
-    // Stage into surfaceDraftKey; primary session draft / stagedMessageEdit stay untouched.
-    const stageHandle = await stageMessageEdit(sessionID, messageID, snapshot, { directory, draftKey });
-    // Re-validate runtime + this assistant's live binding after the async draft commit.
-    // Selection may have moved to another assistant; Map still supports A while B is selected.
-    const runtimeOk =
-      getRuntimeTransportIdentity() === identity.transport
-      && getRuntimeGeneration() === identity.runtimeGeneration;
-    const live = runtimeOk
-      ? readAssistantSnapshot(undefined, identity.transport)?.assistants.find((item) => item.id === identity.assistantID)
-      : undefined;
-    const bindingOk = Boolean(
-      live
-      && live.mode === 'continuous'
-      && live.sessionID === identity.sessionID
-      && live.sessionGeneration === identity.sessionGeneration
-      && (live.effectiveWorkspacePath ?? '') === identity.directory,
-    );
-    if (runtimeOk && bindingOk) {
-      stagedMessageEditRegistryRef.current.register(identity, () => stageHandle.rollback());
-      return;
+    const scope = assistantStagedScopeOf(identity);
+    // Exclusive per transport+assistant: retire prior entry, then stage; failed/skipped prior blocks.
+    const stageResult = await stagedMessageEditRegistryRef.current.stageExclusive(scope, async () => {
+      // Stage into surfaceDraftKey; primary session draft / stagedMessageEdit stay untouched.
+      const stageHandle = await stageMessageEdit(sessionID, messageID, snapshot, { directory, draftKey });
+      // Re-validate runtime + this assistant's live binding after the async draft commit.
+      // Selection may have moved to another assistant; Map still supports A while B is selected.
+      const runtimeOk =
+        getRuntimeTransportIdentity() === identity.transport
+        && getRuntimeGeneration() === identity.runtimeGeneration;
+      const live = runtimeOk
+        ? readAssistantSnapshot(undefined, identity.transport)?.assistants.find((item) => item.id === identity.assistantID)
+        : undefined;
+      const bindingOk = Boolean(
+        live
+        && live.mode === 'continuous'
+        && live.sessionID === identity.sessionID
+        && live.sessionGeneration === identity.sessionGeneration
+        && (live.effectiveWorkspacePath ?? '') === identity.directory,
+      );
+      if (runtimeOk && bindingOk) {
+        return { identity, rollback: () => stageHandle.rollback() };
+      }
+      // Stale runtime/binding: CAS-rollback the restored draft; conflict keeps user edits.
+      // failed/skipped: register handle to protect restored body and signal error to caller.
+      const rolled = await stageHandle.rollback();
+      if (rolled.status === 'failed' || rolled.status === 'skipped') {
+        return {
+          identity,
+          rollback: () => stageHandle.rollback(),
+          protectOnStale: true,
+        };
+      }
+      // rolled-back/conflict: do not keep an entry for a cleanly retired stale stage.
+      return null;
+    });
+    if (stageResult.kind === 'blocked') {
+      throw new Error('assistant_stage_message_edit_prior_blocked');
     }
-    // Stale runtime/binding: CAS-rollback the restored draft; conflict keeps user edits.
-    const rolled = await stageHandle.rollback();
-    if (rolled.status === 'failed') {
-      stagedMessageEditRegistryRef.current.clear(identity.assistantID);
+    if (stageResult.kind === 'stale_protected') {
       throw new Error('assistant_stage_message_edit_rollback_failed');
     }
-    stagedMessageEditRegistryRef.current.clear(identity.assistantID);
   });
   // selectionSaving must NOT drive composer busy/disabled. Primary Tab agent
   // cycling never disables the textarea; mapping PATCH-in-flight onto resources.busy
@@ -287,27 +340,37 @@ export const AssistantView: React.FC<AssistantViewProps> = ({ activeOverride, on
     const attachmentAdapter = createDraftAttachmentResourceAdapter(draftKey, () => useInputStore.getState());
     return {
     busy: false,
+    // Root-only projection: synthetic attachment views never enter resources.attachments.
     attachments,
     addAttachment: (file) => attachmentAdapter.addLocal(file),
     removeAttachment: (id) => attachmentAdapter.removeByAttachmentID(id),
     clearAttachments: () => attachmentAdapter.clearRootAttachments(),
-    setAttachments: (nextAttachments) => attachmentAdapter.replaceRootAttachments(nextAttachments),
+    restoreAttachments: (nextAttachments) => attachmentAdapter.restoreRootAttachments(nextAttachments),
     pendingInput: null,
     consumePendingInput: () => null,
     pendingPreset: null,
     consumePendingPreset: () => null,
     consumeSyntheticParts: () => {
       const input = useInputStore.getState();
-      const views = new Map(input.getDraftAttachmentViews(draftKey).map((attachment) => [attachment.id, attachment]));
+      const viewsByRef = input.draftAttachmentViews[draftKeyString(draftKey)] ?? EMPTY_ATTACHMENT_VIEWS;
       // Retain handoff receipt in the draft via retain predicate; only non-marker parts are returned for send.
-      return input.consumeDraftSyntheticParts(draftKey, isMobileShareHandoffMarkerPart)
-        ?.map((part) => ({ partID: part.partID, text: part.text, synthetic: part.synthetic, attachments: part.attachments.flatMap((attachment) => views.get(attachment.attachmentID) ?? []) })) ?? null;
+      const consumed = input.consumeDraftSyntheticParts(draftKey, isMobileShareHandoffMarkerPart);
+      if (!consumed) return null;
+      return mapSyntheticPartsWithViews(consumed, viewsByRef);
     },
     restoreSyntheticParts: (parts) => {
       void (async () => {
         const input = useInputStore.getState();
-        const restored = parts.map((part) => ({ partID: part.partID ?? createUuid(), text: part.text, attachments: [], ...(part.synthetic === true ? { synthetic: true } : {}) }));
-        input.setDraftSyntheticParts(draftKey, restored);
+        const restored: DraftSyntheticPart[] = parts.map((part) => ({
+          partID: part.partID ?? createUuid(),
+          text: part.text,
+          attachments: [],
+          ...(part.synthetic === true ? { synthetic: true as const } : {}),
+        }));
+        // Merge by partID: keep mobile handoff marker and concurrent parts; replace restored IDs only.
+        const current = input.getDraft(draftKey)?.syntheticParts ?? [];
+        const merged = mergeSyntheticPartsByPartID(current, restored);
+        input.setDraftSyntheticParts(draftKey, merged);
         for (let index = 0; index < restored.length; index++) {
           const partID = restored[index]!.partID;
           for (const attachment of parts[index]?.attachments ?? []) {
@@ -324,7 +387,8 @@ export const AssistantView: React.FC<AssistantViewProps> = ({ activeOverride, on
     captureRuntime: () => useInputStore.getState().captureDraftRuntime(),
     getDraft: (key) => useInputStore.getState().getDraft(key),
     abortPrompt: { sessionID: null, clear: () => {} },
-  }), [attachments, draftKey, history]);
+  };
+  }, [attachments, draftKey, history]);
 
   const variants = React.useMemo(() => {
     const model = (providersQuery.data ?? []).find((provider) => provider.id === assistant?.providerID)?.models?.find((item) => item.id === assistant?.modelID) as { variants?: unknown } | undefined;
@@ -358,28 +422,10 @@ export const AssistantView: React.FC<AssistantViewProps> = ({ activeOverride, on
             if (/^msg_[0-9a-f]{12}[0-9A-Za-z]{14}$/.test(id) && (!floor || id > floor)) floor = id;
           }
           const messageID = ascendingIdAfter('msg', floor);
-          // Commit surface staged edit only when request asks; mismatch rolls back then blocks send.
-          const stagedCommit = await stagedMessageEditRegistryRef.current.commitBeforeSend(
-            assistant.id,
-            {
-              assistantID: assistant.id,
-              sessionID: binding.sessionID,
-              directory: binding.directory,
-              sessionGeneration: binding.sessionGeneration,
-              transport,
-              runtimeGeneration,
-            },
-            async (staged) => {
-              await commitMessageEdit(staged.sessionID, staged.messageID, { directory: staged.directory });
-            },
-            { commitStagedMessageEdit: request.options?.commitStagedMessageEdit },
-          );
-          if (stagedCommit.kind === 'commit_failed') throw stagedCommit.error;
-          if (stagedCommit.kind === 'rollback_failed') {
-            throw new Error('assistant_staged_message_edit_rollback_failed');
-          }
-          if (stagedCommit.kind === 'mismatch') {
-            throw new Error('assistant_staged_message_edit_binding_mismatch');
+          // Sent-message restoration is best-effort. Delivery always follows the
+          // ordinary send path; a staged identity only marks the restored draft.
+          if (request.options?.commitStagedMessageEdit) {
+            stagedMessageEditRegistryRef.current.clear({ transport, assistantID: assistant.id });
           }
           const pendingMessage = createPendingUserMessagePresentation({
             messageID,
@@ -419,12 +465,12 @@ export const AssistantView: React.FC<AssistantViewProps> = ({ activeOverride, on
         sendQueued: async () => { throw new Error('assistant-server-queue-required'); },
         create: async () => {
           const next = await newAssistantSession(assistant.id);
-          clearStagedMessageEdit(assistant.id);
+          await clearStagedMessageEdit(assistant.id);
           await refreshBinding(next, { force: true });
         },
         compact: async () => {
           const result = await compactAssistantSession(assistant.id, binding);
-          clearStagedMessageEdit(assistant.id);
+          await clearStagedMessageEdit(assistant.id);
           await refreshBinding(result.binding, { force: true });
         },
         abort: async () => { await abortAssistantSession(assistant.id, binding); },
@@ -433,7 +479,7 @@ export const AssistantView: React.FC<AssistantViewProps> = ({ activeOverride, on
         cycle,
         new: async () => {
           const next = await newAssistantSession(assistant.id);
-          clearStagedMessageEdit(assistant.id);
+          await clearStagedMessageEdit(assistant.id);
           await refreshBinding(next, { force: true });
         },
         abort: async () => { await abortAssistantSession(assistant.id, binding); },

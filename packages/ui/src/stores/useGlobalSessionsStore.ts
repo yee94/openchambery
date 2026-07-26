@@ -146,6 +146,8 @@ let runningDirectoryTasks = 0;
 let directoryFetchConcurrency = DIRECTORY_FETCH_CONCURRENCY_MID;
 let consecutiveDirectorySuccesses = 0;
 let sessionIndexPollController: AbortController | null = null;
+/** Coalesce concurrent early-hydrate + startup-hydrate GETs. */
+let sessionIndexHydrateInflight: Promise<void> | undefined;
 
 type SessionIndexRuntimeCapture = {
   loadGeneration: number;
@@ -858,6 +860,7 @@ export const useGlobalSessionsStore = create<GlobalSessionsState>((set, get) => 
     consecutiveDirectorySuccesses = 0;
     sessionIndexPollController?.abort();
     sessionIndexPollController = null;
+    sessionIndexHydrateInflight = undefined;
     set({
       activeSessions: [],
       archivedSessions: [],
@@ -884,24 +887,38 @@ export const useGlobalSessionsStore = create<GlobalSessionsState>((set, get) => 
   },
 
   hydrateSessionIndex: async () => {
+    // Coalesce concurrent early-hydrate + startup-hydrate callers so cold start
+    // issues one GET and applies the snapshot once.
+    if (sessionIndexHydrateInflight) return sessionIndexHydrateInflight;
+    if (get().hasHydratedSessionIndex) return;
+
     const runtime = captureSessionIndexRuntime();
-    try {
-      const snapshot = await loadSessionIndexSnapshot();
-      if (!isCurrentSessionIndexRuntime(runtime)) return;
-      if (!snapshot) return;
-      set((state) => ({
-        ...applySessionIndexSnapshotState(state, snapshot, false),
-        hasCachedSessionIndex: snapshot.directories.length > 0,
-      }));
-    } catch (error) {
-      // The index is an acceleration cache. A failed read must not block the
-      // authoritative OpenCode session flow.
-      console.warn('[GlobalSessions] Failed to hydrate runtime session index:', error);
-    } finally {
-      if (isCurrentSessionIndexRuntime(runtime)) {
-        set((state) => state.hasHydratedSessionIndex ? state : { hasHydratedSessionIndex: true });
+    const flight = (async () => {
+      try {
+        const snapshot = await loadSessionIndexSnapshot();
+        if (!isCurrentSessionIndexRuntime(runtime)) return;
+        if (!snapshot) {
+          // 501 / unavailable is definitive for this runtime; mark hydrated so
+          // splash and startup can proceed without waiting on a retry.
+          set((state) => (state.hasHydratedSessionIndex ? state : { hasHydratedSessionIndex: true }));
+          return;
+        }
+        set((state) => ({
+          ...applySessionIndexSnapshotState(state, snapshot, false),
+          hasCachedSessionIndex: snapshot.directories.length > 0,
+          hasHydratedSessionIndex: true,
+        }));
+      } catch (error) {
+        // The index is an acceleration cache. A failed read must not block the
+        // authoritative OpenCode session flow, and must leave hasHydrated false
+        // so startup can retry after the transport (e.g. relay) becomes ready.
+        console.warn('[GlobalSessions] Failed to hydrate runtime session index:', error);
       }
-    }
+    })();
+    sessionIndexHydrateInflight = flight.finally(() => {
+      if (sessionIndexHydrateInflight === flight) sessionIndexHydrateInflight = undefined;
+    });
+    return sessionIndexHydrateInflight;
   },
 
   startSessionIndexStartup: async (directories, options) => {
@@ -910,6 +927,12 @@ export const useGlobalSessionsStore = create<GlobalSessionsState>((set, get) => 
     await get().hydrateSessionIndex();
     if (!isCurrentSessionIndexRuntime(runtime)) {
       return { activeSessions: [], archivedSessions: [] };
+    }
+    // Early hydrate may have failed without marking hydrated (so this call could
+    // retry). After the startup attempt settles, mark hydrated so splash/empty
+    // gates can proceed even when the index API threw.
+    if (!get().hasHydratedSessionIndex) {
+      set({ hasHydratedSessionIndex: true });
     }
     const directorySet = normalizeDirectorySet([
       ...directories,
@@ -1663,6 +1686,10 @@ export const ensureFullGlobalSessionsLoaded = async (fallbackActive?: Session[])
 
 export const refreshGlobalSessions = async (fallbackActive?: Session[]): Promise<LoadResult> => {
   return useGlobalSessionsStore.getState().loadSessions(fallbackActive);
+};
+
+export const hydrateGlobalSessionIndex = async (): Promise<void> => {
+  await useGlobalSessionsStore.getState().hydrateSessionIndex();
 };
 
 export const startGlobalSessionIndexStartup = async (

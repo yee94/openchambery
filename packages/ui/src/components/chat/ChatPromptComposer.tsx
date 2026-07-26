@@ -224,6 +224,7 @@ export const ChatPromptComposer: React.FC<ChatPromptComposerProps> = ({
               <div
                 ref={highlightRef}
                 aria-hidden
+                data-composer-highlight="true"
                 className={cn('pointer-events-none absolute inset-0 z-0 rounded-b-none', textLayoutClassName, inputClassName)}
               >
                 {highlightedContent}

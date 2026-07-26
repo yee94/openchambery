@@ -115,6 +115,7 @@ describe('runSessionStartup', () => {
         });
         return { activeSessions: [], archivedSessions: [] };
       },
+      async () => undefined,
     );
 
     plan = {
@@ -129,6 +130,36 @@ describe('runSessionStartup', () => {
       directories: ['/repo/restored', '/repo/other'],
       priority: ['/repo/restored'],
     }]);
+  });
+
+  test('starts session-index hydrate before settings hydration settles', async () => {
+    let releaseSettings: (() => void) | undefined;
+    const settingsHydration = new Promise<void>((resolve) => { releaseSettings = resolve; });
+    const order: string[] = [];
+    let resolveHydrate: (() => void) | undefined;
+    const hydrate = () => new Promise<void>((resolve) => {
+      order.push('hydrate-start');
+      resolveHydrate = () => {
+        order.push('hydrate-done');
+        resolve();
+      };
+    });
+    const startup = runSessionStartupAfterSettingsHydration(
+      settingsHydration,
+      () => ({ directories: ['/repo/a'] }),
+      async () => {
+        order.push('start');
+        return { activeSessions: [], archivedSessions: [] };
+      },
+      hydrate,
+    );
+
+    await Promise.resolve();
+    expect(order).toEqual(['hydrate-start']);
+    resolveHydrate?.();
+    releaseSettings?.();
+    await startup;
+    expect(order).toEqual(['hydrate-start', 'hydrate-done', 'start']);
   });
 
   test('releases the startup barrier after success', async () => {

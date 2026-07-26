@@ -1,6 +1,10 @@
 import { describe, expect, test } from 'bun:test';
 import type { AttachedFile } from '@/stores/types/sessionTypes';
-import { mergeFailedAttachments, mergeFailedComposerText } from './chat-input-recovery';
+import {
+    mergeFailedAttachments,
+    mergeFailedComposerText,
+    shouldConsumeRootAttachmentsOnSubmit,
+} from './chat-input-recovery';
 
 const attachment = (id: string): AttachedFile => ({
     id,
@@ -30,4 +34,12 @@ describe('chat input send failure recovery', () => {
         const current = attachment('current');
         expect(mergeFailedAttachments([failed], [failed, current])).toEqual([failed, current]);
     });
+
+    test('submit consumes root attachments only when not queued/resource-preserving and count > 0', () => {
+        expect(shouldConsumeRootAttachmentsOnSubmit({ queuedOnly: false, resourcePolicy: false, rootAttachmentCount: 1 })).toBe(true);
+        expect(shouldConsumeRootAttachmentsOnSubmit({ queuedOnly: true, resourcePolicy: false, rootAttachmentCount: 1 })).toBe(false);
+        expect(shouldConsumeRootAttachmentsOnSubmit({ queuedOnly: false, resourcePolicy: true, rootAttachmentCount: 1 })).toBe(false);
+        expect(shouldConsumeRootAttachmentsOnSubmit({ queuedOnly: false, resourcePolicy: false, rootAttachmentCount: 0 })).toBe(false);
+    });
+
 });

@@ -19,6 +19,21 @@ const create = (items: QueueItemDTO[], options: { values?: Map<string, Blob | st
 };
 
 describe('message queue shadow importer', () => {
+  test('scopes create idempotency to the complete generation-bound payload', async () => {
+    const requests: Array<{ requestID: string; clientID: string; expectedGeneration: number }> = [];
+    const manifestHash = 'a'.repeat(64);
+    const run = (generation: number) => createMessageQueueShadowImporter({
+      queue: queue([]), capture: () => capture, current: () => true, kind: 'late', authorityGeneration: () => generation,
+      create: async (input) => { requests.push(input); return { revision: 1, importID: 'import', state: 'committed', manifestHash, commit: { revision: 1, importID: 'import', manifestHash, generation, activationEpoch: 1, added: 0 } }; },
+    }).run();
+
+    await run(1); await run(1); await run(2);
+
+    expect(requests[0]?.requestID).toBe(requests[1]?.requestID);
+    expect(requests[2]?.requestID).not.toBe(requests[0]?.requestID);
+    expect(requests.every((request) => request.requestID.includes(`:${request.expectedGeneration}:${request.clientID}:`))).toBe(true);
+  });
+
   test('maps every durable status and preserves query-only sending states', async () => {
     const items = ['queued', 'retrying', 'sending', 'reconciling', 'failed', 'unresolved'].map((status) => item(status as QueueItemDTO['status']));
     const setup = create(items); const result = await setup.importer.run();

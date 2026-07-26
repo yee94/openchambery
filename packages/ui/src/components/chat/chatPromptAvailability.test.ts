@@ -102,6 +102,7 @@ describe('resolveComposerActionAvailability', () => {
             draftSubmitting: false,
             submissionBlocked: true,
             queueFrozen: false,
+            queueFallbackAvailable: false,
         })).toEqual({
             sendDisabled: true,
             queueDisabled: true,
@@ -116,6 +117,7 @@ describe('resolveComposerActionAvailability', () => {
             draftSubmitting: false,
             submissionBlocked: false,
             queueFrozen: true,
+            queueFallbackAvailable: false,
         })).toEqual({
             sendDisabled: false,
             queueDisabled: true,
@@ -130,6 +132,7 @@ describe('resolveComposerActionAvailability', () => {
             draftSubmitting: false,
             submissionBlocked: false,
             queueFrozen: false,
+            queueFallbackAvailable: false,
         })).toEqual({
             sendDisabled: false,
             queueDisabled: false,
@@ -144,6 +147,22 @@ describe('resolveComposerActionAvailability', () => {
             draftSubmitting: false,
             submissionBlocked: false,
             queueFrozen: false,
+            queueFallbackAvailable: false,
+        })).toEqual({
+            sendDisabled: false,
+            queueDisabled: false,
+            disabledClass: 'opacity-30 pointer-events-none',
+        });
+    });
+
+    test('keeps busy submit available through steer while queue ownership is frozen', () => {
+        expect(resolveComposerActionAvailability({
+            canSend: true,
+            hasSessionTarget: true,
+            draftSubmitting: false,
+            submissionBlocked: false,
+            queueFrozen: true,
+            queueFallbackAvailable: true,
         })).toEqual({
             sendDisabled: false,
             queueDisabled: false,

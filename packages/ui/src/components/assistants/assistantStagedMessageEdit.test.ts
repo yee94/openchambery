@@ -1,9 +1,12 @@
 import { describe, expect, test } from "bun:test"
 import {
   assistantStagedEditMatchesBinding,
+  assistantStagedScopeKey,
+  assistantStagedScopeOf,
   createAssistantStagedMessageEditRegistry,
   type AssistantStagedMessageEditIdentity,
   type AssistantStagedMessageEditRollback,
+  type AssistantStagedMessageEditScope,
 } from "./assistantStagedMessageEdit"
 
 const identity = (
@@ -18,6 +21,10 @@ const identity = (
   runtimeGeneration: 1,
   ...overrides,
 })
+
+const scopeOf = (
+  overrides: Partial<AssistantStagedMessageEditIdentity> = {},
+): AssistantStagedMessageEditScope => assistantStagedScopeOf(identity(overrides))
 
 const binding = (overrides: Partial<AssistantStagedMessageEditIdentity> = {}) => {
   const full = identity(overrides)
@@ -41,158 +48,30 @@ const rollbackOf = (
 }
 
 describe("assistantStagedMessageEdit", () => {
-  test("isolates A and B staged identities", () => {
+  test("isolates A and B staged identities by transport+assistant scope", () => {
     const registry = createAssistantStagedMessageEditRegistry()
     const a = identity({ assistantID: "assistant-a", messageID: "msg_a" })
     const b = identity({ assistantID: "assistant-b", messageID: "msg_b", sessionID: "session-b" })
     registry.register(a, noopRollback)
     registry.register(b, noopRollback)
-    expect(registry.read("assistant-a")).toEqual(a)
-    expect(registry.read("assistant-b")).toEqual(b)
-    expect(registry.readEntry("assistant-a")?.identity).toEqual(a)
-    registry.clear("assistant-a")
-    expect(registry.read("assistant-a")).toBe(undefined)
-    expect(registry.read("assistant-b")).toEqual(b)
+    expect(registry.read(scopeOf({ assistantID: "assistant-a" }))).toEqual(a)
+    expect(registry.read(scopeOf({ assistantID: "assistant-b" }))).toEqual(b)
+    registry.clear(scopeOf({ assistantID: "assistant-a" }))
+    expect(registry.read(scopeOf({ assistantID: "assistant-a" }))).toBe(undefined)
+    expect(registry.read(scopeOf({ assistantID: "assistant-b" }))).toEqual(b)
   })
 
-  test("matching identity commits before send and clears the committed stage", async () => {
+  test("same assistantID on different transports do not block each other", () => {
     const registry = createAssistantStagedMessageEditRegistry()
-    const staged = identity()
-    registry.register(staged, noopRollback)
-    const order: string[] = []
-    const result = await registry.commitBeforeSend(
-      "assistant-a",
-      binding(),
-      async (entry) => {
-        order.push(`commit:${entry.messageID}`)
-      },
-      { commitStagedMessageEdit: true },
-    )
-    order.push("after")
-    expect(result).toEqual({ kind: "committed", messageID: "msg_1", sessionID: "session-a" })
-    expect(order).toEqual(["commit:msg_1", "after"])
-    expect(registry.read("assistant-a")).toBe(undefined)
-  })
-
-  test("commit failure retains stage and surfaces error without send side-effects", async () => {
-    const registry = createAssistantStagedMessageEditRegistry()
-    const staged = identity()
-    registry.register(staged, noopRollback)
-    let sendWouldRun = false
-    const result = await registry.commitBeforeSend(
-      "assistant-a",
-      binding(),
-      async () => {
-        throw new Error("delete-failed")
-      },
-      { commitStagedMessageEdit: true },
-    )
-    if (result.kind === "committed") sendWouldRun = true
-    expect(result.kind).toBe("commit_failed")
-    if (result.kind === "commit_failed") {
-      expect(result.retained).toBe(true)
-      expect((result.error as Error).message).toBe("delete-failed")
-    }
-    expect(sendWouldRun).toBe(false)
-    expect(registry.read("assistant-a")).toEqual(staged)
-  })
-
-  test("binding mismatch rolls back then clears on safe status and does not commit", async () => {
-    const registry = createAssistantStagedMessageEditRegistry()
-    const calls: string[] = []
-    registry.register(
-      identity({ sessionGeneration: 1 }),
-      async () => {
-        calls.push("rollback")
-        return { status: "rolled-back" }
-      },
-    )
-    let committed = false
-    const result = await registry.commitBeforeSend(
-      "assistant-a",
-      binding({ sessionGeneration: 2 }),
-      async () => {
-        committed = true
-      },
-      { commitStagedMessageEdit: true },
-    )
-    expect(result).toEqual({ kind: "mismatch", cleared: true })
-    expect(committed).toBe(false)
-    expect(calls).toEqual(["rollback"])
-    expect(registry.read("assistant-a")).toBe(undefined)
-  })
-
-  test("binding mismatch conflict is treated as safe clear", async () => {
-    const registry = createAssistantStagedMessageEditRegistry()
-    registry.register(identity({ sessionGeneration: 1 }), rollbackOf("conflict"))
-    const result = await registry.commitBeforeSend(
-      "assistant-a",
-      binding({ sessionGeneration: 2 }),
-      async () => {},
-      { commitStagedMessageEdit: true },
-    )
-    expect(result).toEqual({ kind: "mismatch", cleared: true })
-    expect(registry.read("assistant-a")).toBe(undefined)
-  })
-
-  test("binding mismatch rollback failure retains entry and blocks subsequent send", async () => {
-    const registry = createAssistantStagedMessageEditRegistry()
-    const staged = identity({ sessionGeneration: 1 })
-    registry.register(staged, rollbackOf("failed"))
-    const live = binding({ sessionGeneration: 2 })
-    const first = await registry.commitBeforeSend(
-      "assistant-a",
-      live,
-      async () => {},
-      { commitStagedMessageEdit: true },
-    )
-    expect(first).toEqual({ kind: "rollback_failed", retained: true, status: "failed" })
-    expect(registry.read("assistant-a")).toEqual(staged)
-
-    const second = await registry.commitBeforeSend(
-      "assistant-a",
-      live,
-      async () => {},
-      { commitStagedMessageEdit: true },
-    )
-    expect(second).toEqual({ kind: "rollback_failed", retained: true, status: "failed" })
-    expect(registry.read("assistant-a")).toEqual(staged)
-  })
-
-  test("without commitStagedMessageEdit flag, staged is neither committed nor cleared", async () => {
-    const registry = createAssistantStagedMessageEditRegistry()
-    const staged = identity()
-    registry.register(staged, noopRollback)
-    let committed = false
-    const result = await registry.commitBeforeSend(
-      "assistant-a",
-      binding(),
-      async () => {
-        committed = true
-      },
-    )
-    expect(result).toEqual({ kind: "none" })
-    expect(committed).toBe(false)
-    expect(registry.read("assistant-a")).toEqual(staged)
-  })
-
-  test("conditional clear does not remove a newer identity", () => {
-    const registry = createAssistantStagedMessageEditRegistry()
-    registry.register(identity({ messageID: "msg_old", sessionID: "session-a" }), noopRollback)
-    registry.register(identity({ messageID: "msg_new", sessionID: "session-a" }), noopRollback)
-    expect(registry.clearIfMatches("assistant-a", { messageID: "msg_old", sessionID: "session-a" })).toBe(false)
-    expect(registry.read("assistant-a")?.messageID).toBe("msg_new")
-    expect(registry.clearIfMatches("assistant-a", { messageID: "msg_new", sessionID: "session-a" })).toBe(true)
-    expect(registry.read("assistant-a")).toBe(undefined)
-  })
-
-  test("clearIfBindingMismatch only removes when live binding diverges", () => {
-    const registry = createAssistantStagedMessageEditRegistry()
-    registry.register(identity(), noopRollback)
-    expect(registry.clearIfBindingMismatch("assistant-a", binding())).toBe(false)
-    expect(registry.read("assistant-a")).toBeDefined()
-    expect(registry.clearIfBindingMismatch("assistant-a", binding({ directory: "/other" }))).toBe(true)
-    expect(registry.read("assistant-a")).toBe(undefined)
+    const oldTransport = identity({ transport: "runtime-old", messageID: "msg_old", runtimeGeneration: 1 })
+    const newTransport = identity({ transport: "runtime-new", messageID: "msg_new", runtimeGeneration: 2 })
+    registry.register(oldTransport, rollbackOf("failed"))
+    registry.register(newTransport, noopRollback)
+    expect(registry.read(scopeOf({ transport: "runtime-old" }))).toEqual(oldTransport)
+    expect(registry.read(scopeOf({ transport: "runtime-new" }))).toEqual(newTransport)
+    // Scope state remains independent across transports.
+    expect(assistantStagedScopeKey(assistantStagedScopeOf(oldTransport)))
+      .not.toBe(assistantStagedScopeKey(assistantStagedScopeOf(newTransport)))
   })
 
   test("rollbackAndClearIfBindingMismatch clears after successful rollback", async () => {
@@ -206,12 +85,12 @@ describe("assistantStagedMessageEdit", () => {
       },
     )
     const result = await registry.rollbackAndClearIfBindingMismatch(
-      "assistant-a",
+      scopeOf(),
       binding({ directory: "/other" }),
     )
     expect(result).toEqual({ kind: "cleared", status: "rolled-back" })
     expect(calls).toEqual(["rollback"])
-    expect(registry.read("assistant-a")).toBe(undefined)
+    expect(registry.read(scopeOf())).toBe(undefined)
   })
 
   test("rollbackAndClearIfBindingMismatch retains on failed/skipped", async () => {
@@ -219,20 +98,20 @@ describe("assistantStagedMessageEdit", () => {
     const staged = identity()
     registry.register(staged, rollbackOf("failed"))
     const failed = await registry.rollbackAndClearIfBindingMismatch(
-      "assistant-a",
+      scopeOf(),
       binding({ directory: "/other" }),
     )
     expect(failed).toEqual({ kind: "rollback_failed", retained: true, status: "failed" })
-    expect(registry.read("assistant-a")).toEqual(staged)
+    expect(registry.read(scopeOf())).toEqual(staged)
 
-    registry.clear("assistant-a")
+    registry.clear(scopeOf())
     registry.register(staged, rollbackOf("skipped"))
     const skipped = await registry.rollbackAndClearIfBindingMismatch(
-      "assistant-a",
+      scopeOf(),
       binding({ directory: "/other" }),
     )
     expect(skipped).toEqual({ kind: "rollback_failed", retained: true, status: "skipped" })
-    expect(registry.read("assistant-a")).toEqual(staged)
+    expect(registry.read(scopeOf())).toEqual(staged)
   })
 
   test("rollbackAndClearIfBindingMismatch does not clear a concurrent re-register", async () => {
@@ -251,14 +130,16 @@ describe("assistantStagedMessageEdit", () => {
       },
     )
     const pending = registry.rollbackAndClearIfBindingMismatch(
-      "assistant-a",
+      scopeOf(),
       binding({ directory: "/other" }),
     )
+    // Wait until exclusive body has captured the old entry and entered rollback.
+    for (let i = 0; i < 10; i++) await Promise.resolve()
     registry.register(newIdentity, noopRollback)
     releaseRollback()
     const result = await pending
     expect(result).toEqual({ kind: "superseded" })
-    expect(registry.read("assistant-a")).toEqual(newIdentity)
+    expect(registry.read(scopeOf())).toEqual(newIdentity)
   })
 
   test("rollbackAndClearIfBindingMismatch returns match when binding still equals", async () => {
@@ -266,9 +147,9 @@ describe("assistantStagedMessageEdit", () => {
     registry.register(identity(), async () => {
       throw new Error("should-not-rollback")
     })
-    const result = await registry.rollbackAndClearIfBindingMismatch("assistant-a", binding())
+    const result = await registry.rollbackAndClearIfBindingMismatch(scopeOf(), binding())
     expect(result).toEqual({ kind: "match" })
-    expect(registry.read("assistant-a")).toBeDefined()
+    expect(registry.read(scopeOf())).toBeDefined()
   })
 
   test("rollbackAllBestEffort clears safe entries and retains failed", async () => {
@@ -282,8 +163,43 @@ describe("assistantStagedMessageEdit", () => {
       rollbackOf("failed"),
     )
     await registry.rollbackAllBestEffort()
-    expect(registry.read("assistant-a")).toBe(undefined)
-    expect(registry.read("assistant-b")?.messageID).toBe("msg_b")
+    expect(registry.read(scopeOf({ assistantID: "assistant-a" }))).toBe(undefined)
+    expect(registry.read(scopeOf({ assistantID: "assistant-b" }))?.messageID).toBe("msg_b")
+  })
+
+  test("rollbackAllBestEffort can exclude current transport", async () => {
+    const registry = createAssistantStagedMessageEditRegistry()
+    registry.register(
+      identity({ transport: "runtime-current", messageID: "msg_current" }),
+      rollbackOf("rolled-back"),
+    )
+    registry.register(
+      identity({ transport: "runtime-old", messageID: "msg_old" }),
+      rollbackOf("rolled-back"),
+    )
+    await registry.rollbackAllBestEffort({ excludeTransport: "runtime-current" })
+    expect(registry.read(scopeOf({ transport: "runtime-current" }))?.messageID).toBe("msg_current")
+    expect(registry.read(scopeOf({ transport: "runtime-old" }))).toBe(undefined)
+  })
+
+  test("returning to old transport re-enters rollback for retained entry", async () => {
+    const registry = createAssistantStagedMessageEditRegistry()
+    const oldIdentity = identity({ transport: "runtime-old", sessionGeneration: 1, messageID: "msg_old" })
+    registry.register(oldIdentity, rollbackOf("failed"))
+    // Switch away: exclude current (new) transport — old entry stays if rollback fails.
+    await registry.rollbackAllBestEffort({ excludeTransport: "runtime-new" })
+    // failed rollback on old: still retained (rollbackAllBestEffort only clears safe).
+    // Register a failed entry that survives exclude path (no call to its rollback when exclude is old? 
+    // excludeTransport excludes matching transport from rollback — old is NOT excluded so it was rolled).
+    // Re-register failed for return path:
+    registry.register(oldIdentity, rollbackOf("failed"))
+    const liveMismatch = binding({ transport: "runtime-old", sessionGeneration: 2 })
+    const result = await registry.rollbackAndClearIfBindingMismatch(
+      scopeOf({ transport: "runtime-old" }),
+      liveMismatch,
+    )
+    expect(result).toEqual({ kind: "rollback_failed", retained: true, status: "failed" })
+    expect(registry.read(scopeOf({ transport: "runtime-old" }))).toEqual(oldIdentity)
   })
 
   test("assistantStagedEditMatchesBinding requires full composite equality", () => {
@@ -292,4 +208,191 @@ describe("assistantStagedMessageEdit", () => {
     expect(assistantStagedEditMatchesBinding(staged, binding({ transport: "other" }))).toBe(false)
     expect(assistantStagedEditMatchesBinding(staged, binding({ runtimeGeneration: 9 }))).toBe(false)
   })
+
+  test("stageExclusive retires prior entry before registering new", async () => {
+    const registry = createAssistantStagedMessageEditRegistry()
+    const rollbacks: string[] = []
+    registry.register(
+      identity({ messageID: "msg_old" }),
+      async () => {
+        rollbacks.push("old")
+        return { status: "rolled-back" }
+      },
+    )
+    const result = await registry.stageExclusive(scopeOf(), async () => ({
+      identity: identity({ messageID: "msg_new" }),
+      rollback: async () => {
+        rollbacks.push("new")
+        return { status: "rolled-back" as const }
+      },
+    }))
+    expect(result.kind).toBe("registered")
+    expect(rollbacks).toEqual(["old"])
+    expect(registry.read(scopeOf())?.messageID).toBe("msg_new")
+  })
+
+  test("stageExclusive blocks when prior rollback fails", async () => {
+    const registry = createAssistantStagedMessageEditRegistry()
+    const prior = identity({ messageID: "msg_prior" })
+    registry.register(prior, rollbackOf("failed"))
+    let staged = false
+    const result = await registry.stageExclusive(scopeOf(), async () => {
+      staged = true
+      return {
+        identity: identity({ messageID: "msg_new" }),
+        rollback: noopRollback,
+      }
+    })
+    expect(result).toEqual({ kind: "blocked", status: "failed" })
+    expect(staged).toBe(false)
+    expect(registry.read(scopeOf())).toEqual(prior)
+  })
+
+  test("stageExclusive stale protect registers handle and returns stale_protected", async () => {
+    const registry = createAssistantStagedMessageEditRegistry()
+    const result = await registry.stageExclusive(scopeOf(), async () => ({
+      identity: identity({ messageID: "msg_stale" }),
+      rollback: rollbackOf("failed"),
+      protectOnStale: true,
+    }))
+    expect(result.kind).toBe("stale_protected")
+    expect(registry.read(scopeOf())?.messageID).toBe("msg_stale")
+  })
+
+  test("clearExclusive serializes with in-flight stageExclusive so final entry is cleared", async () => {
+    const registry = createAssistantStagedMessageEditRegistry()
+    const order: string[] = []
+    let releaseStage!: () => void
+    const stageGate = new Promise<void>((resolve) => {
+      releaseStage = resolve
+    })
+
+    const stagePromise = registry.stageExclusive(scopeOf(), async () => {
+      order.push("stage-start")
+      await stageGate
+      order.push("stage-end")
+      return {
+        identity: identity({ messageID: "msg_late" }),
+        rollback: noopRollback,
+      }
+    })
+
+    // Start clear while stage holds exclusive — must wait until stage registers then clear.
+    const clearPromise = registry.clearExclusive(scopeOf())
+    await Promise.resolve()
+    await Promise.resolve()
+    releaseStage()
+    await stagePromise
+    await clearPromise
+    expect(order).toEqual(["stage-start", "stage-end"])
+    expect(registry.read(scopeOf())).toBe(undefined)
+  })
+
+  test("concurrent stages on same scope have deterministic order via exclusive", async () => {
+    const registry = createAssistantStagedMessageEditRegistry()
+    const order: string[] = []
+    let releaseFirst!: () => void
+    const firstGate = new Promise<void>((resolve) => {
+      releaseFirst = resolve
+    })
+
+    const first = registry.stageExclusive(scopeOf(), async () => {
+      order.push("first-start")
+      await firstGate
+      order.push("first-end")
+      return {
+        identity: identity({ messageID: "msg_first" }),
+        rollback: async () => {
+          order.push("first-rollback")
+          return { status: "rolled-back" as const }
+        },
+      }
+    })
+
+    const second = registry.stageExclusive(scopeOf(), async () => {
+      order.push("second-start")
+      return {
+        identity: identity({ messageID: "msg_second" }),
+        rollback: noopRollback,
+      }
+    })
+
+    await Promise.resolve()
+    await Promise.resolve()
+    releaseFirst()
+    await first
+    await second
+    expect(order).toEqual(["first-start", "first-end", "first-rollback", "second-start"])
+    expect(registry.read(scopeOf())?.messageID).toBe("msg_second")
+  })
+
+  test("rollbackAndClearIfBindingMismatch serializes with stageExclusive on same scope", async () => {
+    const registry = createAssistantStagedMessageEditRegistry()
+    const order: string[] = []
+    let releaseRollback!: () => void
+    const rollbackGate = new Promise<void>((resolve) => {
+      releaseRollback = resolve
+    })
+    registry.register(
+      identity({ messageID: "msg_old" }),
+      async () => {
+        order.push("rollback-start")
+        await rollbackGate
+        order.push("rollback-end")
+        return { status: "rolled-back" as const }
+      },
+    )
+    const rollbackPromise = registry.rollbackAndClearIfBindingMismatch(
+      scopeOf(),
+      binding({ directory: "/other" }),
+    )
+    const stagePromise = registry.stageExclusive(scopeOf(), async () => {
+      order.push("stage")
+      return {
+        identity: identity({ messageID: "msg_new" }),
+        rollback: noopRollback,
+      }
+    })
+    await Promise.resolve()
+    await Promise.resolve()
+    releaseRollback()
+    await rollbackPromise
+    await stagePromise
+    expect(order).toEqual(["rollback-start", "rollback-end", "stage"])
+    expect(registry.read(scopeOf())?.messageID).toBe("msg_new")
+  })
+
+  test("rollbackAllBestEffort serializes with concurrent stage on same scope", async () => {
+    const registry = createAssistantStagedMessageEditRegistry()
+    const order: string[] = []
+    let releaseRollback!: () => void
+    const rollbackGate = new Promise<void>((resolve) => {
+      releaseRollback = resolve
+    })
+    registry.register(
+      identity({ messageID: "msg_old" }),
+      async () => {
+        order.push("all-rollback-start")
+        await rollbackGate
+        order.push("all-rollback-end")
+        return { status: "rolled-back" as const }
+      },
+    )
+    const allPromise = registry.rollbackAllBestEffort()
+    const stagePromise = registry.stageExclusive(scopeOf(), async () => {
+      order.push("stage-after-all")
+      return {
+        identity: identity({ messageID: "msg_after" }),
+        rollback: noopRollback,
+      }
+    })
+    await Promise.resolve()
+    await Promise.resolve()
+    releaseRollback()
+    await allPromise
+    await stagePromise
+    expect(order).toEqual(["all-rollback-start", "all-rollback-end", "stage-after-all"])
+    expect(registry.read(scopeOf())?.messageID).toBe("msg_after")
+  })
+
 })

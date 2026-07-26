@@ -523,7 +523,7 @@ export const createMessageQueueService = ({ dbPath, getRuntimeConfig = () => nul
     const authority = authorityRow(key); const attempt = db.prepare('SELECT * FROM queue_attempt WHERE queue_item_id=?').get(row.queue_item_id); if (attempt.edit_reservation_expires_at >= now() && attempt.edit_reservation_token) fail('reserved');
     const token = crypto.randomUUID(); const expiresAt = now() + input.ttlMs;
     db.prepare('UPDATE queue_attempt SET edit_reservation_token=?,edit_reservation_owner=?,edit_reservation_expires_at=?,edit_reservation_generation=? WHERE queue_item_id=?').run(token, input.owner, expiresAt, authority.generation, row.queue_item_id);
-    return { revision, scopeID: scope.scope_id, queueItemID: row.queue_item_id, rowVersion: row.row_version, token, expiresAt, generation: authority.generation };
+    return { revision: scope.revision, scopeID: scope.scope_id, queueItemID: row.queue_item_id, rowVersion: row.row_version, token, expiresAt, generation: authority.generation };
   });
   const releaseEditReservation = ({ queueItemID, token } = {}, options = {}) => {
     const key = capturedRuntimeKey(options.runtimeKey); if (!nonEmptyString(queueItemID) || !nonEmptyString(token)) fail('validation_error'); const row = itemRow(queueItemID); if (!row || scopeRow(row.scope_id)?.runtime_key !== key) fail('not_found'); const result = db.prepare('UPDATE queue_attempt SET edit_reservation_token=NULL,edit_reservation_owner=NULL,edit_reservation_expires_at=NULL,edit_reservation_generation=NULL WHERE queue_item_id=? AND edit_reservation_token=?').run(queueItemID, token); if (!result.changes) fail('reserved'); return { queueItemID, released: true };

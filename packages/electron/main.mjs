@@ -1524,8 +1524,11 @@ const spawnLocalServer = async () => {
     apiOnly: false,
     onDesktopNotification: (payload) => maybeShowNativeNotification(payload),
     getIsWindowFocused: isAnyWindowFocused,
+    // Prefer the active API base; fall back to the local sidecar so session-index
+    // / message-queue runtime keys stay stable between server listen and the
+    // later activateMainWindow assignment (empty → local-managed-opencode miss).
     getDesktopRuntimeConfig: () => ({
-      apiBaseUrl: state.apiBaseUrl || '',
+      apiBaseUrl: state.apiBaseUrl || state.sidecarUrl || '',
       requestHeaders: sanitizeRuntimeRequestHeaders(state.requestHeaders || {}),
     }),
     sessionIndexDbPath: path.join(app.getPath('userData'), 'session-index.sqlite'),

@@ -36,7 +36,6 @@ import { TimelineDialog } from './TimelineDialog';
 import { useChatTurnNavigation } from './hooks/useChatTurnNavigation';
 import { useChatSurfaceMode } from './useChatSurfaceMode';
 import { useMobileAppActions } from '@/apps/mobileAppContext';
-import { useDeviceInfo } from '@/lib/device';
 import { Button } from '@/components/ui/button';
 import { OverlayScrollbar } from '@/components/ui/OverlayScrollbar';
 import { Icon } from "@/components/icon/Icon";
@@ -829,7 +828,7 @@ const ChatContainerContent: React.FC<ChatContainerContentProps> = ({
         };
     }, [assistantHistory?.complete, assistantHistory?.loading, currentSessionId, sessionMessages.length, sessionPrefetchInfo, sync]);
 
-    const { isMobile } = useDeviceInfo();
+    const isMobile = useUIStore((state) => state.isMobile);
     const isDedicatedMobileApp = useMobileAppActions() !== null;
     const isVSCode = isVSCodeRuntime();
     const chatSurfaceMode = useChatSurfaceMode();

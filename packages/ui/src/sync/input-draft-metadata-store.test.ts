@@ -124,6 +124,34 @@ describe("input draft metadata store", () => {
     expect(await migrateLegacyInputDraftMetadata(sink, "runtime")).toEqual({ ok: false, error: { code: "corrupt" } })
   })
 
+  test("repairs a valid mismatched marker from the durable staged claim before cleanup", async () => {
+    const storage = new MemoryStorage()
+    const sink = sinkFor(storage)
+    const staged = { ...snapshot(), migration: { complete: false, claimedTransportIdentity: "captured-runtime", captured: true, markerCommitted: false, cleanupComplete: false }, legacy: { entries: { session: { suffix: "session", text: "draft", mentions: [], keys: ["openchamber_chat_input_draft_session"] } } } }
+    expect(await writeInputDraftMetadataSnapshot(sink, staged)).toEqual({ ok: true, value: undefined })
+    storage.values.set(INPUT_DRAFT_METADATA_MIGRATION_MARKER_KEY, JSON.stringify({ version: 1, claimedTransportIdentity: "switched-runtime" }))
+    storage.values.set("openchamber_chat_input_draft_session", "draft")
+
+    const migrated = await migrateLegacyInputDraftMetadata(sink, "switched-runtime")
+
+    expect(migrated.ok && migrated.value.migration).toEqual({ complete: true, claimedTransportIdentity: "captured-runtime", captured: true, markerCommitted: true, cleanupComplete: true })
+    expect(JSON.parse(storage.values.get(INPUT_DRAFT_METADATA_MIGRATION_MARKER_KEY)!)).toEqual({ version: 1, claimedTransportIdentity: "captured-runtime" })
+    expect(storage.values.has("openchamber_chat_input_draft_session")).toBe(false)
+  })
+
+  test("preserves staged legacy keys when mismatched marker repair fails", async () => {
+    const storage = new MemoryStorage()
+    const sink = sinkFor(storage)
+    const staged = { ...snapshot(), migration: { complete: false, claimedTransportIdentity: "captured-runtime", captured: true, markerCommitted: false, cleanupComplete: false }, legacy: { entries: { session: { suffix: "session", text: "draft", mentions: [], keys: ["openchamber_chat_input_draft_session"] } } } }
+    expect(await writeInputDraftMetadataSnapshot(sink, staged)).toEqual({ ok: true, value: undefined })
+    storage.values.set(INPUT_DRAFT_METADATA_MIGRATION_MARKER_KEY, JSON.stringify({ version: 1, claimedTransportIdentity: "switched-runtime" }))
+    storage.values.set("openchamber_chat_input_draft_session", "draft")
+    storage.failWrite = true
+
+    expect(await migrateLegacyInputDraftMetadata(sink, "switched-runtime")).toEqual({ ok: false, error: { code: "quota" } })
+    expect(storage.values.get("openchamber_chat_input_draft_session")).toBe("draft")
+  })
+
   test("quiesces entered work and keeps disabled migration read-only", async () => {
     const storage = new MemoryStorage()
     storage.values.set("openchamber_chat_input_draft_session", "draft")

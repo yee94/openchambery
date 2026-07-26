@@ -240,7 +240,7 @@ const ImagePreview = memo(({ file, onRemove, onShowPopup, gallery, index = 0 }: 
           onRemove();
         }}
         className={cn(
-          "absolute top-0.5 right-0.5 h-4 w-4 rounded-full bg-background/80 text-foreground hover:text-destructive flex items-center justify-center transition-opacity focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-ring",
+          "absolute top-0.5 right-0.5 h-4 w-4 rounded-full bg-transparent text-foreground hover:text-destructive flex items-center justify-center transition-opacity focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-ring",
           alwaysShowActions ? "opacity-100" : "opacity-0 group-hover:opacity-100"
         )}
         title={t('chat.fileAttachment.actions.removeImage')}

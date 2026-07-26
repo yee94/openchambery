@@ -42,7 +42,11 @@ import { abortCurrentOperation } from '@/sync/session-actions';
 
 import { MobileProjectEditSurface } from './MobileProjectEditSurface';
 import { MobileDeleteWorktreeDialog } from './MobileDeleteWorktreeDialog';
-import { getMobileSessionPageSize, mergeMobileWorktreeRefreshResults } from './mobileSessionPagination';
+import {
+  getMobileSessionDefaultVisibleCount,
+  getMobileSessionShowMoreIncrement,
+  mergeMobileWorktreeRefreshResults,
+} from './mobileSessionPagination';
 import { MobileSurfaceShell } from './MobileSurfaceShell';
 
 type MobileSessionsSheetProps = {
@@ -833,15 +837,20 @@ export const MobileSessionsSheet: React.FC<MobileSessionsSheetProps> = ({ open, 
     directory: string,
     currentVisibleCount: number,
     totalSessions: number,
-    pageSize: number,
   ) => {
+    const defaultVisible = getMobileSessionDefaultVisibleCount();
+    const showMoreStep = getMobileSessionShowMoreIncrement();
     setVisibleCountByBucket((previous) => {
       const next = new Map(previous);
-      const current = Math.max(pageSize, previous.get(bucketKey) ?? pageSize, currentVisibleCount);
-      next.set(bucketKey, current + pageSize);
+      const current = Math.max(
+        defaultVisible,
+        previous.get(bucketKey) ?? defaultVisible,
+        currentVisibleCount,
+      );
+      next.set(bucketKey, current + showMoreStep);
       return next;
     });
-    const nextVisibleCount = Math.max(pageSize, currentVisibleCount) + pageSize;
+    const nextVisibleCount = Math.max(defaultVisible, currentVisibleCount) + showMoreStep;
     if (nextVisibleCount < totalSessions) return;
     const normalizedBucketDirectory = normalizePath(directory);
     if (!normalizedBucketDirectory) return;
@@ -858,7 +867,7 @@ export const MobileSessionsSheet: React.FC<MobileSessionsSheetProps> = ({ open, 
   // recursively). Pagination counts only top-level sessions.
   const renderBucketSessions = (node: ProjectNode, bucket: WorktreeBucket, indent: number) => {
     const bucketKey = `${node.project.id}::${bucket.key}`;
-    const pageSize = getMobileSessionPageSize(node.project.worktrees.length > 0);
+    const defaultVisible = getMobileSessionDefaultVisibleCount();
 
     // Group children by parent within this bucket, and treat sessions whose parent
     // is not in this bucket as top-level so nothing is hidden.
@@ -877,16 +886,15 @@ export const MobileSessionsSheet: React.FC<MobileSessionsSheetProps> = ({ open, 
       return !parentId || !idsInBucket.has(parentId);
     });
 
-    const visibleCount = visibleCountByBucket.get(bucketKey) ?? pageSize;
+    const visibleCount = visibleCountByBucket.get(bucketKey) ?? defaultVisible;
     const visibleRoots = roots.slice(0, visibleCount);
     const remaining = roots.length - visibleRoots.length;
     const pagination = activePaginationByDirectory.get(normalizePath(bucket.path));
     const hasRemoteSessions = pagination?.hasMore === true;
     const isLoadingRemoteSessions = pagination?.loadingMore === true;
-    // Show fewer whenever the rendered list is past the default page, even if
-    // more remain — so "more" and "fewer" can appear together for fold / load-more.
-    const canShowFewer = roots.length > pageSize
-      && (visibleRoots.length > pageSize || visibleCount > pageSize);
+    // Match PC: Fewer only after expanding past the default 3-row slice.
+    const canShowFewer = roots.length > defaultVisible
+      && visibleCount > defaultVisible;
 
     const renderNode = (session: Session, rowIndent: number): React.ReactNode => {
       const children = childrenByParent.get(session.id) ?? [];
@@ -936,7 +944,7 @@ export const MobileSessionsSheet: React.FC<MobileSessionsSheetProps> = ({ open, 
           showMore={remaining > 0 || hasRemoteSessions}
           showFewer={canShowFewer}
           loadingMore={isLoadingRemoteSessions}
-          onShowMore={() => showMoreBucketSessions(bucketKey, bucket.path, visibleRoots.length, roots.length, pageSize)}
+          onShowMore={() => showMoreBucketSessions(bucketKey, bucket.path, visibleRoots.length, roots.length)}
           onShowFewer={() => resetBucketVisibleCount(bucketKey)}
         />
       </div>

@@ -51,10 +51,18 @@ type Identity = { queueItemID: string; operationID: string; messageID?: string }
 interface MessageQueueState { queuedMessages: Record<string, QueueItem[]>; followUpBehavior: FollowUpBehavior }
 interface MessageQueueActions {
   addToQueue: (scope: QueueScope, message: QueueAdmission) => QueueAdmissionResult;
-  removeFromQueue: (scope: QueueScope, queueItemID: string, operationID: string | undefined) => void;
+  /**
+   * True when the target is confirmed removed or was already absent.
+   * False for wrong operationID, locked item, mutation fence, or retired transport.
+   */
+  removeFromQueue: (scope: QueueScope, queueItemID: string, operationID: string | undefined) => boolean;
   reorderQueue: (scope: QueueScope, fromID: string, toID: string, operationID: string | undefined) => void;
   popToInput: (scope: QueueScope, queueItemID: string, operationID: string | undefined) => QueueItem | null;
-  clearQueue: (scope: QueueScope) => void; clearAllQueues: () => void; setFollowUpBehavior: (behavior: FollowUpBehavior) => void;
+  /**
+   * True when the scope queue is confirmed empty or was already empty.
+   * False when fence/retired/locked items block the clear.
+   */
+  clearQueue: (scope: QueueScope) => boolean; clearAllQueues: () => void; setFollowUpBehavior: (behavior: FollowUpBehavior) => void;
   getQueueForScope: (scope: QueueScope) => QueueItem[];
   bindLegacyQueue: (legacyScope: QueueScope, targetScope: QueueScope) => QueueItem[];
   markQueueItemSendAttempt: (scope: QueueScope, identity: Identity) => void;
@@ -186,10 +194,46 @@ export const useMessageQueueStore = create<Store>()(devtools(persist((set, get) 
     item.queueItemID = item.id;
     const key = queueScopeKey(scope); set((state) => ({ queuedMessages: { ...state.queuedMessages, [key]: [...(state.queuedMessages[key] ?? []), item] } })); return { ok: true, item };
   },
-  removeFromQueue: (scope, queueItemID, operationID) => { if (!userMutationAllowed(scope) || !operationID) return; const key = queueScopeKey(scope); set((state) => { const queue = state.queuedMessages[key]; const item = queue?.find((candidate) => (candidate.queueItemID === queueItemID || candidate.id === queueItemID) && candidate.operationID === operationID && queueScopeKey(candidate.owner) === key); if (!item || locked(item)) return state; const next = queue.filter((candidate) => candidate !== item); if (next.length) return { queuedMessages: { ...state.queuedMessages, [key]: next } }; const { [key]: removed, ...queuedMessages } = state.queuedMessages; void removed; return { queuedMessages }; }); },
+  removeFromQueue: (scope, queueItemID, operationID) => {
+    if (!userMutationAllowed(scope) || !operationID) return false;
+    const key = queueScopeKey(scope);
+    const queue = get().queuedMessages[key];
+    if (!queue || queue.length === 0) return true;
+    // Same queueItemID with a different operationID must not remove.
+    const byId = queue.find((candidate) => (candidate.queueItemID === queueItemID || candidate.id === queueItemID) && queueScopeKey(candidate.owner) === key);
+    if (byId && byId.operationID !== operationID) return false;
+    const item = queue.find((candidate) => (candidate.queueItemID === queueItemID || candidate.id === queueItemID) && candidate.operationID === operationID && queueScopeKey(candidate.owner) === key);
+    if (!item) return true;
+    if (locked(item)) return false;
+    set((state) => {
+      const current = state.queuedMessages[key];
+      if (!current) return state;
+      const next = current.filter((candidate) => candidate !== item);
+      if (next.length === current.length) return state;
+      if (next.length) return { queuedMessages: { ...state.queuedMessages, [key]: next } };
+      const { [key]: removed, ...queuedMessages } = state.queuedMessages;
+      void removed;
+      return { queuedMessages };
+    });
+    return !getQueueForScope(get(), scope).some((candidate) => candidate === item || ((candidate.queueItemID === queueItemID || candidate.id === queueItemID) && candidate.operationID === operationID));
+  },
   reorderQueue: (scope, fromID, toID, operationID) => { if (!userMutationAllowed(scope) || !operationID) return; const key = queueScopeKey(scope); set((state) => { const queue = state.queuedMessages[key]; const from = queue?.findIndex((item) => (item.id === fromID || item.queueItemID === fromID) && item.operationID === operationID && queueScopeKey(item.owner) === key) ?? -1; const to = queue?.findIndex((item) => (item.id === toID || item.queueItemID === toID) && queueScopeKey(item.owner) === key) ?? -1; if (!queue || from < 0 || to < 0 || from === to || locked(queue[from]!) || locked(queue[to]!)) return state; const next = queue.slice(); const [item] = next.splice(from, 1); next.splice(to, 0, item!); return { queuedMessages: { ...state.queuedMessages, [key]: next } }; }); },
-  popToInput: (scope, id, operationID) => { if (!userMutationAllowed(scope) || !operationID) return null; const item = getQueueForScope(get(), scope).find((candidate) => (candidate.id === id || candidate.queueItemID === id) && candidate.operationID === operationID && queueScopeKey(candidate.owner) === queueScopeKey(scope)); if (!item || locked(item)) return null; get().removeFromQueue(scope, item.queueItemID, item.operationID); return item; },
-  clearQueue: (scope) => { if (!userMutationAllowed(scope)) return; const key = queueScopeKey(scope); set((state) => { const queue = state.queuedMessages[key]; if (!queue || queue.some(locked)) return state; const { [key]: removed, ...queuedMessages } = state.queuedMessages; void removed; return { queuedMessages }; }); },
+  popToInput: (scope, id, operationID) => { if (!userMutationAllowed(scope) || !operationID) return null; const item = getQueueForScope(get(), scope).find((candidate) => (candidate.id === id || candidate.queueItemID === id) && candidate.operationID === operationID && queueScopeKey(candidate.owner) === queueScopeKey(scope)); if (!item || locked(item)) return null; if (!get().removeFromQueue(scope, item.queueItemID, item.operationID)) return null; return item; },
+  clearQueue: (scope) => {
+    if (!userMutationAllowed(scope)) return false;
+    const key = queueScopeKey(scope);
+    const queue = get().queuedMessages[key];
+    if (!queue || queue.length === 0) return true;
+    if (queue.some(locked)) return false;
+    set((state) => {
+      const current = state.queuedMessages[key];
+      if (!current || current.some(locked)) return state;
+      const { [key]: removed, ...queuedMessages } = state.queuedMessages;
+      void removed;
+      return { queuedMessages };
+    });
+    return (get().queuedMessages[key] ?? []).length === 0;
+  },
   clearAllQueues: () => { if (!userMutationAllowed()) return; set((state) => {
     const queuedMessages: Record<string, QueueItem[]> = {};
     let changed = false;

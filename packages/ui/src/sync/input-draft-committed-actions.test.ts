@@ -1,7 +1,7 @@
 import { describe, expect, test } from "bun:test"
 import { createInputDraftBlobStore, MemoryInputDraftBlobDriver } from "./input-draft-blob-store"
 import { createInputDraftMetadataPersistenceCoordinator, createInputDraftMetadataStorageSink, type InputDraftMetadataPersistenceCoordinator, type InputDraftMetadataSink } from "./input-draft-metadata-store"
-import { draftKeyString, draftRootAttachmentOccurrenceRefID, newSessionDraftKey, sessionDraftKey, type DraftKey } from "./input-draft-types"
+import { draftKeyString, draftRootAttachmentOccurrenceRefID, draftSyntheticPartAttachmentOccurrenceRefID, newSessionDraftKey, sessionDraftKey, type DraftKey } from "./input-draft-types"
 import { createInputStore } from "./input-store"
 
 class TestFileReader {
@@ -120,6 +120,63 @@ describe("input draft committed actions", () => {
     })
     expect(cleared.status).toBe("committed")
     expect(store.getState().getDraftAttachmentViews(key).map((view) => view.filename)).toEqual(["shared.png"])
+  })
+
+  test("root replace preserves hydrated synthetic durable URL metadata and views", async () => {
+    const { store } = await setup()
+    const key = sessionDraftKey({ transportIdentity: "runtime" }, "session")
+    const syntheticRef = draftSyntheticPartAttachmentOccurrenceRefID("part", "syn-url")
+    const durableUrl = "https://example.test/synthetic-durable"
+    const syntheticAttachment = {
+      attachmentID: "syn-url",
+      attachmentRefID: syntheticRef,
+      filename: "syn.txt",
+      mimeType: "text/plain",
+      size: 1,
+      locator: { kind: "url" as const, url: durableUrl },
+      source: "server" as const,
+      serverPath: "/syn.txt",
+    }
+    const created = await store.getState().commitDraftSnapshot({
+      key,
+      expectedRevision: "absent",
+      runtime: store.getState().captureDraftRuntime(),
+      snapshot: {
+        text: "with-syn",
+        attachments: [],
+        syntheticParts: [{ partID: "part", text: "ctx", attachments: [syntheticAttachment], synthetic: true }],
+        mentions: [],
+      },
+      values: new Map([[syntheticRef, durableUrl]]),
+    })
+    expect(created.status).toBe("committed")
+    const id = draftKeyString(key)
+    // Simulate a bad existing view.file placeholder that must not override locator.url.
+    store.setState((state) => ({
+      draftAttachmentViews: {
+        ...state.draftAttachmentViews,
+        [id]: {
+          ...state.draftAttachmentViews[id],
+          [syntheticRef]: {
+            id: "syn-url",
+            file: new File(["placeholder"], "syn.txt", { type: "text/plain" }),
+            dataUrl: "data:text/plain;base64,eA==",
+            mimeType: "text/plain",
+            filename: "syn.txt",
+            size: 1,
+            source: "server",
+            serverPath: "/syn.txt",
+          },
+        },
+      },
+    }))
+    const replaced = await store.getState().replaceDraftRootAttachments(key, [])
+    expect(replaced.status).toBe("committed")
+    const draft = store.getState().getDraft(key)
+    expect(draft?.syntheticParts[0]?.attachments[0]?.locator).toEqual({ kind: "url", url: durableUrl })
+    const view = store.getState().draftAttachmentViews[id]?.[syntheticRef]
+    expect(view?.dataUrl).toBe(durableUrl)
+    expect(view?.filename).toBe("syn.txt")
   })
 
   test("moves preserve and consume ownership through durable destination commits", async () => {

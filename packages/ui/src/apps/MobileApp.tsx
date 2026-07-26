@@ -304,9 +304,11 @@ const useNativeMobileChrome = (): void => {
       if (disposed) return;
       // Keyboard choreography:
       //   iOS — resize:none + transform FLIP (~250ms) from keyboardWillShow.
-      //   Android — ImeSyncBridge owns geometry (translationY each IME frame).
-      //            JS only freezes auto-follow + snaps inset/classes at start/end.
-      //            No per-frame JS (that janked half-sheets while the IME moved).
+      //   Android — adjustNothing + an early composer-only CSS FLIP. Android's
+      //            keyboardWillShow and WebView viewport signals arrive after IME
+      //            movement starts, so keyboard intent / focusin starts a short
+      //            transform from the cached IME height. The state-only native
+      //            event calibrates and caches the final height once per open.
       const platform = (window as typeof window & { Capacitor?: { getPlatform?: () => string } }).Capacitor?.getPlatform?.();
       const isAndroid = platform === 'android';
       await Keyboard.setAccessoryBarVisible({ isVisible: false }).catch(() => undefined);
@@ -333,18 +335,33 @@ const useNativeMobileChrome = (): void => {
       const dispatchKb = (type: 'oc:keyboard-intent' | 'oc:keyboard-anim' | 'oc:keyboard-settled', detail: Record<string, unknown>) => {
         window.dispatchEvent(new CustomEvent(type, { detail }));
       };
-      const getKbMovers = (): Array<{ el: HTMLElement; factor: number }> => {
+      const isVisibleKbMover = (element: HTMLElement): boolean => (
+        element.getClientRects().length > 0
+        && getComputedStyle(element).visibility !== 'hidden'
+      );
+      const findVisibleKbMover = <T extends HTMLElement>(selector: string): T | null => {
+        for (const element of document.querySelectorAll<T>(selector)) {
+          if (isVisibleKbMover(element)) return element;
+        }
+        return null;
+      };
+      const getKbMovers = (anchor?: EventTarget | null): Array<{ el: HTMLElement; factor: number }> => {
         const movers: Array<{ el: HTMLElement; factor: number }> = [];
-        const composer = document.querySelector<HTMLElement>('.oc-mobile-composer');
+        const anchorElement = anchor instanceof Element ? anchor : null;
+        const anchoredComposer = anchorElement?.closest<HTMLElement>('.oc-mobile-composer') ?? null;
+        const composer = anchoredComposer && isVisibleKbMover(anchoredComposer)
+          ? anchoredComposer
+          : findVisibleKbMover<HTMLElement>('.oc-mobile-composer');
         if (composer) movers.push({ el: composer, factor: 1 });
-        const draftCenter = document.querySelector<HTMLElement>('.oc-draft-center');
+        const draftCenter = findVisibleKbMover<HTMLElement>('.oc-draft-center');
         if (draftCenter) movers.push({ el: draftCenter, factor: 0.5 });
         return movers;
       };
       const clearKbMovers = () => {
-        for (const { el } of getKbMovers()) {
+        for (const el of document.querySelectorAll<HTMLElement>('.oc-mobile-composer, .oc-draft-center')) {
           el.style.transition = '';
           el.style.transform = '';
+          el.style.willChange = '';
         }
       };
       const measureSafeBottom = () => {
@@ -352,85 +369,184 @@ const useNativeMobileChrome = (): void => {
         safeBottomPx = shell ? parseFloat(getComputedStyle(shell).paddingBottom) || 0 : 0;
       };
 
-      // ── Android: native translationY only; JS bookends (no progress bridge) ─
+      // ── Android: pre-focus CSS FLIP from cached IME height ────────────────
       if (isAndroid) {
+        const IME_RATIO_STORAGE_KEY = 'openchamber.androidImeHeightRatio.v1';
+        const SHOW_MS = 250;
+        const CORRECT_MS = 60;
+        const HIDE_MS = 160;
+        const SHOW_EASING = 'cubic-bezier(0.2, 0, 0, 1)';
+        const HIDE_EASING = 'cubic-bezier(0.4, 0, 1, 1)';
+        let androidTimer: number | null = null;
+
         const isTextField = (node: unknown): boolean =>
           node instanceof HTMLElement
           && (node.tagName === 'TEXTAREA' || node.tagName === 'INPUT' || node.isContentEditable);
 
-        const blurActiveTextField = () => {
-          const active = document.activeElement;
-          if (!isTextField(active)) return;
-          (active as HTMLElement).blur();
+        const clampRatio = (value: number): number => (
+          Number.isFinite(value) ? Math.min(0.68, Math.max(0.28, value)) : 0.39
+        );
+        const readCachedRatio = (): number => {
+          try {
+            return clampRatio(Number.parseFloat(localStorage.getItem(IME_RATIO_STORAGE_KEY) ?? ''));
+          } catch {
+            return 0.39;
+          }
+        };
+        let imeHeight = Math.round(window.innerHeight * readCachedRatio());
+        const persistHeight = (height: number) => {
+          imeHeight = Math.max(0, Math.round(height));
+          if (imeHeight <= 0 || window.innerHeight <= 0) return;
+          try {
+            localStorage.setItem(IME_RATIO_STORAGE_KEY, String(clampRatio(imeHeight / window.innerHeight)));
+          } catch {
+            // Restricted storage keeps the in-memory value for this app run.
+          }
+        };
+        const clearAndroidTimer = () => {
+          if (androidTimer === null) return;
+          window.clearTimeout(androidTimer);
+          androidTimer = null;
+        };
+        const getAndroidSlide = (height: number) => Math.max(0, Math.round(height - safeBottomPx));
+        const getAndroidTransform = (slide: number, factor: number) => `translate3d(0, ${-slide * factor}px, 0)`;
+        const liftMovers = (height: number, durationMs: number, easing: string, anchor?: EventTarget | null): number => {
+          clearAndroidTimer();
+          const slide = getAndroidSlide(height);
+          const movers = getKbMovers(anchor);
+          root.classList.add('oc-kb-animating');
+          for (const { el, factor } of movers) {
+            el.style.willChange = 'transform';
+            el.style.transition = `transform ${durationMs}ms ${easing}`;
+            el.style.transform = getAndroidTransform(slide, factor);
+          }
+          androidTimer = window.setTimeout(() => {
+            androidTimer = null;
+            root.classList.remove('oc-kb-animating');
+            for (const { el } of movers) {
+              el.style.transition = '';
+              el.style.willChange = '';
+            }
+          }, durationMs + 20);
+          return slide;
         };
 
-        const handleImeStart = (event: Event) => {
-          const detail = (event as CustomEvent<{ open?: boolean; height?: number }>).detail;
-          if (!detail) return;
-          keyboardOpen = detail.open === true;
-          keyboardHeight = Math.max(0, Math.round(detail.height ?? 0));
-          // Snap overlay inset — do not run a long bottom CSS transition while
-          // sheets may also be entering (that was a half-sheet jank source).
-          root.classList.add('oc-keyboard-inset-snap');
+        const markOpen = (anchor?: EventTarget | null) => {
+          measureSafeBottom();
           if (keyboardOpen) {
-            root.classList.add('oc-keyboard-open');
-            setInset(keyboardHeight);
-            dispatchKb('oc:keyboard-anim', { phase: 'show', slide: 0, durationMs: 250, easing: 'linear' });
+            const slide = getAndroidSlide(imeHeight);
+            const movers = getKbMovers(anchor);
+            if (movers.length === 0) return;
+            const alreadyPositioned = movers.every(
+              ({ el, factor }) => el.style.transform === getAndroidTransform(slide, factor),
+            );
+            if (alreadyPositioned) return;
+            liftMovers(imeHeight, CORRECT_MS, SHOW_EASING, anchor);
+            dispatchKb('oc:keyboard-anim', {
+              phase: 'show',
+              slide,
+              durationMs: CORRECT_MS,
+              easing: SHOW_EASING,
+            });
             dispatchKb('oc:keyboard-settled', { open: true });
-          } else {
-            blurActiveTextField();
-            dispatchKb('oc:keyboard-intent', { open: false });
-            root.classList.remove('oc-keyboard-open');
-            setInset(0);
-            dispatchKb('oc:keyboard-anim', { phase: 'hide', slide: 0, durationMs: 200, easing: 'linear' });
+            return;
           }
+          keyboardOpen = true;
+          root.classList.add('oc-keyboard-open');
+          setInset(0);
+          setVar('--oc-kb-layout', 0);
+          setVar('--oc-kb-scroll-inset', 0);
+          const slide = liftMovers(imeHeight, SHOW_MS, SHOW_EASING, anchor);
+          dispatchKb('oc:keyboard-anim', {
+            phase: 'show',
+            slide,
+            durationMs: SHOW_MS,
+            easing: SHOW_EASING,
+          });
+          dispatchKb('oc:keyboard-settled', { open: true });
         };
-
-        const handleImeEnd = (event: Event) => {
-          const detail = (event as CustomEvent<{ open?: boolean; height?: number }>).detail;
-          if (!detail) return;
-          const open = detail.open === true;
-          keyboardOpen = open;
-          keyboardHeight = Math.max(0, Math.round(detail.height ?? (open ? keyboardHeight : 0)));
-          if (open) {
-            root.classList.add('oc-keyboard-open');
-            setInset(keyboardHeight);
-            dispatchKb('oc:keyboard-settled', { open: true });
-          } else {
-            blurActiveTextField();
-            root.classList.remove('oc-keyboard-open');
-            setInset(0);
-            dispatchKb('oc:keyboard-intent', { open: false });
+        const markClosed = (blur: boolean) => {
+          keyboardOpen = false;
+          if (blur && isTextField(document.activeElement)) {
+            (document.activeElement as HTMLElement).blur();
+          }
+          root.classList.remove('oc-keyboard-open');
+          setInset(0);
+          setVar('--oc-kb-layout', 0);
+          setVar('--oc-kb-scroll-inset', 0);
+          dispatchKb('oc:keyboard-intent', { open: false });
+          dispatchKb('oc:keyboard-anim', {
+            phase: 'hide',
+            slide: getAndroidSlide(imeHeight),
+            durationMs: HIDE_MS,
+            easing: HIDE_EASING,
+          });
+          liftMovers(0, HIDE_MS, HIDE_EASING);
+          clearAndroidTimer();
+          androidTimer = window.setTimeout(() => {
+            androidTimer = null;
+            root.classList.remove('oc-kb-animating');
+            clearKbMovers();
             dispatchKb('oc:keyboard-settled', { open: false });
-          }
-          window.requestAnimationFrame(() => root.classList.remove('oc-keyboard-inset-snap'));
+          }, HIDE_MS + 20);
         };
 
+        // ChatInput intent runs before focus; focusin covers every other field.
+        const handleFocusIn = (event: FocusEvent) => {
+          if (isTextField(event.target)) markOpen(event.target);
+        };
         const handleFocusOut = (event: FocusEvent) => {
-          if (!keyboardOpen) return;
           if (!isTextField(event.target)) return;
           if (isTextField(event.relatedTarget)) return;
           window.setTimeout(() => {
-            if (!keyboardOpen) return;
             if (isTextField(document.activeElement)) return;
-            dispatchKb('oc:keyboard-intent', { open: false });
+            markClosed(false);
           }, 0);
         };
+        const handleImeState = (event: Event) => {
+          type ImeStateEvent = Event & {
+            open?: boolean;
+            height?: number;
+            detail?: { open?: boolean; height?: number };
+          };
+          const nativeEvent = event as ImeStateEvent;
+          // Capacitor triggerJSEvent exposes payload fields on the event object;
+          // CustomEvent detail remains supported for browser/test dispatches.
+          const detail = nativeEvent.detail ?? nativeEvent;
+          if (detail?.open === true) {
+            const measured = Math.max(0, Math.round(detail.height ?? 0));
+            if (measured > 0) {
+              persistHeight(measured);
+              if (keyboardOpen) liftMovers(imeHeight, CORRECT_MS, SHOW_EASING);
+            }
+            markOpen();
+          }
+          if (detail?.open === false) markClosed(true);
+        };
+        const handleKeyboardIntent = (event: Event) => {
+          const detail = (event as CustomEvent<{ open?: boolean }>).detail;
+          if (detail?.open === true) markOpen();
+        };
 
-        window.addEventListener('oc:ime-start', handleImeStart);
-        window.addEventListener('oc:ime-end', handleImeEnd);
+        document.addEventListener('focusin', handleFocusIn, true);
         document.addEventListener('focusout', handleFocusOut, true);
+        window.addEventListener('oc:ime-state', handleImeState);
+        window.addEventListener('oc:keyboard-intent', handleKeyboardIntent);
 
         if (disposed) {
-          window.removeEventListener('oc:ime-start', handleImeStart);
-          window.removeEventListener('oc:ime-end', handleImeEnd);
+          clearAndroidTimer();
+          document.removeEventListener('focusin', handleFocusIn, true);
           document.removeEventListener('focusout', handleFocusOut, true);
+          window.removeEventListener('oc:ime-state', handleImeState);
+          window.removeEventListener('oc:keyboard-intent', handleKeyboardIntent);
           return;
         }
         cleanup.push(
-          () => window.removeEventListener('oc:ime-start', handleImeStart),
-          () => window.removeEventListener('oc:ime-end', handleImeEnd),
+          clearAndroidTimer,
+          () => document.removeEventListener('focusin', handleFocusIn, true),
           () => document.removeEventListener('focusout', handleFocusOut, true),
+          () => window.removeEventListener('oc:ime-state', handleImeState),
+          () => window.removeEventListener('oc:keyboard-intent', handleKeyboardIntent),
         );
         return;
       }

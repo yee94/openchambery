@@ -125,15 +125,24 @@ type ServerQueueAdmissionConsumption = {
     getDocument: () => ComposerDocument;
     consumeBody: () => void;
     getAttachments: () => readonly AttachedFile[];
-    removeAttachment: (id: string) => void;
+    /** True only when the attachment was confirmed removed from the live draft. */
+    removeAttachment: (id: string) => boolean | Promise<boolean>;
     getInlineDrafts: () => readonly InlineCommentDraft[];
     removeInlineDraft: (id: string) => void;
 };
 
 export type ServerQueueAdmissionConsumptionResult = {
-    status: 'committed' | 'stale';
+    /**
+     * committed: queue admit + full captured cleanup.
+     * partial: queue admit committed but at least one attachment remove failed
+     * (composer cleanup incomplete; body/inline may still have been consumed).
+     * stale: admit/runtime/key not current — no consumption.
+     */
+    status: 'committed' | 'partial' | 'stale';
     bodyConsumed: boolean;
     attachmentIDsConsumed: string[];
+    /** Attachment IDs that matched capture but remove returned false. */
+    attachmentIDsFailed?: string[];
     inlineDraftIDsConsumed: string[];
 };
 
@@ -240,12 +249,19 @@ export const admitServerQueueMessageAndConsumeResources = async ({
     if (bodyConsumed) consumeBody();
 
     const attachmentIDsConsumed: string[] = [];
+    const attachmentIDsFailed: string[] = [];
     const currentAttachments = new Map(getAttachments().map((attachment) => [attachment.id, attachment]));
     for (const [id, captured] of capture.attachments) {
         const current = currentAttachments.get(id);
         if (!current || !sameAttachmentOccurrence(captured, current)) continue;
-        removeAttachment(id);
-        attachmentIDsConsumed.push(id);
+        let removed = false;
+        try {
+            removed = await removeAttachment(id);
+        } catch {
+            removed = false;
+        }
+        if (removed) attachmentIDsConsumed.push(id);
+        else attachmentIDsFailed.push(id);
     }
 
     const inlineDraftIDsConsumed: string[] = [];
@@ -257,6 +273,15 @@ export const admitServerQueueMessageAndConsumeResources = async ({
         inlineDraftIDsConsumed.push(id);
     }
 
+    if (attachmentIDsFailed.length > 0) {
+        return {
+            status: 'partial',
+            bodyConsumed,
+            attachmentIDsConsumed,
+            attachmentIDsFailed,
+            inlineDraftIDsConsumed,
+        };
+    }
     return { status: 'committed', bodyConsumed, attachmentIDsConsumed, inlineDraftIDsConsumed };
 };
 

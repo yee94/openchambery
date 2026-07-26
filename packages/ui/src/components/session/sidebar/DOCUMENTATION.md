@@ -42,14 +42,17 @@
   most once per 24 hours to remove sessions deleted or archived while the app
   was closed.
 - `SessionStartupCoordinator` owns that pass before `SessionSidebar` mounts its
-  normal orchestration. It waits for registered settings hydration and then reads
-  the latest persisted project paths so an initially empty renderer store cannot
-  release the startup barrier early. After starting the server job, the UI observes SQLite
-  revisions through one low-priority long poll. When SQLite has rows the startup
-  logo releases immediately only when those rows existed in the initial restore;
-  validation then continues with cached rows visible.
-  A first run with an empty index stays in the global loading state until the
-  server job completes; sidebar code must not start another hydrate or list cycle.
+  normal orchestration. Hydrate of the SQLite session-summary index starts
+  immediately (does not wait for settings) so the last snapshot can fill the
+  sidebar before OpenCode finishes initializing. Directory planning and the
+  background root refresh still wait for registered settings hydration, then
+  read the latest persisted project paths so an initially empty renderer store
+  cannot release the startup barrier early. After starting the server job, the
+  UI observes SQLite revisions through OpenChamber tip events + GET. When SQLite
+  has rows the startup logo releases as soon as those rows land in the store;
+  validation continues with cached rows visible. A first run with an empty index
+  waits until hydrate settles and OpenCode init (or the blocking root sync)
+  completes; sidebar code must not start another hydrate or list cycle.
 - Project collapse state controls presentation only; Electron session-summary
   refresh targets come from the persisted project index, so no collapse/re-expand
   gesture is required to make a project appear.

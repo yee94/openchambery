@@ -19,7 +19,7 @@ const surface = (surfaceID: string, sessionID: string): ChatInputSurface => ({
   activity: { phase: 'idle' },
   resources: {
     busy: false,
-    attachments: [], addAttachment: async () => {}, removeAttachment: () => {}, clearAttachments: () => {}, setAttachments: () => {}, pendingInput: null, consumePendingInput: () => null, pendingPreset: null, consumePendingPreset: () => null,
+    attachments: [], addAttachment: async () => {}, removeAttachment: async () => true, clearAttachments: async () => true, restoreAttachments: async () => true, pendingInput: null, consumePendingInput: () => null, pendingPreset: null, consumePendingPreset: () => null,
     consumeSyntheticParts: () => null, restoreSyntheticParts: () => {}, inlineDrafts: [], removeInlineDraft: () => {}, restoreInlineDrafts: () => {}, history: [], captureRuntime: () => ({ transportIdentity: 'runtime', generation: 1 }), getDraft: () => undefined,
     abortPrompt: { sessionID: null, clear: () => {} },
   },

@@ -6,34 +6,34 @@ import android.os.Build;
 import android.view.View;
 import android.view.Window;
 import android.webkit.WebView;
-import androidx.annotation.NonNull;
 import androidx.core.graphics.Insets;
 import androidx.core.view.ViewCompat;
 import androidx.core.view.WindowCompat;
-import androidx.core.view.WindowInsetsAnimationCompat;
 import androidx.core.view.WindowInsetsCompat;
 import androidx.core.view.WindowInsetsControllerCompat;
 import com.getcapacitor.Bridge;
 import com.getcapacitor.BridgeActivity;
-import java.util.List;
 import java.util.Locale;
 
 /**
- * Minimal Android IME lift for Capacitor WebView.
+ * Android IME companion for Capacitor WebView — no whole-page lift.
  *
  * Geometry:
- *   1. WebView parent padding stays 0 (no SystemBars IME pad + translation double-count).
- *   2. Each IME frame: {@code translationY = -imeBottom} (compositor).
+ *   WebView parent padding stays 0 so SystemBars does not pad for IME
+ *   (that would layout-shrink the page under the keyboard). The page keeps
+ *   full height; JS lifts only the composer (transform FLIP) so the header
+ *   stays pinned to the top.
  *
- * Backdrop (the "shadow" / gray strip above the keyboard):
- *   Not a VIVO-specific protocol and not in the DOM. On edge-to-edge Android,
- *   lifting the WebView reveals the Activity window / navigation-bar surface
- *   between the page and the IME. Capacitor / Ionic threads call this a gray
- *   strip "not visible in chrome://inspect". Fix: paint window, decor, WebView
- *   parent, and navigation bar the same color as the web page background.
+ * Composer timing:
+ *   JS starts a short composer-only CSS transform from keyboard intent/focus,
+ *   using the previous measured IME height. This bridge emits only visibility
+ *   state + settled height from the inset listener so JS can calibrate/cache
+ *   the next open. There is no progress bridge or per-frame JS geometry.
+ *
+ * Backdrop (gray strip above the keyboard on edge-to-edge):
+ *   Paint window / decor / WebView parent / nav bar to match page --background.
  *
  * @see https://developer.android.com/develop/ui/views/layout/sw-keyboard
- * @see https://forum.ionicframework.com/t/android-keyboard-edge-to-edge-issue-gray-area-after-keyboard-hide-and-inconsistent-resize-capacitor-8/251049
  */
 final class ImeSyncBridge {
     private final BridgeActivity activity;
@@ -41,6 +41,7 @@ final class ImeSyncBridge {
     private View webParent;
     /** Last painted backdrop (ARGB). Avoid redundant window writes. */
     private int lastBackdropArgb = Color.TRANSPARENT;
+    private boolean lastImeVisible = false;
 
     ImeSyncBridge(BridgeActivity activity) {
         this.activity = activity;
@@ -56,20 +57,25 @@ final class ImeSyncBridge {
         webParent = (View) webView.getParent();
         View rootView = content.getRootView();
 
-        // Initial backdrop from theme defaults; refined once CSS --background is readable.
         paintBackdrop(resolveThemeBackdrop());
         webView.post(this::syncBackdropFromWeb);
 
         if (webParent != null) {
+            // Own this view's padding so SystemBars cannot IME-pad the WebView.
+            // Do not translationY the WebView — that would drag the header off-screen.
             ViewCompat.setOnApplyWindowInsetsListener(webParent, (v, insets) -> {
                 v.setPadding(0, 0, 0, 0);
                 Insets systemBars = insets.getInsets(
                     WindowInsetsCompat.Type.systemBars() | WindowInsetsCompat.Type.displayCutout()
                 );
                 boolean imeVisible = insets.isVisible(WindowInsetsCompat.Type.ime());
-                int imePx = Math.max(0, insets.getInsets(WindowInsetsCompat.Type.ime()).bottom);
-                if (webParent.getTranslationY() != -imePx) {
-                    applyTranslation(imeVisible ? -imePx : 0);
+                if (imeVisible != lastImeVisible) {
+                    if (imeVisible) syncBackdropFromWeb();
+                    lastImeVisible = imeVisible;
+                    notifyImeState(
+                        imeVisible,
+                        imeVisible ? insets.getInsets(WindowInsetsCompat.Type.ime()).bottom : 0
+                    );
                 }
                 return new WindowInsetsCompat.Builder(insets)
                     .setInsets(
@@ -87,49 +93,9 @@ final class ImeSyncBridge {
             webParent.requestApplyInsets();
         }
 
-        ViewCompat.setWindowInsetsAnimationCallback(
-            rootView,
-            new WindowInsetsAnimationCompat.Callback(WindowInsetsAnimationCompat.Callback.DISPATCH_MODE_STOP) {
-                @NonNull
-                @Override
-                public WindowInsetsAnimationCompat.BoundsCompat onStart(
-                    @NonNull WindowInsetsAnimationCompat animation,
-                    @NonNull WindowInsetsAnimationCompat.BoundsCompat bounds
-                ) {
-                    if (!isIme(animation)) return super.onStart(animation, bounds);
-                    // Re-sync backdrop when the IME opens so theme/light-dark matches the page.
-                    syncBackdropFromWeb();
-                    WindowInsetsCompat rootInsets = ViewCompat.getRootWindowInsets(rootView);
-                    boolean showing = rootInsets != null && rootInsets.isVisible(WindowInsetsCompat.Type.ime());
-                    int imePx = imeBottomPx(rootInsets);
-                    applyTranslation(-imePx);
-                    notifyJs("oc:ime-start", showing, pxToCss(imePx));
-                    return super.onStart(animation, bounds);
-                }
-
-                @NonNull
-                @Override
-                public WindowInsetsCompat onProgress(
-                    @NonNull WindowInsetsCompat insets,
-                    @NonNull List<WindowInsetsAnimationCompat> runningAnimations
-                ) {
-                    if (!imeRunning(runningAnimations)) return insets;
-                    applyTranslation(-imeBottomPx(insets));
-                    return insets;
-                }
-
-                @Override
-                public void onEnd(@NonNull WindowInsetsAnimationCompat animation) {
-                    super.onEnd(animation);
-                    if (!isIme(animation)) return;
-                    WindowInsetsCompat rootInsets = ViewCompat.getRootWindowInsets(rootView);
-                    boolean showing = rootInsets != null && rootInsets.isVisible(WindowInsetsCompat.Type.ime());
-                    int imePx = showing ? imeBottomPx(rootInsets) : 0;
-                    applyTranslation(showing ? -imePx : 0);
-                    notifyJs("oc:ime-end", showing, pxToCss(imePx));
-                }
-            }
-        );
+        // Capacitor Keyboard installs an empty root animation callback. Remove it
+        // so the IME animation can stay off the app's main-thread callback path.
+        ViewCompat.setWindowInsetsAnimationCallback(rootView, null);
     }
 
     /**
@@ -142,8 +108,6 @@ final class ImeSyncBridge {
         Window window = activity.getWindow();
         if (window != null) {
             window.setBackgroundDrawable(new ColorDrawable(argb));
-            // Navigation bar sits under/near the IME on many OEMs; match it so no
-            // second band appears. Contrast enforcement can force a translucent scrub.
             if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.Q) {
                 window.setNavigationBarContrastEnforced(false);
             }
@@ -154,7 +118,6 @@ final class ImeSyncBridge {
             View decor = window.getDecorView();
             if (decor != null) {
                 decor.setBackgroundColor(argb);
-                // Light/dark nav icons from luminance of the fill.
                 boolean lightBg = isLightColor(argb);
                 WindowInsetsControllerCompat controller =
                     WindowCompat.getInsetsController(window, decor);
@@ -173,7 +136,6 @@ final class ImeSyncBridge {
 
     private void syncBackdropFromWeb() {
         if (bridge == null || bridge.getWebView() == null) return;
-        // Read computed --background (or body) as rgb() and paint native surfaces.
         String script =
             "(function(){"
                 + "try{"
@@ -193,29 +155,14 @@ final class ImeSyncBridge {
         });
     }
 
-    /** Splash / theme defaults used before the web page paints. */
     private int resolveThemeBackdrop() {
-        // Prefer the same splash tokens MobileApp writes for StatusBar.
-        try {
-            WebView webView = bridge != null ? bridge.getWebView() : null;
-            if (webView != null) {
-                // Synchronous fallback colors; refined async via syncBackdropFromWeb.
-            }
-        } catch (Exception ignored) {
-            // fall through
-        }
         boolean night =
             (activity.getResources().getConfiguration().uiMode
                 & android.content.res.Configuration.UI_MODE_NIGHT_MASK)
                 == android.content.res.Configuration.UI_MODE_NIGHT_YES;
-        // Match packages/ui MobileApp StatusBar defaults.
         return night ? Color.parseColor("#171515") : Color.parseColor("#fffdf4");
     }
 
-    /**
-     * Parse evaluateJavascript string results: "\"rgb(23, 21, 21)\"" / "\"#171515\"".
-     * Returns 0 if unparseable.
-     */
     private static int parseCssColor(String raw) {
         if (raw == null || raw.length() < 3) return 0;
         String s = raw.trim();
@@ -230,7 +177,6 @@ final class ImeSyncBridge {
                     ? ("#" + s.charAt(1) + s.charAt(1) + s.charAt(2) + s.charAt(2) + s.charAt(3) + s.charAt(3))
                     : s);
             }
-            // rgb(r, g, b) or rgba(r, g, b, a)
             if (s.startsWith("rgb")) {
                 int open = s.indexOf('(');
                 int close = s.indexOf(')');
@@ -240,16 +186,13 @@ final class ImeSyncBridge {
                 int r = clamp255(parseCssChannel(parts[0]));
                 int g = clamp255(parseCssChannel(parts[1]));
                 int b = clamp255(parseCssChannel(parts[2]));
-                int a = parts.length >= 4 ? clamp255(Math.round(parseCssChannel(parts[3]) * 255f)) : 255;
-                if (parts[3].trim().contains("%") || parseCssChannel(parts[3]) > 1f) {
-                    a = clamp255(Math.round(parseCssChannel(parts[3])));
-                } else if (parts.length >= 4) {
+                int a = 255;
+                if (parts.length >= 4) {
                     float af = parseCssChannel(parts[3]);
                     a = af <= 1f ? clamp255(Math.round(af * 255f)) : clamp255(Math.round(af));
                 }
                 return Color.argb(a, r, g, b);
             }
-            // oklch(...) — approximate via leaving to theme fallback
             return 0;
         } catch (Exception e) {
             return 0;
@@ -272,48 +215,23 @@ final class ImeSyncBridge {
         double r = Color.red(argb) / 255.0;
         double g = Color.green(argb) / 255.0;
         double b = Color.blue(argb) / 255.0;
-        // Relative luminance (sRGB).
         double lum = 0.2126 * r + 0.7152 * g + 0.0722 * b;
         return lum > 0.5;
     }
 
-    private static boolean isIme(@NonNull WindowInsetsAnimationCompat animation) {
-        return (animation.getTypeMask() & WindowInsetsCompat.Type.ime()) != 0;
-    }
-
-    private static boolean imeRunning(@NonNull List<WindowInsetsAnimationCompat> running) {
-        for (WindowInsetsAnimationCompat anim : running) {
-            if (isIme(anim)) return true;
-        }
-        return false;
-    }
-
-    private static int imeBottomPx(WindowInsetsCompat insets) {
-        if (insets == null) return 0;
-        return Math.max(0, insets.getInsets(WindowInsetsCompat.Type.ime()).bottom);
-    }
-
-    private void applyTranslation(float ty) {
-        if (webParent == null) return;
-        if (webParent.getTranslationY() == ty) return;
-        webParent.setTranslationY(ty);
-    }
-
-    private int pxToCss(int px) {
+    /** State-only notification for classes / auto-follow freeze; geometry stays native. */
+    private void notifyImeState(boolean open, int heightPx) {
+        if (bridge == null) return;
         float density = activity.getResources().getDisplayMetrics().density;
         if (density <= 0f) density = 1f;
-        return Math.max(0, Math.round(px / density));
-    }
-
-    private void notifyJs(String name, boolean open, int heightCss) {
-        if (bridge == null || bridge.getWebView() == null) return;
-        String script = String.format(
+        int heightCss = Math.max(0, Math.round(heightPx / density));
+        String data = String.format(
             Locale.US,
-            "try{window.dispatchEvent(new CustomEvent('%s',{detail:{\"open\":%s,\"height\":%d}}));}catch(e){}",
-            name,
+            "{\"open\":%s,\"height\":%d}",
             open,
             heightCss
         );
-        bridge.getWebView().evaluateJavascript(script, null);
+        bridge.triggerJSEvent("oc:ime-state", "window", data);
     }
+
 }

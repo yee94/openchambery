@@ -230,8 +230,12 @@ cooldown, so queued directories share the same failure instead of starting a
 new health-probe chain each time.
 
 On Electron, `useGlobalSessionsStore` is also the UI owner for the SQLite
-session-index startup state. The root coordinator restores summaries first and
-then starts one server-owned background job. Progress is observed through
+session-index startup state. The root coordinator restores summaries first
+(early hydrate, independent of settings) and then starts one server-owned
+background job after settings hydration supplies the directory plan. Concurrent
+hydrate callers share one in-flight GET; a transport failure leaves
+`hasHydratedSessionIndex` false so startup can retry, while a definitive
+unsupported/empty snapshot marks hydrated. Progress is observed through
 OpenChamber SSE revision tips (`openchamber:session-index-changed`) followed by
 an authoritative GET; it must not issue per-directory OpenCode requests from
 the renderer. Tip waits include a short safety timeout so a completed server

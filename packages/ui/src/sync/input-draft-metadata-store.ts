@@ -236,7 +236,14 @@ export const createInputDraftMetadataRepository = (sink: InputDraftMetadataSink)
         if (markerRaw.value !== null) {
           try {
             const marker = parseMigrationMarker(JSON.parse(markerRaw.value))
-            if (!marker || marker.claimedTransportIdentity !== snapshot.migration.claimedTransportIdentity) return { ok: false, error: { code: "corrupt" } }
+            if (!marker) return { ok: false, error: { code: "corrupt" } }
+            if (marker.claimedTransportIdentity !== snapshot.migration.claimedTransportIdentity) {
+              const encoded = markerFor(snapshot.migration.claimedTransportIdentity)
+              if (!encoded.ok) return encoded
+              if (!enabled) return { ok: true, value: snapshot }
+              const repaired = await sink.write(INPUT_DRAFT_METADATA_MIGRATION_MARKER_KEY, encoded.value)
+              if (!repaired.ok) return repaired
+            }
           } catch { return { ok: false, error: { code: "corrupt" } } }
         } else {
           const encoded = markerFor(snapshot.migration.claimedTransportIdentity)

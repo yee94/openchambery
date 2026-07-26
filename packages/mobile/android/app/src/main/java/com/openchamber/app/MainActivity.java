@@ -17,8 +17,11 @@ public class MainActivity extends BridgeActivity {
         registerPlugin(OpenChamberSharePlugin.class);
         super.onCreate(savedInstanceState);
         dispatchShare(getIntent());
-        // After Keyboard plugin installs its (empty) root animation callback,
-        // replace it so translationY can track the IME. Double-post = after load.
+        // After the Keyboard plugin installs its root animation callback, remove
+        // that callback so IME animation stays off the app's main-thread callback
+        // path. Also owns WebView-parent padding/backdrop and emits state-only
+        // IME bookends for cached-height CSS composer choreography.
+        // Double-post = after load.
         if (getBridge() != null && getBridge().getWebView() != null) {
             getBridge().getWebView().post(() ->
                 getBridge().getWebView().post(() -> {

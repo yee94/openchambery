@@ -22,7 +22,6 @@ import { useMessageQueueServerScope } from '@/sync/use-message-queue-server';
 import type { MessageQueueItem } from '@/lib/message-queue-server';
 import { isMessageQueuePendingAdmissionItem, type MessageQueueServerDisplayItem, type MessageQueueServerMutationResult, type MessageQueueServerRuntimeCapture } from '@/sync/message-queue-server-runtime';
 import type { MessageQueueEditResult } from '@/sync/message-queue-edit-bridge';
-import type { ChatInputSurfaceResources } from './chatInputSurface';
 import { useI18n } from '@/lib/i18n';
 import { useQueueScopeDispatchFlight } from '@/hooks/useQueuedMessageAutoSend';
 import { useUIStore } from '@/stores/useUIStore';

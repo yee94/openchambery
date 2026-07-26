@@ -32,6 +32,22 @@ type ComposerRestorationCommitResult = {
   previous?: { record: DraftRecord | null; views: Record<string, AttachedFile>; expectedRevision: number | 'absent' }
 }
 
+type ComposerRestorationRollbackPrevious = {
+  record: DraftRecord | null
+  views: Record<string, AttachedFile>
+  expectedRevision: number | 'absent'
+}
+
+type ComposerRestorationRollbackResult = {
+  status: 'rolled-back' | 'conflict' | 'failed' | 'skipped'
+  current: boolean
+}
+
+type RollbackStore = Pick<
+  ReturnType<typeof useInputStore.getState>,
+  'captureDraftRuntime' | 'commitDraftSnapshot' | 'deleteDraftSnapshot' | 'getDraft'
+>
+
 const cloneRecord = (record: DraftRecord | undefined): DraftRecord | null => {
   if (!record) return null
   return JSON.parse(JSON.stringify(record)) as DraftRecord
@@ -87,31 +103,24 @@ export const commitComposerRestoration = async (
   }
 }
 
-/**
- * Rolls back to a previously captured draft using CAS on the restored revision.
- * A conflict means the user continued editing — keep their newer revision.
- * Prior absence uses durable deleteDraftSnapshot so memory returns to true absence.
- * Only status=committed && current=true reports rolled-back.
- */
-export const rollbackComposerRestoration = async (input: {
+const executeRollbackCAS = async (input: {
   key: DraftKey
   restoredRevision: number
-  previous: { record: DraftRecord | null; views: Record<string, AttachedFile>; expectedRevision: number | 'absent' }
-  runtime?: InputDraftRuntimeCapture
-  input?: Pick<ReturnType<typeof useInputStore.getState>, 'captureDraftRuntime' | 'commitDraftSnapshot' | 'deleteDraftSnapshot' | 'getDraft'>
-}): Promise<{ status: 'rolled-back' | 'conflict' | 'failed' | 'skipped'; current: boolean }> => {
-  const store = input.input ?? useInputStore.getState()
-  const current = store.getDraft(input.key)
+  previous: ComposerRestorationRollbackPrevious
+  runtime: InputDraftRuntimeCapture
+  store: RollbackStore
+}): Promise<ComposerRestorationRollbackResult> => {
+  const current = input.store.getDraft(input.key)
   if (!current || current.revision !== input.restoredRevision) {
     return { status: 'conflict', current: true }
   }
   if (!input.previous.record) {
     // Absent prior draft: durable CAS delete restores true absence (not empty snapshot).
     try {
-      const result = await store.deleteDraftSnapshot({
+      const result = await input.store.deleteDraftSnapshot({
         key: input.key,
         expectedRevision: input.restoredRevision,
-        runtime: input.runtime ?? store.captureDraftRuntime(),
+        runtime: input.runtime,
       })
       if (result.status === 'conflict') return { status: 'conflict', current: true }
       if (result.status === 'committed' && result.current) return { status: 'rolled-back', current: true }
@@ -129,10 +138,10 @@ export const rollbackComposerRestoration = async (input: {
     else if (view?.dataUrl) values.set(attachment.attachmentRefID, view.dataUrl)
   }
   try {
-    const result = await store.commitDraftSnapshot({
+    const result = await input.store.commitDraftSnapshot({
       key: input.key,
       expectedRevision: input.restoredRevision,
-      runtime: input.runtime ?? store.captureDraftRuntime(),
+      runtime: input.runtime,
       snapshot: {
         text: previous.text,
         attachments: previous.attachments,
@@ -148,4 +157,44 @@ export const rollbackComposerRestoration = async (input: {
   } catch {
     return { status: 'failed', current: false }
   }
+}
+
+/**
+ * Rolls back to a previously captured draft using CAS on the restored revision.
+ * A conflict means the user continued editing, so their newer revision remains.
+ * Prior absence uses durable deleteDraftSnapshot so memory returns to true absence.
+ * Cross-runtime and stale-runtime rollback ends as a best-effort failure.
+ */
+export const rollbackComposerRestoration = async (input: {
+  key: DraftKey
+  restoredRevision: number
+  previous: ComposerRestorationRollbackPrevious
+  runtime?: InputDraftRuntimeCapture
+  input?: RollbackStore
+}): Promise<ComposerRestorationRollbackResult> => {
+  const store = input.input ?? useInputStore.getState()
+  const current = store.getDraft(input.key)
+  if (!current || current.revision !== input.restoredRevision) {
+    return { status: 'conflict', current: true }
+  }
+
+  const targetTransport = input.key.transportIdentity
+  const providedRuntime = input.runtime?.transportIdentity === targetTransport ? input.runtime : undefined
+  let capturedRuntime: InputDraftRuntimeCapture | undefined
+  try {
+    const captured = store.captureDraftRuntime()
+    if (captured.transportIdentity === targetTransport) capturedRuntime = captured
+  } catch {
+    // Best-effort rollback can end when runtime capture is unavailable.
+  }
+  const runtime = providedRuntime ?? capturedRuntime
+  if (!runtime) return { status: 'failed', current: false }
+
+  return executeRollbackCAS({
+    key: input.key,
+    restoredRevision: input.restoredRevision,
+    previous: input.previous,
+    runtime,
+    store,
+  })
 }

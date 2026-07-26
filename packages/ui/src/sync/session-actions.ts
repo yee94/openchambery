@@ -1905,6 +1905,8 @@ export type StageMessageEditHandle = {
   /**
    * CAS-rollback the draft to the pre-stage record (or true absence).
    * Conflict means the user continued editing — keep their newer revision.
+   * Deferred cross-runtime rollback (status failed + deferred) is mapped to
+   * failed so Assistant StageHandle retains protection; the intent retries later.
    */
   rollback: () => Promise<{ status: "rolled-back" | "conflict" | "failed" | "skipped" }>
 }

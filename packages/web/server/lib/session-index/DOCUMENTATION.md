@@ -5,6 +5,9 @@ directory by default. Electron injects its user-data path explicitly.
 `sessionIndexDbPath` and `OPENCHAMBER_SESSION_INDEX_DB_PATH` override that
 default; the HMR startup script uses the environment override to isolate its
 development index without changing settings or authentication storage.
+Rows are partitioned by a runtime key derived from the desktop
+`apiBaseUrl` (Electron falls back to the local sidecar URL so the key stays
+stable between server listen and window activation).
 `service.js` exclusively owns the WAL database and stores at most the
 newest 20 root-session summaries per runtime and directory. It never stores
 messages, attachments, permissions, provider data, or model metadata.

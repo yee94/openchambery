@@ -14,6 +14,7 @@ const projects: MobileProjectHomeItem[] = [{
     name: 'Main workspace',
     path: '/code/openchamber',
     kind: 'main',
+    sessionCount: 3,
     sessions: [{
       id: 'parent',
       title: 'Parent session',
@@ -34,6 +35,7 @@ const projects: MobileProjectHomeItem[] = [{
     name: 'Feature branch',
     path: '/code/openchamber-feature',
     kind: 'worktree',
+    sessionCount: 1,
     sessions: [{ id: 'feature-session', title: 'Branch work' }],
   }],
 }];

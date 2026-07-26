@@ -36,7 +36,6 @@ import { lazyWithChunkRecovery } from '@/lib/chunkLoadRecovery';
 import { ReviewFlowDialog, type ReviewFlowExecution } from '@/components/session/ReviewFlowDialog';
 import { ActiveEditorFileSuggestion, AttachedFilesList, AttachedVSCodeFileChips } from './FileAttachment';
 import { QueuedMessageChips } from './QueuedMessageChips';
-import { mergeFailedAttachments } from './chat-input-recovery';
 import { AutoReviewBanner } from './AutoReviewBanner';
 import { FileMentionAutocomplete, type FileMentionHandle } from './FileMentionAutocomplete';
 import { CommandAutocomplete, type CommandAutocompleteHandle, type CommandInfo } from './CommandAutocomplete';
@@ -137,6 +136,9 @@ import type { Part } from '@opencode-ai/sdk/v2/client';
 import { consumesImmediateCommandText, getLocalChatCommand, preservesComposerResources } from './localCommandClassifier';
 import { consumeImmediateCommandText } from './immediateCommandTextConsumption';
 import { runImmediateSessionCommand } from './immediateSessionCommandAction';
+import {
+    shouldConsumeRootAttachmentsOnSubmit,
+} from './chat-input-recovery';
 import { admitChatInputQueueMessageAndConsumeResources, admitServerQueueMessageAndConsumeResources, assistantQueueAdmissionAvailable, attachedFilesToQueueCandidates, createServerQueueAdmissionCapture, createServerQueueAdmissionIdentity, isCompleteQueueSendConfig, isQueueAdmissionRuntimeCurrent } from './queueAdmission';
 import { shouldShowPermissionAutoAcceptControl, togglePermissionAutoAccept } from './permissionAutoAccept';
 import { getSlashTokenRange } from './commandSelection';
@@ -745,6 +747,7 @@ type ComposerActionButtonsProps = {
     draftSubmitting?: boolean;
     submissionBlocked: boolean;
     queueFrozen: boolean;
+    queueFallbackAvailable: boolean;
     onPrimaryAction: () => void;
     onQueueMessage: () => void;
     onAbort: () => void;
@@ -764,6 +767,7 @@ const ComposerActionButtons = React.memo(function ComposerActionButtons(props: C
         draftSubmitting,
         submissionBlocked,
         queueFrozen,
+        queueFallbackAvailable,
         onPrimaryAction,
         onQueueMessage,
         onAbort,
@@ -775,6 +779,7 @@ const ComposerActionButtons = React.memo(function ComposerActionButtons(props: C
         draftSubmitting: Boolean(draftSubmitting),
         submissionBlocked,
         queueFrozen,
+        queueFallbackAvailable,
     });
 
     const sendButton = (
@@ -834,7 +839,9 @@ const ComposerActionButtons = React.memo(function ComposerActionButtons(props: C
                             ? 'text-primary hover:text-primary'
                             : actionAvailability.disabledClass
                     )}
-                    aria-label={t('chat.chatInput.actions.queueMessageAria')}
+                    aria-label={t(queueFrozen && queueFallbackAvailable
+                        ? 'chat.chatInput.actions.sendMessageAria'
+                        : 'chat.chatInput.actions.queueMessageAria')}
                 >
                     <Icon name="send-plane-2" className={cn(sendIconSizeClass, '-rotate-90')} />
                 </button>
@@ -865,6 +872,7 @@ const ComposerActionButtons = React.memo(function ComposerActionButtons(props: C
     && prev.draftSubmitting === next.draftSubmitting
     && prev.submissionBlocked === next.submissionBlocked
     && prev.queueFrozen === next.queueFrozen
+    && prev.queueFallbackAvailable === next.queueFallbackAvailable
     && prev.onPrimaryAction === next.onPrimaryAction
     && prev.onQueueMessage === next.onQueueMessage
     && prev.onAbort === next.onAbort
@@ -1285,17 +1293,17 @@ const ChatInputRuntime: React.FC<ChatInputProps> = ({ onOpenSettings, scrollToBo
                 if (!primaryDraftKey) return;
                 await createDraftAttachmentResourceAdapter(primaryDraftKey, () => useInputStore.getState()).addLocal(file);
             },
-            removeAttachment: (id) => {
-                if (!primaryDraftKey) return;
-                createDraftAttachmentResourceAdapter(primaryDraftKey, () => useInputStore.getState()).removeByAttachmentID(id);
+            removeAttachment: async (id) => {
+                if (!primaryDraftKey) return false;
+                return createDraftAttachmentResourceAdapter(primaryDraftKey, () => useInputStore.getState()).removeByAttachmentID(id);
             },
-            clearAttachments: () => {
-                if (!primaryDraftKey) return;
-                createDraftAttachmentResourceAdapter(primaryDraftKey, () => useInputStore.getState()).clearRootAttachments();
+            clearAttachments: async () => {
+                if (!primaryDraftKey) return false;
+                return createDraftAttachmentResourceAdapter(primaryDraftKey, () => useInputStore.getState()).clearRootAttachments();
             },
-            setAttachments: (attachments) => {
-                if (!primaryDraftKey) return;
-                createDraftAttachmentResourceAdapter(primaryDraftKey, () => useInputStore.getState()).replaceRootAttachments(attachments);
+            restoreAttachments: async (attachments) => {
+                if (!primaryDraftKey) return false;
+                return createDraftAttachmentResourceAdapter(primaryDraftKey, () => useInputStore.getState()).restoreRootAttachments(attachments);
             },
             pendingInput: pendingInputText === null ? null : { text: pendingInputText, mode: pendingInputMode },
             consumePendingInput: consumePendingInputText,
@@ -2182,14 +2190,12 @@ const ChatInputRuntime: React.FC<ChatInputProps> = ({ onOpenSettings, scrollToBo
         }))) return;
         if (submissionBlocked) return;
         if (!inputSnapshot.hasContent || !currentSessionId) return;
-        // Invariant: Assistant never dead-ends in queue. Legacy/frozen ownership
-        // cannot admit assistant deliveries — falling back keeps the conversation
-        // usable after share/busy (default follow-up is "queue").
-        if (!assistantQueueAdmissionAvailable(surface.deliveryTarget?.kind, serverQueue.mode)) {
+        // A running turn remains submit-capable while queue ownership is frozen.
+        // Steer uses the captured session/runtime path and avoids an unsafe queue admit.
+        if (queueFrozen || !assistantQueueAdmissionAvailable(surface.deliveryTarget?.kind, serverQueue.mode)) {
             void handleSubmitRef.current(sessionIsRunning ? { delivery: 'steer' } : undefined);
             return;
         }
-        if (queueFrozen) return;
         // Pin surface/runtime/scope/session before flush so runtime switch cannot
         // pair new sendConfig with the pre-switch composer surface.
         const surfaceTransportAtStart = surface.transportIdentity;
@@ -2353,7 +2359,12 @@ const ChatInputRuntime: React.FC<ChatInputProps> = ({ onOpenSettings, scrollToBo
                 getInlineDrafts: () => surfaceResources.inlineDrafts,
                 removeInlineDraft: surfaceResources.removeInlineDraft,
             }).then((result) => {
+                // partial = queue committed but composer attachment cleanup incomplete
                 if (result.status === 'stale' && assistantSyntheticParts) surfaceResources.restoreSyntheticParts(assistantSyntheticParts);
+                if (result.status === 'partial') {
+                    toast.error(t('chat.chatInput.toast.messageSendFailed'));
+                    return;
+                }
                 if (result.status === 'committed' && !isMobile) textareaRef.current?.focus();
             }).catch((error) => {
                 if (assistantSyntheticParts) surfaceResources.restoreSyntheticParts(assistantSyntheticParts);
@@ -2362,7 +2373,7 @@ const ChatInputRuntime: React.FC<ChatInputProps> = ({ onOpenSettings, scrollToBo
             return;
         }
         // Primary-only legacy queue path. Assistant is handled above.
-        const admission = admitChatInputQueueMessageAndConsumeResources({
+        const admission = await admitChatInputQueueMessageAndConsumeResources({
             bindLegacy: () => useMessageQueueStore.getState().bindLegacyQueue(legacyQueueScope(scope.sessionID), scope),
             addComposer: () => addToQueue(scope, {
                 content: serialized.text,
@@ -2377,9 +2388,7 @@ const ChatInputRuntime: React.FC<ChatInputProps> = ({ onOpenSettings, scrollToBo
                 replacePlainDocument('');
             },
             consumeAttachments: () => {
-                if (attachmentsToQueue.length > 0) {
-                    surfaceResources.clearAttachments();
-                }
+                if (attachmentsToQueue.length > 0) void surfaceResources.clearAttachments();
             },
         });
         if (!admission.ok) {
@@ -2788,30 +2797,7 @@ const ChatInputRuntime: React.FC<ChatInputProps> = ({ onOpenSettings, scrollToBo
             }
         }
 
-        // Clear queue and input
-        if (!resourcePolicy && currentSessionId && queuedMessageId) {
-            const queuedItem = currentQueueScope
-                ? getQueueForScope(useMessageQueueStore.getState(), currentQueueScope).find((message) => message.id === queuedMessageId || message.queueItemID === queuedMessageId)
-                : undefined;
-            if (currentQueueScope && queuedItem?.queueItemID && queuedItem.operationID) {
-                removeFromQueue(currentQueueScope, queuedItem.queueItemID, queuedItem.operationID);
-            }
-        } else if (!resourcePolicy && currentSessionId && hasQueuedMessages) {
-            if (currentQueueScope) clearQueue(currentQueueScope);
-        }
-        if (!queuedOnly && !resourcePolicy) {
-            replacePlainDocument('');
-            // Clear per-session draft on submit
-            // Reset message history navigation state
-            setHistoryIndex(-1);
-            if (attachedFiles.length > 0) {
-                surfaceResources.clearAttachments();
-            }
-            // Close expanded input overlay when submitting
-            setExpandedInput(false);
-        }
-
-        const restoreFailedSubmission = () => {
+        const restoreFailedSubmission = async (): Promise<boolean> => {
             // Drop the establishing prelude if claim never took over (or send aborted).
             clearDraftEstablishingPaint();
             if (currentQueueScope && queuedMessagesToSend.length > 0) {
@@ -2835,17 +2821,50 @@ const ChatInputRuntime: React.FC<ChatInputProps> = ({ onOpenSettings, scrollToBo
                 if (syntheticParts) {
                     surfaceResources.restoreSyntheticParts(syntheticParts);
                 }
-                return;
+                return true;
             }
 
             if (surfaceResources.pendingInput?.text === inputSnapshot.message) {
                 surfaceResources.consumePendingInput();
             }
             if (submissionCapture) recoverSubmission(submissionCapture);
-            surfaceResources.setAttachments(mergeFailedAttachments(inputAttachmentsSnapshot, [...surfaceResources.attachments]));
+            // Skip restore CAS when there were no root attachments to reinstate.
+            let attachmentsOk = true;
+            if (inputAttachmentsSnapshot.length > 0) {
+                attachmentsOk = await surfaceResources.restoreAttachments(inputAttachmentsSnapshot);
+            }
             if (syntheticParts) surfaceResources.restoreSyntheticParts(syntheticParts);
             if (drafts.length > 0) surfaceResources.restoreInlineDrafts(drafts);
+            return attachmentsOk;
         };
+
+        // Clear queue and input
+        if (!resourcePolicy && currentSessionId && queuedMessageId) {
+            const queuedItem = currentQueueScope
+                ? getQueueForScope(useMessageQueueStore.getState(), currentQueueScope).find((message) => message.id === queuedMessageId || message.queueItemID === queuedMessageId)
+                : undefined;
+            if (currentQueueScope && queuedItem?.queueItemID && queuedItem.operationID) {
+                removeFromQueue(currentQueueScope, queuedItem.queueItemID, queuedItem.operationID);
+            }
+        } else if (!resourcePolicy && currentSessionId && hasQueuedMessages) {
+            if (currentQueueScope) clearQueue(currentQueueScope);
+        }
+        if (!queuedOnly && !resourcePolicy) {
+            replacePlainDocument('');
+            // Clear per-session draft on submit
+            // Reset message history navigation state
+            setHistoryIndex(-1);
+            // Close expanded input overlay when submitting
+            setExpandedInput(false);
+            // Delivery uses captured attachment views; draft cleanup stays best-effort.
+            if (shouldConsumeRootAttachmentsOnSubmit({
+                queuedOnly,
+                resourcePolicy,
+                rootAttachmentCount: inputAttachmentsSnapshot.length,
+            })) {
+                void surfaceResources.clearAttachments();
+            }
+        }
 
         const consumeImmediateCommand = () => consumeImmediateCommandText({
             currentSessionId,
@@ -2961,7 +2980,7 @@ const ChatInputRuntime: React.FC<ChatInputProps> = ({ onOpenSettings, scrollToBo
                     );
                     scrollToBottom?.();
                 } catch (error) {
-                    restoreFailedSubmission();
+                    await restoreFailedSubmission();
                     toast.error(error instanceof Error ? error.message : t('chat.chatInput.toast.summaryFailed'));
                 }
                 return;
@@ -2985,7 +3004,7 @@ const ChatInputRuntime: React.FC<ChatInputProps> = ({ onOpenSettings, scrollToBo
                     );
                     scrollToBottom?.();
                 } catch (error) {
-                    restoreFailedSubmission();
+                    await restoreFailedSubmission();
                     toast.error(error instanceof Error ? error.message : t('chat.chatInput.toast.reviewFailed'));
                 }
                 return;
@@ -3013,7 +3032,7 @@ const ChatInputRuntime: React.FC<ChatInputProps> = ({ onOpenSettings, scrollToBo
                     );
                     scrollToBottom?.();
                 } catch (error) {
-                    restoreFailedSubmission();
+                    await restoreFailedSubmission();
                     toast.error(error instanceof Error ? error.message : t('chat.chatInput.toast.planFeatureFailed'));
                 }
                 return;
@@ -3046,7 +3065,7 @@ const ChatInputRuntime: React.FC<ChatInputProps> = ({ onOpenSettings, scrollToBo
                     );
                     scrollToBottom?.();
                 } catch (error) {
-                    restoreFailedSubmission();
+                    await restoreFailedSubmission();
                     toast.error(error instanceof Error ? error.message : t('chat.chatInput.toast.craftGoalFailed'));
                 }
                 return;
@@ -3070,7 +3089,7 @@ const ChatInputRuntime: React.FC<ChatInputProps> = ({ onOpenSettings, scrollToBo
                     );
                     scrollToBottom?.();
                 } catch (error) {
-                    restoreFailedSubmission();
+                    await restoreFailedSubmission();
                     toast.error(error instanceof Error ? error.message : t('chat.chatInput.toast.catchUpFailed'));
                 }
                 return;
@@ -3094,7 +3113,7 @@ const ChatInputRuntime: React.FC<ChatInputProps> = ({ onOpenSettings, scrollToBo
                     );
                     scrollToBottom?.();
                 } catch (error) {
-                    restoreFailedSubmission();
+                    await restoreFailedSubmission();
                     toast.error(error instanceof Error ? error.message : t('chat.chatInput.toast.debugFailed'));
                 }
                 return;
@@ -3118,7 +3137,7 @@ const ChatInputRuntime: React.FC<ChatInputProps> = ({ onOpenSettings, scrollToBo
                     );
                     scrollToBottom?.();
                 } catch (error) {
-                    restoreFailedSubmission();
+                    await restoreFailedSubmission();
                     toast.error(error instanceof Error ? error.message : t('chat.chatInput.toast.weighFailed'));
                 }
                 return;
@@ -3142,7 +3161,7 @@ const ChatInputRuntime: React.FC<ChatInputProps> = ({ onOpenSettings, scrollToBo
                     );
                     scrollToBottom?.();
                 } catch (error) {
-                    restoreFailedSubmission();
+                    await restoreFailedSubmission();
                     toast.error(error instanceof Error ? error.message : t('chat.chatInput.toast.exploreFailed'));
                 }
                 return;
@@ -3203,7 +3222,9 @@ const ChatInputRuntime: React.FC<ChatInputProps> = ({ onOpenSettings, scrollToBo
                 setLinkedPr(null);
             }
         }).catch((error: unknown) => {
-            restoreFailedSubmission();
+            void restoreFailedSubmission().then((ok) => {
+                if (!ok) toast.error(t('chat.chatInput.toast.messageSendFailed'));
+            });
             const rawMessage =
                 error instanceof Error
                     ? error.message
@@ -3256,12 +3277,13 @@ const ChatInputRuntime: React.FC<ChatInputProps> = ({ onOpenSettings, scrollToBo
         // while session status was still loading, which parked idle sends in the
         // queue path and left the composer uncleared when legacy queue rejected them.
         const canQueue = inputMode === 'normal' && inputSnapshot.hasContent && currentSessionId && (sessionIsRunning || autoReviewRunning);
-        const queueUsable = canQueue && assistantQueueAdmissionAvailable(surface.deliveryTarget?.kind, serverQueue.mode);
+        const queueUsable = canQueue
+            && queueModeAllowsMutations(serverQueue.mode)
+            && assistantQueueAdmissionAvailable(surface.deliveryTarget?.kind, serverQueue.mode);
         if (followUpBehavior === 'queue' && queueUsable) {
             handleQueueMessage();
         } else if ((followUpBehavior === 'steer' && canQueue) || (followUpBehavior === 'queue' && canQueue && !queueUsable)) {
-            // Assistant + legacy/frozen queue: fall back to steer into the running
-            // turn (or direct when idle) so share-busy sessions stay sendable.
+            // Queue-unavailable busy sessions steer into the captured running turn.
             void handleSubmitRef.current(canQueue ? { delivery: 'steer' } : undefined);
         } else {
             void handleSubmitRef.current();
@@ -3668,7 +3690,9 @@ const ChatInputRuntime: React.FC<ChatInputProps> = ({ onOpenSettings, scrollToBo
             // Queueing / steering only works when there's an existing busy
             // session (or an active auto-review run). `unknown` is not running.
             const canQueue = inputMode === 'normal' && hasContent && currentSessionId && (sessionIsRunning || autoReviewRunning);
-            const queueUsable = canQueue && assistantQueueAdmissionAvailable(surface.deliveryTarget?.kind, serverQueue.mode);
+            const queueUsable = canQueue
+                && queueModeAllowsMutations(serverQueue.mode)
+                && assistantQueueAdmissionAvailable(surface.deliveryTarget?.kind, serverQueue.mode);
 
             if (followUpBehavior === 'queue') {
                 if (isCtrlEnter || !canQueue) {
@@ -3676,7 +3700,7 @@ const ChatInputRuntime: React.FC<ChatInputProps> = ({ onOpenSettings, scrollToBo
                 } else if (queueUsable) {
                     handleQueueMessage();
                 } else {
-                    // Assistant without server queue: steer instead of a dead-end admit.
+                    // Queue-unavailable busy sessions steer into the captured turn.
                     handleSubmit({ delivery: 'steer' });
                 }
             } else {
@@ -5311,13 +5335,15 @@ const ChatInputRuntime: React.FC<ChatInputProps> = ({ onOpenSettings, scrollToBo
         if (isCapacitorApp() && typeof window !== 'undefined') {
             window.dispatchEvent(new CustomEvent('oc:keyboard-intent', { detail: { open: true } }));
         }
-        // flushSync so the taller layout commits in the same user-gesture stack
-        // as focus (keyboard open + height change measure as one motion).
+        // The full-state tree adds attachment/footer controls and can be costly
+        // under a large development transcript. Keep it concurrent so React can
+        // yield to focus/keyboard frames instead of blocking the focus event or
+        // its microtask checkpoint with one long synchronous render.
         // Update the ref immediately so a same-stack onFocus (after focus())
         // does not re-enter expand before the effect mirrors state.
         if (!mobileComposerExpandedRef.current) {
             mobileComposerExpandedRef.current = true;
-            flushSync(() => {
+            React.startTransition(() => {
                 setMobileComposerExpanded(true);
             });
         }
@@ -5774,12 +5800,7 @@ const ChatInputRuntime: React.FC<ChatInputProps> = ({ onOpenSettings, scrollToBo
     ));
 
     const composerFooterContent = isMobile ? (
-        // Collapsed pill: attach + optional stop only (textarea owns the middle).
-        // Expanded: full agent/model/goal chrome. Same footer host — CSS/layout
-        // swaps chrome without remounting the textarea above.
         !mobileComposerExpanded ? (
-            // display:contents (CSS) lifts these into the surface row so order is
-            // attach | textarea | stop without remounting the textarea.
             <>
                 <div
                     data-mobile-composer-collapsed-slot="attach"
@@ -5816,6 +5837,7 @@ const ChatInputRuntime: React.FC<ChatInputProps> = ({ onOpenSettings, scrollToBo
                             draftSubmitting={resolvedDraftBusy}
                             submissionBlocked={submissionBlocked}
                             queueFrozen={queueFrozen}
+                            queueFallbackAvailable={sessionIsRunning}
                             onPrimaryAction={handlePrimaryAction}
                             onQueueMessage={handleQueueMessage}
                             onAbort={handleAbort}
@@ -5824,63 +5846,63 @@ const ChatInputRuntime: React.FC<ChatInputProps> = ({ onOpenSettings, scrollToBo
                 ) : null}
             </>
         ) : (
-        // gap-x-1.5: even rhythm across agent → model → send (matches send cluster).
-        <div className="flex w-full min-w-0 items-center gap-x-1.5" data-composer-action="true">
-            <div className="composer-mobile-actions flex shrink-0 items-center gap-x-2 pl-1">
-                <ComposerAttachmentControls
-                    isVSCode={isVSCode}
-                    footerIconButtonClass={footerIconButtonClass}
-                    iconSizeClass={iconSizeClass}
-                    handlePickLocalFiles={handlePickLocalFiles}
-                    handlePickLocalImages={handlePickLocalImages}
-                    openIssuePicker={openIssuePicker}
-                    openPrPicker={openPrPicker}
-                    onOpenSettings={onOpenSettings}
-                    onOpenMobileSheet={openMobileAttachSheet}
-                />
-                {showPermissionAutoAcceptControl ? (
-                    <PermissionAutoAcceptButton
-                        sessionId={currentSessionId}
-                        draftOpen={newSessionDraftOpen}
-                        draftEnabled={newSessionDraft.permissionAutoAcceptEnabled === true}
-                        enabled={permissionAutoAcceptEnabled}
-                        saving={currentSessionId ? permissionAutoAcceptSaving : false}
+            <div className="flex w-full min-w-0 items-center gap-x-1.5" data-composer-action="true">
+                <div className="composer-mobile-actions flex shrink-0 items-center gap-x-2 pl-1">
+                    <ComposerAttachmentControls
+                        isVSCode={isVSCode}
                         footerIconButtonClass={footerIconButtonClass}
                         iconSizeClass={iconSizeClass}
-                        onSetDraftEnabled={setDraftPermissionAutoAcceptEnabled}
-                        onSetSessionEnabled={setSessionAutoAccept}
-                        onOpenSessionFirst={openNewSessionDraft}
-                        onToggleFailed={handlePermissionAutoAcceptToggleFailed}
+                        handlePickLocalFiles={handlePickLocalFiles}
+                        handlePickLocalImages={handlePickLocalImages}
+                        openIssuePicker={openIssuePicker}
+                        openPrPicker={openPrPicker}
+                        onOpenSettings={onOpenSettings}
+                        onOpenMobileSheet={openMobileAttachSheet}
                     />
-                ) : null}
-                <SessionGoalButton
-                    sessionId={currentSessionId}
-                    directory={currentSessionDirectoryForSync ?? currentDirectory}
-                    draftOpen={newSessionDraftOpen}
-                />
-                <SessionGoalObjectiveCounter length={message.length} />
+                    {showPermissionAutoAcceptControl ? (
+                        <PermissionAutoAcceptButton
+                            sessionId={currentSessionId}
+                            draftOpen={newSessionDraftOpen}
+                            draftEnabled={newSessionDraft.permissionAutoAcceptEnabled === true}
+                            enabled={permissionAutoAcceptEnabled}
+                            saving={currentSessionId ? permissionAutoAcceptSaving : false}
+                            footerIconButtonClass={footerIconButtonClass}
+                            iconSizeClass={iconSizeClass}
+                            onSetDraftEnabled={setDraftPermissionAutoAcceptEnabled}
+                            onSetSessionEnabled={setSessionAutoAccept}
+                            onOpenSessionFirst={openNewSessionDraft}
+                            onToggleFailed={handlePermissionAutoAcceptToggleFailed}
+                        />
+                    ) : null}
+                    <SessionGoalButton
+                        sessionId={currentSessionId}
+                        directory={currentSessionDirectoryForSync ?? currentDirectory}
+                        draftOpen={newSessionDraftOpen}
+                    />
+                    <SessionGoalObjectiveCounter length={message.length} />
+                </div>
+                {mobileComposerControls}
+                <div className="flex shrink-0 items-center justify-end gap-x-1.5">
+                    <ComposerActionButtons
+                        isMobile={isMobile}
+                        footerIconButtonClass={footerIconButtonClass}
+                        sendIconSizeClass={sendIconSizeClass}
+                        stopIconSizeClass={stopIconSizeClass}
+                        canSend={canSend}
+                        canAbort={canAbort}
+                        hasContent={!!hasContent}
+                        currentSessionId={currentSessionId}
+                        newSessionDraftOpen={newSessionDraftOpen}
+                        draftSubmitting={resolvedDraftBusy}
+                        submissionBlocked={submissionBlocked}
+                        queueFrozen={queueFrozen}
+                        queueFallbackAvailable={sessionIsRunning}
+                        onPrimaryAction={handlePrimaryAction}
+                        onQueueMessage={handleQueueMessage}
+                        onAbort={handleAbort}
+                    />
+                </div>
             </div>
-            {mobileComposerControls}
-            <div className="flex shrink-0 items-center justify-end gap-x-1.5">
-                <ComposerActionButtons
-                    isMobile={isMobile}
-                    footerIconButtonClass={footerIconButtonClass}
-                    sendIconSizeClass={sendIconSizeClass}
-                    stopIconSizeClass={stopIconSizeClass}
-                    canSend={canSend}
-                    canAbort={canAbort}
-                    hasContent={!!hasContent}
-                    currentSessionId={currentSessionId}
-                    newSessionDraftOpen={newSessionDraftOpen}
-                    draftSubmitting={resolvedDraftBusy}
-                    submissionBlocked={submissionBlocked}
-                    queueFrozen={queueFrozen}
-                    onPrimaryAction={handlePrimaryAction}
-                    onQueueMessage={handleQueueMessage}
-                    onAbort={handleAbort}
-                />
-            </div>
-        </div>
         )
     ) : (
         <>
@@ -5952,6 +5974,7 @@ const ChatInputRuntime: React.FC<ChatInputProps> = ({ onOpenSettings, scrollToBo
                     draftSubmitting={resolvedDraftBusy}
                     submissionBlocked={submissionBlocked}
                     queueFrozen={queueFrozen}
+                    queueFallbackAvailable={sessionIsRunning}
                     onPrimaryAction={handlePrimaryAction}
                     onQueueMessage={handleQueueMessage}
                     onAbort={handleAbort}
@@ -6396,9 +6419,8 @@ const ChatInputRuntime: React.FC<ChatInputProps> = ({ onOpenSettings, scrollToBo
                         isMobile && !mobileComposerExpanded && 'oc-mobile-composer-collapsed-content',
                     )}
                     inputHeader={composerInputHeader}
-                    // Keep attachment chips out of the collapsed pill so height stays h-11.
                     attachmentContent={isMobile && !mobileComposerExpanded ? undefined : composerAttachmentContent}
-                    highlightedContent={isMobile && !mobileComposerExpanded ? undefined : composerHighlightedContent}
+                    highlightedContent={composerHighlightedContent}
                     highlightRef={composerHighlightRef}
                     inputRef={textareaRef}
                     textLayoutClassName={cn(
@@ -6468,6 +6490,12 @@ const ChatInputRuntime: React.FC<ChatInputProps> = ({ onOpenSettings, scrollToBo
                         onDragEnd: handleDragEnd,
                         onKeyUp: updateAutocompleteOverlayPosition,
                         onClick: () => {
+                            // Run repair after the WebView has completed its
+                            // default focus action; moving the form during
+                            // pointerdown can invalidate that focus target.
+                            if (isMobile && isCapacitorApp() && typeof window !== 'undefined') {
+                                window.dispatchEvent(new CustomEvent('oc:keyboard-intent', { detail: { open: true } }));
+                            }
                             // Collapsed pill: first tap expands chrome in the same
                             // gesture; the field is already focused (or will be).
                             // Never expand from a residual focus after an action tap.

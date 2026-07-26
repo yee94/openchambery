@@ -33,6 +33,7 @@ export const resolveComposerActionAvailability = (input: {
     draftSubmitting: boolean;
     submissionBlocked: boolean;
     queueFrozen: boolean;
+    queueFallbackAvailable: boolean;
 }) => {
     const sendDisabled = !input.canSend
         || !input.hasSessionTarget
@@ -40,7 +41,7 @@ export const resolveComposerActionAvailability = (input: {
         || input.submissionBlocked;
     const queueDisabled = !input.hasSessionTarget
         || input.submissionBlocked
-        || input.queueFrozen;
+        || (input.queueFrozen && !input.queueFallbackAvailable);
     return {
         sendDisabled,
         queueDisabled,

@@ -1,6 +1,11 @@
 import { describe, expect, test } from 'bun:test';
 
-import { getMobileSessionPageSize, mergeMobileWorktreeRefreshResults } from './mobileSessionPagination';
+import {
+  getMobileSessionDefaultVisibleCount,
+  getMobileSessionPageSize,
+  getMobileSessionShowMoreIncrement,
+  mergeMobileWorktreeRefreshResults,
+} from './mobileSessionPagination';
 import { createMobileLongPressController } from '@/components/ui/mobileLongPress';
 import type { WorktreeMetadata } from '@/types/worktree';
 
@@ -60,12 +65,14 @@ describe('MobileSessionsSheet worktree refresh', () => {
 // ---------------------------------------------------------------------------
 
 describe('MobileSessionsSheet pagination', () => {
-  test('shows 20 sessions by default for projects without worktrees', () => {
-    expect(getMobileSessionPageSize(false)).toBe(20);
+  test('defaults to the same compact slice as the PC sidebar (3)', () => {
+    expect(getMobileSessionDefaultVisibleCount()).toBe(3);
+    expect(getMobileSessionPageSize(false)).toBe(3);
+    expect(getMobileSessionPageSize(true)).toBe(3);
   });
 
-  test('shows 5 sessions by default for projects with worktrees', () => {
-    expect(getMobileSessionPageSize(true)).toBe(5);
+  test('expands by the same show-more step as the PC sidebar (7)', () => {
+    expect(getMobileSessionShowMoreIncrement()).toBe(7);
   });
 });
 

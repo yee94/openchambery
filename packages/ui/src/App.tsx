@@ -250,6 +250,7 @@ function App({ apis }: AppProps) {
   const mobileKeyboardMode = useUIStore((state) => state.mobileKeyboardMode);
   const isDesktopRuntime = React.useMemo(() => isDesktopShell(), []);
   const hasCachedSessionIndex = useGlobalSessionsStore((state) => state.hasCachedSessionIndex);
+  const hasHydratedSessionIndex = useGlobalSessionsStore((state) => state.hasHydratedSessionIndex);
   const setPlanModeEnabled = useFeatureFlagsStore((state) => state.setPlanModeEnabled);
   const [bootInjectionStatus, setBootInjectionStatus] = React.useState<BootInjectionStatus>(() => {
     return getBootInjectionStatus();
@@ -363,8 +364,16 @@ function App({ apis }: AppProps) {
       return;
     }
 
-    const readyForFirstDesktopPaint = isInitialized
-      || (isDesktopRuntime && bootViewIsMain && hasCachedSessionIndex);
+    // Desktop main: prefer a restored SQLite snapshot for first paint so the
+    // sidebar never flashes empty while OpenCode is still initializing. When
+    // the cache is empty/unavailable, wait until hydrate settles (or full
+    // init) so "empty success" is not shown before the restore attempt ends.
+    const readyForFirstDesktopPaint = isDesktopRuntime && bootViewIsMain
+      ? (
+        hasCachedSessionIndex
+        || (isInitialized && hasHydratedSessionIndex)
+      )
+      : isInitialized;
     if (!canDismissInitialLoading({
       isDesktopShell: isDesktopRuntime,
       isInitialized: readyForFirstDesktopPaint,
@@ -389,7 +398,15 @@ function App({ apis }: AppProps) {
       clearTimeout(timer);
       if (removalTimer) clearTimeout(removalTimer);
     };
-  }, [embeddedBackgroundWorkEnabled, isDesktopRuntime, isInitialized, bootOutcomeKnown, bootViewIsMain, hasCachedSessionIndex]);
+  }, [
+    embeddedBackgroundWorkEnabled,
+    isDesktopRuntime,
+    isInitialized,
+    bootOutcomeKnown,
+    bootViewIsMain,
+    hasCachedSessionIndex,
+    hasHydratedSessionIndex,
+  ]);
 
   // Deterministic malformed handling: update splash text so the user
   // sees a specific error instead of a generic spinner, but do NOT

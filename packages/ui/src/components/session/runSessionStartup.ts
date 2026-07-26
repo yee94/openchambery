@@ -1,5 +1,8 @@
 import { releaseSessionStartupBarrier } from '@/lib/session-startup-barrier';
-import { startGlobalSessionIndexStartup } from '@/stores/useGlobalSessionsStore';
+import {
+  hydrateGlobalSessionIndex,
+  startGlobalSessionIndexStartup,
+} from '@/stores/useGlobalSessionsStore';
 
 type SessionStartupWorktree = { path: string };
 
@@ -20,6 +23,8 @@ export type SessionIndexStartupStart = (
   directories: Iterable<string>,
   options?: { priorityDirectories?: Iterable<string> },
 ) => Promise<{ activeSessions: unknown[]; archivedSessions: unknown[] }>;
+
+export type SessionIndexHydrate = () => Promise<void>;
 
 export const collectSessionStartupDirectories = (
   projectDirectories: Iterable<string>,
@@ -125,11 +130,25 @@ export const runSessionStartup = async (
   }
 };
 
+/**
+ * Cold-start session-index restore + refresh with local-first paint.
+ *
+ * Hydrate starts immediately (does not wait for settings) so the last SQLite
+ * snapshot can fill the sidebar before OpenCode/settings finish. Directory
+ * planning and background sync still wait for settings so the catalog is
+ * complete and the active directory is authoritative.
+ */
 export const runSessionStartupAfterSettingsHydration = async (
   settingsHydration: Promise<unknown> | null,
   getPlan: () => SessionStartupPlan,
   start: SessionIndexStartupStart = startGlobalSessionIndexStartup,
+  hydrate: SessionIndexHydrate = hydrateGlobalSessionIndex,
 ): Promise<void> => {
+  // Fire-and-forget early restore: startSessionIndexStartup reuses the same
+  // coalesced hydrate when settings finish after (or during) this GET.
+  void hydrate().catch((error) => {
+    console.warn('[SessionStartup] Early session index hydrate failed:', error);
+  });
   await settingsHydration;
   const plan = getPlan();
   await runSessionStartup(plan.directories, start, {

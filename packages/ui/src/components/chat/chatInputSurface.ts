@@ -130,9 +130,22 @@ export type ChatInputSurfaceResources = {
   busy?: boolean;
   attachments: readonly AttachedFile[];
   addAttachment: (file: File) => Promise<void>;
-  removeAttachment: (id: string) => void;
-  clearAttachments: () => void;
-  setAttachments: (attachments: readonly AttachedFile[]) => void;
+  /**
+   * Removes one attachment by ID. True when the live draft no longer holds it
+   * (memory-first remove that already cleared memory counts as consumed).
+   */
+  removeAttachment: (id: string) => Promise<boolean>;
+  /**
+   * Clears root attachments for send/queue consumption.
+   * The DraftKey adapter clears memory first so sent chips disappear immediately.
+   */
+  clearAttachments: () => Promise<boolean>;
+  /**
+   * Restores failed-send root attachments via restoreDraftRootAttachments CAS
+   * (failed first + live metadata extras, including missing-view rows).
+   * True only when restore CAS is committed+current.
+   */
+  restoreAttachments: (attachments: readonly AttachedFile[]) => Promise<boolean>;
   pendingInput: { text: string; mode: 'replace' | 'append' | 'append-inline' } | null;
   consumePendingInput: () => { text: string; mode: 'replace' | 'append' | 'append-inline' } | null;
   pendingPreset: string | null;

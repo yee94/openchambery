@@ -84,8 +84,8 @@ export function MobileChatScreen({
 
       <div
         className={cn(
-          // Keep the prompt host transparent so the ambient frosted strip
-          // (.oc-mobile-composer::before/::after) can sample chat content.
+          // Keep the prompt host transparent so the 90% footer surface can
+          // fade smoothly into the chat content above it.
           // The input CARD itself is solid again (.oc-mobile-composer-surface).
           'mobile-chat-screen__content relative h-full min-h-0 flex-1',
           '[&_[data-scrollbar=chat]>div]:pt-[calc(max(0.625rem,var(--oc-safe-area-top,0px))+var(--oc-mobile-detail-navigation-height)+1.25rem)]',

@@ -407,8 +407,8 @@ describe('message queue service', () => {
     const activeEditScope = service.getScope(second.scopeID);
     const activeEditItem = activeEditScope.items[0];
     const reservation = service.reserveForEdit({ requestID: 'reserve-active', queueItemID: second.queueItemID, expectedRevision: activeEditScope.revision, rowVersion: activeEditItem.rowVersion, owner: 'editor', ttlMs: 10_000 });
-    expect(reservation).toMatchObject({ queueItemID: second.queueItemID });
-    expect(service.reservedRemove({ requestID: 'edit-active', queueItemID: second.queueItemID, expectedRevision: activeEditScope.revision, expectedRowVersion: activeEditItem.rowVersion, token: reservation.token, generation: reservation.generation })).toMatchObject({ removedQueueItemID: second.queueItemID });
+    expect(reservation).toMatchObject({ queueItemID: second.queueItemID, revision: activeEditScope.revision });
+    expect(service.reservedRemove({ requestID: 'edit-active', queueItemID: second.queueItemID, expectedRevision: reservation.revision, expectedRowVersion: activeEditItem.rowVersion, token: reservation.token, generation: reservation.generation })).toMatchObject({ removedQueueItemID: second.queueItemID });
     expect(service.getScope(second.scopeID).items).toEqual([]);
     service.close();
   });

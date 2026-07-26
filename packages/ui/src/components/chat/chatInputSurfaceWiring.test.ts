@@ -13,7 +13,7 @@ const calls: string[] = [];
 let queuedRequest: (ChatInputDeliveryRequest & { queueItemID: string }) | null = null;
 let lastSendRequest: ChatInputDeliveryRequest | null = null;
 const resources = (owner: string) => ({
-  attachments: [{ id: `${owner}-attachment` }] as never[], addAttachment: async () => { calls.push(`${owner}:attach`); }, removeAttachment: (id: string) => calls.push(`${owner}:remove:${id}`), clearAttachments: () => calls.push(`${owner}:clear`),
+  attachments: [{ id: `${owner}-attachment` }] as never[], addAttachment: async () => { calls.push(`${owner}:attach`); }, removeAttachment: (id: string) => calls.push(`${owner}:remove:${id}`), clearAttachments: async () => { calls.push(`${owner}:clear`); return true; }, restoreAttachments: async () => { calls.push(`${owner}:restore`); return true; },
   pendingInput: { text: `${owner} draft`, mode: 'replace' as const }, consumePendingInput: () => { calls.push(`${owner}:pending`); return null; }, pendingPreset: `${owner} preset`, consumePendingPreset: () => { calls.push(`${owner}:preset`); return null; },
   consumeSyntheticParts: () => { calls.push(`${owner}:synthetic`); return null; }, restoreSyntheticParts: () => calls.push(`${owner}:restore-synthetic`), inlineDrafts: [], removeInlineDraft: (id: string) => calls.push(`${owner}:draft:${id}`), restoreInlineDrafts: () => calls.push(`${owner}:restore-drafts`), history: [`${owner} history`], captureRuntime: () => ({ transportIdentity: `runtime-${owner}`, generation: 1 }), getDraft: () => undefined, abortPrompt: { sessionID: null, clear: () => calls.push(`${owner}:clear-abort`) },
 });

@@ -1950,7 +1950,7 @@ export const dict: Record<I18nKey, string> = {
   'chat.container.returnToParent.titleNamed': '返回到：{title}',
   'chat.container.returnToParent.title': '返回父会话',
   'chat.container.returnToParent.label': '父级',
-  'chat.container.readOnlySubagentPromptBanner': '无法向子智能体会话发送提示。',
+  'chat.container.readOnlySubagentPromptBanner': '无法向子智能体会话发送消息',
   'chat.unifiedControls.title': '控制',
   'chat.unifiedControls.model.title': '模型',
   'chat.unifiedControls.model.noRecent': '没有最近使用的模型',
