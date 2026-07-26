@@ -4,6 +4,7 @@ import type { IconName } from '@/components/icon/icons';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { MobileResizableSheet } from '@/components/ui/MobileResizableSheet';
+import { ScrollableOverlay } from '@/components/ui/ScrollableOverlay';
 import { ModelLogo } from '@/components/ui/ModelLogo';
 import { ProviderLogo } from '@/components/ui/ProviderLogo';
 import { getCurrentIntlLocale, useI18n } from '@/lib/i18n';
@@ -301,53 +302,147 @@ export const MobileModelPickerPanel: React.FC<MobileModelPickerPanelProps> = ({
             resizeAriaLabel={t('mobile.sessions.sheet.resizeAria')}
             bodyClassName="px-2 pb-[max(0.5rem,var(--safe-area-inset-bottom,env(safe-area-inset-bottom,0px)))]"
         >
-            <div className="flex min-h-0 flex-1 flex-col gap-2 overflow-y-auto overscroll-contain">
-                {isVariantView && activeVariantTarget ? (
-                    <div className="flex flex-col gap-1.5">
-                    {[undefined, ...targetVariants].map((variant) => {
-                        const selected = variant === targetSelectedVariant || (!variant && !targetSelectedVariant);
-                        return (
-                            <button key={variant ?? 'default'} type="button" className={cn('flex w-full items-center justify-between gap-2 rounded-xl border px-2 py-1.5 text-left focus:outline-none focus-visible:ring-1 focus-visible:ring-primary', selected ? 'border-primary/30 bg-primary/10' : 'border-border/40')} onClick={() => onSelect(activeVariantTarget.providerID, activeVariantTarget.modelID, variant)}>
-                                <span className="typography-meta font-medium text-foreground">{formatVariantLabel(variant)}</span>
-                                {selected ? <Icon name="check" className="size-4 flex-shrink-0 text-primary" /> : null}
+            {/*
+              Match Sessions sheet: pin search outside the scroll region, and use
+              ScrollableOverlay so the list gets a bounded height + the default
+              dismiss-gesture scroll container class (`.overlay-scrollbar-container`).
+            */}
+            <div className="flex min-h-0 flex-1 flex-col gap-2">
+                {!isVariantView ? (
+                    <div
+                        className="relative z-10 shrink-0"
+                        data-mobile-sheet-no-dismiss=""
+                        data-mobile-sheet-search=""
+                    >
+                        <Icon name="search" className="pointer-events-none absolute left-2 top-1/2 size-3.5 -translate-y-1/2 text-muted-foreground" />
+                        <Input
+                            type="search"
+                            value={query}
+                            onChange={(event) => {
+                                setQuery(event.target.value);
+                                setExpandedModelKey(null);
+                            }}
+                            onPointerUp={(event) => {
+                                // Android WebView can keep the composer textarea as the native
+                                // focus owner after its sheet-opening blur. Focus in the completed
+                                // direct-touch gesture so the search field owns the IME reliably.
+                                event.currentTarget.focus({ preventScroll: true });
+                            }}
+                            placeholder={t('chat.modelControls.searchProvidersOrModels')}
+                            className="h-9 rounded-xl border-border/40 bg-[var(--surface-elevated)] pl-7 typography-meta"
+                            autoComplete="off"
+                            autoCorrect="off"
+                            spellCheck={false}
+                            enterKeyHint="search"
+                            inputMode="search"
+                        />
+                        {query ? (
+                            <button
+                                type="button"
+                                onClick={() => {
+                                    setQuery('');
+                                    setExpandedModelKey(null);
+                                }}
+                                className="absolute right-2 top-1/2 -translate-y-1/2 text-muted-foreground hover:text-foreground"
+                                aria-label={t('chat.modelControls.clearSearch')}
+                            >
+                                <Icon name="close-circle" className="size-4" />
                             </button>
-                        );
-                    })}
+                        ) : null}
                     </div>
-                ) : (
-                    <>
-                    <div className="relative">
-                        <Icon name="search" className="absolute left-2 top-1/2 size-3.5 -translate-y-1/2 text-muted-foreground" />
-                        <Input value={query} onChange={(event) => { setQuery(event.target.value); setExpandedModelKey(null); }} placeholder={t('chat.modelControls.searchProvidersOrModels')} className="h-9 rounded-xl border-border/40 bg-[var(--surface-elevated)] pl-7 typography-meta" />
-                        {query ? <button type="button" onClick={() => { setQuery(''); setExpandedModelKey(null); }} className="absolute right-2 top-1/2 -translate-y-1/2 text-muted-foreground hover:text-foreground" aria-label={t('chat.modelControls.clearSearch')}><Icon name="close-circle" className="size-4" /></button> : null}
-                    </div>
-                    {!hasResults ? <div className="px-3 py-8 text-center typography-meta text-muted-foreground">{t('chat.modelControls.noProvidersOrModelsFound')}</div> : null}
-                    {filteredFavorites.length > 0 ? (
-                        <div className="overflow-hidden rounded-xl border border-border/40 bg-[var(--surface-elevated)]">
-                            <div className="px-2 py-1.5 text-xs font-semibold uppercase tracking-wider text-muted-foreground"><Icon name="star-fill" className="mr-1.5 inline-block size-3 text-primary" />{t('chat.modelControls.favorites')}</div>
-                            <div className="flex flex-col border-t border-border/30">{filteredFavorites.map(renderModelRow)}</div>
-                        </div>
-                    ) : null}
-                    {filteredRecents.length > 0 ? (
-                        <div className="overflow-hidden rounded-xl border border-border/40 bg-[var(--surface-elevated)]">
-                            <div className="px-2 py-1.5 text-xs font-semibold uppercase tracking-wider text-muted-foreground"><Icon name="time" className="mr-1.5 inline-block size-3" />{t('chat.modelControls.recent')}</div>
-                            <div className="flex flex-col border-t border-border/30">{filteredRecents.map(renderModelRow)}</div>
-                        </div>
-                    ) : null}
-                    {filteredProviders.map(({ provider, models }) => {
-                        const expanded = expandedProviders.has(provider.id) || query.trim().length > 0;
-                        return (
-                            <div key={provider.id} className="overflow-hidden rounded-xl border border-border/40 bg-[var(--surface-elevated)]">
-                                <button type="button" onClick={() => { if (query.trim()) return; setExpandedProviders((current) => { const next = new Set(current); if (next.has(provider.id)) next.delete(provider.id); else next.add(provider.id); return next; }); }} className="flex w-full items-center justify-between gap-1.5 px-2 py-1.5 text-left" aria-expanded={expanded}>
-                                    <div className="flex items-center gap-2"><ProviderLogo providerId={provider.id} className="size-3.5" /><span className="typography-meta font-medium text-foreground">{provider.name || provider.id}</span>{provider.id === selectedProviderID ? <span className="typography-micro text-primary/80">{t('chat.modelControls.current')}</span> : null}</div>
-                                    <Icon name={expanded ? 'arrow-down-s' : 'arrow-right-s'} className="size-3 text-muted-foreground" />
-                                </button>
-                                {expanded ? <div className="flex flex-col border-t border-border/30">{models.map((model) => renderModelRow({ model, providerID: provider.id, modelID: model.id as string }))}</div> : null}
+                ) : null}
+                <ScrollableOverlay
+                    useScrollShadow
+                    disableHorizontal
+                    preventOverscroll
+                    outerClassName="min-h-0 flex-1"
+                    className="overscroll-contain"
+                >
+                    <div className="flex flex-col gap-2">
+                        {isVariantView && activeVariantTarget ? (
+                            <div className="flex flex-col gap-1.5">
+                                {[undefined, ...targetVariants].map((variant) => {
+                                    const selected = variant === targetSelectedVariant || (!variant && !targetSelectedVariant);
+                                    return (
+                                        <button
+                                            key={variant ?? 'default'}
+                                            type="button"
+                                            className={cn(
+                                                'flex w-full items-center justify-between gap-2 rounded-xl border px-2 py-1.5 text-left focus:outline-none focus-visible:ring-1 focus-visible:ring-primary',
+                                                selected ? 'border-primary/30 bg-primary/10' : 'border-border/40',
+                                            )}
+                                            onClick={() => onSelect(activeVariantTarget.providerID, activeVariantTarget.modelID, variant)}
+                                        >
+                                            <span className="typography-meta font-medium text-foreground">{formatVariantLabel(variant)}</span>
+                                            {selected ? <Icon name="check" className="size-4 flex-shrink-0 text-primary" /> : null}
+                                        </button>
+                                    );
+                                })}
                             </div>
-                        );
-                    })}
-                    </>
-                )}
+                        ) : (
+                            <>
+                                {!hasResults ? (
+                                    <div className="px-3 py-8 text-center typography-meta text-muted-foreground">
+                                        {t('chat.modelControls.noProvidersOrModelsFound')}
+                                    </div>
+                                ) : null}
+                                {filteredFavorites.length > 0 ? (
+                                    <div className="overflow-hidden rounded-xl border border-border/40 bg-[var(--surface-elevated)]">
+                                        <div className="px-2 py-1.5 text-xs font-semibold uppercase tracking-wider text-muted-foreground">
+                                            <Icon name="star-fill" className="mr-1.5 inline-block size-3 text-primary" />
+                                            {t('chat.modelControls.favorites')}
+                                        </div>
+                                        <div className="flex flex-col border-t border-border/30">{filteredFavorites.map(renderModelRow)}</div>
+                                    </div>
+                                ) : null}
+                                {filteredRecents.length > 0 ? (
+                                    <div className="overflow-hidden rounded-xl border border-border/40 bg-[var(--surface-elevated)]">
+                                        <div className="px-2 py-1.5 text-xs font-semibold uppercase tracking-wider text-muted-foreground">
+                                            <Icon name="time" className="mr-1.5 inline-block size-3" />
+                                            {t('chat.modelControls.recent')}
+                                        </div>
+                                        <div className="flex flex-col border-t border-border/30">{filteredRecents.map(renderModelRow)}</div>
+                                    </div>
+                                ) : null}
+                                {filteredProviders.map(({ provider, models }) => {
+                                    const expanded = expandedProviders.has(provider.id) || query.trim().length > 0;
+                                    return (
+                                        <div key={provider.id} className="overflow-hidden rounded-xl border border-border/40 bg-[var(--surface-elevated)]">
+                                            <button
+                                                type="button"
+                                                onClick={() => {
+                                                    if (query.trim()) return;
+                                                    setExpandedProviders((current) => {
+                                                        const next = new Set(current);
+                                                        if (next.has(provider.id)) next.delete(provider.id);
+                                                        else next.add(provider.id);
+                                                        return next;
+                                                    });
+                                                }}
+                                                className="flex w-full items-center justify-between gap-1.5 px-2 py-1.5 text-left"
+                                                aria-expanded={expanded}
+                                            >
+                                                <div className="flex items-center gap-2">
+                                                    <ProviderLogo providerId={provider.id} className="size-3.5" />
+                                                    <span className="typography-meta font-medium text-foreground">{provider.name || provider.id}</span>
+                                                    {provider.id === selectedProviderID ? (
+                                                        <span className="typography-micro text-primary/80">{t('chat.modelControls.current')}</span>
+                                                    ) : null}
+                                                </div>
+                                                <Icon name={expanded ? 'arrow-down-s' : 'arrow-right-s'} className="size-3 text-muted-foreground" />
+                                            </button>
+                                            {expanded ? (
+                                                <div className="flex flex-col border-t border-border/30">
+                                                    {models.map((model) => renderModelRow({ model, providerID: provider.id, modelID: model.id as string }))}
+                                                </div>
+                                            ) : null}
+                                        </div>
+                                    );
+                                })}
+                            </>
+                        )}
+                    </div>
+                </ScrollableOverlay>
             </div>
         </MobileResizableSheet>
     );

@@ -212,6 +212,16 @@ export const useMobileWindowMotionDismissGesture = (
         ? target?.closest(current.reservedTargetSelector)
         : null;
       if (reservedTarget && wrapper.contains(reservedTarget)) return;
+      // Form fields live outside the list scroller (pinned search chrome). Arming
+      // dismiss on them lets tiny finger jitter call preventDefault on touchmove
+      // and steals focus/keyboard on Android WebView — the field looks dead.
+      if (
+        target?.closest(
+          'input, textarea, select, [contenteditable=""], [contenteditable="true"], [data-mobile-sheet-no-dismiss]',
+        )
+      ) {
+        return;
+      }
       const touch = event.touches[0];
       const scrollContainer = findDismissScrollContainer(
         wrapper,

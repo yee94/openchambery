@@ -82,7 +82,7 @@ export function MobileRowActionsSheet({
       resizeAriaLabel={t('mobile.sessions.sheet.resizeAria')}
       fitContent
     >
-      <div className="flex h-full min-h-0 flex-col gap-1 overflow-y-auto overscroll-contain px-2 pb-[max(0.5rem,var(--safe-area-inset-bottom,env(safe-area-inset-bottom,0px)))]">
+      <div className="flex min-h-0 flex-1 flex-col gap-1 overflow-y-auto overscroll-contain px-2 pb-[max(0.5rem,var(--safe-area-inset-bottom,env(safe-area-inset-bottom,0px)))]">
         {target.kind === 'session' ? (
           <>
             {actions.onRename ? <ActionRow icon="pencil-ai" label={t('sessions.sidebar.session.menu.rename')} onClick={run(actions.onRename)} /> : null}

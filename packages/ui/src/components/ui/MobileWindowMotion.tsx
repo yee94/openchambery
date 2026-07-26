@@ -247,20 +247,30 @@ export const MobileWindowMotion: React.FC<MobileWindowMotionProps> = ({
     if (!active || isPreview || !isTop) return;
     const surface = surfaceRef.current;
     const previous = document.activeElement instanceof HTMLElement ? document.activeElement : null;
-    (surface?.querySelector<HTMLElement>(FOCUSABLE) ?? surface)?.focus();
+    // Keep initial focus on the surface shell. Auto-focusing the first FOCUSABLE
+    // hits the resize handle (`tabIndex={0}`) or a random button, and re-running
+    // this effect (stack top churn) would steal focus from the search field mid-tap.
+    surface?.focus({ preventScroll: true });
     const onKeyDown = (event: KeyboardEvent) => {
       if (event.key === 'Escape') mobileWindowStack.closeTop();
       if (event.key !== 'Tab' || !surface) return;
-      const focusable = Array.from(surface.querySelectorAll<HTMLElement>(FOCUSABLE));
+      const focusable = Array.from(surface.querySelectorAll<HTMLElement>(FOCUSABLE))
+        .filter((element) => !element.closest('[data-mobile-sheet-snap-handle]'));
       const first = focusable[0] ?? surface;
       const last = focusable.at(-1) ?? surface;
-      if (event.shiftKey && document.activeElement === first) { event.preventDefault(); last.focus(); }
-      if (!event.shiftKey && document.activeElement === last) { event.preventDefault(); first.focus(); }
+      if (event.shiftKey && document.activeElement === first) {
+        event.preventDefault();
+        last.focus({ preventScroll: true });
+      }
+      if (!event.shiftKey && document.activeElement === last) {
+        event.preventDefault();
+        first.focus({ preventScroll: true });
+      }
     };
     document.addEventListener('keydown', onKeyDown);
     return () => {
       document.removeEventListener('keydown', onKeyDown);
-      previous?.focus();
+      previous?.focus({ preventScroll: true });
     };
   }, [active, isPreview, isTop]);
 

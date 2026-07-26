@@ -1780,7 +1780,13 @@ export const ModelControls: React.FC<ModelControlsProps> = ({
                 resizeAriaLabel={t('mobile.sessions.sheet.resizeAria')}
                 bodyClassName="px-2 pb-[max(0.5rem,var(--safe-area-inset-bottom,env(safe-area-inset-bottom,0px)))]"
             >
-                <div className="flex min-h-0 flex-1 flex-col gap-2 overflow-y-auto overscroll-contain">
+                <ScrollableOverlay
+                    useScrollShadow
+                    disableHorizontal
+                    preventOverscroll
+                    outerClassName="min-h-0 flex-1"
+                    className="flex flex-col gap-2 overscroll-contain"
+                >
                     {selectableDesktopAgents.map((agent) => {
                         const isSelected = agent.name === uiAgentName;
                         const agentColor = getAgentColor(agent.name);
@@ -1821,7 +1827,7 @@ export const ModelControls: React.FC<ModelControlsProps> = ({
                             </button>
                         );
                     })}
-                </div>
+                </ScrollableOverlay>
             </MobileResizableSheet>
         );
     };

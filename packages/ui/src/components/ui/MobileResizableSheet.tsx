@@ -84,7 +84,19 @@ export const MobileResizableSheet: React.FC<MobileResizableSheetProps> = ({
             </div>
           ) : null}
         </div>
-        <div className={cn('min-h-0 flex-1 overflow-hidden', bodyClassName)}>{children}</div>
+        {/*
+          Body must be a flex column: picker children rely on `flex-1 min-h-0`
+          to own the scroll region. Without `flex`, children grow to content
+          height and get clipped by overflow-hidden — no vertical scroll.
+          `data-page-scroll-lock` keeps overflow:hidden under the global
+          mobile-pointer rewrite that turns `.overflow-hidden` into overflow-y:auto.
+        */}
+        <div
+          className={cn('flex min-h-0 flex-1 flex-col overflow-hidden', bodyClassName)}
+          data-page-scroll-lock="true"
+        >
+          {children}
+        </div>
       </div>
     </MobileWindowMotion>
   );

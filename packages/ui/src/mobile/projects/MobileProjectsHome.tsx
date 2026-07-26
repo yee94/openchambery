@@ -417,19 +417,9 @@ export function MobileProjectsHome({
                     </MobileLabeledSurfaceGroup>
                   ) : null}
 
-                  {/* Main workspace sessions keep their own label and card. */}
+                  {/* Main workspace sessions flow directly below the project header. */}
                   {mainRest.length > 0 ? (
-                    <MobileLabeledSurfaceGroup
-                      className="oc-mobile-main-workspace-group"
-                      ariaLabel={t('mobile.sessions.mainWorkspace')}
-                      label={(
-                        <WorkspaceGroupLabel
-                          icon={<Icon name="git-branch" className="size-3.5" />}
-                          label={t('mobile.sessions.mainWorkspace')}
-                          count={mainWorkspace?.sessionCount ?? mainSessions.length}
-                        />
-                      )}
-                    >
+                    <div className="oc-mobile-labeled-surface-group">
                       <SessionList
                         sessions={mainRest}
                         onSelectSession={searching ? handleSelectSearchSession : onSelectSession}
@@ -437,7 +427,7 @@ export function MobileProjectsHome({
                         onArchiveSession={onArchiveSession}
                         onOpenSessionActions={onOpenSessionActions}
                       />
-                    </MobileLabeledSurfaceGroup>
+                    </div>
                   ) : null}
 
                   {/* Every linked worktree gets an independent label + session card. */}

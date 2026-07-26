@@ -13,6 +13,7 @@ import { useUIStore } from '@/stores/useUIStore';
 import { useDeviceInfo } from '@/lib/device';
 import { cn } from '@/lib/utils';
 import { MobileResizableSheet } from '@/components/ui/MobileResizableSheet';
+import { ScrollableOverlay } from '@/components/ui/ScrollableOverlay';
 import { Icon } from "@/components/icon/Icon";
 import { AgentAvatar } from '@/components/chat/AgentAvatar';
 import { useI18n } from '@/lib/i18n';
@@ -86,7 +87,13 @@ export const AgentSelector: React.FC<AgentSelectorProps> = ({
                 resizeAriaLabel={t('mobile.sessions.sheet.resizeAria')}
                 bodyClassName="px-2 pb-[max(0.5rem,var(--safe-area-inset-bottom,env(safe-area-inset-bottom,0px)))]"
             >
-                <div className="flex min-h-0 flex-1 flex-col gap-1 overflow-y-auto overscroll-contain">
+                <ScrollableOverlay
+                    useScrollShadow
+                    disableHorizontal
+                    preventOverscroll
+                    outerClassName="min-h-0 flex-1"
+                    className="flex flex-col gap-1 overscroll-contain"
+                >
                     <button
                         type="button"
                         className={cn(
@@ -135,7 +142,7 @@ export const AgentSelector: React.FC<AgentSelectorProps> = ({
                             </button>
                         );
                     })}
-                </div>
+                </ScrollableOverlay>
             </MobileResizableSheet>
         );
     };

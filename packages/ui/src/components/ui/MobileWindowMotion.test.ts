@@ -118,13 +118,24 @@ describe('MobileWindowMotion recipe', () => {
   test('uses the standard resizable sheet for mobile model and agent selection', () => {
     expect(mobileModelPickerPanelSource).toContain("from '@/components/ui/MobileResizableSheet'");
     expect(mobileModelPickerPanelSource).toContain('id={`mobile-model-picker-sheet-${mobileSheetId}`}');
+    expect(mobileModelPickerPanelSource).toContain("from '@/components/ui/ScrollableOverlay'");
+    expect(mobileModelPickerPanelSource).toContain('outerClassName="min-h-0 flex-1"');
+    expect(mobileModelPickerPanelSource).toContain('data-mobile-sheet-no-dismiss=""');
+    expect(mobileModelPickerPanelSource).toContain('onPointerUp={(event) => {');
+    expect(mobileModelPickerPanelSource).toContain('event.currentTarget.focus({ preventScroll: true })');
+    expect(mobileResizableSheetSource).toContain("className={cn('flex min-h-0 flex-1 flex-col overflow-hidden', bodyClassName)}");
+    expect(mobileResizableSheetSource).toContain('data-page-scroll-lock="true"');
     expect(agentSelectorSource).toContain("from '@/components/ui/MobileResizableSheet'");
+    expect(agentSelectorSource).toContain("from '@/components/ui/ScrollableOverlay'");
     expect(agentSelectorSource).toContain('id={`mobile-agent-selector-sheet-${mobileSheetId}`}');
     expect(agentSelectorSource).toContain('<AgentAvatar name={agent.name} size={16} className="mt-1.5" />');
     expect(agentSelectorSource).toContain('className="mt-2 h-2 w-2 rounded-full bg-primary"');
     expect(modelControlsSource).toContain('id={`mobile-agent-picker-sheet-${mobileAgentSheetId}`}');
     expect(modelControlsSource).toContain('<MobileResizableSheet');
+    expect(modelControlsSource).toContain('<ScrollableOverlay');
     expect(mobileWindowMotionSource).toContain("className={cn('oc-mobile-floating-shell'");
+    expect(mobileWindowMotionSource).toContain("surface?.focus({ preventScroll: true })");
+    expect(mobileWindowMotionSource).not.toContain("(surface?.querySelector<HTMLElement>(FOCUSABLE) ?? surface)?.focus()");
   });
 
   test('lets a dismissible sheet track downward continuously to zero height', () => {

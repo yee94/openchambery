@@ -532,38 +532,6 @@ button.oc-mobile-group-label-trigger:focus-visible {
   line-height: 1rem !important;
 }
 
-/* The primary workspace is the compact baseline for its session list: the
-   header shares the row rhythm below it, while remaining a quiet label rather
-   than competing with the project title. Other worktree headings keep the
-   shared default measurement. */
-.oc-mobile-main-workspace-group .oc-mobile-group-label,
-.oc-mobile-main-workspace-group .oc-mobile-group-label-trigger {
-  min-height: 2.5rem;
-}
-
-.oc-mobile-main-workspace-group .oc-mobile-group-label-trigger {
-  padding-block: 0.25rem;
-}
-
-.oc-mobile-main-workspace-group
-  .oc-mobile-group-label-trigger
-  .typography-ui-label {
-  font-size: 0.75rem !important;
-  line-height: 0.9375rem !important;
-}
-
-.oc-mobile-main-workspace-group
-  .oc-mobile-group-label-trigger
-  .typography-small {
-  font-size: 0.6875rem !important;
-  line-height: 0.875rem !important;
-}
-
-.oc-mobile-main-workspace-group .oc-mobile-group-label-icon {
-  width: 1rem;
-  height: 1rem;
-}
-
 .oc-mobile-group-action {
   width: 2.25rem;
   min-width: 2.25rem !important;
