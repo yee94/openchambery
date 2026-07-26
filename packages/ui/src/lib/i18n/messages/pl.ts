@@ -1266,6 +1266,8 @@ export const dict: Record<I18nKey, string> = {
   'chat.chatInput.toast.compactFailed': 'Nie udało się skompaktować sesji',
   'chat.chatInput.toast.messageSendFailed': 'Nie udało się wysłać wiadomości. Załączniki zostały przywrócone.',
   'chat.chatInput.toast.sendStatusUnknown': 'Stan wiadomości jest nieznany. Sprawdź i spróbuj ponownie.',
+  'chat.chatInput.toast.queueOperationFailed': 'Operacja kolejki nie powiodła się.',
+  'chat.chatInput.toast.queueOperationStatusUnknown': 'Stan operacji kolejki jest nieznany. Stan serwera odświeży się automatycznie.',
   'chat.chatInput.toast.openSessionFirst': 'Najpierw otwórz sesję',
   'chat.chatInput.toast.reviewFailed': 'Nie udało się przejrzeć zmian',
   'chat.chatInput.toast.planFeatureFailed': 'Nie udało się rozpocząć planowania funkcji',

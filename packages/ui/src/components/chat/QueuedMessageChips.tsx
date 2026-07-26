@@ -19,7 +19,7 @@ import { useMutation, useMutationState } from '@tanstack/react-query';
 import { getQueueForScope, legacyQueueScope, queueScopeKey, useMessageQueueStore, type QueueDeliveryTarget, type QueueItem, type QueueScope, type QueuedMessage } from '@/stores/messageQueueStore';
 import type { DraftKey } from '@/sync/input-draft-types';
 import { useMessageQueueServerScope } from '@/sync/use-message-queue-server';
-import type { MessageQueueItem } from '@/lib/message-queue-server';
+import { MessageQueueServerError, type MessageQueueItem } from '@/lib/message-queue-server';
 import { isMessageQueuePendingAdmissionItem, type MessageQueueServerDisplayItem, type MessageQueueServerMutationResult, type MessageQueueServerRuntimeCapture } from '@/sync/message-queue-server-runtime';
 import type { MessageQueueEditResult } from '@/sync/message-queue-edit-bridge';
 import { useI18n } from '@/lib/i18n';
@@ -300,13 +300,15 @@ export const QueuedMessageChips = memo(({ onEditMessage, onSendMessage, draftKey
             if (runtime.transportIdentity !== variables.runtime.transportIdentity || runtime.generation !== variables.runtime.generation) return;
             if (result.status === 'stale') return;
             if (variables.kind === 'edit' && result.status !== 'committed') {
-                toast.error(t('chat.chatInput.toast.messageSendFailed'));
+                toast.error(t('chat.chatInput.toast.queueOperationFailed'));
             }
         },
-        onError: (_error, variables) => {
+        onError: (error, variables) => {
             const runtime = serverQueue.actions.captureRuntime();
             if (runtime.transportIdentity !== variables.runtime.transportIdentity || runtime.generation !== variables.runtime.generation) return;
-            toast.error(t('chat.chatInput.toast.messageSendFailed'));
+            toast.error(t(error instanceof MessageQueueServerError && error.code === 'unavailable'
+                ? 'chat.chatInput.toast.queueOperationStatusUnknown'
+                : 'chat.chatInput.toast.queueOperationFailed'));
         },
     });
     const pendingServerMutationVariables = useMutationState<unknown>({

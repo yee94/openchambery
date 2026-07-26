@@ -2089,6 +2089,8 @@ export const dict: Record<I18nKey, string> = {
   'chat.chatInput.toast.sendAttachmentsFailed': '傳送附件失敗。請嘗試更少檔案或更小圖片。',
   'chat.chatInput.toast.messageSendFailed': '訊息傳送失敗，附件已恢復。',
   'chat.chatInput.toast.sendStatusUnknown': '訊息傳送狀態未知，請檢查後重試。',
+  'chat.chatInput.toast.queueOperationFailed': '佇列操作失敗。',
+  'chat.chatInput.toast.queueOperationStatusUnknown': '佇列操作狀態未知，伺服器狀態將自動重新整理。',
   'chat.chatInput.toast.clipboardAttachFailed': '從剪貼簿附加圖片失敗',
   'chat.chatInput.toast.addedFileMentions': '已加入 {count} 個檔案提及',
   'chat.chatInput.toast.attachFileFailed': '附加檔案失敗',

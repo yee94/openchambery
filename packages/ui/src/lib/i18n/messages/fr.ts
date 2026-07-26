@@ -1870,6 +1870,8 @@ export const dict = {
   'chat.chatInput.toast.sendAttachmentsFailed': 'Échec de l\'envoi des pièces jointes. Essayez moins de fichiers ou des images plus petites.',
   'chat.chatInput.toast.messageSendFailed': 'Le message n\'a pas pu être envoyé. Pièces jointes restaurées.',
   'chat.chatInput.toast.sendStatusUnknown': 'État du message inconnu. Veuillez vérifier et réessayer.',
+  'chat.chatInput.toast.queueOperationFailed': 'L’opération sur la file d’attente a échoué.',
+  'chat.chatInput.toast.queueOperationStatusUnknown': 'L’état de l’opération sur la file d’attente est inconnu. L’état du serveur sera actualisé automatiquement.',
   'chat.chatInput.toast.clipboardAttachFailed': 'Échec de la pièce jointe de l\'image du presse-papiers',
   'chat.chatInput.toast.addedFileMentions': 'Ajout des mentions du fichier {count}',
   'chat.chatInput.toast.attachFileFailed': 'Impossible de joindre le fichier',

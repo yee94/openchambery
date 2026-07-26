@@ -2119,6 +2119,8 @@ export const dict: Record<I18nKey, string> = {
   'chat.chatInput.toast.sendAttachmentsFailed': '첨부 파일 전송 실패. 파일 수나 이미지 크기를 줄여 보세요.',
   'chat.chatInput.toast.messageSendFailed': '메시지 전송에 실패했습니다. 첨부 파일을 복원했습니다.',
   'chat.chatInput.toast.sendStatusUnknown': '메시지 상태를 알 수 없습니다. 확인 후 다시 시도하세요.',
+  'chat.chatInput.toast.queueOperationFailed': '대기열 작업에 실패했습니다.',
+  'chat.chatInput.toast.queueOperationStatusUnknown': '대기열 작업 상태를 알 수 없습니다. 서버 상태가 자동으로 새로 고쳐집니다.',
   'chat.chatInput.toast.clipboardAttachFailed': '클립보드 이미지 첨부 실패',
   'chat.chatInput.toast.addedFileMentions': '파일 멘션 {count}개 추가됨',
   'chat.chatInput.toast.attachFileFailed': '첨부 파일 실패',

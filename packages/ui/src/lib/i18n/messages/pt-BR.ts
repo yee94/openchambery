@@ -2085,6 +2085,8 @@ export const dict: Record<I18nKey, string> = {
   "chat.chatInput.toast.sendAttachmentsFailed": "Não foi possível enviar os anexos. Tente com menos arquivos ou imagens menores.",
   "chat.chatInput.toast.messageSendFailed": "A mensagem não pôde ser enviada. Os anexos foram restaurados.",
   "chat.chatInput.toast.sendStatusUnknown": "Status da mensagem desconhecido. Verifique e tente novamente.",
+  "chat.chatInput.toast.queueOperationFailed": "Falha na operação da fila.",
+  "chat.chatInput.toast.queueOperationStatusUnknown": "O status da operação da fila é desconhecido. O estado do servidor será atualizado automaticamente.",
   "chat.chatInput.toast.clipboardAttachFailed": "Não foi possível anexar a imagem da área de transferência",
   "chat.chatInput.toast.addedFileMentions": "Foram adicionadas {count} menção(es) de arquivo",
   "chat.chatInput.toast.attachFileFailed": "Não foi possível anexar o arquivo",

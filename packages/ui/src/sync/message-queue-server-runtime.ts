@@ -53,6 +53,7 @@ const defaults: Dependencies = {
   admissionReconcileTimeoutMs: 20_000,
 };
 const isConflict = (error: unknown) => error instanceof MessageQueueServerError && (error.code === 'revision_conflict' || error.code === 'row_version_conflict');
+const isUnavailable = (error: unknown) => error instanceof MessageQueueServerError && error.code === 'unavailable';
 const MAX_CLIENT_MUTATION_CONFLICT_ATTEMPTS = 8;
 const mergeVisibleQueueOrder = (queueItemIDs: readonly string[], current: MessageQueueScope | undefined): string[] => {
   if (!current) return [...queueItemIDs];
@@ -267,7 +268,15 @@ export const createMessageQueueServerRuntime = (dependencies: Partial<Dependenci
     const capture = synchronizeTransport(); let expected = revision;
     for (let attempt = 0; attempt < MAX_CLIENT_MUTATION_CONFLICT_ATTEMPTS; attempt++) {
       const descriptor = state.scopes.get(scopeID); const current = descriptor ? readMessageQueueScope(deps.client, scopeID, descriptor.revision, capture.transportIdentity) : undefined;
-      try { await action(expected, current); }
+      try {
+        try { await action(expected, current); }
+        catch (error) {
+          // Every server mutation is receipt-backed. Replaying the exact request
+          // confirms a lost response and preserves single execution.
+          if (!isUnavailable(error) || !isCaptureCurrent(capture)) throw error;
+          await action(expected, current);
+        }
+      }
       catch (error) {
         if (isConflict(error) && attempt + 1 < MAX_CLIENT_MUTATION_CONFLICT_ATTEMPTS) {
           const reloaded = await reloadScope(scopeID, capture, error); if (!reloaded) return { status: 'stale' };
@@ -285,7 +294,13 @@ export const createMessageQueueServerRuntime = (dependencies: Partial<Dependenci
           const latest = state.scopes.get(scopeID);
           return { status: 'committed', scope: latest ? readMessageQueueScope(deps.client, scopeID, latest.revision, capture.transportIdentity) : scope };
         } catch (error) {
-          if (!isConflict(error) || reconcileAttempt) throw error;
+          if (isConflict(error) && !reconcileAttempt) continue;
+          if (!isCaptureCurrent(capture)) return { status: 'stale' };
+          // The mutation acknowledgement is durable. Keep that success final;
+          // the observer will converge the retained authoritative snapshot.
+          publish({ error });
+          void invalidateMessageQueueScope(deps.client, scopeID, capture.transportIdentity).catch(() => {});
+          return { status: 'committed' };
         }
       }
     }

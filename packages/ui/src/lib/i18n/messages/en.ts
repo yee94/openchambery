@@ -2120,6 +2120,8 @@ export const dict = {
   'chat.chatInput.toast.sendAttachmentsFailed': 'Failed to send attachments. Try fewer files or smaller images.',
   'chat.chatInput.toast.messageSendFailed': 'Message failed to send. Attachments restored.',
   'chat.chatInput.toast.sendStatusUnknown': 'Message status unknown. Please check and try again.',
+  'chat.chatInput.toast.queueOperationFailed': 'Queue operation failed.',
+  'chat.chatInput.toast.queueOperationStatusUnknown': 'Queue operation status is unknown. Server state will refresh automatically.',
   'chat.chatInput.toast.clipboardAttachFailed': 'Failed to attach image from clipboard',
   'chat.chatInput.toast.addedFileMentions': 'Added {count} file mention(s)',
   'chat.chatInput.toast.attachFileFailed': 'Failed to attach file',

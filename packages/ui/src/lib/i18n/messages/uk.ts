@@ -2085,6 +2085,8 @@ export const dict: Record<I18nKey, string> = {
   "chat.chatInput.toast.sendAttachmentsFailed": "Не вдалося надіслати вкладення. Спробуйте зменшити кількість файлів або зображень.",
   "chat.chatInput.toast.messageSendFailed": "Не вдалося надіслати повідомлення. Вкладення відновлено.",
   "chat.chatInput.toast.sendStatusUnknown": "Стан повідомлення невідомий. Перевірте та повторіть спробу.",
+  "chat.chatInput.toast.queueOperationFailed": "Не вдалося виконати операцію з чергою.",
+  "chat.chatInput.toast.queueOperationStatusUnknown": "Стан операції з чергою невідомий. Стан сервера оновиться автоматично.",
   "chat.chatInput.toast.clipboardAttachFailed": "Не вдалося вкласти зображення з буфера обміну",
   "chat.chatInput.toast.addedFileMentions": "Додано згадки файлів {count}",
   "chat.chatInput.toast.attachFileFailed": "Не вдалося прикріпити файл",

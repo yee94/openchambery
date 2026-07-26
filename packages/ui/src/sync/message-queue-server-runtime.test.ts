@@ -110,6 +110,92 @@ test('does not repeat a committed mutation when the worker advances the scope be
   expect(mutationCalls).toBe(1);
 });
 
+test('replays the exact receipt-backed manual send after an unavailable response', async () => {
+  const cache = new Map<string, unknown>();
+  const client = { setQueryData: (key: readonly unknown[], value: unknown) => cache.set(JSON.stringify(key), value), getQueryData: <T>(key: readonly unknown[]) => cache.get(JSON.stringify(key)) as T | undefined, removeQueries: () => {}, invalidateQueries: async () => {} };
+  let revision = 1;
+  const attempts: Array<{ queueItemID: string; requestID: string; expectedRevision: number; expectedRowVersion: number }> = [];
+  const runtime = createMessageQueueServerRuntime({
+    client: client as never,
+    capture: () => ({ transportIdentity: 'device-a', generation: 1 }),
+    current: () => true,
+    status: async () => ({ capability: true, authority: 'active' }),
+    snapshot: async () => ({ revision, scopes: [{ ...descriptor, revision }], worktreeOrders: [] }),
+    scope: async () => ({ ...descriptor, revision, items: [{ ...item, rowVersion: revision, manualDispatchRequested: revision > 1 }] }),
+    manualSend: async (queueItemID, input) => {
+      attempts.push({ queueItemID, requestID: input.requestID, expectedRevision: input.expectedRevision, expectedRowVersion: input.expectedRowVersion });
+      if (attempts.length === 1) {
+        revision = 2;
+        throw new MessageQueueServerError(0, 'unavailable');
+      }
+      return { revision: 2 };
+    },
+  });
+  await runtime.refresh();
+
+  const result = await runtime.manualSend({ requestID: 'lost-response', scopeID: descriptor.scopeID, revision: 1, item });
+
+  expect(attempts).toEqual([
+    { queueItemID: item.queueItemID, requestID: 'lost-response', expectedRevision: 1, expectedRowVersion: 1 },
+    { queueItemID: item.queueItemID, requestID: 'lost-response', expectedRevision: 1, expectedRowVersion: 1 },
+  ]);
+  expect(result.status).toBe('committed');
+  expect(result.scope?.revision).toBe(2);
+});
+
+test('keeps a durable manual-send acknowledgement committed when scope reconciliation fails', async () => {
+  const cache = new Map<string, unknown>();
+  let invalidations = 0, committed = false;
+  const client = { setQueryData: (key: readonly unknown[], value: unknown) => cache.set(JSON.stringify(key), value), getQueryData: <T>(key: readonly unknown[]) => cache.get(JSON.stringify(key)) as T | undefined, removeQueries: () => {}, invalidateQueries: async () => { invalidations++; } };
+  const runtime = createMessageQueueServerRuntime({
+    client: client as never,
+    capture: () => ({ transportIdentity: 'device-a', generation: 1 }),
+    current: () => true,
+    status: async () => ({ capability: true, authority: 'active' }),
+    snapshot: async () => {
+      if (committed) throw new MessageQueueServerError(0, 'unavailable');
+      return { revision: 1, scopes: [descriptor], worktreeOrders: [] };
+    },
+    scope: async () => ({ ...descriptor, items: [item] }),
+    manualSend: async () => { committed = true; return { revision: 2 }; },
+  });
+  await runtime.refresh();
+
+  const result = await runtime.manualSend({ requestID: 'committed-before-refresh', scopeID: descriptor.scopeID, revision: 1, item });
+
+  expect(result).toEqual({ status: 'committed' });
+  expect(invalidations).toBe(1);
+  expect(runtime.getScope({ transportIdentity: 'device-a', directory: '/repo', sessionID: 'session-a' })?.items).toEqual([item]);
+  expect(runtime.getState().error).toBeInstanceOf(MessageQueueServerError);
+  expect((runtime.getState().error as MessageQueueServerError).code).toBe('unavailable');
+});
+
+test('reloads authoritative scope before surfacing an exhausted unavailable replay', async () => {
+  const cache = new Map<string, unknown>();
+  const client = { setQueryData: (key: readonly unknown[], value: unknown) => cache.set(JSON.stringify(key), value), getQueryData: <T>(key: readonly unknown[]) => cache.get(JSON.stringify(key)) as T | undefined, removeQueries: () => {}, invalidateQueries: async () => {} };
+  let revision = 1, attempts = 0;
+  const runtime = createMessageQueueServerRuntime({
+    client: client as never,
+    capture: () => ({ transportIdentity: 'device-a', generation: 1 }),
+    current: () => true,
+    status: async () => ({ capability: true, authority: 'active' }),
+    snapshot: async () => ({ revision, scopes: [{ ...descriptor, revision }], worktreeOrders: [] }),
+    scope: async () => ({ ...descriptor, revision, items: [{ ...item, rowVersion: revision, manualDispatchRequested: revision > 1 }] }),
+    manualSend: async () => {
+      attempts++;
+      revision = 2;
+      throw new MessageQueueServerError(0, 'unavailable');
+    },
+  });
+  await runtime.refresh();
+
+  await expect(runtime.manualSend({ requestID: 'unknown-response', scopeID: descriptor.scopeID, revision: 1, item })).rejects.toThrow(MessageQueueServerError);
+
+  expect(attempts).toBe(2);
+  expect(runtime.getState().scopes.get(descriptor.scopeID)?.revision).toBe(2);
+  expect(runtime.getScope({ transportIdentity: 'device-a', directory: '/repo', sessionID: 'session-a' })?.items[0]?.manualDispatchRequested).toBe(true);
+});
+
 test('manual send reconciles the latest snapshot so a worker bump cannot empty the chip list', async () => {
   const cache = new Map<string, unknown>();
   const client = { setQueryData: (key: readonly unknown[], value: unknown) => cache.set(JSON.stringify(key), value), getQueryData: <T>(key: readonly unknown[]) => cache.get(JSON.stringify(key)) as T | undefined, removeQueries: () => {}, invalidateQueries: async () => {} };

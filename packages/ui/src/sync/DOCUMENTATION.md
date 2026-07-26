@@ -559,6 +559,8 @@ message materialization preserves the idle path.
   queue state. Legacy queue rows remain visible in their legacy scope until a
   manual dispatch path performs a safe bulk bind into the active bound scope.
 
+Receipt-backed queue mutations replay the exact request once after an unavailable transport response. A failed post-commit scope read preserves the committed result and retained authoritative snapshot while the observer converges a later revision. Queue mutation errors use queue-specific copy; an exhausted unavailable replay reports unknown status.
+
 ## Session action rules
 
 Session actions live in `session-actions.ts` and are the canonical place for SDK-calling session mutations that affect global session lists.
