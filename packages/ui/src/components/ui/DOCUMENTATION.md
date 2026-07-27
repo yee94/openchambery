@@ -107,10 +107,20 @@ Canonical look is the bordered shared `Input` style, not a flat bottom divider.
 
 Reuse the shared primitives above. Do not add one-off popup search components or alternate search visuals for the same interaction.
 
+### Search Ranking
+
+Searchable pickers that filter a long candidate list must rank by relevance, not input order or alphabetical order alone.
+
+- Use shared `scoreByFuzzyQuery` / `rankBranchesForQuery` from `lib/search/fuzzySearch` and `lib/worktrees/branchSearch`.
+- Preferred order: exact match → prefix → boundary substring (`/`, `-`, `_`, …) → mid-string substring → fuzzy.
+- Do not re-sort matched results with bare `localeCompare` after filtering; that buries exact hits such as `origin/master` under `backup/...-master-...`.
+- Secondary keys (local before remote, built-in before custom, project scope) may break score ties only.
+
 ### Review Checklist
 
 - Popup stays inside the viewport with the shared collision defaults.
 - Search chrome matches bordered `Input` / `CommandInput`, including focus ring.
 - No local CSS undoes shared search borders, icons, or padding.
 - Long lists scroll inside the popup instead of overflowing the window.
+- Matched results are relevance-ranked; exact / prefix hits stay above weak substring or fuzzy noise.
 - Nearby searchable pickers (project, branch, model, agent, command palette) remain visually consistent.

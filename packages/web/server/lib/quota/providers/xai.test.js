@@ -116,6 +116,33 @@ describe('buildXaiUsageWindows', () => {
     expect(windows.weekly.windowSeconds).toBe(7 * 86400);
     expect(windows.weekly.resetAt).toBe(Date.parse(end));
     expect(windows.weekly.valueLabel).toBeUndefined();
+    // Extra Credits shown as a separate window when prepaid > 0
+    expect(windows.credits_balance.valueLabel).toBe('$15.00 prepaid');
+  });
+
+  it('treats omitted creditUsagePercent as 0% for unified weekly SuperGrok', () => {
+    const start = '2026-07-27T07:29:28.000Z';
+    const end = '2026-08-03T07:29:28.000Z';
+    const windows = buildXaiUsageWindows({
+      config: {
+        currentPeriod: {
+          type: 'USAGE_PERIOD_TYPE_WEEKLY',
+          start,
+          end
+        },
+        isUnifiedBillingUser: true,
+        prepaidBalance: { val: 0 },
+        // monthly fields must NOT steal the primary window
+        monthlyLimit: { val: 150000 },
+        used: { val: 48214 }
+      }
+    });
+
+    expect(windows.weekly.usedPercent).toBe(0);
+    expect(windows.weekly.remainingPercent).toBe(100);
+    expect(windows.weekly.resetAt).toBe(Date.parse(end));
+    expect(windows.monthly).toBeUndefined();
+    expect(windows.credits_balance).toBeUndefined();
   });
 
   it('computes usedPercent from legacy monthlyLimit and used cents', () => {
@@ -137,8 +164,8 @@ describe('buildXaiUsageWindows', () => {
       prepaidBalance: { val: '1500' }
     });
 
-    expect(windows.credits.usedPercent).toBeNull();
-    expect(windows.credits.valueLabel).toBe('$15.00 prepaid');
+    expect(windows.credits_balance.usedPercent).toBeNull();
+    expect(windows.credits_balance.valueLabel).toBe('$15.00 prepaid');
   });
 });
 
@@ -322,5 +349,106 @@ describe('fetchQuota', () => {
     expect(result.error).toMatch(/Grok Build CLI not found/i);
     expect(result.error).toMatch(/grok login/i);
     expect(fetchImpl).toHaveBeenCalledTimes(1);
+  });
+
+  it('maps sparse unified weekly credits without falling back to monthly billing', async () => {
+    const authPath = makeAuthFile({
+      session: {
+        key: 'valid-token',
+        user_id: 'uid-unified',
+        expires_at: '2099-01-01T00:00:00.000Z'
+      }
+    });
+    process.env.OPENCHAMBER_GROK_CLI_PROXY_ORIGIN = 'https://proxy.test';
+
+    const requestedUrls = [];
+    const fetchImpl = vi.fn(async (url) => {
+      requestedUrls.push(String(url));
+      if (String(url).includes('format=credits')) {
+        return {
+          ok: true,
+          status: 200,
+          json: async () => ({
+            config: {
+              currentPeriod: {
+                type: 'USAGE_PERIOD_TYPE_WEEKLY',
+                start: '2026-07-27T07:29:28.000Z',
+                end: '2026-08-03T07:29:28.000Z'
+              },
+              isUnifiedBillingUser: true,
+              prepaidBalance: { val: 0 }
+            }
+          })
+        };
+      }
+      return {
+        ok: true,
+        status: 200,
+        json: async () => ({
+          config: {
+            monthlyLimit: { val: 150000 },
+            used: { val: 48214 },
+            billingPeriodStart: '2026-07-01T00:00:00.000Z',
+            billingPeriodEnd: '2026-08-01T00:00:00.000Z'
+          }
+        })
+      };
+    });
+
+    const result = await fetchQuota({ authPath, fetchImpl });
+
+    expect(result.ok).toBe(true);
+    expect(result.usage.windows.weekly.usedPercent).toBe(0);
+    expect(result.usage.windows.weekly.resetAt).toBe(
+      Date.parse('2026-08-03T07:29:28.000Z')
+    );
+    expect(result.usage.windows.monthly).toBeUndefined();
+    expect(requestedUrls).toEqual(['https://proxy.test/v1/billing?format=credits']);
+  });
+
+  it('falls back to default /v1/billing only when credits has no usable windows', async () => {
+    const authPath = makeAuthFile({
+      session: {
+        key: 'valid-token',
+        user_id: 'uid-legacy',
+        expires_at: '2099-01-01T00:00:00.000Z'
+      }
+    });
+    process.env.OPENCHAMBER_GROK_CLI_PROXY_ORIGIN = 'https://proxy.test';
+
+    const requestedUrls = [];
+    const fetchImpl = vi.fn(async (url) => {
+      requestedUrls.push(String(url));
+      if (String(url).includes('format=credits')) {
+        return {
+          ok: true,
+          status: 200,
+          json: async () => ({ config: { note: 'empty' } })
+        };
+      }
+      return {
+        ok: true,
+        status: 200,
+        json: async () => ({
+          config: {
+            monthlyLimit: { val: 10000 },
+            used: { val: 2500 },
+            billingPeriodStart: '2026-07-01T00:00:00.000Z',
+            billingPeriodEnd: '2026-08-01T00:00:00.000Z'
+          }
+        })
+      };
+    });
+
+    const result = await fetchQuota({ authPath, fetchImpl });
+
+    expect(result.ok).toBe(true);
+    const window = Object.values(result.usage.windows)[0];
+    expect(window.usedPercent).toBe(25);
+    expect(window.remainingPercent).toBe(75);
+    expect(requestedUrls).toEqual([
+      'https://proxy.test/v1/billing?format=credits',
+      'https://proxy.test/v1/billing'
+    ]);
   });
 });

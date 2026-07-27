@@ -1,5 +1,6 @@
 import React from 'react';
-import { cn, fuzzyMatch } from '@/lib/utils';
+import { scoreByFuzzyQuery } from '@/lib/search/fuzzySearch';
+import { cn } from '@/lib/utils';
 import { useInstalledSkillsQuery } from '@/queries/installedSkillsQueries';
 import { useUIStore } from '@/stores/useUIStore';
 import { ScrollableOverlay } from '@/components/ui/ScrollableOverlay';
@@ -44,19 +45,30 @@ export const SkillAutocomplete = React.forwardRef<SkillAutocompleteHandle, Skill
 
   React.useEffect(() => {
     const normalizedQuery = searchQuery.trim();
-    const matches = normalizedQuery.length
-      ? skills.filter((skill) => fuzzyMatch(skill.name, normalizedQuery)
-        || Boolean(skill.description && fuzzyMatch(skill.description, normalizedQuery)))
-      : skills;
+    if (!normalizedQuery.length) {
+      const sorted = [...skills].sort((a, b) => {
+        if (a.scope === 'project' && b.scope !== 'project') return -1;
+        if (a.scope !== 'project' && b.scope === 'project') return 1;
+        return a.name.localeCompare(b.name);
+      });
+      setFilteredSkills(sorted);
+      setSelectedIndex(0);
+      return;
+    }
 
-    const sorted = [...matches].sort((a, b) => {
-      // Sort by project scope first, then name
-      if (a.scope === 'project' && b.scope !== 'project') return -1;
-      if (a.scope !== 'project' && b.scope === 'project') return 1;
-      return a.name.localeCompare(b.name);
+    const ranked = scoreByFuzzyQuery(
+      skills,
+      normalizedQuery,
+      (skill) => [skill.name, skill.description ?? ''],
+    );
+    ranked.sort((a, b) => {
+      if (a.score !== b.score) return a.score - b.score;
+      if (a.item.scope === 'project' && b.item.scope !== 'project') return -1;
+      if (a.item.scope !== 'project' && b.item.scope === 'project') return 1;
+      return a.item.name.localeCompare(b.item.name);
     });
 
-    setFilteredSkills(sorted);
+    setFilteredSkills(ranked.map((entry) => entry.item));
     setSelectedIndex(0);
   }, [skills, searchQuery]);
 

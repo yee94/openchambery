@@ -1,5 +1,6 @@
 import React from 'react';
-import { cn, fuzzyMatch } from '@/lib/utils';
+import { scoreByFuzzyQuery } from '@/lib/search/fuzzySearch';
+import { cn } from '@/lib/utils';
 import { useSessionUIStore } from '@/sync/session-ui-store';
 import { useSessionMessages } from '@/sync/sync-context';
 import { useCommandsQuery } from '@/queries/commandQueries';
@@ -50,17 +51,32 @@ const NEUTRAL_BADGE_CLASS = cn(
   "bg-[var(--surface-muted)] text-muted-foreground border-[var(--interactive-border)]/60"
 );
 
-const sortCommands = (searchQuery: string) => (a: CommandInfo, b: CommandInfo) => {
-  if (a.isBuiltIn !== b.isBuiltIn) {
-    return a.isBuiltIn ? -1 : 1;
+const rankCommandsForQuery = (commands: CommandInfo[], searchQuery: string): CommandInfo[] => {
+  const normalizedQuery = searchQuery.trim();
+  if (!normalizedQuery) {
+    return [...commands].sort((a, b) => {
+      if (a.isBuiltIn !== b.isBuiltIn) {
+        return a.isBuiltIn ? -1 : 1;
+      }
+      return a.name.localeCompare(b.name);
+    });
   }
 
-  const normalizedQuery = searchQuery.toLowerCase();
-  const aStartsWith = a.name.toLowerCase().startsWith(normalizedQuery);
-  const bStartsWith = b.name.toLowerCase().startsWith(normalizedQuery);
-  if (aStartsWith && !bStartsWith) return -1;
-  if (!aStartsWith && bStartsWith) return 1;
-  return a.name.localeCompare(b.name);
+  const ranked = scoreByFuzzyQuery(
+    commands,
+    normalizedQuery,
+    (cmd) => [cmd.name, cmd.description ?? ''],
+  );
+  ranked.sort((a, b) => {
+    if (a.score !== b.score) {
+      return a.score - b.score;
+    }
+    if (a.item.isBuiltIn !== b.item.isBuiltIn) {
+      return a.item.isBuiltIn ? -1 : 1;
+    }
+    return a.item.name.localeCompare(b.item.name);
+  });
+  return ranked.map((entry) => entry.item);
 };
 
 /**
@@ -265,17 +281,10 @@ export const CommandAutocomplete = React.forwardRef<CommandAutocompleteHandle, C
         const allCommands = [...builtInCommands, ...customCommands, ...skillCommands];
 
         const allowInitCommand = !hasMessagesInCurrentSession;
-        const filtered = (searchQuery
-          ? allCommands.filter(cmd =>
-              fuzzyMatch(cmd.name, searchQuery) ||
-              (cmd.description && fuzzyMatch(cmd.description, searchQuery))
-            )
-          : allCommands).filter(cmd => (allowInitCommand || cmd.name !== 'init') && (commandPolicy?.(cmd) ?? true));
-
-        filtered.sort(sortCommands(searchQuery));
-
-        filtered.sort(sortCommands(searchQuery));
-        setCommands(filtered);
+        const eligible = allCommands.filter(
+          (cmd) => (allowInitCommand || cmd.name !== 'init') && (commandPolicy?.(cmd) ?? true),
+        );
+        setCommands(rankCommandsForQuery(eligible, searchQuery));
       } catch {
 
         const allowInitCommand = !hasMessagesInCurrentSession;
@@ -338,14 +347,10 @@ export const CommandAutocomplete = React.forwardRef<CommandAutocompleteHandle, C
           ),
         ];
 
-        const filtered = (searchQuery
-          ? builtInCommands.filter(cmd =>
-              fuzzyMatch(cmd.name, searchQuery) ||
-              (cmd.description && fuzzyMatch(cmd.description, searchQuery))
-            )
-          : builtInCommands).filter(cmd => (allowInitCommand || cmd.name !== 'init') && (commandPolicy?.(cmd) ?? true));
-
-        setCommands(filtered);
+        const eligible = builtInCommands.filter(
+          (cmd) => (allowInitCommand || cmd.name !== 'init') && (commandPolicy?.(cmd) ?? true),
+        );
+        setCommands(rankCommandsForQuery(eligible, searchQuery));
       } finally {
         setLoading(false);
       }

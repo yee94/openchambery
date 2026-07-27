@@ -1,4 +1,4 @@
-import { partitionByFuzzyQuery } from "@/lib/search/fuzzySearch";
+import { scoreByFuzzyQuery } from "@/lib/search/fuzzySearch";
 
 export interface RankedBranchGroups {
   matching: Array<{
@@ -26,42 +26,44 @@ export function rankBranchesForQuery(args: {
     };
   }
 
-  const localPartition = partitionByFuzzyQuery(localBranches, normalizedQuery, (branch) => branch);
-  const remotePartition = partitionByFuzzyQuery(remoteBranches, normalizedQuery, (branch) => branch);
-  const matching: RankedBranchGroups['matching'] = [];
-  const otherLocal = localPartition.other;
-  const otherRemote = remotePartition.other;
+  const localScored = scoreByFuzzyQuery(localBranches, normalizedQuery, (branch) => branch);
+  const remoteScored = scoreByFuzzyQuery(remoteBranches, normalizedQuery, (branch) => branch);
 
-  for (const branch of localPartition.matching) {
-    matching.push({
-      label: branch,
-      value: branch,
-      source: 'local',
-    });
-  }
+  const localMatched = new Set(localScored.map((entry) => entry.item));
+  const remoteMatched = new Set(remoteScored.map((entry) => entry.item));
 
-  for (const branch of remotePartition.matching) {
-    matching.push({
-      label: branch,
-      value: `remotes/${branch}`,
-      source: 'remote',
-    });
-  }
-
-  matching.sort((a, b) => {
-    const byLabel = a.label.localeCompare(b.label, undefined, { sensitivity: 'accent' });
-    if (byLabel !== 0) {
-      return byLabel;
-    }
-    if (a.source !== b.source) {
-      return a.source.localeCompare(b.source);
-    }
-    return a.value.localeCompare(b.value);
-  });
+  const matching = [
+    ...localScored.map((entry) => ({
+      label: entry.item,
+      value: entry.item,
+      source: 'local' as const,
+      score: entry.score,
+    })),
+    ...remoteScored.map((entry) => ({
+      label: entry.item,
+      value: `remotes/${entry.item}`,
+      source: 'remote' as const,
+      score: entry.score,
+    })),
+  ]
+    .sort((a, b) => {
+      if (a.score !== b.score) {
+        return a.score - b.score;
+      }
+      // Prefer local branches when relevance ties.
+      if (a.source !== b.source) {
+        return a.source === 'local' ? -1 : 1;
+      }
+      if (a.label.length !== b.label.length) {
+        return a.label.length - b.label.length;
+      }
+      return a.label.localeCompare(b.label, undefined, { sensitivity: 'accent' });
+    })
+    .map(({ label, value, source }) => ({ label, value, source }));
 
   return {
     matching,
-    otherLocal,
-    otherRemote,
+    otherLocal: localBranches.filter((branch) => !localMatched.has(branch)),
+    otherRemote: remoteBranches.filter((branch) => !remoteMatched.has(branch)),
   };
 }

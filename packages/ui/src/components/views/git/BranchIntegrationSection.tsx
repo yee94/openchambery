@@ -26,6 +26,7 @@ import { Tooltip, TooltipContent, TooltipTrigger } from '@/components/ui/tooltip
 import { Icon } from "@/components/icon/Icon";
 import { cn } from '@/lib/utils';
 import { useI18n } from '@/lib/i18n';
+import { scoreByFuzzyQuery } from '@/lib/search/fuzzySearch';
 
 type OperationType = 'merge' | 'rebase';
 
@@ -86,9 +87,9 @@ export const BranchIntegrationSection: React.FC<BranchIntegrationSectionProps> =
     }
   }, [operationLogs]);
 
-  // Filter branches based on search
+  // Filter branches based on search (relevance-ranked when querying)
   const filteredLocal = React.useMemo(() => {
-    const term = branchSearch.toLowerCase();
+    const term = branchSearch.trim();
     const remoteBranchNames = new Set(
       remoteBranches
         .map((branch) => branch.slice(branch.indexOf('/') + 1))
@@ -96,13 +97,13 @@ export const BranchIntegrationSection: React.FC<BranchIntegrationSectionProps> =
     );
     const filtered = localBranches.filter((branch) => branch !== currentBranch && !remoteBranchNames.has(branch));
     if (!term) return filtered;
-    return filtered.filter((b) => b.toLowerCase().includes(term));
+    return scoreByFuzzyQuery(filtered, term, (branch) => branch).map((entry) => entry.item);
   }, [branchSearch, localBranches, currentBranch, remoteBranches]);
 
   const filteredRemote = React.useMemo(() => {
-    const term = branchSearch.toLowerCase();
+    const term = branchSearch.trim();
     if (!term) return remoteBranches;
-    return remoteBranches.filter((b) => b.toLowerCase().includes(term));
+    return scoreByFuzzyQuery(remoteBranches, term, (branch) => branch).map((entry) => entry.item);
   }, [branchSearch, remoteBranches]);
 
   const resolveDefaultBranch = React.useCallback(() => {

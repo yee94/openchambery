@@ -113,7 +113,7 @@ import {
     type MentionRange,
 } from './composerHighlight';
 import { ComposerTriggerIconMark } from './ComposerTriggerIconMark';
-import { shouldApplyComposerDomCorrection } from './composerFocus';
+import { focusComposerTextarea, resolveComposerTextarea, shouldApplyComposerDomCorrection } from './composerFocus';
 import { highlightFencedCode } from './composerCodeHighlight';
 import {
     assignImageAttachmentFilenames,
@@ -2422,9 +2422,7 @@ const ChatInputRuntime: React.FC<ChatInputProps> = ({ onOpenSettings, scrollToBo
                 toast.error(t('chat.chatInput.toast.messageSendFailed'));
                 return false;
             }
-            setTimeout(() => {
-                textareaRef.current?.focus();
-            }, 0);
+            // Focus is owned by QueuedMessageChips onEditCommitted after restore succeeds.
             return true;
         } catch {
             toast.error(t('chat.chatInput.toast.messageSendFailed'));
@@ -6000,10 +5998,46 @@ const ChatInputRuntime: React.FC<ChatInputProps> = ({ onOpenSettings, scrollToBo
         </>
     );
 
+    // Queue edit restores text async; hand focus back so the user can keep typing.
+    // Desktop (PC client): survive draft external-document re-render + chip unmount
+    // after the edit button loses DOM, which can drop focus to body.
+    const focusComposerAfterQueueEdit = useEvent(() => {
+        if (isMobile) {
+            holdComposerFocusUntilRef.current = Date.now() + 600;
+            expandMobileComposer('focus');
+            const assertMobileFocus = () => {
+                textareaRef.current?.focus({ preventScroll: isCapacitorApp() });
+                if (document.activeElement === textareaRef.current) {
+                    setMobileTextareaFocused(true);
+                }
+            };
+            assertMobileFocus();
+            window.requestAnimationFrame(assertMobileFocus);
+            return;
+        }
+        const focusDesktop = () => {
+            if (!focusComposerTextarea(textareaRef)) return;
+            const textarea = resolveComposerTextarea(textareaRef);
+            if (!textarea) return;
+            const end = textarea.value.length;
+            try {
+                textarea.setSelectionRange(end, end);
+            } catch {
+                // Some hosts reject selection while the value is mid-commit.
+            }
+        };
+        focusDesktop();
+        window.requestAnimationFrame(() => {
+            focusDesktop();
+            window.setTimeout(focusDesktop, 0);
+        });
+    });
+
     const queuedMessageSurface = (
         <QueuedMessageChips
             onEditMessage={handleQueuedMessageEdit}
             onSendMessage={handleQueuedMessageSend}
+            onEditCommitted={focusComposerAfterQueueEdit}
             draftKey={draftKey}
             scope={currentQueueScope}
             draftTarget={draftKey ? {

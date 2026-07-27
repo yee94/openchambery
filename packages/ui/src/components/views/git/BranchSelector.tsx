@@ -18,6 +18,7 @@ import { Tooltip, TooltipContent, TooltipTrigger } from '@/components/ui/tooltip
 import { Icon } from "@/components/icon/Icon";
 import type { GitRemote } from '@/lib/api/types';
 import { useI18n } from '@/lib/i18n';
+import { scoreByFuzzyQuery } from '@/lib/search/fuzzySearch';
 
 interface BranchInfo {
   ahead?: number;
@@ -122,29 +123,32 @@ export const BranchSelector: React.FC<BranchSelectorProps> = ({
   );
 
   const filteredLocal = React.useMemo(() => {
-    const term = search.toLowerCase();
+    const term = search.trim();
     if (!term) return localBranches;
-    return localBranches.filter((b) => b.toLowerCase().includes(term));
+    return scoreByFuzzyQuery(localBranches, term, (branch) => branch).map((entry) => entry.item);
   }, [search, localBranches]);
 
   const filteredRemote = React.useMemo(() => {
-    const term = search.toLowerCase();
+    const term = search.trim();
     if (!term) return remoteBranches;
-    return remoteBranches.filter((b) => b.toLowerCase().includes(term));
+    return scoreByFuzzyQuery(remoteBranches, term, (branch) => branch).map((entry) => entry.item);
   }, [search, remoteBranches]);
 
   const filteredWorktrees = React.useMemo(() => {
-    const term = search.toLowerCase();
+    const term = search.trim();
     if (!term) return worktreeOptions;
-    return worktreeOptions.filter((option) => option.label.toLowerCase().includes(term));
+    return scoreByFuzzyQuery(worktreeOptions, term, (option) => option.label).map((entry) => entry.item);
   }, [search, worktreeOptions]);
 
   const projectRootMatches = React.useMemo(() => {
     if (!projectRootOption) return false;
-    const term = search.toLowerCase();
+    const term = search.trim();
     if (!term) return true;
-    return projectRootOption.label.toLowerCase().includes(term)
-      || (projectRootLabel ?? '').toLowerCase().includes(term);
+    return scoreByFuzzyQuery(
+      [projectRootOption],
+      term,
+      (option) => [option.label, projectRootLabel ?? ''],
+    ).length > 0;
   }, [projectRootLabel, projectRootOption, search]);
 
   const handleCheckout = (branch: string) => {

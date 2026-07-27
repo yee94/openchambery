@@ -228,6 +228,8 @@ interface QueuedMessageChipsProps {
      */
     onEditMessage: (content: string, attachments?: QueuedMessage['attachments'], composerDocument?: QueuedMessage['composerDocument'], composerMentions?: QueuedMessage['composerMentions']) => boolean | Promise<boolean>;
     onSendMessage: (messageId: string) => void;
+    /** After draft restore succeeds (server or legacy), focus the composer for immediate editing. */
+    onEditCommitted?: () => void;
     draftKey: DraftKey | null;
     scope: BoundQueueScope | null;
     /** Explicit draft target for server queue edit CAS (revision only). */
@@ -256,7 +258,7 @@ export const queuedMessageItemScope = (message: QueuedMessage, scope: BoundQueue
     return queueScopeKey(owner) === queueScopeKey(scope) ? scope : null;
 };
 
-export const QueuedMessageChips = memo(({ onEditMessage, onSendMessage, draftKey, scope: queueScope, draftTarget }: QueuedMessageChipsProps) => {
+export const QueuedMessageChips = memo(({ onEditMessage, onSendMessage, onEditCommitted, draftKey, scope: queueScope, draftTarget }: QueuedMessageChipsProps) => {
     const { t } = useI18n();
     const isMobile = useUIStore((state) => state.isMobile);
     const serverQueue = useMessageQueueServerScope({
@@ -423,6 +425,11 @@ export const QueuedMessageChips = memo(({ onEditMessage, onSendMessage, draftKey
                 runtime,
                 runtimeGeneration: runtime.generation,
                 input: serverQueueEditInput(scope, serverMessage, draftTarget.key, expectedRevision),
+            }).then((result) => {
+                // Text is already in the draft when durable; focus so the user can keep typing.
+                if (result.status === 'committed' || ('draftDurable' in result && result.draftDurable)) {
+                    onEditCommitted?.();
+                }
             }).catch(() => {});
             return;
         }
@@ -447,6 +454,7 @@ export const QueuedMessageChips = memo(({ onEditMessage, onSendMessage, draftKey
                 ok = false;
             }
             if (!ok) return;
+            onEditCommitted?.();
             // Safe against concurrent remove/edit races: remove is idempotent when already gone.
             useMessageQueueStore.getState().removeFromQueue(itemScope, queueItemID, operationID);
         })();

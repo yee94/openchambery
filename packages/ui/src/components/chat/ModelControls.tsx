@@ -27,7 +27,8 @@ import { useDeviceInfo } from '@/lib/device';
 import { mergeModelMetadataWithLiveModel } from '@/lib/modelMetadata';
 import { getModelDisplayName as getSharedModelDisplayName } from '@/lib/modelDisplay';
 import { getEditModeColors } from '@/lib/permissions/editModeColors';
-import { cn, fuzzyMatch } from '@/lib/utils';
+import { scoreByFuzzyQuery } from '@/lib/search/fuzzySearch';
+import { cn } from '@/lib/utils';
 import { AgentAvatar } from '@/components/chat/AgentAvatar';
 import { AgentCycleLabel } from '@/components/chat/AgentCycleLabel';
 import { useAgentCycleLabelReveal } from '@/components/chat/useAgentCycleLabelReveal';
@@ -552,14 +553,14 @@ export const ModelControls: React.FC<ModelControlsProps> = ({
     }, [agents]);
 
     const sortedAndFilteredAgents = React.useMemo(() => {
-        const sorted = [...selectableDesktopAgents].sort((a, b) => a.name.localeCompare(b.name));
         if (!agentSearchQuery.trim()) {
-            return sorted;
+            return [...selectableDesktopAgents].sort((a, b) => a.name.localeCompare(b.name));
         }
-        return sorted.filter((agent) =>
-            fuzzyMatch(agent.name, agentSearchQuery) ||
-            (agent.description && fuzzyMatch(agent.description, agentSearchQuery))
-        );
+        return scoreByFuzzyQuery(
+            selectableDesktopAgents,
+            agentSearchQuery.trim(),
+            (agent) => [agent.name, agent.description ?? ''],
+        ).map((entry) => entry.item);
     }, [selectableDesktopAgents, agentSearchQuery]);
 
     const defaultAgentName = React.useMemo(() => {

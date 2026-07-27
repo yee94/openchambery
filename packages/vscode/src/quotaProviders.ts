@@ -2016,6 +2016,54 @@ const buildXaiRenewalFailure = (message: string): ProviderResult =>
     error: `${message}. Run \`grok login\` if automatic renewal cannot recover access.`,
   });
 
+const isWeeklyGrokCreditsConfig = ({
+  config,
+  periodType,
+  isUnifiedBillingUser,
+  monthlyLimitCents,
+}: {
+  config: Record<string, unknown>;
+  periodType: string | null;
+  isUnifiedBillingUser: boolean;
+  monthlyLimitCents: number | null;
+}): boolean => {
+  if (isUnifiedBillingUser) return true;
+  if (periodType && /WEEKLY/i.test(String(periodType))) return true;
+  const hasCurrentPeriod = Boolean(config.currentPeriod || config.current_period);
+  if (hasCurrentPeriod && (monthlyLimitCents == null || monthlyLimitCents <= 0)) {
+    return true;
+  }
+  return false;
+};
+
+const resolveGrokWindowKey = ({
+  windowSeconds,
+  periodType,
+  fallback = 'credits',
+}: {
+  windowSeconds: number | null;
+  periodType: string | null;
+  fallback?: string;
+}): string => {
+  if (windowSeconds != null && windowSeconds > 0) {
+    return resolveWindowLabel(windowSeconds);
+  }
+  if (periodType) {
+    const normalized = periodType.toLowerCase();
+    if (normalized.includes('week')) return 'weekly';
+    if (normalized.includes('month')) return 'monthly';
+    if (normalized.includes('day')) return 'daily';
+    return periodType;
+  }
+  return fallback;
+};
+
+/**
+ * Official SuperGrok Usage priority:
+ *  1. Weekly SuperGrok Heavy (creditUsagePercent; proto3 may omit 0)
+ *  2. Extra Usage Credits (prepaidBalance → credits_balance)
+ *  3. Legacy monthlyLimit/used only when weekly shape is absent
+ */
 const buildXaiUsageWindows = (body: unknown): Record<string, UsageWindow> | null => {
   const root = body && typeof body === 'object' ? (body as Record<string, unknown>) : null;
   if (!root) return null;
@@ -2024,7 +2072,7 @@ const buildXaiUsageWindows = (body: unknown): Record<string, UsageWindow> | null
       ? (root.config as Record<string, unknown>)
       : root;
 
-  const creditUsagePercent = toNumber(
+  let creditUsagePercent = toNumber(
     config.creditUsagePercent ?? config.credit_usage_percent
   );
   const prepaidCents = parseGrokCents(config.prepaidBalance ?? config.prepaid_balance);
@@ -2052,18 +2100,21 @@ const buildXaiUsageWindows = (body: unknown): Record<string, UsageWindow> | null
     currentPeriod?.type,
     currentPeriod?.period_type
   );
+  const isUnifiedBillingUser = Boolean(
+    config.isUnifiedBillingUser ?? config.is_unified_billing_user
+  );
+  const isWeeklyCreditsShape = isWeeklyGrokCreditsConfig({
+    config,
+    periodType,
+    isUnifiedBillingUser,
+    monthlyLimitCents,
+  });
 
-  let usedPercent: number | null = null;
-  if (creditUsagePercent != null) {
-    usedPercent = Math.max(0, Math.min(100, creditUsagePercent));
-  } else if (monthlyLimitCents != null && monthlyLimitCents > 0 && usedCents != null) {
-    usedPercent = Math.max(0, Math.min(100, (Math.max(0, usedCents) / monthlyLimitCents) * 100));
-  } else if (prepaidCents != null && prepaidCents > 0) {
-    usedPercent = null;
-  } else {
-    return null;
+  if (creditUsagePercent == null && isWeeklyCreditsShape) {
+    creditUsagePercent = 0;
   }
 
+  const prepaidUsd = prepaidCents == null ? null : Math.max(0, prepaidCents) / 100;
   const startTs = toTimestamp(periodStart);
   const endTs = toTimestamp(periodEnd);
   const windowSeconds =
@@ -2071,32 +2122,52 @@ const buildXaiUsageWindows = (body: unknown): Record<string, UsageWindow> | null
       ? Math.max(0, Math.round((endTs - startTs) / 1000))
       : null;
 
-  let windowKey: string;
-  if (windowSeconds != null && windowSeconds > 0) {
-    windowKey = resolveWindowLabel(windowSeconds);
-  } else if (periodType) {
-    const normalized = periodType.toLowerCase();
-    if (normalized.includes('week')) windowKey = 'weekly';
-    else if (normalized.includes('month')) windowKey = 'monthly';
-    else if (normalized.includes('day')) windowKey = 'daily';
-    else windowKey = periodType;
-  } else {
-    windowKey = 'credits';
-  }
+  const windows: Record<string, UsageWindow> = {};
 
-  const prepaidUsd = prepaidCents == null ? null : Math.max(0, prepaidCents) / 100;
-  const valueLabel = usedPercent == null && prepaidUsd != null
-    ? `$${formatMoney(prepaidUsd)} prepaid`
-    : null;
-
-  return {
-    [windowKey]: toUsageWindow({
-      usedPercent,
+  if (creditUsagePercent != null) {
+    const windowKey = resolveGrokWindowKey({
+      windowSeconds,
+      periodType,
+      fallback: 'weekly',
+    });
+    windows[windowKey] = toUsageWindow({
+      usedPercent: Math.max(0, Math.min(100, creditUsagePercent)),
       windowSeconds: windowSeconds && windowSeconds > 0 ? windowSeconds : null,
       resetAt: endTs,
-      valueLabel,
-    }),
-  };
+    });
+  } else if (monthlyLimitCents != null && monthlyLimitCents > 0 && usedCents != null) {
+    const windowKey = resolveGrokWindowKey({
+      windowSeconds,
+      periodType,
+      fallback: 'monthly',
+    });
+    windows[windowKey] = toUsageWindow({
+      usedPercent: Math.max(
+        0,
+        Math.min(100, (Math.max(0, usedCents) / monthlyLimitCents) * 100)
+      ),
+      windowSeconds: windowSeconds && windowSeconds > 0 ? windowSeconds : null,
+      resetAt: endTs,
+    });
+  }
+
+  if (prepaidUsd != null && prepaidUsd > 0) {
+    windows.credits_balance = toUsageWindow({
+      usedPercent: null,
+      windowSeconds: null,
+      resetAt: null,
+      valueLabel: `$${formatMoney(prepaidUsd)} prepaid`,
+    });
+  } else if (Object.keys(windows).length === 0 && prepaidUsd != null) {
+    windows.credits_balance = toUsageWindow({
+      usedPercent: null,
+      windowSeconds: null,
+      resetAt: null,
+      valueLabel: `$${formatMoney(prepaidUsd)} prepaid`,
+    });
+  }
+
+  return Object.keys(windows).length > 0 ? windows : null;
 };
 
 const fetchXaiQuota = async (): Promise<ProviderResult> => {
@@ -2130,10 +2201,13 @@ const fetchXaiQuota = async (): Promise<ProviderResult> => {
   const origin =
     firstNonEmptyString(process.env.OPENCHAMBER_GROK_CLI_PROXY_ORIGIN) ||
     DEFAULT_GROK_CLI_PROXY_ORIGIN;
+  // Official SuperGrok Usage is driven by format=credits (weekly + prepaid).
+  // Default /v1/billing is a separate monthly allotment — last-resort only.
   const creditsUrl = `${origin}/v1/billing?format=credits`;
+  const billingUrl = `${origin}/v1/billing`;
 
-  const requestCredits = async (auth: GrokBuildAuth) =>
-    fetch(creditsUrl, {
+  const requestBilling = async (auth: GrokBuildAuth, url: string) =>
+    fetch(url, {
       method: 'GET',
       headers: {
         Authorization: `Bearer ${auth.key}`,
@@ -2149,7 +2223,7 @@ const fetchXaiQuota = async (): Promise<ProviderResult> => {
     });
 
   try {
-    let response = await requestCredits(grokAuth);
+    let response = await requestBilling(grokAuth, creditsUrl);
 
     if ((response.status === 401 || response.status === 403) && !renewalAttempted) {
       const renewal = await renewGrokBuildAuth(authPath);
@@ -2167,7 +2241,7 @@ const fetchXaiQuota = async (): Promise<ProviderResult> => {
         );
       }
       grokAuth = refreshedAuth;
-      response = await requestCredits(grokAuth);
+      response = await requestBilling(grokAuth, creditsUrl);
     }
 
     if (response.status === 401 || response.status === 403) {
@@ -2181,6 +2255,47 @@ const fetchXaiQuota = async (): Promise<ProviderResult> => {
       });
     }
 
+    if (response.ok) {
+      const body = await response.json();
+      const windows = buildXaiUsageWindows(body);
+      if (windows && Object.keys(windows).length > 0) {
+        return buildResult({
+          providerId: 'xai',
+          providerName: 'Grok',
+          ok: true,
+          configured: true,
+          usage: { windows },
+        });
+      }
+    }
+
+    // Credits unusable: try legacy monthly billing once (never overrides weekly success).
+    if (response.ok || (response.status !== 401 && response.status !== 403)) {
+      const billingResponse = await requestBilling(grokAuth, billingUrl);
+      if (billingResponse.ok) {
+        const billingBody = await billingResponse.json();
+        const billingWindows = buildXaiUsageWindows(billingBody);
+        if (billingWindows && Object.keys(billingWindows).length > 0) {
+          return buildResult({
+            providerId: 'xai',
+            providerName: 'Grok',
+            ok: true,
+            configured: true,
+            usage: { windows: billingWindows },
+          });
+        }
+      }
+      if (!response.ok && !billingResponse.ok) {
+        return buildResult({
+          providerId: 'xai',
+          providerName: 'Grok',
+          ok: false,
+          configured: true,
+          error: `API error: ${response.status}`,
+        });
+      }
+    }
+
     if (!response.ok) {
       return buildResult({
         providerId: 'xai',
@@ -2191,24 +2306,12 @@ const fetchXaiQuota = async (): Promise<ProviderResult> => {
       });
     }
 
-    const body = await response.json();
-    const windows = buildXaiUsageWindows(body);
-    if (!windows || Object.keys(windows).length === 0) {
-      return buildResult({
-        providerId: 'xai',
-        providerName: 'Grok',
-        ok: false,
-        configured: true,
-        error: 'No quota data in response',
-      });
-    }
-
     return buildResult({
       providerId: 'xai',
       providerName: 'Grok',
-      ok: true,
+      ok: false,
       configured: true,
-      usage: { windows },
+      error: 'No quota data in response',
     });
   } catch (error) {
     return buildResult({

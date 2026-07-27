@@ -267,9 +267,42 @@ const buildGrokCliHeaders = (grokAuth) => ({
     DEFAULT_GROK_CLIENT_VERSION
 });
 
+const isWeeklyGrokCreditsConfig = ({
+  config,
+  periodType,
+  isUnifiedBillingUser,
+  monthlyLimitCents
+}) => {
+  if (isUnifiedBillingUser) return true;
+  if (periodType && /WEEKLY/i.test(String(periodType))) return true;
+  const hasCurrentPeriod = Boolean(config?.currentPeriod || config?.current_period);
+  if (hasCurrentPeriod && (monthlyLimitCents == null || monthlyLimitCents <= 0)) {
+    return true;
+  }
+  return false;
+};
+
+const resolveGrokWindowKey = ({ windowSeconds, periodType, fallback = 'credits' }) => {
+  if (windowSeconds != null && windowSeconds > 0) {
+    return resolveWindowLabel(windowSeconds);
+  }
+  if (periodType) {
+    const normalized = periodType.toLowerCase();
+    if (normalized.includes('week')) return 'weekly';
+    if (normalized.includes('month')) return 'monthly';
+    if (normalized.includes('day')) return 'daily';
+    return periodType;
+  }
+  return fallback;
+};
+
 /**
  * Convert Grok Build billing credits payload into usage windows.
- * Accepts body.config or body directly.
+ *
+ * Official SuperGrok Usage page priority:
+ *  1. Weekly SuperGrok Heavy — creditUsagePercent (proto3 may omit 0)
+ *  2. Extra Usage Credits — prepaidBalance as credits_balance
+ *  3. Legacy monthlyLimit/used only when weekly credits shape is absent
  */
 export const buildXaiUsageWindows = (body) => {
   const config =
@@ -278,7 +311,7 @@ export const buildXaiUsageWindows = (body) => {
     return null;
   }
 
-  const creditUsagePercent = toNumber(
+  let creditUsagePercent = toNumber(
     config.creditUsagePercent ?? config.credit_usage_percent
   );
   const prepaidCents = parseCents(config.prepaidBalance ?? config.prepaid_balance);
@@ -302,23 +335,23 @@ export const buildXaiUsageWindows = (body) => {
     config.current_period?.type,
     config.current_period?.period_type
   );
+  const isUnifiedBillingUser = Boolean(
+    config.isUnifiedBillingUser ?? config.is_unified_billing_user
+  );
+  const isWeeklyCreditsShape = isWeeklyGrokCreditsConfig({
+    config,
+    periodType,
+    isUnifiedBillingUser,
+    monthlyLimitCents
+  });
 
-  let usedPercent = null;
-  if (creditUsagePercent != null) {
-    usedPercent = clampPercent(creditUsagePercent);
-  } else if (
-    monthlyLimitCents != null &&
-    monthlyLimitCents > 0 &&
-    usedCents != null
-  ) {
-    usedPercent = clampPercent((Math.max(0, usedCents) / monthlyLimitCents) * 100);
-  } else if (prepaidCents != null && prepaidCents > 0) {
-    // Prepaid-only: no usage percent; surface balance via valueLabel.
-    usedPercent = null;
-  } else {
-    return null;
+  // proto3 JSON omits default 0. Official UI still shows "0% used" for weekly Heavy.
+  if (creditUsagePercent == null && isWeeklyCreditsShape) {
+    creditUsagePercent = 0;
   }
 
+  const prepaidUsd =
+    prepaidCents == null ? null : Math.max(0, prepaidCents) / 100;
   const startTs = toTimestamp(periodStart);
   const endTs = toTimestamp(periodEnd);
   const windowSeconds =
@@ -326,33 +359,60 @@ export const buildXaiUsageWindows = (body) => {
       ? Math.max(0, Math.round((endTs - startTs) / 1000))
       : null;
 
-  let windowKey;
-  if (windowSeconds != null && windowSeconds > 0) {
-    windowKey = resolveWindowLabel(windowSeconds);
-  } else if (periodType) {
-    const normalized = periodType.toLowerCase();
-    if (normalized.includes('week')) windowKey = 'weekly';
-    else if (normalized.includes('month')) windowKey = 'monthly';
-    else if (normalized.includes('day')) windowKey = 'daily';
-    else windowKey = periodType;
-  } else {
-    windowKey = 'credits';
+  const windows = {};
+
+  // 1) Weekly SuperGrok Heavy always wins over monthly $ allotment.
+  if (creditUsagePercent != null) {
+    const windowKey = resolveGrokWindowKey({
+      windowSeconds,
+      periodType,
+      fallback: 'weekly'
+    });
+    windows[windowKey] = toUsageWindow({
+      usedPercent: clampPercent(creditUsagePercent),
+      windowSeconds: windowSeconds && windowSeconds > 0 ? windowSeconds : null,
+      resetAt: endTs
+    });
+  } else if (
+    monthlyLimitCents != null &&
+    monthlyLimitCents > 0 &&
+    usedCents != null
+  ) {
+    // 3) Legacy monthly allotment — only when weekly percent is unavailable.
+    const windowKey = resolveGrokWindowKey({
+      windowSeconds,
+      periodType,
+      fallback: 'monthly'
+    });
+    windows[windowKey] = toUsageWindow({
+      usedPercent: clampPercent((Math.max(0, usedCents) / monthlyLimitCents) * 100),
+      windowSeconds: windowSeconds && windowSeconds > 0 ? windowSeconds : null,
+      resetAt: endTs
+    });
   }
 
-  const prepaidUsd =
-    prepaidCents == null ? null : Math.max(0, prepaidCents) / 100;
-  const valueLabel =
-    usedPercent == null && prepaidUsd != null
-      ? `$${formatMoney(prepaidUsd)} prepaid`
-      : null;
+  // 2) Extra Usage Credits (prepaid) — separate window when balance > 0,
+  //    or as the sole window when no percent-based quota exists.
+  if (prepaidUsd != null && prepaidUsd > 0) {
+    windows.credits_balance = toUsageWindow({
+      usedPercent: null,
+      windowSeconds: null,
+      resetAt: null,
+      valueLabel: `$${formatMoney(prepaidUsd)} prepaid`
+    });
+  } else if (Object.keys(windows).length === 0 && prepaidUsd != null) {
+    // prepaid-only with $0 still surfaces a balance row so UI is not empty.
+    windows.credits_balance = toUsageWindow({
+      usedPercent: null,
+      windowSeconds: null,
+      resetAt: null,
+      valueLabel: `$${formatMoney(prepaidUsd)} prepaid`
+    });
+  }
 
-  const windows = {};
-  windows[windowKey] = toUsageWindow({
-    usedPercent,
-    windowSeconds: windowSeconds && windowSeconds > 0 ? windowSeconds : null,
-    resetAt: endTs,
-    valueLabel
-  });
+  if (Object.keys(windows).length === 0) {
+    return null;
+  }
 
   return windows;
 };
@@ -463,7 +523,10 @@ export const fetchQuota = async (options = {}) => {
   }
 
   const origin = resolveGrokCliProxyOrigin();
+  // Official SuperGrok Usage is driven by format=credits (weekly + prepaid).
+  // Default /v1/billing is a separate monthly allotment — last-resort only.
   const creditsUrl = `${origin}/v1/billing?format=credits`;
+  const billingUrl = `${origin}/v1/billing`;
 
   try {
     let response = await requestGrokCredits({
@@ -499,6 +562,26 @@ export const fetchQuota = async (options = {}) => {
         grokAuth
       });
       mapped = await mapCreditsResponse(response);
+    }
+
+    // Never replace a successful weekly credits result with monthly billing.
+    if (mapped.kind === 'ok') {
+      return mapped.result;
+    }
+
+    if (mapped.kind === 'auth_failure') {
+      return mapped.result;
+    }
+
+    // Credits payload unusable: try legacy monthly billing once.
+    const billingResponse = await requestGrokCredits({
+      fetchImpl,
+      creditsUrl: billingUrl,
+      grokAuth
+    });
+    const billingMapped = await mapCreditsResponse(billingResponse);
+    if (billingMapped.kind === 'ok') {
+      return billingMapped.result;
     }
 
     return mapped.result;
