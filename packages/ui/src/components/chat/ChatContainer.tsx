@@ -12,7 +12,10 @@ import {
     type ChatContainerHost,
     type ChatContainerHostFeatures,
 } from './chatContainerHost';
-import { SessionSurfaceContext } from './SessionSurfaceContext';
+import {
+    createExplicitSessionSurface,
+    SessionSurfaceContext,
+} from './SessionSurfaceContext';
 import { ReadOnlyPromptBanner } from './ReadOnlyPromptBanner';
 import { DraftPresetChips } from './DraftPresetChips';
 import { useInputStore } from '@/sync/input-store';
@@ -371,6 +374,9 @@ const ChatViewport = React.memo(({
                     style={CHAT_SCROLL_STYLE}
                     observeMutations={false}
                     hideTopShadow={isMobile && stickyUserHeader}
+                    // Mobile: the composer is a solid page foot — a bottom scroll
+                    // mask reads as a soft full-width edge under the last messages.
+                    hideBottomShadow={isMobile}
                     tabIndex={0}
                     onClick={focusScrollContainer}
                     onScroll={handleHistoryScroll}
@@ -534,7 +540,15 @@ const renderDraftTitle = (title: string, projectLabel: string | null): React.Rea
 type ChatContainerProps = {
     autoOpenDraft?: boolean;
     readOnly?: boolean;
+    active?: boolean;
     host?: ChatContainerHost;
+    /** Binds one phone navigation page to an explicit route and skips the primary retained-view cache. */
+    explicitSession?: {
+        sessionId: string | null;
+        directory: string | null;
+        viewKey: string;
+        active: boolean;
+    };
 };
 
 type ChatContainerContentProps = Omit<ChatContainerProps, 'host'> & {
@@ -562,6 +576,7 @@ const estimateSessionViewBytes = (messageCount: number): number => {
 const ChatContainerContent: React.FC<ChatContainerContentProps> = ({
     autoOpenDraft = true,
     readOnly = false,
+    active = true,
     sessionId: currentSessionId,
     sessionDirectory: currentSessionDirectory,
     sessionViewKey,
@@ -610,8 +625,8 @@ const ChatContainerContent: React.FC<ChatContainerContentProps> = ({
     // Streaming state
     const streamingMessageId = useStreamingStore(
         React.useCallback(
-            (s) => (currentSessionId ? s.streamingMessageIds.get(currentSessionId) ?? null : null),
-            [currentSessionId],
+            (s) => (active && currentSessionId ? s.streamingMessageIds.get(currentSessionId) ?? null : null),
+            [active, currentSessionId],
         ),
     );
     const activeStreamingPhase = useStreamingStore(
@@ -659,6 +674,7 @@ const ChatContainerContent: React.FC<ChatContainerContentProps> = ({
     }>({ key: sessionIdentityEnsureKey, attempt: 0 });
     // Messages from sync system
     const sessionMessageRecords = useSessionMessageRecords(currentSessionId ?? '', effectiveSessionDirectory, {
+        enabled: active,
         suspendPartUpdates: Boolean(streamingMessageId),
         suspendPartUpdatesForMessageId: streamingMessageId,
     });
@@ -953,6 +969,7 @@ const ChatContainerContent: React.FC<ChatContainerContentProps> = ({
         isFollowingProgrammatically,
         showScrollButton,
     } = useChatAutoFollow({
+        enabled: active,
         currentSessionId,
         viewportKey: sessionViewKey,
         sessionMessageCount,
@@ -1072,7 +1089,7 @@ const ChatContainerContent: React.FC<ChatContainerContentProps> = ({
     }, [showPromptNavigator]);
 
     React.useEffect(() => {
-        if (typeof window === 'undefined' || !currentSessionId) return;
+        if (typeof window === 'undefined' || !active || !currentSessionId) return;
 
         const handleForceScrollBottom = (event: Event) => {
             const customEvent = event as CustomEvent<{ sessionId?: string }>;
@@ -1084,10 +1101,10 @@ const ChatContainerContent: React.FC<ChatContainerContentProps> = ({
         return () => {
             window.removeEventListener(CHAT_FORCE_SCROLL_BOTTOM_EVENT, handleForceScrollBottom as EventListener);
         };
-    }, [currentSessionId, goToBottom]);
+    }, [active, currentSessionId, goToBottom]);
 
     React.useEffect(() => {
-        if (typeof window === 'undefined' || !currentSessionId || isDesktopExpandedInput) {
+        if (typeof window === 'undefined' || !active || !currentSessionId || isDesktopExpandedInput) {
             return;
         }
 
@@ -1127,9 +1144,10 @@ const ChatContainerContent: React.FC<ChatContainerContentProps> = ({
         return () => {
             window.removeEventListener('keydown', handleChatTurnKeyDown);
         };
-    }, [currentSessionId, isDesktopExpandedInput, navigation, scrollRef]);
+    }, [active, currentSessionId, isDesktopExpandedInput, navigation, scrollRef]);
 
     React.useLayoutEffect(() => {
+        if (!active) return;
         const container = scrollRef.current;
         if (!container) return;
 
@@ -1163,7 +1181,7 @@ const ChatContainerContent: React.FC<ChatContainerContentProps> = ({
             if (rafId) cancelAnimationFrame(rafId);
             resizeObserver.disconnect();
         };
-    }, [currentSessionId, isDesktopExpandedInput, scrollRef]);
+    }, [active, currentSessionId, isDesktopExpandedInput, scrollRef]);
 
     const lastScrolledSessionRef = React.useRef<string | null>(null);
 
@@ -1185,7 +1203,7 @@ const ChatContainerContent: React.FC<ChatContainerContentProps> = ({
         && historyPrefix.length === 0;
 
     React.useEffect(() => {
-        if (!currentSessionId) return;
+        if (!active || !currentSessionId) return;
         if (lastScrolledSessionRef.current === currentSessionId) return;
 
         const hasHashTarget = typeof window !== 'undefined' && window.location.hash.length > 0;
@@ -1204,7 +1222,7 @@ const ChatContainerContent: React.FC<ChatContainerContentProps> = ({
         } else {
             window.requestAnimationFrame(run);
         }
-    }, [currentSessionId, releaseAutoFollow, restoreSnapshot]);
+    }, [active, currentSessionId, releaseAutoFollow, restoreSnapshot]);
 
     React.useEffect(() => {
         setSessionIdentityEnsureRetry((current) => (
@@ -1215,7 +1233,7 @@ const ChatContainerContent: React.FC<ChatContainerContentProps> = ({
     }, [sessionIdentityEnsureKey]);
 
     React.useEffect(() => {
-        if (!currentSessionId || sessionIdentityEnsureRetry.key !== sessionIdentityEnsureKey || !shouldEnsureChatSessionRenderable({
+        if (!active || !currentSessionId || sessionIdentityEnsureRetry.key !== sessionIdentityEnsureKey || !shouldEnsureChatSessionRenderable({
             sessionId: currentSessionId,
             hasRenderableSessionSnapshot,
             hasCurrentSessionEntity: Boolean(currentSessionEntity),
@@ -1235,6 +1253,7 @@ const ChatContainerContent: React.FC<ChatContainerContentProps> = ({
 
         return () => window.clearTimeout(timer);
     }, [
+        active,
         currentSessionEntity,
         currentSessionId,
         effectiveSessionDirectory,
@@ -1375,7 +1394,7 @@ const ChatContainerContent: React.FC<ChatContainerContentProps> = ({
 						isDesktopExpandedInput
 							? 'flex-1 bg-background'
 							: useCompactDraftLayout
-								? cn(isMobile ? 'bg-transparent' : 'bg-background', 'px-0')
+								? cn('bg-background', 'px-0')
 								: 'flex-1 items-center justify-center bg-background px-0 pb-[6vh]'
 					)}
 				>
@@ -1435,9 +1454,7 @@ const ChatContainerContent: React.FC<ChatContainerContentProps> = ({
 						'relative z-10',
 						isDesktopExpandedInput
 							? 'flex-1 min-h-0 bg-background'
-							: isMobile
-								? 'bg-transparent'
-								: 'bg-background',
+							: 'bg-background',
 					)}
 				>
 					{promptSurface}
@@ -1493,9 +1510,7 @@ const ChatContainerContent: React.FC<ChatContainerContentProps> = ({
                         'relative z-10',
 						isDesktopExpandedInput
 							? 'flex-1 min-h-0 bg-background'
-							: isMobile
-								? 'bg-transparent'
-								: 'bg-background'
+							: 'bg-background'
 					)}
 				>
                     {promptSurface}
@@ -1528,11 +1543,9 @@ const ChatContainerContent: React.FC<ChatContainerContentProps> = ({
                 <div
                     className={cn(
                         'relative z-10',
-						isDesktopExpandedInput
-							? 'flex-1 min-h-0 bg-background'
-							: isMobile
-								? 'bg-transparent'
-								: 'bg-background'
+					isDesktopExpandedInput
+						? 'flex-1 min-h-0 bg-background'
+						: 'bg-background'
 					)}
 				>
                     {promptSurface}
@@ -1589,11 +1602,7 @@ const ChatContainerContent: React.FC<ChatContainerContentProps> = ({
                     'relative z-10',
                     isDesktopExpandedInput
                         ? 'flex-1 min-h-0 bg-background'
-                        // Mobile: transparent host so the frosted composer can
-                        // sample chat content underneath (no solid slab).
-                        : isMobile
-                            ? 'bg-transparent'
-                            : 'bg-background'
+                        : 'bg-background'
                 )}
             >
                 {!isDesktopExpandedInput && viewportMessages.length > 0 && (
@@ -1846,6 +1855,31 @@ const HostedChatContainer: React.FC<ChatContainerProps & { host: ChatContainerHo
     );
 };
 
+const ExplicitChatContainer: React.FC<Omit<ChatContainerProps, 'host'> & {
+    explicitSession: NonNullable<ChatContainerProps['explicitSession']>;
+    runtimeKey: string;
+}> = ({ explicitSession, runtimeKey, ...props }) => {
+    const syncDirectory = useSyncDirectory();
+    const directory = explicitSession.directory ?? syncDirectory;
+    const sessionSurface = React.useMemo(() => createExplicitSessionSurface({
+        ...explicitSession,
+        directory,
+    }), [directory, explicitSession]);
+    return (
+        <SessionSurfaceContext.Provider value={sessionSurface}>
+            <div className="h-full bg-background">
+                <MemoizedChatContainerContent
+                    {...props}
+                    active={explicitSession.active}
+                    sessionId={explicitSession.sessionId}
+                    sessionDirectory={directory}
+                    sessionViewKey={`explicit:${runtimeKey}:${explicitSession.viewKey}`}
+                />
+            </div>
+        </SessionSurfaceContext.Provider>
+    );
+};
+
 export const ChatContainer: React.FC<ChatContainerProps> = (props) => {
     const runtimeKey = React.useSyncExternalStore(
         subscribeRuntimeKey,
@@ -1855,6 +1889,19 @@ export const ChatContainer: React.FC<ChatContainerProps> = (props) => {
 
     if (props.host) {
         return <HostedChatContainer key={`${runtimeKey}:${props.host.sessionSurface.surfaceId}`} {...props} host={props.host} runtimeKey={runtimeKey} />;
+    }
+
+    if (props.explicitSession) {
+        return (
+            <ExplicitChatContainer
+                key={`${runtimeKey}:${props.explicitSession.viewKey}`}
+                autoOpenDraft={props.autoOpenDraft}
+                readOnly={props.readOnly}
+                active={props.active}
+                explicitSession={props.explicitSession}
+                runtimeKey={runtimeKey}
+            />
+        );
     }
 
     return <RuntimeScopedChatContainer key={runtimeKey} {...props} runtimeKey={runtimeKey} />;

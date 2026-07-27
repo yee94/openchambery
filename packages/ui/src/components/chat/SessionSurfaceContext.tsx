@@ -70,6 +70,22 @@ export const PRIMARY_SESSION_SURFACE: SessionSurfaceContextValue = {
     capabilities: PRIMARY_SESSION_SURFACE_CAPABILITIES,
 };
 
+export const createExplicitSessionSurface = (input: {
+    sessionId: string | null;
+    directory: string | null;
+    viewKey: string;
+    active: boolean;
+}): SessionSurfaceContextValue => ({
+    kind: 'primary',
+    surfaceId: `explicit:${input.viewKey}`,
+    sessionId: input.sessionId,
+    directory: input.directory,
+    active: input.active,
+    capabilities: input.active
+        ? PRIMARY_SESSION_SURFACE_CAPABILITIES
+        : STRICT_READ_ONLY_SESSION_SURFACE_CAPABILITIES,
+});
+
 export const SessionSurfaceContext = React.createContext<SessionSurfaceContextValue>(PRIMARY_SESSION_SURFACE);
 
 export const useSessionSurface = (): SessionSurfaceContextValue => React.useContext(SessionSurfaceContext);

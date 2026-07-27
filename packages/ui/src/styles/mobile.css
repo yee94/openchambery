@@ -2245,9 +2245,10 @@ button.oc-mobile-group-label-trigger:focus-visible {
    transform changes via a CSS custom property, which parked the composer until
    the keyboard finished. Only the sliding backdrop lives here. */
 :root.oc-capacitor-app.oc-kb-animating .oc-mobile-composer {
-  /* While sliding, keep the frosted host (not an opaque slab) so messages under
-     the glass fade stay readable mid-choreography. */
-  background: transparent !important;
+  /* Keep the solid page foot while the keyboard slides so the safe-area
+     does not flash a translucent seam under the input. */
+  background: var(--background) !important;
+  background-color: var(--background) !important;
 }
 
 /* Constant-viewport trick for the chat scroller: when the keyboard settles the
@@ -2285,32 +2286,29 @@ button.oc-mobile-group-label-trigger:focus-visible {
   caret-color: transparent;
 }
 
-/* The composer keeps its 1rem bottom padding while the keyboard is down (breathing
-   room above the home indicator), but that gap looks artificial sitting right above
-   the keyboard — so tighten it while the keyboard is open. Snaps at the start of the
-   show animation (a ~10px pre-slide change; transitioning it would reflow the chat
-   every frame). */
+/* iOS removes the resting bottom-safe padding once the keyboard starts so the
+   composer lands flush on the keyboard. Android keeps a small breathing gap. */
 :root.oc-capacitor-app.oc-keyboard-open .oc-mobile-composer {
+  padding-bottom: 0;
+}
+
+:root.oc-capacitor-app.oc-platform-android.oc-keyboard-open
+  .oc-mobile-composer {
   padding-bottom: 12px;
 }
 
-/* Android keyboard curtain: composer and IME run on separate animation clocks,
-   so their temporary gap can be much taller than the resting gap. During show,
-   correction, and hide, a dedicated pseudo paints an opaque curtain from the
-   composer's bottom to the viewport bottom. The existing ::after remains the
-   ambient composer mask, and isolation keeps both layers behind composer content. */
-:root.oc-capacitor-app.oc-platform-android.oc-keyboard-open
-  .oc-mobile-composer,
-:root.oc-capacitor-app.oc-platform-android.oc-kb-animating
-  .oc-mobile-composer {
+/* Native keyboard curtain: UIKit/IME and WebView transforms cross separate event
+   bridges, so a temporary gap may expose chat content. During show, correction,
+   and hide, a dedicated pseudo paints from the composer's bottom to the viewport
+   bottom. The ambient ::after mask stays disabled. */
+:root.oc-capacitor-app.oc-keyboard-open .oc-mobile-composer,
+:root.oc-capacitor-app.oc-kb-animating .oc-mobile-composer {
   isolation: isolate;
   box-shadow: none;
 }
 
-:root.oc-capacitor-app.oc-platform-android.oc-keyboard-open
-  .oc-mobile-composer::before,
-:root.oc-capacitor-app.oc-platform-android.oc-kb-animating
-  .oc-mobile-composer::before {
+:root.oc-capacitor-app.oc-keyboard-open .oc-mobile-composer::before,
+:root.oc-capacitor-app.oc-kb-animating .oc-mobile-composer::before {
   content: "";
   position: absolute;
   z-index: -2;
@@ -2322,72 +2320,61 @@ button.oc-mobile-group-label-trigger:focus-visible {
   background: var(--background) !important;
 }
 
-/* Composer host stays transparent so the translucent footer can fade over chat
-   content. The INPUT CARD itself remains a solid floating surface. */
+/* Composer host is a solid page foot (iOS + Android). No translucent pad and
+   no elevation under the input — those read as a full-width soft shadow and
+   only exist on chat pages (home uses a floating dock instead). */
 .oc-mobile-composer {
-  background: transparent !important;
-  isolation: auto;
+  background: var(--background) !important;
+  background-color: var(--background) !important;
+  isolation: isolate;
+  box-shadow: none !important;
+  filter: none !important;
 }
 
-/* The footer is a uniform 90% page surface through the composer and safe-area,
-   then fades to fully transparent across the short strip above the card. */
+/* No ambient footer mask. A gradient here used to paint a soft full-width
+   edge into the home-indicator / nav safe-area under the input. */
 .oc-mobile-composer::after {
+  content: none;
+  display: none;
+}
+
+/* Capacitor chat safe-area cover: keep the home-indicator / navigation foot
+   on the semantic page background while preserving higher overlay layers. */
+:root.oc-capacitor-app body:has(.oc-mobile-composer)::before {
   content: "";
-  position: absolute;
-  z-index: -1;
+  position: fixed;
+  z-index: 1;
   left: 0;
   right: 0;
-  top: -2.25rem;
   bottom: 0;
+  height: var(--oc-app-bottom-safe, 16px);
+  background: var(--background);
   pointer-events: none;
-  background: linear-gradient(
-    to top,
-    color-mix(in srgb, var(--background) 90%, transparent) 0%,
-    color-mix(in srgb, var(--background) 90%, transparent) calc(100% - 2.25rem),
-    transparent 100%
-  );
 }
 
-.oc-mobile-composer.bottom-safe-area::after {
-  bottom: calc(-1 * var(--oc-safe-area-bottom-visual, var(--oc-safe-area-bottom, 0px)));
-}
-
-/* Floating input card: solid elevated surface + soft lift (not translucent).
+/* Floating input card: solid surface without a drop shadow (not translucent).
    Class name kept for expand motion hooks; fill is opaque on purpose. */
 .oc-mobile-composer-surface {
   background: var(--surface-subtle) !important;
   background-color: var(--surface-subtle) !important;
   -webkit-backdrop-filter: none !important;
   backdrop-filter: none !important;
-  box-shadow: var(--oc-mobile-glass-shadow);
+  box-shadow: none !important;
+  filter: none !important;
   /* Stacking context so slash-command / @-mention popovers (z-100) paint
-     above chat content and the ambient frosted strip. */
+     above chat content. */
   z-index: 20;
   position: relative;
 }
 
-/* Android shell foot: solid page bg, no elevation halo under safe-area. */
-:root.oc-capacitor-app.oc-platform-android .oc-mobile-app-shell {
-  background: var(--background);
-  background-color: var(--background);
-  box-shadow: none;
-  filter: none;
-}
-
-/* Bottom sheets: no drop shadow under the rounded top / handle row on Android. */
-:root.oc-capacitor-app.oc-platform-android .oc-mobile-floating-shell.pwa-overlay-panel,
-:root.oc-capacitor-app.oc-platform-android .oc-mobile-surface-shell {
-  box-shadow: none !important;
-  filter: none;
-}
-
 @media (prefers-reduced-transparency: reduce) {
   .oc-mobile-composer::after {
-    background: var(--background);
+    content: none;
+    display: none;
   }
 
   .oc-mobile-composer-surface {
-    box-shadow: none;
+    box-shadow: none !important;
   }
 }
 

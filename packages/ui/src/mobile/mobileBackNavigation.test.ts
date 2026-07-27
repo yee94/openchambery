@@ -1,12 +1,30 @@
 import { describe, expect, test } from 'bun:test';
+import { readFile } from 'node:fs/promises';
 
 import {
   clampMobileBackProgress,
+  commitMobileBackRouteWithoutPresentation,
+  MobileBackCommitQueue,
+  isMobileBackRouteAcknowledged,
   MobileBackNavigationCoordinator,
+  resolveMobileBackSettleDuration,
   settleMobileBackSurface,
   type MobileBackHistory,
 } from './mobileBackNavigation';
-import { resolveMobileSecondaryBackDecision } from './mobileNavigation';
+import {
+  popMobileChatRoute,
+  pushMobileChatRoute,
+  reconcileMobileChatPredecessor,
+  replaceMobileChatRoute,
+  resolveMobileSecondaryBackDecision,
+  type MobileChatRoute,
+} from './mobileNavigation';
+import { MobilePushPresentationController } from './mobilePushPresentation';
+import {
+  acknowledgeMobileSessionMirror,
+  expectMobileSessionMirror,
+  resetMobileSessionMirror,
+} from './useMobileNavigationStore';
 
 const route = (id: string, onBack: () => boolean | void, layer: 'root' | 'overlay' = 'root') => ({
   id,
@@ -58,6 +76,55 @@ describe('MobileBackNavigationCoordinator', () => {
     expect(coordinator.getTopRoute()).toBeNull();
   });
 
+  test('routes programmatic back through the animation driver before committing', () => {
+    const calls: string[] = [];
+    const coordinator = new MobileBackNavigationCoordinator(null);
+    coordinator.register(route('chat', () => {
+      calls.push('commit');
+    }));
+    const clear = coordinator.setAnimatedBackDriver((activeRoute) => {
+      calls.push(`animate:${activeRoute.id}`);
+      return true;
+    });
+
+    expect(coordinator.requestAnimatedBack('root')).toBe(true);
+    expect(calls).toEqual(['animate:chat']);
+    clear();
+    expect(coordinator.requestAnimatedBack('root')).toBe(true);
+    expect(calls).toEqual(['animate:chat', 'commit']);
+  });
+
+  test('falls back exactly once when the animation driver declines an invoke-only route', () => {
+    let commits = 0;
+    const coordinator = new MobileBackNavigationCoordinator(null);
+    coordinator.register(route('chat', () => {
+      commits += 1;
+    }));
+    coordinator.setAnimatedBackDriver(() => false);
+
+    expect(coordinator.requestAnimatedBack('root')).toBe(true);
+    expect(commits).toBe(1);
+  });
+
+  test('invoke-only commit without a surface is taken exactly once', () => {
+    let commits = 0;
+    const invokeRoute = route('chat', () => {
+      commits += 1;
+    });
+    expect(commitMobileBackRouteWithoutPresentation(invokeRoute, true)).toBe(true);
+    expect(commits).toBe(1);
+  });
+
+  test('invoke-only commit reports a declined route', () => {
+    let commits = 0;
+    const invokeRoute = route('chat', () => {
+      commits += 1;
+      return false;
+    });
+    expect(commitMobileBackRouteWithoutPresentation(invokeRoute, true)).toBe(false);
+    expect(commits).toBe(1);
+  });
+
   test('mirrors one push route into H5 history and consumes browser back', () => {
     const harness = historyHarness();
     let calls = 0;
@@ -90,19 +157,176 @@ describe('MobileBackNavigationCoordinator', () => {
   });
 });
 
+test('settling commits queue and drain one pop at a time', () => {
+  const queue = new MobileBackCommitQueue();
+  queue.enqueue();
+  queue.enqueue();
+  expect(queue.take()).toBe(true);
+  expect(queue.take()).toBe(true);
+  expect(queue.take()).toBe(false);
+  queue.enqueue();
+  queue.clear();
+  expect(queue.take()).toBe(false);
+});
+
+test('pop cleanup waits for route or surface acknowledgment', () => {
+  const outgoing = {} as HTMLElement;
+  expect(isMobileBackRouteAcknowledged({
+    surfaceConnected: true,
+    routeToken: 2,
+    topRouteToken: 2,
+    routeSurface: outgoing,
+    outgoingSurface: outgoing,
+  })).toBe(false);
+  expect(isMobileBackRouteAcknowledged({
+    surfaceConnected: true,
+    routeToken: 2,
+    topRouteToken: 1,
+    routeSurface: outgoing,
+    outgoingSurface: outgoing,
+  })).toBe(true);
+  expect(isMobileBackRouteAcknowledged({
+    surfaceConnected: false,
+    routeToken: 2,
+    topRouteToken: 2,
+    routeSurface: outgoing,
+    outgoingSurface: outgoing,
+  })).toBe(true);
+});
+
+describe('mobile session mirror acknowledgment', () => {
+  test('confirms the newest push/pop target in the same tick', () => {
+    resetMobileSessionMirror();
+    expectMobileSessionMirror({ sessionId: 'child', directory: '/repo' });
+    expectMobileSessionMirror({ sessionId: 'parent', directory: '/repo' });
+    expect(acknowledgeMobileSessionMirror({ sessionId: 'parent', directory: '/repo' })).toBe('internal');
+  });
+
+  test('normalizes directories before confirming an internal mirror', () => {
+    resetMobileSessionMirror();
+    expectMobileSessionMirror({ sessionId: 'session', directory: 'C:\\repo\\' });
+    expect(acknowledgeMobileSessionMirror({ sessionId: 'session', directory: 'c:/repo/' })).toBe('internal');
+  });
+
+  test('runtime reset invalidates an expected mirror generation', () => {
+    expectMobileSessionMirror({ sessionId: 'old-runtime', directory: '/repo' });
+    resetMobileSessionMirror();
+    expect(acknowledgeMobileSessionMirror({ sessionId: 'old-runtime', directory: '/repo' })).toBe('external');
+  });
+});
+
+type AnimationControl = {
+  animation: Animation;
+  resolve: () => void;
+  reject: () => void;
+  cancelCalls: () => number;
+};
+
+const animatedElement = () => {
+  const controls: AnimationControl[] = [];
+  const style = {
+    transform: '',
+    willChange: '',
+    removeProperty: (property: string) => {
+      if (property === 'transform') style.transform = '';
+      if (property === 'will-change') style.willChange = '';
+    },
+  };
+  const element = {
+    style,
+    animate: () => {
+      let resolve!: () => void;
+      let reject!: () => void;
+      let cancels = 0;
+      const finished = new Promise<void>((resolvePromise, rejectPromise) => {
+        resolve = resolvePromise;
+        reject = rejectPromise;
+      });
+      const animation = {
+        finished,
+        cancel: () => {
+          cancels += 1;
+        },
+      } as unknown as Animation;
+      controls.push({ animation, resolve, reject, cancelCalls: () => cancels });
+      return animation;
+    },
+  } as unknown as HTMLElement;
+  return { controls, element, style };
+};
+
+describe('MobilePushPresentationController', () => {
+  test('push lifecycle depends only on stable visual route identity', async () => {
+    const source = await readFile(new URL('./MobileTabsRoot.tsx', import.meta.url), 'utf8');
+    expect(source).toContain(
+      '}, [topSecondaryPageKey, topSecondaryPageDepth, predecessorSecondaryPageKey]);',
+    );
+    expect(source).not.toContain('}, [topSecondaryPage, visibleSecondaryPages]);');
+  });
+
+  test('starts synchronously and can cancel before a deferred frame would run', async () => {
+    const target = animatedElement();
+    const controller = new MobilePushPresentationController();
+    controller.start(target.element, null);
+    expect(target.controls).toHaveLength(1);
+
+    controller.cancel();
+    expect(target.controls[0].cancelCalls()).toBe(1);
+    expect(target.style.transform).toBe('');
+    expect(target.style.willChange).toBe('');
+    target.controls[0].resolve();
+    await Promise.resolve();
+  });
+
+  test('cleans styles when WAAPI finished rejects', async () => {
+    const target = animatedElement();
+    const controller = new MobilePushPresentationController();
+    controller.start(target.element, null);
+    target.controls[0].reject();
+    await Promise.resolve();
+    await Promise.resolve();
+    expect(target.style.transform).toBe('');
+    expect(target.style.willChange).toBe('');
+  });
+
+  test('stale completion cannot clear a consecutive push presentation', async () => {
+    const first = animatedElement();
+    const second = animatedElement();
+    const controller = new MobilePushPresentationController();
+    controller.start(first.element, null);
+    controller.start(second.element, first.element);
+
+    first.controls[0].resolve();
+    await Promise.resolve();
+    expect(second.style.transform).toBe('translate3d(100%, 0, 0)');
+    expect(first.style.willChange).toBe('transform');
+
+    second.controls[0].resolve();
+    first.controls[1].resolve();
+    await Promise.resolve();
+    await Promise.resolve();
+    expect(second.style.transform).toBe('');
+    expect(second.style.willChange).toBe('');
+    expect(first.style.transform).toBe('');
+    expect(first.style.willChange).toBe('');
+  });
+});
+
 describe('resolveMobileSecondaryBackDecision', () => {
   const parent = { id: 'ses_parent', directory: '/proj' };
+  const parentRoute = { key: 'parent', sessionId: parent.id, directory: parent.directory };
+  const childRoute = { key: 'child', sessionId: 'ses_child', directory: '/proj' };
 
   test('chat with parent navigates to parent and keeps secondary open', () => {
     expect(resolveMobileSecondaryBackDecision({
-      secondary: { kind: 'chat' },
+      secondary: { kind: 'chat', routes: [parentRoute, childRoute] },
       parentSessionTarget: parent,
-    })).toEqual({ action: 'navigateToParent', parent });
+    })).toEqual({ action: 'popChatSession', parent });
   });
 
   test('chat root closes secondary', () => {
     expect(resolveMobileSecondaryBackDecision({
-      secondary: { kind: 'chat' },
+      secondary: { kind: 'chat', routes: [parentRoute] },
       parentSessionTarget: null,
     })).toEqual({ action: 'closeSecondary' });
   });
@@ -129,11 +353,66 @@ describe('resolveMobileSecondaryBackDecision', () => {
   });
 });
 
+describe('mobile chat route stack', () => {
+  const route = (sessionId: string): MobileChatRoute => ({
+    key: sessionId,
+    sessionId,
+    directory: '/proj',
+  });
+
+  test('pushes and pops arbitrary parent-child depth one route at a time', () => {
+    const parent = route('parent');
+    const child = route('child');
+    const grandchild = route('grandchild');
+    const stack = pushMobileChatRoute(pushMobileChatRoute([parent], child), grandchild);
+
+    expect(stack.map((entry) => entry.sessionId)).toEqual(['parent', 'child', 'grandchild']);
+    expect(popMobileChatRoute(stack).map((entry) => entry.sessionId)).toEqual(['parent', 'child']);
+    expect(popMobileChatRoute(popMobileChatRoute(stack)).map((entry) => entry.sessionId)).toEqual(['parent']);
+  });
+
+  test('reconciles an immediate predecessor for a deep-linked child', () => {
+    const child = route('child');
+    const parent = route('parent');
+    expect(reconcileMobileChatPredecessor([child], parent)).toEqual([parent, child]);
+  });
+
+  test('deduplicates repeated pushes and truncates to an existing ancestor', () => {
+    const parent = route('parent');
+    const child = route('child');
+    const grandchild = route('grandchild');
+    expect(pushMobileChatRoute([parent, child], child)).toEqual([parent, child]);
+    expect(pushMobileChatRoute([parent, child, grandchild], parent)).toEqual([parent]);
+  });
+
+  test('external session replacement collapses nested depth and preserves the page identity', () => {
+    const parent = route('parent');
+    const child = route('child');
+    const external = { ...route('external'), key: 'fresh-key' };
+    expect(replaceMobileChatRoute([parent, child], external)).toEqual([
+      { ...external, key: child.key },
+    ]);
+  });
+});
+
 test('clampMobileBackProgress keeps native payloads compositor-safe', () => {
   expect(clampMobileBackProgress(-1)).toBe(0);
   expect(clampMobileBackProgress(0.42)).toBe(0.42);
   expect(clampMobileBackProgress(2)).toBe(1);
   expect(clampMobileBackProgress(Number.NaN)).toBe(0);
+});
+
+test('settlement duration follows remaining distance and release velocity within bounds', () => {
+  const longCommit = resolveMobileBackSettleDuration({ progress: 0.1, commit: true, velocityX: 0 });
+  const shortCommit = resolveMobileBackSettleDuration({ progress: 0.8, commit: true, velocityX: 0 });
+  const fastCommit = resolveMobileBackSettleDuration({ progress: 0.1, commit: true, velocityX: 2400, viewportWidth: 390 });
+  const cancel = resolveMobileBackSettleDuration({ progress: 0.6, commit: false, velocityX: -300 });
+
+  expect(longCommit).toBeGreaterThan(shortCommit);
+  expect(fastCommit).toBeLessThan(longCommit);
+  expect(longCommit).toBeLessThanOrEqual(320);
+  expect(cancel).toBeGreaterThanOrEqual(100);
+  expect(cancel).toBeLessThanOrEqual(260);
 });
 
 test('settlement cancels its fill-forwards animation before a route reuses the surface', async () => {
@@ -160,4 +439,13 @@ test('settlement cancels its fill-forwards animation before a route reuses the s
     { transform: 'translate3d(42%, 0, 0)' },
     { transform: 'translate3d(100%, 0, 0)' },
   ]);
+});
+
+test('all three nested transcript entries route through the native phone stack helper', async () => {
+  const [messageBody, toolPart] = await Promise.all([
+    readFile(new URL('../components/chat/message/MessageBody.tsx', import.meta.url), 'utf8'),
+    readFile(new URL('../components/chat/message/parts/ToolPart.tsx', import.meta.url), 'utf8'),
+  ]);
+  expect(messageBody.match(/pushPhoneNestedSession\(/g)).toHaveLength(1);
+  expect(toolPart.match(/pushPhoneNestedSession\(/g)).toHaveLength(2);
 });

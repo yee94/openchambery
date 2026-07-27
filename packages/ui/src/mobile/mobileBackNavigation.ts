@@ -1,7 +1,6 @@
 import * as React from 'react';
 import { Capacitor, registerPlugin, type PluginListenerHandle } from '@capacitor/core';
 import { useEvent } from '@reactuses/core';
-import { flushSync } from 'react-dom';
 
 import { isCapacitorApp } from '@/lib/platform';
 
@@ -69,6 +68,8 @@ export class MobileBackNavigationCoordinator {
   private history: MobileBackHistory | null;
   private removeHistoryListener: (() => void) | null = null;
   private programmaticHistoryBackToken: number | null = null;
+  private animatedBackDriver: ((route: RegisteredMobileBackRoute) => boolean) | null = null;
+  private presentationCancelDriver: (() => void) | null = null;
 
   constructor(history: MobileBackHistory | null = browserHistory()) {
     this.history = history;
@@ -113,6 +114,33 @@ export class MobileBackNavigationCoordinator {
     const route = this.getTopRoute();
     if (!route || (layer && route.layer !== layer)) return false;
     return route.onBack() !== false;
+  };
+
+  requestAnimatedBack = (layer?: MobileBackRouteLayer): boolean => {
+    const route = this.getTopRoute();
+    if (!route || (layer && route.layer !== layer)) return false;
+    if (this.animatedBackDriver?.(route)) return true;
+    return this.backImmediately(layer);
+  };
+
+  setAnimatedBackDriver = (
+    driver: ((route: RegisteredMobileBackRoute) => boolean) | null,
+  ): (() => void) => {
+    this.animatedBackDriver = driver;
+    return () => {
+      if (this.animatedBackDriver === driver) this.animatedBackDriver = null;
+    };
+  };
+
+  setPresentationCancelDriver = (driver: (() => void) | null): (() => void) => {
+    this.presentationCancelDriver = driver;
+    return () => {
+      if (this.presentationCancelDriver === driver) this.presentationCancelDriver = null;
+    };
+  };
+
+  cancelPresentation = (): void => {
+    this.presentationCancelDriver?.();
   };
 
   requestBrowserBack = (): boolean => {
@@ -192,7 +220,7 @@ export const useMobileBackRoute = ({
   }, [active, handleBack, id, layer, surfaceRef, underlayRef]);
 };
 
-type NativeBackEvent = { progress?: number };
+type NativeBackEvent = { progress?: number; velocityX?: number };
 
 type OpenChamberNavigationPlugin = {
   setEnabled(options: { enabled: boolean }): Promise<void>;
@@ -217,6 +245,32 @@ type InteractivePresentation = {
 export const clampMobileBackProgress = (progress: number): number => (
   Math.min(1, Math.max(0, Number.isFinite(progress) ? progress : 0))
 );
+
+export const commitMobileBackRouteWithoutPresentation = (
+  route: MobileBackRoute | null,
+  eligible: boolean,
+): boolean => {
+  if (!route || !eligible) return false;
+  return route.onBack() !== false;
+};
+
+export const resolveMobileBackSettleDuration = (input: {
+  progress: number;
+  commit: boolean;
+  velocityX?: number;
+  viewportWidth?: number;
+}): number => {
+  const progress = clampMobileBackProgress(input.progress);
+  const remaining = input.commit ? 1 - progress : progress;
+  if (remaining <= 0.001) return 0;
+  const width = Math.max(1, input.viewportWidth ?? 390);
+  const velocityPagesPerSecond = Math.abs(input.velocityX ?? 0) / width;
+  const pagesPerSecond = Math.max(input.commit ? 2.4 : 2.8, velocityPagesPerSecond);
+  const rawDuration = (remaining / pagesPerSecond) * 1000;
+  const minimum = input.commit ? 90 : 100;
+  const maximum = input.commit ? 320 : 260;
+  return Math.round(Math.min(maximum, Math.max(minimum, rawDuration)));
+};
 
 const clearPresentation = (presentation: InteractivePresentation): void => {
   const {
@@ -251,6 +305,18 @@ const renderPresentation = (presentation: InteractivePresentation, rawProgress: 
   }
 };
 
+export const isMobileBackRouteAcknowledged = (input: {
+  surfaceConnected: boolean;
+  routeToken: number;
+  topRouteToken: number | null;
+  routeSurface: HTMLElement | null;
+  outgoingSurface: HTMLElement;
+}): boolean => (
+  !input.surfaceConnected
+  || input.topRouteToken !== input.routeToken
+  || input.routeSurface !== input.outgoingSurface
+);
+
 const settleMobileBackElement = async (
   element: HTMLElement,
   targetPercent: number,
@@ -272,7 +338,7 @@ const settleMobileBackElement = async (
       await animation.finished;
       completed = true;
     } catch {
-      // A newer gesture may intentionally interrupt this settlement.
+      // Driver cleanup may intentionally interrupt this settlement.
     } finally {
       // Preserve the rendered endpoint in the inline transform before
       // cancelling fill-forwards. Otherwise WebKit exposes the pre-settlement
@@ -283,7 +349,9 @@ const settleMobileBackElement = async (
       // overflow after the navigation owner changes state.
       animation.cancel();
     }
+    return;
   }
+  element.style.transform = `translate3d(${targetPercent}%, 0, 0)`;
 };
 
 export const settleMobileBackSurface = async (
@@ -291,12 +359,34 @@ export const settleMobileBackSurface = async (
   commit: boolean,
   reducedMotion = typeof window !== 'undefined'
     && window.matchMedia?.('(prefers-reduced-motion: reduce)').matches,
+  duration = resolveMobileBackSettleDuration({
+    progress: Number.parseFloat(surface.style.transform.match(/translate3d\(([-\d.]+)%/)?.[1] ?? '0') / 100,
+    commit,
+  }),
 ): Promise<void> => settleMobileBackElement(
   surface,
   commit ? 100 : 0,
-  commit ? 170 : 210,
+  duration,
   reducedMotion,
 );
+
+export class MobileBackCommitQueue {
+  private pending = 0;
+
+  enqueue(): void {
+    this.pending += 1;
+  }
+
+  take(): boolean {
+    if (this.pending === 0) return false;
+    this.pending -= 1;
+    return true;
+  }
+
+  clear(): void {
+    this.pending = 0;
+  }
+}
 
 export type UseMobileNavigationDriverOptions = {
   enabled: boolean;
@@ -321,6 +411,7 @@ export const useMobileNavigationDriver = ({
     let frame = 0;
     let latestProgress = 0;
     let presentationGeneration = 0;
+    const commitQueue = new MobileBackCommitQueue();
     const handles: PluginListenerHandle[] = [];
 
     const routeIsEligible = (route: RegisteredMobileBackRoute | null): route is RegisteredMobileBackRoute => (
@@ -333,6 +424,8 @@ export const useMobileNavigationDriver = ({
     };
 
     const begin = () => {
+      mobileBackNavigationCoordinator.cancelPresentation();
+      if (settlingPresentation) return;
       const route = mobileBackNavigationCoordinator.getTopRoute();
       if (!routeIsEligible(route)) return;
       const surface = route.getSurface();
@@ -350,7 +443,6 @@ export const useMobileNavigationDriver = ({
       surface.style.transition = 'none';
       surface.style.animation = 'none';
       surface.style.willChange = 'transform';
-      surface.style.boxShadow = '-14px 0 28px color-mix(in srgb, var(--surface-foreground) 12%, transparent)';
       if (underlay) {
         underlay.style.transition = 'none';
         underlay.style.animation = 'none';
@@ -378,11 +470,54 @@ export const useMobileNavigationDriver = ({
       });
     };
 
-    const finish = (commit: boolean, finalProgress?: number) => {
+    const waitForRouteAcknowledgment = (current: InteractivePresentation): Promise<void> => new Promise((resolve) => {
+      let frame = 0;
+      let framesRemaining = 12;
+      let settled = false;
+      const complete = () => {
+        if (settled) return;
+        settled = true;
+        unsubscribe();
+        if (frame) window.cancelAnimationFrame(frame);
+        resolve();
+      };
+      const acknowledged = () => {
+        const top = mobileBackNavigationCoordinator.getTopRoute();
+        return isMobileBackRouteAcknowledged({
+          surfaceConnected: current.surface.isConnected,
+          routeToken: current.route.token,
+          topRouteToken: top?.token ?? null,
+          routeSurface: current.route.getSurface(),
+          outgoingSurface: current.surface,
+        });
+      };
+      const inspect = () => {
+        if (acknowledged() || framesRemaining <= 0) {
+          complete();
+          return;
+        }
+        framesRemaining -= 1;
+        frame = window.requestAnimationFrame(inspect);
+      };
+      const unsubscribe = mobileBackNavigationCoordinator.subscribe(() => {
+        if (acknowledged()) complete();
+      });
+      inspect();
+    });
+
+    const finish = (commit: boolean, finalProgress?: number, velocityX?: number): boolean => {
+      if (settlingPresentation) {
+        if (commit && routeIsEligible(mobileBackNavigationCoordinator.getTopRoute())) {
+          commitQueue.enqueue();
+          return true;
+        }
+        return false;
+      }
       if (frame) {
         window.cancelAnimationFrame(frame);
         frame = 0;
       }
+      if (!presentation) begin();
       if (presentation && finalProgress !== undefined) {
         renderPresentation(presentation, finalProgress);
       }
@@ -390,40 +525,54 @@ export const useMobileNavigationDriver = ({
       const generation = presentationGeneration;
       presentation = null;
       if (!current) {
-        if (commit) mobileBackNavigationCoordinator.backImmediately();
-        return;
+        if (!commit) return false;
+        const route = mobileBackNavigationCoordinator.getTopRoute();
+        return commitMobileBackRouteWithoutPresentation(route, routeIsEligible(route));
       }
       settlingPresentation = current;
       const reducedMotion = window.matchMedia?.('(prefers-reduced-motion: reduce)').matches ?? false;
-      const duration = commit ? 170 : 210;
+      const progress = clampMobileBackProgress(finalProgress ?? latestProgress);
+      const duration = resolveMobileBackSettleDuration({
+        progress,
+        commit,
+        velocityX,
+        viewportWidth: window.innerWidth,
+      });
       void Promise.all([
-        settleMobileBackSurface(current.surface, commit, reducedMotion),
+        settleMobileBackSurface(current.surface, commit, reducedMotion, duration),
         current.underlay
           ? settleMobileBackElement(current.underlay, commit ? 0 : -8, duration, reducedMotion)
           : Promise.resolve(),
-      ]).then(() => {
+      ]).then(async () => {
         if (generation !== presentationGeneration) return;
+        if (!disposed && commit) {
+          current.route.onBack();
+          // Keep the outgoing surface parked until React detaches it or the
+          // coordinator observes the replacement route. The frame cap only
+          // bounds cleanup when an owner cannot publish acknowledgment.
+          await waitForRouteAcknowledgment(current);
+        }
+        if (generation !== presentationGeneration) return;
+        clearPresentation(current);
         if (settlingPresentation === current) settlingPresentation = null;
-        try {
-          if (!disposed && commit) {
-            // Commit the route while the outgoing surface is still parked at
-            // 100%. Clearing first can reveal it at x=0 for one WebKit frame.
-            flushSync(() => {
-              current.route.onBack();
-            });
-          }
-        } finally {
-          clearPresentation(current);
+        if (!disposed && commitQueue.take()) {
+          finish(true, 0, 0);
         }
       });
+      return true;
     };
+
+    const clearAnimatedBackDriver = mobileBackNavigationCoordinator.setAnimatedBackDriver((route) => {
+      if (route !== mobileBackNavigationCoordinator.getTopRoute() || !routeIsEligible(route)) return false;
+      return finish(true, 0, 0);
+    });
 
     const unsubscribe = mobileBackNavigationCoordinator.subscribe(syncEnabled);
     const addListeners = async () => {
       const started = await OpenChamberNavigation.addListener('backStarted', begin);
       const progressed = await OpenChamberNavigation.addListener('backProgressed', (event) => update(event.progress ?? 0));
-      const cancelled = await OpenChamberNavigation.addListener('backCancelled', (event) => finish(false, event.progress));
-      const invoked = await OpenChamberNavigation.addListener('backInvoked', (event) => finish(true, event.progress));
+      const cancelled = await OpenChamberNavigation.addListener('backCancelled', (event) => finish(false, event.progress, event.velocityX));
+      const invoked = await OpenChamberNavigation.addListener('backInvoked', (event) => finish(true, event.progress, event.velocityX));
       if (disposed) {
         await Promise.all([started.remove(), progressed.remove(), cancelled.remove(), invoked.remove()]);
         return;
@@ -437,7 +586,9 @@ export const useMobileNavigationDriver = ({
     return () => {
       disposed = true;
       presentationGeneration += 1;
+      commitQueue.clear();
       unsubscribe();
+      clearAnimatedBackDriver();
       if (frame) window.cancelAnimationFrame(frame);
       if (presentation) clearPresentation(presentation);
       if (settlingPresentation) {

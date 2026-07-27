@@ -58,6 +58,7 @@ final class ImeSyncBridge {
         View rootView = content.getRootView();
 
         paintBackdrop(resolveThemeBackdrop());
+        hideNavigationBar();
         webView.post(this::syncBackdropFromWeb);
 
         if (webParent != null) {
@@ -69,6 +70,9 @@ final class ImeSyncBridge {
                     WindowInsetsCompat.Type.systemBars() | WindowInsetsCompat.Type.displayCutout()
                 );
                 boolean imeVisible = insets.isVisible(WindowInsetsCompat.Type.ime());
+                if (!imeVisible) {
+                    hideNavigationBar();
+                }
                 if (imeVisible != lastImeVisible) {
                     if (imeVisible) syncBackdropFromWeb();
                     lastImeVisible = imeVisible;
@@ -96,6 +100,26 @@ final class ImeSyncBridge {
         // Capacitor Keyboard installs an empty root animation callback. Remove it
         // so the IME animation can stay off the app's main-thread callback path.
         ViewCompat.setWindowInsetsAnimationCallback(rootView, null);
+    }
+
+    @SuppressWarnings("deprecation")
+    void hideNavigationBar() {
+        Window window = activity.getWindow();
+        if (window == null) return;
+        View decor = window.getDecorView();
+        if (decor == null) return;
+        int immersiveFlags =
+            View.SYSTEM_UI_FLAG_LAYOUT_STABLE
+                | View.SYSTEM_UI_FLAG_LAYOUT_HIDE_NAVIGATION
+                | View.SYSTEM_UI_FLAG_HIDE_NAVIGATION
+                | View.SYSTEM_UI_FLAG_IMMERSIVE_STICKY;
+        decor.setSystemUiVisibility(decor.getSystemUiVisibility() | immersiveFlags);
+        WindowInsetsControllerCompat controller = WindowCompat.getInsetsController(window, decor);
+        if (controller == null) return;
+        controller.setSystemBarsBehavior(
+            WindowInsetsControllerCompat.BEHAVIOR_SHOW_TRANSIENT_BARS_BY_SWIPE
+        );
+        controller.hide(WindowInsetsCompat.Type.navigationBars());
     }
 
     /**

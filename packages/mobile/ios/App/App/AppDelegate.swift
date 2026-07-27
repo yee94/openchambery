@@ -77,8 +77,6 @@ class SceneDelegate: UIResponder, UIWindowSceneDelegate {
         self.window = window
         window.makeKeyAndVisible()
 
-        configureWebViewChrome()
-
         if let urlContext = connectionOptions.urlContexts.first {
             _ = ApplicationDelegateProxy.shared.application(UIApplication.shared, open: urlContext.url, options: [:])
         }
@@ -88,10 +86,6 @@ class SceneDelegate: UIResponder, UIWindowSceneDelegate {
     }
 
     func sceneDidBecomeActive(_ scene: UIScene) {
-        // Re-assert in case the WebView wasn't ready at scene-connect time, or the
-        // effect was re-enabled while backgrounded.
-        configureWebViewChrome()
-
         // Clear the app-icon badge whenever the app becomes active. The server sends
         // an absolute badge count (sessions needing attention) on each push; once the
         // user is looking at the app, the in-app indicators take over, so reset to 0.
@@ -132,30 +126,6 @@ class SceneDelegate: UIResponder, UIWindowSceneDelegate {
             if defaults.string(forKey: SceneDelegate.widgetSnapshotKey) == json { return }
             defaults.set(json, forKey: SceneDelegate.widgetSnapshotKey)
             WidgetCenter.shared.reloadAllTimelines()
-        }
-    }
-
-    /// iOS 26 (Liquid Glass) automatically applies a "scroll edge effect" — a blur +
-    /// appearance-coloured dim — to the top/bottom of a scroll view beneath the system
-    /// bars. On the full-screen WKWebView that renders as a dark band behind the status
-    /// bar in Dark Mode (independent of the in-app theme). Hide it so the web content
-    /// (which paints its own themed background) is what shows under the status bar.
-    private func configureWebViewChrome() {
-        guard let bridge = window?.rootViewController as? CAPBridgeViewController,
-              let webView = bridge.webView else { return }
-        webView.isOpaque = false
-        webView.backgroundColor = .clear
-        webView.scrollView.backgroundColor = .clear
-        if #available(iOS 26.0, *) {
-            // KVC keeps this compiling with pre-26 SDKs, but the effect object is a
-            // UIScrollEdgeEffect — NOT a UIView — so it must be handled as a plain
-            // NSObject ("hidden" is the ObjC key behind isHidden). The previous
-            // `as? UIView` cast silently returned nil and left the system's dark
-            // edge band visible behind the status bar.
-            for key in ["topEdgeEffect", "bottomEdgeEffect"] {
-                guard webView.scrollView.responds(to: NSSelectorFromString(key)) else { continue }
-                (webView.scrollView.value(forKey: key) as? NSObject)?.setValue(true, forKey: "hidden")
-            }
         }
     }
 

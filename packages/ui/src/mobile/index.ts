@@ -5,6 +5,7 @@ export {
 export {
   INITIAL_MOBILE_NAVIGATION_STATE,
   MOBILE_BACK_PRIORITY,
+  type MobileChatRoute,
   type MobileNavigationActions,
   type MobileNavigationState,
   type MobileSecondaryState,

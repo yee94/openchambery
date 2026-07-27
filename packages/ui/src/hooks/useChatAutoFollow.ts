@@ -46,6 +46,7 @@ export interface AnimationHandlers {
 }
 
 interface UseChatAutoFollowOptions {
+    enabled?: boolean;
     currentSessionId: string | null;
     viewportKey?: string;
     sessionMessageCount: number;
@@ -180,6 +181,7 @@ const nestedScrollableCanConsumeUp = (root: HTMLElement, target: EventTarget | n
 };
 
 export const useChatAutoFollow = ({
+    enabled = true,
     currentSessionId,
     viewportKey,
     sessionMessageCount,
@@ -680,6 +682,7 @@ export const useChatAutoFollow = ({
     }, [isAnimationGuardActive, isAuto, queueSave, scrollToBottom, setStateValue, stop, updateOverflowAndButton]);
 
     React.useEffect(() => {
+        if (!enabled) return;
         const container = containerEl;
         if (!container) return;
 
@@ -749,13 +752,14 @@ export const useChatAutoFollow = ({
                 window.removeEventListener('pointerdown', handlePointerDownIntent, true);
             }
         };
-    }, [containerEl, handleScrollEvent, releaseFromUserIntent]);
+    }, [containerEl, enabled, handleScrollEvent, releaseFromUserIntent]);
 
     // The heart of the follow behaviour: the content ResizeObserver fires after
     // layout and before paint, so re-pinning to the bottom here is invisible —
     // there is no "jump up then catch up". Observe both the container (composer
     // growth shrinks the viewport) and the inner content (streaming growth).
     React.useEffect(() => {
+        if (!enabled) return;
         const container = containerEl;
         if (!container || typeof ResizeObserver === 'undefined') return;
 
@@ -798,7 +802,7 @@ export const useChatAutoFollow = ({
             observer.observe(inner);
         }
         return () => observer.disconnect();
-    }, [armEntryStickQuiet, containerEl, scrollToBottom, setStateValue, updateOverflowAndButton]);
+    }, [armEntryStickQuiet, containerEl, enabled, scrollToBottom, setStateValue, updateOverflowAndButton]);
 
     // ── native keyboard transitions (Capacitor choreography) ────────────────
     // The chat scroller gets NO transforms and NO auto re-pin for keyboard
@@ -812,7 +816,7 @@ export const useChatAutoFollow = ({
     // These events never fire outside the Capacitor app (except intent from
     // composer expand, which only freezes chase).
     React.useEffect(() => {
-        if (typeof window === 'undefined') return;
+        if (!enabled || typeof window === 'undefined') return;
 
         const clearExpandFreezeTimer = () => {
             if (keyboardExpandFreezeTimerRef.current === null) return;
@@ -902,13 +906,15 @@ export const useChatAutoFollow = ({
             keyboardGeometryFreezeRef.current = false;
             keyboardOpenRef.current = false;
         };
-    }, [updateOverflowAndButton]);
+    }, [enabled, updateOverflowAndButton]);
 
     React.useEffect(() => {
+        if (!enabled) return;
         updateOverflowAndButton();
-    }, [sessionMessageCount, updateOverflowAndButton]);
+    }, [enabled, sessionMessageCount, updateOverflowAndButton]);
 
     const notifyContentChange = React.useCallback((reason?: ContentChangeReason) => {
+        if (!enabled) return;
         // A tracked height animation (e.g. Thinking auto-collapse) opens a guard
         // window so its transient geometry / async scroll events are not misread
         // as a user scroll-away. Real gestures still release through
@@ -929,7 +935,7 @@ export const useChatAutoFollow = ({
         if (stateRef.current === 'following') {
             scrollToBottom(false);
         }
-    }, [armEntryStickQuiet, scrollToBottom, updateOverflowAndButton]);
+    }, [armEntryStickQuiet, enabled, scrollToBottom, updateOverflowAndButton]);
 
     const animationHandlersRef = React.useRef<Map<string, AnimationHandlers>>(new Map());
 
@@ -938,6 +944,7 @@ export const useChatAutoFollow = ({
         if (cached) return cached;
 
         const kick = () => {
+            if (!enabled) return;
             if (stateRef.current === 'following') {
                 scrollToBottom(false);
             }
@@ -946,6 +953,7 @@ export const useChatAutoFollow = ({
         const handlers: AnimationHandlers = {
             onChunk: kick,
             onComplete: () => {
+                if (!enabled) return;
                 updateOverflowAndButton();
             },
             onStreamingCandidate: () => {},
@@ -956,7 +964,7 @@ export const useChatAutoFollow = ({
         };
         animationHandlersRef.current.set(messageId, handlers);
         return handlers;
-    }, [scrollToBottom, updateOverflowAndButton]);
+    }, [enabled, scrollToBottom, updateOverflowAndButton]);
 
     React.useEffect(() => {
         return () => {
@@ -975,7 +983,7 @@ export const useChatAutoFollow = ({
     }, [cancelForcedBottom, endEntryStick, flushSave]);
 
     React.useEffect(() => {
-        if (!onActiveTurnChange) return;
+        if (!enabled || !onActiveTurnChange) return;
         const container = containerEl;
         if (!container) return;
 
@@ -1042,7 +1050,7 @@ export const useChatAutoFollow = ({
             mutationObserver.disconnect();
             spy.destroy();
         };
-    }, [containerEl, onActiveTurnChange]);
+    }, [containerEl, enabled, onActiveTurnChange]);
 
     return {
         scrollRef,

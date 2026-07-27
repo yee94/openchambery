@@ -552,10 +552,58 @@ const useNativeMobileChrome = (): void => {
       }
 
       // ── iOS: fixed-duration transform FLIP (keyboardWillShow height) ──────
+      const IOS_IME_RATIO_STORAGE_KEY = 'openchamber.iosImeHeightRatio.v1';
+      const clampIosImeRatio = (value: number): number => (
+        Number.isFinite(value) ? Math.min(0.68, Math.max(0.28, value)) : 0.39
+      );
+      const readCachedIosImeHeight = (): number => {
+        try {
+          const ratio = clampIosImeRatio(Number.parseFloat(localStorage.getItem(IOS_IME_RATIO_STORAGE_KEY) ?? ''));
+          return Math.round(window.innerHeight * ratio);
+        } catch {
+          return Math.round(window.innerHeight * 0.39);
+        }
+      };
+      const persistIosImeHeight = (height: number) => {
+        if (height <= 0 || window.innerHeight <= 0) return;
+        try {
+          localStorage.setItem(IOS_IME_RATIO_STORAGE_KEY, String(clampIosImeRatio(height / window.innerHeight)));
+        } catch {
+          // Restricted storage keeps the current native measurement for this app run.
+        }
+      };
+      const liftIosMovers = (height: number, anchor?: EventTarget | null): number => {
+        measureSafeBottom();
+        const slide = Math.max(0, height - safeBottomPx);
+        for (const { el, factor } of getKbMovers(anchor)) {
+          el.style.willChange = 'transform';
+          el.style.transition = `transform ${KB_ANIM_MS}ms ${KB_ANIM_EASING}`;
+          el.style.transform = `translateY(${-slide * factor}px)`;
+        }
+        return slide;
+      };
+      const handleIosKeyboardIntent = (event: Event) => {
+        const detail = (event as CustomEvent<{ open?: boolean }>).detail;
+        if (detail?.open !== true || layoutApplied) return;
+        keyboardOpen = true;
+        root.classList.remove('oc-kb-hide');
+        root.classList.add('oc-keyboard-open', 'oc-kb-animating', 'oc-kb-caret-hold');
+        const predictedHeight = keyboardHeight > 0 ? keyboardHeight : readCachedIosImeHeight();
+        const slide = liftIosMovers(predictedHeight, event.target);
+        dispatchKb('oc:keyboard-anim', {
+          phase: 'show',
+          slide,
+          durationMs: KB_ANIM_MS,
+          easing: KB_ANIM_EASING,
+        });
+      };
+      window.addEventListener('oc:keyboard-intent', handleIosKeyboardIntent);
+
       const showHandle = await Keyboard.addListener('keyboardWillShow', (info) => {
         clearSettle();
         keyboardOpen = true;
         keyboardHeight = info.keyboardHeight;
+        persistIosImeHeight(keyboardHeight);
         if (!layoutApplied) measureSafeBottom();
         const slide = Math.max(0, keyboardHeight - safeBottomPx);
         root.classList.remove('oc-kb-hide');
@@ -653,6 +701,7 @@ const useNativeMobileChrome = (): void => {
       if (disposed) {
         clearSettle();
         document.removeEventListener('focusout', handleFocusOut, true);
+        window.removeEventListener('oc:keyboard-intent', handleIosKeyboardIntent);
         void showHandle.remove();
         void hideHandle.remove();
         return;
@@ -666,6 +715,7 @@ const useNativeMobileChrome = (): void => {
           }
         },
         () => document.removeEventListener('focusout', handleFocusOut, true),
+        () => window.removeEventListener('oc:keyboard-intent', handleIosKeyboardIntent),
         () => void showHandle.remove(),
         () => void hideHandle.remove(),
       );
@@ -2587,7 +2637,7 @@ const MobileShell: React.FC<{
       setUpdateOpen(false);
       return true;
     }
-    if (mobileBackNavigationCoordinator.backImmediately('root')) {
+    if (mobileBackNavigationCoordinator.requestAnimatedBack('root')) {
       return true;
     }
     // Phone chat secondary page closes before the app would minimize or
@@ -2862,40 +2912,52 @@ const MobileShell: React.FC<{
                   sessionId={target.sessionId}
                   onBack={() => {
                     closeOverflowMenu();
-                    phoneSecondaryBackRef.current?.();
+                    mobileBackNavigationCoordinator.requestAnimatedBack('root');
                   }}
                   onOpenMenu={toggleOverflowMenu}
                   onCloseMenu={closeOverflowMenu}
-                  menuOpen={overflowOpen}
+                  menuOpen={target.active && overflowOpen}
                 >
-                  <main ref={chatMainRef} className="relative h-full min-h-0 flex-1 overflow-hidden" data-page-scroll-lock="true">
-                    <div
-                      ref={previousSessionHolderRef}
-                      aria-hidden="true"
-                      className="pointer-events-none absolute inset-y-0 -left-full flex w-full items-center justify-end gap-3 bg-background pr-4"
-                    >
-                      <span className="typography-micro font-medium tracking-wide text-muted-foreground/60">
-                        {t('helpDialog.item.previousSession')}
-                      </span>
-                      <span className="flex size-11 items-center justify-center rounded-full border border-border/70 bg-[var(--surface-elevated)] text-foreground shadow-sm">
-                        <Icon name="arrow-left" className="size-5" />
-                      </span>
-                    </div>
-                    <div
-                      ref={nextSessionHolderRef}
-                      aria-hidden="true"
-                      className="pointer-events-none absolute inset-y-0 left-full flex w-full items-center justify-start gap-3 bg-background pl-4"
-                    >
-                      <span className="flex size-11 items-center justify-center rounded-full border border-border/70 bg-[var(--surface-elevated)] text-foreground shadow-sm">
-                        <Icon name="arrow-right" className="size-5" />
-                      </span>
-                      <span className="typography-micro font-medium tracking-wide text-muted-foreground/60">
-                        {t('helpDialog.item.nextSession')}
-                      </span>
-                    </div>
-                    <div ref={chatAnimRef} className="relative h-full w-full bg-background">
+                  <main ref={target.active ? chatMainRef : undefined} className="relative h-full min-h-0 flex-1 overflow-hidden" data-page-scroll-lock="true">
+                    {target.active ? (
+                      <>
+                        <div
+                          ref={previousSessionHolderRef}
+                          aria-hidden="true"
+                          className="pointer-events-none absolute inset-y-0 -left-full flex w-full items-center justify-end gap-3 bg-background pr-4"
+                        >
+                          <span className="typography-micro font-medium tracking-wide text-muted-foreground/60">
+                            {t('helpDialog.item.previousSession')}
+                          </span>
+                          <span className="flex size-11 items-center justify-center rounded-full border border-border/70 bg-[var(--surface-elevated)] text-foreground shadow-sm">
+                            <Icon name="arrow-left" className="size-5" />
+                          </span>
+                        </div>
+                        <div
+                          ref={nextSessionHolderRef}
+                          aria-hidden="true"
+                          className="pointer-events-none absolute inset-y-0 left-full flex w-full items-center justify-start gap-3 bg-background pl-4"
+                        >
+                          <span className="flex size-11 items-center justify-center rounded-full border border-border/70 bg-[var(--surface-elevated)] text-foreground shadow-sm">
+                            <Icon name="arrow-right" className="size-5" />
+                          </span>
+                          <span className="typography-micro font-medium tracking-wide text-muted-foreground/60">
+                            {t('helpDialog.item.nextSession')}
+                          </span>
+                        </div>
+                      </>
+                    ) : null}
+                    <div ref={target.active ? chatAnimRef : undefined} className="relative h-full w-full bg-background">
                       <ErrorBoundary>
-                        <ChatView />
+                        <ChatView
+                          readOnly={!target.active}
+                          active={target.active}
+                          selectionOverride={{
+                            sessionId: target.sessionId || null,
+                            directory: target.directory,
+                            viewKey: target.viewKey,
+                          }}
+                        />
                       </ErrorBoundary>
                     </div>
                   </main>

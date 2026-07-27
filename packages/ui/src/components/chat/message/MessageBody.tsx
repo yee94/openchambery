@@ -52,6 +52,7 @@ import {
 } from '@/lib/reviewFlow';
 import { isEmbeddedSessionChat } from '@/components/layout/contextPanelEmbeddedChat';
 import { getSessionSurfaceActionAvailability, navigateNestedSession, useSessionSurface } from '../SessionSurfaceContext';
+import { pushPhoneNestedSession } from '@/mobile/useMobileNavigationStore';
 
 
 const CONTAIN_LAYOUT_STYLE = { contain: 'layout' as const };
@@ -278,6 +279,9 @@ const UserSubtaskPart: React.FC<{ part: SubtaskPartLike }> = ({ part }) => {
                                 // session-chat iframe) or single-surface layouts
                                 // (mobile, VS Code), navigate in place. Otherwise
                                 // open a new side-panel tab.
+                                if (pushPhoneNestedSession({ sessionId: taskSessionID, directory: effectiveDirectory })) {
+                                    return;
+                                }
                                 if (isEmbeddedSessionChat() || isMobile || isVSCodeRuntime()) {
                                     setCurrentSession(taskSessionID, effectiveDirectory);
                                     return;

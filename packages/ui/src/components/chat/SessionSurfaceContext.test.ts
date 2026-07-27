@@ -3,12 +3,38 @@ import { describe, expect, test } from 'bun:test';
 import {
     PRIMARY_SESSION_SURFACE,
     STRICT_READ_ONLY_SESSION_SURFACE_CAPABILITIES,
+    createExplicitSessionSurface,
     getSessionSurfaceActionAvailability,
     navigateNestedSession,
     type SessionSurfaceContextValue,
 } from './SessionSurfaceContext';
 
 describe('SessionSurfaceContext', () => {
+    test('binds explicit predecessor and top surfaces to their own page identity', () => {
+        const predecessor = createExplicitSessionSurface({
+            sessionId: 'parent',
+            directory: '/parent',
+            viewKey: 'parent-page',
+            active: false,
+        });
+        const top = createExplicitSessionSurface({
+            sessionId: 'child',
+            directory: '/child',
+            viewKey: 'child-page',
+            active: true,
+        });
+
+        expect(predecessor.sessionId).toBe('parent');
+        expect(predecessor.directory).toBe('/parent');
+        expect(predecessor.surfaceId).toBe('explicit:parent-page');
+        expect(predecessor.active).toBe(false);
+        expect(predecessor.capabilities).toBe(STRICT_READ_ONLY_SESSION_SURFACE_CAPABILITIES);
+        expect(top.sessionId).toBe('child');
+        expect(top.directory).toBe('/child');
+        expect(top.surfaceId).toBe('explicit:child-page');
+        expect(top.active).toBe(true);
+        expect(top.capabilities.compose).toBe(true);
+    });
     test('uses the active primary surface with every capability enabled by default', () => {
         expect(PRIMARY_SESSION_SURFACE).toEqual({
             kind: 'primary',

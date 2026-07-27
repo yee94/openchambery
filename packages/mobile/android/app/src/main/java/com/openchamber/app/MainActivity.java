@@ -39,6 +39,14 @@ public class MainActivity extends BridgeActivity {
         dispatchShare(intent);
     }
 
+    @Override
+    public void onWindowFocusChanged(boolean hasFocus) {
+        super.onWindowFocusChanged(hasFocus);
+        if (hasFocus && imeSyncBridge != null) {
+            imeSyncBridge.hideNavigationBar();
+        }
+    }
+
     private void dispatchShare(android.content.Intent intent) {
         if (ACTION_SHARE_READY.equals(intent.getAction())) {
             String id = intent.getStringExtra("operationID");

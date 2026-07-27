@@ -1,5 +1,6 @@
 
 import React from 'react';
+import { useEvent } from '@reactuses/core';
 import { RuntimeAPIContext } from '@/contexts/runtimeAPIContext';
 import { PatchDiff } from '@pierre/diffs/react';
 import { cn } from '@/lib/utils';
@@ -71,6 +72,7 @@ import {
     TOOL_EXPANDED_TIMELINE_CLASS_NAME,
 } from './toolExpandedLayout';
 import { navigateNestedSession, useSessionSurface } from '../../SessionSurfaceContext';
+import { pushPhoneNestedSession } from '@/mobile/useMobileNavigationStore';
 
 const TOOL_ROW_TEXT_CLASS = '!text-[length:var(--text-meta)] !leading-5 sm:!leading-6 tracking-normal';
 const TOOL_ROW_TITLE_CLASS = cn('typography-meta font-medium', TOOL_ROW_TEXT_CLASS);
@@ -1281,6 +1283,9 @@ const TaskToolSummary: React.FC<{
                 // In contexts with no ContextPanel (embedded session-chat iframe)
                 // or single-surface layouts (mobile, VS Code), navigate in place.
                 // Otherwise open a new side-panel tab.
+                if (pushPhoneNestedSession({ sessionId, directory: currentDirectory })) {
+                    return;
+                }
                 if (isEmbeddedSessionChat() || isMobile || runtime?.runtime.isVSCode) {
                     setCurrentSession(sessionId, currentDirectory);
                     return;
@@ -2304,13 +2309,16 @@ const ToolPartContent: React.FC<ToolPartProps> = ({
     const pendingOpenTaskSessionRef = React.useRef(false);
 
     /** 打开子 Agent 会话（context panel / 移动端切会话）；成功返回 true */
-    const openTaskSession = React.useCallback((sessionIdOverride?: string): boolean => {
+    const openTaskSession = useEvent((sessionIdOverride?: string): boolean => {
         const sessionId = sessionIdOverride ?? taskSessionId;
         if (!sessionId || !currentDirectory) {
             return false;
         }
         pendingOpenTaskSessionRef.current = false;
         return navigateNestedSession(sessionSurface, sessionId, currentDirectory, () => {
+            if (pushPhoneNestedSession({ sessionId, directory: currentDirectory })) {
+                return;
+            }
             if (isMobile || runtime?.runtime.isVSCode) {
                 setCurrentSession(sessionId, currentDirectory);
                 return;
@@ -2322,16 +2330,7 @@ const ToolPartContent: React.FC<ToolPartProps> = ({
                 readOnly: true,
             });
         });
-    }, [
-        currentDirectory,
-        isMobile,
-        openContextPanelTab,
-        runtime?.runtime.isVSCode,
-        setCurrentSession,
-        sessionSurface,
-        taskSessionId,
-        taskTitle,
-    ]);
+    });
 
     // loading 时点了但 id 尚未到位：等 sessionId 一到就打开
     React.useEffect(() => {
@@ -2339,7 +2338,7 @@ const ToolPartContent: React.FC<ToolPartProps> = ({
             return;
         }
         openTaskSession(taskSessionId);
-    }, [openTaskSession, taskSessionId]);
+    }, [taskSessionId]);
 
     const handleMainClick = (e: { stopPropagation: () => void }) => {
         // Task：整行始终打开子会话（含 loading）；详情展开只走图标位箭头

@@ -1993,8 +1993,6 @@ export function SyncProvider(props: {
     const resyncing = resyncingDirectoriesRef.current
     if (resyncing.has(directory)) return
 
-    console.warn("[refresh-debug] directory-resync", { directory, reason, statusOnly: !!options?.statusOnly })
-
     // status-only snapshots should not start the full-resync cooldown; they only
     // refresh busy/idle truth after stream ready / recent boot.
     if (!options?.statusOnly) {
@@ -2158,10 +2156,6 @@ export function SyncProvider(props: {
         lastStreamActivityAtRef.current = Date.now()
       },
       onReconnect: () => {
-        console.warn("[refresh-debug] stream-reconnect", {
-          connectedBefore: pipelineHasConnectedRef.current,
-          disconnectedBeforeFirstConnect: pipelineDisconnectedBeforeFirstConnectRef.current,
-        })
         useConfigStore.setState({
           isConnected: true,
           hasEverConnected: true,
@@ -2181,7 +2175,6 @@ export function SyncProvider(props: {
         }
       },
       onDisconnect: (reason) => {
-        console.warn("[refresh-debug] stream-disconnect", { reason })
         if (!pipelineHasConnectedRef.current) {
           pipelineDisconnectedBeforeFirstConnectRef.current = true
         }
@@ -2193,7 +2186,6 @@ export function SyncProvider(props: {
         })
       },
       onTransportSwitch: () => {
-        console.warn("[refresh-debug] stream-transport-switch")
         // Transport changes are gap-prone in real networks. Treat them like a
         // reconnect and refresh active session snapshots from HTTP.
         const { hasEverConnected } = useConfigStore.getState()
@@ -3026,7 +3018,7 @@ export function useUserMessageHistory(sessionID: string, directory?: string): st
 export function useSessionMessageRecords(
   sessionID: string,
   directory?: string,
-  options?: { suspendPartUpdates?: boolean; suspendPartUpdatesForMessageId?: string | null },
+  options?: { enabled?: boolean; suspendPartUpdates?: boolean; suspendPartUpdatesForMessageId?: string | null },
 ) {
   const store = useDirectoryStore(directory)
   const snapshotRef = useRef<SessionMessageRecordsSnapshot>({
@@ -3077,9 +3069,9 @@ export function useSessionMessageRecords(
   }, [options?.suspendPartUpdates, options?.suspendPartUpdatesForMessageId, sessionID, store])
 
   const subscribe = useCallback((notify: () => void) => {
-    if (!sessionID) return () => undefined
+    if (!sessionID || options?.enabled === false) return () => undefined
     return store.subscribe(notify)
-  }, [sessionID, store])
+  }, [options?.enabled, sessionID, store])
 
   return React.useSyncExternalStore(subscribe, getSnapshot, getSnapshot)
 }

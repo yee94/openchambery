@@ -20,7 +20,6 @@ import { resetStreamingState } from '@/sync/streaming';
 // session, and the whole view are preserved — no reconnecting screen, no flash,
 // no bounce back to the draft.
 export const reconnectAppForTransportSwitch = (): void => {
-  console.warn('[refresh-debug] runtime-transport-switch');
   disposeTerminalInputTransport();
   opencodeClient.reconnectToRuntimeBaseUrl();
   // Provider/agent loaders gate writes on catalogTransportIdentity matching the
@@ -33,10 +32,6 @@ export const reconnectAppForTransportSwitch = (): void => {
 };
 
 export const resetAppForRuntimeEndpointChange = (detail: RuntimeEndpointChangedDetail): void => {
-  console.warn('[refresh-debug] runtime-endpoint-reset', {
-    previousRuntimeKey: detail.previousRuntimeKey,
-    runtimeKey: detail.runtimeKey,
-  });
   useSessionUIStore.getState().prepareForRuntimeSwitch(detail.previousRuntimeKey);
   useUIStore.getState().prepareForRuntimeSwitch(detail.previousRuntimeKey);
   if (detail.previousRuntimeKey) {

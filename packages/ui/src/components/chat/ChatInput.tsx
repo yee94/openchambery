@@ -5336,16 +5336,24 @@ const ChatInputRuntime: React.FC<ChatInputProps> = ({ onOpenSettings, scrollToBo
             window.dispatchEvent(new CustomEvent('oc:keyboard-intent', { detail: { open: true } }));
         }
         // The full-state tree adds attachment/footer controls and can be costly
-        // under a large development transcript. Keep it concurrent so React can
-        // yield to focus/keyboard frames instead of blocking the focus event or
-        // its microtask checkpoint with one long synchronous render.
+        // under a large development transcript. iOS must commit the expanded
+        // silhouette before UIKit starts presenting the keyboard; a concurrent
+        // update can otherwise leave the pill behind until the keyboard is already
+        // visible. Other runtimes keep the yielding transition.
         // Update the ref immediately so a same-stack onFocus (after focus())
         // does not re-enter expand before the effect mirrors state.
         if (!mobileComposerExpandedRef.current) {
             mobileComposerExpandedRef.current = true;
-            React.startTransition(() => {
-                setMobileComposerExpanded(true);
-            });
+            const platform = typeof window !== 'undefined'
+                ? (window as typeof window & { Capacitor?: { getPlatform?: () => string } }).Capacitor?.getPlatform?.()
+                : undefined;
+            if (isCapacitorApp() && platform === 'ios') {
+                flushSync(() => setMobileComposerExpanded(true));
+            } else {
+                React.startTransition(() => {
+                    setMobileComposerExpanded(true);
+                });
+            }
         }
         // Capacitor: our keyboard choreography positions everything, so the
         // browser's own scroll-into-view must stay off. Mobile BROWSERS have no
@@ -5527,6 +5535,14 @@ const ChatInputRuntime: React.FC<ChatInputProps> = ({ onOpenSettings, scrollToBo
         || issuePickerOpen
         || prPickerOpen
         || isDragging;
+    const mobileComposerHoldOpen = mobileOverlayHostBusy
+        || mobileDictationActive
+        || Boolean(mobileControlsPanel)
+        || mobileAttachMenuOpen
+        || mobileDraftPicker !== null
+        || issuePickerOpen
+        || prPickerOpen
+        || isDragging;
     React.useEffect(() => {
         if (!isMobile || !mobileComposerExpanded || mobileComposerBusy) return;
         const timer = window.setTimeout(() => {
@@ -5542,8 +5558,8 @@ const ChatInputRuntime: React.FC<ChatInputProps> = ({ onOpenSettings, scrollToBo
         return () => window.clearTimeout(timer);
     }, [isMobile, mobileComposerExpanded, mobileComposerBusy, setExpandedInput]);
 
-    const mobileComposerBusyRef = React.useRef(false);
-    mobileComposerBusyRef.current = mobileComposerBusy;
+    const mobileComposerHoldOpenRef = React.useRef(false);
+    mobileComposerHoldOpenRef.current = mobileComposerHoldOpen;
 
     // Browser counterpart of Capacitor's oc-keyboard-open root class (which is
     // driven by native keyboard events): the focused composer textarea is the
@@ -5585,9 +5601,10 @@ const ChatInputRuntime: React.FC<ChatInputProps> = ({ onOpenSettings, scrollToBo
             const detail = (event as CustomEvent<{ open?: boolean }>).detail;
             if (!detail || detail.open !== false) return;
             if (!mobileComposerExpandedRef.current) return;
-            // Something still holds the composer open (dictation or an overlay
-            // that closed the keyboard) — the fallback path handles it.
-            if (mobileComposerBusyRef.current) return;
+            // Native blur has already started, while React's focused state can
+            // remain true for this frame. Only durable surfaces such as
+            // dictation or an overlay keep the expanded composer alive.
+            if (mobileComposerHoldOpenRef.current) return;
             mobileExpandIntentRef.current = null;
             mobileComposerExpandedRef.current = false;
             flushSync(() => {

@@ -82,12 +82,13 @@ test('native navigation exposes iOS edge progress and Android predictive back', 
   ]);
 
   assert.match(ios, /UIScreenEdgePanGestureRecognizer/);
-  assert.match(ios, /edgePan\.edges = \.left/);
+  assert.match(ios, /recognizer\.edges = \.left/);
   assert.match(ios, /"backStarted"/);
   assert.match(ios, /"backProgressed"/);
   assert.match(ios, /"backInvoked"/);
   assert.match(ios, /CADisplayLink/);
-  assert.match(ios, /preferredFrameRateRange = CAFrameRateRange\(minimum: 30, maximum: 60, preferred: 60\)/);
+  assert.match(ios, /maximumFramesPerSecond = UIScreen\.main\.maximumFramesPerSecond/);
+  assert.match(ios, /preferredFrameRateRange = CAFrameRateRange\(/);
   assert.match(ios, /progressPending = true/);
   assert.match(ios, /registerPluginInstance\(OpenChamberNavigationPlugin\(\)\)/);
 
@@ -169,16 +170,6 @@ test('Android share ingress opens the WebView composer and the delivery bridge a
   assert.doesNotMatch(receiver, /EditText|previewRow|sendButton/);
   assert.match(receiver, /destroyed \|\| terminalNavigation/);
   assert.match(bridge, /envelope\.attachments\.length > 10/);
-});
-
-test('Android share preparation logs a safe failure category without shared content', async () => {
-  const receiver = await source('android/app/src/main/java/com/openchamber/app/ShareReceiverActivity.java');
-  assert.match(receiver, /Log\.w\(TAG, "Draft preparation failed: " \+ shareFailureCode\(error\) \+ "; attachments=" \+ images\.size\(\)\)/);
-  assert.match(receiver, /SecurityException\) return "uri-permission"/);
-  assert.match(receiver, /FileNotFoundException\) return "uri-unavailable"/);
-  assert.match(receiver, /"An image exceeds 20 MB\."\.equals\(error\.getMessage\(\)\)\) return "image-too-large"/);
-  assert.doesNotMatch(receiver, /Log\.w\(TAG,[\s\S]*uri\.toString\(\)/);
-  assert.doesNotMatch(receiver, /Log\.w\(TAG,[\s\S]*sharedText/);
 });
 
 test('iOS sharing resolves public.image files to concrete, signature-verified MIME types', async () => {

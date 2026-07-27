@@ -3,19 +3,18 @@ import { useEvent } from '@reactuses/core';
 
 import { AssistantView } from '@/components/assistants/AssistantView';
 import { useI18n } from '@/lib/i18n';
+import { normalizePath } from '@/lib/pathNormalization';
 import { useSessionUIStore } from '@/sync/session-ui-store';
 
 import { MobileAssistantTab } from './assistant/MobileAssistantTab';
-import {
-  resolveMobileSecondaryBackDecision,
-  type MobileParentSessionTarget,
-} from './mobileNavigation';
+import type { MobileParentSessionTarget } from './mobileNavigation';
 import type { MobileTabId } from './mobileTabs';
 import { MobileTabsRoot } from './MobileTabsRoot';
+import { mobileBackNavigationCoordinator } from './mobileBackNavigation';
 import { MobileProjectsHomeContainer } from './projects';
 import { MobileScheduledTab } from './scheduled/MobileScheduledTab';
 import { MobileSettingsTab } from './settings/MobileSettingsTab';
-import { useMobileNavigationStore } from './useMobileNavigationStore';
+import { acknowledgeMobileSessionMirror, useMobileNavigationStore } from './useMobileNavigationStore';
 
 export type MobilePhoneShellProps = {
   /** Opens the directory explorer so the user can add a project. */
@@ -41,14 +40,19 @@ export type MobilePhoneShellProps = {
     onEditorActiveChange: (active: boolean) => void,
   ) => React.ReactNode);
   /** Chat secondary page content. Rendered with the active chat target. */
-  renderChat: (target: { sessionId: string; directory: string | null }) => React.ReactNode;
+  renderChat: (target: {
+    sessionId: string;
+    directory: string | null;
+    viewKey: string;
+    active: boolean;
+  }) => React.ReactNode;
   className?: string;
 };
 
 /**
  * Phone-only mobile navigation host: four root tabs plus standard second-level
- * pages. Session/draft targets are owned by the session-ui store; this host
- * only projects that authoritative state into the secondary page.
+ * pages. The mobile store owns route order and the session-ui store mirrors
+ * the active top route for app-wide session behavior.
  */
 export function MobilePhoneShell({
   onAddProject,
@@ -67,6 +71,10 @@ export function MobilePhoneShell({
   const openDraftStore = useMobileNavigationStore((state) => state.openDraft);
   const openAssistantStore = useMobileNavigationStore((state) => state.openAssistant);
   const closeSecondaryStore = useMobileNavigationStore((state) => state.closeSecondary);
+  const popChatSessionStore = useMobileNavigationStore((state) => state.popChatSession);
+  const reconcileChatPredecessor = useMobileNavigationStore((state) => state.reconcileChatPredecessor);
+  const materializeDraftSession = useMobileNavigationStore((state) => state.materializeDraftSession);
+  const replaceChatSession = useMobileNavigationStore((state) => state.replaceChatSession);
 
   const setActiveTab = useEvent((tab: MobileTabId) => {
     setActiveTabStore(tab);
@@ -103,18 +111,12 @@ export function MobilePhoneShell({
   // System / gesture / H5 coordinator / chat header all converge here.
   const handleSecondaryBack = useEvent(() => {
     if (scheduledEditorBackRef.current?.()) return true;
-    const decision = resolveMobileSecondaryBackDecision({
-      secondary: useMobileNavigationStore.getState().secondary,
-      parentSessionTarget,
-    });
-    if (decision.action === 'navigateToParent') {
-      void useSessionUIStore.getState().setCurrentSession(
-        decision.parent.id,
-        decision.parent.directory,
-      );
+    const secondary = useMobileNavigationStore.getState().secondary;
+    if (secondary?.kind === 'chat' && secondary.routes.length > 1) {
+      popChatSessionStore();
       return true;
     }
-    if (decision.action === 'closeSecondary') {
+    if (secondary) {
       closeSecondary();
       return true;
     }
@@ -138,6 +140,37 @@ export function MobilePhoneShell({
     currentSessionId ? state.getDirectoryForSession(currentSessionId) : null,
   );
 
+  React.useEffect(() => {
+    const secondary = useMobileNavigationStore.getState().secondary;
+    if (secondary?.kind === 'draft' && currentSessionId) {
+      materializeDraftSession({ sessionId: currentSessionId, directory: currentSessionDirectory });
+      return;
+    }
+    if (secondary?.kind !== 'chat' || !currentSessionId) return;
+    if (acknowledgeMobileSessionMirror({
+      sessionId: currentSessionId,
+      directory: currentSessionDirectory,
+    }) === 'internal') return;
+    const top = secondary.routes.at(-1);
+    if (
+      top?.sessionId !== currentSessionId
+      || normalizePath(top.directory) !== normalizePath(currentSessionDirectory)
+    ) {
+      replaceChatSession({ sessionId: currentSessionId, directory: currentSessionDirectory });
+    }
+  }, [currentSessionDirectory, currentSessionId, materializeDraftSession, replaceChatSession]);
+
+  React.useEffect(() => {
+    const secondary = useMobileNavigationStore.getState().secondary;
+    if (secondary?.kind !== 'chat' || !parentSessionTarget) return;
+    const top = secondary.routes.at(-1);
+    if (!top || top.sessionId !== currentSessionId) return;
+    reconcileChatPredecessor({
+      sessionId: parentSessionTarget.id,
+      directory: parentSessionTarget.directory,
+    });
+  }, [currentSessionId, parentSessionTarget, reconcileChatPredecessor]);
+
   const scheduledTabBody: React.ReactNode = typeof scheduledContent === 'function'
     ? scheduledContent(registerScheduledEditorBack, handleScheduledEditorActiveChange)
     : scheduledContent;
@@ -159,34 +192,55 @@ export function MobilePhoneShell({
   );
 
   const secondaryKind = navigation.secondary?.kind ?? null;
-  const secondaryPage = React.useMemo(() => {
+  const secondaryPages = React.useMemo(() => {
     if (!secondaryKind) return null;
     if (secondaryKind === 'assistant') {
-      return {
+      return [{
         key: 'assistant-secondary',
+        depth: 1,
         ariaLabel: t('assistants.title'),
         onBack: handleSecondaryBack,
-        content: <AssistantView activeOverride onMobileBack={handleSecondaryBack} />,
-      };
+        content: (
+          <AssistantView
+            activeOverride
+            onMobileBack={() => mobileBackNavigationCoordinator.requestAnimatedBack('root')}
+          />
+        ),
+      }];
     }
     // Project the render target from the authoritative session store: once a
     // draft's first prompt materializes the real session, the header/status
     // switch to the live entity while the stable host key keeps the ChatView
     // (and composer focus / IME state) mounted.
-    const hasLiveSession = Boolean(currentSessionId);
-    return {
-      // Stable host key: draft → chat materialization must NOT remount the
-      // ChatView (composer focus, IME composition, DOM state are preserved).
-      key: 'chat-secondary',
-      ariaLabel: t('mobile.nav.secondaryPageAria'),
-      onBack: handleSecondaryBack,
-      content: renderChat(
-        hasLiveSession
-          ? { sessionId: currentSessionId ?? '', directory: currentSessionDirectory ?? null }
-          : { sessionId: '', directory: null },
-      ),
-    };
-  }, [secondaryKind, handleSecondaryBack, currentSessionId, currentSessionDirectory, renderChat, t]);
+    if (navigation.secondary?.kind === 'draft') {
+      return [{
+        key: 'chat-primary',
+        depth: 1,
+        ariaLabel: t('mobile.nav.secondaryPageAria'),
+        onBack: handleSecondaryBack,
+        content: renderChat({ sessionId: '', directory: null, viewKey: 'chat-primary', active: true }),
+      }];
+    }
+    if (navigation.secondary?.kind !== 'chat') return [];
+    const routeStack = navigation.secondary.routes;
+    const routes = routeStack.slice(-2);
+    const firstVisibleDepth = routeStack.length - routes.length + 1;
+    return routes.map((route, index) => {
+      const active = index === routes.length - 1;
+      return {
+        key: route.key,
+        depth: firstVisibleDepth + index,
+        ariaLabel: t('mobile.nav.secondaryPageAria'),
+        onBack: handleSecondaryBack,
+        content: renderChat({
+          sessionId: route.sessionId,
+          directory: route.directory,
+          viewKey: route.key,
+          active,
+        }),
+      };
+    });
+  }, [secondaryKind, navigation.secondary, handleSecondaryBack, renderChat, t]);
 
   return (
     <MobileTabsRoot
@@ -194,7 +248,7 @@ export function MobilePhoneShell({
       navigation={navigation}
       onTabChange={setActiveTab}
       tabs={tabs}
-      secondaryPage={secondaryPage}
+      secondaryPages={secondaryPages ?? []}
       tabBarCovered={scheduledEditorActive}
     />
   );

@@ -17,35 +17,52 @@ class OpenChamberNavigationPlugin: CAPPlugin, CAPBridgedPlugin, UIGestureRecogni
 
     override func load() {
         DispatchQueue.main.async { [weak self] in
-            guard let self, let hostView = self.bridge?.viewController?.view else { return }
-            let edgePan = UIScreenEdgePanGestureRecognizer(target: self, action: #selector(self.handleEdgePan(_:)))
-            edgePan.edges = .left
-            edgePan.delegate = self
-            edgePan.cancelsTouchesInView = true
-            edgePan.isEnabled = false
-            hostView.addGestureRecognizer(edgePan)
-            self.edgePan = edgePan
+            _ = self?.installEdgePanIfNeeded()
         }
+    }
+
+    /// Install the left-edge pan recognizer on the web view (preferred) or bridge host view.
+    /// Must run on the main thread. Returns false when no suitable host view is available.
+    @discardableResult
+    private func installEdgePanIfNeeded() -> Bool {
+        if edgePan != nil { return true }
+        let hostView = webView ?? bridge?.viewController?.view
+        guard let hostView else { return false }
+        let recognizer = UIScreenEdgePanGestureRecognizer(target: self, action: #selector(handleEdgePan(_:)))
+        recognizer.edges = .left
+        recognizer.delegate = self
+        recognizer.cancelsTouchesInView = true
+        recognizer.isEnabled = navigationEnabled
+        hostView.addGestureRecognizer(recognizer)
+        edgePan = recognizer
+        return true
     }
 
     @objc func setEnabled(_ call: CAPPluginCall) {
         let enabled = call.getBool("enabled") ?? false
         DispatchQueue.main.async { [weak self] in
-            self?.navigationEnabled = enabled
-            self?.edgePan?.isEnabled = enabled
+            guard let self else {
+                call.reject("OpenChamberNavigation plugin deallocated")
+                return
+            }
+            self.navigationEnabled = enabled
+            guard self.installEdgePanIfNeeded() else {
+                call.reject("OpenChamberNavigation edge pan host view unavailable")
+                return
+            }
+            self.edgePan?.isEnabled = enabled
             if !enabled {
-                self?.stopProgressDisplayLink()
+                self.stopProgressDisplayLink()
             }
             call.resolve()
         }
     }
 
     func gestureRecognizerShouldBegin(_ gestureRecognizer: UIGestureRecognizer) -> Bool {
-        guard navigationEnabled, let edgePan = gestureRecognizer as? UIScreenEdgePanGestureRecognizer else {
+        guard navigationEnabled, gestureRecognizer === edgePan else {
             return false
         }
-        let velocity = edgePan.velocity(in: edgePan.view)
-        return velocity.x > 0 && abs(velocity.x) > abs(velocity.y)
+        return gestureRecognizer is UIScreenEdgePanGestureRecognizer
     }
 
     @objc private func handleEdgePan(_ recognizer: UIScreenEdgePanGestureRecognizer) {
@@ -69,10 +86,16 @@ class OpenChamberNavigationPlugin: CAPPlugin, CAPBridgedPlugin, UIGestureRecogni
             stopProgressDisplayLink()
             let velocity = recognizer.velocity(in: view).x
             let commit = progress >= 0.35 || (progress >= 0.08 && velocity >= 700)
-            notifyListeners(commit ? "backInvoked" : "backCancelled", data: ["progress": progress])
+            notifyListeners(commit ? "backInvoked" : "backCancelled", data: [
+                "progress": progress,
+                "velocityX": velocity
+            ])
         case .cancelled, .failed:
             stopProgressDisplayLink()
-            notifyListeners("backCancelled", data: ["progress": progress])
+            notifyListeners("backCancelled", data: [
+                "progress": progress,
+                "velocityX": recognizer.velocity(in: view).x
+            ])
         default:
             break
         }
@@ -81,10 +104,15 @@ class OpenChamberNavigationPlugin: CAPPlugin, CAPBridgedPlugin, UIGestureRecogni
     private func startProgressDisplayLink() {
         guard progressDisplayLink == nil else { return }
         let displayLink = CADisplayLink(target: self, selector: #selector(flushProgress))
+        let maximumFramesPerSecond = UIScreen.main.maximumFramesPerSecond
         if #available(iOS 15.0, *) {
-            displayLink.preferredFrameRateRange = CAFrameRateRange(minimum: 30, maximum: 60, preferred: 60)
+            displayLink.preferredFrameRateRange = CAFrameRateRange(
+                minimum: Float(max(30, maximumFramesPerSecond / 2)),
+                maximum: Float(maximumFramesPerSecond),
+                preferred: Float(maximumFramesPerSecond)
+            )
         } else {
-            displayLink.preferredFramesPerSecond = 60
+            displayLink.preferredFramesPerSecond = maximumFramesPerSecond
         }
         displayLink.add(to: .main, forMode: .common)
         progressDisplayLink = displayLink
