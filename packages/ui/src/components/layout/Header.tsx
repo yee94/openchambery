@@ -253,8 +253,6 @@ const DesktopGitHubControl = React.memo(function DesktopGitHubControl({
 
 type DesktopServicesMenuProps = {
   isDesktopApp: boolean;
-  currentInstanceLabel: string;
-  compactCurrentInstanceLabel: string;
   currentInstanceIsLocal: boolean;
   isDesktopServicesOpen: boolean;
   setIsDesktopServicesOpen: React.Dispatch<React.SetStateAction<boolean>>;
@@ -275,7 +273,6 @@ type DesktopServicesMenuProps = {
   rateLimitGroups: RateLimitGroup[];
   expandedFamilies: Record<string, string[]>;
   toggleFamilyExpanded: (providerId: string, familyId: string) => void;
-  shortcutLabel: (actionId: string) => string;
   showDevShutdown: boolean;
   isDevShutdownInFlight: boolean;
   onDevShutdown: () => Promise<void>;
@@ -285,12 +282,12 @@ type DesktopServicesMenuProps = {
   onOpenRemoteUpdate: () => void;
   showPredValues: boolean;
   timeFormatPreference: TimeFormatPreference;
+  /** Align the panel to the session ··· control (same anchor as the overflow menu). */
+  anchorRef: React.RefObject<HTMLElement | null>;
 };
 
 const DesktopServicesMenu = React.memo(function DesktopServicesMenu({
   isDesktopApp,
-  currentInstanceLabel,
-  compactCurrentInstanceLabel,
   currentInstanceIsLocal,
   isDesktopServicesOpen,
   setIsDesktopServicesOpen,
@@ -311,7 +308,6 @@ const DesktopServicesMenu = React.memo(function DesktopServicesMenu({
   rateLimitGroups,
   expandedFamilies,
   toggleFamilyExpanded,
-  shortcutLabel,
   showDevShutdown,
   isDevShutdownInFlight,
   onDevShutdown,
@@ -321,6 +317,7 @@ const DesktopServicesMenu = React.memo(function DesktopServicesMenu({
   onOpenRemoteUpdate,
   showPredValues,
   timeFormatPreference,
+  anchorRef,
 }: DesktopServicesMenuProps) {
   const { t } = useI18n();
   return (
@@ -336,45 +333,18 @@ const DesktopServicesMenu = React.memo(function DesktopServicesMenu({
         }
       }}
     >
-      <Tooltip>
-        <TooltipTrigger asChild>
-          <DropdownMenuTrigger asChild>
-            <button
-              type="button"
-              aria-label={isDesktopApp
-                ? t('header.services.openWithCurrent', { current: currentInstanceLabel })
-                : t('header.services.open')}
-              className={cn(
-                DESKTOP_HEADER_ICON_BUTTON_CLASS,
-                isDesktopApp ? 'w-auto max-w-[14rem] justify-start gap-1.5 px-2.5' : 'h-8 w-8',
-                isDesktopServicesOpen && 'bg-[var(--interactive-hover)] text-foreground'
-              )}
-            >
-              <Icon name="stack" className="h-[18px] w-[18px]" />
-              {isDesktopApp ? (
-                <span className="truncate typography-ui-label font-medium text-foreground">{compactCurrentInstanceLabel}</span>
-              ) : null}
-            </button>
-          </DropdownMenuTrigger>
-        </TooltipTrigger>
-        <TooltipContent>
-          <p>
-            {isDesktopApp
-              ? t('header.services.tooltip.currentInstanceWithShortcuts', {
-                  current: currentInstanceLabel,
-                  toggle: shortcutLabel('toggle_services_menu'),
-                  nextTab: shortcutLabel('cycle_services_tab'),
-                })
-              : t('header.services.tooltip.servicesWithShortcuts', {
-                  toggle: shortcutLabel('toggle_services_menu'),
-                  nextTab: shortcutLabel('cycle_services_tab'),
-                })}
-          </p>
-        </TooltipContent>
-      </Tooltip>
+      {/* Keep a focusable trigger for Base UI; positioning uses the ··· anchor. */}
+      <DropdownMenuTrigger asChild>
+        <button
+          type="button"
+          aria-hidden
+          tabIndex={-1}
+          className="pointer-events-none absolute h-px w-px overflow-hidden opacity-0"
+        />
+      </DropdownMenuTrigger>
       <DropdownMenuContent
-        // Trigger sits near the session title (left). align=start grows the
-        // panel rightward so it does not sit under macOS traffic lights.
+        anchor={anchorRef}
+        // Match the ··· overflow menu: left edges align, panel grows rightward.
         align="start"
         sideOffset={6}
         collisionPadding={12}
@@ -630,25 +600,6 @@ const isSameContextUsage = (
     && (a.lastMessageId ?? '') === (b.lastMessageId ?? '');
 };
 
-const formatCompactHeaderLabel = (value: string): string => {
-  const trimmed = value.trim();
-  if (!trimmed) {
-    return '';
-  }
-
-  const words = trimmed.split(/\s+/).filter(Boolean);
-  if (words.length >= 2) {
-    const first = words[0];
-    const second = words[1].slice(0, 3);
-    const shortTwoWord = `${first} ${second}`.trim();
-    if (words.length > 2 || shortTwoWord.length < trimmed.length) {
-      return `${shortTwoWord}...`;
-    }
-    return shortTwoWord;
-  }
-
-  return trimmed.length > 12 ? `${trimmed.slice(0, 9).trimEnd()}...` : trimmed;
-};
 
 const formatTime = (timestamp: number | null, timeFormatPreference: 'auto' | '12h' | '24h') => {
   if (!timestamp) return '-';
@@ -873,7 +824,6 @@ export const Header: React.FC<HeaderProps> = ({
   const [remoteUpdateInfo, setRemoteUpdateInfo] = React.useState<UpdateInfo | null>(null);
   const [remoteUpdateChecking, setRemoteUpdateChecking] = React.useState(false);
   const [remoteUpdateError, setRemoteUpdateError] = React.useState<string | null>(null);
-  const compactCurrentInstanceLabel = React.useMemo(() => formatCompactHeaderLabel(currentInstanceLabel), [currentInstanceLabel]);
   const [desktopServicesTab, setDesktopServicesTab] = React.useState<'instance' | 'usage' | 'mcp'>(
     isDesktopApp ? 'instance' : 'usage'
   );
@@ -1892,17 +1842,21 @@ export const Header: React.FC<HeaderProps> = ({
     window.setTimeout(action, 0);
   }, []);
 
-  const openUsageFromMenu = React.useCallback(() => {
-    setDesktopServicesTab('usage');
+  const openServicesPanelFromMenu = React.useCallback((tab: 'instance' | 'usage') => {
+    setDesktopServicesTab(tab);
     setIsDesktopServicesOpen(true);
     void refreshCurrentInstanceLabel();
-    if (quotaResults.length === 0) {
+    if (tab === 'usage' && quotaResults.length === 0) {
       void fetchAllQuotas();
     }
   }, [fetchAllQuotas, quotaResults.length, refreshCurrentInstanceLabel]);
 
+  const sessionMenuTriggerRef = React.useRef<HTMLDivElement | null>(null);
+
   const sessionOverflowMenu = (
-    <div className="relative flex shrink-0 items-center gap-0.5">
+    <div className="relative flex shrink-0 items-center">
+      {/* Stable layout box for both the ··· menu and the services panel anchor. */}
+      <div ref={sessionMenuTriggerRef} className="inline-flex h-8 w-8 shrink-0 items-center justify-center">
       <DropdownMenu>
         <Tooltip>
           <TooltipTrigger asChild>
@@ -1941,9 +1895,21 @@ export const Header: React.FC<HeaderProps> = ({
               </span>
             </DropdownMenuItem>
           ) : null}
+          {isDesktopApp ? (
+            <DropdownMenuItem
+              className="flex items-center gap-2"
+              onClick={() => runSessionMenuAction(() => openServicesPanelFromMenu('instance'))}
+            >
+              <Icon name="stack" className="h-3.5 w-3.5" />
+              <span className="flex-1 truncate">
+                {t('header.actions.sessionMenu.servicesWithInstance', { current: currentInstanceLabel })}
+              </span>
+              <span className="typography-micro text-muted-foreground">{shortcutLabel('toggle_services_menu')}</span>
+            </DropdownMenuItem>
+          ) : null}
           <DropdownMenuItem
             className="flex items-center gap-2"
-            onClick={() => runSessionMenuAction(openUsageFromMenu)}
+            onClick={() => runSessionMenuAction(() => openServicesPanelFromMenu('usage'))}
           >
             <Icon name="timer" className="h-3.5 w-3.5" />
             <span className="flex-1">{t('header.actions.sessionMenu.viewUsage')}</span>
@@ -1969,10 +1935,9 @@ export const Header: React.FC<HeaderProps> = ({
           </DropdownMenuItem>
         </DropdownMenuContent>
       </DropdownMenu>
+      </div>
       <DesktopServicesMenu
         isDesktopApp={isDesktopApp}
-        currentInstanceLabel={currentInstanceLabel}
-        compactCurrentInstanceLabel={compactCurrentInstanceLabel}
         currentInstanceIsLocal={currentInstanceIsLocal}
         isDesktopServicesOpen={isDesktopServicesOpen}
         setIsDesktopServicesOpen={setIsDesktopServicesOpen}
@@ -1994,7 +1959,6 @@ export const Header: React.FC<HeaderProps> = ({
         rateLimitGroups={rateLimitGroups}
         expandedFamilies={expandedFamilies}
         toggleFamilyExpanded={toggleFamilyExpanded}
-        shortcutLabel={shortcutLabel}
         showDevShutdown={showDevShutdown}
         isDevShutdownInFlight={isDevShutdownInFlight}
         onDevShutdown={handleDevShutdown}
@@ -2003,6 +1967,7 @@ export const Header: React.FC<HeaderProps> = ({
         remoteUpdateError={remoteUpdateError}
         onOpenRemoteUpdate={openRemoteInstanceUpdate}
         timeFormatPreference={timeFormatPreference}
+        anchorRef={sessionMenuTriggerRef}
       />
     </div>
   );

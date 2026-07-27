@@ -87,6 +87,8 @@ type ContentProps = {
   align?: "start" | "center" | "end";
   side?: "top" | "right" | "bottom" | "left";
   alignOffset?: number;
+  /** Optional external anchor (e.g. a sibling control). Overrides the default trigger anchor. */
+  anchor?: React.ComponentProps<typeof BaseMenu.Positioner>["anchor"];
   portalToBody?: boolean;
   positionerClassName?: string;
   style?: React.CSSProperties;
@@ -105,6 +107,7 @@ function DropdownMenuContent({
   align,
   side,
   alignOffset,
+  anchor,
   portalToBody = false,
   positionerClassName,
   style,
@@ -120,6 +123,7 @@ function DropdownMenuContent({
   return (
     <BaseMenu.Portal container={portalToBody ? undefined : portalContext?.portalContainer || undefined}>
       <BaseMenu.Positioner
+        anchor={anchor}
         sideOffset={sideOffset}
         align={align}
         side={side}
