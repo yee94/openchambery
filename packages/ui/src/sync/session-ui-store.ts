@@ -53,6 +53,7 @@ import {
   deleteSession as deleteSessionAction,
   archiveSession as archiveSessionAction,
   updateSessionTitle as updateSessionTitleAction,
+  requestSessionSmartTitle as requestSessionSmartTitleAction,
   shareSession as shareSessionAction,
   unshareSession as unshareSessionAction,
   optimisticSend,
@@ -499,6 +500,7 @@ export type SessionUIState = {
   archiveSession: (id: string) => Promise<boolean>
   archiveSessions: (ids: string[], options?: Record<string, unknown>) => Promise<{ archivedIds: string[]; failedIds: string[] }>
   updateSessionTitle: (sessionId: string, title: string) => Promise<void>
+  requestSessionSmartTitle: (sessionId: string) => Promise<void>
   shareSession: (sessionId: string) => Promise<Session | null>
   unshareSession: (sessionId: string) => Promise<Session | null>
   revertToMessage: (sessionId: string, messageId: string, options?: { skipRedoPush?: boolean; directory?: string }) => Promise<void>
@@ -2041,6 +2043,11 @@ export const useSessionUIStore = create<SessionUIState>()((set, get) => ({
   // ---------------------------------------------------------------------------
   updateSessionTitle: async (sessionId, title) => {
     await updateSessionTitleAction(sessionId, title)
+  },
+
+  // requestSessionSmartTitle — metadata titleRefresh.requestedAt triggers server generation
+  requestSessionSmartTitle: async (sessionId) => {
+    await requestSessionSmartTitleAction(sessionId)
   },
 
   shareSession: async (sessionId) => {

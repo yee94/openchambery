@@ -4,6 +4,11 @@ All notable changes to this project will be documented in this file.
 
 ## [Unreleased]
 
+## [1.16.73] - 2026-07-27
+
+- **Smart session titles:** add a shared `requestSessionSmartTitle` action and expose AI title generation from mobile session rename dialogs on Projects home and the sessions sheet.
+- **Desktop rename:** route sidebar smart-title requests through the same action so live session stores stay consistent after regeneration.
+
 ## [1.16.72] - 2026-07-27
 
 - **Assistant delete:** long-press or context-menu Delete on desktop and mobile assistant lists opens a confirmation dialog, removes the assistant, and clears a matching default share target.

@@ -488,6 +488,7 @@ export const MobileSessionsSheet: React.FC<MobileSessionsSheetProps> = ({ open, 
   const archiveSession = useSessionUIStore((state) => state.archiveSession);
   const archiveSessions = useSessionUIStore((state) => state.archiveSessions);
   const updateSessionTitle = useSessionUIStore((state) => state.updateSessionTitle);
+  const requestSessionSmartTitle = useSessionUIStore((state) => state.requestSessionSmartTitle);
   const shareSession = useSessionUIStore((state) => state.shareSession);
   const unshareSession = useSessionUIStore((state) => state.unshareSession);
   const openNewSessionDraft = useSessionUIStore((state) => state.openNewSessionDraft);
@@ -515,6 +516,7 @@ export const MobileSessionsSheet: React.FC<MobileSessionsSheetProps> = ({ open, 
   const [pressedActionKey, setPressedActionKey] = React.useState<string | null>(null);
   const [renamingSession, setRenamingSession] = React.useState<Session | null>(null);
   const [renameDraft, setRenameDraft] = React.useState('');
+  const [smartTitleRequesting, setSmartTitleRequesting] = React.useState(false);
   const [worktreeToDelete, setWorktreeToDelete] = React.useState<{
     project: ProjectMeta;
     worktree: WorktreeMetadata;
@@ -1116,6 +1118,22 @@ export const MobileSessionsSheet: React.FC<MobileSessionsSheetProps> = ({ open, 
       toast.error(t('sessions.sidebar.session.menu.rename'), {
         description: t('sessions.sidebar.dialogs.deleteResult.tryAgain'),
       });
+    }
+  };
+
+  const handleRequestSmartTitle = async () => {
+    if (!renamingSession || smartTitleRequesting) return;
+    setSmartTitleRequesting(true);
+    try {
+      await requestSessionSmartTitle(renamingSession.id);
+      setRenamingSession(null);
+      setRenameDraft('');
+    } catch {
+      toast.error(t('sessions.sidebar.session.rename.smartTitle'), {
+        description: t('sessions.sidebar.dialogs.deleteResult.tryAgain'),
+      });
+    } finally {
+      setSmartTitleRequesting(false);
     }
   };
 
@@ -1765,6 +1783,7 @@ export const MobileSessionsSheet: React.FC<MobileSessionsSheetProps> = ({ open, 
           open={Boolean(renamingSession)}
           title={t('sessions.sidebar.session.menu.rename')}
           onClose={() => {
+            if (smartTitleRequesting) return;
             setRenamingSession(null);
             setRenameDraft('');
           }}
@@ -1774,6 +1793,7 @@ export const MobileSessionsSheet: React.FC<MobileSessionsSheetProps> = ({ open, 
                 type="button"
                 variant="ghost"
                 className="flex-1"
+                disabled={smartTitleRequesting}
                 onClick={() => {
                   setRenamingSession(null);
                   setRenameDraft('');
@@ -1785,7 +1805,7 @@ export const MobileSessionsSheet: React.FC<MobileSessionsSheetProps> = ({ open, 
                 type="button"
                 variant="default"
                 className="flex-1"
-                disabled={!renameDraft.trim()}
+                disabled={!renameDraft.trim() || smartTitleRequesting}
                 onClick={() => void handleSaveSessionRename()}
               >
                 {t('sessions.sidebar.session.rename.save')}
@@ -1794,7 +1814,7 @@ export const MobileSessionsSheet: React.FC<MobileSessionsSheetProps> = ({ open, 
           }
         >
           <form
-            className="px-1 py-1"
+            className="flex flex-col gap-3 px-1 py-1"
             onSubmit={(event) => {
               event.preventDefault();
               void handleSaveSessionRename();
@@ -1805,7 +1825,22 @@ export const MobileSessionsSheet: React.FC<MobileSessionsSheetProps> = ({ open, 
               onChange={(event) => setRenameDraft(event.target.value)}
               autoFocus
               className="h-12"
+              disabled={smartTitleRequesting}
             />
+            <Button
+              type="button"
+              variant="outline"
+              className="w-full gap-2"
+              disabled={smartTitleRequesting}
+              onClick={() => void handleRequestSmartTitle()}
+            >
+              {smartTitleRequesting ? (
+                <Icon name="loader-4" className="size-4 animate-spin" />
+              ) : (
+                <Icon name="ai-generate-2" className="size-4" />
+              )}
+              {t('sessions.sidebar.session.rename.smartTitle')}
+            </Button>
           </form>
         </MobileOverlayPanel>
         {worktreeToDelete ? (

@@ -602,6 +602,7 @@ Examples of global-store updates performed in `session-actions.ts`:
 
 - `createSession()` -> `upsertSession(session)`
 - `updateSessionTitle()` -> `upsertSession(result.data)`
+- `requestSessionSmartTitle()` -> writes `titleRefresh.requestedAt`, then `upsertSession(result.data)` (server session-title runtime regenerates the title)
 - `shareSession()` / `unshareSession()` -> `upsertSession(result.data)`
 - `archiveSession()` -> `archiveSessions([id], archivedAt)`
 - `unarchiveSession()` -> `updateSession({ time: { archived: 0 } })` then `upsertSession` into the active list

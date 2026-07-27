@@ -1082,6 +1082,41 @@ export async function updateSessionTitle(sessionId: string, title: string): Prom
   mirrorSessionIntoLiveStores(session, sessionDirectory)
 }
 
+/**
+ * Force server-side smart title generation for a session.
+ * Writes `metadata.openchamber.titleRefresh.requestedAt`; the session-title
+ * runtime picks that up and regenerates the title from recent messages.
+ */
+export async function requestSessionSmartTitle(sessionId: string): Promise<void> {
+  const sessionDirectory = getSessionDirectory(sessionId)
+  const current = getGlobalSessionSnapshot(sessionId)
+  const metadata = (current as Session & { metadata?: Record<string, unknown> } | null)?.metadata ?? {}
+  const openchamber = metadata.openchamber && typeof metadata.openchamber === "object"
+    ? metadata.openchamber as Record<string, unknown>
+    : {}
+  const titleRefresh = openchamber.titleRefresh && typeof openchamber.titleRefresh === "object"
+    ? openchamber.titleRefresh as Record<string, unknown>
+    : {}
+  const lastAutoTitle = typeof current?.title === "string" && current.title.trim()
+    ? current.title.trim()
+    : (typeof titleRefresh.lastAutoTitle === "string" ? titleRefresh.lastAutoTitle : undefined)
+  const session = await opencodeClient.updateSession(sessionId, {
+    metadata: {
+      ...metadata,
+      openchamber: {
+        ...openchamber,
+        titleRefresh: {
+          ...titleRefresh,
+          ...(lastAutoTitle ? { lastAutoTitle } : {}),
+          requestedAt: Date.now(),
+        },
+      },
+    },
+  }, sessionDirectory)
+  useGlobalSessionsStore.getState().upsertSession(session)
+  mirrorSessionIntoLiveStores(session, sessionDirectory)
+}
+
 export async function shareSession(sessionId: string): Promise<Session | null> {
   const sessionDirectory = getSessionDirectory(sessionId)
   const result = await sdk().session.share({ sessionID: sessionId, directory: sessionDirectory })

@@ -934,6 +934,66 @@ describe("updateSessionTitle live state", () => {
   })
 })
 
+describe("requestSessionSmartTitle", () => {
+  beforeEach(() => {
+    replyCalls.length = 0
+    globalUpsertedSessions.length = 0
+    globalActiveSessions = []
+    sessionUpdateResult = {}
+  })
+
+  test("writes titleRefresh.requestedAt and mirrors the updated session", async () => {
+    const oldSession = {
+      id: "session-a",
+      title: "Old Title",
+      time: { created: 1, updated: 1 },
+      metadata: {
+        openchamber: {
+          titleRefresh: { lastAutoTitle: "prior" },
+        },
+      },
+    } as unknown as Session
+    const updatedSession = {
+      ...oldSession,
+      time: { created: 1, updated: 2 },
+      metadata: {
+        openchamber: {
+          titleRefresh: {
+            lastAutoTitle: "Old Title",
+            requestedAt: 123,
+          },
+        },
+      },
+    } as unknown as Session
+    globalActiveSessions = [oldSession]
+    const sessionStore = createStore({}, { session: [oldSession] })
+    const childStores = createChildStores([["/test/project", sessionStore]])
+    sessionUpdateResult = { data: updatedSession }
+
+    const { setActionRefs, requestSessionSmartTitle } = await import("./session-actions")
+    setActionRefs(mockSdk as unknown as OpencodeClient, childStores, () => "/current/project")
+
+    const before = Date.now()
+    await requestSessionSmartTitle("session-a")
+    const after = Date.now()
+
+    const updateCall = replyCalls.find((call) => call.method === "session.update")
+    expect(updateCall?.params.sessionID).toBe("session-a")
+    expect(updateCall?.params.directory).toBe("/test/project")
+    expect(updateCall?.params.title).toBe(undefined)
+    const titleRefresh = (
+      updateCall?.params.metadata as {
+        openchamber?: { titleRefresh?: { lastAutoTitle?: string; requestedAt?: number } }
+      }
+    )?.openchamber?.titleRefresh
+    expect(titleRefresh?.lastAutoTitle).toBe("Old Title")
+    expect(typeof titleRefresh?.requestedAt).toBe("number")
+    expect(titleRefresh!.requestedAt!).toBeGreaterThanOrEqual(before)
+    expect(titleRefresh!.requestedAt!).toBeLessThanOrEqual(after)
+    expect(globalUpsertedSessions).toEqual([updatedSession])
+  })
+})
+
 describe("optimisticSend target directory", () => {
   beforeEach(() => {
     replyCalls.length = 0

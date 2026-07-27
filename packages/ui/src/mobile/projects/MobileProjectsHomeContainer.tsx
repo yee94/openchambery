@@ -2,6 +2,7 @@ import * as React from 'react';
 import type { Session } from '@opencode-ai/sdk/v2/client';
 import { useEvent } from '@reactuses/core';
 
+import { Icon } from '@/components/icon/Icon';
 import { NewWorktreeDialog } from '@/components/session/NewWorktreeDialog';
 import { Input } from '@/components/ui/input';
 import { MobileOverlayPanel } from '@/components/ui/MobileOverlayPanel';
@@ -70,6 +71,7 @@ export function MobileProjectsHomeContainer({
   const pinnedSessionIds = useSessionPinnedStore((state) => state.ids);
   const archiveSessions = useSessionUIStore((state) => state.archiveSessions);
   const updateSessionTitle = useSessionUIStore((state) => state.updateSessionTitle);
+  const requestSessionSmartTitle = useSessionUIStore((state) => state.requestSessionSmartTitle);
   const shareSession = useSessionUIStore((state) => state.shareSession);
   const unshareSession = useSessionUIStore((state) => state.unshareSession);
   const openNewSessionDraft = useSessionUIStore((state) => state.openNewSessionDraft);
@@ -82,6 +84,7 @@ export function MobileProjectsHomeContainer({
   const [actionsOpen, setActionsOpen] = React.useState(false);
   const [renamingSession, setRenamingSession] = React.useState<Session | null>(null);
   const [renameDraft, setRenameDraft] = React.useState('');
+  const [smartTitleRequesting, setSmartTitleRequesting] = React.useState(false);
   const [newWorktreeDialogOpen, setNewWorktreeDialogOpen] = React.useState(false);
   const [worktreeDialogProjectId, setWorktreeDialogProjectId] = React.useState<string | null>(null);
 
@@ -293,6 +296,22 @@ export function MobileProjectsHomeContainer({
     }
   });
 
+  const handleRequestSmartTitle = useEvent(async () => {
+    if (!renamingSession || smartTitleRequesting) return;
+    setSmartTitleRequesting(true);
+    try {
+      await requestSessionSmartTitle(renamingSession.id);
+      setRenamingSession(null);
+      setRenameDraft('');
+    } catch {
+      toast.error(t('sessions.sidebar.session.rename.smartTitle'), {
+        description: t('sessions.sidebar.dialogs.deleteResult.tryAgain'),
+      });
+    } finally {
+      setSmartTitleRequesting(false);
+    }
+  });
+
   const sheetTarget: MobileRowActionTarget | null = React.useMemo(() => {
     if (!actionTarget) return null;
     if (actionTarget.kind === 'session') {
@@ -423,6 +442,7 @@ export function MobileProjectsHomeContainer({
         open={Boolean(renamingSession)}
         title={t('sessions.sidebar.session.menu.rename')}
         onClose={() => {
+          if (smartTitleRequesting) return;
           setRenamingSession(null);
           setRenameDraft('');
         }}
@@ -433,6 +453,7 @@ export function MobileProjectsHomeContainer({
               type="button"
               variant="ghost"
               className="flex-1"
+              disabled={smartTitleRequesting}
               onClick={() => {
                 setRenamingSession(null);
                 setRenameDraft('');
@@ -444,7 +465,7 @@ export function MobileProjectsHomeContainer({
               type="button"
               variant="default"
               className="flex-1"
-              disabled={!renameDraft.trim()}
+              disabled={!renameDraft.trim() || smartTitleRequesting}
               onClick={() => void handleSaveSessionRename()}
             >
               {t('sessions.sidebar.session.rename.save')}
@@ -453,7 +474,7 @@ export function MobileProjectsHomeContainer({
         }
       >
         <form
-          className="px-1 py-1"
+          className="flex flex-col gap-3 px-1 py-1"
           onSubmit={(event) => {
             event.preventDefault();
             void handleSaveSessionRename();
@@ -464,7 +485,22 @@ export function MobileProjectsHomeContainer({
             onChange={(event) => setRenameDraft(event.target.value)}
             autoFocus
             className="h-12"
+            disabled={smartTitleRequesting}
           />
+          <Button
+            type="button"
+            variant="outline"
+            className="w-full gap-2"
+            disabled={smartTitleRequesting}
+            onClick={() => void handleRequestSmartTitle()}
+          >
+            {smartTitleRequesting ? (
+              <Icon name="loader-4" className="size-4 animate-spin" />
+            ) : (
+              <Icon name="ai-generate-2" className="size-4" />
+            )}
+            {t('sessions.sidebar.session.rename.smartTitle')}
+          </Button>
         </form>
       </MobileOverlayPanel>
     </>

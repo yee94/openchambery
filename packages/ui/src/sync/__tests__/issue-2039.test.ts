@@ -241,6 +241,7 @@ mock.module("../session-actions", () => ({
   deleteSession: mock(async () => true),
   archiveSession: mock(async () => true),
   updateSessionTitle: mock(async () => undefined),
+  requestSessionSmartTitle: mock(async () => undefined),
   shareSession: mock(async () => undefined),
   unshareSession: mock(async () => undefined),
   optimisticSend: mock(async () => undefined),

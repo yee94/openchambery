@@ -27,8 +27,8 @@ import { useShiftKeyHeld } from '@/hooks/useShiftKeyHeld';
 import { useDelayedModKeyHeld } from '@/hooks/useDelayedModKeyHeld';
 import { getRuntimeBearerTokenSync } from '@/lib/runtime-auth';
 import { getRuntimeApiBaseUrl } from '@/lib/runtime-switch';
-import { opencodeClient } from '@/lib/opencode/client';
 import { getSessionActivityUpdatedAt } from '@/lib/sessionActivity';
+import { requestSessionSmartTitle } from '@/sync/session-actions';
 import { parseMultiRunSessionTitle } from '@/lib/multirun/title';
 import { MultiRunFusionDialog } from '@/components/multirun/MultiRunFusionDialog';
 import { FusionIcon } from '@/components/icons/FusionIcon';
@@ -635,28 +635,8 @@ function SessionNodeItemComponent(props: Props): React.ReactNode {
     const handleEnableSmartTitle = async () => {
       setPendingSmartTitle(sessionTitle);
       handleCancelEdit();
-      const metadata = (resolvedSession as Session & { metadata?: Record<string, unknown> }).metadata ?? {};
-      const openchamber = metadata.openchamber && typeof metadata.openchamber === 'object'
-        ? metadata.openchamber as Record<string, unknown>
-        : {};
-      const titleRefresh = openchamber.titleRefresh && typeof openchamber.titleRefresh === 'object'
-        ? openchamber.titleRefresh as Record<string, unknown>
-        : {};
-
       try {
-        await opencodeClient.updateSession(session.id, {
-          metadata: {
-            ...metadata,
-            openchamber: {
-              ...openchamber,
-              titleRefresh: {
-                ...titleRefresh,
-                lastAutoTitle: sessionTitle,
-                requestedAt: Date.now(),
-              },
-            },
-          },
-        }, sessionDirectory);
+        await requestSessionSmartTitle(session.id);
       } catch (error) {
         setPendingSmartTitle(null);
         console.warn('[session-sidebar] failed to request smart title:', error);
