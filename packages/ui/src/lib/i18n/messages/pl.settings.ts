@@ -2037,6 +2037,7 @@ export const settingsDict = {
   'assistants.title': 'Asystenci',
   'assistants.subtitle': 'Twoi stali pomocnicy',
   'assistants.listAria': 'Lista asystentów',
+  'assistants.menu.edit': 'Edytuj',
   'assistants.selectorAria': 'Zmień asystenta. Obecnie: {name}',
   'assistants.state.unsupportedTitle': 'Asystenci nie są obsługiwani',
   'assistants.state.unsupportedDescription': 'Ta instancja OpenChamber nie udostępnia funkcji asystentów.',

@@ -57,7 +57,7 @@ import { useMcpConfigStore, type McpDraft } from '@/stores/useMcpConfigStore';
 import { useMcpConfigsQuery, useMcpStatusQuery } from '@/queries/mcpQueries';
 import { useProjectsStore } from '@/stores/useProjectsStore';
 import { useQuotaAutoRefresh, useQuotaStore } from '@/stores/useQuotaStore';
-import { listProjectWorktrees, worktreeMapsEqual } from '@/lib/worktrees/worktreeManager';
+import { forceRefreshProjectWorktreeCatalog } from '@/lib/worktrees/worktreeManager';
 import type { QuotaProviderId, UsageWindow } from '@/types';
 import { useUIStore, type TimeFormatPreference } from '@/stores/useUIStore';
 import { useUpdateStore } from '@/stores/useUpdateStore';
@@ -1354,9 +1354,8 @@ const MobileInstancesSurface: React.FC<{
                       {statusText}
                     </span>
                   </span>
-                  {isConnectingRow ? <Icon name="loader-4" className="size-5 shrink-0 animate-spin text-muted-foreground" /> : null}
                 </button>
-                <div className="flex items-center gap-0.5 pr-2">
+                <div className="flex shrink-0 items-center gap-0.5 pr-2">
                   {confirming ? (
                     <button
                       type="button"
@@ -1368,7 +1367,11 @@ const MobileInstancesSurface: React.FC<{
                       <Icon name="delete-bin" className="size-[18px]" />
                       <span className="typography-ui-label">{t('mobile.instances.delete')}</span>
                     </button>
-                  ) : !connection.candidates.some((c) => c.kind === 'direct') ? null : (
+                  ) : isConnectingRow ? (
+                    <span className="flex size-9 items-center justify-center text-muted-foreground" aria-hidden>
+                      <Icon name="loader-4" className="size-[18px] animate-spin" />
+                    </span>
+                  ) : connection.candidates.some((c) => c.kind === 'direct') ? (
                     <button
                       type="button"
                       aria-label={t('mobile.instances.edit')}
@@ -1384,7 +1387,7 @@ const MobileInstancesSurface: React.FC<{
                     >
                       <Icon name="edit" className="size-[18px]" />
                     </button>
-                  )}
+                  ) : null}
                   <button
                     type="button"
                     aria-label={confirming
@@ -3547,52 +3550,38 @@ export function MobileApp({ apis }: MobileAppProps) {
     void refreshGitHubAuthStatus(apis.github, { force: true });
   }, [apis.github, isConnected, refreshGitHubAuthStatus]);
 
-  // Discover all worktrees for every known project so the draft session's
-  // worktree/branch dropdown can list every available branch — not only the
-  // current one. Mirrors ElectronMiniChatApp + desktop SessionSidebar.
-  // Gated on isConnected: running before the runtime is reachable made every
-  // per-project probe fail silently, leaving the map empty until some later
-  // projects-store update happened to re-run this effect (the "switch projects
-  // back and forth to see worktrees" bug).
+  // Discover linked worktrees for every known project so Projects home, draft
+  // selectors, and session sheets share the same catalog as desktop sidebar.
+  // Authoritative write path: forceRefreshProjectWorktreeCatalog (invalidate +
+  // list + per-project store merge) — same as topology sync / PC "sync sessions".
+  // Do not bulk-replace availableWorktreesByProject from a non-force list: a
+  // stale 30s cache or partial failure can wipe topology results (mobile missing
+  // worktrees that PC already shows).
+  // Gated on isConnected: probing before the runtime is reachable failed silently.
   React.useEffect(() => {
     if (!isConnected || projects.length === 0) return;
     let cancelled = false;
 
     const run = async () => {
-      const worktreesByProject = new Map(useSessionUIStore.getState().availableWorktreesByProject);
-
       await Promise.all(
         projects.map(async (project) => {
-          const projectPath = project.path.replace(/\\/g, '/').replace(/\/+$/, '');
+          const projectPath = normalizePath(project.path);
           if (!projectPath) return;
           try {
             const cachedIsGitRepo = useGitStore.getState().directories.get(projectPath)?.isGitRepo;
             const isGitRepo =
               cachedIsGitRepo ?? (await import('@/lib/gitApi').then((m) => m.checkIsGitRepository(projectPath)));
-            if (!isGitRepo) return;
-            const worktrees = await listProjectWorktrees({ id: project.id, path: projectPath });
-            if (cancelled) return;
-            worktreesByProject.set(projectPath, worktrees);
+            if (!isGitRepo || cancelled) return;
+            await forceRefreshProjectWorktreeCatalog(
+              { id: project.id, path: projectPath },
+              { isCurrent: () => !cancelled },
+            );
           } catch {
-            // Worktree discovery is best-effort per project: a failed probe keeps
-            // that project's previously known (persisted) worktrees instead of
-            // wiping the whole map.
+            // Best-effort per project: forceRefresh only writes on success, so a
+            // failed probe keeps previously known (persisted / topology) entries.
           }
         }),
       );
-
-      if (cancelled) return;
-
-      const allWorktrees = Array.from(worktreesByProject.values()).flat();
-
-      // Skip update if nothing changed — see worktreeMapsEqual JSDoc.
-      const currentByProject = useSessionUIStore.getState().availableWorktreesByProject;
-      if (!worktreeMapsEqual(worktreesByProject, currentByProject)) {
-        useSessionUIStore.setState({
-          availableWorktrees: allWorktrees,
-          availableWorktreesByProject: worktreesByProject,
-        });
-      }
     };
 
     void run();

@@ -165,7 +165,7 @@ describe('ScheduledTasksDialog queries', () => {
     expect(phoneShellContent).toContain('tabBarCovered={scheduledEditorActive}');
     expect(tabRootContent).toContain('showTabBar?: boolean;');
     expect(tabRootContent).toContain('data-mobile-navigation-dock-underlay="true"');
-    expect(tabRootContent).toContain('inert={secondaryPage || tabBarCovered ? true : undefined}');
+    expect(tabRootContent).toContain('inert={topSecondaryPage || tabBarCovered ? true : undefined}');
     expect(tabRootContent).toContain('<MobileTabBar activeTab={selectedTab}');
     expect(tabRootContent).not.toContain(') : showTabBar ? (');
     expect(tabRootContent).toContain('data-mobile-navigation-underlay="true"');
@@ -300,5 +300,57 @@ describe('ScheduledTasksDialog queries', () => {
     expect(chatScreenContent).toContain('elevated={headerElevated}');
     expect(chatScreenContent).not.toContain('disabled={menuOpen}');
     expect(chatScreenContent).not.toContain("t('miniChat.status.idle')");
+  });
+
+  test('keeps the three mobile Settings stages as sibling back-navigation surfaces', async () => {
+    const content = await readFile(
+      join(dirname(fileURLToPath(import.meta.url)), '../views/SettingsView.tsx'),
+      'utf8',
+    );
+    const mobileFlowContent = content.slice(
+      content.indexOf('if (mobileFlow) {'),
+      content.indexOf('\n  return (', content.indexOf('if (mobileFlow) {')),
+    );
+
+    // Stable route id (no mobileStage) so sidebar→content does not re-register.
+    expect(content).toContain('id: `mobile-settings:${settingsSlug}`');
+    expect(content).not.toContain('id: `mobile-settings:${settingsSlug}:${mobileStage}`');
+
+    // Stable bridge refs + layout effect retarget surface/underlay by stage.
+    expect(content).toContain('const mobileBackSurfaceRef = React.useRef<HTMLElement | null>(null)');
+    expect(content).toContain('const mobileBackUnderlayRef = React.useRef<HTMLElement | null>(null)');
+    expect(content).toContain('React.useLayoutEffect(() => {');
+    expect(content).toContain('mobileBackSurfaceRef.current = mobileBackContentRef.current');
+    expect(content).toContain('mobileBackSurfaceRef.current = mobileBackSidebarRef.current');
+    expect(content).toContain('mobileBackUnderlayRef.current = mobileBackRootRef.current');
+    expect(content).toContain('mobileBackUnderlayRef.current =\n        activePageMeta?.kind === "split"\n          ? mobileBackSidebarRef.current\n          : mobileBackRootRef.current');
+    expect(content).toContain('surfaceRef: mobileBackSurfaceRef');
+    expect(content).toContain('underlayRef: mobileBackUnderlayRef');
+
+    // Capacitor must not own nested split-detail history (native coordinator + local stage).
+    expect(content).toContain('import { isCapacitorApp } from "@/lib/platform"');
+    expect(content).toContain('runtimeCtx.isVSCode ||\n        isCapacitorApp()');
+    expect(content).toContain('if (isCapacitorApp() || runtimeCtx.isVSCode) {\n      setMobileStage("page-sidebar")');
+    expect(content).toContain('if (!isMobile || runtimeCtx.isVSCode || isCapacitorApp())');
+
+    expect(content).toContain('const sidebarLayerMounted =\n      detailActive && activePageMeta?.kind === "split";');
+    expect(content).toContain('const rootIsUnderlay = detailActive && !sidebarIsUnderlay;');
+    expect(content).toContain('pt-[calc(var(--oc-safe-area-top,env(safe-area-inset-top,0px))+1rem)]');
+    expect(content).toContain('var(--oc-safe-area-bottom,env(safe-area-inset-bottom,0px))');
+
+    const rootStage = mobileFlowContent.indexOf('data-mobile-settings-stage="nav"');
+    const sidebarStage = mobileFlowContent.indexOf('data-mobile-settings-stage="page-sidebar"');
+    const contentStage = mobileFlowContent.indexOf('data-mobile-settings-stage="page-content"');
+    expect(rootStage).toBeGreaterThanOrEqual(0);
+    expect(sidebarStage).toBeGreaterThan(rootStage);
+    expect(contentStage).toBeGreaterThan(sidebarStage);
+    expect(mobileFlowContent).toContain('ref={mobileBackRootRef}');
+    expect(mobileFlowContent).toContain('ref={mobileBackSidebarRef}');
+    expect(mobileFlowContent).toContain('ref={mobileBackContentRef}');
+    expect(mobileFlowContent).toContain('fixed inset-0 z-20');
+    expect(mobileFlowContent).toContain('fixed inset-0 z-40');
+    expect(mobileFlowContent).toContain('fixed inset-0 z-50');
+    expect(mobileFlowContent).toContain('aria-hidden={sidebarLayerActive ? undefined : "true"}');
+    expect(mobileFlowContent).toContain('inert={sidebarLayerActive ? undefined : true}');
   });
 });

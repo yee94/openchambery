@@ -285,8 +285,6 @@ type DesktopServicesMenuProps = {
   onOpenRemoteUpdate: () => void;
   showPredValues: boolean;
   timeFormatPreference: TimeFormatPreference;
-  /** Hide the visible trigger; open via controlled state (e.g. from the session ··· menu). */
-  hideTrigger?: boolean;
 };
 
 const DesktopServicesMenu = React.memo(function DesktopServicesMenu({
@@ -323,7 +321,6 @@ const DesktopServicesMenu = React.memo(function DesktopServicesMenu({
   onOpenRemoteUpdate,
   showPredValues,
   timeFormatPreference,
-  hideTrigger = false,
 }: DesktopServicesMenuProps) {
   const { t } = useI18n();
   return (
@@ -339,55 +336,48 @@ const DesktopServicesMenu = React.memo(function DesktopServicesMenu({
         }
       }}
     >
-      {hideTrigger ? (
-        <DropdownMenuTrigger asChild>
-          <button
-            type="button"
-            aria-hidden
-            tabIndex={-1}
-            // Anchor only — do not cover the ··· trigger (inset-0 stole hits / focus).
-            className="pointer-events-none absolute left-0 top-0 h-px w-px opacity-0"
-          />
-        </DropdownMenuTrigger>
-      ) : (
-        <Tooltip>
-          <TooltipTrigger asChild>
-            <DropdownMenuTrigger asChild>
-              <button
-                type="button"
-                aria-label={isDesktopApp
-                  ? t('header.services.openWithCurrent', { current: currentInstanceLabel })
-                  : t('header.services.open')}
-                className={cn(
-                  DESKTOP_HEADER_ICON_BUTTON_CLASS,
-                  isDesktopApp ? 'w-auto max-w-[14rem] justify-start gap-1.5 px-2.5' : 'h-8 w-8'
-                )}
-              >
-                <Icon name="stack" className="h-[18px] w-[18px]" />
-                {isDesktopApp ? (
-                  <span className="truncate typography-ui-label font-medium text-foreground">{compactCurrentInstanceLabel}</span>
-                ) : null}
-              </button>
-            </DropdownMenuTrigger>
-          </TooltipTrigger>
-          <TooltipContent>
-            <p>
-              {isDesktopApp
-                ? t('header.services.tooltip.currentInstanceWithShortcuts', {
-                    current: currentInstanceLabel,
-                    toggle: shortcutLabel('toggle_services_menu'),
-                    nextTab: shortcutLabel('cycle_services_tab'),
-                  })
-                : t('header.services.tooltip.servicesWithShortcuts', {
-                    toggle: shortcutLabel('toggle_services_menu'),
-                    nextTab: shortcutLabel('cycle_services_tab'),
-                  })}
-            </p>
-          </TooltipContent>
-        </Tooltip>
-      )}
+      <Tooltip>
+        <TooltipTrigger asChild>
+          <DropdownMenuTrigger asChild>
+            <button
+              type="button"
+              aria-label={isDesktopApp
+                ? t('header.services.openWithCurrent', { current: currentInstanceLabel })
+                : t('header.services.open')}
+              className={cn(
+                DESKTOP_HEADER_ICON_BUTTON_CLASS,
+                isDesktopApp ? 'w-auto max-w-[14rem] justify-start gap-1.5 px-2.5' : 'h-8 w-8',
+                isDesktopServicesOpen && 'bg-[var(--interactive-hover)] text-foreground'
+              )}
+            >
+              <Icon name="stack" className="h-[18px] w-[18px]" />
+              {isDesktopApp ? (
+                <span className="truncate typography-ui-label font-medium text-foreground">{compactCurrentInstanceLabel}</span>
+              ) : null}
+            </button>
+          </DropdownMenuTrigger>
+        </TooltipTrigger>
+        <TooltipContent>
+          <p>
+            {isDesktopApp
+              ? t('header.services.tooltip.currentInstanceWithShortcuts', {
+                  current: currentInstanceLabel,
+                  toggle: shortcutLabel('toggle_services_menu'),
+                  nextTab: shortcutLabel('cycle_services_tab'),
+                })
+              : t('header.services.tooltip.servicesWithShortcuts', {
+                  toggle: shortcutLabel('toggle_services_menu'),
+                  nextTab: shortcutLabel('cycle_services_tab'),
+                })}
+          </p>
+        </TooltipContent>
+      </Tooltip>
       <DropdownMenuContent
-        align="end"
+        // Trigger sits near the session title (left). align=start grows the
+        // panel rightward so it does not sit under macOS traffic lights.
+        align="start"
+        sideOffset={6}
+        collisionPadding={12}
         className="w-[min(27rem,calc(100vw-2rem))] max-h-[75vh] overflow-y-auto bg-[var(--surface-elevated)] p-0"
       >
         <div className="sticky top-0 z-20 px-2 pt-1.5 pb-px">
@@ -1897,21 +1887,22 @@ export const Header: React.FC<HeaderProps> = ({
 
   const showMiniChatHeaderAction = hasElectronDesktopIPC && (isNewSessionDraftOpen || Boolean(currentSessionId));
 
-  const openDesktopServicesFromMenu = React.useCallback(() => {
-    setIsDesktopServicesOpen(true);
-    void refreshCurrentInstanceLabel();
-    if (desktopServicesTab === 'usage' && quotaResults.length === 0) {
-      void fetchAllQuotas();
-    }
-  }, [desktopServicesTab, fetchAllQuotas, quotaResults.length, refreshCurrentInstanceLabel]);
-
   // Run after the overflow menu closes so panel/dock updates aren't lost mid-dismiss.
   const runSessionMenuAction = React.useCallback((action: () => void) => {
     window.setTimeout(action, 0);
   }, []);
 
+  const openUsageFromMenu = React.useCallback(() => {
+    setDesktopServicesTab('usage');
+    setIsDesktopServicesOpen(true);
+    void refreshCurrentInstanceLabel();
+    if (quotaResults.length === 0) {
+      void fetchAllQuotas();
+    }
+  }, [fetchAllQuotas, quotaResults.length, refreshCurrentInstanceLabel]);
+
   const sessionOverflowMenu = (
-    <div className="relative flex shrink-0 items-center">
+    <div className="relative flex shrink-0 items-center gap-0.5">
       <DropdownMenu>
         <Tooltip>
           <TooltipTrigger asChild>
@@ -1952,15 +1943,10 @@ export const Header: React.FC<HeaderProps> = ({
           ) : null}
           <DropdownMenuItem
             className="flex items-center gap-2"
-            onClick={() => runSessionMenuAction(openDesktopServicesFromMenu)}
+            onClick={() => runSessionMenuAction(openUsageFromMenu)}
           >
-            <Icon name="stack" className="h-3.5 w-3.5" />
-            <span className="flex-1 truncate">
-              {isDesktopApp
-                ? t('header.actions.sessionMenu.servicesWithInstance', { current: currentInstanceLabel })
-                : t('header.services.title')}
-            </span>
-            <span className="typography-micro text-muted-foreground">{shortcutLabel('toggle_services_menu')}</span>
+            <Icon name="timer" className="h-3.5 w-3.5" />
+            <span className="flex-1">{t('header.actions.sessionMenu.viewUsage')}</span>
           </DropdownMenuItem>
           <DropdownMenuSeparator />
           <DropdownMenuItem
@@ -1984,7 +1970,6 @@ export const Header: React.FC<HeaderProps> = ({
         </DropdownMenuContent>
       </DropdownMenu>
       <DesktopServicesMenu
-        hideTrigger
         isDesktopApp={isDesktopApp}
         currentInstanceLabel={currentInstanceLabel}
         compactCurrentInstanceLabel={compactCurrentInstanceLabel}

@@ -19,7 +19,7 @@ import { useRuntimeAPIs } from '@/hooks/useRuntimeAPIs';
 import { useI18n } from '@/lib/i18n';
 import { PROJECT_COLOR_MAP, PROJECT_ICON_MAP, ProjectIconImage } from '@/lib/projectMeta';
 import { cn } from '@/lib/utils';
-import { forceRefreshProjectWorktreeCatalog, listProjectWorktrees } from '@/lib/worktrees/worktreeManager';
+import { forceRefreshProjectWorktreeCatalog } from '@/lib/worktrees/worktreeManager';
 import { getRootBranch } from '@/lib/worktrees/worktreeStatus';
 import { useDirectoryStore } from '@/stores/useDirectoryStore';
 import {
@@ -605,8 +605,14 @@ export const MobileSessionsSheet: React.FC<MobileSessionsSheetProps> = ({ open, 
               worktrees: [],
             };
           }
+          // Same authoritative catalog path as desktop SessionSidebar sync /
+          // topology: invalidate + write per project. Cached listProjectWorktrees
+          // alone can leave mobile on a stale empty catalog.
           const [worktreeResult, rootBranchResult] = await Promise.allSettled([
-            listProjectWorktrees({ id: project.id, path }),
+            forceRefreshProjectWorktreeCatalog(
+              { id: project.id, path },
+              { isCurrent: () => !cancelled },
+            ),
             getRootBranch(path),
           ]);
           return {
@@ -615,7 +621,9 @@ export const MobileSessionsSheet: React.FC<MobileSessionsSheetProps> = ({ open, 
             gitStatus: 'success' as const,
             isGitRepo,
             worktreeStatus: worktreeResult.status === 'fulfilled' ? 'success' as const : 'failed' as const,
-            worktrees: worktreeResult.status === 'fulfilled' ? worktreeResult.value : undefined,
+            // forceRefresh already wrote the store; merge still needs the payload
+            // so non-git clears and failed probes keep prior entries correctly.
+            worktrees: worktreeResult.status === 'fulfilled' ? worktreeResult.value.worktrees : undefined,
             rootBranchStatus: rootBranchResult.status === 'fulfilled' ? 'success' as const : 'failed' as const,
             rootBranch: rootBranchResult.status === 'fulfilled' ? rootBranchResult.value : undefined,
           };

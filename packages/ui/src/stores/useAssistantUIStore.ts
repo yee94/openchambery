@@ -29,12 +29,16 @@ type AssistantUIState = {
   defaultShareAssistant: { serverInstanceID: string; assistantID: string } | null;
   assistantCatalogByConnection: Record<string, AssistantCatalogPartition>;
   createRequestRevision: number;
+  /** Bumped when a caller wants Settings to open the selected assistant detail (mobile page-content). */
+  openSettingsRequestRevision: number;
   selectAssistant: (assistantID: string | null) => void;
   selectSettingsAssistant: (assistantID: string | 'new' | null) => void;
   setDefaultShareAssistant: (target: { serverInstanceID: string; assistantID: string } | null) => void;
   replaceCatalogPartition: (partition: AssistantCatalogPartition) => void;
   removeCatalogPartition: (connectionKey: string) => void;
   requestCreate: () => void;
+  /** Select an assistant in Settings and request opening its detail surface. */
+  requestOpenSettings: (assistantID: string) => void;
 };
 
 const transport = () => getRuntimeTransportIdentity();
@@ -63,6 +67,7 @@ export const useAssistantUIStore = create<AssistantUIState>()(persist((set) => (
   defaultShareAssistant: null,
   assistantCatalogByConnection: {},
   createRequestRevision: 0,
+  openSettingsRequestRevision: 0,
   selectAssistant: (assistantID) => set((state) => ({
     assistantByTransport: { ...state.assistantByTransport, [transport()]: assistantID },
   })),
@@ -89,6 +94,10 @@ export const useAssistantUIStore = create<AssistantUIState>()(persist((set) => (
     return { assistantCatalogByConnection, ...(target && !defaultStillExists ? { defaultShareAssistant: null } : {}) };
   }),
   requestCreate: () => set((state) => ({ createRequestRevision: state.createRequestRevision + 1, settingsSelectedAssistantID: 'new' })),
+  requestOpenSettings: (assistantID) => set((state) => ({
+    settingsSelectedAssistantID: assistantID,
+    openSettingsRequestRevision: state.openSettingsRequestRevision + 1,
+  })),
 }), {
   name: 'openchamber-assistant-ui',
   storage: createDeferredSafeJSONStorage(),
@@ -119,4 +128,23 @@ export const openAssistant = (assistantID?: string | null): void => {
   const state = useAssistantUIStore.getState();
   if (assistantID !== undefined) state.selectAssistant(assistantID);
   useUIStore.getState().setActiveMainTab('assistant');
+};
+
+/**
+ * Open Settings on the Assistants page with a concrete assistant selected.
+ * On mobile, pass `openMobileSettings` so the host can switch to the Settings
+ * tab/sheet; SettingsView advances split pages to page-content via the revision.
+ */
+export const openAssistantSettings = (
+  assistantID: string,
+  options?: { openMobileSettings?: (section?: string) => void },
+): void => {
+  useAssistantUIStore.getState().requestOpenSettings(assistantID);
+  if (options?.openMobileSettings) {
+    options.openMobileSettings('assistants');
+    return;
+  }
+  const ui = useUIStore.getState();
+  ui.setSettingsPage('assistants');
+  ui.setSettingsDialogOpen(true);
 };

@@ -36,6 +36,7 @@ import { forceRefreshProjectWorktreeCatalog } from '@/lib/worktrees/worktreeMana
 import { getRootBranch } from '@/lib/worktrees/worktreeStatus';
 import { copyTextToClipboard } from '@/lib/clipboard';
 import { showArchivedSessionsUndoToast } from '@/lib/sessionMutationUndo';
+import { isIPadApp } from '@/lib/platform';
 import { ScrollableOverlay } from '@/components/ui/ScrollableOverlay';
 import { MobileWindowMotion } from '@/components/ui/MobileWindowMotion';
 import { MobileOverlayPanel } from '@/components/ui/MobileOverlayPanel';
@@ -44,6 +45,8 @@ import {
   type MobileLongPressController,
 } from '@/components/ui/mobileLongPress';
 import { MobileDeleteWorktreeDialog } from '@/apps/MobileDeleteWorktreeDialog';
+import { mergeMobileWorktreeRefreshResults } from '@/apps/mobileSessionPagination';
+import { useMobileNavigationStore } from '@/mobile/useMobileNavigationStore';
 import {
   MOBILE_SHEET_EXPANDED_SNAP,
   useMobileSheetSnap,
@@ -622,6 +625,18 @@ export const MobileSessionStatusBar: React.FC<MobileSessionStatusBarProps> = ({
   const sessionStatus = useAllSessionStatuses();
   const setCurrentSession = useSessionUIStore((state) => state.setCurrentSession);
   const openNewSessionDraft = useSessionUIStore((state) => state.openNewSessionDraft);
+  // Phone secondary stack owns draft presentation (ChatView selectionOverride
+  // comes from the route). Calling openNewSessionDraft alone leaves the chat
+  // route on the previous session — the + button looked dead.
+  const startNewSessionDraft = React.useCallback((
+    options?: Parameters<typeof openNewSessionDraft>[0],
+  ) => {
+    if (!isIPadApp()) {
+      useMobileNavigationStore.getState().openDraft(options);
+      return;
+    }
+    openNewSessionDraft(options);
+  }, [openNewSessionDraft]);
   const archiveSession = useSessionUIStore((state) => state.archiveSession);
   const shareSession = useSessionUIStore((state) => state.shareSession);
   const unshareSession = useSessionUIStore((state) => state.unshareSession);
@@ -777,6 +792,58 @@ export const MobileSessionStatusBar: React.FC<MobileSessionStatusBarProps> = ({
     }
   }, [open, visibleSessionDirectories]);
 
+  // Refresh worktree groups when the sheet opens so project filter shows the
+  // tree (root + worktrees). Without this the catalog can stay empty after a
+  // cold start until another surface (iPad sheet / app bootstrap) fills it.
+  React.useEffect(() => {
+    if (!open || projects.length === 0) return;
+    let cancelled = false;
+    void (async () => {
+      const entries = await Promise.all(projects.map(async (project) => {
+        const path = normalize(project.path);
+        if (!path) return null;
+        let isGitRepo = false;
+        try {
+          isGitRepo = await git.checkIsGitRepository(path);
+        } catch {
+          return { path, status: 'failed' as const };
+        }
+        if (!isGitRepo) {
+          return { path, status: 'success' as const, worktrees: [] as WorktreeMetadata[] };
+        }
+        try {
+          // Align with PC/topology: force-refresh invalidates the 30s list cache
+          // and merges into availableWorktreesByProject per project.
+          const result = await forceRefreshProjectWorktreeCatalog(
+            { id: project.id, path },
+            { isCurrent: () => !cancelled },
+          );
+          return { path, status: 'success' as const, worktrees: result.worktrees };
+        } catch {
+          return { path, status: 'failed' as const };
+        }
+      }));
+      if (cancelled) return;
+      const projectPaths = new Set(projects.map((project) => normalize(project.path)).filter(Boolean));
+      const results = entries.flatMap((entry) => (entry ? [entry] : []));
+      useSessionUIStore.setState((state) => {
+        const next = mergeMobileWorktreeRefreshResults(
+          state.availableWorktreesByProject,
+          projectPaths,
+          results,
+        );
+        if (next === state.availableWorktreesByProject) return {};
+        return {
+          availableWorktreesByProject: next,
+          availableWorktrees: Array.from(next.values()).flat(),
+        };
+      });
+    })();
+    return () => {
+      cancelled = true;
+    };
+  }, [git, open, projects]);
+
   const formatProjectLabel = React.useCallback((project: ProjectEntry): string => {
     return formatDirectoryName(project.path) || project.path;
   }, []);
@@ -892,7 +959,17 @@ export const MobileSessionStatusBar: React.FC<MobileSessionStatusBarProps> = ({
 
   const handleSessionClick = React.useCallback((session: SessionWithStatus) => {
     closeSessionPanel();
-    void setCurrentSession(session.id, sessionDirectory(session) || null);
+    const directory = sessionDirectory(session) || null;
+    if (!isIPadApp()) {
+      // Prefer the phone nav entry so draft → session and home → session both
+      // land on the chat secondary page with the correct route override.
+      useMobileNavigationStore.getState().openSession({
+        sessionId: session.id,
+        directory,
+      });
+    } else {
+      void setCurrentSession(session.id, directory);
+    }
     onSessionSwitch?.(session.id);
   }, [closeSessionPanel, onSessionSwitch, setCurrentSession]);
 
@@ -956,7 +1033,7 @@ export const MobileSessionStatusBar: React.FC<MobileSessionStatusBarProps> = ({
     if (filterProjectId) {
       const project = projects.find((p) => p.id === filterProjectId);
       if (project) {
-        openNewSessionDraft({ selectedProjectId: project.id, directoryOverride: project.path });
+        startNewSessionDraft({ selectedProjectId: project.id, directoryOverride: project.path });
         return;
       }
     }
@@ -966,20 +1043,23 @@ export const MobileSessionStatusBar: React.FC<MobileSessionStatusBarProps> = ({
       return bTime - aTime;
     })[0];
     const directory = mostRecent ? sessionDirectory(mostRecent) : '';
-    openNewSessionDraft(directory ? { directoryOverride: directory } : undefined);
-  }, [closeSessionPanel, filterProjectId, projects, sessions, openNewSessionDraft]);
+    startNewSessionDraft(directory ? { directoryOverride: directory } : undefined);
+  }, [closeSessionPanel, filterProjectId, projects, sessions, startNewSessionDraft]);
 
   const handleNewWorktree = React.useCallback(() => {
     if (!worktreeTargetProject || !worktreeTargetIsGitRepository) return;
+    // Close the sessions sheet first so the worktree overlay is not stacked under
+    // the same z-index MobileWindowMotion surface (both use z-[60]).
+    closeSessionPanel();
     setActiveProjectIdOnly(worktreeTargetProject.id);
     setWorktreeDialogProjectId(worktreeTargetProject.id);
     setNewWorktreeDialogOpen(true);
-  }, [setActiveProjectIdOnly, worktreeTargetIsGitRepository, worktreeTargetProject]);
+  }, [closeSessionPanel, setActiveProjectIdOnly, worktreeTargetIsGitRepository, worktreeTargetProject]);
 
   const startSessionDraftForDirectory = (project: ProjectEntry, directory: string) => {
     closeActionMenu();
     setOpen(false);
-    openNewSessionDraft({
+    startNewSessionDraft({
       selectedProjectId: project.id,
       directoryOverride: directory,
       preserveDirectoryOverride: true,
@@ -1294,6 +1374,7 @@ export const MobileSessionStatusBar: React.FC<MobileSessionStatusBarProps> = ({
           onClick={() => {
             const projectId = actionTarget.project.id;
             closeActionMenu();
+            closeSessionPanel();
             setActiveProjectIdOnly(projectId);
             setWorktreeDialogProjectId(projectId);
             setNewWorktreeDialogOpen(true);
@@ -1466,9 +1547,16 @@ export const MobileSessionStatusBar: React.FC<MobileSessionStatusBarProps> = ({
           setNewWorktreeDialogOpen(false);
           setOpen(false);
           if (options?.sessionId) {
-            void setCurrentSession(options.sessionId, worktreePath);
+            if (!isIPadApp()) {
+              useMobileNavigationStore.getState().openSession({
+                sessionId: options.sessionId,
+                directory: worktreePath,
+              });
+            } else {
+              void setCurrentSession(options.sessionId, worktreePath);
+            }
           } else if (worktreeDialogProjectId) {
-            openNewSessionDraft({
+            startNewSessionDraft({
               selectedProjectId: worktreeDialogProjectId,
               directoryOverride: worktreePath,
               preserveDirectoryOverride: true,

@@ -130,20 +130,49 @@ describe('Assistant UI product contract', () => {
       read('../../mobile/useMobileNavigationStore.ts'),
     ]);
     expect(mobileTab).toContain('role="listbox"');
-    expect(mobileTab).toContain("onClick={() => handleOpenAssistant(assistant.id)}");
+    expect(mobileTab).toContain('onOpen={() => handleOpenAssistant(assistant.id)}');
     expect(mobileTab).toContain('key={assistant.id}');
-    expect(mobileTab).toContain('className="oc-mobile-assistant-card-shell"');
+    expect(mobileTab).toContain('oc-mobile-assistant-card-shell');
     expect(mobileTab).toContain('oc-mobile-assistant-card');
     expect(mobileTab).toContain('oc-mobile-entity-title');
     expect(mobileTab).toContain('oc-mobile-entity-meta');
     expect(phoneShell).toContain("secondaryKind === 'assistant'");
-    expect(phoneShell).toContain('<AssistantView activeOverride onMobileBack={handleSecondaryBack} />');
+    expect(phoneShell).toContain('<AssistantView');
+    expect(phoneShell).toContain('activeOverride');
+    expect(phoneShell).toContain('onMobileBack=');
     expect(navigation).toContain("set({ secondary: { kind: 'assistant' } })");
     expect(navigation.indexOf('selectAssistant(assistantID)')).toBeLessThan(navigation.indexOf("set({ secondary: { kind: 'assistant' } })"));
     expect(view).toContain('onMobileBack?: () => void');
     expect(view).toContain('<MobileDetailNavigation');
     expect(view).not.toContain('<MobileOverlayPanel');
     expect(view).not.toContain('mobileSelectorOpen');
+  });
+
+  test('offers edit and cancel from assistant list context menu and long-press', async () => {
+    const [view, mobileTab, store, settingsView, english] = await Promise.all([
+      read('AssistantView.tsx'),
+      read('../../mobile/assistant/MobileAssistantTab.tsx'),
+      read('../../stores/useAssistantUIStore.ts'),
+      read('../views/SettingsView.tsx'),
+      read('../../lib/i18n/messages/en.settings.ts'),
+    ]);
+    expect(view).toContain('AssistantListItem');
+    expect(view).toContain('openAssistantSettings');
+    expect(view).toContain("t('assistants.menu.edit')");
+    expect(view).toContain("t('settings.common.actions.cancel')");
+    expect(view).toContain('ContextMenu');
+    expect(mobileTab).toContain('createMobileLongPressController');
+    expect(mobileTab).toContain('openAssistantSettings');
+    expect(mobileTab).toContain("t('assistants.menu.edit')");
+    expect(mobileTab).toContain("t('settings.common.actions.cancel')");
+    expect(mobileTab).toContain('openFromContextMenu');
+    expect(store).toContain('requestOpenSettings');
+    expect(store).toContain('openSettingsRequestRevision');
+    expect(store).toContain('export const openAssistantSettings');
+    expect(settingsView).toContain('openSettingsRequestRevision');
+    expect(settingsView).toContain('setMobileStage("page-content")');
+    expect(english).toContain("'assistants.menu.edit': 'Edit'");
+    expect(english).not.toContain('assistants.menu.configure');
   });
 
   test('hosts the shared ChatContainer shell instead of a forked transcript tree', async () => {

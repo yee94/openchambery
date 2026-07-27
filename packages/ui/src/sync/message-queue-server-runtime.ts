@@ -203,9 +203,39 @@ export const createMessageQueueServerRuntime = (dependencies: Partial<Dependenci
     } catch (error) { if (!isCaptureCurrent(capture) || signal.aborted) return; publish({ capability: error instanceof MessageQueueServerError && error.status === 501 ? 'unsupported' : 'error', hydration: 'error', error }); }
     finally { if (isCaptureCurrent(capture)) publish({ isFetching: false }); }
   };
-  // Tip waits miss advances that happen while paging a scope. Lead once with GET
-  // (refresh), then wait for the next tip before the next snapshot GET so startup
-  // does not immediately re-fetch the catalog it just applied.
+  // Tip waits miss advances published while paging a scope or between unsubscribe
+  // and the next wait. Lead with GET, apply diverged scopes, then GET again until
+  // the catalog revision is stable before waiting for the next tip. That recovers
+  // confirm-by-message deletions that land mid-apply (chip otherwise stays on the
+  // pre-delete sending/reconciling projection forever).
+  const applySnapshotUntilStable = async (
+    capture: MessageQueueServerRuntimeCapture,
+    signal: AbortSignal,
+  ): Promise<'applied' | 'stale' | 'aborted'> => {
+    while (!signal.aborted && controller) {
+      if (!isCaptureCurrent(capture)) return 'stale';
+      const cached = deps.client.getQueryData<Awaited<ReturnType<typeof fetchMessageQueueSnapshot>>>([capture.transportIdentity, 'messageQueue', 'snapshot']);
+      const latest = await deps.snapshot(signal);
+      if (!isCaptureCurrent(capture) || signal.aborted) return signal.aborted ? 'aborted' : 'stale';
+      const known = new Map(state.scopes);
+      const needsApply = cached?.revision !== latest.revision
+        || latest.scopes.some((descriptor) => known.get(descriptor.scopeID)?.revision !== descriptor.revision)
+        || [...known.keys()].some((scopeID) => !latest.scopes.some((scope) => scope.scopeID === scopeID));
+      if (!needsApply) return 'applied';
+      const completeScopes = await Promise.all(
+        latest.scopes
+          .filter((descriptor) => known.get(descriptor.scopeID)?.revision !== descriptor.revision)
+          .map((descriptor) => loadScope(descriptor, capture, signal)),
+      );
+      if (!isCaptureCurrent(capture) || signal.aborted) return signal.aborted ? 'aborted' : 'stale';
+      if (commitSnapshot(latest, completeScopes, capture)) publish({ hydration: 'ready', error: undefined });
+      // Another tip may have landed while pages loaded. Re-GET before waiting.
+      const post = await deps.snapshot(signal);
+      if (!isCaptureCurrent(capture) || signal.aborted) return signal.aborted ? 'aborted' : 'stale';
+      if (post.revision === latest.revision) return 'applied';
+    }
+    return 'aborted';
+  };
   const observe = async () => {
     await refresh(); let failures = 0;
     const observer = controller;
@@ -214,21 +244,14 @@ export const createMessageQueueServerRuntime = (dependencies: Partial<Dependenci
     while (!signal.aborted && controller === observer) {
       const capture = deps.capture();
       try {
-        const cached = deps.client.getQueryData<Awaited<ReturnType<typeof fetchMessageQueueSnapshot>>>([capture.transportIdentity, 'messageQueue', 'snapshot']);
-        const waitRevision = cached?.revision ?? currentWatermark(capture);
+        // Lead GET each iteration so tips published between the previous
+        // unsubscribe and this wait cannot leave sending chips stranded.
+        const lead = await applySnapshotUntilStable(capture, signal);
+        if (lead === 'aborted' || lead === 'stale') return;
+        const waitRevision = currentWatermark(capture);
         const reason = await deps.waitInvalidation(waitRevision, { signal });
         if (!isCaptureCurrent(capture) || signal.aborted || reason === 'aborted') return;
-        const latest = await deps.snapshot(signal); if (!isCaptureCurrent(capture) || signal.aborted) return;
-        const known = new Map(state.scopes);
-        const needsApply = cached?.revision !== latest.revision
-          || latest.scopes.some((descriptor) => known.get(descriptor.scopeID)?.revision !== descriptor.revision)
-          || [...known.keys()].some((scopeID) => !latest.scopes.some((scope) => scope.scopeID === scopeID));
-        if (needsApply) {
-          const completeScopes = await Promise.all(latest.scopes.filter((descriptor) => known.get(descriptor.scopeID)?.revision !== descriptor.revision).map((descriptor) => loadScope(descriptor, capture, signal)));
-          if (commitSnapshot(latest, completeScopes, capture)) { publish({ hydration: 'ready', error: undefined }); failures = 0; }
-        } else {
-          failures = 0;
-        }
+        failures = 0;
       } catch (error) {
         if (signal.aborted || controller !== observer || !isCaptureCurrent(capture)) return;
         // Mid-page worker bumps surface as revision_conflict; pull again immediately.

@@ -1,8 +1,12 @@
 import fs from 'node:fs';
 import path from 'node:path';
 import os from 'node:os';
+import { execFile } from 'node:child_process';
+import { promisify } from 'node:util';
 import { fetchOpenCodeGoUsage } from './opencodeGoQuota';
 import { readCredential } from './quotaCredentials';
+
+const execFileAsync = promisify(execFile);
 
 type AuthEntry = Record<string, unknown> | string;
 type AuthFile = Record<string, AuthEntry>;
@@ -1764,6 +1768,11 @@ const WAFER_WINDOW_SECONDS = 5 * 3600;
 
 const DEFAULT_GROK_CLI_PROXY_ORIGIN = 'https://cli-chat-proxy.grok.com';
 const DEFAULT_GROK_CLIENT_VERSION = '1.0.0';
+const GROK_AUTH_RENEWAL_PROMPT = 'Reply with OK.';
+const GROK_AUTH_RENEWAL_TIMEOUT_MS = 120_000;
+
+let grokAuthRenewalPromise: Promise<{ ok: boolean; message?: string; expiresAt?: string | null }> | null =
+  null;
 
 type GrokBuildAuth = {
   key: string;
@@ -1884,6 +1893,129 @@ const isXaiConfigured = (): boolean => {
   return Boolean(auth?.key && auth?.userId);
 };
 
+const resolveGrokCliPath = (environment: NodeJS.ProcessEnv = process.env): string | null => {
+  const homeDir = firstNonEmptyString(environment.HOME) || os.homedir();
+  const pathCandidates = String(environment.PATH || '')
+    .split(path.delimiter)
+    .filter(Boolean)
+    .map((directory) => path.join(directory, 'grok'));
+  const candidates = [
+    environment.OPENCHAMBER_GROK_CLI_PATH,
+    environment.AI_USAGE_TRACKER_GROK_CLI_PATH,
+    environment.GROK_CLI_PATH,
+    ...pathCandidates,
+    path.join(homeDir, '.local', 'bin', 'grok'),
+    path.join(homeDir, '.cargo', 'bin', 'grok'),
+    '/opt/homebrew/bin/grok',
+    '/usr/local/bin/grok',
+  ].filter((value): value is string => Boolean(value));
+
+  for (const candidate of candidates) {
+    try {
+      fs.accessSync(candidate, fs.constants.X_OK);
+      return candidate;
+    } catch {
+      // continue searching
+    }
+  }
+  return null;
+};
+
+const describeGrokCommandError = (error: unknown): string => {
+  if (
+    error &&
+    typeof error === 'object' &&
+    'killed' in error &&
+    (error as { killed?: boolean }).killed &&
+    'signal' in error &&
+    (error as { signal?: string }).signal === 'SIGTERM'
+  ) {
+    return 'command timed out';
+  }
+  if (error && typeof error === 'object' && 'stderr' in error) {
+    const stderr = (error as { stderr?: unknown }).stderr;
+    if (typeof stderr === 'string' && stderr.trim()) {
+      return stderr.trim().slice(0, 300);
+    }
+  }
+  return error instanceof Error ? error.message : String(error);
+};
+
+const runGrokBuildAuthRenewal = async (
+  authPath = resolveGrokAuthPath()
+): Promise<{ ok: boolean; message?: string; expiresAt?: string | null }> => {
+  const cliPath = resolveGrokCliPath();
+  if (!cliPath) {
+    return {
+      ok: false,
+      message: 'Grok Build CLI not found — install `grok` or set OPENCHAMBER_GROK_CLI_PATH',
+    };
+  }
+
+  try {
+    await execFileAsync(
+      cliPath,
+      [
+        '-p',
+        GROK_AUTH_RENEWAL_PROMPT,
+        '--max-turns',
+        '1',
+        '--disable-web-search',
+        '--no-subagents',
+        '--no-memory',
+      ],
+      {
+        cwd: os.homedir(),
+        timeout: GROK_AUTH_RENEWAL_TIMEOUT_MS,
+        maxBuffer: 1024 * 1024,
+        env: process.env,
+      }
+    );
+  } catch (error) {
+    return {
+      ok: false,
+      message: `Grok Build CLI renewal failed: ${describeGrokCommandError(error)}`,
+    };
+  }
+
+  const refreshedAuth = readGrokBuildAuth(authPath);
+  if (!refreshedAuth?.key || !refreshedAuth?.userId || isGrokAuthExpired(refreshedAuth.expiresAt)) {
+    return {
+      ok: false,
+      message: 'Grok Build CLI ran, but local access token is still expired',
+    };
+  }
+
+  return {
+    ok: true,
+    expiresAt: refreshedAuth.expiresAt || null,
+  };
+};
+
+const renewGrokBuildAuth = async (
+  authPath = resolveGrokAuthPath()
+): Promise<{ ok: boolean; message?: string; expiresAt?: string | null }> => {
+  if (grokAuthRenewalPromise) {
+    return grokAuthRenewalPromise;
+  }
+
+  grokAuthRenewalPromise = runGrokBuildAuthRenewal(authPath);
+  try {
+    return await grokAuthRenewalPromise;
+  } finally {
+    grokAuthRenewalPromise = null;
+  }
+};
+
+const buildXaiRenewalFailure = (message: string): ProviderResult =>
+  buildResult({
+    providerId: 'xai',
+    providerName: 'Grok',
+    ok: false,
+    configured: true,
+    error: `${message}. Run \`grok login\` if automatic renewal cannot recover access.`,
+  });
+
 const buildXaiUsageWindows = (body: unknown): Record<string, UsageWindow> | null => {
   const root = body && typeof body === 'object' ? (body as Record<string, unknown>) : null;
   if (!root) return null;
@@ -1968,7 +2100,8 @@ const buildXaiUsageWindows = (body: unknown): Record<string, UsageWindow> | null
 };
 
 const fetchXaiQuota = async (): Promise<ProviderResult> => {
-  const grokAuth = readGrokBuildAuth();
+  const authPath = resolveGrokAuthPath();
+  let grokAuth = readGrokBuildAuth(authPath);
   if (!grokAuth?.key || !grokAuth?.userId) {
     return buildResult({
       providerId: 'xai',
@@ -1979,26 +2112,63 @@ const fetchXaiQuota = async (): Promise<ProviderResult> => {
     });
   }
 
+  let renewalAttempted = false;
+  if (isGrokAuthExpired(grokAuth.expiresAt)) {
+    renewalAttempted = true;
+    const renewal = await renewGrokBuildAuth(authPath);
+    if (!renewal.ok) {
+      return buildXaiRenewalFailure(renewal.message || 'Grok Build CLI automatic renewal failed');
+    }
+    grokAuth = readGrokBuildAuth(authPath);
+    if (!grokAuth?.key || !grokAuth?.userId || isGrokAuthExpired(grokAuth.expiresAt)) {
+      return buildXaiRenewalFailure(
+        'Grok Build CLI finished, but local access token is still expired'
+      );
+    }
+  }
+
   const origin =
     firstNonEmptyString(process.env.OPENCHAMBER_GROK_CLI_PROXY_ORIGIN) ||
     DEFAULT_GROK_CLI_PROXY_ORIGIN;
   const creditsUrl = `${origin}/v1/billing?format=credits`;
 
-  try {
-    const response = await fetch(creditsUrl, {
+  const requestCredits = async (auth: GrokBuildAuth) =>
+    fetch(creditsUrl, {
       method: 'GET',
       headers: {
-        Authorization: `Bearer ${grokAuth.key}`,
+        Authorization: `Bearer ${auth.key}`,
         'x-xai-token-auth': 'xai-grok-cli',
         accept: 'application/json',
         'user-agent': 'OpenChamber/xai-quota',
-        'x-userid': String(grokAuth.userId),
+        'x-userid': String(auth.userId),
         'x-grok-client-version':
           firstNonEmptyString(process.env.OPENCHAMBER_GROK_CLIENT_VERSION) ||
           DEFAULT_GROK_CLIENT_VERSION,
       },
       signal: AbortSignal.timeout(15_000),
     });
+
+  try {
+    let response = await requestCredits(grokAuth);
+
+    if ((response.status === 401 || response.status === 403) && !renewalAttempted) {
+      const renewal = await renewGrokBuildAuth(authPath);
+      if (!renewal.ok) {
+        return buildXaiRenewalFailure(renewal.message || 'Grok Build CLI automatic renewal failed');
+      }
+      const refreshedAuth = readGrokBuildAuth(authPath);
+      if (
+        !refreshedAuth?.key ||
+        !refreshedAuth?.userId ||
+        isGrokAuthExpired(refreshedAuth.expiresAt)
+      ) {
+        return buildXaiRenewalFailure(
+          'Grok Build CLI finished, but no valid access token was found'
+        );
+      }
+      grokAuth = refreshedAuth;
+      response = await requestCredits(grokAuth);
+    }
 
     if (response.status === 401 || response.status === 403) {
       return buildResult({

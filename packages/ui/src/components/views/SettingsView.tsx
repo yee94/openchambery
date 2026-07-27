@@ -66,6 +66,7 @@ import {
   isVSCodeRuntime,
   isWebRuntime,
 } from "@/lib/desktop";
+import { isCapacitorApp } from "@/lib/platform";
 import { useI18n } from "@/lib/i18n";
 import { Icon } from "@/components/icon/Icon";
 import type { IconName } from "@/components/icon/icons";
@@ -405,6 +406,28 @@ export const SettingsView: React.FC<SettingsViewProps> = ({
   const suppressMobileHeader = hideMobileHeader && mobileStage === "nav";
   const mobileFlow = isMobile && flowMobile;
   const autoNavSlugRef = React.useRef<string | null>(null);
+  const handledOpenAssistantSettingsRef = React.useRef(0);
+  const openAssistantSettingsRevision = useAssistantUIStore(
+    (state) => state.openSettingsRequestRevision,
+  );
+
+  // Deep-link from Assistant list configure: land on the selected detail page.
+  React.useEffect(() => {
+    if (!isMobile) return;
+    if (openAssistantSettingsRevision <= handledOpenAssistantSettingsRef.current) {
+      return;
+    }
+    const selected =
+      useAssistantUIStore.getState().settingsSelectedAssistantID;
+    if (!selected || selected === "new") return;
+    if (settingsSlug !== "assistants") {
+      setSettingsPage("assistants");
+      return;
+    }
+    handledOpenAssistantSettingsRef.current = openAssistantSettingsRevision;
+    autoNavSlugRef.current = "assistants";
+    setMobileStage("page-content");
+  }, [isMobile, openAssistantSettingsRevision, setSettingsPage, settingsSlug]);
 
   React.useEffect(() => {
     onMobileStageChange?.(mobileStage);
@@ -422,8 +445,11 @@ export const SettingsView: React.FC<SettingsViewProps> = ({
   const startXRef = React.useRef(0);
   const startWidthRef = React.useRef(navWidth);
   const containerRef = React.useRef<HTMLDivElement>(null);
-  const mobileBackSurfaceRef = React.useRef<HTMLDivElement>(null);
-  const mobileBackUnderlayRef = React.useRef<HTMLDivElement>(null);
+  const mobileBackRootRef = React.useRef<HTMLDivElement>(null);
+  const mobileBackSidebarRef = React.useRef<HTMLDivElement>(null);
+  const mobileBackContentRef = React.useRef<HTMLDivElement>(null);
+  const mobileBackSurfaceRef = React.useRef<HTMLElement | null>(null);
+  const mobileBackUnderlayRef = React.useRef<HTMLElement | null>(null);
   const searchResultRefs = React.useRef<(HTMLButtonElement | null)[]>([]);
   const activeSearchResultIndexRef = React.useRef(0);
   const keyboardSearchNavigationRef = React.useRef(false);
@@ -1027,11 +1053,17 @@ export const SettingsView: React.FC<SettingsViewProps> = ({
       return;
     }
 
+    // Capacitor / VS Code: native or local stage only — no nested history.back().
+    if (isCapacitorApp() || runtimeCtx.isVSCode) {
+      setMobileStage("page-sidebar");
+      return;
+    }
+
     const currentDetail =
       typeof window !== "undefined"
         ? getSettingsDetailHistoryEntry(window.history.state)
         : null;
-    if (currentDetail?.page === settingsSlug && !runtimeCtx.isVSCode) {
+    if (currentDetail?.page === settingsSlug) {
       window.history.back();
       return;
     }
@@ -1165,7 +1197,12 @@ export const SettingsView: React.FC<SettingsViewProps> = ({
 
   const pushMobileSplitDetailHistory = React.useCallback(
     (slug: SettingsPageSlug) => {
-      if (typeof window === "undefined" || runtimeCtx.isVSCode) {
+      // Hosted H5 only: nested detail entry under the coordinator sidebar entry.
+      if (
+        typeof window === "undefined" ||
+        runtimeCtx.isVSCode ||
+        isCapacitorApp()
+      ) {
         return;
       }
 
@@ -1203,6 +1240,22 @@ export const SettingsView: React.FC<SettingsViewProps> = ({
     setMobileStage("nav");
   }, [backButtonTargetsPageSidebar, handleMobileSplitItemDeleted]);
 
+  // Stable bridge refs for useMobileBackRoute: stage switches only retarget
+  // .current so the route id is not unregistered/re-registered mid-flow.
+  React.useLayoutEffect(() => {
+    if (mobileStage === "page-content") {
+      mobileBackSurfaceRef.current = mobileBackContentRef.current;
+      mobileBackUnderlayRef.current =
+        activePageMeta?.kind === "split"
+          ? mobileBackSidebarRef.current
+          : mobileBackRootRef.current;
+      return;
+    }
+
+    mobileBackSurfaceRef.current = mobileBackSidebarRef.current;
+    mobileBackUnderlayRef.current = mobileBackRootRef.current;
+  }, [activePageMeta?.kind, mobileStage]);
+
   useMobileBackRoute({
     id: `mobile-settings:${settingsSlug}`,
     active: mobileFlow && mobileStage !== "nav",
@@ -1212,7 +1265,8 @@ export const SettingsView: React.FC<SettingsViewProps> = ({
   });
 
   React.useEffect(() => {
-    if (!isMobile || runtimeCtx.isVSCode) {
+    // Split-detail nested history is hosted H5 only (Capacitor uses native coordinator).
+    if (!isMobile || runtimeCtx.isVSCode || isCapacitorApp()) {
       return;
     }
 
@@ -1536,8 +1590,8 @@ export const SettingsView: React.FC<SettingsViewProps> = ({
     </div>
   );
 
-  const renderMobileStage = () => {
-    if (mobileStage === "nav") {
+  const renderMobileStage = (stage: MobileStage = mobileStage) => {
+    if (stage === "nav") {
       return renderMobileNavStage();
     }
 
@@ -1552,7 +1606,7 @@ export const SettingsView: React.FC<SettingsViewProps> = ({
       return <div className={mobileDetailStageClassName} />;
     }
 
-    if (mobileStage === "page-sidebar") {
+    if (stage === "page-sidebar") {
       if (activePageMeta.kind !== "split") {
         // No sidebar available; fall back to direct content.
         const fallback = renderPageContent(settingsSlug);
@@ -1620,10 +1674,10 @@ export const SettingsView: React.FC<SettingsViewProps> = ({
     );
   };
 
-  const renderMobileDetailNavigation = () => (
+  const renderMobileDetailNavigation = (stage: MobileStage = mobileStage) => (
     <MobileDetailNavigation
       sticky
-      title={mobileStage === "nav"
+      title={stage === "nav"
         ? t("settings.view.home.title")
         : activePageMeta
           ? getPageTitle(activePageMeta.slug)
@@ -1650,6 +1704,13 @@ export const SettingsView: React.FC<SettingsViewProps> = ({
 
   if (mobileFlow) {
     const detailActive = mobileStage !== "nav";
+    const sidebarLayerMounted =
+      detailActive && activePageMeta?.kind === "split";
+    const contentLayerMounted = mobileStage === "page-content";
+    const sidebarLayerActive = mobileStage === "page-sidebar";
+    const sidebarIsUnderlay =
+      contentLayerMounted && activePageMeta?.kind === "split";
+    const rootIsUnderlay = detailActive && !sidebarIsUnderlay;
     return (
       <div
         ref={containerRef}
@@ -1658,24 +1719,42 @@ export const SettingsView: React.FC<SettingsViewProps> = ({
         className="oc-settings-workspace oc-settings-workspace-mobile h-auto w-full min-w-0 overflow-visible bg-transparent"
       >
         <div
-          ref={mobileBackUnderlayRef}
-          data-mobile-navigation-underlay="true"
+          ref={mobileBackRootRef}
+          data-mobile-settings-stage="nav"
+          data-mobile-navigation-underlay={rootIsUnderlay ? "true" : undefined}
           aria-hidden={detailActive ? "true" : undefined}
           inert={detailActive ? true : undefined}
-          className="oc-mobile-settings-root-surface fixed inset-0 z-20 flex h-[100dvh] w-full min-w-0 max-w-full flex-col gap-6 overflow-y-auto overflow-x-hidden overscroll-contain px-[var(--oc-mobile-page-inline-inset)] pb-[calc(var(--oc-mobile-dock-height)+2.5rem+var(--safe-area-inset-bottom,env(safe-area-inset-bottom,0px)))] pt-[calc(var(--safe-area-inset-top,env(safe-area-inset-top,0px))+1rem)] [contain:layout_paint]"
+          className="oc-mobile-settings-root-surface fixed inset-0 z-20 flex h-[100dvh] w-full min-w-0 max-w-full flex-col gap-6 overflow-y-auto overflow-x-hidden overscroll-contain px-[var(--oc-mobile-page-inline-inset)] pb-[calc(var(--oc-mobile-dock-height)+2.5rem+var(--oc-safe-area-bottom,env(safe-area-inset-bottom,0px)))] pt-[calc(var(--oc-safe-area-top,env(safe-area-inset-top,0px))+1rem)] [contain:layout_paint]"
         >
           <MobileTabPageHeader title={t("mobile.settings.placeholder.title")} />
           {renderMobileNavStage()}
         </div>
-        {detailActive ? (
+        {sidebarLayerMounted ? (
           <div
-            ref={mobileBackSurfaceRef}
+            ref={mobileBackSidebarRef}
+            data-mobile-settings-stage="page-sidebar"
+            data-mobile-navigation-underlay={sidebarIsUnderlay ? "true" : undefined}
+            data-mobile-settings-push-surface="true"
+            aria-hidden={sidebarLayerActive ? undefined : "true"}
+            inert={sidebarLayerActive ? undefined : true}
+            className="fixed inset-0 z-40 flex h-[100dvh] w-full min-w-0 max-w-full touch-pan-y flex-col overflow-hidden bg-background [contain:layout_paint]"
+          >
+            {renderMobileDetailNavigation("page-sidebar")}
+            <div className="min-h-0 w-full flex-1 overflow-y-auto overflow-x-hidden overscroll-contain px-[var(--oc-mobile-page-inline-inset)]">
+              {renderMobileStage("page-sidebar")}
+            </div>
+          </div>
+        ) : null}
+        {contentLayerMounted ? (
+          <div
+            ref={mobileBackContentRef}
+            data-mobile-settings-stage="page-content"
             data-mobile-settings-push-surface="true"
             className="fixed inset-0 z-50 flex h-[100dvh] w-full min-w-0 max-w-full touch-pan-y flex-col overflow-hidden bg-background [contain:layout_paint]"
           >
-            {renderMobileDetailNavigation()}
+            {renderMobileDetailNavigation("page-content")}
             <div className="min-h-0 w-full flex-1 overflow-y-auto overflow-x-hidden overscroll-contain px-[var(--oc-mobile-page-inline-inset)]">
-              {renderMobileStage()}
+              {renderMobileStage("page-content")}
             </div>
           </div>
         ) : null}

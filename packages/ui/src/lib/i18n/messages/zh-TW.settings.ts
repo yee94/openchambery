@@ -2036,6 +2036,7 @@
   'assistants.title': '助理',
   'assistants.subtitle': '持續陪伴的專屬助手',
   'assistants.listAria': '助理列表',
+  'assistants.menu.edit': '編輯',
   'assistants.selectorAria': '切換助理。目前：{name}',
   'assistants.state.unsupportedTitle': '此執行個體不支援助理',
   'assistants.state.unsupportedDescription': '目前的 OpenChamber 執行個體未提供助理功能。',

@@ -7,9 +7,8 @@ import { useI18n } from '@/lib/i18n';
 import { cn } from '@/lib/utils';
 
 import { MobileTabBar } from './MobileTabBar';
-import { mobileBackNavigationCoordinator, useMobileBackRoute } from './mobileBackNavigation';
+import { useMobileBackRoute } from './mobileBackNavigation';
 import type { MobileNavigationState } from './mobileNavigation';
-import { MobilePushPresentationController } from './mobilePushPresentation';
 import { MOBILE_TABS, type MobileTabId } from './mobileTabs';
 
 export type MobileSecondaryPage = {
@@ -81,25 +80,21 @@ export function MobileTabsRoot({
   const restoreFocusRef = React.useRef<HTMLElement | null>(null);
   const hadSecondaryRef = React.useRef(false);
   const focusedPageKeyRef = React.useRef('');
-  const pushPresentationRef = React.useRef<MobilePushPresentationController | null>(null);
-  if (!pushPresentationRef.current) pushPresentationRef.current = new MobilePushPresentationController();
 
-  React.useEffect(() => mobileBackNavigationCoordinator.setPresentationCancelDriver(
-    () => pushPresentationRef.current?.cancel(),
-  ), []);
+  const handleSecondaryBack = useEvent(() => topSecondaryPage?.onBack());
 
   useMobileBackRoute({
     id: topSecondaryPage ? `mobile-secondary:${topSecondaryPage.key}` : 'mobile-secondary:inactive',
     active: Boolean(topSecondaryPage),
-    onBack: () => topSecondaryPage?.onBack(),
+    onBack: handleSecondaryBack,
     surfaceRef: secondaryHostRef,
     underlayRef: secondaryUnderlayRef,
   });
 
-  const previousWindowRef = React.useRef<{ depth: number; topKey: string | null }>({ depth: 0, topKey: null });
+  // Instant secondary enter: no push WAAPI. Only keep host/underlay refs for
+  // interactive back. Enter animations previously caused a leftward settle flash
+  // on chat (sticky/list heavy) and are intentionally disabled.
   React.useLayoutEffect(() => {
-    const pushPresentation = pushPresentationRef.current!;
-    pushPresentation.cancel();
     const top = topSecondaryPageKey !== null
       ? secondaryPageElementsRef.current.get(topSecondaryPageKey) ?? null
       : null;
@@ -108,23 +103,6 @@ export function MobileTabsRoot({
       : rootUnderlayRef.current;
     secondaryHostRef.current = top;
     secondaryUnderlayRef.current = predecessor;
-
-    const previous = previousWindowRef.current;
-    const shouldPush = Boolean(
-      top
-      && topSecondaryPageKey !== null
-      && previous.topKey !== topSecondaryPageKey
-      && (topSecondaryPageDepth ?? 1) > previous.depth,
-    );
-    previousWindowRef.current = {
-      depth: topSecondaryPageDepth ?? 0,
-      topKey: topSecondaryPageKey,
-    };
-    if (!shouldPush || !top) return;
-    if (window.matchMedia?.('(prefers-reduced-motion: reduce)').matches) return;
-
-    pushPresentation.start(top, predecessor);
-    return () => pushPresentation.cancel();
   }, [topSecondaryPageKey, topSecondaryPageDepth, predecessorSecondaryPageKey]);
 
   // Focus contract: when a secondary page opens, capture the current trigger
@@ -228,12 +206,6 @@ export function MobileTabsRoot({
               active ? 'z-50' : 'z-40',
             )}
           >
-            {active ? (
-              <span
-                aria-hidden="true"
-                className="pointer-events-none absolute inset-y-0 left-0 z-[60] w-3 bg-[linear-gradient(90deg,color-mix(in_srgb,var(--surface-foreground)_12%,transparent),transparent)] opacity-70"
-              />
-            ) : null}
             {page.content}
           </div>
         );

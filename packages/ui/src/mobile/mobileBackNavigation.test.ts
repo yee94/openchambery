@@ -19,7 +19,6 @@ import {
   resolveMobileSecondaryBackDecision,
   type MobileChatRoute,
 } from './mobileNavigation';
-import { MobilePushPresentationController } from './mobilePushPresentation';
 import {
   acknowledgeMobileSessionMirror,
   expectMobileSessionMirror,
@@ -215,100 +214,18 @@ describe('mobile session mirror acknowledgment', () => {
   });
 });
 
-type AnimationControl = {
-  animation: Animation;
-  resolve: () => void;
-  reject: () => void;
-  cancelCalls: () => number;
-};
-
-const animatedElement = () => {
-  const controls: AnimationControl[] = [];
-  const style = {
-    transform: '',
-    willChange: '',
-    removeProperty: (property: string) => {
-      if (property === 'transform') style.transform = '';
-      if (property === 'will-change') style.willChange = '';
-    },
-  };
-  const element = {
-    style,
-    animate: () => {
-      let resolve!: () => void;
-      let reject!: () => void;
-      let cancels = 0;
-      const finished = new Promise<void>((resolvePromise, rejectPromise) => {
-        resolve = resolvePromise;
-        reject = rejectPromise;
-      });
-      const animation = {
-        finished,
-        cancel: () => {
-          cancels += 1;
-        },
-      } as unknown as Animation;
-      controls.push({ animation, resolve, reject, cancelCalls: () => cancels });
-      return animation;
-    },
-  } as unknown as HTMLElement;
-  return { controls, element, style };
-};
-
-describe('MobilePushPresentationController', () => {
-  test('push lifecycle depends only on stable visual route identity', async () => {
+describe('MobileTabsRoot secondary enter', () => {
+  test('does not wire push WAAPI enter animations', async () => {
     const source = await readFile(new URL('./MobileTabsRoot.tsx', import.meta.url), 'utf8');
+    expect(source).not.toContain('MobilePushPresentationController');
+    expect(source).not.toContain('pushPresentation.start');
+    expect(source).not.toContain('pushPresentationRef');
+    expect(source).toContain('secondaryHostRef.current = top');
+    expect(source).toContain('secondaryUnderlayRef.current = predecessor');
     expect(source).toContain(
-      '}, [topSecondaryPageKey, topSecondaryPageDepth, predecessorSecondaryPageKey]);',
+      'const handleSecondaryBack = useEvent(() => topSecondaryPage?.onBack());',
     );
-    expect(source).not.toContain('}, [topSecondaryPage, visibleSecondaryPages]);');
-  });
-
-  test('starts synchronously and can cancel before a deferred frame would run', async () => {
-    const target = animatedElement();
-    const controller = new MobilePushPresentationController();
-    controller.start(target.element, null);
-    expect(target.controls).toHaveLength(1);
-
-    controller.cancel();
-    expect(target.controls[0].cancelCalls()).toBe(1);
-    expect(target.style.transform).toBe('');
-    expect(target.style.willChange).toBe('');
-    target.controls[0].resolve();
-    await Promise.resolve();
-  });
-
-  test('cleans styles when WAAPI finished rejects', async () => {
-    const target = animatedElement();
-    const controller = new MobilePushPresentationController();
-    controller.start(target.element, null);
-    target.controls[0].reject();
-    await Promise.resolve();
-    await Promise.resolve();
-    expect(target.style.transform).toBe('');
-    expect(target.style.willChange).toBe('');
-  });
-
-  test('stale completion cannot clear a consecutive push presentation', async () => {
-    const first = animatedElement();
-    const second = animatedElement();
-    const controller = new MobilePushPresentationController();
-    controller.start(first.element, null);
-    controller.start(second.element, first.element);
-
-    first.controls[0].resolve();
-    await Promise.resolve();
-    expect(second.style.transform).toBe('translate3d(100%, 0, 0)');
-    expect(first.style.willChange).toBe('transform');
-
-    second.controls[0].resolve();
-    first.controls[1].resolve();
-    await Promise.resolve();
-    await Promise.resolve();
-    expect(second.style.transform).toBe('');
-    expect(second.style.willChange).toBe('');
-    expect(first.style.transform).toBe('');
-    expect(first.style.willChange).toBe('');
+    expect(source).toContain('onBack: handleSecondaryBack,');
   });
 });
 

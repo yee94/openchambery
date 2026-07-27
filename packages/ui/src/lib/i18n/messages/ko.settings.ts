@@ -2036,6 +2036,7 @@ export const settingsDict = {
   'assistants.title': '어시스턴트',
   'assistants.subtitle': '항상 함께하는 전용 도우미',
   'assistants.listAria': '어시스턴트 목록',
+  'assistants.menu.edit': '편집',
   'assistants.selectorAria': '어시스턴트 전환. 현재: {name}',
   'assistants.state.unsupportedTitle': '어시스턴트를 지원하지 않음',
   'assistants.state.unsupportedDescription': '이 OpenChamber 인스턴스는 어시스턴트 기능을 제공하지 않습니다.',

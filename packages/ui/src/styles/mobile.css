@@ -2286,14 +2286,9 @@ button.oc-mobile-group-label-trigger:focus-visible {
   caret-color: transparent;
 }
 
-/* iOS removes the resting bottom-safe padding once the keyboard starts so the
-   composer lands flush on the keyboard. Android keeps a small breathing gap. */
+/* Keep a small breathing gap between the input card and the IME on every
+   native platform. Flush-to-keyboard reads too tight on iPhone. */
 :root.oc-capacitor-app.oc-keyboard-open .oc-mobile-composer {
-  padding-bottom: 0;
-}
-
-:root.oc-capacitor-app.oc-platform-android.oc-keyboard-open
-  .oc-mobile-composer {
   padding-bottom: 12px;
 }
 

@@ -2036,6 +2036,7 @@ export const settingsDict = {
   'assistants.title': '助理',
   'assistants.subtitle': '持续陪伴的专属助手',
   'assistants.listAria': '助理列表',
+  'assistants.menu.edit': '编辑',
   'assistants.selectorAria': '切换助理。当前：{name}',
   'assistants.state.unsupportedTitle': '此实例不支持助理',
   'assistants.state.unsupportedDescription': '当前 OpenChamber 实例未提供助理能力。',

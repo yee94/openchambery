@@ -2,6 +2,7 @@ import * as React from 'react';
 import type { Session } from '@opencode-ai/sdk/v2/client';
 import { useEvent } from '@reactuses/core';
 
+import { NewWorktreeDialog } from '@/components/session/NewWorktreeDialog';
 import { Input } from '@/components/ui/input';
 import { MobileOverlayPanel } from '@/components/ui/MobileOverlayPanel';
 import { Button } from '@/components/ui/button';
@@ -73,6 +74,7 @@ export function MobileProjectsHomeContainer({
   const unshareSession = useSessionUIStore((state) => state.unshareSession);
   const openNewSessionDraft = useSessionUIStore((state) => state.openNewSessionDraft);
   const openDraft = useMobileNavigationStore((state) => state.openDraft);
+  const openSession = useMobileNavigationStore((state) => state.openSession);
   const setActiveProjectIdOnly = useProjectsStore((state) => state.setActiveProjectIdOnly);
   const removeProject = useProjectsStore((state) => state.removeProject);
 
@@ -80,6 +82,8 @@ export function MobileProjectsHomeContainer({
   const [actionsOpen, setActionsOpen] = React.useState(false);
   const [renamingSession, setRenamingSession] = React.useState<Session | null>(null);
   const [renameDraft, setRenameDraft] = React.useState('');
+  const [newWorktreeDialogOpen, setNewWorktreeDialogOpen] = React.useState(false);
+  const [worktreeDialogProjectId, setWorktreeDialogProjectId] = React.useState<string | null>(null);
 
   const collectSessionTreeIds = useEvent((sessionId: string): string[] => {
     const childrenByParent = new Map<string, string[]>();
@@ -202,6 +206,27 @@ export function MobileProjectsHomeContainer({
     const meta = model.projectMetaById.get(project.id);
     if (!meta) return;
     startSessionDraftForDirectory(meta, worktree.path);
+  });
+
+  const handleNewWorktree = useEvent((projectId: string) => {
+    setWorktreeDialogProjectId(projectId);
+    setActiveProjectIdOnly(projectId);
+    setNewWorktreeDialogOpen(true);
+  });
+
+  const handleWorktreeCreated = useEvent((worktreePath: string, options?: { sessionId?: string }) => {
+    const projectId = worktreeDialogProjectId;
+    setNewWorktreeDialogOpen(false);
+    setWorktreeDialogProjectId(null);
+    if (options?.sessionId) {
+      openSession({ sessionId: options.sessionId, directory: worktreePath });
+      return;
+    }
+    openDraft({
+      selectedProjectId: projectId,
+      directoryOverride: worktreePath,
+      preserveDirectoryOverride: true,
+    });
   });
 
   const handleShareFromMenu = useEvent(async (session: Session) => {
@@ -330,8 +355,7 @@ export function MobileProjectsHomeContainer({
       const project = actionTarget.project;
       return {
         onNewSession: () => startSessionDraftForDirectory(project, project.path),
-        // TODO: new worktree — MobileSessionsSheet owns NewWorktreeDialog; extract before wiring here.
-        onNewWorktree: undefined,
+        onNewWorktree: () => handleNewWorktree(project.id),
         // Edit project (MobileProjectEditSurface) is out of scope for this wiring lane.
         onEditProject: undefined,
         onCloseProject: () => removeProject(project.id),
@@ -348,6 +372,7 @@ export function MobileProjectsHomeContainer({
     handleArchiveSession,
     handleCopyShareUrl,
     handleHardDeleteSession,
+    handleNewWorktree,
     handleShareFromMenu,
     handleUnshareFromMenu,
     removeProject,
@@ -383,6 +408,15 @@ export function MobileProjectsHomeContainer({
           if (!open) closeActions();
           else setActionsOpen(true);
         }}
+      />
+
+      <NewWorktreeDialog
+        open={newWorktreeDialogOpen}
+        onOpenChange={(value) => {
+          setNewWorktreeDialogOpen(value);
+          if (!value) setWorktreeDialogProjectId(null);
+        }}
+        onWorktreeCreated={handleWorktreeCreated}
       />
 
       <MobileOverlayPanel

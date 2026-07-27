@@ -2036,6 +2036,7 @@ export const settingsDict = {
   'assistants.title': 'Асистенти',
   'assistants.subtitle': 'Ваші постійні помічники',
   'assistants.listAria': 'Список асистентів',
+  'assistants.menu.edit': 'Редагувати',
   'assistants.selectorAria': 'Змінити асистента. Поточний: {name}',
   'assistants.state.unsupportedTitle': 'Асистенти не підтримуються',
   'assistants.state.unsupportedDescription': 'Цей екземпляр OpenChamber не надає функцію асистентів.',

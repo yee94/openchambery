@@ -323,6 +323,57 @@ test('observer applies a newer snapshot after a tip without re-waiting mid-apply
   runtime.stop();
 });
 
+test('observer recovers a confirm deletion published while scope pages load', async () => {
+  const cache = new Map<string, unknown>();
+  const client = { setQueryData: (key: readonly unknown[], value: unknown) => cache.set(JSON.stringify(key), value), getQueryData: <T>(key: readonly unknown[]) => cache.get(JSON.stringify(key)) as T | undefined, removeQueries: () => {}, invalidateQueries: async () => {} };
+  let revision = 1;
+  let waits = 0;
+  let postTipSnapshotReads = 0;
+  let tipped = false;
+  let releaseWait = () => {};
+  let gate = Promise.resolve();
+  const sending = { ...item, status: 'sending' as const, attemptCount: 1 };
+  const runtime = createMessageQueueServerRuntime({
+    client: client as never,
+    capture: () => ({ transportIdentity: 'device-a', generation: 1 }),
+    current: () => true,
+    status: async () => ({ capability: true, authority: 'active' }),
+    snapshot: async () => {
+      if (tipped) {
+        postTipSnapshotReads += 1;
+        // First post-tip catalog still shows the in-flight row. confirmByMessage
+        // deletes it while pages load; the stability re-GET must observe revision 3.
+        if (postTipSnapshotReads === 1) revision = 2;
+        if (postTipSnapshotReads >= 2) revision = 3;
+      }
+      return { revision, scopes: [{ ...descriptor, revision, itemCount: revision < 3 ? 1 : 0 }], worktreeOrders: [] };
+    },
+    scope: async () => ({
+      ...descriptor,
+      revision,
+      itemCount: revision < 3 ? 1 : 0,
+      items: revision < 3 ? [revision === 1 ? item : sending] : [],
+    }),
+    waitInvalidation: async () => {
+      waits += 1;
+      await gate;
+      tipped = true;
+      return waits === 1 ? 'tip' : 'aborted';
+    },
+  });
+  await runtime.refresh();
+  expect(runtime.getScope({ transportIdentity: 'device-a', directory: '/repo', sessionID: 'session-a' })?.items).toEqual([item]);
+  gate = new Promise<void>((resolve) => { releaseWait = resolve; });
+  runtime.start();
+  for (let i = 0; i < 100 && waits < 1; i++) await Promise.resolve();
+  expect(waits).toBe(1);
+  releaseWait();
+  for (let i = 0; i < 200 && (runtime.getScope({ transportIdentity: 'device-a', directory: '/repo', sessionID: 'session-a' })?.items.length ?? -1) !== 0; i++) await Promise.resolve();
+  expect(runtime.getScope({ transportIdentity: 'device-a', directory: '/repo', sessionID: 'session-a' })?.items).toEqual([]);
+  expect(runtime.getState().scopes.get(descriptor.scopeID)?.revision).toBe(3);
+  runtime.stop();
+});
+
 test('remove treats authoritative not_found as committed after scope reload', async () => {
   const cache = new Map<string, unknown>();
   const client = { setQueryData: (key: readonly unknown[], value: unknown) => cache.set(JSON.stringify(key), value), getQueryData: <T>(key: readonly unknown[]) => cache.get(JSON.stringify(key)) as T | undefined, removeQueries: () => {}, invalidateQueries: async () => {} };

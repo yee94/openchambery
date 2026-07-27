@@ -6,6 +6,12 @@ import { resolveComposerVisibleAgents } from '@/components/chat/chatComposerCata
 import { getCycledPrimaryAgentName, resolveAgentModelSelection } from '@/components/chat/mobileControlsUtils';
 import { Icon } from '@/components/icon/Icon';
 import { Button } from '@/components/ui/button';
+import {
+  ContextMenu,
+  ContextMenuContent,
+  ContextMenuItem,
+  ContextMenuTrigger,
+} from '@/components/ui/context-menu';
 import { useMobileAppActions } from '@/apps/mobileAppContext';
 import { donateNativeAssistantInteraction } from '@/apps/MobileShareBridge';
 import { isMobileShareHandoffMarkerPart } from '@/apps/mobileShareDraftHandoff';
@@ -25,7 +31,7 @@ import { surfaceDraftKey, draftKeyString } from '@/sync/input-draft-types';
 import { createDraftAttachmentResourceAdapter } from '@/sync/draft-attachment-resource-adapter';
 import { useInputStore } from '@/sync/input-store';
 import { useScopedAgentsQuery, useScopedProvidersQuery } from '@/queries/agentQueries';
-import { useAssistantUIStore } from '@/stores/useAssistantUIStore';
+import { openAssistantSettings, useAssistantUIStore } from '@/stores/useAssistantUIStore';
 import { useUIStore } from '@/stores/useUIStore';
 import type { AttachedFile } from '@/stores/types/sessionTypes';
 import { AssistantConversationSurface } from './AssistantConversationSurface';
@@ -79,6 +85,83 @@ const MobileAssistantConversationHeader: React.FC<MobileAssistantConversationHea
       backAriaLabel={t('assistants.actions.backToChat')}
       onBack={onBack}
     />
+  );
+};
+
+type AssistantListItemProps = {
+  assistantID: string;
+  displayName: string;
+  avatarEmoji?: string;
+  modeLabel: string;
+  selected: boolean;
+  enabled: boolean;
+  editLabel: string;
+  cancelLabel: string;
+  onSelect: () => void;
+  onEdit: () => void;
+};
+
+const AssistantListItem: React.FC<AssistantListItemProps> = ({
+  assistantID,
+  displayName,
+  avatarEmoji,
+  modeLabel,
+  selected,
+  enabled,
+  editLabel,
+  cancelLabel,
+  onSelect,
+  onEdit,
+}) => {
+  const [menuOpen, setMenuOpen] = React.useState(false);
+  const handleSelect = useEvent(() => onSelect());
+  const handleEdit = useEvent(() => {
+    setMenuOpen(false);
+    onEdit();
+  });
+  const handleCancel = useEvent(() => setMenuOpen(false));
+
+  return (
+    <ContextMenu open={menuOpen} onOpenChange={setMenuOpen}>
+      <ContextMenuTrigger
+        render={
+          <button
+            type="button"
+            role="option"
+            aria-selected={selected}
+            onClick={handleSelect}
+            onContextMenu={(event) => {
+              event.preventDefault();
+              setMenuOpen(true);
+            }}
+            className={cn(
+              'flex w-full min-h-11 items-center gap-3 rounded-xl border px-3 py-3 text-left outline-none transition-[background-color,border-color,transform,opacity] duration-150 ease-out active:scale-[0.995] focus-visible:ring-2 focus-visible:ring-[var(--interactive-focus-ring)] motion-reduce:transition-none',
+              selected
+                ? 'border-border/50 bg-[var(--surface-elevated)]'
+                : 'border-transparent hover:bg-interactive-hover',
+              !enabled && 'opacity-65',
+            )}
+          />
+        }
+      >
+        <AgentAvatar name={assistantID} emoji={avatarEmoji} size={24} label={displayName} />
+        <span className="min-w-0 flex-1">
+          <span className="block truncate typography-ui-label font-medium">{displayName}</span>
+          <span className="mt-0.5 block truncate typography-micro text-muted-foreground">
+            {modeLabel}
+          </span>
+        </span>
+      </ContextMenuTrigger>
+      <ContextMenuContent className="min-w-[10rem]">
+        <ContextMenuItem onClick={handleEdit}>
+          <Icon name="edit" className="size-4" />
+          {editLabel}
+        </ContextMenuItem>
+        <ContextMenuItem onClick={handleCancel}>
+          {cancelLabel}
+        </ContextMenuItem>
+      </ContextMenuContent>
+    </ContextMenu>
   );
 };
 
@@ -489,6 +572,9 @@ export const AssistantView: React.FC<AssistantViewProps> = ({ activeOverride, on
   }, [active, assistant, capabilityQuery.data?.serverInstanceID, changeSelection, clearStagedMessageEdit, cycle, directory, draftKey, hasMessages, providersQuery.data, providersQuery.isError, providersQuery.isPending, providersQuery.isSuccess, agentsQuery.isError, agentsQuery.isPending, agentsQuery.isSuccess, refreshBinding, rebindPendingMessage, removePendingMessages, resources, runtimeGeneration, selectionCoordinator, selectionIdentity, sessionID, status, transport, variants, visibleAgents]);
 
   const openCreateSettings = useEvent(() => { requestCreate(); if (mobileActions) { mobileActions.openSettings(); return; } const ui = useUIStore.getState(); ui.setSettingsPage('assistants'); ui.setSettingsDialogOpen(true); });
+  const openEditSettings = useEvent((assistantID: string) => {
+    openAssistantSettings(assistantID, mobileActions ? { openMobileSettings: mobileActions.openSettings } : undefined);
+  });
   const returnToChat = useEvent(() => { useUIStore.getState().setActiveMainTab('chat'); });
   const handleMobileBack = useEvent(() => {
     if (onMobileBack) {
@@ -528,28 +614,19 @@ export const AssistantView: React.FC<AssistantViewProps> = ({ activeOverride, on
                 const selected = item.id === selectedAssistantID;
                 const itemPresentation = getAssistantPresentation(item.name);
                 return (
-                  <button
+                  <AssistantListItem
                     key={item.id}
-                    type="button"
-                    role="option"
-                    aria-selected={selected}
-                    onClick={() => selectAssistant(item.id)}
-                    className={cn(
-                      'flex w-full min-h-11 items-center gap-3 rounded-xl border px-3 py-3 text-left outline-none transition-[background-color,border-color,transform,opacity] duration-150 ease-out active:scale-[0.995] focus-visible:ring-2 focus-visible:ring-[var(--interactive-focus-ring)] motion-reduce:transition-none',
-                      selected
-                        ? 'border-border/50 bg-[var(--surface-elevated)]'
-                        : 'border-transparent hover:bg-interactive-hover',
-                      !item.enabled && 'opacity-65',
-                    )}
-                  >
-                    <AgentAvatar name={item.id} emoji={itemPresentation.avatarEmoji} size={24} label={itemPresentation.displayName || item.name} />
-                    <span className="min-w-0 flex-1">
-                      <span className="block truncate typography-ui-label font-medium">{itemPresentation.displayName}</span>
-                      <span className="mt-0.5 block truncate typography-micro text-muted-foreground">
-                        {item.mode === 'stateless' ? t('assistants.mode.stateless') : t('assistants.mode.continuous')}
-                      </span>
-                    </span>
-                  </button>
+                    assistantID={item.id}
+                    displayName={itemPresentation.displayName}
+                    avatarEmoji={itemPresentation.avatarEmoji ?? undefined}
+                    modeLabel={item.mode === 'stateless' ? t('assistants.mode.stateless') : t('assistants.mode.continuous')}
+                    selected={selected}
+                    enabled={item.enabled}
+                    editLabel={t('assistants.menu.edit')}
+                    cancelLabel={t('settings.common.actions.cancel')}
+                    onSelect={() => selectAssistant(item.id)}
+                    onEdit={() => openEditSettings(item.id)}
+                  />
                 );
               })}
             </div>

@@ -20,8 +20,7 @@ import { useSync } from '@/sync/use-sync';
 import { SyncRuntimeEffects } from './AppEffects';
 import { useAppFontEffects } from './useAppFontEffects';
 import { useMiniChatKeyboardShortcuts } from '@/hooks/useMiniChatKeyboardShortcuts';
-import { listProjectWorktrees, worktreeMapsEqual } from '@/lib/worktrees/worktreeManager';
-import type { WorktreeMetadata } from '@/types/worktree';
+import { forceRefreshProjectWorktreeCatalog } from '@/lib/worktrees/worktreeManager';
 
 const MINI_CHAT_PRESENCE_CHANNEL = 'openchamber:mini-chat-presence';
 
@@ -177,35 +176,23 @@ const MiniChatBootstrap: React.FC<{ config: MiniChatConfig }> = ({ config }) => 
     let cancelled = false;
 
     const discoverWorktrees = async () => {
-      const worktreesByProject = new Map<string, WorktreeMetadata[]>();
-      const allWorktrees: WorktreeMetadata[] = [];
-
+      // Same catalog path as desktop sidebar / topology. Never bulk-replace the
+      // whole map from a partial list (that wiped sibling projects' worktrees).
       await Promise.all(projects.map(async (project) => {
         const projectPath = project.path.replace(/\\/g, '/').replace(/\/+$/, '');
         if (!projectPath) return;
         try {
           const cachedIsGitRepo = useGitStore.getState().directories.get(projectPath)?.isGitRepo;
           const isGitRepo = cachedIsGitRepo ?? await import('@/lib/gitApi').then((m) => m.checkIsGitRepository(projectPath));
-          if (!isGitRepo) return;
-          const worktrees = await listProjectWorktrees({ id: project.id, path: projectPath });
-          if (cancelled || worktrees.length === 0) return;
-          worktreesByProject.set(projectPath, worktrees);
-          allWorktrees.push(...worktrees);
+          if (!isGitRepo || cancelled) return;
+          await forceRefreshProjectWorktreeCatalog(
+            { id: project.id, path: projectPath },
+            { isCurrent: () => !cancelled },
+          );
         } catch {
-          // Worktree discovery is best-effort; draft selector falls back to the project root.
+          // Best-effort; draft selector falls back to the project root.
         }
       }));
-
-      if (cancelled) return;
-
-      // Skip update if nothing changed — see worktreeMapsEqual JSDoc.
-      const currentByProject = useSessionUIStore.getState().availableWorktreesByProject;
-      if (!worktreeMapsEqual(worktreesByProject, currentByProject)) {
-        useSessionUIStore.setState({
-          availableWorktrees: allWorktrees,
-          availableWorktreesByProject: worktreesByProject,
-        });
-      }
     };
 
     void discoverWorktrees();

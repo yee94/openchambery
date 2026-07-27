@@ -2036,6 +2036,7 @@ export const settingsDict = {
   'assistants.title': 'アシスタント',
   'assistants.subtitle': 'いつでも使える専属ヘルパー',
   'assistants.listAria': 'アシスタント一覧',
+  'assistants.menu.edit': '編集',
   'assistants.selectorAria': 'アシスタントを切り替えます。現在：{name}',
   'assistants.state.unsupportedTitle': 'アシスタントはサポートされていません',
   'assistants.state.unsupportedDescription': 'この OpenChamber インスタンスではアシスタント機能を利用できません。',

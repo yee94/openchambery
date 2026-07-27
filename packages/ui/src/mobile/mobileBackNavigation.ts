@@ -298,11 +298,9 @@ const clearPresentation = (presentation: InteractivePresentation): void => {
 
 const renderPresentation = (presentation: InteractivePresentation, rawProgress: number): void => {
   const progress = clampMobileBackProgress(rawProgress);
-  const { surface, underlay } = presentation;
+  const { surface } = presentation;
+  // Top page only. Underlay stays at rest so interactive back never parallax-shifts left.
   surface.style.transform = `translate3d(${progress * 100}%, 0, 0)`;
-  if (underlay) {
-    underlay.style.transform = `translate3d(${(progress - 1) * 8}%, 0, 0)`;
-  }
 };
 
 export const isMobileBackRouteAcknowledged = (input: {
@@ -440,13 +438,13 @@ export const useMobileNavigationDriver = ({
       underlay?.getAnimations().forEach((animation) => animation.cancel());
       // Interactive native progress is already time-based. Set all static
       // compositor hints once; the animation frame hot path writes transform only.
+      // Underlay is retained for reveal but never translated.
       surface.style.transition = 'none';
       surface.style.animation = 'none';
       surface.style.willChange = 'transform';
       if (underlay) {
-        underlay.style.transition = 'none';
-        underlay.style.animation = 'none';
-        underlay.style.willChange = 'transform';
+        underlay.style.removeProperty('transform');
+        underlay.style.removeProperty('will-change');
       }
       presentationGeneration += 1;
       presentation = {
@@ -538,12 +536,7 @@ export const useMobileNavigationDriver = ({
         velocityX,
         viewportWidth: window.innerWidth,
       });
-      void Promise.all([
-        settleMobileBackSurface(current.surface, commit, reducedMotion, duration),
-        current.underlay
-          ? settleMobileBackElement(current.underlay, commit ? 0 : -8, duration, reducedMotion)
-          : Promise.resolve(),
-      ]).then(async () => {
+      void settleMobileBackSurface(current.surface, commit, reducedMotion, duration).then(async () => {
         if (generation !== presentationGeneration) return;
         if (!disposed && commit) {
           current.route.onBack();

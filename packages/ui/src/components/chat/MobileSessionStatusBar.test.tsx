@@ -1,5 +1,8 @@
 import React from 'react';
 import { describe, expect, test } from 'bun:test';
+import { readFileSync } from 'node:fs';
+import { dirname, join } from 'node:path';
+import { fileURLToPath } from 'node:url';
 import type { Session } from '@opencode-ai/sdk/v2';
 import { renderToStaticMarkup } from 'react-dom/server';
 
@@ -9,6 +12,11 @@ import {
   preventMobileSessionTouchStartBaseUIHandler,
   SessionItem,
 } from './MobileSessionStatusBar';
+
+const statusBarSource = readFileSync(
+  join(dirname(fileURLToPath(import.meta.url)), 'MobileSessionStatusBar.tsx'),
+  'utf-8',
+);
 
 const session = {
   id: 'ses-touch-menu',
@@ -98,5 +106,18 @@ describe('MobileSessionStatusBar SessionItem', () => {
     expect(markup).toContain('-webkit-user-select:none');
     expect(markup).toContain('user-select:none');
     expect(markup).toContain('Touch menu session');
+  });
+});
+
+describe('MobileSessionStatusBar phone navigation contracts', () => {
+  test('new chat and worktree draft entry points use phone openDraft, not store-only draft open', () => {
+    // Phone ChatView selectionOverride comes from the secondary route. Opening a
+    // draft without openDraft leaves the previous session route mounted.
+    expect(statusBarSource).toContain("useMobileNavigationStore.getState().openDraft(options)");
+    expect(statusBarSource).toContain('const startNewSessionDraft = React.useCallback(');
+    expect(statusBarSource).toContain('startNewSessionDraft({ selectedProjectId: project.id, directoryOverride: project.path })');
+    expect(statusBarSource).toContain('startNewSessionDraft({\n              selectedProjectId: worktreeDialogProjectId,');
+    expect(statusBarSource).toContain('useMobileNavigationStore.getState().openSession({');
+    expect(statusBarSource).toContain('forceRefreshProjectWorktreeCatalog');
   });
 });
