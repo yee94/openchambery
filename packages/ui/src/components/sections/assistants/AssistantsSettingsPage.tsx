@@ -365,7 +365,15 @@ export const AssistantsSettingsPage: React.FC<AssistantsSettingsPageProps> = ({ 
               label={t('assistants.settings.defaultPrompt')}
               className="oc-settings-split-row-stacked"
             >
-              <Textarea embedded id="assistant-prompt" value={draft.defaultPrompt} onChange={(event) => patchDraft('defaultPrompt', event.target.value)} placeholder={t('assistants.settings.defaultPromptPlaceholder')} />
+              <Textarea
+                embedded
+                id="assistant-prompt"
+                value={draft.defaultPrompt}
+                onChange={(event) => patchDraft('defaultPrompt', event.target.value)}
+                placeholder={t('assistants.settings.defaultPromptPlaceholder')}
+                rows={12}
+                outerClassName="min-h-[240px] max-h-[70vh]"
+              />
             </SettingsField>
 
             <SettingsGroup

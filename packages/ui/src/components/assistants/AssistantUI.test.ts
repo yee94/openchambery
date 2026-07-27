@@ -148,10 +148,11 @@ describe('Assistant UI product contract', () => {
     expect(view).not.toContain('mobileSelectorOpen');
   });
 
-  test('offers edit and cancel from assistant list context menu and long-press', async () => {
-    const [view, mobileTab, store, settingsView, english] = await Promise.all([
+  test('offers edit and delete from assistant list context menu and long-press', async () => {
+    const [view, mobileTab, deleteDialog, store, settingsView, english] = await Promise.all([
       read('AssistantView.tsx'),
       read('../../mobile/assistant/MobileAssistantTab.tsx'),
+      read('AssistantDeleteConfirmDialog.tsx'),
       read('../../stores/useAssistantUIStore.ts'),
       read('../views/SettingsView.tsx'),
       read('../../lib/i18n/messages/en.settings.ts'),
@@ -159,13 +160,26 @@ describe('Assistant UI product contract', () => {
     expect(view).toContain('AssistantListItem');
     expect(view).toContain('openAssistantSettings');
     expect(view).toContain("t('assistants.menu.edit')");
-    expect(view).toContain("t('settings.common.actions.cancel')");
+    expect(view).toContain("t('assistants.settings.delete')");
+    expect(view).toContain('name="edit"');
+    expect(view).toContain('name="delete-bin"');
+    expect(view).toContain('ContextMenuSeparator');
+    expect(view).toContain('text-[var(--status-error)]');
+    expect(view).toContain('AssistantDeleteConfirmDialog');
     expect(view).toContain('ContextMenu');
     expect(mobileTab).toContain('createMobileLongPressController');
     expect(mobileTab).toContain('openAssistantSettings');
     expect(mobileTab).toContain("t('assistants.menu.edit')");
-    expect(mobileTab).toContain("t('settings.common.actions.cancel')");
+    expect(mobileTab).toContain("t('assistants.settings.delete')");
+    expect(mobileTab).toContain('name="edit"');
+    expect(mobileTab).toContain('name="delete-bin"');
+    expect(mobileTab).toContain('ContextMenuSeparator');
+    expect(mobileTab).toContain('text-[var(--status-error)]');
+    expect(mobileTab).toContain('AssistantDeleteConfirmDialog');
     expect(mobileTab).toContain('openFromContextMenu');
+    expect(deleteDialog).toContain('deleteAssistantEntry');
+    expect(deleteDialog).toContain('assistants.settings.deleteConfirm');
+    expect(deleteDialog).toContain('variant="destructive"');
     expect(store).toContain('requestOpenSettings');
     expect(store).toContain('openSettingsRequestRevision');
     expect(store).toContain('export const openAssistantSettings');

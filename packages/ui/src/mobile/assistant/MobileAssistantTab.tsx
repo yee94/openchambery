@@ -2,6 +2,7 @@ import * as React from 'react';
 import { useEvent } from '@reactuses/core';
 
 import { AgentAvatar } from '@/components/chat/AgentAvatar';
+import { AssistantDeleteConfirmDialog } from '@/components/assistants/AssistantDeleteConfirmDialog';
 import { getAssistantPresentation } from '@/components/assistants/assistantPresentation';
 import { Icon } from '@/components/icon/Icon';
 import { Button } from '@/components/ui/button';
@@ -9,6 +10,7 @@ import {
   ContextMenu,
   ContextMenuContent,
   ContextMenuItem,
+  ContextMenuSeparator,
   ContextMenuTrigger,
 } from '@/components/ui/context-menu';
 import {
@@ -17,7 +19,11 @@ import {
 } from '@/components/ui/mobileLongPress';
 import { useI18n } from '@/lib/i18n';
 import { cn } from '@/lib/utils';
-import { useAssistantCapabilityQuery, useAssistantSnapshotQuery } from '@/queries/assistantQueries';
+import {
+  useAssistantCapabilityQuery,
+  useAssistantSnapshotQuery,
+  type AssistantDTO,
+} from '@/queries/assistantQueries';
 import { openAssistantSettings } from '@/stores/useAssistantUIStore';
 import { useMobileAppActions } from '@/apps/mobileAppContext';
 
@@ -54,9 +60,10 @@ type MobileAssistantCardProps = {
   summary: string;
   enabled: boolean;
   editLabel: string;
-  cancelLabel: string;
+  deleteLabel: string;
   onOpen: () => void;
   onEdit: () => void;
+  onDelete: () => void;
 };
 
 function MobileAssistantCard({
@@ -67,9 +74,10 @@ function MobileAssistantCard({
   summary,
   enabled,
   editLabel,
-  cancelLabel,
+  deleteLabel,
   onOpen,
   onEdit,
+  onDelete,
 }: MobileAssistantCardProps) {
   const [menuOpen, setMenuOpen] = React.useState(false);
   const [pressed, setPressed] = React.useState(false);
@@ -92,7 +100,10 @@ function MobileAssistantCard({
     setMenuOpen(false);
     onEdit();
   });
-  const handleCancel = useEvent(() => setMenuOpen(false));
+  const handleDelete = useEvent(() => {
+    setMenuOpen(false);
+    onDelete();
+  });
   const openMenu = useEvent(() => {
     setPressed(false);
     setMenuOpen(true);
@@ -173,8 +184,13 @@ function MobileAssistantCard({
           <Icon name="edit" className="size-4" />
           {editLabel}
         </ContextMenuItem>
-        <ContextMenuItem className="min-h-10 px-3" onClick={handleCancel}>
-          {cancelLabel}
+        <ContextMenuSeparator />
+        <ContextMenuItem
+          className="min-h-10 px-3 text-[var(--status-error)] focus:text-[var(--status-error)] data-[highlighted]:text-[var(--status-error)] [&_svg]:text-[var(--status-error)]"
+          onClick={handleDelete}
+        >
+          <Icon name="delete-bin" className="size-4" />
+          {deleteLabel}
         </ContextMenuItem>
       </ContextMenuContent>
     </ContextMenu>
@@ -186,6 +202,7 @@ export function MobileAssistantTab({ onEnable, onOpenAssistant, className }: Mob
   const mobileActions = useMobileAppActions();
   const capability = useAssistantCapabilityQuery();
   const snapshot = useAssistantSnapshotQuery();
+  const [deleteTarget, setDeleteTarget] = React.useState<AssistantDTO | null>(null);
   const handleEnable = useEvent(() => onEnable());
   const handleOpenAssistant = useEvent((assistantID: string) => onOpenAssistant(assistantID));
   const handleEdit = useEvent((assistantID: string) => {
@@ -194,9 +211,15 @@ export function MobileAssistantTab({ onEnable, onOpenAssistant, className }: Mob
       mobileActions ? { openMobileSettings: mobileActions.openSettings } : undefined,
     );
   });
+  const handleRequestDelete = useEvent((assistant: AssistantDTO) => {
+    setDeleteTarget(assistant);
+  });
+  const handleDeleteDialogOpenChange = useEvent((open: boolean) => {
+    if (!open) setDeleteTarget(null);
+  });
   const pageTitle = t('assistants.title');
   const editLabel = t('assistants.menu.edit');
-  const cancelLabel = t('settings.common.actions.cancel');
+  const deleteLabel = t('assistants.settings.delete');
 
   if (capability.isPending || (capability.data?.supported && capability.data.enabled && snapshot.isPending)) {
     return (
@@ -236,13 +259,19 @@ export function MobileAssistantTab({ onEnable, onOpenAssistant, className }: Mob
                 summary={summary}
                 enabled={assistant.enabled}
                 editLabel={editLabel}
-                cancelLabel={cancelLabel}
+                deleteLabel={deleteLabel}
                 onOpen={() => handleOpenAssistant(assistant.id)}
                 onEdit={() => handleEdit(assistant.id)}
+                onDelete={() => handleRequestDelete(assistant)}
               />
             );
           })}
         </div>
+        <AssistantDeleteConfirmDialog
+          assistant={deleteTarget}
+          open={deleteTarget !== null}
+          onOpenChange={handleDeleteDialogOpenChange}
+        />
       </MobileTabPageScaffold>
     );
   }

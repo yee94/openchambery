@@ -4,6 +4,11 @@ All notable changes to this project will be documented in this file.
 
 ## [Unreleased]
 
+## [1.16.72] - 2026-07-27
+
+- **Assistant delete:** long-press or context-menu Delete on desktop and mobile assistant lists opens a confirmation dialog, removes the assistant, and clears a matching default share target.
+- **Assistant settings:** enlarge the default-prompt textarea so longer system prompts are easier to edit.
+
 ## [1.16.71] - 2026-07-27
 
 - **Desktop header:** move Switch instance into the session ··· menu and anchor the instance/usage panel to that control, removing the standalone stack trigger.

@@ -10,6 +10,7 @@ import {
   ContextMenu,
   ContextMenuContent,
   ContextMenuItem,
+  ContextMenuSeparator,
   ContextMenuTrigger,
 } from '@/components/ui/context-menu';
 import { useMobileAppActions } from '@/apps/mobileAppContext';
@@ -21,7 +22,7 @@ import { createUuid } from '@/lib/uuid';
 import { cn } from '@/lib/utils';
 import { MobileDetailNavigation } from '@/mobile/MobileDetailNavigation';
 import { getRuntimeGeneration, getRuntimeTransportIdentity, subscribeRuntimeEndpointChanged } from '@/lib/runtime-switch';
-import { abortAssistantSession, compactAssistantSession, ensureAssistantSession, fetchAssistantSnapshot, newAssistantSession, readAssistantSnapshot, sendAssistantMessage, updateAssistant, useAssistantCapabilityQuery, useAssistantSnapshotQuery, type AssistantPart, type SessionBinding } from '@/queries/assistantQueries';
+import { abortAssistantSession, compactAssistantSession, ensureAssistantSession, fetchAssistantSnapshot, newAssistantSession, readAssistantSnapshot, sendAssistantMessage, updateAssistant, useAssistantCapabilityQuery, useAssistantSnapshotQuery, type AssistantDTO, type AssistantPart, type SessionBinding } from '@/queries/assistantQueries';
 import { ascendingIdAfter } from '@/sync/message-id';
 import { getSyncMessages } from '@/sync/sync-refs';
 import { createPendingUserMessagePresentation, type PendingUserMessagePresentation } from '@/sync/session-ui-store';
@@ -41,6 +42,7 @@ import type { SessionSurfaceMessageEditSnapshot } from '@/components/chat/Sessio
 
 import { AssistantSelectionCoordinator, AssistantSelectionStaleError, type AssistantSelection, type AssistantSelectionIdentity } from './assistantSelectionCoordinator';
 import { commitAssistantSelection } from './assistantSelectionBackend';
+import { AssistantDeleteConfirmDialog } from './AssistantDeleteConfirmDialog';
 import { getAssistantPresentation } from './assistantPresentation';
 import { reconcileAdmittedAssistantBinding, rebindPendingAssistantMessage } from './assistantPendingMessages';
 import {
@@ -96,9 +98,10 @@ type AssistantListItemProps = {
   selected: boolean;
   enabled: boolean;
   editLabel: string;
-  cancelLabel: string;
+  deleteLabel: string;
   onSelect: () => void;
   onEdit: () => void;
+  onDelete: () => void;
 };
 
 const AssistantListItem: React.FC<AssistantListItemProps> = ({
@@ -109,9 +112,10 @@ const AssistantListItem: React.FC<AssistantListItemProps> = ({
   selected,
   enabled,
   editLabel,
-  cancelLabel,
+  deleteLabel,
   onSelect,
   onEdit,
+  onDelete,
 }) => {
   const [menuOpen, setMenuOpen] = React.useState(false);
   const handleSelect = useEvent(() => onSelect());
@@ -119,7 +123,10 @@ const AssistantListItem: React.FC<AssistantListItemProps> = ({
     setMenuOpen(false);
     onEdit();
   });
-  const handleCancel = useEvent(() => setMenuOpen(false));
+  const handleDelete = useEvent(() => {
+    setMenuOpen(false);
+    onDelete();
+  });
 
   return (
     <ContextMenu open={menuOpen} onOpenChange={setMenuOpen}>
@@ -157,8 +164,13 @@ const AssistantListItem: React.FC<AssistantListItemProps> = ({
           <Icon name="edit" className="size-4" />
           {editLabel}
         </ContextMenuItem>
-        <ContextMenuItem onClick={handleCancel}>
-          {cancelLabel}
+        <ContextMenuSeparator />
+        <ContextMenuItem
+          onClick={handleDelete}
+          className="text-[var(--status-error)] focus:text-[var(--status-error)] data-[highlighted]:text-[var(--status-error)] [&_svg]:text-[var(--status-error)]"
+        >
+          <Icon name="delete-bin" className="size-4" />
+          {deleteLabel}
         </ContextMenuItem>
       </ContextMenuContent>
     </ContextMenu>
@@ -575,6 +587,13 @@ export const AssistantView: React.FC<AssistantViewProps> = ({ activeOverride, on
   const openEditSettings = useEvent((assistantID: string) => {
     openAssistantSettings(assistantID, mobileActions ? { openMobileSettings: mobileActions.openSettings } : undefined);
   });
+  const [deleteTarget, setDeleteTarget] = React.useState<AssistantDTO | null>(null);
+  const requestDeleteAssistant = useEvent((item: AssistantDTO) => {
+    setDeleteTarget(item);
+  });
+  const handleDeleteDialogOpenChange = useEvent((open: boolean) => {
+    if (!open) setDeleteTarget(null);
+  });
   const returnToChat = useEvent(() => { useUIStore.getState().setActiveMainTab('chat'); });
   const handleMobileBack = useEvent(() => {
     if (onMobileBack) {
@@ -623,9 +642,10 @@ export const AssistantView: React.FC<AssistantViewProps> = ({ activeOverride, on
                     selected={selected}
                     enabled={item.enabled}
                     editLabel={t('assistants.menu.edit')}
-                    cancelLabel={t('settings.common.actions.cancel')}
+                    deleteLabel={t('assistants.settings.delete')}
                     onSelect={() => selectAssistant(item.id)}
                     onEdit={() => openEditSettings(item.id)}
+                    onDelete={() => requestDeleteAssistant(item)}
                   />
                 );
               })}
@@ -633,6 +653,11 @@ export const AssistantView: React.FC<AssistantViewProps> = ({ activeOverride, on
           </div>
         </section>
       )}
+      <AssistantDeleteConfirmDialog
+        assistant={deleteTarget}
+        open={deleteTarget !== null}
+        onOpenChange={handleDeleteDialogOpenChange}
+      />
       <div className={cn('flex min-h-0 min-w-0 flex-1 flex-col overflow-hidden bg-background', !isMobileSurface && 'border-l border-border/60')}>
         {isMobileSurface ? (
           <MobileAssistantConversationHeader assistant={assistant} onBack={handleMobileBack} />
