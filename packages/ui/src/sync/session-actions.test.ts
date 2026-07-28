@@ -13,6 +13,7 @@ let questionRejectError: unknown | null = null
 let sessionShareResult: { data?: unknown; error?: unknown; response?: { status?: number } } = {}
 let sessionUpdateResult: { data?: unknown; error?: unknown; response?: { status?: number } } = {}
 let sessionMessagesResult: { data?: unknown; error?: unknown; response?: { status?: number } } = { data: [] }
+let sessionStatusResult: Record<string, { type: "idle" | "busy" | "retry"; attempt?: number; message?: string; next?: number }> | null = {}
 let sessionDeleteMessageFailureID: string | null = null
 let sessionForkResult: import("@opencode-ai/sdk/v2/client").Session | null = null
 let clearAttachedFilesCalls = 0
@@ -137,6 +138,10 @@ mock.module("@/lib/opencode/client", () => ({
       return mockScopedClient
     },
     getDirectory: () => "/test/project",
+    getSessionStatusForDirectory: mock((directory: string) => {
+      replyCalls.push({ method: "session.status", params: { directory } })
+      return Promise.resolve(sessionStatusResult)
+    }),
     getSession: mock((sessionId: string, directory?: string | null) => {
       replyCalls.push({ method: "session.get", params: { sessionID: sessionId, directory } })
       if (!sessionGetResult) throw new Error("session.get result is unavailable")
@@ -377,6 +382,7 @@ describe("fetchMessagesForSession startup race", () => {
   beforeEach(() => {
     mobileSurfaceRuntime = false
     vscodeRuntime = false
+    sessionStatusResult = {}
     configStoreState.isConnected = true
     configStoreState.hasEverConnected = true
   })
@@ -494,6 +500,71 @@ describe("fetchMessagesForSession startup race", () => {
     ])
   })
 
+  test("reconciles stale busy after a same-size current-session message pull", async () => {
+    replyCalls.length = 0
+    const existingUser = {
+      id: "msg_status_1",
+      role: "user",
+      sessionID: "session-status-reconcile",
+      time: { created: 1 },
+    } as Message
+    const completedAssistant = {
+      id: "msg_status_2",
+      role: "assistant",
+      sessionID: "session-status-reconcile",
+      finish: "stop",
+      time: { created: 2, completed: 3 },
+    } as Message
+    const textPart = {
+      id: "prt_status_2",
+      messageID: "msg_status_2",
+      sessionID: "session-status-reconcile",
+      type: "text",
+      text: "done",
+      time: { start: 2, end: 3 },
+    } as Part
+    sessionMessagesResult = {
+      data: [
+        { info: existingUser, parts: [{ id: "prt_status_1", type: "text", text: "run" } as Part] },
+        { info: completedAssistant, parts: [textPart] },
+      ],
+    }
+    sessionStatusResult = {}
+    const busyStatus = { type: "busy" } as const
+    const store = createStore({}, {
+      session: [{ id: "session-status-reconcile", time: { created: 1 } } as Session],
+      message: { "session-status-reconcile": [existingUser, completedAssistant] },
+      part: {
+        msg_status_1: [{ id: "prt_status_1", type: "text", text: "run" } as Part],
+        msg_status_2: [textPart],
+      },
+      session_status: { "session-status-reconcile": busyStatus },
+    })
+    const childStores = createChildStores([["/test/project", store]])
+    const { fetchMessagesForSession, setActionRefs } = await import("./session-actions")
+    setActionRefs(mockSdk as unknown as OpencodeClient, childStores, () => "/test/project")
+
+    const { useSessionUIStore } = await import("./session-ui-store")
+    const previousGetState = useSessionUIStore.getState
+    useSessionUIStore.getState = () => ({
+      ...previousGetState(),
+      currentSessionId: "session-status-reconcile",
+      currentSessionDirectory: "/test/project",
+    }) as ReturnType<typeof previousGetState>
+
+    try {
+      await fetchMessagesForSession("session-status-reconcile", "/test/project")
+    } finally {
+      useSessionUIStore.getState = previousGetState
+    }
+
+    expect(replyCalls.filter((call) => call.method === "session.messages")).toHaveLength(1)
+    expect(replyCalls.filter((call) => call.method === "session.status")).toHaveLength(1)
+    expect(store.getState().session_status["session-status-reconcile"]).toEqual({ type: "idle" })
+    expect(typeof store.getState().session_status_observed_at["session-status-reconcile"]).toBe("number")
+    expect(typeof store.getState().session_status_snapshot_at).toBe("number")
+  })
+
   test("does not force-refetch a busy session when the local tail is already a user message", async () => {
     replyCalls.length = 0
     const existingUser = {
@@ -563,6 +634,79 @@ describe("fetchMessagesForSession startup race", () => {
     await fetchMessagesForSession("session-idle-cache", "/test/project")
 
     expect(replyCalls.filter((call) => call.method === "session.messages")).toHaveLength(0)
+  })
+
+  test("refetches dirty same-size half-finished reasoning and materializes completed text", async () => {
+    replyCalls.length = 0
+    const sessionID = "session-dirty-reasoning"
+    const existingUser = {
+      id: "msg_dr_user",
+      role: "user",
+      sessionID,
+      time: { created: 1 },
+    } as Message
+    const existingAssistant = {
+      id: "msg_dr_assistant",
+      role: "assistant",
+      sessionID,
+      time: { created: 2 },
+    } as Message
+    const halfReasoning = {
+      id: "prt_dr_reasoning",
+      messageID: "msg_dr_assistant",
+      sessionID,
+      type: "reasoning",
+      text: "thinking half",
+    } as Part
+    const completeReasoning = {
+      id: "prt_dr_reasoning",
+      messageID: "msg_dr_assistant",
+      sessionID,
+      type: "reasoning",
+      text: "thinking half complete answer",
+      time: { end: 99 },
+    } as Part
+    sessionMessagesResult = {
+      data: [
+        { info: existingUser, parts: [{ id: "prt_dr_user", type: "text", text: "go" } as Part] },
+        { info: { ...existingAssistant, finish: "stop", time: { created: 2, completed: 3 } }, parts: [completeReasoning] },
+      ],
+    }
+    const store = createStore({}, {
+      session: [{ id: sessionID, time: { created: 1 } } as Session],
+      message: { [sessionID]: [existingUser, existingAssistant] },
+      part: {
+        msg_dr_user: [{ id: "prt_dr_user", type: "text", text: "go" } as Part],
+        msg_dr_assistant: [halfReasoning],
+      },
+      session_status: { [sessionID]: { type: "idle" } },
+    })
+    const childStores = createChildStores([["/test/project", store]])
+    const { setSessionPrefetch, markSessionPrefetchDirty } = await import("./session-prefetch-cache")
+    setSessionPrefetch({ directory: "/test/project", sessionID, limit: 2, complete: true })
+    markSessionPrefetchDirty("/test/project", [sessionID])
+
+    const { fetchMessagesForSession, setActionRefs } = await import("./session-actions")
+    setActionRefs(mockSdk as unknown as OpencodeClient, childStores, () => "/test/project")
+
+    const { useSessionUIStore } = await import("./session-ui-store")
+    const previousGetState = useSessionUIStore.getState
+    useSessionUIStore.getState = () => ({
+      ...previousGetState(),
+      currentSessionId: sessionID,
+      currentSessionDirectory: "/test/project",
+    }) as ReturnType<typeof previousGetState>
+
+    try {
+      await fetchMessagesForSession(sessionID, "/test/project")
+    } finally {
+      useSessionUIStore.getState = previousGetState
+    }
+
+    expect(replyCalls.filter((call) => call.method === "session.messages")).toHaveLength(1)
+    const stored = store.getState().part.msg_dr_assistant?.[0] as { text?: string; time?: { end?: number } }
+    expect(stored?.text).toBe("thinking half complete answer")
+    expect(stored?.time?.end).toBe(99)
   })
 })
 

@@ -1455,6 +1455,18 @@ button.oc-mobile-group-label-trigger:focus-visible {
     min-width: 0 !important;
   }
 
+  :root.mobile-pointer:not(.desktop-runtime)
+    .oc-mobile-draft-target-selectors
+    button,
+  :root.mobile-pointer:not(.desktop-runtime)
+    .oc-mobile-draft-target-selectors
+    [role="button"] {
+    height: 26px !important;
+    min-height: 26px !important;
+    min-width: 0 !important;
+    max-height: 26px !important;
+  }
+
   /* Message action / footer icons: don't inflate to 36px touch min — keeps
      equal gaps and left-align with message body on mobile. */
   :root.mobile-pointer:not(.desktop-runtime)
@@ -2152,10 +2164,11 @@ button.oc-mobile-group-label-trigger:focus-visible {
    iOS: Keyboard resize:none + transform FLIP (~250ms); --oc-kb-layout settles
    the shell once at the end of the rise.
 
-   Android: keyboard intent / focusin starts a short composer-only CSS FLIP
-   before IME movement. Target height comes from the previous measured IME
+   Android: keyboard intent / focusin starts a short (~200ms) composer-only CSS
+   FLIP before IME movement. Target height comes from the previous measured IME
    height (39dvh on the first open); a state-only native event calibrates and
-   caches the settled height. No progress bridge or per-frame JS geometry.
+   caches the settled height. Hide is ~100ms so a late close signal can catch up.
+   No progress bridge or per-frame JS geometry.
    Header stays fixed; shell keeps solid bottom-safe breathing room.
    https://developer.android.com/develop/ui/views/layout/sw-keyboard
 
@@ -2326,11 +2339,24 @@ button.oc-mobile-group-label-trigger:focus-visible {
   filter: none !important;
 }
 
-/* No ambient footer mask. A gradient here used to paint a soft full-width
-   edge into the home-indicator / nav safe-area under the input. */
+/* The composer host blends into the transcript through a short page-background
+   fade above the status row while the input card remains fully opaque. */
 .oc-mobile-composer::after {
-  content: none;
-  display: none;
+  content: "";
+  position: absolute;
+  z-index: -1;
+  right: 0;
+  bottom: 100%;
+  left: 0;
+  height: 2.75rem;
+  pointer-events: none;
+  background: linear-gradient(
+    to top,
+    var(--background) 0%,
+    color-mix(in srgb, var(--background) 88%, transparent) 38%,
+    color-mix(in srgb, var(--background) 48%, transparent) 72%,
+    transparent 100%
+  );
 }
 
 /* Capacitor chat safe-area cover: keep the home-indicator / navigation foot

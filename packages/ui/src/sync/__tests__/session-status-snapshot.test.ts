@@ -1,4 +1,5 @@
 import { describe, expect, test } from "bun:test"
+import { QueryClient } from "@tanstack/react-query"
 import { create, type StoreApi } from "zustand"
 import type { SessionStatus } from "@opencode-ai/sdk/v2/client"
 
@@ -7,6 +8,10 @@ import type { DirectoryStore } from "../child-store"
 import {
   applySessionStatusSnapshot,
   collectSessionStatusSnapshotApplyIds,
+  reconcileActiveSessionStatusAfterMessagePull,
+  resyncDirectorySessionStatuses,
+} from "../session-status-reconciliation"
+import {
   isLiveRevisionCurrent,
   resolveStrictDomainSessionID,
   shouldTriggerDomainRecovery,
@@ -131,6 +136,231 @@ describe("applySessionStatusSnapshot", () => {
       expect(store.getState().session_status.ses_background).toEqual(BUSY)
       expect(store.getState().session_status.ses_local).toEqual({ type: "idle" })
     })
+  })
+})
+
+describe("reconcileActiveSessionStatusAfterMessagePull", () => {
+  test("lowers an unchanged busy status to idle after a successful tail pull", async () => {
+    const statusBeforePull: SessionStatus = { type: "busy" }
+    const store = createDirectoryStore({
+      session_status: { ses_a: statusBeforePull },
+    })
+    let loads = 0
+
+    await reconcileActiveSessionStatusAfterMessagePull({
+      directory: "/repo",
+      sessionID: "ses_a",
+      store,
+      statusBeforePull,
+      statusObservedAtBeforePull: undefined,
+      hasMessages: true,
+      now: () => 100,
+      loadSnapshot: async () => {
+        loads += 1
+        return {}
+      },
+    })
+
+    expect(loads).toBe(1)
+    expect(store.getState().session_status.ses_a).toEqual({ type: "idle" })
+    expect(store.getState().session_status_observed_at.ses_a).toBe(100)
+    expect(store.getState().session_status_snapshot_at).toBe(100)
+  })
+
+  test("keeps a live status transition that arrives while the snapshot is loading", async () => {
+    const statusBeforePull: SessionStatus = { type: "busy" }
+    const store = createDirectoryStore({
+      session_status: { ses_a: statusBeforePull },
+    })
+    let resolveSnapshot: ((snapshot: StatusSnapshot) => void) | undefined
+
+    const reconciliation = reconcileActiveSessionStatusAfterMessagePull({
+      directory: "/repo",
+      sessionID: "ses_a",
+      store,
+      statusBeforePull,
+      statusObservedAtBeforePull: undefined,
+      hasMessages: true,
+      now: () => 100,
+      loadSnapshot: () => new Promise<StatusSnapshot>((resolve) => {
+        resolveSnapshot = resolve
+      }),
+    })
+    await Promise.resolve()
+
+    const newerBusy: SessionStatus = { type: "busy" }
+    store.setState({
+      session_status: { ses_a: newerBusy },
+      session_status_observed_at: { ses_a: 101 },
+    })
+    resolveSnapshot?.({})
+    await reconciliation
+
+    expect(store.getState().session_status.ses_a).toBe(newerBusy)
+    expect(store.getState().session_status_observed_at.ses_a).toBe(101)
+  })
+
+  test("shares one directory snapshot across tail reconciliation and reconnect resync", async () => {
+    const statusBeforePull: SessionStatus = { type: "busy" }
+    const store = createDirectoryStore({
+      session_status: { ses_a: statusBeforePull, ses_b: { type: "busy" } },
+    })
+    const queryClient = new QueryClient({ defaultOptions: { queries: { retry: false } } })
+    const runtimeProbe = {
+      getTransport: () => "transport-a",
+      getGeneration: () => 1,
+    }
+    let loads = 0
+    let resolveSnapshot: ((snapshot: StatusSnapshot) => void) | undefined
+    const loadSnapshot = () => {
+      loads += 1
+      return new Promise<StatusSnapshot>((resolve) => {
+        resolveSnapshot = resolve
+      })
+    }
+    const sharedOptions = {
+      queryClient,
+      transport: "transport-a",
+      runtimeProbe,
+      loadSnapshot,
+      now: () => 100,
+    }
+
+    const tailReconciliation = reconcileActiveSessionStatusAfterMessagePull({
+      directory: "/repo",
+      sessionID: "ses_a",
+      store,
+      statusBeforePull,
+      statusObservedAtBeforePull: undefined,
+      hasMessages: true,
+      ...sharedOptions,
+    })
+    const reconnectResync = resyncDirectorySessionStatuses(
+      "/repo",
+      store,
+      ["ses_b"],
+      sharedOptions,
+    )
+    await Promise.resolve()
+
+    expect(loads).toBe(1)
+    resolveSnapshot?.({})
+    await Promise.all([tailReconciliation, reconnectResync])
+
+    expect(store.getState().session_status.ses_a).toEqual({ type: "idle" })
+    expect(store.getState().session_status.ses_b).toEqual({ type: "idle" })
+    expect(store.getState().session_status_observed_at).toEqual({ ses_a: 100, ses_b: 100 })
+  })
+
+  test("preserves busy when the authoritative status snapshot fails", async () => {
+    const statusBeforePull: SessionStatus = { type: "busy" }
+    const store = createDirectoryStore({
+      session_status: { ses_a: statusBeforePull },
+    })
+
+    await reconcileActiveSessionStatusAfterMessagePull({
+      directory: "/repo",
+      sessionID: "ses_a",
+      store,
+      statusBeforePull,
+      statusObservedAtBeforePull: undefined,
+      hasMessages: true,
+      now: () => 100,
+      loadSnapshot: async () => null,
+    })
+
+    expect(store.getState().session_status.ses_a).toBe(statusBeforePull)
+    expect(store.getState().session_status_snapshot_at).toBe(undefined)
+  })
+
+  test("skips reconciliation when the same busy entry was observed during the message pull", async () => {
+    const statusBeforePull: SessionStatus = { type: "busy" }
+    const store = createDirectoryStore({
+      session_status: { ses_a: statusBeforePull },
+      session_status_observed_at: { ses_a: 10 },
+    })
+    let loads = 0
+
+    store.setState({ session_status_observed_at: { ses_a: 11 } })
+    await reconcileActiveSessionStatusAfterMessagePull({
+      directory: "/repo",
+      sessionID: "ses_a",
+      store,
+      statusBeforePull,
+      statusObservedAtBeforePull: 10,
+      hasMessages: true,
+      loadSnapshot: async () => {
+        loads += 1
+        return {}
+      },
+    })
+
+    expect(loads).toBe(0)
+    expect(store.getState().session_status.ses_a).toBe(statusBeforePull)
+    expect(store.getState().session_status_observed_at.ses_a).toBe(11)
+  })
+
+  test("adds no status request for history, empty, idle, stale, or superseded pulls", async () => {
+    const busy: SessionStatus = { type: "busy" }
+    const idle: SessionStatus = { type: "idle" }
+    const store = createDirectoryStore({ session_status: { ses_a: busy } })
+    let loads = 0
+    const loadSnapshot = async () => {
+      loads += 1
+      return {} as StatusSnapshot
+    }
+
+    await reconcileActiveSessionStatusAfterMessagePull({
+      directory: "/repo",
+      sessionID: "ses_a",
+      store,
+      statusBeforePull: busy,
+      statusObservedAtBeforePull: undefined,
+      hasMessages: true,
+      isTailPage: false,
+      loadSnapshot,
+    })
+    await reconcileActiveSessionStatusAfterMessagePull({
+      directory: "/repo",
+      sessionID: "ses_a",
+      store,
+      statusBeforePull: busy,
+      statusObservedAtBeforePull: undefined,
+      hasMessages: false,
+      loadSnapshot,
+    })
+    await reconcileActiveSessionStatusAfterMessagePull({
+      directory: "/repo",
+      sessionID: "ses_a",
+      store,
+      statusBeforePull: idle,
+      statusObservedAtBeforePull: undefined,
+      hasMessages: true,
+      loadSnapshot,
+    })
+    await reconcileActiveSessionStatusAfterMessagePull({
+      directory: "/repo",
+      sessionID: "ses_a",
+      store,
+      statusBeforePull: busy,
+      statusObservedAtBeforePull: undefined,
+      hasMessages: true,
+      isStale: () => true,
+      loadSnapshot,
+    })
+
+    store.setState({ session_status: { ses_a: { type: "busy" } } })
+    await reconcileActiveSessionStatusAfterMessagePull({
+      directory: "/repo",
+      sessionID: "ses_a",
+      store,
+      statusBeforePull: busy,
+      statusObservedAtBeforePull: undefined,
+      hasMessages: true,
+      loadSnapshot,
+    })
+
+    expect(loads).toBe(0)
   })
 })
 

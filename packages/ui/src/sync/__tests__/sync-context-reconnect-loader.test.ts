@@ -229,6 +229,7 @@ type SyncContextApi = typeof import("../sync-context")
 let materializeSessionFromServer: SyncContextApi["materializeSessionFromServer"]
 let resyncDirectoryAfterReconnect: SyncContextApi["resyncDirectoryAfterReconnect"]
 let setActiveSession: SyncContextApi["setActiveSession"]
+let handleEvent: SyncContextApi["handleEvent"]
 let syncContextBound = false
 
 async function ensureSyncContextBound() {
@@ -238,6 +239,7 @@ async function ensureSyncContextBound() {
     materializeSessionFromServer = mod.materializeSessionFromServer
     resyncDirectoryAfterReconnect = mod.resyncDirectoryAfterReconnect
     setActiveSession = mod.setActiveSession
+    handleEvent = mod.handleEvent
     syncContextBound = true
   }
 }
@@ -523,5 +525,88 @@ describe("sync-context reconnect / materialize → loadSessionMessagePage", () =
     expect(deps?.getLiveRevision?.()).toBe(5)
     // isStale should track the same revision advance semantics used by reconnect.
     expect(deps?.isStale?.()).toBe(true)
+  })
+
+  test("active top-level session.idle enqueues one materialize; background top-level does not", async () => {
+    const store = createDirectoryStore({
+      session: [
+        {
+          id: "ses_viewed",
+          title: "viewed",
+          time: { created: 1, updated: 1 },
+          version: "1",
+        } as State["session"][number],
+        {
+          id: "ses_background",
+          title: "background",
+          time: { created: 1, updated: 1 },
+          version: "1",
+        } as State["session"][number],
+      ],
+    })
+    const childStores = {
+      getChild: (directory: string) => (directory === "/repo" ? store : undefined),
+      children: new Map([["/repo", store]]),
+      mark: () => undefined,
+      ensureChild: () => store,
+    } as unknown as import("../child-store").ChildStoreManager
+    setActiveSession("/repo", "ses_viewed")
+
+    handleEvent(
+      "/repo",
+      { type: "session.idle", properties: { sessionID: "ses_viewed" } } as never,
+      childStores,
+      createRoutingIndex(),
+    )
+    handleEvent(
+      "/repo",
+      { type: "session.idle", properties: { sessionID: "ses_background" } } as never,
+      childStores,
+      createRoutingIndex(),
+    )
+
+    await new Promise((resolve) => setTimeout(resolve, 0))
+
+    expect(loadCalls.map((call) => call.sessionID)).toEqual(["ses_viewed"])
+    expect(loadCalls[0]?.purpose).toBe("materialize")
+  })
+
+  test("child session.idle still materializes the parent session", async () => {
+    const store = createDirectoryStore({
+      session: [
+        {
+          id: "ses_parent",
+          title: "parent",
+          time: { created: 1, updated: 1 },
+          version: "1",
+        } as State["session"][number],
+        {
+          id: "ses_child",
+          title: "child",
+          parentID: "ses_parent",
+          time: { created: 1, updated: 1 },
+          version: "1",
+        } as State["session"][number] & { parentID: string },
+      ],
+    })
+    const childStores = {
+      getChild: (directory: string) => (directory === "/repo" ? store : undefined),
+      children: new Map([["/repo", store]]),
+      mark: () => undefined,
+      ensureChild: () => store,
+    } as unknown as import("../child-store").ChildStoreManager
+    setActiveSession("/repo", "ses_parent")
+
+    handleEvent(
+      "/repo",
+      { type: "session.idle", properties: { sessionID: "ses_child" } } as never,
+      childStores,
+      createRoutingIndex(),
+    )
+
+    await new Promise((resolve) => setTimeout(resolve, 0))
+
+    expect(loadCalls.map((call) => call.sessionID)).toEqual(["ses_parent"])
+    expect(loadCalls[0]?.purpose).toBe("materialize")
   })
 })

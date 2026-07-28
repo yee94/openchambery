@@ -29,6 +29,7 @@ export type DraftSessionBranchSelectorProps = {
   onSelectDirectory: (directory: string) => void;
   className?: string;
   maxWidthClassName?: string;
+  presentation?: 'dropdown' | 'mobile-sheet';
 };
 
 const normalizeBranchRef = (branch: string): string => branch.replace(/^remotes\//, '').trim();
@@ -48,6 +49,7 @@ export const DraftSessionBranchSelector: React.FC<DraftSessionBranchSelectorProp
   onSelectDirectory,
   className,
   maxWidthClassName = 'max-w-[48vw] sm:max-w-[20rem]',
+  presentation = 'dropdown',
 }) => {
   const { t } = useI18n();
   const { git } = useRuntimeAPIs();
@@ -205,7 +207,10 @@ export const DraftSessionBranchSelector: React.FC<DraftSessionBranchSelectorProp
     <button
       type="button"
       className={cn(
-        'group relative inline-flex h-6 min-w-0 w-fit items-center rounded-lg !border-0 px-1.5 py-1 pr-1.5 typography-micro font-medium text-foreground/80 transition-[padding] hover:pr-5 focus-visible:pr-5 data-[popup-open]:pr-5',
+        'group relative inline-flex min-w-0 w-fit items-center gap-1.5 rounded-lg !border-0 px-1.5 font-medium text-foreground/80',
+        presentation === 'mobile-sheet'
+          ? 'h-[26px] text-[11px] leading-none'
+          : 'h-6 py-1 pr-1.5 typography-micro transition-[padding] hover:pr-5 focus-visible:pr-5 data-[popup-open]:pr-5',
         maxWidthClassName,
         SELECTOR_CHIP_HOVER_CLASS,
         className,
@@ -213,12 +218,14 @@ export const DraftSessionBranchSelector: React.FC<DraftSessionBranchSelectorProp
       aria-label={chipLabel}
     >
       <Icon name="git-branch" className="size-3.5 shrink-0 text-muted-foreground" aria-hidden="true" />
-      <span className="truncate">{chipLabel}</span>
-      <Icon
-        name="arrow-down-s"
-        className="pointer-events-none absolute right-1 size-3.5 shrink-0 text-muted-foreground opacity-0 transition-opacity group-hover:opacity-100 group-focus-visible:opacity-100 group-data-[popup-open]:opacity-100"
-        aria-hidden="true"
-      />
+      <span className="min-w-0 truncate">{chipLabel}</span>
+      {presentation === 'dropdown' ? (
+        <Icon
+          name="arrow-down-s"
+          className="pointer-events-none absolute right-1 size-3.5 shrink-0 text-muted-foreground opacity-0 transition-opacity group-hover:opacity-100 group-focus-visible:opacity-100 group-data-[popup-open]:opacity-100"
+          aria-hidden="true"
+        />
+      ) : null}
     </button>
   );
 
@@ -240,6 +247,8 @@ export const DraftSessionBranchSelector: React.FC<DraftSessionBranchSelectorProp
         selectedDirectory={directory}
         onSelectDirectory={onSelectDirectory}
         onCreateWorktree={() => { void createWorktreeDraft(); }}
+        open={branchSelectorOpen}
+        presentation={presentation}
         onOpenChange={setBranchSelectorOpen}
       />
 

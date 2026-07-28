@@ -136,18 +136,19 @@ iOS Simulator helpers: `mobile:sim:{boot,install,launch,run,serve,list,kill}` (s
   (Android 13+; older versions allow notifications by default). `windowSoftInputMode=adjustNothing`.
   Android WebView on the current Capacitor host reports a full-height visual/layout
   viewport while IME is open, and VirtualKeyboard geometry reports 0. Android
-  therefore starts a 250ms composer-only CSS FLIP from `oc:keyboard-intent` /
-  `focusin`, using the previous measured IME-height ratio (39dvh first-open
-  fallback). `ImeSyncBridge` keeps WebView-parent padding at 0, paints the
-  edge-to-edge backdrop, removes Capacitor's empty root animation callback, and
-  emits state + settled height once per transition for calibration/cache. There
-  is no progress bridge. The translated distance subtracts the shell's measured
-  bottom-safe padding. The composer keeps its ambient mask while a separate
-  negative-stack curtain paints the temporary gap down to the IME. Cached hidden
-  Session views may retain their own composer nodes, so keyboard choreography
-  selects the visible composer; every native textarea tap repairs a replaced node
-  whose inline transform is missing, and keyboard close clears all cached movers.
-  The close transform runs for 160ms so dismissal clears promptly.
+   therefore starts a 200ms composer-only CSS FLIP from `oc:keyboard-intent` /
+   `focusin`, using the previous measured IME-height ratio (39dvh first-open
+   fallback). `ImeSyncBridge` keeps WebView-parent padding at 0, paints the
+   edge-to-edge backdrop, removes Capacitor's empty root animation callback, and
+   emits state + settled height once per transition for calibration/cache. There
+   is no progress bridge. The translated distance subtracts the shell's measured
+   bottom-safe padding. The composer keeps its ambient mask while a separate
+   negative-stack curtain paints the temporary gap down to the IME. Cached hidden
+   Session views may retain their own composer nodes, so keyboard choreography
+   selects the visible composer; every native textarea tap repairs a replaced node
+   whose inline transform is missing, and keyboard close clears all cached movers.
+   The close transform runs for 100ms (and ignores duplicate close signals) so
+   dismissal can catch up when the system IME has already started hiding.
   ML Kit `com.google.mlkit.vision.DEPENDENCIES=barcode_ui` meta (preloads the code scanner). FCM
   `default_notification_icon=@drawable/ic_stat_notify`.
 - Adaptive launcher icon: full-bleed color background + `ic_launcher_foreground` (sources under

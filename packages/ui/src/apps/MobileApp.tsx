@@ -307,8 +307,10 @@ const useNativeMobileChrome = (): void => {
       //   Android — adjustNothing + an early composer-only CSS FLIP. Android's
       //            keyboardWillShow and WebView viewport signals arrive after IME
       //            movement starts, so keyboard intent / focusin starts a short
-      //            transform from the cached IME height. The state-only native
-      //            event calibrates and caches the final height once per open.
+      //            (~200ms) transform from the cached IME height. Hide is shorter
+      //            (~100ms) because close signals often arrive after the system
+      //            IME has already begun dismissing. The state-only native event
+      //            calibrates and caches the final height once per open.
       const platform = (window as typeof window & { Capacitor?: { getPlatform?: () => string } }).Capacitor?.getPlatform?.();
       const isAndroid = platform === 'android';
       await Keyboard.setAccessoryBarVisible({ isVisible: false }).catch(() => undefined);
@@ -372,9 +374,12 @@ const useNativeMobileChrome = (): void => {
       // ── Android: pre-focus CSS FLIP from cached IME height ────────────────
       if (isAndroid) {
         const IME_RATIO_STORAGE_KEY = 'openchamber.androidImeHeightRatio.v1';
-        const SHOW_MS = 250;
+        // Open starts from intent/focus before the IME moves; keep it short.
+        // Close usually begins after the system IME has already started (or
+        // finished) dismissing, so a long hide leaves the composer hanging.
+        const SHOW_MS = 200;
         const CORRECT_MS = 60;
-        const HIDE_MS = 160;
+        const HIDE_MS = 100;
         const SHOW_EASING = 'cubic-bezier(0.2, 0, 0, 1)';
         const HIDE_EASING = 'cubic-bezier(0.4, 0, 1, 1)';
         let androidTimer: number | null = null;
@@ -466,6 +471,15 @@ const useNativeMobileChrome = (): void => {
           dispatchKb('oc:keyboard-settled', { open: true });
         };
         const markClosed = (blur: boolean) => {
+          // focusout and oc:ime-state can both fire for one dismissal; restarting
+          // the hide transition mid-flight is what parks the composer above the
+          // already-gone IME for an extra beat.
+          if (!keyboardOpen) {
+            if (blur && isTextField(document.activeElement)) {
+              (document.activeElement as HTMLElement).blur();
+            }
+            return;
+          }
           keyboardOpen = false;
           if (blur && isTextField(document.activeElement)) {
             (document.activeElement as HTMLElement).blur();
@@ -475,13 +489,15 @@ const useNativeMobileChrome = (): void => {
           setVar('--oc-kb-layout', 0);
           setVar('--oc-kb-scroll-inset', 0);
           dispatchKb('oc:keyboard-intent', { open: false });
+          const slide = getAndroidSlide(imeHeight);
+          // Start the transform first so the same frame collapses chrome + lift.
+          liftMovers(0, HIDE_MS, HIDE_EASING);
           dispatchKb('oc:keyboard-anim', {
             phase: 'hide',
-            slide: getAndroidSlide(imeHeight),
+            slide,
             durationMs: HIDE_MS,
             easing: HIDE_EASING,
           });
-          liftMovers(0, HIDE_MS, HIDE_EASING);
           clearAndroidTimer();
           androidTimer = window.setTimeout(() => {
             androidTimer = null;
@@ -497,11 +513,12 @@ const useNativeMobileChrome = (): void => {
         };
         const handleFocusOut = (event: FocusEvent) => {
           if (!isTextField(event.target)) return;
+          // During focusout, activeElement is often still the field being blurred.
+          // relatedTarget is the authoritative next focus for same-document moves.
           if (isTextField(event.relatedTarget)) return;
-          window.setTimeout(() => {
-            if (isTextField(document.activeElement)) return;
-            markClosed(false);
-          }, 0);
+          // Prefer the earliest close signal. A zero-timeout waits a full task and
+          // lets the system IME finish before the composer starts dropping.
+          markClosed(false);
         };
         const handleImeState = (event: Event) => {
           type ImeStateEvent = Event & {

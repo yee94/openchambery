@@ -15,6 +15,7 @@ import {
   CommandSeparator,
 } from '@/components/ui/command';
 import { Tooltip, TooltipContent, TooltipTrigger } from '@/components/ui/tooltip';
+import { MobileResizableSheet } from '@/components/ui/MobileResizableSheet';
 import { Icon } from "@/components/icon/Icon";
 import type { GitRemote } from '@/lib/api/types';
 import { useI18n } from '@/lib/i18n';
@@ -62,6 +63,8 @@ interface BranchSelectorProps {
   worktreeNewLabel?: string;
   projectRootLabel?: string;
   onOpenChange?: (open: boolean) => void;
+  open?: boolean;
+  presentation?: 'dropdown' | 'mobile-sheet';
 }
 
 const sanitizeBranchNameInput = (value: string): string => {
@@ -100,6 +103,8 @@ export const BranchSelector: React.FC<BranchSelectorProps> = ({
   worktreeNewLabel,
   projectRootLabel,
   onOpenChange,
+  open: controlledOpen,
+  presentation = 'dropdown',
 }) => {
   const { t } = useI18n();
   const [isOpen, setIsOpen] = React.useState(false);
@@ -109,6 +114,12 @@ export const BranchSelector: React.FC<BranchSelectorProps> = ({
   const [newBranchName, setNewBranchName] = React.useState('');
   const [isCreating, setIsCreating] = React.useState(false);
   const createInputRef = React.useRef<HTMLInputElement>(null);
+  const mobileSheetId = React.useId();
+  const open = controlledOpen ?? isOpen;
+  const setOpen = (nextOpen: boolean) => {
+    if (controlledOpen === undefined) setIsOpen(nextOpen);
+    onOpenChange?.(nextOpen);
+  };
 
   const stopDropdownTypeahead = React.useCallback((event: React.KeyboardEvent<HTMLInputElement>) => {
     event.stopPropagation();
@@ -153,17 +164,17 @@ export const BranchSelector: React.FC<BranchSelectorProps> = ({
 
   const handleCheckout = (branch: string) => {
     if (branch === currentBranch) {
-      setIsOpen(false);
+      setOpen(false);
       return;
     }
     onCheckout(branch);
-    setIsOpen(false);
+    setOpen(false);
     setSearch('');
   };
 
   const handleSelectDirectory = (directory: string) => {
     onSelectDirectory?.(directory);
-    setIsOpen(false);
+    setOpen(false);
     setSearch('');
   };
 
@@ -187,7 +198,7 @@ export const BranchSelector: React.FC<BranchSelectorProps> = ({
       await onCreate(sanitizedNewBranch, remotes[0]);
       setNewBranchName('');
       setShowCreate(false);
-      setIsOpen(false);
+      setOpen(false);
     } finally {
       setIsCreating(false);
     }
@@ -201,7 +212,7 @@ export const BranchSelector: React.FC<BranchSelectorProps> = ({
       setNewBranchName('');
       setShowCreate(false);
       setShowRemoteSelect(false);
-      setIsOpen(false);
+      setOpen(false);
     } finally {
       setIsCreating(false);
     }
@@ -218,13 +229,13 @@ export const BranchSelector: React.FC<BranchSelectorProps> = ({
   };
 
   React.useEffect(() => {
-    if (!isOpen) {
+    if (!open) {
       setSearch('');
       setShowCreate(false);
       setShowRemoteSelect(false);
       setNewBranchName('');
     }
-  }, [isOpen]);
+  }, [open]);
 
   const branchLabel = triggerLabel || currentBranch || t('gitView.branch.detachedHead');
   const resolvedContentAlign = contentAlign ?? (iconOnly ? 'end' : 'start');
@@ -263,32 +274,16 @@ export const BranchSelector: React.FC<BranchSelectorProps> = ({
     </DropdownMenuTrigger>
   );
 
-  return (
-    <DropdownMenu open={isOpen} onOpenChange={(open) => {
-      setIsOpen(open);
-      onOpenChange?.(open);
-    }}>
-      {hideTooltip || trigger ? (
-        menuTrigger
-      ) : (
-        <Tooltip>
-          <TooltipTrigger asChild>
-            {menuTrigger}
-          </TooltipTrigger>
-          <TooltipContent sideOffset={8}>
-            {iconOnly ? branchLabel : t('gitView.branch.currentBranchTooltip')}
-          </TooltipContent>
-        </Tooltip>
-      )}
-
-      <DropdownMenuContent align={resolvedContentAlign} className="w-72 p-0 max-h-[60vh] flex flex-col">
+  const commandSurface = (
         <Command className="h-full min-h-0">
-          <CommandInput
-            placeholder={t('gitView.branch.searchPlaceholder')}
-            value={search}
-            onValueChange={setSearch}
-            onKeyDown={stopDropdownTypeahead}
-          />
+          <div data-mobile-sheet-no-dismiss={presentation === 'mobile-sheet' ? '' : undefined}>
+            <CommandInput
+              placeholder={t('gitView.branch.searchPlaceholder')}
+              value={search}
+              onValueChange={setSearch}
+              onKeyDown={stopDropdownTypeahead}
+            />
+          </div>
           <CommandList
             scrollbarClassName="overlay-scrollbar--flush overlay-scrollbar--dense overlay-scrollbar--zero"
             disableHorizontal
@@ -450,7 +445,7 @@ export const BranchSelector: React.FC<BranchSelectorProps> = ({
                         onClick={(event) => {
                           event.preventDefault();
                           event.stopPropagation();
-                          setIsOpen(false);
+                          setOpen(false);
                           onCreateWorktree();
                         }}
                       >
@@ -488,6 +483,48 @@ export const BranchSelector: React.FC<BranchSelectorProps> = ({
 
           </CommandList>
         </Command>
+  );
+
+  if (presentation === 'mobile-sheet') {
+    const mobileTrigger = React.cloneElement(trigger ?? defaultTrigger, {
+      onClick: () => setOpen(true),
+      'data-popup-open': open ? '' : undefined,
+    } as React.HTMLAttributes<HTMLElement>);
+
+    return (
+      <>
+        {mobileTrigger}
+        <MobileResizableSheet
+          id={`mobile-draft-branch-picker-sheet-${mobileSheetId}`}
+          open={open}
+          onOpenChange={setOpen}
+          ariaLabel={t('gitView.branch.selectBranch')}
+          closeAriaLabel={t('mobile.surface.closeAria')}
+          resizeAriaLabel={t('mobile.sessions.sheet.resizeAria')}
+        >
+          {commandSurface}
+        </MobileResizableSheet>
+      </>
+    );
+  }
+
+  return (
+    <DropdownMenu open={open} onOpenChange={setOpen}>
+      {hideTooltip || trigger ? (
+        menuTrigger
+      ) : (
+        <Tooltip>
+          <TooltipTrigger asChild>
+            {menuTrigger}
+          </TooltipTrigger>
+          <TooltipContent sideOffset={8}>
+            {iconOnly ? branchLabel : t('gitView.branch.currentBranchTooltip')}
+          </TooltipContent>
+        </Tooltip>
+      )}
+
+      <DropdownMenuContent align={resolvedContentAlign} className="w-72 p-0 max-h-[60vh] flex flex-col">
+        {commandSurface}
       </DropdownMenuContent>
     </DropdownMenu>
   );

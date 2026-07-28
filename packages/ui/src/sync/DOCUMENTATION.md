@@ -260,6 +260,11 @@ HTTP pull (initial / prepend / recovery / materialize)
                                 reducer → store commit (single-flight)
   session-message-reducer.ts    reduceSessionMessagePage — pure page → state
   session-prefetch-cache.ts     loading / ready / error + TTL meta
+  ../queries/sessionStatusQueries.ts
+                                TanStack Query: directory status snapshots +
+                                request-start authority boundary
+  session-status-reconciliation.ts
+                                status snapshot → child-store convergence
                 │
                 ▼
         directory child store (message / part)
@@ -326,6 +331,21 @@ Rules that keep this single-sourced:
   requested limit, and pagination cursor. They must not issue duplicate tail
   requests during a React mount or provider remount, and a smaller concurrent
   request must not satisfy a larger request.
+- `queries/sessionStatusQueries.ts` owns runtime- and directory-scoped
+  `/session/status` pull snapshots for reconciliation. Its Query entry uses
+  `staleTime: 0`, forwards the Query abort signal, and shares one in-flight GET
+  across concurrent callers with the same transport and directory. Query data
+  carries the request-start timestamp created inside the shared `queryFn`, so
+  every joined caller applies the same conservative authority boundary.
+- `session-status-reconciliation.ts` owns active-only status snapshot apply and
+  post-message-pull convergence. A successful non-history message pull that
+  began with the same `busy` or `retry` entry and observation timestamp requests
+  an authoritative snapshot after accepting the page. Session selection,
+  reactive sync, forced sync, reconnect, and materialization share the Query
+  request layer. Idle, empty, history, stale, and superseded pulls add zero
+  status requests. A failed status read preserves the active entry, and an SSE
+  status transition observed during either pull keeps precedence over the older
+  work.
 - Session materialization coalescing is scoped to the owning directory store.
   A remounted `SyncProvider` must start its own commit path even when the
   runtime, directory, and session ids match an old in-flight request; transport
@@ -386,17 +406,23 @@ Rules that keep this single-sourced:
   identity plus materialized messages only into that target store. Message TTL
   readiness and session identity remain independent: a ready message page with
   missing identity still performs the exact identity read.
-- Live `session.*` / `message.*` events are authoritative change signals for
-  the session message prefetch cache. `handleEvent` calls
-  `markSessionPrefetchDirty(directory, [sessionID])` for any snapshot-revision
-  event before the reducer runs, which flips `complete → false` and `at → 0`
-  while preserving pagination cursor/limit. The next `fetchMessagesForSession`
-  or `syncSession` then fails the TTL/complete short-circuit and performs one
-  bounded tail-page pull. Without this, a session fetched to completion once
-  would reuse its stale transcript forever after a mobile suspend gap, because
-  `shouldSkipSessionPrefetch` treats `complete: true` as a permanent skip.
-  Events missed during the suspend itself (no SSE delivery at all) are out of
-  scope here; they are covered by the reconnect viewed-session recovery path.
+- Snapshot-revision SSE events (not every live `session.*` / `message.*` payload)
+  are authoritative change signals for the session message prefetch cache.
+  `handleEvent` calls `markSessionPrefetchDirty(directory, [sessionID])` for any
+  snapshot-revision event before the reducer runs, encoding dirty as
+  `complete=false` and `at=0` while preserving pagination cursor/limit.
+  `shouldSkipSessionPrefetch` checks dirty (`at === 0`) before complete/limit/TTL
+  so a previously large complete page still refetches. The next
+  `fetchMessagesForSession` / `syncSession` then performs one bounded tail-page
+  pull. After a successful pull, `fetchMessagesForSession` always runs
+  `materializeSessionSnapshots` (reference-stable no-op when unchanged) so
+  same-size completed parts replace truncated live text. On `session.idle` for
+  the **active** top-level session (`setActiveSession` directory/session identity,
+  not window focus), `handleEvent` enqueues one bounded `session-idle`
+  materialization; background top-level idle stays zero-request; child idle
+  still materializes the parent (`child-session-idle`). Events missed during a
+  suspend with no SSE delivery remain covered by reconnect viewed-session
+  recovery.
 - The client stall timer starts before SSE response headers arrive. Transport
   activity includes SSE comments and heartbeats, iterator events, and every
   WebSocket message frame. A transport stale watchdog reconnects after this
@@ -596,7 +622,7 @@ Rules:
 8. Sidebar previous/next navigation is scope-aware. `SessionSidebar` publishes the Recent order plus logically visible project rows to `session-navigation.ts`; keyboard and native-menu actions share that registry and update the explicit session Focus before committing current-session authority. Project-origin navigation is restricted to the current expanded project and never falls through to hidden rows or another project.
 9. Global Mod+1…9 navigation is session-row based, not project based. `SessionSidebar` combines the currently revealed Recent rows with logically visible project rows, caps the visual order at nine, and publishes it through `sidebar-numbered-navigation.ts`. The numbered activation preserves the selected row's exact Recent/Project Focus identity.
 10. `optimisticSend()` inserts the optimistic user message and local `busy` status **before** the connection grace wait (`waitForConnectionOrThrow`). Long-idle reconnect must not leave the composer cleared / status busy while the chat list still shows the pre-send snapshot. Connection failure remains a pre-dispatch rollback of that optimistic row.
-11. `fetchMessagesForSession()` may early-return on a renderable cache. It only bypasses that cache for a live `busy`/`retry` session whose local tail is **not** already a user message (pre-send snapshot while status is busy). Ordinary busy sessions with an optimistic/confirmed trailing user row keep the early-return so session switches do not force a refetch or loading flash.
+11. `fetchMessagesForSession()` may early-return on a renderable cache only when `shouldSkipSessionPrefetch` also allows reuse (clean ready/complete or in-TTL, no dirty mark). It always bypasses that cache for a live `busy`/`retry` session whose local tail is **not** already a user message (pre-send snapshot while status is busy). Ordinary busy sessions with an optimistic/confirmed trailing user row keep the early-return when the prefetch meta is clean, so session switches do not force a refetch or loading flash.
 
 Examples of global-store updates performed in `session-actions.ts`:
 

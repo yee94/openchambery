@@ -27,6 +27,10 @@ const mobileWindowMotionSource = readFileSync(join(__dirname, 'MobileWindowMotio
 const mobileModelPickerPanelSource = readFileSync(join(__dirname, '../model-picker/MobileModelPickerPanel.tsx'), 'utf-8');
 const modelControlsSource = readFileSync(join(__dirname, '../chat/ModelControls.tsx'), 'utf-8');
 const agentSelectorSource = readFileSync(join(__dirname, '../sections/commands/AgentSelector.tsx'), 'utf-8');
+const chatInputSource = readFileSync(join(__dirname, '../chat/ChatInput.tsx'), 'utf-8');
+const branchSelectorSource = readFileSync(join(__dirname, '../views/git/BranchSelector.tsx'), 'utf-8');
+const mobileStylesSource = readFileSync(join(__dirname, '../../styles/mobile.css'), 'utf-8');
+const mobileOverlayPanelSource = readFileSync(join(__dirname, 'MobileOverlayPanel.tsx'), 'utf-8');
 
 describe('MobileWindowMotion recipe', () => {
   test('maps every edge to its closed transform', () => {
@@ -138,6 +142,18 @@ describe('MobileWindowMotion recipe', () => {
     expect(mobileWindowMotionSource).not.toContain("(surface?.querySelector<HTMLElement>(FOCUSABLE) ?? surface)?.focus()");
   });
 
+  test('uses compact resizable sheets for mobile draft project and branch selection', () => {
+    expect(chatInputSource).toContain('oc-mobile-draft-target-selectors');
+    expect(chatInputSource).toContain('mobile-draft-project-picker-sheet-');
+    expect(chatInputSource).toContain('<ScrollableOverlay outerClassName="min-h-0 flex-1" disableHorizontal>');
+    expect(chatInputSource).toContain('data-mobile-sheet-no-dismiss=""');
+    expect(branchSelectorSource).toContain("presentation?: 'dropdown' | 'mobile-sheet'");
+    expect(branchSelectorSource).toContain('mobile-draft-branch-picker-sheet-');
+    expect(branchSelectorSource).toContain("data-mobile-sheet-no-dismiss={presentation === 'mobile-sheet' ? '' : undefined}");
+    expect(mobileStylesSource).toContain('.oc-mobile-draft-target-selectors');
+    expect(mobileStylesSource).toContain('height: 26px !important;');
+  });
+
   test('lets a dismissible sheet track downward continuously to zero height', () => {
     expect(clampMobileSheetSnapDragHeight(-100, 1000, true)).toBe(0);
     expect(clampMobileSheetSnapDragHeight(360, 1000, true)).toBe(360);
@@ -149,6 +165,8 @@ describe('MobileWindowMotion recipe', () => {
     expect(getMobileWindowMotionSurfaceLayout('sheet', 'bottom')).toContain('mt-auto');
     expect(getMobileWindowMotionSurfaceLayout('sheet', 'bottom')).toContain('mx-auto');
     expect(getMobileWindowMotionSurfaceLayout('sheet', 'bottom')).toContain('pwa-overlay-panel');
+    expect(getMobileWindowMotionSurfaceLayout('sheet', 'bottom')).toContain('pb-[max(0.5rem,var(--oc-safe-area-bottom,env(safe-area-inset-bottom,0px)))]');
+    expect(mobileOverlayPanelSource).toContain('pb-[max(0.5rem,var(--oc-safe-area-bottom,env(safe-area-inset-bottom,0px)))]');
     expect(getMobileWindowMotionSurfaceLayout('sheet', 'top')).toContain('mb-auto');
     expect(getMobileWindowMotionSurfaceLayout('sheet', 'top')).toContain('mx-auto');
     expect(getMobileWindowMotionSurfaceLayout('sheet', 'left')).toContain('rounded-r-xl');

@@ -85,7 +85,7 @@ export const AgentSelector: React.FC<AgentSelectorProps> = ({
                 ariaLabel={t('settings.commands.agentSelector.title')}
                 closeAriaLabel={t('mobile.surface.closeAria')}
                 resizeAriaLabel={t('mobile.sessions.sheet.resizeAria')}
-                bodyClassName="px-2 pb-[max(0.5rem,var(--safe-area-inset-bottom,env(safe-area-inset-bottom,0px)))]"
+                bodyClassName="px-2"
             >
                 <ScrollableOverlay
                     useScrollShadow

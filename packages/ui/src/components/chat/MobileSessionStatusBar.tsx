@@ -1361,7 +1361,7 @@ export const MobileSessionStatusBar: React.FC<MobileSessionStatusBarProps> = ({
         : '';
 
   const actionMenuContent = actionTarget?.kind === 'project' ? (
-    <div className="flex flex-col gap-1 pb-[max(0.5rem,env(safe-area-inset-bottom))]" data-mobile-session-action-sheet="project">
+    <div className="flex flex-col gap-1" data-mobile-session-action-sheet="project">
       <MobileActionButton
         icon="add"
         label={t('sessions.sidebar.project.actions.newSession')}
@@ -1388,7 +1388,7 @@ export const MobileSessionStatusBar: React.FC<MobileSessionStatusBarProps> = ({
       />
     </div>
   ) : actionTarget?.kind === 'worktree' ? (
-    <div className="flex flex-col gap-1 pb-[max(0.5rem,env(safe-area-inset-bottom))]" data-mobile-session-action-sheet="worktree">
+    <div className="flex flex-col gap-1" data-mobile-session-action-sheet="worktree">
       <MobileActionButton
         icon="add"
         label={t('sessions.sidebar.project.actions.newSession')}
@@ -1406,7 +1406,7 @@ export const MobileSessionStatusBar: React.FC<MobileSessionStatusBarProps> = ({
       />
     </div>
   ) : actionTarget?.kind === 'session' ? (
-    <div className="flex flex-col gap-1 pb-[max(0.5rem,env(safe-area-inset-bottom))]" data-mobile-session-action-sheet="session">
+    <div className="flex flex-col gap-1" data-mobile-session-action-sheet="session">
       <MobileActionButton
         icon={pinnedSessionIds.has(actionTarget.session.id) ? 'unpin' : 'pushpin'}
         label={pinnedSessionIds.has(actionTarget.session.id)

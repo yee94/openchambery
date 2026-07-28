@@ -53,6 +53,9 @@ export function shouldSkipSessionPrefetch(input: {
 
   const info = input.info
   if (!info) return true
+  // Dirty encoding: complete=false + at=0. Must pierce complete/limit/TTL so a
+  // previously large complete page still refetches after markSessionPrefetchDirty.
+  if (info.at === 0) return false
   if (info.status !== "ready") return false
   if (info.complete) return true
   if (info.limit > input.pageSize) return true

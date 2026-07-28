@@ -71,6 +71,8 @@ import { Select, SelectContent, SelectItem, SelectSeparator, SelectTrigger, Sele
 import { COMPOSER_ICON_HOVER_CLASS, SELECTOR_CHIP_HOVER_CLASS } from '@/components/chat/message/parts/toolRowChrome';
 import { Input } from '@/components/ui/input';
 import { MobileOverlayPanel } from '@/components/ui/MobileOverlayPanel';
+import { MobileResizableSheet } from '@/components/ui/MobileResizableSheet';
+import { ScrollableOverlay } from '@/components/ui/ScrollableOverlay';
 import { hasActiveMobileOverlay, MOBILE_OVERLAY_ACTIVE_ATTRIBUTE } from '@/components/ui/MobileOverlayPresence';
 import { useThemeSystem } from '@/contexts/useThemeSystem';
 import { GitHubIssuePickerDialog } from '@/components/session/GitHubIssuePickerDialog';
@@ -749,7 +751,6 @@ type ComposerActionButtonsProps = {
     queueFrozen: boolean;
     queueFallbackAvailable: boolean;
     onPrimaryAction: () => void;
-    onQueueMessage: () => void;
     onAbort: () => void;
 };
 
@@ -769,7 +770,6 @@ const ComposerActionButtons = React.memo(function ComposerActionButtons(props: C
         queueFrozen,
         queueFallbackAvailable,
         onPrimaryAction,
-        onQueueMessage,
         onAbort,
     } = props;
     const { t } = useI18n();
@@ -782,25 +782,31 @@ const ComposerActionButtons = React.memo(function ComposerActionButtons(props: C
         queueFallbackAvailable,
     });
 
+    // Match stop / attach / model: only block focus transfer so the soft keyboard
+    // stays open. Do not invent a second activation path (pointerup) — stop works
+    // with plain onClick on the same mobile form capture path.
+    const keepKeyboardFocusProps = isMobile
+        ? {
+            onMouseDown: (event: React.MouseEvent<HTMLButtonElement>) => {
+                event.preventDefault();
+            },
+            onPointerDownCapture: (event: React.PointerEvent<HTMLButtonElement>) => {
+                if (event.pointerType === 'touch') {
+                    event.preventDefault();
+                }
+            },
+        }
+        : {};
+
     const sendButton = (
         <button
             type={isMobile ? 'button' : 'submit'}
             disabled={actionAvailability.sendDisabled}
-            onMouseDown={(event) => {
-                if (isMobile) {
-                    event.preventDefault();
-                }
-            }}
-            onPointerDownCapture={(event) => {
-                if (isMobile && event.pointerType === 'touch') {
-                    event.preventDefault();
-                }
-            }}
+            {...keepKeyboardFocusProps}
             onClick={(event) => {
                 if (!isMobile) {
                     return;
                 }
-
                 event.preventDefault();
                 onPrimaryAction();
             }}
@@ -820,22 +826,24 @@ const ComposerActionButtons = React.memo(function ComposerActionButtons(props: C
         return sendButton;
     }
 
+    // Busy follow-up: same primary action as Enter (queue or steer). Use sendDisabled
+    // (content + session + blocked), not queueDisabled — queue freeze still allows
+    // steer while canAbort is true. Stack above the textarea (z-10).
     return (
-        <div className="relative">
+        <div className="relative z-30 overflow-visible">
             {hasContent ? (
                 <button
                     type="button"
-                    disabled={actionAvailability.queueDisabled}
+                    disabled={actionAvailability.sendDisabled}
+                    {...keepKeyboardFocusProps}
                     onClick={(event) => {
-                        if (isMobile) {
-                            event.preventDefault();
-                        }
-                        onQueueMessage();
+                        event.preventDefault();
+                        onPrimaryAction();
                     }}
                     className={cn(
                         footerIconButtonClass,
-                        'absolute z-20 bottom-full left-1/2 -translate-x-1/2 mb-1',
-                        !actionAvailability.queueDisabled
+                        'absolute z-30 bottom-full left-1/2 -translate-x-1/2 mb-1',
+                        !actionAvailability.sendDisabled
                             ? 'text-primary hover:text-primary'
                             : actionAvailability.disabledClass
                     )}
@@ -851,7 +859,7 @@ const ComposerActionButtons = React.memo(function ComposerActionButtons(props: C
                 onClick={onAbort}
                 className={cn(
                     footerIconButtonClass,
-                    'text-[var(--status-error)] hover:text-[var(--status-error)]'
+                    'relative z-30 text-[var(--status-error)] hover:text-[var(--status-error)]'
                 )}
                 aria-label={t('chat.chatInput.actions.stopGeneratingAria')}
             >
@@ -874,7 +882,6 @@ const ComposerActionButtons = React.memo(function ComposerActionButtons(props: C
     && prev.queueFrozen === next.queueFrozen
     && prev.queueFallbackAvailable === next.queueFallbackAvailable
     && prev.onPrimaryAction === next.onPrimaryAction
-    && prev.onQueueMessage === next.onQueueMessage
     && prev.onAbort === next.onAbort
 ));
 
@@ -974,6 +981,7 @@ const ChatInputRuntime: React.FC<ChatInputProps> = ({ onOpenSettings, scrollToBo
     const [mobileDictationActive, setMobileDictationActive] = React.useState(false);
     const [mobileAttachMenuOpen, setMobileAttachMenuOpen] = React.useState(false);
     const [mobileDraftPicker, setMobileDraftPicker] = React.useState<'project' | null>(null);
+    const mobileDraftProjectSheetId = React.useId();
     const [mobileDraftPickerQuery, setMobileDraftPickerQuery] = React.useState('');
     const [desktopDraftProjectQuery, setDesktopDraftProjectQuery] = React.useState('');
     const [desktopDraftProjectPickerOpen, setDesktopDraftProjectPickerOpen] = React.useState(false);
@@ -5345,7 +5353,10 @@ const ChatInputRuntime: React.FC<ChatInputProps> = ({ onOpenSettings, scrollToBo
             const platform = typeof window !== 'undefined'
                 ? (window as typeof window & { Capacitor?: { getPlatform?: () => string } }).Capacitor?.getPlatform?.()
                 : undefined;
-            if (isCapacitorApp() && platform === 'ios') {
+            // Native shells choreograph the IME + composer together; commit the
+            // expanded silhouette in this frame (iOS UIKit + Android CSS FLIP).
+            // Deferring with startTransition leaves the pill behind the keyboard.
+            if (isCapacitorApp() && (platform === 'ios' || platform === 'android')) {
                 flushSync(() => setMobileComposerExpanded(true));
             } else {
                 React.startTransition(() => {
@@ -5852,9 +5863,9 @@ const ChatInputRuntime: React.FC<ChatInputProps> = ({ onOpenSettings, scrollToBo
                             draftSubmitting={resolvedDraftBusy}
                             submissionBlocked={submissionBlocked}
                             queueFrozen={queueFrozen}
-                            queueFallbackAvailable={sessionIsRunning}
+                            // Abort-capable sessions can still steer when queue ownership is frozen.
+                            queueFallbackAvailable={canAbort || sessionIsRunning}
                             onPrimaryAction={handlePrimaryAction}
-                            onQueueMessage={handleQueueMessage}
                             onAbort={handleAbort}
                         />
                     </div>
@@ -5897,7 +5908,7 @@ const ChatInputRuntime: React.FC<ChatInputProps> = ({ onOpenSettings, scrollToBo
                     <SessionGoalObjectiveCounter length={message.length} />
                 </div>
                 {mobileComposerControls}
-                <div className="flex shrink-0 items-center justify-end gap-x-1.5">
+                <div className="relative z-30 flex shrink-0 items-center justify-end gap-x-1.5">
                     <ComposerActionButtons
                         isMobile={isMobile}
                         footerIconButtonClass={footerIconButtonClass}
@@ -5911,9 +5922,8 @@ const ChatInputRuntime: React.FC<ChatInputProps> = ({ onOpenSettings, scrollToBo
                         draftSubmitting={resolvedDraftBusy}
                         submissionBlocked={submissionBlocked}
                         queueFrozen={queueFrozen}
-                        queueFallbackAvailable={sessionIsRunning}
+                        queueFallbackAvailable={canAbort || sessionIsRunning}
                         onPrimaryAction={handlePrimaryAction}
-                        onQueueMessage={handleQueueMessage}
                         onAbort={handleAbort}
                     />
                 </div>
@@ -5956,7 +5966,7 @@ const ChatInputRuntime: React.FC<ChatInputProps> = ({ onOpenSettings, scrollToBo
                 />
                 <SessionGoalObjectiveCounter length={message.length} />
             </div>
-            <div className={cn('flex flex-1 items-center justify-end md:gap-x-3', footerGapClass)}>
+            <div className={cn('relative z-30 flex flex-1 items-center justify-end md:gap-x-3', footerGapClass)}>
                 <MemoModelControls
                     className="min-w-0 flex-1 justify-end"
                     composerTextareaRef={textareaRef}
@@ -5989,9 +5999,8 @@ const ChatInputRuntime: React.FC<ChatInputProps> = ({ onOpenSettings, scrollToBo
                     draftSubmitting={resolvedDraftBusy}
                     submissionBlocked={submissionBlocked}
                     queueFrozen={queueFrozen}
-                    queueFallbackAvailable={sessionIsRunning}
+                    queueFallbackAvailable={canAbort || sessionIsRunning}
                     onPrimaryAction={handlePrimaryAction}
-                    onQueueMessage={handleQueueMessage}
                     onAbort={handleAbort}
                 />
             </div>
@@ -6371,24 +6380,23 @@ const ChatInputRuntime: React.FC<ChatInputProps> = ({ onOpenSettings, scrollToBo
                     </div>
                 ) : null}
                 {isMobile && showDraftTargetSelectors ? (
-                    <div className="mb-1.5 flex min-w-0 items-center gap-x-2 px-0.5">
+                    <div className="oc-mobile-draft-target-selectors mb-1.5 flex min-w-0 items-center gap-1.5 px-0.5">
                         {selectedDraftProject ? (
                             <button
                                 type="button"
                                 className={cn(
-                                    'inline-flex h-auto min-h-6 min-w-0 max-w-[42vw] flex-shrink cursor-pointer items-center gap-1.5 rounded-lg px-2.5 py-1 typography-micro font-medium text-foreground/80',
+                                    'inline-flex h-[26px] min-w-0 max-w-[46%] shrink items-center gap-1.5 rounded-lg px-1.5 text-[11px] leading-none font-medium text-foreground/80',
                                     SELECTOR_CHIP_HOVER_CLASS,
                                 )}
                                 onClick={() => setMobileDraftPicker('project')}
                             >
                                 {renderProjectLabelWithIcon(selectedDraftProject)}
-                                <Icon name="arrow-down-s" className="h-3.5 w-3.5 flex-shrink-0 text-muted-foreground" />
                             </button>
                         ) : (
                             <button
                                 type="button"
                                 className={cn(
-                                    'inline-flex h-auto min-h-6 cursor-pointer items-center gap-1.5 rounded-lg px-2.5 py-1 typography-micro font-medium text-foreground/80',
+                                    'inline-flex h-[26px] min-w-0 max-w-[46%] items-center gap-1.5 rounded-lg px-1.5 text-[11px] leading-none font-medium text-foreground/80',
                                     SELECTOR_CHIP_HOVER_CLASS,
                                 )}
                                 onClick={() => sessionEvents.requestDirectoryDialog()}
@@ -6405,7 +6413,8 @@ const ChatInputRuntime: React.FC<ChatInputProps> = ({ onOpenSettings, scrollToBo
                                 projectRootOption={projectRootBranchOption}
                                 worktreeOptions={worktreeBranchOptions}
                                 onSelectDirectory={handleDraftDirectoryChange}
-                                maxWidthClassName="max-w-[48vw]"
+                                maxWidthClassName="max-w-[50%]"
+                                presentation="mobile-sheet"
                             />
                         ) : null}
                     </div>
@@ -6500,7 +6509,9 @@ const ChatInputRuntime: React.FC<ChatInputProps> = ({ onOpenSettings, scrollToBo
                         borderTopRightRadius: isMobile && !mobileComposerExpanded ? '9999px' : chatInputRadius,
                     }}
                     footerClassName={cn(
-                        'bg-transparent flex-shrink-0',
+                        // Keep footer chrome (and the floating follow-up send control)
+                        // above the textarea highlight stack (z-10).
+                        'relative z-30 bg-transparent flex-shrink-0',
                         isMobile && !mobileComposerExpanded
                             ? 'oc-mobile-composer-collapsed-footer px-0 py-0'
                             : footerPaddingClass,
@@ -6930,19 +6941,26 @@ const ChatInputRuntime: React.FC<ChatInputProps> = ({ onOpenSettings, scrollToBo
             project/branch Selects (which desktop keeps). */}
         {isMobile && showDraftTargetSelectors && selectedDraftProject ? (
             <>
-                <MobileOverlayPanel
+                <MobileResizableSheet
+                    id={`mobile-draft-project-picker-sheet-${mobileDraftProjectSheetId}`}
                     open={mobileDraftPicker === 'project'}
-                    title={t('chat.chatInput.draftPicker.projectTitle')}
-                    onClose={() => setMobileDraftPicker(null)}
+                    onOpenChange={(open) => {
+                        if (!open) setMobileDraftPicker(null);
+                    }}
+                    ariaLabel={t('chat.chatInput.draftPicker.projectTitle')}
+                    closeAriaLabel={t('mobile.surface.closeAria')}
+                    resizeAriaLabel={t('mobile.sessions.sheet.resizeAria')}
                 >
-                    <div className="flex flex-col gap-2 px-3 pb-4 pt-1">
+                    <div className="shrink-0 px-3 pb-2 pt-1" data-mobile-sheet-no-dismiss="">
                         <Input
                             value={mobileDraftPickerQuery}
                             onChange={(event) => setMobileDraftPickerQuery(event.target.value)}
                             placeholder={t('chat.chatInput.draftPicker.searchProjects')}
                             className="h-9"
                         />
-                        <div className="flex flex-col">
+                    </div>
+                    <ScrollableOverlay outerClassName="min-h-0 flex-1" disableHorizontal>
+                        <div className="flex flex-col px-3 pb-2">
                             {projects
                                 .filter((project) => {
                                     return matchesModelSearch(getProjectDisplayLabel(project), mobileDraftPickerQuery)
@@ -6964,21 +6982,23 @@ const ChatInputRuntime: React.FC<ChatInputProps> = ({ onOpenSettings, scrollToBo
                                         ) : null}
                                     </button>
                                 ))}
-                            {/* Fixed footer action: replace the removed sidebar "add project" toolbar button. */}
-                            <button
-                                type="button"
-                                className="mt-1 flex w-full cursor-pointer items-center gap-2 rounded-lg border-t border-border/50 px-2 py-2.5 text-left typography-ui-label hover:bg-[var(--interactive-hover)]"
-                                onClick={() => {
-                                    setMobileDraftPicker(null);
-                                    sessionEvents.requestDirectoryDialog();
-                                }}
-                            >
-                                <Icon name="folder-add" className="h-4 w-4 shrink-0 text-muted-foreground" />
-                                <span>{t('chat.chatInput.draftPicker.newProject')}</span>
-                            </button>
                         </div>
+                    </ScrollableOverlay>
+                    {/* Fixed footer action: replace the removed sidebar "add project" toolbar button. */}
+                    <div className="shrink-0 px-3 pb-4 pt-1">
+                        <button
+                            type="button"
+                            className="flex w-full cursor-pointer items-center gap-2 rounded-lg border-t border-border/50 px-2 py-2.5 text-left typography-ui-label hover:bg-[var(--interactive-hover)]"
+                            onClick={() => {
+                                setMobileDraftPicker(null);
+                                sessionEvents.requestDirectoryDialog();
+                            }}
+                        >
+                            <Icon name="folder-add" className="h-4 w-4 shrink-0 text-muted-foreground" />
+                            <span>{t('chat.chatInput.draftPicker.newProject')}</span>
+                        </button>
                     </div>
-                </MobileOverlayPanel>
+                </MobileResizableSheet>
             </>
         ) : null}
         </>

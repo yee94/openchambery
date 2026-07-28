@@ -67,6 +67,7 @@ import {
   type ScopedSessionStatusScope,
 } from "./scoped-session-status"
 import { CURRENT_SESSION_ENTITY_CACHE_TTL_MS, resolveCurrentSessionEntity, resolveParentSessionTarget } from "./current-session-entity"
+import { resyncDirectorySessionStatuses } from "./session-status-reconciliation"
 
 // ---------------------------------------------------------------------------
 // Context
@@ -522,128 +523,11 @@ function getViewedSessionMaterializationTarget(directory: string) {
   }
 }
 
-function toSessionStatus(status: Awaited<ReturnType<typeof opencodeClient.getSessionStatus>>[string] | undefined): SessionStatus | undefined {
-  if (!status) return undefined
-  if (status.type === "idle" || status.type === "busy") {
-    return { type: status.type }
-  }
-  if (
-    status.type === "retry"
-    && typeof status.attempt === "number"
-    && typeof status.message === "string"
-    && typeof status.next === "number"
-  ) {
-    return {
-      type: "retry",
-      attempt: status.attempt,
-      message: status.message,
-      next: status.next,
-    }
-  }
-  return undefined
-}
-
 function getActiveSessionCandidateIds(directory: string, state: DirectoryStore): string[] {
   return getReconnectCandidateSessionIds(state, {
     directory,
     viewedSession: getViewedSessionMaterializationTarget(directory),
   })
-}
-
-export type DirectorySessionStatusSnapshot = NonNullable<
-  Awaited<ReturnType<typeof opencodeClient.getSessionStatusForDirectory>>
->
-
-// How a /session/status snapshot is reconciled into the store.
-//
-// The directory-scoped snapshot lists only active (busy/retry) sessions; an
-// absent candidate means "idle per this snapshot". Snapshots are one-shot
-// (bootstrap / reconnect / escalated resync) — live busy/idle transitions arrive
-// via the global event WS (`session.status` / `session.idle`). Treat the
-// snapshot as ground truth: absent/idle candidates are lowered to idle, and the
-// snapshot wins over any derived message state.
-export function applySessionStatusSnapshot(
-  store: StoreApi<DirectoryStore>,
-  snapshot: DirectorySessionStatusSnapshot,
-  candidateSessionIds: string[],
-  observedAt?: number,
-): boolean {
-  if (candidateSessionIds.length === 0) return false
-
-  let changed = false
-  store.setState((state: DirectoryStore) => {
-    const current = state.session_status ?? {}
-    let next: Record<string, SessionStatus> | undefined
-    let nextObservedAt: Record<string, number> | undefined
-    const draft = () => (next ??= { ...current })
-    const observedDraft = () => (nextObservedAt ??= { ...state.session_status_observed_at })
-    const confirmObservedAt = (sessionId: string) => {
-      if (observedAt === undefined || state.session_status_observed_at[sessionId] === observedAt) return
-      observedDraft()[sessionId] = observedAt
-      changed = true
-    }
-
-    for (const sessionId of candidateSessionIds) {
-      if (observedAt !== undefined && (state.session_status_observed_at[sessionId] ?? -Infinity) >= observedAt) {
-        continue
-      }
-      const incoming = toSessionStatus(snapshot[sessionId])
-
-      if (incoming && incoming.type !== "idle") {
-        // Confirm or raise active status (catches a busy event the stream missed).
-        if (!haveEquivalentSyncSnapshots(current[sessionId], incoming)) {
-          draft()[sessionId] = incoming
-          changed = true
-        }
-        confirmObservedAt(sessionId)
-        continue
-      }
-
-      // Snapshot reports this candidate idle (absent, or explicit idle).
-      const existing = current[sessionId]
-      if (!existing || existing.type !== "idle") {
-        draft()[sessionId] = { type: "idle" }
-        changed = true
-      }
-      confirmObservedAt(sessionId)
-    }
-
-    if (!next && !nextObservedAt) return state
-    return {
-      ...(next ? { session_status: next } : {}),
-      ...(nextObservedAt ? { session_status_observed_at: nextObservedAt } : {}),
-    }
-  })
-
-  return changed
-}
-
-export function collectSessionStatusSnapshotApplyIds(
-  localCandidateSessionIds: string[],
-  snapshot: DirectorySessionStatusSnapshot,
-): string[] {
-  return Array.from(new Set([
-    ...localCandidateSessionIds,
-    ...Object.keys(snapshot),
-  ]))
-}
-
-async function resyncDirectorySessionStatuses(
-  directory: string,
-  store: StoreApi<DirectoryStore>,
-  candidateSessionIds: string[],
-): Promise<DirectorySessionStatusSnapshot | null> {
-  const requestedAt = Date.now()
-  const nextStatuses = await opencodeClient.getSessionStatusForDirectory(directory)
-  // null = fetch failed; preserve existing state. {} or populated = a snapshot
-  // of active sessions — absence means idle for the candidate set.
-  if (nextStatuses === null) return null
-  // Local reconnect candidates alone miss sessions that went idle→busy while the
-  // stream was down. Always union snapshot IDs into the apply set.
-  const applyIds = collectSessionStatusSnapshotApplyIds(candidateSessionIds, nextStatuses)
-  store.setState({ session_status_snapshot_at: requestedAt })
-  applySessionStatusSnapshot(store, nextStatuses, applyIds, requestedAt)
-  return nextStatuses
 }
 
 // Decide whether the event stream is genuinely stale and warrants a full
@@ -1536,7 +1420,8 @@ export async function resyncDirectoryAfterReconnect(
   ingestDirectoryStateIntoRoutingIndex(routingIndex, directory, store.getState())
 }
 
-function handleEvent(
+/** Directory event dispatch. Exported as a minimal test seam for idle materialization. */
+export function handleEvent(
   rawDirectory: string,
   payload: Event,
   childStores: ChildStoreManager,
@@ -1750,10 +1635,12 @@ function handleEvent(
     }
   }
 
-  // Sync-layer parent resync: when a child session goes idle, recover
-  // the parent session snapshot. This ensures the
-  // parent's task tool part reflects the child's completion even when
-  // no ToolPart component is mounted.
+  // Sync-layer resync on idle:
+  // - child idle → materialize parent (task tool completion without mounted ToolPart)
+  // - active top-level idle → one bounded tail materialize so half-finished
+  //   reasoning/text is replaced by the authoritative completed snapshot.
+  //   Background top-level idle stays zero-request. Active identity uses
+  //   setActiveSession directory/session only (not window focus).
   if (payload.type === "session.idle") {
     const idleSessionId = getSessionIdFromPayload(payload)
     if (idleSessionId && resolvedDirectory && resolvedDirectory !== "global") {
@@ -1764,6 +1651,11 @@ function handleEvent(
         : null
       if (parentID) {
         enqueueSessionMaterialization(resolvedDirectory, parentID, childStores, { reason: "child-session-idle" })
+      } else if (
+        idleSessionId === _activeSession
+        && resolvedDirectory === _activeDirectory
+      ) {
+        enqueueSessionMaterialization(resolvedDirectory, idleSessionId, childStores, { reason: "session-idle" })
       }
     }
   }

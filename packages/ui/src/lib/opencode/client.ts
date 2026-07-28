@@ -1054,11 +1054,15 @@ class OpencodeService {
    * not be conflated with that — return `null` so the caller can preserve state.
    */
   async getSessionStatusForDirectory(
-    directory: string | null | undefined
+    directory: string | null | undefined,
+    signal?: AbortSignal,
   ): Promise<Record<string, { type: "idle" | "busy" | "retry"; attempt?: number; message?: string; next?: number }> | null> {
     try {
       const trimmedDirectory = typeof directory === "string" ? directory.trim() : "";
-      const result = await this.client.session.status(trimmedDirectory ? { directory: trimmedDirectory } : undefined);
+      const result = await this.client.session.status(
+        trimmedDirectory ? { directory: trimmedDirectory } : undefined,
+        signal ? { signal } : undefined,
+      );
       if (result.error || !result.data || typeof result.data !== "object") {
         return null;
       }

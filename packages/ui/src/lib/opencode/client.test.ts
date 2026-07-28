@@ -13,6 +13,7 @@ let runtimeBase = '/api';
 const healthFetchCalls: unknown[][] = [];
 const healthFetchResults: Array<Response | Error | Promise<Response>> = [];
 const agentSdkCalls: unknown[][] = [];
+const sessionStatusSdkCalls: unknown[][] = [];
 
 const promptAsyncMock = mock(async (...args: unknown[]) => {
   promptAsyncCalls.push(args);
@@ -39,6 +40,10 @@ mock.module('@opencode-ai/sdk/v2', () => ({
     },
     session: {
       promptAsync: promptAsyncMock,
+      status: mock((...args: unknown[]) => {
+        sessionStatusSdkCalls.push(args);
+        return Promise.resolve({ data: {} });
+      }),
     },
   })),
 }));
@@ -83,17 +88,29 @@ beforeEach(() => {
   healthFetchCalls.length = 0;
   healthFetchResults.length = 0;
   agentSdkCalls.length = 0;
+  sessionStatusSdkCalls.length = 0;
   runtimeKey = 'test-runtime';
   runtimeBase = '/api';
 });
 
-describe('opencodeClient catalog abort signals', () => {
+describe('opencodeClient abort signals', () => {
   test('passes signals to scoped SDK catalog requests', async () => {
     const agentSignal = new AbortController().signal;
 
     await opencodeClient.listAgents('/workspace/project', agentSignal);
 
     expect(agentSdkCalls[0]?.[1]).toEqual({ signal: agentSignal });
+  });
+
+  test('passes signals to directory session-status requests', async () => {
+    const statusSignal = new AbortController().signal;
+
+    await opencodeClient.getSessionStatusForDirectory('/workspace/project', statusSignal);
+
+    expect(sessionStatusSdkCalls[0]).toEqual([
+      { directory: '/workspace/project' },
+      { signal: statusSignal },
+    ]);
   });
 });
 

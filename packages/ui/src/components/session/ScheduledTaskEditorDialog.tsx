@@ -1917,7 +1917,7 @@ export function ScheduledTaskEditorDialog(props: {
         <ScrollShadow className="min-h-0 flex-1 overflow-y-auto overflow-x-hidden" size={48} hideTopShadow>
           <div className="w-full px-3 pb-6 pt-4">{formBody}</div>
         </ScrollShadow>
-        <footer className="shrink-0 border-t border-border/50 bg-background/95 px-3 py-2 pb-[max(0.5rem,env(safe-area-inset-bottom))] backdrop-blur-sm">
+        <footer className="shrink-0 border-t border-border/50 bg-background/95 px-3 py-2 backdrop-blur-sm">
           {footerRow}
         </footer>
       </section>

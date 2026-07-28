@@ -158,6 +158,7 @@ export type SessionMaterializationReason =
   | "orphan-delta"
   | "missing-delta-part"
   | "child-session-idle"
+  | "session-idle"
   | "child-session-discovered"
   | "ensure-session-messages"
   | "stream-reconnect"

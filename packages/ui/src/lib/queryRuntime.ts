@@ -57,6 +57,9 @@ export const queryKeys = {
   sessionIndex: {
     snapshot: (transport = getRuntimeTransportIdentity()): readonly [string, 'sessionIndex', 'snapshot'] => [transport, 'sessionIndex', 'snapshot'],
   },
+  sessionStatus: {
+    snapshot: (directory: string, transport = getRuntimeTransportIdentity()): readonly [string, 'sessionStatus', 'snapshot', string | null] => [transport, 'sessionStatus', 'snapshot', normalizeQueryDirectory(directory)],
+  },
 
   plugins: {
     list: (directory: string | null, transport = getRuntimeTransportIdentity()): readonly [string, 'plugins', 'list', string | null] => [transport, 'plugins', 'list', directory],

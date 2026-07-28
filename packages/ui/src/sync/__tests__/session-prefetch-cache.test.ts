@@ -182,4 +182,29 @@ describe("markSessionPrefetchDirty", () => {
     expect(getSessionPrefetch(directory, sessionID, "runtime-a")?.complete).toBe(false)
     expect(getSessionPrefetch(directory, sessionID, "runtime-b")?.complete).toBe(true)
   })
+
+  test("pierces limit > pageSize so a dirty large page still refetches", () => {
+    const directory = "/dirty-large-page"
+    const sessionID = "dirty-large-session"
+    setSessionPrefetch({ directory, sessionID, limit: 200, complete: false, at: Date.now() })
+    expect(shouldSkipSessionPrefetch({
+      hasSession: true,
+      hasMessages: true,
+      info: getSessionPrefetch(directory, sessionID),
+      pageSize: 30,
+    })).toBe(true)
+
+    markSessionPrefetchDirty(directory, [sessionID])
+
+    const info = getSessionPrefetch(directory, sessionID)
+    expect(info?.at).toBe(0)
+    expect(info?.complete).toBe(false)
+    expect(info?.limit).toBe(200)
+    expect(shouldSkipSessionPrefetch({
+      hasSession: true,
+      hasMessages: true,
+      info,
+      pageSize: 30,
+    })).toBe(false)
+  })
 })

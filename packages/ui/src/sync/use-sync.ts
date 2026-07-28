@@ -29,6 +29,7 @@ import { loadSessionChildrenOnDemand, mergeSessionChildren } from "./session-chi
 import { opencodeClient } from "@/lib/opencode/client"
 import { waitForSessionStartupBarrier } from "@/lib/session-startup-barrier"
 import { getInitialSessionMessageLimit, getSessionHistoryMessageLimit } from "./session-message-policy"
+import { reconcileActiveSessionStatusAfterMessagePull } from "./session-status-reconciliation"
 
 const SKIP_PARTS = new Set(["patch", "step-start", "step-finish"])
 const MAX_SEEN_DIRS = 30
@@ -394,6 +395,9 @@ export function useSync() {
       if (m.loading) {
         return
       }
+      const stateBeforePull = targetStore.getState()
+      const statusBeforePull = stateBeforePull.session_status?.[sessionID]
+      const statusObservedAtBeforePull = stateBeforePull.session_status_observed_at?.[sessionID]
       const runtimeKey = getRuntimeKey()
       // Live events can append messages without growing m.limit. A resync
       // must cover everything already rendered or it can manufacture an
@@ -519,6 +523,16 @@ export function useSync() {
           cursor: committed.cursor,
           complete: committed.complete,
         })
+        await reconcileActiveSessionStatusAfterMessagePull({
+          directory: targetDirectory,
+          sessionID,
+          store: targetStore,
+          statusBeforePull,
+          statusObservedAtBeforePull,
+          hasMessages: resolvedPage.session.length > 0,
+          isTailPage: !options?.before,
+          isStale: options?.isStale,
+        })
       } catch (error) {
         setMetaFor(sessionID, { loading: false }, targetDirectory)
         failSessionMessageLoad(targetDirectory, sessionID, formatSdkError(error), runtimeKey)
@@ -548,9 +562,10 @@ export function useSync() {
           const cachedReady = cached && hasSessionMessageBoundary(current.message[sessionID], m.complete)
           const prefetchInfo = !force ? getSessionPrefetch(targetDirectory, sessionID) : undefined
           const hasSession = Binary.search(current.session, sessionID, (s) => s.id).found
-          if (cachedReady && hasSession && !force) return
 
-          // Skip if recently fetched (TTL)
+          // Cache reuse is solely shouldSkipSessionPrefetch (complete/TTL/dirty).
+          // Do not short-circuit on cachedReady+hasSession alone — that bypassed
+          // dirty marks after live events and left half-finished reasoning/text.
           if (!force && shouldSkipSessionPrefetch({
             hasSession,
             hasMessages: cachedReady,
@@ -558,7 +573,9 @@ export function useSync() {
             pageSize: getInitialSessionMessageLimit(),
           })) return
 
-          const shouldLoadMessages = Boolean(!cachedReady || force)
+          // After skip declined: dirty ready + hasSession still loads messages;
+          // missing identity + ready messages only needs session.get.
+          const shouldLoadMessages = Boolean(force || !cachedReady || hasSession)
           const shouldFetchSession = shouldFetchSessionForRenderableSync({ hasSession, shouldLoadMessages, force: Boolean(force) })
           await Promise.all([
             shouldFetchSession

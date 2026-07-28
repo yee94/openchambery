@@ -33,7 +33,13 @@ import {
   getMessageRefetchLimit,
   getSendConfirmationRefetchLimit,
 } from "./session-message-policy"
-import { beginSessionMessageLoad, failSessionMessageLoad, getSessionPrefetch, setSessionPrefetch } from "./session-prefetch-cache"
+import {
+  beginSessionMessageLoad,
+  failSessionMessageLoad,
+  getSessionPrefetch,
+  setSessionPrefetch,
+  shouldSkipSessionPrefetch,
+} from "./session-prefetch-cache"
 import { stripMessageDiffSnapshots, stripSessionDiffSnapshots } from "./sanitize"
 import { sessionEvents } from "@/lib/sessionEvents"
 import {
@@ -43,6 +49,7 @@ import {
   withoutReviewSessionLink,
   type SessionMetadataRecord,
 } from "@/lib/sessionReviewMetadata"
+import { reconcileActiveSessionStatusAfterMessagePull } from "./session-status-reconciliation"
 
 const SEND_CONFIRMATION_REFETCH_ATTEMPTS = 2
 const SEND_CONFIRMATION_REFETCH_RETRY_MS = 150
@@ -2350,8 +2357,11 @@ async function fetchMessagesForSessionInternal(sessionID: string, resolvedDir: s
     const store = dirStoreForDirectory(resolvedDir)
 
     const cachedState = store.getState()
+    const statusBeforePull = cachedState.session_status?.[sessionID]
+    const statusObservedAtBeforePull = cachedState.session_status_observed_at?.[sessionID]
     const cachedMessages = cachedState.message[sessionID]
-    const cachedComplete = getSessionPrefetch(resolvedDir, sessionID)?.complete === true
+    const prefetchMeta = getSessionPrefetch(resolvedDir, sessionID)
+    const cachedComplete = prefetchMeta?.complete === true
     const isUserRole = (message: Message) =>
       message.role === "user" || (message as Message & { clientRole?: string }).clientRole === "user"
     const hasUserBoundary = cachedMessages?.some(isUserRole)
@@ -2366,10 +2376,21 @@ async function fetchMessagesForSessionInternal(sessionID: string, resolvedDir: s
     const lastMessage = cachedMessages?.[cachedMessages.length - 1]
     const tailLooksLikeInFlightSend = Boolean(lastMessage && isUserRole(lastMessage))
     const mustRefetchLiveStaleCache = sessionIsLive && !tailLooksLikeInFlightSend
+    // Renderable + user-boundary/complete is necessary but not sufficient: a
+    // dirty prefetch (live events after a prior complete pull) must still
+    // perform one bounded tail page. Reuse shouldSkipSessionPrefetch so no
+    // meta keeps the historical reusable short-circuit, while dirty/stale
+    // meta fails the skip.
     if (
       !mustRefetchLiveStaleCache
       && getSessionMaterializationStatus(cachedState, sessionID).renderable
       && (hasUserBoundary || cachedComplete)
+      && shouldSkipSessionPrefetch({
+        hasSession: true,
+        hasMessages: true,
+        info: prefetchMeta,
+        pageSize: limit,
+      })
     ) {
       return
     }
@@ -2428,13 +2449,10 @@ async function fetchMessagesForSessionInternal(sessionID: string, resolvedDir: s
       return
     }
 
-    const latestState = store.getState()
-    const latestStatus = getSessionMaterializationStatus(latestState, sessionID)
-    if (latestStatus.renderable && (latestState.message[sessionID]?.length ?? 0) >= completeRecords.length) {
-      setSessionPrefetch({ directory: resolvedDir, sessionID, runtimeKey, limit: completeRecords.length, cursor, complete: !cursor })
-      return
-    }
-
+    // Always materialize the authoritative page. Same-size half-finished
+    // reasoning/text parts must still be replaced when the server returns
+    // completed fields; materializeSessionSnapshots is reference-stable and
+    // no-ops when the snapshot is already equivalent.
     store.setState((state) => {
       const materialized = materializeSessionSnapshots(
         state,
@@ -2452,6 +2470,14 @@ async function fetchMessagesForSessionInternal(sessionID: string, resolvedDir: s
       limit: completeRecords.length,
       cursor,
       complete: !cursor,
+    })
+    await reconcileActiveSessionStatusAfterMessagePull({
+      directory: resolvedDir,
+      sessionID,
+      store,
+      statusBeforePull,
+      statusObservedAtBeforePull,
+      hasMessages: completeRecords.length > 0,
     })
   } catch (error) {
     // Transient failure — the reactive path in ChatContainer will retry
