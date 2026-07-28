@@ -238,6 +238,25 @@ sudo systemctl status openchamber-relay
 
 ## Docker delivery assets
 
+Each non-dry-run OpenChamber release publishes a Docker Hub image for `linux/amd64` and `linux/arm64` as `<DOCKERHUB_USERNAME>/openchamber-relay:<version>` and `<DOCKERHUB_USERNAME>/openchamber-relay:latest`. The release pipeline requires the `DOCKERHUB_USERNAME` GitHub Actions repository variable and a `DOCKERHUB_TOKEN` repository secret with Docker Hub Read and Write permissions. Image publication must succeed before the GitHub Release is finalized.
+
+The `Relay Docker` workflow can republish only the current Relay package version without creating or modifying a GitHub Release or other platform artifacts.
+
+Pull and run an immutable release tag behind a host TLS reverse proxy:
+
+```sh
+docker pull <dockerhub-username>/openchamber-relay:<version>
+docker run -d \
+  --name openchamber-relay \
+  --restart unless-stopped \
+  --read-only \
+  --tmpfs /tmp \
+  --security-opt no-new-privileges:true \
+  -p 127.0.0.1:8787:8787 \
+  -e OPENCHAMBER_RELAY_SERVER_PUBLIC_URL=wss://relay.example.com/ws \
+  <dockerhub-username>/openchamber-relay:<version>
+```
+
 The repository provides optional Docker delivery assets at [`Dockerfile.relay`](../../Dockerfile.relay) and [`docker-compose.relay.yml`](../../docker-compose.relay.yml). The Compose service publishes `127.0.0.1:${OPENCHAMBER_RELAY_PUBLISHED_PORT:-8787}` and accepts `OPENCHAMBER_RELAY_SERVER_PUBLIC_URL` plus selected Relay limits.
 
 ```sh

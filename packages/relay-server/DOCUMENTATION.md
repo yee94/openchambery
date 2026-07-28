@@ -64,6 +64,34 @@ Run the Relay with `--public-url wss://relay.example.com/ws`. The `/ws` path in 
 
 ## Docker
 
+Each non-dry-run OpenChamber release publishes a multi-platform Relay image for `linux/amd64` and `linux/arm64` to:
+
+```text
+<DOCKERHUB_USERNAME>/openchamber-relay:<version>
+<DOCKERHUB_USERNAME>/openchamber-relay:latest
+```
+
+The release workflow reads the Docker Hub account from the `DOCKERHUB_USERNAME` GitHub Actions repository variable and authenticates with the `DOCKERHUB_TOKEN` repository secret. Use a Docker Hub personal access token with Read and Write permissions; Delete permission is not required. A failed image build or push blocks final publication of the GitHub Release.
+
+For an image-only republish of the current package version, run the `Relay Docker` workflow directly or dispatch the `Release` workflow with `relay_only` enabled. The image-only path does not create or modify a GitHub Release or any desktop and mobile artifacts.
+
+Pull and run a published image behind a host TLS reverse proxy:
+
+```sh
+docker pull <dockerhub-username>/openchamber-relay:<version>
+docker run -d \
+  --name openchamber-relay \
+  --restart unless-stopped \
+  --read-only \
+  --tmpfs /tmp \
+  --security-opt no-new-privileges:true \
+  -p 127.0.0.1:8787:8787 \
+  -e OPENCHAMBER_RELAY_SERVER_PUBLIC_URL=wss://relay.example.com/ws \
+  <dockerhub-username>/openchamber-relay:<version>
+```
+
+Use an immutable version tag in production. Each non-dry-run release updates `latest` together with its immutable version tag.
+
 From the repository root, build and start the supplied service. The compatibility assets are [`Dockerfile.relay`](../../Dockerfile.relay) and [`docker-compose.relay.yml`](../../docker-compose.relay.yml):
 
 ```sh
