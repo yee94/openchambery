@@ -44,7 +44,7 @@ describe("reduceSessionMessagePage — initial", () => {
     const result = reduceSessionMessagePage(state, "ses_1", page([
       { info: userMessage("msg_1"), parts: [part("prt_1", "msg_1")] },
       { info: message("msg_2"), parts: [part("prt_2", "msg_2")] },
-    ], { complete: true }), { mode: "initial", skipPartTypes: SKIP_PARTS })
+    ], { complete: true }), { purpose: "initial", skipPartTypes: SKIP_PARTS })
 
     expect(result.applied).toBe(true)
     expect(result.changed).toBe(true)
@@ -65,7 +65,7 @@ describe("reduceSessionMessagePage — initial", () => {
       emptyState(),
       "ses_1",
       page([], { complete: true }),
-      { mode: "initial", skipPartTypes: SKIP_PARTS },
+      { purpose: "initial", skipPartTypes: SKIP_PARTS },
     )
 
     expect(result.applied).toBe(true)
@@ -83,7 +83,7 @@ describe("reduceSessionMessagePage — initial", () => {
         cursor: "msg_10",
         complete: false,
       }),
-      { mode: "initial", skipPartTypes: SKIP_PARTS },
+      { purpose: "initial", skipPartTypes: SKIP_PARTS },
     )
 
     expect(result.meta).toEqual({
@@ -116,7 +116,7 @@ describe("reduceSessionMessagePage — prepend", () => {
         ],
         { cursor: "msg_1", complete: false },
       ),
-      { mode: "prepend", skipPartTypes: SKIP_PARTS },
+      { purpose: "prepend", skipPartTypes: SKIP_PARTS },
     )
 
     expect(result.message.ses_1?.map((item) => item.id)).toEqual(["msg_1", "msg_2"])
@@ -144,7 +144,7 @@ describe("reduceSessionMessagePage — prepend", () => {
         { info: message("msg_1"), parts: [part("prt_1", "msg_1", "text", "stale")] },
         { info: userMessage("msg_0"), parts: [part("prt_0", "msg_0")] },
       ], { cursor: undefined, complete: true }),
-      { mode: "prepend", skipPartTypes: SKIP_PARTS },
+      { purpose: "prepend", skipPartTypes: SKIP_PARTS },
     )
 
     expect(result.part.msg_1?.[0]).toBe(existingPart)
@@ -176,7 +176,7 @@ describe("reduceSessionMessagePage — recovery", () => {
         complete: false,
         cursor: "msg_2",
       }),
-      { mode: "recovery", skipPartTypes: SKIP_PARTS },
+      { purpose: "recovery", skipPartTypes: SKIP_PARTS },
     )
 
     expect(result.message.ses_1).toEqual([older, completed])
@@ -198,7 +198,7 @@ describe("reduceSessionMessagePage — recovery", () => {
       state,
       "ses_1",
       page([{ info: { ...existing }, parts: [{ ...existingPart }] }], { complete: true }),
-      { mode: "recovery", skipPartTypes: SKIP_PARTS },
+      { purpose: "recovery", skipPartTypes: SKIP_PARTS },
     )
 
     expect(result.changed).toBe(false)
@@ -223,7 +223,7 @@ describe("reduceSessionMessagePage — materialize", () => {
         { info: userMessage("msg_1"), parts: [part("prt_1", "msg_1")] },
         { info: assistant, parts: [part("prt_2", "msg_2")] },
       ], { complete: true }),
-      { mode: "materialize", skipPartTypes: SKIP_PARTS },
+      { purpose: "materialize", skipPartTypes: SKIP_PARTS },
     )
 
     expect(result.partsChanged).toBe(true)
@@ -246,7 +246,7 @@ describe("reduceSessionMessagePage — materialize", () => {
         { info: userMessage("msg_1"), parts: [part("prt_1", "msg_1")] },
         { info: assistant, parts: [] },
       ], { complete: true }),
-      { mode: "materialize", skipPartTypes: SKIP_PARTS },
+      { purpose: "materialize", skipPartTypes: SKIP_PARTS },
     )
 
     // Empty assistant parts are stored as [] and count as renderable.
@@ -272,7 +272,7 @@ describe("reduceSessionMessagePage — streaming and optimistic", () => {
       state,
       "ses_1",
       page([{ info: message("msg_1"), parts: [completed] }], { complete: true }),
-      { mode: "initial", skipPartTypes: SKIP_PARTS },
+      { purpose: "initial", skipPartTypes: SKIP_PARTS },
     )
 
     expect(result.part.msg_1?.[0]).toBe(completed)
@@ -292,7 +292,7 @@ describe("reduceSessionMessagePage — streaming and optimistic", () => {
       page([{ info: message("msg_1"), parts: [part("prt_1", "msg_1", "text", "")] }], {
         complete: true,
       }),
-      { mode: "initial", skipPartTypes: SKIP_PARTS },
+      { purpose: "initial", skipPartTypes: SKIP_PARTS },
     )
 
     expect(result.part.msg_1?.[0]).toBe(livePart)
@@ -308,7 +308,7 @@ describe("reduceSessionMessagePage — streaming and optimistic", () => {
       "ses_1",
       page([{ info: message("msg_2"), parts: [part("prt_2", "msg_2")] }], { complete: true }),
       {
-        mode: "initial",
+        purpose: "initial",
         skipPartTypes: SKIP_PARTS,
         optimistic: [{ message: optimisticUser, parts: [optimisticPart] }],
       },
@@ -329,7 +329,7 @@ describe("reduceSessionMessagePage — streaming and optimistic", () => {
       "ses_1",
       page([{ info: optimisticUser, parts: [serverPart] }], { complete: true }),
       {
-        mode: "initial",
+        purpose: "initial",
         skipPartTypes: SKIP_PARTS,
         optimistic: [{ message: optimisticUser, parts: [optimisticPart] }],
       },
@@ -373,7 +373,7 @@ describe("reduceSessionMessagePage — race and error semantics", () => {
         { info: { ...liveAssistant }, parts: [staleReasoning] },
       ], { complete: true }),
       {
-        mode: "recovery",
+        purpose: "recovery",
         skipPartTypes: SKIP_PARTS,
         capturedRevision: 3,
         liveRevision: 5,
@@ -402,7 +402,7 @@ describe("reduceSessionMessagePage — race and error semantics", () => {
       "ses_1",
       page([{ info: message("msg_stale"), parts: [part("prt_stale", "msg_stale")] }], { complete: true }),
       {
-        mode: "initial",
+        purpose: "initial",
         skipPartTypes: SKIP_PARTS,
         capturedRevision: 3,
         liveRevision: 5,
@@ -422,7 +422,7 @@ describe("reduceSessionMessagePage — race and error semantics", () => {
       "ses_1",
       page([{ info: message("msg_1"), parts: [part("prt_1", "msg_1")] }], { complete: true }),
       {
-        mode: "recovery",
+        purpose: "recovery",
         skipPartTypes: SKIP_PARTS,
         capturedRevision: 4,
         liveRevision: 4,
@@ -447,7 +447,7 @@ describe("reduceSessionMessagePage — race and error semantics", () => {
       state,
       "ses_1",
       { ok: false, error: "network failed" },
-      { mode: "initial", skipPartTypes: SKIP_PARTS },
+      { purpose: "initial", skipPartTypes: SKIP_PARTS },
     )
 
     expect(result.applied).toBe(false)
@@ -471,7 +471,7 @@ describe("reduceSessionMessagePage — race and error semantics", () => {
       state,
       "ses_1",
       page([{ info: existingMessage, parts: [existingPart] }], { complete: true }),
-      { mode: "initial", skipPartTypes: SKIP_PARTS },
+      { purpose: "initial", skipPartTypes: SKIP_PARTS },
     )
 
     expect(result.applied).toBe(true)
@@ -490,7 +490,7 @@ describe("reduceSessionMessagePage — race and error semantics", () => {
         info: message("msg_1"),
         parts: [part("prt_patch", "msg_1", "patch"), part("prt_text", "msg_1")],
       }], { complete: true }),
-      { mode: "initial", skipPartTypes: SKIP_PARTS },
+      { purpose: "initial", skipPartTypes: SKIP_PARTS },
     )
 
     expect(result.part.msg_1?.map((item) => item.id)).toEqual(["prt_text"])

@@ -5,21 +5,22 @@ import {
   type MaterializedState,
 } from "./materialization"
 import { mergeOptimisticPage, type OptimisticItem } from "./optimistic"
+import {
+  resolveSessionMergeStrategy,
+  type SessionMergeStrategy,
+  type SessionMessagePagePurpose,
+} from "./session-merge-strategy"
 
 /**
  * Pure reducer: HTTP session-message page → store message/part state.
  *
- * Modes:
- * - initial: first load / replace (merge materialization)
- * - prepend: older history pagination (skip existing parts)
- * - recovery: reconnect; keep local history outside the fetched tail
- * - materialize: repair orphan/missing parts for existing messages
+ * The reducer does not decide how the page combines with existing state; it
+ * resolves one `SessionMergeStrategy` from `(purpose, staleness)` and hands that to
+ * materialization. See `session-merge-strategy.ts` for the resolution table.
  *
  * No SDK / Query / store side effects. Callers apply `message`/`part` and
  * execute returned `commands` (e.g. clear optimistic shadow entries).
  */
-
-export type SessionMessagePageMode = "initial" | "prepend" | "recovery" | "materialize"
 
 export type SessionMessagePageMeta = {
   limit: number
@@ -49,7 +50,7 @@ export type SessionMessageReducerCommand =
   | { type: "clear-optimistic"; messageIDs: string[] }
 
 export type ReduceSessionMessagePageOptions = {
-  mode: SessionMessagePageMode
+  purpose: SessionMessagePagePurpose
   skipPartTypes?: ReadonlySet<string>
   optimistic?: OptimisticItem[]
   /** HTTP request captured live revision; when set with liveRevision, stale pages are dropped. */
@@ -60,6 +61,8 @@ export type ReduceSessionMessagePageOptions = {
 
 export type ReduceSessionMessagePageResult = {
   applied: boolean
+  /** Strategy the page was reduced under. Diagnostic; callers need not branch. */
+  merge: SessionMergeStrategy
   changed: boolean
   messagesChanged: boolean
   partsChanged: boolean
@@ -70,15 +73,6 @@ export type ReduceSessionMessagePageResult = {
   confirmedOptimisticIDs: string[]
   commands: SessionMessageReducerCommand[]
   error?: string
-}
-
-function materializeMode(
-  mode: SessionMessagePageMode,
-): "merge" | "prepend" | "recovery" {
-  if (mode === "prepend") return "prepend"
-  if (mode === "recovery") return "recovery"
-  // initial + materialize both use merge semantics for snapshots
-  return "merge"
 }
 
 function isLiveRevisionStale(
@@ -122,9 +116,13 @@ export function reduceSessionMessagePage(
   page: SessionMessagePageInput,
   options: ReduceSessionMessagePageOptions,
 ): ReduceSessionMessagePageResult {
+  const liveRevisionStale = isLiveRevisionStale(options.capturedRevision, options.liveRevision)
+  const merge = resolveSessionMergeStrategy({ purpose: options.purpose, stale: liveRevisionStale })
+
   if (!page.ok) {
     return {
       applied: false,
+      merge,
       changed: false,
       messagesChanged: false,
       partsChanged: false,
@@ -138,10 +136,10 @@ export function reduceSessionMessagePage(
     }
   }
 
-  const liveRevisionStale = isLiveRevisionStale(options.capturedRevision, options.liveRevision)
-  if (liveRevisionStale && options.mode !== "recovery") {
+  if (liveRevisionStale && merge.onStale === "drop") {
     return {
       applied: false,
+      merge,
       changed: false,
       messagesChanged: false,
       partsChanged: false,
@@ -177,7 +175,7 @@ export function reduceSessionMessagePage(
     records,
     {
       skipPartTypes: options.skipPartTypes,
-      mode: liveRevisionStale ? "merge" : materializeMode(options.mode),
+      merge,
     },
   )
 
@@ -199,6 +197,7 @@ export function reduceSessionMessagePage(
 
   return {
     applied: true,
+    merge,
     changed,
     messagesChanged,
     partsChanged,

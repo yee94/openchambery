@@ -1,6 +1,9 @@
 import { describe, expect, test } from "bun:test"
 import type { Message, Part } from "@opencode-ai/sdk/v2/client"
 import { getSessionMaterializationStatus, materializeSessionSnapshots } from "../materialization"
+import { resolveSessionMergeStrategy } from "../session-merge-strategy"
+
+const RECOVERY_MERGE = resolveSessionMergeStrategy({ purpose: "recovery" })
 
 function message(id: string, sessionID = "ses_1"): Message {
   return { id, sessionID, role: "assistant", time: { created: 1 } } as Message
@@ -168,7 +171,7 @@ describe("materializeSessionSnapshots", () => {
       { message: { ses_1: [older, incomplete] }, part: { msg_2: [livePart] } },
       "ses_1",
       [{ info: completed, parts: [part("prt_2", "msg_2", "text", "")] }],
-      { mode: "recovery" },
+      { merge: RECOVERY_MERGE },
     )
 
     expect(result.message.ses_1).toEqual([older, completed])
@@ -180,7 +183,7 @@ describe("materializeSessionSnapshots", () => {
   test("recovery preserves references for equivalent fetched messages", () => {
     const existing = message("msg_1")
     const state = { message: { ses_1: [existing] }, part: {} }
-    const result = materializeSessionSnapshots(state, "ses_1", [{ info: { ...existing }, parts: [] }], { mode: "recovery" })
+    const result = materializeSessionSnapshots(state, "ses_1", [{ info: { ...existing }, parts: [] }], { merge: RECOVERY_MERGE })
 
     expect(result.message).toBe(state.message)
     expect(result.messagesChanged).toBe(false)

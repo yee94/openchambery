@@ -1,5 +1,10 @@
 import type { Message, Part } from "@opencode-ai/sdk/v2/client"
 import { mergeMessages } from "./optimistic"
+import {
+  DEFAULT_SESSION_MERGE_STRATEGY,
+  shouldPreserveStreamingParts,
+  type SessionMergeStrategy,
+} from "./session-merge-strategy"
 
 const cmp = (a: string, b: string) => (a < b ? -1 : a > b ? 1 : 0)
 const STREAMING_PART_FIELDS = ["text", "output"] as const
@@ -16,7 +21,8 @@ export type MaterializedState = {
 
 export type MaterializeSessionSnapshotsOptions = {
   skipPartTypes?: ReadonlySet<string>
-  mode?: "merge" | "prepend" | "recovery"
+  /** Resolved by `resolveSessionMergeStrategy`; defaults to `initial` semantics. */
+  merge?: SessionMergeStrategy
 }
 
 export type MaterializeSessionSnapshotsResult = {
@@ -154,7 +160,12 @@ function mergeMaterializedParts(
   return [...mergedParts, ...missingLiveParts].sort((a, b) => cmp(a.id, b.id))
 }
 
-function mergeRecoveryMessages(existing: Message[], snapshots: Message[]): Message[] {
+/**
+ * `upsert` semantics: fetched snapshots replace their existing counterparts and
+ * unseen snapshots are appended. Contrast with `mergeMessages`, which is
+ * insert-only and therefore never refreshes a message the store already holds.
+ */
+function upsertMessages(existing: Message[], snapshots: Message[]): Message[] {
   const nextByID = new Map(snapshots.map((message) => [message.id, message]))
   let changed = false
   const merged = existing.map((message) => {
@@ -180,24 +191,25 @@ export function materializeSessionSnapshots(
   options: MaterializeSessionSnapshotsOptions = {},
 ): MaterializeSessionSnapshotsResult {
   const skipPartTypes = options.skipPartTypes ?? new Set<string>()
+  const merge = options.merge ?? DEFAULT_SESSION_MERGE_STRATEGY
   const snapshots = records
     .filter((record) => !!record?.info?.id)
     .sort((left, right) => cmp(left.info.id, right.info.id))
   const nextMessages = snapshots.map((record) => record.info)
   const existingMessages = state.message[sessionID]
   const currentMessages = existingMessages ?? []
-  const messages = options.mode === "recovery"
-    ? mergeRecoveryMessages(currentMessages, nextMessages)
+  const messages = merge.messages === "upsert"
+    ? upsertMessages(currentMessages, nextMessages)
     : mergeMessages(currentMessages, nextMessages)
   const messagesChanged = messages !== currentMessages || (existingMessages === undefined && snapshots.length === 0)
 
   let partsChanged = false
   const nextPartState = { ...state.part }
-  const isPrepend = options.mode === "prepend"
+  const skipMaterializedParts = merge.parts === "skip-existing"
 
   for (const record of snapshots) {
     const messageID = record.info.id
-    if (isPrepend && nextPartState[messageID]) continue
+    if (skipMaterializedParts && nextPartState[messageID]) continue
 
     const isAssistant = record.info.role === "assistant"
     const existing = nextPartState[messageID]
@@ -205,7 +217,7 @@ export function materializeSessionSnapshots(
       existing,
       sortParts(record.parts ?? [], skipPartTypes),
       skipPartTypes,
-      isAssistant,
+      shouldPreserveStreamingParts(merge, record.info.role),
     )
     // For non-assistant messages an empty snapshot keeps the old "absent"
     // representation; only assistant messages need the explicit [] marker

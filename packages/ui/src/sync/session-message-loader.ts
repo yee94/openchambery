@@ -24,11 +24,14 @@ import {
 import {
   reduceSessionMessagePage,
   type ReduceSessionMessagePageResult,
-  type SessionMessagePageMode,
   type SessionMessagePageMeta,
   type SessionMessageReducerState,
 } from "./session-message-reducer"
 import type { OptimisticItem } from "./optimistic"
+import {
+  shouldDropStalePage,
+  type SessionMessagePagePurpose,
+} from "./session-merge-strategy"
 
 // ---------------------------------------------------------------------------
 // Transport single-flight (legacy + internal)
@@ -139,8 +142,6 @@ export async function recoverAssistantTailBoundary<T extends SessionMessageRecor
 // Application orchestration: policy → query → reducer → commit
 // ---------------------------------------------------------------------------
 
-export type SessionMessageLoadPurpose = SessionMessagePageMode
-
 export type SessionMessageQueryRecord = {
   info: Message
   parts?: Part[]
@@ -173,7 +174,7 @@ export type LoadSessionMessagePageDeps = {
 }
 
 export type LoadSessionMessagePageAppInput = {
-  purpose: SessionMessageLoadPurpose
+  purpose: SessionMessagePagePurpose
   runtimeKey: string
   directory: string
   sessionID: string
@@ -189,11 +190,13 @@ export type LoadSessionMessagePageResult = {
   changed: boolean
   meta?: SessionMessagePageMeta
   messages: Message[]
+  /** Records the server page contributed, after assistant-tail parent recovery. */
+  recordCount: number
   error?: string
   reduced?: ReduceSessionMessagePageResult
 }
 
-export function resolveSessionMessagePageLimit(purpose: SessionMessageLoadPurpose): number {
+export function resolveSessionMessagePageLimit(purpose: SessionMessagePagePurpose): number {
   switch (purpose) {
     case "prepend":
       return getSessionHistoryMessageLimit()
@@ -249,6 +252,35 @@ async function loadSessionMessagePageApp(
   const limit = input.limit ?? resolveSessionMessagePageLimit(purpose)
   const emptyMessages = (): Message[] => deps.getStoreState().message[sessionID] ?? []
 
+  // A page whose strategy backfills (reconnect recovery) stays useful after live
+  // events land: it is the only source for messages the SSE gap swallowed. The
+  // reducer then downgrades it to insert-only so live content keeps precedence.
+  const dropWhenStale = shouldDropStalePage(purpose)
+  const lostRaceToLiveState = () => dropWhenStale && Boolean(deps.isStale?.())
+
+  const skipStalePage = (page: {
+    recordCount: number
+    cursor?: string
+    complete: boolean
+  }): LoadSessionMessagePageResult => {
+    setSessionPrefetch({
+      directory,
+      sessionID,
+      runtimeKey,
+      limit: page.recordCount,
+      cursor: page.cursor,
+      complete: page.complete,
+    })
+    return {
+      status: "skipped",
+      applied: false,
+      changed: false,
+      messages: emptyMessages(),
+      recordCount: page.recordCount,
+      meta: deps.getStoreState().meta,
+    }
+  }
+
   beginSessionMessageLoad(directory, sessionID, limit, runtimeKey)
   deps.onLoading?.()
 
@@ -265,22 +297,12 @@ async function loadSessionMessagePageApp(
       request: () => deps.queryPage({ limit, before }),
     })
 
-    if (deps.isStale?.() && purpose !== "recovery") {
-      setSessionPrefetch({
-        directory,
-        sessionID,
-        runtimeKey,
-        limit: page.records.length,
+    if (lostRaceToLiveState()) {
+      return skipStalePage({
+        recordCount: page.records.length,
         cursor: page.cursor,
         complete: page.complete,
       })
-      return {
-        status: "skipped",
-        applied: false,
-        changed: false,
-        messages: emptyMessages(),
-        meta: deps.getStoreState().meta,
-      }
     }
 
     let records = page.records.map((record) => ({
@@ -311,22 +333,12 @@ async function loadSessionMessagePageApp(
       records = recovered.records
     }
 
-    if (deps.isStale?.() && purpose !== "recovery") {
-      setSessionPrefetch({
-        directory,
-        sessionID,
-        runtimeKey,
-        limit: records.length,
+    if (lostRaceToLiveState()) {
+      return skipStalePage({
+        recordCount: records.length,
         cursor: page.cursor,
         complete: page.complete,
       })
-      return {
-        status: "skipped",
-        applied: false,
-        changed: false,
-        messages: emptyMessages(),
-        meta: deps.getStoreState().meta,
-      }
     }
 
     const liveRevision = deps.getLiveRevision?.()
@@ -341,7 +353,7 @@ async function loadSessionMessagePageApp(
         complete: page.complete,
       },
       {
-        mode: purpose,
+        purpose,
         skipPartTypes: deps.skipPartTypes,
         optimistic: deps.getOptimistic?.() ?? [],
         capturedRevision,
@@ -364,6 +376,7 @@ async function loadSessionMessagePageApp(
         applied: false,
         changed: false,
         messages: reduced.messages,
+        recordCount: records.length,
         meta: reduced.meta,
         reduced,
       }
@@ -387,6 +400,7 @@ async function loadSessionMessagePageApp(
       applied: true,
       changed: reduced.changed,
       messages: reduced.messages,
+      recordCount: records.length,
       meta,
       reduced,
     }
@@ -399,6 +413,7 @@ async function loadSessionMessagePageApp(
       applied: false,
       changed: false,
       messages: emptyMessages(),
+      recordCount: 0,
       meta: deps.getStoreState().meta,
       error: message,
     }

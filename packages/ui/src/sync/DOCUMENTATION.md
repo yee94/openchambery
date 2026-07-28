@@ -254,6 +254,7 @@ other's channel:
 ```
 HTTP pull (initial / prepend / recovery / materialize)
   session-message-policy.ts     limit per runtime + purpose (single source)
+  session-merge-strategy.ts     (purpose, stale) → frozen merge strategy
   session-message-query.ts      TanStack Query: immutable HTTP page cache
   session-message-loader.ts     loadSessionMessagePage — the ONLY entry that
                                 orchestrates policy → query → tail recovery →
@@ -285,8 +286,14 @@ Rules that keep this single-sourced:
 - `session-message-policy.ts` is the only place a page-size number appears.
   Purpose (`initial` / `prepend` / `recovery` / `materialize`) determines the
   limit; no `RECONNECT_MESSAGE_LIMIT`-style constants exist elsewhere.
+- `session-merge-strategy.ts` is the only place that resolves how one fetched
+  HTTP page folds into existing store state. `resolveSessionMergeStrategy({
+  purpose, stale })` returns a frozen `SessionMergeStrategy`; the loader's
+  stale gate, the reducer's apply gate, and materialization's message/part
+  merge only read that value. Layers must not re-derive drop/backfill,
+  insert-only/upsert, or streaming preservation from `purpose` or staleness.
 - `session-message-reducer.ts` holds no SDK/Query/store side effects; it is a
-  pure function so all four modes stay unit-testable.
+  pure function so all four purposes stay unit-testable.
 - UI transcript selectors read the directory child store, never TanStack Query.
 
 ### Context panel session transcripts
@@ -301,24 +308,66 @@ Rules that keep this single-sourced:
 - Cover planner, navigation, geometry key, cache touch/estimate/close, render-mode, and viewed-session behavior in `components/layout/contextPanelSessionSurface.test.ts`.
 
 - HTTP page → store message/part conversion is owned by the pure reducer
-  `session-message-reducer.ts` (`reduceSessionMessagePage`). Modes:
-  `initial` (first load / replace), `prepend` (history pagination),
-  `recovery` (reconnect; keep local history outside the bounded tail), and
-  `materialize` (repair orphan / missing parts). It wraps
-  `materializeSessionSnapshots` plus optimistic merge, returns reference-stable
-  state when unchanged, and emits commands such as `clear-optimistic`. Callers
-  own store writes and side effects; the reducer never touches SDK/Query/store.
-  Stale non-recovery HTTP pages are dropped when `liveRevision > capturedRevision`.
-  Recovery pages use additive merge semantics in that case: missing messages are
-  restored while newer live message objects and streaming part content retain precedence.
-  Fetch errors (`ok: false`) preserve prior state and never write empty success.
+  `session-message-reducer.ts` (`reduceSessionMessagePage`). Page purpose
+  (`initial` first load, `prepend` history pagination, `recovery` reconnect,
+  `materialize` orphan/missing-part repair) is an input, not a second merge
+  vocabulary. The reducer resolves one `SessionMergeStrategy` from
+  `(purpose, liveRevisionStale)` via `resolveSessionMergeStrategy`, carries that
+  strategy on `ReduceSessionMessagePageResult.merge`, and passes it into
+  `materializeSessionSnapshots` through the `merge` option. Materialization
+  reads message/part merge modes and streaming preservation from the strategy
+  (`shouldPreserveStreamingParts(merge, role)`); it does not re-derive them from
+  purpose. (A separate local `role === "assistant"` check in materialization
+  still decides whether an empty snapshot stores an explicit `[]` renderability
+  marker or deletes the key — that is coupled only to
+  `getSessionMaterializationStatus` inspecting assistant messages, and is not
+  part of the merge strategy.) The reducer also performs optimistic merge,
+  returns reference-stable state when unchanged, and emits commands such as
+  `clear-optimistic`. Callers own store writes and side effects; the reducer
+  never touches SDK/Query/store. Fetch errors (`ok: false`) preserve prior
+  state and never write empty success.
+
+  Strategy dimensions (`SessionMergeStrategy`):
+
+  | field | values | meaning |
+  |---|---|---|
+  | `onStale` | `drop` \| `backfill` | discard the page, or still apply it as hole-filling |
+  | `messages` | `upsert` \| `insert-only` | replace existing message objects, or only add absent IDs |
+  | `parts` | `replace` \| `skip-existing` | fetched parts are authoritative, or leave messages that already have parts |
+  | `preserveStreaming` | `assistant` \| `all` \| `none` | which roles keep in-flight streaming text the snapshot omits |
+
+  Resolution (`id` is a debug label, not a behavioral input):
+
+  | purpose | stale | id | onStale | messages | parts | preserveStreaming |
+  |---|---|---|---|---|---|---|
+  | `initial` | — | `initial` | drop | insert-only | replace | assistant |
+  | `prepend` | — | `history` | drop | insert-only | skip-existing | assistant |
+  | `materialize` | — | `materialize` | drop | insert-only | replace | assistant |
+  | `recovery` | no | `recovery` | backfill | upsert | replace | assistant |
+  | `recovery` | yes | `recovery-backfill` | backfill | insert-only | replace | assistant |
+
+  Staleness (`liveRevision > capturedRevision`) therefore downgrades exactly one
+  dimension: recovery's `messages` goes from `upsert` to `insert-only`. A stale
+  reconnect page still supplies messages the SSE gap swallowed (`onStale:
+  backfill`), but never overwrites newer message objects live events already
+  committed. Every other purpose drops the page when stale
+  (`shouldDropStalePage(purpose)`). Only current recovery upserts existing
+  message objects; all other purposes are insert-only. Note the historical
+  helper names: `mergeMessages` is insert-only while `mergeRecoveryMessages` is
+  an upsert — the strategy field names that asymmetry explicitly.
+
+  Known limitation: `initial` resolves to `insert-only`, so a first-screen load
+  cannot refresh a message body the server has since changed. Whether to change
+  that is a separate decision; the table makes the behavior visible.
 - Application orchestration for message pages is owned by
   `session-message-loader.ts` (`loadSessionMessagePage` with `purpose`). It
-  resolves limit from `session-message-policy`, single-flights the HTTP query,
-  recovers assistant-only tails via exact parent message IDs, runs the pure
-  reducer, and commits through caller-supplied store deps so a remounted
-  provider always writes into its own store. Loading / ready / error status
-  flows through `session-prefetch-cache`. The legacy transport overload
+  resolves limit from `session-message-policy`, gates stale pages with
+  `shouldDropStalePage(purpose)` (rather than hardcoding a recovery exception),
+  single-flights the HTTP query, recovers assistant-only tails via exact parent
+  message IDs, runs the pure reducer, and commits through caller-supplied store
+  deps so a remounted provider always writes into its own store.
+  `LoadSessionMessagePageResult` carries `recordCount`. Loading / ready / error
+  status flows through `session-prefetch-cache`. The legacy transport overload
   (`request` without `purpose`) remains for gradual migration.
 - HTTP page pulls for TanStack Query are owned by `session-message-query.ts`.
   Query keys include transport identity, directory, sessionID, limit, and
@@ -444,10 +493,13 @@ Rules that keep this single-sourced:
   its active-session fallback without affecting domain health or recovery
   freshness. Recovery captures a monotonic per-session live revision and skips
   its session/message commit when a newer live event arrives before HTTP settles.
-- Recovery replaces fetched-tail message metadata with the authoritative server
-  snapshot, including completion, finish, and token fields. Local messages
-  outside the bounded tail remain intact, and part merging retains live streaming
-  fields until an authoritative completed part arrives.
+- Current (non-stale) recovery upserts fetched-tail message metadata with the
+  authoritative server snapshot, including completion, finish, and token fields.
+  Stale recovery is insert-only: it backfills missing messages only and leaves
+  newer live message objects untouched. Local messages outside the bounded tail
+  remain intact in both cases. Part merging uses `parts: replace` with
+  `preserveStreaming: assistant`, so live streaming fields on assistant parts
+  retain precedence until an authoritative completed part arrives.
 - A WebSocket-to-SSE fallback enters connecting or reconnecting state. Connected
   state publishes after the fallback SSE stream reports its real connection.
 - A successful directory status snapshot records its conservative request-start

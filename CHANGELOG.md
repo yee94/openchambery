@@ -4,6 +4,12 @@ All notable changes to this project will be documented in this file.
 
 ## [Unreleased]
 
+## [1.16.77] - 2026-07-28
+
+- **Session merge:** centralize session message page merge strategy so the loader, reducer, and materialization share one `(purpose, stale)` resolution instead of diverging rules.
+- **Reconnect recovery:** stale recovery pages backfill missing messages without overwriting newer live message objects.
+- **Message loading:** route initial and history loads through the shared session-message loader instead of duplicate fetch paths.
+
 ## [1.16.76] - 2026-07-28
 
 - **File links:** detect binary files across Web, VS Code, and Desktop, open them with the system default app on desktop, and skip non-image binary references on mobile.
@@ -472,10 +478,3 @@ All notable changes to this project will be documented in this file.
 - **Runtime compatibility:** ensure Node development servers rebuild `better-sqlite3` for the active Node ABI after Electron builds, avoiding native-module load failures.
 
 ## [1.16.11] - 2026-07-14
-
-- **Release:** rebuild the current desktop, mobile, and VS Code artifacts from the `1.16.10` codebase.
-
-## [1.16.10] - 2026-07-14
-
-- **Session index:** persist live activity timestamps and session status, ingest realtime session events, and preserve ordering across refreshes and restarts.
-- **Session loading:** improve cross-runtime session recovery, runtime endpoint resets, lazy chunk recovery, and Electron refresh diagnostics.

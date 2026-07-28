@@ -5,7 +5,6 @@ import { retry } from "./retry"
 import { SESSION_CACHE_LIMIT, type State } from "./types"
 import { pickSessionCacheEvictions } from "./session-cache"
 import {
-  mergeOptimisticPage,
   type OptimisticItem,
 } from "./optimistic"
 import { dropCachedSessionMessageRecordsSnapshots, materializeSessionFromServer, useDirectoryStore, useSyncDirectory, useChildStoreManager } from "./sync-context"
@@ -16,13 +15,10 @@ import { isMobileSurfaceRuntime } from "@/lib/runtimeSurface"
 import {
   shouldSkipSessionPrefetch,
   getSessionPrefetch,
-  setSessionPrefetch,
   clearSessionPrefetch,
-  beginSessionMessageLoad,
-  failSessionMessageLoad,
 } from "./session-prefetch-cache"
-import { getSessionMaterializationStatus, materializeSessionSnapshots } from "./materialization"
-import { loadSessionMessage, loadSessionMessagePage, recoverAssistantTailBoundary } from "./session-message-loader"
+import { getSessionMaterializationStatus } from "./materialization"
+import { loadSessionMessagePage } from "./session-message-loader"
 import { getRuntimeKey } from "@/lib/runtime-switch"
 import { sessionSyncCoordinator } from "./session-sync-coordinator"
 import { loadSessionChildrenOnDemand, mergeSessionChildren } from "./session-children"
@@ -355,39 +351,9 @@ export function useSync() {
     [childStores, directory, store],
   )
 
-  // Fetch messages from API
-  const fetchMessages = useCallback(
-    async (sessionID: string, limit: number, before?: string, runtimeKey = getRuntimeKey(), targetDirectory = directory) => {
-      const scopedClient = opencodeClient.getScopedSdkClient(targetDirectory)
-      const result = await loadSessionMessagePage({
-        runtimeKey,
-        directory: targetDirectory,
-        sessionID,
-        limit,
-        before,
-        request: () => retry(async () => {
-          const response = await scopedClient.session.messages({ sessionID, directory: targetDirectory, limit, before })
-          assertSdkSuccess(response, "session.messages")
-          return response
-        }),
-      })
-      const items = (result.data ?? []).filter((x: { info?: { id?: string } }) => !!x?.info?.id)
-      const session = items
-        .map((x: { info: Message }) => stripMessageDiffSnapshots(x.info))
-        .sort((a: Message, b: Message) => cmp(a.id, b.id))
-      const part = items.map((x: { info: { id: string }; parts: Part[] }) => ({
-        id: x.info.id,
-        part: sortParts(x.parts),
-      }))
-      const cursor = result.response?.headers?.get?.("x-next-cursor") ?? undefined
-      return { session, part, cursor, complete: !cursor }
-    },
-    [directory],
-  )
-
   // Load messages for a session
   const loadMessages = useCallback(
-    async (sessionID: string, options?: { before?: string; mode?: "replace" | "prepend"; isStale?: () => boolean; directory?: string }) => {
+    async (sessionID: string, options?: { before?: string; purpose?: "initial" | "prepend"; isStale?: () => boolean; directory?: string }) => {
       const targetDirectory = options?.directory ?? directory
       const targetStore = targetDirectory === directory ? store : childStores.ensureChild(targetDirectory, { bootstrap: false })
       const scopedClient = opencodeClient.getScopedSdkClient(targetDirectory)
@@ -402,143 +368,113 @@ export function useSync() {
       // Live events can append messages without growing m.limit. A resync
       // must cover everything already rendered or it can manufacture an
       // "older" cursor for history that is already on screen.
-      const storeMessageCount = targetStore.getState().message[sessionID]?.length ?? 0
+      const storeMessageCount = stateBeforePull.message[sessionID]?.length ?? 0
       const limit = getReactiveSessionMessageRequestLimit({
         before: options?.before,
         recordedLimit: m.limit,
         renderedMessageCount: storeMessageCount,
       })
       setMetaFor(sessionID, { loading: true }, targetDirectory)
-      beginSessionMessageLoad(targetDirectory, sessionID, limit, runtimeKey)
 
-      try {
-        // Commit a fetched page to the store: merge optimistic items, run
-        // materialization, and write the result so the UI can render it.
-        // Returns the committed meta so the caller can update pagination
-        // state once at the end. The store write happens here (per page) so
-        // the hydrating skeleton disappears after the first fetch instead of
-        // waiting for the full expansion sequence.
-        const commitMessagesToStore = (
-          page: Awaited<ReturnType<typeof fetchMessages>>,
-          mode: "replace" | "prepend" | undefined,
-          isStale?: () => boolean,
-        ) => {
-          if (isStale?.()) {
-            return { messages: [], cursor: page.cursor, complete: page.complete }
-          }
-
-          const items = getOptimistic(sessionID, targetDirectory)
-          const merged = mergeOptimisticPage(page, items)
-          for (const messageID of merged.confirmed) {
-            clearOptimistic(sessionID, messageID, targetDirectory)
-          }
-
-          const current = targetStore.getState()
-          const materialized = materializeSessionSnapshots(
-            current,
-            sessionID,
-            merged.session.map((info) => ({
-              info,
-              parts: merged.part.find((item) => item.id === info.id)?.part ?? [],
-            })),
-            { skipPartTypes: SKIP_PARTS, mode: mode === "prepend" ? "prepend" : "merge" },
-          )
-
-          // materializeSessionSnapshots is synchronous today, so this check
-          // is defense-in-depth: it guards the store write if materialization
-          // ever becomes async or yields between the check above and setState.
-          if (isStale?.()) {
-            return { messages: [], cursor: merged.cursor, complete: merged.complete }
-          }
-
-          if (materialized.messagesChanged || materialized.partsChanged) {
-            targetStore.setState({
-              ...(materialized.messagesChanged ? { message: materialized.message } : {}),
-              ...(materialized.partsChanged ? { part: materialized.part } : {}),
+      const result = await loadSessionMessagePage({
+        purpose: options?.purpose ?? "initial",
+        runtimeKey,
+        directory: targetDirectory,
+        sessionID,
+        limit,
+        before: options?.before,
+        deps: {
+          queryPage: async ({ limit: pageLimit, before }) => {
+            const response = await retry(async () => {
+              const page = await scopedClient.session.messages({
+                sessionID,
+                directory: targetDirectory,
+                limit: pageLimit,
+                before,
+              })
+              assertSdkSuccess(page, "session.messages")
+              return page
             })
-          }
-          return { messages: materialized.messages, cursor: merged.cursor, complete: merged.complete }
-        }
-
-        const page = await fetchMessages(sessionID, limit, options?.before, runtimeKey, targetDirectory)
-        const recovered = options?.before || page.complete
-          ? page
-          : await recoverAssistantTailBoundary({
-              records: page.session.map((info) => ({
-                info,
-                parts: page.part.find((item) => item.id === info.id)?.part ?? [],
+            const items = (response.data ?? []).filter((item: { info?: { id?: string } }) => !!item?.info?.id)
+            const cursor = response.response?.headers?.get?.("x-next-cursor") ?? undefined
+            return {
+              records: items.map((item: { info: Message; parts?: Part[] }) => ({
+                info: stripMessageDiffSnapshots(item.info),
+                parts: sortParts(item.parts ?? []),
               })),
-              complete: page.complete,
-              requestMessage: async (messageID) => {
-                const response = await loadSessionMessage({
-                  runtimeKey,
-                  directory: targetDirectory,
-                  sessionID,
-                  messageID,
-                  request: async () => {
-                    const result = await scopedClient.session.message({ sessionID, messageID, directory: targetDirectory })
-                    assertSdkSuccess(result, "session.message")
-                    return result
-                  },
-                })
-                const record = response.data
-                if (!record?.info?.id) throw new Error("session.message failed: empty response")
-                return { info: stripMessageDiffSnapshots(record.info), parts: sortParts(record.parts ?? []) }
-              },
-            })
-        const resolvedPage = "records" in recovered
-          ? {
-              session: recovered.records.map((record) => record.info),
-              part: recovered.records.map((record) => ({ id: record.info.id, part: record.parts })),
-              cursor: page.cursor,
-              complete: page.complete,
+              cursor,
+              complete: !cursor,
             }
-          : recovered
-        const committed = commitMessagesToStore(resolvedPage, options?.mode, options?.isStale)
-
-        if (options?.isStale?.()) {
-          setMetaFor(sessionID, { loading: false }, targetDirectory)
-          setSessionPrefetch({
-            directory: targetDirectory,
-            sessionID,
-            runtimeKey,
-            limit: resolvedPage.session.length,
-            cursor: resolvedPage.cursor,
-            complete: resolvedPage.complete,
-          })
-          return
-        }
-
-        setMetaFor(sessionID, {
-          limit: committed.messages.length,
-          cursor: committed.cursor,
-          complete: committed.complete,
-          loading: false,
-        }, targetDirectory)
-        setSessionPrefetch({
-          directory: targetDirectory,
-          sessionID,
-          runtimeKey,
-          limit: committed.messages.length,
-          cursor: committed.cursor,
-          complete: committed.complete,
-        })
-        await reconcileActiveSessionStatusAfterMessagePull({
-          directory: targetDirectory,
-          sessionID,
-          store: targetStore,
-          statusBeforePull,
-          statusObservedAtBeforePull,
-          hasMessages: resolvedPage.session.length > 0,
-          isTailPage: !options?.before,
+          },
+          queryMessage: async ({ messageID }) => {
+            const response = await retry(async () => {
+              const exact = await scopedClient.session.message({ sessionID, messageID, directory: targetDirectory })
+              assertSdkSuccess(exact, "session.message")
+              return exact
+            })
+            const record = response.data
+            if (!record?.info?.id) throw new Error("session.message failed: empty response")
+            return {
+              info: stripMessageDiffSnapshots(record.info),
+              parts: sortParts(record.parts ?? []),
+            }
+          },
+          // Pagination meta lives in this hook's ref, not the store, so it is
+          // supplied here for the reducer's reference-stability comparison.
+          getStoreState: () => {
+            const current = targetStore.getState()
+            const currentMeta = getMetaFor(sessionID, targetDirectory)
+            return {
+              message: current.message,
+              part: current.part,
+              meta: {
+                limit: currentMeta.limit,
+                cursor: currentMeta.cursor,
+                complete: currentMeta.complete,
+              },
+            }
+          },
+          commitStore: (reduced) => {
+            for (const messageID of reduced.confirmedOptimisticIDs) {
+              clearOptimistic(sessionID, messageID, targetDirectory)
+            }
+            if (!reduced.messagesChanged && !reduced.partsChanged) return
+            targetStore.setState({
+              ...(reduced.messagesChanged ? { message: reduced.message } : {}),
+              ...(reduced.partsChanged ? { part: reduced.part } : {}),
+            })
+          },
+          getOptimistic: () => getOptimistic(sessionID, targetDirectory),
           isStale: options?.isStale,
-        })
-      } catch (error) {
+          skipPartTypes: SKIP_PARTS,
+        },
+      })
+
+      // The loader owns prefetch meta, load status, and error reporting for
+      // skipped/failed pulls; only the hook-local pagination ref needs clearing.
+      if (result.status !== "ready") {
         setMetaFor(sessionID, { loading: false }, targetDirectory)
-        failSessionMessageLoad(targetDirectory, sessionID, formatSdkError(error), runtimeKey)
+        return
       }
+
+      setMetaFor(sessionID, {
+        limit: result.meta?.limit ?? result.messages.length,
+        cursor: result.meta?.cursor,
+        complete: result.meta?.complete ?? false,
+        loading: false,
+      }, targetDirectory)
+      await reconcileActiveSessionStatusAfterMessagePull({
+        directory: targetDirectory,
+        sessionID,
+        store: targetStore,
+        statusBeforePull,
+        statusObservedAtBeforePull,
+        hasMessages: result.recordCount > 0,
+        isTailPage: !options?.before,
+        isStale: options?.isStale,
+      })
     },
-    [childStores, store, fetchMessages, getMetaFor, setMetaFor, getOptimistic, clearOptimistic, directory],
+    [childStores, store, getMetaFor, setMetaFor, getOptimistic, clearOptimistic, directory],
   )
 
   // Sync a session (load if not cached)
@@ -611,7 +547,7 @@ export function useSync() {
       touch(sessionID)
       const m = getMetaFor(sessionID)
       if (m.loading || m.complete || !m.cursor) return
-      await loadMessages(sessionID, { before: m.cursor, mode: "prepend" })
+      await loadMessages(sessionID, { before: m.cursor, purpose: "prepend" })
     },
     [touch, getMetaFor, loadMessages],
   )

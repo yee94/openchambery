@@ -9,6 +9,7 @@ import type {
   LoadSessionMessagePageResult,
 } from "../session-message-loader"
 import type { ReduceSessionMessagePageResult } from "../session-message-reducer"
+import { resolveSessionMergeStrategy } from "../session-merge-strategy"
 
 // ---------------------------------------------------------------------------
 // Mocks — loader is the seam under test; SDK / status stay out of the way.
@@ -118,12 +119,15 @@ function installModuleMocks() {
       }
       loadCalls.push(input)
 
+      const merge = resolveSessionMergeStrategy({ purpose: input.purpose })
+
       if (loaderBehavior === "error") {
         return {
           status: "error",
           applied: false,
           changed: false,
           messages: input.deps.getStoreState().message[input.sessionID] ?? [],
+          recordCount: 0,
           error: "network down",
         } satisfies LoadSessionMessagePageResult
       }
@@ -134,6 +138,7 @@ function installModuleMocks() {
           applied: false,
           changed: false,
           messages: input.deps.getStoreState().message[input.sessionID] ?? [],
+          recordCount: 0,
         } satisfies LoadSessionMessagePageResult
       }
 
@@ -144,6 +149,7 @@ function installModuleMocks() {
         changed: true,
         messagesChanged: true,
         partsChanged: true,
+        merge,
         message: { ...state.message, [sessionID]: loaderMessages },
         part: { ...state.part, ...loaderParts },
         messages: loaderMessages,
@@ -160,6 +166,7 @@ function installModuleMocks() {
         applied: true,
         changed: true,
         messages: loaderMessages,
+        recordCount: loaderMessages.length,
         meta: reduced.meta,
         reduced,
       } satisfies LoadSessionMessagePageResult
