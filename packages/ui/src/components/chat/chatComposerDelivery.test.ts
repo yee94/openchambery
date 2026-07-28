@@ -64,14 +64,14 @@ test('confirmed directory mentions send application/x-directory mime', () => {
         plan: legacyTextToAuthoredPlan('update @opencode config'),
         agents,
         installedSkillNames: new Set(),
-        directory: '/Users/yee.wang/.config',
-        root: '/Users/yee.wang/.config',
+        directory: '/Users/example/.config',
+        root: '/Users/example/.config',
         confirmedFilePaths: ['opencode'],
         confirmedDirectoryPaths: ['opencode'],
     });
 
     expect(compiled.attachments).toHaveLength(1);
-    expect(compiled.attachments[0]?.serverPath).toBe('/Users/yee.wang/.config/opencode');
+    expect(compiled.attachments[0]?.serverPath).toBe('/Users/example/.config/opencode');
     expect(compiled.attachments[0]?.mimeType).toBe('application/x-directory');
     expect(compiled.attachments[0]?.filename).toBe('opencode');
 });

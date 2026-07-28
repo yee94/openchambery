@@ -7,9 +7,9 @@ import {
 describe('resolveDraftSessionBranchLabel', () => {
   test('returns the project root branch name for the project directory', () => {
     expect(resolveDraftSessionBranchLabel({
-      selectedDirectory: '/Users/yee.wang/Code/github/openchamber-yee',
+      selectedDirectory: '/Users/example/Code/github/openchamber',
       projectRootOption: {
-        value: '/Users/yee.wang/Code/github/openchamber-yee',
+        value: '/Users/example/Code/github/openchamber',
         label: 'main',
       },
       worktreeOptions: [],
@@ -18,14 +18,14 @@ describe('resolveDraftSessionBranchLabel', () => {
 
   test('returns the worktree branch name for an isolated worktree directory', () => {
     expect(resolveDraftSessionBranchLabel({
-      selectedDirectory: '/Users/yee.wang/Code/github/openchamber-yee/.worktrees/feat-a',
+      selectedDirectory: '/Users/example/Code/github/openchamber/.worktrees/feat-a',
       projectRootOption: {
-        value: '/Users/yee.wang/Code/github/openchamber-yee',
+        value: '/Users/example/Code/github/openchamber',
         label: 'main',
       },
       worktreeOptions: [
         {
-          value: '/Users/yee.wang/Code/github/openchamber-yee/.worktrees/feat-a',
+          value: '/Users/example/Code/github/openchamber/.worktrees/feat-a',
           label: 'feat-a',
         },
       ],
@@ -33,10 +33,10 @@ describe('resolveDraftSessionBranchLabel', () => {
   });
 
   test('never falls back to a directory basename when the branch is still unknown', () => {
-    // Regression: mobile draft chip painted "openchamber-yee" instead of "main"
+    // Regression: mobile draft chip painted "openchamber" instead of "main"
     // because formatDirectoryName(selectedDirectory) was used as the label.
     expect(resolveDraftSessionBranchLabel({
-      selectedDirectory: '/Users/yee.wang/Code/github/openchamber-yee',
+      selectedDirectory: '/Users/example/Code/github/openchamber',
       projectRootOption: null,
       worktreeOptions: [],
     })).toBeNull();
@@ -46,7 +46,7 @@ describe('resolveDraftSessionBranchLabel', () => {
     expect(resolveDraftSessionBranchLabel({
       selectedDirectory: null,
       projectRootOption: {
-        value: '/Users/yee.wang/Code/github/openchamber-yee',
+        value: '/Users/example/Code/github/openchamber',
         label: 'main',
       },
       worktreeOptions: [],
@@ -57,20 +57,20 @@ describe('resolveDraftSessionBranchLabel', () => {
 describe('isDirectoryBasenameLabel', () => {
   test('detects when a chip label is just the directory basename', () => {
     expect(isDirectoryBasenameLabel(
-      'openchamber-yee',
-      '/Users/yee.wang/Code/github/openchamber-yee',
+      'openchamber',
+      '/Users/example/Code/github/openchamber',
     )).toBe(true);
   });
 
   test('does not treat a real branch name as a directory basename', () => {
     expect(isDirectoryBasenameLabel(
       'main',
-      '/Users/yee.wang/Code/github/openchamber-yee',
+      '/Users/example/Code/github/openchamber',
     )).toBe(false);
   });
 
   test('handles trailing slashes and backslashes', () => {
-    expect(isDirectoryBasenameLabel('openchamber-yee', '/Users/yee/openchamber-yee/')).toBe(true);
-    expect(isDirectoryBasenameLabel('openchamber-yee', 'C:\\Users\\yee\\openchamber-yee')).toBe(true);
+    expect(isDirectoryBasenameLabel('openchamber', '/Users/example/openchamber/')).toBe(true);
+    expect(isDirectoryBasenameLabel('openchamber', 'C:\\Users\\example\\openchamber')).toBe(true);
   });
 });

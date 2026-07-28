@@ -5169,7 +5169,7 @@ const ChatInputRuntime: React.FC<ChatInputProps> = ({ onOpenSettings, scrollToBo
     }, [projectRootBranchOption, selectedDraftDirectory, shouldKeepMissingSelectedDraftDirectory, worktreeBranchOptions]);
 
     // Chip label must be a real branch/worktree name — never a directory basename.
-    // formatDirectoryName fallback previously painted "openchamber-yee" on the
+    // formatDirectoryName fallback previously painted the project folder name on the
     // branch chip and blocked DraftSessionBranchSelector's live currentBranch.
     const selectedDraftBranchLabel = React.useMemo(
         () => resolveDraftSessionBranchLabel({

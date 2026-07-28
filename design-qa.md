@@ -153,9 +153,9 @@ final result: passed
 
 ## Comparison inputs
 
-- Source visual truth: the existing Project tab card system at `/Users/yee.wang/.codex/visualizations/2026/07/24/019f9217-60e5-7a92-b084-ff3bbc320d57/mobile-project-typography-reference.png`, plus the reported focused-card defect at `/var/folders/5l/tlc329r51b17td86h3klclbw0000gn/T/codex-clipboard-cc4ab333-ec87-4f9a-8e66-6fa980717de5.png`.
-- Browser-rendered implementation after opening an Assistant and returning: `/Users/yee.wang/.codex/visualizations/2026/07/24/019f9217-60e5-7a92-b084-ff3bbc320d57/mobile-assistant-independent-cards-shadow-retained.png`.
-- Full-view side-by-side comparison: `/Users/yee.wang/.codex/visualizations/2026/07/24/019f9217-60e5-7a92-b084-ff3bbc320d57/mobile-project-assistant-card-shadow-comparison.png`.
+- Source visual truth: the existing Project tab card system at `<local-visualization-root>/mobile-project-typography-reference.png`, plus the reported focused-card defect at `<local-artifact-root>/codex-clipboard-reference.png`.
+- Browser-rendered implementation after opening an Assistant and returning: `<local-visualization-root>/mobile-assistant-independent-cards-shadow-retained.png`.
+- Full-view side-by-side comparison: `<local-visualization-root>/mobile-project-assistant-card-shadow-comparison.png`.
 - Source and implementation browser captures: `393 × 852` CSS px at device scale factor 1, light theme. The defect screenshot is a framed, scaled capture and is used only to identify the pressed/focused shadow regression.
 - State: Project root reference beside Assistant root after `Assistant → 小小白 → Back`, with the first Assistant card still focused.
 
@@ -195,9 +195,9 @@ final result: passed
 ## Comparison inputs
 
 - Source visual truth: `/var/folders/5l/tlc329r51b17td86h3klclbw0000gn/T/codex-clipboard-192e2961-257a-46d4-ba43-bfd237ba321e.png`
-- Browser-rendered Assistant catalog: `/Users/yee.wang/.codex/visualizations/2026/07/24/019f9217-60e5-7a92-b084-ff3bbc320d57/mobile-assistant-catalog.png`
-- Browser-rendered Assistant conversation: `/Users/yee.wang/.codex/visualizations/2026/07/24/019f9217-60e5-7a92-b084-ff3bbc320d57/mobile-assistant-conversation.png`
-- Full-view comparison evidence: `/Users/yee.wang/.codex/visualizations/2026/07/24/019f9217-60e5-7a92-b084-ff3bbc320d57/mobile-assistant-comparison.png`
+- Browser-rendered Assistant catalog: `<local-visualization-root>/mobile-assistant-catalog.png`
+- Browser-rendered Assistant conversation: `<local-visualization-root>/mobile-assistant-conversation.png`
+- Full-view comparison evidence: `<local-visualization-root>/mobile-assistant-comparison.png`
 - Source pixels: `931 × 1540`, framed mobile preview in dark theme.
 - Implementation pixels and CSS viewport: `393 × 852` at device scale factor 1, app content only, light theme.
 - Density normalization: the source was aspect-contained into a `393 × 852` comparison cell; the implementation was captured 1:1 at `393 × 852`. Theme and framing differences are runtime state, not implementation drift.
@@ -256,8 +256,8 @@ final result: passed
 - Appearance now renders eight explicit shared `SettingsGroup` instances and eighteen explicit `SettingsRow` instances. All eight cards measure `357px` inside the `393px` viewport; the document and tab panel both retain a `393px` scroll width, with no page-level horizontal overflow.
 - PWA app name, install orientation, and mobile keyboard behavior are separate titled groups rather than one oversized desktop card. Layout/font controls use the same two-column row primitive, compact token typography, inset separators, and borderless semantic background.
 - The fixed Appearance header resolves to a `64px` sticky bar at `top: 0`, with an opaque theme surface and a theme-color-to-transparent fade below it. Scrolled content no longer ghosts through the title or back action.
-- Light-mode comparison capture: `/Users/yee.wang/.codex/visualizations/2026/07/24/019f92a1-fcf2-79a1-af41-09e493082e2f/mobile-appearance-final-top-light-393x852.png`.
-- Installation/layout capture: `/Users/yee.wang/.codex/visualizations/2026/07/24/019f92a1-fcf2-79a1-af41-09e493082e2f/mobile-appearance-final-install-layout-light-393x852.png`.
+- Light-mode comparison capture: `<local-visualization-root>/mobile-appearance-final-top-light-393x852.png`.
+- Installation/layout capture: `<local-visualization-root>/mobile-appearance-final-install-layout-light-393x852.png`.
 - Mobile viewport `431 × 960`: scheduled tasks → Create renders the same fixed secondary navigation, with form content independently scrollable below it.
 - Focused ESLint and `bun run mobile:build` passed. The build retains the repository's existing KaTeX font-path warnings.
 
@@ -268,8 +268,8 @@ final result: passed
 ## Comparison inputs
 
 - Source visual truth: `/var/folders/5l/tlc329r51b17td86h3klclbw0000gn/T/codex-clipboard-026247ed-f987-4e2f-9d68-45a0bc2d2226.png`
-- Browser-rendered implementation: `/Users/yee.wang/.codex/visualizations/2026/07/24/019f9217-60e5-7a92-b084-ff3bbc320d57/mobile-row-actions-fit-content.png`
-- Focused side-by-side comparison: `/Users/yee.wang/.codex/visualizations/2026/07/24/019f9217-60e5-7a92-b084-ff3bbc320d57/mobile-row-actions-fit-content-comparison.png`
+- Browser-rendered implementation: `<local-visualization-root>/mobile-row-actions-fit-content.png`
+- Focused side-by-side comparison: `<local-visualization-root>/mobile-row-actions-fit-content-comparison.png`
 - Implementation viewport: `393 × 852` CSS px at device scale factor 1, light theme, session action sheet open in its collapsed state.
 - Source pixels: `1038 × 956`. The sheet crop (`752 × 896`) was normalized 2:1 to `376 × 448` for comparison. The implementation sheet crop (`393 × 358`) was width-normalized to `376 × 343`.
 

@@ -77,9 +77,9 @@ describe('attachment citations', () => {
                 filename: 'SidebarFooter.tsx:199-200',
                 source: 'vscode',
                 vscodeSource: 'selection',
-                vscodePath: '/Users/yee/project/src/SidebarFooter.tsx',
+                vscodePath: '/Users/example/project/src/SidebarFooter.tsx',
             }],
-        )).toBe('check [/Users/yee/project/src/SidebarFooter.tsx:199-200] and [image-1.png]');
+        )).toBe('check [/Users/example/project/src/SidebarFooter.tsx:199-200] and [image-1.png]');
     });
 
     test('classifies code-selection file parts as reference-only display data', () => {
@@ -246,7 +246,7 @@ describe('attachment citations', () => {
     test('recognizes OpenCode directory attachment mime and trailing-slash paths', () => {
         expect(isDirectoryAttachmentMime('application/x-directory')).toBe(true);
         expect(isDirectoryAttachmentMime(' text/plain ')).toBe(false);
-        expect(isDirectoryAttachmentPath('/Users/yee.wang/.config/opencode/')).toBe(true);
-        expect(isDirectoryAttachmentPath('/Users/yee.wang/.config/opencode')).toBe(false);
+        expect(isDirectoryAttachmentPath('/Users/example/.config/opencode/')).toBe(true);
+        expect(isDirectoryAttachmentPath('/Users/example/.config/opencode')).toBe(false);
     });
 });

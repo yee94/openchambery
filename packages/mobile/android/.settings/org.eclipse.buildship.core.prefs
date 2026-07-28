@@ -1,4 +1,4 @@
-arguments=--init-script /Users/yee.wang/.cache/opencode/bin/jdtls/config_mac/org.eclipse.osgi/57/0/.cp/gradle/init/init.gradle
+arguments=--init-script /Users/example/.cache/opencode/bin/jdtls/config_mac/org.eclipse.osgi/57/0/.cp/gradle/init/init.gradle
 auto.sync=false
 build.scans.enabled=false
 connection.gradle.distribution=GRADLE_DISTRIBUTION(WRAPPER)

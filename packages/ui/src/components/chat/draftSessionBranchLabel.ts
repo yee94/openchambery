@@ -2,7 +2,7 @@
  * Resolve the draft branch chip label from known project-root / worktree options.
  *
  * Never falls back to a directory basename — that painted the project folder name
- * on the branch chip (e.g. "openchamber-yee" instead of "main") and blocked the
+ * on the branch chip (e.g. the project folder name instead of "main") and blocked the
  * live git current-branch query inside DraftSessionBranchSelector.
  */
 export function resolveDraftSessionBranchLabel(input: {

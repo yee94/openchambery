@@ -554,6 +554,18 @@ export const registerAuthAndAccessRoutes = (app, dependencies) => {
     }
   };
 
+  const normalizeRequestedRelayUrl = (value) => {
+    if (typeof value !== 'string' || !value.trim()) return null;
+    try {
+      const parsed = new URL(value.trim());
+      if (parsed.protocol !== 'ws:' && parsed.protocol !== 'wss:') return null;
+      parsed.hash = '';
+      return parsed.toString();
+    } catch {
+      return null;
+    }
+  };
+
   // `preferredServerUrl` is the caller-supplied externally reachable URL (the
   // desktop UI reaches its own server over loopback, so the request origin is not
   // scannable — it passes the LAN URL instead). Falls back to the request origin
@@ -564,7 +576,12 @@ export const registerAuthAndAccessRoutes = (app, dependencies) => {
   //   false → direct only, never relay;
   //   undefined → legacy: advertise relay only if it is already enabled.
   // `includeDirect === false` produces a relay-only link (no direct candidate).
-  const pairingServerCandidates = async (req, { preferredServerUrl, includeRelay, includeDirect = true } = {}) => {
+  const pairingServerCandidates = async (req, {
+    preferredServerUrl,
+    includeRelay,
+    includeDirect = true,
+    relayUrl,
+  } = {}) => {
     const candidates = [];
     if (includeDirect) {
       const direct = normalizeCandidateUrl(preferredServerUrl) || requestOrigin(req);
@@ -582,9 +599,13 @@ export const registerAuthAndAccessRoutes = (app, dependencies) => {
     // is unreachable (relay carries a higher priority number).
     if (includeRelay !== false) {
       try {
-        const relayCandidate = await getRelayPairingCandidate({ ensureEnabled: includeRelay === true });
+        const relayCandidate = await getRelayPairingCandidate({
+          ensureEnabled: includeRelay === true,
+          ...(relayUrl ? { relayUrl } : {}),
+        });
         if (relayCandidate) candidates.push(relayCandidate);
-      } catch {
+      } catch (error) {
+        if (relayUrl || includeDirect === false) throw error;
         // A relay enable/status failure must not break direct pairing.
       }
     }
@@ -818,10 +839,17 @@ export const registerAuthAndAccessRoutes = (app, dependencies) => {
 
   app.post('/api/client-auth/pairing/sessions', express.json({ limit: '64kb' }), async (req, res, next) => {
     await runWithClientCreateAuth(req, res, next, async (authContext) => {
+      const requestedRelayUrl = req.body?.relayUrl === undefined
+        ? undefined
+        : normalizeRequestedRelayUrl(req.body.relayUrl);
+      if (req.body?.relayUrl !== undefined && !requestedRelayUrl) {
+        return res.status(400).json({ error: 'Relay URL must use ws:// or wss://' });
+      }
       const candidates = await pairingServerCandidates(req, {
         preferredServerUrl: req.body?.serverUrl,
         includeRelay: typeof req.body?.includeRelay === 'boolean' ? req.body.includeRelay : undefined,
         includeDirect: req.body?.includeDirect !== false,
+        relayUrl: requestedRelayUrl,
       });
       const usesRelay = candidates.some((candidate) => candidate.type === 'relay');
       const result = await clientPairingRuntime.createPairingSession({
@@ -885,7 +913,7 @@ export const registerAuthAndAccessRoutes = (app, dependencies) => {
   app.get('/api/client-auth/pairing/transports', async (req, res, next) => {
     await runWithClientCreateAuth(req, res, next, async () => {
       res.setHeader('Cache-Control', 'no-store');
-      res.json(getPairingTransports(req));
+      res.json(await getPairingTransports(req));
     });
   });
 

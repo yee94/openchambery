@@ -13,6 +13,7 @@ The mobile package reuses the web build, then rewrites `mobile.html` to `index.h
 - Password-protected OpenChamber servers can be unlocked from the mobile app. The app stores the issued client token with the saved connection.
 - Chat `edit` and `multiedit` rows open their exact single-file tool patch in a resizable phone sheet or the iPad Changes panel. An `apply_patch` row opens every renderable file patch from that invocation. The initial target focuses its first changed line, and apply-patch turn-snapshot records open the owning turn diff.
 - iOS and Android register the `openchamber://` URL scheme. Opening a validated `openchamber://connect?v=2&p=...` link invokes the same one-time pairing redemption used by the QR scanner, including on cold launch; pairing secrets remain transient and are never logged or persisted.
+- Pairing v2 Relay candidates carry their own `relayUrl`. Native and hosted mobile persist that endpoint with the connection metadata and use it for later reconnects, so official and self-hosted Relay connections can coexist on one client.
 
 ## Native Haptics Hot Path
 

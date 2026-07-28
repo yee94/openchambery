@@ -269,10 +269,28 @@ export const createRelayService = ({
   // relay pairing link IS the demand signal, so the relay turns itself on here
   // rather than requiring a separate manual toggle. Idempotent: a no-op when the
   // relay is already enabled and running.
-  const ensureEnabledForPairing = async () => {
+  const ensureEnabledForPairing = async (requestedRelayUrl) => {
     const config = await readConfig();
-    if (!config.enabled) {
-      await writeConfig({ enabled: true, relayUrl: config.relayUrl });
+    let relayUrl = config.relayUrl;
+    if (!config.relayUrlLocked && requestedRelayUrl !== undefined) {
+      if (!isValidRelayUrl(requestedRelayUrl)) {
+        const error = new Error('Relay URL must use ws:// or wss://');
+        error.statusCode = 400;
+        throw error;
+      }
+      relayUrl = requestedRelayUrl.trim();
+    }
+
+    const endpointChanged = relayUrl !== config.relayUrl;
+    if (!config.enabled || endpointChanged) {
+      await writeConfig({ enabled: true, relayUrl });
+    }
+    if (endpointChanged) {
+      // One Host identity can have only one live Relay control connection. A
+      // custom endpoint therefore becomes the authoritative transport before
+      // its pairing candidate is returned. Stop also clears a standby claim
+      // watcher whose retry closure still targets the previous endpoint.
+      stop();
     }
     if (!hostClient) {
       const next = await readConfig();

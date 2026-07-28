@@ -1189,6 +1189,10 @@ export interface ClientAuthAPI {
     // produces a relay-only link (no direct candidate).
     includeRelay?: boolean;
     includeDirect?: boolean;
+    // Optional per-link Relay endpoint. The Host switches its Relay transport
+    // to this endpoint before returning the candidate. Deployments pinned by
+    // OPENCHAMBER_RELAY_URL keep using the pinned value.
+    relayUrl?: string;
   }): Promise<PairingSessionCreateResult>;
   purgeRevokedClients(): Promise<RemoteClientPurgeRevokedResult>;
   revokeClient(id: string): Promise<RemoteClientRevokeResult>;
@@ -1197,7 +1201,13 @@ export interface ClientAuthAPI {
   cancelPairing(id: string): Promise<{ cancelled: boolean }>;
   // Direct transports the server can be reached on, for the create-device dialog.
   // LAN reflects the server's actual bind, independent of the UI origin.
-  getPairingTransports(): Promise<{ local: string | null; lan: string | null; relayAvailable: boolean }>;
+  getPairingTransports(): Promise<{
+    local: string | null;
+    lan: string | null;
+    relayAvailable: boolean;
+    relayUrl?: string;
+    relayUrlLocked?: boolean;
+  }>;
 }
 
 export interface RuntimeAPIs {

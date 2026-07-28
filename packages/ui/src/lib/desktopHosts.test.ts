@@ -55,6 +55,33 @@ describe('resolveDesktopHostUrl', () => {
 });
 
 describe('desktop host runtime headers', () => {
+  test('restores a saved custom Relay endpoint for Desktop reconnects', async () => {
+    await withDesktopBridge(async (cmd) => {
+      expect(cmd).toBe('desktop_hosts_get');
+      return {
+        hosts: [{
+          id: 'remote-relay',
+          label: 'Self-hosted Relay',
+          url: 'relay://server-1',
+          relay: {
+            relayUrl: 'wss://self-hosted.example/ws',
+            serverId: 'server-1',
+            hostEncPubJwk: { kty: 'EC', crv: 'P-256', x: 'x', y: 'y' },
+          },
+        }],
+        defaultHostId: 'remote-relay',
+        initialHostChoiceCompleted: true,
+      };
+    }, async () => {
+      const config = await desktopHostsGet();
+      expect(config.hosts[0]?.relay).toEqual({
+        relayUrl: 'wss://self-hosted.example/ws',
+        serverId: 'server-1',
+        hostEncPubJwk: { kty: 'EC', crv: 'P-256', x: 'x', y: 'y' },
+      });
+    });
+  });
+
   test('parses persisted request headers from desktop config', async () => {
     await withDesktopBridge(async (cmd) => {
       expect(cmd).toBe('desktop_hosts_get');

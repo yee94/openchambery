@@ -662,6 +662,73 @@ describe('core-routes', () => {
     ]);
   });
 
+  it('passes a custom Relay endpoint into relay-only pairing and returns that endpoint in the candidate', async () => {
+    const getRelayPairingCandidate = vi.fn(async ({ relayUrl }) => ({
+      type: 'relay',
+      relayUrl,
+      serverId: 'srv_custom',
+      hostEncPubJwk: { kty: 'EC', crv: 'P-256', x: 'aaa', y: 'bbb' },
+      priority: 30,
+    }));
+    const { app } = createPairingRouteApp({ getRelayPairingCandidate });
+
+    const response = await request(app)
+      .post('/api/client-auth/pairing/sessions')
+      .send({
+        label: 'Pair phone',
+        includeRelay: true,
+        includeDirect: false,
+        relayUrl: 'wss://relay.example/custom#ignored',
+      })
+      .expect(201);
+
+    expect(getRelayPairingCandidate).toHaveBeenCalledWith({
+      ensureEnabled: true,
+      relayUrl: 'wss://relay.example/custom',
+    });
+    expect(response.body.server.candidates).toEqual([
+      expect.objectContaining({ type: 'relay', relayUrl: 'wss://relay.example/custom' }),
+    ]);
+  });
+
+  it('rejects an invalid custom Relay endpoint before creating a pairing session', async () => {
+    const getRelayPairingCandidate = vi.fn();
+    const { app, dependencies } = createPairingRouteApp({ getRelayPairingCandidate });
+
+    await request(app)
+      .post('/api/client-auth/pairing/sessions')
+      .send({ includeRelay: true, relayUrl: 'https://relay.example/ws' })
+      .expect(400, { error: 'Relay URL must use ws:// or wss://' });
+
+    expect(getRelayPairingCandidate).not.toHaveBeenCalled();
+    expect(dependencies.clientPairingRuntime.createPairingSession).not.toHaveBeenCalled();
+  });
+
+  it('reports the effective Relay endpoint and environment lock to the pairing dialog', async () => {
+    const { app } = createPairingRouteApp({
+      getPairingTransports: vi.fn(async () => ({
+        local: 'http://127.0.0.1:3000',
+        lan: null,
+        relayAvailable: true,
+        relayUrl: 'wss://relay.example/ws',
+        relayUrlLocked: true,
+      })),
+    });
+
+    const response = await request(app)
+      .get('/api/client-auth/pairing/transports')
+      .expect(200);
+
+    expect(response.headers['cache-control']).toBe('no-store');
+    expect(response.body).toEqual({
+      local: 'http://127.0.0.1:3000',
+      lan: null,
+      relayAvailable: true,
+      relayUrl: 'wss://relay.example/ws',
+      relayUrlLocked: true,
+    });
+  });
+
   it('still returns the direct candidate when the relay candidate lookup throws', async () => {
     const { app } = createPairingRouteApp({
       getRelayPairingCandidate: vi.fn(async () => { throw new Error('relay status read failed'); }),

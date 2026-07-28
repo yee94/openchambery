@@ -76,7 +76,9 @@ Point every OpenChamber Host at the Relay, then generate a Relay pairing link or
 OPENCHAMBER_RELAY_URL=wss://relay.example.com/ws openchamber
 ```
 
-Saved pairing candidates retain their endpoint snapshot. Use a new pairing link or candidate refresh to move existing clients to the self-hosted endpoint. See [OpenChamber Relay Server](https://github.com/yee94/openchamber/tree/main/packages/relay-server#readme) for bundle builds, reverse-proxy configuration, security, operations, and systemd guidance.
+The **Add a device** dialog defaults to `wss://relay.openchamber.dev/ws` and lets the operator enter a custom `ws://` or `wss://` Relay endpoint for that pairing. The Host persists and switches to the selected endpoint before creating the QR code; `OPENCHAMBER_RELAY_URL` remains authoritative when set. The creating client remembers the last effective endpoint locally.
+
+Saved pairing candidates retain their endpoint snapshot, including the Relay URL. Mobile and Desktop clients reconnect through that saved endpoint until a new pairing flow replaces it. See [OpenChamber Relay Server](https://github.com/yee94/openchamber/tree/main/packages/relay-server#readme) for bundle builds, reverse-proxy configuration, security, operations, and systemd guidance.
 
 ### Tunnel behavior notes
 

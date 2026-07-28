@@ -1531,13 +1531,22 @@ async function main(options = {}) {
       // A relay pairing link enables the relay on demand; a plain link only
       // advertises relay when it is already on.
       return options?.ensureEnabled
-        ? relayServiceInstance.ensureEnabledForPairing()
+        ? relayServiceInstance.ensureEnabledForPairing(options?.relayUrl)
         : relayServiceInstance.getPairingCandidate();
     },
     // Re-evaluate the relay lifecycle after pairing/device changes (a revoked or
     // redeemed device can flip relay demand on or off).
     reconcileRelay: () => (relayServiceInstance ? relayServiceInstance.reconcile() : Promise.resolve()),
-    getPairingTransports: resolvePairingTransports,
+    getPairingTransports: async (req) => {
+      const transports = resolvePairingTransports(req);
+      if (!relayServiceInstance) return transports;
+      const relay = await relayServiceInstance.getStatus();
+      return {
+        ...transports,
+        relayUrl: relay.relayUrl,
+        relayUrlLocked: relay.relayUrlLocked,
+      };
+    },
     getDirectCandidateUrls: resolveDirectLanUrls,
     // Stable server identity for client-side verification of learned addresses.
     // Lazily resolved: the relay service is constructed after these routes.

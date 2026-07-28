@@ -134,6 +134,35 @@ describe('mobile connection storage', () => {
       restoreGlobals();
     }
   });
+
+  test('re-pairing the same server replaces its saved Relay endpoint', async () => {
+    try {
+      installTestWindow();
+      await upsertMobileConnection({
+        label: 'My Desktop',
+        candidates: [{ kind: 'relay', relay: testRelay }],
+        clientToken: 'old-token',
+      });
+      await upsertMobileConnection({
+        label: 'My Desktop',
+        candidates: [{
+          kind: 'relay',
+          relay: { ...testRelay, relayUrl: 'wss://self-hosted.example/ws' },
+        }],
+        clientToken: 'new-token',
+      });
+
+      const connections = await loadMobileConnections();
+      expect(connections).toHaveLength(1);
+      expect(connections[0]?.candidates).toEqual([{
+        kind: 'relay',
+        relay: { ...testRelay, relayUrl: 'wss://self-hosted.example/ws' },
+      }]);
+      expect(connections[0]?.clientToken).toBe('new-token');
+    } finally {
+      restoreGlobals();
+    }
+  });
 });
 
 describe('validateMobileConnectionSession', () => {

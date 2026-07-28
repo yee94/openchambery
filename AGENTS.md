@@ -48,6 +48,7 @@ Release artifacts and repository links use `yee94/openchamber`. Electron is the 
 - Do not run git or GitHub commands unless the user explicitly asks.
 - Do not add dependencies unless explicitly requested.
 - Never add or log secrets, bearer tokens, pairing credentials, or sensitive user data.
+- Keep repository artifacts free of personal domains, machine paths, and container-registry namespaces; use neutral examples and environment-driven deployment references.
 - Keep changes minimal and preserve unrelated worktree changes.
 - Enforce security and correctness in core/runtime logic, not only UI visibility or prompts.
 - Keep entrypoints and bridges thin; place domain logic in focused owning modules.

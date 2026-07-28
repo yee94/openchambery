@@ -92,6 +92,23 @@ docker run -d \
 
 Use an immutable version tag in production. Each non-dry-run release updates `latest` together with its immutable version tag.
 
+For a complete public deployment using the published immutable image, automatic HTTPS, and an internal-only Relay listener, use [`docker-compose.relay.remote.yml`](../../docker-compose.relay.remote.yml). Docker Compose 2.23.1 or later is required for its inline Caddy config. Point the domain's `A` and/or `AAAA` record at the server, allow inbound TCP ports 80 and 443 plus UDP port 443, then run:
+
+```sh
+OPENCHAMBER_RELAY_IMAGE='<dockerhub-username>/openchamber-relay:<version>@sha256:<manifest-digest>' \
+RELAY_DOMAIN=relay.example.com \
+ACME_EMAIL=admin@example.com \
+docker compose -f docker-compose.relay.remote.yml up -d
+```
+
+`OPENCHAMBER_RELAY_IMAGE` is required; the deployment file must never bind to a personal registry namespace. Supply an immutable version-and-manifest-digest reference in production. The file keeps Relay off host ports, replaces forwarded client IPs at Caddy, persists Caddy certificates and configuration, and enables trusted-proxy mode on Relay. Inspect startup and readiness with:
+
+```sh
+docker compose -f docker-compose.relay.remote.yml ps
+curl -fsS https://relay.example.com/healthz
+curl -fsS https://relay.example.com/readyz
+```
+
 From the repository root, build and start the supplied service. The compatibility assets are [`Dockerfile.relay`](../../Dockerfile.relay) and [`docker-compose.relay.yml`](../../docker-compose.relay.yml):
 
 ```sh
@@ -111,7 +128,9 @@ export OPENCHAMBER_RELAY_URL=wss://relay.example.com/ws
 openchamber
 ```
 
-Saved candidates contain an endpoint snapshot. Existing clients switch to this Relay after a new pairing flow or a candidate refresh; generate a fresh pairing link when immediate endpoint replacement is required.
+The **Add a device** dialog can select this endpoint per pairing. The Host persists the selection, switches its control connection, and embeds the effective `relayUrl` in the pairing-v2 candidate before rendering the QR code. `OPENCHAMBER_RELAY_URL` pins the endpoint and disables the override. The creating client remembers its last effective choice locally; consuming Mobile and Desktop clients persist the endpoint snapshot with the saved connection.
+
+Existing clients switch to a new Relay after a new pairing flow; generate a fresh pairing link when endpoint replacement is required.
 
 ## Configuration
 
