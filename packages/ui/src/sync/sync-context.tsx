@@ -67,7 +67,10 @@ import {
   type ScopedSessionStatusScope,
 } from "./scoped-session-status"
 import { CURRENT_SESSION_ENTITY_CACHE_TTL_MS, resolveCurrentSessionEntity, resolveParentSessionTarget } from "./current-session-entity"
-import { resyncDirectorySessionStatuses } from "./session-status-reconciliation"
+import {
+  reconcileActiveSessionStatusAfterMessagePull,
+  resyncDirectorySessionStatuses,
+} from "./session-status-reconciliation"
 
 // ---------------------------------------------------------------------------
 // Context
@@ -1345,6 +1348,12 @@ export async function resyncDirectoryAfterReconnect(
 
       // Captured after `session.get` so only events racing the page itself are stale.
       const bodyRevision = getLiveRevision(sessionId)
+      // Same busy/retry snapshot that began the recovery pull; used for
+      // post-message status reconcile (live SSE during the pull still wins).
+      const stateBeforePull = store.getState()
+      const statusBeforePull = stateBeforePull.session_status?.[sessionId]
+      const statusObservedAtBeforePull = stateBeforePull.session_status_observed_at?.[sessionId]
+      const isBodyStale = () => !isLiveRevisionCurrent(bodyRevision, getLiveRevision(sessionId))
 
       const loadResult = await loadSessionMessagePage({
         purpose: "recovery",
@@ -1404,7 +1413,7 @@ export async function resyncDirectoryAfterReconnect(
             })
           },
           getLiveRevision: () => getLiveRevision(sessionId),
-          isStale: () => !isLiveRevisionCurrent(bodyRevision, getLiveRevision(sessionId)),
+          isStale: isBodyStale,
           skipPartTypes: RECONNECT_SKIP_PARTS,
         },
       })
@@ -1414,6 +1423,18 @@ export async function resyncDirectoryAfterReconnect(
 
       const nextMessages = loadResult.messages
       setIndexedSessionMessages(routingIndex, sessionId, directory, nextMessages)
+
+      // Successful recovery is a non-history tail pull; converge status when the
+      // page began busy/retry and no live SSE superseded that snapshot.
+      await reconcileActiveSessionStatusAfterMessagePull({
+        directory,
+        sessionID: sessionId,
+        store,
+        statusBeforePull,
+        statusObservedAtBeforePull,
+        hasMessages: nextMessages.length > 0,
+        isStale: isBodyStale,
+      })
     }))
   }
 

@@ -1180,7 +1180,7 @@ export const VoiceSettings: React.FC = () => {
                         )}
 
                         {sttProvider === 'openai-compatible' && (
-                            <div className="py-1.5 space-y-2">
+                            <div className="oc-settings-group-row space-y-2">
                                 <div>
                                     <span className={cn("typography-ui-label text-foreground", !sttServerUrl.trim() && "text-[var(--status-error)]")}>
                                         {t('settings.voice.page.field.serverUrl')}

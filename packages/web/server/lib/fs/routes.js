@@ -129,6 +129,27 @@ const FILE_MIME_MAP = Object.freeze({
 });
 
 const MAX_SERVE_BYTES = 100 * 1024 * 1024;
+const BINARY_SAMPLE_BYTES = 8192;
+
+const isBinaryFile = async (filePath, fsPromises) => {
+  const file = await fsPromises.open(filePath, 'r');
+  try {
+    const sample = Buffer.alloc(BINARY_SAMPLE_BYTES);
+    const { bytesRead } = await file.read(sample, 0, sample.length, 0);
+    const bytes = sample.subarray(0, bytesRead);
+    if (bytes.includes(0)) {
+      return true;
+    }
+    try {
+      new TextDecoder('utf-8', { fatal: true }).decode(bytes);
+      return false;
+    } catch {
+      return true;
+    }
+  } finally {
+    await file.close();
+  }
+};
 
 // Only deterministic, side-effect-free git plumbing path queries are cacheable.
 // Anything outside this allowlist (including any non-git command) runs normally
@@ -737,7 +758,8 @@ export const registerFsRoutes = (app, dependencies) => {
         return res.status(400).json({ error: 'Specified path is not a file' });
       }
 
-      return res.json({ path: canonicalPath, isFile: true, size: stats.size, mtimeMs: stats.mtimeMs });
+      const isBinary = await isBinaryFile(canonicalPath, fsPromises);
+      return res.json({ path: canonicalPath, isFile: true, size: stats.size, mtimeMs: stats.mtimeMs, isBinary });
     } catch (error) {
       const err = error;
       if (err && typeof err === 'object' && err.code === 'ENOENT') {

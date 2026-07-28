@@ -17,6 +17,24 @@ type FsAttachment = {
   dataUrl: string;
 };
 
+const isBinaryFile = async (filePath: string): Promise<boolean> => {
+  const file = await fs.promises.open(filePath, 'r');
+  try {
+    const sample = Buffer.alloc(8192);
+    const { bytesRead } = await file.read(sample, 0, sample.length, 0);
+    const bytes = sample.subarray(0, bytesRead);
+    if (bytes.includes(0)) return true;
+    try {
+      new TextDecoder('utf-8', { fatal: true }).decode(bytes);
+      return false;
+    } catch {
+      return true;
+    }
+  } finally {
+    await file.close();
+  }
+};
+
 type SkippedAttachment = {
   name: string;
   reason: string;
@@ -317,6 +335,7 @@ export async function handleFsBridgeMessage(
             isFile: true,
             size: stats.size,
             mtimeMs: stats.mtimeMs,
+            isBinary: await isBinaryFile(resolution.resolvedPath),
           },
         };
       } catch (error) {

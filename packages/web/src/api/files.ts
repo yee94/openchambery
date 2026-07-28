@@ -130,7 +130,7 @@ export const createWebFilesAPI = ({ getDirectory }: WebFilesAPIOptions): FilesAP
     };
   },
 
-  async statFile(path: string, options): Promise<{ path: string; isFile: boolean; size: number; mtimeMs?: number }> {
+  async statFile(path: string, options): Promise<{ path: string; isFile: boolean; size: number; mtimeMs?: number; isBinary?: boolean }> {
     const target = normalizePath(path);
     const params = new URLSearchParams({ path: target });
     if (options?.allowOutsideWorkspace) {
@@ -155,6 +155,9 @@ export const createWebFilesAPI = ({ getDirectory }: WebFilesAPIOptions): FilesAP
       isFile: Boolean((result as { isFile?: boolean }).isFile),
       size: typeof (result as { size?: number }).size === 'number' ? (result as { size: number }).size : 0,
       mtimeMs: typeof (result as { mtimeMs?: number }).mtimeMs === 'number' ? (result as { mtimeMs: number }).mtimeMs : undefined,
+      isBinary: typeof (result as { isBinary?: unknown }).isBinary === 'boolean'
+        ? (result as { isBinary: boolean }).isBinary
+        : undefined,
     };
   },
 

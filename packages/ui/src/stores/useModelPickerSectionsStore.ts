@@ -6,7 +6,9 @@ import { persist } from 'zustand/middleware';
  * model/provider picker (`ModelPickerList`): the `favorites` and `recent`
  * sections plus each `provider:<id>` group. Section keys are stable and shared
  * across every picker surface, so collapsing a provider in one picker is
- * remembered everywhere and survives remounts and full page reloads.
+ * remembered everywhere and survives remounts and full page reloads. Pickers
+ * apply this persisted state while the search field is empty; active searches
+ * use component-local collapsed state.
  *
  * Only collapsed keys are stored (presence === collapsed); the default for any
  * unknown key is expanded.

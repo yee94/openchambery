@@ -1,4 +1,7 @@
 import { describe, expect, test } from 'bun:test';
+import { readFileSync } from 'node:fs';
+import { dirname, join } from 'node:path';
+import { fileURLToPath } from 'node:url';
 
 import {
     isLikelyFileReferencePath,
@@ -7,6 +10,8 @@ import {
 } from './fileReferenceParser';
 
 const parse = (value: string): ParsedFileReference | null => parseFileReference(value);
+const sourceDirectory = dirname(fileURLToPath(import.meta.url));
+const markdownRendererSource = readFileSync(join(sourceDirectory, 'MarkdownRendererImpl.tsx'), 'utf-8');
 
 describe('parseFileReference', () => {
     test('returns null for empty or whitespace input', () => {
@@ -113,5 +118,18 @@ describe('isLikelyFileReferencePath', () => {
         expect(isLikelyFileReferencePath('.omo/notepads/run/learnings.md')).toBe(true);
         expect(isLikelyFileReferencePath('Dockerfile')).toBe(true);
         expect(isLikelyFileReferencePath('.gitignore')).toBe(true);
+    });
+});
+
+describe('binary file references', () => {
+    test('routes binary links through the desktop path opener before the context preview', () => {
+        const binaryHandlingStart = markdownRendererSource.indexOf("sourceElement.getAttribute('data-openchamber-file-binary') === 'true'");
+        const contextPreviewStart = markdownRendererSource.indexOf('const contextDirectory = getContextDirectory', binaryHandlingStart);
+
+        expect(binaryHandlingStart).toBeGreaterThan(-1);
+        const binaryHandling = markdownRendererSource.slice(binaryHandlingStart, contextPreviewStart);
+        expect(binaryHandling).toContain('!isImageFile(resolved.resolvedPath)');
+        expect(binaryHandling).toContain('await openDesktopPath(resolved.resolvedPath)');
+        expect(markdownRendererSource).toContain('isMobileSurface && info.isBinary && !isImageFile(latestResolved.resolvedPath)');
     });
 });

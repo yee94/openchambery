@@ -48,6 +48,16 @@ let sessionGetData: Session | null = {
 /** Lets a test simulate live SSE landing while `session.get` is in flight. */
 let onSessionGet: (() => void) | null = null
 
+/** Per-test queue of `/session/status` snapshots for reconnect status resync. */
+type StatusSnapshot = Record<string, { type: "busy" | "idle" | "retry" }>
+type StatusSnapshotEntry = {
+  snapshot: StatusSnapshot
+  /** Delay before resolving so a later snapshot's request-start is after the first. */
+  delayMs?: number
+}
+const statusSnapshotQueue: StatusSnapshotEntry[] = []
+const statusSnapshotCalls: Array<{ directory: string; startedAt: number }> = []
+
 function installModuleMocks() {
   // Runtime surface mocks (complete exports) so importing sync-context / useDirectoryStore
   // never touches a bare `window` in Node test runners.
@@ -176,7 +186,15 @@ function installModuleMocks() {
           message: mock(async () => ({ data: null })),
         },
       }),
-      getSessionStatusForDirectory: mock(async () => ({})),
+      getSessionStatusForDirectory: mock(async (directory?: string | null) => {
+        const startedAt = Date.now()
+        statusSnapshotCalls.push({ directory: directory ?? "", startedAt })
+        const entry = statusSnapshotQueue.shift()
+        if (entry?.delayMs && entry.delayMs > 0) {
+          await new Promise((resolve) => setTimeout(resolve, entry.delayMs))
+        }
+        return entry?.snapshot ?? {}
+      }),
       getSessionStatus: mock(async () => ({})),
       listPendingQuestions: mock(async () => []),
       listPendingPermissions: mock(async () => []),
@@ -292,6 +310,8 @@ describe("sync-context reconnect / materialize → loadSessionMessagePage", () =
     loadCalls.length = 0
     sessionGetCalls.length = 0
     messagesSdkCalls.length = 0
+    statusSnapshotQueue.length = 0
+    statusSnapshotCalls.length = 0
     loaderBehavior = "ready"
     onSessionGet = null
     loaderMessages = [message("msg_1")]
@@ -358,6 +378,45 @@ describe("sync-context reconnect / materialize → loadSessionMessagePage", () =
     expect(typeof loadCalls[0]?.deps.isStale).toBe("function")
     expect(sessionGetCalls).toEqual(["ses_viewed"])
     expect(messagesSdkCalls).toHaveLength(0)
+  })
+
+  test("recovery reconciles stale busy status after completed message pull", async () => {
+    // First directory status still reports busy; the recovery page then lands a
+    // completed assistant. Without post-pull reconcile the list keeps busy.
+    const busy: { type: "busy" } = { type: "busy" }
+    const store = createDirectoryStore({
+      session_status: { ses_viewed: busy },
+      message: {},
+      part: {},
+    })
+    // Short delay on the first snapshot so its request-start is strictly earlier
+    // than the post-message-pull snapshot (requestedAt is captured before await).
+    statusSnapshotQueue.push(
+      { snapshot: { ses_viewed: { type: "busy" } }, delayMs: 5 },
+      { snapshot: {} },
+    )
+    loaderMessages = [
+      {
+        id: "msg_done",
+        sessionID: "ses_viewed",
+        role: "assistant",
+        time: { created: 1, completed: 2 },
+      } as Message,
+    ]
+    loaderParts = { msg_done: [part("prt_done", "msg_done")] }
+
+    await resyncDirectoryAfterReconnect(
+      "/repo",
+      store,
+      createRoutingIndex(),
+      "stream-reconnect",
+      () => 1,
+    )
+
+    expect(statusSnapshotCalls).toHaveLength(2)
+    expect(statusSnapshotCalls[1]!.startedAt).toBeGreaterThanOrEqual(statusSnapshotCalls[0]!.startedAt)
+    expect(store.getState().message.ses_viewed?.map((item) => item.id)).toEqual(["msg_done"])
+    expect(store.getState().session_status.ses_viewed).toEqual({ type: "idle" })
   })
 
   test("loader ready commits messages into the directory store (materialize)", async () => {

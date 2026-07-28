@@ -15,9 +15,11 @@ import { useUIStore } from '@/stores/useUIStore';
 import { useEffectiveDirectory } from '@/hooks/useEffectiveDirectory';
 import { useRuntimeAPIs } from '@/hooks/useRuntimeAPIs';
 import type { EditorAPI } from '@/lib/api/types';
-import { isDesktopLocalOriginActive, isDesktopShell, isVSCodeRuntime } from '@/lib/desktop';
+import { isDesktopBinaryPath, isDesktopLocalOriginActive, isDesktopShell, isVSCodeRuntime, openDesktopPath } from '@/lib/desktop';
 import { ensureOutsideFileGrantForDesktop } from '@/lib/outsideFileGrants';
 import { getDirectoryForFilePath, isFilePathWithinDirectory, toAbsoluteFilePath } from '@/lib/path-utils';
+import { isImageFile } from '@/lib/toolHelpers';
+import { isMobileSurfaceRuntime } from '@/lib/runtimeSurface';
 import { renderMarkdownBlocks, renderMarkdownSync } from './markdown/markdownCore';
 import { ensureMarkdownShikiTheme, getMarkdownSyntaxVars } from './markdown/markdownTheme';
 import { MarkdownLoadingPlaceholder } from './markdown/MarkdownLoadingSkeleton';
@@ -159,7 +161,9 @@ const VSCODE_FILE_REFERENCE_STAT_CACHE_MAX = 200;
 const FILE_REFERENCE_LINK_LIMIT = 80;
 const VSCODE_FILE_REFERENCE_LINK_LIMIT = 40;
 const FILE_REFERENCE_ANNOTATION_DELAY_MS = 160;
-const FILE_REFERENCE_STAT_CACHE = new Map<string, Promise<boolean>>();
+type FileReferenceInfo = { exists: boolean; isBinary: boolean };
+
+const FILE_REFERENCE_STAT_CACHE = new Map<string, Promise<FileReferenceInfo>>();
 let activeFileReferenceStatCount = 0;
 const pendingFileReferenceStats: Array<() => void> = [];
 
@@ -467,10 +471,10 @@ const getResolvedReference = (rawValue: string, effectiveDirectory: string): (Pa
   };
 };
 
-const fileReferenceExists = (resolvedPath: string): Promise<boolean> => {
+const getFileReferenceInfo = (resolvedPath: string): Promise<FileReferenceInfo> => {
   const normalizedPath = normalizePath(resolvedPath);
   if (!normalizedPath) {
-    return Promise.resolve(false);
+    return Promise.resolve({ exists: false, isBinary: false });
   }
 
   const cached = FILE_REFERENCE_STAT_CACHE.get(normalizedPath);
@@ -480,7 +484,7 @@ const fileReferenceExists = (resolvedPath: string): Promise<boolean> => {
     return cached;
   }
 
-  const request = new Promise<boolean>((resolve) => {
+  const request = new Promise<FileReferenceInfo>((resolve) => {
     const run = () => {
       activeFileReferenceStatCount += 1;
       void runtimeFetch(`/api/fs/stat?path=${encodeURIComponent(normalizedPath)}&optional=true`, {
@@ -489,13 +493,13 @@ const fileReferenceExists = (resolvedPath: string): Promise<boolean> => {
       })
         .then(async (response) => {
           if (!response.ok) {
-            resolve(false);
+            resolve({ exists: false, isBinary: false });
             return;
           }
-          const payload = await response.json().catch(() => null) as { exists?: unknown } | null;
-          resolve(payload?.exists !== false);
+          const payload = await response.json().catch(() => null) as { exists?: unknown; isBinary?: unknown } | null;
+          resolve({ exists: payload?.exists !== false, isBinary: payload?.isBinary === true });
         })
-        .catch(() => resolve(false))
+        .catch(() => resolve({ exists: false, isBinary: false }))
         .finally(() => {
           activeFileReferenceStatCount = Math.max(0, activeFileReferenceStatCount - 1);
           pendingFileReferenceStats.shift()?.();
@@ -547,19 +551,20 @@ const useFileReferenceInteractions = ({
       return;
     }
     let cancelled = false;
+    const isMobileSurface = isMobileSurfaceRuntime();
     const fileReferenceLinkLimit = getFileReferenceLinkLimit();
     // File-reference highlighting runs on every surface. The annotation pass
-    // issues filesystem `stat` probes (fileReferenceExists → /api/fs/stat);
+    // issues filesystem `stat` probes (getFileReferenceInfo → /api/fs/stat);
     // concurrency (FILE_REFERENCE_STAT_CONCURRENCY) and the bounded
     // FILE_REFERENCE_STAT_CACHE keep the request volume in check on
-    // constrained runtimes, so there is no need to disable the feature
-    // entirely on mobile.
+    // constrained runtimes. Mobile only annotates files it can preview.
     const fileReferencesEnabled = enabled;
 
     const clearFileLinkAttributes = (candidate: HTMLElement) => {
       candidate.removeAttribute('data-openchamber-file-link');
       candidate.removeAttribute('data-openchamber-file-ref');
       candidate.removeAttribute('data-openchamber-file-path');
+      candidate.removeAttribute('data-openchamber-file-binary');
       if (candidate.getAttribute('title') === 'Open file') {
         candidate.removeAttribute('title');
       }
@@ -628,12 +633,12 @@ const useFileReferenceInteractions = ({
         const canGrantOutsideFile = isDesktopShell()
           && isDesktopLocalOriginActive()
           && !isFilePathWithinDirectory(resolved.resolvedPath, effectiveDirectory);
-        const existsPromise = canGrantOutsideFile
-          ? Promise.resolve(true)
-          : fileReferenceExists(resolved.resolvedPath);
+        const infoPromise = canGrantOutsideFile
+          ? isDesktopBinaryPath(resolved.resolvedPath).then((isBinary) => ({ exists: true, isBinary: isBinary === true }))
+          : getFileReferenceInfo(resolved.resolvedPath);
 
-        void existsPromise.then((exists) => {
-          if (cancelled || !exists || !container.contains(candidate)) {
+        void infoPromise.then((info) => {
+          if (cancelled || !info.exists || !container.contains(candidate)) {
             return;
           }
 
@@ -642,10 +647,14 @@ const useFileReferenceInteractions = ({
           if (!latestResolved || latestResolved.resolvedPath !== resolved.resolvedPath) {
             return;
           }
+          if (isMobileSurface && info.isBinary && !isImageFile(latestResolved.resolvedPath)) {
+            return;
+          }
 
           candidate.setAttribute('data-openchamber-file-link', 'true');
           candidate.setAttribute('data-openchamber-file-ref', latestRawCandidate);
           candidate.setAttribute('data-openchamber-file-path', latestResolved.resolvedPath);
+          candidate.setAttribute('data-openchamber-file-binary', String(info.isBinary));
           candidate.setAttribute('title', 'Open file');
           if (candidate.tagName.toLowerCase() !== 'a') {
             candidate.setAttribute('role', 'button');
@@ -660,6 +669,14 @@ const useFileReferenceInteractions = ({
       const resolved = getResolvedReference(raw, effectiveDirectory);
       if (!resolved) {
         return;
+      }
+
+      const isBinary = sourceElement.getAttribute('data-openchamber-file-binary') === 'true';
+      const isApplicationBundle = resolved.resolvedPath.toLowerCase().endsWith('.app');
+      if ((isBinary || isApplicationBundle) && !isImageFile(resolved.resolvedPath)) {
+        if (await openDesktopPath(resolved.resolvedPath)) {
+          return;
+        }
       }
 
       const contextDirectory = getContextDirectory(effectiveDirectory, resolved.resolvedPath);

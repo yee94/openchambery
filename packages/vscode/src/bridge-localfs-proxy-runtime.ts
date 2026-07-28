@@ -47,6 +47,24 @@ const normalizeFsProxyPath = (pathname: string): '/api/fs/stat' | '/api/fs/read'
   return null;
 };
 
+const isBinaryFile = async (filePath: string): Promise<boolean> => {
+  const file = await fs.promises.open(filePath, 'r');
+  try {
+    const sample = Buffer.alloc(8192);
+    const { bytesRead } = await file.read(sample, 0, sample.length, 0);
+    const bytes = sample.subarray(0, bytesRead);
+    if (bytes.includes(0)) return true;
+    try {
+      new TextDecoder('utf-8', { fatal: true }).decode(bytes);
+      return false;
+    } catch {
+      return true;
+    }
+  } finally {
+    await file.close();
+  }
+};
+
 export const tryHandleLocalFsProxy = async (method: string, requestPath: string): Promise<ApiProxyResponsePayload | null> => {
   let parsed: URL;
   try {
@@ -99,6 +117,7 @@ export const tryHandleLocalFsProxy = async (method: string, requestPath: string)
     }
 
     if (fsProxyPath === '/api/fs/stat') {
+      const isBinary = await isBinaryFile(resolution.resolvedPath);
       return {
         status: 200,
         headers: {
@@ -110,6 +129,7 @@ export const tryHandleLocalFsProxy = async (method: string, requestPath: string)
           isFile: true,
           size: stats.size,
           mtimeMs: stats.mtimeMs,
+          isBinary,
         })),
       };
     }

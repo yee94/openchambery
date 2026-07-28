@@ -13,6 +13,7 @@ Own filesystem API behavior for the web server runtime, including workspace-boun
     - `GET /api/fs/home`
     - `POST /api/fs/mkdir`
     - `GET /api/fs/read`
+    - `GET /api/fs/stat` (includes an `isBinary` classification from an 8 KiB file sample)
     - `GET /api/fs/raw`
     - `GET /api/fs/serve/:path(*)`
     - `POST /api/fs/write`

@@ -138,7 +138,8 @@ export function reduceSessionMessagePage(
     }
   }
 
-  if (isLiveRevisionStale(options.capturedRevision, options.liveRevision)) {
+  const liveRevisionStale = isLiveRevisionStale(options.capturedRevision, options.liveRevision)
+  if (liveRevisionStale && options.mode !== "recovery") {
     return {
       applied: false,
       changed: false,
@@ -176,7 +177,7 @@ export function reduceSessionMessagePage(
     records,
     {
       skipPartTypes: options.skipPartTypes,
-      mode: materializeMode(options.mode),
+      mode: liveRevisionStale ? "merge" : materializeMode(options.mode),
     },
   )
 

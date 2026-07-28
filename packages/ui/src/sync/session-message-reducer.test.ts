@@ -348,7 +348,48 @@ describe("reduceSessionMessagePage — streaming and optimistic", () => {
 })
 
 describe("reduceSessionMessagePage — race and error semantics", () => {
-  test("skips apply when live revision advanced past captured HTTP revision", () => {
+  test("stale recovery fills missing messages while preserving newer live content", () => {
+    const previousAssistant = message("msg_1")
+    const missingUser = userMessage("msg_2")
+    const liveAssistant = message("msg_3")
+    const halfReasoning = part("prt_1", "msg_1", "reasoning", "half")
+    const completedReasoning = {
+      ...part("prt_1", "msg_1", "reasoning", "complete reasoning"),
+      time: { end: 10 },
+    } as Part
+    const liveReasoning = part("prt_3", "msg_3", "reasoning", "newer reasoning from sse")
+    const staleReasoning = part("prt_3", "msg_3", "reasoning", "newer")
+    const state: SessionMessageReducerState = {
+      message: { ses_1: [previousAssistant, liveAssistant] },
+      part: { msg_1: [halfReasoning], msg_3: [liveReasoning] },
+    }
+
+    const result = reduceSessionMessagePage(
+      state,
+      "ses_1",
+      page([
+        { info: previousAssistant, parts: [completedReasoning] },
+        { info: missingUser, parts: [part("prt_2", "msg_2", "text", "sent prompt")] },
+        { info: { ...liveAssistant }, parts: [staleReasoning] },
+      ], { complete: true }),
+      {
+        mode: "recovery",
+        skipPartTypes: SKIP_PARTS,
+        capturedRevision: 3,
+        liveRevision: 5,
+      },
+    )
+
+    expect(result.applied).toBe(true)
+    expect(result.message.ses_1?.map((item) => item.id)).toEqual(["msg_1", "msg_2", "msg_3"])
+    expect(result.message.ses_1?.[0]).toBe(previousAssistant)
+    expect(result.message.ses_1?.[2]).toBe(liveAssistant)
+    expect((result.part.msg_1?.[0] as { text?: string }).text).toBe("complete reasoning")
+    expect((result.part.msg_1?.[0] as { time?: { end?: number } }).time?.end).toBe(10)
+    expect((result.part.msg_3?.[0] as { text?: string }).text).toBe("newer reasoning from sse")
+  })
+
+  test("skips stale initial pages", () => {
     const existing = message("msg_live")
     const existingPart = part("prt_live", "msg_live", "text", "from sse")
     const state: SessionMessageReducerState = {
@@ -359,11 +400,9 @@ describe("reduceSessionMessagePage — race and error semantics", () => {
     const result = reduceSessionMessagePage(
       state,
       "ses_1",
-      page([{ info: message("msg_stale"), parts: [part("prt_stale", "msg_stale")] }], {
-        complete: true,
-      }),
+      page([{ info: message("msg_stale"), parts: [part("prt_stale", "msg_stale")] }], { complete: true }),
       {
-        mode: "recovery",
+        mode: "initial",
         skipPartTypes: SKIP_PARTS,
         capturedRevision: 3,
         liveRevision: 5,
@@ -374,7 +413,6 @@ describe("reduceSessionMessagePage — race and error semantics", () => {
     expect(result.changed).toBe(false)
     expect(result.message).toBe(state.message)
     expect(result.part).toBe(state.part)
-    expect(result.meta).toBe(state.meta)
   })
 
   test("applies when live revision matches captured revision", () => {

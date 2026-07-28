@@ -265,7 +265,7 @@ async function loadSessionMessagePageApp(
       request: () => deps.queryPage({ limit, before }),
     })
 
-    if (deps.isStale?.()) {
+    if (deps.isStale?.() && purpose !== "recovery") {
       setSessionPrefetch({
         directory,
         sessionID,
@@ -311,7 +311,7 @@ async function loadSessionMessagePageApp(
       records = recovered.records
     }
 
-    if (deps.isStale?.()) {
+    if (deps.isStale?.() && purpose !== "recovery") {
       setSessionPrefetch({
         directory,
         sessionID,

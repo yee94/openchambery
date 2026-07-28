@@ -160,6 +160,26 @@ const registerRead = (fsPromises) => {
   return getRoute('GET', '/api/fs/read');
 };
 
+const registerStat = (fsPromises) => {
+  const { app, getRoute } = createRouteRegistry();
+  registerFsRoutes(app, {
+    os: { homedir: () => '/home/user' },
+    path: path.posix,
+    fsPromises: {
+      realpath: async (targetPath) => targetPath,
+      ...fsPromises,
+    },
+    spawn: vi.fn(),
+    crypto: { randomUUID: () => 'job-0' },
+    normalizeDirectoryPath: (p) => p,
+    resolveProjectDirectory: async () => ({ directory: '/repo' }),
+    buildAugmentedPath: () => '/usr/bin',
+    resolveGitBinaryForSpawn: () => 'git',
+    openchamberUserConfigRoot: '/home/user/.config',
+  });
+  return getRoute('GET', '/api/fs/stat');
+};
+
 const registerRaw = (fsPromises) => {
   const { app, getRoute } = createRouteRegistry();
   registerFsRoutes(app, {
@@ -218,6 +238,12 @@ const callRead = async (handler, query) => {
   return res;
 };
 
+const callStat = async (handler, query) => {
+  const res = createMockResponse();
+  await handler({ query }, res);
+  return res;
+};
+
 const callRaw = async (handler, query) => {
   const res = createMockResponse();
   await handler({ query }, res);
@@ -229,6 +255,46 @@ const callMkdir = async (handler, body) => {
   await handler({ body }, res);
   return res;
 };
+
+describe('fs stat', () => {
+  it('reports binary content from a bounded byte sample', async () => {
+    const file = {
+      read: vi.fn(async (buffer) => {
+        buffer.set([0x00, 0x61]);
+        return { bytesRead: 2 };
+      }),
+      close: vi.fn(async () => undefined),
+    };
+    const handler = registerStat({
+      stat: vi.fn(async () => ({ isFile: () => true, size: 2, mtimeMs: 1 })),
+      open: vi.fn(async () => file),
+    });
+
+    const res = await callStat(handler, { path: '/repo/artifact.dmg' });
+
+    expect(res.body).toEqual({ path: '/repo/artifact.dmg', isFile: true, size: 2, mtimeMs: 1, isBinary: true });
+    expect(file.read).toHaveBeenCalledWith(expect.any(Buffer), 0, 8192, 0);
+    expect(file.close).toHaveBeenCalledOnce();
+  });
+
+  it('keeps UTF-8 text previewable', async () => {
+    const file = {
+      read: vi.fn(async (buffer) => {
+        buffer.set(Buffer.from('export const value = 1;'));
+        return { bytesRead: 23 };
+      }),
+      close: vi.fn(async () => undefined),
+    };
+    const handler = registerStat({
+      stat: vi.fn(async () => ({ isFile: () => true, size: 23, mtimeMs: 1 })),
+      open: vi.fn(async () => file),
+    });
+
+    const res = await callStat(handler, { path: '/repo/source.unknown' });
+
+    expect(res.body).toMatchObject({ isBinary: false });
+  });
+});
 
 describe('fs write', () => {
   it('does not rewrite a file when content is unchanged', async () => {

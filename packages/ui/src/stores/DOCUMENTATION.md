@@ -95,6 +95,8 @@ Examples:
 
 These stores coordinate visible app state, navigation, selected tabs, dialogs, and lightweight feature flags.
 
+`useModelPickerSectionsStore` persists model-picker section collapse choices for the empty-search view. `ModelPickerList` starts active-search results expanded, keeps collapse choices component-local during that search, and clears them when the search ends.
+
 `useUIStore` keeps context-panel tab *content* directory-scoped (`contextPanelByDirectory`), but the *open* state of the right workspace (context panel for subagent/file preview/diff, plus right sidebar git/files) is session-correlated. `syncWorkspacePanelsForSessionSwitch()` captures the previous session snapshot into in-memory `sessionWorkspacePanelById` and restores the next session (or closes panels when there is no snapshot). Callers that leave a real session must invoke it: `setCurrentSession()` on session id change, and `openNewSessionDraft()` when clearing the current session for Welcome/draft (it does not go through `setCurrentSession`).
 
 Exact tool patches selected from `edit`, `multiedit`, and `apply_patch` rows live in the transient `contextToolDiffByDirectory` map. Edit-style rows retain one file, while an `apply_patch` row retains every renderable file from that invocation. The persisted tab keeps only its target path, turn message, and focus line; regular diff navigation, scope changes, tab close, and runtime switches clear the transient patches.

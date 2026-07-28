@@ -423,6 +423,9 @@ export const ModelPickerList: React.FC<ModelPickerListProps> = ({
     () => new Set(Object.keys(collapsedRecord).filter((key) => collapsedRecord[key])),
     [collapsedRecord],
   );
+  const hasSearchQuery = searchQuery.trim().length > 0;
+  const [searchCollapsedSections, setSearchCollapsedSections] = React.useState<Set<string>>(() => new Set());
+  const effectiveCollapsedSections = hasSearchQuery ? searchCollapsedSections : collapsedSections;
   const favoriteRowSensors = useSensors(
     useSensor(PointerSensor, { activationConstraint: { distance: 8 } }),
   );
@@ -505,14 +508,14 @@ export const ModelPickerList: React.FC<ModelPickerListProps> = ({
 
   const flatModelList = React.useMemo(() => {
     const items: ModelPickerEntry[] = [];
-    if (!collapsedSections.has('favorites')) filteredFavorites.forEach((entry) => items.push(entry));
-    if (!collapsedSections.has('recent')) filteredRecents.forEach((entry) => items.push(entry));
+    if (!effectiveCollapsedSections.has('favorites')) filteredFavorites.forEach((entry) => items.push(entry));
+    if (!effectiveCollapsedSections.has('recent')) filteredRecents.forEach((entry) => items.push(entry));
     filteredProviders.forEach((provider) => {
-      if (collapsedSections.has(`provider:${provider.id}`)) return;
+      if (effectiveCollapsedSections.has(`provider:${provider.id}`)) return;
       provider.models.forEach((model) => items.push({ model, providerID: provider.id, modelID: model.id as string }));
     });
     return items;
-  }, [collapsedSections, filteredFavorites, filteredProviders, filteredRecents]);
+  }, [effectiveCollapsedSections, filteredFavorites, filteredProviders, filteredRecents]);
 
   const hasResults = flatModelList.length > 0;
   const favoriteSortingEnabled = Boolean(onReorderFavorite) && searchQuery.trim().length === 0 && filteredFavorites.length > 1;
@@ -524,6 +527,11 @@ export const ModelPickerList: React.FC<ModelPickerListProps> = ({
   React.useEffect(() => {
     selectionStore.set(0);
   }, [searchQuery, selectionStore]);
+
+  React.useEffect(() => {
+    if (hasSearchQuery) return;
+    setSearchCollapsedSections((current) => current.size === 0 ? current : new Set());
+  }, [hasSearchQuery]);
 
   const selectIndex = React.useCallback((index: number) => {
     selectionStore.set(index);
@@ -683,8 +691,20 @@ export const ModelPickerList: React.FC<ModelPickerListProps> = ({
     onReorderProvider(arrayMove(ids, from, to));
   };
 
-  const isSectionCollapsed = (key: string) => collapsedSections.has(key);
-  const toggleSectionCollapsed = (key: string) => toggleSection(key);
+  const isSectionCollapsed = (key: string) => effectiveCollapsedSections.has(key);
+  const toggleSectionCollapsed = (key: string) => {
+    if (!hasSearchQuery) {
+      toggleSection(key);
+      return;
+    }
+
+    setSearchCollapsedSections((current) => {
+      const next = new Set(current);
+      if (next.has(key)) next.delete(key);
+      else next.add(key);
+      return next;
+    });
+  };
 
   const renderSectionHeader = (key: string, icon: React.ReactNode, label: React.ReactNode, headerDragProps?: SortableFavoriteHandleProps) => {
     const collapsed = isSectionCollapsed(key);

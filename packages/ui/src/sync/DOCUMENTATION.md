@@ -308,7 +308,9 @@ Rules that keep this single-sourced:
   `materializeSessionSnapshots` plus optimistic merge, returns reference-stable
   state when unchanged, and emits commands such as `clear-optimistic`. Callers
   own store writes and side effects; the reducer never touches SDK/Query/store.
-  Stale HTTP vs SSE races drop the page when `liveRevision > capturedRevision`.
+  Stale non-recovery HTTP pages are dropped when `liveRevision > capturedRevision`.
+  Recovery pages use additive merge semantics in that case: missing messages are
+  restored while newer live message objects and streaming part content retain precedence.
   Fetch errors (`ok: false`) preserve prior state and never write empty success.
 - Application orchestration for message pages is owned by
   `session-message-loader.ts` (`loadSessionMessagePage` with `purpose`). It

@@ -806,6 +806,24 @@ export const openDesktopPath = async (path: string, app?: string | null): Promis
   }
 };
 
+export const isDesktopBinaryPath = async (path: string): Promise<boolean | null> => {
+  if (!hasDesktopInvoke() || !isDesktopLocalOriginActive()) {
+    return null;
+  }
+
+  const trimmed = path?.trim();
+  if (!trimmed) {
+    return null;
+  }
+
+  try {
+    const result = await invokeDesktop<unknown>('desktop_is_binary_path', { path: trimmed });
+    return typeof result === 'boolean' ? result : null;
+  } catch {
+    return null;
+  }
+};
+
 export const revealDesktopPath = async (path: string): Promise<boolean> => {
   if (!hasDesktopInvoke() || !isDesktopLocalOriginActive()) {
     return false;

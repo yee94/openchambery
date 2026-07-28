@@ -10,7 +10,7 @@ Desktop starts the OpenChamber web server in the same Electron main process. The
 
 `main.mjs` imports `@openchamber/web/server/index.js` and calls `startWebUiServer()`. The Electron window then loads the UI from the local server in development, or from packaged `resources/web-dist` assets in packaged builds.
 
-The preload bridge exposes desktop-only APIs to the web UI through `window.__OPENCHAMBER_DESKTOP__`. Privileged commands are checked in `main.mjs`, not only in the UI.
+The preload bridge exposes desktop-only APIs to the web UI through `window.__OPENCHAMBER_DESKTOP__`. Privileged commands are checked in `main.mjs`, not only in the UI. The binary-path probe samples at most 8 KiB before a non-image binary file opens through the system handler.
 
 ## Shutdown Lifecycle
 

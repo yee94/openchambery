@@ -561,7 +561,7 @@ describe("loadSessionMessagePage — application orchestration", () => {
     expect(storeB.state.message[sessionID]?.map((item) => item.id)).toEqual(["msg_1"])
   })
 
-  test("live revision advance blocks a stale snapshot from overwriting the store", async () => {
+  test("live revision advance lets recovery restore missing messages without overwriting live content", async () => {
     const existing = message("msg_live", "user")
     const existingPart = part("prt_live", "msg_live", "from sse")
     const store = createStore({
@@ -592,13 +592,15 @@ describe("loadSessionMessagePage — application orchestration", () => {
           })
         },
         getLiveRevision: () => liveRevision,
+        isStale: () => liveRevision > 3,
         skipPartTypes: SKIP_PARTS,
       },
     })
 
-    expect(result.status).toBe("skipped")
-    expect(result.applied).toBe(false)
-    expect(store.commits).toHaveLength(0)
+    expect(result.status).toBe("ready")
+    expect(result.applied).toBe(true)
+    expect(store.commits).toHaveLength(1)
+    expect(store.state.message[sessionID]?.map((item) => item.id).sort()).toEqual(["msg_live", "msg_stale"])
     expect(store.state.message[sessionID]?.[0]).toBe(existing)
     expect(store.state.part.msg_live?.[0]).toBe(existingPart)
   })

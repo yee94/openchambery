@@ -4008,6 +4008,28 @@ const handleInvoke = async (browserWindow, command, args = {}) => {
       return null;
     }
 
+    case 'desktop_is_binary_path': {
+      const targetPath = typeof args.path === 'string' ? args.path.trim() : '';
+      if (!targetPath) throw new Error('Path is required');
+      const stats = await fsp.stat(targetPath);
+      if (!stats.isFile()) return false;
+      const file = await fsp.open(targetPath, 'r');
+      try {
+        const sample = Buffer.alloc(8192);
+        const { bytesRead } = await file.read(sample, 0, sample.length, 0);
+        const bytes = sample.subarray(0, bytesRead);
+        if (bytes.includes(0)) return true;
+        try {
+          new TextDecoder('utf-8', { fatal: true }).decode(bytes);
+          return false;
+        } catch {
+          return true;
+        }
+      } finally {
+        await file.close();
+      }
+    }
+
     case 'desktop_open_external_url': {
       const target = typeof args.url === 'string' ? args.url.trim() : '';
       if (!target) throw new Error('URL is required');
