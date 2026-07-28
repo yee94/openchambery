@@ -391,12 +391,13 @@ export async function materializeSessionFromServer(
   // Match prior empty-page behavior: do not treat an empty successful page as
   // enough to resync status (old path returned before any write when records
   // were empty). Prefetch meta for non-empty pages is owned by the loader.
-  if (loadResult.status !== "ready" || !loadResult.applied) return
-  if (loadResult.messages.length === 0) return
+  if (loadResult.status !== "ready" || !loadResult.applied) return loadResult.status
+  if (loadResult.messages.length === 0) return loadResult.status
 
   if (statusBeforeMaterialization && statusBeforeMaterialization.type !== "idle" && !options?.isStale?.()) {
     await resyncDirectorySessionStatuses(directory, store, [sessionID])
   }
+  return loadResult.status
 }
 
 // Module-level refs for notification viewed check.
@@ -1302,7 +1303,7 @@ export async function resyncDirectoryAfterReconnect(
     const scopedClient = opencodeClient.getScopedSdkClient(directory)
     const runtimeKey = getRuntimeKey()
     await Promise.all(materializationSessionIds.map(async (sessionId) => {
-      const capturedRevision = getLiveRevision(sessionId)
+      const identityRevision = getLiveRevision(sessionId)
       syncDebug.recovery.materializing({ reason, directory, sessionID: sessionId })
       const sessionResponse = await retry(async () => {
         const response = await scopedClient.session.get({ sessionID: sessionId })
@@ -1310,37 +1311,40 @@ export async function resyncDirectoryAfterReconnect(
         return response
       }).catch(() => null)
       const session = sessionResponse?.data
-      if (!session) return
-      if (!isLiveRevisionCurrent(capturedRevision, getLiveRevision(sessionId))) return
 
-      const nextSession = stripSessionDiffSnapshots(session)
+      // Session identity is independent of the message page. A missing session or
+      // live events arriving during `session.get` only skip the identity write:
+      // a session that keeps streaming would otherwise never recover its body.
+      if (session && isLiveRevisionCurrent(identityRevision, getLiveRevision(sessionId))) {
+        const nextSession = stripSessionDiffSnapshots(session)
+        store.setState((state: DirectoryStore) => {
+          const sessionIndex = state.session.findIndex((item) => item.id === nextSession.id)
+          let sessions = state.session
+          let sessionChanged = false
+          let sessionTotal = state.sessionTotal
 
-      // Session identity is independent of the message page; apply it first so a
-      // later message error/skip still leaves identity current when possible.
-      store.setState((state: DirectoryStore) => {
-        const sessionIndex = state.session.findIndex((item) => item.id === nextSession.id)
-        let sessions = state.session
-        let sessionChanged = false
-        let sessionTotal = state.sessionTotal
-
-        if (sessionIndex >= 0) {
-          if (!haveEquivalentSyncSnapshots(sessions[sessionIndex], nextSession)) {
+          if (sessionIndex >= 0) {
+            if (!haveEquivalentSyncSnapshots(sessions[sessionIndex], nextSession)) {
+              sessions = [...state.session]
+              sessions[sessionIndex] = nextSession
+              sessionChanged = true
+            }
+          } else {
             sessions = [...state.session]
-            sessions[sessionIndex] = nextSession
+            sessions.push(nextSession)
+            sessions.sort((a, b) => cmp(a.id, b.id))
+            if (!nextSession.parentID) sessionTotal += 1
             sessionChanged = true
           }
-        } else {
-          sessions = [...state.session]
-          sessions.push(nextSession)
-          sessions.sort((a, b) => cmp(a.id, b.id))
-          if (!nextSession.parentID) sessionTotal += 1
-          sessionChanged = true
-        }
 
-        if (!sessionChanged) return state
-        return { session: sessions, sessionTotal }
-      })
-      setIndexedSessionDirectory(routingIndex, nextSession.id, directory)
+          if (!sessionChanged) return state
+          return { session: sessions, sessionTotal }
+        })
+        setIndexedSessionDirectory(routingIndex, nextSession.id, directory)
+      }
+
+      // Captured after `session.get` so only events racing the page itself are stale.
+      const bodyRevision = getLiveRevision(sessionId)
 
       const loadResult = await loadSessionMessagePage({
         purpose: "recovery",
@@ -1400,7 +1404,7 @@ export async function resyncDirectoryAfterReconnect(
             })
           },
           getLiveRevision: () => getLiveRevision(sessionId),
-          isStale: () => !isLiveRevisionCurrent(capturedRevision, getLiveRevision(sessionId)),
+          isStale: () => !isLiveRevisionCurrent(bodyRevision, getLiveRevision(sessionId)),
           skipPartTypes: RECONNECT_SKIP_PARTS,
         },
       })

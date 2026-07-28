@@ -1,4 +1,5 @@
 import React from 'react';
+import { useEvent } from '@reactuses/core';
 import { cn } from '@/lib/utils';
 import type { TurnActivityRecord as TurnActivityPart } from '../../lib/turns/types';
 import type { ToolPart as ToolPartType } from '@opencode-ai/sdk/v2';
@@ -6,7 +7,6 @@ import type { StreamPhase } from '../types';
 import type { ContentChangeReason } from '@/hooks/useChatAutoFollow';
 import type { ToolPopupContent } from '../types';
 import ToolPart from './ToolPart';
-import { MinDurationShineText } from './MinDurationShineText';
 import { ToolRevealOnMount } from './ToolRevealOnMount';
 import { FileTypeIcon } from '@/components/icons/FileTypeIcon';
 import { Text } from '@/components/ui/text';
@@ -27,6 +27,7 @@ import { getExternalFaviconUrl } from '@/lib/url';
 import { getDirectoryForFilePath, getRelativeFilePath, isFilePathWithinDirectory, normalizeFilePath, toAbsoluteFilePath } from '@/lib/path-utils';
 import { getToolRowBlockClass, TOOL_ROW_INTERACTIVE_CHROME_CLASS } from './toolRowChrome';
 import { useSessionSurface } from '../../SessionSurfaceContext';
+import { useMobileAppActions } from '@/apps/mobileAppContext';
 
 const TOOL_ROW_TEXT_CLASS = '!text-[length:var(--text-meta)] !leading-5 sm:!leading-6 tracking-normal';
 const TOOL_ROW_TITLE_CLASS = cn('typography-meta font-medium', TOOL_ROW_TEXT_CLASS);
@@ -70,20 +71,6 @@ const ExternalLinkFavicon: React.FC<{ href: string }> = ({ href }) => {
             />
         </span>
     );
-};
-
-const isActivityRunning = (activity: TurnActivityPart): boolean => {
-    if (activity.kind !== 'tool') return false;
-    const part = activity.part as ToolPartType;
-    const status = (part.state?.status as string) || undefined;
-    const isFinalized = status === 'completed' || status === 'error' || status === 'aborted' || status === 'failed' || status === 'timeout' || status === 'cancelled';
-    if (isFinalized) {
-        return false;
-    }
-    if (status === 'running' || status === 'pending' || status === 'started') {
-        return true;
-    }
-    return typeof activity.endedAt !== 'number';
 };
 
 /**
@@ -392,9 +379,9 @@ const ExpandableToolRow: React.FC<ExpandableToolRowProps> = ({
     animateTailText,
     animateRows,
 }) => {
-    const handleToggle = React.useCallback(() => {
+    const handleToggle = useEvent(() => {
         onToggleTool(activity.id);
-    }, [activity.id, onToggleTool]);
+    });
 
     const content = (
         <div className={getToolRowBlockClass(isMobile)}>
@@ -584,6 +571,7 @@ const StaticToolRowInner: React.FC<{
     const icon = getToolIcon(toolName);
     const isReadGroup = toolName.toLowerCase() === 'read';
     const runtime = React.useContext(RuntimeAPIContext);
+    const mobileActions = useMobileAppActions();
     const fallbackDirectory = useDirectoryStore((state) => state.currentDirectory);
     const sessionSurface = useSessionSurface();
     const currentDirectory = sessionSurface.kind === 'embedded'
@@ -591,7 +579,6 @@ const StaticToolRowInner: React.FC<{
         : fallbackDirectory;
     const skillsQuery = useInstalledSkillsQuery({ enabled: toolName.toLowerCase() === 'skill' });
     const skills = React.useMemo(() => skillsQuery.data ?? [], [skillsQuery.data]);
-    const hasRunningActivity = React.useMemo(() => activities.some((activity) => isActivityRunning(activity)), [activities]);
     const skillByName = React.useMemo(() => new Map(skills.map((skill) => [skill.name, skill])), [skills]);
 
     const descriptions = React.useMemo(() => {
@@ -641,12 +628,21 @@ const StaticToolRowInner: React.FC<{
         return entries;
     }, [activities, currentDirectory, isReadGroup]);
 
-    const handleReadFileClick = React.useCallback((filePath: string, offset?: number) => {
+    const handleReadFileClick = useEvent((filePath: string, offset?: number) => {
         if (!currentDirectory) {
             return;
         }
         const absolutePath = toAbsoluteFilePath(currentDirectory, filePath);
         if (!absolutePath) {
+            return;
+        }
+
+        // Dedicated mobile: same gesture resizable sheet as Edit/Write diffs.
+        if (mobileActions) {
+            mobileActions.openFile({
+                path: absolutePath,
+                targetLine: offset && Number.isFinite(offset) ? Math.max(1, Math.trunc(offset)) : undefined,
+            });
             return;
         }
 
@@ -675,15 +671,20 @@ const StaticToolRowInner: React.FC<{
             return;
         }
         uiStore.openContextFile(contextDirectory, absolutePath);
-    }, [currentDirectory, runtime]);
+    });
 
-    const handleSkillClick = React.useCallback((skillPath: string) => {
+    const handleSkillClick = useEvent((skillPath: string) => {
         const absolutePath = normalizeFilePath(skillPath);
         if (!absolutePath) {
             return;
         }
 
         const openInContext = () => {
+            // Dedicated mobile: gesture sheet; desktop keeps context panel.
+            if (mobileActions) {
+                mobileActions.openFile({ path: absolutePath });
+                return;
+            }
             const uiStore = useUIStore.getState();
             const contextDirectory = currentDirectory || getDirectoryForFilePath('', absolutePath);
             uiStore.openContextFile(contextDirectory, absolutePath);
@@ -696,7 +697,7 @@ const StaticToolRowInner: React.FC<{
             return;
         }
         openInContext();
-    }, [currentDirectory]);
+    });
 
     const normalizedToolName = toolName.toLowerCase();
     const isSearchGroup = normalizedToolName === 'grep'
@@ -706,44 +707,93 @@ const StaticToolRowInner: React.FC<{
         || normalizedToolName === 'glob';
     const isFetchGroup = normalizedToolName === 'webfetch' || normalizedToolName === 'fetch' || normalizedToolName === 'curl' || normalizedToolName === 'wget';
     const isSkillGroup = normalizedToolName === 'skill';
+    // Read/Skill 与 Edit/Write 一致：整行导航热区（多文件时点路径仍可精确打开）
+    const primaryReadEntry = isReadGroup && readFileEntries.length > 0 ? readFileEntries[0] : null;
+    const primarySkillEntry = isSkillGroup && skillEntries.length > 0 ? skillEntries[0] : null;
+    const isWholeRowNav = Boolean(primaryReadEntry || primarySkillEntry);
+    const canActivateWholeRowNav = Boolean(
+        (primaryReadEntry && currentDirectory)
+        || primarySkillEntry
+    );
+
+    const handleWholeRowNavClick = useEvent(() => {
+        if (!isWholeRowNav || !canActivateWholeRowNav) {
+            return;
+        }
+        // 多路径子按钮已 stopPropagation；整行只负责主目标
+        if (primaryReadEntry) {
+            handleReadFileClick(primaryReadEntry.path, primaryReadEntry.offset);
+            return;
+        }
+        if (primarySkillEntry) {
+            handleSkillClick(primarySkillEntry.path);
+        }
+    });
+
+    const handleWholeRowNavKeyDown = useEvent((event: React.KeyboardEvent<HTMLDivElement>) => {
+        if (event.key !== 'Enter' && event.key !== ' ') {
+            return;
+        }
+        event.preventDefault();
+        handleWholeRowNavClick();
+    });
 
     return (
         <div
             className={cn(
                 'flex w-full items-center gap-x-1.5 min-w-0',
                 TOOL_ROW_INTERACTIVE_CHROME_CLASS,
+                isWholeRowNav && canActivateWholeRowNav && 'cursor-pointer',
+                isWholeRowNav && !canActivateWholeRowNav && 'cursor-default opacity-70',
             )}
+            // Full-width nav rows match ToolPart soft press (never compact).
+            data-mobile-press-feedback={isWholeRowNav ? 'soft' : undefined}
+            onClick={isWholeRowNav ? handleWholeRowNavClick : undefined}
+            onKeyDown={isWholeRowNav ? handleWholeRowNavKeyDown : undefined}
+            role={isWholeRowNav ? 'button' : undefined}
+            tabIndex={isWholeRowNav && canActivateWholeRowNav ? 0 : undefined}
+            aria-disabled={isWholeRowNav && !canActivateWholeRowNav ? true : undefined}
         >
             <div className="inline-flex h-5 items-center flex-shrink-0" style={{ color: 'var(--tools-icon)' }}>
                 {icon}
             </div>
-            <MinDurationShineText
-                active={hasRunningActivity}
-                minDurationMs={1000}
+            <span
                 className={cn(TOOL_ROW_TITLE_CLASS, 'inline-flex items-center flex-shrink-0 opacity-85')}
                 style={{ color: 'var(--tools-title)' }}
                 title={displayName}
             >
                 {displayName}
-            </MinDurationShineText>
+            </span>
             {isReadGroup && readFileEntries.length > 0
                 ? readFileEntries.map((entry) => (
-                    <button
-                        key={entry.path}
-                        type="button"
-                        disabled={!currentDirectory}
-                        onClick={(event) => {
-                            event.preventDefault();
-                            event.stopPropagation();
-                            handleReadFileClick(entry.path, entry.offset);
-                        }}
-                        className={cn('inline-flex !min-h-0 items-center justify-start gap-1 min-w-0 flex-1 text-left hover:opacity-90', TOOL_ROW_DESCRIPTION_CLASS)}
-                        style={{ color: 'var(--tools-description)' }}
-                        title={entry.offset ? `${entry.displayPath}:${entry.offset}` : entry.displayPath}
-                    >
-                        {showToolFileIcons ? <FileTypeIcon filePath={entry.path} className="h-3.5 w-3.5" /> : null}
-                        {renderReadFilePath(entry.displayPath, animateTailText)}
-                    </button>
+                    readFileEntries.length === 1 ? (
+                        <span
+                            key={entry.path}
+                            className={cn('inline-flex !min-h-0 items-center justify-start gap-1 min-w-0 flex-1 text-left', TOOL_ROW_DESCRIPTION_CLASS)}
+                            style={{ color: 'var(--tools-description)' }}
+                            title={entry.offset ? `${entry.displayPath}:${entry.offset}` : entry.displayPath}
+                        >
+                            {showToolFileIcons ? <FileTypeIcon filePath={entry.path} className="h-3.5 w-3.5" /> : null}
+                            {renderReadFilePath(entry.displayPath, animateTailText)}
+                        </span>
+                    ) : (
+                        <button
+                            key={entry.path}
+                            type="button"
+                            disabled={!currentDirectory}
+                            onClick={(event) => {
+                                event.preventDefault();
+                                event.stopPropagation();
+                                handleReadFileClick(entry.path, entry.offset);
+                            }}
+                            className={cn('inline-flex !min-h-0 items-center justify-start gap-1 min-w-0 flex-1 text-left hover:opacity-90', TOOL_ROW_DESCRIPTION_CLASS)}
+                            style={{ color: 'var(--tools-description)' }}
+                            title={entry.offset ? `${entry.displayPath}:${entry.offset}` : entry.displayPath}
+                        >
+                            {showToolFileIcons ? <FileTypeIcon filePath={entry.path} className="h-3.5 w-3.5" /> : null}
+                            {renderReadFilePath(entry.displayPath, animateTailText)}
+                        </button>
+                    )
                 ))
                 : null}
             {isSearchGroup && descriptions.length > 0
@@ -767,6 +817,10 @@ const StaticToolRowInner: React.FC<{
                         href={url}
                         target="_blank"
                         rel="noopener noreferrer"
+                        onClick={(event) => {
+                            // 避免被整行导航（若未来扩展）吞掉外链
+                            event.stopPropagation();
+                        }}
                         className={cn(
                             'min-w-0 flex-1 inline-flex items-center gap-1.5 underline decoration-[color:var(--status-info)] underline-offset-2 hover:opacity-90',
                             'truncate whitespace-nowrap', TOOL_ROW_DESCRIPTION_CLASS
@@ -781,20 +835,31 @@ const StaticToolRowInner: React.FC<{
                 : null}
             {isSkillGroup && skillEntries.length > 0
                 ? skillEntries.map((entry, index) => (
-                    <button
-                        key={`${entry.name}-${entry.path}-${index}`}
-                        type="button"
-                        onClick={(event) => {
-                            event.preventDefault();
-                            event.stopPropagation();
-                            handleSkillClick(entry.path);
-                        }}
-                        className={cn('!min-h-0 min-w-0 flex-1 truncate whitespace-nowrap text-left hover:opacity-90', TOOL_ROW_DESCRIPTION_CLASS)}
-                        style={{ color: 'var(--tools-description)' }}
-                        title={entry.path}
-                    >
-                        {entry.name}
-                    </button>
+                    skillEntries.length === 1 ? (
+                        <span
+                            key={`${entry.name}-${entry.path}-${index}`}
+                            className={cn('!min-h-0 min-w-0 flex-1 truncate whitespace-nowrap text-left', TOOL_ROW_DESCRIPTION_CLASS)}
+                            style={{ color: 'var(--tools-description)' }}
+                            title={entry.path}
+                        >
+                            {entry.name}
+                        </span>
+                    ) : (
+                        <button
+                            key={`${entry.name}-${entry.path}-${index}`}
+                            type="button"
+                            onClick={(event) => {
+                                event.preventDefault();
+                                event.stopPropagation();
+                                handleSkillClick(entry.path);
+                            }}
+                            className={cn('!min-h-0 min-w-0 flex-1 truncate whitespace-nowrap text-left hover:opacity-90', TOOL_ROW_DESCRIPTION_CLASS)}
+                            style={{ color: 'var(--tools-description)' }}
+                            title={entry.path}
+                        >
+                            {entry.name}
+                        </button>
+                    )
                 ))
                 : null}
             {!isReadGroup && !isSearchGroup && !isFetchGroup && !isSkillGroup && descriptions.length > 0 ? (

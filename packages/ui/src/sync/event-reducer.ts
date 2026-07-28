@@ -165,6 +165,7 @@ export type SessionMaterializationReason =
   | "transport-switch"
   | "stale-status-resync"
   | "domain-stale-resync"
+  | "manual-refresh"
 
 export type DirectoryEventResult = boolean | {
   changed: boolean

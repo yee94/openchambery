@@ -2234,11 +2234,23 @@ button.oc-mobile-group-label-trigger:focus-visible {
     100dvh - var(--oc-keyboard-inset, 0px) -
       max(0.75rem, env(safe-area-inset-top))
   );
+  /* Bottom sheets must clear the home indicator / rounded hardware edge.
+     Tailwind pb tokens alone are easy to miss in a stale mobile bundle; pin
+     the reservation here for every native overlay panel. */
+  padding-bottom: max(
+    0.75rem,
+    var(--oc-app-bottom-safe, 16px),
+    var(
+      --oc-safe-area-bottom,
+      var(--safe-area-inset-bottom, env(safe-area-inset-bottom, 0px))
+    )
+  ) !important;
 }
 
 :root.oc-capacitor-app .pwa-overlay-panel .pwa-overlay-scroll,
 :root.oc-capacitor-app .oc-mobile-surface-shell .pwa-overlay-scroll {
-  padding-bottom: calc(var(--oc-safe-area-bottom-visual, 0px) + 12px);
+  /* Surface already owns the physical bottom inset; keep only a small list gap. */
+  padding-bottom: 12px;
 }
 
 /* Full-screen scroll views (e.g. the connect/login screen) live outside the app

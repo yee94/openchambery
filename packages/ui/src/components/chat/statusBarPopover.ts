@@ -29,14 +29,15 @@ export const statusBarPopoverListClassName =
 
 export const todoToolListClassName = `${todoListClassName} w-full`;
 
+/** Todo 工具滚动卡片配置：直角边框且无内边距 */
 export const todoToolScrollOptions = {
-    className: 'p-0',
+    className: 'p-0 rounded-none',
     maxHeightClass: 'max-h-[46vh]',
     disableHorizontal: true,
 } as const;
 
 export const statusBarPopoverRowClassName =
-    'px-3 py-2 text-xs leading-4 md:py-2.5 md:text-[0.8125rem] md:leading-5';
+    'px-2.5 py-1.5 text-xs leading-4 md:py-2 md:text-[0.8125rem] md:leading-5';
 
 export const statusBarTriggerClassName =
     'flex min-w-0 items-center gap-1 text-xs leading-4 text-muted-foreground md:gap-1.5 md:text-[0.8125rem] md:leading-5';

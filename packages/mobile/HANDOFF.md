@@ -11,7 +11,9 @@ renderer), not the desktop shell. The native app is a WKWebView (iOS) / Android 
 bundled copy of the web build; native capabilities are added via Capacitor plugins and two iOS app
 extensions.
 
-- App id / package: `com.openchamber.app`; app name `OpenChamber`.
+- App id / package: `com.openchamber.app` (release); debug uses `com.openchamber.app.debug` via
+  `applicationIdSuffix` so a local debug APK can sit alongside a store/CI release install.
+  Launcher label is `OpenChamber` / `OpenChamber Debug`.
 - Capacitor config: `capacitor.config.ts` (Keyboard `resize: 'none'`; Android
   `adjustNothing` + cached-height composer CSS FLIP + `ImeSyncBridge`
   (zero parent padding, backdrop, state/height bookends), StatusBar overlay,
@@ -73,7 +75,8 @@ bun run --cwd packages/mobile android:logcat      # app logs
 ```
 
 Typical device iteration: `bun run --cwd packages/mobile build:android:debug` then
-`android:run`. APK path: `android/app/build/outputs/apk/debug/app-debug.apk`.
+`android:run`. APK path: `android/app/build/outputs/apk/debug/app-debug.apk`
+(package `com.openchamber.app.debug`; does not replace a release install of `com.openchamber.app`).
 
 iOS Simulator helpers: `mobile:sim:{boot,install,launch,run,serve,list,kill}` (see
 `scripts/ios-sim.mjs`; `serve-sim` for a browser preview of the simulator).

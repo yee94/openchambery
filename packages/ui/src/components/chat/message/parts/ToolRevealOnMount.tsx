@@ -4,6 +4,23 @@ import { cn } from '@/lib/utils';
 const WIPE_MASK =
     'linear-gradient(to right, rgba(0,0,0,1) 0%, rgba(0,0,0,1) 45%, rgba(0,0,0,0) 60%, rgba(0,0,0,0) 100%)';
 
+const clearRevealStyles = (target: HTMLElement | null) => {
+    if (!target) {
+        return;
+    }
+    target.style.opacity = '';
+    // target.style.filter = '';
+    target.style.transform = '';
+    target.style.maskImage = '';
+    target.style.webkitMaskImage = '';
+    target.style.maskSize = '';
+    target.style.webkitMaskSize = '';
+    target.style.maskRepeat = '';
+    target.style.webkitMaskRepeat = '';
+    target.style.maskPosition = '';
+    target.style.webkitMaskPosition = '';
+};
+
 interface ToolRevealOnMountProps {
     children: React.ReactNode;
     animate: boolean;
@@ -21,23 +38,6 @@ const AnimatedToolReveal: React.FC<AnimatedToolRevealProps> = ({
     className,
 }) => {
     const rootRef = React.useRef<HTMLDivElement | null>(null);
-
-    const clearRevealStyles = React.useCallback((target: HTMLElement | null) => {
-        if (!target) {
-            return;
-        }
-        target.style.opacity = '';
-        // target.style.filter = '';
-        target.style.transform = '';
-        target.style.maskImage = '';
-        target.style.webkitMaskImage = '';
-        target.style.maskSize = '';
-        target.style.webkitMaskSize = '';
-        target.style.maskRepeat = '';
-        target.style.webkitMaskRepeat = '';
-        target.style.maskPosition = '';
-        target.style.webkitMaskPosition = '';
-    }, []);
 
     React.useLayoutEffect(() => {
         const el = rootRef.current;
@@ -112,7 +112,7 @@ const AnimatedToolReveal: React.FC<AnimatedToolRevealProps> = ({
             animation?.cancel();
             clearRevealStyles(el);
         };
-    }, [clearRevealStyles, delayMs, wipe]);
+    }, [delayMs, wipe]);
 
     return (
         <div ref={rootRef} className={cn('flow-root', className)}>

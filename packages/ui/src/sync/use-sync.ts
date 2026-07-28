@@ -8,7 +8,7 @@ import {
   mergeOptimisticPage,
   type OptimisticItem,
 } from "./optimistic"
-import { dropCachedSessionMessageRecordsSnapshots, useDirectoryStore, useSyncDirectory, useChildStoreManager } from "./sync-context"
+import { dropCachedSessionMessageRecordsSnapshots, materializeSessionFromServer, useDirectoryStore, useSyncDirectory, useChildStoreManager } from "./sync-context"
 import { dropSessionCaches, getProtectedSessionCacheIds } from "./session-cache"
 import { stripMessageDiffSnapshots, stripSessionDiffSnapshots } from "./sanitize"
 import { isVSCodeRuntime } from "@/lib/desktop"
@@ -717,6 +717,30 @@ export function useSync() {
     [clearOptimistic],
   )
 
+  /**
+   * User-triggered transcript refresh. Drops the prefetch entry so the tail page
+   * cannot be skipped as recently fetched, then pulls it from the server.
+   * Throws when the pull fails so callers can surface the failure.
+   */
+  const refreshSessionTranscript = useCallback(
+    async (sessionID: string, options?: { directory?: string }) => {
+      if (!sessionID) return
+      await waitForSessionStartupBarrier()
+      const targetDirectory = options?.directory ?? directory
+      if (!targetDirectory || targetDirectory === "global") return
+      const targetStore = targetDirectory === directory
+        ? store
+        : childStores.ensureChild(targetDirectory, { bootstrap: false })
+
+      clearSessionPrefetch(targetDirectory, [sessionID])
+      const status = await materializeSessionFromServer(targetDirectory, sessionID, targetStore, {
+        reason: "manual-refresh",
+      })
+      if (status === "error") throw new Error("refresh transcript failed")
+    },
+    [childStores, directory, store],
+  )
+
   return useMemo(
     () => ({
       ensureSessionRenderable: syncSession,
@@ -726,12 +750,13 @@ export function useSync() {
       hasMore,
       isLoading,
       isComplete,
+      refreshSessionTranscript,
       optimistic: {
         add: optimisticAdd,
         remove: optimisticRemove,
         confirm: optimisticConfirm,
       },
     }),
-    [syncSession, loadChildren, loadMore, hasMore, isLoading, isComplete, optimisticAdd, optimisticRemove, optimisticConfirm],
+    [syncSession, loadChildren, loadMore, hasMore, isLoading, isComplete, refreshSessionTranscript, optimisticAdd, optimisticRemove, optimisticConfirm],
   )
 }

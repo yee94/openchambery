@@ -1,4 +1,5 @@
 import React from 'react';
+import { useEvent } from '@reactuses/core';
 import { cn } from '@/lib/utils';
 import type { Part } from '@opencode-ai/sdk/v2';
 import type { AgentMentionInfo } from '../types';
@@ -50,6 +51,20 @@ const hasPotentialSkillToken = (textContent: string): boolean => {
 
 const normalizeUserMessageRenderingMode = (mode: unknown): 'markdown' | 'plain' => {
     return mode === 'markdown' ? 'markdown' : 'plain';
+};
+
+const hasActiveSelectionInElement = (element: HTMLElement): boolean => {
+    if (typeof window === 'undefined') {
+        return false;
+    }
+
+    const selection = window.getSelection();
+    if (!selection || selection.isCollapsed || selection.rangeCount === 0) {
+        return false;
+    }
+
+    const range = selection.getRangeAt(0);
+    return element.contains(range.startContainer) || element.contains(range.endContainer);
 };
 
 const MessageReferenceChip: React.FC<{
@@ -167,7 +182,7 @@ const UserTextPart: React.FC<UserTextPartProps> = ({ part, messageId, agentMenti
         return Array.from(byId.values());
     }, [messageParts, textContent]);
 
-    const openSkill = React.useCallback((name: string) => {
+    const openSkill = useEvent((name: string) => {
         const skill = skillByName.get(name);
         const rawPath = typeof skill?.path === 'string' ? skill.path : '';
         const normalizedPath = normalizeFilePath(rawPath);
@@ -190,21 +205,7 @@ const UserTextPart: React.FC<UserTextPartProps> = ({ part, messageId, agentMenti
             return;
         }
         open();
-    }, [effectiveDirectory, openContextFile, skillByName]);
-
-    const hasActiveSelectionInElement = React.useCallback((element: HTMLElement): boolean => {
-        if (typeof window === 'undefined') {
-            return false;
-        }
-
-        const selection = window.getSelection();
-        if (!selection || selection.isCollapsed || selection.rangeCount === 0) {
-            return false;
-        }
-
-        const range = selection.getRangeAt(0);
-        return element.contains(range.startContainer) || element.contains(range.endContainer);
-    }, []);
+    });
 
     React.useEffect(() => {
         const el = textRef.current;
@@ -231,7 +232,7 @@ const UserTextPart: React.FC<UserTextPartProps> = ({ part, messageId, agentMenti
         }
     }, [collapsibleUserMessages]);
 
-    const handleClick = React.useCallback((event: React.MouseEvent<HTMLDivElement>) => {
+    const handleClick = useEvent((event: React.MouseEvent<HTMLDivElement>) => {
         const target = event.target as HTMLElement | null;
         const skillLink = target?.closest<HTMLElement>('[data-skill-name]');
         const skillName = skillLink?.dataset.skillName
@@ -255,12 +256,12 @@ const UserTextPart: React.FC<UserTextPartProps> = ({ part, messageId, agentMenti
         if (collapsibleUserMessages && !isExpanded && isTruncated) {
             setIsExpanded(true);
         }
-    }, [collapsibleUserMessages, hasActiveSelectionInElement, isExpanded, isTruncated, openSkill]);
+    });
 
-    const handleCollapse = React.useCallback((event: React.MouseEvent) => {
+    const handleCollapse = useEvent((event: React.MouseEvent) => {
         event.stopPropagation();
         setIsExpanded(false);
-    }, []);
+    });
 
     const referenceParts = React.useMemo(() => {
         return buildMessageReferenceParts(textContent, {
@@ -284,7 +285,8 @@ const UserTextPart: React.FC<UserTextPartProps> = ({ part, messageId, agentMenti
         });
     }, [agentMention, referenceParts, skillByName, textContent]);
 
-    const renderTextSegment = React.useCallback((segment: string, key: string): React.ReactNode => {
+    // Render-phase factory: ordinary function, not useCallback/useEvent.
+    const renderTextSegment = (segment: string, key: string): React.ReactNode => {
         if (!segment) return null;
         if (normalizedRenderingMode === 'markdown') {
             const markdown = prepareUserMarkdownContent({
@@ -319,9 +321,9 @@ const UserTextPart: React.FC<UserTextPartProps> = ({ part, messageId, agentMenti
             );
         }
         return <React.Fragment key={key}>{segment}</React.Fragment>;
-    }, [isCollapsed, normalizedRenderingMode]);
+    };
 
-    const renderReferenceParts = React.useCallback((parts: MessageTextPart[]): React.ReactNode => {
+    const renderReferenceParts = (parts: MessageTextPart[]): React.ReactNode => {
         return parts.map((partItem, index) => {
             if (partItem.type === 'text') {
                 return renderTextSegment(partItem.text, `text-${index}`);
@@ -334,7 +336,7 @@ const UserTextPart: React.FC<UserTextPartProps> = ({ part, messageId, agentMenti
                 />
             );
         });
-    }, [openSkill, renderTextSegment]);
+    };
 
     const plainTextContent = React.useMemo(() => {
         if (referenceParts) {

@@ -45,6 +45,8 @@ let sessionGetData: Session | null = {
   title: "viewed",
   time: { created: 1, updated: 1 },
 } as Session
+/** Lets a test simulate live SSE landing while `session.get` is in flight. */
+let onSessionGet: (() => void) | null = null
 
 function installModuleMocks() {
   // Runtime surface mocks (complete exports) so importing sync-context / useDirectoryStore
@@ -161,6 +163,7 @@ function installModuleMocks() {
         session: {
           get: mock(async ({ sessionID }: { sessionID: string }) => {
             sessionGetCalls.push(sessionID)
+            onSessionGet?.()
             if (!sessionGetData) {
               return { error: { message: "missing" }, response: { status: 404 } }
             }
@@ -290,6 +293,7 @@ describe("sync-context reconnect / materialize → loadSessionMessagePage", () =
     sessionGetCalls.length = 0
     messagesSdkCalls.length = 0
     loaderBehavior = "ready"
+    onSessionGet = null
     loaderMessages = [message("msg_1")]
     loaderParts = { msg_1: [part("prt_1", "msg_1")] }
     sessionGetData = {
@@ -525,6 +529,70 @@ describe("sync-context reconnect / materialize → loadSessionMessagePage", () =
     expect(deps?.getLiveRevision?.()).toBe(5)
     // isStale should track the same revision advance semantics used by reconnect.
     expect(deps?.isStale?.()).toBe(true)
+  })
+
+  test("live events during session.get still recover the message body", async () => {
+    const store = createDirectoryStore({
+      session_status: { ses_viewed: { type: "busy" } },
+      message: {},
+      part: {},
+    })
+    let liveRevision = 1
+    // A streaming session keeps emitting while `session.get` is in flight.
+    onSessionGet = () => { liveRevision += 1 }
+
+    await resyncDirectoryAfterReconnect(
+      "/repo",
+      store,
+      createRoutingIndex(),
+      "stream-reconnect",
+      () => liveRevision,
+    )
+
+    expect(loadCalls).toHaveLength(1)
+    expect(loadCalls[0]?.purpose).toBe("recovery")
+    // Body revision is captured after session.get, so the page is not stale.
+    expect(loadCalls[0]?.deps.isStale?.()).toBe(false)
+    expect(store.getState().message.ses_viewed).toHaveLength(1)
+  })
+
+  test("missing session identity still recovers the message body", async () => {
+    const store = createDirectoryStore({
+      session_status: { ses_viewed: { type: "busy" } },
+      message: {},
+      part: {},
+    })
+    sessionGetData = null
+
+    await resyncDirectoryAfterReconnect(
+      "/repo",
+      store,
+      createRoutingIndex(),
+      "stream-reconnect",
+      () => 1,
+    )
+
+    expect(loadCalls).toHaveLength(1)
+    expect(store.getState().message.ses_viewed).toHaveLength(1)
+  })
+
+  test("live events after the body page starts still mark it stale", async () => {
+    const store = createDirectoryStore({
+      session_status: { ses_viewed: { type: "busy" } },
+    })
+    let liveRevision = 1
+
+    await resyncDirectoryAfterReconnect(
+      "/repo",
+      store,
+      createRoutingIndex(),
+      "stream-reconnect",
+      () => liveRevision,
+    )
+
+    expect(loadCalls[0]?.deps.isStale?.()).toBe(false)
+    liveRevision += 1
+    expect(loadCalls[0]?.deps.isStale?.()).toBe(true)
   })
 
   test("active top-level session.idle enqueues one materialize; background top-level does not", async () => {

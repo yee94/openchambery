@@ -513,6 +513,7 @@ export const MobileSessionsSheet: React.FC<MobileSessionsSheetProps> = ({ open, 
   const [newWorktreeDialogOpen, setNewWorktreeDialogOpen] = React.useState(false);
   const [worktreeDialogProjectId, setWorktreeDialogProjectId] = React.useState<string | null>(null);
   const [actionTarget, setActionTarget] = React.useState<MobileActionTarget | null>(null);
+  const [closingProject, setClosingProject] = React.useState<ProjectMeta | null>(null);
   const [pressedActionKey, setPressedActionKey] = React.useState<string | null>(null);
   const [renamingSession, setRenamingSession] = React.useState<Session | null>(null);
   const [renameDraft, setRenameDraft] = React.useState('');
@@ -1320,16 +1321,18 @@ export const MobileSessionsSheet: React.FC<MobileSessionsSheetProps> = ({ open, 
           setEditingProjectId(projectId);
         }}
       />
-      <MobileActionButton
-        icon="close"
-        label={t('sessions.sidebar.project.actions.closeProject')}
-        destructive
-        onClick={() => {
-          const projectId = actionTarget.project.id;
-          closeActionMenu();
-          removeProject(projectId);
-        }}
-      />
+      <div className="mt-3 border-t border-[var(--surface-subtle)] pt-3">
+        <MobileActionButton
+          icon="close"
+          label={t('sessions.sidebar.project.actions.closeProject')}
+          destructive
+          onClick={() => {
+            const project = actionTarget.project;
+            closeActionMenu();
+            setClosingProject(project);
+          }}
+        />
+      </div>
     </div>
   ) : actionTarget?.kind === 'worktree' ? (
     <div className="flex flex-col gap-1">
@@ -1342,16 +1345,18 @@ export const MobileSessionsSheet: React.FC<MobileSessionsSheetProps> = ({ open, 
           startSessionDraftForDirectory(project, worktree.path);
         }}
       />
-      <MobileActionButton
-        icon="delete-bin"
-        label={t('mobile.projectEdit.deleteWorktreeConfirmButton')}
-        destructive
-        onClick={() => {
-          const target = { project: actionTarget.project, worktree: actionTarget.worktree };
-          closeActionMenu();
-          setWorktreeToDelete(target);
-        }}
-      />
+      <div className="mt-3 border-t border-[var(--surface-subtle)] pt-3">
+        <MobileActionButton
+          icon="delete-bin"
+          label={t('mobile.projectEdit.deleteWorktreeConfirmButton')}
+          destructive
+          onClick={() => {
+            const target = { project: actionTarget.project, worktree: actionTarget.worktree };
+            closeActionMenu();
+            setWorktreeToDelete(target);
+          }}
+        />
+      </div>
     </div>
   ) : actionTarget?.kind === 'session' ? (
     <div className="flex flex-col gap-1">
@@ -1417,16 +1422,18 @@ export const MobileSessionsSheet: React.FC<MobileSessionsSheetProps> = ({ open, 
           void handleArchiveFromMenu(session);
         }}
       />
-      <MobileActionButton
-        icon="delete-bin"
-        label={t('sessions.sidebar.bulkActions.delete')}
-        destructive
-        onClick={() => {
-          const session = actionTarget.session;
-          closeActionMenu();
-          handleHardDeleteSession(session);
-        }}
-      />
+      <div className="mt-3 border-t border-[var(--surface-subtle)] pt-3">
+        <MobileActionButton
+          icon="delete-bin"
+          label={t('sessions.sidebar.bulkActions.delete')}
+          destructive
+          onClick={() => {
+            const session = actionTarget.session;
+            closeActionMenu();
+            handleHardDeleteSession(session);
+          }}
+        />
+      </div>
     </div>
   ) : null;
 
@@ -1778,6 +1785,42 @@ export const MobileSessionsSheet: React.FC<MobileSessionsSheetProps> = ({ open, 
           contentMaxHeightClassName="max-h-[min(68dvh,560px)]"
         >
           {actionMenuContent}
+        </MobileOverlayPanel>
+        <MobileOverlayPanel
+          open={Boolean(closingProject)}
+          title={t('sessions.sidebar.project.actions.closeProject')}
+          onClose={() => setClosingProject(null)}
+          closeAriaLabel={t('mobile.surface.closeAria')}
+          footer={
+            <div className="flex gap-2">
+              <Button
+                type="button"
+                variant="ghost"
+                className="flex-1"
+                onClick={() => setClosingProject(null)}
+              >
+                {t('sessions.sidebar.dialogs.cancel')}
+              </Button>
+              <Button
+                type="button"
+                variant="destructive"
+                className="flex-1"
+                onClick={() => {
+                  if (!closingProject) return;
+                  const project = closingProject;
+                  setClosingProject(null);
+                  removeProject(project.id);
+                  toast.success(t('mobile.sessions.toast.projectRemoved', { label: project.label }));
+                }}
+              >
+                {t('mobile.sessions.confirmRemoveProject')}
+              </Button>
+            </div>
+          }
+        >
+          <p className="px-1 py-1 typography-ui-body text-foreground">
+            {t('mobile.projects.closeConfirmMessage', { title: closingProject?.label ?? '' })}
+          </p>
         </MobileOverlayPanel>
         <MobileOverlayPanel
           open={Boolean(renamingSession)}

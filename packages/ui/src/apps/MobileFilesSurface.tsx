@@ -84,13 +84,41 @@ const isJsonFile = (path: string): boolean => /\.(json|jsonc)$/i.test(path);
 type MobileFilesSurfaceProps = {
   /** When provided, header gets a close X that calls this; used when the surface is hosted in MobileSurfaceShell. */
   onClose?: () => void;
+  /**
+   * Absolute path to open immediately as file detail (Read tool / direct preview sheet).
+   * Host should remount when the target path changes so the initial route re-seeds.
+   */
+  initialFilePath?: string | null;
+  /**
+   * When true with an initial file route, back from detail dismisses the host sheet
+   * instead of returning to the browser list. Pair with hideFileHeader when the host
+   * sheet already owns title + close chrome (same pattern as direct Changes diffs).
+   */
+  directFilePreview?: boolean;
+  /** Hide the in-content file detail header; host sheet provides chrome. */
+  hideFileHeader?: boolean;
 };
 
-export const MobileFilesSurface: React.FC<MobileFilesSurfaceProps> = ({ onClose }) => {
+export const MobileFilesSurface: React.FC<MobileFilesSurfaceProps> = ({
+  onClose,
+  initialFilePath = null,
+  directFilePreview = false,
+  hideFileHeader = false,
+}) => {
   const { t } = useI18n();
   const { files } = useRuntimeAPIs();
   const root = normalizePath(useEffectiveDirectory() ?? null);
-  const [route, setRoute] = React.useState<MobileFilesRoute>(() => ({ type: 'browser', directory: root }));
+  const [route, setRoute] = React.useState<MobileFilesRoute>(() => {
+    const focusPath = normalizePath(initialFilePath);
+    if (focusPath) {
+      return {
+        type: 'file',
+        path: focusPath,
+        returnDirectory: getParentDirectory(focusPath) ?? root,
+      };
+    }
+    return { type: 'browser', directory: root };
+  });
   const mobileNavigationSurfaceRef = React.useRef<HTMLDivElement | null>(null);
   const [query, setQuery] = React.useState('');
   const pendingFileFocusPath = useUIStore((state) => state.pendingFileFocusPath);
@@ -99,6 +127,13 @@ export const MobileFilesSurface: React.FC<MobileFilesSurfaceProps> = ({ onClose 
   React.useEffect(() => {
     if (!root) return;
     setRoute((current) => {
+      // Never clobber a direct file preview (Read/Skill sheet) or an already
+      // navigated browser directory when the project root first resolves.
+      if (current.type === 'file') {
+        return current.returnDirectory
+          ? current
+          : { ...current, returnDirectory: getParentDirectory(current.path) ?? root };
+      }
       if (current.type === 'browser' && current.directory) return current;
       return { type: 'browser', directory: root };
     });
@@ -187,6 +222,12 @@ export const MobileFilesSurface: React.FC<MobileFilesSurfaceProps> = ({ onClose 
 
   const closeFileDetail = useEvent(() => {
     if (route.type !== 'file') return false;
+    // Direct Read/Skill preview: dismiss the host gesture sheet instead of
+    // dropping into the project browser (mirrors direct Changes diffs).
+    if (directFilePreview) {
+      onClose?.();
+      return true;
+    }
     setRoute({ type: 'browser', directory: route.returnDirectory });
     return true;
   });
@@ -222,6 +263,7 @@ export const MobileFilesSurface: React.FC<MobileFilesSurfaceProps> = ({ onClose 
           content={fileContent}
           error={fileError}
           isLoading={isLoadingFile}
+          hideHeader={hideFileHeader}
           onBack={closeFileDetail}
           onCopyPath={() => void handleCopyPath(route.path)}
           onCopyContent={() => void handleCopyContent()}
@@ -372,10 +414,11 @@ const MobileFileDetail: React.FC<{
   content: string;
   error: string | null;
   isLoading: boolean;
+  hideHeader?: boolean;
   onBack: () => void;
   onCopyPath: () => void;
   onCopyContent: () => void;
-}> = ({ path, content, error, isLoading, onBack, onCopyPath, onCopyContent }) => {
+}> = ({ path, content, error, isLoading, hideHeader = false, onBack, onCopyPath, onCopyContent }) => {
   const { t } = useI18n();
   const imageAuthKey = isImageFile(path) && !path.toLowerCase().endsWith('.svg') ? path : '';
   const [imageAuthReadyKey, setImageAuthReadyKey] = React.useState('');
@@ -404,27 +447,40 @@ const MobileFileDetail: React.FC<{
 
   return (
     <div className="flex h-full flex-col overflow-hidden bg-background text-foreground">
-      <header className="flex h-[var(--oc-header-height,56px)] shrink-0 items-center gap-3 border-b border-border/50 px-3 text-foreground">
-        <button
-          type="button"
-          className="flex size-9 shrink-0 items-center justify-center rounded-lg text-muted-foreground hover:bg-interactive-hover hover:text-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-primary"
-          aria-label={t('header.actions.backAria')}
-          onClick={onBack}
-        >
-          <Icon name="arrow-left" className="size-5" />
-        </button>
-        <div className="min-w-0 flex-1">
-          <h2 className="truncate typography-ui-header text-foreground">{getNameFromPath(path)}</h2>
-        </div>
-        {!isImageFile(path) ? (
-          <Button type="button" variant="ghost" size="icon" onClick={onCopyContent} aria-label={t('mobile.files.copyContentAria')}>
-            <Icon name="file-copy" className="size-4" />
+      {!hideHeader ? (
+        <header className="flex h-[var(--oc-header-height,56px)] shrink-0 items-center gap-3 border-b border-border/50 px-3 text-foreground">
+          <button
+            type="button"
+            className="flex size-9 shrink-0 items-center justify-center rounded-lg text-muted-foreground hover:bg-interactive-hover hover:text-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-primary"
+            aria-label={t('header.actions.backAria')}
+            onClick={onBack}
+          >
+            <Icon name="arrow-left" className="size-5" />
+          </button>
+          <div className="min-w-0 flex-1">
+            <h2 className="truncate typography-ui-header text-foreground">{getNameFromPath(path)}</h2>
+          </div>
+          {!isImageFile(path) ? (
+            <Button type="button" variant="ghost" size="icon" onClick={onCopyContent} aria-label={t('mobile.files.copyContentAria')}>
+              <Icon name="file-copy" className="size-4" />
+            </Button>
+          ) : null}
+          <Button type="button" variant="ghost" size="icon" onClick={onCopyPath} aria-label={t('mobile.files.copyPathAria')}>
+            <Icon name="clipboard" className="size-4" />
           </Button>
-        ) : null}
-        <Button type="button" variant="ghost" size="icon" onClick={onCopyPath} aria-label={t('mobile.files.copyPathAria')}>
-          <Icon name="clipboard" className="size-4" />
-        </Button>
-      </header>
+        </header>
+      ) : (
+        <div className="flex shrink-0 items-center justify-end gap-1 px-3 pb-1">
+          {!isImageFile(path) ? (
+            <Button type="button" variant="ghost" size="icon" onClick={onCopyContent} aria-label={t('mobile.files.copyContentAria')}>
+              <Icon name="file-copy" className="size-4" />
+            </Button>
+          ) : null}
+          <Button type="button" variant="ghost" size="icon" onClick={onCopyPath} aria-label={t('mobile.files.copyPathAria')}>
+            <Icon name="clipboard" className="size-4" />
+          </Button>
+        </div>
+      )}
       <div className="min-h-0 flex-1 overflow-hidden">
         {isLoading || imageAuthLoading ? (
           <MobileFilesState loading message={t('filesView.state.loading')} />

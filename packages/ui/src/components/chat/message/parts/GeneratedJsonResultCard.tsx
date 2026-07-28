@@ -1,4 +1,5 @@
 import React from 'react';
+import { useEvent } from '@reactuses/core';
 import { Button } from '@/components/ui/button';
 import { Icon } from '@/components/icon/Icon';
 import { copyTextToClipboard } from '@/lib/clipboard';
@@ -25,7 +26,7 @@ export const GeneratedJsonResultCard: React.FC<{ result: GeneratedResult }> = ({
     return [result.title, result.body].filter(Boolean).join('\n\n');
   }, [result]);
 
-  const handleCopy = React.useCallback(async () => {
+  const handleCopy = useEvent(async () => {
     const copyResult = await copyTextToClipboard(copyText || result.raw);
     if (!copyResult.ok) return;
 
@@ -38,7 +39,7 @@ export const GeneratedJsonResultCard: React.FC<{ result: GeneratedResult }> = ({
       copiedResetTimerRef.current = null;
       setCopied(false);
     }, 2000);
-  }, [copyText, result.raw]);
+  });
 
   return (
     <div data-component="generated-json-result" className="my-4 group overflow-hidden rounded-2xl border border-border/80 bg-[var(--surface-elevated)]">

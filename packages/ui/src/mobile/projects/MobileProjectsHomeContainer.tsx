@@ -82,6 +82,7 @@ export function MobileProjectsHomeContainer({
 
   const [actionTarget, setActionTarget] = React.useState<ActionTargetState | null>(null);
   const [actionsOpen, setActionsOpen] = React.useState(false);
+  const [closingProject, setClosingProject] = React.useState<ProjectMeta | null>(null);
   const [renamingSession, setRenamingSession] = React.useState<Session | null>(null);
   const [renameDraft, setRenameDraft] = React.useState('');
   const [smartTitleRequesting, setSmartTitleRequesting] = React.useState(false);
@@ -377,7 +378,7 @@ export function MobileProjectsHomeContainer({
         onNewWorktree: () => handleNewWorktree(project.id),
         // Edit project (MobileProjectEditSurface) is out of scope for this wiring lane.
         onEditProject: undefined,
-        onCloseProject: () => removeProject(project.id),
+        onCloseProject: () => setClosingProject(project),
       };
     }
     const { project, worktreePath } = actionTarget;
@@ -437,6 +438,43 @@ export function MobileProjectsHomeContainer({
         }}
         onWorktreeCreated={handleWorktreeCreated}
       />
+
+      <MobileOverlayPanel
+        open={Boolean(closingProject)}
+        title={t('sessions.sidebar.project.actions.closeProject')}
+        onClose={() => setClosingProject(null)}
+        closeAriaLabel={t('mobile.surface.closeAria')}
+        footer={
+          <div className="flex gap-2">
+            <Button
+              type="button"
+              variant="ghost"
+              className="flex-1"
+              onClick={() => setClosingProject(null)}
+            >
+              {t('sessions.sidebar.dialogs.cancel')}
+            </Button>
+            <Button
+              type="button"
+              variant="destructive"
+              className="flex-1"
+              onClick={() => {
+                if (!closingProject) return;
+                const project = closingProject;
+                setClosingProject(null);
+                removeProject(project.id);
+                toast.success(t('mobile.sessions.toast.projectRemoved', { label: project.label }));
+              }}
+            >
+              {t('mobile.sessions.confirmRemoveProject')}
+            </Button>
+          </div>
+        }
+      >
+        <p className="px-1 py-1 typography-ui-body text-foreground">
+          {t('mobile.projects.closeConfirmMessage', { title: closingProject?.label ?? '' })}
+        </p>
+      </MobileOverlayPanel>
 
       <MobileOverlayPanel
         open={Boolean(renamingSession)}

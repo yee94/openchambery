@@ -399,6 +399,12 @@ Rules that keep this single-sourced:
   ready / recent boot) still runs this bounded viewed-body recovery; it only
   suppresses extra reconnect work such as blocking-request resync, never viewed
   transcript reconciliation.
+- Reconnect recovery gates session identity and the message body on separate
+  live revisions. The identity revision is captured before `session.get`; the
+  body revision is captured after it returns. A missing session or live events
+  landing during `session.get` skip only the identity write. Sharing one
+  revision strands the transcript of a session that keeps streaming, because
+  every `session.get` round trip loses the race and aborts body recovery.
 - A bounded bootstrap may omit a selected session. `ensureSessionRenderable()`
   accepts an explicit target directory for this exact materialization path. It
   creates that directory child store with `bootstrap: false`, uses that

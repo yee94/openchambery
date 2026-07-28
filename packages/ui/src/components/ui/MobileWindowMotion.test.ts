@@ -165,8 +165,8 @@ describe('MobileWindowMotion recipe', () => {
     expect(getMobileWindowMotionSurfaceLayout('sheet', 'bottom')).toContain('mt-auto');
     expect(getMobileWindowMotionSurfaceLayout('sheet', 'bottom')).toContain('mx-auto');
     expect(getMobileWindowMotionSurfaceLayout('sheet', 'bottom')).toContain('pwa-overlay-panel');
-    expect(getMobileWindowMotionSurfaceLayout('sheet', 'bottom')).toContain('pb-[max(0.5rem,var(--oc-safe-area-bottom,env(safe-area-inset-bottom,0px)))]');
-    expect(mobileOverlayPanelSource).toContain('pb-[max(0.5rem,var(--oc-safe-area-bottom,env(safe-area-inset-bottom,0px)))]');
+    expect(getMobileWindowMotionSurfaceLayout('sheet', 'bottom')).toContain('pb-[max(0.5rem,var(--oc-app-bottom-safe,0px),var(--oc-safe-area-bottom,env(safe-area-inset-bottom,0px)))]');
+    expect(mobileOverlayPanelSource).toContain('pb-[max(0.5rem,var(--oc-app-bottom-safe,0px),var(--oc-safe-area-bottom,env(safe-area-inset-bottom,0px)))]');
     expect(getMobileWindowMotionSurfaceLayout('sheet', 'top')).toContain('mb-auto');
     expect(getMobileWindowMotionSurfaceLayout('sheet', 'top')).toContain('mx-auto');
     expect(getMobileWindowMotionSurfaceLayout('sheet', 'left')).toContain('rounded-r-xl');

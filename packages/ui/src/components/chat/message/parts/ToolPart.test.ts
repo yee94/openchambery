@@ -29,6 +29,37 @@ const progressiveGroupSource = readFileSync(join(__dirname, 'ProgressiveGroup.ts
 describe('mobile press feedback', () => {
     test('tool rows opt into soft press so full-width subagent/tool rows never use compact scale', () => {
         expect(toolPartSource).toContain('data-mobile-press-feedback="soft"');
+        expect(progressiveGroupSource).toContain('data-mobile-press-feedback={isWholeRowNav ? \'soft\' : undefined}');
+    });
+});
+
+describe('static navigation hit targets', () => {
+    test('read/skill rows use whole-row activation like edit/write file navigation', () => {
+        expect(progressiveGroupSource).toContain('const isWholeRowNav = Boolean(primaryReadEntry || primarySkillEntry)');
+        expect(progressiveGroupSource).toContain('role={isWholeRowNav ? \'button\' : undefined}');
+        expect(progressiveGroupSource).toContain('handleWholeRowNavClick');
+        expect(progressiveGroupSource).not.toContain('MinDurationShineText');
+    });
+
+    test('mobile read/skill routes through openFile gesture sheet like edit diffs', () => {
+        expect(progressiveGroupSource).toContain('useMobileAppActions');
+        expect(progressiveGroupSource).toContain('mobileActions.openFile({');
+        expect(mobileAppSource).toContain('openFile: ({ path, targetLine }) => {');
+        expect(mobileAppSource).toContain('MOBILE_DIRECT_FILE_WINDOW_ID');
+        expect(mobileAppSource).toContain('directFilePreview');
+        expect(mobileAppSource).toContain('hideFileHeader');
+        // root-sync effect must preserve type:file so Read preview is not reset to browser root
+        const filesSurfaceSource = readFileSync(join(__dirname, '../../../../apps/MobileFilesSurface.tsx'), 'utf-8');
+        expect(filesSurfaceSource).toContain("if (current.type === 'file')");
+        expect(filesSurfaceSource).toContain('initialFilePath');
+    });
+});
+
+describe('tool busy title chrome', () => {
+    test('non-task tool titles stay immediate full opacity without shine busy state', () => {
+        expect(toolPartSource).not.toContain('MinDurationShineText');
+        expect(toolPartSource).toContain('taskBusy && \'animate-text-shimmer\'');
+        expect(toolPartSource).toContain("normalizedPartTool === 'bash' && typeof effectiveTimeStart === 'number'");
     });
 });
 
@@ -46,9 +77,9 @@ describe('shared todo list layout', () => {
     test('popover and tool lists share row boundaries while the tool scroll container owns overflow', () => {
         expect(statusBarPopoverListClassName).toContain(todoListClassName);
         expect(todoToolListClassName).toContain(todoListClassName);
-        expect(statusBarPopoverRowClassName).toContain('px-3 py-2');
+        expect(statusBarPopoverRowClassName).toContain('px-2.5 py-1.5');
         expect(todoToolScrollOptions).toEqual({
-            className: 'p-0',
+            className: 'p-0 rounded-none',
             maxHeightClass: 'max-h-[46vh]',
             disableHorizontal: true,
         });
@@ -65,7 +96,7 @@ describe('shared expanded tool layout', () => {
     test('all mobile tool content uses the compact Todo boundary and scroll padding', () => {
         expect(TOOL_EXPANDED_TIMELINE_CLASS_NAME).toBe('relative ml-2 pl-3');
         expect(getToolExpandedContentClassName(true)).toBe('relative flex min-w-0 flex-col gap-2 py-2');
-        expect(getToolExpandedContentClassName(true, 'todo')).toBe('relative flex min-w-0 flex-col gap-2 py-2');
+        expect(getToolExpandedContentClassName(true, 'todo')).toBe('relative flex min-w-0 flex-col gap-1 py-0.5');
         expect(getToolScrollableSectionPaddingClassName(true)).toBe('p-0');
     });
 

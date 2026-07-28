@@ -152,7 +152,7 @@ export const MobileOverlayPanel: React.FC<MobileOverlayPanelProps> = ({
     >
         <div
           className={cn(
-            'mt-auto flex max-h-[calc(100dvh-0.75rem)] min-h-0 w-full flex-col rounded-t-xl border-x border-t border-border/50 bg-background pb-[max(0.5rem,var(--oc-safe-area-bottom,env(safe-area-inset-bottom,0px)))] shadow-none pwa-overlay-panel',
+            'mt-auto flex max-h-[calc(100dvh-0.75rem)] min-h-0 w-full flex-col rounded-t-xl border-x border-t border-border/50 bg-background pb-[max(0.5rem,var(--oc-app-bottom-safe,0px),var(--oc-safe-area-bottom,env(safe-area-inset-bottom,0px)))] shadow-none pwa-overlay-panel',
             'mx-auto max-w-lg',
             className
           )}

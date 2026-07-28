@@ -1,4 +1,5 @@
 import React from 'react';
+import { useEvent } from '@reactuses/core';
 import { animate, type AnimationPlaybackControls } from 'motion';
 import type { Part } from '@opencode-ai/sdk/v2';
 import { cn } from '@/lib/utils';
@@ -142,18 +143,18 @@ export const ReasoningTimelineBlock: React.FC<ReasoningTimelineBlockProps> = ({
         ? t('chat.reasoningTrace.collapseAria')
         : t('chat.reasoningTrace.expandAria');
 
-    const handleToggle = React.useCallback(() => {
+    const handleToggle = useEvent(() => {
         setShouldRenderExpandedContent(true);
         setExpansion({ expanded: !isExpanded, source: 'user' });
         onContentChange?.('structural');
-    }, [isExpanded, onContentChange]);
+    });
 
-    const handleKeyDown = React.useCallback((event: React.KeyboardEvent) => {
+    const handleKeyDown = useEvent((event: React.KeyboardEvent) => {
         if (event.key === 'Enter' || event.key === ' ') {
             event.preventDefault();
             handleToggle();
         }
-    }, [handleToggle]);
+    });
 
     React.useLayoutEffect(() => {
         setExpansion((prev) => {

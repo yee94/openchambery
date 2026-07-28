@@ -34,6 +34,14 @@ android {
         }
     }
     buildTypes {
+        // Side-by-side with release: debug keeps its own applicationId so a local
+        // assembleDebug install does not replace a store/CI release package.
+        debug {
+            applicationIdSuffix ".debug"
+            versionNameSuffix "-debug"
+            resValue "string", "app_name", "OpenChamber Debug"
+            resValue "string", "title_activity_main", "OpenChamber Debug"
+        }
         release {
             if (hasCiSigning) {
                 signingConfig signingConfigs.release

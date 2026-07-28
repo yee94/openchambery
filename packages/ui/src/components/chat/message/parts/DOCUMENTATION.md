@@ -80,7 +80,8 @@ Use this doc when you ask an agent to change tool/header/description behavior.
 
 ## Current important behavior
 
-- `read` and `skill` are **static navigation tools** and render via `StaticToolRow`.
+- `read` and `skill` are **static navigation tools** and render via `StaticToolRow`. The whole row is the hit target (same as Edit/Write): single-path rows open that file anywhere on the row; multi-path rows keep per-path buttons so a secondary path stays precise. On dedicated mobile, clicks call `mobileActions.openFile` and open the same gesture `MobileResizableSheet` used by direct Edit/Write diffs (phone) or the right Files panel (iPad); desktop still uses context-panel `openContextFile`.
+- Tool titles (including Shell Command) render immediately at full opacity while running. Busy opacity shine (`MinDurationShineText`) is not used on tool headers; only Task tools keep `animate-text-shimmer` for active subagent work. Shell still shows a live duration ticker next to the title.
 - `edit` / `multiedit` / `write` stay in `ToolPart` for title + path + diff-stats chrome and use **non-expandable file navigation**. Web/Desktop and dedicated mobile `edit` / `multiedit` clicks open the selected tool's single-file patch; `apply_patch` clicks open every renderable file patch from that tool invocation. The initial target scrolls to its first changed line, and the existing bounded stacked-diff policy limits how many large patches mount at once. Web/Desktop renderable-patch fallback opens the target file from the owning turn. Dedicated mobile uses the closable Motion sheet on phones and the right Changes panel on iPad; standard file Changes handles edit fallback, while apply-patch fallback presents every file from the owning turn. VS Code opens the primary file in its native diff editor. Patch records lacking a complete renderable file set open the owning turn's complete diff. No chevron / expanded diff body.
 - Every other tool, including search/fetch, OpenCode built-ins, custom tools, plugins, and MCP tools, is **expandable** and renders through `ToolPart`.
 - Mobile expandable tools share one compact content boundary: the timeline shell keeps the common rail inset, content shells remove their extra horizontal padding, and scroll surfaces use zero padding. Todo keeps its list dividers and zero-padding list surface through the same shared layout rules. Mobile Shell input and highlighted output use a `1.25rem` line height with a tighter gap between the two blocks; desktop spacing remains unchanged.
@@ -139,4 +140,4 @@ Why: only navigation tools use the compact static path; all other tools need obs
 - Tools: `ToolPart.tsx`, `ProgressiveGroup.tsx`, `toolPresentation.tsx`, `toolRowChrome.ts`, `toolRenderUtils.ts`, `ToolRevealOnMount.tsx`
 - Reasoning/justification: `ReasoningPart.tsx`, `JustificationBlock.tsx`
 - Status/placeholders: `WorkingPlaceholder.tsx`, `SessionActiveSpinner.tsx`, `MigratingPart.tsx`, `BusyDots.tsx`
-- Utility renderers: `VirtualizedCodeBlock.tsx`, `MinDurationShineText.tsx`
+- Utility renderers: `VirtualizedCodeBlock.tsx`

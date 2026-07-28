@@ -12,6 +12,11 @@ export type MobileAppActions = {
   }) => void;
   /** Open every diff from the owning turn in a mobile review sheet. */
   openTurnDiff: (messageId?: string) => void;
+  /**
+   * Open a file preview in the gesture-capable resizable sheet (phone)
+   * or the right Files panel (iPad). Used by Read / Skill tool rows.
+   */
+  openFile: (options: { path: string; targetLine?: number }) => void;
   /** Open the Files surface as a modal. */
   openFiles: () => void;
   /** Open the Settings surface as a modal. */

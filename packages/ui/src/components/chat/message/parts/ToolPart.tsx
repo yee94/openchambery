@@ -42,7 +42,6 @@ import { JsonSummaryView } from './JsonSummaryView';
 import { Icon } from "@/components/icon/Icon";
 import { AgentAvatar } from '@/components/chat/AgentAvatar';
 import { type DiffViewMode } from '../DiffViewToggle';
-import { MinDurationShineText } from './MinDurationShineText';
 import { ToolRevealOnMount } from './ToolRevealOnMount';
 import { getToolIcon } from './toolPresentation';
 import { useDurationTickerNow } from './useDurationTicker';
@@ -943,12 +942,12 @@ const ToolScrollableTextOutput: React.FC<{
         setCopiedJson(false);
     }, [renderedOutput]);
 
-    const handleJsonViewChange = React.useCallback((view: 'summary' | 'formatted' | 'raw', event: React.MouseEvent<HTMLButtonElement>) => {
+    const handleJsonViewChange = useEvent((view: 'summary' | 'formatted' | 'raw', event: React.MouseEvent<HTMLButtonElement>) => {
         event.stopPropagation();
         setJsonViewMode(view);
-    }, []);
+    });
 
-    const handleCopyOutput = React.useCallback(async (event: React.MouseEvent<HTMLButtonElement>) => {
+    const handleCopyOutput = useEvent(async (event: React.MouseEvent<HTMLButtonElement>) => {
         event.stopPropagation();
         const result = await copyTextToClipboard(renderedOutput);
         if (!result.ok) {
@@ -959,7 +958,7 @@ const ToolScrollableTextOutput: React.FC<{
         if (typeof window !== 'undefined') {
             window.setTimeout(() => setCopiedJson(false), 1200);
         }
-    }, [renderedOutput, t]);
+    });
 
     if (jsonResult.isJson) {
         return (
@@ -1865,7 +1864,7 @@ const ToolExpandedContent: React.FC<ToolExpandedContentProps> = React.memo(({
             return (
                 <div className={getToolExpandedContentClassName(isMobile, 'todo-error')}>
                     <div className="typography-meta font-medium text-muted-foreground/80">{t('chat.toolPart.error')}</div>
-                    <div className="typography-meta p-2 rounded-xl border" style={{
+                    <div className="typography-meta p-2 rounded-none border" style={{
                         backgroundColor: 'var(--status-error-background)',
                         color: 'var(--status-error)',
                         borderColor: 'var(--status-error-border)',
@@ -1988,6 +1987,7 @@ const ToolPartContent: React.FC<ToolPartProps> = ({
 
     const normalizedPartTool = normalizeToolName(part.tool);
     const isTaskTool = normalizedPartTool === 'task';
+    const isTodoTool = normalizedPartTool === 'todowrite' || normalizedPartTool === 'todoread';
     // Edit/Write：单行导航，不展开详情
     const isFileNavTool = isFileNavToolName(normalizedPartTool);
 
@@ -2626,15 +2626,13 @@ const ToolPartContent: React.FC<ToolPartProps> = ({
                     </div>
                     {isMultiFileApplyPatch ? (
                         <>
-                            <MinDurationShineText
-                                active={Boolean(effectiveActive && !isError)}
-                                minDurationMs={300}
+                            <span
                                 className={cn(TOOL_ROW_TITLE_CLASS, 'flex-shrink-0')}
                                 style={titleStyle}
                                 title={displayName}
                             >
                                 {displayName}
-                            </MinDurationShineText>
+                            </span>
                             {getMultiFileDescription(metadata, animateTailText, showToolFileIcons)}
                         </>
                     ) : (
@@ -2652,15 +2650,13 @@ const ToolPartContent: React.FC<ToolPartProps> = ({
                                         {taskTitle}
                                     </span>
                                 ) : (
-                                    <MinDurationShineText
-                                        active={Boolean(effectiveActive && !isError)}
-                                        minDurationMs={300}
+                                    <span
                                         className={cn(TOOL_ROW_TITLE_CLASS, 'flex-shrink-0')}
                                         style={titleStyle}
                                         title={taskTitle}
                                     >
                                         {taskTitle}
-                                    </MinDurationShineText>
+                                    </span>
                                 )}
                             </div>
                             {normalizedPartTool === 'bash' && typeof effectiveTimeStart === 'number' ? (
@@ -2758,7 +2754,7 @@ const ToolPartContent: React.FC<ToolPartProps> = ({
                 >
                     {shouldRenderExpandedContent ? (
                         <div
-                            className={TOOL_EXPANDED_TIMELINE_CLASS_NAME}
+                            className={isTodoTool ? 'relative ml-0.5 pl-1.5' : TOOL_EXPANDED_TIMELINE_CLASS_NAME}
                         >
                             <span
                                 aria-hidden="true"

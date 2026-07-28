@@ -103,7 +103,7 @@ export function MobileRowActionsSheet({
             ) : null}
             {actions.onArchive ? <ActionRow icon="archive" label={t('sessions.sidebar.bulkActions.archive')} onClick={run(actions.onArchive)} /> : null}
             {actions.onDelete ? (
-              <div className="mt-2 border-t border-[var(--surface-subtle)] pt-2">
+              <div className="mt-3 border-t border-[var(--surface-subtle)] pt-3">
                 <ActionRow icon="delete-bin" label={t('sessions.sidebar.bulkActions.delete')} onClick={run(actions.onDelete)} destructive />
               </div>
             ) : null}
@@ -116,7 +116,7 @@ export function MobileRowActionsSheet({
             {target.gitRepository && actions.onNewWorktree ? <ActionRow icon="node-tree" label={t('sessions.sidebar.project.actions.newWorktree')} onClick={run(actions.onNewWorktree)} /> : null}
             {actions.onEditProject ? <ActionRow icon="pencil-ai" label={t('sessions.sidebar.project.actions.edit')} onClick={run(actions.onEditProject)} /> : null}
             {actions.onCloseProject ? (
-              <div className="mt-2 border-t border-[var(--surface-subtle)] pt-2">
+              <div className="mt-3 border-t border-[var(--surface-subtle)] pt-3">
                 <ActionRow icon="close" label={t('sessions.sidebar.project.actions.closeProject')} onClick={run(actions.onCloseProject)} destructive />
               </div>
             ) : null}
@@ -127,7 +127,7 @@ export function MobileRowActionsSheet({
           <>
             {actions.onNewSession ? <ActionRow icon="add" label={t('sessions.sidebar.project.actions.newSession')} onClick={run(actions.onNewSession)} /> : null}
             {actions.onDeleteWorktree ? (
-              <div className="mt-2 border-t border-[var(--surface-subtle)] pt-2">
+              <div className="mt-3 border-t border-[var(--surface-subtle)] pt-3">
                 <ActionRow icon="delete-bin" label={t('mobile.projectEdit.deleteWorktreeConfirmButton')} onClick={run(actions.onDeleteWorktree)} destructive />
               </div>
             ) : null}

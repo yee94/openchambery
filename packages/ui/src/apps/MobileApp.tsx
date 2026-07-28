@@ -68,6 +68,7 @@ import { DirectoryExplorerDialog } from '@/components/session/DirectoryExplorerD
 import { ScheduledTasksDialog, ScheduledTasksWorkspace } from '@/components/session/ScheduledTasksDialog';
 import { SettingsGroup } from '@/components/sections/shared/SettingsGroup';
 import { SyncProvider, useCurrentSessionEntity, useParentSessionTarget, useSessionMessages } from '@/sync/sync-context';
+import { useSync } from '@/sync/use-sync';
 
 import { SyncAppEffects } from './AppEffects';
 import { MobileChangesSurface } from './MobileChangesSurface';
@@ -105,6 +106,7 @@ import { handlePendingNativeAssistantOpen } from './nativeAssistantShortcut';
 
 const MOBILE_DIRECT_DIFF_WINDOW_ID = 'mobile-direct-diff';
 const MOBILE_TURN_DIFF_WINDOW_ID = 'mobile-turn-diff';
+const MOBILE_DIRECT_FILE_WINDOW_ID = 'mobile-direct-file';
 const MOBILE_OVERFLOW_MENU_ID = 'mobile-overflow-menu';
 
 type MobileAppProps = {
@@ -856,11 +858,13 @@ const getProjectLabel = (path: string): string => {
 };
 
 type OverflowItem = {
-  key: 'new-session' | 'files' | 'changes' | 'scheduled' | 'assistant' | 'mcp' | 'instances' | 'update' | 'settings';
+  key: 'new-session' | 'refresh-transcript' | 'files' | 'changes' | 'scheduled' | 'assistant' | 'mcp' | 'instances' | 'update' | 'settings';
   icon?: IconName;
   iconNode?: React.ReactNode;
   label: string;
   badge?: number;
+  disabled?: boolean;
+  spinning?: boolean;
   onSelect: () => void;
 };
 
@@ -1872,14 +1876,16 @@ const MobileOverflowMenu: React.FC<{
             className={cn(
               'flex w-full items-center gap-3 px-4 py-3 text-left transition-colors hover:bg-interactive-hover focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-primary focus-visible:ring-inset',
               index > 0 && 'border-t border-border/30',
+              item.disabled && 'cursor-not-allowed opacity-60',
             )}
             style={{ touchAction: 'manipulation' }}
+            disabled={item.disabled}
             onClick={() => {
               item.onSelect();
               onClose();
             }}
           >
-            {item.iconNode ?? (item.icon ? <Icon name={item.icon} className="size-5 shrink-0 text-muted-foreground" /> : null)}
+            {item.iconNode ?? (item.icon ? <Icon name={item.icon} className={cn('size-5 shrink-0 text-muted-foreground', item.spinning && 'animate-spin')} /> : null)}
             <span className="min-w-0 flex-1 truncate typography-ui-label text-foreground">{item.label}</span>
             {item.badge && item.badge > 0 ? (
               <span className="inline-flex size-2 shrink-0 rounded-full bg-primary" aria-hidden />
@@ -2243,11 +2249,17 @@ type PendingMobileChangesDiff = {
   toolPatches?: ReadonlyArray<{ path: string; patch: string }>;
 };
 
+type PendingMobileFilePreview = {
+  path: string;
+  targetLine?: number;
+};
+
 const MobileShell: React.FC<{
   connection: UseMobileConnection;
   onActiveConnectionDeleted: () => void;
 }> = ({ connection, onActiveConnectionDeleted }) => {
   const { t } = useI18n();
+  const sync = useSync();
   useStreamingHaptics();
   useMobilePressHaptics();
   const mobileSessionPanelOpen = useUIStore((state) => state.mobileSessionPanelOpen);
@@ -2257,6 +2269,8 @@ const MobileShell: React.FC<{
   const assistantCapability = useAssistantCapabilityQuery();
   const setActiveMainTab = useUIStore((state) => state.setActiveMainTab);
   const [filesOpen, setFilesOpen] = React.useState(false);
+  const [filePreviewOpen, setFilePreviewOpen] = React.useState(false);
+  const [pendingFilePreview, setPendingFilePreview] = React.useState<PendingMobileFilePreview | null>(null);
   const [changesOpen, setChangesOpen] = React.useState(false);
   const [turnDiffOpen, setTurnDiffOpen] = React.useState(false);
   const [turnDiffMessageId, setTurnDiffMessageId] = React.useState<string | null>(null);
@@ -2267,6 +2281,7 @@ const MobileShell: React.FC<{
   const [directoryDialogOpen, setDirectoryDialogOpen] = React.useState(false);
   const [settingsInitialMobileStage, setSettingsInitialMobileStage] = React.useState<'nav' | 'page-content'>('nav');
   const [overflowOpen, setOverflowOpen] = React.useState(false);
+  const [isTranscriptRefreshing, setIsTranscriptRefreshing] = React.useState(false);
   const toggleOverflowMenu = useEvent(() => setOverflowOpen((open) => !open));
   const closeOverflowMenu = useEvent(() => setOverflowOpen(false));
   // When set, the Changes surface opens directly into the per-file diff for this path.
@@ -2311,6 +2326,7 @@ const MobileShell: React.FC<{
 
   const rootBackRoutesBlocked = mobileSessionPanelOpen
     || filesOpen
+    || filePreviewOpen
     || changesOpen
     || turnDiffOpen
     || scheduledTasksDialogOpen
@@ -2335,6 +2351,8 @@ const MobileShell: React.FC<{
   const openFilesSurface = useEvent(() => {
     setTurnDiffOpen(false);
     setTurnDiffMessageId(null);
+    setFilePreviewOpen(false);
+    setPendingFilePreview(null);
     if (isIPad) {
       setPendingChangesDiff(null);
       setIpadRightPanel('files');
@@ -2344,21 +2362,66 @@ const MobileShell: React.FC<{
     setFilesOpen(true);
   });
 
+  const closeFilePreview = useEvent(() => {
+    setFilePreviewOpen(false);
+    setPendingFilePreview(null);
+  });
+
+  /**
+   * Read/Skill (and other direct file opens): phone uses the same gesture
+   * resizable sheet as Edit diffs; iPad keeps the right Files panel + pending focus.
+   */
+  const openFileSurface = useEvent((preview: PendingMobileFilePreview) => {
+    const path = preview.path.trim();
+    if (!path) return;
+
+    setTurnDiffOpen(false);
+    setTurnDiffMessageId(null);
+    setPendingChangesDiff(null);
+    setChangesOpen(false);
+
+    if (isIPad) {
+      useUIStore.getState().setPendingFileFocusPath(path);
+      setIpadRightPanel('files');
+      if (isPortrait) setIpadSidebarOpen(false);
+      return;
+    }
+
+    setFilesOpen(false);
+    setPendingFilePreview({
+      path,
+      targetLine: typeof preview.targetLine === 'number' && Number.isFinite(preview.targetLine)
+        ? Math.max(1, Math.trunc(preview.targetLine))
+        : undefined,
+    });
+    setFilePreviewOpen(true);
+  });
+
   // When a file-reference link inside chat markdown triggers
   // uiStore.openContextFile(...), the pending focus path is set even while
-  // the Files surface is closed. Open the surface so MobileFilesSurface can
-  // consume the pending entry and route directly into the file preview.
+  // the Files surface is closed. Prefer the gesture file preview sheet on
+  // phone; iPad still opens the right Files panel.
   const pendingFileFocusPath = useUIStore((state) => state.pendingFileFocusPath);
   React.useEffect(() => {
     if (!pendingFileFocusPath) {
       return;
     }
-    openFilesSurface();
-  }, [pendingFileFocusPath, openFilesSurface]);
+    if (isIPad) {
+      openFilesSurface();
+      return;
+    }
+    // openFileSurface clears the host path via Files surface consumption when
+    // using openContextFile; for direct focus paths, open the gesture sheet
+    // and clear the pending store entry so we do not re-open after dismiss.
+    openFileSurface({ path: pendingFileFocusPath });
+    useUIStore.getState().setPendingFileFocusPath(null);
+  }, [pendingFileFocusPath, isIPad, openFilesSurface, openFileSurface]);
 
   const openChangesSurface = useEvent((diff: PendingMobileChangesDiff | null = null) => {
     setTurnDiffOpen(false);
     setTurnDiffMessageId(null);
+    setFilePreviewOpen(false);
+    setPendingFilePreview(null);
     setPendingChangesDiff(diff);
     if (isIPad) {
       setIpadRightPanel('changes');
@@ -2371,6 +2434,8 @@ const MobileShell: React.FC<{
   const openTurnDiffSurface = useEvent((messageId?: string) => {
     setPendingChangesDiff(null);
     setChangesOpen(false);
+    setFilePreviewOpen(false);
+    setPendingFilePreview(null);
     setTurnDiffMessageId(messageId ?? null);
     if (isIPad) {
       setIpadRightPanel('turn-diff');
@@ -2422,12 +2487,15 @@ const MobileShell: React.FC<{
         openChangesSurface({ path: diffPath, staged: false, targetLine, toolPatches: patches });
       },
       openTurnDiff: openTurnDiffSurface,
+      openFile: ({ path, targetLine }) => {
+        openFileSurface({ path, targetLine });
+      },
       openFiles: () => openFilesSurface(),
       openSettings: (section?: string) => {
         openSettingsSurface(section);
       },
     }),
-    [openChangesSurface, openFilesSurface, openSettingsSurface, openTurnDiffSurface],
+    [openChangesSurface, openFileSurface, openFilesSurface, openSettingsSurface, openTurnDiffSurface],
   );
 
   const closeChanges = useEvent(() => {
@@ -2487,6 +2555,23 @@ const MobileShell: React.FC<{
   );
   const currentSessionDirectory = useSessionUIStore(currentSessionDirectorySelector);
   const parentSessionTarget = useParentSessionTarget(currentSessionId, currentSessionDirectory || currentDirectory || undefined);
+  const refreshCurrentTranscript = useEvent(() => {
+    const sessionID = currentSessionId;
+    if (!sessionID || isTranscriptRefreshing) return;
+    const directory = currentSessionDirectory || currentDirectory || undefined;
+
+    setIsTranscriptRefreshing(true);
+    void (async () => {
+      try {
+        await sync.refreshSessionTranscript(sessionID, { directory });
+        toast.success(t('mobile.menu.refreshTranscriptSuccess'));
+      } catch {
+        toast.error(t('mobile.menu.refreshTranscriptFailed'));
+      } finally {
+        setIsTranscriptRefreshing(false);
+      }
+    })();
+  });
   // Record the swipe direction; the animation itself runs in the layout effect below, once the
   // new session's content has committed — running it inline in the swipe callback raced the
   // re-render and dropped the animation on roughly every other switch.
@@ -2560,6 +2645,7 @@ const MobileShell: React.FC<{
     || (!isIPad && !phoneChatMounted)
     || mobileSessionPanelOpen
     || filesOpen
+    || filePreviewOpen
     || changesOpen
     || turnDiffOpen
     || scheduledTasksDialogOpen
@@ -2631,6 +2717,10 @@ const MobileShell: React.FC<{
     }
     // Push-style details inside modal surfaces pop before their owning modal.
     if (mobileBackNavigationCoordinator.backImmediately('overlay')) {
+      return true;
+    }
+    if (filePreviewOpen) {
+      closeFilePreview();
       return true;
     }
     if (filesOpen) {
@@ -2785,9 +2875,19 @@ const MobileShell: React.FC<{
           onSelect: () => openSettingsSurface(),
         });
       }
+      if (currentSessionId) {
+        items.push({
+          key: 'refresh-transcript',
+          icon: 'refresh',
+          label: t('mobile.menu.refreshTranscript'),
+          disabled: isTranscriptRefreshing,
+          spinning: isTranscriptRefreshing,
+          onSelect: refreshCurrentTranscript,
+        });
+      }
       return items;
     },
-    [dirtyChangeCount, isIPad, openChangesSurface, openFilesSurface, openNewSessionDraft, openSettingsSurface, setActiveMainTab, showUpdateItem, t],
+    [currentSessionId, dirtyChangeCount, isIPad, isTranscriptRefreshing, openChangesSurface, openFilesSurface, openNewSessionDraft, openSettingsSurface, refreshCurrentTranscript, setActiveMainTab, showUpdateItem, t],
   );
 
   return (
@@ -3129,6 +3229,35 @@ const MobileShell: React.FC<{
               <MobileFilesSurface onClose={() => setFilesOpen(false)} />
             </ErrorBoundary>
           </MobileSurfaceShell>
+        ) : null}
+
+        {filePreviewOpen && pendingFilePreview ? (
+          <MobileResizableSheet
+            id={MOBILE_DIRECT_FILE_WINDOW_ID}
+            open
+            onOpenChange={(nextOpen) => {
+              if (!nextOpen) closeFilePreview();
+            }}
+            title={(
+              <h2 className="truncate typography-ui-label font-semibold text-foreground">
+                {pendingFilePreview.path.split(/[/\\]/).filter(Boolean).at(-1) ?? pendingFilePreview.path}
+              </h2>
+            )}
+            ariaLabel={t('mobile.menu.files')}
+            closeAriaLabel={t('mobile.surface.closeAria')}
+            resizeAriaLabel={t('mobile.changes.sheet.resizeAria')}
+            initiallyExpanded
+          >
+            <ErrorBoundary>
+              <MobileFilesSurface
+                key={pendingFilePreview.path}
+                onClose={closeFilePreview}
+                initialFilePath={pendingFilePreview.path}
+                directFilePreview
+                hideFileHeader
+              />
+            </ErrorBoundary>
+          </MobileResizableSheet>
         ) : null}
 
         <MobileResizableSheet
