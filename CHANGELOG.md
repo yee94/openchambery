@@ -7,7 +7,7 @@ All notable changes to this project will be documented in this file.
 ## [1.16.85] - 2026-07-29
 
 - **Desktop stability:** update Electron to 41.10.3, restoring Renderer startup on macOS 26.5.2 Apple Silicon systems.
-- **Release automation:** publish desktop, Android, iOS TestFlight, and Relay artifacts without building or attaching a VS Code extension package.
+- **Release automation:** publish macOS arm64, Windows, Linux, Android, iOS TestFlight, and Relay artifacts without building or attaching a VS Code extension package.
 
 ## [1.16.84] - 2026-07-29
 

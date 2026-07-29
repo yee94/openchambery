@@ -123,10 +123,6 @@ jobs:
             arch: arm64
             platform: darwin-aarch64
             runner: macos-26
-          - target: x86_64-apple-darwin
-            arch: x64
-            platform: darwin-x86_64
-            runner: macos-15-intel
     steps:
       - uses: actions/checkout@df4cb1c069e1874edd31b4311f1884172cec0e10 # v6.0.3
 
@@ -490,12 +486,12 @@ jobs:
           pattern: latest-yml-*-apple-darwin
           path: artifacts
 
-      - name: Verify both macOS architecture manifests
+      - name: Verify macOS arm64 manifest
         run: |
           set -euo pipefail
           mapfile -t manifests < <(find artifacts -type f -name latest-mac.yml -print)
-          if [ "${#manifests[@]}" -ne 2 ]; then
-            echo "Expected exactly two per-architecture latest-mac.yml files, found ${#manifests[@]}"
+          if [ "${#manifests[@]}" -ne 1 ]; then
+            echo "Expected exactly one arm64 latest-mac.yml file, found ${#manifests[@]}"
             printf '%s\n' "${manifests[@]}"
             exit 1
           fi
@@ -515,7 +511,6 @@ jobs:
           manifest="${RUNNER_TEMP}/latest-mac.yml"
           test -s "$manifest"
           grep -Fq "OpenChamber-${VERSION}-mac-arm64.zip" "$manifest"
-          grep -Fq "OpenChamber-${VERSION}-mac-x64.zip" "$manifest"
 
       - name: Upload combined macOS manifest to draft release
         if: ${{ github.event.inputs.dry_run != 'true' }}
@@ -611,10 +606,6 @@ jobs:
             `OpenChamber-${version}-mac-arm64.dmg.blockmap`,
             `OpenChamber-${version}-mac-arm64.zip`,
             `OpenChamber-${version}-mac-arm64.zip.blockmap`,
-            `OpenChamber-${version}-mac-x64.dmg`,
-            `OpenChamber-${version}-mac-x64.dmg.blockmap`,
-            `OpenChamber-${version}-mac-x64.zip`,
-            `OpenChamber-${version}-mac-x64.zip.blockmap`,
             'latest-mac.yml',
             `OpenChamber-${version}-win-x64.exe`,
             `OpenChamber-${version}-win-x64.exe.blockmap`,
