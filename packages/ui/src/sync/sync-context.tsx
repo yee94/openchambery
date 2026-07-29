@@ -38,7 +38,11 @@ import { useConfigStore } from "@/stores/useConfigStore"
 import { useTodosPersistStore } from "@/stores/useTodosPersistStore"
 import { toast } from "@/components/ui"
 import { appendNotification } from "./notification-store"
-import { applyGlobalSessionStatusEvent, useGlobalSessionStatusStore } from "./global-session-status"
+import {
+  applyGlobalSessionStatusEvent,
+  applyGlobalSessionStatusSnapshot,
+  useGlobalSessionStatusStore,
+} from "./global-session-status"
 import { applyWorktreeBootstrapStatusEvent } from "@/lib/worktrees/worktreeBootstrap"
 import type { State } from "./types"
 import type { SessionStatus } from "@opencode-ai/sdk/v2/client"
@@ -52,6 +56,7 @@ import { openSessionFromToast } from "./session-opener"
 import { getPermissionToastKey, showPermissionNeededToast } from "./permission-toast"
 import { getRuntimeLiveStatusSeed, LIVE_STATUS_TTL_MS } from "./runtime-live-memory"
 import { getRuntimeKey } from "@/lib/runtime-switch"
+import { normalizeProjectPath } from "@/lib/projectResolution"
 import { getRegisteredRuntimeAPIs } from "@/contexts/runtimeAPIRegistry"
 import { getSessionPrefetch, markSessionPrefetchDirty, subscribeSessionPrefetch, type SessionPrefetchMeta } from "./session-prefetch-cache"
 import { useGlobalSessionsStore } from "@/stores/useGlobalSessionsStore"
@@ -70,6 +75,7 @@ import { CURRENT_SESSION_ENTITY_CACHE_TTL_MS, resolveCurrentSessionEntity, resol
 import {
   reconcileActiveSessionStatusAfterMessagePull,
   resyncDirectorySessionStatuses,
+  setAuthoritativeGlobalSessionStatusConverge,
 } from "./session-status-reconciliation"
 import type { NormalizedOpenCodeEvent } from "./opencode-event-normalizer"
 
@@ -166,9 +172,14 @@ function useLiveSyncSelector<T>(
 // React 18 batches synchronous setState calls automatically.
 // ---------------------------------------------------------------------------
 
-/** Read status for a session across all directories */
-export function useGlobalSessionStatus(sessionId: string): SessionStatus | undefined {
-  const liveStatus = useLiveSyncSelector(
+/**
+ * Child-store live status only — same authority as `useAllSessionStatuses`.
+ * Prefer this for surfaces that must stay consistent with the sessions list
+ * (e.g. mobile home running indicators) and must not paint sticky global
+ * fallback busy after a missed idle.
+ */
+export function useLiveSessionStatus(sessionId: string): SessionStatus | undefined {
+  return useLiveSyncSelector(
     useCallback((states) => findLiveSessionStatus(states, sessionId), [sessionId]),
     Object.is,
     useCallback(
@@ -179,6 +190,11 @@ export function useGlobalSessionStatus(sessionId: string): SessionStatus | undef
       [sessionId],
     ),
   )
+}
+
+/** Read status for a session across all directories (live + global fallback). */
+export function useGlobalSessionStatus(sessionId: string): SessionStatus | undefined {
+  const liveStatus = useLiveSessionStatus(sessionId)
   const fallbackStatus = useGlobalSessionStatusStore(
     useCallback((state) => state.statusById.get(sessionId)?.status, [sessionId]),
   )
@@ -2287,6 +2303,25 @@ export function SyncProvider(props: {
       childStores,
       () => opencodeClient.getDirectory() || props.directory,
     )
+    // Authoritative directory status resync also clears sticky global fallback
+    // busy for the apply-id set (missed idle events). Preserve other busy
+    // entries for the same directory so a single-session resync cannot wipe them
+    // — applyGlobalSessionStatusSnapshot clears directory keys absent from raw.
+    setAuthoritativeGlobalSessionStatusConverge((directory, snapshot, applyIds) => {
+      const applySet = new Set(applyIds)
+      const normalizedDirectory = normalizeProjectPath(directory) ?? directory
+      const raw: Record<string, { type?: string }> = { ...snapshot }
+      for (const [sessionId, entry] of useGlobalSessionStatusStore.getState().statusById) {
+        if (applySet.has(sessionId)) continue
+        if (entry.directory === normalizedDirectory) {
+          raw[sessionId] = { type: entry.status }
+        }
+      }
+      applyGlobalSessionStatusSnapshot(directory, raw, applyIds)
+    })
+    return () => {
+      setAuthoritativeGlobalSessionStatusConverge(undefined)
+    }
   }, [props.sdk, props.directory, childStores, routingIndex])
 
   // Subscribe to child store for streaming state derivation

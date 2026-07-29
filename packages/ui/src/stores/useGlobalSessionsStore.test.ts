@@ -1062,6 +1062,82 @@ describe('useGlobalSessionsStore', () => {
     }
   });
 
+  test('clears residual session-index loading when a later batch drops a directory from pending', async () => {
+    const originalWindow = globalThis.window;
+    const originalFetch = globalThis.fetch;
+    const p0Pending = {
+      revision: 1,
+      sync: {
+        active: true,
+        completed: 0,
+        total: 1,
+        pendingDirectories: ['/repo/a'],
+        completedDirectories: [] as string[],
+        failedDirectories: [] as string[],
+      },
+      directories: [] as Array<{ directory: string; sessions: Session[] }>,
+    };
+    // New server batch: only /repo/b is pending; completed lists are cleared per job,
+    // so /repo/a must be released by observer residual cleanup, not completed/failed.
+    const p1Batch = {
+      revision: 2,
+      sync: {
+        active: true,
+        completed: 0,
+        total: 1,
+        pendingDirectories: ['/repo/b'],
+        completedDirectories: [] as string[],
+        failedDirectories: [] as string[],
+      },
+      directories: [] as Array<{ directory: string; sessions: Session[] }>,
+    };
+    try {
+      Object.defineProperty(globalThis, 'window', {
+        configurable: true,
+        value: { location: { origin: 'http://localhost', href: 'http://localhost/' } },
+      });
+      globalThis.fetch = async (input) => {
+        const pathname = new URL(input instanceof Request ? input.url : String(input), 'http://localhost').pathname;
+        if (pathname === '/api/openchamber/session-index/sync') {
+          return new Response(JSON.stringify(p0Pending), {
+            status: 202,
+            headers: { 'Content-Type': 'application/json' },
+          });
+        }
+        return new Response(JSON.stringify({ available: true, ...p1Batch }), {
+          status: 200,
+          headers: { 'Content-Type': 'application/json' },
+        });
+      };
+
+      const sync = useGlobalSessionsStore.getState().syncSessionsForDirectories(['/repo/a', '/repo/b']);
+      while (tipListeners.size === 0) await new Promise((resolve) => setTimeout(resolve, 0));
+
+      expect(useGlobalSessionsStore.getState().loadingDirectories.has('/repo/a')).toBe(true);
+      expect(useGlobalSessionsStore.getState().loadingDirectories.has('/repo/b')).toBe(false);
+
+      emitOpenchamberTip({ type: 'session-index-changed', revision: 2, occurredAt: 1 });
+      while (
+        useGlobalSessionsStore.getState().loadingDirectories.has('/repo/a')
+        || !useGlobalSessionsStore.getState().loadingDirectories.has('/repo/b')
+      ) {
+        await new Promise((resolve) => setTimeout(resolve, 0));
+      }
+
+      expect(useGlobalSessionsStore.getState().loadingDirectories.has('/repo/a')).toBe(false);
+      expect(useGlobalSessionsStore.getState().refreshingDirectories.has('/repo/a')).toBe(false);
+      expect(useGlobalSessionsStore.getState().loadingDirectories.has('/repo/b')).toBe(true);
+      expect(useGlobalSessionsStore.getState().refreshingDirectories.has('/repo/b')).toBe(false);
+
+      // End the observer so the suite does not leak tip listeners / inflight work.
+      useGlobalSessionsStore.getState().resetForRuntimeSwitch();
+      await sync;
+    } finally {
+      Object.defineProperty(globalThis, 'window', { configurable: true, value: originalWindow });
+      globalThis.fetch = originalFetch;
+    }
+  });
+
   test('clears session-index loading when its revalidation fails', async () => {
     const originalWindow = globalThis.window;
     const originalFetch = globalThis.fetch;

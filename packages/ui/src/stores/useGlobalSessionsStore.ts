@@ -668,7 +668,8 @@ const applySessionIndexSnapshotState = (
   for (const directory of snapshotDirectories) nextLoaded.add(directory);
   const nextLoading = new Set(state.loadingDirectories);
   const nextRefreshing = new Set(state.refreshingDirectories);
-  for (const directory of snapshot.sync.pendingDirectories) {
+  const pendingDirectorySet = new Set(snapshot.sync.pendingDirectories);
+  for (const directory of pendingDirectorySet) {
     if ((activeSessions.some((session) => resolveGlobalSessionDirectory(session) === directory))) {
       nextRefreshing.add(directory);
       nextLoading.delete(directory);
@@ -682,6 +683,18 @@ const applySessionIndexSnapshotState = (
   ]) {
     nextLoading.delete(directory);
     nextRefreshing.delete(directory);
+  }
+  // Authoritative snapshots own observer-held loading. When a later batch drops a
+  // directory from pending without listing it in completed/failed (server clears
+  // those lists per job), release residual loading/refreshing — but never steal
+  // an overlapping SDK refresh that still owns inflightActiveDirectoryRefresh.
+  if (authoritative) {
+    for (const directory of sessionIndexObserverDirectoryRefs.keys()) {
+      if (pendingDirectorySet.has(directory)) continue;
+      if (inflightActiveDirectoryRefresh.has(directory)) continue;
+      nextLoading.delete(directory);
+      nextRefreshing.delete(directory);
+    }
   }
 
   return {

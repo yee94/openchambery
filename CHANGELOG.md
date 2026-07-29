@@ -4,6 +4,11 @@ All notable changes to this project will be documented in this file.
 
 ## [Unreleased]
 
+## [1.16.82] - 2026-07-29
+
+- **Session status:** release stale project loading indicators when a newer session-index batch replaces completion metadata, and keep mobile project cards aligned with the recent-session list after a session finishes.
+- **Mobile worktrees:** present the new-worktree flow in a resizable, scrollable sheet with a fixed action area.
+
 ## [1.16.81] - 2026-07-29
 
 - **Relay pairing:** allow the local Desktop shell (`desktop-local`) to set a custom Host Relay endpoint when creating pairing sessions; remote client tokens stay blocked.

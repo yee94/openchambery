@@ -14,4 +14,12 @@ describe("resolveGlobalSessionStatus", () => {
     expect(resolveGlobalSessionStatus(liveStatus, "busy")).toBe(liveStatus)
   })
 
+  test("live idle wins over sticky global fallback busy", () => {
+    // Home used to paint fallback busy while list (live-only) already showed idle.
+    expect(resolveGlobalSessionStatus({ type: "idle" }, "busy")).toEqual({ type: "idle" })
+  })
+
+  test("returns undefined when neither live nor fallback is active", () => {
+    expect(resolveGlobalSessionStatus(undefined, undefined)).toBe(undefined)
+  })
 })

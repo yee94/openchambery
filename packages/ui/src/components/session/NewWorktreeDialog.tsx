@@ -50,6 +50,8 @@ import { useGitBranches, useGitStore, useGitLoadingBranches } from '@/stores/use
 import { GitHubIntegrationDialog } from './GitHubIntegrationDialog';
 import { SortableTabsStrip } from '@/components/ui/sortable-tabs-strip';
 import { MobileOverlayPanel } from '@/components/ui/MobileOverlayPanel';
+import { MobileResizableSheet } from '@/components/ui/MobileResizableSheet';
+import { ScrollableOverlay } from '@/components/ui/ScrollableOverlay';
 import { Icon } from "@/components/icon/Icon";
 import type {
   GitHubIssue,
@@ -214,6 +216,7 @@ export function NewWorktreeDialog({
   const { t } = useI18n();
   const { github, git } = useRuntimeAPIs();
   const isMobile = useUIStore((state) => state.isMobile);
+  const mobileSheetId = React.useId();
   const githubAuthQuery = useGitHubAuthQuery();
   const githubAuthStatus = githubAuthQuery.data ?? null;
   const githubAuthChecked = githubAuthQuery.isFetched;
@@ -1069,28 +1072,39 @@ export function NewWorktreeDialog({
   return (
     <>
       {isMobile ? (
-        <MobileOverlayPanel
+        <MobileResizableSheet
+          id={`new-worktree-sheet-${mobileSheetId}`}
           open={open}
-          title={t('session.newWorktree.title')}
-          onClose={() => onOpenChange(false)}
-          footer={footerContent}
+          onOpenChange={onOpenChange}
+          title={<h2 className="truncate typography-ui-label font-semibold text-foreground">{t('session.newWorktree.title')}</h2>}
+          ariaLabel={t('session.newWorktree.title')}
+          closeAriaLabel={t('mobile.surface.closeAria')}
+          resizeAriaLabel={t('mobile.sessions.sheet.resizeAria')}
         >
-          {/* Mode Selection - using SortableTabsStrip */}
-          <div className="w-full mb-4">
-            <SortableTabsStrip
-              items={[
-                { id: 'new-branch', label: t('session.newWorktree.mode.newBranch'), icon: <Icon name="git-branch" className="h-3.5 w-3.5" /> },
-                { id: 'existing-branch', label: t('session.newWorktree.mode.existingBranch'), icon: <Icon name="git-repository" className="h-3.5 w-3.5" /> },
-              ]}
-              activeId={mode}
-              onSelect={(id) => handleModeChange(id as Mode)}
-              variant="active-pill"
-              layoutMode="fit"
-              className="w-full"
-            />
-          </div>
+          <div className="flex min-h-0 flex-1 flex-col">
+            <ScrollableOverlay
+              useScrollShadow
+              disableHorizontal
+              preventOverscroll
+              outerClassName="min-h-0 flex-1"
+              className="overscroll-contain px-4 pb-4 pt-2"
+            >
+              {/* Mode Selection - using SortableTabsStrip */}
+              <div className="w-full mb-4">
+                <SortableTabsStrip
+                  items={[
+                    { id: 'new-branch', label: t('session.newWorktree.mode.newBranch'), icon: <Icon name="git-branch" className="h-3.5 w-3.5" /> },
+                    { id: 'existing-branch', label: t('session.newWorktree.mode.existingBranch'), icon: <Icon name="git-repository" className="h-3.5 w-3.5" /> },
+                  ]}
+                  activeId={mode}
+                  onSelect={(id) => handleModeChange(id as Mode)}
+                  variant="active-pill"
+                  layoutMode="fit"
+                  className="w-full"
+                />
+              </div>
 
-          <div className="space-y-6">
+              <div className="space-y-6">
             {/* Branch Name / Existing Branch Selection */}
             {mode === 'existing-branch' ? (
               <div className="space-y-1.5">
@@ -1556,8 +1570,13 @@ export function NewWorktreeDialog({
                 )}
               </div>
             )}
+              </div>
+            </ScrollableOverlay>
+            <div className="shrink-0 border-t border-border/50 px-4 pb-3 pt-2">
+              {footerContent}
+            </div>
           </div>
-        </MobileOverlayPanel>
+        </MobileResizableSheet>
       ) : (
         <Dialog open={open} onOpenChange={onOpenChange}>
           <DialogContent className="max-w-lg max-h-[80vh] flex flex-col">

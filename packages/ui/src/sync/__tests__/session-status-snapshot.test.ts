@@ -268,6 +268,117 @@ describe("reconcileActiveSessionStatusAfterMessagePull", () => {
     expect(store.getState().session_status_snapshot_at).toBe(50)
   })
 
+  test("successful fused snapshot converges global fallback for directory apply ids", async () => {
+    const store = createDirectoryStore({
+      session_status: { ses_a: { type: "busy" }, ses_b: { type: "busy" } },
+    })
+    const converged: Array<{
+      directory: string
+      snapshot: Record<string, { type?: string }>
+      applyIds: string[]
+    }> = []
+
+    await resyncDirectorySessionStatuses("/repo", store, ["ses_a", "ses_b"], {
+      now: () => 55,
+      loadSnapshot: async () => ({ ses_a: { type: "busy" } }),
+      loadActive: async () => ({ state: "supported", membership: {} }),
+      onAuthoritativeGlobalStatusConverge: (directory, snapshot, applyIds) => {
+        converged.push({ directory, snapshot, applyIds: [...applyIds].sort() })
+      },
+    })
+
+    expect(store.getState().session_status.ses_a).toEqual({ type: "idle" })
+    expect(store.getState().session_status.ses_b).toEqual({ type: "idle" })
+    // Absence from snapshot + applyIds means idle (clears sticky global busy).
+    expect(converged).toEqual([{
+      directory: "/repo",
+      snapshot: {},
+      applyIds: ["ses_a", "ses_b"],
+    }])
+  })
+
+  test("failed resync does not converge global fallback (preserves sticky busy)", async () => {
+    const busy: SessionStatus = { type: "busy" }
+    const store = createDirectoryStore({
+      session_status: { ses_a: busy },
+    })
+    let convergeCalls = 0
+
+    await resyncDirectorySessionStatuses("/repo", store, ["ses_a"], {
+      now: () => 56,
+      loadSnapshot: async () => null,
+      loadActive: async () => ({ state: "unknown" }),
+      onAuthoritativeGlobalStatusConverge: () => {
+        convergeCalls += 1
+      },
+    })
+
+    expect(store.getState().session_status.ses_a).toBe(busy)
+    expect(convergeCalls).toBe(0)
+  })
+
+  test("live SSE newer than snapshot is preferred when converging global fallback", async () => {
+    // Snapshot request starts at t=100; live busy lands at t=150 before apply.
+    // Child store keeps live busy; converge payload must report busy not idle.
+    const store = createDirectoryStore({
+      session_status: { ses_a: { type: "busy" } },
+    })
+    let resolveSnapshot: ((snapshot: StatusSnapshot) => void) | undefined
+    const converged: Array<{
+      snapshot: Record<string, { type?: string }>
+      applyIds: string[]
+    }> = []
+
+    const resync = resyncDirectorySessionStatuses("/repo", store, ["ses_a"], {
+      now: () => 100,
+      skipActive: true,
+      loadSnapshot: () => new Promise<StatusSnapshot>((resolve) => {
+        resolveSnapshot = resolve
+      }),
+      onAuthoritativeGlobalStatusConverge: (_directory, snapshot, applyIds) => {
+        converged.push({ snapshot, applyIds: [...applyIds] })
+      },
+    })
+    await Promise.resolve()
+
+    // Live SSE wins via observed_at > requestedAt; empty snapshot would idle.
+    store.setState({
+      session_status: { ses_a: { type: "busy" } },
+      session_status_observed_at: { ses_a: 150 },
+    })
+    resolveSnapshot?.({})
+    await resync
+
+    expect(store.getState().session_status.ses_a).toEqual({ type: "busy" })
+    expect(store.getState().session_status_observed_at.ses_a).toBe(150)
+    expect(converged).toEqual([{
+      snapshot: { ses_a: { type: "busy" } },
+      applyIds: ["ses_a"],
+    }])
+  })
+
+  test("converges busy when active membership keeps the session running", async () => {
+    const store = createDirectoryStore({
+      session_status: { ses_a: { type: "idle" } },
+    })
+    const converged: Array<Record<string, { type?: string }>> = []
+
+    await resyncDirectorySessionStatuses("/repo", store, ["ses_a"], {
+      now: () => 57,
+      loadSnapshot: async () => ({}),
+      loadActive: async () => ({
+        state: "supported",
+        membership: { ses_a: { type: "running" } },
+      }),
+      onAuthoritativeGlobalStatusConverge: (_directory, snapshot) => {
+        converged.push(snapshot)
+      },
+    })
+
+    expect(store.getState().session_status.ses_a).toEqual({ type: "busy" })
+    expect(converged).toEqual([{ ses_a: { type: "busy" } }])
+  })
+
   test("404 active unsupported falls back to legacy", async () => {
     const store = createDirectoryStore({
       session_status: { ses_a: { type: "idle" } },

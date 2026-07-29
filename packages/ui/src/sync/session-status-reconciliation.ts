@@ -17,6 +17,26 @@ import {
 } from "@/queries/sessionActiveQueries"
 import type { DirectoryStore } from "./child-store"
 
+/**
+ * After an authoritative directory status snapshot is applied to a child store,
+ * converge the global busy/retry fallback for the same directory + apply IDs.
+ * Injected so this module stays free of the global-status store dependency.
+ */
+export type AuthoritativeGlobalSessionStatusConverge = (
+  directory: string,
+  snapshot: Record<string, { type?: string }>,
+  applyIds: string[],
+) => void
+
+let authoritativeGlobalSessionStatusConverge: AuthoritativeGlobalSessionStatusConverge | undefined
+
+/** Wire global fallback convergence from SyncProvider (or tests). */
+export function setAuthoritativeGlobalSessionStatusConverge(
+  handler: AuthoritativeGlobalSessionStatusConverge | undefined,
+): void {
+  authoritativeGlobalSessionStatusConverge = handler
+}
+
 type SessionStatusResyncOptions = {
   isStale?: () => boolean
   loadSnapshot?: DirectorySessionStatusSnapshotLoader
@@ -27,6 +47,11 @@ type SessionStatusResyncOptions = {
   transport?: string
   /** Skip the process-global active probe (e.g. tests that only exercise legacy). */
   skipActive?: boolean
+  /**
+   * Optional per-call override for global fallback convergence. Defaults to the
+   * handler registered via `setAuthoritativeGlobalSessionStatusConverge`.
+   */
+  onAuthoritativeGlobalStatusConverge?: AuthoritativeGlobalSessionStatusConverge
 }
 
 type MessagePullStatusReconciliationInput = SessionStatusResyncOptions & {
@@ -312,6 +337,28 @@ export async function resyncDirectorySessionStatuses(
   // Only advance snapshot_at on a successful authoritative boundary.
   store.setState({ session_status_snapshot_at: requestedAt })
   applySessionStatusSnapshot(store, fused, applyIds, requestedAt)
+
+  // Converge the global busy/retry fallback for this directory slice so a missed
+  // idle event cannot leave sticky busy after an authoritative resync. Build the
+  // payload from post-apply child-store status so live SSE that won via
+  // session_status_observed_at stays preferred over the older snapshot.
+  // Only non-idle entries are listed (absence + applyIds means idle), matching
+  // applyGlobalSessionStatusSnapshot's one-shot contract.
+  const converge =
+    options.onAuthoritativeGlobalStatusConverge
+    ?? authoritativeGlobalSessionStatusConverge
+  if (converge) {
+    const statusAfter = store.getState().session_status ?? {}
+    const raw: Record<string, { type?: string }> = {}
+    for (const sessionId of applyIds) {
+      const status = statusAfter[sessionId]
+      if (status && status.type !== "idle") {
+        raw[sessionId] = { type: status.type }
+      }
+    }
+    converge(directory, raw, applyIds)
+  }
+
   return fused
 }
 

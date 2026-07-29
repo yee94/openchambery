@@ -420,9 +420,16 @@ Rules that keep this single-sourced:
   `session_status_observed_at`. Unknown session IDs are never invented outside
   the candidate + directory-local snapshot apply set. Only a successful
   fused/legacy boundary with at least one directory-local apply ID advances
-  `session_status_snapshot_at`. Session selection, reactive sync, forced sync,
-  reconnect, and materialization share the Query request layer. Idle, empty,
-  history, stale, and superseded pulls add zero status requests.
+  `session_status_snapshot_at`. After such a successful apply, the module
+  converges the global busy/retry fallback for the same directory and apply-id
+  set, building the payload from **post-apply** child-store status so live
+  SSE/WS that won via `session_status_observed_at` stays preferred over the
+  older snapshot (non-idle entries only; absence within apply IDs means idle).
+  Failed loads, unusable dual paths, empty apply sets, and stale resyncs
+  **do not** converge — they preserve the existing global busy/retry fallback.
+  Session selection, reactive sync, forced sync, reconnect, and materialization
+  share the Query request layer. Idle, empty, history, stale, and superseded
+  pulls add zero status requests.
 - `opencode-event-normalizer.ts` is a pure transport-ingress normalizer that
   runs **before** directory resolution and coalescing. It accepts legacy
   `{ type, properties }`, current `{ type, data, location, durable }`, and

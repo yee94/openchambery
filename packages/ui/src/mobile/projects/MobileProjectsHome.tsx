@@ -7,7 +7,7 @@ import { Input } from '@/components/ui/input';
 import { useI18n } from '@/lib/i18n';
 import { cn } from '@/lib/utils';
 import {
-  useGlobalSessionStatus,
+  useLiveSessionStatus,
   useSessionPermissions,
   useSessionQuestions,
 } from '@/sync/sync-context';
@@ -81,7 +81,9 @@ type SessionListProps = Pick<
 };
 
 function MobileLiveSessionRow(props: MobileSessionRowProps) {
-  const status = useGlobalSessionStatus(props.session.id);
+  // Live child-store only — matches MobileSessionsSheet's useAllSessionStatuses
+  // so sticky global fallback busy cannot disagree with the recent-sessions list.
+  const status = useLiveSessionStatus(props.session.id);
   const permissions = useSessionPermissions(
     props.session.id,
     (props.session as MobileSessionTreeNode).directory,
