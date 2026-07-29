@@ -1,6 +1,6 @@
 {
   "name": "@openchamber/web",
-  "version": "1.16.82",
+  "version": "1.16.83",
   "private": false,
   "type": "module",
   "main": "./server/index.js",

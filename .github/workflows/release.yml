@@ -586,7 +586,8 @@ jobs:
       build_number: ${{ github.run_number }}
       release_tag: v${{ needs.create-release.outputs.version }}
       upload_github_release: true
-      build_ios: false
+      build_android: true
+      build_ios: true
     secrets: inherit
 
   publish-relay-docker-manual:
