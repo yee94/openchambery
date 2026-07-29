@@ -61,6 +61,14 @@ APPIMAGE_EXTRACT_AND_RUN=1 ./OpenChamber-*-linux-*.AppImage
 
 Install from the [Marketplace](https://marketplace.visualstudio.com/items?itemName=fedaykindev.openchamber) or search **OpenChamber** in Extensions.
 
+### Mobile (iOS TestFlight + Android)
+
+- **iOS (TestFlight):** https://testflight.apple.com/join/ZCENBHtm  
+  Public beta. First-time external testers may need Apple Beta App Review approval before the build becomes installable.
+- **Android:** download the signed APK/AAB from [Releases](https://github.com/yee94/openchamber/releases).
+
+The native app connects to an existing OpenChamber server; it does not embed OpenCode itself.
+
 ### CLI (Web + PWA)
 
 _Requires Node.js 22+_

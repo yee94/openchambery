@@ -48,6 +48,12 @@ The mobile package reuses the web build, then rewrites `mobile.html` to `index.h
 - iOS resolves every shared image to `image/jpeg`, `image/png`, `image/gif`, `image/webp`, or `image/heic` from the copied file extension and matching file signature. Android preserves the content resolver's concrete image MIME, including `image/heic`. Shares with an unrecognized iOS image format return an attachment error and clean up copied temporary files.
 - The share extension requires the existing `group.com.yee94.openchamber` App Group entitlement for the app and `OpenChamberShareExtension` target. The release signing profile must enable that App Group for `com.yee94.openchamber.OpenChamberShareExtension`.
 
+## Install (beta)
+
+- **iOS TestFlight (public link):** https://testflight.apple.com/join/ZCENBHtm  
+  External group: `OpenChamber Beta`. New CI uploads are attached to this group after processing; first-time external builds require Apple Beta App Review.
+- **Android:** signed APK/AAB assets on [GitHub Releases](https://github.com/yee94/openchamber/releases).
+
 ## Commands
 
 Run these from `packages/mobile`, or use the root `mobile:*` aliases.

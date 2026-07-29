@@ -75,6 +75,14 @@ APPIMAGE_EXTRACT_AND_RUN=1 ./OpenChamber-*-linux-*.AppImage
 
 在扩展市场搜索 **OpenChamber**，或打开 [Marketplace](https://marketplace.visualstudio.com/items?itemName=fedaykindev.openchamber)。
 
+### 移动端（iOS TestFlight + Android）
+
+- **iOS（TestFlight）：** https://testflight.apple.com/join/ZCENBHtm  
+  公开测试链接。首次外部测试可能需等待 Apple Beta App Review 通过后才可安装。
+- **Android：** 从 [Releases](https://github.com/yee94/openchamber/releases) 下载签名 APK/AAB。
+
+原生 App 连接已有的 OpenChamber 服务端，本身不内嵌 OpenCode。
+
 ### CLI（Web + PWA）
 
 需要 Node.js 22+：
