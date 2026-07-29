@@ -2200,11 +2200,13 @@ button.oc-mobile-group-label-trigger:focus-visible {
    iOS: Keyboard resize:none + transform FLIP (~250ms); --oc-kb-layout settles
    the shell once at the end of the rise.
 
-   Android: keyboard intent / focusin starts a short (~200ms) composer-only CSS
-   FLIP before IME movement. Target height comes from the previous measured IME
-   height (39dvh on the first open); a state-only native event calibrates and
-   caches the settled height. Hide is ~100ms so a late close signal can catch up.
-   No progress bridge or per-frame JS geometry.
+   Android: keyboard intent / composer focusin starts a short (~200ms)
+   composer-only CSS FLIP before IME movement. Only the bottom chat composer
+   arms this path — question cards and other fields must not. Target height
+   comes from the previous measured IME height (39dvh on the first open); a
+   state-only native event calibrates and caches the settled height. Hide is
+   ~100ms so a late close signal can catch up. No progress bridge or per-frame
+   JS geometry.
    Header stays fixed; shell keeps solid bottom-safe breathing room.
    https://developer.android.com/develop/ui/views/layout/sw-keyboard
 

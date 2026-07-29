@@ -1,4 +1,5 @@
 import React from 'react';
+import { useEvent } from '@reactuses/core';
 import { BranchSelector, type BranchSelectorWorktreeOption } from '@/components/views/git/BranchSelector';
 import { Icon } from '@/components/icon/Icon';
 import { SELECTOR_CHIP_HOVER_CLASS } from '@/components/chat/message/parts/toolRowChrome';
@@ -11,14 +12,24 @@ import {
   DialogHeader,
   DialogTitle,
 } from '@/components/ui/dialog';
+import { NewWorktreeDialog } from '@/components/session/NewWorktreeDialog';
 import { useRuntimeAPIs } from '@/hooks/useRuntimeAPIs';
 import { useI18n } from '@/lib/i18n';
 import type { GitRemote } from '@/lib/api/types';
+import { normalizePath } from '@/lib/pathNormalization';
 import { cn } from '@/lib/utils';
-import { createWorktreeDraft, createWorktreeDraftForBranch } from '@/lib/worktreeSessionCreator';
+import { createWorktreeDraftForBranch } from '@/lib/worktreeSessionCreator';
+import { useDirectoryStore } from '@/stores/useDirectoryStore';
 import { useGitStore, useIsGitRepo } from '@/stores/useGitStore';
+import { useProjectsStore } from '@/stores/useProjectsStore';
+import { useSessionUIStore } from '@/sync/session-ui-store';
 import { refreshGitBranchesQuery, useGitBranchesQuery, useGitRemotesQuery } from '@/queries/gitBranchQueries';
 import { isDirectoryBasenameLabel } from './draftSessionBranchLabel';
+import {
+  canQueryDraftGitBranches,
+  resolveDraftBranchListDirectory,
+  splitGitBranchList,
+} from './draftSessionBranchQueries';
 
 export type DraftSessionBranchSelectorProps = {
   directory: string | null;
@@ -53,32 +64,81 @@ export const DraftSessionBranchSelector: React.FC<DraftSessionBranchSelectorProp
 }) => {
   const { t } = useI18n();
   const { git } = useRuntimeAPIs();
-  const isGitRepo = useIsGitRepo(directory);
-  const branchesQuery = useGitBranchesQuery(directory, git, isGitRepo === true);
-  const branches = branchesQuery.data;
+  // Branch *lists* are repo-wide and already warmed for the project root by ChatInput.
+  // Checkout / current branch still target the selected draft directory (root or worktree).
+  const listDirectory = resolveDraftBranchListDirectory(projectDirectory, directory);
+  const selectedDirectory = directory;
+  const isListDirectoryGitRepo = useIsGitRepo(listDirectory);
+  const isSelectedDirectoryGitRepo = useIsGitRepo(selectedDirectory);
+  // Do not wait for `isGitRepo === true`: after switching to a worktree the store
+  // entry is often still `null`, which previously disabled the query and cleared lists.
+  const canQueryListBranches = canQueryDraftGitBranches(listDirectory, isListDirectoryGitRepo);
+  const canQuerySelectedBranches = selectedDirectory !== listDirectory
+    && canQueryDraftGitBranches(selectedDirectory, isSelectedDirectoryGitRepo);
+  const listBranchesQuery = useGitBranchesQuery(listDirectory, git, canQueryListBranches);
+  const selectedBranchesQuery = useGitBranchesQuery(selectedDirectory, git, canQuerySelectedBranches);
+  const listBranches = listBranchesQuery.data;
+  const selectedBranches = selectedDirectory === listDirectory
+    ? listBranches
+    : selectedBranchesQuery.data;
   const fetchStatus = useGitStore((state) => state.fetchStatus);
+  const selectedStatusBranch = useGitStore((state) => (
+    selectedDirectory
+      ? state.directories.get(selectedDirectory)?.status?.current?.trim() || null
+      : null
+  ));
   const [branchSelectorOpen, setBranchSelectorOpen] = React.useState(false);
-  const remotesQuery = useGitRemotesQuery(directory, git, isGitRepo === true && branchSelectorOpen);
+  const remotesQuery = useGitRemotesQuery(
+    listDirectory,
+    git,
+    canQueryListBranches && branchSelectorOpen,
+  );
   const remotes = remotesQuery.data ?? [];
   const [pendingBranch, setPendingBranch] = React.useState<string | null>(null);
   const [isActing, setIsActing] = React.useState(false);
+  const [newWorktreeDialogOpen, setNewWorktreeDialogOpen] = React.useState(false);
+  const projects = useProjectsStore((state) => state.projects);
+  const activeProjectId = useProjectsStore((state) => state.activeProjectId);
 
-  const localBranches = React.useMemo(() => {
-    if (!branches?.all) return [];
-    return branches.all
-      .filter((branchName: string) => !branchName.startsWith('remotes/'))
-      .sort();
-  }, [branches]);
+  React.useEffect(() => {
+    if (!git) return;
+    // Resolve unknown repo probes so later gates and status.current stay accurate.
+    if (listDirectory && isListDirectoryGitRepo === null) {
+      void fetchStatus(listDirectory, git, { silent: true });
+    }
+    if (
+      selectedDirectory
+      && selectedDirectory !== listDirectory
+      && isSelectedDirectoryGitRepo === null
+    ) {
+      void fetchStatus(selectedDirectory, git, { silent: true });
+    }
+  }, [
+    fetchStatus,
+    git,
+    isListDirectoryGitRepo,
+    isSelectedDirectoryGitRepo,
+    listDirectory,
+    selectedDirectory,
+  ]);
 
-  const remoteBranches = React.useMemo(() => {
-    if (!branches?.all) return [];
-    return branches.all
-      .filter((branchName: string) => branchName.startsWith('remotes/'))
-      .map((branchName: string) => branchName.replace(/^remotes\//, ''))
-      .sort();
-  }, [branches]);
+  const worktreeDialogProjectId = React.useMemo(() => {
+    const normalizedProjectDirectory = normalizePath(projectDirectory);
+    if (normalizedProjectDirectory) {
+      const matched = projects.find(
+        (project) => normalizePath(project.path) === normalizedProjectDirectory,
+      );
+      if (matched) return matched.id;
+    }
+    return activeProjectId;
+  }, [activeProjectId, projectDirectory, projects]);
 
-  const currentBranch = branches?.current?.trim() || null;
+  const { localBranches, remoteBranches } = React.useMemo(
+    () => splitGitBranchList(listBranches?.all),
+    [listBranches],
+  );
+
+  const currentBranch = selectedBranches?.current?.trim() || selectedStatusBranch || null;
   // Parent may still pass a directory basename while branches load (or after a
   // missing-option fallback). Prefer the live git current branch over that.
   const chipLabel = (
@@ -88,27 +148,32 @@ export const DraftSessionBranchSelector: React.FC<DraftSessionBranchSelectorProp
     || t('chat.chatInput.branch')
   );
 
-  const refreshGit = React.useCallback(async () => {
-    if (!directory || !git) return;
-    await refreshGitBranchesQuery(directory, git);
-    await fetchStatus(directory, git, { silent: true });
-  }, [directory, fetchStatus, git]);
+  const refreshGit = useEvent(async () => {
+    if (!git) return;
+    const targets = new Set<string>();
+    if (listDirectory) targets.add(listDirectory);
+    if (selectedDirectory) targets.add(selectedDirectory);
+    await Promise.all([...targets].map(async (target) => {
+      await refreshGitBranchesQuery(target, git);
+      await fetchStatus(target, git, { silent: true });
+    }));
+  });
 
-  const findExistingWorktree = React.useCallback((branch: string) => {
+  const findExistingWorktree = useEvent((branch: string) => {
     const normalized = normalizeBranchRef(branch);
     const shortName = branchShortName(normalized);
     return worktreeOptions.find((option) => {
       const labelValue = option.label.trim();
       return labelValue === normalized || labelValue === shortName;
     }) ?? null;
-  }, [worktreeOptions]);
+  });
 
-  const checkoutBranch = React.useCallback(async (branch: string) => {
-    if (!directory || !git) return;
+  const checkoutBranch = useEvent(async (branch: string) => {
+    if (!selectedDirectory || !git) return;
     const normalized = normalizeBranchRef(branch);
     if (currentBranch === normalized || currentBranch === branchShortName(normalized)) return;
     try {
-      await git.checkoutBranch(directory, normalized);
+      await git.checkoutBranch(selectedDirectory, normalized);
       toast.success(t('gitView.toast.checkedOut', { name: normalized }));
       await refreshGit();
     } catch (error) {
@@ -117,9 +182,9 @@ export const DraftSessionBranchSelector: React.FC<DraftSessionBranchSelectorProp
         : t('gitView.toast.checkoutFailed', { name: normalized });
       toast.error(message);
     }
-  }, [currentBranch, directory, git, refreshGit, t]);
+  });
 
-  const handleBranchSelected = React.useCallback((branch: string) => {
+  const handleBranchSelected = useEvent((branch: string) => {
     const normalized = normalizeBranchRef(branch);
     if (!normalized) return;
     if (
@@ -137,9 +202,9 @@ export const DraftSessionBranchSelector: React.FC<DraftSessionBranchSelectorProp
 
     // Draft conversations get a chooser: isolate via worktree, or checkout here.
     setPendingBranch(normalized);
-  }, [currentBranch, findExistingWorktree, onSelectDirectory]);
+  });
 
-  const handleCheckoutHere = React.useCallback(async () => {
+  const handleCheckoutHere = useEvent(async () => {
     if (!pendingBranch || isActing) return;
     setIsActing(true);
     try {
@@ -148,9 +213,9 @@ export const DraftSessionBranchSelector: React.FC<DraftSessionBranchSelectorProp
     } finally {
       setIsActing(false);
     }
-  }, [checkoutBranch, isActing, pendingBranch]);
+  });
 
-  const handleCreateWorktree = React.useCallback(async () => {
+  const handleCreateWorktree = useEvent(async () => {
     if (!pendingBranch || isActing) return;
     setIsActing(true);
     try {
@@ -164,19 +229,19 @@ export const DraftSessionBranchSelector: React.FC<DraftSessionBranchSelectorProp
     } finally {
       setIsActing(false);
     }
-  }, [isActing, pendingBranch, projectDirectory]);
+  });
 
-  const handleCreate = React.useCallback(async (branchName: string, remote?: GitRemote) => {
-    if (!directory || !git) return;
+  const handleCreate = useEvent(async (branchName: string, remote?: GitRemote) => {
+    if (!selectedDirectory || !git) return;
     const remoteName = remote?.name ?? 'origin';
     try {
-      await git.createBranch(directory, branchName, currentBranch ?? 'HEAD');
+      await git.createBranch(selectedDirectory, branchName, currentBranch ?? 'HEAD');
       toast.success(t('gitView.toast.createdBranch', { name: branchName }));
       // After creating a brand-new branch, ask the same draft-only chooser.
       setPendingBranch(branchName);
 
       // Keep upstream setup opportunistic; do not block the chooser.
-      void git.gitPush(directory, {
+      void git.gitPush(selectedDirectory, {
         remote: remoteName,
         branch: branchName,
         options: ['--set-upstream'],
@@ -201,7 +266,61 @@ export const DraftSessionBranchSelector: React.FC<DraftSessionBranchSelectorProp
       toast.error(message);
       throw error;
     }
-  }, [currentBranch, directory, git, refreshGit, t]);
+  });
+
+  // Match the sidebar worktree entry: open the full configure dialog (branch
+  // name, worktree directory, source branch) instead of silent instant create.
+  const handleOpenCreateWorktreeDialog = useEvent(() => {
+    const projectsState = useProjectsStore.getState();
+    const normalizedProjectDirectory = normalizePath(projectDirectory);
+    const matchedProject = normalizedProjectDirectory
+      ? projectsState.projects.find(
+        (project) => normalizePath(project.path) === normalizedProjectDirectory,
+      ) ?? null
+      : null;
+    if (matchedProject && projectsState.activeProjectId !== matchedProject.id) {
+      projectsState.setActiveProjectIdOnly(matchedProject.id);
+    }
+    setNewWorktreeDialogOpen(true);
+  });
+
+  const handleWorktreeCreated = useEvent(
+    (worktreePath: string, options?: { sessionId?: string }) => {
+      setNewWorktreeDialogOpen(false);
+      if (options?.sessionId) {
+        useSessionUIStore.getState().setCurrentSession(options.sessionId, worktreePath);
+        return;
+      }
+
+      const projectsState = useProjectsStore.getState();
+      const normalizedProjectDirectory = normalizePath(projectDirectory);
+      const matchedProject = normalizedProjectDirectory
+        ? projectsState.projects.find(
+          (project) => normalizePath(project.path) === normalizedProjectDirectory,
+        ) ?? null
+        : null;
+      const projectId = matchedProject?.id ?? projectsState.activeProjectId ?? null;
+      const sessionStore = useSessionUIStore.getState();
+
+      // Keep the open draft and only retarget its directory so composer text is preserved.
+      if (sessionStore.newSessionDraft?.open) {
+        sessionStore.overrideNewSessionDraftTarget({
+          ...(projectId ? { selectedProjectId: projectId } : {}),
+          directoryOverride: worktreePath,
+          bootstrapPendingDirectory: worktreePath,
+          preserveDirectoryOverride: true,
+        });
+        useDirectoryStore.getState().setDirectory(worktreePath, { showOverlay: false });
+        return;
+      }
+
+      sessionStore.openNewSessionDraft({
+        ...(projectId ? { selectedProjectId: projectId } : {}),
+        directoryOverride: worktreePath,
+        preserveDirectoryOverride: true,
+      });
+    },
+  );
 
   const chipTrigger = (
     <button
@@ -235,7 +354,7 @@ export const DraftSessionBranchSelector: React.FC<DraftSessionBranchSelectorProp
         currentBranch={currentBranch}
         localBranches={localBranches}
         remoteBranches={remoteBranches}
-        branchInfo={branches?.branches}
+        branchInfo={listBranches?.branches}
         onCheckout={handleBranchSelected}
         onCreate={handleCreate}
         remotes={remotes}
@@ -246,11 +365,20 @@ export const DraftSessionBranchSelector: React.FC<DraftSessionBranchSelectorProp
         worktreeOptions={worktreeOptions}
         selectedDirectory={directory}
         onSelectDirectory={onSelectDirectory}
-        onCreateWorktree={() => { void createWorktreeDraft(); }}
+        onCreateWorktree={handleOpenCreateWorktreeDialog}
         open={branchSelectorOpen}
         presentation={presentation}
         onOpenChange={setBranchSelectorOpen}
       />
+
+      {newWorktreeDialogOpen ? (
+        <NewWorktreeDialog
+          open={true}
+          projectId={worktreeDialogProjectId}
+          onOpenChange={setNewWorktreeDialogOpen}
+          onWorktreeCreated={handleWorktreeCreated}
+        />
+      ) : null}
 
       <Dialog
         open={Boolean(pendingBranch)}

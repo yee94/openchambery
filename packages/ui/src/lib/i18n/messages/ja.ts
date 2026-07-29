@@ -91,7 +91,7 @@ export const dict: Record<I18nKey, string> = {
   'mobile.instances.label.placeholder': '表示名（任意）',
   'mobile.instances.saveNew': 'インスタンスを保存',
   'mobile.instances.status.connectedDirect': '接続中 · ローカルネットワーク',
-  'mobile.instances.status.connectedRelay': '接続中 · プライベートリレー',
+  'mobile.instances.status.connectedRelay': '接続中 · リレー',
   'mobile.instances.saveEdit': '変更を保存',
   'mobile.instances.cancelEdit': 'キャンセル',
   'mobile.instances.edit': '編集',

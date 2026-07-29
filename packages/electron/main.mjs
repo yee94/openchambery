@@ -72,8 +72,7 @@ const APP_USER_MODEL_ID = isDev
 const BACKGROUND_START_ARG = '--background';
 
 /**
- * Copy shared OpenCode auth/config into an isolated XDG tree once, so Preview
- * can talk to providers without writing sessions into the release OpenCode DB.
+ * Copy shared OpenCode auth/config into an isolated XDG tree once (dev only).
  * Existing isolated files are never overwritten.
  */
 const seedSharedOpenCodeIntoIsolatedXdg = ({ xdgDataHome, xdgConfigHome }) => {
@@ -99,7 +98,7 @@ const seedSharedOpenCodeIntoIsolatedXdg = ({ xdgDataHome, xdgConfigHome }) => {
       path.join(xdgConfigHome, 'opencode'),
     );
   } catch {
-    // Best-effort seed; Preview can still prompt for providers if missing.
+    // Best-effort seed; dev can still prompt for providers if missing.
   }
 };
 
@@ -143,33 +142,38 @@ if (isDev) {
 } else if (isPreviewDesktop) {
   app.setPath('userData', path.join(app.getPath('appData'), 'OpenChamber Preview'));
 }
-// Preview (and dev) must not share release-app state:
+// Preview (and dev) must not share release-app OpenChamber state:
 // - OPENCHAMBER_DATA_DIR: assistants.sqlite, settings, relay claim, …
-// - XDG_*: managed OpenCode session DB (opencode.db), config, cache
-// Without XDG isolation, both apps talk to the same ~/.local/share/opencode
-// store and Preview sessions appear in the release sidebar (and vice versa).
+// - OPENCHAMBER_MANAGED_PROCESS_REGISTRY: managed OpenCode process bookkeeping
+//
+// Preview intentionally shares the user's global OpenCode config/session store
+// (~/.config/opencode, ~/.local/share/opencode) so QA can use real sessions and
+// provider auth without a one-time seed copy. Dev still isolates XDG so local
+// HMR work does not write into the user's production OpenCode DB.
 if (isPreviewDesktop || isDev) {
   const isolatedRoot = path.join(app.getPath('userData'), 'openchamber-data');
   if (!process.env.OPENCHAMBER_DATA_DIR?.trim()) {
     process.env.OPENCHAMBER_DATA_DIR = isolatedRoot;
   }
   const dataDir = process.env.OPENCHAMBER_DATA_DIR;
-  if (!process.env.XDG_DATA_HOME?.trim()) {
-    process.env.XDG_DATA_HOME = path.join(dataDir, 'xdg-data');
-  }
-  if (!process.env.XDG_CONFIG_HOME?.trim()) {
-    process.env.XDG_CONFIG_HOME = path.join(dataDir, 'xdg-config');
-  }
-  if (!process.env.XDG_CACHE_HOME?.trim()) {
-    process.env.XDG_CACHE_HOME = path.join(dataDir, 'xdg-cache');
-  }
   if (!process.env.OPENCHAMBER_MANAGED_PROCESS_REGISTRY?.trim()) {
     process.env.OPENCHAMBER_MANAGED_PROCESS_REGISTRY = path.join(dataDir, 'managed-opencode');
   }
-  seedSharedOpenCodeIntoIsolatedXdg({
-    xdgDataHome: process.env.XDG_DATA_HOME,
-    xdgConfigHome: process.env.XDG_CONFIG_HOME,
-  });
+  if (isDev) {
+    if (!process.env.XDG_DATA_HOME?.trim()) {
+      process.env.XDG_DATA_HOME = path.join(dataDir, 'xdg-data');
+    }
+    if (!process.env.XDG_CONFIG_HOME?.trim()) {
+      process.env.XDG_CONFIG_HOME = path.join(dataDir, 'xdg-config');
+    }
+    if (!process.env.XDG_CACHE_HOME?.trim()) {
+      process.env.XDG_CACHE_HOME = path.join(dataDir, 'xdg-cache');
+    }
+    seedSharedOpenCodeIntoIsolatedXdg({
+      xdgDataHome: process.env.XDG_DATA_HOME,
+      xdgConfigHome: process.env.XDG_CONFIG_HOME,
+    });
+  }
 }
 app.setAppUserModelId(APP_USER_MODEL_ID);
 app.commandLine.appendSwitch('proxy-bypass-list', '<-loopback>');

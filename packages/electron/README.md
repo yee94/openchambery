@@ -110,10 +110,12 @@ Preview builds:
 | Session index / message-queue SQLite | Yes | under Electron `userData` |
 | Desktop local HTTP port | Effectively yes | stored in profile settings; binds a free port if the preferred one is taken |
 | Managed OpenCode **process** | Yes (separate process + port) | spawned by that Desktop instance |
-| **OpenCode session DB** (`opencode.db`) | Yes | `$OPENCHAMBER_DATA_DIR/xdg-data/opencode` via `XDG_DATA_HOME` |
-| OpenCode config for that process | Yes (seeded once from shared) | `$OPENCHAMBER_DATA_DIR/xdg-config/opencode` via `XDG_CONFIG_HOME` |
+| **OpenCode session DB** (`opencode.db`) | **No** (shared with release / CLI) | default `~/.local/share/opencode` (or existing `XDG_DATA_HOME`) |
+| OpenCode config / provider auth | **No** (shared with release / CLI) | default `~/.config/opencode` and auth under the shared data home |
 
-So: Preview must **not** load or mutate the release install’s OpenCode session store. On first Preview launch, provider `auth.json` and global OpenCode config are **copied once** into the isolated tree so models still work; later Preview sessions stay under the Preview XDG tree only.
+Preview isolates **OpenChamber** app state so it can run beside the installed release app, but it reuses the machine’s normal OpenCode global config and session store. That means Preview and release/CLI see the same sessions, models, and auth. Avoid writing the same session from both apps at once if you run them together.
+
+**Dev** (`electron:dev`) still isolates XDG under its own `userData` so HMR work does not write into the production OpenCode DB; it seeds auth/config once from the shared tree.
 
 Regenerate preview icons after changing the production mark:
 

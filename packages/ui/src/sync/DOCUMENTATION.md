@@ -449,26 +449,25 @@ Rules that keep this single-sourced:
   runtime, directory, and session ids match an old in-flight request; transport
   single-flight can still share the HTTP response, but the new store must not
   reuse a promise that only commits into a detached store.
-- Initial history is a 5-message tail page on relay mobile surfaces, a 16-message
-  tail page on direct mobile surfaces, and a 30-message tail page on Web,
-  Electron, and VS Code. All message page limits live in
-  `session-message-policy.ts` (initial, history, recovery, materialization,
-  refetch, send-confirmation). Every caller — the imperative selection path, the
-  reactive sync path, reconnect recovery, and orphan/ensure materialization —
-  resolves its page size directly from that policy, so they share the same
-  transport flight and never diverge into per-callsite hardcoded numbers.
-  Recovery and materialization use the same limit as initial
-  for the active runtime. A failed first load retains its requested
-  page size; retries never degrade into an unbounded `limit=0` history read. An assistant-only
-  partial tail fetches up to eight missing parent user messages by exact message
-  ID, then commits the merged records; it never expands to a 100/150-message
-  page while searching for a turn boundary. Loading failures are subscribable
-  and preserve the prior ready records for retry.
+- Initial history is a shared 30-message tail page on every surface (Web,
+  Electron, VS Code, direct mobile, and private Relay tunnels). All message page
+  limits live in `session-message-policy.ts` (initial, history, recovery,
+  materialization, refetch, send-confirmation). Every caller — the imperative
+  selection path, the reactive sync path, reconnect recovery, and orphan/ensure
+  materialization — resolves its page size directly from that policy, so they
+  share the same transport flight and never diverge into per-callsite hardcoded
+  numbers. Recovery and materialization use the same limit as initial. A failed
+  first load retains its requested page size; retries never degrade into an
+  unbounded `limit=0` history read. An assistant-only partial tail fetches up to
+  eight missing parent user messages by exact message ID, then commits the
+  merged records; it never expands to a 100/150-message page while searching for
+  a turn boundary. Loading failures are subscribable and preserve the prior
+  ready records for retry.
 - Message loading status is runtime-scoped. Reactive request de-duplication is
   local to the owning directory-store lifecycle, so a remounted provider still
   commits a shared transport response into its own store.
 - Older history is user-driven pagination (`loadMore`) only. Each request loads
-  five messages on relay mobile surfaces and 30 messages on every other surface.
+  30 messages on every surface.
 - Composer session mention search filters every loaded global active-session
   summary across projects, while the empty menu keeps three recent suggestions.
   Opening the mention menu performs no referenced-session fetch. Selecting a

@@ -433,7 +433,7 @@ describe("fetchMessagesForSession startup race", () => {
       vscodeRuntime = runtime === "vscode"
       await fetchMessagesForSession("session-a", "/test/project")
 
-      expect(replyCalls.filter((call) => call.method === "session.messages")[0]?.params.limit).toBe(runtime === "mobile" ? 16 : 30)
+      expect(replyCalls.filter((call) => call.method === "session.messages")[0]?.params.limit).toBe(30)
     }
   })
 

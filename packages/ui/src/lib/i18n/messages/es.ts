@@ -90,7 +90,7 @@ export const dict: Record<I18nKey, string> = {
   "mobile.instances.label.placeholder": "Nombre para mostrar (opcional)",
   "mobile.instances.saveNew": "Guardar instancia",
   "mobile.instances.status.connectedDirect": "Conectado · Red local",
-  "mobile.instances.status.connectedRelay": "Conectado · Relay privado",
+  "mobile.instances.status.connectedRelay": "Conectado · Relay",
   "mobile.instances.saveEdit": "Guardar cambios",
   "mobile.nav.changes": "Cambios",
   "mobile.nav.settings": "Ajustes",

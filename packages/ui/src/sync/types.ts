@@ -133,7 +133,8 @@ export const INITIAL_STATE: State = {
   mcp: {},
   lsp: [],
   vcs: undefined,
-  limit: 5,
+  // Matches DIRECTORY_SESSION_LIMIT / session-index SESSION_LIMIT (one cold-start page).
+  limit: 20,
   message: {},
   part: {},
 }

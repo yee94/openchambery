@@ -6563,15 +6563,12 @@ const ChatInputRuntime: React.FC<ChatInputProps> = ({ onOpenSettings, scrollToBo
                         onDragEnd: handleDragEnd,
                         onKeyUp: updateAutocompleteOverlayPosition,
                         onClick: () => {
-                            // Run repair after the WebView has completed its
-                            // default focus action; moving the form during
-                            // pointerdown can invalidate that focus target.
-                            if (isMobile && isCapacitorApp() && typeof window !== 'undefined') {
-                                window.dispatchEvent(new CustomEvent('oc:keyboard-intent', { detail: { open: true } }));
-                            }
                             // Collapsed pill: first tap expands chrome in the same
                             // gesture; the field is already focused (or will be).
                             // Never expand from a residual focus after an action tap.
+                            // Keyboard intent is armed once from onFocus /
+                            // expandMobileComposer — do not re-dispatch here or
+                            // Android can restart the composer FLIP mid-flight.
                             if (
                                 isMobile
                                 && !mobileComposerExpandedRef.current
@@ -6643,6 +6640,12 @@ const ChatInputRuntime: React.FC<ChatInputProps> = ({ onOpenSettings, scrollToBo
                                 expandMobileComposer('focus');
                             } else {
                                 mobileExpandIntentRef.current = null;
+                                // Already expanded: still arm a single keyboard
+                                // intent so Android can FLIP before IME movement.
+                                // expandMobileComposer would re-focus the same node.
+                                if (isCapacitorApp() && typeof window !== 'undefined') {
+                                    window.dispatchEvent(new CustomEvent('oc:keyboard-intent', { detail: { open: true } }));
+                                }
                             }
                             setMobileTextareaFocused(true);
                         },

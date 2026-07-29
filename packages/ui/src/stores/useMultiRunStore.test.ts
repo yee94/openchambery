@@ -28,7 +28,7 @@ const createWorktreeWithDefaultsMock = mock((project: { id?: string; path: strin
 const childState = {
   session: [] as Session[],
   sessionTotal: 0,
-  limit: 5,
+  limit: 20,
 };
 let currentDirectory = '/repo';
 
@@ -160,7 +160,7 @@ describe('useMultiRunStore', () => {
     waitForWorktreeSetup = false;
     childState.session = [];
     childState.sessionTotal = 0;
-    childState.limit = 5;
+    childState.limit = 20;
     currentDirectory = '/repo';
     useMultiRunStore.setState({ isLoading: false, error: null });
   });

@@ -88,7 +88,7 @@ export const dict = {
   'mobile.instances.label.placeholder': 'Optional display name',
   'mobile.instances.saveNew': 'Save instance',
   'mobile.instances.status.connectedDirect': 'Connected · Local network',
-  'mobile.instances.status.connectedRelay': 'Connected · Private relay',
+  'mobile.instances.status.connectedRelay': 'Connected · Relay',
   'mobile.instances.saveEdit': 'Save changes',
   'mobile.nav.changes': 'Changes',
   'mobile.nav.settings': 'Settings',
