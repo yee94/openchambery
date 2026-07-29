@@ -166,4 +166,32 @@ describe('session index background sync runtime', () => {
 
     expect(fetchFn).toHaveBeenCalledTimes(2);
   });
+
+  it('marks in-flight and queued directories failed when the runtime stops', async () => {
+    const service = createService();
+    let started = false;
+    const runtime = createSessionIndexSyncRuntime({
+      sessionIndexService: service,
+      buildOpenCodeUrl: (route) => `http://opencode.test${route}`,
+      getOpenCodeAuthHeaders: () => ({}),
+      waitForOpenCodeReady: async () => true,
+      fetchFn: (_url, init) => new Promise((_resolve, reject) => {
+        started = true;
+        init.signal.addEventListener('abort', () => {
+          reject(new DOMException('aborted', 'AbortError'));
+        }, { once: true });
+      }),
+    });
+
+    runtime.enqueue(['/repo/in-flight', '/repo/queued']);
+    await waitUntil(() => started);
+    runtime.stop();
+    await waitUntil(() => runtime.snapshot().sync.active === false);
+
+    expect(runtime.snapshot().sync).toMatchObject({
+      active: false,
+      pendingDirectories: [],
+      failedDirectories: expect.arrayContaining(['/repo/in-flight', '/repo/queued']),
+    });
+  });
 });

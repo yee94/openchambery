@@ -14,12 +14,25 @@ const healthFetchCalls: unknown[][] = [];
 const healthFetchResults: Array<Response | Error | Promise<Response>> = [];
 const agentSdkCalls: unknown[][] = [];
 const sessionStatusSdkCalls: unknown[][] = [];
+const sessionActiveSdkCalls: unknown[][] = [];
+const sessionActiveResults: Array<unknown> = [];
 
 const promptAsyncMock = mock(async (...args: unknown[]) => {
   promptAsyncCalls.push(args);
   const next = promptAsyncResults.shift();
   if (next instanceof Error) throw next;
   return next ?? { response: new Response(null, { status: 200 }) };
+});
+
+const sessionActiveMock = mock(async (...args: unknown[]) => {
+  sessionActiveSdkCalls.push(args);
+  const next = sessionActiveResults.shift();
+  if (next instanceof Error) throw next;
+  return next ?? {
+    data: { data: {} },
+    error: undefined,
+    response: new Response(null, { status: 200 }),
+  };
 });
 
 mock.module('@opencode-ai/sdk/v2', () => ({
@@ -44,6 +57,11 @@ mock.module('@opencode-ai/sdk/v2', () => ({
         sessionStatusSdkCalls.push(args);
         return Promise.resolve({ data: {} });
       }),
+    },
+    v2: {
+      session: {
+        active: sessionActiveMock,
+      },
     },
   })),
 }));
@@ -89,6 +107,8 @@ beforeEach(() => {
   healthFetchResults.length = 0;
   agentSdkCalls.length = 0;
   sessionStatusSdkCalls.length = 0;
+  sessionActiveSdkCalls.length = 0;
+  sessionActiveResults.length = 0;
   runtimeKey = 'test-runtime';
   runtimeBase = '/api';
 });
@@ -111,6 +131,57 @@ describe('opencodeClient abort signals', () => {
       { directory: '/workspace/project' },
       { signal: statusSignal },
     ]);
+  });
+
+  test('passes signals to session.active requests', async () => {
+    const activeSignal = new AbortController().signal;
+    await opencodeClient.getSessionActive(activeSignal);
+    expect(sessionActiveSdkCalls[0]).toEqual([{ signal: activeSignal }]);
+  });
+});
+
+describe('opencodeClient getSessionActive', () => {
+  test('returns supported membership on 200', async () => {
+    sessionActiveResults.push({
+      data: { data: { ses_a: { type: 'running' } } },
+      error: undefined,
+      response: new Response(null, { status: 200 }),
+    });
+
+    expect(await opencodeClient.getSessionActive()).toEqual({
+      state: 'supported',
+      membership: { ses_a: { type: 'running' } },
+    });
+  });
+
+  test('returns unsupported on 404/405/501', async () => {
+    for (const status of [404, 405, 501]) {
+      sessionActiveResults.push({
+        data: undefined,
+        error: { message: 'not found' },
+        response: new Response(null, { status }),
+      });
+      expect(await opencodeClient.getSessionActive()).toEqual({ state: 'unsupported' });
+    }
+  });
+
+  test('returns unknown on 5xx, network, and malformed 200', async () => {
+    sessionActiveResults.push({
+      data: undefined,
+      error: { message: 'boom' },
+      response: new Response(null, { status: 500 }),
+    });
+    expect(await opencodeClient.getSessionActive()).toEqual({ state: 'unknown' });
+
+    sessionActiveResults.push(new TypeError('Failed to fetch'));
+    expect(await opencodeClient.getSessionActive()).toEqual({ state: 'unknown' });
+
+    sessionActiveResults.push({
+      data: { data: { ses_a: { type: 'not-running' } } },
+      error: undefined,
+      response: new Response(null, { status: 200 }),
+    });
+    expect(await opencodeClient.getSessionActive()).toEqual({ state: 'unknown' });
   });
 });
 

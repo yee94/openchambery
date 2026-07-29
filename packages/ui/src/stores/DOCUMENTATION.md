@@ -247,7 +247,9 @@ through OpenChamber SSE revision tips (`openchamber:session-index-changed`)
 followed by an authoritative GET via the Query helper; it must not issue
 per-directory OpenCode requests from the renderer. Tip waits include a short
 safety timeout so a completed server job whose tip arrived before the consumer
-subscribed cannot hang manual or startup sync forever. The long-lived tip
+subscribed cannot hang manual or startup sync forever. An observer that exits
+after a failed revalidation clears only the loading entries it owns; concurrent
+SDK directory refreshes retain their own loading state. The long-lived tip
 observer keeps the last successful store projection across transient
 authoritative GET failures and retries that GET with abortable exponential
 backoff (500ms base, ×2, capped at 10s) inside the same lifecycle/runtime

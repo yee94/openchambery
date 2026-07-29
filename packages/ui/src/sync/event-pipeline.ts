@@ -18,6 +18,11 @@ import { getRuntimeUrlResolver } from "@/lib/runtime-url"
 import { clearRuntimeUrlAuthToken, refreshRuntimeUrlAuthToken } from "@/lib/runtime-auth"
 import { type RelayTunnelWebSocket } from "@/lib/relay/tunnel-client"
 import { openRuntimeWebSocket } from "@/lib/relay/runtime-socket"
+import {
+  normalizeOpenCodeEvent,
+  toLegacyEventShape,
+  type NormalizedOpenCodeEvent,
+} from "./opencode-event-normalizer"
 import { syncDebug } from "./debug"
 
 const FLUSH_FRAME_MS = 33
@@ -42,6 +47,11 @@ export type EventPipelineInput = {
   sdk: OpencodeClient
   onEvent: (directory: string, payload: Event) => void
   routeDirectory?: (directory: string, payload: Event) => string
+  /**
+   * Optional hook for current-event domain hints (admission, activity, terminal)
+   * after normalization and before the legacy Event reducer path.
+   */
+  onNormalizedEvent?: (directory: string, normalized: NormalizedOpenCodeEvent) => void
   /** Called after stream reconnects (visibility restore or heartbeat timeout). */
   onReconnect?: () => void
   /** Called when the stream disconnects (heartbeat timeout, network error, or transport failure). */
@@ -128,29 +138,56 @@ const normalizeOpenChamberSessionStatus = (payload: Event): Event | null => {
   } as Event
 }
 
-const normalizeEventType = (payload: Event): Event => {
-  const normalizedOpenChamberStatus = normalizeOpenChamberSessionStatus(payload)
-  if (normalizedOpenChamberStatus) {
-    return normalizedOpenChamberStatus
+/**
+ * Ingress normalization: openchamber synthetic status, then pure OpenCode
+ * envelope normalizer (legacy properties / current data / durable sync filter /
+ * versioned type strip), producing the legacy Event shape for reducers.
+ */
+const normalizeIngressEvent = (payload: unknown): {
+  event: Event
+  normalized: NormalizedOpenCodeEvent
+} | null => {
+  if (!payload || typeof payload !== "object") return null
+
+  // openchamber:session-status → canonical session.status before general path
+  const openChamber = normalizeOpenChamberSessionStatus(payload as Event)
+  if (openChamber) {
+    const props = openChamber.properties as Record<string, unknown>
+    return {
+      event: openChamber,
+      normalized: {
+        id: typeof openChamber.id === "string" ? openChamber.id : undefined,
+        type: "session.status",
+        properties: props,
+      },
+    }
   }
 
-  const type = (payload as { type?: unknown }).type
-  if (typeof type !== "string") {
-    return payload
-  }
+  const result = normalizeOpenCodeEvent(payload)
+  if (result.action === "drop") return null
 
-  const match = /^(.*)\.(\d+)$/.exec(type)
-  if (!match || !match[1]) {
-    return payload
-  }
-
+  const legacy = toLegacyEventShape(result.event)
   return {
-    ...payload,
-    type: match[1] as Event["type"],
-  } as unknown as Event
+    event: legacy as Event,
+    normalized: result.event,
+  }
 }
 
-function resolveEventDirectory(event: unknown, payload: Event): string {
+function resolveEventDirectory(
+  event: unknown,
+  rawPayload: unknown,
+  payload: Event,
+  locationDirectory?: string,
+): string {
+  const hasCurrentDataEnvelope =
+    typeof rawPayload === "object"
+    && rawPayload !== null
+    && typeof (rawPayload as { data?: unknown }).data === "object"
+    && (rawPayload as { data?: unknown }).data !== null
+  if (hasCurrentDataEnvelope && locationDirectory && locationDirectory.length > 0) {
+    return locationDirectory
+  }
+
   const directDirectory =
     typeof event === "object" && event !== null && typeof (event as { directory?: unknown }).directory === "string"
       ? (event as { directory: string }).directory
@@ -158,6 +195,10 @@ function resolveEventDirectory(event: unknown, payload: Event): string {
 
   if (directDirectory && directDirectory.length > 0) {
     return directDirectory
+  }
+
+  if (locationDirectory && locationDirectory.length > 0) {
+    return locationDirectory
   }
 
   const properties =
@@ -182,18 +223,18 @@ function resolveEventDirectory(event: unknown, payload: Event): string {
   return "global"
 }
 
-function resolveEventPayload(payload: unknown): Event | null {
+function resolveEventPayload(payload: unknown): unknown | null {
   if (!payload || typeof payload !== "object") {
     return null
   }
 
-  const record = payload as { type?: unknown; payload?: unknown }
+  const record = payload as { type?: unknown; payload?: unknown; data?: unknown }
   if (typeof record.type === "string") {
-    return payload as Event
+    return payload
   }
 
   if (record.payload && typeof record.payload === "object" && typeof (record.payload as { type?: unknown }).type === "string") {
-    return record.payload as Event
+    return record.payload
   }
 
   return null
@@ -244,6 +285,7 @@ export function createEventPipeline(input: EventPipelineInput): EventPipeline {
   const {
     sdk,
     onEvent,
+    onNormalizedEvent,
     onReconnect,
     onDisconnect,
     onTransportActivity,
@@ -452,8 +494,25 @@ export function createEventPipeline(input: EventPipelineInput): EventPipeline {
     onReconnect?.()
   }
 
-  const enqueueEvent = (directory: string, payload: Event) => {
-    const normalizedPayload = normalizeEventType(payload)
+  const enqueueEvent = (
+    directory: string,
+    payload: Event,
+    normalized?: NormalizedOpenCodeEvent,
+  ) => {
+    // Current session.next.* body streams are not legacy Message/Part events.
+    // Emit domain hints only — skip the Event reducer queue so we do not
+    // invent fake message.part deltas.
+    if (normalized && typeof normalized.type === "string" && normalized.type.startsWith("session.next.")) {
+      onNormalizedEvent?.(directory, normalized)
+      // session.status is never under session.next; admission/activity only.
+      return
+    }
+
+    if (normalized) {
+      onNormalizedEvent?.(directory, normalized)
+    }
+
+    const normalizedPayload = payload
     const routedDirectory = routeDirectory?.(directory, normalizedPayload) || directory
     const d = getOrCreateDir(routedDirectory)
 
@@ -501,6 +560,20 @@ export function createEventPipeline(input: EventPipelineInput): EventPipeline {
 
     d.queue.push(normalizedPayload)
     scheduleDir(routedDirectory)
+  }
+
+  const ingestTransportPayload = (frame: unknown, rawPayload: unknown) => {
+    const payload = resolveEventPayload(rawPayload)
+    if (!payload) return
+    const ingress = normalizeIngressEvent(payload)
+    if (!ingress) return
+    const directory = resolveEventDirectory(
+      frame,
+      payload,
+      ingress.event,
+      ingress.normalized.locationDirectory,
+    )
+    enqueueEvent(directory, ingress.event, ingress.normalized)
   }
 
   const armHeartbeat = () => {
@@ -565,12 +638,7 @@ export function createEventPipeline(input: EventPipelineInput): EventPipeline {
       reportTransportActivity()
       streamErrorLogged = false
 
-      const payload = resolveEventPayload((event as { payload?: Event }).payload ?? event)
-      if (!payload) {
-        continue
-      }
-      const directory = resolveEventDirectory(event, payload)
-      enqueueEvent(directory, payload)
+      ingestTransportPayload(event, (event as { payload?: unknown }).payload ?? event)
 
       if (Date.now() - yielded < STREAM_YIELD_MS) continue
       yielded = Date.now()
@@ -723,20 +791,14 @@ export function createEventPipeline(input: EventPipelineInput): EventPipeline {
           return
         }
 
-        const payload = resolveEventPayload(frame.payload)
-        if (!payload) {
-          return
-        }
-
         if (typeof frame.eventId === "string" && frame.eventId.length > 0) {
           lastEventId = frame.eventId
         }
 
-        const directory = resolveEventDirectory(
-          { directory: frame.directory, payload },
-          payload,
+        ingestTransportPayload(
+          { directory: frame.directory, payload: frame.payload },
+          frame.payload,
         )
-        enqueueEvent(directory, payload)
       }
 
       socket.onerror = () => {

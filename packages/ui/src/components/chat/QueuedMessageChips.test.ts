@@ -1,6 +1,7 @@
 import { beforeEach, describe, expect, test } from 'bun:test';
 import { legacyQueueScope, setMessageQueueMutationFence, useMessageQueueStore, type QueueItem, type QueueScope } from '@/stores/messageQueueStore';
-import { applyPendingServerQueueOperation, applyPendingServerQueueOperations, canEditQueuedMessage, canRemoveQueuedMessage, canSendQueuedMessage, canSendServerQueuedMessage, isServerQueueItemActiveAttempt, isServerQueueItemDispatchPending, legacyQueueEditRestoreSource, mergeQueuedMessageScopes, popQueuedMessageForEdit, queueModeAllowsMutations, reorderServerQueueItems, selectPendingServerQueueOperation, selectPendingServerQueueOperations, serverQueueEditInput, serverQueueItemMutationInput, shouldRemoveQueueItemAfterEditCommit } from './queuedMessageChipsState';import type { ServerQueueOperationIdentity } from './queuedMessageChipsState';
+import { applyPendingServerQueueOperation, applyPendingServerQueueOperations, canEditQueuedMessage, canRemoveQueuedMessage, canSendQueuedMessage, canSendServerQueuedMessage, isServerQueueItemActiveAttempt, isServerQueueItemDispatchPending, isServerQueueItemHiddenFromChips, legacyQueueEditRestoreSource, mergeQueuedMessageScopes, popQueuedMessageForEdit, projectServerQueueChipItems, queueModeAllowsMutations, reorderServerQueueItems, selectCommittedSendShadows, selectPendingServerQueueOperation, selectPendingServerQueueOperations, serverQueueEditInput, serverQueueItemMutationInput, shouldRemoveQueueItemAfterEditCommit } from './queuedMessageChipsState';
+import type { ServerQueueCommittedSendShadow, ServerQueueOperationIdentity } from './queuedMessageChipsState';
 import type { MessageQueueItem, MessageQueueScope } from '@/lib/message-queue-server';
 import { sessionDraftKey } from '@/sync/input-draft-types';
 import type { MessageQueuePendingAdmissionItem } from '@/sync/message-queue-server-runtime';
@@ -198,25 +199,63 @@ describe('QueuedMessageChips production queue boundary', () => {
         ], exact).map((operation) => operation.queueItemID)).toEqual(['queue-a', 'queue-b']);
     });
 
-    test('applyPendingServerQueueOperation optimistically moves the target to first on send and keeps stable references', () => {
+    test('applyPendingServerQueueOperation optimistically hides the send target like edit/remove', () => {
         const first = serverItem('first');
         const second = serverItem('second');
         const third = serverItem('third');
         const items: readonly (MessageQueueItem | MessageQueuePendingAdmissionItem)[] = [first, second, third];
         const send: ServerQueueOperationIdentity = { kind: 'send', transportIdentity: 'runtime-a', runtimeGeneration: 1, directory: '/project', sessionID: 'session-a', scopeID: 'scope-a', queueItemID: 'second' };
         const result = applyPendingServerQueueOperation(items, send);
-        expect(result.map((item) => item.queueItemID)).toEqual(['second', 'first', 'third']);
-        // Existing references are reused; no item recreated.
-        expect(result[0]).toBe(second);
-        expect(result[1]).toBe(first);
-        expect(result[2]).toBe(third);
-        // Target already first returns original reference.
-        const alreadyFirst: readonly MessageQueueItem[] = [first, second];
-        const alreadyFirstResult = applyPendingServerQueueOperation(alreadyFirst, { ...send, queueItemID: 'first' });
-        expect(alreadyFirstResult).toBe(alreadyFirst);
+        expect(result.map((item) => item.queueItemID)).toEqual(['first', 'third']);
+        expect(result[0]).toBe(first);
+        expect(result[1]).toBe(third);
         // Missing target returns original reference.
         const missingTargetResult = applyPendingServerQueueOperation(items, { ...send, queueItemID: 'missing' });
         expect(missingTargetResult).toBe(items);
+        // Source array is never mutated.
+        expect(items.map((item) => item.queueItemID)).toEqual(['first', 'second', 'third']);
+    });
+
+    test('projectServerQueueChipItems hides pending send and authoritative tracking rows, restores failed/unresolved', () => {
+        const waiting = serverItem('waiting');
+        const manual = { ...serverItem('manual'), manualDispatchRequested: true };
+        const sending = serverItem('sending', 'sending');
+        const reconciling = serverItem('reconciling', 'reconciling');
+        const failed = serverItem('failed', 'failed');
+        const unresolved = serverItem('unresolved', 'unresolved');
+        const pending: MessageQueuePendingAdmissionItem = { ...pendingAdmissionItem };
+        const exact = { transportIdentity: 'runtime-a', runtimeGeneration: 1, directory: '/project', sessionID: 'session-a', scopeID: 'scope-a' };
+        expect(isServerQueueItemHiddenFromChips(manual)).toBe(true);
+        expect(isServerQueueItemHiddenFromChips(sending)).toBe(true);
+        expect(isServerQueueItemHiddenFromChips(reconciling)).toBe(true);
+        expect(isServerQueueItemHiddenFromChips(failed)).toBe(false);
+        expect(isServerQueueItemHiddenFromChips(unresolved)).toBe(false);
+        expect(isServerQueueItemHiddenFromChips(waiting)).toBe(false);
+
+        const authoritative = [waiting, manual, sending, reconciling, failed, unresolved, pending];
+        expect(projectServerQueueChipItems(authoritative, []).map((item) => item.queueItemID)).toEqual(['waiting', 'failed', 'unresolved', 'pending']);
+
+        const pendingSend: ServerQueueOperationIdentity = { kind: 'send', ...exact, queueItemID: 'waiting' };
+        expect(projectServerQueueChipItems(authoritative, [pendingSend]).map((item) => item.queueItemID)).toEqual(['failed', 'unresolved', 'pending']);
+        // Definitive failure clears the mutation overlay; waiting row returns.
+        expect(projectServerQueueChipItems(authoritative, []).map((item) => item.queueItemID)).toEqual(['waiting', 'failed', 'unresolved', 'pending']);
+    });
+
+    test('committed send shadow keeps hide while scope lags and restores failed/unresolved after ack revision', () => {
+        const exact = { transportIdentity: 'runtime-a', runtimeGeneration: 1, directory: '/project', sessionID: 'session-a', scopeID: 'scope-a' };
+        const waiting = serverItem('waiting');
+        const failed = serverItem('failed', 'failed');
+        const unresolved = serverItem('unresolved', 'unresolved');
+        const shadow: ServerQueueCommittedSendShadow = { kind: 'send', ...exact, queueItemID: 'waiting', committedRevision: 5 };
+        // pending → success with lagging authoritative scope continues optimistic hide.
+        expect(selectCommittedSendShadows([shadow], exact, 3).map((entry) => entry.queueItemID)).toEqual(['waiting']);
+        expect(projectServerQueueChipItems([waiting, failed, unresolved], selectCommittedSendShadows([shadow], exact, 3)).map((item) => item.queueItemID)).toEqual(['failed', 'unresolved']);
+        // Once scope reaches the receipt revision, shadow ends and recoverable rows stay visible.
+        expect(selectCommittedSendShadows([shadow], exact, 5)).toEqual([]);
+        expect(projectServerQueueChipItems([waiting, failed, unresolved], selectCommittedSendShadows([shadow], exact, 5)).map((item) => item.queueItemID)).toEqual(['waiting', 'failed', 'unresolved']);
+        // Runtime generation isolation: foreign generation never shadows.
+        expect(selectCommittedSendShadows([shadow], { ...exact, runtimeGeneration: 2 }, 3)).toEqual([]);
+        expect(selectCommittedSendShadows([{ ...shadow, runtimeGeneration: 2 }], exact, 3)).toEqual([]);
     });
 
     test('applyPendingServerQueueOperation reorder reorders authoritative items and preserves pending admission rows', () => {
@@ -234,6 +273,18 @@ describe('QueuedMessageChips production queue boundary', () => {
         const alreadyOrdered: readonly MessageQueueItem[] = [first, second];
         const alreadyOrderedResult = applyPendingServerQueueOperation(alreadyOrdered, { ...reorder, queueItemIDs: ['first', 'second'] });
         expect(alreadyOrderedResult).toBe(alreadyOrdered);
+    });
+
+    test('reorderServerQueueItems keeps hidden tracking rows in the complete server order', () => {
+        const reconciling = serverItem('reconciling', 'reconciling');
+        const first = serverItem('first');
+        const sending = serverItem('sending', 'sending');
+        const second = serverItem('second');
+        const complete = serverScope([reconciling, first, sending, second]);
+
+        const result = reorderServerQueueItems(complete, 'second', 'first', 'request-reorder', [first, second]);
+
+        expect(result?.queueItemIDs).toEqual(['reconciling', 'second', 'sending', 'first']);
     });
 
     test('applyPendingServerQueueOperation reorder ignores duplicate and unknown IDs while retaining authoritative and pending order', () => {
@@ -288,12 +339,14 @@ describe('QueuedMessageChips production queue boundary', () => {
         const operations: ServerQueueOperationIdentity[] = [
             { kind: 'send', ...exact, queueItemID: 'third' },
             { kind: 'remove', ...exact, queueItemID: 'first' },
-            { kind: 'reorder', ...exact, queueItemID: 'second', queueItemIDs: ['sending', 'second', 'third'] },
+            { kind: 'reorder', ...exact, queueItemID: 'second', queueItemIDs: ['sending', 'second'] },
         ];
 
         const result = applyPendingServerQueueOperations([first, sending, second, third], operations);
 
-        expect(result.map((item) => item.queueItemID)).toEqual(['sending', 'second', 'third']);
+        // send hides third; remove hides first; reorder rearranges remaining authoritative rows.
+        expect(result.map((item) => item.queueItemID)).toEqual(['sending', 'second']);
         expect(result[0]).toBe(sending);
+        expect(projectServerQueueChipItems([first, sending, second, third], operations).map((item) => item.queueItemID)).toEqual(['second']);
     });
 });

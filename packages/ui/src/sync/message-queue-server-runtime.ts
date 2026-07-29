@@ -10,7 +10,8 @@ export type MessageQueueServerCapability = 'idle' | 'available' | 'unsupported' 
 export type MessageQueueServerScopeState = MessageQueueScopeDescriptor;
 export type MessageQueueServerSurfaceState = { transportIdentity: string; scopes: ReadonlyMap<string, MessageQueueServerScopeState>; hydration: 'idle' | 'hydrating' | 'ready' | 'error'; capability: MessageQueueServerCapability; authority: string | undefined; isFetching: boolean; error: unknown; importState: MessageQueueShadowImportState };
 export type MessageQueueServerRuntimeCapture = { transportIdentity: string; generation: number };
-export type MessageQueueServerMutationResult = { status: 'committed' | 'stale'; scope?: MessageQueueScope };
+/** committedRevision is the action receipt revision; retained even when post-commit scope reload fails so UI can keep a continuous optimistic hide. */
+export type MessageQueueServerMutationResult = { status: 'committed' | 'stale'; scope?: MessageQueueScope; committedRevision?: number };
 export type MessageQueuePendingAdmissionPhase = 'uploading' | 'admitting' | 'ambiguous' | 'acknowledged';
 export type MessageQueuePendingAdmissionItem = {
   kind: 'pending-admission'; requestID: string; queueItemID: string; operationID: string; messageID: string; content: string; createdAt: number; phase: MessageQueuePendingAdmissionPhase; attachmentCount: number;
@@ -287,17 +288,24 @@ export const createMessageQueueServerRuntime = (dependencies: Partial<Dependenci
   // pages to the mutation revision races the worker after manual send and can leave
   // descriptors without matching pages (empty chip list). On mutation failure,
   // still best-effort reload so a raced tip cannot strand the UI.
+  // committedRevision always comes from the action receipt so a failed scope reload
+  // still carries an ack watermark for continuous chip optimistic hide.
   const mutate = async (scopeID: string, revision: number, action: (expectedRevision: number, scope: MessageQueueScope | undefined) => Promise<{ revision: number }>): Promise<MessageQueueServerMutationResult> => {
     const capture = synchronizeTransport(); let expected = revision;
     for (let attempt = 0; attempt < MAX_CLIENT_MUTATION_CONFLICT_ATTEMPTS; attempt++) {
       const descriptor = state.scopes.get(scopeID); const current = descriptor ? readMessageQueueScope(deps.client, scopeID, descriptor.revision, capture.transportIdentity) : undefined;
+      let committedRevision: number | undefined;
       try {
-        try { await action(expected, current); }
+        try {
+          const receipt = await action(expected, current);
+          committedRevision = receipt.revision;
+        }
         catch (error) {
           // Every server mutation is receipt-backed. Replaying the exact request
           // confirms a lost response and preserves single execution.
           if (!isUnavailable(error) || !isCaptureCurrent(capture)) throw error;
-          await action(expected, current);
+          const receipt = await action(expected, current);
+          committedRevision = receipt.revision;
         }
       }
       catch (error) {
@@ -309,21 +317,24 @@ export const createMessageQueueServerRuntime = (dependencies: Partial<Dependenci
         throw error;
       }
       if (!isCaptureCurrent(capture)) return { status: 'stale' };
+      const withAck = (result: MessageQueueServerMutationResult): MessageQueueServerMutationResult => (
+        committedRevision === undefined ? result : { ...result, committedRevision }
+      );
       for (let reconcileAttempt = 0; reconcileAttempt < 2; reconcileAttempt++) {
         try {
           const scope = await reloadScope(scopeID, capture, new MessageQueueServerError(409, 'revision_conflict'));
-          if (!scope) return { status: 'stale' };
+          if (!scope) return withAck({ status: 'stale' });
           await invalidateMessageQueueScope(deps.client, scopeID, capture.transportIdentity);
           const latest = state.scopes.get(scopeID);
-          return { status: 'committed', scope: latest ? readMessageQueueScope(deps.client, scopeID, latest.revision, capture.transportIdentity) : scope };
+          return withAck({ status: 'committed', scope: latest ? readMessageQueueScope(deps.client, scopeID, latest.revision, capture.transportIdentity) : scope });
         } catch (error) {
           if (isConflict(error) && !reconcileAttempt) continue;
-          if (!isCaptureCurrent(capture)) return { status: 'stale' };
+          if (!isCaptureCurrent(capture)) return withAck({ status: 'stale' });
           // The mutation acknowledgement is durable. Keep that success final;
           // the observer will converge the retained authoritative snapshot.
           publish({ error });
           void invalidateMessageQueueScope(deps.client, scopeID, capture.transportIdentity).catch(() => {});
-          return { status: 'committed' };
+          return withAck({ status: 'committed' });
         }
       }
     }

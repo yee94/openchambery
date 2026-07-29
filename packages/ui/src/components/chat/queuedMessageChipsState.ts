@@ -89,6 +89,13 @@ export const isServerQueueItemActiveAttempt = (item: Pick<MessageQueueItem, 'sta
 // inspects authoritative MessageQueueItem rows.
 export const isServerQueueItemDispatchPending = (item: MessageQueueItem): boolean => item.manualDispatchRequested === true || item.status === 'sending' || item.status === 'reconciling';
 
+// Tracking rows that already crossed (or are about to cross) the send boundary stay
+// durable server-side until exact confirmation/tombstone, but chips hide them so the
+// user sees only waiting/recoverable work. failed/unresolved restore visibility.
+export const isServerQueueItemHiddenFromChips = (item: MessageQueueItem): boolean => (
+    item.manualDispatchRequested === true || item.status === 'sending' || item.status === 'reconciling'
+);
+
 export type ServerQueueOperationKind = 'edit' | 'send' | 'remove' | 'reorder';
 
 export type ServerQueueOperationIdentity = {
@@ -102,7 +109,21 @@ export type ServerQueueOperationIdentity = {
     queueItemIDs?: string[];
 };
 
+/** Successful send mutations that still outrank the authoritative scope revision keep hiding their target until the observer converges. */
+export type ServerQueueCommittedSendShadow = ServerQueueOperationIdentity & {
+    kind: 'send';
+    committedRevision: number;
+};
+
 type ServerQueueExactScope = { transportIdentity: string; runtimeGeneration: number; directory: string; sessionID: string; scopeID: string };
+
+const matchesExactScope = (operation: ServerQueueOperationIdentity, exactScope: ServerQueueExactScope): boolean => (
+    operation.transportIdentity === exactScope.transportIdentity
+    && operation.runtimeGeneration === exactScope.runtimeGeneration
+    && operation.directory === exactScope.directory
+    && operation.sessionID === exactScope.sessionID
+    && operation.scopeID === exactScope.scopeID
+);
 
 // Select the pending operation whose identity exactly matches the target scope
 // (transportIdentity + runtimeGeneration + directory + sessionID + scopeID). Returns undefined when
@@ -112,39 +133,44 @@ type ServerQueueExactScope = { transportIdentity: string; runtimeGeneration: num
 export const selectPendingServerQueueOperation = (
     operations: readonly ServerQueueOperationIdentity[],
     exactScope: ServerQueueExactScope,
-): ServerQueueOperationIdentity | undefined => operations.find((operation) =>
-    operation.transportIdentity === exactScope.transportIdentity
-    && operation.runtimeGeneration === exactScope.runtimeGeneration
-    && operation.directory === exactScope.directory
-    && operation.sessionID === exactScope.sessionID
-    && operation.scopeID === exactScope.scopeID
-);
+): ServerQueueOperationIdentity | undefined => operations.find((operation) => matchesExactScope(operation, exactScope));
 
 export const selectPendingServerQueueOperations = (
     operations: readonly ServerQueueOperationIdentity[],
     exactScope: ServerQueueExactScope,
-): readonly ServerQueueOperationIdentity[] => operations.filter((operation) =>
-    operation.transportIdentity === exactScope.transportIdentity
-    && operation.runtimeGeneration === exactScope.runtimeGeneration
-    && operation.directory === exactScope.directory
-    && operation.sessionID === exactScope.sessionID
-    && operation.scopeID === exactScope.scopeID
-);
+): readonly ServerQueueOperationIdentity[] => operations.filter((operation) => matchesExactScope(operation, exactScope));
+
+/**
+ * Keep successful send overlays while the authoritative scope revision is still
+ * behind the mutation receipt. Stops when scope.revision >= committedRevision,
+ * runtime generation mismatches, or the mutation is gone from the cache.
+ * Does not write the revision-pinned Query cache — overlay ownership only.
+ */
+export const selectCommittedSendShadows = (
+    shadows: readonly ServerQueueCommittedSendShadow[],
+    exactScope: ServerQueueExactScope,
+    authoritativeRevision: number | undefined,
+): readonly ServerQueueOperationIdentity[] => shadows.filter((shadow) => (
+    matchesExactScope(shadow, exactScope)
+    && Number.isSafeInteger(shadow.committedRevision)
+    && shadow.committedRevision > 0
+    && (authoritativeRevision === undefined || authoritativeRevision < shadow.committedRevision)
+));
 
 // Pure optimistic reordering over authoritative server items. Only existing item
 // references are reused; no item is recreated and pending admission rows are
 // preserved untouched.
-//   - send: moves the existing target immediately after already-active rows.
+//   - send/edit/remove: hide the target immediately; definitive mutation failure
+//     clears the pending overlay so waiting/failed/unresolved rows reappear.
 //   - reorder: reorders existing items to match queueItemIDs order; returns the
 //     original array reference when the existing order already matches.
-//   - edit/remove: hide the target immediately and restore it on failure.
 // When the target is missing or the reorder order already matches, the original
 // array reference is returned so React skips re-rendering.
 export const applyPendingServerQueueOperation = (
     items: readonly MessageQueueServerDisplayItem[],
     operation: ServerQueueOperationIdentity,
 ): readonly MessageQueueServerDisplayItem[] => {
-    if (operation.kind === 'edit' || operation.kind === 'remove') {
+    if (operation.kind === 'edit' || operation.kind === 'remove' || operation.kind === 'send') {
         const index = items.findIndex((item) => !isMessageQueuePendingAdmissionItem(item) && item.queueItemID === operation.queueItemID);
         if (index < 0) return items;
         return [...items.slice(0, index), ...items.slice(index + 1)];
@@ -181,23 +207,27 @@ export const applyPendingServerQueueOperation = (
         if (next.every((item, index) => item === items[index])) return items;
         return next;
     }
-    // send: match the server's promotion rule. A POST that already crossed the
-    // boundary stays pinned; the selected waiting row becomes the next row.
-    const authoritative = items.filter((item): item is MessageQueueItem => !isMessageQueuePendingAdmissionItem(item));
-    const moved = authoritative.find((item) => item.queueItemID === operation.queueItemID);
-    if (!moved) return items;
-    const active = authoritative.filter((item) => item.queueItemID !== moved.queueItemID && isServerQueueItemActiveAttempt(item));
-    const waiting = authoritative.filter((item) => item.queueItemID !== moved.queueItemID && !isServerQueueItemActiveAttempt(item));
-    const pending = items.filter(isMessageQueuePendingAdmissionItem);
-    const next = [...active, moved, ...waiting, ...pending];
-    if (next.every((item, index) => item === items[index])) return items;
-    return next;
+    return items;
 };
 
 export const applyPendingServerQueueOperations = (
     items: readonly MessageQueueServerDisplayItem[],
     operations: readonly ServerQueueOperationIdentity[],
 ): readonly MessageQueueServerDisplayItem[] => operations.reduce(applyPendingServerQueueOperation, items);
+
+// Chip projection: apply pending + committed-ack-revision send shadows, then hide
+// authoritative tracking rows (manual intent / sending / reconciling). Durable
+// rows remain on the server until exact message confirmation or tombstone.
+// failed/unresolved reappear once the authoritative revision reaches the ack
+// (shadow ends) even if a success mutation entry remains briefly in cache.
+export const projectServerQueueChipItems = (
+    items: readonly MessageQueueServerDisplayItem[],
+    operations: readonly ServerQueueOperationIdentity[],
+): readonly MessageQueueServerDisplayItem[] => {
+    const projected = applyPendingServerQueueOperations(items, operations);
+    const visible = projected.filter((item) => isMessageQueuePendingAdmissionItem(item) || !isServerQueueItemHiddenFromChips(item));
+    return visible.length === projected.length ? projected : visible;
+};
 
 export const serverQueueItemMutationInput = (scope: MessageQueueScope, item: MessageQueueItem, requestID: string) => ({
     requestID,
@@ -221,12 +251,21 @@ export const reorderServerQueueItems = (
     requestID: string,
     visibleItems: readonly MessageQueueServerDisplayItem[] = scope.items,
 ): { requestID: string; scopeID: string; revision: number; queueItemIDs: string[] } | null => {
-    const queueItemIDs = visibleItems.filter((item): item is MessageQueueItem => !isMessageQueuePendingAdmissionItem(item)).map((item) => item.queueItemID);
-    const from = queueItemIDs.indexOf(activeID);
-    const to = queueItemIDs.indexOf(overID);
+    const visibleIDs = visibleItems
+        .filter((item): item is MessageQueueItem => !isMessageQueuePendingAdmissionItem(item))
+        .map((item) => item.queueItemID);
+    const from = visibleIDs.indexOf(activeID);
+    const to = visibleIDs.indexOf(overID);
     if (from < 0 || to < 0 || from === to) return null;
-    const [moved] = queueItemIDs.splice(from, 1);
+    const [moved] = visibleIDs.splice(from, 1);
     if (!moved) return null;
-    queueItemIDs.splice(to, 0, moved);
+    visibleIDs.splice(to, 0, moved);
+
+    const visibleSet = new Set(visibleIDs);
+    let visibleIndex = 0;
+    const queueItemIDs = scope.items.map((item) => {
+        if (!visibleSet.has(item.queueItemID)) return item.queueItemID;
+        return visibleIDs[visibleIndex++] ?? item.queueItemID;
+    });
     return { requestID, scopeID: scope.scopeID, revision: scope.revision, queueItemIDs };
 };

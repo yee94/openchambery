@@ -8,10 +8,15 @@ const extractSessionStatusUpdate = (payload) => {
     return null;
   }
 
+  // Accept both bridge/legacy `{ properties }` and native current `{ data }` shapes.
   const properties = payload.properties && typeof payload.properties === 'object' ? payload.properties : {};
-  const status = properties.status && typeof properties.status === 'object' ? properties.status : {};
-  const info = properties.info && typeof properties.info === 'object' ? properties.info : {};
-  const sessionId = typeof properties.sessionID === 'string' ? properties.sessionID.trim() : '';
+  const data = payload.data && typeof payload.data === 'object' ? payload.data : {};
+  const body = Object.keys(data).length > 0 ? data : properties;
+  const status = body.status && typeof body.status === 'object' ? body.status : {};
+  const info = body.info && typeof body.info === 'object' ? body.info : {};
+  const sessionId = typeof body.sessionID === 'string'
+    ? body.sessionID.trim()
+    : (typeof body.sessionId === 'string' ? body.sessionId.trim() : '');
   // Canonical OpenCode schema uses properties.status.type. Keep legacy info.type fallback for compatibility.
   const type = typeof status.type === 'string'
     ? status.type.trim()

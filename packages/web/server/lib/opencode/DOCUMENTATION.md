@@ -103,6 +103,12 @@ This module provides OpenCode server integration utilities for the web server ru
   - `markUserMessageSent(sessionId)`
   - `resetAllSessionActivityToIdle()`
   - `dispose()`
+- `processOpenCodeSsePayload` accepts OpenCode `session.status` in both bridge/legacy
+  `{ type, properties }` and native current `{ type, data }` shapes (plus
+  `sessionId` / `info.type` fallbacks). Status drives activity phase and
+  attention; the runtime does not own process-global `v2.session.active`
+  membership — that remains a UI-side authoritative pull fused with directory
+  `/session/status`.
 
 ## Public exports (lifecycle.js)
 - `createOpenCodeLifecycleRuntime(dependencies)`: creates lifecycle runtime for managed/external OpenCode process orchestration.

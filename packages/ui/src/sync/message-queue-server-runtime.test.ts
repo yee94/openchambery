@@ -163,7 +163,8 @@ test('keeps a durable manual-send acknowledgement committed when scope reconcili
 
   const result = await runtime.manualSend({ requestID: 'committed-before-refresh', scopeID: descriptor.scopeID, revision: 1, item });
 
-  expect(result).toEqual({ status: 'committed' });
+  // Receipt is durable; keep committedRevision even when post-commit scope reload fails.
+  expect(result).toEqual({ status: 'committed', committedRevision: 2 });
   expect(invalidations).toBe(1);
   expect(runtime.getScope({ transportIdentity: 'device-a', directory: '/repo', sessionID: 'session-a' })?.items).toEqual([item]);
   expect(runtime.getState().error).toBeInstanceOf(MessageQueueServerError);

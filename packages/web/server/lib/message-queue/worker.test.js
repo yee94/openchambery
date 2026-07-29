@@ -19,13 +19,25 @@ afterEach(() => vi.useRealTimers());
 
 describe('message queue worker', () => {
   it('starts paused then claims, sends, and reconciles accepted delivery with captured fencing', async () => {
-    const { worker, service } = setup();
+    const markAcceptedForReconciliation = vi.fn();
+    const { worker, service } = setup({ service: { markAcceptedForReconciliation } });
     await worker.runOnce();
     expect(service.claimNext).toHaveBeenCalledTimes(0);
     worker.start();
     await worker.wake();
     expect(service.claimNext).toHaveBeenCalledWith({ runtimeKey: 'runtime', owner: 'worker', leaseMs: 15000, queueItemID: 'item', eligibilityToken: 'eligibility' });
     expect(service.completeAttempt).not.toHaveBeenCalled();
+    expect(markAcceptedForReconciliation).toHaveBeenCalledWith(expect.objectContaining({ queueItemID: 'item', leaseToken: 'lease', fenceGeneration: 1, runtimeKey: 'runtime', dueAt: expect.any(Number) }));
+    expect(service.markAmbiguous).not.toHaveBeenCalled();
+    await worker.stop();
+  });
+
+  it('falls back to markAmbiguous for accepted delivery when markAcceptedForReconciliation is absent', async () => {
+    const { worker, service } = setup();
+    // Default mock service has no markAcceptedForReconciliation; worker uses markAmbiguous.
+    expect(service.markAcceptedForReconciliation).toBeUndefined();
+    worker.start();
+    await worker.wake();
     expect(service.markAmbiguous).toHaveBeenCalledWith(expect.objectContaining({ queueItemID: 'item', leaseToken: 'lease', fenceGeneration: 1, runtimeKey: 'runtime', dueAt: expect.any(Number) }));
     await worker.stop();
   });
@@ -77,7 +89,8 @@ describe('message queue worker', () => {
 
   it('returns status before a run flight settles and reports a background rejection', async () => {
     const diagnostic = vi.spyOn(console, 'error').mockImplementation(() => {});
-    const { worker } = setup({ service: { claimDueReconcile: vi.fn(() => { throw new Error('claim failed'); }) } });
+    // No dispatch candidates so the throw from claimDueReconcile is the only work.
+    const { worker } = setup({ service: { claimDueReconcile: vi.fn(() => { throw new Error('claim failed'); }), reserveEligibilityCandidate: vi.fn(() => null) } });
     expect(worker.start()).toEqual({ paused: false, active: 0 });
     await flush();
     expect(diagnostic).toHaveBeenCalledWith('message_queue_worker_run_failed', expect.objectContaining({ message: 'claim failed' }));
@@ -294,6 +307,74 @@ describe('message queue worker', () => {
     expect(service.recordReconcileConfirmed).toHaveBeenCalledTimes(1);
     // Coalesced wakes request one immediate follow-up run after the in-flight work settles.
     expect(service.reserveEligibilityCandidate).toHaveBeenCalledTimes(2);
+    await worker.stop();
+  });
+
+  it('starts manual dispatch while a prior reconciling findMessage is still hanging', async () => {
+    let releaseFind;
+    const hangingFind = new Promise((resolve) => { releaseFind = resolve; });
+    const manualItem = { ...claim.item, queueItemID: 'item-second' };
+    const manualCandidate = { ...candidate, item: manualItem, eligibilityToken: 'eligibility-manual', dispatchMode: 'manual' };
+    const manualClaim = { ...claim, item: manualItem, leaseToken: 'lease-manual' };
+    const order = [];
+    let sent = false;
+    const reserveEligibilityCandidate = vi.fn(() => {
+      order.push('reserve');
+      return reserveEligibilityCandidate.mock.calls.length === 1 ? manualCandidate : null;
+    });
+    const claimDueReconcile = vi.fn(() => {
+      order.push('reconcile-claim');
+      return claimDueReconcile.mock.calls.length === 1 ? reconcileClaim : null;
+    });
+    const claimNext = vi.fn().mockReturnValueOnce(manualClaim).mockReturnValue(null);
+    const { worker, service, adapter } = setup({
+      service: { claimDueReconcile, reserveEligibilityCandidate, claimNext },
+      adapter: {
+        findMessage: vi.fn(() => {
+          order.push('findMessage');
+          return hangingFind;
+        }),
+        checkEligibility: vi.fn(() => ({ available: true, idle: false, settled: false, latestMessageID: 'msg_0000000000' })),
+        send: vi.fn(() => {
+          order.push('send');
+          sent = true;
+          return { ok: true };
+        }),
+      },
+    });
+    worker.start();
+    // Probe runs concurrently with hung findMessage; wait until send lands without releasing find.
+    for (let i = 0; i < 20 && !sent; i += 1) await flush();
+    expect(adapter.send).toHaveBeenCalledTimes(1);
+    expect(service.beginAttempt).toHaveBeenCalledWith(expect.objectContaining({ queueItemID: 'item-second' }));
+    expect(order.indexOf('reserve')).toBeLessThan(order.indexOf('reconcile-claim'));
+    expect(order.indexOf('findMessage')).toBeGreaterThanOrEqual(0);
+    // findMessage still hanging until we release — proves send did not wait on it.
+    expect(sent).toBe(true);
+    releaseFind({ found: false });
+    await flush();
+    await worker.stop();
+  });
+
+  it('still blocks a second concurrent POST while a peer is sending (service fence; reconciling does not serialize run)', async () => {
+    // Worker-level: with a hanging reconciling query and no dispatch candidate,
+    // reserve is still attempted before reconcile await completes (ordering).
+    // Service-level sending fence remains covered by service.test.js.
+    const reserveEligibilityCandidate = vi.fn(() => null);
+    let releaseFind;
+    const hangingFind = new Promise((resolve) => { releaseFind = resolve; });
+    const claimDueReconcile = vi.fn().mockReturnValueOnce(reconcileClaim).mockReturnValue(null);
+    const { worker, service, adapter } = setup({
+      service: { claimDueReconcile, reserveEligibilityCandidate },
+      adapter: { findMessage: vi.fn(() => hangingFind) },
+    });
+    worker.start();
+    await flush();
+    expect(reserveEligibilityCandidate).toHaveBeenCalled();
+    expect(service.claimNext).toHaveBeenCalledTimes(0);
+    expect(adapter.send).toHaveBeenCalledTimes(0);
+    releaseFind({ found: true });
+    await flush();
     await worker.stop();
   });
 

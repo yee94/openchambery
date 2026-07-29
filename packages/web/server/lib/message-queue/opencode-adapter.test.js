@@ -12,7 +12,7 @@ describe('OpenCode message queue adapter', () => {
     expect(waitForReady).toHaveBeenCalledWith();
   });
   it('captures runtime, materializes text and files, and sends the captured configuration', async () => {
-    const promptAsync = vi.fn(() => ({ data: {} })); createOpencodeClient.mockReturnValue({ session: { promptAsync, messages: vi.fn(() => ({ data: [] })) } });
+    const promptAsync = vi.fn(() => ({ data: {}, response: { status: 204 } })); createOpencodeClient.mockReturnValue({ session: { promptAsync, messages: vi.fn(() => ({ data: [] })) } });
     let generation = 1;
     const adapter = createOpenCodeMessageQueueAdapter({ waitForReady: vi.fn(), buildOpenCodeUrl: () => 'http://open.code/', getOpenCodeAuthHeaders: () => ({ Authorization: 'secret' }), getRuntimeConfig: () => ({ apiBaseUrl: 'http://open.code' }), getRuntimeGeneration: () => generation, getSessionEligibility: () => ({ idle: true, settled: true }), getLatestMessageID: () => 'old', readAttachment: () => ({ type: 'file', url: 'file:///attachment' }) });
     const runtime = adapter.captureRuntime(); const scope = { sessionID: 'session', directory: '/repo' }; expect(await adapter.checkEligibility(scope)).toMatchObject({ available: true, idle: true, settled: true, latestMessageID: 'old' });
@@ -30,7 +30,7 @@ describe('OpenCode message queue adapter', () => {
     expect(readAttachment).toHaveBeenCalledWith({ attachmentID: 'image', filename: 'image.png' }, expect.any(Object), expect.any(Object));
   });
   it('uses the injected upstream runtime URL and detects its changes', async () => {
-    const promptAsync = vi.fn(() => ({ data: {} }));
+    const promptAsync = vi.fn(() => ({ data: {}, response: { status: 204 } }));
     createOpencodeClient.mockReturnValue({ session: { promptAsync, messages: vi.fn(() => ({ data: [] })) } });
     let upstreamUrl = 'http://opencode-upstream:4096/';
     const adapter = createOpenCodeMessageQueueAdapter({ buildOpenCodeUrl: () => upstreamUrl, getOpenCodeAuthHeaders: () => ({}), getRuntimeConfig: () => ({ apiBaseUrl: upstreamUrl }), readAttachment: () => null });
@@ -44,6 +44,73 @@ describe('OpenCode message queue adapter', () => {
     const messages = vi.fn(() => ({ data: [{ id: 'other' }, { id: 'wanted' }] })); createOpencodeClient.mockReturnValue({ session: { promptAsync: vi.fn(() => ({ error: {}, response: { status: 503 } })), messages } });
     const adapter = createOpenCodeMessageQueueAdapter({ buildOpenCodeUrl: () => 'http://open.code/', getOpenCodeAuthHeaders: () => ({}), getSessionEligibility: () => ({ idle: true, settled: true }), getLatestMessageID: () => null, readAttachment: () => null });
     expect(await adapter.send({ scope: { sessionID: 's', directory: '/d' }, messageID: 'm', sendConfig: { providerID: 'p', modelID: 'm' } })).toMatchObject({ kind: 'ambiguous', status: 503 }); expect(await adapter.findMessage({ sessionID: 's', directory: '/d' }, 'wanted')).toEqual({ found: true });
+  });
+  it('treats explicit 2xx empty bodies as ok and never treats undefined/malformed results as success', async () => {
+    const promptAsync = vi.fn()
+      .mockReturnValueOnce({ data: undefined, error: null, response: { status: 204 } })
+      .mockReturnValueOnce({ data: undefined, error: undefined, response: { status: 202 } })
+      .mockReturnValueOnce({ data: {}, error: null, response: { status: 200 } })
+      .mockReturnValueOnce(undefined)
+      .mockReturnValueOnce(null)
+      .mockReturnValueOnce({});
+    createOpencodeClient.mockReturnValue({ session: { promptAsync, messages: vi.fn(() => ({ data: [] })) } });
+    const adapter = createOpenCodeMessageQueueAdapter({ buildOpenCodeUrl: () => 'http://open.code/', getOpenCodeAuthHeaders: () => ({}), getRuntimeConfig: () => ({ apiBaseUrl: 'http://open.code' }), readAttachment: () => null });
+    const base = { scope: { sessionID: 's', directory: '/d' }, messageID: 'm', sendConfig: { providerID: 'p', modelID: 'm' }, parts: [] };
+    await expect(adapter.send(base)).resolves.toMatchObject({ ok: true, status: 204 });
+    await expect(adapter.send(base)).resolves.toMatchObject({ ok: true, status: 202 });
+    await expect(adapter.send(base)).resolves.toMatchObject({ ok: true, status: 200 });
+    await expect(adapter.send(base)).resolves.toMatchObject({ ok: false, kind: 'ambiguous', code: 'malformed_result' });
+    await expect(adapter.send(base)).resolves.toMatchObject({ ok: false, kind: 'ambiguous', code: 'malformed_result' });
+    await expect(adapter.send(base)).resolves.toMatchObject({ ok: false, kind: 'ambiguous', code: 'malformed_result' });
+  });
+  it('reads failure status from error.status and classifies definitive 4xx failures', async () => {
+    const promptAsync = vi.fn()
+      .mockReturnValueOnce({ error: { status: 400 }, response: undefined })
+      .mockReturnValueOnce({ error: {}, response: { status: 422 } })
+      .mockReturnValueOnce({ error: { status: 429 } })
+      .mockReturnValueOnce({ error: { status: 408 } });
+    createOpencodeClient.mockReturnValue({ session: { promptAsync, messages: vi.fn(() => ({ data: [] })) } });
+    const adapter = createOpenCodeMessageQueueAdapter({ buildOpenCodeUrl: () => 'http://open.code/', getOpenCodeAuthHeaders: () => ({}), readAttachment: () => null });
+    const base = { scope: { sessionID: 's', directory: '/d' }, messageID: 'm', sendConfig: { providerID: 'p', modelID: 'm' }, parts: [] };
+    await expect(adapter.send(base)).resolves.toMatchObject({ ok: false, kind: 'failed', status: 400 });
+    await expect(adapter.send(base)).resolves.toMatchObject({ ok: false, kind: 'failed', status: 422 });
+    await expect(adapter.send(base)).resolves.toMatchObject({ ok: false, kind: 'ambiguous', status: 429 });
+    await expect(adapter.send(base)).resolves.toMatchObject({ ok: false, kind: 'ambiguous', status: 408 });
+  });
+  it('prefers client.v2.session.message exact lookup and treats 404 as found:false', async () => {
+    const exact = vi.fn()
+      .mockReturnValueOnce({ data: { info: { id: 'wanted' } } })
+      .mockReturnValueOnce({ error: { status: 404 }, response: { status: 404 } });
+    const messages = vi.fn(() => ({ data: [{ id: 'other' }] }));
+    createOpencodeClient.mockReturnValue({ v2: { session: { message: exact } }, session: { messages, promptAsync: vi.fn() } });
+    const adapter = createOpenCodeMessageQueueAdapter({ buildOpenCodeUrl: () => 'http://open.code/', getOpenCodeAuthHeaders: () => ({}), readAttachment: () => null });
+    await expect(adapter.findMessage({ sessionID: 's', directory: '/d' }, 'wanted')).resolves.toEqual({ found: true });
+    await expect(adapter.findMessage({ sessionID: 's', directory: '/d' }, 'missing')).resolves.toEqual({ found: false });
+    expect(messages).not.toHaveBeenCalled();
+    expect(exact).toHaveBeenCalledWith({ sessionID: 's', messageID: 'wanted', directory: '/d' }, expect.any(Object));
+  });
+  it('falls back from unsupported exact lookup to legacy session.message then bounded messages', async () => {
+    const legacyMessage = vi.fn()
+      .mockReturnValueOnce({ data: { info: { id: 'legacy-hit' } } })
+      .mockReturnValueOnce({ error: { status: 404 }, response: { status: 404 } });
+    const messages = vi.fn(() => ({ data: [{ id: 'bounded-hit' }] }));
+    createOpencodeClient
+      .mockReturnValueOnce({ session: { message: legacyMessage, messages, promptAsync: vi.fn() } })
+      .mockReturnValueOnce({ session: { message: legacyMessage, messages, promptAsync: vi.fn() } })
+      .mockReturnValueOnce({ session: { messages, promptAsync: vi.fn() } });
+    const adapter = createOpenCodeMessageQueueAdapter({ buildOpenCodeUrl: () => 'http://open.code/', getOpenCodeAuthHeaders: () => ({}), readAttachment: () => null });
+    await expect(adapter.findMessage({ sessionID: 's', directory: '/d' }, 'legacy-hit')).resolves.toEqual({ found: true });
+    await expect(adapter.findMessage({ sessionID: 's', directory: '/d' }, 'missing')).resolves.toEqual({ found: false });
+    await expect(adapter.findMessage({ sessionID: 's', directory: '/d' }, 'bounded-hit')).resolves.toEqual({ found: true });
+    expect(messages).toHaveBeenCalledTimes(1);
+  });
+  it('falls back when v2 exact lookup returns 405/501 unsupported', async () => {
+    const exact = vi.fn().mockReturnValueOnce({ error: { status: 405 }, response: { status: 405 } });
+    const messages = vi.fn(() => ({ data: [{ info: { id: 'wanted' } }] }));
+    createOpencodeClient.mockReturnValue({ v2: { session: { message: exact } }, session: { messages, promptAsync: vi.fn() } });
+    const adapter = createOpenCodeMessageQueueAdapter({ buildOpenCodeUrl: () => 'http://open.code/', getOpenCodeAuthHeaders: () => ({}), readAttachment: () => null });
+    await expect(adapter.findMessage({ sessionID: 's', directory: '/d' }, 'wanted')).resolves.toEqual({ found: true });
+    expect(messages).toHaveBeenCalledTimes(1);
   });
   it('uses absent session status as idle and derives settlement from the message tail', async () => {
     const messages = vi.fn(() => ({ data: [] })); createOpencodeClient.mockReturnValue({ session: { messages, status: vi.fn(() => ({ data: {} })) } });

@@ -177,6 +177,8 @@ let consecutiveDirectorySuccesses = 0;
 let sessionIndexPollController: AbortController | null = null;
 /** Coalesce concurrent early-hydrate + startup-hydrate GETs. */
 let sessionIndexHydrateInflight: Promise<void> | undefined;
+/** Active observers by directory, used to isolate session-index cleanup from SDK refreshes. */
+const sessionIndexObserverDirectoryRefs = new Map<string, number>();
 
 type SessionIndexRuntimeCapture = {
   loadGeneration: number;
@@ -405,6 +407,61 @@ const normalizeDirectorySet = (directories: Iterable<string>): Set<string> => {
     if (normalized) next.add(normalized);
   }
   return next;
+};
+
+const retainSessionIndexObserverDirectories = (directories: Iterable<string>): Set<string> => {
+  const observed = normalizeDirectorySet(directories);
+  for (const directory of observed) {
+    sessionIndexObserverDirectoryRefs.set(
+      directory,
+      (sessionIndexObserverDirectoryRefs.get(directory) ?? 0) + 1,
+    );
+  }
+  return observed;
+};
+
+const releaseSessionIndexObserverDirectories = (directories: Iterable<string>): Set<string> => {
+  const released = new Set<string>();
+  for (const directory of directories) {
+    const refs = sessionIndexObserverDirectoryRefs.get(directory) ?? 0;
+    if (refs <= 1) {
+      sessionIndexObserverDirectoryRefs.delete(directory);
+      released.add(directory);
+      continue;
+    }
+    sessionIndexObserverDirectoryRefs.set(directory, refs - 1);
+  }
+  return released;
+};
+
+const clearReleasedSessionIndexLoading = (
+  state: GlobalSessionsState,
+  directories: ReadonlySet<string>,
+): Partial<GlobalSessionsState> | GlobalSessionsState => {
+  let nextLoading = state.loadingDirectories;
+  let nextRefreshing = state.refreshingDirectories;
+
+  for (const directory of directories) {
+    if (inflightActiveDirectoryRefresh.has(directory)) continue;
+    if (nextLoading.has(directory)) {
+      if (nextLoading === state.loadingDirectories) nextLoading = new Set(state.loadingDirectories);
+      nextLoading.delete(directory);
+    }
+    if (nextRefreshing.has(directory)) {
+      if (nextRefreshing === state.refreshingDirectories) nextRefreshing = new Set(state.refreshingDirectories);
+      nextRefreshing.delete(directory);
+    }
+  }
+
+  if (
+    nextLoading === state.loadingDirectories
+    && nextRefreshing === state.refreshingDirectories
+  ) return state;
+
+  return {
+    loadingDirectories: nextLoading,
+    refreshingDirectories: nextRefreshing,
+  };
 };
 
 const getNextSessionCursor = (sessions: Session[]): number | null => {
@@ -890,6 +947,7 @@ export const useGlobalSessionsStore = create<GlobalSessionsState>((set, get) => 
     sessionIndexPollController?.abort();
     sessionIndexPollController = null;
     sessionIndexHydrateInflight = undefined;
+    sessionIndexObserverDirectoryRefs.clear();
     set({
       activeSessions: [],
       archivedSessions: [],
@@ -1072,6 +1130,13 @@ export const useGlobalSessionsStore = create<GlobalSessionsState>((set, get) => 
     sessionIndexPollController?.abort();
     const controller = new AbortController();
     sessionIndexPollController = controller;
+    const observedDirectories = retainSessionIndexObserverDirectories(immediateDirectorySet);
+    const releaseObservedDirectories = () => {
+      if (!isCurrentSessionIndexRuntime(runtime)) return;
+      const releasedDirectories = releaseSessionIndexObserverDirectories(observedDirectories);
+      if (releasedDirectories.size === 0) return;
+      set((state) => clearReleasedSessionIndexLoading(state, releasedDirectories));
+    };
     const shouldBlock = !hasCachedSnapshot;
     const initialSnapshot = initial;
     if (!shouldBlock) {
@@ -1152,6 +1217,7 @@ export const useGlobalSessionsStore = create<GlobalSessionsState>((set, get) => 
         console.warn('[GlobalSessions] Session index tip sync failed:', error);
       }
     }).finally(() => {
+      releaseObservedDirectories();
       settleRootSync();
       if (sessionIndexPollController === controller) sessionIndexPollController = null;
       if (shouldBlock && isCurrentSessionIndexRuntime(runtime)) {
@@ -1430,6 +1496,13 @@ export const useGlobalSessionsStore = create<GlobalSessionsState>((set, get) => 
 
     const controller = new AbortController();
     directoryAbortControllers.add(controller);
+    const observedDirectories = retainSessionIndexObserverDirectories(directorySet);
+    const releaseObservedDirectories = () => {
+      if (!isCurrentSessionIndexRuntime(runtime)) return;
+      const releasedDirectories = releaseSessionIndexObserverDirectories(observedDirectories);
+      if (releasedDirectories.size === 0) return;
+      set((state) => clearReleasedSessionIndexLoading(state, releasedDirectories));
+    };
     try {
       let current = snapshot;
       while (!controller.signal.aborted && isCurrentSessionIndexRuntime(runtime)) {
@@ -1455,6 +1528,7 @@ export const useGlobalSessionsStore = create<GlobalSessionsState>((set, get) => 
         console.warn('[GlobalSessions] Session index sync failed:', error);
       }
     } finally {
+      releaseObservedDirectories();
       directoryAbortControllers.delete(controller);
     }
 

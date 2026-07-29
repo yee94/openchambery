@@ -1062,6 +1062,114 @@ describe('useGlobalSessionsStore', () => {
     }
   });
 
+  test('clears session-index loading when its revalidation fails', async () => {
+    const originalWindow = globalThis.window;
+    const originalFetch = globalThis.fetch;
+    const pending = {
+      revision: 1,
+      sync: {
+        active: true,
+        completed: 0,
+        total: 1,
+        pendingDirectories: ['/repo/revalidation-failure'],
+        completedDirectories: [],
+        failedDirectories: [],
+      },
+      directories: [],
+    };
+    try {
+      Object.defineProperty(globalThis, 'window', {
+        configurable: true,
+        value: { location: { origin: 'http://localhost', href: 'http://localhost/' } },
+      });
+      globalThis.fetch = async (input) => {
+        const pathname = new URL(input instanceof Request ? input.url : String(input), 'http://localhost').pathname;
+        if (pathname === '/api/openchamber/session-index/sync') {
+          return new Response(JSON.stringify(pending), {
+            status: 202,
+            headers: { 'Content-Type': 'application/json' },
+          });
+        }
+        throw new Error('session index revalidation failed');
+      };
+
+      const sync = useGlobalSessionsStore.getState().syncSessionsForDirectories(['/repo/revalidation-failure']);
+      while (tipListeners.size === 0) await new Promise((resolve) => setTimeout(resolve, 0));
+      emitOpenchamberTip({ type: 'session-index-changed', revision: 2, occurredAt: 1 });
+      await sync;
+
+      expect(useGlobalSessionsStore.getState().loadingDirectories.has('/repo/revalidation-failure')).toBe(false);
+      expect(useGlobalSessionsStore.getState().refreshingDirectories.has('/repo/revalidation-failure')).toBe(false);
+    } finally {
+      Object.defineProperty(globalThis, 'window', { configurable: true, value: originalWindow });
+      globalThis.fetch = originalFetch;
+    }
+  });
+
+  test('keeps an overlapping SDK refresh loading after session-index revalidation fails', async () => {
+    const originalWindow = globalThis.window;
+    const originalFetch = globalThis.fetch;
+    const originalGetSdkClient = opencodeClient.getSdkClient;
+    let resolveList: (value: { data: Session[]; error: undefined; response: Response }) => void = () => undefined;
+    const list = () => new Promise<{ data: Session[]; error: undefined; response: Response }>((resolve) => {
+      resolveList = resolve;
+    });
+    const pending = {
+      revision: 1,
+      sync: {
+        active: true,
+        completed: 0,
+        total: 1,
+        pendingDirectories: ['/repo/overlap'],
+        completedDirectories: [],
+        failedDirectories: [],
+      },
+      directories: [],
+    };
+    try {
+      Object.defineProperty(globalThis, 'window', {
+        configurable: true,
+        value: { location: { origin: 'http://localhost', href: 'http://localhost/' } },
+      });
+      globalThis.fetch = async (input) => {
+        const pathname = new URL(input instanceof Request ? input.url : String(input), 'http://localhost').pathname;
+        if (pathname === '/api/openchamber/session-index/sync') {
+          return new Response(JSON.stringify(pending), {
+            status: 202,
+            headers: { 'Content-Type': 'application/json' },
+          });
+        }
+        if (pathname === '/api/openchamber/session-index/directory') {
+          return new Response(null, { status: 204 });
+        }
+        throw new Error('session index revalidation failed');
+      };
+      opencodeClient.getSdkClient = () => ({
+        experimental: { session: { list } },
+      } as unknown as OpencodeClient);
+
+      const sync = useGlobalSessionsStore.getState().syncSessionsForDirectories(['/repo/overlap']);
+      while (tipListeners.size === 0) await new Promise((resolve) => setTimeout(resolve, 0));
+      const refresh = useGlobalSessionsStore.getState().refreshSessionsForDirectories(['/repo/overlap']);
+      await new Promise((resolve) => setTimeout(resolve, 0));
+      emitOpenchamberTip({ type: 'session-index-changed', revision: 2, occurredAt: 1 });
+      await sync;
+
+      expect(useGlobalSessionsStore.getState().loadingDirectories.has('/repo/overlap')).toBe(true);
+      expect(useGlobalSessionsStore.getState().refreshingDirectories.has('/repo/overlap')).toBe(true);
+
+      resolveList({ data: [], error: undefined, response: new Response(null, { status: 200 }) });
+      await refresh;
+
+      expect(useGlobalSessionsStore.getState().loadingDirectories.has('/repo/overlap')).toBe(false);
+      expect(useGlobalSessionsStore.getState().refreshingDirectories.has('/repo/overlap')).toBe(false);
+    } finally {
+      opencodeClient.getSdkClient = originalGetSdkClient;
+      Object.defineProperty(globalThis, 'window', { configurable: true, value: originalWindow });
+      globalThis.fetch = originalFetch;
+    }
+  });
+
   test('drops a session-index snapshot that resolves after a runtime switch', async () => {
     const originalWindow = globalThis.window;
     const originalFetch = globalThis.fetch;

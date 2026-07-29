@@ -52,9 +52,10 @@ export const createMessageQueueWorker = ({ service, adapter, workerID, concurren
         : adapter.send({ ...context, parts }, { signal: controller.signal })); const status = statusOf(result);
       admissionAccepted = Boolean(result?.ok || result?.accepted || result?.ambiguous || result?.kind === 'ambiguous' || status === 408 || status === 429 || status >= 500);
       if (leaseLost) return;
+      const enterReconciliation = service.markAcceptedForReconciliation ?? service.markAmbiguous;
       if (result?.ok || result?.accepted) return settle(statelessAssistantDelivery
         ? service.completeAttempt({ ...args, operationID: item.operationID, messageID: attempt.messageID, source: 'assistant_prompt_admitted' })
-        : service.markAmbiguous({ ...args, dueAt: clock() }));
+        : enterReconciliation({ ...args, dueAt: clock() }));
       if (Number.isInteger(status) && status >= 400 && status < 500 && status !== 408 && status !== 429) return settle(service.markFailed({ ...args, errorCode: `http_${status}` }));
       if (result?.ambiguous || result?.kind === 'ambiguous' || status === 408 || status === 429 || status >= 500) return settle(statelessAssistantDelivery
         ? service.markFailed({ ...args, errorCode: 'delivery_unknown' })
@@ -111,8 +112,11 @@ export const createMessageQueueWorker = ({ service, adapter, workerID, concurren
     const runtimeKey = service.getRuntimeKey(); const runtime = adapter.captureRuntime(); const authority = service.getAuthority({ runtimeKey });
     if (authority?.authority !== 'active') return status();
     service.recoverExpiredSending?.({ runtimeKey });
-    while (!paused && !stopping) { const claim = service.claimDueReconcile?.({ runtimeKey, owner: workerID, leaseMs }); if (!claim) break; await reconcile(claim, runtimeKey, runtime); }
+    // Start dispatch probes before awaiting reconciling work so a hung findMessage
+    // (up to RECONCILE_TIMEOUT_MS) cannot delay a waiting manual intent's POST.
+    // Same-scope sending still fences reserve/claim; automatic stays idle/settled gated.
     while (!paused && !stopping && active.size < concurrency) { const candidate = service.reserveEligibilityCandidate({ runtimeKey, owner: workerID, leaseMs: Math.max(leaseMs, ELIGIBILITY_TIMEOUT_MS + 1_000) }); if (!candidate) break; const task = probe(candidate, runtimeKey, runtime).finally(() => active.delete(task)); active.add(task); }
+    while (!paused && !stopping) { const claim = service.claimDueReconcile?.({ runtimeKey, owner: workerID, leaseMs }); if (!claim) break; await reconcile(claim, runtimeKey, runtime); }
     await Promise.all([...active]); return status();
   };
   const runOnce = () => {

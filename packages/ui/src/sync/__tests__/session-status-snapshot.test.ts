@@ -8,9 +8,11 @@ import type { DirectoryStore } from "../child-store"
 import {
   applySessionStatusSnapshot,
   collectSessionStatusSnapshotApplyIds,
+  fuseActiveWithLegacyStatus,
   reconcileActiveSessionStatusAfterMessagePull,
   resyncDirectorySessionStatuses,
 } from "../session-status-reconciliation"
+import type { SessionActiveResult } from "@/lib/opencode/client"
 import {
   isLiveRevisionCurrent,
   resolveStrictDomainSessionID,
@@ -40,6 +42,88 @@ function completedMessage() {
 }
 
 const BUSY: SessionStatus = { type: "busy" }
+
+describe("fuseActiveWithLegacyStatus", () => {
+  test("active empty membership converges busy candidates to idle", () => {
+    const { snapshot, source } = fuseActiveWithLegacyStatus(
+      { state: "supported", membership: {} },
+      { ses_a: { type: "busy" } },
+      ["ses_a"],
+    )
+    expect(source).toBe("fused")
+    expect(snapshot?.ses_a).toEqual({ type: "idle" })
+  })
+
+  test("active running + legacy retry keeps retry", () => {
+    const retry = { type: "retry" as const, attempt: 2, message: "x", next: 30 }
+    const { snapshot } = fuseActiveWithLegacyStatus(
+      { state: "supported", membership: { ses_a: { type: "running" } } },
+      { ses_a: retry },
+      ["ses_a"],
+    )
+    expect(snapshot?.ses_a).toEqual(retry)
+  })
+
+  test("active running + absent legacy becomes busy", () => {
+    const { snapshot } = fuseActiveWithLegacyStatus(
+      { state: "supported", membership: { ses_a: { type: "running" } } },
+      {},
+      ["ses_a"],
+    )
+    expect(snapshot?.ses_a).toEqual({ type: "busy" })
+  })
+
+  test("unsupported/unknown falls back to legacy", () => {
+    const legacy = { ses_a: { type: "busy" as const } }
+    expect(fuseActiveWithLegacyStatus({ state: "unsupported" }, legacy, ["ses_a"])).toEqual({
+      snapshot: legacy,
+      source: "legacy",
+    })
+    expect(fuseActiveWithLegacyStatus({ state: "unknown" }, legacy, ["ses_a"])).toEqual({
+      snapshot: legacy,
+      source: "legacy",
+    })
+  })
+
+  test("both missing yields none", () => {
+    expect(fuseActiveWithLegacyStatus(null, null, ["ses_a"])).toEqual({
+      snapshot: null,
+      source: "none",
+    })
+  })
+
+  test("does not copy foreign active membership IDs into a directory-local fuse", () => {
+    // Active has ses_a + ses_b process-wide; directory /a only knows ses_a.
+    // Result must never invent ses_b on this store.
+    const { snapshot, source } = fuseActiveWithLegacyStatus(
+      {
+        state: "supported",
+        membership: {
+          ses_a: { type: "running" },
+          ses_b: { type: "running" },
+        },
+      },
+      {},
+      ["ses_a"],
+    )
+    expect(source).toBe("fused")
+    expect(snapshot).toEqual({ ses_a: { type: "busy" } })
+    expect(snapshot?.ses_b).toBe(undefined)
+  })
+
+  test("empty candidates with only foreign membership yields none", () => {
+    const { snapshot, source } = fuseActiveWithLegacyStatus(
+      {
+        state: "supported",
+        membership: { ses_foreign: { type: "running" } },
+      },
+      {},
+      [],
+    )
+    expect(source).toBe("none")
+    expect(snapshot).toBe(null)
+  })
+})
 
 describe("applySessionStatusSnapshot", () => {
   describe("one-shot snapshot (bootstrap / reconnect / escalated resync)", () => {
@@ -155,6 +239,7 @@ describe("reconcileActiveSessionStatusAfterMessagePull", () => {
       statusObservedAtBeforePull: undefined,
       hasMessages: true,
       now: () => 100,
+      skipActive: true,
       loadSnapshot: async () => {
         loads += 1
         return {}
@@ -165,6 +250,113 @@ describe("reconcileActiveSessionStatusAfterMessagePull", () => {
     expect(store.getState().session_status.ses_a).toEqual({ type: "idle" })
     expect(store.getState().session_status_observed_at.ses_a).toBe(100)
     expect(store.getState().session_status_snapshot_at).toBe(100)
+  })
+
+  test("active 200 empty membership converges busy to idle", async () => {
+    const statusBeforePull: SessionStatus = { type: "busy" }
+    const store = createDirectoryStore({
+      session_status: { ses_a: statusBeforePull },
+    })
+
+    await resyncDirectorySessionStatuses("/repo", store, ["ses_a"], {
+      now: () => 50,
+      loadSnapshot: async () => ({ ses_a: { type: "busy" } }),
+      loadActive: async () => ({ state: "supported", membership: {} }),
+    })
+
+    expect(store.getState().session_status.ses_a).toEqual({ type: "idle" })
+    expect(store.getState().session_status_snapshot_at).toBe(50)
+  })
+
+  test("404 active unsupported falls back to legacy", async () => {
+    const store = createDirectoryStore({
+      session_status: { ses_a: { type: "idle" } },
+    })
+
+    await resyncDirectorySessionStatuses("/repo", store, ["ses_a"], {
+      now: () => 60,
+      loadSnapshot: async () => ({ ses_a: { type: "busy" } }),
+      loadActive: async () => ({ state: "unsupported" }),
+    })
+
+    expect(store.getState().session_status.ses_a).toEqual({ type: "busy" })
+  })
+
+  test("5xx/malformed active preserves prior when legacy also fails", async () => {
+    const busy: SessionStatus = { type: "busy" }
+    const store = createDirectoryStore({
+      session_status: { ses_a: busy },
+    })
+
+    await resyncDirectorySessionStatuses("/repo", store, ["ses_a"], {
+      now: () => 70,
+      loadSnapshot: async () => null,
+      loadActive: async () => ({ state: "unknown" }),
+    })
+
+    expect(store.getState().session_status.ses_a).toBe(busy)
+    expect(store.getState().session_status_snapshot_at).toBe(undefined)
+  })
+
+  test("active supported still fuses when legacy snapshot fails", async () => {
+    const store = createDirectoryStore({
+      session_status: { ses_a: { type: "busy" } },
+    })
+
+    await resyncDirectorySessionStatuses("/repo", store, ["ses_a"], {
+      now: () => 75,
+      loadSnapshot: async () => null,
+      loadActive: async () => ({
+        state: "supported",
+        membership: { ses_a: { type: "running" } },
+      }),
+    })
+
+    expect(store.getState().session_status.ses_a).toEqual({ type: "busy" })
+    expect(store.getState().session_status_snapshot_at).toBe(75)
+  })
+
+  test("empty candidates + failed legacy + foreign-only active preserves prior state", async () => {
+    // Directory has no local candidates, legacy fails, and active membership
+    // only lists sessions from other directories. Must not invent foreign IDs
+    // and must not advance session_status_snapshot_at.
+    const busy: SessionStatus = { type: "busy" }
+    const store = createDirectoryStore({
+      session_status: { ses_local: busy },
+    })
+
+    const result = await resyncDirectorySessionStatuses("/a", store, [], {
+      now: () => 80,
+      loadSnapshot: async () => null,
+      loadActive: async () => ({
+        state: "supported",
+        membership: { ses_foreign: { type: "running" } },
+      }),
+    })
+
+    expect(result).toBe(null)
+    expect(store.getState().session_status).toEqual({ ses_local: busy })
+    expect(store.getState().session_status.ses_foreign).toBe(undefined)
+    expect(store.getState().session_status_snapshot_at).toBe(undefined)
+  })
+
+  test("does not write foreign active sessions into another directory store", async () => {
+    const storeA = createDirectoryStore({ session_status: { ses_a: { type: "idle" } } })
+
+    await resyncDirectorySessionStatuses("/a", storeA, ["ses_a"], {
+      now: () => 90,
+      loadSnapshot: async () => ({}),
+      loadActive: async () => ({
+        state: "supported",
+        membership: {
+          ses_a: { type: "running" },
+          ses_b: { type: "running" },
+        },
+      }),
+    })
+
+    expect(storeA.getState().session_status.ses_a).toEqual({ type: "busy" })
+    expect(storeA.getState().session_status.ses_b).toBe(undefined)
   })
 
   test("keeps a live status transition that arrives while the snapshot is loading", async () => {
@@ -182,6 +374,7 @@ describe("reconcileActiveSessionStatusAfterMessagePull", () => {
       statusObservedAtBeforePull: undefined,
       hasMessages: true,
       now: () => 100,
+      skipActive: true,
       loadSnapshot: () => new Promise<StatusSnapshot>((resolve) => {
         resolveSnapshot = resolve
       }),
@@ -223,6 +416,7 @@ describe("reconcileActiveSessionStatusAfterMessagePull", () => {
       transport: "transport-a",
       runtimeProbe,
       loadSnapshot,
+      skipActive: true as const,
       now: () => 100,
     }
 
@@ -252,6 +446,42 @@ describe("reconcileActiveSessionStatusAfterMessagePull", () => {
     expect(store.getState().session_status_observed_at).toEqual({ ses_a: 100, ses_b: 100 })
   })
 
+  test("shares one process-global active request across multi-directory resync", async () => {
+    const storeA = createDirectoryStore({ session_status: { ses_a: { type: "busy" } } })
+    const storeB = createDirectoryStore({ session_status: { ses_b: { type: "busy" } } })
+    const queryClient = new QueryClient({ defaultOptions: { queries: { retry: false } } })
+    const runtimeProbe = {
+      getTransport: () => "transport-a",
+      getGeneration: () => 1,
+    }
+    let activeLoads = 0
+    let resolveActive: ((result: SessionActiveResult) => void) | undefined
+    const loadActive = () => {
+      activeLoads += 1
+      return new Promise<SessionActiveResult>((resolve) => {
+        resolveActive = resolve
+      })
+    }
+    const shared = {
+      queryClient,
+      transport: "transport-a",
+      runtimeProbe,
+      loadActive,
+      loadSnapshot: async () => ({}),
+      now: () => 200,
+    }
+
+    const a = resyncDirectorySessionStatuses("/a", storeA, ["ses_a"], shared)
+    const b = resyncDirectorySessionStatuses("/b", storeB, ["ses_b"], shared)
+    await Promise.resolve()
+    expect(activeLoads).toBe(1)
+    resolveActive?.({ state: "supported", membership: {} })
+    await Promise.all([a, b])
+
+    expect(storeA.getState().session_status.ses_a).toEqual({ type: "idle" })
+    expect(storeB.getState().session_status.ses_b).toEqual({ type: "idle" })
+  })
+
   test("preserves busy when the authoritative status snapshot fails", async () => {
     const statusBeforePull: SessionStatus = { type: "busy" }
     const store = createDirectoryStore({
@@ -266,6 +496,7 @@ describe("reconcileActiveSessionStatusAfterMessagePull", () => {
       statusObservedAtBeforePull: undefined,
       hasMessages: true,
       now: () => 100,
+      skipActive: true,
       loadSnapshot: async () => null,
     })
 
