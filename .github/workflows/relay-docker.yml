@@ -99,7 +99,6 @@ jobs:
         with:
           username: ${{ vars.DOCKERHUB_USERNAME }}
           password: ${{ secrets.DOCKERHUB_TOKEN }}
-          scope: ${{ env.RELAY_IMAGE }}@push
 
       - name: Prepare image labels
         id: relay_meta
@@ -175,12 +174,14 @@ jobs:
       - name: Set up Docker Buildx
         uses: docker/setup-buildx-action@d7f5e7f509e45cec5c76c4d5afdd7de93d0b3df5 # v4.1.0
 
+      # Full Hub login (no repository-scoped credentials). imagetools create must
+      # pull untagged digests and push the multi-arch manifest list; scoped
+      # @push-only auth returns 401 on the pull leg.
       - name: Log in to Docker Hub
         uses: docker/login-action@371161bbe7024a29a25c5e19bfcbc0804fe9ad2c # v4.5.2
         with:
           username: ${{ vars.DOCKERHUB_USERNAME }}
           password: ${{ secrets.DOCKERHUB_TOKEN }}
-          scope: ${{ env.RELAY_IMAGE }}@push
 
       - name: Prepare image tags
         id: relay_meta
@@ -195,6 +196,7 @@ jobs:
         env:
           RELAY_IMAGE: ${{ env.RELAY_IMAGE }}
           VERSION: ${{ inputs.version }}
+          DOCKER_METADATA_TAGS: ${{ steps.relay_meta.outputs.tags }}
         working-directory: ${{ runner.temp }}/digests
         shell: bash
         run: |
@@ -209,14 +211,17 @@ jobs:
           while IFS= read -r tag; do
             [[ -n "$tag" ]] || continue
             tag_args+=(-t "$tag")
-          done < <(printf '%s\n' "${{ steps.relay_meta.outputs.tags }}")
+          done <<< "$DOCKER_METADATA_TAGS"
           if [[ ${#tag_args[@]} -eq 0 ]]; then
             echo "No image tags were prepared for the multi-arch manifest." >&2
             exit 1
           fi
           refs=()
           for digest_file in "${digests[@]}"; do
-            refs+=("${RELAY_IMAGE}@sha256:${digest_file}")
+            # Artifact upload can include nested paths; only the basename is the digest hash.
+            digest_hash="$(basename "$digest_file")"
+            refs+=("${RELAY_IMAGE}@sha256:${digest_hash}")
           done
+          echo "Creating multi-arch manifest from: ${refs[*]}"
           docker buildx imagetools create "${tag_args[@]}" "${refs[@]}"
           docker buildx imagetools inspect "${RELAY_IMAGE}:${VERSION}"
