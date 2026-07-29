@@ -1437,21 +1437,27 @@ const MobileInstancesSurface: React.FC<{
               <div
                 key={connection.id}
                 className={cn(
-                  'oc-settings-group-row flex items-center transition-colors',
+                  'oc-settings-group-row relative flex items-center',
                   confirming && 'bg-[color-mix(in_srgb,var(--destructive)_8%,transparent)]',
                 )}
               >
+                {/* Full-card hit target so the whole row switches instances; action
+                    buttons sit above with z-10 and keep their own clicks. */}
                 <button
                   type="button"
-                  className="flex min-w-0 flex-1 items-center gap-3 text-left transition-colors active:bg-interactive-hover focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-inset focus-visible:ring-primary disabled:opacity-60"
+                  aria-label={t('desktopHostSwitcher.actions.switchToAria', { instance: connection.label })}
+                  data-mobile-press-feedback="none"
+                  className="absolute inset-0 z-0 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-inset focus-visible:ring-primary disabled:pointer-events-none"
                   onClick={() => {
                     if (isActive) return;
                     setConnectingId(connection.id);
                     void connect({ id: connection.id, candidates: connection.candidates, clientToken: connection.clientToken, label: connection.label })
                       .finally(() => setConnectingId(null));
                   }}
-                  disabled={(isBusy && !isConnectingRow) || confirming}
-                >
+                  disabled={isActive || (isBusy && !isConnectingRow) || confirming}
+                  style={{ touchAction: 'manipulation' }}
+                />
+                <div className="pointer-events-none relative z-[1] flex min-w-0 flex-1 items-center gap-3">
                   <span className="relative flex size-9 shrink-0 items-center justify-center rounded-[12px] bg-interactive-hover text-foreground">
                     <Icon name="server" className="size-[18px]" />
                     {isActive ? (
@@ -1467,8 +1473,8 @@ const MobileInstancesSurface: React.FC<{
                       {statusText}
                     </span>
                   </span>
-                </button>
-                <div className="flex shrink-0 items-center gap-0.5 pr-2">
+                </div>
+                <div className="relative z-10 flex shrink-0 items-center gap-0.5 pr-2">
                   {confirming ? (
                     <button
                       type="button"

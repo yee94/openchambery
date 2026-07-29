@@ -4,6 +4,10 @@ All notable changes to this project will be documented in this file.
 
 ## [Unreleased]
 
+## [1.16.80] - 2026-07-29
+
+- **Mobile instances:** make the whole instance row a switch target while edit/delete actions keep their own hit areas.
+
 ## [1.16.79] - 2026-07-29
 
 - **Relay pairing:** choose official or custom `ws://` / `wss://` Relay endpoints when creating device QR codes, pin server-side endpoints with `OPENCHAMBER_RELAY_URL`, and remember the endpoint from scanned pairing payloads.
