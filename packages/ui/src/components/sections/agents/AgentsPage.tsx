@@ -26,6 +26,7 @@ import {
 } from '@/components/ui/select';
 import { Icon } from '@/components/icon/Icon';
 import { SettingsField, SettingsGroup, SettingsRow } from '@/components/sections/shared/SettingsGroup';
+import { buildAgentSaveConfig, type AgentEditorSnapshot } from './agentSaveConfig';
 
 type PermissionAction = 'allow' | 'ask' | 'deny';
 type PermissionRule = { permission: string; pattern: string; action: PermissionAction };
@@ -617,22 +618,41 @@ export const AgentsPage: React.FC = () => {
     setIsSaving(true);
 
     try {
-      const trimmedModel = model.trim();
-      const trimmedVariant = variant.trim();
-      const trimmedPrompt = prompt.trim();
-      const permissionConfig = buildPermissionConfigWithGlobal(globalPermission, permissionRules);
-      const config: AgentConfig = {
-        name: agentName,
-        ...(description.trim() ? { description: description.trim() } : {}),
+      const currentSnapshot: AgentEditorSnapshot = {
+        description,
         mode,
-        model: trimmedModel === '' ? null : trimmedModel,
-        variant: trimmedVariant === '' ? null : trimmedVariant || undefined,
-        temperature: temperature ?? null,
-        top_p: topP ?? null,
-        prompt: trimmedPrompt || (isNewAgent ? undefined : null),
-        permission: permissionConfig,
-        ...(isNewAgent && draftScope ? { scope: draftScope } : {}),
+        model,
+        variant,
+        temperature,
+        topP,
+        prompt,
+        globalPermission,
+        permissionRules,
       };
+      const initial = initialStateRef.current;
+      const initialSnapshot: AgentEditorSnapshot | null = initial
+        ? {
+          description: initial.description,
+          mode: initial.mode,
+          model: initial.model,
+          variant: initial.variant,
+          temperature: initial.temperature,
+          topP: initial.topP,
+          prompt: initial.prompt,
+          globalPermission: initial.globalPermission,
+          permissionRules: initial.permissionRules,
+        }
+        : null;
+
+      const config = buildAgentSaveConfig({
+        isNewAgent,
+        agentName,
+        draftScope: isNewAgent ? draftScope : undefined,
+        draftHasExplicitPermission: isNewAgent && agentDraft?.permission !== undefined,
+        current: currentSnapshot,
+        initial: initialSnapshot,
+        permissionConfig: buildPermissionConfigWithGlobal(globalPermission, permissionRules),
+      }) as AgentConfig;
 
       let result: AgentMutationResult;
       if (isNewAgent) {

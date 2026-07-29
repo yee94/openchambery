@@ -161,6 +161,7 @@ mock.module("../selection-store", () => ({
 
 mock.module("@/lib/runtime-switch", () => ({
   getRuntimeApiBaseUrl: () => "",
+  getRuntimeGeneration: () => 0,
   getRuntimeKey: () => "test-runtime",
   getRuntimeTransportIdentity: () => "test-runtime",
   initializeRuntimeEndpoint: () => undefined,

@@ -7,7 +7,7 @@ import {
 import { queryClient as defaultQueryClient, queryKeys } from '@/lib/queryRuntime';
 import { getRuntimeGeneration, getRuntimeTransportIdentity } from '@/lib/runtime-switch';
 
-export type SessionActiveSnapshotObservation = {
+type SessionActiveSnapshotObservation = {
   readonly result: SessionActiveResult;
   readonly requestedAt: number;
 };
