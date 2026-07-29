@@ -259,7 +259,7 @@ export const useUpdateStore = create<UpdateStore>()((set, get) => ({
         set({ progress });
       });
       if (!ok) {
-        throw new Error('Desktop update only works on Local instance');
+        throw new Error('Failed to download update');
       }
       set({ downloading: false, downloaded: true });
     } catch (error) {
@@ -280,7 +280,7 @@ export const useUpdateStore = create<UpdateStore>()((set, get) => ({
     try {
       const ok = await restartToApplyUpdate();
       if (!ok) {
-        throw new Error('Desktop restart only works on Local instance');
+        throw new Error('Failed to restart');
       }
     } catch (error) {
       set({

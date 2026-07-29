@@ -18,6 +18,7 @@ import { assertUpdaterCapability } from './updater-capability.mjs';
 import { checkForDesktopUpdate } from './updater-check.mjs';
 import { resolveUpdaterFeed } from './updater-feed.mjs';
 import { resolveQuitInterception } from './quit-confirmation.mjs';
+import { isRemoteIpcCommandAllowed } from './ipc-command-gate.mjs';
 import { mintOutsideFileGrant } from '@openchamber/web/server/lib/fs/routes.js';
 import {
   UI_PROTOCOL,
@@ -4358,7 +4359,11 @@ const handleInvoke = async (browserWindow, command, args = {}) => {
       }
 
     case 'desktop_restart': {
-      const applyUpdate = Boolean(state.pendingUpdate?.downloaded && app.isPackaged);
+      const updateRestartRequested = args?.applyUpdate === true;
+      if (updateRestartRequested && !(state.pendingUpdate?.downloaded && app.isPackaged)) {
+        throw new Error('No pending update');
+      }
+      const applyUpdate = updateRestartRequested || Boolean(state.pendingUpdate?.downloaded && app.isPackaged);
       if (applyUpdate) assertUpdaterCapability({ packaged: app.isPackaged });
       log.info(`[electron] desktop_restart applyUpdate=${applyUpdate} packaged=${app.isPackaged}`);
       if (applyUpdate && process.platform === 'darwin' && typeof app.isInApplicationsFolder === 'function') {
@@ -4933,31 +4938,8 @@ const isLocalSender = (webContents) => {
   }
 };
 
-const COMMANDS_SAFE_FOR_REMOTE = new Set([
-  'desktop_hosts_get',
-  'desktop_host_probe',
-  'desktop_new_window',
-  'desktop_new_window_at_url',
-  'desktop_new_window_for_host',
-  'desktop_set_window_title',
-  'desktop_set_window_theme',
-  'desktop_is_window_fullscreen',
-  'desktop_start_window_drag',
-  'desktop_minimize_current_window',
-  'desktop_toggle_current_window_maximized',
-  'desktop_close_current_window',
-  'desktop_get_current_window_state',
-  'desktop_get_app_version',
-  'desktop_get_lan_address',
-  'desktop_capture_page_rect',
-  'desktop_tray_update',
-  'desktop_zoom_in',
-  'desktop_zoom_out',
-  'desktop_zoom_reset',
-]);
-
 ipcMain.handle('openchamber:invoke', async (event, command, args) => {
-  if (!isLocalSender(event.sender) && !COMMANDS_SAFE_FOR_REMOTE.has(command)) {
+  if (!isLocalSender(event.sender) && !isRemoteIpcCommandAllowed(command, args)) {
     log.warn(`[ipc] rejected ${command} from non-local origin: ${event.sender?.getURL?.() || '(unknown)'}`);
     throw new Error('IPC not available for this origin');
   }

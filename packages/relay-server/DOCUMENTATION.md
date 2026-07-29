@@ -64,7 +64,7 @@ Run the Relay with `--public-url wss://relay.example.com/ws`. The `/ws` path in 
 
 ## Docker
 
-Each non-dry-run OpenChamber release publishes a multi-platform Relay image for `linux/amd64` and `linux/arm64` to:
+Each non-dry-run OpenChamber release publishes a multi-platform Relay image for `linux/amd64` and `linux/arm64` to Docker Hub. CI builds each architecture natively in parallel (`ubuntu-latest` and `ubuntu-24.04-arm`), then merges digests into a single multi-arch manifest tagged as:
 
 ```text
 <DOCKERHUB_USERNAME>/openchamber-relay:<version>

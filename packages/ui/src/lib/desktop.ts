@@ -753,16 +753,16 @@ export const restartToApplyUpdate = async (): Promise<boolean> => {
     return false;
   }
 
-  return restartDesktopApp();
+  return restartDesktopApp({ applyUpdate: true });
 };
 
-export const restartDesktopApp = async (): Promise<boolean> => {
+export const restartDesktopApp = async ({ applyUpdate = false }: { applyUpdate?: boolean } = {}): Promise<boolean> => {
   if (!hasDesktopInvoke()) {
     return false;
   }
 
   try {
-    await invokeDesktop('desktop_restart');
+    await invokeDesktop('desktop_restart', applyUpdate ? { applyUpdate: true } : undefined);
     return true;
   } catch (error) {
     console.warn('Failed to restart desktop app', error);
