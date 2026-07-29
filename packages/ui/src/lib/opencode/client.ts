@@ -25,6 +25,22 @@ export type FetchPermissionResult =
   | { state: "ok"; permission: PermissionV2Request }
   | { state: "resolved" }
   | { state: "unknown" };
+
+/**
+ * Tagged result of `OpencodeService.getSessionActive()` for OpenCode 1.18+
+ * `v2.session.active`. Membership is process-global; sessions absent from a
+ * successful map are authoritatively inactive for this OpenCode process.
+ *
+ * - `supported`: HTTP 200 with a validated membership map
+ * - `unsupported`: HTTP 404 / 405 / 501 (endpoint not present)
+ * - `unknown`: 401, 5xx, network failure, or malformed body — do not treat as empty success
+ */
+export type SessionActiveMembership = Record<string, { type: "running" }>;
+
+export type SessionActiveResult =
+  | { state: "supported"; membership: SessionActiveMembership }
+  | { state: "unsupported" }
+  | { state: "unknown" };
 import { getRuntimeUrlResolver } from "@/lib/runtime-url";
 import { runtimeFetch } from "@/lib/runtime-fetch";
 import { getRuntimeKey } from "@/lib/runtime-switch";
@@ -1072,6 +1088,69 @@ class OpencodeService {
       >;
     } catch {
       return null;
+    }
+  }
+
+  /**
+   * Narrow wrapper around `v2.session.active` (OpenCode 1.18+).
+   *
+   * Three-state capability probe driven by the real HTTP response:
+   * - `supported`: HTTP 200 with a validated membership map (sessionID → { type: "running" }).
+   *   Absence from the map is authoritative inactive for this process.
+   * - `unsupported`: HTTP 404 / 405 / 501 (older OpenCode without the endpoint).
+   * - `unknown`: 401, 5xx, network failure, or malformed 200 body — caller must not
+   *   treat this as empty success and should fall back to legacy `/session/status`.
+   */
+  async getSessionActive(signal?: AbortSignal): Promise<SessionActiveResult> {
+    try {
+      const result = await this.client.v2.session.active(
+        signal ? { signal } : undefined,
+      );
+      const status = result.response?.status;
+
+      if (result.error) {
+        if (status === 404 || status === 405 || status === 501) {
+          return { state: "unsupported" };
+        }
+        return { state: "unknown" };
+      }
+
+      if (status !== undefined && status !== 200) {
+        if (status === 404 || status === 405 || status === 501) {
+          return { state: "unsupported" };
+        }
+        return { state: "unknown" };
+      }
+
+      const data = result.data;
+      // HeyApi may nest the 200 payload as `{ data: map }` or return the map directly.
+      const rawMap =
+        data && typeof data === "object" && "data" in data && (data as { data?: unknown }).data !== undefined
+          ? (data as { data: unknown }).data
+          : data;
+
+      if (!rawMap || typeof rawMap !== "object" || Array.isArray(rawMap)) {
+        return { state: "unknown" };
+      }
+
+      const membership: SessionActiveMembership = {};
+      for (const [sessionID, entry] of Object.entries(rawMap as Record<string, unknown>)) {
+        if (typeof sessionID !== "string" || sessionID.length === 0) {
+          return { state: "unknown" };
+        }
+        if (!entry || typeof entry !== "object") {
+          return { state: "unknown" };
+        }
+        const type = (entry as { type?: unknown }).type;
+        if (type !== "running") {
+          return { state: "unknown" };
+        }
+        membership[sessionID] = { type: "running" };
+      }
+
+      return { state: "supported", membership };
+    } catch {
+      return { state: "unknown" };
     }
   }
 

@@ -30,7 +30,9 @@ known project directories once to `POST /api/openchamber/session-index/sync`.
 The runtime processes them sequentially, applies `start=lastSyncedAt` for recent
 indexes, performs a full reconciliation after 24 hours, and commits each result
 to SQLite. It publishes an in-memory revision after every externally observable
-index or synchronization-state change.
+index or synchronization-state change. Stopping the runtime marks queued and
+in-flight directories as failed in the published progress snapshot so clients
+can retire their matching loading state.
 
 The renderer observes revisions through OpenChamber SSE tip events
 (`openchamber:session-index-changed`). Each tip carries the new revision and

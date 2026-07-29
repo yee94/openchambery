@@ -29,7 +29,7 @@ import { Icon } from "@/components/icon/Icon";
 import { cn } from '@/lib/utils';
 import { createUuid } from '@/lib/uuid';
 import { toast } from '@/components/ui';
-import { applyPendingServerQueueOperations, canEditQueuedMessage, canRemoveQueuedMessage, canSendQueuedMessage, canSendServerQueuedMessage, isServerQueueItemActiveAttempt, isServerQueueItemDispatchPending, legacyQueueEditRestoreSource, mergeQueuedMessageScopes, queueModeAllowsMutations, reorderServerQueueItems, selectPendingServerQueueOperations, serverQueueEditInput, serverQueueItemMutationInput, type ServerQueueOperationIdentity, type ServerQueueOperationKind } from './queuedMessageChipsState';
+import { canEditQueuedMessage, canRemoveQueuedMessage, canSendQueuedMessage, canSendServerQueuedMessage, isServerQueueItemActiveAttempt, isServerQueueItemDispatchPending, legacyQueueEditRestoreSource, mergeQueuedMessageScopes, projectServerQueueChipItems, queueModeAllowsMutations, reorderServerQueueItems, selectCommittedSendShadows, selectPendingServerQueueOperations, serverQueueEditInput, serverQueueItemMutationInput, type ServerQueueCommittedSendShadow, type ServerQueueOperationIdentity, type ServerQueueOperationKind } from './queuedMessageChipsState';
 import { enqueueServerQueueScopeMutation, type ServerQueueScopeMutationFlights } from './queueAdmission';
 
 type BoundQueueScope = Extract<QueueScope, { state: 'bound' }> & {
@@ -317,36 +317,71 @@ export const QueuedMessageChips = memo(({ onEditMessage, onSendMessage, onEditCo
         filters: { mutationKey: serverMutationKey, exact: true, status: 'pending' },
         select: (mutation) => mutation.state.variables,
     });
-    const pendingServerOperations = React.useMemo(() => {
-        if (!queueScope || !serverQueue.scope) return [];
-        const exactScope = {
+    // Successful send mutations carry committedRevision from the receipt so chips
+    // stay hidden after the pending overlay ends while scope reload lags.
+    const successSendShadows = useMutationState<ServerQueueCommittedSendShadow | undefined>({
+        filters: { mutationKey: serverMutationKey, exact: true, status: 'success' },
+        select: (mutation) => {
+            const variables = mutation.state.variables;
+            if (!isServerQueueOperationIdentity(variables) || variables.kind !== 'send') return undefined;
+            const data = mutation.state.data as ServerQueueMutationResult | undefined;
+            if (!data || data.status !== 'committed') return undefined;
+            const fromReceipt = 'committedRevision' in data && typeof data.committedRevision === 'number' && Number.isSafeInteger(data.committedRevision)
+                ? data.committedRevision
+                : undefined;
+            const fromScope = 'scope' in data && data.scope && typeof data.scope.revision === 'number' && Number.isSafeInteger(data.scope.revision)
+                ? data.scope.revision
+                : undefined;
+            const committedRevision = fromReceipt ?? fromScope;
+            if (committedRevision === undefined || committedRevision <= 0) return undefined;
+            return { ...variables, kind: 'send' as const, committedRevision };
+        },
+    });
+    const exactServerScope = React.useMemo(() => {
+        if (!queueScope || !serverQueue.scope) return null;
+        return {
             transportIdentity: queueScope.transportIdentity,
             directory: queueScope.directory,
             sessionID: queueScope.sessionID,
             scopeID: serverQueue.scope.scopeID,
             runtimeGeneration: queueScope.runtimeGeneration ?? serverQueue.runtimeCapture.generation,
         };
+    }, [queueScope, serverQueue.runtimeCapture.generation, serverQueue.scope]);
+    const pendingServerOperations = React.useMemo(() => {
+        if (!exactServerScope) return [];
         return selectPendingServerQueueOperations(pendingServerMutationVariables.filter((operation): operation is ServerQueueOperationIdentity => (
-            isServerQueueOperationIdentity(operation) && operation.scopeID === serverQueue.scope?.scopeID
-        )), exactScope);
-    }, [pendingServerMutationVariables, queueScope, serverQueue.runtimeCapture.generation, serverQueue.scope]);
+            isServerQueueOperationIdentity(operation) && operation.scopeID === exactServerScope.scopeID
+        )), exactServerScope);
+    }, [exactServerScope, pendingServerMutationVariables]);
+    const committedSendOverlays = React.useMemo(() => {
+        if (!exactServerScope) return [];
+        return selectCommittedSendShadows(
+            successSendShadows.filter((shadow): shadow is ServerQueueCommittedSendShadow => shadow !== undefined),
+            exactServerScope,
+            serverQueue.scope?.revision,
+        );
+    }, [exactServerScope, serverQueue.scope?.revision, successSendShadows]);
+    const chipOverlayOperations = React.useMemo(
+        () => [...pendingServerOperations, ...committedSendOverlays],
+        [committedSendOverlays, pendingServerOperations],
+    );
     const legacyQueueSelector = React.useMemo(
         () => (state: ReturnType<typeof useMessageQueueStore.getState>) => selectQueuedMessagesForScope(state, queueScope),
         [queueScope],
     );
     const legacyMessages = useMessageQueueStore(legacyQueueSelector);
     const queuedMessages = React.useMemo(() => serverQueue.mode === 'server'
-        ? applyPendingServerQueueOperations(serverQueue.items, pendingServerOperations)
-        : legacyMessages, [legacyMessages, pendingServerOperations, serverQueue.items, serverQueue.mode]);
+        ? projectServerQueueChipItems(serverQueue.items, chipOverlayOperations)
+        : legacyMessages, [chipOverlayOperations, legacyMessages, serverQueue.items, serverQueue.mode]);
     const pendingKindsByItem = React.useMemo(() => {
         const result = new Map<string, Set<ServerQueueOperationKind>>();
-        for (const operation of pendingServerOperations) {
+        for (const operation of chipOverlayOperations) {
             const kinds = result.get(operation.queueItemID) ?? new Set<ServerQueueOperationKind>();
             kinds.add(operation.kind);
             result.set(operation.queueItemID, kinds);
         }
         return result;
-    }, [pendingServerOperations]);
+    }, [chipOverlayOperations]);
     const frozen = !queueModeAllowsMutations(serverQueue.mode);
     const hasScopeDispatchFlight = useQueueScopeDispatchFlight(queueScope);
     const hasDispatchLock = serverQueue.mode === 'server'

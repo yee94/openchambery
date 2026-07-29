@@ -388,15 +388,62 @@ Rules that keep this single-sourced:
   across concurrent callers with the same transport and directory. Query data
   carries the request-start timestamp created inside the shared `queryFn`, so
   every joined caller applies the same conservative authority boundary.
-- `session-status-reconciliation.ts` owns active-only status snapshot apply and
-  post-message-pull convergence. A successful non-history message pull that
-  began with the same `busy` or `retry` entry and observation timestamp requests
-  an authoritative snapshot after accepting the page. Session selection,
-  reactive sync, forced sync, reconnect, and materialization share the Query
-  request layer. Idle, empty, history, stale, and superseded pulls add zero
-  status requests. A failed status read preserves the active entry, and an SSE
-  status transition observed during either pull keeps precedence over the older
-  work.
+- `queries/sessionActiveQueries.ts` owns process-global
+  `v2.session.active` (`GET /api/session/active`) single-flight keyed by
+  transport identity **and** runtime generation (no directory). Concurrent
+  directory reconnect and post-message-pull callers on the same
+  transport+generation share one HTTP request; a new generation never reuses
+  an older in-flight request or cache entry. Query completion is gated by
+  `assertRuntimeCurrent` so a superseded generation cannot commit.
+  `client.getSessionActive()` returns a three-state result:
+  - `supported` — HTTP 200 with a strict `{ [sessionID]: { type: "running" } }` map
+  - `unsupported` — HTTP 404 / 405 / 501 (older OpenCode)
+  - `unknown` — 401, 5xx, network, or malformed body (never empty success)
+- `session-status-reconciliation.ts` owns authoritative status snapshot fuse and
+  post-message-pull convergence. Each resync issues **parallel** directory
+  legacy `/session/status` and process-global active membership pulls, then
+  fuses them (`fuseActiveWithLegacyStatus`):
+  - active running + legacy retry → keep retry metadata
+  - active running + busy / absent → busy
+  - active supported + absent from membership → idle (stale busy converges)
+  - active unknown / unsupported → legacy only
+  - both unusable → preserve prior status; **do not** advance
+    `session_status_snapshot_at`
+  - active supported with a failed legacy load still fuses (empty legacy map)
+  - fuse scope is directory-local only: `candidateSessionIds` ∪ this
+    directory's legacy status keys. Pure process-global membership IDs from
+    other directories are never written into the wrong child store
+  - empty candidates + failed legacy + active listing only foreign IDs →
+    preserve prior status; **do not** advance `session_status_snapshot_at`
+  Authority boundary uses the earlier of the two request-start timestamps so
+  SSE/WS status observed during either in-flight window keeps precedence via
+  `session_status_observed_at`. Unknown session IDs are never invented outside
+  the candidate + directory-local snapshot apply set. Only a successful
+  fused/legacy boundary with at least one directory-local apply ID advances
+  `session_status_snapshot_at`. Session selection, reactive sync, forced sync,
+  reconnect, and materialization share the Query request layer. Idle, empty,
+  history, stale, and superseded pulls add zero status requests.
+- `opencode-event-normalizer.ts` is a pure transport-ingress normalizer that
+  runs **before** directory resolution and coalescing. It accepts legacy
+  `{ type, properties }`, current `{ type, data, location, durable }`, and
+  global `{ directory, payload }` envelopes; strips versioned type suffixes
+  (`session.status.1` → `session.status`); drops durable `sync` replicas so the
+  same logical event is not consumed twice; maps current `session.status` into
+  the legacy Event reducer contract; and exposes admission / domain-activity
+  hints for `session.next.*` without inventing `message.part.*` events.
+  `event-pipeline.ts` keeps `/global/event` WS/SSE + Relay (never
+  `client.v2.event.subscribe`). Current `session.next.*` frames emit
+  `onNormalizedEvent` only and skip the legacy reducer queue. Canonical
+  `session.status` still enters the reducer and coalesces per session.
+  `sync-context.handleNormalizedOpenCodeHints` marks prefetch dirty on
+  admission/activity and issues **one** bounded materialize for the currently
+  viewed session on terminal `session.next.step.ended` / `.failed` only.
+- **P2 promptAsync admission gate (documented, not switched):** OpenCode 1.18
+  `v2.session.prompt` does not yet expose a per-item immutable
+  provider/model/agent/variant admission contract matching OpenChamber's direct
+  send and durable queue requirements. Direct-send and the durable message
+  queue therefore remain on `promptAsync`. Do not implement a pseudo-atomic
+  `switchAgent` / `switchModel` then `prompt` path as a substitute.
 - Session materialization coalescing is scoped to the owning directory store.
   A remounted `SyncProvider` must start its own commit path even when the
   runtime, directory, and session ids match an old in-flight request; transport
@@ -558,9 +605,9 @@ Server admission publishes an exact-scope, headless pending shadow synchronously
 
 Full catalog reads page every changed scope before one monotonic commit. The commit compares the incoming catalog revision against the cached snapshot and every current scope revision, then preserves newer Query and descriptor references when an older result settles late. Targeted reconciliation commits only its captured scope and retains sibling descriptors and pages. Failed page sequences preserve the prior complete authoritative snapshot.
 
-`queuedMessageChipsState.ts` owns the pure UI data contract for server queue chip state. It exports `ServerQueueOperationKind` (`edit | send | remove | reorder`), exact-scope pending-operation selectors, and ordered optimistic projection helpers. Every client mutation enters the TanStack Mutation Cache immediately, so edit/remove hide their target, manual send promotes its target after already-active rows, and reorder replaces the visible authoritative order without waiting for the previous network write. The network mutations then drain serially by exact runtime generation and queue scope; another session has an independent lane. The overlay never writes the revision-pinned Query cache, and a failed/aborted operation removes only its own intent so authoritative reconciliation restores the affected row. `isServerQueueItemDispatchPending` returns true for an authoritative `MessageQueueItem` whose `manualDispatchRequested === true` (manual Send POST acknowledged but the worker has not yet started) or whose status is `sending`/`reconciling`; `isServerQueueItemActiveAttempt` is narrower and returns true only after the POST boundary. Active attempts disable only their own Send and drag actions; Edit may restore the captured payload to the draft and Remove may discard the tracking row even though neither action can unsend an upstream POST. They do not globally disable waiting-row edit, remove, manual send, reorder, pending admission, or another client mutation; a waiting manual intent remains client-mutable, shows its loading state, and remains clickable so a fresh client Send can overwrite a stale intent. Revision and row-version conflicts are internal convergence signals: the client reloads the exact scope and replays the same desired operation with a bounded retry. `MessageQueueItem.manualDispatchRequested` is optional and parsed strictly: a missing field reads as absent, `true`/`false` are accepted, and any other type is rejected as a malformed authoritative response.
+`queuedMessageChipsState.ts` owns the pure UI data contract for server queue chip state. It exports `ServerQueueOperationKind` (`edit | send | remove | reorder`), exact-scope pending-operation selectors, committed-ack-revision send shadows (`selectCommittedSendShadows`), and ordered optimistic projection helpers. Every client mutation enters the TanStack Mutation Cache immediately, so edit/remove hide their target, manual send hides its target (same as edit/remove), and reorder replaces the visible authoritative order without waiting for the previous network write. Reorder requests retain every authoritative scope ID and move visible waiting IDs only through visible slots, so hidden tracking rows keep their server positions. The network mutations then drain serially by exact runtime generation and queue scope; another session has an independent lane. After a send mutation succeeds, `MessageQueueServerMutationResult.committedRevision` (from the action receipt, retained even when post-commit scope reload fails) keeps the same exact runtime generation/scope send hide until the authoritative scope revision catches up, the runtime switches, or the success mutation is cleaned from the cache—so chips never flash back between pending end and authoritative `manualDispatchRequested`/`sending`/`reconciling`. The overlay never writes the revision-pinned Query cache, and a failed/aborted operation removes only its own intent so authoritative reconciliation restores the affected row. `isServerQueueItemDispatchPending` returns true for an authoritative `MessageQueueItem` whose `manualDispatchRequested === true` (manual Send POST acknowledged but the worker has not yet started) or whose status is `sending`/`reconciling`; `isServerQueueItemActiveAttempt` is narrower and returns true only after the POST boundary. Active attempts disable only their own Send and drag actions; Edit may restore the captured payload to the draft and Remove may discard the tracking row even though neither action can unsend an upstream POST. They do not globally disable waiting-row edit, remove, manual send, reorder, pending admission, or another client mutation; a waiting manual intent remains client-mutable, shows its loading state, and remains clickable so a fresh client Send can overwrite a stale intent. Revision and row-version conflicts are internal convergence signals: the client reloads the exact scope and replays the same desired operation with a bounded retry. `MessageQueueItem.manualDispatchRequested` is optional and parsed strictly: a missing field reads as absent, `true`/`false` are accepted, and any other type is rejected as a malformed authoritative response.
 
-The server observer leads once with an authoritative status+snapshot GET (via Query), applies scope pages when the catalog diverges, then waits for the next SSE tip. Each loop iteration leads with another GET and re-GETs after paging until the catalog revision is stable, so tips published while pages load or between unsubscribe and the next wait cannot leave a stale sending/reconciling chip after confirm-by-message. Tip waits use the max of the cached snapshot revision and every loaded scope revision. `start`/`stop` are ref-counted with a zero-delay deferred stop so React StrictMode cleanup+remount reuses the first observer. Cutover prefers the status written by `server.refresh()` and does not issue a second status GET when the Query cache is warm; worktree-order shares the same snapshot Query helpers. `remove` treats authoritative `not_found` as a committed delete after reloading the scope. Runtime changes abort its observer and isolate Query cache identity. The observer captures runtime generation for each snapshot, tip wait, upload, and mutation. Web, Electron, hosted mobile, and Capacitor use the server-capable route; `501` marks capability unsupported, and VS Code retains its legacy fallback. Active and paused server authority use the manual-send CAS endpoint; paused promotion moves the item to the queued head with a due time of now while the worker remains stopped, and resume dispatches that promoted head. A mutation conflict reloads only the mutated scope before one retry; sibling scope descriptors stay on their last loaded revision so unrelated queues do not render empty. After a committed mutation (including manual send), the client always reconciles that scope from the latest snapshot instead of pinning pages to the mutation revision, so a worker claim cannot regress descriptors into an empty chip list. A failed mutation still best-effort reloads the scope before surfacing the error. Scope advancement after a committed response preserves the original idempotent request as a single execution. Shadow and unsupported authority delegate to the explicit legacy callback. Server authority stays `shadow` and its worker stays paused throughout Phase 2. The v3 production queue remains authoritative until Phase 3 activation.
+The server observer leads once with an authoritative status+snapshot GET (via Query), applies scope pages when the catalog diverges, then waits for the next SSE tip. Each loop iteration leads with another GET and re-GETs after paging until the catalog revision is stable, so tips published while pages load or between unsubscribe and the next wait cannot leave a stale sending/reconciling chip after confirm-by-message. Tip waits use the max of the cached snapshot revision and every loaded scope revision. Shared `openchamberEvents` keeps a module-level latest revision watermark per tip domain (`session-index-changed` | `message-queue-changed` | `assistants-changed`); `waitForMessageQueueInvalidation` registers its listener first, then reads that watermark so a tip delivered while only peer domain listeners held the SSE open still resolves as `tip`. A 15s safety timeout returns `timeout` for silent frame drops / transport gaps and is treated like tip/ready (authoritative GET, continue). Runtime endpoint changes clear watermarks before reconnect so A→B→A and LAN/relay switches never inherit an old tip. Relay still uses the shared runtime SSE path. `start`/`stop` are ref-counted with a zero-delay deferred stop so React StrictMode cleanup+remount reuses the first observer. Cutover prefers the status written by `server.refresh()` and does not issue a second status GET when the Query cache is warm; worktree-order shares the same snapshot Query helpers. `remove` treats authoritative `not_found` as a committed delete after reloading the scope. Runtime changes abort its observer and isolate Query cache identity. The observer captures runtime generation for each snapshot, tip wait, upload, and mutation. Web, Electron, hosted mobile, and Capacitor use the server-capable route; `501` marks capability unsupported, and VS Code retains its legacy fallback. Active and paused server authority use the manual-send CAS endpoint; paused promotion moves the item to the queued head with a due time of now while the worker remains stopped, and resume dispatches that promoted head. A mutation conflict reloads only the mutated scope before one retry; sibling scope descriptors stay on their last loaded revision so unrelated queues do not render empty. After a committed mutation (including manual send), the client always reconciles that scope from the latest snapshot instead of pinning pages to the mutation revision, so a worker claim cannot regress descriptors into an empty chip list. A failed mutation still best-effort reloads the scope before surfacing the error. Scope advancement after a committed response preserves the original idempotent request as a single execution. Shadow and unsupported authority delegate to the explicit legacy callback. Server authority stays `shadow` and its worker stays paused throughout Phase 2. The v3 production queue remains authoritative until Phase 3 activation.
 
 `message-queue-shadow-import.ts` hydrates the v4 runtime read-only and constructs stable scope/item ordinals, canonical payload hashes, snapshot hashes, and manifests without mutating the local ledger. It materializes or uploads canonical attachment payloads, creates a protocol-4 import, stages every payload, and seals the manifest. Payload tokens release through one `finally` path. `message-queue-cutover.ts` owns the headless external-store cutover lifecycle: probing, legacy-unsupported, server-active, server-paused, and blocked ownership; freezing, staging, activating, late-importing, complete, and error migration states. It freezes admission while shadow staging, calls injected quiesce/flush barriers, activates sealed shadow imports, and commits late imports after active or paused ownership. A lost commit response confirms through status epoch and manifest. Only HTTP 501 enables legacy ownership; transport and authorization failures remain blocked with backoff. Runtime switches abort the old flow and isolate the next transport. Phase 3 binds every cutover publication to the v3 ownership gate and mutation fence. The module starts quiescing; only HTTP 501 enables v3 dispatch and user mutations. Quiescing blocks new dispatch before begin and immediately before POST, waits for dispatch and reconciliation flights, resolves and atomically binds every unbound legacy scope, then flushes persistence and captures the final v3 ledger. A server-active or server-paused transport enters the retired transport set, so its bound scopes remain read-only while a newly selected HTTP 501 transport opens its own v3 queue. Existing sending rows retain internal confirmation and failure settlement before retirement.
 
@@ -660,7 +707,7 @@ message materialization preserves the idle path.
   queue state. Legacy queue rows remain visible in their legacy scope until a
   manual dispatch path performs a safe bulk bind into the active bound scope.
 
-Receipt-backed queue mutations replay the exact request once after an unavailable transport response. A failed post-commit scope read preserves the committed result and retained authoritative snapshot while the observer converges a later revision. Queue mutation errors use queue-specific copy; an exhausted unavailable replay reports unknown status.
+Receipt-backed queue mutations replay the exact request once after an unavailable transport response. A failed post-commit scope read preserves the committed result (including `committedRevision` from the action receipt) and retained authoritative snapshot while the observer converges a later revision. Queue mutation errors use queue-specific copy; an exhausted unavailable replay reports unknown status.
 
 ## Session action rules
 

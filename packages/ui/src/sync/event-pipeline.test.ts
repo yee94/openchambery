@@ -180,4 +180,140 @@ describe("createEventPipeline", () => {
       pipeline.cleanup()
     }
   })
+
+  test("maps current data/location session.status into the legacy reducer queue", async () => {
+    let resolveStreamFinished!: () => void
+    const streamFinished = new Promise<void>((resolve) => {
+      resolveStreamFinished = resolve
+    })
+    let resolveDelivered!: (event: Event) => void
+    const deliveredEvent = new Promise<Event>((resolve) => {
+      resolveDelivered = resolve
+    })
+    const directories: string[] = []
+    const pipeline = createEventPipeline({
+      sdk: createSdk([
+        {
+          type: "session.status",
+          location: { path: "/repo/app" },
+          data: {
+            sessionID: "ses_2",
+            status: { type: "busy" },
+          },
+        } as unknown as Event,
+      ], resolveStreamFinished),
+      onEvent: (directory, payload) => {
+        directories.push(directory)
+        resolveDelivered(payload)
+      },
+      transport: "sse",
+      heartbeatTimeoutMs: 1_000,
+    })
+
+    try {
+      await streamFinished
+      const delivered = await Promise.race([deliveredEvent, failAfter(500)])
+      expect(delivered.type).toBe("session.status")
+      expect(delivered.properties).toEqual({
+        sessionID: "ses_2",
+        status: { type: "busy" },
+      })
+      expect(directories).toEqual(["/repo/app"])
+    } finally {
+      pipeline.cleanup()
+    }
+  })
+
+  test("keeps session.next.* off the legacy reducer and emits normalized hints only", async () => {
+    let resolveStreamFinished!: () => void
+    const streamFinished = new Promise<void>((resolve) => {
+      resolveStreamFinished = resolve
+    })
+    let resolveHint!: (value: { directory: string; type: string; kind?: string }) => void
+    const hinted = new Promise<{ directory: string; type: string; kind?: string }>((resolve) => {
+      resolveHint = resolve
+    })
+    const delivered: Event[] = []
+    const pipeline = createEventPipeline({
+      sdk: createSdk([
+        {
+          type: "session.next.text.delta",
+          data: {
+            timestamp: 1,
+            sessionID: "ses_1",
+            assistantMessageID: "msg_a",
+            textID: "txt_1",
+            delta: "x",
+          },
+        } as unknown as Event,
+      ], resolveStreamFinished),
+      onEvent: (_directory, payload) => {
+        delivered.push(payload)
+      },
+      onNormalizedEvent: (directory, normalized) => {
+        resolveHint({
+          directory,
+          type: normalized.type,
+          kind: normalized.domainActivityHint?.kind,
+        })
+      },
+      transport: "sse",
+      heartbeatTimeoutMs: 1_000,
+    })
+
+    try {
+      await streamFinished
+      const hint = await Promise.race([hinted, failAfter(500)])
+      // Allow a brief window for accidental reducer delivery.
+      await new Promise((resolve) => setTimeout(resolve, 50))
+      expect(delivered).toEqual([])
+      expect(hint.type).toBe("session.next.text.delta")
+      expect(hint.kind).toBe("activity")
+    } finally {
+      pipeline.cleanup()
+    }
+  })
+
+  test("coalesces consecutive legacy status updates for the same session", async () => {
+    let resolveStreamFinished!: () => void
+    const streamFinished = new Promise<void>((resolve) => {
+      resolveStreamFinished = resolve
+    })
+    let resolveDelivered!: () => void
+    const deliveredAll = new Promise<void>((resolve) => {
+      resolveDelivered = resolve
+    })
+    const delivered: Event[] = []
+    const pipeline = createEventPipeline({
+      sdk: createSdk([
+        {
+          type: "session.status",
+          properties: { sessionID: "ses_1", status: { type: "busy" } },
+        } as Event,
+        {
+          type: "session.status",
+          properties: { sessionID: "ses_1", status: { type: "idle" } },
+        } as Event,
+      ], resolveStreamFinished),
+      onEvent: (_directory, payload) => {
+        delivered.push(payload)
+        if (delivered.length === 1) {
+          resolveDelivered()
+        }
+      },
+      transport: "sse",
+      heartbeatTimeoutMs: 1_000,
+    })
+
+    try {
+      await streamFinished
+      await Promise.race([deliveredAll, failAfter(500)])
+      await new Promise((resolve) => setTimeout(resolve, 50))
+      expect(delivered).toHaveLength(1)
+      expect(delivered[0]?.type).toBe("session.status")
+      expect((delivered[0]?.properties as { status?: { type?: string } }).status?.type).toBe("idle")
+    } finally {
+      pipeline.cleanup()
+    }
+  })
 })

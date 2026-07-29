@@ -718,6 +718,50 @@ describe('message queue service', () => {
     service.close();
   });
 
+  it('allows a second manual dispatch after the first accepted row is reconciling, while sending still blocks concurrent POST', () => {
+    let time = 1_000;
+    const service = createMessageQueueService({ dbPath: dbPath(), getRuntimeConfig: () => ({ apiBaseUrl: 'http://runtime' }), clock: () => time });
+    service.admit({ ...admission('first-request', 'first'), item: { ...admission('first-request', 'first').item, dueAt: time } });
+    service.admit({ ...admission('second-request', 'second'), item: { ...admission('second-request', 'second').item, dueAt: time } });
+    service.setAuthority({ authority: 'active', expectedGeneration: 0 });
+
+    const firstProbe = service.reserveEligibilityCandidate({ owner: 'worker-a' });
+    expect(firstProbe.item.queueItemID).toBe('item-first');
+    const firstClaim = service.claimNext({ owner: 'worker-a', queueItemID: firstProbe.item.queueItemID, eligibilityToken: firstProbe.eligibilityToken });
+    service.beginAttempt({ queueItemID: firstClaim.item.queueItemID, leaseToken: firstClaim.leaseToken, fenceGeneration: firstClaim.fenceGeneration, messageID: 'msg_first_attempt' });
+    // Concurrent POST is still blocked while status=sending.
+    expect(service.reserveEligibilityCandidate({ owner: 'worker-b' })).toBeNull();
+
+    service.markAcceptedForReconciliation({ queueItemID: firstClaim.item.queueItemID, leaseToken: firstClaim.leaseToken, fenceGeneration: firstClaim.fenceGeneration, dueAt: time });
+    expect(service.getScope(firstClaim.item.scopeID).items.find((entry) => entry.queueItemID === 'item-first').status).toBe('reconciling');
+
+    // reconciling only tracks confirmation; next manual intent may enter one sending/POST.
+    let scope = service.getScope(firstClaim.item.scopeID);
+    const second = scope.items.find((entry) => entry.queueItemID === 'item-second');
+    const promoted = service.manualSend({ requestID: 'manual-second', queueItemID: second.queueItemID, expectedRevision: scope.revision, expectedRowVersion: second.rowVersion });
+    // Dual-client replay of the same requestID keeps one commit.
+    expect(service.manualSend({ requestID: 'manual-second', queueItemID: second.queueItemID, expectedRevision: scope.revision, expectedRowVersion: second.rowVersion })).toEqual(promoted);
+
+    const secondProbe = service.reserveEligibilityCandidate({ owner: 'worker-c' });
+    expect(secondProbe).toMatchObject({ item: { queueItemID: 'item-second' }, dispatchMode: 'manual' });
+    const secondClaim = service.claimNext({ owner: 'worker-c', queueItemID: secondProbe.item.queueItemID, eligibilityToken: secondProbe.eligibilityToken });
+    expect(secondClaim.item.status).toBe('sending');
+    // Second concurrent POST remains blocked while the new row is sending.
+    expect(service.reserveEligibilityCandidate({ owner: 'worker-d' })).toBeNull();
+    service.close();
+  });
+
+  it('keeps markAmbiguous compatible with markAcceptedForReconciliation durable transition', () => {
+    let time = 1_000;
+    const service = createMessageQueueService({ dbPath: dbPath(), getRuntimeConfig: () => ({ apiBaseUrl: 'http://runtime' }), clock: () => time });
+    service.admit({ ...admission(), item: { ...admission().item, dueAt: time } });
+    service.setAuthority({ authority: 'active', expectedGeneration: 0 });
+    const claim = service.claimNext({ owner: 'worker' });
+    service.beginAttempt({ queueItemID: claim.item.queueItemID, leaseToken: claim.leaseToken, fenceGeneration: claim.fenceGeneration, messageID: 'msg_accepted' });
+    expect(service.markAcceptedForReconciliation({ queueItemID: claim.item.queueItemID, leaseToken: claim.leaseToken, fenceGeneration: claim.fenceGeneration, dueAt: time })).toMatchObject({ queueItemID: 'item-1', status: 'reconciling' });
+    service.close();
+  });
+
   it('persists one manual dispatch intent through release and consumes it at beginAttempt', () => {
     let time = 1_000; const pathname = dbPath(); const service = createMessageQueueService({ dbPath: pathname, getRuntimeConfig: () => ({ apiBaseUrl: 'http://runtime' }), clock: () => time });
     const admitted = service.admit({ ...admission(), item: { ...admission().item, dueAt: time } }); expect(service.getScope(admitted.scopeID).items[0].manualDispatchRequested).toBe(false); service.setAuthority({ authority: 'active', expectedGeneration: 0 });

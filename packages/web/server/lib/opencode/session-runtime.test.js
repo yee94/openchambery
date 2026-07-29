@@ -98,6 +98,38 @@ describe('session runtime', () => {
     });
   });
 
+  it('accepts native current data session.status payloads', () => {
+    const events = [];
+    const runtime = createSessionRuntime({
+      writeSseEvent() {
+        throw new Error('SSE fallback should not be used when broadcastEvent is provided');
+      },
+      getNotificationClients: () => new Set(),
+      broadcastEvent: (payload) => {
+        events.push(payload);
+      },
+    });
+    runtimes.push(runtime);
+
+    runtime.processOpenCodeSsePayload({
+      type: 'session.status',
+      data: {
+        sessionID: 'native-session-1',
+        status: {
+          type: 'busy',
+        },
+      },
+    });
+
+    expect(events).toContainEqual({
+      type: 'openchamber:session-status',
+      properties: expect.objectContaining({
+        sessionID: 'native-session-1',
+        status: 'busy',
+      }),
+    });
+  });
+
   it('broadcasts idle activity when cooldown expires', () => {
     vi.useFakeTimers();
     const events = [];

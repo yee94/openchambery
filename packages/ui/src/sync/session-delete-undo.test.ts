@@ -135,6 +135,7 @@ mock.module("@/stores/useGlobalSessionsStore", () => ({
 }))
 
 mock.module("./sync-refs", () => ({
+  getAllSyncSessionMap: () => new Map(),
   registerSessionDirectory: () => undefined,
 }))
 

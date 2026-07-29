@@ -71,6 +71,7 @@ import {
   reconcileActiveSessionStatusAfterMessagePull,
   resyncDirectorySessionStatuses,
 } from "./session-status-reconciliation"
+import type { NormalizedOpenCodeEvent } from "./opencode-event-normalizer"
 
 // ---------------------------------------------------------------------------
 // Context
@@ -309,6 +310,40 @@ function enqueueSessionMaterialization(
       pendingSessionMaterializations.delete(k)
     }
   })
+}
+
+/**
+ * Handle current-event domain hints after ingress normalization.
+ * Does not fetch message bodies for background sessions — only marks
+ * prefetch dirty and, for terminal events on the viewed session, enqueues
+ * one bounded materialization (same path as session.idle).
+ */
+export function handleNormalizedOpenCodeHints(
+  directory: string,
+  normalized: NormalizedOpenCodeEvent,
+  childStores: ChildStoreManager,
+): void {
+  const sessionID =
+    normalized.admissionHint?.sessionID
+    ?? normalized.domainActivityHint?.sessionID
+    ?? (typeof normalized.properties.sessionID === "string"
+      ? normalized.properties.sessionID
+      : undefined)
+  if (!sessionID || !directory || directory === "global") return
+
+  // Admission confirmation + activity: dirty prefetch only (zero body fetch).
+  if (normalized.admissionHint || normalized.domainActivityHint?.kind === "activity") {
+    markSessionPrefetchDirty(directory, [sessionID])
+  }
+
+  if (normalized.domainActivityHint?.kind === "terminal") {
+    markSessionPrefetchDirty(directory, [sessionID])
+    // Terminal step ended/failed on the currently viewed session → one bounded
+    // materialization. Background sessions stay zero-request.
+    if (sessionID === _activeSession && directory === _activeDirectory) {
+      enqueueSessionMaterialization(directory, sessionID, childStores, { reason: "session-idle" })
+    }
+  }
 }
 
 export async function materializeSessionFromServer(
@@ -2024,6 +2059,20 @@ export function SyncProvider(props: {
       transport: messageStreamTransport,
       routeDirectory: (directory, payload) => {
         return resolveDirectoryFromRoutingIndex(routingIndex, directory, payload, childStores)
+      },
+      onNormalizedEvent: (directory, normalized) => {
+        handleNormalizedOpenCodeHints(directory, normalized, childStores)
+        // Domain activity for the viewed session (current step/text streams).
+        const sessionID = normalized.domainActivityHint?.sessionID
+          ?? normalized.admissionHint?.sessionID
+        if (
+          sessionID
+          && directory === _activeDirectory
+          && sessionID === _activeSession
+          && (normalized.domainActivityHint || normalized.admissionHint)
+        ) {
+          lastDomainActivityAtBySessionRef.current.set(viewedSessionKey(directory, sessionID), Date.now())
+        }
       },
       onEvent: (directory, payload) => {
         const sessionID = resolveStrictDomainSessionID(payload, routingIndex.messageSessionById) ?? null

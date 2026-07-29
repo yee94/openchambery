@@ -247,7 +247,9 @@ through OpenChamber SSE revision tips (`openchamber:session-index-changed`)
 followed by an authoritative GET via the Query helper; it must not issue
 per-directory OpenCode requests from the renderer. Tip waits include a short
 safety timeout so a completed server job whose tip arrived before the consumer
-subscribed cannot hang manual or startup sync forever. Successful non-null
+subscribed cannot hang manual or startup sync forever. An observer that exits
+after a failed revalidation clears only the loading entries it owns; concurrent
+SDK directory refreshes retain their own loading state. Successful non-null
 POST/GET snapshots write back through the Query helper (memory + persistent
 seed). Do not add a second session-summary cache outside that Query/startup
 path or a sidebar-local startup refresh.

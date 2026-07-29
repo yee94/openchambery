@@ -357,10 +357,12 @@ export const createSessionIndexSyncRuntime = ({
   const stop = () => {
     stopped = true;
     currentController?.abort();
+    const interruptedDirectories = [...queuedDirectories];
     queue.length = 0;
     childFlagQueue.length = 0;
     queuedDirectories.clear();
     queuedChildFlagKeys.clear();
+    for (const directory of interruptedDirectories) failedDirectories.add(directory);
     notify();
   };
 
