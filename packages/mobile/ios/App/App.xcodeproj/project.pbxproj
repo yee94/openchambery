@@ -527,7 +527,7 @@
 				CODE_SIGN_IDENTITY = "iPhone Developer";
 				COPY_PHASE_STRIP = NO;
 				DEBUG_INFORMATION_FORMAT = dwarf;
-				DEVELOPMENT_TEAM = 5J7WJGPA2Q;
+				DEVELOPMENT_TEAM = 6W97S9B7CZ;
 				ENABLE_STRICT_OBJC_MSGSEND = YES;
 				ENABLE_TESTABILITY = YES;
 				ENABLE_USER_SCRIPT_SANDBOXING = NO;
@@ -591,7 +591,7 @@
 				CODE_SIGN_IDENTITY = "iPhone Developer";
 				COPY_PHASE_STRIP = NO;
 				DEBUG_INFORMATION_FORMAT = "dwarf-with-dsym";
-				DEVELOPMENT_TEAM = 5J7WJGPA2Q;
+				DEVELOPMENT_TEAM = 6W97S9B7CZ;
 				ENABLE_NS_ASSERTIONS = NO;
 				ENABLE_STRICT_OBJC_MSGSEND = YES;
 				ENABLE_USER_SCRIPT_SANDBOXING = NO;
@@ -631,7 +631,7 @@
 				);
 				MARKETING_VERSION = 1.0;
 				OTHER_SWIFT_FLAGS = "$(inherited) \"-D\" \"COCOAPODS\" \"-DDEBUG\"";
-				PRODUCT_BUNDLE_IDENTIFIER = com.openchamber.app;
+				PRODUCT_BUNDLE_IDENTIFIER = com.yee94.openchamber;
 				PRODUCT_NAME = "$(TARGET_NAME)";
 				SWIFT_ACTIVE_COMPILATION_CONDITIONS = DEBUG;
 				SWIFT_VERSION = 5.0;
@@ -656,7 +656,7 @@
 					"@executable_path/Frameworks",
 				);
 				MARKETING_VERSION = 1.0;
-				PRODUCT_BUNDLE_IDENTIFIER = com.openchamber.app;
+				PRODUCT_BUNDLE_IDENTIFIER = com.yee94.openchamber;
 				PRODUCT_NAME = "$(TARGET_NAME)";
 				SWIFT_ACTIVE_COMPILATION_CONDITIONS = "";
 				SWIFT_VERSION = 5.0;
@@ -670,7 +670,7 @@
 				CODE_SIGN_ENTITLEMENTS = OpenChamberWidget/OpenChamberWidget.entitlements;
 				CODE_SIGN_STYLE = Automatic;
 				CURRENT_PROJECT_VERSION = 1;
-				DEVELOPMENT_TEAM = 5J7WJGPA2Q;
+				DEVELOPMENT_TEAM = 6W97S9B7CZ;
 				GENERATE_INFOPLIST_FILE = NO;
 				INFOPLIST_FILE = OpenChamberWidget/Info.plist;
 				IPHONEOS_DEPLOYMENT_TARGET = 17.0;
@@ -680,7 +680,7 @@
 					"@executable_path/../../Frameworks",
 				);
 				MARKETING_VERSION = 1.0;
-				PRODUCT_BUNDLE_IDENTIFIER = com.openchamber.app.OpenChamberWidget;
+				PRODUCT_BUNDLE_IDENTIFIER = com.yee94.openchamber.OpenChamberWidget;
 				PRODUCT_NAME = "$(TARGET_NAME)";
 				SKIP_INSTALL = YES;
 				SWIFT_ACTIVE_COMPILATION_CONDITIONS = DEBUG;
@@ -695,7 +695,7 @@
 				CODE_SIGN_ENTITLEMENTS = OpenChamberWidget/OpenChamberWidget.entitlements;
 				CODE_SIGN_STYLE = Automatic;
 				CURRENT_PROJECT_VERSION = 1;
-				DEVELOPMENT_TEAM = 5J7WJGPA2Q;
+				DEVELOPMENT_TEAM = 6W97S9B7CZ;
 				GENERATE_INFOPLIST_FILE = NO;
 				INFOPLIST_FILE = OpenChamberWidget/Info.plist;
 				IPHONEOS_DEPLOYMENT_TARGET = 17.0;
@@ -705,7 +705,7 @@
 					"@executable_path/../../Frameworks",
 				);
 				MARKETING_VERSION = 1.0;
-				PRODUCT_BUNDLE_IDENTIFIER = com.openchamber.app.OpenChamberWidget;
+				PRODUCT_BUNDLE_IDENTIFIER = com.yee94.openchamber.OpenChamberWidget;
 				PRODUCT_NAME = "$(TARGET_NAME)";
 				SKIP_INSTALL = YES;
 				SWIFT_VERSION = 5.0;
@@ -719,7 +719,7 @@
 				CODE_SIGN_ENTITLEMENTS = OpenChamberNotificationService/OpenChamberNotificationService.entitlements;
 				CODE_SIGN_STYLE = Automatic;
 				CURRENT_PROJECT_VERSION = 1;
-				DEVELOPMENT_TEAM = 5J7WJGPA2Q;
+				DEVELOPMENT_TEAM = 6W97S9B7CZ;
 				GENERATE_INFOPLIST_FILE = NO;
 				INFOPLIST_FILE = OpenChamberNotificationService/Info.plist;
 				IPHONEOS_DEPLOYMENT_TARGET = 15.5;
@@ -729,7 +729,7 @@
 					"@executable_path/../../Frameworks",
 				);
 				MARKETING_VERSION = 1.0;
-				PRODUCT_BUNDLE_IDENTIFIER = com.openchamber.app.OpenChamberNotificationService;
+				PRODUCT_BUNDLE_IDENTIFIER = com.yee94.openchamber.OpenChamberNotificationService;
 				PRODUCT_NAME = "$(TARGET_NAME)";
 				SKIP_INSTALL = YES;
 				SWIFT_ACTIVE_COMPILATION_CONDITIONS = DEBUG;
@@ -744,7 +744,7 @@
 				CODE_SIGN_ENTITLEMENTS = OpenChamberNotificationService/OpenChamberNotificationService.entitlements;
 				CODE_SIGN_STYLE = Automatic;
 				CURRENT_PROJECT_VERSION = 1;
-				DEVELOPMENT_TEAM = 5J7WJGPA2Q;
+				DEVELOPMENT_TEAM = 6W97S9B7CZ;
 				GENERATE_INFOPLIST_FILE = NO;
 				INFOPLIST_FILE = OpenChamberNotificationService/Info.plist;
 				IPHONEOS_DEPLOYMENT_TARGET = 15.5;
@@ -754,7 +754,7 @@
 					"@executable_path/../../Frameworks",
 				);
 				MARKETING_VERSION = 1.0;
-				PRODUCT_BUNDLE_IDENTIFIER = com.openchamber.app.OpenChamberNotificationService;
+				PRODUCT_BUNDLE_IDENTIFIER = com.yee94.openchamber.OpenChamberNotificationService;
 				PRODUCT_NAME = "$(TARGET_NAME)";
 				SKIP_INSTALL = YES;
 				SWIFT_VERSION = 5.0;
@@ -762,8 +762,8 @@
 			};
 			name = Release;
 		};
-		D0E5000000000000000000E2 /* Debug */ = { isa = XCBuildConfiguration; buildSettings = { CODE_SIGN_ENTITLEMENTS = OpenChamberShareExtension/OpenChamberShareExtension.entitlements; CODE_SIGN_STYLE = Automatic; CURRENT_PROJECT_VERSION = 1; DEVELOPMENT_TEAM = 5J7WJGPA2Q; INFOPLIST_FILE = OpenChamberShareExtension/Info.plist; IPHONEOS_DEPLOYMENT_TARGET = 15.5; LD_RUNPATH_SEARCH_PATHS = ("$(inherited)", "@executable_path/Frameworks", "@executable_path/../../Frameworks", ); MARKETING_VERSION = 1.0; PRODUCT_BUNDLE_IDENTIFIER = com.openchamber.app.OpenChamberShareExtension; PRODUCT_NAME = "$(TARGET_NAME)"; SKIP_INSTALL = YES; SWIFT_VERSION = 5.0; TARGETED_DEVICE_FAMILY = "1,2"; }; name = Debug; };
-		D0E5000000000000000000E3 /* Release */ = { isa = XCBuildConfiguration; buildSettings = { CODE_SIGN_ENTITLEMENTS = OpenChamberShareExtension/OpenChamberShareExtension.entitlements; CODE_SIGN_STYLE = Automatic; CURRENT_PROJECT_VERSION = 1; DEVELOPMENT_TEAM = 5J7WJGPA2Q; INFOPLIST_FILE = OpenChamberShareExtension/Info.plist; IPHONEOS_DEPLOYMENT_TARGET = 15.5; LD_RUNPATH_SEARCH_PATHS = ("$(inherited)", "@executable_path/Frameworks", "@executable_path/../../Frameworks", ); MARKETING_VERSION = 1.0; PRODUCT_BUNDLE_IDENTIFIER = com.openchamber.app.OpenChamberShareExtension; PRODUCT_NAME = "$(TARGET_NAME)"; SKIP_INSTALL = YES; SWIFT_VERSION = 5.0; TARGETED_DEVICE_FAMILY = "1,2"; }; name = Release; };
+		D0E5000000000000000000E2 /* Debug */ = { isa = XCBuildConfiguration; buildSettings = { CODE_SIGN_ENTITLEMENTS = OpenChamberShareExtension/OpenChamberShareExtension.entitlements; CODE_SIGN_STYLE = Automatic; CURRENT_PROJECT_VERSION = 1; DEVELOPMENT_TEAM = 6W97S9B7CZ; INFOPLIST_FILE = OpenChamberShareExtension/Info.plist; IPHONEOS_DEPLOYMENT_TARGET = 15.5; LD_RUNPATH_SEARCH_PATHS = ("$(inherited)", "@executable_path/Frameworks", "@executable_path/../../Frameworks", ); MARKETING_VERSION = 1.0; PRODUCT_BUNDLE_IDENTIFIER = com.yee94.openchamber.OpenChamberShareExtension; PRODUCT_NAME = "$(TARGET_NAME)"; SKIP_INSTALL = YES; SWIFT_VERSION = 5.0; TARGETED_DEVICE_FAMILY = "1,2"; }; name = Debug; };
+		D0E5000000000000000000E3 /* Release */ = { isa = XCBuildConfiguration; buildSettings = { CODE_SIGN_ENTITLEMENTS = OpenChamberShareExtension/OpenChamberShareExtension.entitlements; CODE_SIGN_STYLE = Automatic; CURRENT_PROJECT_VERSION = 1; DEVELOPMENT_TEAM = 6W97S9B7CZ; INFOPLIST_FILE = OpenChamberShareExtension/Info.plist; IPHONEOS_DEPLOYMENT_TARGET = 15.5; LD_RUNPATH_SEARCH_PATHS = ("$(inherited)", "@executable_path/Frameworks", "@executable_path/../../Frameworks", ); MARKETING_VERSION = 1.0; PRODUCT_BUNDLE_IDENTIFIER = com.yee94.openchamber.OpenChamberShareExtension; PRODUCT_NAME = "$(TARGET_NAME)"; SKIP_INSTALL = YES; SWIFT_VERSION = 5.0; TARGETED_DEVICE_FAMILY = "1,2"; }; name = Release; };
 /* End XCBuildConfiguration section */
 
 /* Begin XCConfigurationList section */

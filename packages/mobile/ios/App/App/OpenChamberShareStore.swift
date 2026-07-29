@@ -24,8 +24,8 @@ struct ShareEnvelope: Codable {
 }
 
 enum OpenChamberShareStore {
-    private static let donationLogger = Logger(subsystem: Bundle.main.bundleIdentifier ?? "com.openchamber.app", category: "share-donation")
-    static let appGroup = "group.com.openchamber.app"
+    private static let donationLogger = Logger(subsystem: Bundle.main.bundleIdentifier ?? "com.yee94.openchamber", category: "share-donation")
+    static let appGroup = "group.com.yee94.openchamber"
     static let catalogKey = "openchamberShareCatalog"
     static let maximumImageBytes = 8 * 1024 * 1024
     static let maximumTotalBytes = 16 * 1024 * 1024

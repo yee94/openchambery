@@ -130,6 +130,26 @@ jobs:
       - name: Install dependencies
         run: bun install --frozen-lockfile
 
+      - name: Install macOS notarization API key
+        shell: bash
+        env:
+          APP_STORE_CONNECT_PRIVATE_KEY_BASE64: ${{ secrets.APP_STORE_CONNECT_PRIVATE_KEY_BASE64 }}
+          APP_STORE_CONNECT_KEY_ID: ${{ secrets.APP_STORE_CONNECT_KEY_ID }}
+          APP_STORE_CONNECT_ISSUER_ID: ${{ secrets.APP_STORE_CONNECT_ISSUER_ID }}
+          CSC_LINK: ${{ secrets.CSC_LINK }}
+          CSC_KEY_PASSWORD: ${{ secrets.CSC_KEY_PASSWORD }}
+        run: |
+          set -euo pipefail
+          for name in APP_STORE_CONNECT_PRIVATE_KEY_BASE64 APP_STORE_CONNECT_KEY_ID APP_STORE_CONNECT_ISSUER_ID CSC_LINK CSC_KEY_PASSWORD; do
+            if [[ -z "${!name}" ]]; then
+              echo "$name secret is required."
+              exit 1
+            fi
+          done
+          key_path="$RUNNER_TEMP/AuthKey_${APP_STORE_CONNECT_KEY_ID}.p8"
+          printf '%s' "$APP_STORE_CONNECT_PRIVATE_KEY_BASE64" | base64 -D > "$key_path"
+          echo "APPLE_API_KEY=$key_path" >> "$GITHUB_ENV"
+
       - name: Build VS Code extension
         run: bun run --cwd packages/vscode build
 
@@ -204,6 +224,10 @@ jobs:
           # rebuild-native.mjs reads this to target the right arch when
           # cross-building (runner is arm64; x64 matrix needs the hint).
           ELECTRON_BUILDER_ARCH: ${{ matrix.arch }}
+          CSC_LINK: ${{ secrets.CSC_LINK }}
+          CSC_KEY_PASSWORD: ${{ secrets.CSC_KEY_PASSWORD }}
+          APPLE_API_KEY_ID: ${{ secrets.APP_STORE_CONNECT_KEY_ID }}
+          APPLE_API_ISSUER: ${{ secrets.APP_STORE_CONNECT_ISSUER_ID }}
         run: |
           bun run build:web-assets
           bun run prepare:opencode-cli
@@ -217,7 +241,7 @@ jobs:
           bunx electron-builder --mac --${{ matrix.arch }} --publish=never
           bun run verify:opencode-cli:packaged
 
-      - name: Verify ad-hoc macOS app signature
+      - name: Verify Developer ID macOS signature
         run: |
           set -euo pipefail
 
@@ -233,15 +257,12 @@ jobs:
 
           codesign --verify --deep --strict --verbose=2 "$APP_PATH"
           SIGN_INFO=$(codesign -dv --verbose=4 "$APP_PATH" 2>&1)
-          if echo "$SIGN_INFO" | grep -q "Authority=Developer ID Application"; then
-            echo "Error: expected an ad-hoc macOS build, but found a Developer ID signature"
+          if ! echo "$SIGN_INFO" | grep -q "Authority=Developer ID Application"; then
+            echo "Error: expected a Developer ID Application signature"
             exit 1
           fi
-          if ! echo "$SIGN_INFO" | grep -q "Signature=adhoc"; then
-            echo "Error: expected a valid ad-hoc signature"
-            exit 1
-          fi
-          echo "Ad-hoc macOS app prepared at $APP_PATH"
+          spctl --assess --type execute --verbose=4 "$APP_PATH"
+          echo "Developer ID macOS app prepared at $APP_PATH"
 
       - name: Upload DMG / ZIP / blockmaps to release
         uses: softprops/action-gh-release@3bb12739c298aeb8a4eeaf626c5b8d85266b0e65 # v2.6.2

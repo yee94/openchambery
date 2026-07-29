@@ -105,7 +105,7 @@ class SceneDelegate: UIResponder, UIWindowSceneDelegate {
         writeWidgetSnapshot()
     }
 
-    private static let widgetAppGroup = "group.com.openchamber.app"
+    private static let widgetAppGroup = "group.com.yee94.openchamber"
     private static let widgetSnapshotKey = "widgetSnapshot"
 
     /// Pulls the session overview JSON from the web layer (window.__OPENCHAMBER_WIDGET_SNAPSHOT__),

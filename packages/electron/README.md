@@ -127,7 +127,7 @@ Requires Pillow (`python3` + `PIL`) and, on macOS, `sips` + `iconutil`.
 
 ## Platform Notes
 
-macOS packaging needs Xcode/build tools for ad-hoc-signed builds and icon asset compilation. Ad-hoc signing requires no Apple account and keeps Apple Silicon executables runnable, but it is not Developer ID signing or notarization, so users must explicitly allow the app in macOS Privacy & Security on first launch.
+macOS packaging needs Xcode/build tools, a Developer ID Application certificate, and App Store Connect API credentials. Release workflows sign and notarize the DMG; local preview builds use the same signing configuration.
 
 Windows packaging needs NSIS support through `electron-builder`. If no Windows signing env is set, `package.mjs` disables code signing and builds an unsigned installer.
 
@@ -156,11 +156,11 @@ Packaged desktop apps check updates through `openchamber-update.edgeone.dev`. ma
 The `Release` GitHub Actions workflow runs for `v*` tags or by manual dispatch. Before starting a release:
 
 1. Run `bun run version:bump -- <version>` and update the matching `CHANGELOG.md` section.
-2. No Apple signing or notarization secrets are required for the ad-hoc macOS desktop build.
+2. Set `CSC_LINK`, `CSC_KEY_PASSWORD`, `APP_STORE_CONNECT_PRIVATE_KEY_BASE64`, `APP_STORE_CONNECT_KEY_ID`, and `APP_STORE_CONNECT_ISSUER_ID` for signed and notarized macOS desktop builds.
 3. Configure `NPM_TOKEN` only when publishing to npm. iOS signing secrets are required only for the manual `all` scope; tag-triggered releases build Android but skip iOS.
 4. For a desktop-only release, manually dispatch the workflow with scope `desktop` (the default). Pushing tag `v<version>` retains the full-release behavior.
 
-The workflow creates the GitHub Release and uploads the desktop artifacts. Windows retains in-app automatic updates. Ad-hoc macOS builds cannot use Electron's in-app updater, so macOS users must download and install each release manually. Tag-triggered releases also upload Android artifacts but skip iOS/TestFlight. A dry run keeps the Release as a draft. The version validation step fails early if the requested version differs from the root or Electron package version.
+The workflow creates the GitHub Release and uploads the desktop artifacts. Windows retains in-app automatic updates. macOS users download and install each release manually. Tag-triggered releases also upload Android artifacts but skip iOS/TestFlight. A dry run keeps the Release as a draft. The version validation step fails early if the requested version differs from the root or Electron package version.
 
 Managed local Desktop startup prefers OpenCode binaries in this order:
 

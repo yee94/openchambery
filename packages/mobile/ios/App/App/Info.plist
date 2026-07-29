@@ -49,7 +49,7 @@
 			<key>CFBundleTypeRole</key>
 			<string>Editor</string>
 			<key>CFBundleURLName</key>
-			<string>com.openchamber.app.deeplink</string>
+			<string>com.yee94.openchamber.deeplink</string>
 			<key>CFBundleURLSchemes</key>
 			<array>
 				<string>openchamber</string>

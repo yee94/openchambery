@@ -92,14 +92,16 @@
     "mac": {
       "category": "public.app-category.developer-tools",
       "icon": "resources/icons/icon.icns",
-      "identity": "-",
+      "identity": "Developer ID Application",
       "artifactName": "${productName}-${version}-mac-${arch}.${ext}",
       "extendInfo": {
         "CFBundleIconName": "AppIcon"
       },
-      "hardenedRuntime": false,
+      "hardenedRuntime": true,
+      "entitlements": "resources/entitlements.mac.plist",
+      "entitlementsInherit": "resources/entitlements.mac.inherit.plist",
       "gatekeeperAssess": false,
-      "notarize": false,
+      "notarize": true,
       "target": [
         "dmg",
         "zip"
