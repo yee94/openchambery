@@ -717,8 +717,14 @@ describe('core-routes', () => {
     expect(dependencies.clientPairingRuntime.createPairingSession).not.toHaveBeenCalled();
   });
 
-  it('forbids desktop-local client tokens from setting a custom Relay endpoint', async () => {
-    const getRelayPairingCandidate = vi.fn();
+  it('lets desktop-local client tokens set a custom Relay endpoint when pairing', async () => {
+    const getRelayPairingCandidate = vi.fn(async ({ relayUrl }) => ({
+      type: 'relay',
+      relayUrl,
+      serverId: 'srv_desktop',
+      hostEncPubJwk: { kty: 'EC', crv: 'P-256', x: 'aaa', y: 'bbb' },
+      priority: 30,
+    }));
     const { app, dependencies } = createPairingRouteApp({
       getRelayPairingCandidate,
       uiAuthController: {
@@ -743,10 +749,53 @@ describe('core-routes', () => {
       },
     });
 
+    const response = await request(app)
+      .post('/api/client-auth/pairing/sessions')
+      .send({ includeRelay: true, includeDirect: false, relayUrl: 'wss://relay.example/custom' })
+      .expect(201);
+
+    expect(getRelayPairingCandidate).toHaveBeenCalledWith({
+      ensureEnabled: true,
+      relayUrl: 'wss://relay.example/custom',
+    });
+    expect(dependencies.clientPairingRuntime.createPairingSession).toHaveBeenCalled();
+    expect(response.body.server.candidates).toEqual([
+      expect.objectContaining({ type: 'relay', relayUrl: 'wss://relay.example/custom' }),
+    ]);
+  });
+
+  it('forbids non-desktop client tokens from setting a custom Relay endpoint', async () => {
+    const getRelayPairingCandidate = vi.fn();
+    const { app, dependencies } = createPairingRouteApp({
+      getRelayPairingCandidate,
+      uiAuthController: {
+        // Force a remote desktop client past create-auth so the relayUrl gate is
+        // exercised independently of the desktop-local create-auth admission rule.
+        resolveAuthContext: vi.fn(async () => ({
+          type: 'client',
+          clientId: 'remote-desktop-1',
+          client: { id: 'remote-desktop-1', clientKind: 'desktop' },
+        })),
+        requireAuth: vi.fn((_req, _res, next) => next()),
+        requireSessionAuth: vi.fn((_req, _res, next) => next()),
+        handleSessionStatus: vi.fn(),
+        handleSessionCreate: vi.fn(),
+        handleUrlAuthToken: vi.fn(),
+        handlePasskeyStatus: vi.fn(),
+        handlePasskeyAuthenticationOptions: vi.fn(),
+        handlePasskeyAuthenticationVerify: vi.fn(),
+        handlePasskeyRegistrationOptions: vi.fn(),
+        handlePasskeyRegistrationVerify: vi.fn(),
+        handlePasskeyList: vi.fn(),
+        handlePasskeyRevoke: vi.fn(),
+        handleResetAuth: vi.fn(),
+      },
+    });
+
     await request(app)
       .post('/api/client-auth/pairing/sessions')
       .send({ includeRelay: true, relayUrl: 'wss://relay.example/custom' })
-      .expect(403, { error: 'Only the owner UI session can set a custom Relay endpoint' });
+      .expect(403, { error: 'Client tokens cannot create remote clients' });
 
     expect(getRelayPairingCandidate).not.toHaveBeenCalled();
     expect(dependencies.clientPairingRuntime.createPairingSession).not.toHaveBeenCalled();

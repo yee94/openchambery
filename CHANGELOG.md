@@ -4,6 +4,11 @@ All notable changes to this project will be documented in this file.
 
 ## [Unreleased]
 
+## [1.16.81] - 2026-07-29
+
+- **Relay pairing:** allow the local Desktop shell (`desktop-local`) to set a custom Host Relay endpoint when creating pairing sessions; remote client tokens stay blocked.
+- **Mobile Settings:** keep Settings detail pages as a quiet transparent canvas so only group cards own material, including Android solid chrome.
+
 ## [1.16.80] - 2026-07-29
 
 - **Mobile instances:** make the whole instance row a switch target while edit/delete actions keep their own hit areas.

@@ -128,7 +128,7 @@ export OPENCHAMBER_RELAY_URL=wss://relay.example.com/ws
 openchamber
 ```
 
-The **Add a device** dialog can select this endpoint per pairing. Only the owner UI session may persist a custom Host endpoint and switch the control connection; the effective `relayUrl` is embedded in the pairing-v2 candidate before the QR code. Endpoints must be `ws://` or `wss://` without userinfo; query and fragment are not part of identity and are stripped. `OPENCHAMBER_RELAY_URL` pins the endpoint and disables the override. The creating client remembers its last effective choice locally; consuming Mobile and Desktop clients persist the endpoint snapshot with the saved connection.
+The **Add a device** dialog can select this endpoint per pairing. An owner UI session or the local Desktop shell (`desktop-local`) may persist a custom Host endpoint and switch the control connection; the effective `relayUrl` is embedded in the pairing-v2 candidate before the QR code. Endpoints must be `ws://` or `wss://` without userinfo; query and fragment are not part of identity and are stripped. `OPENCHAMBER_RELAY_URL` pins the endpoint and disables the override. The creating client remembers its last effective choice locally; consuming Mobile and Desktop clients persist the endpoint snapshot with the saved connection.
 
 Existing clients switch to a new Relay after a new pairing flow; generate a fresh pairing link when endpoint replacement is required.
 

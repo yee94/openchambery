@@ -844,10 +844,15 @@ export const registerAuthAndAccessRoutes = (app, dependencies) => {
 
   app.post('/api/client-auth/pairing/sessions', express.json({ limit: '64kb' }), async (req, res, next) => {
     await runWithClientCreateAuth(req, res, next, async (authContext) => {
-      // Changing the Host Relay endpoint is an owner-UI action. desktop-local
-      // may still create pairing links without a custom endpoint.
+      // Changing the Host Relay endpoint is an owner-UI or local desktop-shell
+      // action. Paired remote clients never reach this handler (create-auth only
+      // admits session + desktop-local); keep the kind check so a future auth
+      // widening cannot re-point the Host relay from a remote bearer.
       if (req.body?.relayUrl !== undefined && authContext?.type === 'client') {
-        return res.status(403).json({ error: 'Only the owner UI session can set a custom Relay endpoint' });
+        const actingClient = authContext.client || await clientRecordFromAuthContext(authContext);
+        if (actingClient?.clientKind !== 'desktop-local') {
+          return res.status(403).json({ error: 'Only the owner UI session can set a custom Relay endpoint' });
+        }
       }
       const requestedRelayUrl = req.body?.relayUrl === undefined
         ? undefined

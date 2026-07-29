@@ -988,6 +988,10 @@ button.oc-mobile-group-label-trigger:focus-visible {
   box-shadow: none !important;
 }
 
+/* Quiet canvas only: Settings detail must not inherit floating-surface fill.
+   Higher specificity beats generic .oc-mobile-floating-surface (and Android /
+   reduced-transparency opaque chrome overrides further below). */
+.oc-mobile-floating-surface.oc-mobile-settings-detail-card,
 .oc-mobile-settings-detail-card {
   width: 100%;
   min-width: 0;
@@ -1326,6 +1330,13 @@ button.oc-mobile-group-label-trigger:focus-visible {
     background: var(--surface-elevated);
     -webkit-backdrop-filter: none;
     backdrop-filter: none;
+  }
+
+  /* Settings detail stays a transparent canvas; only group cards own material. */
+  .oc-mobile-floating-surface.oc-mobile-settings-detail-card,
+  .oc-mobile-settings-detail-card {
+    background: transparent;
+    box-shadow: none;
   }
 
   .oc-mobile-floating-action {
@@ -2146,6 +2157,17 @@ button.oc-mobile-group-label-trigger:focus-visible {
     var(--surface-elevated) 88%,
     var(--background)
   );
+}
+
+/* Settings detail is not floating chrome — keep the quiet page canvas so
+   SettingsGroup cards are the only nested material (no giant outer card). */
+:root.oc-capacitor-app.oc-platform-android
+  .oc-mobile-floating-surface.oc-mobile-settings-detail-card,
+:root.oc-capacitor-app.oc-platform-android .oc-mobile-settings-detail-card {
+  background: transparent;
+  box-shadow: none;
+  -webkit-backdrop-filter: none;
+  backdrop-filter: none;
 }
 
 :root.oc-capacitor-app.oc-platform-android .oc-mobile-glass-control,
