@@ -1,6 +1,6 @@
 {
   "name": "@openchamber/electron",
-  "version": "1.16.84",
+  "version": "1.16.85",
   "private": true,
   "description": "Electron desktop runtime for OpenChamber",
   "author": "OpenChamber",
@@ -14,7 +14,7 @@
   },
   "devDependencies": {
     "@electron/rebuild": "^3.7.0",
-    "electron": "^41.2.1",
+    "electron": "^41.10.3",
     "electron-builder": "^26.0.0"
   },
   "desktopPrerequisites": [
