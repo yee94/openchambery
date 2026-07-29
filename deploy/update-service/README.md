@@ -50,10 +50,11 @@ region that includes MLC.
 Connect the repository to Makers so pushes to `main` create production
 deployments.
 
-OpenChamber Web, CLI, VS Code, Capacitor mobile, and macOS Desktop use
-`https://openchamber-update.edgeone.dev/v1/update/check`. Windows and Linux
-Desktop use the Electron updater metadata under `/desktop/`. Those metadata
-responses point signed package downloads at GitHub Release assets.
+OpenChamber Web, CLI, VS Code, and Capacitor mobile use
+`https://openchamber-update.edgeone.dev/v1/update/check`. Packaged Desktop
+builds on macOS, Windows, and Linux use Electron updater metadata under
+`/desktop/`. Those metadata responses point signed package downloads at GitHub
+Release assets.
 
 `OPENCHAMBER_UPDATE_API_URL` remains available as a compatible JSON API
-override for Web, VS Code, and macOS Desktop.
+override for Web, VS Code, and Capacitor mobile.

@@ -151,16 +151,16 @@ Packaged Desktop builds include the official OpenCode CLI that matches the pinne
 
 ## Releases and automatic updates
 
-Packaged desktop apps check updates through `openchamber-update.edgeone.dev`. macOS uses the shared JSON version API, while Windows and Linux use Electron updater metadata proxied through `/desktop/`. Signed installers and AppImages remain GitHub Release assets. Each cold startup checks once, and users can check again from the app menu, sidebar, or Settings.
+Packaged desktop apps check updates through `openchamber-update.edgeone.dev` using Electron updater metadata proxied through `/desktop/`. Signed installers, macOS ZIP updates, and AppImages remain GitHub Release assets. Each cold startup checks once, and users can check again from the app menu, sidebar, or Settings.
 
 The `Release` GitHub Actions workflow runs for `v*` tags or by manual dispatch. Before starting a release:
 
 1. Run `bun run version:bump -- <version>` and update the matching `CHANGELOG.md` section.
 2. Set `CSC_LINK`, `CSC_KEY_PASSWORD`, `APP_STORE_CONNECT_PRIVATE_KEY_BASE64`, `APP_STORE_CONNECT_KEY_ID`, and `APP_STORE_CONNECT_ISSUER_ID` for signed and notarized macOS desktop builds.
-3. Configure `NPM_TOKEN` only when publishing to npm. iOS signing secrets are required only for the manual `all` scope; tag-triggered releases build Android but skip iOS.
+3. Configure `NPM_TOKEN` only when publishing to npm. iOS signing secrets are required for the TestFlight upload that runs with the formal release workflow.
 4. For a desktop-only release, manually dispatch the workflow with scope `desktop` (the default). Pushing tag `v<version>` retains the full-release behavior.
 
-The workflow creates the GitHub Release and uploads the desktop artifacts. Windows retains in-app automatic updates. macOS users download and install each release manually. Tag-triggered releases also upload Android artifacts but skip iOS/TestFlight. A dry run keeps the Release as a draft. The version validation step fails early if the requested version differs from the root or Electron package version.
+The workflow creates the GitHub Release and uploads the desktop artifacts. macOS, Windows, and writable Linux AppImage installs use in-app automatic updates. Formal releases also upload Android artifacts and send iOS builds to TestFlight. A dry run keeps the Release as a draft. The version validation step fails early if the requested version differs from the root or Electron package version.
 
 Managed local Desktop startup prefers OpenCode binaries in this order:
 
