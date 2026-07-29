@@ -273,6 +273,8 @@ When adding or changing Host HTTP APIs that mobile/desktop clients reach over Pr
    - `GET /api/passkeys`
    - `DELETE /api/passkeys/:id`
    - `POST /api/auth/reset`
+   - `POST /api/client-auth/pairing/sessions`: accepts an optional `relayUrl` when Relay is included. Only an owner UI session may set a custom endpoint (paired client bearers receive HTTP 403). Canonical form is `ws://`/`wss://` scheme/host/path: userinfo is rejected (HTTP 400); query and fragment are stripped and are not part of endpoint identity. The Host persists the switch and reconnects its control connection before returning the pairing-v2 Relay candidate; an `OPENCHAMBER_RELAY_URL` override stays authoritative.
+   - `GET /api/client-auth/pairing/transports`: returns direct transport availability plus the effective Relay URL and whether the environment pins it.
    - `GET /connect`
    - `POST /api/system/probe-url`
    - `app.use('/api', ...)` auth/tunnel guard

@@ -662,6 +662,157 @@ describe('core-routes', () => {
     ]);
   });
 
+  it('passes a custom Relay endpoint into relay-only pairing and returns that endpoint in the candidate', async () => {
+    const getRelayPairingCandidate = vi.fn(async ({ relayUrl }) => ({
+      type: 'relay',
+      relayUrl,
+      serverId: 'srv_custom',
+      hostEncPubJwk: { kty: 'EC', crv: 'P-256', x: 'aaa', y: 'bbb' },
+      priority: 30,
+    }));
+    const { app } = createPairingRouteApp({ getRelayPairingCandidate });
+
+    const response = await request(app)
+      .post('/api/client-auth/pairing/sessions')
+      .send({
+        label: 'Pair phone',
+        includeRelay: true,
+        includeDirect: false,
+        relayUrl: 'wss://relay.example/custom?token=secret#ignored',
+      })
+      .expect(201);
+
+    expect(getRelayPairingCandidate).toHaveBeenCalledWith({
+      ensureEnabled: true,
+      relayUrl: 'wss://relay.example/custom',
+    });
+    expect(response.body.server.candidates).toEqual([
+      expect.objectContaining({ type: 'relay', relayUrl: 'wss://relay.example/custom' }),
+    ]);
+  });
+
+  it('rejects an invalid custom Relay endpoint before creating a pairing session', async () => {
+    const getRelayPairingCandidate = vi.fn();
+    const { app, dependencies } = createPairingRouteApp({ getRelayPairingCandidate });
+
+    await request(app)
+      .post('/api/client-auth/pairing/sessions')
+      .send({ includeRelay: true, relayUrl: 'https://relay.example/ws' })
+      .expect(400, { error: 'Relay URL must use ws:// or wss://' });
+
+    expect(getRelayPairingCandidate).not.toHaveBeenCalled();
+    expect(dependencies.clientPairingRuntime.createPairingSession).not.toHaveBeenCalled();
+  });
+
+  it('rejects Relay endpoints that embed username/password userinfo', async () => {
+    const getRelayPairingCandidate = vi.fn();
+    const { app, dependencies } = createPairingRouteApp({ getRelayPairingCandidate });
+
+    await request(app)
+      .post('/api/client-auth/pairing/sessions')
+      .send({ includeRelay: true, relayUrl: 'wss://user:pass@relay.example/ws' })
+      .expect(400, { error: 'Relay URL must use ws:// or wss://' });
+
+    expect(getRelayPairingCandidate).not.toHaveBeenCalled();
+    expect(dependencies.clientPairingRuntime.createPairingSession).not.toHaveBeenCalled();
+  });
+
+  it('forbids desktop-local client tokens from setting a custom Relay endpoint', async () => {
+    const getRelayPairingCandidate = vi.fn();
+    const { app, dependencies } = createPairingRouteApp({
+      getRelayPairingCandidate,
+      uiAuthController: {
+        resolveAuthContext: vi.fn(async () => ({
+          type: 'client',
+          clientId: 'desktop-1',
+          client: { id: 'desktop-1', clientKind: 'desktop-local' },
+        })),
+        requireAuth: vi.fn((_req, _res, next) => next()),
+        requireSessionAuth: vi.fn((_req, _res, next) => next()),
+        handleSessionStatus: vi.fn(),
+        handleSessionCreate: vi.fn(),
+        handleUrlAuthToken: vi.fn(),
+        handlePasskeyStatus: vi.fn(),
+        handlePasskeyAuthenticationOptions: vi.fn(),
+        handlePasskeyAuthenticationVerify: vi.fn(),
+        handlePasskeyRegistrationOptions: vi.fn(),
+        handlePasskeyRegistrationVerify: vi.fn(),
+        handlePasskeyList: vi.fn(),
+        handlePasskeyRevoke: vi.fn(),
+        handleResetAuth: vi.fn(),
+      },
+    });
+
+    await request(app)
+      .post('/api/client-auth/pairing/sessions')
+      .send({ includeRelay: true, relayUrl: 'wss://relay.example/custom' })
+      .expect(403, { error: 'Only the owner UI session can set a custom Relay endpoint' });
+
+    expect(getRelayPairingCandidate).not.toHaveBeenCalled();
+    expect(dependencies.clientPairingRuntime.createPairingSession).not.toHaveBeenCalled();
+  });
+
+  it('still lets desktop-local create pairing sessions without a custom Relay endpoint', async () => {
+    const getRelayPairingCandidate = vi.fn(async () => null);
+    const { app, dependencies } = createPairingRouteApp({
+      getRelayPairingCandidate,
+      uiAuthController: {
+        resolveAuthContext: vi.fn(async () => ({
+          type: 'client',
+          clientId: 'desktop-1',
+          client: { id: 'desktop-1', clientKind: 'desktop-local' },
+        })),
+        requireAuth: vi.fn((_req, _res, next) => next()),
+        requireSessionAuth: vi.fn((_req, _res, next) => next()),
+        handleSessionStatus: vi.fn(),
+        handleSessionCreate: vi.fn(),
+        handleUrlAuthToken: vi.fn(),
+        handlePasskeyStatus: vi.fn(),
+        handlePasskeyAuthenticationOptions: vi.fn(),
+        handlePasskeyAuthenticationVerify: vi.fn(),
+        handlePasskeyRegistrationOptions: vi.fn(),
+        handlePasskeyRegistrationVerify: vi.fn(),
+        handlePasskeyList: vi.fn(),
+        handlePasskeyRevoke: vi.fn(),
+        handleResetAuth: vi.fn(),
+      },
+    });
+
+    await request(app)
+      .post('/api/client-auth/pairing/sessions')
+      .set('Host', 'runtime.example')
+      .send({ label: 'Pair phone', includeRelay: true })
+      .expect(201);
+
+    expect(getRelayPairingCandidate).toHaveBeenCalled();
+    expect(dependencies.clientPairingRuntime.createPairingSession).toHaveBeenCalled();
+  });
+
+  it('reports the effective Relay endpoint and environment lock to the pairing dialog', async () => {
+    const { app } = createPairingRouteApp({
+      getPairingTransports: vi.fn(async () => ({
+        local: 'http://127.0.0.1:3000',
+        lan: null,
+        relayAvailable: true,
+        relayUrl: 'wss://relay.example/ws',
+        relayUrlLocked: true,
+      })),
+    });
+
+    const response = await request(app)
+      .get('/api/client-auth/pairing/transports')
+      .expect(200);
+
+    expect(response.headers['cache-control']).toBe('no-store');
+    expect(response.body).toEqual({
+      local: 'http://127.0.0.1:3000',
+      lan: null,
+      relayAvailable: true,
+      relayUrl: 'wss://relay.example/ws',
+      relayUrlLocked: true,
+    });
+  });
+
   it('still returns the direct candidate when the relay candidate lookup throws', async () => {
     const { app } = createPairingRouteApp({
       getRelayPairingCandidate: vi.fn(async () => { throw new Error('relay status read failed'); }),

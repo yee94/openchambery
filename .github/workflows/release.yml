@@ -15,6 +15,11 @@ on:
         required: false
         default: false
         type: boolean
+      relay_only:
+        description: 'Publish only the Relay Docker image'
+        required: false
+        default: false
+        type: boolean
 
 env:
   CARGO_INCREMENTAL: 0
@@ -25,6 +30,7 @@ permissions:
 
 jobs:
   create-release:
+    if: ${{ !inputs.relay_only }}
     runs-on: ubuntu-latest
     outputs:
       release_id: ${{ steps.create_release.outputs.id }}
@@ -54,7 +60,12 @@ jobs:
           node - <<'NODE'
           const fs = require('fs');
           const expected = process.env.VERSION;
-          const manifests = ['package.json', 'packages/electron/package.json', 'packages/vscode/package.json'];
+          const manifests = [
+            'package.json',
+            'packages/electron/package.json',
+            'packages/relay-server/package.json',
+            'packages/vscode/package.json',
+          ];
           const mismatches = manifests.flatMap((file) => {
             const actual = JSON.parse(fs.readFileSync(file, 'utf8')).version;
             return actual === expected ? [] : [`${file}: ${actual}`];
@@ -557,8 +568,26 @@ jobs:
       build_ios: false
     secrets: inherit
 
-  finalize-release:
+  publish-relay-docker-manual:
+    name: Publish only the Relay Docker image
+    if: ${{ inputs.relay_only }}
+    uses: ./.github/workflows/relay-docker.yml
+    with:
+      version: ${{ inputs.version }}
+      push: true
+    secrets: inherit
+
+  publish-relay-docker:
+    name: Publish Relay image to Docker Hub
     needs: [create-release, build-vscode-extension, build-desktop-electron-macos, build-desktop-electron-windows, publish-electron-linux, combine-electron-manifests, mobile-release]
+    uses: ./.github/workflows/relay-docker.yml
+    with:
+      version: ${{ needs.create-release.outputs.version }}
+      push: ${{ github.event_name != 'workflow_dispatch' || !inputs.dry_run }}
+    secrets: inherit
+
+  finalize-release:
+    needs: [create-release, build-vscode-extension, build-desktop-electron-macos, build-desktop-electron-windows, publish-electron-linux, combine-electron-manifests, mobile-release, publish-relay-docker]
     if: >-
       ${{
         always() &&
@@ -570,7 +599,8 @@ jobs:
         needs.build-desktop-electron-windows.result == 'success' &&
         needs.publish-electron-linux.result == 'success' &&
         needs.combine-electron-manifests.result == 'success' &&
-        needs.mobile-release.result == 'success'
+        needs.mobile-release.result == 'success' &&
+        needs.publish-relay-docker.result == 'success'
       }}
     runs-on: ubuntu-latest
     env:

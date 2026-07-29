@@ -1,0 +1,113 @@
+name: Relay Docker
+
+on:
+  workflow_call:
+    inputs:
+      version:
+        description: 'Image version tag; must match the Relay package version'
+        required: true
+        type: string
+      push:
+        description: 'Push the built image to Docker Hub'
+        required: false
+        default: true
+        type: boolean
+    secrets:
+      DOCKERHUB_TOKEN:
+        description: 'Docker Hub personal access token with Read and Write permissions'
+        required: false
+  workflow_dispatch:
+    inputs:
+      version:
+        description: 'Image version tag; must match the Relay package version'
+        required: true
+        type: string
+      push:
+        description: 'Push the built image to Docker Hub'
+        required: false
+        default: true
+        type: boolean
+
+permissions:
+  contents: read
+
+jobs:
+  publish:
+    name: Build and publish Relay image
+    runs-on: ubuntu-latest
+    env:
+      RELAY_IMAGE: ${{ vars.DOCKERHUB_USERNAME }}/openchamber-relay
+    steps:
+      - name: Checkout
+        uses: actions/checkout@df4cb1c069e1874edd31b4311f1884172cec0e10 # v6.0.3
+
+      - name: Validate release and Docker Hub configuration
+        env:
+          DOCKERHUB_USERNAME: ${{ vars.DOCKERHUB_USERNAME }}
+          DOCKERHUB_TOKEN: ${{ secrets.DOCKERHUB_TOKEN }}
+          VERSION: ${{ inputs.version }}
+          SHOULD_PUSH: ${{ inputs.push }}
+        shell: bash
+        run: |
+          set -euo pipefail
+          if [[ -z "$DOCKERHUB_USERNAME" ]]; then
+            echo "Missing repository variable DOCKERHUB_USERNAME." >&2
+            exit 1
+          fi
+          if [[ "$SHOULD_PUSH" == "true" && -z "$DOCKERHUB_TOKEN" ]]; then
+            echo "Missing repository secret DOCKERHUB_TOKEN." >&2
+            exit 1
+          fi
+          node - <<'NODE'
+          const fs = require('fs');
+          const expected = process.env.VERSION;
+          const manifests = ['package.json', 'packages/relay-server/package.json'];
+          const mismatches = manifests.flatMap((file) => {
+            const actual = JSON.parse(fs.readFileSync(file, 'utf8')).version;
+            return actual === expected ? [] : [`${file}: ${actual}`];
+          });
+          if (mismatches.length > 0) {
+            throw new Error(`Relay image version ${expected} does not match:\n${mismatches.join('\n')}`);
+          }
+          NODE
+
+      - name: Set up QEMU
+        uses: docker/setup-qemu-action@96fe6ef7f33517b61c61be40b68a1882f3264fb8 # v4.2.0
+        with:
+          platforms: arm64
+
+      - name: Set up Docker Buildx
+        uses: docker/setup-buildx-action@d7f5e7f509e45cec5c76c4d5afdd7de93d0b3df5 # v4.1.0
+
+      - name: Log in to Docker Hub
+        if: inputs.push
+        uses: docker/login-action@371161bbe7024a29a25c5e19bfcbc0804fe9ad2c # v4.5.2
+        with:
+          username: ${{ vars.DOCKERHUB_USERNAME }}
+          password: ${{ secrets.DOCKERHUB_TOKEN }}
+          scope: ${{ env.RELAY_IMAGE }}@push
+
+      - name: Prepare image metadata
+        id: relay_meta
+        uses: docker/metadata-action@dc802804100637a589fabce1cb79ff13a1411302 # v6.2.0
+        with:
+          images: ${{ env.RELAY_IMAGE }}
+          tags: |
+            type=raw,value=${{ inputs.version }}
+            type=raw,value=latest
+          labels: |
+            org.opencontainers.image.title=OpenChamber Relay Server
+            org.opencontainers.image.description=Self-hosted private relay server for OpenChamber
+            org.opencontainers.image.version=${{ inputs.version }}
+
+      - name: Build and publish Relay image
+        uses: docker/build-push-action@53b7df96c91f9c12dcc8a07bcb9ccacbed38856a # v7.3.0
+        with:
+          context: .
+          file: Dockerfile.relay
+          platforms: linux/amd64,linux/arm64
+          push: ${{ inputs.push }}
+          tags: ${{ steps.relay_meta.outputs.tags }}
+          labels: ${{ steps.relay_meta.outputs.labels }}
+          cache-from: type=gha,scope=openchamber-relay
+          cache-to: type=gha,mode=max,scope=openchamber-relay

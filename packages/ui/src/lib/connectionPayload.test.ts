@@ -63,6 +63,35 @@ describe('connection payload helpers', () => {
     expect(parsePairingConnectionPayload(`openchamber://connect?v=2&p=${withBadRelay({ type: 'relay', relayUrl: 'wss://relay.example/ws', serverId: 'srv', hostEncPubJwk: { kty: 'EC', crv: 'P-384', x: 'a', y: 'b' } })}`)).toBeNull();
   });
 
+  test('relay candidate strips query/fragment and rejects userinfo credentials', () => {
+    const encodeCandidates = (candidates: unknown[]) =>
+      Buffer.from(JSON.stringify({ v: 2, pairingId: 'pair_1', secret: 's', candidates })).toString('base64url');
+
+    const withQueryAndFragment = encodeCandidates([
+      {
+        type: 'relay',
+        relayUrl: 'wss://relay.example/ws?token=secret#frag',
+        serverId: 'srv',
+        hostEncPubJwk,
+      },
+    ]);
+    const parsed = parsePairingConnectionPayload(`openchamber://connect?v=2&p=${withQueryAndFragment}`);
+    expect(parsed?.candidates).toEqual([
+      { type: 'relay', relayUrl: 'wss://relay.example/ws', serverId: 'srv', hostEncPubJwk },
+    ]);
+
+    // Username/password userinfo is never part of a Relay endpoint → drop candidate.
+    const withUserPass = encodeCandidates([
+      { type: 'relay', relayUrl: 'wss://user:pass@relay.example/ws', serverId: 'srv', hostEncPubJwk },
+    ]);
+    expect(parsePairingConnectionPayload(`openchamber://connect?v=2&p=${withUserPass}`)).toBeNull();
+
+    const withUserOnly = encodeCandidates([
+      { type: 'relay', relayUrl: 'ws://user@127.0.0.1:8787/ws', serverId: 'srv', hostEncPubJwk },
+    ]);
+    expect(parsePairingConnectionPayload(`openchamber://connect?v=2&p=${withUserOnly}`)).toBeNull();
+  });
+
   test('drops a private-key member from a relay JWK (keeps only public coordinates)', () => {
     const withKey = Buffer.from(JSON.stringify({
       v: 2,

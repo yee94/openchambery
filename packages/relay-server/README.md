@@ -100,7 +100,9 @@ export OPENCHAMBER_RELAY_URL=wss://relay.example.com/ws
 openchamber
 ```
 
-Saved candidates include an endpoint snapshot. Existing Clients use a candidate refresh or a new pairing flow to receive a changed Relay endpoint. Create a fresh pairing link when immediate endpoint replacement is required.
+The **Add a device** dialog can override the Relay endpoint for a pairing. The Host persists and switches to the selected endpoint before it emits the QR code, unless `OPENCHAMBER_RELAY_URL` pins the deployment endpoint. The effective `relayUrl` is part of the pairing-v2 candidate and is saved by Mobile and Desktop clients for later reconnects.
+
+Existing Clients use a new pairing flow to receive a changed Relay endpoint. Create a fresh pairing link when endpoint replacement is required.
 
 ## TLS reverse proxies
 
@@ -237,6 +239,36 @@ sudo systemctl status openchamber-relay
 - Keep logs and metrics snapshots free of URL query strings, `sig`, `pk`, `grant`, encrypted payloads, pairing material, and bearer credentials.
 
 ## Docker delivery assets
+
+Each non-dry-run OpenChamber release publishes a Docker Hub image for `linux/amd64` and `linux/arm64` as `<DOCKERHUB_USERNAME>/openchamber-relay:<version>` and `<DOCKERHUB_USERNAME>/openchamber-relay:latest`. The release pipeline requires the `DOCKERHUB_USERNAME` GitHub Actions repository variable and a `DOCKERHUB_TOKEN` repository secret with Docker Hub Read and Write permissions. Image publication must succeed before the GitHub Release is finalized.
+
+The `Relay Docker` workflow can republish only the current Relay package version without creating or modifying a GitHub Release or other platform artifacts.
+
+Pull and run an immutable release tag behind a host TLS reverse proxy:
+
+```sh
+docker pull <dockerhub-username>/openchamber-relay:<version>
+docker run -d \
+  --name openchamber-relay \
+  --restart unless-stopped \
+  --read-only \
+  --tmpfs /tmp \
+  --security-opt no-new-privileges:true \
+  -p 127.0.0.1:8787:8787 \
+  -e OPENCHAMBER_RELAY_SERVER_PUBLIC_URL=wss://relay.example.com/ws \
+  <dockerhub-username>/openchamber-relay:<version>
+```
+
+For an end-to-end public deployment with Caddy-managed HTTPS, use [`docker-compose.relay.remote.yml`](../../docker-compose.relay.remote.yml) with Docker Compose 2.23.1 or later:
+
+```sh
+OPENCHAMBER_RELAY_IMAGE='<dockerhub-username>/openchamber-relay:<version>@sha256:<manifest-digest>' \
+RELAY_DOMAIN=relay.example.com \
+ACME_EMAIL=admin@example.com \
+docker compose -f docker-compose.relay.remote.yml up -d
+```
+
+`OPENCHAMBER_RELAY_IMAGE` is required so the repository never binds this reusable deployment file to a personal registry namespace. Use an immutable version-and-digest reference in production.
 
 The repository provides optional Docker delivery assets at [`Dockerfile.relay`](../../Dockerfile.relay) and [`docker-compose.relay.yml`](../../docker-compose.relay.yml). The Compose service publishes `127.0.0.1:${OPENCHAMBER_RELAY_PUBLISHED_PORT:-8787}` and accepts `OPENCHAMBER_RELAY_SERVER_PUBLIC_URL` plus selected Relay limits.
 

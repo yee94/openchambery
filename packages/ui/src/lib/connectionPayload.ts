@@ -85,8 +85,10 @@ const normalizeHttpUrl = (value: unknown): string | null => {
   }
 };
 
-// Relay endpoints are WebSocket URLs and keep their path (e.g. `/ws`, `/tunnel`),
-// so only the fragment is stripped — never the trailing path segment.
+// Relay endpoints are WebSocket URLs and keep their path (e.g. `/ws`, `/tunnel`).
+// Credentials are never part of a Relay endpoint identity — reject rather than
+// strip userinfo so a scanned pairing QR cannot smuggle URL auth. Query and
+// fragment are cleared so tokens in the query string never become the endpoint.
 const normalizeWsUrl = (value: unknown): string | null => {
   if (typeof value !== 'string') return null;
   const trimmed = value.trim();
@@ -94,7 +96,11 @@ const normalizeWsUrl = (value: unknown): string | null => {
   try {
     const parsed = new URL(trimmed);
     if (parsed.protocol !== 'ws:' && parsed.protocol !== 'wss:') return null;
+    if (parsed.username || parsed.password) return null;
+    parsed.username = '';
+    parsed.password = '';
     parsed.hash = '';
+    parsed.search = '';
     return parsed.toString();
   } catch {
     return null;

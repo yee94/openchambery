@@ -25,9 +25,7 @@ const DAEMON_READY_TIMEOUT_MS = 30000;
 
 function createServeCommand({
   serverPath,
-  bunBin,
   checkOpenCodeCLI,
-  getPreferredServerRuntime,
   setForegroundServerActive,
   setForegroundShutdown,
 }) {
@@ -101,8 +99,10 @@ async function serveCommand(options) {
     }
 
     const opencodeBinary = await checkOpenCodeCLI(emitNotice);
-    const preferredRuntime = getPreferredServerRuntime();
-    const runtimeBin = preferredRuntime === 'bun' ? bunBin : process.execPath;
+    // The Web API owns better-sqlite3 and must use the Node ABI prepared by the
+    // package scripts. Selecting Bun merely because it is installed makes an
+    // otherwise valid CLI launch fail before the Host can report readiness.
+    const runtimeBin = process.execPath;
 
     ensureLogsDir();
     const initialLogPort = targetPort === 0 ? 'auto' : String(targetPort);

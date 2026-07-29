@@ -62,9 +62,23 @@ import { getDesktopLanAddress, isDesktopLocalOriginActive, isDesktopShell } from
 import { runtimeFetch } from '@/lib/runtime-fetch';
 import { getRuntimeApiBaseUrl, switchRuntimeEndpoint } from '@/lib/runtime-switch';
 import { createUuid } from '@/lib/uuid';
+import {
+  DEFAULT_PAIRING_RELAY_URL,
+  normalizePairingRelayUrl,
+  readPairingRelayUrlPreference,
+  writePairingRelayUrlPreference,
+} from '@/lib/pairingRelayPreference';
 
 const randomPort = (): number => {
   return Math.floor(20000 + Math.random() * 30000);
+};
+
+type PairingTransportOptions = {
+  localUrl: string | null;
+  lanUrl: string | null;
+  relayAvailable: boolean;
+  relayUrl: string | null;
+  relayUrlLocked: boolean;
 };
 
 const isPortInUseError = (error: unknown): boolean => {
@@ -487,7 +501,10 @@ export const RemoteInstancesPage: React.FC = () => {
   const [addDeviceCreating, setAddDeviceCreating] = React.useState(false);
   const [addDeviceTransport, setAddDeviceTransport] = React.useState<'local' | 'lan' | 'relay'>('relay');
   const [addDeviceFallback, setAddDeviceFallback] = React.useState(true);
-  const [transportOptions, setTransportOptions] = React.useState<{ localUrl: string | null; lanUrl: string | null; relayAvailable: boolean } | null>(null);
+  const [addDeviceRelayUrl, setAddDeviceRelayUrl] = React.useState(DEFAULT_PAIRING_RELAY_URL);
+  const [addDeviceRelayUrlError, setAddDeviceRelayUrlError] = React.useState<string | null>(null);
+  const addDeviceRelayUrlInputRef = React.useRef<HTMLInputElement>(null);
+  const [transportOptions, setTransportOptions] = React.useState<PairingTransportOptions | null>(null);
   const revokedClientCount = React.useMemo(() => remoteClients.filter((client) => Boolean(client.revokedAt)).length, [remoteClients]);
   const [sshAddDialogOpen, setSshAddDialogOpen] = React.useState(false);
   const [sshCommandDraft, setSshCommandDraft] = React.useState('ssh user@example.com');
@@ -890,11 +907,17 @@ export const RemoteInstancesPage: React.FC = () => {
   // for LAN reachability (derived from its bind, not the UI origin), so "Local
   // network" works even when the UI is opened on localhost. Falls back to the
   // client-side guess if the endpoint is unavailable.
-  const resolveTransportOptions = React.useCallback(async (): Promise<{ localUrl: string | null; lanUrl: string | null; relayAvailable: boolean }> => {
+  const resolveTransportOptions = React.useCallback(async (): Promise<PairingTransportOptions> => {
     if (clientAuth?.getPairingTransports) {
       try {
         const transports = await clientAuth.getPairingTransports();
-        return { localUrl: transports.local, lanUrl: transports.lan, relayAvailable: transports.relayAvailable };
+        return {
+          localUrl: transports.local,
+          lanUrl: transports.lan,
+          relayAvailable: transports.relayAvailable,
+          relayUrl: normalizePairingRelayUrl(transports.relayUrl),
+          relayUrlLocked: transports.relayUrlLocked === true,
+        };
       } catch {
         // fall through to the client-side guess
       }
@@ -908,7 +931,7 @@ export const RemoteInstancesPage: React.FC = () => {
     } catch {
       // keep null
     }
-    return { localUrl, lanUrl, relayAvailable: true };
+    return { localUrl, lanUrl, relayAvailable: true, relayUrl: null, relayUrlLocked: false };
   }, [clientAuth]);
 
   const openAddDevice = React.useCallback(async () => {
@@ -917,11 +940,17 @@ export const RemoteInstancesPage: React.FC = () => {
     setPairingQrDataUrl(null);
     setPairingCopied(false);
     setCreatedPairingId(null);
+    setAddDeviceRelayUrlError(null);
     setAddDevicePhase('configure');
     setAddDeviceFallback(true);
     setAddDeviceOpen(true);
     const opts = await resolveTransportOptions();
     setTransportOptions(opts);
+    const locallySavedRelayUrl = readPairingRelayUrlPreference();
+    setAddDeviceRelayUrl(
+      (opts.relayUrlLocked ? opts.relayUrl : locallySavedRelayUrl || opts.relayUrl)
+      || DEFAULT_PAIRING_RELAY_URL,
+    );
     // "Anywhere" (relay, with home-network preference) is the right default for
     // most people; fall back to narrower options only when relay is unavailable.
     setAddDeviceTransport(opts.relayAvailable ? 'relay' : opts.lanUrl ? 'lan' : 'local');
@@ -952,12 +981,20 @@ export const RemoteInstancesPage: React.FC = () => {
         includeDirect = false;
         includeRelay = true;
       }
+      const relayUrl = includeRelay ? normalizePairingRelayUrl(addDeviceRelayUrl) : null;
+      if (includeRelay && !relayUrl) {
+        setAddDeviceRelayUrlError(t('settings.remoteInstances.clientAuth.addDevice.relayUrlInvalid'));
+        addDeviceRelayUrlInputRef.current?.focus();
+        return;
+      }
+      setAddDeviceRelayUrlError(null);
       const { pairing, server } = await clientAuth.createPairingSession({
         label,
         allowedClientKinds: ['mobile', 'desktop'],
         serverUrl,
         includeRelay,
         includeDirect,
+        ...(relayUrl ? { relayUrl } : {}),
       });
       const payload = buildPairingConnectionPayload({
         pairingId: pairing.id,
@@ -971,6 +1008,13 @@ export const RemoteInstancesPage: React.FC = () => {
         expiresAt: pairing.expiresAt,
         candidates: server.candidates as unknown as PairingEndpointCandidate[],
       });
+      const actualRelayCandidate = payload.candidates.find(
+        (candidate): candidate is Extract<PairingEndpointCandidate, { type: 'relay' }> => candidate.type === 'relay',
+      );
+      if (actualRelayCandidate) {
+        setAddDeviceRelayUrl(actualRelayCandidate.relayUrl);
+        writePairingRelayUrlPreference(actualRelayCandidate.relayUrl);
+      }
       const encoded = encodePairingConnectionPayload(payload);
       setPairingUrl(encoded);
       // Pairing payloads are dense (multiple transport candidates + the relay
@@ -988,7 +1032,7 @@ export const RemoteInstancesPage: React.FC = () => {
     } finally {
       setAddDeviceCreating(false);
     }
-  }, [clientAuth, transportOptions, addDeviceTransport, addDeviceFallback, remoteClientLabel, loadRemoteClients]);
+  }, [clientAuth, transportOptions, addDeviceTransport, addDeviceFallback, addDeviceRelayUrl, remoteClientLabel, loadRemoteClients, t]);
 
   const handleCopyPairing = React.useCallback(() => {
     if (!pairingUrl) return;
@@ -1771,6 +1815,47 @@ export const RemoteInstancesPage: React.FC = () => {
                     <label className="flex w-fit cursor-pointer items-center gap-2 pt-1">
                       <Checkbox checked={addDeviceFallback} onChange={setAddDeviceFallback} ariaLabel={t('settings.remoteInstances.clientAuth.addDevice.fallback.preferLocal')} />
                       <span className="typography-meta text-muted-foreground">{t('settings.remoteInstances.clientAuth.addDevice.fallback.preferLocal')}</span>
+                    </label>
+                  ) : null}
+                  {(addDeviceTransport === 'relay' || (addDeviceTransport === 'lan' && addDeviceFallback)) ? (
+                    <label className="block space-y-1.5 pt-2">
+                      <span className="typography-ui-label text-foreground">
+                        {t('settings.remoteInstances.clientAuth.addDevice.relayUrlLabel')}
+                      </span>
+                      <Input
+                        ref={addDeviceRelayUrlInputRef}
+                        className="h-8 font-mono"
+                        value={addDeviceRelayUrl}
+                        onChange={(event) => {
+                          setAddDeviceRelayUrl(event.target.value);
+                          setAddDeviceRelayUrlError(null);
+                        }}
+                        placeholder={DEFAULT_PAIRING_RELAY_URL}
+                        readOnly={transportOptions?.relayUrlLocked === true}
+                        aria-readonly={transportOptions?.relayUrlLocked === true || undefined}
+                        aria-invalid={Boolean(addDeviceRelayUrlError) || undefined}
+                        aria-describedby={addDeviceRelayUrlError
+                          ? 'add-device-relay-url-hint add-device-relay-url-error'
+                          : 'add-device-relay-url-hint'}
+                        spellCheck={false}
+                        autoCapitalize="none"
+                        autoCorrect="off"
+                      />
+                      <span id="add-device-relay-url-hint" className="block typography-meta text-muted-foreground">
+                        {transportOptions?.relayUrlLocked
+                          ? t('settings.remoteInstances.clientAuth.addDevice.relayUrlLockedHint')
+                          : t('settings.remoteInstances.clientAuth.addDevice.relayUrlHint')}
+                      </span>
+                      {addDeviceRelayUrlError ? (
+                        <span
+                          id="add-device-relay-url-error"
+                          role="alert"
+                          aria-live="polite"
+                          className="block typography-meta text-[var(--status-error)]"
+                        >
+                          {addDeviceRelayUrlError}
+                        </span>
+                      ) : null}
                     </label>
                   ) : null}
                 </div>

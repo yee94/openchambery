@@ -18,21 +18,30 @@ import { startRelayHost } from './host-client.js';
 
 export const DEFAULT_RELAY_URL = 'wss://relay.openchamber.dev/ws';
 
-const isValidRelayUrl = (value) => {
-  if (typeof value !== 'string') return false;
+// Canonical form: ws(s)://host[:port]/path only. Reject credentials (userinfo)
+// so settings and pairing candidates never store secrets in the endpoint URL.
+// Strip query/fragment so persistence and candidates stay scheme/host/path.
+const canonicalizeRelayUrl = (value) => {
+  if (typeof value !== 'string') return null;
+  const trimmed = value.trim();
+  if (!trimmed) return null;
   try {
-    const url = new URL(value.trim());
-    return url.protocol === 'ws:' || url.protocol === 'wss:';
+    const url = new URL(trimmed);
+    if (url.protocol !== 'ws:' && url.protocol !== 'wss:') return null;
+    if (url.username || url.password) return null;
+    url.username = '';
+    url.password = '';
+    url.hash = '';
+    url.search = '';
+    return url.toString();
   } catch {
-    return false;
+    return null;
   }
 };
 
 const normalizeRelayUrl = (value) => {
   if (typeof value !== 'string') return DEFAULT_RELAY_URL;
-  const trimmed = value.trim();
-  if (!trimmed || !isValidRelayUrl(trimmed)) return DEFAULT_RELAY_URL;
-  return trimmed;
+  return canonicalizeRelayUrl(value) ?? DEFAULT_RELAY_URL;
 };
 
 // A deployment can pin the relay endpoint via env (e.g. a self-hosted relay on
@@ -41,8 +50,8 @@ const normalizeRelayUrl = (value) => {
 // status all point at it — clients then inherit it from the offer automatically.
 const envRelayUrlOverride = () => {
   const raw = process.env.OPENCHAMBER_RELAY_URL;
-  if (typeof raw !== 'string' || !raw.trim() || !isValidRelayUrl(raw)) return null;
-  return raw.trim();
+  if (typeof raw !== 'string' || !raw.trim()) return null;
+  return canonicalizeRelayUrl(raw);
 };
 
 /**
@@ -269,10 +278,29 @@ export const createRelayService = ({
   // relay pairing link IS the demand signal, so the relay turns itself on here
   // rather than requiring a separate manual toggle. Idempotent: a no-op when the
   // relay is already enabled and running.
-  const ensureEnabledForPairing = async () => {
+  const ensureEnabledForPairing = async (requestedRelayUrl) => {
     const config = await readConfig();
-    if (!config.enabled) {
-      await writeConfig({ enabled: true, relayUrl: config.relayUrl });
+    let relayUrl = config.relayUrl;
+    if (!config.relayUrlLocked && requestedRelayUrl !== undefined) {
+      const canonical = canonicalizeRelayUrl(requestedRelayUrl);
+      if (!canonical) {
+        const error = new Error('Relay URL must use ws:// or wss://');
+        error.statusCode = 400;
+        throw error;
+      }
+      relayUrl = canonical;
+    }
+
+    const endpointChanged = relayUrl !== config.relayUrl;
+    if (!config.enabled || endpointChanged) {
+      await writeConfig({ enabled: true, relayUrl });
+    }
+    if (endpointChanged) {
+      // One Host identity can have only one live Relay control connection. A
+      // custom endpoint therefore becomes the authoritative transport before
+      // its pairing candidate is returned. Stop also clears a standby claim
+      // watcher whose retry closure still targets the previous endpoint.
+      stop();
     }
     if (!hostClient) {
       const next = await readConfig();
@@ -297,7 +325,16 @@ export const createRelayService = ({
     app.post('/api/openchamber/relay/enable', express.json({ limit: '16kb' }), async (req, res) => {
       try {
         const current = await readConfig();
-        const relayUrl = typeof req.body?.relayUrl === 'string' ? normalizeRelayUrl(req.body.relayUrl) : current.relayUrl;
+        let relayUrl = current.relayUrl;
+        if (typeof req.body?.relayUrl === 'string') {
+          // Reject invalid endpoints with 400 instead of silently falling back
+          // to the default (which would hide bad userinfo/scheme from the UI).
+          const canonical = canonicalizeRelayUrl(req.body.relayUrl);
+          if (!canonical) {
+            return res.status(400).json({ error: 'Relay URL must use ws:// or wss://' });
+          }
+          relayUrl = canonical;
+        }
         await writeConfig({ enabled: true, relayUrl });
         if (hostClient) stop();
         // Explicit user action: take the machine's host claim like pairing does.
