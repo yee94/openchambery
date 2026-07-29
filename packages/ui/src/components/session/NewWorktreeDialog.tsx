@@ -32,7 +32,7 @@ import { useSelectionStore } from '@/sync/selection-store';
 import * as sessionActions from '@/sync/session-actions';
 import { useConfigStore } from '@/stores/useConfigStore';
 import { validateWorktreeCreate, createWorktree } from '@/lib/worktrees/worktreeManager';
-import { withWorktreeUpstreamDefaults } from '@/lib/worktrees/worktreeCreate';
+import { resolveRootTrackingRemote, withWorktreeUpstreamDefaults } from '@/lib/worktrees/worktreeCreate';
 import { waitForWorktreeBootstrap } from '@/lib/worktrees/worktreeBootstrap';
 import { getWorktreeSetupCommands, getWorktreeSetupWaitEnabled } from '@/lib/openchamberConfig';
 import { getRootBranch } from '@/lib/worktrees/worktreeStatus';
@@ -60,6 +60,7 @@ import type {
 } from '@/lib/api/types';
 import type { ProjectRef } from '@/lib/worktrees/worktreeManager';
 import { useI18n } from '@/lib/i18n';
+import { resolveWorktreeDialogProject } from './newWorktreeDialogProject';
 
 type Mode = 'new-branch' | 'existing-branch';
 
@@ -184,6 +185,7 @@ interface NewWorktreeDialogProps {
   open: boolean;
   onOpenChange: (open: boolean) => void;
   onWorktreeCreated?: (worktreePath: string, options?: { sessionId?: string }) => void;
+  projectId?: string | null;
 }
 
 const buildIssueContextText = (args: {
@@ -207,6 +209,7 @@ export function NewWorktreeDialog({
   open,
   onOpenChange,
   onWorktreeCreated,
+  projectId,
 }: NewWorktreeDialogProps) {
   const { t } = useI18n();
   const { github, git } = useRuntimeAPIs();
@@ -214,7 +217,9 @@ export function NewWorktreeDialog({
   const githubAuthQuery = useGitHubAuthQuery();
   const githubAuthStatus = githubAuthQuery.data ?? null;
   const githubAuthChecked = githubAuthQuery.isFetched;
-  const activeProject = useProjectsStore((state) => state.getActiveProject());
+  const activeProject = useProjectsStore((state) => {
+    return resolveWorktreeDialogProject(state.projects, state.activeProjectId, projectId);
+  });
   
   const projectDirectory = activeProject?.path ?? null;
   const projectRef: ProjectRef | null = React.useMemo(() => {
@@ -831,7 +836,10 @@ export function NewWorktreeDialog({
       const includePrDiff = mode === 'new-branch' ? newBranchState.includePrDiff : false;
       const shouldCreateSession = Boolean(linkedIssue || linkedPrState);
 
-      const setupCommands = await getWorktreeSetupCommands(projectRef);
+      const [setupCommands, resolvedRootTrackingRemote] = await Promise.all([
+        getWorktreeSetupCommands(projectRef),
+        resolveRootTrackingRemote(projectDirectory),
+      ]);
       const sourceBranch = newBranchState.sourceBranch;
 
       let sourceLabel = '';
@@ -868,7 +876,9 @@ export function NewWorktreeDialog({
         };
       })();
       
-      const resolvedArgs = await withWorktreeUpstreamDefaults(projectDirectory, args);
+      const resolvedArgs = await withWorktreeUpstreamDefaults(projectDirectory, args, {
+        resolvedRootTrackingRemote,
+      });
 
       const metadata = await createWorktree(projectRef, resolvedArgs);
 

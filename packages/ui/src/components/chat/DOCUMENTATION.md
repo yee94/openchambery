@@ -29,3 +29,5 @@ On mobile, only the Composer is an explicit Session-swipe surface: left switches
 Mobile direct-send keeps the Composer textarea focused so the keyboard remains available for consecutive messages. Only controls that intentionally open another mobile panel or sheet explicitly blur the textarea.
 
 `QueuedMessageChips` roots the queue surface with `oc-composer-queue` and uses compact mobile control sizes. Those sizes only stick under real touch when `mobile.css` opts the cluster out of the global `:root.mobile-pointer` 36px button min — React `isMobile` alone is not enough. See `packages/ui/src/styles/DOCUMENTATION.md` (`isMobile` vs `mobile-pointer`) before debugging queue chip spacing that changes when DevTools inspect opens or closes.
+
+Streaming assistant and reasoning rendering reads `streamingRenderCadence.ts`: Android native uses a 100ms source throttle and 128ms Markdown reveal pace; web, desktop, VS Code, and iOS use 20ms and 64ms. Finalized content renders immediately.

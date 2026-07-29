@@ -21,6 +21,7 @@ export type MobileRowActionCallbacks = {
   onDelete?: () => void;
   onNewSession?: () => void;
   onNewWorktree?: () => void;
+  onSyncSessions?: () => void;
   onEditProject?: () => void;
   onCloseProject?: () => void;
   onDeleteWorktree?: () => void;
@@ -114,6 +115,7 @@ export function MobileRowActionsSheet({
           <>
             {actions.onNewSession ? <ActionRow icon="add" label={t('sessions.sidebar.project.actions.newSession')} onClick={run(actions.onNewSession)} /> : null}
             {target.gitRepository && actions.onNewWorktree ? <ActionRow icon="node-tree" label={t('sessions.sidebar.project.actions.newWorktree')} onClick={run(actions.onNewWorktree)} /> : null}
+            {actions.onSyncSessions ? <ActionRow icon="refresh" label={t('sessions.sidebar.project.actions.syncSessions')} onClick={run(actions.onSyncSessions)} /> : null}
             {actions.onEditProject ? <ActionRow icon="pencil-ai" label={t('sessions.sidebar.project.actions.edit')} onClick={run(actions.onEditProject)} /> : null}
             {actions.onCloseProject ? (
               <div className="mt-3 border-t border-[var(--surface-subtle)] pt-3">

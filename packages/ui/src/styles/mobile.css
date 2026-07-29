@@ -2135,6 +2135,42 @@ button.oc-mobile-group-label-trigger:focus-visible {
   );
 }
 
+/* Android WebView uses opaque semantic fills for persistent floating chrome.
+   Shadows retain the shared elevation hierarchy while avoiding continuous
+   backdrop compositing during scroll and native window movement. */
+:root.oc-capacitor-app.oc-platform-android .oc-mobile-floating-surface,
+:root.oc-capacitor-app.oc-platform-android .oc-mobile-glass-surface,
+:root.oc-capacitor-app.oc-platform-android .oc-mobile-floating-bottom-bar {
+  background: color-mix(
+    in srgb,
+    var(--surface-elevated) 88%,
+    var(--background)
+  );
+}
+
+:root.oc-capacitor-app.oc-platform-android .oc-mobile-glass-control,
+:root.oc-capacitor-app.oc-platform-android .oc-mobile-floating-action {
+  background: var(--surface-elevated);
+}
+
+:root.oc-capacitor-app.oc-platform-android .oc-mobile-overlay-surface {
+  background: color-mix(
+    in srgb,
+    var(--surface-elevated) 96%,
+    var(--background)
+  );
+}
+
+:root.oc-capacitor-app.oc-platform-android .oc-mobile-floating-surface,
+:root.oc-capacitor-app.oc-platform-android .oc-mobile-glass-surface,
+:root.oc-capacitor-app.oc-platform-android .oc-mobile-floating-bottom-bar,
+:root.oc-capacitor-app.oc-platform-android .oc-mobile-glass-control,
+:root.oc-capacitor-app.oc-platform-android .oc-mobile-floating-action,
+:root.oc-capacitor-app.oc-platform-android .oc-mobile-overlay-surface {
+  -webkit-backdrop-filter: none;
+  backdrop-filter: none;
+}
+
 :root.oc-capacitor-app.oc-platform-android .header-safe-area {
   padding-top: var(--oc-safe-area-top);
 }

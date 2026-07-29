@@ -8,9 +8,17 @@ type OpenChamberEvent = {
   revision?: number;
   occurredAt?: number;
 };
+type RevisionDomain = 'session-index-changed' | 'message-queue-changed' | 'assistants-changed';
 const tipListeners = new Set<(event: OpenChamberEvent) => void>();
+const latestByDomain = new Map<RevisionDomain, number>();
+const isRevisionDomain = (type: string): type is RevisionDomain =>
+  type === 'session-index-changed' || type === 'message-queue-changed' || type === 'assistants-changed';
 /** Deliver a tip (or ready) event to every active OpenChamber tip subscriber. */
 const emitTip = (event: OpenChamberEvent) => {
+  if (isRevisionDomain(event.type) && typeof event.revision === 'number') {
+    const previous = latestByDomain.get(event.type);
+    if (previous === undefined || event.revision > previous) latestByDomain.set(event.type, event.revision);
+  }
   for (const listener of [...tipListeners]) listener(event);
 };
 const realOpenchamberEvents = await import('@/lib/openchamberEvents');
@@ -19,6 +27,7 @@ mock.module('@/lib/openchamberEvents', () => ({
     tipListeners.add(listener);
     return () => { tipListeners.delete(listener); };
   },
+  getLatestOpenchamberEventRevision: (type: RevisionDomain) => latestByDomain.get(type),
   // Keep the real parser so sibling suites can still assert envelope contracts.
   parseOpenchamberEventEnvelope: realOpenchamberEvents.parseOpenchamberEventEnvelope,
 }));
@@ -62,6 +71,7 @@ describe('message queue server adapter', () => {
   });
   beforeEach(() => {
     tipListeners.clear();
+    latestByDomain.clear();
     fetchCalls.length = 0;
     previousResolver = getRuntimeUrlResolver();
     configureRuntimeUrlResolver({ apiBaseUrl: 'http://127.0.0.1:57123' });
@@ -81,6 +91,7 @@ describe('message queue server adapter', () => {
   });
   afterEach(() => {
     tipListeners.clear();
+    latestByDomain.clear();
     fetchCalls.length = 0;
     setRuntimeUrlResolver(previousResolver);
     globalThis.fetch = originalFetch;
@@ -128,6 +139,8 @@ describe('message queue server adapter', () => {
     emitTip({ type: 'message-queue-changed', revision: 4, occurredAt: 1 });
     expect(await tip).toBe('tip');
 
+    // Clear tip watermark so ready/aborted waits are not short-circuited by a prior tip.
+    latestByDomain.clear();
     const ready = api.waitForMessageQueueInvalidation(3);
     emitTip({ type: 'event-stream-ready' });
     expect(await ready).toBe('ready');
@@ -137,6 +150,29 @@ describe('message queue server adapter', () => {
     controller.abort();
     expect(await aborted).toBe('aborted');
     expect(fetchCalls).toEqual([]);
+  });
+
+  test('resolves tip immediately when the watermark advanced before the waiter subscribed', async () => {
+    emitTip({ type: 'message-queue-changed', revision: 9, occurredAt: 1 });
+    expect(tipListeners.size).toBe(0);
+    expect(await api.waitForMessageQueueInvalidation(4)).toBe('tip');
+  });
+
+  test('keeps tip resolution after subscribe when the tip arrives later', async () => {
+    const pending = api.waitForMessageQueueInvalidation(4, { safetyTimeoutMs: 5_000 });
+    emitTip({ type: 'message-queue-changed', revision: 5, occurredAt: 1 });
+    expect(await pending).toBe('tip');
+  });
+
+  test('safety-timeouts when no tip arrives so observers cannot hang forever', async () => {
+    expect(await api.waitForMessageQueueInvalidation(4, { safetyTimeoutMs: 20 })).toBe('timeout');
+  });
+
+  test('does not resolve message-queue wait from a session-index revision tip', async () => {
+    emitTip({ type: 'session-index-changed', revision: 99, occurredAt: 1 });
+    const pending = api.waitForMessageQueueInvalidation(4, { safetyTimeoutMs: 20 });
+    emitTip({ type: 'session-index-changed', revision: 100, occurredAt: 2 });
+    expect(await pending).toBe('timeout');
   });
 
   test('sends the admission and mutation contracts without serializing signals', async () => {

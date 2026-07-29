@@ -52,6 +52,22 @@ describe('Electron session index', () => {
     service.close();
   });
 
+  it('retains an empty synced directory for cross-client worktree discovery', () => {
+    const runtimeRef = { value: 'http://runtime-a.test' };
+    const service = createService(runtimeRef);
+
+    service.replaceDirectory({ directory: '/repo/empty-worktree', sessions: [], cursor: null, hasMore: false, now: 1000 });
+
+    expect(service.snapshot().directories).toEqual([
+      expect.objectContaining({
+        directory: '/repo/empty-worktree',
+        sessions: [],
+        lastSyncedAt: 1000,
+      }),
+    ]);
+    service.close();
+  });
+
   it('keeps Assistant-tagged OpenCode sessions in ordinary sidebar summaries', () => {
     const runtimeRef = { value: 'http://runtime-a.test' };
     const service = createService(runtimeRef);

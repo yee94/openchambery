@@ -124,9 +124,25 @@ export const createWorktreeTopologyCoordinator = (dependencies: WorktreeTopology
   const recoverUnknownDirectories = () => {
     const catalog = dependencies.getCatalog();
     const projects = dependencies.getProjects();
+    // Recovery candidates: live active session directories and session-index
+    // snapshot directories (cachedDirectories). Membership is semantic — a new
+    // Set/array with the same members must not force extra catalog refresh.
+    const nextMembers = new Set<string>();
     for (const directory of dependencies.getActiveDirectories()) {
       if (!directory.trim()) continue;
-      const normalized = normalizePath(directory);
+      nextMembers.add(normalizePath(directory));
+    }
+    // Drop bookkeeping for directories that left the candidate set so a later
+    // reappearance can recover again within the same ready epoch.
+    for (const signature of [...unknownCandidates]) {
+      const directory = signature.slice(signature.indexOf(':') + 1);
+      if (!nextMembers.has(directory)) unknownCandidates.delete(signature);
+    }
+    for (const signature of [...suppressedUnknown]) {
+      const directory = signature.slice(signature.indexOf(':') + 1);
+      if (!nextMembers.has(directory)) suppressedUnknown.delete(signature);
+    }
+    for (const normalized of nextMembers) {
       const project = projects.find((candidate) => {
         const root = normalizePath(candidate.path);
         const known = catalog.get(root)?.some((worktree) => normalizePath(worktree.path) === normalized);
@@ -205,13 +221,24 @@ export const startWorktreeTopologySync = (): (() => void) => {
       isVSCode: isVSCodeRuntime,
       getProjects: () => useProjectsStore.getState().projects,
       getCatalog: () => useSessionUIStore.getState().availableWorktreesByProject,
-      getActiveDirectories: () => useGlobalSessionsStore.getState().activeSessions.map((session) => session.directory).filter((directory): directory is string => typeof directory === 'string'),
+      getActiveDirectories: () => {
+        const state = useGlobalSessionsStore.getState();
+        const directories: string[] = [];
+        for (const session of state.activeSessions) {
+          if (typeof session.directory === 'string') directories.push(session.directory);
+        }
+        for (const directory of state.cachedDirectories) directories.push(directory);
+        return directories;
+      },
       needsSessionSync: (directory) => !useGlobalSessionsStore.getState().loadedDirectories.has(normalizePath(directory)),
       refresh: forceRefreshProjectWorktreeCatalog,
       syncAdded: (directories) => syncGlobalSessionsForDirectories(directories, useGlobalSessionsStore.getState().activeSessions),
       subscribeProjects: (listener) => useProjectsStore.subscribe(listener),
       subscribeCatalog: (listener) => useSessionUIStore.subscribe((state, previous) => { if (state.availableWorktreesByProject !== previous.availableWorktreesByProject) listener(); }),
-      subscribeSessions: (listener) => useGlobalSessionsStore.subscribe((state, previous) => { if (state.activeSessions !== previous.activeSessions) listener(); }),
+      subscribeSessions: (listener) => useGlobalSessionsStore.subscribe((state, previous) => {
+        if (state.activeSessions === previous.activeSessions && state.cachedDirectories === previous.cachedDirectories) return;
+        listener();
+      }),
       subscribeEvents: subscribeOpenchamberEvents,
       subscribeRuntime: (listener) => subscribeRuntimeEndpointChanged((detail) => listener(isRuntimeEndpointIdentityChange(detail))),
       generation: getRuntimeGeneration,

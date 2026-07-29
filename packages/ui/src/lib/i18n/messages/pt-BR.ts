@@ -2525,6 +2525,8 @@ export const dict: Record<I18nKey, string> = {
   "sessionAuth.toast.passkeyAdded": "Chave de acesso adicionada",
   "sessionAuth.toast.passkeySetupCanceled": "Configurações de chave de acesso cancelada",
   "desktopHostSwitcher.title": "Instância",
+  "desktopHostSwitcher.transition.title": "Alternando instância…",
+  "desktopHostSwitcher.transition.description": "Carregando os dados da instância selecionada.",
   "desktopHostSwitcher.description": "Alterne entre Local e o servidor remoto do OpenChamber",
   "desktopHostSwitcher.header.current": "Atual",
   "desktopHostSwitcher.header.default": "Padrão",

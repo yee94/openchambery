@@ -2529,6 +2529,8 @@ export const dict: Record<I18nKey, string> = {
   'sessionAuth.toast.passkeyAdded': 'Passkey 已新增',
   'sessionAuth.toast.passkeySetupCanceled': 'Passkey 設定已取消',
   'desktopHostSwitcher.title': '實例',
+  'desktopHostSwitcher.transition.title': '正在切換實例…',
+  'desktopHostSwitcher.transition.description': '正在載入所選實例的資料。',
   'desktopHostSwitcher.description': '在 Local 與遠端 OpenChamber 伺服器之間切換',
   'desktopHostSwitcher.header.current': '目前',
   'desktopHostSwitcher.header.default': '預設',

@@ -2297,6 +2297,8 @@ export const dict = {
   'sessionAuth.toast.passkeyAdded': 'Clé d\'accès ajoutée',
   'sessionAuth.toast.passkeySetupCanceled': 'Configuration du mot de passe annulée',
   'desktopHostSwitcher.title': 'Instance',
+  'desktopHostSwitcher.transition.title': 'Changement d’instance…',
+  'desktopHostSwitcher.transition.description': 'Chargement des données de l’instance sélectionnée.',
   'desktopHostSwitcher.description': 'Basculer entre les serveurs OpenChamber locaux et distants',
   'desktopHostSwitcher.header.current': 'Actuel',
   'desktopHostSwitcher.header.default': 'Défaut',

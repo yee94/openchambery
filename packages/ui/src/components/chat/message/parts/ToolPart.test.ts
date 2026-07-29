@@ -53,6 +53,15 @@ describe('static navigation hit targets', () => {
         expect(filesSurfaceSource).toContain("if (current.type === 'file')");
         expect(filesSurfaceSource).toContain('initialFilePath');
     });
+
+    test('mobile read image preview loads relay assets through runtimeFetch', () => {
+        const filesSurfaceSource = readFileSync(join(__dirname, '../../../../apps/MobileFilesSurface.tsx'), 'utf-8');
+        expect(filesSurfaceSource).toContain('isRelayModeActive()');
+        expect(filesSurfaceSource).toContain("runtimeFetch('/api/fs/raw', { query: { path: imagePath } })");
+        expect(filesSurfaceSource).toContain('URL.createObjectURL(blob)');
+        expect(filesSurfaceSource).toContain('URL.revokeObjectURL(objectUrl)');
+        expect(filesSurfaceSource).toContain('const imageSrc = relayImageKey ? relayImageSrc');
+    });
 });
 
 describe('tool busy title chrome', () => {

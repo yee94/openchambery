@@ -20,6 +20,7 @@ import { ensureOutsideFileGrantForDesktop } from '@/lib/outsideFileGrants';
 import { getDirectoryForFilePath, isFilePathWithinDirectory, toAbsoluteFilePath } from '@/lib/path-utils';
 import { isImageFile } from '@/lib/toolHelpers';
 import { isMobileSurfaceRuntime } from '@/lib/runtimeSurface';
+import { getClientPlatform } from '@/lib/platform';
 import { renderMarkdownBlocks, renderMarkdownSync } from './markdown/markdownCore';
 import { ensureMarkdownShikiTheme, getMarkdownSyntaxVars } from './markdown/markdownTheme';
 import { MarkdownLoadingPlaceholder } from './markdown/MarkdownLoadingSkeleton';
@@ -37,6 +38,7 @@ import {
 import { createMermaidViewerRegistry, MERMAID_BLOCK_SELECTOR, shouldRefreshMermaidViewers } from './markdown/mermaidViewer';
 import { scheduleAfterPaintTask } from '@/lib/afterPaintTaskQueue';
 import { DualLimitLru } from '@/lib/dualLimitLru';
+import { resolveStreamingRenderCadence } from './streamingRenderCadence';
 import {
   BLOCK_PATH_TOKEN_RE,
   PARAGRAPH_PATH_TOKEN_RE,
@@ -875,22 +877,18 @@ const useMermaidInlineInteractions = ({
 // Rendering core: marked -> math -> shiki -> sanitize -> decorate -> morphdom
 // ---------------------------------------------------------------------------
 
-// Single tuning knob: the streaming reveal cadence. Lower = smoother but more
-// CPU (more re-parse steps/sec); higher = cheaper but chunkier. Step sizes are
-// auto-scaled from this so reveal throughput (chars/sec) stays constant no
-// matter the cadence — text always keeps up with the incoming stream.
-const TEXT_PACE_MS = 64;
+// Streaming reveal cadence varies by native platform. Step sizes are auto-scaled
+// so reveal throughput (chars/sec) stays constant across the selected cadence.
 const PACE_BASELINE_MS = 24;
-const PACE_RATIO = TEXT_PACE_MS / PACE_BASELINE_MS;
 const TEXT_SNAP = /[\s.,!?;:)\]]/;
 
-const paceStep = (remaining: number): number => {
+const paceStep = (remaining: number, textPaceMs: number): number => {
   const base = remaining <= 12 ? 2 : remaining <= 48 ? 4 : remaining <= 96 ? 8 : Math.min(24, Math.ceil(remaining / 8));
-  return Math.max(1, Math.round(base * PACE_RATIO));
+  return Math.max(1, Math.round(base * (textPaceMs / PACE_BASELINE_MS)));
 };
 
-const nextRevealIndex = (text: string, start: number): number => {
-  const end = Math.min(text.length, start + paceStep(text.length - start));
+const nextRevealIndex = (text: string, start: number, textPaceMs: number): number => {
+  const end = Math.min(text.length, start + paceStep(text.length - start, textPaceMs));
   for (let i = end; i < Math.min(text.length, end + 8); i += 1) {
     if (TEXT_SNAP.test(text[i] ?? '')) return i + 1;
   }
@@ -900,7 +898,7 @@ const nextRevealIndex = (text: string, start: number): number => {
 // Granular streaming reveal. Cheap because each step only re-runs the
 // marked->morphdom pipeline (patching changed DOM nodes), with no React tree
 // reconciliation of the markdown body.
-const usePacedText = (content: string, streaming: boolean): string => {
+const usePacedText = (content: string, streaming: boolean, textPaceMs: number): string => {
   const [shown, setShown] = React.useState<number>(() => (streaming ? 0 : content.length));
   const shownRef = React.useRef(shown);
   shownRef.current = shown;
@@ -921,18 +919,18 @@ const usePacedText = (content: string, streaming: boolean): string => {
         timer = null;
         return;
       }
-      setShown(nextRevealIndex(content, current));
-      timer = window.setTimeout(tick, TEXT_PACE_MS);
+      setShown(nextRevealIndex(content, current, textPaceMs));
+      timer = window.setTimeout(tick, textPaceMs);
     };
 
     if (shownRef.current < content.length) {
-      timer = window.setTimeout(tick, TEXT_PACE_MS);
+      timer = window.setTimeout(tick, textPaceMs);
     }
 
     return () => {
       if (timer !== null) window.clearTimeout(timer);
     };
-  }, [content, streaming]);
+  }, [content, streaming, textPaceMs]);
 
   if (!streaming) return content;
   return content.slice(0, Math.min(shown, content.length));
@@ -1303,7 +1301,8 @@ const MarkdownRendererImpl: React.FC<MarkdownRendererProps> = ({
   }, [effectiveDirectory, openContextPreview]);
 
   const live = isStreaming && !disableStreamAnimation;
-  const pacedText = usePacedText(content, live);
+  const streamingRenderCadence = resolveStreamingRenderCadence(getClientPlatform());
+  const pacedText = usePacedText(content, live, streamingRenderCadence.markdownPaceMs);
   const [richReady, revealRichContent] = useRichMarkdownReveal(containerRef, live);
 
   useMermaidInlineInteractions({

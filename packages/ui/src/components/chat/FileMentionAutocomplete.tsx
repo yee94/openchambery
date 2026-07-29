@@ -19,6 +19,10 @@ import { useSessionUIStore } from '@/sync/session-ui-store';
 import { useGlobalSessionsStore } from '@/stores/useGlobalSessionsStore';
 import type { Session } from '@opencode-ai/sdk/v2';
 import { getVisibleSessionMentionCandidates } from './fileMentionAutocompleteState';
+import {
+  createMentionTouchSelectionController,
+  type MentionTouchSelectionController,
+} from './fileMentionTouchSelection';
 
 type FileInfo = ProjectFileSearchHit;
 type AgentInfo = {
@@ -82,6 +86,10 @@ export const FileMentionAutocomplete = React.forwardRef<FileMentionHandle, FileM
   const labelRefs = React.useRef<(HTMLSpanElement | null)[]>([]);
   const measureRefs = React.useRef<(HTMLSpanElement | null)[]>([]);
   const containerRef = React.useRef<HTMLDivElement | null>(null);
+  const touchSelectionControllerRef = React.useRef<MentionTouchSelectionController | null>(null);
+  if (!touchSelectionControllerRef.current) {
+    touchSelectionControllerRef.current = createMentionTouchSelectionController();
+  }
   const isMobile = useUIStore((state) => state.isMobile);
   const mobileMaxHeight = useMobileAutocompleteMaxHeight(containerRef, isMobile);
   const normalizedSearchQuery = (searchQuery ?? '').trim();
@@ -385,6 +393,33 @@ export const FileMentionAutocomplete = React.forwardRef<FileMentionHandle, FileM
     onSessionSelect?.(session);
   });
 
+  const getItemInteractionHandlers = (index: number, select: () => void) => ({
+    onMouseDown: (event: React.MouseEvent<HTMLDivElement>) => event.preventDefault(),
+    onPointerDown: (event: React.PointerEvent<HTMLDivElement>) => {
+      if (event.pointerType === 'touch') {
+        touchSelectionControllerRef.current?.pointerDown(event.clientX, event.clientY);
+      }
+    },
+    onPointerMove: (event: React.PointerEvent<HTMLDivElement>) => {
+      if (event.pointerType === 'touch') {
+        touchSelectionControllerRef.current?.pointerMove(event.clientX, event.clientY);
+      }
+    },
+    onPointerUp: (event: React.PointerEvent<HTMLDivElement>) => {
+      if (event.pointerType !== 'touch') return;
+      const selected = touchSelectionControllerRef.current?.pointerUp(select) ?? false;
+      if (selected) {
+        event.preventDefault();
+        event.stopPropagation();
+      }
+    },
+    onPointerCancel: () => touchSelectionControllerRef.current?.pointerCancel(),
+    onClick: () => {
+      touchSelectionControllerRef.current?.click(select);
+    },
+    onMouseMove: () => setSelectedIndex(index),
+  });
+
   React.useImperativeHandle(ref, () => ({
     handleKeyDown: (key: string) => {
       if (key === 'Escape') {
@@ -491,8 +526,7 @@ export const FileMentionAutocomplete = React.forwardRef<FileMentionHandle, FileM
                     isMobile && 'min-h-11',
                     isSelected && 'bg-interactive-selection text-interactive-selection-foreground',
                   )}
-                  onClick={() => handleAgentPick(agent.name)}
-                  onMouseMove={() => setSelectedIndex(index)}
+                  {...getItemInteractionHandlers(index, () => handleAgentPick(agent.name))}
                 >
                   <div className="min-w-0 flex-1">
                     <div className="font-semibold truncate">@{agent.name}</div>
@@ -525,8 +559,7 @@ export const FileMentionAutocomplete = React.forwardRef<FileMentionHandle, FileM
                     isMobile && 'min-h-11',
                     isSelected && 'bg-interactive-selection text-interactive-selection-foreground',
                   )}
-                  onClick={() => handleSessionPick(session)}
-                  onMouseMove={() => setSelectedIndex(rowIndex)}
+                  {...getItemInteractionHandlers(rowIndex, () => handleSessionPick(session))}
                 >
                   <Icon name="chat-thread" className="h-4 w-4 flex-shrink-0 text-[var(--primary-base)]" />
                   <span
@@ -563,8 +596,7 @@ export const FileMentionAutocomplete = React.forwardRef<FileMentionHandle, FileM
                     isMobile && 'min-h-11',
                     isSelected && "bg-interactive-selection text-interactive-selection-foreground"
                   )}
-                  onClick={() => handleFileSelect({ ...dir, isDirectory: true })}
-                  onMouseMove={() => setSelectedIndex(rowIndex)}
+                  {...getItemInteractionHandlers(rowIndex, () => handleFileSelect({ ...dir, isDirectory: true }))}
                 >
                   <Icon name="folder-3-fill" className="h-3.5 w-3.5 text-current" />
                   <span className="flex-1 min-w-0 truncate" aria-label={relativePath}>
@@ -595,8 +627,7 @@ export const FileMentionAutocomplete = React.forwardRef<FileMentionHandle, FileM
                     isMobile && 'min-h-11',
                     isSelected && "bg-interactive-selection text-interactive-selection-foreground"
                   )}
-                  onClick={() => handleFileSelect(file)}
-                  onMouseMove={() => setSelectedIndex(rowIndex)}
+                  {...getItemInteractionHandlers(rowIndex, () => handleFileSelect(file))}
                 >
                   {getFileIcon(file)}
                   <span
@@ -649,8 +680,7 @@ export const FileMentionAutocomplete = React.forwardRef<FileMentionHandle, FileM
                       isMobile && 'min-h-11',
                       isSelected && "bg-interactive-selection text-interactive-selection-foreground"
                   )}
-                  onClick={() => handleFileSelect(file)}
-                  onMouseMove={() => setSelectedIndex(rowIndex)}
+                  {...getItemInteractionHandlers(rowIndex, () => handleFileSelect(file))}
                 >
                   {getFileIcon(file)}
                   <span

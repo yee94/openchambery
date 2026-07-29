@@ -323,6 +323,48 @@ test('observer applies a newer snapshot after a tip without re-waiting mid-apply
   runtime.stop();
 });
 
+test('observer recovers when a tip is dropped after the stable GET and before wait registers', async () => {
+  // Missed-wakeup regression: shared openchamberEvents can deliver DELETE tips
+  // while no queue waiter is subscribed. First wait returns timeout (tip lost);
+  // the next lead GET must clear the reconciling/sending row permanently.
+  const cache = new Map<string, unknown>();
+  const client = { setQueryData: (key: readonly unknown[], value: unknown) => cache.set(JSON.stringify(key), value), getQueryData: <T>(key: readonly unknown[]) => cache.get(JSON.stringify(key)) as T | undefined, removeQueries: () => {}, invalidateQueries: async () => {} };
+  let revision = 1;
+  let waits = 0;
+  const reconciling = { ...item, status: 'reconciling' as const, attemptCount: 1 };
+  const runtime = createMessageQueueServerRuntime({
+    client: client as never,
+    capture: () => ({ transportIdentity: 'device-a', generation: 1 }),
+    current: () => true,
+    status: async () => ({ capability: true, authority: 'active' }),
+    snapshot: async () => ({ revision, scopes: [{ ...descriptor, revision, itemCount: revision === 1 ? 1 : 0 }], worktreeOrders: [] }),
+    scope: async () => ({
+      ...descriptor,
+      revision,
+      itemCount: revision === 1 ? 1 : 0,
+      items: revision === 1 ? [reconciling] : [],
+    }),
+    waitInvalidation: async () => {
+      waits += 1;
+      // Server advanced and deleted the row after the stable GET; the tip was
+      // discarded before this waiter registered (shared SSE kept alive by peers).
+      if (waits === 1) {
+        revision = 2;
+        return 'timeout';
+      }
+      return 'aborted';
+    },
+  });
+  await runtime.refresh();
+  expect(runtime.getScope({ transportIdentity: 'device-a', directory: '/repo', sessionID: 'session-a' })?.items).toEqual([reconciling]);
+  runtime.start();
+  for (let i = 0; i < 200 && (runtime.getScope({ transportIdentity: 'device-a', directory: '/repo', sessionID: 'session-a' })?.items.length ?? -1) !== 0; i++) await Promise.resolve();
+  expect(runtime.getScope({ transportIdentity: 'device-a', directory: '/repo', sessionID: 'session-a' })?.items).toEqual([]);
+  expect(runtime.getState().scopes.get(descriptor.scopeID)?.revision).toBe(2);
+  expect(waits).toBeGreaterThanOrEqual(1);
+  runtime.stop();
+});
+
 test('observer recovers a confirm deletion published while scope pages load', async () => {
   const cache = new Map<string, unknown>();
   const client = { setQueryData: (key: readonly unknown[], value: unknown) => cache.set(JSON.stringify(key), value), getQueryData: <T>(key: readonly unknown[]) => cache.get(JSON.stringify(key)) as T | undefined, removeQueries: () => {}, invalidateQueries: async () => {} };

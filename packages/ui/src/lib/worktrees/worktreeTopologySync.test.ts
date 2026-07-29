@@ -167,4 +167,113 @@ describe('worktree topology coordinator', () => {
     coordinator.start(); timers.flush(); await settle();
     expect(refreshes).toBe(1); expect(syncs).toEqual([]); coordinator.stop();
   });
+
+  test('empty active sessions with new cachedDirectories triggers recovery', async () => {
+    const timers = fakeTimers();
+    let sessionsListener: (() => void) | undefined;
+    let candidates: string[] = [];
+    const refreshed: string[] = [];
+    const coordinator = createWorktreeTopologyCoordinator({
+      isVSCode: () => false,
+      getProjects: () => [{ id: 'a', path: '/a' }],
+      getCatalog: () => new Map(),
+      getActiveDirectories: () => candidates,
+      refresh: async (project) => { refreshed.push(project.path); return emptyResult; },
+      syncAdded: async () => {},
+      subscribeProjects: () => () => {},
+      subscribeCatalog: () => () => {},
+      subscribeSessions: (listener) => { sessionsListener = listener; return () => {}; },
+      subscribeEvents: () => () => {},
+      subscribeRuntime: () => () => {},
+      generation: () => 1,
+      setTimer: timers.setTimer,
+      clearTimer: timers.clearTimer,
+    });
+    coordinator.start();
+    timers.flush();
+    await settle();
+    expect(refreshed).toEqual(['/a']);
+    refreshed.length = 0;
+    // Session-index snapshot directories alone (no live sessions) still recover.
+    candidates = ['/unknown-cached'];
+    sessionsListener?.();
+    timers.flush();
+    await settle();
+    expect(refreshed).toEqual(['/a']);
+    coordinator.stop();
+  });
+
+  test('same candidate membership does not refresh again', async () => {
+    const timers = fakeTimers();
+    let sessionsListener: (() => void) | undefined;
+    let candidates = ['/unknown'];
+    const refreshed: string[] = [];
+    const coordinator = createWorktreeTopologyCoordinator({
+      isVSCode: () => false,
+      getProjects: () => [{ id: 'a', path: '/a' }],
+      getCatalog: () => new Map(),
+      getActiveDirectories: () => candidates,
+      refresh: async (project) => { refreshed.push(project.path); return emptyResult; },
+      syncAdded: async () => {},
+      subscribeProjects: () => () => {},
+      subscribeCatalog: () => () => {},
+      subscribeSessions: (listener) => { sessionsListener = listener; return () => {}; },
+      subscribeEvents: () => () => {},
+      subscribeRuntime: () => () => {},
+      generation: () => 1,
+      setTimer: timers.setTimer,
+      clearTimer: timers.clearTimer,
+    });
+    coordinator.start();
+    timers.flush();
+    await settle();
+    expect(refreshed).toEqual(['/a']);
+    // New array/Set identity, identical semantic membership.
+    candidates = ['/unknown'];
+    sessionsListener?.();
+    timers.flush();
+    await settle();
+    expect(refreshed).toEqual(['/a']);
+    coordinator.stop();
+  });
+
+  test('removed then re-added candidate can recover again', async () => {
+    const timers = fakeTimers();
+    let sessionsListener: (() => void) | undefined;
+    let candidates = ['/unknown'];
+    const refreshed: string[] = [];
+    const coordinator = createWorktreeTopologyCoordinator({
+      isVSCode: () => false,
+      getProjects: () => [{ id: 'a', path: '/a' }],
+      getCatalog: () => new Map(),
+      getActiveDirectories: () => candidates,
+      refresh: async (project) => { refreshed.push(project.path); return emptyResult; },
+      syncAdded: async () => {},
+      subscribeProjects: () => () => {},
+      subscribeCatalog: () => () => {},
+      subscribeSessions: (listener) => { sessionsListener = listener; return () => {}; },
+      subscribeEvents: () => () => {},
+      subscribeRuntime: () => () => {},
+      generation: () => 1,
+      setTimer: timers.setTimer,
+      clearTimer: timers.clearTimer,
+    });
+    coordinator.start();
+    timers.flush();
+    await settle();
+    expect(refreshed).toEqual(['/a']);
+    // Leave the candidate set so suppression/unknown bookkeeping is cleared.
+    candidates = [];
+    sessionsListener?.();
+    timers.flush();
+    await settle();
+    expect(refreshed).toEqual(['/a']);
+    // Reappear: recovery must run again in the same ready epoch.
+    candidates = ['/unknown'];
+    sessionsListener?.();
+    timers.flush();
+    await settle();
+    expect(refreshed).toEqual(['/a', '/a']);
+    coordinator.stop();
+  });
 });

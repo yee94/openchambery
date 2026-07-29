@@ -13,6 +13,7 @@ import {
   subscribeToStreamingHapticEvents,
 } from '@/sync/streaming-haptic-events';
 import { useSessionUIStore } from '@/sync/session-ui-store';
+import { getClientPlatform } from '@/lib/platform';
 
 const useIsomorphicLayoutEffect = typeof window !== 'undefined' ? React.useLayoutEffect : React.useEffect;
 
@@ -129,9 +130,14 @@ export function evaluateHaptics(input: HapticsInput): HapticsDecision {
 }
 
 const HAPTIC_MIN_INTERVAL_MS = 20;
+const STREAMING_TEXT_HAPTIC_MIN_INTERVAL_MS = 750;
 
 export function shouldTriggerHaptic(lastTriggeredAt: number, now: number): boolean {
   return now - lastTriggeredAt >= HAPTIC_MIN_INTERVAL_MS;
+}
+
+export function shouldTriggerStreamingTextHaptic(lastTriggeredAt: number, now: number): boolean {
+  return now - lastTriggeredAt >= STREAMING_TEXT_HAPTIC_MIN_INTERVAL_MS;
 }
 
 export type SwipeThresholdHapticEvent = 'enter' | 'cancel' | null;
@@ -202,13 +208,15 @@ export function useMobilePressHaptics(): void {
  * Fires a light haptic when a visible streaming part updates.
  *
  * - Only active on Capacitor iOS / Android native builds.
- * - Visible assistant text changes repeat; reasoning and tool appearances fire once per part.
+ * - Android assistant text changes emit at most once every 750ms; reasoning and tool appearances fire once per part.
  */
 export function useStreamingHaptics(): void {
   useIsomorphicLayoutEffect(() => {
     if (!isCapacitorMobileNative()) return;
 
     const shouldProcessEvent = createStreamingHapticEventDeduper();
+    const limitStreamingTextHaptics = getClientPlatform() === 'android';
+    let lastStreamingTextHapticAt = Number.NEGATIVE_INFINITY;
 
     const unsubscribe = subscribeToStreamingHapticEvents((event) => {
       if (!shouldProcessEvent(event)) return;
@@ -224,6 +232,16 @@ export function useStreamingHaptics(): void {
       });
 
       if (!decision.shouldTrigger) return;
+
+      if (limitStreamingTextHaptics && event.kind === 'text') {
+        const now = Date.now();
+        if (!shouldTriggerStreamingTextHaptic(lastStreamingTextHapticAt, now)) return;
+        if (triggerMobileHaptic()) {
+          lastStreamingTextHapticAt = now;
+        }
+        return;
+      }
+
       triggerMobileHaptic();
     });
 

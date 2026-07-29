@@ -23,7 +23,9 @@ import { getImageMimeType, getLanguageFromExtension, isImageFile } from '@/lib/t
 import type { FileSearchResult } from '@/lib/api/types';
 import { getRuntimeUrlResolver } from '@/lib/runtime-url';
 import { refreshRuntimeUrlAuthToken } from '@/lib/runtime-auth';
-import { getRuntimeApiBaseUrl } from '@/lib/runtime-switch';
+import { runtimeFetch } from '@/lib/runtime-fetch';
+import { getRuntimeApiBaseUrl, getRuntimeTransportIdentity } from '@/lib/runtime-switch';
+import { isRelayModeActive } from '@/lib/relay/runtime-tunnel';
 import { useFileContentQuery, useFileDirectoryQuery, useFileSearchQuery } from '@/queries/fileQueries';
 import { cn } from '@/lib/utils';
 import { useMobileBackRoute } from '@/mobile/mobileBackNavigation';
@@ -420,8 +422,18 @@ const MobileFileDetail: React.FC<{
   onCopyContent: () => void;
 }> = ({ path, content, error, isLoading, hideHeader = false, onBack, onCopyPath, onCopyContent }) => {
   const { t } = useI18n();
-  const imageAuthKey = isImageFile(path) && !path.toLowerCase().endsWith('.svg') ? path : '';
+  const imagePath = isImageFile(path) && !path.toLowerCase().endsWith('.svg') ? path : '';
+  const runtimeTransportIdentity = getRuntimeTransportIdentity();
+  const relayImageKey = imagePath && isRelayModeActive()
+    ? `${runtimeTransportIdentity}|${imagePath}`
+    : '';
+  const imageAuthKey = imagePath && !relayImageKey
+    ? `${runtimeTransportIdentity}|${imagePath}`
+    : '';
   const [imageAuthReadyKey, setImageAuthReadyKey] = React.useState('');
+  const [relayImageSrc, setRelayImageSrc] = React.useState('');
+  const [relayImageError, setRelayImageError] = React.useState<string | null>(null);
+  const [isRelayImageLoading, setRelayImageLoading] = React.useState(false);
 
   React.useEffect(() => {
     if (!imageAuthKey) {
@@ -442,8 +454,57 @@ const MobileFileDetail: React.FC<{
     };
   }, [imageAuthKey]);
 
+  React.useEffect(() => {
+    if (!relayImageKey) {
+      setRelayImageSrc('');
+      setRelayImageError(null);
+      setRelayImageLoading(false);
+      return;
+    }
+
+    let cancelled = false;
+    let objectUrl = '';
+    setRelayImageSrc('');
+    setRelayImageError(null);
+    setRelayImageLoading(true);
+
+    void runtimeFetch('/api/fs/raw', { query: { path: imagePath } })
+      .then(async (response) => {
+        if (!response.ok) {
+          throw new Error(t('filesView.error.readFileFailed'));
+        }
+        return response.blob();
+      })
+      .then((blob) => {
+        objectUrl = URL.createObjectURL(blob);
+        if (cancelled) {
+          URL.revokeObjectURL(objectUrl);
+          return;
+        }
+        setRelayImageSrc(objectUrl);
+      })
+      .catch((fetchError: unknown) => {
+        if (!cancelled) {
+          setRelayImageError(fetchError instanceof Error ? fetchError.message : t('filesView.error.readFileFailed'));
+        }
+      })
+      .finally(() => {
+        if (!cancelled) {
+          setRelayImageLoading(false);
+        }
+      });
+
+    return () => {
+      cancelled = true;
+      if (objectUrl) {
+        URL.revokeObjectURL(objectUrl);
+      }
+    };
+  }, [imagePath, relayImageKey, t]);
+
   const imageAuthLoading = Boolean(imageAuthKey && imageAuthReadyKey !== imageAuthKey);
-  const imageSrc = imageAuthLoading ? '' : getImageSrc(path);
+  const imageSrc = relayImageKey ? relayImageSrc : imageAuthLoading ? '' : getImageSrc(path);
+  const imageError = error ?? relayImageError;
 
   return (
     <div className="flex h-full flex-col overflow-hidden bg-background text-foreground">
@@ -482,10 +543,10 @@ const MobileFileDetail: React.FC<{
         </div>
       )}
       <div className="min-h-0 flex-1 overflow-hidden">
-        {isLoading || imageAuthLoading ? (
+        {isLoading || imageAuthLoading || isRelayImageLoading ? (
           <MobileFilesState loading message={t('filesView.state.loading')} />
-        ) : error ? (
-          <MobileFilesState message={error} />
+        ) : imageError ? (
+          <MobileFilesState message={imageError} />
         ) : isImageFile(path) && imageSrc ? (
           <ScrollShadow className="h-full overflow-auto p-4">
             <img src={imageSrc} alt={getNameFromPath(path)} className="mx-auto max-h-full max-w-full rounded-lg object-contain" />

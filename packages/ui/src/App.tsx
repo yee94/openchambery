@@ -66,6 +66,7 @@ import { resetAppForRuntimeEndpointChange } from '@/apps/runtimeEndpointReset';
 import { useAppFontEffects } from '@/apps/useAppFontEffects';
 import { OpenCodeUpdateToast } from '@/components/update/OpenCodeUpdateToast';
 import { StartupSessionSyncOverlay } from '@/components/session/StartupSessionSyncOverlay';
+import { DesktopRuntimeSwitchOverlay } from '@/components/desktop/DesktopRuntimeSwitchOverlay';
 import { SessionStartupCoordinator } from '@/components/session/SessionStartupCoordinator';
 import { useGlobalSessionsStore } from '@/stores/useGlobalSessionsStore';
 import { useUpdateStore } from '@/stores/useUpdateStore';
@@ -244,6 +245,7 @@ function App({ apis }: AppProps) {
   const [initRetryExhausted, setInitRetryExhausted] = React.useState(false);
   const [initRetryEpoch, setInitRetryEpoch] = React.useState(0);
   const [runtimeEndpointEpoch, setRuntimeEndpointEpoch] = React.useState(0);
+  const [desktopRuntimeTransition, setDesktopRuntimeTransition] = React.useState({ epoch: 0, startedAt: 0 });
   const [manualInitRetrying, setManualInitRetrying] = React.useState(false);
   const startupUpdateCheckStartedRef = React.useRef(false);
   const wideChatLayoutEnabled = useUIStore((state) => state.wideChatLayoutEnabled);
@@ -286,6 +288,9 @@ function App({ apis }: AppProps) {
       if (!isRuntimeEndpointIdentityChange(detail)) {
         return;
       }
+      if (isDesktopRuntime) {
+        setDesktopRuntimeTransition((current) => ({ epoch: current.epoch + 1, startedAt: Date.now() }));
+      }
       resetAppForRuntimeEndpointChange(detail);
       setRuntimeEndpointEpoch((epoch) => epoch + 1);
       setInitRetryExhausted(false);
@@ -296,7 +301,7 @@ function App({ apis }: AppProps) {
       unsubscribe();
       transitions.cancel();
     };
-  }, []);
+  }, [isDesktopRuntime]);
 
   const autoReviewResumeSignature = useAutoReviewStore((state) => {
     const runtimeKey = getRuntimeKey();
@@ -1059,6 +1064,12 @@ function App({ apis }: AppProps) {
                   <SessionStartupCoordinator />
                   <OpenCodeUpdateToast />
                   <MainLayout />
+                  {isDesktopRuntime && desktopRuntimeTransition.epoch > 0 && (
+                    <DesktopRuntimeSwitchOverlay
+                      transition={desktopRuntimeTransition}
+                      ready={isInitialized && isConnected}
+                    />
+                  )}
                   <StartupSessionSyncOverlay />
                   <Toaster />
                   {!isBootShell && (

@@ -9,12 +9,15 @@ import { MobileOverlayPanel } from '@/components/ui/MobileOverlayPanel';
 import { Button } from '@/components/ui/button';
 import { toast } from '@/components/ui';
 import { copyTextToClipboard } from '@/lib/clipboard';
+import { useRuntimeAPIs } from '@/hooks/useRuntimeAPIs';
 import { useI18n } from '@/lib/i18n';
 import { deleteSessionsWithUndo, showArchivedSessionsUndoToast } from '@/lib/sessionMutationUndo';
 import { useMobileSessionTreeStore } from '@/stores/useMobileSessionTreeStore';
 import { useProjectsStore } from '@/stores/useProjectsStore';
 import { useSessionPinnedStore } from '@/stores/useSessionPinnedStore';
+import { syncGlobalSessionsForDirectories } from '@/stores/useGlobalSessionsStore';
 import { useSessionUIStore } from '@/sync/session-ui-store';
+import { forceRefreshProjectWorktreeCatalog } from '@/lib/worktrees/worktreeManager';
 
 import { useMobileNavigationStore } from '../useMobileNavigationStore';
 
@@ -37,6 +40,10 @@ import {
   useMobileProjectsHomeModel,
   type ProjectMeta,
 } from './useMobileProjectsHomeModel';
+import {
+  applyProjectGitProbeResult,
+  type ActionTargetState,
+} from './mobileProjectsHomeContainerState';
 
 export type MobileProjectsHomeContainerProps = {
   onOpenChat: (args: { sessionId: string; directory: string | null }) => void;
@@ -46,11 +53,6 @@ export type MobileProjectsHomeContainerProps = {
   onNewSession?: () => void;
   className?: string;
 };
-
-type ActionTargetState =
-  | { kind: 'session'; session: Session }
-  | { kind: 'project'; project: ProjectMeta }
-  | { kind: 'worktree'; project: ProjectMeta; worktreePath: string; worktreeName: string };
 
 /**
  * Data + action container for the mobile Projects home.
@@ -63,6 +65,7 @@ export function MobileProjectsHomeContainer({
   className,
 }: MobileProjectsHomeContainerProps) {
   const { t } = useI18n();
+  const { git } = useRuntimeAPIs();
   const model = useMobileProjectsHomeModel();
 
   const setProjectExpanded = useMobileSessionTreeStore((state) => state.setProjectExpanded);
@@ -199,8 +202,15 @@ export function MobileProjectsHomeContainer({
   const handleOpenProjectActions = useEvent((project: MobileProjectHomeItem) => {
     const meta = model.projectMetaById.get(project.id);
     if (!meta) return;
-    setActionTarget({ kind: 'project', project: meta });
+    setActionTarget({ kind: 'project', project: meta, isGitRepository: false });
     setActionsOpen(true);
+    void git.checkIsGitRepository(meta.path)
+      .then((isGitRepository) => {
+        setActionTarget((current) => applyProjectGitProbeResult(current, meta.id, isGitRepository));
+      })
+      .catch(() => {
+        setActionTarget((current) => applyProjectGitProbeResult(current, meta.id, false));
+      });
   });
 
   const handleNewWorktreeSession = useEvent((
@@ -216,6 +226,26 @@ export function MobileProjectsHomeContainer({
     setWorktreeDialogProjectId(projectId);
     setActiveProjectIdOnly(projectId);
     setNewWorktreeDialogOpen(true);
+  });
+
+  const handleSyncProjectSessions = useEvent((project: ProjectMeta) => {
+    void (async () => {
+      let worktrees = project.worktrees;
+      try {
+        const result = await forceRefreshProjectWorktreeCatalog({
+          id: project.id,
+          path: project.path,
+        });
+        worktrees = result.worktrees;
+      } catch (error) {
+        console.warn('[MobileProjectsHome] Worktree refresh before session sync failed:', error);
+        worktrees = useSessionUIStore.getState().availableWorktreesByProject.get(project.path) ?? project.worktrees;
+      }
+      await syncGlobalSessionsForDirectories(
+        [project.path, ...worktrees.map((worktree) => worktree.path)],
+        model.allSessions,
+      );
+    })();
   });
 
   const handleWorktreeCreated = useEvent((worktreePath: string, options?: { sessionId?: string }) => {
@@ -327,8 +357,7 @@ export function MobileProjectsHomeContainer({
       return {
         kind: 'project',
         title: actionTarget.project.label,
-        // Worktrees list is authoritative for git-backed projects in this surface.
-        gitRepository: actionTarget.project.worktrees.length > 0,
+        gitRepository: actionTarget.isGitRepository,
       };
     }
     return {
@@ -376,6 +405,7 @@ export function MobileProjectsHomeContainer({
       return {
         onNewSession: () => startSessionDraftForDirectory(project, project.path),
         onNewWorktree: () => handleNewWorktree(project.id),
+        onSyncSessions: () => handleSyncProjectSessions(project),
         // Edit project (MobileProjectEditSurface) is out of scope for this wiring lane.
         onEditProject: undefined,
         onCloseProject: () => setClosingProject(project),
@@ -393,6 +423,7 @@ export function MobileProjectsHomeContainer({
     handleCopyShareUrl,
     handleHardDeleteSession,
     handleNewWorktree,
+    handleSyncProjectSessions,
     handleShareFromMenu,
     handleUnshareFromMenu,
     removeProject,
@@ -432,6 +463,7 @@ export function MobileProjectsHomeContainer({
 
       <NewWorktreeDialog
         open={newWorktreeDialogOpen}
+        projectId={worktreeDialogProjectId}
         onOpenChange={(value) => {
           setNewWorktreeDialogOpen(value);
           if (!value) setWorktreeDialogProjectId(null);

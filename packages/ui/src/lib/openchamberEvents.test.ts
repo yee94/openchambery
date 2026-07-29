@@ -1,5 +1,9 @@
 import { describe, expect, test } from 'bun:test';
-import { parseOpenchamberEventEnvelope, subscribeOpenchamberEvents } from './openchamberEvents';
+import {
+  getLatestOpenchamberEventRevision,
+  parseOpenchamberEventEnvelope,
+  subscribeOpenchamberEvents,
+} from './openchamberEvents';
 
 describe('parseOpenchamberEventEnvelope', () => {
   test('parses ready and valid topology envelopes', () => {
@@ -101,19 +105,37 @@ test('shares one runtime SSE request, isolates listeners, aborts the final subsc
     expect(requests).toBe(1);
 
     expect(signals[0]?.aborted).toBe(false);
+    // Seed a tip on the first connection, then prove runtime switch clears it.
+    firstController?.enqueue(encoder.encode('data: {"type":"openchamber:message-queue-changed","properties":{"revision":4,"occurredAt":1}}\n\n'));
+    await new Promise((resolve) => setTimeout(resolve, 0));
+    expect(getLatestOpenchamberEventRevision('message-queue-changed')).toBe(4);
+
     runtimeWindow.dispatchEvent(new Event('openchamber:runtime-endpoint-changed'));
     await new Promise((resolve) => setTimeout(resolve, 0));
     expect(signals[0]?.aborted).toBe(true);
     expect(requests).toBe(2);
+    expect(getLatestOpenchamberEventRevision('message-queue-changed')).toBe(undefined);
+    expect(getLatestOpenchamberEventRevision('session-index-changed')).toBe(undefined);
 
     firstController?.error(new Error('late stale failure'));
     secondController?.enqueue(encoder.encode('data: {"type":"openchamber:message-queue-changed","properties":{"revision":9,"occurredAt":2}}\n\n'));
+    secondController?.enqueue(encoder.encode('data: {"type":"openchamber:session-index-changed","properties":{"revision":3,"occurredAt":3}}\n\n'));
+    secondController?.enqueue(encoder.encode('data: {"type":"openchamber:assistants-changed","properties":{"revision":2,"occurredAt":4}}\n\n'));
     await new Promise((resolve) => setTimeout(resolve, 0));
-    expect(received).toEqual([{ type: 'message-queue-changed', revision: 9, occurredAt: 2 }]);
+    expect(received).toEqual([
+      { type: 'message-queue-changed', revision: 4, occurredAt: 1 },
+      { type: 'message-queue-changed', revision: 9, occurredAt: 2 },
+      { type: 'session-index-changed', revision: 3, occurredAt: 3 },
+      { type: 'assistants-changed', revision: 2, occurredAt: 4 },
+    ]);
+    expect(getLatestOpenchamberEventRevision('message-queue-changed')).toBe(9);
+    expect(getLatestOpenchamberEventRevision('session-index-changed')).toBe(3);
+    expect(getLatestOpenchamberEventRevision('assistants-changed')).toBe(2);
 
     removeThrowing();
     removeReceiving();
     expect(signals[1]?.aborted).toBe(true);
+    expect(getLatestOpenchamberEventRevision('message-queue-changed')).toBe(undefined);
   } finally {
     Object.defineProperty(globalThis, 'window', { configurable: true, value: originalWindow });
     globalThis.fetch = originalFetch;

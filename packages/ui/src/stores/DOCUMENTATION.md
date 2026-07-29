@@ -247,7 +247,15 @@ through OpenChamber SSE revision tips (`openchamber:session-index-changed`)
 followed by an authoritative GET via the Query helper; it must not issue
 per-directory OpenCode requests from the renderer. Tip waits include a short
 safety timeout so a completed server job whose tip arrived before the consumer
-subscribed cannot hang manual or startup sync forever. Successful non-null
+subscribed cannot hang manual or startup sync forever. The long-lived tip
+observer keeps the last successful store projection across transient
+authoritative GET failures and retries that GET with abortable exponential
+backoff (500ms base, ×2, capped at 10s) inside the same lifecycle/runtime
+generation; success resets the backoff and the loop continues waiting for the
+next tip. Dense tips stay sequential (debounce + single in-flight GET path).
+A definitive unsupported result (`null` / 501) still terminates the observer
+without retry. Runtime switch and lifecycle abort cancel tip waits and retry
+timers so a stale completion cannot commit. Successful non-null
 POST/GET snapshots write back through the Query helper (memory + persistent
 seed). Do not add a second session-summary cache outside that Query/startup
 path or a sidebar-local startup refresh.

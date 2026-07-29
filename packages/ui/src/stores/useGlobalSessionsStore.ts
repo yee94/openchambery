@@ -133,6 +133,31 @@ const DIRECTORY_FETCH_CONCURRENCY_MID = 3;
 const DIRECTORY_FETCH_CONCURRENCY_MIN = 1;
 const DIRECTORY_RECOVERY_SUCCESS_THRESHOLD = 2;
 const STARTUP_RETRY_DELAY_MS = 750;
+/** Long-lived tip observer: first wait before re-GETting a failed snapshot. */
+const SESSION_INDEX_TIP_GET_RETRY_DELAY_MS = 500;
+/** Cap for tip-observer GET backoff (matches `@/sync/retry` maxDelay). */
+const SESSION_INDEX_TIP_GET_RETRY_MAX_DELAY_MS = 10_000;
+const SESSION_INDEX_TIP_GET_RETRY_FACTOR = 2;
+
+/**
+ * Abortable delay for tip-observer GET retries. Resolves early on abort so the
+ * observer can exit without leaving a dangling timer after runtime switch.
+ */
+const sleepWithAbort = (ms: number, signal: AbortSignal): Promise<void> => new Promise((resolve) => {
+  if (signal.aborted) {
+    resolve();
+    return;
+  }
+  const timer = setTimeout(() => {
+    signal.removeEventListener('abort', onAbort);
+    resolve();
+  }, ms);
+  const onAbort = () => {
+    clearTimeout(timer);
+    resolve();
+  };
+  signal.addEventListener('abort', onAbort, { once: true });
+});
 
 let inflightLoad: Promise<LoadResult> | null = null;
 // Bumped on runtime switch: an in-flight load from the previous instance must
@@ -1064,6 +1089,9 @@ export const useGlobalSessionsStore = create<GlobalSessionsState>((set, get) => 
     };
     const consume = async () => {
       let current = initialSnapshot;
+      // Bounded exponential backoff for transient tip-driven GET failures only.
+      // Successful GETs reset it; 501/null still terminates; abort/runtime change stops waits.
+      let tipGetRetryDelayMs = SESSION_INDEX_TIP_GET_RETRY_DELAY_MS;
       while (!controller.signal.aborted && isCurrentSessionIndexRuntime(runtime)) {
         set((state) => ({
           ...applySessionIndexSnapshotState(state, current, true),
@@ -1081,16 +1109,42 @@ export const useGlobalSessionsStore = create<GlobalSessionsState>((set, get) => 
         const reason = await waitForSessionIndexInvalidation(current.revision, controller.signal);
         if (!isCurrentSessionIndexRuntime(runtime) || !isCurrentSessionIndexRuntime(waitRuntime)) break;
         if (reason === 'aborted') break;
-        const loadRuntime = captureSessionIndexRuntime();
-        let next: SessionIndexSnapshot | null;
-        try {
-          next = await refreshSessionIndexSnapshotQuery();
-        } catch {
+        // Tip/ready/timeout already coalesced dense tips; one sequential GET path
+        // with abortable backoff — never fan out concurrent snapshot GETs here.
+        let loaded: SessionIndexSnapshot | null | undefined;
+        while (!controller.signal.aborted && isCurrentSessionIndexRuntime(runtime)) {
+          const loadRuntime = captureSessionIndexRuntime();
+          try {
+            loaded = await refreshSessionIndexSnapshotQuery();
+          } catch {
+            // Keep the last successful `current` (and store projection) intact.
+            if (controller.signal.aborted || !isCurrentSessionIndexRuntime(runtime)) {
+              loaded = undefined;
+              break;
+            }
+            await sleepWithAbort(tipGetRetryDelayMs, controller.signal);
+            if (controller.signal.aborted || !isCurrentSessionIndexRuntime(runtime)) {
+              loaded = undefined;
+              break;
+            }
+            tipGetRetryDelayMs = Math.min(
+              tipGetRetryDelayMs * SESSION_INDEX_TIP_GET_RETRY_FACTOR,
+              SESSION_INDEX_TIP_GET_RETRY_MAX_DELAY_MS,
+            );
+            continue;
+          }
+          if (!isCurrentSessionIndexRuntime(loadRuntime)) {
+            loaded = undefined;
+            break;
+          }
+          // Definitive unsupported (501 → null): stable termination, no retry.
+          if (!loaded) break;
+          tipGetRetryDelayMs = SESSION_INDEX_TIP_GET_RETRY_DELAY_MS;
           break;
         }
-        if (!isCurrentSessionIndexRuntime(runtime) || !isCurrentSessionIndexRuntime(loadRuntime)) break;
-        if (!next) break;
-        current = next;
+        if (loaded === undefined) break;
+        if (!loaded) break;
+        current = loaded;
       }
     };
     const polling = consume().catch((error) => {

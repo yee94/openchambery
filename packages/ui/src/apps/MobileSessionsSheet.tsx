@@ -1763,6 +1763,7 @@ export const MobileSessionsSheet: React.FC<MobileSessionsSheetProps> = ({ open, 
         <DirectoryExplorerDialog open={directoryDialogOpen} onOpenChange={setDirectoryDialogOpen} forceMobile />
         <NewWorktreeDialog
           open={newWorktreeDialogOpen}
+          projectId={worktreeDialogProjectId}
           onOpenChange={(value) => {
             setNewWorktreeDialogOpen(value);
             if (!value) setWorktreeDialogProjectId(null);

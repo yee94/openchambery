@@ -1,6 +1,7 @@
 import { describe, expect, test } from 'bun:test';
 import {
   checkIsGitRepository,
+  createGitWorktree,
   discoverGitRepositories,
   getGitStatus,
   getGitBranches,
@@ -314,6 +315,247 @@ describe('gitApiHttp discovery fan-out', () => {
       expect(cached).toBe(true);
       const checkCallsAfter = calls.filter((url) => url.includes('/api/git/check')).length;
       expect(checkCallsAfter).toBe(1);
+    } finally {
+      restoreMocks();
+    }
+  });
+});
+
+describe('gitApiHttp createGitWorktree', () => {
+  const createdWorktree = {
+    head: 'abc123',
+    name: 'feature-a',
+    branch: 'feature/a',
+    path: '/repo/.worktrees/feature-a',
+  };
+
+  const validPartialEnvelope = {
+    code: 'message_queue_activation_pending',
+    worktree: createdWorktree,
+    repair: {
+      method: 'POST',
+      path: '/api/git/worktrees/queue-activation',
+      body: {
+        projectDirectory: '/repo',
+        directory: '/repo/.worktrees/feature-a',
+      },
+    },
+  };
+
+  const flushMicrotasks = async () => {
+    await Promise.resolve();
+    await Promise.resolve();
+    await Promise.resolve();
+  };
+
+  test('returns worktree on normal 2xx create', async () => {
+    installWindowMock();
+    const calls: FetchCall[] = [];
+    globalThis.fetch = (async (input, init) => {
+      calls.push({ input, init });
+      return new Response(JSON.stringify(createdWorktree), {
+        status: 200,
+        headers: { 'Content-Type': 'application/json' },
+      });
+    }) as typeof fetch;
+
+    try {
+      const result = await createGitWorktree('/repo', { worktreeName: 'feature-a' });
+      expect(result).toEqual(createdWorktree);
+      expect(calls).toHaveLength(1);
+      expect(String(calls[0].input)).toBe('/api/git/worktrees?directory=%2Frepo');
+      expect(calls[0].init?.method).toBe('POST');
+      expect(String(calls[0].input)).not.toContain('queue-activation');
+    } finally {
+      restoreMocks();
+    }
+  });
+
+  test('treats trusted 503 partial success as create success and schedules repair', async () => {
+    installWindowMock();
+    const calls: FetchCall[] = [];
+    globalThis.fetch = (async (input, init) => {
+      calls.push({ input, init });
+      const url = String(input);
+      if (url.includes('/api/git/worktrees/queue-activation')) {
+        return new Response(JSON.stringify({ directory: createdWorktree.path, state: 'active' }), {
+          status: 200,
+          headers: { 'Content-Type': 'application/json' },
+        });
+      }
+      return new Response(JSON.stringify(validPartialEnvelope), {
+        status: 503,
+        headers: { 'Content-Type': 'application/json' },
+      });
+    }) as typeof fetch;
+
+    try {
+      const result = await createGitWorktree('/repo', { worktreeName: 'feature-a' });
+      expect(result).toEqual(createdWorktree);
+
+      await flushMicrotasks();
+      // Allow the zero-backoff first repair attempt to complete.
+      await new Promise((resolve) => setTimeout(resolve, 20));
+
+      const createCalls = calls.filter((call) => String(call.input).includes('/api/git/worktrees')
+        && !String(call.input).includes('queue-activation'));
+      const repairCalls = calls.filter((call) => String(call.input).includes('/api/git/worktrees/queue-activation'));
+      expect(createCalls).toHaveLength(1);
+      expect(repairCalls.length).toBeGreaterThanOrEqual(1);
+      expect(repairCalls[0].init?.method).toBe('POST');
+      expect(JSON.parse(String(repairCalls[0].init?.body))).toEqual({
+        projectDirectory: '/repo',
+        directory: '/repo/.worktrees/feature-a',
+      });
+    } finally {
+      restoreMocks();
+    }
+  });
+
+  test('rejects malformed partial-success envelopes as create failures', async () => {
+    installWindowMock();
+    const cases: Array<{ label: string; status: number; body: unknown }> = [
+      {
+        label: 'wrong status',
+        status: 500,
+        body: validPartialEnvelope,
+      },
+      {
+        label: 'wrong code',
+        status: 503,
+        body: { ...validPartialEnvelope, code: 'other_pending' },
+      },
+      {
+        label: 'missing worktree name',
+        status: 503,
+        body: {
+          ...validPartialEnvelope,
+          worktree: { path: '/repo/.worktrees/feature-a' },
+        },
+      },
+      {
+        label: 'repair path mismatch',
+        status: 503,
+        body: {
+          ...validPartialEnvelope,
+          repair: {
+            method: 'POST',
+            path: '/api/git/worktrees/evil',
+            body: validPartialEnvelope.repair.body,
+          },
+        },
+      },
+      {
+        label: 'projectDirectory mismatch',
+        status: 503,
+        body: {
+          ...validPartialEnvelope,
+          repair: {
+            ...validPartialEnvelope.repair,
+            body: {
+              projectDirectory: '/other',
+              directory: createdWorktree.path,
+            },
+          },
+        },
+      },
+      {
+        label: 'directory mismatch',
+        status: 503,
+        body: {
+          ...validPartialEnvelope,
+          repair: {
+            ...validPartialEnvelope.repair,
+            body: {
+              projectDirectory: '/repo',
+              directory: '/other-path',
+            },
+          },
+        },
+      },
+    ];
+
+    try {
+      for (const testCase of cases) {
+        const calls: FetchCall[] = [];
+        globalThis.fetch = (async (input, init) => {
+          calls.push({ input, init });
+          return new Response(JSON.stringify(testCase.body), {
+            status: testCase.status,
+            headers: { 'Content-Type': 'application/json' },
+          });
+        }) as typeof fetch;
+
+        const error = await captureError(async () => {
+          await createGitWorktree('/repo', { worktreeName: 'feature-a' });
+        });
+        expect(error).toBeInstanceOf(Error);
+        expect((error as Error).message).toBe('Failed to create worktree');
+        await flushMicrotasks();
+        await new Promise((resolve) => setTimeout(resolve, 20));
+        expect(calls.every((call) => !String(call.input).includes('queue-activation'))).toBe(true);
+      }
+    } finally {
+      restoreMocks();
+    }
+  });
+
+  test('retries repair on activation_pending then succeeds without long waits', async () => {
+    installWindowMock();
+    const calls: FetchCall[] = [];
+    let repairAttempts = 0;
+    globalThis.fetch = (async (input, init) => {
+      calls.push({ input, init });
+      const url = String(input);
+      if (url.includes('/api/git/worktrees/queue-activation')) {
+        repairAttempts += 1;
+        if (repairAttempts === 1) {
+          return new Response(JSON.stringify({ code: 'message_queue_activation_pending' }), {
+            status: 503,
+            headers: { 'Content-Type': 'application/json' },
+          });
+        }
+        return new Response(JSON.stringify({ directory: createdWorktree.path, state: 'active' }), {
+          status: 200,
+          headers: { 'Content-Type': 'application/json' },
+        });
+      }
+      return new Response(JSON.stringify(validPartialEnvelope), {
+        status: 503,
+        headers: { 'Content-Type': 'application/json' },
+      });
+    }) as typeof fetch;
+
+    try {
+      const result = await createGitWorktree('/repo', { worktreeName: 'feature-a' });
+      expect(result).toEqual(createdWorktree);
+
+      // First repair is immediate; second waits 500ms backoff.
+      await new Promise((resolve) => setTimeout(resolve, 700));
+      expect(repairAttempts).toBe(2);
+      const repairBodies = calls
+        .filter((call) => String(call.input).includes('queue-activation'))
+        .map((call) => JSON.parse(String(call.init?.body)));
+      expect(repairBodies.every((body) => body.projectDirectory === '/repo'
+        && body.directory === createdWorktree.path)).toBe(true);
+    } finally {
+      restoreMocks();
+    }
+  });
+
+  test('propagates ordinary create errors', async () => {
+    installWindowMock();
+    globalThis.fetch = (async () => new Response(JSON.stringify({ error: 'branch exists' }), {
+      status: 500,
+      headers: { 'Content-Type': 'application/json' },
+    })) as typeof fetch;
+
+    try {
+      const error = await captureError(async () => {
+        await createGitWorktree('/repo', { worktreeName: 'feature-a' });
+      });
+      expect(error).toBeInstanceOf(Error);
+      expect((error as Error).message).toBe('branch exists');
     } finally {
       restoreMocks();
     }

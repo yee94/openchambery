@@ -4433,7 +4433,13 @@ const ChatInputRuntime: React.FC<ChatInputProps> = ({ onOpenSettings, scrollToBo
 
     const handleFileSelect = (file: { name: string; path: string; relativePath?: string; isDirectory?: boolean }) => {
 
-        const cursorPosition = textareaRef.current?.selectionStart || 0;
+        const textarea = textareaRef.current;
+        const cursorPosition = Math.min(
+            textarea && document.activeElement === textarea
+                ? textarea.selectionStart ?? cursorPosRef.current
+                : cursorPosRef.current,
+            message.length,
+        );
         const textBeforeCursor = message.substring(0, cursorPosition);
         const lastAtSymbol = textBeforeCursor.lastIndexOf('@');
 
@@ -4483,7 +4489,12 @@ const ChatInputRuntime: React.FC<ChatInputProps> = ({ onOpenSettings, scrollToBo
 
     const handleAgentSelect = (agentName: string) => {
         const textarea = textareaRef.current;
-        const cursorPosition = textarea?.selectionStart ?? message.length;
+        const cursorPosition = Math.min(
+            textarea && document.activeElement === textarea
+                ? textarea.selectionStart ?? cursorPosRef.current
+                : cursorPosRef.current,
+            message.length,
+        );
         const textBeforeCursor = message.substring(0, cursorPosition);
         const lastAtSymbol = textBeforeCursor.lastIndexOf('@');
 
@@ -6635,8 +6646,9 @@ const ChatInputRuntime: React.FC<ChatInputProps> = ({ onOpenSettings, scrollToBo
                             }
                             setMobileTextareaFocused(true);
                         },
-                        onBlur: () => {
+                        onBlur: (event) => {
                             nativeCompositionActiveRef.current = false;
+                            cursorPosRef.current = event.currentTarget.selectionStart ?? cursorPosRef.current;
                             if (!isMobile) {
                                 window.setTimeout(() => {
                                     const active = document.activeElement;

@@ -52,6 +52,11 @@ type OpenChamberEvent =
   | SessionIndexChangedEvent
   | MessageQueueChangedEvent
   | AssistantsChangedEvent;
+/** Domains that carry a monotonic server revision tip. */
+type OpenchamberRevisionEventType =
+  | 'session-index-changed'
+  | 'message-queue-changed'
+  | 'assistants-changed';
 type Listener = (event: OpenChamberEvent) => void;
 
 type ConnectionAttempt = { controller: AbortController };
@@ -62,6 +67,25 @@ let heartbeatTimer: ReturnType<typeof setTimeout> | null = null;
 let reconnectAttempt = 0;
 let runtimeChangeUnsubscribe: (() => void) | null = null;
 const listeners = new Set<Listener>();
+/** In-memory latest tip per revision domain — closes GET→subscribe gaps. Not persisted. */
+const latestRevisionByDomain = new Map<OpenchamberRevisionEventType, number>();
+const isRevisionEventType = (type: string): type is OpenchamberRevisionEventType =>
+  type === 'session-index-changed' || type === 'message-queue-changed' || type === 'assistants-changed';
+const clearRevisionWatermarks = () => {
+  latestRevisionByDomain.clear();
+};
+/**
+ * Latest revision tip observed for a domain on the current runtime endpoint.
+ * Returns undefined when no tip has arrived since connect / runtime switch.
+ */
+export const getLatestOpenchamberEventRevision = (type: OpenchamberRevisionEventType): number | undefined =>
+  latestRevisionByDomain.get(type);
+const noteRevisionWatermark = (type: OpenchamberRevisionEventType, revision: number) => {
+  const previous = latestRevisionByDomain.get(type);
+  if (previous === undefined || revision > previous) {
+    latestRevisionByDomain.set(type, revision);
+  }
+};
 
 const MAX_RECONNECT_DELAY_MS = 30_000;
 const HEARTBEAT_TIMEOUT_MS = 45_000;
@@ -225,6 +249,11 @@ const dispatchFromEnvelope = (envelope: { type: string; properties: unknown }) =
   const nextEvent = parseOpenchamberEventEnvelope(envelope);
   if (!nextEvent) return;
   if (nextEvent.type === 'event-stream-ready') reconnectAttempt = 0;
+  // Record tip before notifying so a waiter that subscribes mid-dispatch still
+  // sees the watermark via getLatestOpenchamberEventRevision.
+  if (isRevisionEventType(nextEvent.type) && 'revision' in nextEvent) {
+    noteRevisionWatermark(nextEvent.type, nextEvent.revision);
+  }
   for (const listener of listeners) {
     try {
       listener(nextEvent);
@@ -276,6 +305,8 @@ const connect = () => {
 const ensureRuntimeChangeSubscription = () => {
   if (runtimeChangeUnsubscribe || typeof window === 'undefined') return;
   runtimeChangeUnsubscribe = subscribeRuntimeEndpointChanged(() => {
+    // Drop watermarks before reconnect so A→B→A / LAN↔relay never inherit tips.
+    clearRevisionWatermarks();
     if (reconnectTimer) {
       clearTimeout(reconnectTimer);
       reconnectTimer = null;
@@ -299,6 +330,10 @@ export const subscribeOpenchamberEvents = (listener: Listener): (() => void) => 
   return () => {
     listeners.delete(listener);
     if (listeners.size === 0) {
+      // No event can be observed while the shared stream is stopped. Clearing
+      // here also covers a runtime switch that occurs before the next listener
+      // re-installs the endpoint-change subscription.
+      clearRevisionWatermarks();
       if (reconnectTimer) {
         clearTimeout(reconnectTimer);
         reconnectTimer = null;

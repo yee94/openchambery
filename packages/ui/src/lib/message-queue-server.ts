@@ -1,4 +1,4 @@
-import { subscribeOpenchamberEvents } from '@/lib/openchamberEvents';
+import { getLatestOpenchamberEventRevision, subscribeOpenchamberEvents } from '@/lib/openchamberEvents';
 import { runtimeFetch } from '@/lib/runtime-fetch';
 import { getRuntimeUrlResolver } from '@/lib/runtime-url';
 
@@ -343,25 +343,41 @@ export const fetchMessageQueueScope = async (scopeID: string, options: { offset?
   messageQueueScopeFlights.set(key, shared);
   return shared;
 };
+/** Hang-break when a tip is dropped between stable GET and waiter subscribe. */
+const MESSAGE_QUEUE_SAFETY_TIMEOUT_MS = 15_000;
 /**
  * Wait until a message-queue tip arrives with revision > afterRevision, or the
  * OpenChamber event stream becomes ready, or the signal aborts.
+ *
+ * Subscribe first, then read the module-level tip watermark so a tip that
+ * landed while no message-queue waiter was attached still resolves as `'tip'`.
+ * `safetyTimeoutMs` is a silent self-heal for dropped frames / transport gaps;
+ * consumers treat `'timeout'` like tip/ready (authoritative GET, then continue).
  */
 export const waitForMessageQueueInvalidation = (
   afterRevision: number,
-  options: { signal?: AbortSignal } = {},
-): Promise<'tip' | 'ready' | 'aborted'> => new Promise((resolve) => {
+  options: { signal?: AbortSignal; safetyTimeoutMs?: number } = {},
+): Promise<'tip' | 'ready' | 'aborted' | 'timeout'> => new Promise((resolve) => {
   const signal = options.signal;
   if (signal?.aborted) {
     resolve('aborted');
     return;
   }
-  const finish = (reason: 'tip' | 'ready' | 'aborted') => {
+  const safetyTimeoutMs = typeof options.safetyTimeoutMs === 'number' && options.safetyTimeoutMs > 0
+    ? options.safetyTimeoutMs
+    : MESSAGE_QUEUE_SAFETY_TIMEOUT_MS;
+  let settled = false;
+  const finish = (reason: 'tip' | 'ready' | 'aborted' | 'timeout') => {
+    if (settled) return;
+    settled = true;
+    clearTimeout(safetyTimer);
     unsubscribe();
     signal?.removeEventListener('abort', onAbort);
     resolve(reason);
   };
   const onAbort = () => finish('aborted');
+  // Listener first: events after this line reach the waiter; pre-subscribe tips
+  // are recovered via getLatestOpenchamberEventRevision immediately below.
   const unsubscribe = subscribeOpenchamberEvents((event) => {
     if (event.type === 'event-stream-ready') {
       finish('ready');
@@ -371,6 +387,12 @@ export const waitForMessageQueueInvalidation = (
       finish('tip');
     }
   });
+  const safetyTimer = setTimeout(() => finish('timeout'), safetyTimeoutMs);
+  const latest = getLatestOpenchamberEventRevision('message-queue-changed');
+  if (latest !== undefined && latest > afterRevision) {
+    finish('tip');
+    return;
+  }
   signal?.addEventListener('abort', onAbort, { once: true });
 });
 export type MessageQueueServerAuthority = 'shadow' | 'active' | 'paused';

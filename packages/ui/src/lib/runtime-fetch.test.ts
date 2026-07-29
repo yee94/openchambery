@@ -468,6 +468,41 @@ describe('runtimeFetch read coalescing', () => {
     }
   });
 
+  test('routes raw file reads through the active relay with runtime auth', async () => {
+    const calls: Array<{ path: string; headers: Headers }> = [];
+    const relay = {
+      fetch: async (input: string | URL | Request, init?: RequestInit) => {
+        const path = input instanceof Request ? input.url : input.toString();
+        calls.push({ path, headers: new Headers(init?.headers) });
+        return new Response(new Uint8Array([1, 2, 3]), {
+          status: 200,
+          headers: { 'content-type': 'image/png' },
+        });
+      },
+      openWebSocket: () => { throw new Error('unused'); },
+      getStatus: () => ({ state: 'connected' as const }),
+      subscribeStatus: () => () => undefined,
+      close: () => undefined,
+    } satisfies RelayTunnelClient;
+
+    try {
+      setRuntimeBearerToken('runtime-token');
+      adoptRelayTunnel({ relayUrl: 'wss://relay.example', serverId: 'server-a', hostEncPubJwk: {} }, relay);
+
+      const response = await runtimeFetch('/api/fs/raw', { query: { path: '/repo/image.png' } });
+
+      expect(calls).toHaveLength(1);
+      expect(calls[0].path).toBe('/api/fs/raw?path=%2Frepo%2Fimage.png');
+      expect(calls[0].headers.get('authorization')).toBe('Bearer runtime-token');
+      const blob = await response.blob();
+      expect(blob.type).toBe('image/png');
+      expect(blob.size).toBe(3);
+    } finally {
+      deactivateRelayTunnel();
+      clearRuntimeAuthCredentialProvider();
+    }
+  });
+
   test('keeps same-URL reads separate across credential generations', async () => {
     const previous = getRuntimeUrlResolver();
     const calls: Headers[] = [];

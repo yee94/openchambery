@@ -57,9 +57,11 @@ describe('useGlobalSessionsStore', () => {
   afterAll(() => {
     mock.restore();
   });
-  beforeEach(() => {
+  beforeEach(async () => {
     tipListeners.clear();
     resetOpenCodeReadiness();
+    const { queryClient } = await import('@/lib/queryRuntime');
+    queryClient.clear();
     const originalCheckHealth = opencodeClient.checkHealth;
     opencodeClient.checkHealth = async () => true;
     restoreCheckHealth = () => { opencodeClient.checkHealth = originalCheckHealth; };
@@ -646,6 +648,286 @@ describe('useGlobalSessionsStore', () => {
         .toEqual(['ses_older', 'ses_newer']);
       expect(requestCount).toBeGreaterThanOrEqual(3);
     } finally {
+      useGlobalSessionsStore.getState().resetForRuntimeSwitch();
+      Object.defineProperty(globalThis, 'window', { configurable: true, value: originalWindow });
+      globalThis.fetch = originalFetch;
+    }
+  });
+
+  test('tip observer keeps last success across transient GET failure then applies later tips', async () => {
+    // Extend the activity tip path: fail the first tip-driven snapshot GET, keep prior
+    // sessions/cachedDirectories, then recover and process a subsequent tip.
+    const originalWindow = globalThis.window;
+    const originalFetch = globalThis.fetch;
+    const { queryClient } = await import('@/lib/queryRuntime');
+    queryClient.clear();
+    queryClient.setDefaultOptions({ queries: { retry: false } });
+
+    const dir = '/repo/activity';
+    const older = buildSession('https://share.example/older', {
+      id: 'ses_older',
+      directory: dir,
+      time: { created: 1, updated: 10 },
+    });
+    const newer = buildSession('https://share.example/newer', {
+      id: 'ses_newer',
+      directory: dir,
+      time: { created: 2, updated: 20 },
+    });
+    const recovered = buildSession('https://share.example/recovered', {
+      id: 'ses_recovered',
+      directory: dir,
+      time: { created: 3, updated: 40 },
+    });
+    const later = buildSession('https://share.example/later', {
+      id: 'ses_later',
+      directory: dir,
+      time: { created: 4, updated: 50 },
+    });
+    const sync = {
+      active: false,
+      completed: 1,
+      total: 1,
+      pendingDirectories: [] as string[],
+      completedDirectories: [dir],
+      failedDirectories: [] as string[],
+    };
+    const initialSnapshot = {
+      revision: 1,
+      sync,
+      directories: [{
+        directory: dir,
+        cursor: null,
+        hasMore: false,
+        lastSyncedAt: 1000,
+        lastFullSyncedAt: 1000,
+        lastAccessedAt: 1000,
+        sessions: [newer, older],
+      }],
+    };
+    const recoveredSnapshot = {
+      ...initialSnapshot,
+      revision: 2,
+      directories: [{
+        ...initialSnapshot.directories[0],
+        sessions: [recovered, newer, older],
+      }],
+    };
+    const laterSnapshot = {
+      ...initialSnapshot,
+      revision: 3,
+      directories: [{
+        ...initialSnapshot.directories[0],
+        sessions: [later, recovered, newer, older],
+      }],
+    };
+
+    try {
+      Object.defineProperty(globalThis, 'window', {
+        configurable: true,
+        value: { location: { origin: 'http://localhost', href: 'http://localhost/' } },
+      });
+      let requestCount = 0;
+      let failNextSessionIndexGet = false;
+      let failSeen = false;
+      let concurrentGets = 0;
+      let maxConcurrentGets = 0;
+      let phase: 'initial' | 'recovered' | 'later' = 'initial';
+      globalThis.fetch = async (input) => {
+        const pathname = new URL(input instanceof Request ? input.url : String(input), 'http://localhost').pathname;
+        if (pathname === '/api/openchamber/session-index/sync') {
+          return new Response(JSON.stringify(initialSnapshot), {
+            status: 202,
+            headers: { 'Content-Type': 'application/json' },
+          });
+        }
+        if (pathname === '/api/openchamber/session-index') {
+          requestCount += 1;
+          concurrentGets += 1;
+          maxConcurrentGets = Math.max(maxConcurrentGets, concurrentGets);
+          try {
+            if (failNextSessionIndexGet) {
+              failNextSessionIndexGet = false;
+              failSeen = true;
+              throw new Error('Failed to fetch');
+            }
+            if (phase === 'initial') {
+              return new Response(JSON.stringify({ available: true, ...initialSnapshot }), {
+                status: 200,
+                headers: { 'Content-Type': 'application/json' },
+              });
+            }
+            if (phase === 'recovered') {
+              return new Response(JSON.stringify({ available: true, ...recoveredSnapshot }), {
+                status: 200,
+                headers: { 'Content-Type': 'application/json' },
+              });
+            }
+            return new Response(JSON.stringify({ available: true, ...laterSnapshot }), {
+              status: 200,
+              headers: { 'Content-Type': 'application/json' },
+            });
+          } finally {
+            concurrentGets -= 1;
+          }
+        }
+        return new Response(JSON.stringify({ available: true, ...initialSnapshot }), {
+          status: 200,
+          headers: { 'Content-Type': 'application/json' },
+        });
+      };
+
+      const startup = useGlobalSessionsStore.getState().startSessionIndexStartup([dir]);
+      for (let i = 0; i < 50 && tipListeners.size === 0; i += 1) {
+        await new Promise((resolve) => setTimeout(resolve, 0));
+      }
+      await startup;
+      expect(useGlobalSessionsStore.getState().sessionsByDirectory.get(dir)?.map((s) => s.id))
+        .toEqual(['ses_older', 'ses_newer']);
+
+      const sessionsBeforeFailure = useGlobalSessionsStore.getState().sessionsByDirectory.get(dir);
+      const cachedDirsBeforeFailure = [...useGlobalSessionsStore.getState().cachedDirectories];
+      failNextSessionIndexGet = true;
+      phase = 'recovered';
+      emitOpenchamberTip({ type: 'session-index-changed', revision: 2, occurredAt: 1 });
+      while (!failSeen) await new Promise((resolve) => setTimeout(resolve, 10));
+      expect(useGlobalSessionsStore.getState().sessionsByDirectory.get(dir)).toEqual(sessionsBeforeFailure);
+      expect([...useGlobalSessionsStore.getState().cachedDirectories]).toEqual(cachedDirsBeforeFailure);
+
+      while (useGlobalSessionsStore.getState().activeSessions[0]?.id !== 'ses_recovered') {
+        await new Promise((resolve) => setTimeout(resolve, 25));
+      }
+      expect(useGlobalSessionsStore.getState().sessionsByDirectory.get(dir)?.map((s) => s.id))
+        .toEqual(['ses_recovered', 'ses_older', 'ses_newer']);
+
+      phase = 'later';
+      emitOpenchamberTip({ type: 'session-index-changed', revision: 3, occurredAt: 2 });
+      while (useGlobalSessionsStore.getState().activeSessions[0]?.id !== 'ses_later') {
+        await new Promise((resolve) => setTimeout(resolve, 25));
+      }
+      expect(useGlobalSessionsStore.getState().sessionsByDirectory.get(dir)?.map((s) => s.id))
+        .toEqual(['ses_later', 'ses_recovered', 'ses_older', 'ses_newer']);
+      expect(maxConcurrentGets).toBe(1);
+      expect(requestCount).toBeGreaterThanOrEqual(3);
+      expect(failSeen).toBe(true);
+    } finally {
+      queryClient.setDefaultOptions({ queries: { retry: 1 } });
+      queryClient.clear();
+      useGlobalSessionsStore.getState().resetForRuntimeSwitch();
+      Object.defineProperty(globalThis, 'window', { configurable: true, value: originalWindow });
+      globalThis.fetch = originalFetch;
+    }
+  });
+
+  test('tip observer stops retry after runtime switch abort', async () => {
+    const originalWindow = globalThis.window;
+    const originalFetch = globalThis.fetch;
+    const { queryClient } = await import('@/lib/queryRuntime');
+    queryClient.clear();
+    queryClient.setDefaultOptions({ queries: { retry: false } });
+
+    const dir = '/repo/activity';
+    const cached = buildSession('https://share.example/tip-abort', {
+      id: 'ses_abort',
+      directory: dir,
+      time: { created: 1, updated: 10 },
+    });
+    const stale = buildSession('https://share.example/tip-stale', {
+      id: 'ses_stale',
+      directory: dir,
+      time: { created: 2, updated: 20 },
+    });
+    const initialSnapshot = {
+      revision: 1,
+      sync: {
+        active: false,
+        completed: 1,
+        total: 1,
+        pendingDirectories: [] as string[],
+        completedDirectories: [dir],
+        failedDirectories: [] as string[],
+      },
+      directories: [{
+        directory: dir,
+        cursor: null,
+        hasMore: false,
+        lastSyncedAt: 1000,
+        lastFullSyncedAt: 1000,
+        lastAccessedAt: 1000,
+        sessions: [cached],
+      }],
+    };
+    const staleSnapshot = {
+      ...initialSnapshot,
+      revision: 99,
+      directories: [{
+        ...initialSnapshot.directories[0],
+        sessions: [stale],
+      }],
+    };
+    const hungGet: { resolve: null | ((response: Response) => void) } = { resolve: null };
+
+    try {
+      Object.defineProperty(globalThis, 'window', {
+        configurable: true,
+        value: { location: { origin: 'http://localhost', href: 'http://localhost/' } },
+      });
+      let tipDrivenAttempts = 0;
+      let armTips = false;
+      globalThis.fetch = async (input) => {
+        const pathname = new URL(input instanceof Request ? input.url : String(input), 'http://localhost').pathname;
+        if (pathname === '/api/openchamber/session-index/sync') {
+          return new Response(JSON.stringify(initialSnapshot), {
+            status: 202,
+            headers: { 'Content-Type': 'application/json' },
+          });
+        }
+        if (pathname === '/api/openchamber/session-index') {
+          if (!armTips) {
+            return new Response(JSON.stringify({ available: true, ...initialSnapshot }), {
+              status: 200,
+              headers: { 'Content-Type': 'application/json' },
+            });
+          }
+          tipDrivenAttempts += 1;
+          return await new Promise<Response>((resolve) => {
+            hungGet.resolve = resolve;
+          });
+        }
+        return new Response(JSON.stringify({ available: true, ...initialSnapshot }), {
+          status: 200,
+          headers: { 'Content-Type': 'application/json' },
+        });
+      };
+
+      const startup = useGlobalSessionsStore.getState().startSessionIndexStartup([dir]);
+      for (let i = 0; i < 50 && tipListeners.size === 0; i += 1) {
+        await new Promise((resolve) => setTimeout(resolve, 0));
+      }
+      await startup;
+
+      armTips = true;
+      emitOpenchamberTip({ type: 'session-index-changed', revision: 2, occurredAt: 1 });
+      while (hungGet.resolve === null) await new Promise((resolve) => setTimeout(resolve, 10));
+
+      const attemptsAtSwitch = tipDrivenAttempts;
+      useGlobalSessionsStore.getState().resetForRuntimeSwitch();
+      hungGet.resolve?.(new Response(JSON.stringify({ available: true, ...staleSnapshot }), {
+        status: 200,
+        headers: { 'Content-Type': 'application/json' },
+      }));
+      for (let i = 0; i < 20; i += 1) await new Promise((resolve) => setTimeout(resolve, 0));
+
+      expect(useGlobalSessionsStore.getState().activeSessions).toEqual([]);
+      expect(useGlobalSessionsStore.getState().sessionsByDirectory.size).toBe(0);
+      expect(tipDrivenAttempts).toBe(attemptsAtSwitch);
+    } finally {
+      hungGet.resolve?.(new Response(JSON.stringify({ available: true, ...initialSnapshot }), {
+        status: 200,
+        headers: { 'Content-Type': 'application/json' },
+      }));
+      queryClient.setDefaultOptions({ queries: { retry: 1 } });
+      queryClient.clear();
       useGlobalSessionsStore.getState().resetForRuntimeSwitch();
       Object.defineProperty(globalThis, 'window', { configurable: true, value: originalWindow });
       globalThis.fetch = originalFetch;

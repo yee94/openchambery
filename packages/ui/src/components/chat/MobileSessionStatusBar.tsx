@@ -1539,6 +1539,7 @@ export const MobileSessionStatusBar: React.FC<MobileSessionStatusBarProps> = ({
       </MobileOverlayPanel>
       <NewWorktreeDialog
         open={newWorktreeDialogOpen}
+        projectId={worktreeDialogProjectId}
         onOpenChange={(value) => {
           setNewWorktreeDialogOpen(value);
           if (!value) setWorktreeDialogProjectId(null);

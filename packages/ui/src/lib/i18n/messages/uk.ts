@@ -2525,6 +2525,8 @@ export const dict: Record<I18nKey, string> = {
   "sessionAuth.toast.passkeyAdded": "Ключ доступу додано",
   "sessionAuth.toast.passkeySetupCanceled": "Налаштування ключа доступу скасовано",
   "desktopHostSwitcher.title": "Інстанс",
+  "desktopHostSwitcher.transition.title": "Перемикання інстансу…",
+  "desktopHostSwitcher.transition.description": "Завантаження даних вибраного інстансу.",
   "desktopHostSwitcher.description": "Перемикання між Local і віддаленими OpenChamber серверами",
   "desktopHostSwitcher.header.current": "поточний",
   "desktopHostSwitcher.header.default": "За замовчуванням",

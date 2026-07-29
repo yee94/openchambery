@@ -6,6 +6,7 @@ import {
   isCapacitorNativePlatform,
   resolveMobileHapticMethod,
   shouldTriggerHaptic,
+  shouldTriggerStreamingTextHaptic,
   type HapticsInput,
 } from './streamingHaptics';
 import {
@@ -54,6 +55,11 @@ describe('haptic cadence', () => {
   test('allows haptics every 20ms', () => {
     expect(shouldTriggerHaptic(100, 119)).toBe(false);
     expect(shouldTriggerHaptic(100, 120)).toBe(true);
+  });
+
+  test('limits repeated streaming text haptics to every 750ms', () => {
+    expect(shouldTriggerStreamingTextHaptic(100, 849)).toBe(false);
+    expect(shouldTriggerStreamingTextHaptic(100, 850)).toBe(true);
   });
 });
 

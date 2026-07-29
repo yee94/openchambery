@@ -2559,6 +2559,8 @@ export const dict: Record<I18nKey, string> = {
   'sessionAuth.toast.passkeyAdded': '패스키를 추가했습니다',
   'sessionAuth.toast.passkeySetupCanceled': '패스키 설정을 취소했습니다',
   'desktopHostSwitcher.title': '인스턴스',
+  'desktopHostSwitcher.transition.title': '인스턴스 전환 중…',
+  'desktopHostSwitcher.transition.description': '선택한 인스턴스의 데이터를 불러오는 중입니다.',
   'desktopHostSwitcher.description': '로컬과 원격 OpenChamber 서버 간에 전환합니다',
   'desktopHostSwitcher.header.current': '현재',
   'desktopHostSwitcher.header.default': '기본값',

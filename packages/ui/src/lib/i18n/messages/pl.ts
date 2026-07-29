@@ -1646,6 +1646,8 @@ export const dict: Record<I18nKey, string> = {
   'desktopHostSwitcher.status.wrongService': 'Nieprawidłowa usługa',
   'desktopHostSwitcher.statusAria': 'Status instancji',
   'desktopHostSwitcher.title': 'Instancja',
+  'desktopHostSwitcher.transition.title': 'Przełączanie instancji…',
+  'desktopHostSwitcher.transition.description': 'Ładowanie danych wybranej instancji.',
   'desktopHostSwitcher.toast.instanceUnreachable': 'Instancja „{host}” jest nieosiągalna',
   'desktopHostSwitcher.toast.sshConnected': 'Połączono z instancją SSH „{host}”',
   'desktopHostSwitcher.toast.sshFailedToConnect': 'Nie udało się połączyć z instancją SSH „{host}”',

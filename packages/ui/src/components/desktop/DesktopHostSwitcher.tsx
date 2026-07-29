@@ -14,6 +14,7 @@ import { toast } from '@/components/ui';
 import { isElectronShell, isDesktopShell } from '@/lib/desktop';
 import { Icon } from "@/components/icon/Icon";
 import { useUIStore } from '@/stores/useUIStore';
+import { useConfigStore } from '@/stores/useConfigStore';
 import { useI18n } from '@/lib/i18n';
 import {
   desktopHostProbe,
@@ -34,7 +35,7 @@ import {
 import { scheduleDesktopHostCandidateRefresh } from '@/lib/desktopRelayRestore';
 import { adoptRelayTunnel } from '@/lib/relay/runtime-tunnel';
 import { createRelayTunnelClient } from '@/lib/relay/tunnel-client';
-import { getRuntimeApiBaseUrl, getRuntimeKey, subscribeRuntimeEndpointChanged, switchRuntimeEndpoint } from '@/lib/runtime-switch';
+import { getRuntimeApiBaseUrl, getRuntimeKey, getRuntimeTransportIdentity, subscribeRuntimeEndpointChanged, switchRuntimeEndpoint } from '@/lib/runtime-switch';
 import {
   desktopSshConnect,
   desktopSshDisconnect,
@@ -42,6 +43,11 @@ import {
   desktopSshStatus,
   type DesktopSshInstanceStatus,
 } from '@/lib/desktopSsh';
+import {
+  resolveHostRowDisplay,
+  type HostRowDisplayStatus,
+  type HostRowProbeSnapshot,
+} from './desktopHostSwitcherDisplay';
 
 const LOCAL_HOST_ID = 'local';
 const SSH_CONNECT_TIMEOUT_MS = 90_000;
@@ -52,19 +58,14 @@ const runtimeKeyForHost = (host: DesktopHost): string => {
   return `host:${host.id}`;
 };
 
-type HostStatus = {
-  status: HostProbeResult['status'];
-  latencyMs: number;
-  /** Which transport the successful probe used (multi-transport hosts). */
-  via?: 'relay';
-};
+type HostStatus = HostRowProbeSnapshot;
 
 // Last known statuses survive the dropdown unmounting (it remounts on every
 // open). Rows show the previous result immediately — refreshed quietly by the
 // open-probe — instead of shouting "Unknown" at the user for a few seconds.
 const lastKnownHostStatuses: Record<string, HostStatus> = {};
 
-type HostDisplayStatus = HostProbeResult['status'] | 'checking' | null;
+type HostDisplayStatus = HostRowDisplayStatus;
 
 const toNavigationUrl = (rawUrl: string): string => {
   const normalized = normalizeHostUrl(rawUrl);
@@ -183,15 +184,6 @@ const sshPhaseLabelKey = (phase: DesktopSshInstanceStatus['phase'] | undefined):
     default:
       return 'desktopHostSwitcher.sshPhase.idle';
   }
-};
-
-const sshPhaseToHostStatus = (
-  phase: DesktopSshInstanceStatus['phase'] | undefined,
-): HostProbeResult['status'] | null => {
-  if (!phase || phase === 'idle') return null;
-  if (phase === 'ready') return 'ok';
-  if (phase === 'error') return 'unreachable';
-  return 'auth';
 };
 
 const getSshStatusById = async (): Promise<Record<string, DesktopSshInstanceStatus>> => {
@@ -313,6 +305,8 @@ export function DesktopHostSwitcherDialog({
   const { t } = useI18n();
   const setSettingsDialogOpen = useUIStore((state) => state.setSettingsDialogOpen);
   const setSettingsPage = useUIStore((state) => state.setSettingsPage);
+  const runtimeIsConnected = useConfigStore((state) => state.isConnected);
+  const runtimeConnectionPhase = useConfigStore((state) => state.connectionPhase);
 
   const [configHosts, setConfigHosts] = React.useState<DesktopHost[]>([]);
   const [defaultHostId, setDefaultHostId] = React.useState<string | null>(null);
@@ -368,6 +362,10 @@ export function DesktopHostSwitcherDialog({
     void runtimeEndpointEpoch;
     return resolveCurrentHost(allHosts);
   }, [allHosts, runtimeEndpointEpoch]);
+  const currentTransportIsRelay = React.useMemo(() => {
+    void runtimeEndpointEpoch;
+    return getRuntimeTransportIdentity().startsWith('relay:');
+  }, [runtimeEndpointEpoch]);
   const currentDefaultLabel = React.useMemo(() => {
     const id = defaultHostId || LOCAL_HOST_ID;
     return allHosts.find((h) => h.id === id)?.label || t('desktopHostSwitcher.instance.local');
@@ -932,13 +930,20 @@ export function DesktopHostSwitcherDialog({
                 const isDefault = (defaultHostId || LOCAL_HOST_ID) === host.id;
                 const status = statusById[host.id] || null;
                 const sshStatus = sshStatusesById[host.id] || null;
-                // While a probe runs, keep showing the last known result (quiet
-                // refresh); only fall back to "Checking" when there has never
-                // been one. "Unknown" is never shown — an unprobed host is by
-                // definition being checked.
-                const statusKind: HostDisplayStatus = isSsh
-                  ? sshPhaseToHostStatus(sshStatus?.phase)
-                  : (status?.status ?? 'checking');
+                // Active status: runtime isConnected + connectionPhase.
+                // Inactive: probe / SSH phase. Ping only when probe transport
+                // matches the badge (no stale direct latency + Relay).
+                const rowDisplay = resolveHostRowDisplay({
+                  isActive,
+                  isSsh,
+                  runtimeIsConnected,
+                  runtimeConnectionPhase,
+                  currentTransportIsRelay,
+                  probe: status,
+                  sshPhase: sshStatus?.phase,
+                });
+                const statusKind = rowDisplay.statusKind;
+                const isViaRelay = rowDisplay.showViaRelay;
                 const isEditing = editingId === host.id;
                 const effectiveUrl = isLocal ? localOrigin : (normalizeHostUrl(host.url) || host.url);
                 const displayLabel = host.id === LOCAL_HOST_ID
@@ -992,11 +997,11 @@ export function DesktopHostSwitcherDialog({
                           )}
                         </div>
                         <div className={cn('typography-micro truncate', statusTextClass(statusKind))}>
-                          {isSsh ? t(sshPhaseLabelKey(sshStatus?.phase)) : t(statusLabelKey(statusKind))}
-                          {!isSsh && statusKind === 'ok' && typeof status?.latencyMs === 'number'
-                            ? t('desktopHostSwitcher.status.ping', { ms: Math.max(0, Math.round(status.latencyMs)) })
+                          {isSsh && !isActive ? t(sshPhaseLabelKey(sshStatus?.phase)) : t(statusLabelKey(statusKind))}
+                          {rowDisplay.latencyMs != null
+                            ? t('desktopHostSwitcher.status.ping', { ms: rowDisplay.latencyMs })
                             : ''}
-                          {!isSsh && status?.via === 'relay' ? ` · ${t('settings.remoteInstances.clientAuth.state.viaRelay')}` : ''}
+                          {isViaRelay ? ` · ${t('settings.remoteInstances.clientAuth.state.viaRelay')}` : ''}
                         </div>
                         <div className="typography-micro text-muted-foreground/70 truncate font-mono">
                           {displayUrl}

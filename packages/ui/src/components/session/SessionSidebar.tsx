@@ -78,6 +78,7 @@ import {
   compareSessionsByPinnedAndTime,
   normalizePath,
 } from './sidebar/utils';
+import { buildManualProjectSessionSyncDirectories } from './sidebar/manualProjectSessionSync';
 import {
   mergeLiveSessionWithGlobalSession,
   loadMoreGlobalSessionsForDirectory,
@@ -1111,21 +1112,40 @@ export const SessionSidebar: React.FC<SessionSidebarProps> = ({
       // Manual sync must re-discover worktrees first. The menu only knows the
       // in-memory catalog; external `git worktree add` or OpenCode sessions in a
       // new linked tree would otherwise never reach the session-index DB.
+      // Prefer this refresh's `result.worktrees` — `collectDirectoriesForProjectId`
+      // closes over a pre-await React snapshot of `availableWorktreesByProject`.
+      let worktrees: WorktreeMetadata[] = [];
       if (!isVSCode) {
         try {
-          await forceRefreshProjectWorktreeCatalog({ id: project.id, path: project.path });
+          const result = await forceRefreshProjectWorktreeCatalog({
+            id: project.id,
+            path: project.path,
+          });
+          worktrees = result.worktrees;
         } catch (error) {
           console.warn('[SessionSidebar] Worktree refresh before session sync failed:', error);
+          const projectPath = normalizePath(project.path);
+          worktrees = projectPath
+            ? (useSessionUIStore.getState().availableWorktreesByProject.get(projectPath) ?? [])
+            : [];
         }
       }
-      const directories = collectDirectoriesForProjectId(projectId);
+      const directories = buildManualProjectSessionSyncDirectories(
+        project.path,
+        worktrees,
+        {
+          currentDirectory,
+          workspaceRoot: project.path,
+          includeWorktrees: !isVSCode,
+        },
+      );
       if (directories.length === 0) return;
       await syncGlobalSessionsForDirectories(
         directories,
         syncSessionsSnapshotRef.current,
       );
     })();
-  }, [collectDirectoriesForProjectId, isVSCode, projects]);
+  }, [currentDirectory, isVSCode, projects]);
 
   // Persisted expanded projects are already open when the sidebar mounts, so
   // they never pass through toggleProject's "expanding" branch. Once collapse

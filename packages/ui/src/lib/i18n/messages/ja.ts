@@ -2558,6 +2558,8 @@ export const dict: Record<I18nKey, string> = {
   'sessionAuth.toast.passkeyAdded': 'パスキーを追加しました',
   'sessionAuth.toast.passkeySetupCanceled': 'パスキー設定をキャンセルしました',
   'desktopHostSwitcher.title': 'インスタンス',
+  'desktopHostSwitcher.transition.title': 'インスタンスを切り替えています…',
+  'desktopHostSwitcher.transition.description': '選択したインスタンスのデータを読み込んでいます。',
   'desktopHostSwitcher.description': 'ローカルとリモートのOpenChamberサーバーを切り替えます',
   'desktopHostSwitcher.header.current': '現在',
   'desktopHostSwitcher.header.default': 'デフォルト',

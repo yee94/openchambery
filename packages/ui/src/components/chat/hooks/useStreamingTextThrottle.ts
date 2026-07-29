@@ -1,4 +1,6 @@
 import React from 'react';
+import { getClientPlatform } from '@/lib/platform';
+import { resolveStreamingRenderCadence } from '../streamingRenderCadence';
 
 interface UseStreamingTextThrottleInput {
     text: string;
@@ -6,8 +8,6 @@ interface UseStreamingTextThrottleInput {
     throttleMs?: number;
     identityKey?: string;
 }
-
-const DEFAULT_STREAMING_TEXT_THROTTLE_MS = 20;
 
 const computeStreamingThrottleDelay = (lastEmitAt: number, now: number, throttleMs: number): number => {
     const elapsed = now - lastEmitAt;
@@ -31,7 +31,7 @@ const clearTimer = (state: StreamingThrottleState): void => {
 export const useStreamingTextThrottle = ({
     text,
     isStreaming,
-    throttleMs = DEFAULT_STREAMING_TEXT_THROTTLE_MS,
+    throttleMs = resolveStreamingRenderCadence(getClientPlatform()).textThrottleMs,
     identityKey,
 }: UseStreamingTextThrottleInput): string => {
     const [throttledText, setThrottledText] = React.useState(text);

@@ -36,6 +36,7 @@ import type {
   ResetToCommitResponse,
 } from './api/types';
 import { runtimeFetch } from './runtime-fetch';
+import { getRuntimeGeneration, getRuntimeTransportIdentity } from './runtime-switch';
 import { getRuntimeUrlResolver } from './runtime-url';
 
 const API_BASE = '/api/git';
@@ -46,6 +47,13 @@ const GIT_REPO_CHECK_CACHE_TTL_MS = 5000;
 // createWithPrompt) under Chromium's ~6 HTTP/1.1 connections per origin.
 const GIT_DISCOVERY_NETWORK_CONCURRENCY = 2;
 const GIT_DISCOVERY_CACHE_TTL_MS = 5000;
+const QUEUE_ACTIVATION_PATH = `${API_BASE}/worktrees/queue-activation`;
+const MESSAGE_QUEUE_ACTIVATION_PENDING = 'message_queue_activation_pending';
+const WORKTREE_LIFECYCLE_BUSY = 'worktree_lifecycle_busy';
+const WORKTREE_ACTIVATION_STALE = 'worktree_activation_stale';
+const QUEUE_ACTIVATION_REPAIR_ATTEMPT_TIMEOUT_MS = 5_000;
+const QUEUE_ACTIVATION_REPAIR_BUDGET_MS = 30_000;
+const QUEUE_ACTIVATION_REPAIR_BACKOFF_MS = [0, 500, 1_000, 2_000, 4_000, 8_000, 14_000] as const;
 const gitStatusCache = new Map<string, { value: GitStatus; expiresAt: number }>();
 const gitStatusInFlight = new Map<string, Promise<GitStatus>>();
 const gitStatusCacheVersions = new Map<string, number>();
@@ -55,6 +63,7 @@ const gitPrimaryRootCache = new Map<string, { value: { root: string }; expiresAt
 const gitPrimaryRootInFlight = new Map<string, Promise<{ root: string }>>();
 const gitWorktreesCache = new Map<string, { value: GitWorktreeInfo[]; expiresAt: number }>();
 const gitWorktreesInFlight = new Map<string, Promise<GitWorktreeInfo[]>>();
+const pendingQueueActivationRepairs = new Set<string>();
 let gitDiscoveryNetworkActive = 0;
 const gitDiscoveryNetworkWaiters: Array<() => void> = [];
 
@@ -828,19 +837,181 @@ export async function previewGitWorktree(directory: string, payload: CreateGitWo
   return response.json();
 }
 
+const isNonEmptyString = (value: unknown): value is string =>
+  typeof value === 'string' && value.length > 0;
+
+const parseGitWorktreeCreateResult = (value: unknown): GitWorktreeCreateResult | null => {
+  if (!value || typeof value !== 'object') return null;
+  const candidate = value as Record<string, unknown>;
+  if (!isNonEmptyString(candidate.name) || !isNonEmptyString(candidate.path)) {
+    return null;
+  }
+  const result: GitWorktreeCreateResult = {
+    head: typeof candidate.head === 'string' ? candidate.head : '',
+    name: candidate.name,
+    branch: typeof candidate.branch === 'string' ? candidate.branch : '',
+    path: candidate.path,
+  };
+  if (candidate.directoryCreated === true) {
+    result.directoryCreated = true;
+  }
+  if (candidate.bootstrapStatus && typeof candidate.bootstrapStatus === 'object') {
+    result.bootstrapStatus = candidate.bootstrapStatus as GitWorktreeCreateResult['bootstrapStatus'];
+  }
+  return result;
+};
+
+/**
+ * Strict trusted partial-success envelope from POST /api/git/worktrees when Git
+ * created the worktree but message-queue activation is still pending.
+ * Never treats an arbitrary server repair descriptor as executable — only the
+ * fixed queue-activation endpoint/body after validation.
+ */
+const parseMessageQueueActivationPending = (
+  status: number,
+  payload: unknown,
+  projectDirectory: string,
+): GitWorktreeCreateResult | null => {
+  if (status !== 503 || !payload || typeof payload !== 'object') return null;
+  const body = payload as Record<string, unknown>;
+  if (body.code !== MESSAGE_QUEUE_ACTIVATION_PENDING) return null;
+
+  const worktree = parseGitWorktreeCreateResult(body.worktree);
+  if (!worktree) return null;
+
+  const repair = body.repair;
+  if (!repair || typeof repair !== 'object') return null;
+  const repairBody = repair as Record<string, unknown>;
+  if (repairBody.method !== 'POST' || repairBody.path !== QUEUE_ACTIVATION_PATH) return null;
+
+  const requestBody = repairBody.body;
+  if (!requestBody || typeof requestBody !== 'object') return null;
+  const fields = requestBody as Record<string, unknown>;
+  if (fields.projectDirectory !== projectDirectory) return null;
+  if (fields.directory !== worktree.path) return null;
+
+  return worktree;
+};
+
+const queueActivationRepairDedupeKey = (
+  transport: string,
+  generation: number,
+  projectDirectory: string,
+  worktreePath: string,
+): string => `${transport}\u0000${generation}\u0000${projectDirectory}\u0000${worktreePath}`;
+
+const waitMs = (ms: number): Promise<void> => new Promise((resolve) => {
+  setTimeout(resolve, ms);
+});
+
+const isRetryableQueueActivationResponse = async (response: Response): Promise<boolean> => {
+  if (response.status === 409) {
+    const payload = await response.json().catch(() => null) as { code?: unknown } | null;
+    return payload?.code === WORKTREE_LIFECYCLE_BUSY || payload?.code === WORKTREE_ACTIVATION_STALE;
+  }
+  if (response.status === 503) {
+    const payload = await response.json().catch(() => null) as { code?: unknown } | null;
+    return payload?.code === MESSAGE_QUEUE_ACTIVATION_PENDING;
+  }
+  return false;
+};
+
+const isTerminalQueueActivationStatus = (status: number): boolean =>
+  status === 400 || status === 401 || status === 403 || status === 501;
+
+/**
+ * Fire-and-forget queue activation repair. Deduped per transport + generation +
+ * project/worktree path; stops when runtime/transport identity changes.
+ */
+const scheduleQueueActivationRepair = (projectDirectory: string, worktreePath: string): void => {
+  const transport = getRuntimeTransportIdentity();
+  const generation = getRuntimeGeneration();
+  const dedupeKey = queueActivationRepairDedupeKey(transport, generation, projectDirectory, worktreePath);
+  if (pendingQueueActivationRepairs.has(dedupeKey)) return;
+  pendingQueueActivationRepairs.add(dedupeKey);
+
+  const isCurrentRuntime = (): boolean =>
+    getRuntimeTransportIdentity() === transport && getRuntimeGeneration() === generation;
+
+  void (async () => {
+    const startedAt = Date.now();
+    let attempt = 0;
+
+    while (Date.now() - startedAt < QUEUE_ACTIVATION_REPAIR_BUDGET_MS) {
+      if (!isCurrentRuntime()) return;
+
+      const backoff = QUEUE_ACTIVATION_REPAIR_BACKOFF_MS[
+        Math.min(attempt, QUEUE_ACTIVATION_REPAIR_BACKOFF_MS.length - 1)
+      ] ?? 0;
+      if (backoff > 0) {
+        const remaining = QUEUE_ACTIVATION_REPAIR_BUDGET_MS - (Date.now() - startedAt);
+        if (remaining <= 0) return;
+        await waitMs(Math.min(backoff, remaining));
+        if (!isCurrentRuntime()) return;
+      }
+
+      const controller = new AbortController();
+      const timeoutId = setTimeout(() => controller.abort(), QUEUE_ACTIVATION_REPAIR_ATTEMPT_TIMEOUT_MS);
+      try {
+        const response = await runtimeFetch(buildUrl(QUEUE_ACTIVATION_PATH, undefined), {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ projectDirectory, directory: worktreePath }),
+          signal: controller.signal,
+        });
+
+        if (response.ok) return;
+        if (isTerminalQueueActivationStatus(response.status)) return;
+        if (await isRetryableQueueActivationResponse(response)) {
+          attempt += 1;
+          continue;
+        }
+        return;
+      } catch {
+        // Network failures and per-attempt timeouts are retryable within the budget.
+        attempt += 1;
+      } finally {
+        clearTimeout(timeoutId);
+      }
+    }
+  })()
+    .catch(() => {
+      // Swallow background repair failures — create already returned the worktree.
+    })
+    .finally(() => {
+      pendingQueueActivationRepairs.delete(dedupeKey);
+    });
+};
+
 export async function createGitWorktree(directory: string, payload: CreateGitWorktreePayload): Promise<GitWorktreeCreateResult> {
+  // Create is non-idempotent: do not attach a hard client timeout on this POST.
   const response = await runtimeFetch(buildUrl(`${API_BASE}/worktrees`, directory), {
     method: 'POST',
     headers: { 'Content-Type': 'application/json' },
     body: JSON.stringify(payload ?? {}),
   });
 
-  if (!response.ok) {
-    const error = await response.json().catch(() => ({ error: response.statusText }));
-    throw new Error(error.error || 'Failed to create worktree');
+  const payloadJson = await response.json().catch(() => null);
+
+  if (response.ok) {
+    const created = parseGitWorktreeCreateResult(payloadJson);
+    if (created) return created;
+    if (payloadJson && typeof payloadJson === 'object') {
+      return payloadJson as GitWorktreeCreateResult;
+    }
+    throw new Error('Failed to create worktree');
   }
 
-  return response.json();
+  const pendingWorktree = parseMessageQueueActivationPending(response.status, payloadJson, directory);
+  if (pendingWorktree) {
+    scheduleQueueActivationRepair(directory, pendingWorktree.path);
+    return pendingWorktree;
+  }
+
+  const error = payloadJson && typeof payloadJson === 'object'
+    ? payloadJson as { error?: string }
+    : { error: response.statusText };
+  throw new Error(error.error || 'Failed to create worktree');
 }
 
 export async function deleteGitWorktree(directory: string, payload: RemoveGitWorktreePayload): Promise<{ success: boolean }> {
