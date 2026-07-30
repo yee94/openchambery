@@ -3993,6 +3993,7 @@ const ChatInputRuntime: React.FC<ChatInputProps> = ({ onOpenSettings, scrollToBo
         if (isComposerExpanded) {
             textarea.style.height = '100%';
             textarea.style.maxHeight = 'none';
+            textarea.style.overflowY = 'auto';
             setTextareaSize(null);
             if (textarea.scrollTop !== previousScrollTop) {
                 textarea.scrollTop = previousScrollTop;
@@ -4041,6 +4042,9 @@ const ChatInputRuntime: React.FC<ChatInputProps> = ({ onOpenSettings, scrollToBo
 
         textarea.style.height = `${nextHeight}px`;
         textarea.style.maxHeight = `${maxHeight}px`;
+        // Collapsed mobile pill state sets an inline hidden overflow. Restore
+        // textarea scrolling as soon as the full composer measures its content.
+        textarea.style.overflowY = 'auto';
         if (textarea.scrollTop !== previousScrollTop) {
             textarea.scrollTop = previousScrollTop;
         }

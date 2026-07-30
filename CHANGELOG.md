@@ -4,6 +4,10 @@ All notable changes to this project will be documented in this file.
 
 ## [Unreleased]
 
+## [1.16.92] - 2026-07-30
+
+- **Mobile composer:** scroll long drafts within the input field after the compact composer expands.
+
 ## [1.16.91] - 2026-07-30
 
 - **iOS external TestFlight:** use supported App Store Connect build fields and relationship operations when associating processed builds with the external beta group and submitting Beta App Review.
