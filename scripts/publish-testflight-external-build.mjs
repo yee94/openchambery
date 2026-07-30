@@ -4,7 +4,6 @@ import { appendFileSync, existsSync, readFileSync } from 'node:fs';
 const ASC_API_URL = 'https://api.appstoreconnect.apple.com';
 const BUILD_PROCESSING_TIMEOUT_MS = 60 * 60 * 1000;
 const BUILD_PROCESSING_POLL_MS = 30 * 1000;
-const TERMINAL_BETA_REVIEW_STATES = new Set(['APPROVED', 'IN_BETA_REVIEW', 'WAITING_FOR_BETA_REVIEW']);
 
 function requireEnv(name) {
   const value = process.env[name]?.trim();
@@ -86,7 +85,7 @@ async function findBuild(appId) {
     `/v1/builds?${query({
       'filter[app]': appId,
       'filter[version]': buildNumber,
-      'fields[builds]': 'processingState,betaReviewState,version,uploadedDate',
+      'fields[builds]': 'processingState,version,uploadedDate',
       limit: '10',
     })}`,
   );
@@ -117,25 +116,15 @@ async function waitForProcessedBuild(appId) {
 }
 
 async function addBuildToExternalGroup(buildId) {
-  const currentGroups = await api(`/v1/builds/${buildId}/betaGroups?limit=50`);
-  const groups = assertSuccess(currentGroups, 'Read TestFlight build groups')?.data ?? [];
-  if (groups.some((group) => group.id === betaGroupId)) return;
-
   const result = await api(`/v1/betaGroups/${betaGroupId}/relationships/builds`, {
     method: 'POST',
     body: JSON.stringify({ data: [{ type: 'builds', id: buildId }] }),
   });
+  if (result.response.status === 409) return;
   assertSuccess(result, 'Add TestFlight build to external group');
 }
 
 async function submitBetaReview(build) {
-  const reviewState = build.attributes?.betaReviewState;
-  if (reviewState === 'APPROVED') return 'already-approved';
-  if (TERMINAL_BETA_REVIEW_STATES.has(reviewState)) return reviewState.toLowerCase();
-  if (reviewState === 'REJECTED') {
-    throw new Error(`TestFlight build ${buildNumber} has a rejected Beta App Review submission.`);
-  }
-
   const existing = await api(`/v1/builds/${build.id}/betaAppReviewSubmission`);
   if (existing.response.ok && existing.body?.data) return 'already-submitted';
   if (existing.response.status !== 404) assertSuccess(existing, 'Read Beta App Review submission');
