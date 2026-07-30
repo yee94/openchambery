@@ -810,7 +810,8 @@ the existing single-request path.
 
 After success, commit the real session to directory routing, global session
 state, selection state, and the optimistic shadow map. If SSE delivered the
-message first, preserve that authoritative object and skip optimistic insertion.
+message first, preserve that authoritative object, avoid a duplicate insertion,
+and publish the local `busy` status until authoritative session activity arrives.
 Create-phase failures restore the draft and input. Prompt-phase failures keep
 the created session; ambiguous delivery is confirmed by message ID and is never
 automatically re-submitted.

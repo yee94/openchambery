@@ -314,15 +314,20 @@ describe('handleCombinedDraftSend', () => {
   })
 
   test('3) SSE-first — pre-place message in child store, response must not duplicate', async () => {
-    registerRuntimeAPIs(makeCombinedAPI(async () => {
-      // SSE arrives before response: simulate by having optimisticInsertUserMessage
-      // do its normal work, then the response finalize checks getDirectoryState
-      return successResult()
+    const childStore = setupChildStores()
+    registerRuntimeAPIs(makeCombinedAPI(async (input) => {
+      const current = childStore.getState()
+      childStore.setState({
+        message: { ...current.message, [SESSION_ID]: [{ id: input.messageID, role: 'user', sessionID: SESSION_ID }] },
+        session_status: { ...current.session_status, [SESSION_ID]: { type: 'idle' } },
+      })
+      return successResult(input.messageID)
     }))
     useSessionUIStore.getState().openNewSessionDraft()
     await useSessionUIStore.getState().sendMessage('sse test', 'openai', 'gpt-4o')
     expect(useSessionUIStore.getState().currentSessionId).toBe(SESSION_ID)
-    // No duplicate — the flow already checks existingMessages before insert
+    expect(childStore.getState().message[SESSION_ID]).toHaveLength(1)
+    expect(childStore.getState().session_status[SESSION_ID]).toEqual({ type: 'busy' })
   })
 
   test('4) transport throws twice then succeeds — three attempts same messageID', async () => {

@@ -9,6 +9,7 @@ import { Icon } from "@/components/icon/Icon";
 import { OpenChamberLogo } from '@/components/ui/OpenChamberLogo';
 import { useI18n } from '@/lib/i18n';
 import { runtimeFetch } from '@/lib/runtime-fetch';
+import { getMobileClientVersion } from '@/lib/mobileAppVersion';
 import { SettingsGroup, SettingsRow } from '@/components/sections/shared/SettingsGroup';
 
 const GITHUB_URL = 'https://github.com/yee94/openchamber';
@@ -25,6 +26,7 @@ export const AboutSettings: React.FC<AboutSettingsProps> = ({ initialUpdateDialo
   const { t } = useI18n();
   const [updateDialogOpen, setUpdateDialogOpen] = React.useState(initialUpdateDialogOpen);
   const [showChecking, setShowChecking] = React.useState(false);
+  const [clientVersion, setClientVersion] = React.useState<string | null>(null);
   const [openChamberVersion, setOpenChamberVersion] = React.useState<string | null>(null);
   const [openCodeVersion, setOpenCodeVersion] = React.useState<string | null>(null);
   const updateStore = useUpdateStore(useShallow((s) => ({
@@ -42,7 +44,19 @@ export const AboutSettings: React.FC<AboutSettingsProps> = ({ initialUpdateDialo
   })));
   const { isMobile } = useDeviceInfo();
 
-  const currentVersion = openChamberVersion || updateStore.info?.currentVersion || 'unknown';
+  const currentVersion = clientVersion || t('settings.openchamber.about.state.unknown');
+
+  React.useEffect(() => {
+    let cancelled = false;
+
+    void getMobileClientVersion().then((version) => {
+      if (!cancelled) setClientVersion(version);
+    });
+
+    return () => {
+      cancelled = true;
+    };
+  }, []);
 
   React.useEffect(() => {
     let cancelled = false;
@@ -130,10 +144,15 @@ export const AboutSettings: React.FC<AboutSettingsProps> = ({ initialUpdateDialo
         </div>
 
         <SettingsGroup>
-          <SettingsRow label={t('settings.openchamber.about.field.version')}>
+          <SettingsRow label={t('settings.openchamber.about.field.clientVersion')}>
             <span className="typography-ui-label font-mono text-foreground text-right">{currentVersion}</span>
           </SettingsRow>
-          <SettingsRow label={t('settings.openchamber.about.field.openCodeVersion')}>
+          <SettingsRow label={t('settings.openchamber.about.field.instanceOpenChamberVersion')}>
+            <span className="typography-ui-label font-mono text-foreground text-right">
+              {openChamberVersion || t('settings.openchamber.about.state.unknown')}
+            </span>
+          </SettingsRow>
+          <SettingsRow label={t('settings.openchamber.about.field.instanceOpenCodeVersion')}>
             <span className="typography-ui-label font-mono text-foreground text-right">
               {openCodeVersion || t('settings.openchamber.about.state.unknown')}
             </span>
@@ -230,10 +249,15 @@ export const AboutSettings: React.FC<AboutSettingsProps> = ({ initialUpdateDialo
   return (
     <>
       <SettingsGroup label={t('settings.openchamber.about.title')}>
-        <SettingsRow label={t('settings.openchamber.about.field.version')}>
+        <SettingsRow label={t('settings.openchamber.about.field.clientVersion')}>
           <span className="typography-ui-label font-mono text-foreground text-right">{currentVersion}</span>
         </SettingsRow>
-        <SettingsRow label={t('settings.openchamber.about.field.openCodeVersion')}>
+        <SettingsRow label={t('settings.openchamber.about.field.instanceOpenChamberVersion')}>
+          <span className="typography-ui-label font-mono text-foreground text-right">
+            {openChamberVersion || t('settings.openchamber.about.state.unknown')}
+          </span>
+        </SettingsRow>
+        <SettingsRow label={t('settings.openchamber.about.field.instanceOpenCodeVersion')}>
           <span className="typography-ui-label font-mono text-foreground text-right">
             {openCodeVersion || t('settings.openchamber.about.state.unknown')}
           </span>

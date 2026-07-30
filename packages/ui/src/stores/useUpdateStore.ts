@@ -13,8 +13,7 @@ import {
 } from '@/lib/desktop';
 import { runtimeFetch } from '@/lib/runtime-fetch';
 import { getClientPlatform, isCapacitorApp } from '@/lib/platform';
-
-declare const __APP_VERSION__: string | undefined;
+import { getMobileClientVersion } from '@/lib/mobileAppVersion';
 
 type UpdateState = {
   checking: boolean;
@@ -203,8 +202,8 @@ export const useUpdateStore = create<UpdateStore>()((set, get) => ({
         const vscodeInfo = await checkForWebUpdates('vscode');
         suggestedSec = vscodeInfo?.nextSuggestedCheckInSec ?? null;
       } else if (runtime === 'mobile') {
-        const appVersion = typeof __APP_VERSION__ !== 'undefined' ? __APP_VERSION__ : undefined;
-        info = await checkForWebUpdates('mobile', appVersion);
+        const appVersion = await getMobileClientVersion();
+        info = await checkForWebUpdates('mobile', appVersion ?? 'unknown');
         suggestedSec = info?.nextSuggestedCheckInSec ?? null;
       }
 
