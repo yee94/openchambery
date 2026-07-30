@@ -51,7 +51,15 @@ git push origin main
 git push origin "v$VERSION"
 ```
 
-`release.yml` 在 `v*` tag push 后创建 Draft Release、构建桌面端和移动端、上传产物，再将 Draft Release 发布为正式 Release。Android 流程会生成签名 APK/AAB 并上传到对应 GitHub Release，iOS 流程会上传 IPA 到 TestFlight。
+`release.yml` 在 `v*` tag push 后创建 Draft Release、构建桌面端和移动端、上传产物，再将 Draft Release 发布为正式 Release。Android 流程会生成签名 APK/AAB 并上传到对应 GitHub Release，iOS 流程会上传 IPA 到 TestFlight、等待 Apple 处理完成、关联外测群组并自动提交 Beta App Review。
+
+### iOS 外测自动发布
+
+在 GitHub 仓库的 **Settings → Secrets and variables → Actions → Variables** 设置：
+
+- `TESTFLIGHT_EXTERNAL_BETA_GROUP_ID`：App Store Connect 外测群组 UUID。
+
+`mobile-release.yml` 会把每次 iOS 构建关联到这个固定群组。群组的 TestFlight Public Link 保持不变；Apple 批准新的 Beta App Review 后，该链接会自动提供最新获准构建。
 
 手动运行 `release.yml` 时，提供版本号；该 workflow 会执行桌面端和 Android 发布。`dry_run=true` 会保留 Draft Release，用于验证构建和产物：
 

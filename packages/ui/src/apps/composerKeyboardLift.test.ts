@@ -24,7 +24,10 @@ const createElement = (tag: string, className = ''): HTMLElement => {
     },
     append(...nodes: HTMLElement[]) {
       for (const node of nodes) {
-        node.parentElement = el as unknown as HTMLElement;
+        Object.defineProperty(node, 'parentElement', {
+          configurable: true,
+          value: el as unknown as HTMLElement,
+        });
         children.push(node);
       }
     },
