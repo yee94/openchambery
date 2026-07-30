@@ -151,7 +151,7 @@ Packaged Desktop builds include the official OpenCode CLI that matches the pinne
 
 ## Releases and automatic updates
 
-Packaged desktop apps check updates through `openchamber-update.edgeone.dev` using Electron updater metadata proxied through `/desktop/`. Signed installers, macOS ZIP updates, and AppImages remain GitHub Release assets. Each cold startup checks once, and users can check again from the app menu, sidebar, or Settings. Electron applies a downloaded desktop update independently of the active OpenChamber host connection.
+Packaged desktop apps check updates through `openchamber-update.edgeone.dev` using Electron updater metadata proxied through `/desktop/`. Signed installers, macOS ZIP updates, and AppImages remain GitHub Release assets. Each cold startup checks once, then repeats hourly while the app is visible; users can also check from the app menu, sidebar, or Settings. Electron applies a downloaded desktop update independently of the active OpenChamber host connection.
 
 The `Release` GitHub Actions workflow runs for `v*` tags or by manual dispatch. Before starting a release:
 

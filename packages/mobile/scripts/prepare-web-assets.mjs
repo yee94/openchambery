@@ -13,4 +13,15 @@ await mkdir(mobileDist, { recursive: true });
 await cp(webDist, mobileDist, { recursive: true });
 
 const html = await readFile(mobileHtml, 'utf8');
-await writeFile(indexHtml, html);
+// Android's composer owns IME geometry through its transform FLIP. Keep the
+// native WebView viewport stable so Chromium cannot add a second layout lift.
+const nativeHtml = html.replace(
+  'viewport-fit=cover"',
+  'viewport-fit=cover, interactive-widget=overlays-content"',
+);
+
+if (nativeHtml === html) {
+  throw new Error('Mobile viewport meta tag was not found while preparing native assets');
+}
+
+await writeFile(indexHtml, nativeHtml);

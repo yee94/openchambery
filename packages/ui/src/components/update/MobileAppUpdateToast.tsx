@@ -4,9 +4,9 @@ import { Icon } from '@/components/icon/Icon';
 import { toast } from '@/components/ui/toast';
 import { useI18n } from '@/lib/i18n';
 import { getClientPlatform } from '@/lib/platform';
-import { openExternalUrl } from '@/lib/url';
 import { useUpdateStore } from '@/stores/useUpdateStore';
 import { getDeferredSafeStorage } from '@/stores/utils/safeStorage';
+import { openMobileAppUpdateDownload } from './mobileAppUpdateDownload';
 
 const TOAST_ID = 'mobile-app-update-available';
 const DISMISSED_VERSION_KEY = 'mobile-app-update-toast-dismissed-version';
@@ -43,7 +43,7 @@ export const MobileAppUpdateToast: React.FC = () => {
       action: {
         label: t('mobileUpdate.toast.actions.download'),
         onClick: () => {
-          void openExternalUrl(downloadUrl);
+          void openMobileAppUpdateDownload(downloadUrl);
         },
       },
       cancel: {

@@ -5625,7 +5625,10 @@ const ChatInputRuntime: React.FC<ChatInputProps> = ({ onOpenSettings, scrollToBo
         const timer = window.setTimeout(() => {
             restoreKeyboardAfterOverlayRef.current = false;
             // Browsers need their native scroll-into-view (see expandMobileComposer).
-            textareaRef.current?.focus({ preventScroll: isCapacitorApp() });
+            const textarea = textareaRef.current;
+            if (textarea && document.activeElement !== textarea) {
+                textarea.focus({ preventScroll: isCapacitorApp() });
+            }
         }, 180);
         return () => window.clearTimeout(timer);
     }, [isMobile, mobileOverlayOpen, mobileTextareaFocused]);

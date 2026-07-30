@@ -22,3 +22,16 @@ export function isComposerKeyboardFocusTransfer(
 ): boolean {
   return isComposerKeyboardTarget(relatedTarget ?? null);
 }
+
+/**
+ * Resolves what a native Android IME state event may do for the composer.
+ * An already-armed composer session refreshes its next-open cache only: the
+ * active FLIP owns the current keyboard rise from focus through close.
+ */
+export function getAndroidComposerImeStateAction(
+  composerLiftArmed: boolean,
+  activeElement: EventTarget | null | undefined,
+): 'ignore' | 'cache' | 'open' {
+  if (composerLiftArmed) return 'cache';
+  return isComposerKeyboardTarget(activeElement ?? null) ? 'open' : 'ignore';
+}

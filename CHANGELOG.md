@@ -4,6 +4,12 @@ All notable changes to this project will be documented in this file.
 
 ## [Unreleased]
 
+## [1.16.93] - 2026-07-30
+
+- **Desktop updates:** check the EdgeOne update service at startup and hourly while the packaged app is visible.
+- **Android updates:** hand APK downloads to the configured system browser for download and installation.
+- **Mobile composer:** stabilize Android keyboard lift and composer focus across model selection, and show a live dictation waveform.
+
 ## [1.16.92] - 2026-07-30
 
 - **Mobile composer:** scroll long drafts within the input field after the compact composer expands.

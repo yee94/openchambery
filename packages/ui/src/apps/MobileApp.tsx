@@ -72,6 +72,7 @@ import { useSync } from '@/sync/use-sync';
 
 import { SyncAppEffects } from './AppEffects';
 import {
+  getAndroidComposerImeStateAction,
   isComposerKeyboardFocusTransfer,
   isComposerKeyboardTarget,
 } from './composerKeyboardLift';
@@ -427,6 +428,10 @@ const useNativeMobileChrome = (): void => {
           }
         };
         let imeHeight = Math.round(window.innerHeight * readCachedRatio());
+        // Keep the height that armed this keyboard session separate from the
+        // measured cache. The native state event refreshes the next-open cache;
+        // rewriting an in-flight transform from that event creates a second rise.
+        let armedImeHeight = 0;
         const persistHeight = (height: number) => {
           imeHeight = Math.max(0, Math.round(height));
           if (imeHeight <= 0 || window.innerHeight <= 0) return;
@@ -475,19 +480,20 @@ const useNativeMobileChrome = (): void => {
           } else if (source === 'focus') {
             if (!shouldLiftComposerForFocus(anchor)) return;
           } else if (!keyboardOpen && !shouldLiftComposerForFocus(document.activeElement)) {
-            // IME open for a non-composer field: cache height elsewhere, no lift.
+            // IME open for a non-composer field: leave composer state untouched.
             return;
           }
           measureSafeBottom();
           if (keyboardOpen) {
-            const slide = getAndroidSlide(imeHeight);
+            const activeImeHeight = armedImeHeight || imeHeight;
+            const slide = getAndroidSlide(activeImeHeight);
             const movers = getKbMovers(source === 'focus' ? anchor : undefined);
             if (movers.length === 0) return;
             const alreadyPositioned = movers.every(
               ({ el, factor }) => el.style.transform === getAndroidTransform(slide, factor),
             );
             if (alreadyPositioned) return;
-            liftMovers(imeHeight, CORRECT_MS, SHOW_EASING, source === 'focus' ? anchor : undefined);
+            liftMovers(activeImeHeight, CORRECT_MS, SHOW_EASING, source === 'focus' ? anchor : undefined);
             dispatchKb('oc:keyboard-anim', {
               phase: 'show',
               slide,
@@ -502,7 +508,8 @@ const useNativeMobileChrome = (): void => {
           setInset(0);
           setVar('--oc-kb-layout', 0);
           setVar('--oc-kb-scroll-inset', 0);
-          const slide = liftMovers(imeHeight, SHOW_MS, SHOW_EASING, source === 'focus' ? anchor : undefined);
+          armedImeHeight = imeHeight;
+          const slide = liftMovers(armedImeHeight, SHOW_MS, SHOW_EASING, source === 'focus' ? anchor : undefined);
           dispatchKb('oc:keyboard-anim', {
             phase: 'show',
             slide,
@@ -521,7 +528,9 @@ const useNativeMobileChrome = (): void => {
             }
             return;
           }
+          const activeImeHeight = armedImeHeight || imeHeight;
           keyboardOpen = false;
+          armedImeHeight = 0;
           if (blur && isTextField(document.activeElement)) {
             (document.activeElement as HTMLElement).blur();
           }
@@ -530,7 +539,7 @@ const useNativeMobileChrome = (): void => {
           setVar('--oc-kb-layout', 0);
           setVar('--oc-kb-scroll-inset', 0);
           dispatchKb('oc:keyboard-intent', { open: false });
-          const slide = getAndroidSlide(imeHeight);
+          const slide = getAndroidSlide(activeImeHeight);
           // Start the transform first so the same frame collapses chrome + lift.
           liftMovers(0, HIDE_MS, HIDE_EASING);
           dispatchKb('oc:keyboard-anim', {
@@ -578,15 +587,17 @@ const useNativeMobileChrome = (): void => {
           const detail = nativeEvent.detail ?? nativeEvent;
           if (detail?.open === true) {
             const measured = Math.max(0, Math.round(detail.height ?? 0));
-            if (measured > 0) {
-              // Always cache measured height for the next composer open, even
-              // when this IME session is for a non-composer field.
+            const action = getAndroidComposerImeStateAction(keyboardOpen, document.activeElement);
+            if (measured > 0 && action !== 'ignore') {
+              // A model-picker search field can have a different IME silhouette
+              // from the composer. Keep the cache scoped to composer-owned opens.
               persistHeight(measured);
-              // Correct only an already-armed composer lift — never start a
-              // lift solely because the IME opened for another field.
-              if (keyboardOpen) liftMovers(imeHeight, CORRECT_MS, SHOW_EASING);
             }
-            markOpen(document.activeElement, 'ime');
+            // The state event may beat focusin on a fast keyboard. In that case
+            // it starts the single composer lift with the measured height. Once
+            // a focus/intent lift is armed, this event only refreshes next-open
+            // cache data and leaves its transform untouched.
+            if (action === 'open') markOpen(document.activeElement, 'ime');
           }
           if (detail?.open === false) markClosed(true);
         };

@@ -1,6 +1,7 @@
 import { describe, expect, test } from 'bun:test';
 
 import {
+  getAndroidComposerImeStateAction,
   isComposerKeyboardFocusTransfer,
   isComposerKeyboardTarget,
 } from './composerKeyboardLift';
@@ -68,5 +69,17 @@ describe('composerKeyboardLift', () => {
     expect(isComposerKeyboardFocusTransfer(b)).toBe(true);
     expect(isComposerKeyboardFocusTransfer(outside)).toBe(false);
     expect(isComposerKeyboardFocusTransfer(null)).toBe(false);
+  });
+
+  test('uses native IME height as cache only while a composer lift is armed', () => {
+    const composer = createElement('form', 'oc-mobile-composer');
+    const textarea = createElement('textarea');
+    const outside = createElement('input');
+    composer.appendChild(textarea);
+
+    expect(getAndroidComposerImeStateAction(false, textarea)).toBe('open');
+    expect(getAndroidComposerImeStateAction(true, textarea)).toBe('cache');
+    expect(getAndroidComposerImeStateAction(true, outside)).toBe('cache');
+    expect(getAndroidComposerImeStateAction(false, outside)).toBe('ignore');
   });
 });

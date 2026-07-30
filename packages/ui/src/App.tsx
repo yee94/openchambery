@@ -78,6 +78,8 @@ const OnboardingScreen = lazyWithChunkRecovery(() =>
   import('@/components/onboarding/OnboardingScreen').then((m) => ({ default: m.OnboardingScreen })),
 );
 
+const DESKTOP_UPDATE_CHECK_INTERVAL_MS = 60 * 60 * 1000;
+
 const AboutDialogWrapper: React.FC = () => {
   const isAboutDialogOpen = useUIStore((s) => s.isAboutDialogOpen);
   const setAboutDialogOpen = useUIStore((s) => s.setAboutDialogOpen);
@@ -824,7 +826,35 @@ function App({ apis }: AppProps) {
     }
 
     startupUpdateCheckStartedRef.current = true;
-    void useUpdateStore.getState().checkForUpdates();
+    let disposed = false;
+    let timer: number | null = null;
+
+    const schedule = (delayMs: number) => {
+      timer = window.setTimeout(() => {
+        if (disposed) return;
+
+        const updateStore = useUpdateStore.getState();
+        if (document.visibilityState !== 'visible' || updateStore.checking) {
+          schedule(DESKTOP_UPDATE_CHECK_INTERVAL_MS);
+          return;
+        }
+
+        void updateStore.checkForUpdates().finally(() => {
+          if (!disposed) {
+            schedule(DESKTOP_UPDATE_CHECK_INTERVAL_MS);
+          }
+        });
+      }, delayMs);
+    };
+
+    schedule(0);
+
+    return () => {
+      disposed = true;
+      if (timer !== null) {
+        window.clearTimeout(timer);
+      }
+    };
   }, [isInitialized]);
 
   useTraySync();

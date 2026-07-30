@@ -50,21 +50,22 @@ const formatDuration = (seconds: number): string => {
     return `${mins}:${String(secs).padStart(2, '0')}`;
 };
 
-const VolumeMeter: React.FC<{ volume: number }> = ({ volume }) => {
+const AudioWave: React.FC<{ volume: number }> = ({ volume }) => {
     const { currentTheme } = useThemeSystem();
+    const normalizedVolume = Math.min(1, Math.max(0, volume));
+    const barMultipliers = [0.45, 0.7, 1, 0.7, 0.45];
     return (
-        <div
-            className="h-1.5 w-16 flex-shrink-0 overflow-hidden rounded-full"
-            style={{ backgroundColor: currentTheme.colors.interactive.border }}
-            aria-hidden="true"
-        >
-            <div
-                className="h-full rounded-full transition-[width] duration-75"
-                style={{
-                    width: `${Math.round(Math.min(1, volume) * 100)}%`,
-                    backgroundColor: currentTheme.colors.primary.base,
-                }}
-            />
+        <div className="flex h-6 w-10 flex-shrink-0 items-center justify-center gap-1" aria-hidden="true">
+            {barMultipliers.map((multiplier, index) => (
+                <span
+                    key={index}
+                    className="h-full w-1 rounded-full transition-transform duration-75 ease-out motion-reduce:transition-none"
+                    style={{
+                        backgroundColor: currentTheme.colors.primary.base,
+                        transform: `scaleY(${0.25 + normalizedVolume * multiplier * 0.75})`,
+                    }}
+                />
+            ))}
         </div>
     );
 };
@@ -392,7 +393,7 @@ export const ComposerDictation: React.FC<ComposerDictationProps> = ({
                             // fixed min pushed the action row 4px below the real
                             // footer. The area must shrink to whatever space the
                             // underlying composer actually has.
-                            'flex-1 min-h-0 overflow-y-auto px-3',
+                            'scrollbar-none flex-1 min-h-0 overflow-y-auto px-3',
                             isMobile ? 'pt-3.5 pb-2.5' : 'pt-5 pb-2',
                         )}
                     >
@@ -403,6 +404,11 @@ export const ComposerDictation: React.FC<ComposerDictationProps> = ({
                                 <p className="typography-markdown md:typography-ui-label whitespace-pre-wrap" style={{ color: currentTheme.colors.surface.foreground }}>
                                     {partialTranscript}
                                 </p>
+                            ) : status === 'recording' ? (
+                                <div className="flex items-center gap-3" style={{ color: currentTheme.colors.surface.mutedForeground }}>
+                                    <AudioWave volume={volume} />
+                                    <p className="typography-markdown md:typography-ui-label">{placeholderText}</p>
+                                </div>
                             ) : (
                                 <p className="typography-markdown md:typography-ui-label" style={{ color: currentTheme.colors.surface.mutedForeground }}>
                                     {placeholderText}
@@ -436,7 +442,7 @@ export const ComposerDictation: React.FC<ComposerDictationProps> = ({
                                         style={{ backgroundColor: currentTheme.colors.status.error }}
                                     />
                                 </span>
-                                <VolumeMeter volume={volume} />
+                                <AudioWave volume={volume} />
                                 <span className="typography-meta tabular-nums" style={{ color: currentTheme.colors.surface.mutedForeground }}>
                                     {formatDuration(duration)}
                                 </span>

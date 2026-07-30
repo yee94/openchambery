@@ -1725,7 +1725,6 @@ export const ModelControls: React.FC<ModelControlsProps> = ({
                     variant,
                 }).then(() => {
                     addRecentModel(providerId, modelId);
-                    requestAnimationFrame(() => focusComposerTextarea(composerTextareaRef));
                 }).catch(() => undefined);
                 return;
             }
@@ -1741,7 +1740,8 @@ export const ModelControls: React.FC<ModelControlsProps> = ({
 
             persistAgentModelPreference(resolveLiveAgentName(), providerId, modelId, variant);
             closeMobilePanel();
-            requestAnimationFrame(() => focusComposerTextarea(composerTextareaRef));
+            // ChatInput restores composer focus after the sheet has fully closed.
+            // Keeping one mobile focus owner prevents a second Android IME lift.
         };
 
         return (

@@ -15,6 +15,7 @@ public class MainActivity extends BridgeActivity {
         registerPlugin(OpenChamberHapticsPlugin.class);
         registerPlugin(OpenChamberNavigationPlugin.class);
         registerPlugin(OpenChamberSharePlugin.class);
+        registerPlugin(OpenChamberExternalBrowserPlugin.class);
         super.onCreate(savedInstanceState);
         dispatchShare(getIntent());
         // After the Keyboard plugin installs its root animation callback, remove
