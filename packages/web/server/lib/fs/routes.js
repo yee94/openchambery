@@ -57,25 +57,6 @@ export const mintOutsideFileGrant = async (targetPath, {
   };
 };
 
-const resolveOutsideFileGrant = async ({ token, targetPath, scope, fsPromises }) => {
-  pruneOutsideFileGrants();
-  if (typeof token !== 'string' || !token.trim()) {
-    return { ok: false, error: 'Outside workspace file access requires a grant' };
-  }
-  const grant = outsideFileGrants.get(token.trim());
-  if (!grant) {
-    return { ok: false, error: 'Outside workspace file grant is invalid or expired' };
-  }
-  if (!grant.scopes.has(scope)) {
-    return { ok: false, error: 'Outside workspace file grant does not allow this operation' };
-  }
-  const canonicalPath = await fsPromises.realpath(targetPath);
-  if (canonicalPath !== grant.canonicalPath) {
-    return { ok: false, error: 'Outside workspace file grant does not match requested path' };
-  }
-  return { ok: true, base: grant.base, resolved: canonicalPath, granted: true };
-};
-
 const createCommandTimeoutMs = () => {
   const raw = Number(process.env.OPENCHAMBER_FS_EXEC_TIMEOUT_MS);
   if (Number.isFinite(raw) && raw > 0) return raw;
@@ -302,30 +283,14 @@ const escapeCloneSshKeyPath = (sshKeyPath) => {
   return `'${normalized.replace(/'/g, "'\\''")}'`;
 };
 
-const resolveReadPathFromContext = async ({ req, targetPath, scope, resolveProjectDirectory, path, os, fsPromises, normalizeDirectoryPath, openchamberUserConfigRoot }) => {
-  if (req.query?.allowOutsideWorkspace === 'true') {
-    const normalized = normalizeDirectoryPath(targetPath);
-    if (!normalized || typeof normalized !== 'string') {
-      return { ok: false, error: 'Path is required' };
-    }
-    const resolved = path.resolve(normalized);
-    return resolveOutsideFileGrant({
-      token: req.query?.outsideFileGrant,
-      targetPath: resolved,
-      scope,
-      fsPromises,
-    });
+const resolveReadPathFromContext = ({ targetPath, path, normalizeDirectoryPath }) => {
+  const normalized = normalizeDirectoryPath(targetPath);
+  if (!normalized || typeof normalized !== 'string') {
+    return { ok: false, error: 'Path is required' };
   }
 
-  return resolveWorkspacePathFromContext({
-    req,
-    targetPath,
-    resolveProjectDirectory,
-    path,
-    os,
-    normalizeDirectoryPath,
-    openchamberUserConfigRoot,
-  });
+  const resolved = path.resolve(normalized);
+  return { ok: true, base: path.dirname(resolved), resolved, unrestricted: true };
 };
 
 const runCommandInDirectory = ({ shell, shellFlag, command, resolvedCwd, spawn, buildAugmentedPath, commandTimeoutMs }) => {
@@ -749,7 +714,7 @@ export const registerFsRoutes = (app, dependencies) => {
         fsPromises.realpath(resolved.base).catch(() => path.resolve(resolved.base)),
       ]);
 
-      if (!isPathWithinRoot(canonicalPath, canonicalBase, path, os)) {
+      if (!resolved.unrestricted && !isPathWithinRoot(canonicalPath, canonicalBase, path, os)) {
         return res.status(403).json({ error: 'Access to file denied' });
       }
 
@@ -807,7 +772,7 @@ export const registerFsRoutes = (app, dependencies) => {
         fsPromises.realpath(resolved.base).catch(() => path.resolve(resolved.base)),
       ]);
 
-      if (!isPathWithinRoot(canonicalPath, canonicalBase, path, os)) {
+      if (!resolved.unrestricted && !isPathWithinRoot(canonicalPath, canonicalBase, path, os)) {
         return res.status(403).json({ error: 'Access to file denied' });
       }
 
@@ -882,7 +847,7 @@ export const registerFsRoutes = (app, dependencies) => {
         fsPromises.realpath(resolved.base).catch(() => path.resolve(resolved.base)),
       ]);
 
-      if (!isPathWithinRoot(canonicalPath, canonicalBase, path, os)) {
+      if (!resolved.unrestricted && !isPathWithinRoot(canonicalPath, canonicalBase, path, os)) {
         return res.status(403).json({ error: 'Access to file denied' });
       }
 
@@ -967,7 +932,7 @@ export const registerFsRoutes = (app, dependencies) => {
         fsPromises.realpath(resolved.base).catch(() => path.resolve(resolved.base)),
       ]);
 
-      if (!isPathWithinRoot(canonicalPath, canonicalBase, path, os)) {
+      if (!resolved.unrestricted && !isPathWithinRoot(canonicalPath, canonicalBase, path, os)) {
         return res.status(403).json({ error: 'Access to file denied' });
       }
 

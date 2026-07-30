@@ -263,6 +263,11 @@ export function useAssistantStatus(
     const primarySessionDirectory = useSessionUIStore((state) => state.currentSessionDirectory);
     const currentSessionId = sessionId ?? primarySessionId;
     const currentSessionDirectory = directory ?? primarySessionDirectory;
+    const relayPendingSendMessageID = useSessionUIStore(
+        React.useCallback((state) => (
+            currentSessionId ? state.relayPendingSendMessageIDs.get(currentSessionId) ?? null : null
+        ), [currentSessionId]),
+    );
 
     const rawSessionMessages = useDirectorySync(
         React.useCallback((state) => {
@@ -397,6 +402,25 @@ export function useAssistantStatus(
             return baseWorking;
         }
 
+        if (relayPendingSendMessageID) {
+            return {
+                ...baseWorking,
+                activity: 'streaming',
+                hasWorkingContext: true,
+                isWorking: true,
+                isStreaming: true,
+                isCooldown: false,
+                lifecyclePhase: 'streaming',
+                statusText: t('chat.assistantStatus.sendingMessage'),
+                isGenericStatus: false,
+                isWaitingForPermission: false,
+                canAbort: false,
+                activePartType: undefined,
+                activeToolName: undefined,
+                retryInfo: null,
+            };
+        }
+
         const hasPendingPermission = sessionPermissionRequests.length > 0;
         const hasPendingQuestion = sessionQuestionRequests.length > 0;
 
@@ -425,7 +449,7 @@ export function useAssistantStatus(
             canAbort: false,
             retryInfo: null,
         };
-    }, [baseWorking, sessionPermissionRequests, sessionQuestionRequests, t]);
+    }, [baseWorking, relayPendingSendMessageID, sessionPermissionRequests, sessionQuestionRequests, t]);
 
     return {
         forming,

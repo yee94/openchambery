@@ -1895,6 +1895,7 @@ export const dict: Record<I18nKey, string> = {
   "chat.assistantStatus.weighingOptions": "Оцінювання варіантів",
   "chat.assistantStatus.thinking": "Обмірковування",
   "chat.assistantStatus.composing": "Створення відповіді",
+  "chat.assistantStatus.sendingMessage": "Надсилання повідомлення",
   "chat.assistantStatus.waitingForPermission": "Очікування дозволу",
   "chat.assistantStatus.retrying": "Повторна спроба",
   "chat.assistantStatus.retryingIn": "Повторна спроба {duration}",

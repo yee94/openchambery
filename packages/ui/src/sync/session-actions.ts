@@ -50,6 +50,7 @@ import {
   type SessionMetadataRecord,
 } from "@/lib/sessionReviewMetadata"
 import { reconcileActiveSessionStatusAfterMessagePull } from "./session-status-reconciliation"
+import { isRelayModeActive } from "@/lib/relay/runtime-tunnel"
 
 const SEND_CONFIRMATION_REFETCH_ATTEMPTS = 2
 const SEND_CONFIRMATION_REFETCH_RETRY_MS = 150
@@ -1186,6 +1187,7 @@ export async function optimisticSend(input: {
   const targetDirectory = input.directory ?? dir()
   const capture = captureSendTarget(targetDirectory)
   const transport = captureRuntimeTransport()
+  const relaySend = isRelayModeActive()
   let transportEntered = false
   let messageID: string | undefined
   try {
@@ -1195,6 +1197,10 @@ export async function optimisticSend(input: {
 
     messageID = input.messageID ?? ascendingId("msg")
     input.onMessageID?.(messageID)
+
+    if (relaySend) {
+      useSessionUIStore.getState().markRelayMessageSending?.(input.sessionId, messageID)
+    }
 
     // Paint the user bubble + busy status immediately. Connection recovery may
     // take up to CONNECTION_GRACE_MS; the list must not wait on that.
@@ -1263,6 +1269,10 @@ export async function optimisticSend(input: {
       },
     })
     throw dispatchError
+  } finally {
+    if (messageID && relaySend) {
+      useSessionUIStore.getState().clearRelayMessageSending?.(input.sessionId, messageID)
+    }
   }
 }
 

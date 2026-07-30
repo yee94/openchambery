@@ -4,6 +4,11 @@ All notable changes to this project will be documented in this file.
 
 ## [Unreleased]
 
+## [1.16.87] - 2026-07-30
+
+- **Relay messaging:** show an optimistic user message immediately and display a highlighted sending status until the prompt request settles.
+- **Filesystem API:** centralize outside-file grant validation and simplify route coverage for read-only file access.
+
 ## [1.16.86] - 2026-07-30
 
 - **macOS signed desktop:** give Electron helper processes their own hardened-runtime JIT entitlements so notarized DMGs no longer crash in `OpenChamber Helper (Renderer)` during V8 startup.

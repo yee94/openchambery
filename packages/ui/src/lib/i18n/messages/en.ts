@@ -1918,6 +1918,7 @@ export const dict = {
   'chat.assistantStatus.weighingOptions': 'Weighing options',
   'chat.assistantStatus.thinking': 'Thinking',
   'chat.assistantStatus.composing': 'Composing',
+  'chat.assistantStatus.sendingMessage': 'Sending message',
   'chat.assistantStatus.waitingForPermission': 'Waiting for permission',
   'chat.assistantStatus.retrying': 'Retrying',
   'chat.assistantStatus.retryingIn': 'Retrying {duration}',

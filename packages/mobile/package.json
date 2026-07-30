@@ -1,6 +1,6 @@
 {
   "name": "@openchamber/mobile",
-  "version": "1.16.86",
+  "version": "1.16.87",
   "private": true,
   "type": "module",
   "scripts": {

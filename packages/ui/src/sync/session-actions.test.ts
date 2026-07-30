@@ -24,6 +24,8 @@ const abortBlockEvents: Array<{ event: "begin" | "clear"; scope: Record<string, 
 let abortBlockToken = 0
 let mobileSurfaceRuntime = false
 let vscodeRuntime = false
+let relayModeActive = false
+const relayPendingSendTransitions: Array<{ state: 'mark' | 'clear'; sessionId: string; messageID: string }> = []
 
 mock.module("@/lib/runtimeSurface", () => ({
   isMobileSurfaceRuntime: () => mobileSurfaceRuntime,
@@ -34,7 +36,7 @@ mock.module("@/lib/desktop", () => ({
 }))
 
 mock.module("@/lib/relay/runtime-tunnel", () => ({
-  isRelayModeActive: () => false,
+  isRelayModeActive: () => relayModeActive,
   getActiveRelayTunnel: () => null,
   activateRelayTunnel: () => null,
   adoptRelayTunnel: () => {},
@@ -214,6 +216,12 @@ mock.module("./session-ui-store", () => ({
       },
       clearQueueAbortBlock: (scope: Record<string, unknown>, token: string) => {
         abortBlockEvents.push({ event: "clear", scope, token })
+      },
+      markRelayMessageSending: (sessionId: string, messageID: string) => {
+        relayPendingSendTransitions.push({ state: 'mark', sessionId, messageID })
+      },
+      clearRelayMessageSending: (sessionId: string, messageID: string) => {
+        relayPendingSendTransitions.push({ state: 'clear', sessionId, messageID })
       },
     }),
     setState: () => undefined,
@@ -1145,6 +1153,42 @@ describe("optimisticSend target directory", () => {
     sessionMessagesResult = { data: [] }
     configStoreState.isConnected = true
     configStoreState.hasEverConnected = true
+    relayModeActive = false
+    relayPendingSendTransitions.length = 0
+  })
+
+  test("keeps the relay sending status until the prompt request settles", async () => {
+    const targetStore = createStore({})
+    const childStores = createChildStores([["/target/project", targetStore]])
+    relayModeActive = true
+    let releaseSend!: () => void
+    const sendGate = new Promise<void>((resolve) => { releaseSend = resolve })
+
+    const { optimisticSend, setActionRefs, setOptimisticRefs } = await import("./session-actions")
+    setActionRefs(mockSdk as unknown as OpencodeClient, childStores, () => "/target/project")
+    setOptimisticRefs(() => {}, () => {})
+
+    const send = optimisticSend({
+      sessionId: "session-relay",
+      directory: "/target/project",
+      content: "relay message",
+      providerID: "provider",
+      modelID: "model",
+      messageID: "message-relay",
+      send: () => sendGate,
+    })
+
+    expect(relayPendingSendTransitions).toEqual([
+      { state: 'mark', sessionId: 'session-relay', messageID: 'message-relay' },
+    ])
+
+    releaseSend()
+    await send
+
+    expect(relayPendingSendTransitions).toEqual([
+      { state: 'mark', sessionId: 'session-relay', messageID: 'message-relay' },
+      { state: 'clear', sessionId: 'session-relay', messageID: 'message-relay' },
+    ])
   })
 
   test("inserts the optimistic user row before waiting for connection recovery", async () => {

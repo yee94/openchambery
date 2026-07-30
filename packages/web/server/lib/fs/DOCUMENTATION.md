@@ -1,7 +1,7 @@
 # FS Module Documentation
 
 ## Purpose
-Own filesystem API behavior for the web server runtime, including workspace-bound file operations, directory listing, reveal, and background command execution jobs.
+Own filesystem API behavior for the web server runtime, including file operations, directory listing, reveal, and background command execution jobs.
 
 ## Entrypoints and structure
 - `packages/web/server/lib/fs/routes.js`: route registration and runtime-owned state for `/api/fs/*` endpoints.
@@ -24,7 +24,7 @@ Own filesystem API behavior for the web server runtime, including workspace-boun
     - `GET /api/fs/exec/:jobId`
     - `GET /api/fs/list`
   - Owns exec job queue state (`execJobs`) and lifecycle/TTL pruning.
-  - Enforces workspace boundary checks with active project + worktree fallback support.
+  - Read-only file endpoints accept paths outside the active workspace; mutating and command endpoints enforce workspace boundary checks with active project + worktree fallback support.
 - `createFsSearchRuntime({ fsPromises, path, spawn, resolveGitBinaryForSpawn })` from `search.js`
   - Returns `{ searchFilesystemFiles(rootPath, options) }`.
   - Supports fuzzy matching, hidden-file handling, and optional `git check-ignore` filtering.
@@ -34,6 +34,6 @@ Own filesystem API behavior for the web server runtime, including workspace-boun
 - `index.js` no longer owns FS route handlers or FS exec job state.
 
 ## Notes for contributors
-- Keep filesystem policy (workspace root checks, error mapping, exec timeout behavior) inside this module, not in the composition root.
+- Keep filesystem policy (read access, workspace root checks for mutations, error mapping, exec timeout behavior) inside this module, not in the composition root.
 - Optional `GET /api/fs/read` responses retain their `text/plain` body and set `x-openchamber-file-exists` to `true` or `false` so empty files remain distinguishable from missing files.
 - If adding new `/api/fs/*` endpoints, add them in `routes.js` and extend this document.

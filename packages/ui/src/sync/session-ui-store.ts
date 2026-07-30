@@ -451,7 +451,10 @@ export type SessionUIState = {
   // Non-Git mode: dismissed signature hash per session, hides bar until new turn arrives
   pendingChangesBarDismissed: Map<string, string>
   stagedMessageEdit: { sessionId: string; messageId: string } | null
+  relayPendingSendMessageIDs: Map<string, string>
   dismissPendingChangesBar: (sessionId: string, signature: string | null) => void
+  markRelayMessageSending: (sessionId: string, messageID: string) => void
+  clearRelayMessageSending: (sessionId: string, messageID: string) => void
 
   // Actions — UI state management
   setCurrentSession: (id: string | null, directoryHint?: string | null) => void
@@ -1150,6 +1153,25 @@ export const useSessionUIStore = create<SessionUIState>()((set, get) => ({
   sessionPlanAvailable: new Map(),
   pendingChangesBarDismissed: new Map(),
   stagedMessageEdit: null,
+  relayPendingSendMessageIDs: new Map(),
+
+  markRelayMessageSending: (sessionId, messageID) => {
+    set((state) => {
+      if (state.relayPendingSendMessageIDs.get(sessionId) === messageID) return state
+      const relayPendingSendMessageIDs = new Map(state.relayPendingSendMessageIDs)
+      relayPendingSendMessageIDs.set(sessionId, messageID)
+      return { relayPendingSendMessageIDs }
+    })
+  },
+
+  clearRelayMessageSending: (sessionId, messageID) => {
+    set((state) => {
+      if (state.relayPendingSendMessageIDs.get(sessionId) !== messageID) return state
+      const relayPendingSendMessageIDs = new Map(state.relayPendingSendMessageIDs)
+      relayPendingSendMessageIDs.delete(sessionId)
+      return { relayPendingSendMessageIDs }
+    })
+  },
 
   // ---------------------------------------------------------------------------
   // setCurrentSession
@@ -1288,6 +1310,7 @@ export const useSessionUIStore = create<SessionUIState>()((set, get) => ({
       queueAbortBlocks: new Map(),
       pendingChangesBarDismissed: new Map(),
       stagedMessageEdit: null,
+      relayPendingSendMessageIDs: new Map(),
     })
     useInputStore.getState().setActiveAttachmentDraft(
       restoredSessionId

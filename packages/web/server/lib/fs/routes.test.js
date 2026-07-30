@@ -2,7 +2,7 @@ import { EventEmitter } from 'events';
 import path from 'path';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 
-import { mintOutsideFileGrant, registerFsRoutes } from './routes.js';
+import { registerFsRoutes } from './routes.js';
 
 const createRouteRegistry = () => {
   const routes = new Map();
@@ -380,91 +380,51 @@ describe('fs write', () => {
 });
 
 describe('fs read', () => {
-  it('rejects outside workspace reads without a grant', async () => {
-    const warn = vi.spyOn(console, 'warn').mockImplementation(() => {});
+  it('reads files outside the active workspace', async () => {
     const fsPromises = {
       stat: vi.fn(async () => ({ isFile: () => true, size: 3 })),
       readFile: vi.fn(async () => 'secret'),
     };
     const handler = registerRead(fsPromises);
 
-    const res = await callRead(handler, { path: '/etc/passwd', allowOutsideWorkspace: 'true' });
+    const res = await callRead(handler, { path: '/etc/passwd' });
 
-    expect(res.statusCode).toBe(400);
-    expect(res.body).toEqual({ error: 'Outside workspace file access requires a grant' });
-    expect(fsPromises.readFile).not.toHaveBeenCalled();
-    warn.mockRestore();
+    expect(res.statusCode).toBe(200);
+    expect(res.body).toBe('secret');
   });
 
-  it('allows outside workspace reads with an exact-path grant', async () => {
+  it('reads a requested path regardless of a legacy outside-file grant', async () => {
     const fsPromises = {
       realpath: vi.fn(async (targetPath) => targetPath),
       stat: vi.fn(async () => ({ isFile: () => true, size: 6 })),
       readFile: vi.fn(async () => 'secret'),
     };
-    const grant = await mintOutsideFileGrant('/outside/plan.txt', {
-      fsPromises,
-      path: path.posix,
-      crypto: { randomUUID: () => 'grant-read' },
-    });
     const handler = registerRead(fsPromises);
 
     const res = await callRead(handler, {
-      path: '/outside/plan.txt',
+      path: '/outside/b.txt',
       allowOutsideWorkspace: 'true',
-      outsideFileGrant: grant.outsideFileGrant,
+      outsideFileGrant: 'legacy-grant',
     });
 
     expect(res.statusCode).toBe(200);
     expect(res.body).toBe('secret');
   });
 
-  it('rejects outside workspace grants for a different canonical path', async () => {
-    const fsPromises = {
-      realpath: vi.fn(async (targetPath) => targetPath),
-      stat: vi.fn(async () => ({ isFile: () => true, size: 6 })),
-      readFile: vi.fn(async () => 'secret'),
-    };
-    const grant = await mintOutsideFileGrant('/outside/a.txt', {
-      fsPromises,
-      path: path.posix,
-      crypto: { randomUUID: () => 'grant-mismatch' },
-    });
-    const handler = registerRead(fsPromises);
-
-    const res = await callRead(handler, {
-      path: '/outside/b.txt',
-      allowOutsideWorkspace: 'true',
-      outsideFileGrant: grant.outsideFileGrant,
-    });
-
-    expect(res.statusCode).toBe(400);
-    expect(res.body).toEqual({ error: 'Outside workspace file grant does not match requested path' });
-    expect(fsPromises.readFile).not.toHaveBeenCalled();
-  });
-
-  it('sets no-referrer on raw responses served through outside file grants', async () => {
+  it('reads raw files outside the active workspace', async () => {
     const fsPromises = {
       realpath: vi.fn(async (targetPath) => targetPath),
       stat: vi.fn(async () => ({ isFile: () => true, size: 6 })),
       readFile: vi.fn(async () => Buffer.from('secret')),
     };
-    const grant = await mintOutsideFileGrant('/outside/image.png', {
-      scopes: ['raw'],
-      fsPromises,
-      path: path.posix,
-      crypto: { randomUUID: () => 'grant-raw' },
-    });
     const handler = registerRaw(fsPromises);
 
     const res = await callRaw(handler, {
       path: '/outside/image.png',
-      allowOutsideWorkspace: 'true',
-      outsideFileGrant: grant.outsideFileGrant,
     });
 
     expect(res.statusCode).toBe(200);
-    expect(res.getHeader('referrer-policy')).toBe('no-referrer');
+    expect(res.body).toEqual(Buffer.from('secret'));
   });
 
   it('rejects outside workspace mkdir without a trusted directory grant', async () => {

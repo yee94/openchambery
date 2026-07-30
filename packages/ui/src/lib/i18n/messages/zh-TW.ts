@@ -1887,6 +1887,7 @@ export const dict: Record<I18nKey, string> = {
   'chat.assistantStatus.weighingOptions': '正在權衡選項',
   'chat.assistantStatus.thinking': '正在思考',
   'chat.assistantStatus.composing': '正在撰寫',
+  'chat.assistantStatus.sendingMessage': '正在傳送訊息',
   'chat.assistantStatus.waitingForPermission': '正在等待授權',
   'chat.assistantStatus.retrying': '正在重試',
   'chat.assistantStatus.retryingIn': '{duration}後重試',

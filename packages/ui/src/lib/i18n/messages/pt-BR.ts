@@ -1895,6 +1895,7 @@ export const dict: Record<I18nKey, string> = {
   "chat.assistantStatus.weighingOptions": "Avaliando opções",
   "chat.assistantStatus.thinking": "Pensando",
   "chat.assistantStatus.composing": "Redigindo",
+  "chat.assistantStatus.sendingMessage": "Enviando mensagem",
   "chat.assistantStatus.waitingForPermission": "Aguardando permissão",
   "chat.assistantStatus.retrying": "Tentando novamente",
   "chat.assistantStatus.retryingIn": "Tentando novamente {duration}",

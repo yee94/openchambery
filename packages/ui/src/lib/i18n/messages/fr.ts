@@ -1696,6 +1696,7 @@ export const dict = {
   'chat.assistantStatus.weighingOptions': 'Évaluation des options',
   'chat.assistantStatus.thinking': 'Réflexion en cours',
   'chat.assistantStatus.composing': 'Rédaction en cours',
+  'chat.assistantStatus.sendingMessage': 'Envoi du message',
   'chat.assistantStatus.waitingForPermission': 'En attente d’autorisation',
   'chat.assistantStatus.retrying': 'Nouvelle tentative',
   'chat.assistantStatus.retryingIn': 'Nouvelle tentative {duration}',

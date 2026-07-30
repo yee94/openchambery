@@ -1919,6 +1919,7 @@ export const dict: Record<I18nKey, string> = {
   'chat.assistantStatus.weighingOptions': '선택지 검토 중',
   'chat.assistantStatus.thinking': '생각 중',
   'chat.assistantStatus.composing': '작성 중',
+  'chat.assistantStatus.sendingMessage': '메시지 전송 중',
   'chat.assistantStatus.waitingForPermission': '권한 대기 중',
   'chat.assistantStatus.retrying': '재시도 중',
   'chat.assistantStatus.retryingIn': '{duration}에 재시도',

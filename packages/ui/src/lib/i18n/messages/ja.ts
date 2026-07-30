@@ -1913,6 +1913,7 @@ export const dict: Record<I18nKey, string> = {
   'chat.assistantStatus.weighingOptions': '選択肢を検討中',
   'chat.assistantStatus.thinking': '考え中',
   'chat.assistantStatus.composing': '作成中',
+  'chat.assistantStatus.sendingMessage': 'メッセージを送信中',
   'chat.assistantStatus.waitingForPermission': '許可を待機中',
   'chat.assistantStatus.retrying': '再試行中',
   'chat.assistantStatus.retryingIn': '{duration}に再試行',
