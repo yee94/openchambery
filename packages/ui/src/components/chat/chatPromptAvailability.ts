@@ -32,15 +32,19 @@ export const resolveComposerActionAvailability = (input: {
     hasSessionTarget: boolean;
     draftSubmitting: boolean;
     submissionBlocked: boolean;
+    /** Component-level submit flight: blocks send/queue while a submit is in progress. */
+    submissionInFlight?: boolean;
     queueFrozen: boolean;
     queueFallbackAvailable: boolean;
 }) => {
     const sendDisabled = !input.canSend
         || !input.hasSessionTarget
         || input.draftSubmitting
-        || input.submissionBlocked;
+        || input.submissionBlocked
+        || Boolean(input.submissionInFlight);
     const queueDisabled = !input.hasSessionTarget
         || input.submissionBlocked
+        || Boolean(input.submissionInFlight)
         || (input.queueFrozen && !input.queueFallbackAvailable);
     return {
         sendDisabled,

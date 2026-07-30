@@ -24,8 +24,7 @@ const abortBlockEvents: Array<{ event: "begin" | "clear"; scope: Record<string, 
 let abortBlockToken = 0
 let mobileSurfaceRuntime = false
 let vscodeRuntime = false
-let relayModeActive = false
-const relayPendingSendTransitions: Array<{ state: 'mark' | 'clear'; sessionId: string; messageID: string }> = []
+const pendingSendTransitions: Array<{ state: 'mark' | 'clear'; sessionId: string; messageID: string }> = []
 
 mock.module("@/lib/runtimeSurface", () => ({
   isMobileSurfaceRuntime: () => mobileSurfaceRuntime,
@@ -33,14 +32,6 @@ mock.module("@/lib/runtimeSurface", () => ({
 
 mock.module("@/lib/desktop", () => ({
   isVSCodeRuntime: () => vscodeRuntime,
-}))
-
-mock.module("@/lib/relay/runtime-tunnel", () => ({
-  isRelayModeActive: () => relayModeActive,
-  getActiveRelayTunnel: () => null,
-  activateRelayTunnel: () => null,
-  adoptRelayTunnel: () => {},
-  deactivateRelayTunnel: () => {},
 }))
 
 const mockScopedClient = {
@@ -217,11 +208,11 @@ mock.module("./session-ui-store", () => ({
       clearQueueAbortBlock: (scope: Record<string, unknown>, token: string) => {
         abortBlockEvents.push({ event: "clear", scope, token })
       },
-      markRelayMessageSending: (sessionId: string, messageID: string) => {
-        relayPendingSendTransitions.push({ state: 'mark', sessionId, messageID })
+      markMessageSending: (sessionId: string, messageID: string) => {
+        pendingSendTransitions.push({ state: 'mark', sessionId, messageID })
       },
-      clearRelayMessageSending: (sessionId: string, messageID: string) => {
-        relayPendingSendTransitions.push({ state: 'clear', sessionId, messageID })
+      clearMessageSending: (sessionId: string, messageID: string) => {
+        pendingSendTransitions.push({ state: 'clear', sessionId, messageID })
       },
     }),
     setState: () => undefined,
@@ -1153,14 +1144,12 @@ describe("optimisticSend target directory", () => {
     sessionMessagesResult = { data: [] }
     configStoreState.isConnected = true
     configStoreState.hasEverConnected = true
-    relayModeActive = false
-    relayPendingSendTransitions.length = 0
+    pendingSendTransitions.length = 0
   })
 
-  test("keeps the relay sending status until the prompt request settles", async () => {
+  test("keeps the pending send status until the prompt request settles for every runtime", async () => {
     const targetStore = createStore({})
     const childStores = createChildStores([["/target/project", targetStore]])
-    relayModeActive = true
     let releaseSend!: () => void
     const sendGate = new Promise<void>((resolve) => { releaseSend = resolve })
 
@@ -1169,25 +1158,117 @@ describe("optimisticSend target directory", () => {
     setOptimisticRefs(() => {}, () => {})
 
     const send = optimisticSend({
-      sessionId: "session-relay",
+      sessionId: "session-send",
       directory: "/target/project",
-      content: "relay message",
+      content: "pending message",
       providerID: "provider",
       modelID: "model",
-      messageID: "message-relay",
+      messageID: "message-pending",
       send: () => sendGate,
     })
 
-    expect(relayPendingSendTransitions).toEqual([
-      { state: 'mark', sessionId: 'session-relay', messageID: 'message-relay' },
+    expect(pendingSendTransitions).toEqual([
+      { state: 'mark', sessionId: 'session-send', messageID: 'message-pending' },
     ])
 
     releaseSend()
     await send
 
-    expect(relayPendingSendTransitions).toEqual([
-      { state: 'mark', sessionId: 'session-relay', messageID: 'message-relay' },
-      { state: 'clear', sessionId: 'session-relay', messageID: 'message-relay' },
+    expect(pendingSendTransitions).toEqual([
+      { state: 'mark', sessionId: 'session-send', messageID: 'message-pending' },
+      { state: 'clear', sessionId: 'session-send', messageID: 'message-pending' },
+    ])
+  })
+
+  test("clears pending send by message id so an older settle cannot erase a newer concurrent pending", async () => {
+    const targetStore = createStore({})
+    const childStores = createChildStores([["/target/project", targetStore]])
+    let releaseOld!: () => void
+    let releaseNew!: () => void
+    const oldGate = new Promise<void>((resolve) => { releaseOld = resolve })
+    const newGate = new Promise<void>((resolve) => { releaseNew = resolve })
+
+    const { optimisticSend, setActionRefs, setOptimisticRefs } = await import("./session-actions")
+    setActionRefs(mockSdk as unknown as OpencodeClient, childStores, () => "/target/project")
+    setOptimisticRefs(() => {}, () => {})
+
+    const olderSend = optimisticSend({
+      sessionId: "session-send",
+      directory: "/target/project",
+      content: "first",
+      providerID: "provider",
+      modelID: "model",
+      messageID: "message-old",
+      send: () => oldGate,
+    })
+
+    expect(pendingSendTransitions).toEqual([
+      { state: 'mark', sessionId: 'session-send', messageID: 'message-old' },
+    ])
+
+    const newerSend = optimisticSend({
+      sessionId: "session-send",
+      directory: "/target/project",
+      content: "second",
+      providerID: "provider",
+      modelID: "model",
+      messageID: "message-new",
+      send: () => newGate,
+    })
+
+    expect(pendingSendTransitions).toEqual([
+      { state: 'mark', sessionId: 'session-send', messageID: 'message-old' },
+      { state: 'mark', sessionId: 'session-send', messageID: 'message-new' },
+    ])
+
+    releaseOld()
+    await olderSend
+    // Older clear is still invoked with its own messageID; production store only
+    // deletes when the session's pending id still matches that messageID.
+    expect(pendingSendTransitions).toEqual([
+      { state: 'mark', sessionId: 'session-send', messageID: 'message-old' },
+      { state: 'mark', sessionId: 'session-send', messageID: 'message-new' },
+      { state: 'clear', sessionId: 'session-send', messageID: 'message-old' },
+    ])
+
+    releaseNew()
+    await newerSend
+    expect(pendingSendTransitions).toEqual([
+      { state: 'mark', sessionId: 'session-send', messageID: 'message-old' },
+      { state: 'mark', sessionId: 'session-send', messageID: 'message-new' },
+      { state: 'clear', sessionId: 'session-send', messageID: 'message-old' },
+      { state: 'clear', sessionId: 'session-send', messageID: 'message-new' },
+    ])
+  })
+
+  test("clears pending send after pre-dispatch failure", async () => {
+    const targetStore = createStore({})
+    const childStores = createChildStores([["/target/project", targetStore]])
+    configStoreState.isConnected = false
+
+    const { getSendFailureKind, optimisticSend, setActionRefs, setOptimisticRefs } = await import("./session-actions")
+    setActionRefs(mockSdk as unknown as OpencodeClient, childStores, () => "/target/project")
+    setOptimisticRefs(() => {}, () => {})
+
+    let caught: unknown = null
+    try {
+      await optimisticSend({
+        sessionId: "session-send",
+        directory: "/target/project",
+        content: "offline",
+        providerID: "provider",
+        modelID: "model",
+        messageID: "message-fail",
+        send: async () => {},
+      })
+    } catch (error) {
+      caught = error
+    }
+
+    expect(getSendFailureKind(caught)).toBe("pre-dispatch")
+    expect(pendingSendTransitions).toEqual([
+      { state: 'mark', sessionId: 'session-send', messageID: 'message-fail' },
+      { state: 'clear', sessionId: 'session-send', messageID: 'message-fail' },
     ])
   })
 

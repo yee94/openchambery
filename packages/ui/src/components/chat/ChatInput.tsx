@@ -748,6 +748,7 @@ type ComposerActionButtonsProps = {
     newSessionDraftOpen: boolean;
     draftSubmitting?: boolean;
     submissionBlocked: boolean;
+    submissionInFlight?: boolean;
     queueFrozen: boolean;
     queueFallbackAvailable: boolean;
     onPrimaryAction: () => void;
@@ -767,6 +768,7 @@ const ComposerActionButtons = React.memo(function ComposerActionButtons(props: C
         newSessionDraftOpen,
         draftSubmitting,
         submissionBlocked,
+        submissionInFlight,
         queueFrozen,
         queueFallbackAvailable,
         onPrimaryAction,
@@ -778,6 +780,7 @@ const ComposerActionButtons = React.memo(function ComposerActionButtons(props: C
         hasSessionTarget: Boolean(currentSessionId || newSessionDraftOpen),
         draftSubmitting: Boolean(draftSubmitting),
         submissionBlocked,
+        submissionInFlight: Boolean(submissionInFlight),
         queueFrozen,
         queueFallbackAvailable,
     });
@@ -877,8 +880,9 @@ const ComposerActionButtons = React.memo(function ComposerActionButtons(props: C
     && prev.hasContent === next.hasContent
     && prev.currentSessionId === next.currentSessionId
     && prev.newSessionDraftOpen === next.newSessionDraftOpen
-    && prev.draftSubmitting === next.draftSubmitting
+    &&     prev.draftSubmitting === next.draftSubmitting
     && prev.submissionBlocked === next.submissionBlocked
+    && prev.submissionInFlight === next.submissionInFlight
     && prev.queueFrozen === next.queueFrozen
     && prev.queueFallbackAvailable === next.queueFallbackAvailable
     && prev.onPrimaryAction === next.onPrimaryAction
@@ -2180,9 +2184,26 @@ const ChatInputRuntime: React.FC<ChatInputProps> = ({ onOpenSettings, scrollToBo
         presetText?: string;
     };
     const handleSubmitRef = React.useRef<(options?: SubmitOptions) => Promise<void>>(async () => {});
+    // Component-level submit flight: one direct-send or queue admission at a time.
+    // Held from first await (selection.flush) through sendPromise settle (direct)
+    // or admission settle (queue). Re-entry via button/form/Enter/preset/dictation
+    // is ignored while held.
+    const [submissionInFlight, setSubmissionInFlight] = React.useState(false);
+    const submissionInFlightRef = React.useRef(false);
+    const beginSubmissionFlight = (): boolean => {
+        if (submissionInFlightRef.current) return false;
+        submissionInFlightRef.current = true;
+        setSubmissionInFlight(true);
+        return true;
+    };
+    const endSubmissionFlight = () => {
+        submissionInFlightRef.current = false;
+        setSubmissionInFlight(false);
+    };
     // Add message to queue instead of sending
     const handleQueueMessage = useEvent(async () => {
         if (!surface.active) return;
+        if (submissionInFlightRef.current) return;
         const inputSnapshot = getCurrentInputSnapshot();
         const initialSerialization = serializeComposerDocument(inputSnapshot.document);
         if (!initialSerialization.ok) { toast.error(t('chat.chatInput.toast.messageSendFailed')); return; }
@@ -2200,10 +2221,13 @@ const ChatInputRuntime: React.FC<ChatInputProps> = ({ onOpenSettings, scrollToBo
         if (!inputSnapshot.hasContent || !currentSessionId) return;
         // A running turn remains submit-capable while queue ownership is frozen.
         // Steer uses the captured session/runtime path and avoids an unsafe queue admit.
+        // Release is not needed here: we never took a flight before this branch.
         if (queueFrozen || !assistantQueueAdmissionAvailable(surface.deliveryTarget?.kind, serverQueue.mode)) {
             void handleSubmitRef.current(sessionIsRunning ? { delivery: 'steer' } : undefined);
             return;
         }
+        // Claim flight before the first await so button/keyboard re-entry is blocked.
+        if (!beginSubmissionFlight()) return;
         // Pin surface/runtime/scope/session before flush so runtime switch cannot
         // pair new sendConfig with the pre-switch composer surface.
         const surfaceTransportAtStart = surface.transportIdentity;
@@ -2213,198 +2237,213 @@ const ChatInputRuntime: React.FC<ChatInputProps> = ({ onOpenSettings, scrollToBo
         const primaryQueueSessionIdAtStart = surface.kind === 'primary'
             ? (currentQueueScope?.sessionID ?? currentSessionId)
             : null;
-        await surface.selection.flush();
-        if (!isQueueAdmissionRuntimeCurrent(
-            { transportIdentity: surfaceTransportAtStart, generation: surfaceGenerationAtStart },
-            { transportIdentity: getRuntimeTransportIdentity(), generation: getRuntimeGeneration() },
-        )) {
-            return;
-        }
-        if (!isQueueAdmissionRuntimeCurrent(draftRuntimeAtStart, surfaceResources.captureRuntime())) {
-            return;
-        }
-        if (
-            primaryQueueSessionIdAtStart
-            && useSessionUIStore.getState().currentSessionId !== primaryQueueSessionIdAtStart
-        ) {
-            return;
-        }
-        if (!queueScopeAtStart) {
-            toast.error(t('chat.chatInput.toast.messageSendFailed'));
-            return;
-        }
-        // Re-check scope against live transport + primary session directory (not render-closed values).
-        if (
-            queueScopeAtStart.transportIdentity !== getRuntimeTransportIdentity()
-            || queueScopeAtStart.runtimeGeneration !== getRuntimeGeneration()
-            || queueScopeAtStart.sessionID !== (primaryQueueSessionIdAtStart ?? queueScopeAtStart.sessionID)
-            || (
+        // When true, flight is released before delegating to handleSubmit so the
+        // direct-send path can claim its own flight (avoid self-deadlock).
+        let releaseFlightForSubmitDelegate = false;
+        try {
+            await surface.selection.flush();
+            if (!isQueueAdmissionRuntimeCurrent(
+                { transportIdentity: surfaceTransportAtStart, generation: surfaceGenerationAtStart },
+                { transportIdentity: getRuntimeTransportIdentity(), generation: getRuntimeGeneration() },
+            )) {
+                return;
+            }
+            if (!isQueueAdmissionRuntimeCurrent(draftRuntimeAtStart, surfaceResources.captureRuntime())) {
+                return;
+            }
+            if (
                 primaryQueueSessionIdAtStart
-                && (useSessionUIStore.getState().getDirectoryForSession(primaryQueueSessionIdAtStart) ?? null) !== queueScopeAtStart.directory
-            )
-        ) {
-            return;
-        }
-        const scope = queueScopeAtStart;
-        // Primary must read live config after flush (React selection.value can be stale).
-        // Scope-check so activateDirectory failure cannot capture another Project's config.
-        const sendConfig = surface.kind === 'primary'
-            ? (() => {
-                const configState = useConfigStore.getState();
-                const sessionDirectory = primaryQueueSessionIdAtStart
-                    ? (useSessionUIStore.getState().getDirectoryForSession(primaryQueueSessionIdAtStart) ?? null)
-                    : null;
-                return capturePrimaryComposerSendConfig(configState, {
-                    expectedConfigKey: getConfigDirectoryKey(sessionDirectory),
-                    activeDirectoryKey: configState.activeDirectoryKey,
-                });
-            })()
-            : (surface.selection.value.providerID && surface.selection.value.modelID
-                ? { ...surface.selection.value, providerID: surface.selection.value.providerID, modelID: surface.selection.value.modelID }
-                : undefined);
-        // New queue admission requires a complete sendConfig; keep composer resources.
-        if (!isCompleteQueueSendConfig(sendConfig)) {
-            return;
-        }
-
-        const resourcePolicy = initialPlan.chunks.every((chunk) => chunk.provenance === 'authored') && preservesComposerResources(logicalMessage, inputMode);
-        if (resourcePolicy) {
-            void handleSubmitRef.current();
-            return;
-        }
-
-        const drafts = [...surfaceResources.inlineDrafts].sort((a, b) => a.createdAt - b.createdAt);
-
-        const documentToQueue = drafts.length > 0
-            ? validateComposerDocument(appendInlineComments(inputSnapshot.document.text, drafts), inputSnapshot.document.references).document
-            : inputSnapshot.document;
-        const serialized = serializeComposerDocument(documentToQueue, 'queue-canonical');
-        if (!serialized.ok) { toast.error(t('chat.chatInput.toast.messageSendFailed')); return; }
-        const attachmentsToQueue = sanitizeAttachmentsForSend(sendableAttachedFiles);
-
-        if (serverQueue.mode === 'server') {
-            if (!draftKey) {
+                && useSessionUIStore.getState().currentSessionId !== primaryQueueSessionIdAtStart
+            ) {
+                return;
+            }
+            if (!queueScopeAtStart) {
                 toast.error(t('chat.chatInput.toast.messageSendFailed'));
                 return;
             }
-            const admissionCapture = createServerQueueAdmissionCapture({
-                draftKey,
-                runtime: draftRuntimeAtStart,
-                document: inputSnapshot.document,
-                attachments: sendableAttachedFiles,
-                inlineDrafts: drafts,
-            });
-            const identity = createServerQueueAdmissionIdentity();
-            const assistantSyntheticParts = scope.deliveryTarget.kind === 'assistant'
-                ? surfaceResources.consumeSyntheticParts()?.map((part) => ({ ...part, partID: part.partID ?? createUuid() })) ?? null
-                : null;
-            let attachmentCandidates;
-            let assistantCompiledAttachments: typeof attachmentsToQueue = [];
-            const assistantDeliveryParts = scope.deliveryTarget.kind === 'assistant'
-                ? (() => {
-                    const compiled = compileChatComposerDelivery({
-                        plan: { chunks: serialized.chunks ?? [], semantics: serialized.semantics ?? [] },
-                        agents,
-                        installedSkillNames: new Set(readInstalledSkillsSnapshot(queryClient, currentDirectory).map((skill) => skill.name)),
-                        directory: currentDirectory,
-                        root: chatSearchDirectory || currentDirectory,
-                        confirmedFilePaths: confirmedFileMentions.map((mention) => mention.path),
-                        confirmedDirectoryPaths: confirmedFileMentions.filter((mention) => mention.kind === 'directory').map((mention) => mention.path),
-                        citationAttachments: sendableAttachedFiles,
-                    });
-                    assistantCompiledAttachments = compiled.attachments;
-                    return buildAssistantQueueDeliveryParts({
-                        text: drafts.length > 0 ? appendInlineComments(compiled.text, drafts) : compiled.text,
-                        attachments: [...attachmentsToQueue, ...compiled.attachments],
-                        semanticParts: buildComposerSemanticParts(compiled.semantics, scope.directory),
-                        syntheticParts: assistantSyntheticParts,
-                    });
-                })()
-                : undefined;
-            try {
-                const candidates = [
-                    ...attachedFilesToQueueCandidates(attachmentsToQueue),
-                    ...attachedFilesToQueueCandidates(assistantCompiledAttachments),
-                    ...(assistantSyntheticParts ?? []).flatMap((part) => attachedFilesToQueueCandidates(part.attachments ?? [], part.partID)),
-                ];
-                const referencedAttachmentIDs = assistantDeliveryParts ? new Set(assistantDeliveryParts.flatMap((part) => part.type === 'file' ? [part.attachmentID] : [])) : null;
-                attachmentCandidates = candidates.filter((candidate, index) => candidates.findIndex((entry) => entry.attachmentID === candidate.attachmentID) === index && (!referencedAttachmentIDs || referencedAttachmentIDs.has(candidate.attachmentID)));
-            } catch (error) {
-                if (assistantSyntheticParts) surfaceResources.restoreSyntheticParts(assistantSyntheticParts);
-                toast.error(t(error instanceof RangeError ? 'chat.chatInput.toast.attachmentsTooLarge' : 'chat.chatInput.toast.messageSendFailed'));
+            // Re-check scope against live transport + primary session directory (not render-closed values).
+            if (
+                queueScopeAtStart.transportIdentity !== getRuntimeTransportIdentity()
+                || queueScopeAtStart.runtimeGeneration !== getRuntimeGeneration()
+                || queueScopeAtStart.sessionID !== (primaryQueueSessionIdAtStart ?? queueScopeAtStart.sessionID)
+                || (
+                    primaryQueueSessionIdAtStart
+                    && (useSessionUIStore.getState().getDirectoryForSession(primaryQueueSessionIdAtStart) ?? null) !== queueScopeAtStart.directory
+                )
+            ) {
                 return;
             }
-            const assistantSyntheticSidecar = assistantDeliveryParts && assistantSyntheticParts
-                ? buildAssistantQueueSyntheticSidecar(assistantDeliveryParts, assistantSyntheticParts.map((part) => ({ ...part, partID: part.partID })))
-                : undefined;
-            void admitServerQueueMessageAndConsumeResources({
-                capture: admissionCapture,
-                admit: () => serverQueue.actions.admit({
-                    requestID: identity.requestID,
-                    scope: { directory: scope.directory, sessionID: scope.sessionID },
-                    item: {
-                        queueItemID: identity.queueItemID,
-                        operationID: identity.operationID,
-                        messageID: identity.messageID,
-                        content: serialized.text,
-                        composerDocument: documentToQueue,
-                        composerMentions,
-                        sendConfig,
-                        deliveryTarget: scope.deliveryTarget,
-                        ...(assistantDeliveryParts ? { deliveryParts: assistantDeliveryParts } : {}),
-                        ...(assistantSyntheticSidecar ? { syntheticParts: assistantSyntheticSidecar } : {}),
-                        attachmentIssues: [],
-                        createdAt: identity.createdAt,
-                    },
-                    attachments: attachmentCandidates,
-                }),
-                captureRuntime: surfaceResources.captureRuntime,
-                getCurrentDraftKey: () => draftKey,
-                getDocument,
-                consumeBody: () => replacePlainDocument(''),
-                getAttachments: () => surfaceResources.attachments,
-                removeAttachment: surfaceResources.removeAttachment,
-                getInlineDrafts: () => surfaceResources.inlineDrafts,
-                removeInlineDraft: surfaceResources.removeInlineDraft,
-            }).then((result) => {
-                // partial = queue committed but composer attachment cleanup incomplete
-                if (result.status === 'stale' && assistantSyntheticParts) surfaceResources.restoreSyntheticParts(assistantSyntheticParts);
-                if (result.status === 'partial') {
+            const scope = queueScopeAtStart;
+            // Primary must read live config after flush (React selection.value can be stale).
+            // Scope-check so activateDirectory failure cannot capture another Project's config.
+            const sendConfig = surface.kind === 'primary'
+                ? (() => {
+                    const configState = useConfigStore.getState();
+                    const sessionDirectory = primaryQueueSessionIdAtStart
+                        ? (useSessionUIStore.getState().getDirectoryForSession(primaryQueueSessionIdAtStart) ?? null)
+                        : null;
+                    return capturePrimaryComposerSendConfig(configState, {
+                        expectedConfigKey: getConfigDirectoryKey(sessionDirectory),
+                        activeDirectoryKey: configState.activeDirectoryKey,
+                    });
+                })()
+                : (surface.selection.value.providerID && surface.selection.value.modelID
+                    ? { ...surface.selection.value, providerID: surface.selection.value.providerID, modelID: surface.selection.value.modelID }
+                    : undefined);
+            // New queue admission requires a complete sendConfig; keep composer resources.
+            if (!isCompleteQueueSendConfig(sendConfig)) {
+                return;
+            }
+
+            const resourcePolicy = initialPlan.chunks.every((chunk) => chunk.provenance === 'authored') && preservesComposerResources(logicalMessage, inputMode);
+            if (resourcePolicy) {
+                // Release then delegate so handleSubmit can claim flight without self-lock.
+                releaseFlightForSubmitDelegate = true;
+                endSubmissionFlight();
+                void handleSubmitRef.current();
+                return;
+            }
+
+            const drafts = [...surfaceResources.inlineDrafts].sort((a, b) => a.createdAt - b.createdAt);
+
+            const documentToQueue = drafts.length > 0
+                ? validateComposerDocument(appendInlineComments(inputSnapshot.document.text, drafts), inputSnapshot.document.references).document
+                : inputSnapshot.document;
+            const serialized = serializeComposerDocument(documentToQueue, 'queue-canonical');
+            if (!serialized.ok) { toast.error(t('chat.chatInput.toast.messageSendFailed')); return; }
+            const attachmentsToQueue = sanitizeAttachmentsForSend(sendableAttachedFiles);
+
+            if (serverQueue.mode === 'server') {
+                if (!draftKey) {
                     toast.error(t('chat.chatInput.toast.messageSendFailed'));
                     return;
                 }
-                if (result.status === 'committed' && !isMobile) textareaRef.current?.focus();
-            }).catch((error) => {
-                if (assistantSyntheticParts) surfaceResources.restoreSyntheticParts(assistantSyntheticParts);
-                toast.error(t(error instanceof RangeError ? 'chat.chatInput.toast.attachmentsTooLarge' : 'chat.chatInput.toast.messageSendFailed'));
+                const admissionCapture = createServerQueueAdmissionCapture({
+                    draftKey,
+                    runtime: draftRuntimeAtStart,
+                    document: inputSnapshot.document,
+                    attachments: sendableAttachedFiles,
+                    inlineDrafts: drafts,
+                });
+                const identity = createServerQueueAdmissionIdentity();
+                const assistantSyntheticParts = scope.deliveryTarget.kind === 'assistant'
+                    ? surfaceResources.consumeSyntheticParts()?.map((part) => ({ ...part, partID: part.partID ?? createUuid() })) ?? null
+                    : null;
+                let attachmentCandidates;
+                let assistantCompiledAttachments: typeof attachmentsToQueue = [];
+                const assistantDeliveryParts = scope.deliveryTarget.kind === 'assistant'
+                    ? (() => {
+                        const compiled = compileChatComposerDelivery({
+                            plan: { chunks: serialized.chunks ?? [], semantics: serialized.semantics ?? [] },
+                            agents,
+                            installedSkillNames: new Set(readInstalledSkillsSnapshot(queryClient, currentDirectory).map((skill) => skill.name)),
+                            directory: currentDirectory,
+                            root: chatSearchDirectory || currentDirectory,
+                            confirmedFilePaths: confirmedFileMentions.map((mention) => mention.path),
+                            confirmedDirectoryPaths: confirmedFileMentions.filter((mention) => mention.kind === 'directory').map((mention) => mention.path),
+                            citationAttachments: sendableAttachedFiles,
+                        });
+                        assistantCompiledAttachments = compiled.attachments;
+                        return buildAssistantQueueDeliveryParts({
+                            text: drafts.length > 0 ? appendInlineComments(compiled.text, drafts) : compiled.text,
+                            attachments: [...attachmentsToQueue, ...compiled.attachments],
+                            semanticParts: buildComposerSemanticParts(compiled.semantics, scope.directory),
+                            syntheticParts: assistantSyntheticParts,
+                        });
+                    })()
+                    : undefined;
+                try {
+                    const candidates = [
+                        ...attachedFilesToQueueCandidates(attachmentsToQueue),
+                        ...attachedFilesToQueueCandidates(assistantCompiledAttachments),
+                        ...(assistantSyntheticParts ?? []).flatMap((part) => attachedFilesToQueueCandidates(part.attachments ?? [], part.partID)),
+                    ];
+                    const referencedAttachmentIDs = assistantDeliveryParts ? new Set(assistantDeliveryParts.flatMap((part) => part.type === 'file' ? [part.attachmentID] : [])) : null;
+                    attachmentCandidates = candidates.filter((candidate, index) => candidates.findIndex((entry) => entry.attachmentID === candidate.attachmentID) === index && (!referencedAttachmentIDs || referencedAttachmentIDs.has(candidate.attachmentID)));
+                } catch (error) {
+                    if (assistantSyntheticParts) surfaceResources.restoreSyntheticParts(assistantSyntheticParts);
+                    toast.error(t(error instanceof RangeError ? 'chat.chatInput.toast.attachmentsTooLarge' : 'chat.chatInput.toast.messageSendFailed'));
+                    return;
+                }
+                const assistantSyntheticSidecar = assistantDeliveryParts && assistantSyntheticParts
+                    ? buildAssistantQueueSyntheticSidecar(assistantDeliveryParts, assistantSyntheticParts.map((part) => ({ ...part, partID: part.partID })))
+                    : undefined;
+                // Await admission so flight holds until settle; body clear stays in
+                // admit helper (after admit success) to preserve draft on failure.
+                try {
+                    const result = await admitServerQueueMessageAndConsumeResources({
+                        capture: admissionCapture,
+                        admit: () => serverQueue.actions.admit({
+                            requestID: identity.requestID,
+                            scope: { directory: scope.directory, sessionID: scope.sessionID },
+                            item: {
+                                queueItemID: identity.queueItemID,
+                                operationID: identity.operationID,
+                                messageID: identity.messageID,
+                                content: serialized.text,
+                                composerDocument: documentToQueue,
+                                composerMentions,
+                                sendConfig,
+                                deliveryTarget: scope.deliveryTarget,
+                                ...(assistantDeliveryParts ? { deliveryParts: assistantDeliveryParts } : {}),
+                                ...(assistantSyntheticSidecar ? { syntheticParts: assistantSyntheticSidecar } : {}),
+                                attachmentIssues: [],
+                                createdAt: identity.createdAt,
+                            },
+                            attachments: attachmentCandidates,
+                        }),
+                        captureRuntime: surfaceResources.captureRuntime,
+                        getCurrentDraftKey: () => draftKey,
+                        getDocument,
+                        consumeBody: () => replacePlainDocument(''),
+                        getAttachments: () => surfaceResources.attachments,
+                        removeAttachment: surfaceResources.removeAttachment,
+                        getInlineDrafts: () => surfaceResources.inlineDrafts,
+                        removeInlineDraft: surfaceResources.removeInlineDraft,
+                    });
+                    // partial = queue committed but composer attachment cleanup incomplete
+                    if (result.status === 'stale' && assistantSyntheticParts) surfaceResources.restoreSyntheticParts(assistantSyntheticParts);
+                    if (result.status === 'partial') {
+                        toast.error(t('chat.chatInput.toast.messageSendFailed'));
+                        return;
+                    }
+                    if (result.status === 'committed' && !isMobile) textareaRef.current?.focus();
+                } catch (error) {
+                    if (assistantSyntheticParts) surfaceResources.restoreSyntheticParts(assistantSyntheticParts);
+                    toast.error(t(error instanceof RangeError ? 'chat.chatInput.toast.attachmentsTooLarge' : 'chat.chatInput.toast.messageSendFailed'));
+                }
+                return;
+            }
+            // Primary-only legacy queue path. Assistant is handled above.
+            const admission = await admitChatInputQueueMessageAndConsumeResources({
+                bindLegacy: () => useMessageQueueStore.getState().bindLegacyQueue(legacyQueueScope(scope.sessionID), scope),
+                addComposer: () => addToQueue(scope, {
+                    content: serialized.text,
+                    composerDocument: documentToQueue,
+                    composerMentions,
+                    attachments: attachmentsToQueue.length > 0 ? attachmentsToQueue : undefined,
+                    sendConfig,
+                }),
+                drafts,
+                consumeDraft: (draft) => surfaceResources.removeInlineDraft(draft.id),
+                consumeBody: () => {
+                    replacePlainDocument('');
+                },
+                consumeAttachments: () => {
+                    if (attachmentsToQueue.length > 0) void surfaceResources.clearAttachments();
+                },
             });
-            return;
-        }
-        // Primary-only legacy queue path. Assistant is handled above.
-        const admission = await admitChatInputQueueMessageAndConsumeResources({
-            bindLegacy: () => useMessageQueueStore.getState().bindLegacyQueue(legacyQueueScope(scope.sessionID), scope),
-            addComposer: () => addToQueue(scope, {
-                content: serialized.text,
-                composerDocument: documentToQueue,
-                composerMentions,
-                attachments: attachmentsToQueue.length > 0 ? attachmentsToQueue : undefined,
-                sendConfig,
-            }),
-            drafts,
-            consumeDraft: (draft) => surfaceResources.removeInlineDraft(draft.id),
-            consumeBody: () => {
-                replacePlainDocument('');
-            },
-            consumeAttachments: () => {
-                if (attachmentsToQueue.length > 0) void surfaceResources.clearAttachments();
-            },
-        });
-        if (!admission.ok) {
-            toast.error(t('chat.chatInput.toast.messageSendFailed'));
-            return;
-        }
-        if (!isMobile) {
-            textareaRef.current?.focus();
+            if (!admission.ok) {
+                toast.error(t('chat.chatInput.toast.messageSendFailed'));
+                return;
+            }
+            if (!isMobile) {
+                textareaRef.current?.focus();
+            }
+        } finally {
+            if (!releaseFlightForSubmitDelegate) {
+                endSubmissionFlight();
+            }
         }
     });
 
@@ -2464,6 +2503,8 @@ const ChatInputRuntime: React.FC<ChatInputProps> = ({ onOpenSettings, scrollToBo
     const handleSubmit = async (options?: SubmitOptions) => {
         if (!surface.active) return;
         if (submissionBlocked) return;
+        // Component-level flight: ignore every entry while a submit is in progress.
+        if (submissionInFlightRef.current) return;
         const queuedOnly = options?.queuedOnly ?? false;
         const queuedMessageId = options?.queuedMessageId;
         const delivery = options?.delivery === 'steer' && sessionIsRunning ? 'steer' : undefined;
@@ -2516,6 +2557,7 @@ const ChatInputRuntime: React.FC<ChatInputProps> = ({ onOpenSettings, scrollToBo
         } else if (!queuedOnly && currentSessionId && hasQueuedMessages && queueFrozen) {
             return;
         } else if (!queuedOnly && currentSessionId && hasQueuedMessages && serverQueue.mode === 'server') {
+            // No flight yet: queue path claims its own before its first await.
             if (inputSnapshot.hasContent) handleQueueMessage();
             return;
         } else if (!queuedOnly && currentSessionId && hasQueuedMessages) {
@@ -2546,6 +2588,23 @@ const ChatInputRuntime: React.FC<ChatInputProps> = ({ onOpenSettings, scrollToBo
         // prevents the UI from looking like it accepted a second send.
         if (!currentSessionId && resolvedDraftBusy) return;
 
+        // Claim flight before the first await so button/keyboard/preset re-entry is blocked.
+        if (!beginSubmissionFlight()) return;
+        // Direct messages leave the Composer before selection/configuration work
+        // starts. The captured submission restores this exact draft if dispatch
+        // cannot proceed. Local commands retain their existing resource policy.
+        const clearedComposerBeforeDispatch = !queuedOnly && !resourcePolicy;
+        if (clearedComposerBeforeDispatch) {
+            replacePlainDocument('');
+            setHistoryIndex(-1);
+            setExpandedInput(false);
+        }
+        // When true, flight ownership transfers to sendPromise.finally (do not release in finally).
+        let transferFlightToSendPromise = false;
+        // When true, flight was released before delegating to handleQueueMessage.
+        let releasedForQueueDelegate = false;
+
+        try {
         // Primary: pin session before any await so A→B switch mid-flush aborts send.
         // Queued-only prefers the bound queue owner / first queued item owner when present.
         const primarySubmitSessionIdAtStart = surface.kind === 'primary'
@@ -2612,6 +2671,9 @@ const ChatInputRuntime: React.FC<ChatInputProps> = ({ onOpenSettings, scrollToBo
         // rejected turn winds down and the session returns to idle. This avoids
         // aborting the turn (which would surface an "aborted" notice).
         if (currentSessionId && !queuedOnly && !resourcePolicy && autoReviewRunning) {
+            if (submissionCapture) recoverSubmission(submissionCapture);
+            releasedForQueueDelegate = true;
+            endSubmissionFlight();
             handleQueueMessage();
             return;
         }
@@ -2619,6 +2681,9 @@ const ChatInputRuntime: React.FC<ChatInputProps> = ({ onOpenSettings, scrollToBo
         if (currentSessionId && !queuedOnly && !resourcePolicy) {
             const dismissedQuestions = await sessionActions.dismissOpenQuestionsForSession(currentSessionId);
             if (dismissedQuestions) {
+                if (submissionCapture) recoverSubmission(submissionCapture);
+                releasedForQueueDelegate = true;
+                endSubmissionFlight();
                 handleQueueMessage();
                 return;
             }
@@ -3211,6 +3276,12 @@ const ChatInputRuntime: React.FC<ChatInputProps> = ({ onOpenSettings, scrollToBo
             sendMessageOptions,
         );
 
+        // Keep flight until send settles so a cleared composer cannot double-send.
+        transferFlightToSendPromise = true;
+        void sendPromise.finally(() => {
+            endSubmissionFlight();
+        });
+
         if (typeof window === 'undefined') {
             scrollToBottom?.();
         } else {
@@ -3270,6 +3341,14 @@ const ChatInputRuntime: React.FC<ChatInputProps> = ({ onOpenSettings, scrollToBo
         if (!isMobile) {
             textareaRef.current?.focus();
         }
+        } finally {
+            if (!transferFlightToSendPromise && !releasedForQueueDelegate) {
+                if (clearedComposerBeforeDispatch && submissionCapture) {
+                    recoverSubmission(submissionCapture);
+                }
+                endSubmissionFlight();
+            }
+        }
     };
 
     // Update ref with latest handleSubmit on every render
@@ -3277,6 +3356,7 @@ const ChatInputRuntime: React.FC<ChatInputProps> = ({ onOpenSettings, scrollToBo
 
     // Primary action for send/queue button — respects selected follow-up behavior
     const handlePrimaryAction = React.useCallback(() => {
+        if (submissionInFlightRef.current) return;
         const inputSnapshot = getCurrentInputSnapshot();
         // Only authoritative busy/retry (or an active auto-review) may queue/steer.
         // `unknown` must not count as running — assistant surfaces used to emit it
@@ -3298,6 +3378,7 @@ const ChatInputRuntime: React.FC<ChatInputProps> = ({ onOpenSettings, scrollToBo
 
     // Draft welcome presets: submit immediately.
     const submitPresetPrompt = React.useCallback((text: string) => {
+        if (submissionInFlightRef.current) return;
         // The text goes straight into the submit (see SubmitOptions.presetText)
         // instead of through the composer input — the collapsed mobile pill has
         // no mounted textarea to stage it in.
@@ -3319,6 +3400,7 @@ const ChatInputRuntime: React.FC<ChatInputProps> = ({ onOpenSettings, scrollToBo
     }, [applyProgrammaticEdit]);
 
     const handleDictationInsertAndSend = React.useCallback((text: string) => {
+        if (submissionInFlightRef.current) return;
         // Same as preset chips: the composed text goes into the submit as an
         // explicit override instead of being staged in the textarea, which may
         // not be mounted (collapsed mobile pill).
@@ -3690,6 +3772,8 @@ const ChatInputRuntime: React.FC<ChatInputProps> = ({ onOpenSettings, scrollToBo
         // a send button; plain Enter should submit, Shift+Enter for newline.
         if (e.key === 'Enter' && !e.shiftKey) {
             e.preventDefault();
+            // Component-level flight: ignore keyboard re-entry while submit is active.
+            if (submissionInFlightRef.current) return;
 
             const isCtrlEnter = e.ctrlKey || e.metaKey;
 
@@ -5873,6 +5957,7 @@ const ChatInputRuntime: React.FC<ChatInputProps> = ({ onOpenSettings, scrollToBo
                             newSessionDraftOpen={newSessionDraftOpen}
                             draftSubmitting={resolvedDraftBusy}
                             submissionBlocked={submissionBlocked}
+                            submissionInFlight={submissionInFlight}
                             queueFrozen={queueFrozen}
                             // Abort-capable sessions can still steer when queue ownership is frozen.
                             queueFallbackAvailable={canAbort || sessionIsRunning}
@@ -5932,6 +6017,7 @@ const ChatInputRuntime: React.FC<ChatInputProps> = ({ onOpenSettings, scrollToBo
                         newSessionDraftOpen={newSessionDraftOpen}
                         draftSubmitting={resolvedDraftBusy}
                         submissionBlocked={submissionBlocked}
+                        submissionInFlight={submissionInFlight}
                         queueFrozen={queueFrozen}
                         queueFallbackAvailable={canAbort || sessionIsRunning}
                         onPrimaryAction={handlePrimaryAction}
@@ -6009,6 +6095,7 @@ const ChatInputRuntime: React.FC<ChatInputProps> = ({ onOpenSettings, scrollToBo
                     newSessionDraftOpen={newSessionDraftOpen}
                     draftSubmitting={resolvedDraftBusy}
                     submissionBlocked={submissionBlocked}
+                    submissionInFlight={submissionInFlight}
                     queueFrozen={queueFrozen}
                     queueFallbackAvailable={canAbort || sessionIsRunning}
                     onPrimaryAction={handlePrimaryAction}
@@ -6449,7 +6536,8 @@ const ChatInputRuntime: React.FC<ChatInputProps> = ({ onOpenSettings, scrollToBo
                     value={message}
                     attachments={[]}
                     disabled={(!currentSessionId && !newSessionDraftOpen) || resolvedDraftBusy}
-                    pending={canAbort}
+                    // canAbort = session busy (stop UI); submissionInFlight blocks Enter re-entry.
+                    pending={canAbort || submissionInFlight}
                     isMobile={isMobile}
                     onSubmit={handlePrimaryAction}
                     data-mobile-composer-surface={isMobile ? 'true' : undefined}

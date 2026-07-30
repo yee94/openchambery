@@ -263,9 +263,9 @@ export function useAssistantStatus(
     const primarySessionDirectory = useSessionUIStore((state) => state.currentSessionDirectory);
     const currentSessionId = sessionId ?? primarySessionId;
     const currentSessionDirectory = directory ?? primarySessionDirectory;
-    const relayPendingSendMessageID = useSessionUIStore(
+    const pendingSendMessageID = useSessionUIStore(
         React.useCallback((state) => (
-            currentSessionId ? state.relayPendingSendMessageIDs.get(currentSessionId) ?? null : null
+            currentSessionId ? state.pendingSendMessageIDs.get(currentSessionId) ?? null : null
         ), [currentSessionId]),
     );
 
@@ -402,7 +402,7 @@ export function useAssistantStatus(
             return baseWorking;
         }
 
-        if (relayPendingSendMessageID) {
+        if (pendingSendMessageID) {
             return {
                 ...baseWorking,
                 activity: 'streaming',
@@ -449,7 +449,7 @@ export function useAssistantStatus(
             canAbort: false,
             retryInfo: null,
         };
-    }, [baseWorking, relayPendingSendMessageID, sessionPermissionRequests, sessionQuestionRequests, t]);
+    }, [baseWorking, pendingSendMessageID, sessionPermissionRequests, sessionQuestionRequests, t]);
 
     return {
         forming,

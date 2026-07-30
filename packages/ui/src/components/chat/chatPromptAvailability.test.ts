@@ -169,4 +169,35 @@ describe('resolveComposerActionAvailability', () => {
             disabledClass: 'opacity-30 pointer-events-none',
         });
     });
+
+    test('disables Send and Queue while a component-level submission flight is active', () => {
+        expect(resolveComposerActionAvailability({
+            canSend: true,
+            hasSessionTarget: true,
+            draftSubmitting: false,
+            submissionBlocked: false,
+            submissionInFlight: true,
+            queueFrozen: false,
+            queueFallbackAvailable: false,
+        })).toEqual({
+            sendDisabled: true,
+            queueDisabled: true,
+            disabledClass: 'opacity-30 pointer-events-none',
+        });
+    });
+
+    test('treats missing submissionInFlight as not in flight', () => {
+        expect(resolveComposerActionAvailability({
+            canSend: true,
+            hasSessionTarget: true,
+            draftSubmitting: false,
+            submissionBlocked: false,
+            queueFrozen: false,
+            queueFallbackAvailable: false,
+        })).toEqual({
+            sendDisabled: false,
+            queueDisabled: false,
+            disabledClass: 'opacity-30 pointer-events-none',
+        });
+    });
 });

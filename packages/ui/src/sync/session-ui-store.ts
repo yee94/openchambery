@@ -451,10 +451,10 @@ export type SessionUIState = {
   // Non-Git mode: dismissed signature hash per session, hides bar until new turn arrives
   pendingChangesBarDismissed: Map<string, string>
   stagedMessageEdit: { sessionId: string; messageId: string } | null
-  relayPendingSendMessageIDs: Map<string, string>
+  pendingSendMessageIDs: Map<string, string>
   dismissPendingChangesBar: (sessionId: string, signature: string | null) => void
-  markRelayMessageSending: (sessionId: string, messageID: string) => void
-  clearRelayMessageSending: (sessionId: string, messageID: string) => void
+  markMessageSending: (sessionId: string, messageID: string) => void
+  clearMessageSending: (sessionId: string, messageID: string) => void
 
   // Actions — UI state management
   setCurrentSession: (id: string | null, directoryHint?: string | null) => void
@@ -1047,10 +1047,8 @@ async function handleCombinedDraftSend(params: {
     if (result.ok) {
       const session = result.session as Session; const sessionDir = directory ?? (session as { directory?: string }).directory ?? null
       const dirState = getDirectoryState(sessionDir ?? resolvedDir); const existingMessages = dirState?.message?.[session.id]
-      if (!existingMessages?.some((m: Message) => m.id === messageID)) {
-        const inserted = optimisticInsertUserMessage({ sessionId: session.id, messageID, content, providerID, modelID, agent: effectiveAgent, directory: sessionDir, files, parts: parts as Part[] })
-        if (!inserted && !existingMessages?.length) console.warn("[combined] optimistic insert skipped (refs not mounted), session:", session.id)
-      }
+      const inserted = optimisticInsertUserMessage({ sessionId: session.id, messageID, content, providerID, modelID, agent: effectiveAgent, directory: sessionDir, files, parts: parts as Part[] })
+      if (!inserted && !existingMessages?.length) console.warn("[combined] optimistic insert skipped (refs not mounted), session:", session.id)
       const finalized = await finalizeDraftSession(session, { providerID, modelID, agent: effectiveAgent, variant }, { directory: sessionDir, agent: effectiveAgent, draftProjectId: draft.selectedProjectId, targetFolderId: draft.targetFolderId, draftSyntheticParts: draft.syntheticParts }, claimed)
       await finalizeClaimedDraftOwnership(claimed, session.id, "consume")
       notifyConfirmedMessageSent(session.id, messageID)
@@ -1153,23 +1151,23 @@ export const useSessionUIStore = create<SessionUIState>()((set, get) => ({
   sessionPlanAvailable: new Map(),
   pendingChangesBarDismissed: new Map(),
   stagedMessageEdit: null,
-  relayPendingSendMessageIDs: new Map(),
+  pendingSendMessageIDs: new Map(),
 
-  markRelayMessageSending: (sessionId, messageID) => {
+  markMessageSending: (sessionId, messageID) => {
     set((state) => {
-      if (state.relayPendingSendMessageIDs.get(sessionId) === messageID) return state
-      const relayPendingSendMessageIDs = new Map(state.relayPendingSendMessageIDs)
-      relayPendingSendMessageIDs.set(sessionId, messageID)
-      return { relayPendingSendMessageIDs }
+      if (state.pendingSendMessageIDs.get(sessionId) === messageID) return state
+      const pendingSendMessageIDs = new Map(state.pendingSendMessageIDs)
+      pendingSendMessageIDs.set(sessionId, messageID)
+      return { pendingSendMessageIDs }
     })
   },
 
-  clearRelayMessageSending: (sessionId, messageID) => {
+  clearMessageSending: (sessionId, messageID) => {
     set((state) => {
-      if (state.relayPendingSendMessageIDs.get(sessionId) !== messageID) return state
-      const relayPendingSendMessageIDs = new Map(state.relayPendingSendMessageIDs)
-      relayPendingSendMessageIDs.delete(sessionId)
-      return { relayPendingSendMessageIDs }
+      if (state.pendingSendMessageIDs.get(sessionId) !== messageID) return state
+      const pendingSendMessageIDs = new Map(state.pendingSendMessageIDs)
+      pendingSendMessageIDs.delete(sessionId)
+      return { pendingSendMessageIDs }
     })
   },
 
@@ -1310,7 +1308,7 @@ export const useSessionUIStore = create<SessionUIState>()((set, get) => ({
       queueAbortBlocks: new Map(),
       pendingChangesBarDismissed: new Map(),
       stagedMessageEdit: null,
-      relayPendingSendMessageIDs: new Map(),
+      pendingSendMessageIDs: new Map(),
     })
     useInputStore.getState().setActiveAttachmentDraft(
       restoredSessionId

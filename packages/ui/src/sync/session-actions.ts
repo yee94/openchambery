@@ -50,7 +50,6 @@ import {
   type SessionMetadataRecord,
 } from "@/lib/sessionReviewMetadata"
 import { reconcileActiveSessionStatusAfterMessagePull } from "./session-status-reconciliation"
-import { isRelayModeActive } from "@/lib/relay/runtime-tunnel"
 
 const SEND_CONFIRMATION_REFETCH_ATTEMPTS = 2
 const SEND_CONFIRMATION_REFETCH_RETRY_MS = 150
@@ -1187,7 +1186,6 @@ export async function optimisticSend(input: {
   const targetDirectory = input.directory ?? dir()
   const capture = captureSendTarget(targetDirectory)
   const transport = captureRuntimeTransport()
-  const relaySend = isRelayModeActive()
   let transportEntered = false
   let messageID: string | undefined
   try {
@@ -1198,9 +1196,9 @@ export async function optimisticSend(input: {
     messageID = input.messageID ?? ascendingId("msg")
     input.onMessageID?.(messageID)
 
-    if (relaySend) {
-      useSessionUIStore.getState().markRelayMessageSending?.(input.sessionId, messageID)
-    }
+    // Mark pending send before the optimistic user row so the assistant status
+    // can show "sending message" for every runtime while the request is in flight.
+    useSessionUIStore.getState().markMessageSending?.(input.sessionId, messageID)
 
     // Paint the user bubble + busy status immediately. Connection recovery may
     // take up to CONNECTION_GRACE_MS; the list must not wait on that.
@@ -1270,8 +1268,9 @@ export async function optimisticSend(input: {
     })
     throw dispatchError
   } finally {
-    if (messageID && relaySend) {
-      useSessionUIStore.getState().clearRelayMessageSending?.(input.sessionId, messageID)
+    // Clear only this messageID so a concurrent newer pending send is preserved.
+    if (messageID) {
+      useSessionUIStore.getState().clearMessageSending?.(input.sessionId, messageID)
     }
   }
 }
@@ -1342,10 +1341,20 @@ export function optimisticInsertUserMessage(input: {
   const targetDirectory = input.directory ?? dir()
   const store = targetDirectory ? dirStoreForDirectory(targetDirectory) : dirStore()
 
-  // If SSE already materialized this message, skip insertion
   const state = store.getState()
   const existingMessages = state.message?.[input.sessionId]
   if (existingMessages?.some((m) => m.id === input.messageID)) {
+    const now = Date.now()
+    store.setState({
+      session_status: {
+        ...state.session_status,
+        [input.sessionId]: { type: "busy" as const },
+      },
+      session_status_observed_at: {
+        ...state.session_status_observed_at,
+        [input.sessionId]: now,
+      },
+    })
     return false
   }
 
