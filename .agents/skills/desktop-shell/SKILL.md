@@ -42,6 +42,7 @@ Non-user-visible child processes must never flash a console window.
 
 - Keep native/external modules configured according to `packages/electron/README.md` and `bundle-main.mjs`.
 - Preserve startup, quit, updater, notification, and deep-link behavior across development and packaged builds.
+- Keep `autoUpdater.allowPrerelease = false` unless the user explicitly requests prerelease auto-update. Stable clients must not be offered GitHub prereleases / `-beta` builds; release isolation rules live in `docs/RELEASING.md` and `.opencode/commands/release.md`.
 - Ensure cleanup tolerates partial startup and repeated shutdown signals.
 - Do not infer readiness from stdout when an in-process callback or returned server handle exists.
 

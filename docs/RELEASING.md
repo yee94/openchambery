@@ -55,13 +55,54 @@ git push origin "v$VERSION"
 
 ### Beta / prerelease
 
-带 semver 预发布后缀的版本（如 `1.16.94-beta.2`）会以 GitHub **prerelease** 发布：
+这是 Agent / 发布命令的强制规矩，不只是建议。带 semver 预发布后缀的版本（任意含 `-` 的版本，推荐 `X.Y.Z-beta.N`，如 `1.16.94-beta.2`）必须与稳定自动更新通道隔离。
 
-- 不会成为 `/releases/latest`，因此桌面 EdgeOne `/desktop/latest*.yml` 与 Android 最新 APK 仍指向最近的正式版。
-- 不会改写 `deploy/update-service/release-manifest.json`，JSON 更新检查 API 也不命中 beta。
-- 仍跳过 iOS/TestFlight（Apple marketing version 不能含 `-beta`）。
+**判定**
 
-手动安装 beta 包不受影响；只有稳定客户端的自动更新通道被隔离。
+| 形式 | 类型 | 自动更新 |
+|---|---|---|
+| `1.16.95` | 稳定正式版 | 可以进入 `/releases/latest` 与 EdgeOne update feed |
+| `1.16.95-beta.1` / `1.16.95-rc.1` | prerelease | **禁止**进入稳定自动更新 |
+
+**发布时必须**
+
+1. 使用 `X.Y.Z-beta.N`（或其它 semver prerelease）形式；禁止把 beta 内容打成无后缀的 `X.Y.Z`。
+2. 依赖 `release.yml`：含 `-` 的版本创建/发布 GitHub Release 时设置 `prerelease: true`，从而**不会**成为 `/releases/latest`。
+3. 依赖 finalize-release **跳过** `deploy/update-service/release-manifest.json` 写入；`write-release-manifest.mjs` 对 prerelease 直接 exit 0。Agent 不得手工把该 manifest 改成 beta 版本并推送。
+4. 保持 Electron `autoUpdater.allowPrerelease = false`（稳定客户端不订阅 prerelease）。
+5. 仍跳过 iOS/TestFlight（Apple marketing version 不能含 `-beta`）。
+
+**发布时禁止**
+
+- `gh release edit v…-beta… --latest`，或去掉 beta 的 prerelease 标记（除非用户明确要求把该版本升格为正式版）。
+- 把 beta 版本写入 `release-manifest.json`，或手动上传/覆盖稳定通道上的 `latest.yml` / `latest-mac.yml` / `latest-linux*.yml` 指向 beta。
+- 假设 “版本号里有 beta 字样就够了”——GitHub Latest 与 EdgeOne desktop feed 只认 **是否 prerelease**，不认名字。
+
+**通道说明**
+
+- 桌面 EdgeOne `/desktop/latest*.yml` 代理 `https://github.com/yee94/openchamber/releases/latest/download/…`。
+- Android 最新 APK 同样读 `/releases/latest`。
+- Web / VS Code / Capacitor 的 JSON 更新检查读 `release-manifest.json`（只应含最新稳定版）。
+- 用户从 Release 页**手动下载** beta 安装包不受影响；被隔离的只有稳定客户端自动更新。
+
+**误发恢复**
+
+若 beta 已变成 Latest 或已污染 update feed：
+
+```bash
+gh release edit "v$BETA_VERSION" --prerelease --repo yee94/openchamber
+gh release edit "v$STABLE_VERSION" --latest --repo yee94/openchamber
+# 如 release-manifest.json 已被写成 beta，改回最新稳定版并推送 main
+```
+
+然后确认：
+
+```bash
+gh api repos/yee94/openchamber/releases/latest --jq .tag_name   # 应为稳定版
+curl -sS https://openchamber-update.edgeone.dev/desktop/latest-mac.yml | head -3
+```
+
+Agent 入口命令：`.opencode/commands/release.md`。
 
 ### iOS 外测自动发布
 

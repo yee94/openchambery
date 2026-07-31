@@ -24,9 +24,13 @@ release sources:
   Function at request time.
 
 The release workflow updates `release-manifest.json` after GitHub publishes a
-release. Every following EdgeOne deployment serves that published version.
-GitHub Actions needs repository `contents: write` permission for this manifest
-commit.
+**stable** release. Semver prereleases (`X.Y.Z-beta.N`, any version containing
+`-`) must never be written into this manifest: `write-release-manifest.mjs`
+skips them, and `release.yml` finalize-release skips the publish step for
+prereleases. Desktop `/desktop/latest*.yml` likewise proxies GitHub
+`/releases/latest`, which excludes prereleases. Every following EdgeOne
+deployment serves that published stable version. GitHub Actions needs
+repository `contents: write` permission for this manifest commit.
 
 ## EdgeOne Makers setup
 

@@ -112,4 +112,4 @@ Required local tools:
 
 ## Generated Assets
 
-The native projects currently use Capacitor-generated launcher and splash assets. Replace them before release branding work.
+Launcher icons and splash screens use the dark OpenChamber mark (`packages/electron/resources/icons/app-icon.png` / `app-icon.svg`). Source inputs live in `packages/mobile/assets/` (`icon-only.png`, `icon-foreground.png`, `icon-background.png`); iOS `AppIcon` / Splash and Android mipmaps + splash drawables are kept in sync with that dark mark.

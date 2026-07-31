@@ -154,8 +154,8 @@ iOS Simulator helpers: `mobile:sim:{boot,install,launch,run,serve,list,kill}` (s
    dismissal can catch up when the system IME has already started hiding.
   ML Kit `com.google.mlkit.vision.DEPENDENCIES=barcode_ui` meta (preloads the code scanner). FCM
   `default_notification_icon=@drawable/ic_stat_notify`.
-- Adaptive launcher icon: full-bleed color background + `ic_launcher_foreground` (sources under
-  `packages/mobile/assets/`, regenerable with `@capacitor/assets`).
+- Adaptive launcher icon: dark full-bleed background (`#1A1A1A`) + `ic_launcher_foreground`
+  (sources under `packages/mobile/assets/`, aligned with the desktop dark app mark).
 
 ## Quirks / gotchas
 
