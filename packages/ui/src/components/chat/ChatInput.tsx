@@ -2178,26 +2178,9 @@ const ChatInputRuntime: React.FC<ChatInputProps> = ({ onOpenSettings, scrollToBo
     const queueFrozen = !queueModeAllowsMutations(serverQueue.mode);
     const canSend = hasContent || hasQueuedMessages;
 
-    // Emptying the composer disarms a staged edit: the restored text is gone, so the
-    // next send is an ordinary message and must not delete the turn it came from.
-    // Only a transition out of non-empty counts, so staging itself never self-cancels.
     const stagedEditSessionId = useSessionUIStore(
         (s) => (s.stagedMessageEdit?.sessionId === currentSessionId ? s.stagedMessageEdit.sessionId : null),
     );
-    const stagedEditSawContentRef = React.useRef(false);
-    React.useEffect(() => {
-        const decision = resolveStagedEditDisarm({
-            surfaceKind: surface.kind,
-            stagedSessionId: stagedEditSessionId,
-            composerHasContent: message.trim().length > 0 || sendableAttachedFiles.length > 0,
-            sawComposerContent: stagedEditSawContentRef.current,
-        });
-        if (decision.action === 'hold') return;
-        stagedEditSawContentRef.current = decision.action === 'arm';
-        if (decision.action === 'disarm') {
-            useSessionUIStore.getState().clearStagedMessageEdit(decision.sessionId);
-        }
-    }, [message, sendableAttachedFiles.length, stagedEditSessionId, surface.kind]);
 
     const sessionIsRunning = sessionPhase === 'busy' || sessionPhase === 'retry';
     const canAbort = surface.activity?.canAbort ?? sessionIsRunning;
@@ -2252,6 +2235,33 @@ const ChatInputRuntime: React.FC<ChatInputProps> = ({ onOpenSettings, scrollToBo
     const isSubmissionInFlight = (): boolean => (
         useComposerSendStore.getState().isInFlight(composerSendScopeKey)
     );
+
+    // Emptying the composer disarms a staged edit: the restored text is gone, so the
+    // next send is an ordinary message and must not delete the turn it came from.
+    // Only a transition out of non-empty counts, so staging itself never self-cancels,
+    // and dispatch clearing the composer is held so it cannot drop its own edit.
+    // Arming also focuses the composer: Edit restored the old text here, so typing
+    // should continue without a second tap (mobile shares this node with the pill).
+    const stagedEditSawContentRef = React.useRef(false);
+    React.useEffect(() => {
+        const decision = resolveStagedEditDisarm({
+            surfaceKind: surface.kind,
+            stagedSessionId: stagedEditSessionId,
+            composerHasContent: message.trim().length > 0 || sendableAttachedFiles.length > 0,
+            sawComposerContent: stagedEditSawContentRef.current,
+            submitInFlight: submissionFlightKind !== null,
+        });
+        if (decision.action === 'hold') return;
+        const armedNow = decision.action === 'arm' && !stagedEditSawContentRef.current;
+        stagedEditSawContentRef.current = decision.action === 'arm';
+        if (armedNow && !focusComposerTextarea(textareaRef)) {
+            // Staging can land a frame before the textarea is mounted/enabled.
+            requestAnimationFrame(() => focusComposerTextarea(textareaRef));
+        }
+        if (decision.action === 'disarm') {
+            useSessionUIStore.getState().clearStagedMessageEdit(decision.sessionId);
+        }
+    }, [message, sendableAttachedFiles.length, stagedEditSessionId, submissionFlightKind, surface.kind]);
     const establishingPendingItems = useComposerSendStore(
         React.useMemo(() => selectEstablishingPendingItems(establishingDraftID), [establishingDraftID]),
     );
@@ -3613,7 +3623,8 @@ const ChatInputRuntime: React.FC<ChatInputProps> = ({ onOpenSettings, scrollToBo
 
         // Hand optimistic ticket / edit paint to the final send path; early exits
         // roll them back in finally. sendPromise rejection rolls back the ticket
-        // only — the editing paint is released around the commit in sendMessage.
+        // only — sendMessage releases the editing paint around the commit, and the
+        // settle below is the backstop for any path that never reaches that commit.
         handedOptimisticToSendPromise = true;
         const sendPromise = sendMessage(
             primaryText,
@@ -3632,6 +3643,14 @@ const ChatInputRuntime: React.FC<ChatInputProps> = ({ onOpenSettings, scrollToBo
         transferFlightToSendPromise = true;
         void sendPromise.finally(() => {
             endSubmissionFlight();
+            // No-op once the commit already released it; the row must never be left
+            // stuck in "editing" when a send settles without committing the edit.
+            if (messageEditCommitTarget) {
+                useSessionUIStore.getState().endMessageEditCommit(
+                    messageEditCommitTarget.sessionId,
+                    messageEditCommitTarget.messageId,
+                );
+            }
         });
 
         if (establishingDraftIDAtSubmit) {
