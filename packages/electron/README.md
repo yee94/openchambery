@@ -125,6 +125,12 @@ bun run --cwd packages/electron generate:preview-icons
 
 Requires Pillow (`python3` + `PIL`) and, on macOS, `sips` + `iconutil`.
 
+macOS packaged Dock icons prefer `resources/icons/Assets.car` (`CFBundleIconName=AppIcon`) over `icon.icns`. The Icon Composer source `resources/icons/AppIcon.icon` is forced to the dark mark for light, dark, and tinted appearances. After editing it, regenerate the catalog:
+
+```bash
+bun run --cwd packages/electron generate:macos-icon
+```
+
 ## Platform Notes
 
 macOS packaging needs Xcode/build tools, a Developer ID Application certificate, and App Store Connect API credentials. Release workflows sign and notarize the DMG; local preview builds use the same signing configuration.

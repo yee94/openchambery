@@ -1,11 +1,19 @@
 {
   "fill-specializations" : [
     {
-      "value" : "automatic"
+      "value" : "system-dark"
+    },
+    {
+      "appearance" : "light",
+      "value" : "system-dark"
     },
     {
       "appearance" : "dark",
-      "value" : "automatic"
+      "value" : "system-dark"
+    },
+    {
+      "appearance" : "tinted",
+      "value" : "system-dark"
     }
   ],
   "groups" : [
@@ -14,7 +22,11 @@
         {
           "glass-specializations" : [
             {
-              "value" : false
+              "value" : true
+            },
+            {
+              "appearance" : "light",
+              "value" : true
             },
             {
               "appearance" : "dark",
@@ -29,8 +41,11 @@
           "name" : "app-icon-glyph-dark 4",
           "opacity-specializations" : [
             {
+              "value" : 1
+            },
+            {
               "appearance" : "light",
-              "value" : 0
+              "value" : 1
             },
             {
               "appearance" : "dark",
@@ -56,65 +71,24 @@
         },
         {
           "blend-mode" : "normal",
-          "fill-specializations" : [
-            {
-              "value" : "automatic"
-            },
-            {
-              "appearance" : "dark",
-              "value" : "automatic"
-            }
-          ],
-          "glass-specializations" : [
-            {
-              "value" : true
-            },
-            {
-              "appearance" : "dark",
-              "value" : false
-            },
-            {
-              "appearance" : "tinted",
-              "value" : false
-            }
-          ],
-          "hidden-specializations" : [
-            {
-              "idiom" : "square",
-              "value" : false
-            }
-          ],
+          "hidden" : true,
           "image-name" : "app-icon-glyph-light 2.png",
           "name" : "app-icon-glyph-light 2",
           "opacity-specializations" : [
             {
+              "value" : 0
+            },
+            {
+              "appearance" : "light",
+              "value" : 0
+            },
+            {
               "appearance" : "dark",
               "value" : 0
             },
             {
               "appearance" : "tinted",
               "value" : 0
-            }
-          ],
-          "position-specializations" : [
-            {
-              "value" : {
-                "scale" : 1.4,
-                "translation-in-points" : [
-                  0,
-                  -5.2000000000000455
-                ]
-              }
-            },
-            {
-              "idiom" : "square",
-              "value" : {
-                "scale" : 1.3,
-                "translation-in-points" : [
-                  0,
-                  -5.2000000000000455
-                ]
-              }
             }
           ]
         }

@@ -4,6 +4,11 @@ All notable changes to this project will be documented in this file.
 
 ## [Unreleased]
 
+## [1.16.94-beta.8] - 2026-07-31
+
+- **Desktop branding:** force the macOS Icon Composer `AppIcon` (`Assets.car`) to the dark mark in light, dark, and tinted appearances so Dock no longer switches back to the light glyph.
+- **Android branding:** regenerate adaptive-icon cube-only foreground mipmaps and use a full-bleed dark gradient background drawable so launchers no longer stack a finished icon card over the adaptive background.
+
 ## [1.16.94-beta.7] - 2026-07-31
 
 - **Queue chips:** decorate image/citation and mention tokens with the shared message reference chip so queued previews match sent-message styling instead of showing raw reserved-slot placeholders.
@@ -516,19 +521,3 @@ All notable changes to this project will be documented in this file.
 - **Mobile sessions:** preserve the session window's rendered elements, scroll position, project filter, expanded worktree groups, and pagination state across presentations while continuing to refresh authoritative session data.
 
 ## [1.16.24] - 2026-07-18
-
-- **Shared data layer:** migrate agents, commands, installed skills, MCP, GitHub authentication, plugins, skills catalogs, files, and plans to runtime-scoped TanStack Query caches with cancellation, retries, request sharing, bounded freshness, and stale-result protection.
-- **Configuration isolation:** key configuration data by runtime transport and normalized directory, preserve complete snapshots across refresh failures, clear caches on runtime changes, and refresh only the affected scope after mutations.
-- **Settings and stores:** make Query the owner of server-backed configuration state while stores retain selection, drafts, mutation progress, and diagnostics; update Settings search and configuration pages to consume the same authoritative snapshots.
-- **Commands and skills:** batch agent and command metadata reads, resolve cold-cache slash commands before sending, and use the effective session, worktree, or draft directory consistently for composer highlighting, autocomplete, starter chips, skill links, and send-time command classification.
-- **Plan editor:** add directory- and runtime-scoped plan resolution with explicit missing-file handling, per-document revisions, serial saves, pending-write flushes, retryable failures, stale-completion rejection, and cache updates after successful writes.
-- **Diagram editor:** move diagram reads into the shared file cache, keep file switches isolated, update cached content after successful writes, and preserve the editor baseline when a save fails or returns an unsuccessful result.
-- **Files and mobile:** unify directory listing, search, file content, and file status queries across shared and mobile surfaces; distinguish empty files from missing optional files and prevent older directory requests from replacing current results.
-- **Mobile interaction:** add progressive previous/next session feedback while swiping across chat, signal the commit threshold with native haptics, and provide light haptic feedback for enabled button presses in Capacitor apps.
-- **MCP and integrations:** unify MCP configuration and live status queries across Settings, dropdown, and mobile surfaces; scope connect, disconnect, OAuth, and configuration refreshes to their runtime and directory while surfacing status failures clearly.
-- **Plugins, skills catalogs, and GitHub:** add shared authentication snapshots, resilient catalog pagination and deduplication, bounded source requests, registry normalization, and mutation-driven cache invalidation across Settings and picker dialogs.
-- **Web and VS Code parity:** add batched configuration metadata routes, project-directory forwarding for agents, commands, skills, catalogs, and files, plus an optional-read contract across the Web server, VS Code bridge, and local filesystem proxy.
-- **Routing and chat reliability:** keep valid session deep links stable after startup, reconcile stale session directories from the authoritative index, close text-selection menus synchronously during session switches, and refine composer leader-key hints.
-- **Mobile windows:** add a shared motion and stacking system for top, bottom, left, and right overlays, with edge-aware dismissal, nested-scroll ownership, final-frame settlement, focus management, and near 1:1 touch tracking.
-- **Mobile sessions:** group sessions by project root and worktree with branch labels, bounded expansion and remote pagination, add worktree creation, close the panel consistently after navigation, and reduce the header-swipe opening distance to 35% of the viewport.
-- **Localization:** detect supported browser language preferences at startup, including regional Traditional Chinese and Portuguese variants, while preserving explicit locale selections.
