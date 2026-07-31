@@ -703,9 +703,11 @@ jobs:
             echo "Skipping Vercel deploy; VERCEL_TOKEN / VERCEL_ORG_ID / VERCEL_PROJECT_ID secrets are not configured."
             exit 0
           fi
-          mkdir -p deploy/update-service/.vercel
-          printf '%s\n' "{\"orgId\":\"${VERCEL_ORG_ID}\",\"projectId\":\"${VERCEL_PROJECT_ID}\"}" > deploy/update-service/.vercel/project.json
-          npx --yes vercel@latest deploy --prod --yes --token "$VERCEL_TOKEN" --cwd deploy/update-service
+          # Project rootDirectory is deploy/update-service; deploy from monorepo root.
+          mkdir -p .vercel
+          printf '%s\n' "{\"orgId\":\"${VERCEL_ORG_ID}\",\"projectId\":\"${VERCEL_PROJECT_ID}\"}" > .vercel/project.json
+          npx --yes vercel@latest deploy --prod --yes --token "$VERCEL_TOKEN"
+          rm -rf .vercel
 
       - name: Send release to Discord
         if: ${{ env.DISCORD_WEBHOOK_URL != '' }}
