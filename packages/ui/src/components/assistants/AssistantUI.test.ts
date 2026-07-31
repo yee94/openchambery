@@ -243,7 +243,12 @@ describe('Assistant UI product contract', () => {
     expect(chatInput).toContain('<MemoModelControls');
     expect(chatInput.indexOf('const painted = await beginDraftEstablishingPaint({')).toBeLessThan(chatInput.indexOf('await fetchResponseStyleInstruction()'));
     expect(chatInput.indexOf('const painted = await beginDraftEstablishingPaint({')).toBeLessThan(chatInput.indexOf('primaryText = await expandText(primaryText)'));
-    expect(chatInput).toContain("...(draftMessageID ? { messageID: draftMessageID } : {})");
+    // Establishing is claimed with the flight, before the paint await, so a
+    // second send during create stages a follow-up chip instead of a session.
+    expect(chatInput.indexOf('.beginEstablishing({')).toBeLessThan(chatInput.indexOf('const painted = await beginDraftEstablishingPaint({'));
+    // Optimistic ticket owns the message ID when present; the draft send falls back to its pinned ID.
+    expect(chatInput).toContain('? { messageID: optimisticTicket.messageID, ticket: optimisticTicket }');
+    expect(chatInput).toContain('? { messageID: draftMessageID }');
   });
 
   test('loads Assistant history through the binding-scoped paged host', async () => {

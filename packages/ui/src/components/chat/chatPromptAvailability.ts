@@ -1,3 +1,5 @@
+import type { ComposerSendPhase } from '@/sync/composer-send-manager';
+
 type ChatPromptAvailability = {
     showReadOnlyBanner: boolean;
     blockSubmission: boolean;
@@ -27,24 +29,29 @@ export const resolveChatPromptAvailability = (input: {
     };
 };
 
+/**
+ * Send/queue availability derives from one composer send phase instead of
+ * separate flight booleans. An establishing new-session send keeps both actions
+ * available because later submits stage client pending-admission chips.
+ */
 export const resolveComposerActionAvailability = (input: {
     canSend: boolean;
     hasSessionTarget: boolean;
     draftSubmitting: boolean;
     submissionBlocked: boolean;
-    /** Component-level submit flight: blocks send/queue while a submit is in progress. */
-    submissionInFlight?: boolean;
+    sendPhase: ComposerSendPhase;
     queueFrozen: boolean;
     queueFallbackAvailable: boolean;
 }) => {
+    const { inFlight, establishing } = input.sendPhase;
+    const busyBlocks = !establishing && (input.draftSubmitting || inFlight);
     const sendDisabled = !input.canSend
         || !input.hasSessionTarget
-        || input.draftSubmitting
         || input.submissionBlocked
-        || Boolean(input.submissionInFlight);
+        || busyBlocks;
     const queueDisabled = !input.hasSessionTarget
         || input.submissionBlocked
-        || Boolean(input.submissionInFlight)
+        || (!establishing && inFlight)
         || (input.queueFrozen && !input.queueFallbackAvailable);
     return {
         sendDisabled,

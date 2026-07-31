@@ -14,6 +14,13 @@ if (!VERSION_PATTERN.test(version)) {
   throw new Error('Usage: node scripts/write-release-manifest.mjs <version>');
 }
 
+// Stable auto-update clients read this manifest. Never promote a semver
+// prerelease (beta/rc/…) into the public EdgeOne update feed.
+if (version.includes('-')) {
+  console.log(`Skipping update manifest publication for prerelease v${version}.`);
+  process.exit(0);
+}
+
 function parseVersionForComparison(value) {
   const normalized = String(value || '').replace(/^v/, '').split('+')[0];
   const prereleaseIndex = normalized.indexOf('-');

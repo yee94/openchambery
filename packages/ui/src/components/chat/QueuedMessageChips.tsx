@@ -250,10 +250,18 @@ interface QueuedMessageChipsProps {
     scope: BoundQueueScope | null;
     /** Explicit draft target for server queue edit CAS (revision only). */
     draftTarget: { key: DraftKey; expectedRevision: () => number | 'absent' } | null;
+    /**
+     * Client-only pending-admission chips (e.g. establishing-session follow-ups).
+     * Rendered with the same "Queuing…" treatment as legacy/server pending admissions.
+     */
+    clientPendingItems?: readonly QueuePendingAdmissionItem[];
+    /** Remove a client-only pending chip (restoring content is caller-owned). */
+    onRemoveClientPending?: (requestID: string) => void;
 }
 
 const EMPTY_QUEUE: QueueItem[] = [];
 const EMPTY_LEGACY_DISPLAY: Array<QueuedMessage | QueuePendingAdmissionItem> = [];
+const EMPTY_PENDING_CLIENT: readonly QueuePendingAdmissionItem[] = [];
 const EMPTY_PENDING_OPERATION_KINDS: ReadonlySet<ServerQueueOperationKind> = new Set();
 
 // eslint-disable-next-line react-refresh/only-export-components
@@ -294,7 +302,7 @@ export const queuedMessageItemScope = (message: QueuedMessage, scope: BoundQueue
     return queueScopeKey(owner) === queueScopeKey(scope) ? scope : null;
 };
 
-export const QueuedMessageChips = memo(({ onEditMessage, onSendMessage, onEditCommitted, draftKey, scope: queueScope, draftTarget }: QueuedMessageChipsProps) => {
+export const QueuedMessageChips = memo(({ onEditMessage, onSendMessage, onEditCommitted, draftKey, scope: queueScope, draftTarget, clientPendingItems = EMPTY_PENDING_CLIENT, onRemoveClientPending }: QueuedMessageChipsProps) => {
     const { t } = useI18n();
     const isMobile = useUIStore((state) => state.isMobile);
     const serverQueue = useMessageQueueServerScope({
@@ -406,9 +414,13 @@ export const QueuedMessageChips = memo(({ onEditMessage, onSendMessage, onEditCo
         [queueScope],
     );
     const legacyMessages = useMessageQueueStore(legacyQueueSelector);
-    const queuedMessages = React.useMemo(() => serverQueue.mode === 'server'
-        ? projectServerQueueChipItems(serverQueue.items, chipOverlayOperations)
-        : legacyMessages, [chipOverlayOperations, legacyMessages, serverQueue.items, serverQueue.mode]);
+    const queuedMessages = React.useMemo(() => {
+        const base = serverQueue.mode === 'server'
+            ? projectServerQueueChipItems(serverQueue.items, chipOverlayOperations)
+            : legacyMessages;
+        if (clientPendingItems.length === 0) return base;
+        return [...base, ...clientPendingItems];
+    }, [chipOverlayOperations, clientPendingItems, legacyMessages, serverQueue.items, serverQueue.mode]);
     const pendingKindsByItem = React.useMemo(() => {
         const result = new Map<string, Set<ServerQueueOperationKind>>();
         for (const operation of chipOverlayOperations) {
@@ -561,7 +573,13 @@ export const QueuedMessageChips = memo(({ onEditMessage, onSendMessage, onEditCo
     });
 
     const handleRemove = useEvent((message: QueuedMessage | MessageQueueServerDisplayItem) => {
-        if (frozen || isMessageQueuePendingAdmissionItem(message)) return;
+        if (isMessageQueuePendingAdmissionItem(message)) {
+            if (clientPendingItems.some((item) => item.requestID === message.requestID)) {
+                onRemoveClientPending?.(message.requestID);
+            }
+            return;
+        }
+        if (frozen) return;
         if (serverQueue.mode === 'server') {
             if (!queueScope || !serverQueue.scope) return;
             const serverMessage = message as MessageQueueItem;
@@ -589,7 +607,12 @@ export const QueuedMessageChips = memo(({ onEditMessage, onSendMessage, onEditCo
         if (itemScope) useMessageQueueStore.getState().removeFromQueue(itemScope, legacyMessage.queueItemID ?? legacyMessage.id, legacyMessage.operationID);
     });
 
-    if (queuedMessages.length === 0 || !queueScope) {
+    if (queuedMessages.length === 0) {
+        return null;
+    }
+    // Session-bound queue actions need a scope; establishing client-pending chips
+    // may render before the draft materializes into a session.
+    if (!queueScope && clientPendingItems.length === 0) {
         return null;
     }
 

@@ -1,6 +1,9 @@
 import { describe, expect, test } from 'bun:test';
 
+import { composerSendPhase } from '@/sync/composer-send-manager';
 import { resolveChatPromptAvailability, resolveComposerActionAvailability, resolveSessionIdentityPending } from './chatPromptAvailability';
+
+const idlePhase = composerSendPhase(null, false);
 
 describe('resolveSessionIdentityPending', () => {
     test('blocks primary chat while the directory session entity is missing', () => {
@@ -101,6 +104,7 @@ describe('resolveComposerActionAvailability', () => {
             hasSessionTarget: true,
             draftSubmitting: false,
             submissionBlocked: true,
+            sendPhase: idlePhase,
             queueFrozen: false,
             queueFallbackAvailable: false,
         })).toEqual({
@@ -116,6 +120,7 @@ describe('resolveComposerActionAvailability', () => {
             hasSessionTarget: true,
             draftSubmitting: false,
             submissionBlocked: false,
+            sendPhase: idlePhase,
             queueFrozen: true,
             queueFallbackAvailable: false,
         })).toEqual({
@@ -131,6 +136,7 @@ describe('resolveComposerActionAvailability', () => {
             hasSessionTarget: true,
             draftSubmitting: false,
             submissionBlocked: false,
+            sendPhase: idlePhase,
             queueFrozen: false,
             queueFallbackAvailable: false,
         })).toEqual({
@@ -146,6 +152,7 @@ describe('resolveComposerActionAvailability', () => {
             hasSessionTarget: true,
             draftSubmitting: false,
             submissionBlocked: false,
+            sendPhase: idlePhase,
             queueFrozen: false,
             queueFallbackAvailable: false,
         })).toEqual({
@@ -161,6 +168,7 @@ describe('resolveComposerActionAvailability', () => {
             hasSessionTarget: true,
             draftSubmitting: false,
             submissionBlocked: false,
+            sendPhase: idlePhase,
             queueFrozen: true,
             queueFallbackAvailable: true,
         })).toEqual({
@@ -176,7 +184,7 @@ describe('resolveComposerActionAvailability', () => {
             hasSessionTarget: true,
             draftSubmitting: false,
             submissionBlocked: false,
-            submissionInFlight: true,
+            sendPhase: composerSendPhase('send', false),
             queueFrozen: false,
             queueFallbackAvailable: false,
         })).toEqual({
@@ -186,12 +194,29 @@ describe('resolveComposerActionAvailability', () => {
         });
     });
 
-    test('treats missing submissionInFlight as not in flight', () => {
+    test('keeps Send available during new-session establishing follow-up admission', () => {
+        expect(resolveComposerActionAvailability({
+            canSend: true,
+            hasSessionTarget: true,
+            draftSubmitting: true,
+            submissionBlocked: false,
+            sendPhase: composerSendPhase('send', true),
+            queueFrozen: false,
+            queueFallbackAvailable: false,
+        })).toEqual({
+            sendDisabled: false,
+            queueDisabled: false,
+            disabledClass: 'opacity-30 pointer-events-none',
+        });
+    });
+
+    test('treats an idle send phase as not in flight', () => {
         expect(resolveComposerActionAvailability({
             canSend: true,
             hasSessionTarget: true,
             draftSubmitting: false,
             submissionBlocked: false,
+            sendPhase: idlePhase,
             queueFrozen: false,
             queueFallbackAvailable: false,
         })).toEqual({

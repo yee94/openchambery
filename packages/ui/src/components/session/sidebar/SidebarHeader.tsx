@@ -14,10 +14,9 @@ type Props = {
 };
 
 /**
- * Sidebar search field only. The old action toolbar (add project / new session /
- * multi-run / scheduled / search / selection / display mode) was removed; display
- * mode now lives on the Recent section header, and add-project lives on the
- * Welcome draft project picker.
+ * Sidebar search field only. The old action toolbar (new session / multi-run /
+ * scheduled / search / selection) was removed; project controls live on the
+ * Projects section header.
  */
 export function SidebarHeader(props: Props): React.ReactNode {
   const { t } = useI18n();

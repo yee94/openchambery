@@ -66,6 +66,8 @@ So:
 | `message-composer-restoration-sources.ts` | Sent/queue Composer restoration payload builders (path/mention/data-URL helpers) | App UI state |
 | `message-composer-restoration-cas.ts` | Composer restoration CAS capture/commit/rollback (prior absence uses durable `deleteDraftSnapshot`) | App UI state |
 | `session-history-mutation-coordinator.ts` | Serial flight for same-session revert/unrevert keyed by transport/generation/directory/session; failures never block the next op | App UI state |
+| `composer-send-manager.ts` | Per-surface submit flight plus new-session establishing follow-ups (client pending-admission chips) | App UI state |
+| `composer-send-drain.ts` | After createWithPrompt materializes a session, drain establishing follow-ups into server/legacy queue | App UI state |
 | `input-draft-metadata-store.ts` | Validated durable draft metadata, legacy staging, migration markers | Browser storage |
 | `selection-store.ts` | Model/agent/variant selections | App UI state |
 | `voice-store.ts` | Voice state | App UI state |
@@ -815,6 +817,30 @@ and publish the local `busy` status until authoritative session activity arrives
 Create-phase failures restore the draft and input. Prompt-phase failures keep
 the created session; ambiguous delivery is confirmed by message ID and is never
 automatically re-submitted.
+
+While that first create+prompt flight is held, later composer submits for the
+same draft do not open another session. `composer-send-manager.ts` records the
+establishing draft identity **synchronously when the first create flight is
+claimed** (before selection.flush / paint awaits), stages follow-ups as
+client-only pending-admission chips (same "Queuing…" continuum as legacy/server
+stageAdmission), and blocks `openNewSessionDraft()` so Mod+N cannot rotate the
+draft mid-create. During establishing the composer stays editable and Send stays
+enabled so Enter/button can stage chips despite the primary flight. Flight is
+keyed by ChatInput surface ID so primary and secondary composers never block each
+other. After the first prompt selects a real session, `composer-send-drain.ts`
+takes those follow-ups and admits them into that session's server or legacy queue
+with stable request/queue/message identities. Removing a client pending chip
+restores its text/attachments into the composer; failed create clears establishing
+state without starting another create.
+
+Composer surfaces read one derived `ComposerSendPhase` (`flightKind`, `inFlight`,
+`establishing`) instead of recombining flight booleans per call site, and every
+submit entry point (button, Enter, form, preset, dictation) checks the same
+manager claim before the flight gate. Event handlers read flight state from the
+store at call time rather than from a render snapshot. Draft-open blocking is
+owned solely by the manager; `openNewSessionDraft()` keeps its existing rotation
+behavior for a plain claimed submission with no establishing send.
+
 
 ### New-session draft ownership (Phase 1 Lane 3b)
 

@@ -5,6 +5,7 @@ import {
   DropdownMenuItem,
   DropdownMenuTrigger,
 } from '@/components/ui/dropdown-menu';
+import { Button } from '@/components/ui/button';
 import { Tooltip, TooltipContent, TooltipTrigger } from '@/components/ui/tooltip';
 import { Icon } from '@/components/icon/Icon';
 import { useI18n } from '@/lib/i18n';
@@ -19,8 +20,8 @@ type Props = {
 };
 
 /**
- * Project collapse/expand menu (equalizer). Lives on the Recent section header
- * row so the old sidebar action toolbar can stay empty.
+ * Project collapse/expand menu. Lives in the Projects section header overflow
+ * menu so its commands stay grouped with the project tree.
  */
 export function SidebarDisplayModeMenu({
   collapseAllProjects,
@@ -35,10 +36,11 @@ export function SidebarDisplayModeMenu({
       <Tooltip>
         <TooltipTrigger asChild>
           <DropdownMenuTrigger asChild>
-            <button
-              type="button"
+            <Button
+              variant="ghost"
+              size="xs"
               className={cn(
-                'inline-flex h-6 w-6 items-center justify-center rounded-md text-muted-foreground hover:bg-interactive-hover hover:text-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-primary/50',
+                'size-6 p-0 text-muted-foreground',
                 buttonClassName,
               )}
               aria-label={t('sessions.sidebar.header.actions.sessionDisplayMode')}
@@ -46,8 +48,8 @@ export function SidebarDisplayModeMenu({
                 event.stopPropagation();
               }}
             >
-              <Icon name="equalizer-2" className={cn('h-3.5 w-3.5', iconClassName)} />
-            </button>
+              <Icon name="more-2-fill" className={cn('h-3.5 w-3.5', iconClassName)} />
+            </Button>
           </DropdownMenuTrigger>
         </TooltipTrigger>
         <TooltipContent side="bottom" sideOffset={4}>

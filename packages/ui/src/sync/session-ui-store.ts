@@ -73,6 +73,7 @@ import {
 } from "./session-actions"
 import { useInputStore, type InputDraftRuntimeCapture, type DraftOwnershipCommitResult, type SyntheticContextPart } from "./input-store"
 import { newSessionDraftKey, sessionDraftKey, type DraftKey } from "./input-draft-types"
+import { useComposerSendStore } from "./composer-send-manager"
 import { useSessionGoalArmStore } from "@/stores/useSessionGoalArmStore"
 import { setSessionGoal } from "@/lib/sessionGoalActions"
 import { wrapSystemReminder } from "@/lib/systemReminder"
@@ -1342,6 +1343,12 @@ export const useSessionUIStore = create<SessionUIState>()((set, get) => ({
   // openNewSessionDraft
   // ---------------------------------------------------------------------------
   openNewSessionDraft: (options) => {
+    // Establishing create+prompt owns the draft identity. Rotating here would
+    // clear draftSubmitting/draftEstablishing and allow a second createSession.
+    // Draft rotation during a plain claimed submission stays supported.
+    if (useComposerSendStore.getState().shouldBlockNewSessionDraftOpen()) {
+      return
+    }
     const existingDraft = get().newSessionDraft
     let projectsState = useProjectsStore.getState()
     const projects = projectsState.projects

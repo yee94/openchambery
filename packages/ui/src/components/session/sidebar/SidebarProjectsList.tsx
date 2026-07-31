@@ -98,6 +98,13 @@ export function SidebarProjectsList(props: Props): React.ReactNode {
   const groupSensors = useSensors(
     useSensor(PointerSensor, { activationConstraint: { distance: 8 } }),
   );
+  const projectsHeader = !props.hasSessionSearchQuery ? (
+    <SidebarSectionHeader
+      title={t('sessions.sidebar.projectsTitle')}
+      isFirst={!props.hasLeadingSection}
+      accessory={props.headerAccessory}
+    />
+  ) : null;
 
   // Threaded into SessionGroupSection so the archived-bucket virtualizer
   // can resolve the scrolling ancestor synchronously (no getComputedStyle
@@ -147,7 +154,7 @@ export function SidebarProjectsList(props: Props): React.ReactNode {
   }
 
   if (props.projectSections.length === 0) {
-    return <ScrollableOverlay useScrollShadow scrollShadowSize={96} outerClassName="flex-1 min-h-0" className={cn('space-y-1 px-3 pb-1', props.mobileVariant ? '' : '')}>{props.topContent}{props.emptyState}</ScrollableOverlay>;
+    return <ScrollableOverlay useScrollShadow scrollShadowSize={96} outerClassName="flex-1 min-h-0" className={cn('space-y-1 px-3 pb-1', props.mobileVariant ? '' : '')}>{props.topContent}{projectsHeader}{props.emptyState}</ScrollableOverlay>;
   }
 
   if (props.sectionsForRender.length === 0) {
@@ -199,13 +206,7 @@ export function SidebarProjectsList(props: Props): React.ReactNode {
           {/* Codex-style section label above the project tree.
               Per-project loading lives on the folder icon + body placeholder;
               do not reintroduce a global "syncing sessions" accessory here. */}
-          {!props.hasSessionSearchQuery ? (
-            <SidebarSectionHeader
-              title={t('sessions.sidebar.projectsTitle')}
-              isFirst={!props.hasLeadingSection}
-              accessory={props.headerAccessory}
-            />
-          ) : null}
+          {projectsHeader}
           <DndContext
             sensors={projectSensors}
             collisionDetection={closestCenter}

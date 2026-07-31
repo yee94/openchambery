@@ -53,6 +53,16 @@ git push origin "v$VERSION"
 
 `release.yml` 在 `v*` tag push 后创建 Draft Release、构建桌面端和移动端、上传产物，再将 Draft Release 发布为正式 Release。Android 流程会生成签名 APK/AAB 并上传到对应 GitHub Release，iOS 流程会上传 IPA 到 TestFlight、等待 Apple 处理完成、关联外测群组并自动提交 Beta App Review。
 
+### Beta / prerelease
+
+带 semver 预发布后缀的版本（如 `1.16.94-beta.2`）会以 GitHub **prerelease** 发布：
+
+- 不会成为 `/releases/latest`，因此桌面 EdgeOne `/desktop/latest*.yml` 与 Android 最新 APK 仍指向最近的正式版。
+- 不会改写 `deploy/update-service/release-manifest.json`，JSON 更新检查 API 也不命中 beta。
+- 仍跳过 iOS/TestFlight（Apple marketing version 不能含 `-beta`）。
+
+手动安装 beta 包不受影响；只有稳定客户端的自动更新通道被隔离。
+
 ### iOS 外测自动发布
 
 在 GitHub 仓库的 **Settings → Secrets and variables → Actions → Variables** 设置：

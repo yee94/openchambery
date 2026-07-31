@@ -14,6 +14,7 @@ import { useGlobalSessionStatusStore } from '@/sync/global-session-status';
 import { useDirectoryStore } from '@/stores/useDirectoryStore';
 import { useProjectsStore } from '@/stores/useProjectsStore';
 import { useUIStore } from '@/stores/useUIStore';
+import { sessionEvents } from '@/lib/sessionEvents';
 import { getDeferredSafeStorage } from '@/stores/utils/safeStorage';
 import { useGitRepoStatusMap } from '@/stores/useGitStore';
 import { isVSCodeRuntime } from '@/lib/desktop';
@@ -2485,11 +2486,23 @@ export const SessionSidebar: React.FC<SessionSidebarProps> = ({
     ],
   );
 
-  const displayModeMenu = !hideDirectoryControls ? (
-    <SidebarDisplayModeMenu
-      collapseAllProjects={collapseAllProjects}
-      expandAllProjects={expandAllProjects}
-    />
+  const projectHeaderActions = !hideDirectoryControls ? (
+    <div className="flex items-center gap-1">
+      <SidebarDisplayModeMenu
+        collapseAllProjects={collapseAllProjects}
+        expandAllProjects={expandAllProjects}
+      />
+      <Button
+        variant="ghost"
+        size="xs"
+        className="size-6 p-0 text-muted-foreground"
+        aria-label={t('sessions.sidebar.header.actions.addProject')}
+        title={t('sessions.sidebar.header.actions.addProject')}
+        onClick={sessionEvents.requestDirectoryDialog}
+      >
+        <Icon name="add" className="size-4" />
+      </Button>
+    </div>
   ) : null;
   // Desktop brand+search sit above the scroll region so the logo never scrolls.
   // Mobile still keeps the mark inside the scrollable leading content.
@@ -2555,7 +2568,6 @@ export const SessionSidebar: React.FC<SessionSidebarProps> = ({
             currentSessionId={currentSessionId}
             editingId={editingId}
             openSidebarMenuKey={openSidebarMenuKey}
-            headerAccessory={displayModeMenu}
             onVisibleSessionIdsChange={
               handleVisiblePinnedShortcutSessionIdsChange
             }
@@ -2615,7 +2627,7 @@ export const SessionSidebar: React.FC<SessionSidebarProps> = ({
       <SidebarProjectsList
         topContent={topContent}
         hasLeadingSection={topContent !== null && pinnedItems.length > 0}
-        headerAccessory={pinnedItems.length === 0 ? displayModeMenu : null}
+        headerAccessory={projectHeaderActions}
         sectionsForRender={sectionsForSidebarRender}
         projectSections={projectSections}
         activeProjectId={activeProjectId}

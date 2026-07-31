@@ -143,6 +143,15 @@ import {
     shouldConsumeRootAttachmentsOnSubmit,
 } from './chat-input-recovery';
 import { shouldOptimisticPrimarySend } from './optimisticPrimarySend';
+import {
+    composerSendPhase,
+    selectComposerFlightKind,
+    selectEstablishingPendingItems,
+    selectIsEstablishingDraft,
+    useComposerSendStore,
+    type ComposerSendPhase,
+} from '@/sync/composer-send-manager';
+import { drainEstablishingFollowUps } from '@/sync/composer-send-drain';
 import { runQueueMessageFireAndForget } from './queueMessageFireAndForget';
 import { admitServerQueueMessageAndConsumeResources, assistantQueueAdmissionAvailable, attachedFilesToQueueCandidates, beginQueueAdmissionOptimisticClear, createServerQueueAdmissionCapture, createServerQueueAdmissionIdentity, isCompleteQueueSendConfig, isQueueAdmissionRuntimeCurrent } from './queueAdmission';
 import { shouldShowPermissionAutoAcceptControl, togglePermissionAutoAccept } from './permissionAutoAccept';
@@ -730,8 +739,8 @@ type ComposerActionButtonsProps = {
     newSessionDraftOpen: boolean;
     draftSubmitting?: boolean;
     submissionBlocked: boolean;
-    submissionInFlight?: boolean;
-    submissionFlightKind?: 'send' | 'queue' | null;
+    /** Single composer send phase from composer-send-manager. */
+    sendPhase: ComposerSendPhase;
     queueFrozen: boolean;
     queueFallbackAvailable: boolean;
     onPrimaryAction: () => void;
@@ -751,8 +760,7 @@ const ComposerActionButtons = React.memo(function ComposerActionButtons(props: C
         newSessionDraftOpen,
         draftSubmitting,
         submissionBlocked,
-        submissionInFlight,
-        submissionFlightKind,
+        sendPhase,
         queueFrozen,
         queueFallbackAvailable,
         onPrimaryAction,
@@ -764,7 +772,7 @@ const ComposerActionButtons = React.memo(function ComposerActionButtons(props: C
         hasSessionTarget: Boolean(currentSessionId || newSessionDraftOpen),
         draftSubmitting: Boolean(draftSubmitting),
         submissionBlocked,
-        submissionInFlight: Boolean(submissionInFlight),
+        sendPhase,
         queueFrozen,
         queueFallbackAvailable,
     });
@@ -785,9 +793,9 @@ const ComposerActionButtons = React.memo(function ComposerActionButtons(props: C
         }
         : {};
 
-    const inFlight = Boolean(submissionInFlight);
-    const queueInFlight = inFlight && submissionFlightKind === 'queue';
-    const sendInFlight = inFlight && submissionFlightKind !== 'queue';
+    const inFlight = sendPhase.inFlight;
+    const queueInFlight = inFlight && sendPhase.flightKind === 'queue';
+    const sendInFlight = inFlight && sendPhase.flightKind !== 'queue';
     const primaryAria = queueInFlight
         ? t('chat.chatInput.actions.queuingMessageAria')
         : sendInFlight
@@ -885,8 +893,7 @@ const ComposerActionButtons = React.memo(function ComposerActionButtons(props: C
     && prev.newSessionDraftOpen === next.newSessionDraftOpen
     &&     prev.draftSubmitting === next.draftSubmitting
     && prev.submissionBlocked === next.submissionBlocked
-    && prev.submissionInFlight === next.submissionInFlight
-    && prev.submissionFlightKind === next.submissionFlightKind
+    && prev.sendPhase === next.sendPhase
     && prev.queueFrozen === next.queueFrozen
     && prev.queueFallbackAvailable === next.queueFallbackAvailable
     && prev.onPrimaryAction === next.onPrimaryAction
@@ -2200,28 +2207,89 @@ const ChatInputRuntime: React.FC<ChatInputProps> = ({ onOpenSettings, scrollToBo
         presetText?: string;
     };
     const handleSubmitRef = React.useRef<(options?: SubmitOptions) => Promise<void>>(async () => {});
-    // Component-level submit flight: one direct-send or queue admission at a time.
-    // Held from first await (selection.flush) through sendPromise settle (direct)
-    // or admission settle (queue). Re-entry via button/form/Enter/preset/dictation
-    // is ignored while held.
-    const [submissionInFlight, setSubmissionInFlight] = React.useState(false);
-    const [submissionFlightKind, setSubmissionFlightKind] = React.useState<'send' | 'queue' | null>(null);
-    const submissionInFlightRef = React.useRef(false);
-    const submissionFlightKindRef = React.useRef<'send' | 'queue' | null>(null);
-    const beginSubmissionFlight = (kind: 'send' | 'queue' = 'send'): boolean => {
-        if (submissionInFlightRef.current) return false;
-        submissionInFlightRef.current = true;
-        submissionFlightKindRef.current = kind;
-        setSubmissionInFlight(true);
-        setSubmissionFlightKind(kind);
+    // Submit flight lives in composer-send-manager, scoped by surface so primary
+    // and secondary composers cannot block each other. Establishing follow-ups
+    // may enqueue while the primary create+prompt flight is still held.
+    const composerSendScopeKey = surface.surfaceID;
+    const establishingDraftID = newSessionDraft?.draftID ?? null;
+    const submissionFlightKind = useComposerSendStore(
+        React.useMemo(() => selectComposerFlightKind(composerSendScopeKey), [composerSendScopeKey]),
+    );
+    const isComposerEstablishing = useComposerSendStore(
+        React.useMemo(() => selectIsEstablishingDraft(establishingDraftID), [establishingDraftID]),
+    );
+    const sendPhase = React.useMemo(
+        () => composerSendPhase(submissionFlightKind, isComposerEstablishing),
+        [submissionFlightKind, isComposerEstablishing],
+    );
+    const beginSubmissionFlight = (kind: 'send' | 'queue' = 'send'): boolean => (
+        useComposerSendStore.getState().beginFlight(composerSendScopeKey, kind)
+    );
+    const endSubmissionFlight = () => {
+        useComposerSendStore.getState().endFlight(composerSendScopeKey);
+    };
+    // Authoritative at call time: event handlers must not read a render snapshot.
+    const isSubmissionInFlight = (): boolean => (
+        useComposerSendStore.getState().isInFlight(composerSendScopeKey)
+    );
+    const establishingPendingItems = useComposerSendStore(
+        React.useMemo(() => selectEstablishingPendingItems(establishingDraftID), [establishingDraftID]),
+    );
+    // New-session establishing: later sends become client pending-admission chips
+    // (same "Queuing…" UI) and drain into the real session queue after materialize.
+    const enqueueEstablishingFollowUpFromComposer = useEvent(async (): Promise<boolean> => {
+        const draftID = useSessionUIStore.getState().newSessionDraft.draftID;
+        if (!draftID || !useComposerSendStore.getState().isEstablishing(draftID)) return false;
+        const inputSnapshot = getCurrentInputSnapshot();
+        if (!inputSnapshot.hasContent) return false;
+        const serialization = serializeComposerDocument(inputSnapshot.document, 'queue-canonical');
+        if (!serialization.ok) {
+            toast.error(t('chat.chatInput.toast.messageSendFailed'));
+            return false;
+        }
+        await surface.selection.flush();
+        if (!useComposerSendStore.getState().isEstablishing(draftID)) return false;
+        const configState = useConfigStore.getState();
+        const sendConfig = capturePrimaryComposerSendConfig(configState);
+        if (!sendConfig?.providerID || !sendConfig?.modelID) {
+            toast.error(t('chat.chatInput.toast.messageSendFailed'));
+            return false;
+        }
+        const attachments = sanitizeAttachmentsForSend(sendableAttachedFiles);
+        const staged = useComposerSendStore.getState().enqueueEstablishingFollowUp({
+            draftID,
+            content: serialization.text,
+            sendConfig: {
+                providerID: sendConfig.providerID,
+                modelID: sendConfig.modelID,
+                ...(sendConfig.agent ? { agent: sendConfig.agent } : {}),
+                ...(sendConfig.variant ? { variant: sendConfig.variant } : {}),
+            },
+            attachments,
+            composerDocument: inputSnapshot.document,
+        });
+        if (!staged) return false;
+        replacePlainDocument('');
+        setHistoryIndex(-1);
+        setExpandedInput(false);
+        if (attachments.length > 0) {
+            void surfaceResources.clearAttachments();
+        }
+        return true;
+    });
+    /**
+     * Single entry for every submit path (button, Enter, form, preset) while a
+     * new-session create owns the draft. Returns true when the manager took the
+     * submit, so callers stop instead of starting a second createWithPrompt.
+     */
+    const claimedByEstablishingFollowUp = (): boolean => {
+        if (currentSessionId) return false;
+        const draftID = useSessionUIStore.getState().newSessionDraft.draftID;
+        if (!useComposerSendStore.getState().isEstablishing(draftID)) return false;
+        void enqueueEstablishingFollowUpFromComposer();
         return true;
     };
-    const endSubmissionFlight = () => {
-        submissionInFlightRef.current = false;
-        submissionFlightKindRef.current = null;
-        setSubmissionInFlight(false);
-        setSubmissionFlightKind(null);
-    };
+
     // Add message to queue instead of sending.
     // Server + legacy: after inputSnapshot/flight, stage a stable admission identity
     // and clear the composer synchronously before the first await (selection.flush).
@@ -2229,7 +2297,7 @@ const ChatInputRuntime: React.FC<ChatInputProps> = ({ onOpenSettings, scrollToBo
     // submission capture; committed admits keep the empty composer.
     const handleQueueMessage = useEvent(async () => {
         if (!surface.active) return;
-        if (submissionInFlightRef.current) return;
+        if (isSubmissionInFlight()) return;
         const inputSnapshot = getCurrentInputSnapshot();
         const initialSerialization = serializeComposerDocument(inputSnapshot.document);
         if (!initialSerialization.ok) { toast.error(t('chat.chatInput.toast.messageSendFailed')); return; }
@@ -2635,8 +2703,11 @@ const ChatInputRuntime: React.FC<ChatInputProps> = ({ onOpenSettings, scrollToBo
     const handleSubmit = async (options?: SubmitOptions) => {
         if (!surface.active) return;
         if (submissionBlocked) return;
+        // Establishing owns the draft: stage a follow-up chip before the flight
+        // gate below, which the in-progress create+prompt still holds.
+        if (claimedByEstablishingFollowUp()) return;
         // Component-level flight: ignore every entry while a submit is in progress.
-        if (submissionInFlightRef.current) return;
+        if (isSubmissionInFlight()) return;
         const queuedOnly = options?.queuedOnly ?? false;
         const queuedMessageId = options?.queuedMessageId;
         const delivery = options?.delivery === 'steer' && sessionIsRunning ? 'steer' : undefined;
@@ -2714,14 +2785,78 @@ const ChatInputRuntime: React.FC<ChatInputProps> = ({ onOpenSettings, scrollToBo
             return;
         }
 
-        // Prevent double-submit while a draft session is being materialized.
-        // The store's materializeOpenDraftSession also guards against concurrent
-        // calls, but this early return avoids the full async preamble and
-        // prevents the UI from looking like it accepted a second send.
+        // Draft materialization already claimed elsewhere (legacy claim path with
+        // no manager establishing): refuse instead of opening a second session.
         if (!currentSessionId && resolvedDraftBusy) return;
 
         // Claim flight before the first await so button/keyboard/preset re-entry is blocked.
         if (!beginSubmissionFlight()) return;
+        // New-session create: open establishing before any await so later Enter/Send
+        // can stage follow-up chips instead of being blocked by this flight.
+        const establishingDraftIDAtSubmit = !currentSessionId && newSessionDraftOpen && !queuedOnly && !resourcePolicy
+            ? (useSessionUIStore.getState().newSessionDraft.draftID ?? null)
+            : null;
+        const draftMessageID = establishingDraftIDAtSubmit
+            ? ascendingId('msg')
+            : undefined;
+        if (establishingDraftIDAtSubmit && draftMessageID) {
+            if (!useComposerSendStore.getState().beginEstablishing({
+                draftID: establishingDraftIDAtSubmit,
+                primaryMessageID: draftMessageID,
+            })) {
+                endSubmissionFlight();
+                return;
+            }
+        }
+        // Establishing spans the UI prelude (paint) and the manager claim. Both
+        // are released together so a dropped create cannot strand either half.
+        const abortEstablishing = (): void => {
+            clearDraftEstablishingPaint();
+            if (establishingDraftIDAtSubmit) {
+                useComposerSendStore.getState().clearEstablishing(establishingDraftIDAtSubmit);
+            }
+        };
+        // Land staged follow-ups into the materialized session queue, or clear
+        // establishing when create never produced a session id.
+        const drainOrClearEstablishingFollowUps = (draftID: string): void => {
+            const sessionId = useSessionUIStore.getState().currentSessionId;
+            const directory = (
+                (sessionId ? useSessionUIStore.getState().getDirectoryForSession(sessionId) : null)
+                ?? currentDirectory
+                ?? ''
+            );
+            if (!sessionId || !directory) {
+                useComposerSendStore.getState().clearEstablishing(draftID);
+                return;
+            }
+            void drainEstablishingFollowUps({
+                draftID,
+                sessionID: sessionId,
+                directory,
+                transportIdentity: getRuntimeTransportIdentity(),
+                runtimeGeneration: getRuntimeGeneration(),
+                admitServer: serverQueue.mode === 'server'
+                    ? async (item) => serverQueue.actions.admit({
+                        requestID: item.requestID,
+                        scope: { directory, sessionID: sessionId },
+                        item: {
+                            queueItemID: item.queueItemID,
+                            operationID: item.operationID,
+                            messageID: item.messageID,
+                            content: item.content,
+                            createdAt: item.createdAt,
+                            sendConfig: item.sendConfig,
+                            attachmentIssues: [],
+                            ...(item.composerDocument ? { composerDocument: item.composerDocument } : {}),
+                            ...(item.composerMentions ? { composerMentions: item.composerMentions } : {}),
+                        },
+                        attachments: item.attachments.length > 0
+                            ? attachedFilesToQueueCandidates(item.attachments)
+                            : undefined,
+                    })
+                    : undefined,
+            });
+        };
         // Direct messages leave the Composer before selection/configuration work
         // starts. The captured submission restores this exact draft if dispatch
         // cannot proceed. Local commands retain their existing resource policy.
@@ -2876,9 +3011,7 @@ const ChatInputRuntime: React.FC<ChatInputProps> = ({ onOpenSettings, scrollToBo
         }
 
         // Pin first-submit session/directory so backend cannot re-route after a mid-flight switch.
-        const draftMessageID = !currentSessionId && newSessionDraftOpen && !queuedOnly && !resourcePolicy
-            ? ascendingId('msg')
-            : undefined;
+        // draftMessageID / establishingDraftIDAtSubmit were claimed before the first await.
         const sendMessageOptions = {
             ...(delivery ? { delivery } : {}),
             commitStagedMessageEdit: !queuedOnly,
@@ -3043,9 +3176,9 @@ const ChatInputRuntime: React.FC<ChatInputProps> = ({ onOpenSettings, scrollToBo
         // the composer. Otherwise the draft dialog stays visible with an empty
         // input while response-style / snippet prep (and later createWithPrompt)
         // still run — claimDraftSubmission is too late for that gap.
-        if (!currentSessionId && newSessionDraftOpen && !queuedOnly && !resourcePolicy) {
+        if (establishingDraftIDAtSubmit && draftMessageID) {
             const painted = await beginDraftEstablishingPaint({
-                messageID: draftMessageID!,
+                messageID: draftMessageID,
                 providerID: providerIdToSend,
                 modelID: modelIdToSend,
                 agent: agentNameToSend,
@@ -3057,11 +3190,16 @@ const ChatInputRuntime: React.FC<ChatInputProps> = ({ onOpenSettings, scrollToBo
             if (!painted) {
                 return;
             }
+            // Establishing was claimed before the first await; abort if the draft rotated.
+            if (!useComposerSendStore.getState().isEstablishing(establishingDraftIDAtSubmit)) {
+                abortEstablishing();
+                return;
+            }
         }
 
         const restoreFailedSubmission = async (): Promise<boolean> => {
             // Drop the establishing prelude if claim never took over (or send aborted).
-            clearDraftEstablishingPaint();
+            abortEstablishing();
             if (currentQueueScope && queuedMessagesToSend.length > 0) {
                 useMessageQueueStore.setState((state) => {
                     const scopeKey = queueScopeKey(currentQueueScope);
@@ -3301,7 +3439,7 @@ const ChatInputRuntime: React.FC<ChatInputProps> = ({ onOpenSettings, scrollToBo
             }
             else if (commandName === 'goal' && (currentSessionId || newSessionDraftOpen)) {
                 // /goal only arms the next send — drop the establishing prelude.
-                clearDraftEstablishingPaint();
+                abortEstablishing();
                 useSessionGoalArmStore.getState().setArmed(true);
                 return;
             }
@@ -3477,6 +3615,14 @@ const ChatInputRuntime: React.FC<ChatInputProps> = ({ onOpenSettings, scrollToBo
             endSubmissionFlight();
         });
 
+        if (establishingDraftIDAtSubmit) {
+            void sendPromise.then(() => {
+                drainOrClearEstablishingFollowUps(establishingDraftIDAtSubmit);
+            }).catch(() => {
+                useComposerSendStore.getState().clearEstablishing(establishingDraftIDAtSubmit);
+            });
+        }
+
         if (typeof window === 'undefined') {
             scrollToBottom?.();
         } else {
@@ -3555,6 +3701,12 @@ const ChatInputRuntime: React.FC<ChatInputProps> = ({ onOpenSettings, scrollToBo
                     recoverSubmission(submissionCapture);
                 }
                 endSubmissionFlight();
+                // Early-exit / awaited magic-prompt paths do not use sendPromise.then
+                // drain. If create already selected a session, land follow-ups there;
+                // otherwise drop establishing so Mod+N is not stuck.
+                if (establishingDraftIDAtSubmit) {
+                    drainOrClearEstablishingFollowUps(establishingDraftIDAtSubmit);
+                }
             }
         }
     };
@@ -3564,7 +3716,8 @@ const ChatInputRuntime: React.FC<ChatInputProps> = ({ onOpenSettings, scrollToBo
 
     // Primary action for send/queue button — respects selected follow-up behavior
     const handlePrimaryAction = React.useCallback(() => {
-        if (submissionInFlightRef.current) return;
+        if (claimedByEstablishingFollowUp()) return;
+        if (isSubmissionInFlight()) return;
         const inputSnapshot = getCurrentInputSnapshot();
         // Only authoritative busy/retry (or an active auto-review) may queue/steer.
         // `unknown` must not count as running — assistant surfaces used to emit it
@@ -3582,11 +3735,11 @@ const ChatInputRuntime: React.FC<ChatInputProps> = ({ onOpenSettings, scrollToBo
         } else {
             void handleSubmitRef.current();
         }
-    }, [inputMode, getCurrentInputSnapshot, currentSessionId, sessionIsRunning, autoReviewRunning, followUpBehavior, queueMessageFromEvent, serverQueue.mode, surface.deliveryTarget?.kind]);
+    }, [inputMode, getCurrentInputSnapshot, currentSessionId, sessionIsRunning, autoReviewRunning, followUpBehavior, queueMessageFromEvent, serverQueue.mode, surface.deliveryTarget?.kind, enqueueEstablishingFollowUpFromComposer]);
 
     // Draft welcome presets: submit immediately.
     const submitPresetPrompt = React.useCallback((text: string) => {
-        if (submissionInFlightRef.current) return;
+        if (isSubmissionInFlight()) return;
         // The text goes straight into the submit (see SubmitOptions.presetText)
         // instead of through the composer input — the collapsed mobile pill has
         // no mounted textarea to stage it in.
@@ -3608,7 +3761,7 @@ const ChatInputRuntime: React.FC<ChatInputProps> = ({ onOpenSettings, scrollToBo
     }, [applyProgrammaticEdit]);
 
     const handleDictationInsertAndSend = React.useCallback((text: string) => {
-        if (submissionInFlightRef.current) return;
+        if (isSubmissionInFlight()) return;
         // Same as preset chips: the composed text goes into the submit as an
         // explicit override instead of being staged in the textarea, which may
         // not be mounted (collapsed mobile pill).
@@ -3980,8 +4133,11 @@ const ChatInputRuntime: React.FC<ChatInputProps> = ({ onOpenSettings, scrollToBo
         // a send button; plain Enter should submit, Shift+Enter for newline.
         if (e.key === 'Enter' && !e.shiftKey) {
             e.preventDefault();
+            // Establishing follow-ups bypass primary create+prompt flight so Enter
+            // still stages "Queuing…" chips the same way the send button does.
+            if (claimedByEstablishingFollowUp()) return;
             // Component-level flight: ignore keyboard re-entry while submit is active.
-            if (submissionInFlightRef.current) return;
+            if (isSubmissionInFlight()) return;
 
             const isCtrlEnter = e.ctrlKey || e.metaKey;
 
@@ -6129,8 +6285,7 @@ const ChatInputRuntime: React.FC<ChatInputProps> = ({ onOpenSettings, scrollToBo
                             newSessionDraftOpen={newSessionDraftOpen}
                             draftSubmitting={resolvedDraftBusy}
                             submissionBlocked={submissionBlocked}
-                            submissionInFlight={submissionInFlight}
-                            submissionFlightKind={submissionFlightKind}
+                            sendPhase={sendPhase}
                             queueFrozen={queueFrozen}
                             // Abort-capable sessions can still steer when queue ownership is frozen.
                             queueFallbackAvailable={canAbort || sessionIsRunning}
@@ -6190,8 +6345,7 @@ const ChatInputRuntime: React.FC<ChatInputProps> = ({ onOpenSettings, scrollToBo
                         newSessionDraftOpen={newSessionDraftOpen}
                         draftSubmitting={resolvedDraftBusy}
                         submissionBlocked={submissionBlocked}
-                        submissionInFlight={submissionInFlight}
-                            submissionFlightKind={submissionFlightKind}
+                        sendPhase={sendPhase}
                         queueFrozen={queueFrozen}
                         queueFallbackAvailable={canAbort || sessionIsRunning}
                         onPrimaryAction={handlePrimaryAction}
@@ -6266,8 +6420,7 @@ const ChatInputRuntime: React.FC<ChatInputProps> = ({ onOpenSettings, scrollToBo
                     newSessionDraftOpen={newSessionDraftOpen}
                     draftSubmitting={resolvedDraftBusy}
                     submissionBlocked={submissionBlocked}
-                    submissionInFlight={submissionInFlight}
-                            submissionFlightKind={submissionFlightKind}
+                    sendPhase={sendPhase}
                     queueFrozen={queueFrozen}
                     queueFallbackAvailable={canAbort || sessionIsRunning}
                     onPrimaryAction={handlePrimaryAction}
@@ -6323,6 +6476,18 @@ const ChatInputRuntime: React.FC<ChatInputProps> = ({ onOpenSettings, scrollToBo
                 key: draftKey,
                 expectedRevision: () => surfaceResources.getDraft(draftKey)?.revision ?? 'absent',
             } : null}
+            clientPendingItems={establishingPendingItems}
+            onRemoveClientPending={(requestID) => {
+                const removed = useComposerSendStore.getState().removeEstablishingFollowUp(requestID);
+                if (!removed) return;
+                // Best-effort restore of discarded establishing follow-up text.
+                if (removed.content) {
+                    replacePlainDocument(removed.content);
+                }
+                if (removed.attachments.length > 0) {
+                    void surfaceResources.restoreAttachments(removed.attachments);
+                }
+            }}
         />
     );
 
@@ -6707,9 +6872,11 @@ const ChatInputRuntime: React.FC<ChatInputProps> = ({ onOpenSettings, scrollToBo
                 <ChatPromptComposer
                     value={message}
                     attachments={[]}
-                    disabled={(!currentSessionId && !newSessionDraftOpen) || resolvedDraftBusy}
-                    // canAbort = session busy (stop UI); submissionInFlight blocks Enter re-entry.
-                    pending={canAbort || submissionInFlight}
+                    // Establishing keeps the textarea editable so follow-ups can stage chips.
+                    disabled={(!currentSessionId && !newSessionDraftOpen) || (resolvedDraftBusy && !sendPhase.establishing)}
+                    // canAbort = session busy (stop UI); an active flight blocks Enter re-entry.
+                    // Establishing follow-ups intentionally ignore this pending gate in handlers.
+                    pending={canAbort || (sendPhase.inFlight && !sendPhase.establishing)}
                     isMobile={isMobile}
                     onSubmit={handlePrimaryAction}
                     data-mobile-composer-surface={isMobile ? 'true' : undefined}
