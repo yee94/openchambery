@@ -1263,17 +1263,28 @@ const ChatContainerContent: React.FC<ChatContainerContentProps> = ({
         sessionIdentityEnsureRetry,
     ]);
 
-	if (forkTransition) {
+	// Fork loading is session-scoped: other chats stay interactive while this runs.
+	// Before the forked id exists, pin to the source; afterwards follow the target only.
+	const forkTransitionForSession =
+		forkTransition &&
+		currentSessionId &&
+		(forkTransition.targetSessionId
+			? currentSessionId === forkTransition.targetSessionId
+			: currentSessionId === forkTransition.sourceSessionId)
+			? forkTransition
+			: null;
+
+	if (forkTransitionForSession) {
 		const stageKey =
-			forkTransition.stage === 'preparing'
+			forkTransitionForSession.stage === 'preparing'
 				? 'chat.forkTransition.preparing'
-				: forkTransition.stage === 'copying'
+				: forkTransitionForSession.stage === 'copying'
 					? 'chat.forkTransition.copying'
-					: forkTransition.stage === 'opening'
+					: forkTransitionForSession.stage === 'opening'
 						? 'chat.forkTransition.opening'
 						: 'chat.forkTransition.loading';
 		const stageOrder = ['preparing', 'copying', 'opening', 'loading'] as const;
-		const stageIndex = Math.max(1, stageOrder.indexOf(forkTransition.stage) + 1);
+		const stageIndex = Math.max(1, stageOrder.indexOf(forkTransitionForSession.stage) + 1);
 		const progressLabel = t('chat.forkTransition.progress', {
 			current: stageIndex,
 			total: stageOrder.length,

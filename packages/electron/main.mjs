@@ -16,6 +16,7 @@ import { resolveManagedOpenCodeCwd } from './opencode-cwd.mjs';
 import { sanitizeRuntimeRequestHeaders } from './runtime-request-headers.mjs';
 import { assertUpdaterCapability } from './updater-capability.mjs';
 import { checkForDesktopUpdate } from './updater-check.mjs';
+import { createIdleUpdateDownloadScheduler } from './updater-idle-download.mjs';
 import { resolveUpdaterFeed } from './updater-feed.mjs';
 import { resolveQuitInterception } from './quit-confirmation.mjs';
 import { isRemoteIpcCommandAllowed } from './ipc-command-gate.mjs';
@@ -3166,6 +3167,94 @@ const compareSemver = (left, right) => {
   return 0;
 };
 
+// Shared in-flight download so idle auto-download and the manual "Download"
+// button await the same promise instead of racing two electron-updater calls.
+let updateDownloadPromise = null;
+let idleUpdateDownloadScheduler = null;
+
+const hasPendingUpdateDownload = () =>
+  Boolean(state.pendingUpdate?.electronUpdate && !state.pendingUpdate.downloaded);
+
+const downloadPendingUpdate = async () => {
+  assertUpdaterCapability({ packaged: app.isPackaged });
+  if (!state.pendingUpdate) {
+    throw new Error('No pending update');
+  }
+  if (state.pendingUpdate.downloaded) {
+    return null;
+  }
+  if (!state.pendingUpdate.electronUpdate) {
+    throw new Error('Electron updater metadata is not available for this build');
+  }
+  if (updateDownloadPromise) {
+    return updateDownloadPromise;
+  }
+
+  updateDownloadPromise = (async () => {
+    setTaskbarProgress(0.01);
+    emitToAllWindows('openchamber:update-progress', mapUpdaterProgressEvent({
+      event: 'Started',
+      data: {
+        contentLength: null,
+      },
+    }));
+    try {
+      await new Promise((resolve, reject) => {
+        let settled = false;
+        const cleanup = () => {
+          autoUpdater.off('update-downloaded', onDownloaded);
+          autoUpdater.off('error', onError);
+        };
+        const finish = (callback, value) => {
+          if (settled) return;
+          settled = true;
+          cleanup();
+          callback(value);
+        };
+        const onDownloaded = () => finish(resolve, null);
+        const onError = (error) => finish(reject, error);
+        autoUpdater.on('update-downloaded', onDownloaded);
+        autoUpdater.on('error', onError);
+        Promise.resolve(autoUpdater.downloadUpdate()).catch((error) => finish(reject, error));
+      });
+      if (state.pendingUpdate) {
+        state.pendingUpdate.downloaded = true;
+      }
+      emitToAllWindows('openchamber:update-progress', mapUpdaterProgressEvent({
+        event: 'Finished',
+        data: {},
+      }));
+      emitToAllWindows('openchamber:update-ready', {
+        version: state.pendingUpdate?.version || null,
+        downloaded: true,
+      });
+      return null;
+    } finally {
+      setTaskbarProgress(-1);
+    }
+  })().finally(() => {
+    updateDownloadPromise = null;
+  });
+
+  return updateDownloadPromise;
+};
+
+const scheduleIdleUpdateDownload = () => {
+  if (!app.isPackaged || !hasPendingUpdateDownload()) return;
+  if (!idleUpdateDownloadScheduler) {
+    // powerMonitor.getSystemIdleState(threshold) is the OS-level API that
+    // answers "has the user been inactive for N seconds?" — idle/locked means
+    // we can pull the update package without contending with interactive work.
+    idleUpdateDownloadScheduler = createIdleUpdateDownloadScheduler({
+      getIdleState: (thresholdSeconds) => powerMonitor.getSystemIdleState(thresholdSeconds),
+      downloadUpdate: downloadPendingUpdate,
+      isPendingDownload: hasPendingUpdateDownload,
+      log,
+    });
+  }
+  idleUpdateDownloadScheduler.schedule();
+};
+
 const setupAutoUpdater = () => {
   if (!app.isPackaged) {
     return;
@@ -4302,6 +4391,13 @@ const handleInvoke = async (browserWindow, command, args = {}) => {
         (typeof updateInfo?.releaseNotes === 'string' && updateInfo.releaseNotes.trim() ? updateInfo.releaseNotes : null) ||
         await parseRelevantChangelogNotes(currentVersion, nextVersion);
       state.pendingUpdate = pendingUpdate;
+      // Check is cheap and can run anytime; the package download waits for an
+      // OS-reported idle/locked window via powerMonitor.getSystemIdleState.
+      if (available && hasPendingUpdateDownload()) {
+        scheduleIdleUpdateDownload();
+      } else {
+        idleUpdateDownloadScheduler?.stop();
+      }
       return {
         available,
         currentVersion,
@@ -4310,53 +4406,16 @@ const handleInvoke = async (browserWindow, command, args = {}) => {
         date:
           (typeof updateInfo?.releaseDate === 'string' && updateInfo.releaseDate) ||
           null,
+        downloaded: Boolean(pendingUpdate?.downloaded),
       };
     }
 
     case 'desktop_download_and_install_update':
-      assertUpdaterCapability({ packaged: app.isPackaged });
-      if (!state.pendingUpdate) {
-        throw new Error('No pending update');
-      }
-      setTaskbarProgress(0.01);
-      emitToAllWindows('openchamber:update-progress', mapUpdaterProgressEvent({
-        event: 'Started',
-        data: {
-          contentLength: null,
-        },
-      }));
-      try {
-        if (!state.pendingUpdate.electronUpdate) {
-          throw new Error('Electron updater metadata is not available for this build');
-        }
-        if (!state.pendingUpdate.downloaded) {
-          await new Promise((resolve, reject) => {
-            let settled = false;
-            const cleanup = () => {
-              autoUpdater.off('update-downloaded', onDownloaded);
-              autoUpdater.off('error', onError);
-            };
-            const finish = (callback, value) => {
-              if (settled) return;
-              settled = true;
-              cleanup();
-              callback(value);
-            };
-            const onDownloaded = () => finish(resolve, null);
-            const onError = (error) => finish(reject, error);
-            autoUpdater.on('update-downloaded', onDownloaded);
-            autoUpdater.on('error', onError);
-            Promise.resolve(autoUpdater.downloadUpdate()).catch((error) => finish(reject, error));
-          });
-        }
-        emitToAllWindows('openchamber:update-progress', mapUpdaterProgressEvent({
-          event: 'Finished',
-          data: {},
-        }));
-        return null;
-      } finally {
-        setTaskbarProgress(-1);
-      }
+      // Manual download: skip the idle gate and pull immediately. Shares the
+      // same in-flight promise as the idle scheduler when one is already going.
+      idleUpdateDownloadScheduler?.stop();
+      await downloadPendingUpdate();
+      return null;
 
     case 'desktop_restart': {
       const updateRestartRequested = args?.applyUpdate === true;

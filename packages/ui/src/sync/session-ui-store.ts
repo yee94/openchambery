@@ -414,6 +414,8 @@ export type ForkTransitionStage = "preparing" | "copying" | "opening" | "loading
 export type ForkTransitionState = {
   operationId: number
   sourceSessionId: string
+  /** Populated once the runtime returns the forked session id. */
+  targetSessionId: string | null
   directory: string
   stage: ForkTransitionStage
 }
@@ -2250,6 +2252,7 @@ export const useSessionUIStore = create<SessionUIState>()((set, get) => ({
         forkTransition: {
           operationId,
           sourceSessionId: sessionId,
+          targetSessionId: null,
           directory,
           stage: "preparing",
         },
@@ -2329,6 +2332,7 @@ export const useSessionUIStore = create<SessionUIState>()((set, get) => ({
         forkTransition: {
           operationId,
           sourceSessionId: sessionId,
+          targetSessionId: null,
           directory,
           stage: "preparing",
         },

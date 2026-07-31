@@ -79,6 +79,7 @@ const OnboardingScreen = lazyWithChunkRecovery(() =>
 );
 
 const DESKTOP_UPDATE_CHECK_INTERVAL_MS = 60 * 60 * 1000;
+const DESKTOP_UPDATE_FOCUS_THROTTLE_MS = 20 * 60 * 1000;
 
 const AboutDialogWrapper: React.FC = () => {
   const isAboutDialogOpen = useUIStore((s) => s.isAboutDialogOpen);
@@ -828,31 +829,56 @@ function App({ apis }: AppProps) {
     startupUpdateCheckStartedRef.current = true;
     let disposed = false;
     let timer: number | null = null;
+    let unlistenDesktopUpdates: null | (() => void | Promise<void>) = null;
 
-    const schedule = (delayMs: number) => {
+    // Idle auto-download runs in the Electron main process; mirror its progress
+    // so the update CTA flips to "Restart to Update" without a manual Download.
+    void useUpdateStore.getState().subscribeDesktopUpdateEvents().then((unlisten) => {
+      if (disposed) {
+        void unlisten();
+        return;
+      }
+      unlistenDesktopUpdates = unlisten;
+    });
+
+    const runCheck = () => {
+      const updateStore = useUpdateStore.getState();
+      if (updateStore.checking) return;
+      void updateStore.checkForUpdates();
+    };
+
+    // Hourly baseline probe while the window is visible.
+    const scheduleHourly = (delayMs: number) => {
       timer = window.setTimeout(() => {
         if (disposed) return;
-
-        const updateStore = useUpdateStore.getState();
-        if (document.visibilityState !== 'visible' || updateStore.checking) {
-          schedule(DESKTOP_UPDATE_CHECK_INTERVAL_MS);
-          return;
+        if (document.visibilityState === 'visible') {
+          runCheck();
         }
-
-        void updateStore.checkForUpdates().finally(() => {
-          if (!disposed) {
-            schedule(DESKTOP_UPDATE_CHECK_INTERVAL_MS);
-          }
-        });
+        scheduleHourly(DESKTOP_UPDATE_CHECK_INTERVAL_MS);
       }, delayMs);
     };
 
-    schedule(0);
+    // Refocus probe, throttled to once per 20 minutes via lastChecked.
+    const handleFocus = () => {
+      if (disposed || document.visibilityState !== 'visible') return;
+      const lastChecked = useUpdateStore.getState().lastChecked;
+      if (lastChecked != null && Date.now() - lastChecked < DESKTOP_UPDATE_FOCUS_THROTTLE_MS) {
+        return;
+      }
+      runCheck();
+    };
+
+    scheduleHourly(0);
+    window.addEventListener('focus', handleFocus);
 
     return () => {
       disposed = true;
       if (timer !== null) {
         window.clearTimeout(timer);
+      }
+      window.removeEventListener('focus', handleFocus);
+      if (unlistenDesktopUpdates) {
+        void unlistenDesktopUpdates();
       }
     };
   }, [isInitialized]);

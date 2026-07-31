@@ -191,15 +191,21 @@ mock.module("@/stores/useConfigStore", () => ({
 }))
 
 // Mock useSessionUIStore
+let uiCurrentSessionId: string | null = "session-a"
+const setCurrentSessionCalls: Array<{ sessionId: string; directory?: string | null }> = []
 mock.module("./session-ui-store", () => ({
   useSessionUIStore: {
     getState: () => ({
+      currentSessionId: uiCurrentSessionId,
       getDirectoryForSession: (sessionId: string) => {
         if (sessionId === "session-a") return "/test/project"
         if (sessionId === "session-b") return "/other/project"
         return null
       },
-      setCurrentSession: () => undefined,
+      setCurrentSession: (sessionId: string, directory?: string | null) => {
+        setCurrentSessionCalls.push({ sessionId, directory })
+        uiCurrentSessionId = sessionId
+      },
       beginQueueAbortBlock: (scope: Record<string, unknown>) => {
         const token = `abort-${++abortBlockToken}`
         abortBlockEvents.push({ event: "begin", scope, token })
@@ -804,6 +810,8 @@ describe("forkSession input restoration", () => {
   beforeEach(() => {
     replyCalls.length = 0
     clearAttachedFilesCalls = 0
+    setCurrentSessionCalls.length = 0
+    uiCurrentSessionId = "session-a"
     sessionMessagesResult = { data: [] }
     sessionGetResult = null
     globalActiveSessions = []
@@ -942,6 +950,36 @@ describe("forkSession input restoration", () => {
     expect(sessionStore.getState().session.some((session) => session.id === "session-a")).toBe(true)
     expect(sessionStore.getState().session.some((session) => session.id === "forked-session")).toBe(true)
     expect(replyCalls.find((call) => call.method === "session.fork")?.params.sessionID).toBe("session-a")
+  })
+
+  test("does not yank selection or restore composer when the user left the source session", async () => {
+    const sourceSession = { id: "session-a", title: "Source", time: { created: 1 } } as Session
+    const selectedMessage = { id: "message-a", sessionID: "session-a", role: "user", time: { created: 1 } } as Message
+    uiCurrentSessionId = "session-b"
+    const sessionStore = createStore({}, {
+      session: [sourceSession],
+      message: { "session-a": [selectedMessage] },
+      session_status: { "session-a": { type: "idle" } },
+      part: {
+        "message-a": [
+          { id: "text-a", messageID: "message-a", type: "text", text: "fork message" },
+          { id: "file-a", messageID: "message-a", type: "file", url: "file:///fork.txt", mime: "text/plain", filename: "fork.txt" },
+        ] as Part[],
+      },
+    })
+    const childStores = createChildStores([["/test/project", sessionStore]])
+    const { forkSession, setActionRefs } = await import("./session-actions")
+    setActionRefs(mockSdk as unknown as OpencodeClient, childStores, () => "/current/project")
+
+    const completed = await forkSession("session-a", 5, "message-a")
+
+    expect(completed).toBe(true)
+    expect(setCurrentSessionCalls).toEqual([])
+    expect(uiCurrentSessionId).toBe("session-b")
+    expect(clearAttachedFilesCalls).toBe(0)
+    expect(inputState.pendingInputText).toBe("existing draft")
+    expect(inputState.attachedFiles).toEqual([{ url: "file:///existing.txt", mimeType: "text/plain", filename: "existing.txt" }])
+    expect(sessionStore.getState().session.some((session) => session.id === "forked-session")).toBe(true)
   })
 })
 

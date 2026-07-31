@@ -566,11 +566,15 @@ describe('useConfigStore provider persistence', () => {
       directoryScoped: {
         [DIRECTORY]: {
           providers: [provider('active')], agents: [], currentProviderId: 'active', currentModelId: 'active-model',
-          currentAgentName: 'build', selectedProviderId: 'active', agentModelSelections: { build: { providerId: 'active', modelId: 'active-model' } }, defaultProviders: { default: 'active' },
+          currentAgentName: 'build', selectedProviderId: 'active', agentModelSelections: {},
+          lastUserSelection: { agentName: 'build', providerId: 'active', modelId: 'active-model' },
+          defaultProviders: { default: 'active' },
         },
         [OTHER_DIRECTORY]: {
           providers: [provider('other')], agents: [], currentProviderId: 'other', currentModelId: 'other-model',
-          currentAgentName: 'review', selectedProviderId: 'other', agentModelSelections: { review: { providerId: 'other', modelId: 'other-model' } }, defaultProviders: { default: 'other' },
+          currentAgentName: 'review', selectedProviderId: 'other', agentModelSelections: {},
+          lastUserSelection: { agentName: 'review', providerId: 'other', modelId: 'other-model' },
+          defaultProviders: { default: 'other' },
         },
       },
     });
@@ -580,19 +584,23 @@ describe('useConfigStore provider persistence', () => {
     expect(persisted.directoryScoped[DIRECTORY].defaultProviders).toEqual({ default: 'active' });
     expect(persisted.directoryScoped[OTHER_DIRECTORY].providers).toEqual([]);
     expect(persisted.directoryScoped[OTHER_DIRECTORY].defaultProviders).toEqual({});
-    expect(persisted.directoryScoped[DIRECTORY].agentModelSelections).toEqual({ build: { providerId: 'active', modelId: 'active-model' } });
-    expect(persisted.directoryScoped[OTHER_DIRECTORY].agentModelSelections).toEqual({ review: { providerId: 'other', modelId: 'other-model' } });
+    expect(persisted.directoryScoped[DIRECTORY].lastUserSelection).toEqual({ agentName: 'build', providerId: 'active', modelId: 'active-model' });
+    expect(persisted.directoryScoped[OTHER_DIRECTORY].lastUserSelection).toEqual({ agentName: 'review', providerId: 'other', modelId: 'other-model' });
+    expect(persisted.directoryScoped[DIRECTORY].agentModelSelections).toEqual({});
+    expect(persisted.directoryScoped[OTHER_DIRECTORY].agentModelSelections).toEqual({});
   });
 
-  test('rehydrate rejects malformed, dangerous, and oversized agent model selections', async () => {
+  test('rehydrate migrates legacy per-agent picks into lastUserSelection and rejects bad keys', async () => {
     const oversized = 'x'.repeat(257);
     storage.set(STORAGE_KEY, JSON.stringify({
       state: {
         catalogTransportIdentity: getRuntimeTransportIdentity(),
         activeDirectoryKey: DIRECTORY,
+        lastSelectedAgentName: 'valid',
         directoryScoped: {
           [DIRECTORY]: {
             providers: [provider('safe')],
+            lastSelectedAgentName: 'valid',
             agentModelSelections: {
               valid: { providerId: ' safe ', modelId: 'model', variant: 'fast' },
               ' spaced ': { providerId: 'safe', modelId: 'model' },
@@ -612,7 +620,18 @@ describe('useConfigStore provider persistence', () => {
 
     await useConfigStore.persist.rehydrate();
 
-    expect(useConfigStore.getState().agentModelSelections).toEqual({ valid: { providerId: 'safe', modelId: 'model', variant: 'fast' } });
+    expect(useConfigStore.getState().lastUserSelection).toEqual({
+      agentName: 'valid',
+      providerId: 'safe',
+      modelId: 'model',
+      variant: 'fast',
+    });
+    expect(useConfigStore.getState().globalLastUserSelection).toEqual({
+      agentName: 'valid',
+      providerId: 'safe',
+      modelId: 'model',
+      variant: 'fast',
+    });
   });
 
   test('migration rewrites the allowlisted preference envelope without credential sentinels', async () => {
@@ -637,7 +656,7 @@ describe('useConfigStore provider persistence', () => {
     expect(state.settingsAutoCreateWorktree).toBe(true);
     expect(state.speechRate).toBe(1.2);
     const rewritten = storage.get(STORAGE_KEY) ?? '';
-    expect(JSON.parse(rewritten).version).toBe(3);
+    expect(JSON.parse(rewritten).version).toBe(4);
     expect(rewritten).not.toContain(sentinel);
     expect(rewritten).not.toContain('unknownPreference');
     expect(JSON.stringify(useConfigStore.persist.getOptions().partialize?.(state))).not.toContain(sentinel);
@@ -735,7 +754,7 @@ describe('useConfigStore provider persistence', () => {
     expect(state.currentVariant).toBe('high');
   });
 
-  test('setAgent prefers last user agent model+variant over OpenCode agent pin', () => {
+  test('setAgent without session memory uses agent pin, not Project last unit pick', () => {
     useSessionUIStore.setState({ currentSessionId: null });
     useConfigStore.setState({
       activeDirectoryKey: DIRECTORY,
@@ -747,27 +766,25 @@ describe('useConfigStore provider persistence', () => {
         model: { providerID: 'anthropic', modelID: 'claude-sonnet' },
         variant: undefined,
       })],
-      agentModelSelections: {
-        build: { providerId: 'openai', modelId: 'gpt-5.5', variant: 'low' },
-      },
+      lastUserSelection: { agentName: 'build', providerId: 'openai', modelId: 'gpt-5.5', variant: 'low' },
       settingsDefaultModel: undefined,
       settingsDefaultVariant: 'high',
       opencodeDefaultModel: 'anthropic/claude-sonnet',
-      currentProviderId: 'anthropic',
-      currentModelId: 'claude-sonnet',
-      currentVariant: undefined,
+      currentProviderId: 'openai',
+      currentModelId: 'gpt-5.5',
+      currentVariant: 'low',
       directoryScoped: {},
     });
 
     useConfigStore.getState().setAgent('build');
 
     const state = useConfigStore.getState();
-    expect(state.currentProviderId).toBe('openai');
-    expect(state.currentModelId).toBe('gpt-5.5');
-    expect(state.currentVariant).toBe('low');
+    // Mid-draft agent switch is not a new-draft inherit — use agent pin / settings.
+    expect(state.currentProviderId).toBe('anthropic');
+    expect(state.currentModelId).toBe('claude-sonnet');
   });
 
-  test('applyDefaultModelAgentSelection restores per-agent last user pick on new draft', () => {
+  test('applyDefaultModelAgentSelection restores Project last user unit pick on new draft', () => {
     useSelectionStore.setState({
       lastUsedProvider: { providerID: 'anthropic', modelID: 'claude-sonnet' },
       sessionAgentSelections: new Map([['ses_old', 'plan']]),
@@ -784,9 +801,7 @@ describe('useConfigStore provider persistence', () => {
         testAgent('build', { model: { providerID: 'anthropic', modelID: 'claude-sonnet' } }),
         testAgent('plan'),
       ],
-      agentModelSelections: {
-        build: { providerId: 'openai', modelId: 'gpt-5.5', variant: 'high' },
-      },
+      lastUserSelection: { agentName: 'plan', providerId: 'openai', modelId: 'gpt-5.5', variant: 'high' },
       settingsDefaultAgent: 'build',
       settingsDefaultModel: undefined,
       settingsDefaultVariant: undefined,
@@ -794,20 +809,20 @@ describe('useConfigStore provider persistence', () => {
       currentProviderId: 'anthropic',
       currentModelId: 'claude-sonnet',
       currentVariant: undefined,
-      currentAgentName: 'plan',
+      currentAgentName: 'build',
       directoryScoped: {},
     });
 
     useConfigStore.getState().applyDefaultModelAgentSelection();
 
     const state = useConfigStore.getState();
-    expect(state.currentAgentName).toBe('build');
+    expect(state.currentAgentName).toBe('plan');
     expect(state.currentProviderId).toBe('openai');
     expect(state.currentModelId).toBe('gpt-5.5');
     expect(state.currentVariant).toBe('high');
   });
 
-  test('applyDefaultModelAgentSelection prefers per-agent memory over settings default model', () => {
+  test('applyDefaultModelAgentSelection prefers Project last unit pick over settings default model', () => {
     useConfigStore.setState({
       activeDirectoryKey: DIRECTORY,
       providers: [
@@ -815,9 +830,7 @@ describe('useConfigStore provider persistence', () => {
         provider('anthropic', 'claude-sonnet'),
       ],
       agents: [testAgent('build')],
-      agentModelSelections: {
-        build: { providerId: 'openai', modelId: 'gpt-5.5', variant: 'low' },
-      },
+      lastUserSelection: { agentName: 'build', providerId: 'openai', modelId: 'gpt-5.5', variant: 'low' },
       settingsDefaultAgent: 'build',
       settingsDefaultModel: 'anthropic/claude-sonnet',
       settingsDefaultVariant: undefined,
@@ -871,11 +884,13 @@ describe('useConfigStore provider persistence', () => {
     expect(state.currentModelId).toBe('gpt-5.5');
   });
 
-  test('saveAgentModelSelection persists model and variant per agent', () => {
+  test('saveAgentModelSelection persists Project + global unit pick', () => {
     useConfigStore.setState({
       activeDirectoryKey: DIRECTORY,
       agentModelSelections: {},
       lastSelectedAgentName: undefined,
+      lastUserSelection: undefined,
+      globalLastUserSelection: undefined,
       directoryScoped: {},
     });
 
@@ -886,7 +901,21 @@ describe('useConfigStore provider persistence', () => {
       modelId: 'gpt-5.5',
       variant: 'high',
     });
-    expect(useConfigStore.getState().directoryScoped[DIRECTORY]?.agentModelSelections.build).toEqual({
+    expect(useConfigStore.getState().getAgentModelSelection('plan')).toBeNull();
+    expect(useConfigStore.getState().lastUserSelection).toEqual({
+      agentName: 'build',
+      providerId: 'openai',
+      modelId: 'gpt-5.5',
+      variant: 'high',
+    });
+    expect(useConfigStore.getState().globalLastUserSelection).toEqual({
+      agentName: 'build',
+      providerId: 'openai',
+      modelId: 'gpt-5.5',
+      variant: 'high',
+    });
+    expect(useConfigStore.getState().directoryScoped[DIRECTORY]?.lastUserSelection).toEqual({
+      agentName: 'build',
       providerId: 'openai',
       modelId: 'gpt-5.5',
       variant: 'high',
@@ -895,13 +924,11 @@ describe('useConfigStore provider persistence', () => {
     expect(useConfigStore.getState().directoryScoped[DIRECTORY]?.lastSelectedAgentName).toBe('build');
   });
 
-  test('saveAgentModelSelection updates last agent even when model is unchanged', () => {
+  test('saveAgentModelSelection updates last unit pick when agent changes', () => {
     useConfigStore.setState({
       activeDirectoryKey: DIRECTORY,
-      agentModelSelections: {
-        build: { providerId: 'openai', modelId: 'gpt-5.5', variant: 'high' },
-        plan: { providerId: 'anthropic', modelId: 'claude-sonnet' },
-      },
+      lastUserSelection: { agentName: 'plan', providerId: 'anthropic', modelId: 'claude-sonnet' },
+      globalLastUserSelection: { agentName: 'plan', providerId: 'anthropic', modelId: 'claude-sonnet' },
       lastSelectedAgentName: 'plan',
       directoryScoped: {},
     });
@@ -910,14 +937,21 @@ describe('useConfigStore provider persistence', () => {
 
     expect(useConfigStore.getState().lastSelectedAgentName).toBe('build');
     expect(useConfigStore.getState().directoryScoped[DIRECTORY]?.lastSelectedAgentName).toBe('build');
-    expect(useConfigStore.getState().agentModelSelections.build).toEqual({
+    expect(useConfigStore.getState().lastUserSelection).toEqual({
+      agentName: 'build',
+      providerId: 'openai',
+      modelId: 'gpt-5.5',
+      variant: 'high',
+    });
+    expect(useConfigStore.getState().globalLastUserSelection).toEqual({
+      agentName: 'build',
       providerId: 'openai',
       modelId: 'gpt-5.5',
       variant: 'high',
     });
   });
 
-  test('Project A/B lastSelectedAgentName isolation and new-draft inherit', async () => {
+  test('Project A/B lastUserSelection isolation and new-draft inherit', async () => {
     useConfigStore.setState({
       activeDirectoryKey: DIRECTORY,
       isConnected: false,
@@ -926,9 +960,8 @@ describe('useConfigStore provider persistence', () => {
         provider('anthropic', 'claude-sonnet'),
       ],
       agents: [testAgent('build'), testAgent('plan')],
-      agentModelSelections: {
-        plan: { providerId: 'openai', modelId: 'gpt-5.5', variant: 'high' },
-      },
+      lastUserSelection: { agentName: 'plan', providerId: 'openai', modelId: 'gpt-5.5', variant: 'high' },
+      globalLastUserSelection: { agentName: 'plan', providerId: 'openai', modelId: 'gpt-5.5', variant: 'high' },
       lastSelectedAgentName: 'plan',
       settingsDefaultAgent: undefined,
       settingsDefaultModel: undefined,
@@ -948,9 +981,8 @@ describe('useConfigStore provider persistence', () => {
           currentModelId: 'claude-sonnet',
           currentAgentName: 'build',
           selectedProviderId: 'anthropic',
-          agentModelSelections: {
-            plan: { providerId: 'openai', modelId: 'gpt-5.5', variant: 'high' },
-          },
+          agentModelSelections: {},
+          lastUserSelection: { agentName: 'plan', providerId: 'openai', modelId: 'gpt-5.5', variant: 'high' },
           lastSelectedAgentName: 'plan',
           defaultProviders: {},
           selectionSource: 'manual',
@@ -965,9 +997,8 @@ describe('useConfigStore provider persistence', () => {
           currentModelId: 'gpt-5.5',
           currentAgentName: 'plan',
           selectedProviderId: 'openai',
-          agentModelSelections: {
-            build: { providerId: 'anthropic', modelId: 'claude-sonnet' },
-          },
+          agentModelSelections: {},
+          lastUserSelection: { agentName: 'build', providerId: 'anthropic', modelId: 'claude-sonnet' },
           lastSelectedAgentName: 'build',
           defaultProviders: {},
           selectionSource: 'manual',
@@ -975,40 +1006,44 @@ describe('useConfigStore provider persistence', () => {
       },
     });
 
-    // Project A new draft inherits plan + plan's remembered model.
+    // Project A new draft inherits its own last unit pick.
     useConfigStore.getState().applyDefaultModelAgentSelection();
     expect(useConfigStore.getState().currentAgentName).toBe('plan');
     expect(useConfigStore.getState().currentProviderId).toBe('openai');
     expect(useConfigStore.getState().currentModelId).toBe('gpt-5.5');
     expect(useConfigStore.getState().currentVariant).toBe('high');
-    expect(useConfigStore.getState().directoryScoped[DIRECTORY]?.lastSelectedAgentName).toBe('plan');
-    expect(useConfigStore.getState().directoryScoped[OTHER_DIRECTORY]?.lastSelectedAgentName).toBe('build');
+    expect(useConfigStore.getState().directoryScoped[DIRECTORY]?.lastUserSelection?.agentName).toBe('plan');
+    expect(useConfigStore.getState().directoryScoped[OTHER_DIRECTORY]?.lastUserSelection?.agentName).toBe('build');
 
-    // Activate Project B and apply new-draft inherit — B uses build + its own model.
+    // Activate Project B and apply new-draft inherit — B uses its own unit pick.
     await useConfigStore.getState().activateDirectory(OTHER_DIRECTORY);
     expect(useConfigStore.getState().activeDirectoryKey).toBe(OTHER_DIRECTORY);
-    expect(useConfigStore.getState().lastSelectedAgentName).toBe('build');
+    expect(useConfigStore.getState().lastUserSelection).toEqual({
+      agentName: 'build',
+      providerId: 'anthropic',
+      modelId: 'claude-sonnet',
+    });
 
     useConfigStore.getState().applyDefaultModelAgentSelection();
     expect(useConfigStore.getState().currentAgentName).toBe('build');
     expect(useConfigStore.getState().currentProviderId).toBe('anthropic');
     expect(useConfigStore.getState().currentModelId).toBe('claude-sonnet');
 
-    // Project A snapshot stays isolated (plan + plan model prefs unchanged).
-    expect(useConfigStore.getState().directoryScoped[DIRECTORY]?.lastSelectedAgentName).toBe('plan');
-    expect(useConfigStore.getState().directoryScoped[DIRECTORY]?.agentModelSelections.plan).toEqual({
+    // Project A snapshot stays isolated.
+    expect(useConfigStore.getState().directoryScoped[DIRECTORY]?.lastUserSelection).toEqual({
+      agentName: 'plan',
       providerId: 'openai',
       modelId: 'gpt-5.5',
       variant: 'high',
     });
-    expect(useConfigStore.getState().directoryScoped[OTHER_DIRECTORY]?.lastSelectedAgentName).toBe('build');
-    expect(useConfigStore.getState().directoryScoped[OTHER_DIRECTORY]?.agentModelSelections.build).toEqual({
+    expect(useConfigStore.getState().directoryScoped[OTHER_DIRECTORY]?.lastUserSelection).toEqual({
+      agentName: 'build',
       providerId: 'anthropic',
       modelId: 'claude-sonnet',
     });
   });
 
-  test('settingsDefaultAgent still wins over Project lastSelectedAgentName', () => {
+  test('Project lastUserSelection wins over settingsDefaultAgent', () => {
     useConfigStore.setState({
       activeDirectoryKey: DIRECTORY,
       providers: [
@@ -1019,28 +1054,97 @@ describe('useConfigStore provider persistence', () => {
         testAgent('build', { model: { providerID: 'anthropic', modelID: 'claude-sonnet' } }),
         testAgent('plan'),
       ],
-      agentModelSelections: {
-        plan: { providerId: 'openai', modelId: 'gpt-5.5', variant: 'high' },
-      },
+      lastUserSelection: { agentName: 'plan', providerId: 'openai', modelId: 'gpt-5.5', variant: 'high' },
       lastSelectedAgentName: 'plan',
       settingsDefaultAgent: 'build',
       settingsDefaultModel: undefined,
       settingsDefaultVariant: undefined,
       opencodeDefaultModel: 'anthropic/claude-sonnet',
-      currentProviderId: 'openai',
-      currentModelId: 'gpt-5.5',
-      currentVariant: 'high',
-      currentAgentName: 'plan',
+      currentProviderId: 'anthropic',
+      currentModelId: 'claude-sonnet',
+      currentVariant: undefined,
+      currentAgentName: 'build',
       directoryScoped: {},
     });
 
     useConfigStore.getState().applyDefaultModelAgentSelection();
 
     const state = useConfigStore.getState();
-    expect(state.currentAgentName).toBe('build');
-    // build agent pin / cascade, not plan's remembered model
-    expect(state.currentProviderId).toBe('anthropic');
-    expect(state.currentModelId).toBe('claude-sonnet');
+    expect(state.currentAgentName).toBe('plan');
+    expect(state.currentProviderId).toBe('openai');
+    expect(state.currentModelId).toBe('gpt-5.5');
+    expect(state.currentVariant).toBe('high');
+  });
+
+  test('new Project without memory falls back to global lastUserSelection', () => {
+    useConfigStore.setState({
+      activeDirectoryKey: DIRECTORY,
+      providers: [
+        provider('openai', 'gpt-5.5', { low: {}, high: {} }),
+        provider('anthropic', 'claude-sonnet'),
+      ],
+      agents: [testAgent('build'), testAgent('plan')],
+      lastUserSelection: undefined,
+      globalLastUserSelection: { agentName: 'plan', providerId: 'openai', modelId: 'gpt-5.5', variant: 'high' },
+      settingsDefaultAgent: 'build',
+      settingsDefaultModel: 'anthropic/claude-sonnet',
+      currentProviderId: 'anthropic',
+      currentModelId: 'claude-sonnet',
+      currentVariant: undefined,
+      currentAgentName: 'build',
+      directoryScoped: {},
+    });
+
+    useConfigStore.getState().applyDefaultModelAgentSelection();
+
+    const state = useConfigStore.getState();
+    expect(state.currentAgentName).toBe('plan');
+    expect(state.currentProviderId).toBe('openai');
+    expect(state.currentModelId).toBe('gpt-5.5');
+    expect(state.currentVariant).toBe('high');
+  });
+
+  test('transport mismatch keeps Project/global last picks while clearing catalogs', async () => {
+    storage.set(STORAGE_KEY, JSON.stringify({
+      state: {
+        catalogTransportIdentity: 'old-runtime',
+        activeDirectoryKey: DIRECTORY,
+        settingsGitmojiEnabled: true,
+        globalLastUserSelection: { agentName: 'plan', providerId: 'openai', modelId: 'gpt-5.5', variant: 'high' },
+        directoryScoped: {
+          [DIRECTORY]: {
+            providers: [provider('stale')],
+            lastUserSelection: { agentName: 'plan', providerId: 'openai', modelId: 'gpt-5.5', variant: 'high' },
+          },
+        },
+      },
+      version: 4,
+    }));
+
+    await useConfigStore.persist.rehydrate();
+
+    const state = useConfigStore.getState();
+    expect(state.providers).toEqual([]);
+    expect(state.settingsGitmojiEnabled).toBe(true);
+    expect(state.lastUserSelection).toEqual({
+      agentName: 'plan',
+      providerId: 'openai',
+      modelId: 'gpt-5.5',
+      variant: 'high',
+    });
+    expect(state.globalLastUserSelection).toEqual({
+      agentName: 'plan',
+      providerId: 'openai',
+      modelId: 'gpt-5.5',
+      variant: 'high',
+    });
+    expect(state.directoryScoped[DIRECTORY]?.lastUserSelection).toEqual({
+      agentName: 'plan',
+      providerId: 'openai',
+      modelId: 'gpt-5.5',
+      variant: 'high',
+    });
+    expect(state.directoryScoped[DIRECTORY]?.providers).toEqual([]);
   });
 
   test('loadAgents does not fetch OpenCode config directly', async () => {
@@ -1560,7 +1664,9 @@ describe('useConfigStore provider persistence', () => {
         [DIRECTORY]: {
           providers: providers as never, agents: [], currentProviderId: 'provider-0', currentModelId: 'model-0',
           currentAgentName: 'build', selectedProviderId: 'provider-0',
-          agentModelSelections: { build: { providerId: 'provider-0', modelId: 'model-0' } }, defaultProviders: { default: 'provider-0' },
+          agentModelSelections: {},
+          lastUserSelection: { agentName: 'build', providerId: 'provider-0', modelId: 'model-0' },
+          defaultProviders: { default: 'provider-0' },
         },
       },
     });
@@ -1568,7 +1674,7 @@ describe('useConfigStore provider persistence', () => {
     const active = (persisted.directoryScoped as Record<string, Record<string, unknown>>)[DIRECTORY];
     expect(active.providers).toEqual([]);
     expect(active.currentProviderId).toBe('provider-0');
-    expect(active.agentModelSelections).toEqual({ build: { providerId: 'provider-0', modelId: 'model-0' } });
+    expect(active.lastUserSelection).toEqual({ agentName: 'build', providerId: 'provider-0', modelId: 'model-0' });
   });
 
   test('stale provider completion cannot revive catalog or loading after an A to B runtime switch', async () => {

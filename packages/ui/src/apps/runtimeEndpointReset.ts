@@ -58,6 +58,8 @@ export const resetAppForRuntimeEndpointChange = (detail: RuntimeEndpointChangedD
     selectedProviderId: '',
     agentModelSelections: {},
     lastSelectedAgentName: undefined,
+    lastUserSelection: undefined,
+    globalLastUserSelection: undefined,
     opencodeDefaultAgent: undefined,
     opencodeDefaultModel: undefined,
     selectionSource: 'auto',

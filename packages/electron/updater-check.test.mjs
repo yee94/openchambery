@@ -45,3 +45,26 @@ test('authoritative no-update result clears pending update', async () => {
   assert.equal(result.available, false);
   assert.equal(result.pendingUpdate, null);
 });
+
+test('preserves downloaded flag when the same version is still pending', async () => {
+  const result = await checkForDesktopUpdate({
+    autoUpdater: { checkForUpdates: async () => ({ updateInfo: { version: '2.0.0' }, id: 'fresh' }) },
+    currentVersion: '1.0.0',
+    pendingUpdate: { version: '2.0.0', downloaded: true, electronUpdate: { id: 'old' } },
+    compareVersions,
+  });
+  assert.equal(result.available, true);
+  assert.equal(result.pendingUpdate?.downloaded, true);
+  assert.equal(result.pendingUpdate?.electronUpdate?.id, 'fresh');
+});
+
+test('does not carry downloaded across a different pending version', async () => {
+  const result = await checkForDesktopUpdate({
+    autoUpdater: { checkForUpdates: async () => ({ updateInfo: { version: '3.0.0' } }) },
+    currentVersion: '1.0.0',
+    pendingUpdate: { version: '2.0.0', downloaded: true },
+    compareVersions,
+  });
+  assert.equal(result.pendingUpdate?.version, '3.0.0');
+  assert.equal(result.pendingUpdate?.downloaded, false);
+});

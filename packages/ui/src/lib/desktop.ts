@@ -20,6 +20,8 @@ export type UpdateInfo = {
   releaseUrl?: string;
   downloadUrl?: string;
   nextSuggestedCheckInSec?: number;
+  /** True when the desktop package is already on disk and ready to install on restart. */
+  downloaded?: boolean;
   // Web-specific fields
   packageManager?: string;
   updateCommand?: string;
@@ -684,6 +686,42 @@ export const checkForDesktopUpdates = async (): Promise<UpdateInfo | null> => {
     throw new Error('Desktop update checker returned no result');
   }
   return info;
+};
+
+/** Subscribe to main-process update progress (manual or idle auto-download). */
+export const listenDesktopUpdateProgress = async (
+  onProgress: (event: { event?: string; data?: Record<string, unknown> }) => void,
+): Promise<null | (() => void | Promise<void>)> => {
+  const bridge = getDesktopBridge();
+  if (typeof bridge?.listen !== 'function') return null;
+
+  return bridge.listen('openchamber:update-progress', (evt) => {
+    const payload = evt?.payload;
+    if (!payload || typeof payload !== 'object') return;
+    const data = payload as { event?: unknown; data?: unknown };
+    onProgress({
+      event: typeof data.event === 'string' ? data.event : undefined,
+      data: data.data && typeof data.data === 'object' ? (data.data as Record<string, unknown>) : undefined,
+    });
+  });
+};
+
+/** Fired when an idle/manual download finishes and restart-to-update is ready. */
+export const listenDesktopUpdateReady = async (
+  onReady: (payload: { version?: string | null; downloaded?: boolean }) => void,
+): Promise<null | (() => void | Promise<void>)> => {
+  const bridge = getDesktopBridge();
+  if (typeof bridge?.listen !== 'function') return null;
+
+  return bridge.listen('openchamber:update-ready', (evt) => {
+    const payload = evt?.payload;
+    if (!payload || typeof payload !== 'object') return;
+    const data = payload as { version?: unknown; downloaded?: unknown };
+    onReady({
+      version: typeof data.version === 'string' ? data.version : null,
+      downloaded: data.downloaded === true,
+    });
+  });
 };
 
 export const downloadDesktopUpdate = async (

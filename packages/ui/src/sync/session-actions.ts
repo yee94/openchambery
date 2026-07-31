@@ -103,6 +103,18 @@ async function setForkTransitionStage(
   await new Promise<void>((resolve) => setTimeout(resolve, 0))
 }
 
+/** Bind the forked session id so the loading shell can follow that chat only. */
+function setForkTransitionTarget(
+  operationId: number,
+  targetSessionId: string,
+): void {
+  useSessionUIStore.setState((state) =>
+    state.forkTransition?.operationId === operationId
+      ? { forkTransition: { ...state.forkTransition, targetSessionId } }
+      : state,
+  )
+}
+
 export function resolveForkMessageId(
   messageId: string | undefined,
   messages: Message[],
@@ -2631,12 +2643,21 @@ export async function forkSession(sessionId: string, operationId: number, messag
 
     // Switch immediately once OpenCode reveals the real ID, then keep the
     // transition visible until the bounded initial page is available.
-    useSessionUIStore.getState().setCurrentSession(forkedSession.id, directory)
+    setForkTransitionTarget(operationId, forkedSession.id)
+    // Only follow into the fork when the user is still on the source (or
+    // already on the target). Switching away must not yank global selection.
+    const viewingSessionId = useSessionUIStore.getState().currentSessionId
+    const shouldFollowFork =
+      viewingSessionId === sessionId || viewingSessionId === forkedSession.id
+    if (shouldFollowFork) {
+      useSessionUIStore.getState().setCurrentSession(forkedSession.id, directory)
+    }
     await setForkTransitionStage(operationId, "loading")
     console.info("[session-fork] loading the forked session", {
       operationId,
       sessionId,
       forkedSessionId: forkedSession.id,
+      followed: shouldFollowFork,
     })
     await fetchMessagesForSession(forkedSession.id, directory)
     const loadedMessages = store.getState().message[forkedSession.id] ?? []
@@ -2647,20 +2668,21 @@ export async function forkSession(sessionId: string, operationId: number, messag
         expiresAt: Date.now() + FORK_COPY_EVENT_CUTOFF_TTL_MS,
       })
     }
+
+    // Restore forked message text and file attachments to input (user messages only).
+    // Skip when the user left the fork path — pendingInput is a global one-shot.
+    if (shouldFollowFork && shouldRestoreComposer && messageText) {
+      useInputStore.setState({
+        pendingInputText: messageText,
+        pendingInputMode: "replace" as const,
+      })
+    }
+    // A selected message owns its attachment restoration snapshot. A current-session
+    // fork preserves the composer's existing resources.
+    if (shouldFollowFork && shouldRestoreComposer && messageId) restoreFilePartsToInput(fileParts)
   } finally {
     if (activeForkCopy?.operationId === operationId) activeForkCopy = null
   }
-
-  // Restore forked message text and file attachments to input (user messages only)
-  if (shouldRestoreComposer && messageText) {
-    useInputStore.setState({
-      pendingInputText: messageText,
-      pendingInputMode: "replace" as const,
-    })
-  }
-  // A selected message owns its attachment restoration snapshot. A current-session
-  // fork preserves the composer's existing resources.
-  if (shouldRestoreComposer && messageId) restoreFilePartsToInput(fileParts)
   console.info("[session-fork] forked session is ready", {
     operationId,
     sessionId,

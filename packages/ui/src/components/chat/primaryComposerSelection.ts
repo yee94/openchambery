@@ -312,7 +312,7 @@ export const resolvePrimaryComposerSessionSelection = (options: {
 /**
  * Apply a resolved session restore into live config + session memory.
  *
- * Never writes project-scoped agent preferences (`saveAgentModelSelection`).
+  * Never writes Project/global last unit picks (`saveAgentModelSelection`).
  * Viewing or restoring a historical session must not change Project defaults.
  */
 export const applyPrimaryComposerSessionRestore = (

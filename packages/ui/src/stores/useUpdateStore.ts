@@ -5,6 +5,8 @@ import { useUIStore } from './useUIStore';
 import {
   checkForDesktopUpdates,
   downloadDesktopUpdate,
+  listenDesktopUpdateProgress,
+  listenDesktopUpdateReady,
   restartToApplyUpdate,
   isDesktopLocalOriginActive,
   isElectronShell,
@@ -32,6 +34,8 @@ interface UpdateStore extends UpdateState {
   checkForUpdates: () => Promise<number | null>;
   downloadUpdate: () => Promise<void>;
   restartToUpdate: () => Promise<void>;
+  /** Wire main-process idle/manual download events into store state. */
+  subscribeDesktopUpdateEvents: () => Promise<() => void>;
   dismiss: () => void;
   reset: () => void;
 }
@@ -189,6 +193,8 @@ export const useUpdateStore = create<UpdateStore>()((set, get) => ({
         set({
           checking: false,
           available: desktopInfo?.available ?? false,
+          // Main may already have finished an idle auto-download for this version.
+          downloaded: desktopInfo?.downloaded ?? false,
           info: desktopInfo,
           lastChecked: Date.now(),
           nextCheckInSec: null,
@@ -254,6 +260,12 @@ export const useUpdateStore = create<UpdateStore>()((set, get) => ({
           : desktopInfo,
       }));
 
+      // Already idle-downloaded while the dialog was open — just flip the CTA.
+      if (desktopInfo.downloaded || get().downloaded) {
+        set({ downloading: false, downloaded: true });
+        return;
+      }
+
       const ok = await downloadDesktopUpdate((progress) => {
         set({ progress });
       });
@@ -267,6 +279,61 @@ export const useUpdateStore = create<UpdateStore>()((set, get) => ({
         error: error instanceof Error ? error.message : 'Failed to download update',
       });
     }
+  },
+
+  subscribeDesktopUpdateEvents: async () => {
+    if (!isElectronShell()) {
+      return () => {};
+    }
+
+    const cleanups: Array<() => void | Promise<void>> = [];
+
+    const unlistenProgress = await listenDesktopUpdateProgress((payload) => {
+      const eventName = payload.event;
+      const eventData = payload.data ?? null;
+
+      if (eventName === 'Started') {
+        set({
+          downloading: true,
+          error: null,
+          progress: {
+            downloaded: 0,
+            total: typeof eventData?.contentLength === 'number' ? eventData.contentLength : undefined,
+          },
+        });
+        return;
+      }
+
+      if (eventName === 'Progress') {
+        const downloaded = typeof eventData?.downloaded === 'number' ? eventData.downloaded : 0;
+        const total = typeof eventData?.total === 'number' ? eventData.total : undefined;
+        set({ downloading: true, progress: { downloaded, total } });
+        return;
+      }
+
+      if (eventName === 'Finished') {
+        set({ downloading: false, downloaded: true });
+      }
+    });
+    if (unlistenProgress) cleanups.push(unlistenProgress);
+
+    const unlistenReady = await listenDesktopUpdateReady((payload) => {
+      if (payload.downloaded) {
+        set({ downloading: false, downloaded: true, available: true });
+      }
+    });
+    if (unlistenReady) cleanups.push(unlistenReady);
+
+    return async () => {
+      for (const cleanup of cleanups) {
+        try {
+          const result = cleanup();
+          if (result instanceof Promise) await result;
+        } catch {
+          // ignore listener teardown failures
+        }
+      }
+    };
   },
 
   restartToUpdate: async () => {

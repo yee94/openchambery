@@ -32,11 +32,23 @@ export const checkForDesktopUpdate = async ({ autoUpdater, currentVersion, pendi
     (typeof updateInfo?.version === 'string' && updateInfo.version) ||
     currentVersion;
   const available = compareVersions(nextVersion, currentVersion) > 0;
+  // Keep downloaded=true across re-checks for the same version so an idle
+  // auto-download (or a manual one) is not forgotten when the hourly probe runs.
+  const alreadyDownloaded =
+    available
+    && pendingUpdate?.version === nextVersion
+    && pendingUpdate?.downloaded === true;
   return {
     available,
     updateInfo,
     updateResult,
     nextVersion,
-    pendingUpdate: available ? { version: nextVersion, electronUpdate: updateResult } : null,
+    pendingUpdate: available
+      ? {
+          version: nextVersion,
+          electronUpdate: updateResult,
+          downloaded: alreadyDownloaded,
+        }
+      : null,
   };
 };
