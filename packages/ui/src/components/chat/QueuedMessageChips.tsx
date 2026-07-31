@@ -29,7 +29,8 @@ import { Icon } from "@/components/icon/Icon";
 import { cn } from '@/lib/utils';
 import { createUuid } from '@/lib/uuid';
 import { toast } from '@/components/ui';
-import { canEditQueuedMessage, canRemoveQueuedMessage, canSendQueuedMessage, canSendServerQueuedMessage, isServerQueueItemActiveAttempt, isServerQueueItemDispatchPending, legacyQueueEditRestoreSource, mergeQueuedMessageScopes, projectServerQueueChipItems, queueModeAllowsMutations, reorderServerQueueItems, selectCommittedSendShadows, selectPendingServerQueueOperations, serverQueueEditInput, serverQueueItemMutationInput, type ServerQueueCommittedSendShadow, type ServerQueueOperationIdentity, type ServerQueueOperationKind } from './queuedMessageChipsState';
+import { MessageReferenceChip } from './MessageReferenceChip';
+import { canEditQueuedMessage, canRemoveQueuedMessage, canSendQueuedMessage, canSendServerQueuedMessage, buildQueuedMessagePreviewParts, isServerQueueItemActiveAttempt, isServerQueueItemDispatchPending, legacyQueueEditRestoreSource, mergeQueuedMessageScopes, projectServerQueueChipItems, queueModeAllowsMutations, queuedMessagePreviewLine, reorderServerQueueItems, resolveQueuedMessagePreviewText, selectCommittedSendShadows, selectPendingServerQueueOperations, serverQueueEditInput, serverQueueItemMutationInput, type ServerQueueCommittedSendShadow, type ServerQueueOperationIdentity, type ServerQueueOperationKind } from './queuedMessageChipsState';
 import { enqueueServerQueueScopeMutation, type ServerQueueScopeMutationFlights } from './queueAdmission';
 
 type BoundQueueScope = Extract<QueueScope, { state: 'bound' }> & {
@@ -94,23 +95,21 @@ const QueuedMessageChip = memo(({ message, server, frozen, hasDispatchLock, pend
     const isDragDisabled = legacyMessage?.owner?.state === 'unbound-legacy' || clientMutationBlocked || activeAttempt;
     const canSend = !clientMutationBlocked && (server ? canSendServerQueuedMessage(message as MessageQueueServerDisplayItem, hasDispatchLock) : canSendQueuedMessage(message as QueuedMessage, hasDispatchLock));
     const recovery = legacyMessage?.failure?.recovery;
-    const visibleContent = recovery?.content ?? message.content;
+    const visibleContent = resolveQueuedMessagePreviewText(message);
     const visibleAttachments = pendingAdmission ? undefined : recovery?.attachments ?? message.attachments;
+    const visibleComposerDocument = recovery?.composerDocument ?? ('composerDocument' in message ? message.composerDocument : undefined);
     const { attributes, listeners, setNodeRef, transform, transition, isDragging } = useSortable({
         id: queueItemID,
         disabled: isDragDisabled,
     });
 
-    // Get first line of message, truncated
-    const firstLine = React.useMemo(() => {
-        const lines = visibleContent.split('\n');
-        const first = lines[0] || '';
-        const maxLength = 100;
-        if (first.length > maxLength) {
-            return first.substring(0, maxLength) + '...';
-        }
-        return first + (lines.length > 1 ? '...' : '');
-    }, [visibleContent]);
+    // First line only; CSS truncation owns overflow. Reference tokens render as chips
+    // so reserved-slot placeholders like `[␠image-1.png]` never show raw.
+    const firstLine = React.useMemo(() => queuedMessagePreviewLine(visibleContent), [visibleContent]);
+    const previewParts = React.useMemo(() => buildQueuedMessagePreviewParts(visibleContent, {
+        attachments: visibleAttachments,
+        composerDocument: visibleComposerDocument,
+    }), [visibleAttachments, visibleComposerDocument, visibleContent]);
 
     const attachmentCount = pendingAdmission ? message.attachmentCount : visibleAttachments?.length ?? 0;
 
@@ -163,12 +162,25 @@ const QueuedMessageChip = memo(({ message, server, frozen, hasDispatchLock, pend
             </button>
             {isMobile ? removeAction : null}
             <span className={cn(
-                'min-w-0 flex-1 truncate text-foreground',
+                // items-baseline keeps chip labels on the same line as plain text
+                // ("hey") / "+N files". MessageReferenceChip exposes its label baseline
+                // (icon is a separate 1em well), matching sent-message rendering.
+                'flex min-w-0 flex-1 items-baseline overflow-hidden whitespace-nowrap text-foreground',
                 isMobile ? 'text-xs leading-5' : 'typography-ui-label leading-5',
             )}>
-                {firstLine || t('chat.queuedMessage.empty')}
+                {previewParts ? previewParts.map((part, index) => (
+                    part.type === 'text'
+                        ? <span key={`text-${index}`} className="min-w-0 truncate">{part.text}</span>
+                        : (
+                            <MessageReferenceChip
+                                key={`ref-${index}-${part.span.start}`}
+                                decoration={part.decoration}
+                                interactive={false}
+                            />
+                        )
+                )) : (firstLine || t('chat.queuedMessage.empty'))}
                 {attachmentCount > 0 && (
-                    <span className="ml-1 text-muted-foreground">{t('chat.queuedMessage.attachments', { count: attachmentCount })}</span>
+                    <span className="ml-1 shrink-0 text-muted-foreground">{t('chat.queuedMessage.attachments', { count: attachmentCount })}</span>
                 )}
             </span>
             <div className="flex shrink-0 items-center gap-1.5 text-muted-foreground">

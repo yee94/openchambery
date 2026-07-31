@@ -1,5 +1,6 @@
 import { defineConfig } from 'vite';
-import react from '@vitejs/plugin-react';
+import react, { reactCompilerPreset } from '@vitejs/plugin-react';
+import babel from '@rolldown/plugin-babel';
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
 
@@ -9,10 +10,10 @@ export default defineConfig(({ mode }) => ({
   root: path.resolve(__dirname, 'webview'),
   base: './',  // Use relative paths for VS Code webview
   plugins: [
-    react({
-      babel: {
-        plugins: ['babel-plugin-react-compiler'],
-      },
+    react(),
+    // React Compiler via Rolldown Babel preset (plugin-react v6 no longer embeds Babel).
+    babel({
+      presets: [reactCompilerPreset()],
     }),
   ],
   resolve: {
@@ -52,7 +53,7 @@ export default defineConfig(({ mode }) => ({
   build: {
     outDir: path.resolve(__dirname, 'dist/webview'),
     emptyOutDir: true,
-    rollupOptions: {
+    rolldownOptions: {
       input: path.resolve(__dirname, 'webview/index.html'),
       external: ['node:child_process', 'node:fs', 'node:path', 'node:url'],
       output: {

@@ -7,30 +7,21 @@ import { SimpleMarkdownRenderer } from '../../MarkdownRenderer';
 import { useUIStore } from '@/stores/useUIStore';
 import { useInstalledSkillsQuery } from '@/queries/installedSkillsQueries';
 import { Icon } from "@/components/icon/Icon";
-import type { IconName } from '@/components/icon/icons';
 import { useEffectiveDirectory } from '@/hooks/useEffectiveDirectory';
 import { ensureOutsideFileGrantForDesktop } from '@/lib/outsideFileGrants';
 import { getDirectoryForFilePath, isFilePathWithinDirectory, normalizeFilePath } from '@/lib/path-utils';
 import { useI18n } from '@/lib/i18n';
-import {
-    COMPOSER_TRIGGER_ICON_LABEL_GAP,
-    COMPOSER_TRIGGER_ICON_SIZE_CLASS,
-    COMPOSER_TRIGGER_ICON_SLOT,
-} from '@/composer/inline-visual';
+import { COMPOSER_TRIGGER_ICON_SLOT } from '@/composer/inline-visual';
 import { parseSessionMentionInstruction } from '@/composer/delivery';
 import { isSyntheticPart } from '@/lib/messages/synthetic';
 import { getAllSyncSessionMap } from '@/sync/sync-refs';
-import {
-    buildAgentMentionUrl,
-    parseSkillHref,
-} from '@/lib/messages/inlineMessageLinks';
+import { buildAgentMentionUrl, parseSkillHref } from '@/lib/messages/inlineMessageLinks';
 import {
     buildCitationIconsFromParts,
     buildMessageReferenceParts,
-    messageReferenceTriggerIconSpec,
-    type MessageReferenceDecoration,
     type MessageTextPart,
 } from '@/lib/messages/references';
+import { MessageReferenceChip } from '../../MessageReferenceChip';
 import { prepareUserMarkdownContent, SKILL_TOKEN_PATTERN } from './userTextPartContent';
 
 type PartWithText = Part & { text?: string; content?: string; value?: string };
@@ -65,71 +56,6 @@ const hasActiveSelectionInElement = (element: HTMLElement): boolean => {
 
     const range = selection.getRangeAt(0);
     return element.contains(range.startContainer) || element.contains(range.endContainer);
-};
-
-const MessageReferenceChip: React.FC<{
-    decoration: MessageReferenceDecoration;
-    onOpenSkill?: (skillName: string) => void;
-}> = ({ decoration, onOpenSkill }) => {
-    const triggerIconSpec = messageReferenceTriggerIconSpec(decoration);
-    // Keep icon+label as one unbreakable inline unit — no local wrap inside the chip.
-    // Optical icon→label gap only; no extra left margin, or the chip indents past neighbors.
-    const content = (
-        <span className={cn(
-            triggerIconSpec
-                ? 'mr-1 inline-flex shrink-0 items-center align-baseline whitespace-nowrap'
-                : 'inline-flex items-baseline gap-0.5 align-baseline',
-            decoration.className,
-        // Match Composer overlay: fixed 1em well + shared optical gap before the label.
-        )} style={triggerIconSpec ? { gap: COMPOSER_TRIGGER_ICON_LABEL_GAP } : undefined} data-message-reference-kind={decoration.kind}>
-            {triggerIconSpec ? (
-                <>
-                    <span className={cn(COMPOSER_TRIGGER_ICON_SIZE_CLASS, 'inline-flex shrink-0 items-center justify-center')}>
-                        <Icon name={triggerIconSpec.icon as IconName} className="size-full" aria-hidden="true" />
-                    </span>
-                    <span>{triggerIconSpec.label}</span>
-                </>
-            ) : decoration.icon ? (
-                <span className="inline-flex size-[1em] shrink-0 items-center justify-center">
-                    <Icon name={decoration.icon} className="size-full" aria-hidden="true" />
-                </span>
-            ) : null}
-            {triggerIconSpec ? null : <span>{decoration.label}</span>}
-        </span>
-    );
-
-    if (decoration.kind === 'skill' && decoration.skillName && onOpenSkill) {
-        return (
-            <button
-                type="button"
-                className="inline align-baseline hover:underline"
-                data-skill-name={decoration.skillName}
-                onClick={(event) => {
-                    event.stopPropagation();
-                    onOpenSkill(decoration.skillName!);
-                }}
-            >
-                {content}
-            </button>
-        );
-    }
-
-    if (decoration.kind === 'agent' && decoration.href) {
-        return (
-            <a
-                href={buildAgentMentionUrl(decoration.agentName || decoration.label.replace(/^@/, ''))}
-                className="inline align-baseline hover:underline"
-                target="_blank"
-                rel="noopener noreferrer"
-                data-openchamber-agent-mention="true"
-                onClick={(event) => event.stopPropagation()}
-            >
-                {content}
-            </a>
-        );
-    }
-
-    return content;
 };
 
 const UserTextPart: React.FC<UserTextPartProps> = ({ part, messageId, agentMention, messageParts }) => {

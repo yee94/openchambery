@@ -1,10 +1,11 @@
 import { defineConfig } from 'vite';
-import react from '@vitejs/plugin-react';
+import react, { reactCompilerPreset } from '@vitejs/plugin-react';
+import babel from '@rolldown/plugin-babel';
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { readFileSync } from 'node:fs';
 import { VitePWA } from 'vite-plugin-pwa';
-import { themeStoragePlugin } from '../../vite-theme-plugin';
+import { themeStoragePlugin } from '../../vite-theme-plugin.ts';
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
 const packageJson = JSON.parse(readFileSync(path.resolve(__dirname, 'package.json'), 'utf-8'));
@@ -12,13 +13,42 @@ const pwaDevEnabled = process.env.OPENCHAMBER_DISABLE_PWA_DEV !== '1';
 const reactScanToggle = (process.env.VITE_ENABLE_REACT_SCAN ?? '').toLowerCase();
 const enableReactScan = reactScanToggle === '1' || reactScanToggle === 'true' || reactScanToggle === 'on' || reactScanToggle === 'yes';
 
+// Resolve vendor chunk names from node_modules package ids.
+// Use the last node_modules segment so bun's .bun store (and pnpm) resolve to the real package.
+function resolveVendorChunkName(id: string): string | undefined {
+  if (!id.includes('node_modules')) return undefined;
+
+  const normalized = id.replace(/\\/g, '/');
+  const match = normalized.split('node_modules/').pop();
+  if (!match || match.startsWith('.bun/') || match.startsWith('.pnpm/')) return undefined;
+
+  const segments = match.split('/');
+  const packageName = match.startsWith('@') ? `${segments[0]}/${segments[1]}` : segments[0];
+  if (!packageName || packageName.startsWith('.')) return undefined;
+
+  if (packageName === 'react' || packageName === 'react-dom') return 'vendor-react';
+  if (packageName === 'zustand' || packageName === 'zustand/middleware') return 'vendor-zustand';
+
+  if (packageName === '@opencode-ai/sdk') return 'vendor-opencode-sdk';
+  if (packageName.includes('remark') || packageName.includes('rehype') || packageName === 'react-markdown') return 'vendor-markdown';
+  if (packageName === '@base-ui/react' || packageName.startsWith('@base-ui')) return 'vendor-base-ui';
+  if (packageName.includes('react-syntax-highlighter') || packageName.includes('highlight.js')) return 'vendor-syntax';
+
+  const sanitized = packageName.replace(/^@/, '').replace(/\//g, '-');
+  return `vendor-${sanitized}`;
+}
+
 export default defineConfig(({ command }) => ({
   root: path.resolve(__dirname, '.'),
+  // Experimental Rolldown bundled dev: serve bundled chunks instead of per-module ESM.
+  experimental: {
+    bundledDev: true,
+  },
   plugins: [
-    react({
-      babel: {
-        plugins: ['babel-plugin-react-compiler'],
-      },
+    react(),
+    // React Compiler via Rolldown Babel preset (plugin-react v6 no longer embeds Babel).
+    babel({
+      presets: [reactCompilerPreset()],
     }),
     {
       name: 'inject-react-scan-script',
@@ -126,7 +156,7 @@ export default defineConfig(({ command }) => ({
     outDir: path.resolve(__dirname, 'dist'),
     emptyOutDir: true,
     chunkSizeWarningLimit: 500,
-    rollupOptions: {
+    rolldownOptions: {
       input: {
         main: path.resolve(__dirname, 'index.html'),
         mobile: path.resolve(__dirname, 'mobile.html'),
@@ -134,40 +164,35 @@ export default defineConfig(({ command }) => ({
       },
       external: ['node:child_process', 'node:fs', 'node:path', 'node:url'],
       output: {
-        manualChunks(id) {
-          if (!id.includes('node_modules')) return undefined;
-
-          const match = id.split('node_modules/')[1];
-          if (!match) return undefined;
-
-          const segments = match.split('/');
-          const packageName = match.startsWith('@') ? `${segments[0]}/${segments[1]}` : segments[0];
-
-          if (packageName === 'react' || packageName === 'react-dom') return 'vendor-react';
-          if (packageName === 'zustand' || packageName === 'zustand/middleware') return 'vendor-zustand';
-
-          if (packageName === '@opencode-ai/sdk') return 'vendor-opencode-sdk';
-          if (packageName.includes('remark') || packageName.includes('rehype') || packageName === 'react-markdown') return 'vendor-markdown';
-          if (packageName === '@base-ui/react' || packageName.startsWith('@base-ui')) return 'vendor-base-ui';
-          if (packageName.includes('react-syntax-highlighter') || packageName.includes('highlight.js')) return 'vendor-syntax';
-
-          const sanitized = packageName.replace(/^@/, '').replace(/\//g, '-');
-          return `vendor-${sanitized}`;
+        codeSplitting: {
+          groups: [
+            {
+              name: resolveVendorChunkName,
+            },
+          ],
         },
+        // Preserve warnings and errors in production while dropping renderer-only
+        // diagnostic logs and their ordinary object payloads from shipped bundles.
+        ...(command === 'build'
+          ? {
+              minify: {
+                compress: {
+                  treeshake: {
+                    manualPureFunctions: [
+                      'console.debug',
+                      'console.info',
+                      'console.log',
+                      'console.trace',
+                      'console.group',
+                      'console.groupCollapsed',
+                      'console.groupEnd',
+                    ],
+                  },
+                },
+              },
+            }
+          : {}),
       },
     },
   },
-  // Preserve warnings and errors in production while dropping renderer-only
-  // diagnostic logs and their ordinary object payloads from shipped bundles.
-  esbuild: command === 'build' ? {
-    pure: [
-      'console.debug',
-      'console.info',
-      'console.log',
-      'console.trace',
-      'console.group',
-      'console.groupCollapsed',
-      'console.groupEnd',
-    ],
-  } : undefined,
 }));

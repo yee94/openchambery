@@ -493,10 +493,9 @@ class ShareViewController: UIViewController, UITextViewDelegate {
 
     private static func avatarImage(seed: String, emoji: String?) -> UIImage {
         let size = CGSize(width: 88, height: 88)
-        return UIGraphicsImageRenderer(size: size).image { context in
-            context.cgContext.setFillColor(UIColor.secondarySystemGroupedBackground.cgColor)
-            context.cgContext.fill(CGRect(origin: .zero, size: size))
-
+        let format = UIGraphicsImageRendererFormat.default()
+        format.opaque = false
+        return UIGraphicsImageRenderer(size: size, format: format).image { context in
             if let emoji, !emoji.isEmpty {
                 let font = UIFont.systemFont(ofSize: size.width * 0.7)
                 let attributes: [NSAttributedString.Key: Any] = [.font: font]

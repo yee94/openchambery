@@ -113,4 +113,4 @@ Required local tools:
 
 ## Generated Assets
 
-Launcher icons and splash screens use the dark OpenChamber mark (`packages/electron/resources/icons/app-icon.png` / `app-icon.svg`). Source inputs live in `packages/mobile/assets/` (`icon-only.png`, `icon-foreground.png`, `icon-background.png`); iOS `AppIcon` / Splash and Android mipmaps + splash drawables are kept in sync with that dark mark.
+Launcher icons and splash screens use the dark OpenChamber mark (`packages/electron/resources/icons/app-icon.png` / `app-icon.svg`). Source inputs live in `packages/mobile/assets/` (`icon-only.png`, `icon-foreground.png`, `icon-background.png`); iOS `AppIcon` / Splash and Android mipmaps + splash drawables are kept in sync with that dark mark. Android 8+ uses a full-bleed `#1A1A1A` adaptive-icon background and the transparent `ic_launcher_openchamber_foreground.xml` mark; the Launcher owns masking and icon shape.

@@ -96,6 +96,20 @@ export const withGitDiscoveryNetworkSlot = async <T>(task: () => Promise<T>): Pr
   }
 };
 
+// The gate is a plain counting semaphore, so a task that takes a second slot
+// while holding the first stalls forever once every permit is held by a task
+// doing the same. Helpers below already take a slot; tag them so callers
+// reaching them through a runtime bridge know not to wrap them again.
+const GIT_DISCOVERY_GATED = Symbol.for('openchamber.git.discoveryGated');
+
+const markGitDiscoveryGated = <T extends object>(fn: T): T => {
+  Object.defineProperty(fn, GIT_DISCOVERY_GATED, { value: true, configurable: true });
+  return fn;
+};
+
+export const isGitDiscoveryGated = (value: unknown): boolean =>
+  typeof value === 'function' && (value as unknown as Record<symbol, unknown>)[GIT_DISCOVERY_GATED] === true;
+
 const normalizeDirectoryKey = (directory: string): string => directory.trim();
 const getStatusCacheKey = (directory: string, mode?: 'light'): string =>
   mode === 'light' ? `${normalizeDirectoryKey(directory)}::light` : normalizeDirectoryKey(directory);
@@ -797,6 +811,8 @@ export async function listGitWorktrees(directory: string): Promise<GitWorktreeIn
     }
   }
 }
+
+markGitDiscoveryGated(listGitWorktrees);
 
 export async function validateGitWorktree(directory: string, payload: CreateGitWorktreePayload): Promise<GitWorktreeValidationResult> {
   const response = await runtimeFetch(buildUrl(`${API_BASE}/worktrees/validate`, directory), {

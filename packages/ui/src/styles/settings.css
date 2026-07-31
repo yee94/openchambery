@@ -218,7 +218,7 @@
 
 .oc-settings-workspace
   [data-settings-value]
-  .oc-settings-inline-value > div {
+  .oc-settings-inline-value > :is(div, span) {
   flex: 0 1 auto !important;
   justify-content: flex-end;
   text-align: right;

@@ -361,8 +361,6 @@ final class OpenChamberShareStore {
         Bitmap bitmap = Bitmap.createBitmap(size, size, Bitmap.Config.ARGB_8888);
         Canvas canvas = new Canvas(bitmap);
         Paint paint = new Paint(Paint.ANTI_ALIAS_FLAG | Paint.SUBPIXEL_TEXT_FLAG);
-        paint.setColor(Color.WHITE);
-        canvas.drawRect(0, 0, size, size, paint);
 
         if (nonEmpty(emoji)) {
             paint.setColor(Color.BLACK);

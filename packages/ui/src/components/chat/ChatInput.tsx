@@ -4369,6 +4369,7 @@ const ChatInputRuntime: React.FC<ChatInputProps> = ({ onOpenSettings, scrollToBo
 
         // Mobile pill silhouette: keep a single-line field so the shared
         // textarea matches the collapsed chrome without remounting.
+        // Never leave a scrollable surface — caret/swipe must not pan content.
         if (isMobile && !mobileComposerExpanded) {
             const view = textarea.ownerDocument?.defaultView;
             const computedStyle = view ? view.getComputedStyle(textarea) : null;
@@ -4376,7 +4377,11 @@ const ChatInputRuntime: React.FC<ChatInputProps> = ({ onOpenSettings, scrollToBo
             const nextHeight = Number.isNaN(lineHeight) ? 20 : lineHeight;
             textarea.style.height = `${nextHeight}px`;
             textarea.style.maxHeight = `${nextHeight}px`;
+            textarea.style.overflow = 'hidden';
+            textarea.style.overflowX = 'hidden';
             textarea.style.overflowY = 'hidden';
+            if (textarea.scrollTop !== 0) textarea.scrollTop = 0;
+            if (textarea.scrollLeft !== 0) textarea.scrollLeft = 0;
             setTextareaSize((prev) => {
                 if (prev && prev.height === nextHeight && prev.maxHeight === nextHeight) {
                     return prev;
@@ -6995,6 +7000,17 @@ const ChatInputRuntime: React.FC<ChatInputProps> = ({ onOpenSettings, scrollToBo
                             updateAutocompleteOverlayPosition();
                         },
                         onScroll: (event) => {
+                            // Collapsed mobile pill must stay non-scrollable even when
+                            // the browser tries to pan to the caret on a long line.
+                            if (isMobile && !mobileComposerExpandedRef.current) {
+                                const textarea = event.currentTarget;
+                                if (textarea.scrollTop !== 0) textarea.scrollTop = 0;
+                                if (textarea.scrollLeft !== 0) textarea.scrollLeft = 0;
+                                if (composerHighlightRef.current) {
+                                    composerHighlightRef.current.style.transform = '';
+                                }
+                                return;
+                            }
                             updateAutocompleteOverlayPosition();
                             const scrollTop = event.currentTarget.scrollTop;
                             if (composerHighlightRef.current) {

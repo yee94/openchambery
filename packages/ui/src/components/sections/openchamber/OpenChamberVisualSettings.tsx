@@ -51,6 +51,7 @@ type ResponsiveSettingsGroupProps = {
     children: React.ReactNode;
     description?: React.ReactNode;
     className?: string;
+    cardClassName?: string;
 };
 
 type ResponsiveSettingsFieldProps = {
@@ -96,12 +97,14 @@ const ResponsiveSettingsGroup = ({
     children,
     description,
     className,
+    cardClassName,
 }: ResponsiveSettingsGroupProps) => {
     return (
         <SettingsGroup
             label={label}
             description={description}
             className={cn('oc-settings-detail-group', isMobile && 'oc-mobile-settings-detail-group', className)}
+            cardClassName={cardClassName}
         >
             {children}
         </SettingsGroup>
@@ -1635,14 +1638,15 @@ export const OpenChamberVisualSettings: React.FC<OpenChamberVisualSettingsProps>
                     <div className="oc-settings-section-stack">
 
                             {(shouldShow('userMessageRendering') || shouldShow('mermaidRendering') || shouldShow('chatRenderMode') || shouldShow('messageTransport') || (shouldShow('activityRenderMode') && chatRenderMode === 'sorted') || (shouldShow('diffLayout') && !isVSCode) || shouldShow('followUpBehavior')) && (
-                                <div className="grid grid-cols-1 gap-y-[var(--oc-settings-section-stack-gap)] md:grid-cols-[minmax(0,16rem)_minmax(0,16rem)] md:justify-start md:gap-x-[var(--oc-settings-section-stack-gap)]">
+                                <div className="grid w-full grid-cols-1 gap-y-[var(--oc-settings-section-stack-gap)]">
                                     {shouldShow('chatRenderMode') && (
                                         <ResponsiveSettingsGroup
                                             isMobile={isMobile}
                                             label={t('settings.openchamber.visual.section.chatRenderMode')}
-                                            className="md:col-span-2"
+                                            className="w-full"
+                                            cardClassName="!border-0 !bg-transparent !rounded-none overflow-visible"
                                         >
-                                            <div data-settings-item="chat.render-mode" className="oc-settings-group-row">
+                                            <div data-settings-item="chat.render-mode" className="min-w-0 w-full">
                                             <div role="radiogroup" aria-label={t('settings.openchamber.visual.section.chatRenderModeAria')} className="grid w-full grid-cols-1 gap-3 sm:grid-cols-2">
                                                 {CHAT_RENDER_MODE_OPTIONS.map((option) => {
                                                     const selected = chatRenderMode === option.id;
@@ -1729,7 +1733,7 @@ export const OpenChamberVisualSettings: React.FC<OpenChamberVisualSettingsProps>
                                         <ResponsiveSettingsGroup
                                             isMobile={isMobile}
                                             label={t('settings.openchamber.visual.section.messageStreamTransport')}
-                                            className="md:col-span-2"
+                                            className="w-full"
                                         >
                                             <div data-settings-item="chat.message-transport" className="oc-settings-group-row flex flex-col gap-2">
                                                 <div className="flex flex-wrap items-center gap-1">
@@ -1760,7 +1764,7 @@ export const OpenChamberVisualSettings: React.FC<OpenChamberVisualSettingsProps>
                                         <ResponsiveSettingsGroup
                                             isMobile={isMobile}
                                             label={t('settings.openchamber.visual.section.activityDefault')}
-                                            className="md:col-span-2"
+                                            className="w-full"
                                         >
                                             <div role="radiogroup" aria-label={t('settings.openchamber.visual.section.activityDefaultAria')}>
                                                 {ACTIVITY_RENDER_MODE_OPTIONS.map((option) => {
@@ -1783,7 +1787,7 @@ export const OpenChamberVisualSettings: React.FC<OpenChamberVisualSettingsProps>
                                         <ResponsiveSettingsGroup
                                             isMobile={isMobile}
                                             label={t('settings.openchamber.visual.section.showToolsOpenedByDefault')}
-                                            className="md:col-span-2"
+                                            className="w-full"
                                         >
                                             <div
                                                 className="oc-settings-group-row group flex cursor-pointer items-center gap-2"
@@ -1812,6 +1816,7 @@ export const OpenChamberVisualSettings: React.FC<OpenChamberVisualSettingsProps>
                                         <ResponsiveSettingsGroup
                                             isMobile={isMobile}
                                             label={t('settings.openchamber.visual.section.userMessageRendering')}
+                                            className="w-full"
                                         >
                                             <div role="radiogroup" aria-label={t('settings.openchamber.visual.section.userMessageRenderingAria')}>
                                                 {USER_MESSAGE_RENDERING_OPTIONS.map((option) => {
@@ -1834,6 +1839,7 @@ export const OpenChamberVisualSettings: React.FC<OpenChamberVisualSettingsProps>
                                         <ResponsiveSettingsGroup
                                             isMobile={isMobile}
                                             label={t('settings.openchamber.visual.section.mermaidRendering')}
+                                            className="w-full"
                                         >
                                             <div role="radiogroup" aria-label={t('settings.openchamber.visual.section.mermaidRenderingAria')}>
                                                 {MERMAID_RENDERING_OPTIONS.map((option) => {
@@ -1856,6 +1862,7 @@ export const OpenChamberVisualSettings: React.FC<OpenChamberVisualSettingsProps>
                                         <ResponsiveSettingsGroup
                                             isMobile={isMobile}
                                             label={t('settings.openchamber.visual.section.diffLayout')}
+                                            className="w-full"
                                         >
                                             <div role="radiogroup" aria-label={t('settings.openchamber.visual.section.diffLayoutAria')}>
                                                 {DIFF_LAYOUT_OPTIONS.map((option) => {
@@ -1878,6 +1885,7 @@ export const OpenChamberVisualSettings: React.FC<OpenChamberVisualSettingsProps>
                                         <ResponsiveSettingsGroup
                                             isMobile={isMobile}
                                             label={t('settings.openchamber.visual.section.followUpBehavior')}
+                                            className="w-full"
                                         >
                                             <div data-settings-item="chat.follow-up-behavior" role="radiogroup" aria-label={t('settings.openchamber.visual.section.followUpBehaviorAria')}>
                                                 {FOLLOW_UP_BEHAVIOR_OPTIONS.map((option) => {

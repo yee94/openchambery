@@ -681,15 +681,22 @@ const runStructuredGenerationInActiveSession = async ({
 
 export async function listGitWorktrees(directory: string): Promise<import('./api/types').GitWorktreeInfo[]> {
   const runtime = getRuntimeGit();
+  if (!runtime) return gitHttp.listGitWorktrees(directory);
+
   // Runtime bridges bypass gitApiHttp's discovery gate — wrap them the same way.
-  if (runtime?.worktree?.list) {
-    const list = runtime.worktree.list.bind(runtime.worktree);
-    return gitHttp.withGitDiscoveryNetworkSlot(() => list(directory));
+  // The web/mobile bridge is the exception: it points straight back at
+  // gitApiHttp, which takes its own slot. Wrapping that again makes one listing
+  // hold two of the gate's two permits, so two overlapping catalog refreshes
+  // deadlock the gate and every later discovery call stalls forever.
+  const bridged = runtime.worktree?.list ?? runtime.listGitWorktrees;
+  if (gitHttp.isGitDiscoveryGated(bridged)) {
+    return gitHttp.listGitWorktrees(directory);
   }
-  if (runtime) {
-    return gitHttp.withGitDiscoveryNetworkSlot(() => runtime.listGitWorktrees(directory));
-  }
-  return gitHttp.listGitWorktrees(directory);
+
+  const invoke = runtime.worktree?.list
+    ? runtime.worktree.list.bind(runtime.worktree)
+    : runtime.listGitWorktrees.bind(runtime);
+  return gitHttp.withGitDiscoveryNetworkSlot(() => invoke(directory));
 }
 
 export async function validateGitWorktree(

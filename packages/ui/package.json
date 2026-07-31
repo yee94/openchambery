@@ -1,6 +1,6 @@
 {
   "name": "@openchamber/ui",
-  "version": "1.16.94-beta.6",
+  "version": "1.16.94-beta.7",
   "private": true,
   "type": "module",
   "main": "src/main.tsx",
@@ -97,7 +97,7 @@
     "@types/react": "^19.2.0",
     "@types/react-dom": "^19.2.0",
     "@remixicon/react": "^4.7.0",
-    "@vitejs/plugin-react": "^5.0.0",
+    "@vitejs/plugin-react": "^6.0.5",
     "autoprefixer": "^10.4.21",
     "concurrently": "^9.2.1",
     "cors": "^2.8.5",
@@ -112,6 +112,6 @@
     "tw-animate-css": "^1.3.8",
     "typescript": "~5.9.0",
     "typescript-eslint": "^8.39.1",
-    "vite": "^7.1.2"
+    "vite": "^8.2.0"
   }
 }

@@ -153,10 +153,9 @@ enum OpenChamberShareStore {
     }
     private static func assistantImage(seed: String, emoji: String?) -> INImage? {
         let size = CGSize(width: 256, height: 256)
-        let image = UIGraphicsImageRenderer(size: size).image { context in
-            context.cgContext.setFillColor(UIColor.white.cgColor)
-            context.cgContext.fill(CGRect(origin: .zero, size: size))
-
+        let format = UIGraphicsImageRendererFormat.default()
+        format.opaque = false
+        let image = UIGraphicsImageRenderer(size: size, format: format).image { context in
             if let emoji, !emoji.isEmpty {
                 let font = UIFont.systemFont(ofSize: size.width * 0.7)
                 let attributes: [NSAttributedString.Key: Any] = [.font: font]

@@ -3,6 +3,12 @@ import type { MessageQueueItem, MessageQueueScope } from '@/lib/message-queue-se
 import type { DraftKey } from '@/sync/input-draft-types';
 import type { DraftCommitInput } from '@/sync/input-store';
 import { isMessageQueuePendingAdmissionItem, type MessageQueueServerDisplayItem } from '@/sync/message-queue-server-runtime';
+import { isInlineAttachmentCitation } from '@/composer/inline-attachment-sync';
+import {
+    buildMessageReferenceParts,
+    type MessageReferenceDetectContext,
+    type MessageTextPart,
+} from '@/lib/messages/references';
 
 export const queueModeAllowsMutations = (mode: 'legacy' | 'server' | 'frozen'): boolean => mode !== 'frozen';
 
@@ -268,4 +274,98 @@ export const reorderServerQueueItems = (
         return visibleIDs[visibleIndex++] ?? item.queueItemID;
     });
     return { requestID, scopeID: scope.scopeID, revision: scope.revision, queueItemIDs };
+};
+
+type QueuePreviewAttachment = {
+    filename?: string;
+    mimeType?: string;
+    source?: 'local' | 'server' | 'vscode';
+    vscodeSource?: 'file' | 'selection';
+};
+
+type QueuePreviewComposerReference = {
+    kind?: unknown;
+    sessionId?: unknown;
+    display?: unknown;
+};
+
+type QueuePreviewComposerDocument = {
+    text?: string;
+    references?: readonly QueuePreviewComposerReference[];
+};
+
+/** Prefer composer display text so reserved-slot citations/mentions stay chip-decoratable. */
+export const resolveQueuedMessagePreviewText = (message: {
+    content: string;
+    composerDocument?: QueuePreviewComposerDocument | null;
+    failure?: { recovery?: { content?: string; composerDocument?: QueuePreviewComposerDocument | null } };
+}): string => {
+    const recovery = message.failure?.recovery;
+    const display = recovery?.composerDocument?.text ?? message.composerDocument?.text;
+    if (typeof display === 'string' && display.length > 0) return display;
+    return recovery?.content ?? message.content;
+};
+
+export const buildCitationIconsFromQueueAttachments = (
+    attachments: readonly QueuePreviewAttachment[] | undefined,
+): Map<string, 'image' | 'attachment'> => {
+    const icons = new Map<string, 'image' | 'attachment'>();
+    for (const attachment of attachments ?? []) {
+        const filename = typeof attachment.filename === 'string' ? attachment.filename.trim() : '';
+        if (!filename) continue;
+        const key = filename.toLowerCase();
+        if (attachment.mimeType?.startsWith('image/')) {
+            icons.set(key, 'image');
+            continue;
+        }
+        if (
+            isInlineAttachmentCitation({
+                source: attachment.source ?? 'local',
+                vscodeSource: attachment.vscodeSource,
+                mimeType: attachment.mimeType,
+            })
+        ) {
+            icons.set(key, 'attachment');
+        }
+    }
+    return icons;
+};
+
+export const buildQueuedMessagePreviewSessionMentions = (
+    composerDocument: QueuePreviewComposerDocument | null | undefined,
+): MessageReferenceDetectContext['sessionMentions'] => {
+    const mentions: Array<{ sessionId: string; sessionLabel: string }> = [];
+    for (const reference of composerDocument?.references ?? []) {
+        if (reference.kind !== 'session' || typeof reference.sessionId !== 'string') continue;
+        const display = typeof reference.display === 'string' ? reference.display : '';
+        const sessionLabel = display.replace(/^@\u2003?/, '').trim() || reference.sessionId;
+        mentions.push({ sessionId: reference.sessionId, sessionLabel });
+    }
+    return mentions;
+};
+
+/** First visual line for the queue chip; CSS truncation owns overflow. */
+export const queuedMessagePreviewLine = (text: string): string => {
+    const first = text.split('\n')[0] ?? '';
+    return first + (text.includes('\n') ? '...' : '');
+};
+
+/**
+ * Decorated preview parts for a queue chip. Returns null when the line has no
+ * reference tokens so the caller can keep a plain-text fast path.
+ */
+export const buildQueuedMessagePreviewParts = (
+    text: string,
+    options: {
+        attachments?: readonly QueuePreviewAttachment[];
+        composerDocument?: QueuePreviewComposerDocument | null;
+    } = {},
+): MessageTextPart[] | null => {
+    const line = queuedMessagePreviewLine(text);
+    if (!line) return null;
+    return buildMessageReferenceParts(line, {
+        citationIcons: buildCitationIconsFromQueueAttachments(options.attachments),
+        sessionMentions: buildQueuedMessagePreviewSessionMentions(options.composerDocument),
+        allowPathHeuristics: true,
+    });
 };

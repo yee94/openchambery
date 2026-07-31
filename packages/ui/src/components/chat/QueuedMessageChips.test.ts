@@ -1,9 +1,9 @@
 import { beforeEach, describe, expect, test } from 'bun:test';
 import { legacyQueueScope, setMessageQueueMutationFence, useMessageQueueStore, type QueueItem, type QueueScope } from '@/stores/messageQueueStore';
-import { applyPendingServerQueueOperation, applyPendingServerQueueOperations, canEditQueuedMessage, canRemoveQueuedMessage, canSendQueuedMessage, canSendServerQueuedMessage, isServerQueueItemActiveAttempt, isServerQueueItemDispatchPending, isServerQueueItemHiddenFromChips, legacyQueueEditRestoreSource, mergeQueuedMessageScopes, popQueuedMessageForEdit, projectServerQueueChipItems, queueModeAllowsMutations, reorderServerQueueItems, selectCommittedSendShadows, selectPendingServerQueueOperation, selectPendingServerQueueOperations, serverQueueEditInput, serverQueueItemMutationInput, shouldRemoveQueueItemAfterEditCommit } from './queuedMessageChipsState';
+import { applyPendingServerQueueOperation, applyPendingServerQueueOperations, buildQueuedMessagePreviewParts, canEditQueuedMessage, canRemoveQueuedMessage, canSendQueuedMessage, canSendServerQueuedMessage, isServerQueueItemActiveAttempt, isServerQueueItemDispatchPending, isServerQueueItemHiddenFromChips, legacyQueueEditRestoreSource, mergeQueuedMessageScopes, popQueuedMessageForEdit, projectServerQueueChipItems, queueModeAllowsMutations, queuedMessagePreviewLine, reorderServerQueueItems, resolveQueuedMessagePreviewText, selectCommittedSendShadows, selectPendingServerQueueOperation, selectPendingServerQueueOperations, serverQueueEditInput, serverQueueItemMutationInput, shouldRemoveQueueItemAfterEditCommit } from './queuedMessageChipsState';
 import type { ServerQueueCommittedSendShadow, ServerQueueOperationIdentity } from './queuedMessageChipsState';
 import type { MessageQueueItem, MessageQueueScope } from '@/lib/message-queue-server';
-import { sessionDraftKey } from '@/sync/input-draft-types';
+import { DRAFT_COMPOSER_TRIGGER_ICON_SLOT, sessionDraftKey } from '@/sync/input-draft-types';
 import { isMessageQueuePendingAdmissionItem, type MessageQueuePendingAdmissionItem } from '@/sync/message-queue-server-runtime';
 import { queuedMessageItemScope, selectLegacyQueueDisplayItemsForScope, selectQueuedMessagesForScope } from './QueuedMessageChips';
 
@@ -397,5 +397,57 @@ describe('QueuedMessageChips legacy pending admission display', () => {
         expect(canEditQueuedMessage(pending, { frozen: false })).toBe(false);
         expect(canRemoveQueuedMessage(pending, { frozen: false })).toBe(false);
         expect(canSendServerQueuedMessage(pending as MessageQueuePendingAdmissionItem, false)).toBe(false);
+    });
+});
+
+describe('QueuedMessageChips preview decoration', () => {
+    test('prefers composer display text over canonical queue content', () => {
+        const display = `[${DRAFT_COMPOSER_TRIGGER_ICON_SLOT}image-1.png] review`;
+        expect(resolveQueuedMessagePreviewText({
+            content: '[image-1.png] review',
+            composerDocument: { text: display, references: [] },
+        })).toBe(display);
+        expect(resolveQueuedMessagePreviewText({
+            content: 'visible',
+            failure: { recovery: { content: 'recovered', composerDocument: { text: 'recovered display', references: [] } } },
+        })).toBe('recovered display');
+    });
+
+    test('decorates reserved-slot image citations as chips instead of raw placeholders', () => {
+        const text = `[${DRAFT_COMPOSER_TRIGGER_ICON_SLOT}image-1.png] please review`;
+        const parts = buildQueuedMessagePreviewParts(text, {
+            attachments: [{ filename: 'image-1.png', mimeType: 'image/png', source: 'local' }],
+        });
+        expect(parts?.[0]?.type).toBe('reference');
+        if (parts?.[0]?.type !== 'reference') throw new Error('expected image reference');
+        expect([parts[0].decoration.kind, parts[0].decoration.label, parts[0].decoration.icon]).toEqual([
+            'image',
+            'image-1.png',
+            'file-image',
+        ]);
+        expect(parts?.[1]).toEqual({ type: 'text', text: ' please review' });
+    });
+
+    test('decorates session mentions from composer document sidecars', () => {
+        const label = `MessageReferenceChip`;
+        const text = `@${DRAFT_COMPOSER_TRIGGER_ICON_SLOT}${label} follow up`;
+        const parts = buildQueuedMessagePreviewParts(text, {
+            composerDocument: {
+                text,
+                references: [{ kind: 'session', sessionId: 'ses_1', display: `@${DRAFT_COMPOSER_TRIGGER_ICON_SLOT}${label}` }],
+            },
+        });
+        expect(parts?.[0]?.type).toBe('reference');
+        if (parts?.[0]?.type !== 'reference') throw new Error('expected session reference');
+        expect([parts[0].decoration.kind, parts[0].decoration.label, parts[0].decoration.icon]).toEqual([
+            'session',
+            label,
+            'chat-thread',
+        ]);
+    });
+
+    test('keeps a single-line preview marker for multiline content', () => {
+        expect(queuedMessagePreviewLine('first\nsecond')).toBe('first...');
+        expect(queuedMessagePreviewLine('only')).toBe('only');
     });
 });
