@@ -20,6 +20,7 @@ import { createDraftAttachmentResourceAdapter } from '@/sync/draft-attachment-re
 import { buildQueueComposerRestoration, commitComposerRestoration } from '@/sync/message-composer-restoration';
 import type { AttachedFile } from '@/stores/types/sessionTypes';
 import * as sessionActions from '@/sync/session-actions';
+import { commitMessageEdit } from '@/sync/session-actions';
 import type { OptimisticSendTicket } from '@/sync/session-actions';
 import { useDirectorySync, useSessionMessages, useUserMessageHistory } from '@/sync/sync-context';
 import { getAllSyncSessionMap, getSyncMessages, resolveMaterializedSessionDirectory } from '@/sync/sync-refs';
@@ -2319,6 +2320,28 @@ const ChatInputRuntime: React.FC<ChatInputProps> = ({ onOpenSettings, scrollToBo
     const handleQueueMessage = useEvent(async () => {
         if (!surface.active) return;
         if (isSubmissionInFlight()) return;
+        // A staged edit routed through the queue still means "delete the old turn,
+        // then send the new content": run the delete first so the queue item is the
+        // replacement, not an extra message. A failed delete keeps the staged edit
+        // and drops the admission instead of parking a stale delete for a later
+        // unrelated send.
+        if (currentSessionId) {
+            const stagedBeforeQueue = useSessionUIStore.getState().stagedMessageEdit;
+            if (stagedBeforeQueue && stagedBeforeQueue.sessionId === currentSessionId) {
+                useSessionUIStore.getState().beginMessageEditCommit(stagedBeforeQueue.sessionId, stagedBeforeQueue.messageId);
+                try {
+                    await commitMessageEdit(stagedBeforeQueue.sessionId, stagedBeforeQueue.messageId);
+                } catch (error) {
+                    console.warn('[chat-input] staged-edit delete failed before queue admission', error);
+                    return;
+                } finally {
+                    useSessionUIStore.getState().endMessageEditCommit(stagedBeforeQueue.sessionId, stagedBeforeQueue.messageId);
+                }
+                if (useSessionUIStore.getState().stagedMessageEdit === stagedBeforeQueue) {
+                    useSessionUIStore.getState().clearStagedMessageEdit(stagedBeforeQueue.sessionId);
+                }
+            }
+        }
         const inputSnapshot = getCurrentInputSnapshot();
         const initialSerialization = serializeComposerDocument(inputSnapshot.document);
         if (!initialSerialization.ok) { toast.error(t('chat.chatInput.toast.messageSendFailed')); return; }
@@ -5918,11 +5941,17 @@ const ChatInputRuntime: React.FC<ChatInputProps> = ({ onOpenSettings, scrollToBo
                 submitInFlight: isSubmissionInFlight(),
                 focusHeld: Date.now() < holdComposerFocusUntilRef.current,
                 overlayOpen: openSheetCountRef.current > 0 || mobilePickerDialogsOpenRef.current,
-                focusInsideComposer: active instanceof Element && Boolean(
-                    active.closest('[data-chat-input="true"]')
-                    || active.closest('[data-chat-input-footer="true"]')
-                    || active.closest('[data-slot="dropdown-menu-content"]'),
-                ),
+                focusInsideComposer:
+                    (active instanceof Element
+                        && Boolean(
+                            active.closest('[data-composer-content="true"]')
+                            || active.closest('[data-slot="dropdown-menu-content"]'),
+                        ))
+                    // A composer chrome action (attach, agent, model, dictation,
+                    // pickers) blur the textarea on purpose as part of the gesture;
+                    // focus landing outside the field inside that window is not an
+                    // abandonment of the staged edit.
+                    || Date.now() < suppressComposerFocusUntilRef.current,
             });
             if (decision.action === 'disarm') {
                 useSessionUIStore.getState().clearStagedMessageEdit(decision.sessionId);
@@ -7155,8 +7184,7 @@ const ChatInputRuntime: React.FC<ChatInputProps> = ({ onOpenSettings, scrollToBo
                                         return;
                                     }
                                     if (
-                                        active.closest('[data-chat-input="true"]')
-                                        || active.closest('[data-chat-input-footer="true"]')
+                                        active.closest('[data-composer-content="true"]')
                                         || active.closest('[data-slot="dropdown-menu-content"]')
                                     ) return;
                                     setDesktopComposerFocused(false);

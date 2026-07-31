@@ -66,4 +66,19 @@ describe('ChatInput staged-edit wiring', () => {
         const settleHandler = chatInputSource.slice(settleStart, chatInputSource.indexOf('});', settleStart));
         expect(settleHandler).toContain('endMessageEditCommit(');
     });
+
+    test('commits a staged edit before queue admission so a queued resend stays a replacement', () => {
+        const queueStart = chatInputSource.indexOf('const handleQueueMessage = useEvent(async () => {');
+        const queueHandler = chatInputSource.slice(queueStart, chatInputSource.indexOf('const inputSnapshot = getCurrentInputSnapshot();', queueStart));
+        expect(queueHandler).toContain('commitMessageEdit(');
+        expect(queueHandler).toContain('beginMessageEditCommit(');
+        expect(queueHandler).toContain('endMessageEditCommit(');
+        expect(queueHandler).toContain('clearStagedMessageEdit(');
+    });
+
+    test('treats the whole composer shell and chrome-action windows as still inside the composer', () => {
+        expect(chatInputSource).toContain('active.closest(\'[data-composer-content="true"]\')');
+        expect(chatInputSource).toContain('Date.now() < suppressComposerFocusUntilRef.current');
+        expect(chatInputSource).not.toContain('active.closest(\'[data-chat-input="true"]\') || active.closest(\'[data-chat-input-footer');
+    });
 });
