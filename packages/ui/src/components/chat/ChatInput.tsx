@@ -123,7 +123,6 @@ import {
     buildAttachmentCitationText,
     findAttachmentCitationRanges,
     isInlineAttachmentCitation,
-    removeAttachmentCitations,
     resolveAttachmentCitationDeletion,
 } from './attachmentCitations';
 import { getFileMentionAutocompleteQuery, type FileMentionAutocompleteInputSource } from './fileMentionAutocompleteState';
@@ -3869,12 +3868,13 @@ const ChatInputRuntime: React.FC<ChatInputProps> = ({ onOpenSettings, scrollToBo
                 const removedFilenames = new Set(citationDeletion.removedFilenames.map((filename) => filename.toLowerCase()));
                 const normalizedDeletion = normalizeReferenceDeletionWhitespace(citationDeletion.text, citationDeletion.caret);
                 e.preventDefault();
+                // Text first so store citation strip is a no-op; remove is the shared attachment sink.
+                applyProgrammaticEdit(normalizedDeletion.text);
                 for (const attachment of attachedFiles) {
                     if (removedFilenames.has(attachment.filename.toLowerCase())) {
-                        surfaceResources.removeAttachment(attachment.id);
+                        void surfaceResources.removeAttachment(attachment.id);
                     }
                 }
-                applyProgrammaticEdit(normalizedDeletion.text);
                 requestAnimationFrame(() => {
                     if (textareaRef.current) {
                         textareaRef.current.selectionStart = normalizedDeletion.caret;
@@ -3922,8 +3922,9 @@ const ChatInputRuntime: React.FC<ChatInputProps> = ({ onOpenSettings, scrollToBo
                         const removeUntil = message[citationRange.end] === ' ' ? citationRange.end + 1 : citationRange.end;
                         const nextMessage = `${message.slice(0, citationRange.start)}${message.slice(removeUntil)}`;
                         e.preventDefault();
-                        if (attachment) surfaceResources.removeAttachment(attachment.id);
+                        // Text first so store citation strip is a no-op; remove is the shared attachment sink.
                         applyProgrammaticEdit(nextMessage);
+                        if (attachment) void surfaceResources.removeAttachment(attachment.id);
                         requestAnimationFrame(() => {
                             if (textareaRef.current) {
                                 textareaRef.current.selectionStart = citationRange.start;
@@ -4566,23 +4567,10 @@ const ChatInputRuntime: React.FC<ChatInputProps> = ({ onOpenSettings, scrollToBo
         commitBrowserTextChange(nextValue, cursorPosition, cursorPosition, inputSource, text);
     }, [commitBrowserTextChange, message]);
 
+    // Store removeDraftAttachment clears inline citations in the same revision.
     const handleAttachedFileRemove = React.useCallback((file: AttachedFile) => {
-        surfaceResources.removeAttachment(file.id);
-        if (!isInlineAttachmentCitation(file)) {
-            return;
-        }
-
-        const nextMessage = removeAttachmentCitations(message, [file.filename]);
-        if (nextMessage === message) {
-            return;
-        }
-
-        applyProgrammaticEdit(nextMessage);
-        requestAnimationFrame(() => {
-            adjustTextareaHeight();
-        });
-        updateAutocompleteState(nextMessage, Math.min(textareaRef.current?.selectionStart ?? nextMessage.length, nextMessage.length));
-    }, [adjustTextareaHeight, message, surfaceResources, updateAutocompleteState, applyProgrammaticEdit]);
+        void surfaceResources.removeAttachment(file.id);
+    }, [surfaceResources]);
 
     const clearDropTextSuppression = React.useCallback(() => {
         suppressNextFileDropTextInsertRef.current = false;

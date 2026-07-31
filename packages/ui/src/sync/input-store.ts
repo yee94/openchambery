@@ -12,6 +12,7 @@ import { createInputDraftBlobStore, type DraftBlobErrorCode, type InputDraftBlob
 import { createInputDraftDurabilityCoordinator, type InputDraftDurabilityCoordinator, type InputDraftDurabilityResult } from "./input-draft-durability-coordinator"
 import { cloneDraftRecord, draftKeyString, draftRootAttachmentOccurrenceRefID, draftSyntheticPartAttachmentOccurrenceRefID, isDurableURL, parseDraftRecord, type DraftAttachmentMetadata, type DraftComposerDocument, type DraftKey, type DraftMention, type DraftRecord, type DraftSyntheticPart } from "./input-draft-types"
 import { parseLegacyDraftComposerDocument } from "./input-draft-composer-parser"
+import { isInlineAttachmentCitation, stripInlineAttachmentCitationsFromDraft } from "@/composer/inline-attachment-sync"
 
 const FILE_URI_PREFIX = "file://"
 const encodeFilePath = (filepath: string): string => {
@@ -787,7 +788,46 @@ export const createInputStore = (services: InputDraftServices = {}) => {
     attachmentHydrationTasks.set(id, task)
     try { await task } finally { if (attachmentHydrationTasks.get(id) === task) attachmentHydrationTasks.delete(id) }
   },
-  removeDraftAttachment: async (key, attachmentRefID) => { const id = draftKeyString(key); const record = get().drafts[id]; const attachment = record && attachmentList(record).find((item) => item.attachmentRefID === attachmentRefID); if (!record || !attachment) return false; const next = valid({ ...record, revision: record.revision + 1, attachments: record.attachments.filter((item) => item.attachmentRefID !== attachmentRefID), syntheticParts: record.syntheticParts.map((part) => ({ ...part, attachments: part.attachments.filter((item) => item.attachmentRefID !== attachmentRefID) })) }); if (!next) return false; bump(id); set((state) => { const views = { ...state.draftAttachmentViews[id] }; delete views[attachmentRefID]; return { drafts: { ...state.drafts, [id]: next }, draftAttachmentViews: { ...state.draftAttachmentViews, [id]: views }, draftMissingAttachmentRefIDs: { ...state.draftMissingAttachmentRefIDs, [id]: (state.draftMissingAttachmentRefIDs[id] ?? []).filter((ref) => ref !== attachmentRefID) } } }); const result = await persist([id]); return result.status === "committed" },
+  removeDraftAttachment: async (key, attachmentRefID) => {
+    const id = draftKeyString(key)
+    const record = get().drafts[id]
+    const attachment = record && attachmentList(record).find((item) => item.attachmentRefID === attachmentRefID)
+    if (!record || !attachment) return false
+    // Inline citations (images / code selections) live with the attachment metadata.
+    const stripped = isInlineAttachmentCitation(attachment)
+      ? stripInlineAttachmentCitationsFromDraft(record.text, [attachment.filename], record.mentions, record.composerReferences)
+      : undefined
+    const next = valid({
+      ...record,
+      revision: record.revision + 1,
+      ...(stripped?.changed ? {
+        text: stripped.text,
+        mentions: stripped.mentions,
+        ...(stripped.composerReferences === undefined ? {} : { composerReferences: stripped.composerReferences }),
+      } : {}),
+      attachments: record.attachments.filter((item) => item.attachmentRefID !== attachmentRefID),
+      syntheticParts: record.syntheticParts.map((part) => ({
+        ...part,
+        attachments: part.attachments.filter((item) => item.attachmentRefID !== attachmentRefID),
+      })),
+    })
+    if (!next) return false
+    bump(id)
+    set((state) => {
+      const views = { ...state.draftAttachmentViews[id] }
+      delete views[attachmentRefID]
+      return {
+        drafts: { ...state.drafts, [id]: next },
+        draftAttachmentViews: { ...state.draftAttachmentViews, [id]: views },
+        draftMissingAttachmentRefIDs: {
+          ...state.draftMissingAttachmentRefIDs,
+          [id]: (state.draftMissingAttachmentRefIDs[id] ?? []).filter((ref) => ref !== attachmentRefID),
+        },
+      }
+    })
+    const result = await persist([id])
+    return result.status === "committed"
+  },
   replaceDraftAttachment: async (key, attachmentRefID, file, options) => {
     const id = draftKeyString(key)
     const record = get().drafts[id]

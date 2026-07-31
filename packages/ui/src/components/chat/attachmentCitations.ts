@@ -3,15 +3,21 @@ import {
     COMPOSER_TRIGGER_ICON_SLOT,
     stripComposerTriggerIconSlot,
 } from '@/composer/inline-visual';
+import {
+    findAttachmentCitationRanges,
+    type CitationRange,
+} from '@/composer/inline-attachment-sync';
+
+export {
+    findAttachmentCitationRanges,
+    isInlineAttachmentCitation,
+    removeAttachmentCitations,
+    type CitationRange,
+} from '@/composer/inline-attachment-sync';
 
 export interface ImageAttachmentCandidate {
     name: string;
     type?: string;
-}
-
-export interface CitationRange {
-    start: number;
-    end: number;
 }
 
 export interface AttachmentCitationDeletionIntent {
@@ -192,11 +198,6 @@ export const getAttachmentCitationIconPath = (filename: string): string => (
     filename.replace(/:\d+(?:-\d+)?$/, '')
 );
 
-export const isInlineAttachmentCitation = (attachment: AttachmentCitationCandidate): boolean => (
-    (attachment.source === 'vscode' && attachment.vscodeSource === 'selection')
-    || attachment.mimeType?.startsWith('image/') === true
-);
-
 export const expandCodeSelectionCitations = (
     text: string,
     attachments: CodeSelectionCitationCandidate[] | undefined,
@@ -235,62 +236,6 @@ export const isDirectoryAttachmentMime = (mime?: string | null): boolean => (
 export const isDirectoryAttachmentPath = (path?: string | null): boolean => (
     typeof path === 'string' && /[/\\]$/.test(path.trim())
 );
-
-export const findAttachmentCitationRanges = (text: string, filenames: string[]): CitationRange[] => {
-    if (!text || !text.includes('[') || filenames.length === 0) {
-        return [];
-    }
-
-    const known = new Set(filenames.map(normalizeFilenameKey));
-    const ranges: CitationRange[] = [];
-    let cursor = 0;
-
-    while (cursor < text.length) {
-        const start = text.indexOf('[', cursor);
-        if (start === -1) {
-            break;
-        }
-
-        const end = text.indexOf(']', start + 1);
-        if (end === -1) {
-            break;
-        }
-
-        // Markdown links keep their normal link highlighting; attachment citations
-        // are plain bracket references like [desktop.png] or reserved [␠desktop.png].
-        if (text[end + 1] !== '(') {
-            const name = stripComposerTriggerIconSlot(text.slice(start + 1, end)).trim();
-            if (known.has(normalizeFilenameKey(name))) {
-                ranges.push({ start, end: end + 1 });
-            }
-        }
-
-        cursor = end + 1;
-    }
-
-    return ranges;
-};
-
-export const removeAttachmentCitations = (text: string, filenames: string[]): string => {
-    const ranges = findAttachmentCitationRanges(text, filenames);
-    let nextText = text;
-
-    for (let index = ranges.length - 1; index >= 0; index -= 1) {
-        const range = ranges[index];
-        let start = range.start;
-        let end = range.end;
-
-        if (end < nextText.length && /\s/.test(nextText[end])) {
-            end += 1;
-        } else if (start > 0 && /\s/.test(nextText[start - 1])) {
-            start -= 1;
-        }
-
-        nextText = `${nextText.slice(0, start)}${nextText.slice(end)}`;
-    }
-
-    return nextText;
-};
 
 const getWordDeletionRange = (
     text: string,

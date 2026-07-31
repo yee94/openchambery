@@ -54,6 +54,29 @@ describe("input store durable attachments", () => {
     expect(store.getState().getDraftAttachmentViews(key()).map((item) => item.filename)).toEqual(["three.txt"])
   })
 
+  test("removeDraftAttachment clears inline image citations in the same revision", async () => {
+    const { store } = await createStore()
+    const image = await store.getState().addDraftLocalAttachment(key(), new File(["img"], "image-1.png", { type: "image/png" }))
+    store.getState().setDraftComposerState(key(), {
+      document: { text: "look [\u2003image-1.png] please", references: [] },
+      mentions: [],
+    })
+    const before = store.getState().getDraft(key())!.revision
+    expect(await store.getState().removeDraftAttachment(key(), image!.attachmentRefID)).toBe(true)
+    const draft = store.getState().getDraft(key())!
+    expect(draft.text).toBe("look please")
+    expect(draft.attachments).toEqual([])
+    expect(draft.revision).toBe(before + 1)
+  })
+
+  test("removeDraftAttachment leaves ordinary file draft text alone", async () => {
+    const { store } = await createStore()
+    const file = await store.getState().addDraftLocalAttachment(key(), new File(["note"], "note.txt", { type: "text/plain" }))
+    store.getState().setDraftText(key(), "keep this body")
+    expect(await store.getState().removeDraftAttachment(key(), file!.attachmentRefID)).toBe(true)
+    expect(store.getState().getDraft(key())!.text).toBe("keep this body")
+  })
+
   test("moves and deletes blob-backed drafts through one coordinator transaction", async () => {
     const { store, blobs } = await createStore()
     const source = key("source")
