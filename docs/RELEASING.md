@@ -61,7 +61,7 @@ git push origin "v$VERSION"
 
 | 形式 | 类型 | 自动更新 |
 |---|---|---|
-| `1.16.95` | 稳定正式版 | 可以进入 `/releases/latest` 与 EdgeOne update feed |
+| `1.16.95` | 稳定正式版 | 可以进入 `/releases/latest` 与 Vercel update feed |
 | `1.16.95-beta.1` / `1.16.95-rc.1` | prerelease | **禁止**进入稳定自动更新 |
 
 **发布时必须**
@@ -76,11 +76,11 @@ git push origin "v$VERSION"
 
 - `gh release edit v…-beta… --latest`，或去掉 beta 的 prerelease 标记（除非用户明确要求把该版本升格为正式版）。
 - 把 beta 版本写入 `release-manifest.json`，或手动上传/覆盖稳定通道上的 `latest.yml` / `latest-mac.yml` / `latest-linux*.yml` 指向 beta。
-- 假设 “版本号里有 beta 字样就够了”——GitHub Latest 与 EdgeOne desktop feed 只认 **是否 prerelease**，不认名字。
+- 假设 “版本号里有 beta 字样就够了”——GitHub Latest 与 Vercel desktop feed 只认 **是否 prerelease**，不认名字。
 
 **通道说明**
 
-- 桌面 EdgeOne `/desktop/latest*.yml` 代理 `https://github.com/yee94/openchamber/releases/latest/download/…`。
+- 桌面 Vercel `/desktop/latest*.yml` 代理 `https://github.com/yee94/openchamber/releases/latest/download/…`。
 - Android 最新 APK 同样读 `/releases/latest`。
 - Web / VS Code / Capacitor 的 JSON 更新检查读 `release-manifest.json`（只应含最新稳定版）。
 - 用户从 Release 页**手动下载** beta 安装包不受影响；被隔离的只有稳定客户端自动更新。
@@ -99,7 +99,7 @@ gh release edit "v$STABLE_VERSION" --latest --repo yee94/openchamber
 
 ```bash
 gh api repos/yee94/openchamber/releases/latest --jq .tag_name   # 应为稳定版
-curl -sS https://openchamber-update.edgeone.dev/desktop/latest-mac.yml | head -3
+curl -sS https://openchamber-update.vercel.app/desktop/latest-mac.yml | head -3
 ```
 
 Agent 入口命令：`.opencode/commands/release.md`。

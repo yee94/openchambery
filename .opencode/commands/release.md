@@ -33,11 +33,11 @@ Stable packaged clients must never be offered a beta through auto-update. When r
 
 - **Must** use a semver prerelease form such as `X.Y.Z-beta.N`. Never ship a beta as a plain `X.Y.Z` tag.
 - **Must** rely on `release.yml` marking the GitHub Release as `prerelease: true` so it does **not** become `/releases/latest`.
-- **Must not** write, commit, or push `deploy/update-service/release-manifest.json` to the beta version. That file is the stable EdgeOne JSON update feed; `write-release-manifest.mjs` and finalize-release already skip prereleases — do not bypass them.
+- **Must not** write, commit, or push `deploy/update-service/release-manifest.json` to the beta version. That file is the stable Vercel JSON update feed; `write-release-manifest.mjs` and finalize-release already skip prereleases — do not bypass them.
 - **Must not** manually promote a beta to Latest (`gh release edit … --latest`) or clear its prerelease flag unless the user explicitly converts it into a stable release.
-- **Must not** point desktop updater feeds, Discord “latest”, or Android “latest APK” at a beta. Desktop EdgeOne `/desktop/latest*.yml` proxies GitHub `/releases/latest`; Android also uses `/releases/latest`.
+- **Must not** point desktop updater feeds, Discord “latest”, or Android “latest APK” at a beta. Desktop Vercel `/desktop/latest*.yml` proxies GitHub `/releases/latest`; Android also uses `/releases/latest`.
 - **Must** leave `autoUpdater.allowPrerelease = false` alone unless the user explicitly requests prerelease auto-update.
-- After pushing a beta tag, if a previous beta was accidentally published as Latest, immediately restore the newest stable release as Latest (`gh release edit vX.Y.Z --latest`) and confirm `release-manifest.json` / EdgeOne `latest-mac.yml` still show that stable version.
+- After pushing a beta tag, if a previous beta was accidentally published as Latest, immediately restore the newest stable release as Latest (`gh release edit vX.Y.Z --latest`) and confirm `release-manifest.json` / Vercel `latest-mac.yml` still show that stable version.
 - Beta still skips iOS/TestFlight (Apple marketing versions cannot include `-beta`).
 
 Constraints:

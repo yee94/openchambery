@@ -1,7 +1,7 @@
 import assert from 'node:assert/strict';
 import { afterEach, test } from 'node:test';
 
-import { onRequest } from '../edge-functions/v1/update/check.js';
+import { handleUpdateCheck } from '../lib/update-check.js';
 
 let restoreFetch = null;
 
@@ -70,13 +70,11 @@ test('returns the existing update API contract with changelog notes for a newer 
     ].join('\n'),
   });
 
-  const response = await onRequest({
-    request: requestWithJson({
-      currentVersion: '1.16.48',
-      installId: 'client-install-id',
-      reportUsage: true,
-    }),
-  });
+  const response = await handleUpdateCheck(requestWithJson({
+    currentVersion: '1.16.48',
+    installId: 'client-install-id',
+    reportUsage: true,
+  }));
   const body = await response.json();
 
   assert.equal(response.status, 200);
@@ -94,7 +92,7 @@ test('returns the existing update API contract with changelog notes for a newer 
 
 test('returns an up-to-date result without fetching changelog content', async () => {
   const requests = stubStaticAssets({ manifest });
-  const response = await onRequest({ request: requestWithJson({ currentVersion: '1.16.50' }) });
+  const response = await handleUpdateCheck(requestWithJson({ currentVersion: '1.16.50' }));
   const body = await response.json();
 
   assert.deepEqual(body, {
@@ -112,7 +110,7 @@ test('treats a prerelease client as older than the corresponding stable release'
     manifest,
     changelog: '## [1.16.50] - 2026-07-21\n\n- Stable release',
   });
-  const response = await onRequest({ request: requestWithJson({ currentVersion: '1.16.50-beta.1' }) });
+  const response = await handleUpdateCheck(requestWithJson({ currentVersion: '1.16.50-beta.1' }));
   const body = await response.json();
 
   assert.equal(body.updateAvailable, true);
@@ -121,18 +119,18 @@ test('treats a prerelease client as older than the corresponding stable release'
 
 test('returns platform download targets for Capacitor clients', async () => {
   stubStaticAssets({ manifest, changelog: '## [1.16.50] - 2026-07-21\n\n- Mobile release' });
-  const androidResponse = await onRequest({ request: requestWithJson({
+  const androidResponse = await handleUpdateCheck(requestWithJson({
     currentVersion: '1.16.49', appType: 'mobile-capacitor', platform: 'android',
-  }) });
+  }));
   const android = await androidResponse.json();
   assert.equal(android.downloadUrl, 'https://github.com/yee94/openchamber/releases/download/v1.16.50/app-release.apk');
 
   restoreFetch?.();
   restoreFetch = null;
   stubStaticAssets({ manifest, changelog: '## [1.16.50] - 2026-07-21\n\n- Mobile release' });
-  const iosResponse = await onRequest({ request: requestWithJson({
+  const iosResponse = await handleUpdateCheck(requestWithJson({
     currentVersion: '1.16.49', appType: 'mobile-capacitor', platform: 'ios',
-  }) });
+  }));
   const ios = await iosResponse.json();
   assert.equal(ios.downloadUrl, manifest.releaseNotesUrl);
 });
@@ -146,13 +144,11 @@ test('returns a controlled error for malformed request JSON', async () => {
     globalThis.fetch = originalFetch;
   };
 
-  const response = await onRequest({
-    request: new Request('https://updates.example.com/v1/update/check', {
-      method: 'POST',
-      headers: { 'content-type': 'application/json' },
-      body: '{',
-    }),
-  });
+  const response = await handleUpdateCheck(new Request('https://updates.example.com/v1/update/check', {
+    method: 'POST',
+    headers: { 'content-type': 'application/json' },
+    body: '{',
+  }));
 
   assert.equal(response.status, 400);
   assert.deepEqual(await response.json(), { error: 'Request body must contain JSON' });
@@ -160,19 +156,19 @@ test('returns a controlled error for malformed request JSON', async () => {
 
 test('returns a controlled error when the generated manifest is unavailable', async () => {
   stubStaticAssets({ manifest, manifestStatus: 503 });
-  const response = await onRequest({ request: requestWithJson({ currentVersion: '1.16.49' }) });
+  const response = await handleUpdateCheck(requestWithJson({ currentVersion: '1.16.49' }));
 
   assert.equal(response.status, 503);
   assert.deepEqual(await response.json(), { error: 'Update manifest is unavailable' });
 });
 
 test('answers CORS preflight and method validation', async () => {
-  const optionsResponse = await onRequest({
-    request: new Request('https://updates.example.com/v1/update/check', { method: 'OPTIONS' }),
-  });
-  const getResponse = await onRequest({
-    request: new Request('https://updates.example.com/v1/update/check', { method: 'GET' }),
-  });
+  const optionsResponse = await handleUpdateCheck(
+    new Request('https://updates.example.com/v1/update/check', { method: 'OPTIONS' }),
+  );
+  const getResponse = await handleUpdateCheck(
+    new Request('https://updates.example.com/v1/update/check', { method: 'GET' }),
+  );
 
   assert.equal(optionsResponse.status, 204);
   assert.equal(optionsResponse.headers.get('access-control-allow-methods'), 'POST, OPTIONS');

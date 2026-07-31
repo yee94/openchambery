@@ -1,7 +1,17 @@
 {
-  "buildCommand": "bun run build",
-  "installCommand": "bun install",
-  "outputDirectory": "dist",
+  "buildCommand": "node scripts/build.mjs",
+  "installCommand": "echo 'no package dependencies'",
+  "outputDirectory": "public",
+  "rewrites": [
+    {
+      "source": "/v1/update/check",
+      "destination": "/api/v1/update/check"
+    },
+    {
+      "source": "/desktop/:file",
+      "destination": "/api/desktop?file=:file"
+    }
+  ],
   "headers": [
     {
       "source": "/update-manifest.json",

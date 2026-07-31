@@ -18,7 +18,7 @@ let cachedDetectedPm = null;
 function getSpawnSyncBaseOptions() {
   return process.platform === 'win32' ? { windowsHide: true } : {};
 }
-const UPDATE_CHECK_URL = process.env.OPENCHAMBER_UPDATE_API_URL || 'https://openchamber-update.edgeone.dev/v1/update/check';
+const UPDATE_CHECK_URL = process.env.OPENCHAMBER_UPDATE_API_URL || 'https://openchamber-update.vercel.app/v1/update/check';
 
 function getOpenChamberConfigDir() {
   if (process.platform === 'win32') {

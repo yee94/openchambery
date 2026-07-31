@@ -1,6 +1,6 @@
 export const PRODUCTION_UPDATER_FEED = Object.freeze({
   provider: 'generic',
-  url: 'https://openchamber-update.edgeone.dev/desktop/',
+  url: 'https://openchamber-update.vercel.app/desktop/',
 });
 
 const isLoopbackHostname = (hostname) => {

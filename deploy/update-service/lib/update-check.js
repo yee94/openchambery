@@ -129,8 +129,7 @@ async function loadReleaseNotes(request, currentVersion, latestVersion) {
   }
 }
 
-export async function onRequest(context) {
-  const { request } = context;
+export async function handleUpdateCheck(request) {
   const method = request.method.toUpperCase();
 
   if (method === 'OPTIONS') {

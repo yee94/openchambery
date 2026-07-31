@@ -1,7 +1,7 @@
 import assert from 'node:assert/strict';
 import test from 'node:test';
 
-import { createDesktopManifestHandler, rewriteRelativeAssetUrls } from '../edge-functions/desktop-manifest.js';
+import { createDesktopManifestHandler, rewriteRelativeAssetUrls } from '../lib/desktop-manifest.js';
 
 test('rewrites relative Electron updater asset urls to GitHub release downloads', () => {
   const rewritten = rewriteRelativeAssetUrls([

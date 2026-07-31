@@ -1,6 +1,6 @@
 # OpenChamber Update Service
 
-This EdgeOne Makers project serves the public OpenChamber update-check API at
+This Vercel project serves the public OpenChamber update-check API at
 `POST /v1/update/check`.
 
 ## Contract
@@ -15,47 +15,39 @@ request data.
 
 ## Build inputs
 
-`bun run build` creates the deployable `dist/` directory from repository-owned
+`bun run build` creates the deployable `public/` directory from repository-owned
 release sources:
 
 - `release-manifest.json` provides the latest published version.
 - `CHANGELOG.md` provides release notes.
-- `dist/update-manifest.json` and `dist/CHANGELOG.md` are consumed by the Edge
-  Function at request time.
+- `public/update-manifest.json` and `public/CHANGELOG.md` are consumed by the
+  Edge Function at request time.
 
 The release workflow updates `release-manifest.json` after GitHub publishes a
 **stable** release. Semver prereleases (`X.Y.Z-beta.N`, any version containing
 `-`) must never be written into this manifest: `write-release-manifest.mjs`
 skips them, and `release.yml` finalize-release skips the publish step for
 prereleases. Desktop `/desktop/latest*.yml` likewise proxies GitHub
-`/releases/latest`, which excludes prereleases. Every following EdgeOne
+`/releases/latest`, which excludes prereleases. Every following Vercel
 deployment serves that published stable version. GitHub Actions needs
 repository `contents: write` permission for this manifest commit.
 
-## EdgeOne Makers setup
-
-Create a separate Makers project with these values:
+## Vercel setup
 
 | Setting | Value |
 | --- | --- |
 | Project name | `openchamber-update` |
-| Production branch | `main` |
-| Preset framework | `Other` or `Static` |
 | Root directory | `deploy/update-service` |
-| Build command | `bun run build` |
-| Install command | `bun install` |
-| Build output directory | `dist` |
+| Build command | `node scripts/build.mjs` |
+| Install command | none (no package dependencies) |
+| Output directory | `public` |
+| Framework preset | Other |
 
-Makers assigns a project domain after the first successful deployment. Use that
-domain for the first API verification. A custom domain can later provide
-mainland delivery through domain verification, ICP filing, and an acceleration
-region that includes MLC.
-
-Connect the repository to Makers so pushes to `main` create production
-deployments.
+Connect the repository so pushes to `main` create production deployments, or
+deploy with the Vercel CLI from `deploy/update-service`.
 
 OpenChamber Web, CLI, VS Code, and Capacitor mobile use
-`https://openchamber-update.edgeone.dev/v1/update/check`. Packaged Desktop
+`https://openchamber-update.vercel.app/v1/update/check`. Packaged Desktop
 builds on macOS, Windows, and Linux use Electron updater metadata under
 `/desktop/`. Those metadata responses point signed package downloads at GitHub
 Release assets.

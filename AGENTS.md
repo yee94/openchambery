@@ -34,7 +34,7 @@ Shared contracts must define intentional behavior for every applicable runtime: 
 
 Desktop release work belongs in `packages/electron/`. Electron owns windows, menus, dialogs, notifications, updater, deep links, runtime host switching, local IPC gates, and SSH/tunnel management. The desktop runtime imports `@openchamber/web/server/index.js` and starts the web server in-process through `startWebUiServer`; notifications flow through the injected `onDesktopNotification` callback.
 
-Release artifacts and repository links use `yee94/openchamber`. Electron is the desktop release target; use `bun run electron:build` for the current platform and `bun run release:test` for the release smoke build. Agent GitHub releases follow `docs/RELEASING.md` and `.opencode/commands/release.md`. Semver prereleases (`X.Y.Z-beta.N` / any version with `-`) must publish as GitHub prereleases and must never enter the stable auto-update feed (`/releases/latest`, EdgeOne `/desktop/latest*.yml`, or `deploy/update-service/release-manifest.json`).
+Release artifacts and repository links use `yee94/openchamber`. Electron is the desktop release target; use `bun run electron:build` for the current platform and `bun run release:test` for the release smoke build. Agent GitHub releases follow `docs/RELEASING.md` and `.opencode/commands/release.md`. Semver prereleases (`X.Y.Z-beta.N` / any version with `-`) must publish as GitHub prereleases and must never enter the stable auto-update feed (`/releases/latest`, Vercel `/desktop/latest*.yml`, or `deploy/update-service/release-manifest.json`).
 
 ## Native Module Runtime
 

@@ -55,7 +55,7 @@ describe('checkForUpdates', () => {
 
   it('returns available=true when both API and npm confirm a newer version', async () => {
     fetchMock
-      .when('openchamber-update.edgeone.dev', {
+      .when('openchamber-update.vercel.app', {
         ok: true,
         json: async () => ({
           latestVersion: '1.10.0',
@@ -85,7 +85,7 @@ describe('checkForUpdates', () => {
 
   it('returns available=false when API claims update but npm has same version', async () => {
     fetchMock
-      .when('openchamber-update.edgeone.dev', {
+      .when('openchamber-update.vercel.app', {
         ok: true,
         json: async () => ({
           latestVersion: '1.10.0',
@@ -107,7 +107,7 @@ describe('checkForUpdates', () => {
 
   it('returns available=false when npm only has a prerelease of the current version', async () => {
     fetchMock
-      .when('openchamber-update.edgeone.dev', Promise.reject(new Error('Network error')))
+      .when('openchamber-update.vercel.app', Promise.reject(new Error('Network error')))
       .when('registry.npmjs.org', {
         ok: true,
         json: async () => ({
@@ -122,7 +122,7 @@ describe('checkForUpdates', () => {
 
   it('accepts electron desktop update claims without npm cross-checking', async () => {
     fetchMock
-      .when('openchamber-update.edgeone.dev', {
+      .when('openchamber-update.vercel.app', {
         ok: true,
         json: async () => ({
           latestVersion: '1.10.0',
@@ -143,7 +143,7 @@ describe('checkForUpdates', () => {
 
   it('returns available=false when API claims update but npm is behind', async () => {
     fetchMock
-      .when('openchamber-update.edgeone.dev', {
+      .when('openchamber-update.vercel.app', {
         ok: true,
         json: async () => ({
           latestVersion: '1.10.0',
@@ -166,7 +166,7 @@ describe('checkForUpdates', () => {
   // --- Scenario: API says no update, npm agrees ---
 
   it('returns available=false when API says no update and versions match', async () => {
-    fetchMock.when('openchamber-update.edgeone.dev', {
+    fetchMock.when('openchamber-update.vercel.app', {
       ok: true,
       json: async () => ({
         latestVersion: '1.9.10',
@@ -183,7 +183,7 @@ describe('checkForUpdates', () => {
 
   it('returns available=true from npm fallback when API is unreachable and npm has newer version', async () => {
     fetchMock
-      .when('openchamber-update.edgeone.dev', Promise.reject(new Error('Network error')))
+      .when('openchamber-update.vercel.app', Promise.reject(new Error('Network error')))
       .when('registry.npmjs.org', {
         ok: true,
         json: async () => ({
@@ -203,7 +203,7 @@ describe('checkForUpdates', () => {
 
   it('returns available=false from npm fallback when API is unreachable and versions match', async () => {
     fetchMock
-      .when('openchamber-update.edgeone.dev', Promise.reject(new Error('Network error')))
+      .when('openchamber-update.vercel.app', Promise.reject(new Error('Network error')))
       .when('registry.npmjs.org', {
         ok: true,
         json: async () => ({
@@ -220,7 +220,7 @@ describe('checkForUpdates', () => {
 
   it('returns available=false when API returns non-ok status and versions match on npm', async () => {
     fetchMock
-      .when('openchamber-update.edgeone.dev', {
+      .when('openchamber-update.vercel.app', {
         ok: false,
         status: 500,
         json: async () => ({}),
@@ -241,7 +241,7 @@ describe('checkForUpdates', () => {
 
   it('returns available=false when both sources are unreachable', async () => {
     fetchMock
-      .when('openchamber-update.edgeone.dev', Promise.reject(new Error('Network error')))
+      .when('openchamber-update.vercel.app', Promise.reject(new Error('Network error')))
       .when('registry.npmjs.org', Promise.reject(new Error('Registry unreachable')));
 
     const result = await checkForUpdates({ currentVersion: '1.9.10' });
@@ -252,7 +252,7 @@ describe('checkForUpdates', () => {
   // --- Mobile (Capacitor / Android) via the shared update API ---
 
   it('mobile: returns available=true with the API-provided APK asset', async () => {
-    fetchMock.when('openchamber-update.edgeone.dev', {
+    fetchMock.when('openchamber-update.vercel.app', {
       ok: true,
       json: async () => ({
         latestVersion: '1.11.0',
@@ -277,7 +277,7 @@ describe('checkForUpdates', () => {
   });
 
   it('mobile: returns available=false when the update API reports the same version', async () => {
-    fetchMock.when('openchamber-update.edgeone.dev', {
+    fetchMock.when('openchamber-update.vercel.app', {
       ok: true,
       json: async () => ({
         latestVersion: '1.10.5',
@@ -295,7 +295,7 @@ describe('checkForUpdates', () => {
   });
 
   it('mobile: returns available=false with error when the update API is unreachable', async () => {
-    fetchMock.when('openchamber-update.edgeone.dev', Promise.reject(new Error('Network error')));
+    fetchMock.when('openchamber-update.vercel.app', Promise.reject(new Error('Network error')));
 
     const result = await checkForUpdates({
       appType: 'mobile-capacitor',
@@ -308,7 +308,7 @@ describe('checkForUpdates', () => {
   });
 
   it('mobile: falls back to the release page when the update API omits a download URL', async () => {
-    fetchMock.when('openchamber-update.edgeone.dev', {
+    fetchMock.when('openchamber-update.vercel.app', {
       ok: true,
       json: async () => ({
         latestVersion: '1.11.0',

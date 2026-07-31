@@ -37,7 +37,7 @@ jobs:
       release_upload_url: ${{ steps.create_release.outputs.upload_url }}
       version: ${{ steps.get_version.outputs.version }}
       # Semver prerelease (e.g. 1.16.94-beta.2) must never become GitHub Latest
-      # or enter the EdgeOne auto-update feed used by stable packaged clients.
+      # or enter the Vercel auto-update feed used by stable packaged clients.
       is_prerelease: ${{ steps.get_version.outputs.is_prerelease }}
     steps:
       - uses: actions/checkout@df4cb1c069e1874edd31b4311f1884172cec0e10 # v6.0.3
@@ -667,14 +667,14 @@ jobs:
           # second empty published release, then fail with tag_name already_exists
           # while leaving the asset-bearing draft unpublished. Publish the known
           # draft by id instead.
-          # Keep prerelease bits off /releases/latest so desktop EdgeOne feeds
+          # Keep prerelease bits off /releases/latest so desktop Vercel feeds
           # and Android "latest APK" stay on the newest stable release.
           gh api --method PATCH "repos/${GITHUB_REPOSITORY}/releases/${RELEASE_ID}" \
             -F draft=false \
             -F prerelease="$([[ "${IS_PRERELEASE}" == "true" ]] && echo true || echo false)" \
             --jq '{id, tag_name, draft, prerelease, asset_count: (.assets|length)}'
 
-      - name: Publish EdgeOne update manifest
+      - name: Publish Vercel update manifest
         if: ${{ needs.create-release.outputs.is_prerelease != 'true' }}
         env:
           VERSION: ${{ needs.create-release.outputs.version }}
@@ -690,6 +690,22 @@ jobs:
           git add deploy/update-service/release-manifest.json
           git commit -m "chore: publish update manifest v${VERSION}"
           git push origin HEAD:main
+
+      - name: Deploy update service to Vercel
+        if: ${{ needs.create-release.outputs.is_prerelease != 'true' }}
+        env:
+          VERCEL_TOKEN: ${{ secrets.VERCEL_TOKEN }}
+          VERCEL_ORG_ID: ${{ secrets.VERCEL_ORG_ID }}
+          VERCEL_PROJECT_ID: ${{ secrets.VERCEL_PROJECT_ID }}
+        run: |
+          set -euo pipefail
+          if [[ -z "${VERCEL_TOKEN}" || -z "${VERCEL_ORG_ID}" || -z "${VERCEL_PROJECT_ID}" ]]; then
+            echo "Skipping Vercel deploy; VERCEL_TOKEN / VERCEL_ORG_ID / VERCEL_PROJECT_ID secrets are not configured."
+            exit 0
+          fi
+          mkdir -p deploy/update-service/.vercel
+          printf '%s\n' "{\"orgId\":\"${VERCEL_ORG_ID}\",\"projectId\":\"${VERCEL_PROJECT_ID}\"}" > deploy/update-service/.vercel/project.json
+          npx --yes vercel@latest deploy --prod --yes --token "$VERCEL_TOKEN" --cwd deploy/update-service
 
       - name: Send release to Discord
         if: ${{ env.DISCORD_WEBHOOK_URL != '' }}

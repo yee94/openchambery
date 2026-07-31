@@ -12,11 +12,11 @@ const overrideEnvironment = {
   OPENCHAMBER_UPDATER_E2E_URL: 'http://127.0.0.1:49152/updates/',
 };
 
-test('production updater feed is immutable EdgeOne generic configuration', () => {
+test('production updater feed is immutable Vercel generic configuration', () => {
   assert.equal(Object.isFrozen(PRODUCTION_UPDATER_FEED), true);
   assert.deepEqual(PRODUCTION_UPDATER_FEED, {
     provider: 'generic',
-    url: 'https://openchamber-update.edgeone.dev/desktop/',
+    url: 'https://openchamber-update.vercel.app/desktop/',
   });
 });
 

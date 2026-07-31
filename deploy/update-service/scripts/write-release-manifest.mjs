@@ -15,7 +15,7 @@ if (!VERSION_PATTERN.test(version)) {
 }
 
 // Stable auto-update clients read this manifest. Never promote a semver
-// prerelease (beta/rc/…) into the public EdgeOne update feed.
+// prerelease (beta/rc/…) into the public Vercel update feed.
 if (version.includes('-')) {
   console.log(`Skipping update manifest publication for prerelease v${version}.`);
   process.exit(0);
