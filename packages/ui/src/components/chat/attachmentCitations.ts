@@ -348,6 +348,9 @@ export const resolveAttachmentCitationDeletion = (
     return {
         text: `${text.slice(0, start)}${text.slice(end)}`,
         caret: start,
-        removedFilenames: intersected.map((range) => text.slice(range.start + 1, range.end - 1)),
+        // Strip the reserved icon well so callers can match attachment.filename.
+        removedFilenames: intersected.map((range) => (
+            stripComposerTriggerIconSlot(text.slice(range.start + 1, range.end - 1)).trim()
+        )),
     };
 };

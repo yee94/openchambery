@@ -168,6 +168,19 @@ describe('attachment citations', () => {
         });
     });
 
+    test('strips the reserved icon well from removed image filenames', () => {
+        const text = 'look [\u2003image-2.png]';
+        expect(resolveAttachmentCitationDeletion(
+            text,
+            ['image-2.png'],
+            { key: 'Backspace', selectionStart: text.length, selectionEnd: text.length },
+        )).toEqual({
+            text: 'look',
+            caret: 4,
+            removedFilenames: ['image-2.png'],
+        });
+    });
+
     test('deletes the whole preceding citation with Option+Backspace after its separator', () => {
         const text = 'before [SidebarFooter.tsx:17-24] after';
         const cursor = text.indexOf('after');

@@ -3916,7 +3916,8 @@ const ChatInputRuntime: React.FC<ChatInputProps> = ({ onOpenSettings, scrollToBo
                         attachedFiles.map((file) => file.filename),
                     ).find((range) => probeIndex >= range.start && probeIndex < range.end);
                     if (citationRange) {
-                        const filename = message.slice(citationRange.start + 1, citationRange.end - 1);
+                        // Match attachment.filename after stripping the reserved icon well.
+                        const filename = stripComposerTriggerIconSlot(message.slice(citationRange.start + 1, citationRange.end - 1)).trim();
                         const attachment = attachedFiles.find((file) => file.filename.toLowerCase() === filename.toLowerCase());
                         const removeUntil = message[citationRange.end] === ' ' ? citationRange.end + 1 : citationRange.end;
                         const nextMessage = `${message.slice(0, citationRange.start)}${message.slice(removeUntil)}`;
