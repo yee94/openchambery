@@ -54,6 +54,29 @@ test('Android sharing shortcut contract declares its target and category', async
   assert.match(destroy, /if \(draftID != null\) \{[\s\S]*ACTIVE\.get\(draftID\)/);
 });
 
+test('native Assistant shortcuts use the shared display name and avatar presentation', async () => {
+  const [bridge, android, iosStore, iosPlugin, shareExtension] = await Promise.all([
+    source('../ui/src/apps/MobileShareBridge.tsx'),
+    source('android/app/src/main/java/com/openchamber/app/OpenChamberShareStore.java'),
+    source('ios/App/App/OpenChamberShareStore.swift'),
+    source('ios/App/App/OpenChamberSharePlugin.swift'),
+    source('ios/App/OpenChamberShareExtension/ShareViewController.swift'),
+  ]);
+
+  assert.match(bridge, /getAssistantPresentation\(entry\.name\)/);
+  assert.match(bridge, /name: presentation\.displayName \|\| entry\.name/);
+  assert.match(bridge, /avatarEmoji: presentation\.avatarEmoji/);
+  assert.match(android, /\.setShortLabel\(name\)[\s\S]*\.setLongLabel\(name\)[\s\S]*\.setIcon\(assistantShortcutIcon\(avatarSeed, avatarEmoji\)\)/);
+  assert.match(android, /Icon\.createWithBitmap\(bitmap\)/);
+  assert.match(android, /canvas\.drawText\(emoji,/);
+  assert.match(iosStore, /assistantImage\(seed: target\["avatarSeed"\] as\? String \?\? assistantID, emoji: target\["avatarEmoji"\] as\? String\)/);
+  assert.match(iosPlugin, /target\["avatarEmoji"\] = avatarEmoji/);
+  assert.match(shareExtension, /avatarImage\(seed: target\?\["avatarSeed"\][\s\S]*emoji: target\?\["avatarEmoji"\] as\? String\)/);
+  const destinationCard = shareExtension.match(/private func makeDestinationCard\(\) -> UIView \{[\s\S]*?(?=\n    private func configureButtons)/)?.[0];
+  assert.ok(destinationCard);
+  assert.match(destinationCard, /UIStackView\(arrangedSubviews: \[name\]\)/);
+});
+
 test('Android Assistant shortcut delivery is durable and acknowledged only by the WebView', async () => {
   const [store, plugin, activity, bridge] = await Promise.all([
     source('android/app/src/main/java/com/openchamber/app/OpenChamberShareStore.java'),

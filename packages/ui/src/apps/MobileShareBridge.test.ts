@@ -125,6 +125,15 @@ describe('MobileShareBridge contract', () => {
     expect(picker).not.toContain('max-h-[min(75dvh,36rem)]');
   });
 
+  test('publishes the Assistant display name and leading emoji avatar to native shortcuts', async () => {
+    const source = await readFile(join(directory, 'MobileShareBridge.tsx'), 'utf8');
+
+    expect(source).toContain("import { getAssistantPresentation } from '@/components/assistants/assistantPresentation';");
+    expect(source).toContain('const presentation = getAssistantPresentation(entry.name);');
+    expect(source).toContain('name: presentation.displayName || entry.name,');
+    expect(source).toContain('avatarEmoji: presentation.avatarEmoji');
+  });
+
   test('validates the active server identity before switching a stable connection that may currently use direct transport', async () => {
     const source = await readFile(join(directory, 'MobileShareBridge.tsx'), 'utf8');
     const process = source.indexOf('const processAssignedNativeDraftOne');

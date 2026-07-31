@@ -201,7 +201,7 @@ class ShareViewController: UIViewController, UITextViewDelegate {
         card.layer.cornerCurve = .continuous
         card.translatesAutoresizingMaskIntoConstraints = false
 
-        let avatar = UIImageView(image: Self.avatarImage(seed: target?["avatarSeed"] as? String ?? target?["assistantID"] as? String ?? "OpenChamber"))
+        let avatar = UIImageView(image: Self.avatarImage(seed: target?["avatarSeed"] as? String ?? target?["assistantID"] as? String ?? "OpenChamber", emoji: target?["avatarEmoji"] as? String))
         avatar.layer.cornerRadius = 22
         avatar.clipsToBounds = true
         avatar.isAccessibilityElement = true
@@ -210,9 +210,7 @@ class ShareViewController: UIViewController, UITextViewDelegate {
 
         let name = label(text: target?["name"] as? String ?? Strings.destination, style: .headline, color: .label)
         name.numberOfLines = 2
-        let server = label(text: target?["serverLabel"] as? String ?? Strings.missingTarget, style: .subheadline, color: .secondaryLabel)
-        server.numberOfLines = 2
-        let labels = UIStackView(arrangedSubviews: [name, server])
+        let labels = UIStackView(arrangedSubviews: [name])
         labels.axis = .vertical
         labels.spacing = 2
 
@@ -493,28 +491,37 @@ class ShareViewController: UIViewController, UITextViewDelegate {
         return label
     }
 
-    private static func avatarImage(seed: String) -> UIImage {
-        let colors: [UIColor] = [.systemPurple, .systemTeal, .systemBlue, .systemOrange, .systemCyan, .systemYellow, .systemPink]
-        var hash: Int32 = 0
-        for codeUnit in seed.utf16 { hash = hash &* 31 &+ Int32(codeUnit) }
-        let magnitude = hash < 0 ? UInt64(-Int64(hash)) : UInt64(hash)
-        let color = colors[Int(magnitude % UInt64(colors.count))]
+    private static func avatarImage(seed: String, emoji: String?) -> UIImage {
         let size = CGSize(width: 88, height: 88)
-        let cell = size.width / 5
         return UIGraphicsImageRenderer(size: size).image { context in
             context.cgContext.setFillColor(UIColor.secondarySystemGroupedBackground.cgColor)
             context.cgContext.fill(CGRect(origin: .zero, size: size))
-            context.cgContext.setFillColor(color.withAlphaComponent(0.16).cgColor)
-            context.cgContext.fill(CGRect(origin: .zero, size: size))
-            context.cgContext.setFillColor(color.cgColor)
-            var bits = UInt32(bitPattern: hash)
-            for y in 0..<5 {
-                for x in 0..<3 {
-                    let enabled = (bits & 1) == 1
-                    bits >>= 1
-                    guard enabled else { continue }
-                    for mirroredX in Set([x, 4 - x]) {
-                        context.cgContext.fill(CGRect(x: CGFloat(mirroredX) * cell, y: CGFloat(y) * cell, width: cell, height: cell))
+
+            if let emoji, !emoji.isEmpty {
+                let font = UIFont.systemFont(ofSize: size.width * 0.7)
+                let attributes: [NSAttributedString.Key: Any] = [.font: font]
+                let glyph = emoji as NSString
+                let glyphSize = glyph.size(withAttributes: attributes)
+                glyph.draw(at: CGPoint(x: (size.width - glyphSize.width) / 2, y: (size.height - glyphSize.height) / 2), withAttributes: attributes)
+            } else {
+                let colors: [UIColor] = [.systemPurple, .systemTeal, .systemBlue, .systemOrange, .systemCyan, .systemYellow, .systemPink]
+                var hash: Int32 = 0
+                for codeUnit in seed.utf16 { hash = hash &* 31 &+ Int32(codeUnit) }
+                let magnitude = hash < 0 ? UInt64(-Int64(hash)) : UInt64(hash)
+                let color = colors[Int(magnitude % UInt64(colors.count))]
+                let cell = size.width / 5
+                context.cgContext.setFillColor(color.withAlphaComponent(0.16).cgColor)
+                context.cgContext.fill(CGRect(origin: .zero, size: size))
+                context.cgContext.setFillColor(color.cgColor)
+                var bits = UInt32(bitPattern: hash)
+                for y in 0..<5 {
+                    for x in 0..<3 {
+                        let enabled = (bits & 1) == 1
+                        bits >>= 1
+                        guard enabled else { continue }
+                        for mirroredX in Set([x, 4 - x]) {
+                            context.cgContext.fill(CGRect(x: CGFloat(mirroredX) * cell, y: CGFloat(y) * cell, width: cell, height: cell))
+                        }
                     }
                 }
             }

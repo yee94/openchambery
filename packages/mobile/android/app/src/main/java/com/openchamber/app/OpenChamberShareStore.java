@@ -2,6 +2,11 @@ package com.openchamber.app;
 
 import android.content.Context;
 import android.content.SharedPreferences;
+import android.graphics.Bitmap;
+import android.graphics.Canvas;
+import android.graphics.Color;
+import android.graphics.Paint;
+import android.graphics.drawable.Icon;
 import android.net.Uri;
 import android.provider.OpenableColumns;
 import org.json.JSONArray;
@@ -25,6 +30,16 @@ final class OpenChamberShareStore {
     private static final String CATALOG = "openchamberShareCatalog";
     private static final String PENDING_ASSISTANT_OPEN = "openchamberPendingAssistantOpen";
     private static final String CANCELLATIONS = "openchamber-share-cancellations";
+    private static final int[] AGENT_AVATAR_COLORS = {
+        Color.rgb(34, 197, 94),
+        Color.rgb(139, 92, 246),
+        Color.rgb(6, 182, 212),
+        Color.rgb(59, 130, 246),
+        Color.rgb(249, 115, 22),
+        Color.rgb(14, 165, 233),
+        Color.rgb(245, 158, 11),
+        Color.rgb(236, 72, 153),
+    };
 
     static File inbox(Context context) { return new File(context.getFilesDir(), "openchamber-share-inbox"); }
     static File drafts(Context context) { return new File(context.getFilesDir(), "openchamber-share-drafts"); }
@@ -341,5 +356,82 @@ final class OpenChamberShareStore {
     private static String safeName(String name) { return nonEmpty(name) ? name.replaceAll("[^A-Za-z0-9._-]", "_") : "shared-image"; }
     private static void writeAtomic(File file, byte[] bytes) throws Exception { File tmp = new File(file.getParentFile(), "." + file.getName()); try (FileOutputStream out = new FileOutputStream(tmp)) { out.write(bytes); out.getFD().sync(); } if (!tmp.renameTo(file)) throw new IllegalStateException("Could not write share envelope."); }
     private static void delete(File file) { if (file.isDirectory()) { File[] files = file.listFiles(); if (files != null) for (File child : files) delete(child); } file.delete(); }
-    private static void refreshShortcuts(Context context, JSONArray entries) { if (android.os.Build.VERSION.SDK_INT < 25) return; java.util.ArrayList<android.content.pm.ShortcutInfo> shortcuts = new java.util.ArrayList<>(); for (int i = 0; i < entries.length() && shortcuts.size() < 4; i++) { try { JSONObject entry = entries.getJSONObject(i); if (!entry.optBoolean("enabled")) continue; String serverID = entry.getString("serverInstanceID"), assistantID = entry.getString("assistantID"), id = "share-" + serverID + "-" + assistantID; android.os.PersistableBundle target = new android.os.PersistableBundle(); target.putString("serverInstanceID", serverID); target.putString("assistantID", assistantID); android.content.Intent launcherIntent = new android.content.Intent(context, ShareReceiverActivity.class).setAction(ShareReceiverActivity.ACTION_OPEN_ASSISTANT).putExtra("serverInstanceID", serverID).putExtra("assistantID", assistantID); shortcuts.add(new android.content.pm.ShortcutInfo.Builder(context, id).setShortLabel(entry.getString("name")).setLongLabel(entry.getString("name") + " · " + entry.optString("serverLabel")).setIcon(android.graphics.drawable.Icon.createWithResource(context, com.openchamber.app.R.mipmap.ic_launcher)).setCategories(java.util.Collections.singleton(ShareReceiverActivity.SHARE_TARGET_CATEGORY)).setExtras(target).setIntent(launcherIntent).build()); } catch (Exception ignored) {} } ((android.content.pm.ShortcutManager) context.getSystemService(android.content.pm.ShortcutManager.class)).setDynamicShortcuts(shortcuts); }
+    private static Icon assistantShortcutIcon(String seed, String emoji) {
+        int size = 192;
+        Bitmap bitmap = Bitmap.createBitmap(size, size, Bitmap.Config.ARGB_8888);
+        Canvas canvas = new Canvas(bitmap);
+        Paint paint = new Paint(Paint.ANTI_ALIAS_FLAG | Paint.SUBPIXEL_TEXT_FLAG);
+        paint.setColor(Color.WHITE);
+        canvas.drawRect(0, 0, size, size, paint);
+
+        if (nonEmpty(emoji)) {
+            paint.setColor(Color.BLACK);
+            paint.setTextAlign(Paint.Align.CENTER);
+            paint.setTextSize(size * 0.7f);
+            Paint.FontMetrics metrics = paint.getFontMetrics();
+            canvas.drawText(emoji, size / 2f, size / 2f - (metrics.ascent + metrics.descent) / 2f, paint);
+        } else {
+            int color = agentAvatarColor(seed);
+            paint.setColor(Color.argb(36, Color.red(color), Color.green(color), Color.blue(color)));
+            canvas.drawRect(0, 0, size, size, paint);
+            paint.setColor(color);
+            float cell = size / 5f;
+            int bits = avatarHash(seed);
+            for (int y = 0; y < 5; y++) {
+                for (int x = 0; x < 3; x++) {
+                    boolean enabled = (bits & 1) == 1;
+                    bits >>>= 1;
+                    if (!enabled) continue;
+                    canvas.drawRect(x * cell, y * cell, (x + 1) * cell, (y + 1) * cell, paint);
+                    if (x != 2) canvas.drawRect((4 - x) * cell, y * cell, (5 - x) * cell, (y + 1) * cell, paint);
+                }
+            }
+        }
+        return Icon.createWithBitmap(bitmap);
+    }
+
+    private static int avatarHash(String seed) {
+        int hash = 0;
+        for (int index = 0; index < seed.length(); index++) hash = hash * 31 + seed.charAt(index);
+        return hash;
+    }
+
+    private static int agentAvatarColor(String seed) {
+        int hash = avatarHash(seed);
+        long magnitude = hash < 0 ? -(long) hash : hash;
+        return AGENT_AVATAR_COLORS[1 + (int) (magnitude % (AGENT_AVATAR_COLORS.length - 1))];
+    }
+
+    private static void refreshShortcuts(Context context, JSONArray entries) {
+        if (android.os.Build.VERSION.SDK_INT < 25) return;
+        java.util.ArrayList<android.content.pm.ShortcutInfo> shortcuts = new java.util.ArrayList<>();
+        for (int i = 0; i < entries.length() && shortcuts.size() < 4; i++) {
+            try {
+                JSONObject entry = entries.getJSONObject(i);
+                if (!entry.optBoolean("enabled")) continue;
+                String serverID = entry.getString("serverInstanceID");
+                String assistantID = entry.getString("assistantID");
+                String name = entry.getString("name");
+                String avatarSeed = entry.getString("avatarSeed");
+                String avatarEmoji = entry.optString("avatarEmoji");
+                String id = "share-" + serverID + "-" + assistantID;
+                android.os.PersistableBundle target = new android.os.PersistableBundle();
+                target.putString("serverInstanceID", serverID);
+                target.putString("assistantID", assistantID);
+                android.content.Intent launcherIntent = new android.content.Intent(context, ShareReceiverActivity.class)
+                    .setAction(ShareReceiverActivity.ACTION_OPEN_ASSISTANT)
+                    .putExtra("serverInstanceID", serverID)
+                    .putExtra("assistantID", assistantID);
+                shortcuts.add(new android.content.pm.ShortcutInfo.Builder(context, id)
+                    .setShortLabel(name)
+                    .setLongLabel(name)
+                    .setIcon(assistantShortcutIcon(avatarSeed, avatarEmoji))
+                    .setCategories(java.util.Collections.singleton(ShareReceiverActivity.SHARE_TARGET_CATEGORY))
+                    .setExtras(target)
+                    .setIntent(launcherIntent)
+                    .build());
+            } catch (Exception ignored) {}
+        }
+        ((android.content.pm.ShortcutManager) context.getSystemService(android.content.pm.ShortcutManager.class)).setDynamicShortcuts(shortcuts);
+    }
 }

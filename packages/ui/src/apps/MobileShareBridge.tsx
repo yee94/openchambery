@@ -14,13 +14,15 @@ import { clearMobileShareDraftHandoffMarker, finalizeMobileShareDraftHandoff, ha
 import { useInputStore } from '@/sync/input-store';
 import { handlePendingNativeAssistantOpen, openNativeAssistantConversation } from './nativeAssistantShortcut';
 import { MobileShareRecipientPicker } from './MobileShareRecipientPicker';
+import { getAssistantPresentation } from '@/components/assistants/assistantPresentation';
 
-type NativeAssistantCatalogEntry = AssistantCatalogEntry;
+type NativeAssistantCatalogEntry = Omit<AssistantCatalogEntry, 'name'> & { name: string; avatarEmoji?: string };
+type NativeAssistantInteraction = { serverInstanceID: string; assistantID: string; name: string; avatarSeed: string; avatarEmoji?: string };
 type NativeShareAttachment = { stagedPath: string; originalName: string; mime: string; byteSize: number };
 export type NativeShareEnvelope = { version: 1; operationID: string; serverInstanceID: string; assistantID: string; text?: string; attachments: NativeShareAttachment[]; source: 'ios-share' | 'android-share'; createdAt: number; expiresAt: number };
 type OpenChamberSharePlugin = {
   updateCatalog(options: { entries: NativeAssistantCatalogEntry[] }): Promise<void>;
-  donateAssistantInteraction(options: { serverInstanceID: string; assistantID: string; name: string; avatarSeed: string }): Promise<void>;
+  donateAssistantInteraction(options: NativeAssistantInteraction): Promise<void>;
   listPending(): Promise<{ envelopes: NativeShareEnvelope[] }>;
   ack(options: { operationID: string }): Promise<void>;
   releaseFiles(options: { operationID: string }): Promise<void>;
@@ -136,11 +138,18 @@ export const refreshNativeAssistantCatalog = async (): Promise<void> => {
 
 export const publishNativeAssistantCatalog = async (): Promise<void> => {
   if (!nativeAvailable()) return;
-  const entries = Object.values(useAssistantUIStore.getState().assistantCatalogByConnection).flatMap((partition) => partition.entries);
+  const entries = Object.values(useAssistantUIStore.getState().assistantCatalogByConnection).flatMap((partition) => partition.entries).map((entry): NativeAssistantCatalogEntry => {
+    const presentation = getAssistantPresentation(entry.name);
+    return {
+      ...entry,
+      name: presentation.displayName || entry.name,
+      ...(presentation.avatarEmoji ? { avatarEmoji: presentation.avatarEmoji } : {}),
+    };
+  });
   await OpenChamberShare.updateCatalog({ entries });
 };
 
-export const donateNativeAssistantInteraction = async (target: { serverInstanceID: string; assistantID: string; name: string; avatarSeed: string }): Promise<void> => {
+export const donateNativeAssistantInteraction = async (target: NativeAssistantInteraction): Promise<void> => {
   if (Capacitor.getPlatform() !== 'ios') return;
   await OpenChamberShare.donateAssistantInteraction(target);
 };

@@ -78,7 +78,7 @@ enum OpenChamberShareStore {
             completion(ShareError.missingTarget)
             return
         }
-        let image = assistantImage(seed: target["avatarSeed"] as? String ?? assistantID)
+        let image = assistantImage(seed: target["avatarSeed"] as? String ?? assistantID, emoji: target["avatarEmoji"] as? String)
         let recipient = INPerson(
             personHandle: INPersonHandle(value: conversationID, type: .unknown),
             nameComponents: nil,
@@ -151,36 +151,45 @@ enum OpenChamberShareStore {
         let identity = Data("\(serverInstanceID)\u{0}\(assistantID)".utf8).base64EncodedString()
         return "openchamber.assistant.v1.\(identity)"
     }
-    private static func assistantImage(seed: String) -> INImage? {
-        let colors = [
-            UIColor(red: 0.58, green: 0.35, blue: 0.95, alpha: 1),
-            UIColor(red: 0.04, green: 0.66, blue: 0.75, alpha: 1),
-            UIColor(red: 0.23, green: 0.51, blue: 0.96, alpha: 1),
-            UIColor(red: 0.95, green: 0.45, blue: 0.16, alpha: 1),
-            UIColor(red: 0.05, green: 0.58, blue: 0.90, alpha: 1),
-            UIColor(red: 0.92, green: 0.64, blue: 0.04, alpha: 1),
-            UIColor(red: 0.93, green: 0.31, blue: 0.58, alpha: 1),
-        ]
-        let hash = avatarHash(seed)
-        let signedHash = Int32(bitPattern: hash)
-        let magnitude = signedHash < 0 ? UInt64(-Int64(signedHash)) : UInt64(signedHash)
-        let color = colors[Int(magnitude % UInt64(colors.count))]
+    private static func assistantImage(seed: String, emoji: String?) -> INImage? {
         let size = CGSize(width: 256, height: 256)
-        let cell = size.width / 5
         let image = UIGraphicsImageRenderer(size: size).image { context in
             context.cgContext.setFillColor(UIColor.white.cgColor)
             context.cgContext.fill(CGRect(origin: .zero, size: size))
-            context.cgContext.setFillColor(color.withAlphaComponent(0.14).cgColor)
-            context.cgContext.fill(CGRect(origin: .zero, size: size))
-            context.cgContext.setFillColor(color.cgColor)
-            var bits = hash
-            for y in 0..<5 {
-                for x in 0..<3 {
-                    let enabled = (bits & 1) == 1
-                    bits >>= 1
-                    guard enabled else { continue }
-                    for mirroredX in Set([x, 4 - x]) {
-                        context.cgContext.fill(CGRect(x: CGFloat(mirroredX) * cell, y: CGFloat(y) * cell, width: cell, height: cell))
+
+            if let emoji, !emoji.isEmpty {
+                let font = UIFont.systemFont(ofSize: size.width * 0.7)
+                let attributes: [NSAttributedString.Key: Any] = [.font: font]
+                let glyph = emoji as NSString
+                let glyphSize = glyph.size(withAttributes: attributes)
+                glyph.draw(at: CGPoint(x: (size.width - glyphSize.width) / 2, y: (size.height - glyphSize.height) / 2), withAttributes: attributes)
+            } else {
+                let colors = [
+                    UIColor(red: 0.58, green: 0.35, blue: 0.95, alpha: 1),
+                    UIColor(red: 0.04, green: 0.66, blue: 0.75, alpha: 1),
+                    UIColor(red: 0.23, green: 0.51, blue: 0.96, alpha: 1),
+                    UIColor(red: 0.95, green: 0.45, blue: 0.16, alpha: 1),
+                    UIColor(red: 0.05, green: 0.58, blue: 0.90, alpha: 1),
+                    UIColor(red: 0.92, green: 0.64, blue: 0.04, alpha: 1),
+                    UIColor(red: 0.93, green: 0.31, blue: 0.58, alpha: 1),
+                ]
+                let hash = avatarHash(seed)
+                let signedHash = Int32(bitPattern: hash)
+                let magnitude = signedHash < 0 ? UInt64(-Int64(signedHash)) : UInt64(signedHash)
+                let color = colors[Int(magnitude % UInt64(colors.count))]
+                let cell = size.width / 5
+                context.cgContext.setFillColor(color.withAlphaComponent(0.14).cgColor)
+                context.cgContext.fill(CGRect(origin: .zero, size: size))
+                context.cgContext.setFillColor(color.cgColor)
+                var bits = hash
+                for y in 0..<5 {
+                    for x in 0..<3 {
+                        let enabled = (bits & 1) == 1
+                        bits >>= 1
+                        guard enabled else { continue }
+                        for mirroredX in Set([x, 4 - x]) {
+                            context.cgContext.fill(CGRect(x: CGFloat(mirroredX) * cell, y: CGFloat(y) * cell, width: cell, height: cell))
+                        }
                     }
                 }
             }

@@ -545,7 +545,14 @@ export const AssistantView: React.FC<AssistantViewProps> = ({ activeOverride, on
             throw error;
           }
           if (capabilityQuery.data?.serverInstanceID) {
-            void donateNativeAssistantInteraction({ serverInstanceID: capabilityQuery.data.serverInstanceID, assistantID: assistant.id, name: assistant.name, avatarSeed: assistant.id }).catch(() => undefined);
+            const nativePresentation = getAssistantPresentation(assistant.name);
+            void donateNativeAssistantInteraction({
+              serverInstanceID: capabilityQuery.data.serverInstanceID,
+              assistantID: assistant.id,
+              name: nativePresentation.displayName || assistant.name,
+              avatarSeed: assistant.id,
+              ...(nativePresentation.avatarEmoji ? { avatarEmoji: nativePresentation.avatarEmoji } : {}),
+            }).catch(() => undefined);
           }
           // Stateless mode replaces the binding each turn. Move the pending row
           // first so it remains visible while the new binding materializes.

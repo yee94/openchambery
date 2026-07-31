@@ -15,7 +15,10 @@ class OpenChamberSharePlugin: CAPPlugin, CAPBridgedPlugin {
         guard let serverInstanceID = call.getString("serverInstanceID"),
               let assistantID = call.getString("assistantID"),
               let name = call.getString("name") else { call.reject("assistant identity is required"); return }
-        let target: [String: Any] = ["serverInstanceID": serverInstanceID, "assistantID": assistantID, "name": name, "avatarSeed": call.getString("avatarSeed") ?? assistantID]
+        var target: [String: Any] = ["serverInstanceID": serverInstanceID, "assistantID": assistantID, "name": name, "avatarSeed": call.getString("avatarSeed") ?? assistantID]
+        if let avatarEmoji = call.getString("avatarEmoji"), !avatarEmoji.isEmpty {
+            target["avatarEmoji"] = avatarEmoji
+        }
         OpenChamberShareStore.donateAssistantInteraction(target: target) { error in
             DispatchQueue.main.async {
                 if let error { call.reject(error.localizedDescription) } else { call.resolve() }
