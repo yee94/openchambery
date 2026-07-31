@@ -112,6 +112,13 @@ const toDisplayPending = (
   ...(item.composerMentions ? { composerMentions: item.composerMentions } : {}),
 })
 
+/** Cache mapped display rows so zustand/useSyncExternalStore getSnapshot stays referentially stable. */
+let establishingDisplayCache: {
+  pending: readonly ComposerSendEstablishingFollowUp[]
+  draftID: string | null | undefined
+  items: readonly QueuePendingAdmissionItem[]
+} | undefined
+
 export const selectEstablishingPendingDisplayItems = (
   state: Pick<ComposerSendState, "establishing">,
   draftID?: string | null,
@@ -119,7 +126,18 @@ export const selectEstablishingPendingDisplayItems = (
   const establishing = state.establishing
   if (!establishing) return EMPTY_PENDING
   if (draftID && establishing.draftID !== draftID) return EMPTY_PENDING
-  return establishing.pending.map(toDisplayPending)
+  // beginEstablishing starts with pending:[]; a fresh [] every read is an infinite loop.
+  if (establishing.pending.length === 0) return EMPTY_PENDING
+  if (
+    establishingDisplayCache
+    && establishingDisplayCache.pending === establishing.pending
+    && establishingDisplayCache.draftID === draftID
+  ) {
+    return establishingDisplayCache.items
+  }
+  const items = establishing.pending.map(toDisplayPending)
+  establishingDisplayCache = { pending: establishing.pending, draftID, items }
+  return items
 }
 
 /**
@@ -281,6 +299,7 @@ export const useComposerSendStore = create<ComposerSendStore>()((set, get) => ({
 }))
 
 export const resetComposerSendStoreForTests = (): void => {
+  establishingDisplayCache = undefined
   useComposerSendStore.setState({
     flights: {},
     establishing: null,

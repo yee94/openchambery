@@ -187,17 +187,17 @@ tag push 会包含 mobile-release。手动触发时使用 `release_scope=all`。
 
 ### `finalize-release` / `Verify complete release asset inventory` 失败
 
-`finalize-release` 要求 Draft Release **恰好 21 个**资产，且 Android 版本化文件名必须匹配**当前这次** workflow 的 `github.run_number`：
+`finalize-release` 要求 Draft Release **恰好 16 个**资产（mac/win/linux 安装包与 `latest*.yml`，加上 `app-release.aab` / `app-release.apk` 与当前 `run_number` 的版本化 Android 两个文件），且 Android 版本化文件名必须匹配**当前这次** workflow 的 `github.run_number`：
 
 - `OpenChamber-$VERSION-$RUN_NUMBER-android.aab`
 - `OpenChamber-$VERSION-$RUN_NUMBER-android.apk`
 
-同名资产（如 `app-release.apk`、桌面安装包、`latest*.yml`、`.vsix`）上传时会被覆盖；但 Android 版本化文件名包含 `run_number`，**不会**被后续运行覆盖。
+同名资产（如 `app-release.apk`、桌面安装包、`latest*.yml`）上传时会被覆盖；但 Android 版本化文件名包含 `run_number`，**不会**被后续运行覆盖。
 
 因此，只要同一版本经历过多次 Release 运行（先 `workflow_dispatch` 再 tag push、或多次手动重跑），旧的 `-NN-android.*` 会留在 Draft 上。典型报错：
 
 ```text
-Expected exactly 21 release assets, found 23: ... OpenChamber-1.16.32-72-android.aab, ... OpenChamber-1.16.32-73-android.aab ...
+Expected exactly 16 release assets, found 18: ... OpenChamber-1.16.32-72-android.aab, ... OpenChamber-1.16.32-73-android.aab ...
 ```
 
 **v1.16.32 实况：** 第一次 `workflow_dispatch` 已上传 build `72` Android 资产；后续 tag push 运行号变成 `73` 又上传一套；`finalize` 因多出旧资产失败，Draft 无法转正式。
@@ -221,7 +221,7 @@ Expected exactly 21 release assets, found 23: ... OpenChamber-1.16.32-72-android
    gh api -X DELETE "repos/yee94/openchamber/releases/assets/<asset-id>"
    ```
 
-3. 清理后资产数应为 21，再只重跑失败的 `finalize-release`（不必整条 Release 全量重跑）：
+3. 清理后资产数应为 16，再只重跑失败的 `finalize-release`（不必整条 Release 全量重跑）：
 
    ```bash
    gh run rerun <run-id> --repo yee94/openchamber --failed
@@ -235,6 +235,36 @@ Expected exactly 21 release assets, found 23: ... OpenChamber-1.16.32-72-android
 - 若某次运行已成功上传 Android、但桌面端失败：优先 `gh run rerun <run-id> --failed`（同一 `run_number`，不会追加新的 `-NN-android.*`），不要另开一次同版本 Release。
 - 发布后若 `isDraft=true`，先看 `finalize-release` 是否卡在资产数量/旧 build number，而不是立刻切下一个 patch 版本。
 
+### `finalize-release` / `Publish release` 失败（`tag_name already_exists`）
+
+症状日志：
+
+```text
+↪️ Using release <draft-id> for tag vX.Y.Z instead of duplicate draft <new-id>
+error finalizing release: ... "already_exists","field":"tag_name"
+```
+
+根因：`softprops/action-gh-release` 在 `draft: false` + 仅 `tag_name` 时可能**新建**一个空的 published Release，再试图 undraft 已有资产的 draft，于是同 tag 撞车。仓库里会出现：
+
+- 一个 **draft**（含完整桌面/Android 资产，名称通常为 `OpenChamber vX.Y.Z`）
+- 一个 **published 空 Release**（0 assets，名称常为 `vX.Y.Z`）
+
+当前 workflow 已改为对 `create-release` 输出的 `release_id` 做 `PATCH draft=false`，避免再创建。
+
+若历史 run 已留下重复 Release：
+
+```bash
+# 列出同 tag 的 draft / published
+gh api repos/yee94/openchamber/releases --jq '.[] | select(.tag_name=="v'"$VERSION"'") | {id,tag:.tag_name,name,draft,assets:(.assets|length)}'
+
+# 删除空的 published 重复项
+gh api -X DELETE "repos/yee94/openchamber/releases/<empty-published-id>"
+
+# 将含资产的 draft 正式发布（beta 保持 prerelease=true）
+gh api --method PATCH "repos/yee94/openchamber/releases/<draft-id>" -F draft=false -F prerelease=true
+```
+
+不要对已成功上传资产的同版本再开一次全量 Release；修好重复项后，后续新版本走正常 tag push 即可。
 ### Windows / Linux `Install dependencies` 失败（镜像解包）
 
 桌面构建偶发在 `bun install` 阶段失败，日志常见从 `mirrors.tencent.com/npm/...` 拉取 `app-builder-bin` 后解包失败。这会导致该平台产物缺失，`finalize-release` 被跳过，Draft 保留。

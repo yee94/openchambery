@@ -45,6 +45,29 @@ describe("composer-send-manager", () => {
     expect(store.isEstablishing("draft-1")).toBe(true)
   })
 
+  test("establishing display selector keeps a stable getSnapshot while pending is empty", () => {
+    const store = useComposerSendStore.getState()
+    store.beginEstablishing({ draftID: "draft-1", primaryMessageID: "msg_1" })
+    const first = selectEstablishingPendingDisplayItems(useComposerSendStore.getState(), "draft-1")
+    const second = selectEstablishingPendingDisplayItems(useComposerSendStore.getState(), "draft-1")
+    expect(first).toEqual([])
+    expect(second).toBe(first)
+  })
+
+  test("establishing display selector caches mapped rows for the same pending array", () => {
+    const store = useComposerSendStore.getState()
+    store.beginEstablishing({ draftID: "draft-1", primaryMessageID: "msg_1" })
+    store.enqueueEstablishingFollowUp({
+      draftID: "draft-1",
+      content: "follow-up",
+      sendConfig: { providerID: "p", modelID: "m" },
+    })
+    const first = selectEstablishingPendingDisplayItems(useComposerSendStore.getState(), "draft-1")
+    const second = selectEstablishingPendingDisplayItems(useComposerSendStore.getState(), "draft-1")
+    expect(first).toHaveLength(1)
+    expect(second).toBe(first)
+  })
+
   test("establishing follow-ups stage pending-admission chips for one draft", () => {
     const store = useComposerSendStore.getState()
     expect(store.beginEstablishing({ draftID: "draft-1", primaryMessageID: "msg_1" })).toBe(true)

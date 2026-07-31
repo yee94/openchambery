@@ -653,15 +653,26 @@ jobs:
           NODE
 
       - name: Publish release
-        uses: softprops/action-gh-release@3bb12739c298aeb8a4eeaf626c5b8d85266b0e65 # v2.6.2
-        with:
-          tag_name: v${{ needs.create-release.outputs.version }}
-          draft: false
-          # Keep prerelease bits off /releases/latest so desktop EdgeOne feeds
-          # and Android "latest APK" stay on the newest stable release.
-          prerelease: ${{ needs.create-release.outputs.is_prerelease == 'true' }}
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          RELEASE_ID: ${{ needs.create-release.outputs.release_id }}
+          IS_PRERELEASE: ${{ needs.create-release.outputs.is_prerelease }}
+        run: |
+          set -euo pipefail
+          if [[ -z "${RELEASE_ID}" ]]; then
+            echo "Missing create-release release_id" >&2
+            exit 1
+          fi
+          # softprops/action-gh-release with draft:false + tag_name can create a
+          # second empty published release, then fail with tag_name already_exists
+          # while leaving the asset-bearing draft unpublished. Publish the known
+          # draft by id instead.
+          # Keep prerelease bits off /releases/latest so desktop EdgeOne feeds
+          # and Android "latest APK" stay on the newest stable release.
+          gh api --method PATCH "repos/${GITHUB_REPOSITORY}/releases/${RELEASE_ID}" \
+            -F draft=false \
+            -F prerelease="$([[ "${IS_PRERELEASE}" == "true" ]] && echo true || echo false)" \
+            --jq '{id, tag_name, draft, prerelease, asset_count: (.assets|length)}'
 
       - name: Publish EdgeOne update manifest
         if: ${{ needs.create-release.outputs.is_prerelease != 'true' }}
