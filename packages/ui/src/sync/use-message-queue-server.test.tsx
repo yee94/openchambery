@@ -18,6 +18,7 @@ const runtime = (authority: string, onScope?: (input: { transportIdentity: strin
     getPendingAdmissions: () => pending,
     captureRuntime: () => ({ transportIdentity: 'runtime-a', generation: 1 }),
     start: () => {}, stop: () => {}, restart: () => {}, refresh: async () => {}, runShadowImport: async () => ({ status: 'idle', imported: 0, total: 0, issues: [], canActivate: false }),
+    stageAdmission: () => {}, unstageAdmission: () => {},
     admit: async () => ({ status: 'committed' }), edit: async () => ({ status: 'committed' }), remove: async () => ({ status: 'committed' }), reserveEdit: async () => undefined, renewEdit: async () => undefined, releaseEdit: async () => {}, removeReserved: async () => false, reorder: async () => ({ status: 'committed' }), manualSend: async () => ({ status: 'committed' }),
 });
 

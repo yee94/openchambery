@@ -16,7 +16,7 @@ import {
 import { CSS } from '@dnd-kit/utilities';
 import { useEvent } from '@reactuses/core';
 import { useMutation, useMutationState } from '@tanstack/react-query';
-import { getQueueForScope, legacyQueueScope, queueScopeKey, useMessageQueueStore, type QueueDeliveryTarget, type QueueItem, type QueueScope, type QueuedMessage } from '@/stores/messageQueueStore';
+import { getPendingAdmissionsForScope, getQueueForScope, legacyQueueScope, queueScopeKey, useMessageQueueStore, type QueueDeliveryTarget, type QueueItem, type QueuePendingAdmissionItem, type QueueScope, type QueuedMessage } from '@/stores/messageQueueStore';
 import type { DraftKey } from '@/sync/input-draft-types';
 import { useMessageQueueServerScope } from '@/sync/use-message-queue-server';
 import { MessageQueueServerError, type MessageQueueItem } from '@/lib/message-queue-server';
@@ -172,47 +172,63 @@ const QueuedMessageChip = memo(({ message, server, frozen, hasDispatchLock, pend
                 )}
             </span>
             <div className="flex shrink-0 items-center gap-1.5 text-muted-foreground">
-                <button
-                    type="button"
-                    onClick={() => onEdit(message)}
-                    disabled={!canEdit}
-                    aria-busy={editPending || undefined}
-                    aria-label={t('chat.queuedMessage.edit')}
-                    className={cn(
-                        'inline-flex items-center bg-transparent text-muted-foreground transition-colors hover:text-foreground disabled:pointer-events-none disabled:opacity-50',
-                        isMobile ? 'h-7 gap-1.5 px-0 text-[11px]' : 'h-7 gap-1 px-0.5',
-                    )}
-                >
-                    <Icon
-                        name={pendingAdmission || editPending ? 'loader-4' : 'edit'}
-                        className={cn(isMobile ? 'size-3' : 'size-3.5', (pendingAdmission || editPending) && 'animate-spin')}
-                        aria-hidden="true"
-                    />
-                    <span className={cn('font-medium', isMobile ? 'leading-none' : 'typography-ui-label')}>
-                        {t('chat.queuedMessage.edit')}
+                {pendingAdmission ? (
+                    <span
+                        className={cn(
+                            'inline-flex items-center gap-1 font-medium text-muted-foreground',
+                            isMobile ? 'h-7 text-[11px] leading-none' : 'h-7 typography-ui-label',
+                        )}
+                        aria-live="polite"
+                        aria-label={t('chat.queuedMessage.queuingAria')}
+                    >
+                        <Icon name="loader-4" className={cn(isMobile ? 'size-3' : 'size-3.5', 'animate-spin')} aria-hidden="true" />
+                        <span>{t('chat.queuedMessage.queuing')}</span>
                     </span>
-                </button>
-                <button
-                    type="button"
-                    onClick={() => onSend(message)}
-                    disabled={!canSend}
-                    aria-busy={sendPending || undefined}
-                    aria-label={t('chat.queuedMessage.send')}
-                    className={cn(
-                        'inline-flex items-center bg-transparent text-muted-foreground transition-colors hover:text-foreground disabled:pointer-events-none disabled:opacity-50',
-                        isMobile ? 'h-7 gap-1.5 px-0 text-[11px]' : 'h-7 gap-1 px-0.5',
-                    )}
-                >
-                    <Icon
-                        name={pendingAdmission || sendPending ? 'loader-4' : 'send-plane'}
-                        className={cn(isMobile ? 'size-3' : 'size-3.5', (pendingAdmission || sendPending) && 'animate-spin')}
-                        aria-hidden="true"
-                    />
-                    <span className={cn('font-medium', isMobile ? 'leading-none' : 'typography-ui-label')}>
-                        {t('chat.queuedMessage.send')}
-                    </span>
-                </button>
-                {!isMobile ? removeAction : null}
+                ) : (
+                    <>
+                        <button
+                            type="button"
+                            onClick={() => onEdit(message)}
+                            disabled={!canEdit}
+                            aria-busy={editPending || undefined}
+                            aria-label={t('chat.queuedMessage.edit')}
+                            className={cn(
+                                'inline-flex items-center bg-transparent text-muted-foreground transition-colors hover:text-foreground disabled:pointer-events-none disabled:opacity-50',
+                                isMobile ? 'h-7 gap-1.5 px-0 text-[11px]' : 'h-7 gap-1 px-0.5',
+                            )}
+                        >
+                            <Icon
+                                name={editPending ? 'loader-4' : 'edit'}
+                                className={cn(isMobile ? 'size-3' : 'size-3.5', editPending && 'animate-spin')}
+                                aria-hidden="true"
+                            />
+                            <span className={cn('font-medium', isMobile ? 'leading-none' : 'typography-ui-label')}>
+                                {t('chat.queuedMessage.edit')}
+                            </span>
+                        </button>
+                        <button
+                            type="button"
+                            onClick={() => onSend(message)}
+                            disabled={!canSend}
+                            aria-busy={sendPending || undefined}
+                            aria-label={t('chat.queuedMessage.send')}
+                            className={cn(
+                                'inline-flex items-center bg-transparent text-muted-foreground transition-colors hover:text-foreground disabled:pointer-events-none disabled:opacity-50',
+                                isMobile ? 'h-7 gap-1.5 px-0 text-[11px]' : 'h-7 gap-1 px-0.5',
+                            )}
+                        >
+                            <Icon
+                                name={sendPending ? 'loader-4' : 'send-plane'}
+                                className={cn(isMobile ? 'size-3' : 'size-3.5', sendPending && 'animate-spin')}
+                                aria-hidden="true"
+                            />
+                            <span className={cn('font-medium', isMobile ? 'leading-none' : 'typography-ui-label')}>
+                                {t('chat.queuedMessage.send')}
+                            </span>
+                        </button>
+                    </>
+                )}
+                {!isMobile && !pendingAdmission ? removeAction : null}
             </div>
         </div>
     );
@@ -237,6 +253,7 @@ interface QueuedMessageChipsProps {
 }
 
 const EMPTY_QUEUE: QueueItem[] = [];
+const EMPTY_LEGACY_DISPLAY: Array<QueuedMessage | QueuePendingAdmissionItem> = [];
 const EMPTY_PENDING_OPERATION_KINDS: ReadonlySet<ServerQueueOperationKind> = new Set();
 
 // eslint-disable-next-line react-refresh/only-export-components
@@ -248,6 +265,25 @@ export const selectQueuedMessagesForScope = (
     const legacyMessages = getQueueForScope(state, legacyQueueScope(scope.sessionID));
     const boundMessages = getQueueForScope(state, scope);
     return mergeQueuedMessageScopes(legacyMessages, boundMessages);
+};
+
+/**
+ * Durable legacy/bound rows plus ephemeral pending-admission chips for the scope.
+ * Pending markers are display-only and never come from queuedMessages.
+ */
+// eslint-disable-next-line react-refresh/only-export-components
+export const selectLegacyQueueDisplayItemsForScope = (
+    state: Pick<ReturnType<typeof useMessageQueueStore.getState>, 'queuedMessages' | 'pendingAdmissions'>,
+    scope: BoundQueueScope | null,
+): Array<QueuedMessage | QueuePendingAdmissionItem> => {
+    if (!scope) return EMPTY_LEGACY_DISPLAY;
+    const durable = selectQueuedMessagesForScope(state, scope);
+    const pending = [
+        ...getPendingAdmissionsForScope(state, legacyQueueScope(scope.sessionID)),
+        ...getPendingAdmissionsForScope(state, scope),
+    ];
+    if (pending.length === 0) return durable;
+    return [...durable, ...pending];
 };
 
 // eslint-disable-next-line react-refresh/only-export-components
@@ -366,7 +402,7 @@ export const QueuedMessageChips = memo(({ onEditMessage, onSendMessage, onEditCo
         [committedSendOverlays, pendingServerOperations],
     );
     const legacyQueueSelector = React.useMemo(
-        () => (state: ReturnType<typeof useMessageQueueStore.getState>) => selectQueuedMessagesForScope(state, queueScope),
+        () => (state: ReturnType<typeof useMessageQueueStore.getState>) => selectLegacyQueueDisplayItemsForScope(state, queueScope),
         [queueScope],
     );
     const legacyMessages = useMessageQueueStore(legacyQueueSelector);
@@ -386,7 +422,7 @@ export const QueuedMessageChips = memo(({ onEditMessage, onSendMessage, onEditCo
     const hasScopeDispatchFlight = useQueueScopeDispatchFlight(queueScope);
     const hasDispatchLock = serverQueue.mode === 'server'
         ? false
-        : hasScopeDispatchFlight || queuedMessages.some((item) => !isMessageQueuePendingAdmissionItem(item) && (item.status === 'sending' || item.status === 'reconciling'));
+        : hasScopeDispatchFlight || queuedMessages.some((item) => !isMessageQueuePendingAdmissionItem(item) && ((item as QueuedMessage).status === 'sending' || (item as QueuedMessage).status === 'reconciling'));
 
     const reorderQueue = useMessageQueueStore((state) => state.reorderQueue);
 
@@ -429,7 +465,7 @@ export const QueuedMessageChips = memo(({ onEditMessage, onSendMessage, onEditCo
             }).catch(() => {});
             return;
         }
-        const legacyQueueMessages = queuedMessages as QueuedMessage[];
+        const legacyQueueMessages = queuedMessages.filter((message): message is QueuedMessage => !isMessageQueuePendingAdmissionItem(message));
         const activeMessage = legacyQueueMessages.find((message) => (message.queueItemID ?? message.id) === active.id);
         const overMessage = legacyQueueMessages.find((message) => (message.queueItemID ?? message.id) === over.id);
         if (!activeMessage || !overMessage) return;
@@ -441,9 +477,9 @@ export const QueuedMessageChips = memo(({ onEditMessage, onSendMessage, onEditCo
     });
 
     const handleEdit = useEvent((message: QueuedMessage | MessageQueueServerDisplayItem) => {
-        if (frozen) return;
+        if (frozen || isMessageQueuePendingAdmissionItem(message)) return;
         if (serverQueue.mode === 'server') {
-            if (!queueScope || !serverQueue.scope || !draftKey || !draftTarget || isMessageQueuePendingAdmissionItem(message)) return;
+            if (!queueScope || !serverQueue.scope || !draftKey || !draftTarget) return;
             const serverMessage = message as MessageQueueItem;
             const expectedRevision = draftTarget.expectedRevision();
             const scope = serverQueue.scope;
@@ -496,9 +532,9 @@ export const QueuedMessageChips = memo(({ onEditMessage, onSendMessage, onEditCo
     });
 
     const handleSend = useEvent((message: QueuedMessage | MessageQueueServerDisplayItem) => {
-        if (frozen) return;
+        if (frozen || isMessageQueuePendingAdmissionItem(message)) return;
         if (serverQueue.mode === 'server') {
-            if (!queueScope || !serverQueue.scope || isMessageQueuePendingAdmissionItem(message)) return;
+            if (!queueScope || !serverQueue.scope) return;
             const serverMessage = message as MessageQueueItem;
             const scope = serverQueue.scope;
             const runtime = serverQueue.actions.captureRuntime();
@@ -525,9 +561,9 @@ export const QueuedMessageChips = memo(({ onEditMessage, onSendMessage, onEditCo
     });
 
     const handleRemove = useEvent((message: QueuedMessage | MessageQueueServerDisplayItem) => {
-        if (frozen) return;
+        if (frozen || isMessageQueuePendingAdmissionItem(message)) return;
         if (serverQueue.mode === 'server') {
-            if (!queueScope || !serverQueue.scope || isMessageQueuePendingAdmissionItem(message)) return;
+            if (!queueScope || !serverQueue.scope) return;
             const serverMessage = message as MessageQueueItem;
             const scope = serverQueue.scope;
             const runtime = serverQueue.actions.captureRuntime();

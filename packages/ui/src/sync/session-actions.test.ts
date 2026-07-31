@@ -1520,6 +1520,231 @@ describe("optimisticSend target directory", () => {
     expect(targetStore.getState().session_status["session-missing"]?.type).toBe("idle")
     expect(typeof targetStore.getState().session_status_observed_at["session-missing"]).toBe("number")
   })
+
+  test("beginOptimisticSend paints the optimistic row and sending status before settle", async () => {
+    const targetStore = createStore({})
+    const childStores = createChildStores([["/target/project", targetStore]])
+    let optimisticAdd: OptimisticAddCall | null = null
+    let sendCalled = false
+
+    const { beginOptimisticSend, settleOptimisticSend, setActionRefs, setOptimisticRefs } = await import("./session-actions")
+    setActionRefs(mockSdk as unknown as OpencodeClient, childStores, () => "/target/project")
+    setOptimisticRefs(
+      (input) => {
+        optimisticAdd = input
+        const current = targetStore.getState()
+        const messages = current.message[input.sessionID] ? [...current.message[input.sessionID]] : []
+        messages.push(input.message)
+        targetStore.setState({
+          message: { ...current.message, [input.sessionID]: messages },
+          part: { ...current.part, [input.message.id]: input.parts },
+          session_status: { ...current.session_status, [input.sessionID]: { type: "busy" as const } },
+          session_status_observed_at: { ...current.session_status_observed_at, [input.sessionID]: Date.now() },
+        })
+      },
+      () => {},
+    )
+
+    const ticket = beginOptimisticSend({
+      sessionId: "session-begin",
+      directory: "/target/project",
+      content: "hello begin",
+      providerID: "provider",
+      modelID: "model",
+      messageID: "message-begin",
+    })
+
+    expect(ticket.messageID).toBe("message-begin")
+    expect(optimisticAdd).not.toBeNull()
+    expect((optimisticAdd as unknown as OptimisticAddCall).message.id).toBe("message-begin")
+    expect(targetStore.getState().session_status["session-begin"]?.type).toBe("busy")
+    expect(pendingSendTransitions).toEqual([
+      { state: "mark", sessionId: "session-begin", messageID: "message-begin" },
+    ])
+    expect(sendCalled).toBe(false)
+
+    await settleOptimisticSend({
+      ticket,
+      send: async (messageID) => {
+        expect(messageID).toBe("message-begin")
+        sendCalled = true
+      },
+    })
+
+    expect(sendCalled).toBe(true)
+    expect(pendingSendTransitions).toEqual([
+      { state: "mark", sessionId: "session-begin", messageID: "message-begin" },
+      { state: "clear", sessionId: "session-begin", messageID: "message-begin" },
+    ])
+  })
+
+  test("ticket settle failure rolls back the optimistic row without double insert", async () => {
+    const targetStore = createStore({})
+    const childStores = createChildStores([["/target/project", targetStore]])
+    let optimisticAddCount = 0
+    let optimisticRemove: OptimisticRemoveCall | null = null
+
+    const {
+      beginOptimisticSend,
+      settleOptimisticSend,
+      getSendFailureKind,
+      setActionRefs,
+      setOptimisticRefs,
+    } = await import("./session-actions")
+    setActionRefs(mockSdk as unknown as OpencodeClient, childStores, () => "/target/project")
+    setOptimisticRefs(
+      (input) => {
+        optimisticAddCount += 1
+        const current = targetStore.getState()
+        const messages = current.message[input.sessionID] ? [...current.message[input.sessionID]] : []
+        messages.push(input.message)
+        targetStore.setState({
+          message: { ...current.message, [input.sessionID]: messages },
+          part: { ...current.part, [input.message.id]: input.parts },
+          session_status: { ...current.session_status, [input.sessionID]: { type: "busy" as const } },
+          session_status_observed_at: { ...current.session_status_observed_at, [input.sessionID]: Date.now() },
+        })
+      },
+      (input) => {
+        optimisticRemove = input
+        const current = targetStore.getState()
+        const messages = (current.message[input.sessionID] ?? []).filter((message) => message.id !== input.messageID)
+        const part = { ...current.part }
+        delete part[input.messageID]
+        targetStore.setState({
+          message: { ...current.message, [input.sessionID]: messages },
+          part,
+        })
+      },
+    )
+
+    const ticket = beginOptimisticSend({
+      sessionId: "session-ticket-fail",
+      directory: "/target/project",
+      content: "will fail",
+      providerID: "provider",
+      modelID: "model",
+      messageID: "message-ticket-fail",
+    })
+    expect(optimisticAddCount).toBe(1)
+
+    let caught: unknown = null
+    try {
+      await settleOptimisticSend({
+        ticket,
+        send: async () => {
+          throw Object.assign(new Error("bad request"), { status: 400 })
+        },
+      })
+    } catch (error) {
+      caught = error
+    }
+
+    expect(getSendFailureKind(caught)).toBe("definitive-rejection")
+    expect(optimisticAddCount).toBe(1)
+    expect((optimisticRemove as OptimisticRemoveCall | null)?.messageID).toBe("message-ticket-fail")
+    expect(targetStore.getState().session_status["session-ticket-fail"]?.type).toBe("idle")
+    expect(pendingSendTransitions.filter((t) => t.messageID === "message-ticket-fail")).toEqual([
+      { state: "mark", sessionId: "session-ticket-fail", messageID: "message-ticket-fail" },
+      { state: "clear", sessionId: "session-ticket-fail", messageID: "message-ticket-fail" },
+    ])
+  })
+
+  test("stale runtime rollback skips optimisticRemove but still clears this message pending", async () => {
+    const targetStore = createStore({})
+    const childStores = createChildStores([["/target/project", targetStore]])
+    let optimisticRemove: OptimisticRemoveCall | null = null
+    const { switchRuntimeEndpoint } = await import("../lib/runtime-switch")
+    const { beginOptimisticSend, rollbackOptimisticSend, setActionRefs, setOptimisticRefs } = await import("./session-actions")
+    switchRuntimeEndpoint({ apiBaseUrl: "http://runtime-a.test", runtimeKey: "runtime-a" })
+    setActionRefs(mockSdk as unknown as OpencodeClient, childStores, () => "/target/project")
+    setOptimisticRefs(
+      (input) => {
+        const current = targetStore.getState()
+        const messages = current.message[input.sessionID] ? [...current.message[input.sessionID]] : []
+        messages.push(input.message)
+        targetStore.setState({
+          message: { ...current.message, [input.sessionID]: messages },
+          part: { ...current.part, [input.message.id]: input.parts },
+          session_status: { ...current.session_status, [input.sessionID]: { type: "busy" as const } },
+        })
+      },
+      (input) => { optimisticRemove = input },
+    )
+
+    const ticket = beginOptimisticSend({
+      sessionId: "session-stale-rollback",
+      directory: "/target/project",
+      content: "stale",
+      providerID: "provider",
+      modelID: "model",
+      messageID: "message-stale-rollback",
+    })
+    expect(targetStore.getState().message["session-stale-rollback"]?.map((message) => message.id)).toEqual(["message-stale-rollback"])
+
+    switchRuntimeEndpoint({ apiBaseUrl: "http://runtime-b.test", runtimeKey: "runtime-b" })
+    rollbackOptimisticSend(ticket)
+
+    // Stale capture+transport must not invoke the live remove hook (new runtime may share IDs).
+    expect(optimisticRemove).toBeNull()
+    expect(targetStore.getState().message["session-stale-rollback"]?.map((message) => message.id)).toEqual(["message-stale-rollback"])
+    expect(pendingSendTransitions).toEqual([
+      { state: "mark", sessionId: "session-stale-rollback", messageID: "message-stale-rollback" },
+      { state: "clear", sessionId: "session-stale-rollback", messageID: "message-stale-rollback" },
+    ])
+  })
+
+  test("optimisticSend with ticket reuses messageID and never double-inserts", async () => {
+    const targetStore = createStore({})
+    const childStores = createChildStores([["/target/project", targetStore]])
+    let optimisticAddCount = 0
+    let transmittedMessageID = ""
+
+    const { beginOptimisticSend, optimisticSend, setActionRefs, setOptimisticRefs } = await import("./session-actions")
+    setActionRefs(mockSdk as unknown as OpencodeClient, childStores, () => "/target/project")
+    setOptimisticRefs(
+      (input) => {
+        optimisticAddCount += 1
+        const current = targetStore.getState()
+        const messages = current.message[input.sessionID] ? [...current.message[input.sessionID]] : []
+        if (!messages.some((message) => message.id === input.message.id)) {
+          messages.push(input.message)
+        }
+        targetStore.setState({
+          message: { ...current.message, [input.sessionID]: messages },
+          part: { ...current.part, [input.message.id]: input.parts },
+          session_status: { ...current.session_status, [input.sessionID]: { type: "busy" as const } },
+        })
+      },
+      () => {},
+    )
+
+    const ticket = beginOptimisticSend({
+      sessionId: "session-reuse",
+      directory: "/target/project",
+      content: "reuse",
+      providerID: "provider",
+      modelID: "model",
+      messageID: "message-reuse",
+    })
+    expect(optimisticAddCount).toBe(1)
+
+    await optimisticSend({
+      sessionId: "session-reuse",
+      directory: "/target/project",
+      content: "reuse",
+      providerID: "provider",
+      modelID: "model",
+      ticket,
+      send: async (messageID) => {
+        transmittedMessageID = messageID
+      },
+    })
+
+    expect(optimisticAddCount).toBe(1)
+    expect(transmittedMessageID).toBe("message-reuse")
+    expect(ticket.messageID).toBe("message-reuse")
+  })
 })
 
 describe("queue reconciliation optimistic cleanup", () => {
@@ -1913,6 +2138,24 @@ describe("message edit staging", () => {
     expect(draftCommits[0]?.snapshot.attachments.some((attachment) => attachment.locator?.kind === "url" && attachment.locator.url === "file:///attached.txt")).toBe(true)
   })
 
+  test("stages an empty composer draft when the store user message has no part key", async () => {
+    const sessionStore = createStore({}, {
+      session: [{ id: "session-a", time: { created: 1 } } as Session],
+      message: { "session-a": [{ id: "msg_2", sessionID: "session-a", role: "user", time: { created: 2 } } as Message] },
+      part: {},
+    })
+    const childStores = createChildStores([["/test/project", sessionStore]])
+    const { stageMessageEdit, setActionRefs } = await import("./session-actions")
+    setActionRefs(mockSdk as unknown as OpencodeClient, childStores, () => "/current/project")
+
+    await stageMessageEdit("session-a", "msg_2")
+
+    expect(draftCommits).toHaveLength(1)
+    expect(draftCommits[0]?.snapshot.text).toBe("")
+    // Must not invent a [] part key for the user message.
+    expect(Object.prototype.hasOwnProperty.call(sessionStore.getState().part, "msg_2")).toBe(false)
+  })
+
   test("restores a visible user snapshot when the child store lacks its message and parts", async () => {
     const sessionStore = createStore({}, {
       session: [{ id: "session-a", time: { created: 1 } } as Session],
@@ -1986,7 +2229,7 @@ describe("message edit staging", () => {
     expect(sessionStore.getState().message["session-a"]).toEqual([])
   })
 
-  test("preserves the existing draft when a later-message deletion fails", async () => {
+  test("restores the optimistic message tail when a later-message deletion fails", async () => {
     const session = { id: "session-a", time: { created: 1 } } as Session
     const targetMessage = { id: "msg_2", sessionID: "session-a", role: "user", time: { created: 2 } } as Message
     const laterMessage = { id: "msg_3", sessionID: "session-a", role: "assistant", time: { created: 3 } } as Message
@@ -2008,11 +2251,48 @@ describe("message edit staging", () => {
 
     await expect(commitMessageEdit("session-a", "msg_2")).rejects.toThrow("session.deleteMessage failed (500)")
 
-    expect(sessionStore.getState().message["session-a"].map((message) => message.id)).toEqual(["msg_2", "msg_3"])
-    expect(sessionStore.getState().part["msg_4"]).toBe(undefined)
+    // Optimistic hide rolls back fully — no half-deleted tail after remote failure.
+    expect(sessionStore.getState().message["session-a"].map((message) => message.id)).toEqual(["msg_2", "msg_3", "msg_4"])
+    expect(sessionStore.getState().part["msg_4"]).toEqual([{ id: "prt_4", messageID: "msg_4", type: "text", text: "later" }])
     expect(inputState.pendingInputText).toBe("previous draft")
     expect(inputState.pendingInputMode).toBe("normal")
     expect(inputState.attachedFiles).toEqual([{ url: "file:///previous.txt", mimeType: "text/plain", filename: "previous.txt" }])
+  })
+
+  test("hides the edited turn immediately before remote deletes settle", async () => {
+    const session = { id: "session-a", time: { created: 1 } } as Session
+    const targetMessage = { id: "msg_2", sessionID: "session-a", role: "user", time: { created: 2 } } as Message
+    const laterMessage = { id: "msg_3", sessionID: "session-a", role: "assistant", time: { created: 3 } } as Message
+    const sessionStore = createStore({}, {
+      session: [session],
+      message: { "session-a": [targetMessage, laterMessage] },
+      part: {
+        "msg_2": [{ id: "prt_2", messageID: "msg_2", type: "text", text: "edit this" } as Part],
+        "msg_3": [{ id: "prt_3", messageID: "msg_3", type: "text", text: "answer" } as Part],
+      },
+    })
+    const childStores = createChildStores([["/test/project", sessionStore]])
+    const client = (await import("@/lib/opencode/client")).opencodeClient as {
+      deleteSessionMessage: (sessionId: string, messageId: string, directory?: string | null) => Promise<unknown>
+    }
+    let sawEmptyDuringDelete = false
+    const original = client.deleteSessionMessage
+    client.deleteSessionMessage = (async (...args: Parameters<typeof original>) => {
+      if (!sawEmptyDuringDelete) {
+        expect(sessionStore.getState().message["session-a"]).toEqual([])
+        sawEmptyDuringDelete = true
+      }
+      return original(...args)
+    }) as typeof original
+    const { commitMessageEdit, setActionRefs } = await import("./session-actions")
+    setActionRefs(mockSdk as unknown as OpencodeClient, childStores, () => "/current/project")
+    try {
+      await commitMessageEdit("session-a", "msg_2")
+      expect(sawEmptyDuringDelete).toBe(true)
+      expect(sessionStore.getState().message["session-a"]).toEqual([])
+    } finally {
+      client.deleteSessionMessage = original
+    }
   })
 
   test("stages into an explicit surfaceDraftKey without touching the primary session draft key", async () => {
@@ -2098,6 +2378,132 @@ describe("message edit staging", () => {
     expect(sessionStore.getState().message["session-a"]).toEqual([])
     expect(wrongStore.getState().message["session-a"]).toBe(undefined)
   })
+
+  test("hideMessageEditTarget synchronously hides the edit tail without remote deletes", async () => {
+    const session = { id: "session-a", time: { created: 1 } } as Session
+    const targetMessage = { id: "msg_2", sessionID: "session-a", role: "user", time: { created: 2 } } as Message
+    const laterMessage = { id: "msg_3", sessionID: "session-a", role: "assistant", time: { created: 3 } } as Message
+    const sessionStore = createStore({}, {
+      session: [session],
+      message: { "session-a": [targetMessage, laterMessage] },
+      part: {
+        "msg_2": [{ id: "prt_2", messageID: "msg_2", type: "text", text: "edit this" } as Part],
+        "msg_3": [{ id: "prt_3", messageID: "msg_3", type: "text", text: "answer" } as Part],
+      },
+    })
+    const childStores = createChildStores([["/test/project", sessionStore]])
+    const { hideMessageEditTarget, setActionRefs } = await import("./session-actions")
+    setActionRefs(mockSdk as unknown as OpencodeClient, childStores, () => "/test/project")
+
+    const handle = hideMessageEditTarget("session-a", "msg_2")
+
+    expect(sessionStore.getState().message["session-a"]).toEqual([])
+    expect(sessionStore.getState().part["msg_2"]).toBe(undefined)
+    expect(replyCalls.filter((call) => call.method === "session.deleteMessage")).toHaveLength(0)
+
+    handle.rollback()
+    expect(sessionStore.getState().message["session-a"].map((message) => message.id)).toEqual(["msg_2", "msg_3"])
+    expect(sessionStore.getState().part["msg_3"]).toEqual([{ id: "prt_3", messageID: "msg_3", type: "text", text: "answer" }])
+  })
+
+  test("hide/restore preserves missing part-key semantics for user messages", async () => {
+    const session = { id: "session-a", time: { created: 1 } } as Session
+    const targetMessage = { id: "msg_2", sessionID: "session-a", role: "user", time: { created: 2 } } as Message
+    const laterMessage = { id: "msg_3", sessionID: "session-a", role: "assistant", time: { created: 3 } } as Message
+    const sessionStore = createStore({}, {
+      session: [session],
+      message: { "session-a": [targetMessage, laterMessage] },
+      // User message intentionally has no part key; assistant keeps an explicit [].
+      part: {
+        "msg_3": [],
+      },
+    })
+    const childStores = createChildStores([["/test/project", sessionStore]])
+    const { hideMessageEditTarget, setActionRefs } = await import("./session-actions")
+    setActionRefs(mockSdk as unknown as OpencodeClient, childStores, () => "/test/project")
+
+    expect(Object.prototype.hasOwnProperty.call(sessionStore.getState().part, "msg_2")).toBe(false)
+    const handle = hideMessageEditTarget("session-a", "msg_2")
+    handle.rollback()
+
+    expect(Object.prototype.hasOwnProperty.call(sessionStore.getState().part, "msg_2")).toBe(false)
+    expect(sessionStore.getState().part["msg_3"]).toEqual([])
+  })
+
+  test("commitMessageEdit with hideHandle refetches, expands deletes, and restores snapshot+extras in id order", async () => {
+    const session = { id: "session-a", time: { created: 1 } } as Session
+    const targetMessage = { id: "msg_2", sessionID: "session-a", role: "user", time: { created: 2 } } as Message
+    const laterMessage = { id: "msg_3", sessionID: "session-a", role: "assistant", time: { created: 3 } } as Message
+    const latestMessage = { id: "msg_4", sessionID: "session-a", role: "user", time: { created: 4 } } as Message
+    const arrivedAfterHide = { id: "msg_5", sessionID: "session-a", role: "assistant", time: { created: 5 } } as Message
+    const sessionStore = createStore({}, {
+      session: [session],
+      message: { "session-a": [targetMessage, laterMessage, latestMessage] },
+      part: {
+        "msg_2": [{ id: "prt_2", messageID: "msg_2", type: "text", text: "edit this" } as Part],
+        "msg_3": [{ id: "prt_3", messageID: "msg_3", type: "text", text: "answer" } as Part],
+        "msg_4": [{ id: "prt_4", messageID: "msg_4", type: "text", text: "later" } as Part],
+      },
+    })
+    const childStores = createChildStores([["/test/project", sessionStore]])
+    sessionDeleteMessageFailureID = "msg_3"
+    sessionMessagesResult = {
+      data: [
+        { info: targetMessage, parts: [{ id: "prt_2", messageID: "msg_2", type: "text", text: "edit this" } as Part] },
+        { info: laterMessage, parts: [{ id: "prt_3", messageID: "msg_3", type: "text", text: "answer" } as Part] },
+        { info: latestMessage, parts: [{ id: "prt_4", messageID: "msg_4", type: "text", text: "later" } as Part] },
+        { info: arrivedAfterHide, parts: [{ id: "prt_5", messageID: "msg_5", type: "text", text: "late tail" } as Part] },
+      ],
+    }
+    const { hideMessageEditTarget, commitMessageEdit, setActionRefs } = await import("./session-actions")
+    setActionRefs(mockSdk as unknown as OpencodeClient, childStores, () => "/test/project")
+
+    const hideHandle = hideMessageEditTarget("session-a", "msg_2")
+    expect(sessionStore.getState().message["session-a"]).toEqual([])
+
+    await expect(commitMessageEdit("session-a", "msg_2", { hideHandle })).rejects.toThrow("session.deleteMessage failed (500)")
+
+    expect(replyCalls.filter((call) => call.method === "session.messages")).toHaveLength(1)
+    expect(
+      replyCalls
+        .filter((call) => call.method === "session.deleteMessage")
+        .map((call) => call.params.messageID),
+    ).toEqual(["msg_5", "msg_4", "msg_3"])
+    // Original click-time snapshot plus the refetch-only tail, message-id ascending.
+    expect(sessionStore.getState().message["session-a"].map((message) => message.id)).toEqual([
+      "msg_2",
+      "msg_3",
+      "msg_4",
+      "msg_5",
+    ])
+  })
+
+  test("commitMessageEdit with hideHandle restores the pre-hidden tail when refetch fails", async () => {
+    const session = { id: "session-a", time: { created: 1 } } as Session
+    const targetMessage = { id: "msg_2", sessionID: "session-a", role: "user", time: { created: 2 } } as Message
+    const laterMessage = { id: "msg_3", sessionID: "session-a", role: "assistant", time: { created: 3 } } as Message
+    const sessionStore = createStore({}, {
+      session: [session],
+      message: { "session-a": [targetMessage, laterMessage] },
+      part: {
+        "msg_2": [{ id: "prt_2", messageID: "msg_2", type: "text", text: "edit this" } as Part],
+        "msg_3": [{ id: "prt_3", messageID: "msg_3", type: "text", text: "answer" } as Part],
+      },
+    })
+    const childStores = createChildStores([["/test/project", sessionStore]])
+    sessionMessagesResult = { error: true, response: { status: 500 } }
+    const { hideMessageEditTarget, commitMessageEdit, setActionRefs } = await import("./session-actions")
+    setActionRefs(mockSdk as unknown as OpencodeClient, childStores, () => "/test/project")
+
+    const hideHandle = hideMessageEditTarget("session-a", "msg_2")
+    expect(sessionStore.getState().message["session-a"]).toEqual([])
+
+    await expect(commitMessageEdit("session-a", "msg_2", { hideHandle })).rejects.toThrow()
+
+    expect(replyCalls.filter((call) => call.method === "session.deleteMessage")).toHaveLength(0)
+    expect(sessionStore.getState().message["session-a"].map((message) => message.id)).toEqual(["msg_2", "msg_3"])
+    expect(sessionStore.getState().part["msg_2"]).toEqual([{ id: "prt_2", messageID: "msg_2", type: "text", text: "edit this" }])
+  })
 })
 
 describe("session history mutation serial coordinator", () => {
@@ -2115,6 +2521,7 @@ describe("session history mutation serial coordinator", () => {
     replyCalls.length = 0
     sessionRevertResult = {}
     sessionUnrevertResult = {}
+    sessionMessagesResult = { data: [] }
     draftCommits.length = 0
     draftRevisionByKey = new Map()
     draftCommitShouldFail = false

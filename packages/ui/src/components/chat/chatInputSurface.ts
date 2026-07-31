@@ -4,6 +4,7 @@ import type { CommandInfo } from './CommandAutocomplete';
 import type { AttachedFile } from '@/stores/types/sessionTypes';
 import type { InlineCommentDraft } from '@/stores/useInlineCommentDraftStore';
 import type { SyntheticContextPart } from '@/sync/input-store';
+import type { MessageEditHideHandle, OptimisticSendTicket } from '@/sync/session-actions';
 import type { Agent } from '@opencode-ai/sdk/v2';
 
 export type ChatInputDeliveryTarget = { kind: 'primary' } | { kind: 'assistant'; assistantID: string };
@@ -109,6 +110,10 @@ export type ChatInputDeliveryRequest = {
     sessionId?: string;
     directoryHint?: string | null;
     messageID?: string;
+    /** Pre-begun optimistic send ticket — primary backend reuses messageID. */
+    ticket?: OptimisticSendTicket;
+    /** Pre-hide handle for staged message-edit commit. */
+    messageEditHideHandle?: MessageEditHideHandle;
   };
   queueScope?: ChatInputQueueScope;
 };

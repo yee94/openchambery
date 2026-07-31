@@ -17,9 +17,55 @@ export type MessageQueuePendingAdmissionItem = {
   kind: 'pending-admission'; requestID: string; queueItemID: string; operationID: string; messageID: string; content: string; createdAt: number; phase: MessageQueuePendingAdmissionPhase; attachmentCount: number;
   composerDocument?: MessageQueueAdmissionItem['composerDocument']; composerMentions?: MessageQueueAdmissionItem['composerMentions']; sendConfig?: MessageQueueAdmissionItem['sendConfig'];
 };
+export type MessageQueueStageAdmissionInput = {
+  requestID: string;
+  scope: { directory: string; sessionID: string };
+  item: {
+    queueItemID: string;
+    operationID: string;
+    messageID: string;
+    content: string;
+    createdAt: number;
+    attachmentCount?: number;
+    composerDocument?: MessageQueueAdmissionItem['composerDocument'];
+    composerMentions?: MessageQueueAdmissionItem['composerMentions'];
+    sendConfig?: MessageQueueAdmissionItem['sendConfig'];
+  };
+};
+export type MessageQueueUnstageAdmissionInput = {
+  requestID: string;
+  scope: { directory: string; sessionID: string };
+};
 export type MessageQueueServerDisplayItem = MessageQueueItem | MessageQueuePendingAdmissionItem;
 export const isMessageQueuePendingAdmissionItem = (value: unknown): value is MessageQueuePendingAdmissionItem => typeof value === 'object' && value !== null && (value as { kind?: unknown }).kind === 'pending-admission';
-export type MessageQueueServerSurface = { subscribe(listener: () => void): () => void; subscribeScope(scope: { transportIdentity: string; directory: string; sessionID: string }, listener: () => void): () => void; getState(): MessageQueueServerSurfaceState; getScope(scope: { transportIdentity: string; directory: string; sessionID: string }): MessageQueueScope | undefined; getPendingAdmissions(scope: { transportIdentity: string; directory: string; sessionID: string }): readonly MessageQueuePendingAdmissionItem[]; captureRuntime(): MessageQueueServerRuntimeCapture; start(): void; stop(): void; restart(): void; runShadowImport(): Promise<MessageQueueShadowImportState>; pause?(expectedGeneration: number): Promise<void>; resume?(expectedGeneration: number): Promise<void>; admit(input: { requestID: string; scope: { directory: string; sessionID: string }; item: Omit<MessageQueueAdmissionItem, 'attachments'>; attachments?: readonly QueueAttachmentCandidate[] }): Promise<MessageQueueServerMutationResult>; edit(input: { requestID: string; scopeID: string; revision: number; item: MessageQueueItem; patch: Parameters<typeof editTextQueueItem>[1]['item'] }): Promise<MessageQueueServerMutationResult>; remove(input: { requestID: string; scopeID: string; revision: number; item: MessageQueueItem }): Promise<MessageQueueServerMutationResult>; reserveEdit(input: { requestID: string; scopeID: string; revision: number; item: MessageQueueItem; owner: string; ttlMs: number; runtime: MessageQueueServerRuntimeCapture }): Promise<MessageQueueEditReservation | undefined>; renewEdit(input: { item: MessageQueueItem; token: string; generation: number; ttlMs: number; runtime: MessageQueueServerRuntimeCapture; signal?: AbortSignal }): Promise<MessageQueueEditReservationRenewal | undefined>; releaseEdit(input: { item: MessageQueueItem; token: string; runtime: MessageQueueServerRuntimeCapture }): Promise<void>; removeReserved(input: { requestID: string; scopeID: string; revision: number; item: MessageQueueItem; token: string; generation: number; runtime: MessageQueueServerRuntimeCapture }): Promise<boolean>; reorder(input: { requestID: string; scopeID: string; revision: number; queueItemIDs: string[] }): Promise<MessageQueueServerMutationResult>; manualSend(input: { requestID: string; scopeID: string; revision: number; item: MessageQueueItem }): Promise<MessageQueueServerMutationResult>; refresh(): Promise<void> };
+export type MessageQueueServerSurface = {
+  subscribe(listener: () => void): () => void;
+  subscribeScope(scope: { transportIdentity: string; directory: string; sessionID: string }, listener: () => void): () => void;
+  getState(): MessageQueueServerSurfaceState;
+  getScope(scope: { transportIdentity: string; directory: string; sessionID: string }): MessageQueueScope | undefined;
+  getPendingAdmissions(scope: { transportIdentity: string; directory: string; sessionID: string }): readonly MessageQueuePendingAdmissionItem[];
+  captureRuntime(): MessageQueueServerRuntimeCapture;
+  start(): void;
+  stop(): void;
+  restart(): void;
+  runShadowImport(): Promise<MessageQueueShadowImportState>;
+  pause?(expectedGeneration: number): Promise<void>;
+  resume?(expectedGeneration: number): Promise<void>;
+  /** Synchronously publish a pending-admission chip before any await (upload/POST). Reuses requestID on later admit. */
+  stageAdmission(input: MessageQueueStageAdmissionInput): void;
+  /** Drop a staged pending-admission when flush/compile/admit fails before commit. */
+  unstageAdmission(input: MessageQueueUnstageAdmissionInput): void;
+  admit(input: { requestID: string; scope: { directory: string; sessionID: string }; item: Omit<MessageQueueAdmissionItem, 'attachments'>; attachments?: readonly QueueAttachmentCandidate[] }): Promise<MessageQueueServerMutationResult>;
+  edit(input: { requestID: string; scopeID: string; revision: number; item: MessageQueueItem; patch: Parameters<typeof editTextQueueItem>[1]['item'] }): Promise<MessageQueueServerMutationResult>;
+  remove(input: { requestID: string; scopeID: string; revision: number; item: MessageQueueItem }): Promise<MessageQueueServerMutationResult>;
+  reserveEdit(input: { requestID: string; scopeID: string; revision: number; item: MessageQueueItem; owner: string; ttlMs: number; runtime: MessageQueueServerRuntimeCapture }): Promise<MessageQueueEditReservation | undefined>;
+  renewEdit(input: { item: MessageQueueItem; token: string; generation: number; ttlMs: number; runtime: MessageQueueServerRuntimeCapture; signal?: AbortSignal }): Promise<MessageQueueEditReservationRenewal | undefined>;
+  releaseEdit(input: { item: MessageQueueItem; token: string; runtime: MessageQueueServerRuntimeCapture }): Promise<void>;
+  removeReserved(input: { requestID: string; scopeID: string; revision: number; item: MessageQueueItem; token: string; generation: number; runtime: MessageQueueServerRuntimeCapture }): Promise<boolean>;
+  reorder(input: { requestID: string; scopeID: string; revision: number; queueItemIDs: string[] }): Promise<MessageQueueServerMutationResult>;
+  manualSend(input: { requestID: string; scopeID: string; revision: number; item: MessageQueueItem }): Promise<MessageQueueServerMutationResult>;
+  refresh(): Promise<void>;
+};
 type Client = Pick<typeof queryClient, 'setQueryData' | 'getQueryData' | 'removeQueries' | 'invalidateQueries' | 'fetchQuery'>;
 type Dependencies = { snapshot: typeof fetchMessageQueueSnapshot; status: typeof fetchMessageQueueServerStatus; scope: typeof fetchMessageQueueScope; waitInvalidation: typeof waitForMessageQueueInvalidation; admit: typeof admitTextQueueItem; edit: typeof editTextQueueItem; remove: typeof removeQueueItem; reserve: typeof reserveMessageQueueItemForEdit; renew: typeof renewEditReservation; release: typeof releaseMessageQueueItemEditReservation; removeReserved: typeof removeReservedMessageQueueItem; reorder: typeof reorderQueueScope; manualSend: typeof sendQueueItemNow; upload: typeof uploadQueueAttachments; client: Client; capture: () => MessageQueueServerRuntimeCapture; current: (capture: MessageQueueServerRuntimeCapture) => boolean; legacyManualSend: (item: MessageQueueItem) => Promise<void>; shadowQueue: () => ReturnType<typeof getMessageQueueRuntime>; admissionUploadTimeoutMs: number; admissionRequestTimeoutMs: number; admissionReconcileTimeoutMs: number };
 const withAbort = <T>(promise: Promise<T>, signal?: AbortSignal): Promise<T> => promise.then((value) => {
@@ -379,17 +425,68 @@ export const createMessageQueueServerRuntime = (dependencies: Partial<Dependenci
     restart: () => { if (stopTimer !== undefined) { clearTimeout(stopTimer); stopTimer = undefined; } stopObserver(); resetForTransport(deps.capture()); if (users) startObserver(); },
     refresh, runShadowImport,
     pause: async (expectedGeneration) => { await pauseMessageQueueAuthority({ expectedGeneration, signal: controller?.signal }); await refresh(); }, resume: async (expectedGeneration) => { await resumeMessageQueueAuthority({ expectedGeneration, signal: controller?.signal }); await refresh(); },
+    // Explicit pre-await chip: ChatInput stages identity + clears composer before
+    // selection.flush so QueuedMessageChips sees pending-admission immediately.
+    stageAdmission: ({ requestID, scope, item }) => {
+      const capture = synchronizeTransport();
+      const pendingKey = scopeKey({ transportIdentity: capture.transportIdentity, ...scope });
+      const pending: PendingAdmission = {
+        kind: 'pending-admission',
+        requestID,
+        queueItemID: item.queueItemID,
+        operationID: item.operationID,
+        messageID: item.messageID,
+        content: item.content,
+        createdAt: item.createdAt,
+        phase: 'uploading',
+        attachmentCount: item.attachmentCount ?? 0,
+        ...(item.composerDocument ? { composerDocument: item.composerDocument } : {}),
+        ...(item.composerMentions ? { composerMentions: item.composerMentions } : {}),
+        ...(item.sendConfig ? { sendConfig: item.sendConfig } : {}),
+      };
+      updatePendingAdmissions(pendingKey, (entries) => {
+        const without = entries.filter((entry) => entry.requestID !== requestID && entry.queueItemID !== item.queueItemID);
+        return [...without, pending];
+      });
+    },
+    unstageAdmission: ({ requestID, scope }) => {
+      const capture = synchronizeTransport();
+      const pendingKey = scopeKey({ transportIdentity: capture.transportIdentity, ...scope });
+      updatePendingAdmissions(pendingKey, (entries) => entries.filter((entry) => entry.requestID !== requestID));
+    },
     admit: async ({ requestID, scope, item, attachments = [] }) => {
       const capture = synchronizeTransport();
       const pendingScope = { transportIdentity: capture.transportIdentity, ...scope };
       const pendingKey = scopeKey(pendingScope);
-      const pending: PendingAdmission = {
-        kind: 'pending-admission', requestID, queueItemID: item.queueItemID, operationID: item.operationID, messageID: item.messageID, content: item.content, createdAt: item.createdAt, phase: 'uploading', attachmentCount: attachments.length,
-        ...(item.composerDocument ? { composerDocument: item.composerDocument } : {}), ...(item.composerMentions ? { composerMentions: item.composerMentions } : {}), ...(item.sendConfig ? { sendConfig: item.sendConfig } : {}),
-      };
-      const replacePending = (next: PendingAdmission) => updatePendingAdmissions(pendingKey, (entries) => entries.map((entry) => entry.requestID === requestID ? next : entry));
-      const removePending = () => updatePendingAdmissions(pendingKey, (entries) => entries.filter((entry) => entry.requestID !== requestID));
-      updatePendingAdmissions(pendingKey, (entries) => [...entries, pending]);
+      const staged = (pendingAdmissions.get(pendingKey) ?? EMPTY_PENDING_ADMISSIONS).find(
+        (entry) => entry.requestID === requestID || entry.queueItemID === item.queueItemID,
+      );
+      // Reuse the staged chip identity so stage→admit never duplicates a row.
+      const pending: PendingAdmission = staged && (staged.requestID === requestID || staged.queueItemID === item.queueItemID)
+        ? {
+          ...staged,
+          requestID,
+          queueItemID: item.queueItemID,
+          operationID: item.operationID,
+          messageID: item.messageID,
+          content: item.content,
+          createdAt: item.createdAt,
+          phase: 'uploading',
+          attachmentCount: attachments.length,
+          ...(item.composerDocument ? { composerDocument: item.composerDocument } : {}),
+          ...(item.composerMentions ? { composerMentions: item.composerMentions } : {}),
+          ...(item.sendConfig ? { sendConfig: item.sendConfig } : {}),
+        }
+        : {
+          kind: 'pending-admission', requestID, queueItemID: item.queueItemID, operationID: item.operationID, messageID: item.messageID, content: item.content, createdAt: item.createdAt, phase: 'uploading', attachmentCount: attachments.length,
+          ...(item.composerDocument ? { composerDocument: item.composerDocument } : {}), ...(item.composerMentions ? { composerMentions: item.composerMentions } : {}), ...(item.sendConfig ? { sendConfig: item.sendConfig } : {}),
+        };
+      const replacePending = (next: PendingAdmission) => updatePendingAdmissions(pendingKey, (entries) => entries.map((entry) => (
+        entry.requestID === requestID || entry.queueItemID === item.queueItemID ? next : entry
+      )));
+      const removePending = () => updatePendingAdmissions(pendingKey, (entries) => entries.filter((entry) => entry.requestID !== requestID && entry.queueItemID !== item.queueItemID));
+      if (staged) replacePending(pending);
+      else updatePendingAdmissions(pendingKey, (entries) => [...entries, pending]);
       let uploaded;
       try {
         uploaded = await withDeadline((signal) => deps.upload(attachments, signal), controller?.signal, deps.admissionUploadTimeoutMs);

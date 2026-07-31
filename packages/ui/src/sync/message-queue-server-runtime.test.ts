@@ -610,6 +610,52 @@ test('admission publishes an exact-scope uploading shadow before upload settles'
   await admission;
 });
 
+test('stageAdmission is immediately readable and admit reuses the same identity without a duplicate chip', async () => {
+  let releaseUpload = () => {};
+  const upload = new Promise<{ attachments: [] }>((resolve) => { releaseUpload = () => resolve({ attachments: [] }); });
+  const runtime = createMessageQueueServerRuntime({ capture: () => ({ transportIdentity: 'device-a', generation: 1 }), current: () => true, upload: async () => upload, admit: async () => ({ revision: 2, scopeID: 'scope-a' }) } as never);
+  const scope = { directory: '/repo', sessionID: 'session-a' };
+  runtime.stageAdmission({
+    requestID: 'request-a',
+    scope,
+    item: { queueItemID: 'queue-a', operationID: 'operation-a', messageID: 'msg_a', content: 'staged body', createdAt: 1, attachmentCount: 2 },
+  });
+  const staged = runtime.getPendingAdmissions({ transportIdentity: 'device-a', ...scope });
+  expect(staged).toHaveLength(1);
+  expect(staged[0]?.kind).toBe('pending-admission');
+  expect(staged[0]?.requestID).toBe('request-a');
+  expect(staged[0]?.queueItemID).toBe('queue-a');
+  expect(staged[0]?.phase).toBe('uploading');
+  expect(staged[0]?.content).toBe('staged body');
+  expect(staged[0]?.attachmentCount).toBe(2);
+
+  const admission = runtime.admit({
+    requestID: 'request-a',
+    scope,
+    item: { queueItemID: 'queue-a', operationID: 'operation-a', messageID: 'msg_a', content: 'staged body', attachmentIssues: [], createdAt: 1 },
+    attachments: [],
+  });
+  const duringUpload = runtime.getPendingAdmissions({ transportIdentity: 'device-a', ...scope });
+  expect(duringUpload).toHaveLength(1);
+  expect(duringUpload[0]?.requestID).toBe('request-a');
+  expect(duringUpload[0]?.queueItemID).toBe('queue-a');
+  releaseUpload();
+  await admission;
+});
+
+test('unstageAdmission clears a staged pending chip before admit', () => {
+  const runtime = createMessageQueueServerRuntime({ capture: () => ({ transportIdentity: 'device-a', generation: 1 }), current: () => true } as never);
+  const scope = { directory: '/repo', sessionID: 'session-a' };
+  runtime.stageAdmission({
+    requestID: 'request-a',
+    scope,
+    item: { queueItemID: 'queue-a', operationID: 'operation-a', messageID: 'msg_a', content: 'staged', createdAt: 1 },
+  });
+  expect(runtime.getPendingAdmissions({ transportIdentity: 'device-a', ...scope })).toHaveLength(1);
+  runtime.unstageAdmission({ requestID: 'request-a', scope });
+  expect(runtime.getPendingAdmissions({ transportIdentity: 'device-a', ...scope })).toEqual([]);
+});
+
 test('POST acknowledgement resolves before a blocked targeted scope read and replay uses the same request payload once', async () => {
   let releaseScope = () => {}, calls = 0;
   const scopeRead = new Promise<MessageQueueScope>((resolve) => { releaseScope = () => resolve({ ...descriptor, revision: 2, items: [item] }); });

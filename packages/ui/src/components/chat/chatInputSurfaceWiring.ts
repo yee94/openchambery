@@ -44,6 +44,8 @@ export const primarySendOptionsFromDeliveryRequest = (
   delivery?: 'steer';
   commitStagedMessageEdit?: boolean;
   messageID?: string;
+  ticket?: NonNullable<ChatInputDeliveryRequest['options']>['ticket'];
+  messageEditHideHandle?: NonNullable<ChatInputDeliveryRequest['options']>['messageEditHideHandle'];
 } => {
   const base = {
     ...(request.options?.delivery === 'steer' ? { delivery: 'steer' as const } : {}),
@@ -51,6 +53,10 @@ export const primarySendOptionsFromDeliveryRequest = (
       ? { commitStagedMessageEdit: request.options.commitStagedMessageEdit }
       : {}),
     ...(request.options?.messageID ? { messageID: request.options.messageID } : {}),
+    ...(request.options?.ticket ? { ticket: request.options.ticket } : {}),
+    ...(request.options?.messageEditHideHandle
+      ? { messageEditHideHandle: request.options.messageEditHideHandle }
+      : {}),
   };
   const sessionId = request.options?.sessionId ?? request.sessionID ?? undefined;
   if (!sessionId) {

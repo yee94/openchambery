@@ -538,7 +538,8 @@ jobs:
       release_tag: v${{ needs.create-release.outputs.version }}
       upload_github_release: true
       build_android: true
-      build_ios: true
+      # Apple marketing versions cannot include -beta; skip iOS/TestFlight for beta tags.
+      build_ios: ${{ !contains(needs.create-release.outputs.version, '-beta') }}
     secrets: inherit
 
   publish-relay-docker-manual:

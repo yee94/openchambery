@@ -17,7 +17,7 @@ export type MessageQueueServerScopeView = {
   items: readonly MessageQueueServerDisplayItem[];
   hasPendingAdmission: boolean;
   hasBlockingAdmission: boolean;
-  actions: Pick<MessageQueueServerSurface, 'admit' | 'edit' | 'remove' | 'reorder' | 'manualSend' | 'refresh' | 'runShadowImport' | 'captureRuntime'> & { editIntoDraft: typeof editServerQueueItemIntoDraft };
+  actions: Pick<MessageQueueServerSurface, 'admit' | 'edit' | 'remove' | 'reorder' | 'manualSend' | 'refresh' | 'runShadowImport' | 'captureRuntime' | 'stageAdmission' | 'unstageAdmission'> & { editIntoDraft: typeof editServerQueueItemIntoDraft };
 };
 
 const EMPTY_ITEMS: readonly MessageQueueServerDisplayItem[] = [];
@@ -30,7 +30,7 @@ export const useMessageQueueServerScope = (input: MessageQueueServerScopeInput, 
     let previous: MessageQueueServerScopeView | undefined;
     let previousPending: ReturnType<MessageQueueServerSurface['getPendingAdmissions']> | undefined;
     let previousLocalItems: readonly QueueItem[] | undefined;
-    const actions = { admit: runtime.admit, edit: runtime.edit, remove: runtime.remove, reorder: runtime.reorder, manualSend: runtime.manualSend, refresh: runtime.refresh, runShadowImport: runtime.runShadowImport, captureRuntime: runtime.captureRuntime, editIntoDraft: editServerQueueItemIntoDraft };
+    const actions = { admit: runtime.admit, edit: runtime.edit, remove: runtime.remove, reorder: runtime.reorder, manualSend: runtime.manualSend, refresh: runtime.refresh, runShadowImport: runtime.runShadowImport, captureRuntime: runtime.captureRuntime, stageAdmission: runtime.stageAdmission, unstageAdmission: runtime.unstageAdmission, editIntoDraft: editServerQueueItemIntoDraft };
     const getSnapshot = (): MessageQueueServerScopeView => {
       const state = runtime.getState(), runtimeCapture = runtime.captureRuntime(), scope = runtime.getScope(scopeInput), pending = runtime.getPendingAdmissions(scopeInput), cutoverState = cutover.getSnapshot();
       const stableRuntimeCapture = previous?.runtimeCapture.transportIdentity === runtimeCapture.transportIdentity && previous.runtimeCapture.generation === runtimeCapture.generation ? previous.runtimeCapture : runtimeCapture;

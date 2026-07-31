@@ -68,6 +68,8 @@ import {
   fetchRecentSendConfirmationRecords,
   materializeConfirmedSendRecords,
   dirStoreForDirectory,
+  type OptimisticSendTicket,
+  type MessageEditHideHandle,
 } from "./session-actions"
 import { useInputStore, type InputDraftRuntimeCapture, type DraftOwnershipCommitResult, type SyntheticContextPart } from "./input-store"
 import { newSessionDraftKey, sessionDraftKey, type DraftKey } from "./input-draft-types"
@@ -90,7 +92,11 @@ export type { AttachedFile }
 
 export type MessageEditSnapshot = {
   info: Message
-  parts: Part[]
+  /**
+   * Visible-row parts at click time. Omit when the child store had no part key
+   * yet — absence is distinct from an empty `[]` for user messages.
+   */
+  parts?: Part[]
 }
 
 export type PendingUserMessagePresentation = {
@@ -177,6 +183,8 @@ export async function routeMessage(params: {
   optimisticParts?: readonly Part[]
   delivery?: 'steer'
   messageID?: string
+  /** Ticket from a prior `beginOptimisticSend` — skips re-insert and reuses messageID. */
+  ticket?: OptimisticSendTicket
   preserveOptimisticOnAmbiguous?: boolean
   onSendConfirmed?: (messageID: string) => void
 }): Promise<void> {
@@ -242,6 +250,7 @@ export async function routeMessage(params: {
         directory: requestDirectory,
         files: params.files,
         messageID: params.messageID,
+        ticket: params.ticket,
         preserveOptimisticOnAmbiguous: params.preserveOptimisticOnAmbiguous,
         onSendConfirmed,
         send: (messageID) => opencodeClient.sendCommand({
@@ -271,6 +280,7 @@ export async function routeMessage(params: {
     files: params.files,
     parts: params.optimisticParts,
     messageID: params.messageID,
+    ticket: params.ticket,
     preserveOptimisticOnAmbiguous: params.preserveOptimisticOnAmbiguous,
     onSendConfirmed,
     send: (messageID) => opencodeClient.sendMessage({
@@ -296,6 +306,10 @@ type SendMessageOptions = {
   delivery?: 'steer'
   commitStagedMessageEdit?: boolean
   messageID?: string
+  /** Ticket from a prior `beginOptimisticSend` — passed through to routeMessage / optimisticSend. */
+  ticket?: OptimisticSendTicket
+  /** Optional pre-hide handle from `hideMessageEditTarget` for staged edit commit. */
+  messageEditHideHandle?: MessageEditHideHandle
   preserveOptimisticOnAmbiguous?: boolean
   onSendConfirmed?: (messageID: string) => void
 }
@@ -1766,7 +1780,9 @@ export const useSessionUIStore = create<SessionUIState>()((set, get) => ({
     const stagedMessageEdit = get().stagedMessageEdit
     const requestedSessionId = options?.sessionId ?? get().currentSessionId
     if (options?.commitStagedMessageEdit && stagedMessageEdit && stagedMessageEdit.sessionId === requestedSessionId) {
-      await commitMessageEdit(stagedMessageEdit.sessionId, stagedMessageEdit.messageId)
+      await commitMessageEdit(stagedMessageEdit.sessionId, stagedMessageEdit.messageId, {
+        hideHandle: options.messageEditHideHandle,
+      })
       if (get().stagedMessageEdit === stagedMessageEdit) {
         set({ stagedMessageEdit: null })
       }
@@ -1971,6 +1987,7 @@ export const useSessionUIStore = create<SessionUIState>()((set, get) => ({
       files,
       delivery: options?.delivery,
       messageID: options?.messageID,
+      ticket: options?.ticket,
       preserveOptimisticOnAmbiguous: options?.preserveOptimisticOnAmbiguous,
       onSendConfirmed: options?.onSendConfirmed,
       additionalParts: additionalParts?.map((p) => ({

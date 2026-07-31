@@ -4,7 +4,7 @@ import { serializeComposerDocument } from '@/composer/document';
 
 const a: Extract<QueueScope, { state: 'bound' }> = { state: 'bound', transportIdentity: 'runtime-a', directory: '/project', sessionID: 'session-a' };
 const b: Extract<QueueScope, { state: 'bound' }> = { ...a, transportIdentity: 'runtime-b' };
-const reset = (): void => { useMessageQueueStore.setState({ queuedMessages: {}, followUpBehavior: 'queue' }); };
+const reset = (): void => { useMessageQueueStore.setState({ queuedMessages: {}, followUpBehavior: 'queue', pendingAdmissions: {} }); };
 const mustAdd = (scope: QueueScope = a): QueueItem => {
   const result = useMessageQueueStore.getState().addToQueue(scope, { content: 'message' });
   if (!result.ok) throw new Error(result.reason);
@@ -226,5 +226,110 @@ describe('messageQueueStore scoped ledger', () => {
     expect(actions.beginQueueItemDispatch(a, identity, 'msg_ffffffffffffABCDEFGHIJKLMN', false, 19)).toBeNull();
     const retry = actions.beginQueueItemDispatch(a, identity, 'msg_ffffffffffffABCDEFGHIJKLMN', false, 20);
     expect(retry?.messageID).toBe('msg_ffffffffffffABCDEFGHIJKLMN');
+  });
+});
+
+describe('messageQueueStore ephemeral pending admissions', () => {
+  beforeEach(() => { setMessageQueueMutationFence('open'); reset(); });
+
+  test('stageAdmission is readable immediately and never enters durable queuedMessages', () => {
+    const actions = useMessageQueueStore.getState();
+    actions.stageAdmission(a, {
+      requestID: 'request-a',
+      queueItemID: 'queued-a',
+      operationID: 'operation-a',
+      messageID: 'msg_a',
+      content: 'pending body',
+      createdAt: 42,
+      attachmentCount: 2,
+    });
+    const pending = actions.getPendingAdmissionsForScope(a);
+    expect(pending).toHaveLength(1);
+    expect(pending[0]?.kind).toBe('pending-admission');
+    expect(pending[0]?.phase).toBe('admitting');
+    expect(pending[0]?.requestID).toBe('request-a');
+    expect(pending[0]?.queueItemID).toBe('queued-a');
+    expect(pending[0]?.content).toBe('pending body');
+    expect(pending[0]?.attachmentCount).toBe(2);
+    expect(actions.getQueueForScope(a)).toEqual([]);
+    expect(useMessageQueueStore.getState().queuedMessages[queueScopeKey(a)]).toBe(undefined);
+  });
+
+  test('unstageAdmission clears a staged chip before confirmation', () => {
+    const actions = useMessageQueueStore.getState();
+    actions.stageAdmission(a, {
+      requestID: 'request-a',
+      queueItemID: 'queued-a',
+      operationID: 'operation-a',
+      messageID: 'msg_a',
+      content: 'pending body',
+      createdAt: 1,
+    });
+    actions.unstageAdmission(a, 'request-a');
+    expect(actions.getPendingAdmissionsForScope(a)).toEqual([]);
+    expect(actions.getQueueForScope(a)).toEqual([]);
+  });
+
+  test('confirmAdmission promotes staged identity into a durable queued row and clears the marker', () => {
+    const actions = useMessageQueueStore.getState();
+    actions.stageAdmission(a, {
+      requestID: 'request-a',
+      queueItemID: 'queued-a',
+      operationID: 'operation-a',
+      messageID: 'msg_a',
+      content: 'pending body',
+      createdAt: 7,
+    });
+    const confirmed = actions.confirmAdmission(a, {
+      requestID: 'request-a',
+      sendConfig: { providerID: 'p', modelID: 'm', agent: 'build' },
+    });
+    expect(confirmed.ok).toBe(true);
+    if (!confirmed.ok) throw new Error(confirmed.reason);
+    expect(confirmed.item.queueItemID).toBe('queued-a');
+    expect(confirmed.item.operationID).toBe('operation-a');
+    expect(confirmed.item.messageID).toBe('msg_a');
+    expect(confirmed.item.content).toBe('pending body');
+    expect(confirmed.item.createdAt).toBe(7);
+    expect(confirmed.item.status).toBe('queued');
+    expect(confirmed.item.sendConfig).toEqual({ providerID: 'p', modelID: 'm', agent: 'build' });
+    expect(actions.getPendingAdmissionsForScope(a)).toEqual([]);
+    expect(actions.getQueueForScope(a)).toEqual([confirmed.item]);
+  });
+
+  test('partialize excludes pendingAdmissions so persistence cannot capture temporary markers', () => {
+    useMessageQueueStore.getState().stageAdmission(a, {
+      requestID: 'request-a',
+      queueItemID: 'queued-a',
+      operationID: 'operation-a',
+      messageID: 'msg_a',
+      content: 'pending body',
+      createdAt: 1,
+    });
+    mustAdd(a);
+    const persisted = migrateMessageQueueState({
+      queuedMessages: useMessageQueueStore.getState().queuedMessages,
+      followUpBehavior: 'queue',
+      pendingAdmissions: useMessageQueueStore.getState().pendingAdmissions,
+    } as never);
+    expect(Object.hasOwn(persisted, 'pendingAdmissions')).toBe(false);
+    expect(Object.keys(persisted.queuedMessages).length).toBeGreaterThan(0);
+    expect(useMessageQueueStore.getState().getPendingAdmissionsForScope(a)).toHaveLength(1);
+  });
+
+  test('unstageAdmission remains available while the mutation fence blocks durable writes', () => {
+    const actions = useMessageQueueStore.getState();
+    actions.stageAdmission(a, {
+      requestID: 'request-a',
+      queueItemID: 'queued-a',
+      operationID: 'operation-a',
+      messageID: 'msg_a',
+      content: 'pending body',
+      createdAt: 1,
+    });
+    setMessageQueueMutationFence('quiescing');
+    expect(actions.addToQueue(a, { content: 'blocked' }).ok).toBe(false);
+    actions.unstageAdmission(a, 'request-a');
+    expect(actions.getPendingAdmissionsForScope(a)).toEqual([]);
   });
 });

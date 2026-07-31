@@ -1148,133 +1148,6 @@ export async function unshareSession(sessionId: string): Promise<Session | null>
 
 import { ascendingId } from "./message-id"
 
-/**
- * Wraps an async send operation with optimistic user-message insertion.
- * Uses useSync()'s optimistic infrastructure — message + parts are inserted
- * into the store AND registered in the shadow Map. mergeOptimisticPage
- * handles deduplication when the server echoes back the real message.
- *
- * Insert the optimistic user row before the connection grace wait so a
- * long-idle reconnect cannot leave the composer cleared / status busy while
- * the chat list still shows the pre-send snapshot.
- */
-export async function optimisticSend(input: {
-  sessionId: string
-  content: string
-  providerID: string
-  modelID: string
-  agent?: string
-  directory?: string | null
-  files?: Array<{ type: "file"; mime: string; url: string; filename: string }>
-  parts?: readonly Part[]
-  /** Pre-generated messageID — if omitted, one is generated via ascendingId */
-  messageID?: string
-  /** Retains optimistic state after an ambiguous dispatched failure for queue reconciliation. */
-  preserveOptimisticOnAmbiguous?: boolean
-  /** Send responses can confirm a queue operation before SSE confirmation is available. */
-  onSendConfirmed?: (messageID: string) => void
-  onOptimisticInsert?: () => void
-  onMessageID?: (messageID: string) => void
-  beforeOptimisticInsert?: () => void
-  /** The actual API call — receives the optimistic messageID so the server can use the same ID */
-  send: (messageID: string) => Promise<void>
-}): Promise<void> {
-  if (!_optimisticAdd || !_optimisticRemove) {
-    throw new SendDispatchError("pre-dispatch", new Error("Optimistic refs not set — is useSync() mounted?"))
-  }
-
-  const targetDirectory = input.directory ?? dir()
-  const capture = captureSendTarget(targetDirectory)
-  const transport = captureRuntimeTransport()
-  let transportEntered = false
-  let messageID: string | undefined
-  try {
-    assertCurrentSendTarget(capture, transport)
-    input.beforeOptimisticInsert?.()
-    assertCurrentSendTarget(capture, transport)
-
-    messageID = input.messageID ?? ascendingId("msg")
-    input.onMessageID?.(messageID)
-
-    // Mark pending send before the optimistic user row so the assistant status
-    // can show "sending message" for every runtime while the request is in flight.
-    useSessionUIStore.getState().markMessageSending?.(input.sessionId, messageID)
-
-    // Paint the user bubble + busy status immediately. Connection recovery may
-    // take up to CONNECTION_GRACE_MS; the list must not wait on that.
-    optimisticInsertUserMessage({
-      sessionId: input.sessionId,
-      messageID,
-      content: input.content,
-      providerID: input.providerID,
-      modelID: input.modelID,
-      agent: input.agent,
-      directory: targetDirectory,
-      files: input.files,
-      parts: input.parts,
-    })
-    input.onOptimisticInsert?.()
-
-    await waitForConnectionOrThrow()
-    assertCurrentSendTarget(capture, transport)
-    transportEntered = true
-    await input.send(messageID)
-    if (!isCurrentSendTarget(capture, transport)) {
-      throw new SendDispatchError(
-        "ambiguous-dispatched",
-        new Error("Send target changed after transport dispatch"),
-        messageID,
-      )
-    }
-    input.onSendConfirmed?.(messageID)
-  } catch (error) {
-    const failureKind = getSendFailureKind(error) ?? classifySendFailure(error, transportEntered)
-    const dispatchError = error instanceof SendDispatchError
-      ? error
-      : new SendDispatchError(failureKind, error, messageID)
-    if (!messageID || !isCurrentSendTarget(capture, transport)) throw dispatchError
-    const acceptedRecords = failureKind === "ambiguous-dispatched" && !input.preserveOptimisticOnAmbiguous
-      ? await fetchRecentSendConfirmationRecords(input.sessionId, messageID, targetDirectory)
-      : null
-
-    if (acceptedRecords && isCurrentSendTarget(capture, transport)) {
-      materializeConfirmedSendRecords(capture.store, input.sessionId, messageID, acceptedRecords)
-      _optimisticConfirm?.({
-        sessionID: input.sessionId,
-        directory: targetDirectory,
-        messageID,
-      })
-      return
-    }
-
-    if (input.preserveOptimisticOnAmbiguous && failureKind === "ambiguous-dispatched") throw dispatchError
-    // Rollback via optimistic infrastructure
-    _optimisticRemove({
-      sessionID: input.sessionId,
-      directory: targetDirectory,
-      messageID,
-    })
-    const s = capture.store.getState()
-    const now = Date.now()
-    capture.store.setState({
-      session_status: {
-        ...s.session_status,
-        [input.sessionId]: { type: "idle" as const },
-      },
-      session_status_observed_at: {
-        ...s.session_status_observed_at,
-        [input.sessionId]: now,
-      },
-    })
-    throw dispatchError
-  } finally {
-    // Clear only this messageID so a concurrent newer pending send is preserved.
-    if (messageID) {
-      useSessionUIStore.getState().clearMessageSending?.(input.sessionId, messageID)
-    }
-  }
-}
-
 type SendTargetCapture = {
   store: DirectoryStoreApi
   isCurrent: () => boolean
@@ -1313,6 +1186,263 @@ function isCurrentSendTarget(target: SendTargetCapture, transport: RuntimeTransp
 
 function assertCurrentSendTarget(target: SendTargetCapture, transport: RuntimeTransportCapture): void {
   if (!isCurrentSendTarget(target, transport)) throw new Error("Send target changed before transport dispatch")
+}
+
+/**
+ * Immutable ticket from a synchronous optimistic begin. Captures the fixed
+ * messageID, target directory child-store generation, and runtime transport so
+ * later settle/rollback stay scoped to the begin-time authority.
+ */
+export type OptimisticSendTicket = {
+  readonly messageID: string
+  readonly sessionId: string
+  readonly directory: string | null
+  readonly capture: SendTargetCapture
+  readonly transport: RuntimeTransportCapture
+}
+
+export type BeginOptimisticSendInput = {
+  sessionId: string
+  /** Raw authored text for temporary display (and text-part fallback). */
+  content: string
+  /** Provider/model used only for the temporary optimistic row display. */
+  providerID: string
+  modelID: string
+  agent?: string
+  directory?: string | null
+  files?: Array<{ type: "file"; mime: string; url: string; filename: string }>
+  parts?: readonly Part[]
+  /** Pre-generated messageID — if omitted, one is generated via ascendingId */
+  messageID?: string
+  onOptimisticInsert?: () => void
+  onMessageID?: (messageID: string) => void
+  beforeOptimisticInsert?: () => void
+}
+
+/**
+ * Synchronously paint the optimistic user row + sending status before any
+ * await. Call from ChatInput before the first async boundary so the list and
+ * pending-send UI update immediately.
+ */
+export function beginOptimisticSend(input: BeginOptimisticSendInput): OptimisticSendTicket {
+  if (!_optimisticAdd || !_optimisticRemove) {
+    throw new SendDispatchError("pre-dispatch", new Error("Optimistic refs not set — is useSync() mounted?"))
+  }
+
+  try {
+    const targetDirectory: string | null = input.directory ?? dir() ?? null
+    const capture = captureSendTarget(targetDirectory)
+    const transport = captureRuntimeTransport()
+    assertCurrentSendTarget(capture, transport)
+    input.beforeOptimisticInsert?.()
+    assertCurrentSendTarget(capture, transport)
+
+    const messageID = input.messageID ?? ascendingId("msg")
+    input.onMessageID?.(messageID)
+
+    // Mark pending send before the optimistic user row so the assistant status
+    // can show "sending message" for every runtime while the request is in flight.
+    useSessionUIStore.getState().markMessageSending?.(input.sessionId, messageID)
+
+    // Paint the user bubble + busy status immediately. Connection recovery may
+    // take up to CONNECTION_GRACE_MS; the list must not wait on that.
+    optimisticInsertUserMessage({
+      sessionId: input.sessionId,
+      messageID,
+      content: input.content,
+      providerID: input.providerID,
+      modelID: input.modelID,
+      agent: input.agent,
+      directory: targetDirectory,
+      files: input.files,
+      parts: input.parts,
+    })
+    input.onOptimisticInsert?.()
+
+    return {
+      messageID,
+      sessionId: input.sessionId,
+      directory: targetDirectory,
+      capture,
+      transport,
+    }
+  } catch (error) {
+    if (error instanceof SendDispatchError) throw error
+    throw new SendDispatchError(
+      getSendFailureKind(error) ?? classifySendFailure(error, false),
+      error,
+    )
+  }
+}
+
+/**
+ * Drop the optimistic row and restore session idle only while the begin-time
+ * capture+transport are still current. A stale runtime/child-store must not
+ * call the live `_optimisticRemove` — that hook targets the current store and
+ * can delete a same-ID row that belongs to a newer begin. Does not clear
+ * pendingSendMessageIDs — callers that own the full settle lifecycle clear in
+ * `finally`; standalone rollback does.
+ */
+function rollbackOptimisticSendState(ticket: OptimisticSendTicket): void {
+  if (!isCurrentSendTarget(ticket.capture, ticket.transport)) return
+  if (!_optimisticRemove) return
+
+  _optimisticRemove({
+    sessionID: ticket.sessionId,
+    directory: ticket.directory,
+    messageID: ticket.messageID,
+  })
+
+  const s = ticket.capture.store.getState()
+  const now = Date.now()
+  ticket.capture.store.setState({
+    session_status: {
+      ...s.session_status,
+      [ticket.sessionId]: { type: "idle" as const },
+    },
+    session_status_observed_at: {
+      ...s.session_status_observed_at,
+      [ticket.sessionId]: now,
+    },
+  })
+}
+
+/**
+ * Idempotent rollback for a begin ticket: drop the optimistic row while the
+ * begin-time capture+transport remain current, and always clear
+ * pendingSendMessageIDs for this messageID (clearMessageSending is ID-matched
+ * so a newer pending send is preserved).
+ */
+export function rollbackOptimisticSend(ticket: OptimisticSendTicket): void {
+  rollbackOptimisticSendState(ticket)
+  useSessionUIStore.getState().clearMessageSending?.(ticket.sessionId, ticket.messageID)
+}
+
+/**
+ * Settle a previously begun ticket: connection grace wait, SDK dispatch, send
+ * confirmation, and ambiguous-dispatch confirmation / rollback. Never re-inserts
+ * the optimistic row — the ticket already owns that paint.
+ */
+export async function settleOptimisticSend(input: {
+  ticket: OptimisticSendTicket
+  /** Retains optimistic state after an ambiguous dispatched failure for queue reconciliation. */
+  preserveOptimisticOnAmbiguous?: boolean
+  /** Send responses can confirm a queue operation before SSE confirmation is available. */
+  onSendConfirmed?: (messageID: string) => void
+  /** The actual API call — receives the ticket messageID so the server uses the same ID */
+  send: (messageID: string) => Promise<void>
+}): Promise<void> {
+  if (!_optimisticAdd || !_optimisticRemove) {
+    throw new SendDispatchError("pre-dispatch", new Error("Optimistic refs not set — is useSync() mounted?"))
+  }
+
+  const { ticket } = input
+  const { capture, transport, messageID, sessionId, directory: targetDirectory } = ticket
+  let transportEntered = false
+  try {
+    await waitForConnectionOrThrow()
+    assertCurrentSendTarget(capture, transport)
+    transportEntered = true
+    await input.send(messageID)
+    if (!isCurrentSendTarget(capture, transport)) {
+      throw new SendDispatchError(
+        "ambiguous-dispatched",
+        new Error("Send target changed after transport dispatch"),
+        messageID,
+      )
+    }
+    input.onSendConfirmed?.(messageID)
+  } catch (error) {
+    const failureKind = getSendFailureKind(error) ?? classifySendFailure(error, transportEntered)
+    const dispatchError = error instanceof SendDispatchError
+      ? error
+      : new SendDispatchError(failureKind, error, messageID)
+    if (!isCurrentSendTarget(capture, transport)) throw dispatchError
+    const acceptedRecords = failureKind === "ambiguous-dispatched" && !input.preserveOptimisticOnAmbiguous
+      ? await fetchRecentSendConfirmationRecords(sessionId, messageID, targetDirectory)
+      : null
+
+    if (acceptedRecords && isCurrentSendTarget(capture, transport)) {
+      materializeConfirmedSendRecords(capture.store, sessionId, messageID, acceptedRecords)
+      _optimisticConfirm?.({
+        sessionID: sessionId,
+        directory: targetDirectory,
+        messageID,
+      })
+      return
+    }
+
+    if (input.preserveOptimisticOnAmbiguous && failureKind === "ambiguous-dispatched") throw dispatchError
+    // Rollback optimistic row + idle; pending clear stays in finally (single clear).
+    rollbackOptimisticSendState(ticket)
+    throw dispatchError
+  } finally {
+    // Clear only this messageID so a concurrent newer pending send is preserved.
+    useSessionUIStore.getState().clearMessageSending?.(sessionId, messageID)
+  }
+}
+
+/**
+ * Wraps an async send operation with optimistic user-message insertion.
+ * Uses useSync()'s optimistic infrastructure — message + parts are inserted
+ * into the store AND registered in the shadow Map. mergeOptimisticPage
+ * handles deduplication when the server echoes back the real message.
+ *
+ * Insert the optimistic user row before the connection grace wait so a
+ * long-idle reconnect cannot leave the composer cleared / status busy while
+ * the chat list still shows the pre-send snapshot.
+ *
+ * Pass an existing `ticket` from `beginOptimisticSend` to skip re-insert and
+ * reuse the same messageID for the SDK call. Without a ticket, behavior matches
+ * the historical begin+settle path.
+ */
+export async function optimisticSend(input: {
+  sessionId: string
+  content: string
+  providerID: string
+  modelID: string
+  agent?: string
+  directory?: string | null
+  files?: Array<{ type: "file"; mime: string; url: string; filename: string }>
+  parts?: readonly Part[]
+  /** Pre-generated messageID — if omitted, one is generated via ascendingId */
+  messageID?: string
+  /**
+   * Ticket from a prior `beginOptimisticSend`. When present, skips insert and
+   * settles with the ticket's fixed messageID / captures (no double insert).
+   */
+  ticket?: OptimisticSendTicket
+  /** Retains optimistic state after an ambiguous dispatched failure for queue reconciliation. */
+  preserveOptimisticOnAmbiguous?: boolean
+  /** Send responses can confirm a queue operation before SSE confirmation is available. */
+  onSendConfirmed?: (messageID: string) => void
+  onOptimisticInsert?: () => void
+  onMessageID?: (messageID: string) => void
+  beforeOptimisticInsert?: () => void
+  /** The actual API call — receives the optimistic messageID so the server can use the same ID */
+  send: (messageID: string) => Promise<void>
+}): Promise<void> {
+  const ticket = input.ticket ?? beginOptimisticSend({
+    sessionId: input.sessionId,
+    content: input.content,
+    providerID: input.providerID,
+    modelID: input.modelID,
+    agent: input.agent,
+    directory: input.directory,
+    files: input.files,
+    parts: input.parts,
+    messageID: input.messageID,
+    onOptimisticInsert: input.onOptimisticInsert,
+    onMessageID: input.onMessageID,
+    beforeOptimisticInsert: input.beforeOptimisticInsert,
+  })
+
+  await settleOptimisticSend({
+    ticket,
+    preserveOptimisticOnAmbiguous: input.preserveOptimisticOnAmbiguous,
+    onSendConfirmed: input.onSendConfirmed,
+    send: input.send,
+  })
 }
 
 /**
@@ -2004,10 +2134,18 @@ export async function stageMessageEdit(
       throw new Error("The selected user message is unavailable")
     }
     targetMessage = storedMessage
-    targetParts = state.part[messageId] ?? []
+    // Keep missing part-key semantics for user messages (do not coerce to []).
+    targetParts = Object.prototype.hasOwnProperty.call(state.part, messageId)
+      ? state.part[messageId]
+      : undefined
   }
 
-  if (!targetMessage || !targetParts) {
+  if (!targetMessage) {
+    throw new Error("The selected user message is unavailable")
+  }
+  // Snapshot/store without a part key still stages an empty composer draft;
+  // we must not invent a `[]` part key back into the message store here.
+  if (snapshot && targetParts === undefined) {
     throw new Error("The selected user message is unavailable")
   }
 
@@ -2015,7 +2153,7 @@ export async function stageMessageEdit(
     ?? sessionDraftKey({ transportIdentity: getRuntimeTransportIdentity() }, sessionId)
   const { commit } = await commitSentPartsToDraftKey({
     key,
-    parts: targetParts as Array<Record<string, unknown>>,
+    parts: (targetParts ?? []) as Array<Record<string, unknown>>,
     directory,
   })
   if (commit.status !== "committed" || !commit.current) {
@@ -2040,16 +2178,152 @@ export async function stageMessageEdit(
 }
 
 /**
+ * Opaque handle for a synchronous local hide of an edit target and later
+ * messages. Does not touch the remote; use with `commitMessageEdit` or call
+ * `rollback()` on send failure to restore the local snapshot.
+ */
+export type MessageEditHideHandle = {
+  readonly sessionId: string
+  readonly messageId: string
+  readonly directory?: string
+  /** Restore the hidden tail into the same child store (message-id ascending). */
+  rollback: () => void
+  /** Snapshot used by commit for remote deletes and failure restore. */
+  readonly _snapshot: {
+    store: DirectoryStoreApi
+    directory?: string
+    removedMessages: Message[]
+    /** Only messages that had a present part key (user messages omit, not `[]`). */
+    removedParts: Record<string, Part[]>
+  }
+}
+
+const cmpMessageId = (a: string, b: string) => (a < b ? -1 : a > b ? 1 : 0)
+
+/** Capture only present part keys — user messages use absence, not `[]`. */
+function capturePresentParts(
+  partState: Record<string, Part[]>,
+  messages: readonly Message[],
+): Record<string, Part[]> {
+  const removedParts: Record<string, Part[]> = {}
+  for (const message of messages) {
+    if (Object.prototype.hasOwnProperty.call(partState, message.id)) {
+      removedParts[message.id] = partState[message.id]!
+    }
+  }
+  return removedParts
+}
+
+/** Restore messages by id ascending; rewrite part keys only when they were present. */
+function restoreMessageTailWithParts(
+  store: DirectoryStoreApi,
+  sessionId: string,
+  messagesToRestore: readonly Message[],
+  partsToRestore: Record<string, Part[]>,
+): void {
+  store.setState((state) => {
+    const current = state.message[sessionId] ?? []
+    const present = new Set(current.map((message) => message.id))
+    const restoredMessages = [
+      ...current,
+      ...messagesToRestore.filter((message) => !present.has(message.id)),
+    ].sort((a, b) => cmpMessageId(a.id, b.id))
+    const nextParts = { ...state.part }
+    for (const message of messagesToRestore) {
+      if (nextParts[message.id] !== undefined) continue
+      if (Object.prototype.hasOwnProperty.call(partsToRestore, message.id)) {
+        nextParts[message.id] = partsToRestore[message.id]!
+      }
+    }
+    return {
+      message: { ...state.message, [sessionId]: restoredMessages },
+      part: nextParts,
+    }
+  })
+}
+
+function hideMessageTailInStore(
+  store: DirectoryStoreApi,
+  sessionId: string,
+  messages: readonly Message[],
+  targetIndex: number,
+  removedMessages: readonly Message[],
+): void {
+  store.setState((state) => {
+    const nextMessages = { ...state.message, [sessionId]: messages.slice(0, targetIndex) }
+    const nextParts = { ...state.part }
+    for (const message of removedMessages) {
+      delete nextParts[message.id]
+    }
+    return { message: nextMessages, part: nextParts }
+  })
+}
+
+/**
+ * Synchronously hide the staged edit target and every later local message in
+ * the current directory child store. Safe to call before the first await in
+ * ChatInput. Does not trigger remote deletes — pair with `commitMessageEdit`
+ * (pass this handle) or call `handle.rollback()` if the send aborts early.
+ */
+export function hideMessageEditTarget(
+  sessionId: string,
+  messageId: string,
+  options?: { directory?: string },
+): MessageEditHideHandle {
+  const { store, directory } = dirStoreForSession(sessionId, options?.directory)
+  const messages = store.getState().message[sessionId] ?? []
+  const targetIndex = messages.findIndex((message) => message.id === messageId)
+  const targetMessage = targetIndex >= 0 ? messages[targetIndex] : undefined
+  if (!targetMessage || targetMessage.role !== "user") {
+    throw new Error("The selected user message is unavailable")
+  }
+
+  const removedMessages = messages.slice(targetIndex)
+  const removedParts = capturePresentParts(store.getState().part, removedMessages)
+  hideMessageTailInStore(store, sessionId, messages, targetIndex, removedMessages)
+
+  return {
+    sessionId,
+    messageId,
+    directory,
+    rollback: () => restoreMessageTailWithParts(store, sessionId, removedMessages, removedParts),
+    _snapshot: { store, directory, removedMessages, removedParts },
+  }
+}
+
+/**
  * Commit a staged message edit immediately before sending its replacement.
  * The official delete-message endpoint removes conversation data only, so the
  * action deletes the target turn and every later message while retaining files.
+ *
+ * Optimistic client policy: drop the edited turn and every later message from
+ * the local store before remote deletes settle, then restore the snapshot if
+ * any delete fails so the UI never sits on a half-deleted tail.
+ *
+ * Pass a prior `hideHandle` from `hideMessageEditTarget` to keep the click-time
+ * sync hide, then abort + refetch authoritative messages and expand hide/delete
+ * to the refreshed target range (covers tails that arrive after the pre-hide).
+ * Without a handle, behavior matches the historical refetch + hide + remote-
+ * delete path.
  */
 export async function commitMessageEdit(
   sessionId: string,
   messageId: string,
-  options?: { directory?: string },
+  options?: { directory?: string; hideHandle?: MessageEditHideHandle },
 ): Promise<void> {
-  const { store, directory } = dirStoreForSession(sessionId, options?.directory)
+  const hideHandle = options?.hideHandle
+  if (
+    hideHandle
+    && (hideHandle.sessionId !== sessionId || hideHandle.messageId !== messageId)
+  ) {
+    throw new Error("Message edit hide handle does not match commit target")
+  }
+
+  const directoryOverride = hideHandle?.directory ?? options?.directory
+  const { store, directory } = hideHandle
+    ? { store: hideHandle._snapshot.store, directory: hideHandle._snapshot.directory }
+    : dirStoreForSession(sessionId, directoryOverride)
+
   const status = store.getState().session_status[sessionId]
   if (status && status.type !== "idle") {
     try {
@@ -2059,17 +2333,73 @@ export async function commitMessageEdit(
     }
   }
 
-  await refetchSessionMessages(sessionId, options?.directory)
-  const messages = store.getState().message[sessionId] ?? []
-  const targetIndex = messages.findIndex((message) => message.id === messageId)
-  const targetMessage = targetIndex >= 0 ? messages[targetIndex] : undefined
-  if (!targetMessage || targetMessage.role !== "user") {
-    throw new Error("The selected user message is unavailable")
+  let removedMessages: Message[]
+  let removedParts: Record<string, Part[]>
+  let restoreMessages: Message[]
+  let restoreParts: Record<string, Part[]>
+
+  if (hideHandle) {
+    const preHiddenMessages = hideHandle._snapshot.removedMessages
+    const preHiddenParts = hideHandle._snapshot.removedParts
+
+    try {
+      await refetchSessionMessages(sessionId, directoryOverride)
+    } catch (error) {
+      // Refetch failed — put back the click-time hidden tail and surface the error.
+      hideHandle.rollback()
+      throw error
+    }
+
+    const messages = store.getState().message[sessionId] ?? []
+    const targetIndex = messages.findIndex((message) => message.id === messageId)
+    const targetMessage = targetIndex >= 0 ? messages[targetIndex] : undefined
+    if (!targetMessage || targetMessage.role !== "user") {
+      hideHandle.rollback()
+      throw new Error("The selected user message is unavailable")
+    }
+
+    removedMessages = messages.slice(targetIndex)
+    removedParts = capturePresentParts(store.getState().part, removedMessages)
+    // Re-hide / expand hide for anything the refetch put back (or newly revealed).
+    hideMessageTailInStore(store, sessionId, messages, targetIndex, removedMessages)
+
+    const preHiddenIds = new Set(preHiddenMessages.map((message) => message.id))
+    const refreshedExtras = removedMessages.filter((message) => !preHiddenIds.has(message.id))
+    restoreMessages = [...preHiddenMessages, ...refreshedExtras].sort((a, b) => cmpMessageId(a.id, b.id))
+    restoreParts = { ...preHiddenParts }
+    for (const message of refreshedExtras) {
+      if (Object.prototype.hasOwnProperty.call(removedParts, message.id)) {
+        restoreParts[message.id] = removedParts[message.id]!
+      }
+    }
+  } else {
+    await refetchSessionMessages(sessionId, directoryOverride)
+    const messages = store.getState().message[sessionId] ?? []
+    const targetIndex = messages.findIndex((message) => message.id === messageId)
+    const targetMessage = targetIndex >= 0 ? messages[targetIndex] : undefined
+    if (!targetMessage || targetMessage.role !== "user") {
+      throw new Error("The selected user message is unavailable")
+    }
+
+    removedMessages = messages.slice(targetIndex)
+    removedParts = capturePresentParts(store.getState().part, removedMessages)
+    restoreMessages = removedMessages
+    restoreParts = removedParts
+
+    // Immediately hide the edited turn and everything after it so send/edit
+    // feels local even though remote deletes are still in flight.
+    hideMessageTailInStore(store, sessionId, messages, targetIndex, removedMessages)
   }
 
-  for (const message of messages.slice(targetIndex).reverse()) {
-    await opencodeClient.deleteSessionMessage(sessionId, message.id, directory)
-    removeSessionMessageFromStore(store, sessionId, message.id)
+  try {
+    for (const message of [...removedMessages].reverse()) {
+      await opencodeClient.deleteSessionMessage(sessionId, message.id, directory)
+      // Local remove is already applied; keep the call idempotent for races.
+      removeSessionMessageFromStore(store, sessionId, message.id)
+    }
+  } catch (error) {
+    restoreMessageTailWithParts(store, sessionId, restoreMessages, restoreParts)
+    throw error
   }
 }
 

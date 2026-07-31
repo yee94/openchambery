@@ -4,6 +4,13 @@ All notable changes to this project will be documented in this file.
 
 ## [Unreleased]
 
+## [1.16.94-beta.1] - 2026-07-31
+
+- **Optimistic send:** paint the primary user row and sending state before async selection flush so ordinary sends feel immediate.
+- **Message queue:** fire-and-forget queue admission with optimistic composer clear/restore, pending admission chips, and clearer in-flight send/queue button states.
+- **Composer mentions:** share insertion-boundary helpers so inline file/agent references keep consistent spacing.
+- **Release CI:** skip iOS/TestFlight builds for `-beta` tags because Apple marketing versions cannot include prerelease suffixes.
+
 ## [1.16.93] - 2026-07-30
 
 - **Desktop updates:** check the EdgeOne update service at startup and hourly while the packaged app is visible.
@@ -491,77 +498,3 @@ All notable changes to this project will be documented in this file.
 - **Mobile windows:** add a shared motion and stacking system for top, bottom, left, and right overlays, with edge-aware dismissal, nested-scroll ownership, final-frame settlement, focus management, and near 1:1 touch tracking.
 - **Mobile sessions:** group sessions by project root and worktree with branch labels, bounded expansion and remote pagination, add worktree creation, close the panel consistently after navigation, and reduce the header-swipe opening distance to 35% of the viewport.
 - **Localization:** detect supported browser language preferences at startup, including regional Traditional Chinese and Portuguese variants, while preserving explicit locale selections.
-- **Runtime compatibility:** generate WebView-compatible UUID v4 identifiers for drafts, queued messages, folders, plans, todos, remote instances, and connection metadata when the native random UUID API is unavailable.
-- **Release integrity:** keep GitHub Releases in draft until the complete Desktop, Android, VSIX, blockmap, and update-manifest inventory passes validation, including a combined dual-architecture macOS update manifest.
-
-## [1.16.23] - 2026-07-18
-
-- **Git workspace:** streamline branch, sync, history, stash, stage, and revert controls with pinned headers and aligned actions across tree and flat change views.
-- **Async workflows:** add runtime-scoped query caching, cancellation, pagination, stale-result protection, and cache resets across web, desktop, mobile, and VS Code surfaces.
-- **Chat and navigation:** restore composer focus after model or agent selection, refine queued-message controls and terminal shortcuts, improve message forking, and remove citations when attachments are deleted.
-- **Session reliability:** hide temporary SmartFetch secondary sessions from live and indexed session lists while preserving pagination and clearing existing summaries.
-- **Files and integrations:** improve mobile file browsing, GitHub issue and pull request search, scheduled tasks, diagrams, PWA detection, server text-to-speech, provider state, and quota refresh behavior.
-
-## [1.16.22] - 2026-07-17
-
-- **Mobile composer:** tighten queued, reverted, and auto-review controls with smaller typography and denser spacing while preserving touch targets.
-- **Mobile context:** replace the session metadata app icon with a live context-usage progress ring while preserving the existing metadata panel interaction.
-- **Message actions:** show pending feedback and prevent duplicate revert or fork actions in message controls and the timeline.
-
-## [1.16.21] - 2026-07-16
-
-- **Sessions:** add undoable archive and delete actions with a recovery window, plus archived-session browsing and restore controls.
-- **Sidebar:** refine pinned sessions, project pagination, archive/delete actions, and modifier shortcut hints across desktop and mobile.
-- **Chat and queues:** improve queued-message delivery, attachment deduplication, draft presets, and session-title continuity.
-- **Mermaid:** add smoother pan and zoom controls, source copying, and SVG download support.
-- **Reliability:** reduce startup and background request storms, improve runtime recovery, and pause hidden or inactive polling work.
-
-## [1.16.20] - 2026-07-16
-
-- **Sidebar:** refine Mod+1…9 shortcut hints into compact inline chips that replace row actions while the modifier is held.
-
-## [1.16.19] - 2026-07-16
-
-- **Sessions:** add undoable archive and delete actions with a 10-second recovery window, plus an archived-session manager for browsing and restoring sessions.
-- **Sidebar:** simplify pinned session rows, improve project pagination with Show more/Show fewer controls, and streamline archive/delete actions across desktop and mobile.
-- **Queued messages:** improve delivery ordering, message ID generation, persistence flushing, retry handling, and reconciliation across runtime changes and directory-scoped sessions.
-- **Chat composer:** prevent duplicate pasted images, deduplicate optimistic attachments, and add expandable attachment and draft-preset layouts.
-- **Mermaid:** add smoother pan, wheel zoom, pinch zoom, copy-source, and SVG download controls.
-- **Session titles:** improve topic continuity, language selection, fork-title refreshes, and protection for manually renamed sessions.
-- **Files and workspace:** align folder icon treatments across mobile, sidebar, file, and changes views, and refine the web sidebar brand layout.
-- **Localization:** add translated copy for archived sessions, undo actions, pagination, and related settings across supported languages.
-- **Documentation:** refresh the project overview in English and Chinese with current product screenshots.
-
-## [1.16.18] - 2026-07-16
-
-- **Startup reliability:** remove the permission-control visibility probe that queried OpenCode during composer mount, preventing startup request storms when the managed server is still initializing.
-- **Runtime requests:** coalesce health, upgrade-status, and other idempotent reads by runtime, transport, and credential generation, with short failure cooldowns for unavailable OpenCode instances.
-- **Embedded chats:** pause hidden iframe initialization and background recovery work; keep upgrade checks on the primary app surface.
-- **Files:** pause external-change polling for inactive editor tabs and avoid repeated hidden `fs/stat` traffic.
-- **Desktop:** fix an Electron `Illegal invocation` crash caused by unbound native timer calls in the delayed upgrade check.
-
-## [1.16.17] - 2026-07-16
-
-- **Chat:** new session send now shows a full-screen establishing page immediately (like fork), instead of keeping the draft composer visible during combined create+prompt.
-- **Fork:** cold-start fork no longer fails silently — source sessions are resolved from the global session index or `session.get` when the directory child store hasn't hydrated yet.
-- **Keyboard:** first Esc now shows "Press Esc again to abort" in the status row; the abort prompt is visible on every layout including expanded input and desktop.
-- **Keyboard:** `Ctrl+C` (customizable) clears the composer and any queued messages without interfering with text selection copy.
-- **Compact:** `Ctrl+X C` compact command no longer fixes a `normalizeCandidatePath` unbound-method error.
-- **Sessions:** workspace panels (right sidebar + context panel) now restore their per-session state when switching conversations.
-- **Sessions:** improved sidebar session tree deduplication and pinned session handling.
-- **Status bar:** moved changed files and pending changes into a unified popover, cleaning up the status row layout.
-
-## [1.16.13] - 2026-07-16
-
-- **Queued message delivery:** generate OpenCode-compatible `msg_` message identifiers, migrate queued legacy identifiers, and route terminal session events through their directory-scoped status stores so consecutive queued messages dispatch after the active response settles.
-
-## [1.16.12] - 2026-07-15
-
-- **Composer and queue reliability:** persist drafts and attachment blobs across restarts, migrate queued messages to a transport- and directory-scoped ledger, and reconcile queued sends safely after runtime changes.
-- **Message editing and delivery:** preserve the original message when opening it for editing, replace a staged turn together with its later messages on confirmation, classify send failures precisely, and emit sent notifications only after server confirmation.
-- **Attachments:** support large data-URL attachment payloads through OpenChamber session routes and coordinate attachment cleanup across drafts and queued messages.
-- **Chat navigation and feedback:** open changed files at the selected diff line and provide deduplicated streaming haptics for assistant text, reasoning, and tool activity on mobile.
-- **Session behavior:** refresh forked-session titles after their first completed exchange and improve cross-store session lookup and fork diagnostics.
-- **Runtime compatibility:** ensure Node development servers rebuild `better-sqlite3` for the active Node ABI after Electron builds, avoiding native-module load failures.
-
-## [1.16.11] - 2026-07-14

@@ -43,12 +43,58 @@ export interface QueuedMessage {
   reconciliationStartedAt?: number; reconciliationDeadlineAt?: number; reconciliationChecks?: number; reconciliationNextCheckAt?: number;
 }
 export interface QueueItem extends QueuedMessage { queueItemID: string; operationID: string; messageID: string; owner: QueueOwner; status: QueueItemStatus; attemptCount: number }
+/**
+ * Ephemeral legacy admission chip shown from stage until sendConfig confirmation.
+ * Never partialized into persistence and never a durable QueueItemStatus row.
+ */
+export type QueuePendingAdmissionItem = {
+  kind: 'pending-admission';
+  requestID: string;
+  queueItemID: string;
+  operationID: string;
+  messageID: string;
+  content: string;
+  createdAt: number;
+  phase: 'admitting';
+  attachmentCount: number;
+  composerDocument?: DraftComposerDocument;
+  composerMentions?: DraftMention[];
+};
+export type QueuePendingAdmissionStageInput = {
+  requestID: string;
+  queueItemID: string;
+  operationID: string;
+  messageID: string;
+  content: string;
+  createdAt: number;
+  attachmentCount?: number;
+  composerDocument?: DraftComposerDocument;
+  composerMentions?: DraftMention[];
+};
+export type QueuePendingAdmissionConfirmInput = {
+  requestID: string;
+  sendConfig: NonNullable<QueuedMessage['sendConfig']>;
+  attachments?: AttachedFile[];
+};
+export const isQueuePendingAdmissionItem = (value: unknown): value is QueuePendingAdmissionItem => (
+  typeof value === 'object' && value !== null && (value as { kind?: unknown }).kind === 'pending-admission'
+);
+const EMPTY_PENDING_ADMISSIONS: readonly QueuePendingAdmissionItem[] = [];
+export const getPendingAdmissionsForScope = (
+  state: { pendingAdmissions: Record<string, QueuePendingAdmissionItem[]> },
+  scope: QueueScope,
+): readonly QueuePendingAdmissionItem[] => state.pendingAdmissions[queueScopeKey(scope)] ?? EMPTY_PENDING_ADMISSIONS;
 export type QueueAdmissionResult = { ok: true; item: QueueItem } | { ok: false; reason: 'invalid-composer-document' | 'invalid-composer-mentions' };
 type QueueAdmission = Omit<QueuedMessage, 'id' | 'queueItemID' | 'operationID' | 'messageID' | 'createdAt' | 'owner' | 'status' | 'attemptCount' | 'nextAttemptAt' | 'failure' | 'reconciliationStartedAt' | 'reconciliationDeadlineAt' | 'reconciliationChecks' | 'reconciliationNextCheckAt'>;
 type QueueFailureInput = Omit<QueueFailure, 'recovery'> & { recovery?: QueueRecoveryPayload };
 type Identity = { queueItemID: string; operationID: string; messageID?: string };
 
-interface MessageQueueState { queuedMessages: Record<string, QueueItem[]>; followUpBehavior: FollowUpBehavior }
+interface MessageQueueState {
+  queuedMessages: Record<string, QueueItem[]>;
+  followUpBehavior: FollowUpBehavior;
+  /** In-memory only; excluded from partialize / migrate. */
+  pendingAdmissions: Record<string, QueuePendingAdmissionItem[]>;
+}
 interface MessageQueueActions {
   addToQueue: (scope: QueueScope, message: QueueAdmission) => QueueAdmissionResult;
   /**
@@ -64,6 +110,22 @@ interface MessageQueueActions {
    */
   clearQueue: (scope: QueueScope) => boolean; clearAllQueues: () => void; setFollowUpBehavior: (behavior: FollowUpBehavior) => void;
   getQueueForScope: (scope: QueueScope) => QueueItem[];
+  getPendingAdmissionsForScope: (scope: QueueScope) => readonly QueuePendingAdmissionItem[];
+  /**
+   * Publish a local pending-admission chip before selection.flush.
+   * Ephemeral marker only — never written into queuedMessages / persistence.
+   */
+  stageAdmission: (scope: QueueScope, input: QueuePendingAdmissionStageInput) => void;
+  /**
+   * Drop a staged pending chip when flush/config confirmation fails.
+   * Always allowed so cleanup cannot strand a temporary marker behind the fence.
+   */
+  unstageAdmission: (scope: QueueScope, requestID: string) => void;
+  /**
+   * Promote a staged admission into a durable queued row with sendConfig.
+   * Clears the temporary marker in the same update and reuses staged identity.
+   */
+  confirmAdmission: (scope: QueueScope, input: QueuePendingAdmissionConfirmInput) => QueueAdmissionResult;
   bindLegacyQueue: (legacyScope: QueueScope, targetScope: QueueScope) => QueueItem[];
   markQueueItemSendAttempt: (scope: QueueScope, identity: Identity) => void;
   markQueueItemPreDispatchRetry: (scope: QueueScope, identity: Identity, nextAttemptAt: number, failure?: QueueFailureInput) => void;
@@ -182,7 +244,7 @@ const update = (set: (fn: (state: Store) => Store | Partial<Store>) => void, sco
 };
 
 export const useMessageQueueStore = create<Store>()(devtools(persist((set, get) => ({
-  queuedMessages: {}, followUpBehavior: DEFAULT_FOLLOW_UP_BEHAVIOR,
+  queuedMessages: {}, followUpBehavior: DEFAULT_FOLLOW_UP_BEHAVIOR, pendingAdmissions: {},
   addToQueue: (scope, message) => {
     if (!userMutationAllowed(scope)) return { ok: false, reason: 'invalid-composer-document' };
     const composerDocument = validComposerDocument(message.composerDocument, message.content, message.attachments);
@@ -223,14 +285,17 @@ export const useMessageQueueStore = create<Store>()(devtools(persist((set, get) 
     if (!userMutationAllowed(scope)) return false;
     const key = queueScopeKey(scope);
     const queue = get().queuedMessages[key];
-    if (!queue || queue.length === 0) return true;
-    if (queue.some(locked)) return false;
+    const hasPending = (get().pendingAdmissions[key] ?? []).length > 0;
+    if ((!queue || queue.length === 0) && !hasPending) return true;
+    if (queue?.some(locked)) return false;
     set((state) => {
       const current = state.queuedMessages[key];
-      if (!current || current.some(locked)) return state;
-      const { [key]: removed, ...queuedMessages } = state.queuedMessages;
-      void removed;
-      return { queuedMessages };
+      if (current?.some(locked)) return state;
+      const queuedMessages = { ...state.queuedMessages };
+      const pendingAdmissions = { ...state.pendingAdmissions };
+      delete queuedMessages[key];
+      delete pendingAdmissions[key];
+      return { queuedMessages, pendingAdmissions };
     });
     return (get().queuedMessages[key] ?? []).length === 0;
   },
@@ -243,10 +308,92 @@ export const useMessageQueueStore = create<Store>()(devtools(persist((set, get) 
       if (retained.length) queuedMessages[key] = retained;
       if (retained.length !== queue.length) changed = true;
     }
-    return changed ? { queuedMessages } : state;
+    const pendingCleared = Object.keys(state.pendingAdmissions).length > 0;
+    return (changed || pendingCleared) ? { queuedMessages, pendingAdmissions: {} } : state;
   }); },
   setFollowUpBehavior: (behavior) => { if (!userMutationAllowed()) return; set({ followUpBehavior: behavior }); void updateDesktopSettings({ followUpBehavior: behavior }); },
   getQueueForScope: (scope) => getQueueForScope(get(), scope),
+  getPendingAdmissionsForScope: (scope) => getPendingAdmissionsForScope(get(), scope),
+  stageAdmission: (scope, input) => {
+    if (!userMutationAllowed(scope)) return;
+    if (!input.requestID || !input.queueItemID || !input.operationID || !input.messageID || typeof input.content !== 'string') return;
+    const composerDocument = validComposerDocument(input.composerDocument, input.content);
+    if (input.composerDocument !== undefined && !composerDocument) return;
+    const composerMentions = validComposerMentions(input.composerMentions, composerDocument);
+    if (input.composerMentions !== undefined && !composerMentions) return;
+    const key = queueScopeKey(scope);
+    const pending: QueuePendingAdmissionItem = {
+      kind: 'pending-admission',
+      requestID: input.requestID,
+      queueItemID: input.queueItemID,
+      operationID: input.operationID,
+      messageID: input.messageID,
+      content: input.content,
+      createdAt: input.createdAt,
+      phase: 'admitting',
+      attachmentCount: Math.max(0, Math.floor(input.attachmentCount ?? 0)),
+      ...(composerDocument ? { composerDocument } : {}),
+      ...(composerDocument && composerMentions?.length ? { composerMentions } : {}),
+    };
+    set((state) => {
+      const previous = state.pendingAdmissions[key] ?? [];
+      const next = [...previous.filter((entry) => entry.requestID !== pending.requestID && entry.queueItemID !== pending.queueItemID), pending];
+      return { pendingAdmissions: { ...state.pendingAdmissions, [key]: next } };
+    });
+  },
+  unstageAdmission: (scope, requestID) => {
+    if (!requestID) return;
+    const key = queueScopeKey(scope);
+    set((state) => {
+      const previous = state.pendingAdmissions[key];
+      if (!previous?.length) return state;
+      const next = previous.filter((entry) => entry.requestID !== requestID);
+      if (next.length === previous.length) return state;
+      if (next.length) return { pendingAdmissions: { ...state.pendingAdmissions, [key]: next } };
+      const { [key]: removed, ...pendingAdmissions } = state.pendingAdmissions;
+      void removed;
+      return { pendingAdmissions };
+    });
+  },
+  confirmAdmission: (scope, input) => {
+    if (!userMutationAllowed(scope) || !input.requestID || !input.sendConfig?.providerID || !input.sendConfig?.modelID) {
+      return { ok: false, reason: 'invalid-composer-document' };
+    }
+    const key = queueScopeKey(scope);
+    const staged = (get().pendingAdmissions[key] ?? []).find((entry) => entry.requestID === input.requestID);
+    if (!staged) return { ok: false, reason: 'invalid-composer-document' };
+    const composerDocument = validComposerDocument(staged.composerDocument, staged.content, input.attachments);
+    if (staged.composerDocument !== undefined && !composerDocument) return { ok: false, reason: 'invalid-composer-document' };
+    const composerMentions = validComposerMentions(staged.composerMentions, composerDocument);
+    if (staged.composerMentions !== undefined && !composerMentions) return { ok: false, reason: 'invalid-composer-mentions' };
+    const item: QueueItem = {
+      id: staged.queueItemID,
+      queueItemID: staged.queueItemID,
+      operationID: staged.operationID,
+      messageID: staged.messageID,
+      content: staged.content,
+      createdAt: staged.createdAt,
+      owner: scope,
+      status: 'queued',
+      attemptCount: 0,
+      sendConfig: input.sendConfig,
+      ...(composerDocument ? { composerDocument } : {}),
+      ...(composerDocument && composerMentions?.length ? { composerMentions } : {}),
+      ...(input.attachments?.length ? { attachments: input.attachments } : {}),
+    };
+    set((state) => {
+      const previousPending = state.pendingAdmissions[key] ?? [];
+      const nextPending = previousPending.filter((entry) => entry.requestID !== input.requestID);
+      const pendingAdmissions = nextPending.length
+        ? { ...state.pendingAdmissions, [key]: nextPending }
+        : (() => { const { [key]: removed, ...rest } = state.pendingAdmissions; void removed; return rest; })();
+      return {
+        pendingAdmissions,
+        queuedMessages: { ...state.queuedMessages, [key]: [...(state.queuedMessages[key] ?? []), item] },
+      };
+    });
+    return { ok: true, item };
+  },
   bindLegacyQueue: (legacy, target) => {
     if (!userMutationAllowed(legacy) || !userMutationAllowed(target)) return [];
     if (legacy.state !== 'unbound-legacy' || target.state !== 'bound' || legacy.sessionID !== target.sessionID) return [];
@@ -316,7 +463,19 @@ export const useMessageQueueStore = create<Store>()(devtools(persist((set, get) 
     return dispatched;
   },
   confirmQueueItem: (scope, identity) => { if (retiredScope(scope)) return; const key = queueScopeKey(scope); set((state) => { const queue = state.queuedMessages[key]; const item = queue?.find((candidate) => { const operationMatch = identity.operationID ? candidate.operationID === identity.operationID : true; const messageMatch = identity.messageID ? candidate.messageID === identity.messageID : true; const itemMatch = identity.queueItemID ? candidate.queueItemID === identity.queueItemID : true; return operationMatch && messageMatch && itemMatch; }); if (!item || (!identity.operationID && !identity.messageID)) return state; const next = queue!.filter((candidate) => candidate !== item); if (next.length) return { queuedMessages: { ...state.queuedMessages, [key]: next } }; const { [key]: removed, ...queuedMessages } = state.queuedMessages; void removed; return { queuedMessages }; }); },
-}), { name: 'message-queue-store', version: 4, storage: messageQueueStorage, partialize: (state) => ({ queuedMessages: state.queuedMessages, followUpBehavior: state.followUpBehavior }), migrate: migrateMessageQueueState, merge: (persisted, current) => ({ ...current, ...migrateMessageQueueState(persisted) }) }), { name: 'message-queue-store' }));
+}), {
+  name: 'message-queue-store',
+  version: 4,
+  storage: messageQueueStorage,
+  // pendingAdmissions stay out of persistence on purpose (ephemeral UI only).
+  partialize: (state) => ({ queuedMessages: state.queuedMessages, followUpBehavior: state.followUpBehavior }),
+  migrate: migrateMessageQueueState,
+  merge: (persisted, current) => ({
+    ...current,
+    ...migrateMessageQueueState(persisted),
+    pendingAdmissions: current.pendingAdmissions,
+  }),
+}), { name: 'message-queue-store' }));
 
 export type LegacyQueueCutoverPreparation = { ok: true; moved: number } | { ok: false; unresolvedSessionIDs: string[] };
 export const prepareLegacyQueuesForCutover = (transportIdentity: string, resolveDirectory: (sessionID: string) => string | null | undefined): LegacyQueueCutoverPreparation => {

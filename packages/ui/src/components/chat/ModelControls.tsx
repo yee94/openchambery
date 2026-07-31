@@ -1,6 +1,5 @@
 import React from 'react';
 import type { Agent } from '@opencode-ai/sdk/v2';
-import { createPortal } from 'react-dom';
 import type { EditPermissionMode } from '@/stores/types/sessionTypes';
 import type { ModelMetadata } from '@/types';
 import {
@@ -292,12 +291,6 @@ interface ModelControlsProps {
     composerTextareaRef: React.RefObject<HTMLTextAreaElement | null>;
     mobilePanel?: MobileControlsPanel;
     onMobilePanelChange?: (panel: MobileControlsPanel) => void;
-    /**
-     * When true, the desktop agent trigger is not rendered in the model cluster.
-     * Pass a mount node via `agentPortalContainer` to place it in the left icon bar.
-     */
-    relocateAgent?: boolean;
-    agentPortalContainer?: HTMLElement | null;
     selectionAdapter?: ModelControlsSelectionAdapter;
 }
 
@@ -306,8 +299,6 @@ export const ModelControls: React.FC<ModelControlsProps> = ({
     composerTextareaRef,
     mobilePanel,
     onMobilePanelChange,
-    relocateAgent = false,
-    agentPortalContainer = null,
     selectionAdapter,
 }) => {
     const { t } = useI18n();
@@ -583,7 +574,7 @@ export const ModelControls: React.FC<ModelControlsProps> = ({
     const sizeVariant: 'mobile' | 'vscode' | 'default' = isMobile ? 'mobile' : isVSCodeRuntime ? 'vscode' : 'default';
     const controlIconSize = sizeVariant === 'mobile' ? 'size-5' : sizeVariant === 'vscode' ? 'size-4' : 'size-4';
     const controlTextSize = isCompact ? 'typography-micro' : 'typography-meta';
-    const inlineGapClass = sizeVariant === 'mobile' ? 'gap-x-1' : sizeVariant === 'vscode' ? 'gap-x-2' : 'gap-x-3';
+    const inlineGapClass = sizeVariant === 'mobile' ? 'gap-x-1' : sizeVariant === 'vscode' ? 'gap-x-2' : 'gap-x-1.5';
     // Icon-only agent trigger: same square hit-target as composer + / focus / shield buttons.
     // Icon-only agent trigger: same square hit-target as composer + / focus / shield buttons.
     const agentIconButtonClass = sizeVariant === 'mobile' ? 'h-8 w-8' : sizeVariant === 'vscode' ? 'h-5 w-5' : 'h-6 w-6';
@@ -2549,8 +2540,8 @@ export const ModelControls: React.FC<ModelControlsProps> = ({
                                 </DropdownMenuTrigger>
                             </TooltipTrigger>
                             <DropdownMenuContent
-                                align={relocateAgent ? 'start' : 'end'}
-                                alignOffset={relocateAgent ? 0 : -40}
+                                align="end"
+                                alignOffset={-40}
                                 className={cn(
                                     'w-[min(280px,calc(100vw-2rem))] p-0 flex flex-col',
                                     isAgentSelectorInstant && INSTANT_DROPDOWN_CLASS,
@@ -2679,13 +2670,10 @@ export const ModelControls: React.FC<ModelControlsProps> = ({
         className,
     );
 
-    const relocateDesktopAgent = Boolean(relocateAgent && !isCompact);
-    const shouldPortalAgent = Boolean(relocateDesktopAgent && agentPortalContainer);
     const agentSelector = renderAgentSelector();
 
     return (
         <>
-            {shouldPortalAgent ? createPortal(agentSelector, agentPortalContainer!) : null}
             <div className={inlineClassName}>
                 <div
                     className={cn(
@@ -2694,7 +2682,7 @@ export const ModelControls: React.FC<ModelControlsProps> = ({
                         isMobile && 'overflow-hidden'
                     )}
                 >
-                    {relocateDesktopAgent ? null : agentSelector}
+                    {agentSelector}
                     {renderModelSelector()}
                 </div>
             </div>

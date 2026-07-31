@@ -61,6 +61,13 @@ describe('Assistant query contract', () => {
     expect(update).toContain('applyAssistant(result, transport)');
   });
 
+  test('refreshes capability and snapshot after changing instance availability', async () => {
+    const source = await readFile(join(directory, 'assistantQueries.ts'), 'utf8');
+    const mutation = source.slice(source.indexOf('export const setAssistantsEnabled'), source.indexOf('export const createAssistant'));
+    expect(mutation).toContain('key.snapshot(transport), exact: true');
+    expect(mutation).toContain('key.capability(transport), exact: true');
+  });
+
   test('provides an abortable direct snapshot fetch without Query cache operations or retries', async () => {
     const source = await readFile(join(directory, 'assistantQueries.ts'), 'utf8');
     const directFetch = source.slice(source.indexOf('export const fetchAssistantSnapshot'), source.indexOf('export const assistantCapabilityQueryOptions'));

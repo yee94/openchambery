@@ -14,6 +14,7 @@ export { AssistantAPIError, AssistantShareOperationError, parseAssistantCapabili
 const ASSISTANT_HISTORY_PAGE_SIZE = 30;
 const key = {
   snapshot: (transport = getRuntimeTransportIdentity()) => [transport, 'assistants', 'snapshot'] as const,
+  capability: (transport = getRuntimeTransportIdentity()) => [transport, 'assistants', 'capability'] as const,
   history: (assistantID: string, sessionID: string, sessionGeneration: number, transport = getRuntimeTransportIdentity(), runtimeGeneration = getRuntimeGeneration()) => [transport, runtimeGeneration, 'assistants', 'history', assistantID, sessionID, sessionGeneration] as const,
 };
 const requestJSON = async <T>(path: string, init: RequestInit = {}): Promise<T> => { const response = await runtimeFetch(path, init); const payload = await response.json().catch(() => null) as { error?: unknown } | T | null; if (!response.ok) throw new AssistantAPIError(payload && typeof payload === 'object' && 'error' in payload && typeof payload.error === 'string' ? payload.error : 'request_failed', response.status); return payload as T; };
@@ -79,7 +80,7 @@ export const useAssistantHistoryInfiniteQuery = (
   enabled: enabled && Boolean(assistantID && binding.sessionID),
 });
 export const fetchAssistantSnapshot = async (signal: AbortSignal): Promise<AssistantSnapshot> => parseAssistantSnapshotDTO(await requestJSON<unknown>('/api/openchamber/assistants/snapshot', { signal }));
-export const assistantCapabilityQueryOptions = (transport = getRuntimeTransportIdentity()) => ({ queryKey: [transport, 'assistants', 'capability'] as const, queryFn: () => fetchAssistantCapability(), retry: false });
+export const assistantCapabilityQueryOptions = (transport = getRuntimeTransportIdentity()) => ({ queryKey: key.capability(transport), queryFn: () => fetchAssistantCapability(), retry: false });
 export const useAssistantCapabilityQuery = () => useQuery(assistantCapabilityQueryOptions());
 export const readAssistantSnapshot = (client: Pick<QueryClient, 'getQueryData'> = queryClient, transport = getRuntimeTransportIdentity()): AssistantSnapshot | undefined => client.getQueryData<AssistantSnapshot>(key.snapshot(transport));
 export const ensureAssistantSnapshot = (client: Pick<QueryClient, 'fetchQuery'> = queryClient, transport = getRuntimeTransportIdentity()) => client.fetchQuery(assistantSnapshotQueryOptions(transport));
@@ -92,7 +93,14 @@ export const sendAssistantMessage = async (assistantID: string, binding: Session
 export const sendAssistantShare = async (assistantID: string, operationID: string, messageID: string, parts: AssistantPart[], source: Exclude<AssistantSource, 'composer'>): Promise<ShareOperation> => { const transport = getRuntimeTransportIdentity(); const generation = getRuntimeGeneration(); const operation = parseShareOperation(await requestJSON<unknown>(`/api/openchamber/assistants/${encodeURIComponent(assistantID)}/share`, jsonInit('POST', { operationID, payload: { messageID, parts, source } }))); assertCurrent(transport, generation); return operation; };
 export const fetchAssistantShareOperation = async (operationID: string, transport = getRuntimeTransportIdentity(), generation = getRuntimeGeneration()): Promise<ShareOperation> => { assertCurrent(transport, generation); const operation = parseShareOperation(await requestJSON<unknown>(`/api/openchamber/assistants/share-operations/${encodeURIComponent(operationID)}`)); assertCurrent(transport, generation); return operation; };
 export const waitForAssistantShare = async (operation: ShareOperation, transport = getRuntimeTransportIdentity(), generation = getRuntimeGeneration()): Promise<ShareOperation> => { let current = operation; for (let attempt = 0; attempt < 60 && (current.state === 'running' || current.state === 'submitting'); attempt += 1) { assertCurrent(transport, generation); await new Promise((resolve) => setTimeout(resolve, 750)); current = await fetchAssistantShareOperation(current.operationID, transport, generation); } assertCurrent(transport, generation); if (current.state === 'completed') return current; if (current.state === 'failed') throw new AssistantShareOperationError(current.errorCode ?? 'share_failed', 400, current); throw new AssistantShareOperationError('share_unresolved', 408, current); };
-export const setAssistantsEnabled = async (enabled: boolean, expectedRevision: number): Promise<void> => { await requestJSON('/api/openchamber/assistants/settings', jsonInit('PUT', { enabled, expectedRevision })); await queryClient.invalidateQueries({ queryKey: key.snapshot(getRuntimeTransportIdentity()) }); };
+export const setAssistantsEnabled = async (enabled: boolean, expectedRevision: number): Promise<void> => {
+  await requestJSON('/api/openchamber/assistants/settings', jsonInit('PUT', { enabled, expectedRevision }));
+  const transport = getRuntimeTransportIdentity();
+  await Promise.all([
+    queryClient.invalidateQueries({ queryKey: key.snapshot(transport), exact: true }),
+    queryClient.invalidateQueries({ queryKey: key.capability(transport), exact: true }),
+  ]);
+};
 export const createAssistant = async (draft: AssistantDraft): Promise<AssistantDTO> => { const transport = getRuntimeTransportIdentity(); const result = parseAssistantDTO(await requestJSON<unknown>('/api/openchamber/assistants', jsonInit('POST', draft))); applyAssistant(result, transport); return result; };
 export const updateAssistant = async (assistant: AssistantDTO, draft: AssistantDraft): Promise<AssistantDTO> => { const transport = getRuntimeTransportIdentity(); const generation = getRuntimeGeneration(); const result = parseAssistantDTO(await requestJSON<unknown>(`/api/openchamber/assistants/${encodeURIComponent(assistant.id)}`, jsonInit('PATCH', { ...draft, expectedRevision: assistant.revision }))); assertCurrent(transport, generation); applyAssistant(result, transport); return result; };
 export const deleteAssistant = async (assistant: AssistantDTO): Promise<void> => { await requestJSON(`/api/openchamber/assistants/${encodeURIComponent(assistant.id)}`, jsonInit('DELETE', { expectedRevision: assistant.revision })); await queryClient.invalidateQueries({ queryKey: key.snapshot(getRuntimeTransportIdentity()) }); };

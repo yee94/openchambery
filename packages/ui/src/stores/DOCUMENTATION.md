@@ -404,6 +404,8 @@ Legacy migration preserves known bound owners and places unresolved entries in
 an unbound legacy scope until an explicit bulk send bind at the dispatch boundary. Cutover resolves every legacy session through authoritative session-directory state, plans every binding before one atomic apply, then flushes the fully bound snapshot for v4 migration. A missing directory leaves every legacy scope in place and keeps cutover blocked. Queue UI selects one scope or one item at a time; it
 avoids broad ledger subscriptions, cross-scope scans in render paths, and
 selector allocations that amplify queue updates.
+Legacy admission may publish an in-memory `pendingAdmissions` chip (`kind: pending-admission`) before selection flush; it is excluded from `partialize`, never mutates durable `QueueItemStatus`, and is cleared by `unstageAdmission` on failure or `confirmAdmission` once sendConfig is committed.
+
 
 ## Selector Rules
 

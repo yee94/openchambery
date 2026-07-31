@@ -313,3 +313,26 @@ export const createServerQueueAdmissionIdentity = (
     messageID: createMessageID(),
     createdAt,
 });
+
+export type ServerQueueAdmissionIdentity = ReturnType<typeof createServerQueueAdmissionIdentity>;
+
+/**
+ * Synchronous pre-await optimistic admission: stage the pending chip (or legacy
+ * placeholder), clear the composer, then yield so callers may await flush/network.
+ * Observable order is stage → clear → (optional) postClear; failures before
+ * commit must unstage and restore via the caller's submission capture.
+ */
+export const beginQueueAdmissionOptimisticClear = <TStageResult>({
+    stage,
+    clearComposer,
+    postClear,
+}: {
+    stage: () => TStageResult;
+    clearComposer: () => void;
+    postClear?: () => void;
+}): TStageResult => {
+    const staged = stage();
+    clearComposer();
+    postClear?.();
+    return staged;
+};

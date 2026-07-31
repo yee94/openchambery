@@ -128,6 +128,30 @@ describe('primary delivery request helpers', () => {
     });
   });
 
+  test('primarySendOptionsFromDeliveryRequest passes ticket and messageEditHideHandle through', () => {
+    const ticket = { messageID: 'msg_ticket' } as NonNullable<ChatInputDeliveryRequest['options']>['ticket'];
+    const messageEditHideHandle = {
+      sessionId: 'ses_a',
+      messageId: 'msg_edit',
+      rollback: () => {},
+    } as NonNullable<ChatInputDeliveryRequest['options']>['messageEditHideHandle'];
+    expect(primarySendOptionsFromDeliveryRequest({
+      sessionID: 'ses_a',
+      directory: '/project/a',
+      options: {
+        commitStagedMessageEdit: true,
+        ticket,
+        messageEditHideHandle,
+      },
+    })).toEqual({
+      sessionId: 'ses_a',
+      directoryHint: '/project/a',
+      commitStagedMessageEdit: true,
+      ticket,
+      messageEditHideHandle,
+    });
+  });
+
   test('assertDeliveryRequestRuntimeCurrent rejects stale generation or transport', () => {
     assertDeliveryRequestRuntimeCurrent(
       { transportIdentity: 'runtime-a', runtimeGeneration: 1 },

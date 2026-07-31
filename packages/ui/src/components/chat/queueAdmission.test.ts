@@ -1,5 +1,5 @@
 import { beforeEach, describe, expect, test } from 'bun:test';
-import { admitChatInputQueueMessageAndConsumeResources, admitQueueMessageAndConsumeResources, admitServerQueueMessageAndConsumeResources, assistantQueueAdmissionAvailable, attachedFilesToQueueCandidates, createServerQueueAdmissionCapture, createServerQueueAdmissionIdentity, enqueueServerQueueScopeMutation, isCompleteQueueSendConfig, isQueueAdmissionRuntimeCurrent, type ServerQueueScopeMutationFlights } from './queueAdmission';
+import { admitChatInputQueueMessageAndConsumeResources, admitQueueMessageAndConsumeResources, admitServerQueueMessageAndConsumeResources, assistantQueueAdmissionAvailable, attachedFilesToQueueCandidates, beginQueueAdmissionOptimisticClear, createServerQueueAdmissionCapture, createServerQueueAdmissionIdentity, enqueueServerQueueScopeMutation, isCompleteQueueSendConfig, isQueueAdmissionRuntimeCurrent, type ServerQueueScopeMutationFlights } from './queueAdmission';
 import { legacyQueueScope, setMessageQueueMutationFence, useMessageQueueStore, type QueueItem, type QueueScope } from '@/stores/messageQueueStore';
 import { sessionDraftKey, type DraftRecord } from '@/sync/input-draft-types';
 import type { AttachedFile } from '@/stores/types/sessionTypes';
@@ -324,5 +324,31 @@ describe('admitQueueMessageAndConsumeResources', () => {
         const ids = ['request-id', 'queue-id', 'operation-id'];
         const identity = createServerQueueAdmissionIdentity(() => ids.shift()!, () => 'msg_ascending', 1234);
         expect(identity).toEqual({ requestID: 'request-id', queueItemID: 'queued-queue-id', operationID: 'operation-operation-id', messageID: 'msg_ascending', createdAt: 1234 });
+    });
+
+    test('beginQueueAdmissionOptimisticClear stages then clears before any await-ready work', () => {
+        const order: string[] = [];
+        let staged = false;
+        let cleared = false;
+        const result = beginQueueAdmissionOptimisticClear({
+            stage: () => {
+                order.push('stage');
+                staged = true;
+                return { requestID: 'request-a' };
+            },
+            clearComposer: () => {
+                order.push('clear');
+                cleared = true;
+            },
+            postClear: () => {
+                order.push('post-clear');
+            },
+        });
+        expect(result).toEqual({ requestID: 'request-a' });
+        expect(order).toEqual(['stage', 'clear', 'post-clear']);
+        expect(staged).toBe(true);
+        expect(cleared).toBe(true);
+        // Observable contract for ChatInput: stage+clear finish before the first await.
+        expect(order.indexOf('stage')).toBeLessThan(order.indexOf('clear'));
     });
 });

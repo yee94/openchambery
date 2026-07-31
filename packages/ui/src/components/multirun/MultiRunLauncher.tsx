@@ -22,6 +22,7 @@ import { BranchSelector, useBranchOptions } from './BranchSelector';
 import { AgentSelector } from './AgentSelector';
 import { CommandAutocomplete, type CommandAutocompleteHandle, type CommandInfo } from '@/components/chat/CommandAutocomplete';
 import { FileMentionAutocomplete, type FileMentionHandle } from '@/components/chat/FileMentionAutocomplete';
+import { insertTokenWithReferenceBoundaries } from '@/components/chat/insertionBoundaries';
 import { SnippetAutocomplete, type SnippetAutocompleteHandle } from '@/components/chat/SnippetAutocomplete';
 import { Icon } from "@/components/icon/Icon";
 import { isDesktopShell } from '@/lib/desktop';
@@ -789,21 +790,20 @@ const RunGroupCard: React.FC<RunGroupCardProps> = ({
       : (file.path || file.name);
 
     const startIndex = lastAtSymbol !== -1 ? lastAtSymbol : cursorPosition;
-    const nextPrompt = `${prompt.substring(0, startIndex)}@${mentionPath} ${prompt.substring(cursorPosition)}`;
-    const nextCursor = startIndex + mentionPath.length + 2;
+    const inserted = insertTokenWithReferenceBoundaries(prompt, startIndex, cursorPosition, `@${mentionPath}`);
 
-    setPrompt(nextPrompt);
+    setPrompt(inserted.text);
     setShowFileMention(false);
     setMentionQuery('');
 
     requestAnimationFrame(() => {
       const currentTextarea = promptTextareaRef.current;
       if (currentTextarea) {
-        currentTextarea.selectionStart = nextCursor;
-        currentTextarea.selectionEnd = nextCursor;
+        currentTextarea.selectionStart = inserted.caret;
+        currentTextarea.selectionEnd = inserted.caret;
         currentTextarea.focus();
       }
-      updateAutocompleteState(nextPrompt, nextCursor);
+      updateAutocompleteState(inserted.text, inserted.caret);
     });
   });
 
@@ -814,21 +814,20 @@ const RunGroupCard: React.FC<RunGroupCardProps> = ({
     const textBeforeCursor = prompt.substring(0, cursorPosition);
     const lastAtSymbol = textBeforeCursor.lastIndexOf('@');
     const startIndex = lastAtSymbol !== -1 ? lastAtSymbol : cursorPosition;
-    const nextPrompt = `${prompt.substring(0, startIndex)}@${agentName} ${prompt.substring(cursorPosition)}`;
-    const nextCursor = startIndex + agentName.length + 2;
+    const inserted = insertTokenWithReferenceBoundaries(prompt, startIndex, cursorPosition, `@${agentName}`);
 
-    setPrompt(nextPrompt);
+    setPrompt(inserted.text);
     setShowFileMention(false);
     setMentionQuery('');
 
     requestAnimationFrame(() => {
       const currentTextarea = promptTextareaRef.current;
       if (currentTextarea) {
-        currentTextarea.selectionStart = nextCursor;
-        currentTextarea.selectionEnd = nextCursor;
+        currentTextarea.selectionStart = inserted.caret;
+        currentTextarea.selectionEnd = inserted.caret;
         currentTextarea.focus();
       }
-      updateAutocompleteState(nextPrompt, nextCursor);
+      updateAutocompleteState(inserted.text, inserted.caret);
     });
   });
 

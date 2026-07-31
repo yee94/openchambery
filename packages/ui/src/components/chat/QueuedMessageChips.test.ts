@@ -4,8 +4,8 @@ import { applyPendingServerQueueOperation, applyPendingServerQueueOperations, ca
 import type { ServerQueueCommittedSendShadow, ServerQueueOperationIdentity } from './queuedMessageChipsState';
 import type { MessageQueueItem, MessageQueueScope } from '@/lib/message-queue-server';
 import { sessionDraftKey } from '@/sync/input-draft-types';
-import type { MessageQueuePendingAdmissionItem } from '@/sync/message-queue-server-runtime';
-import { queuedMessageItemScope, selectQueuedMessagesForScope } from './QueuedMessageChips';
+import { isMessageQueuePendingAdmissionItem, type MessageQueuePendingAdmissionItem } from '@/sync/message-queue-server-runtime';
+import { queuedMessageItemScope, selectLegacyQueueDisplayItemsForScope, selectQueuedMessagesForScope } from './QueuedMessageChips';
 
 type CompleteScope = Extract<QueueScope, { state: 'bound' }> & { deliveryTarget: { kind: 'primary' } | { kind: 'assistant'; assistantID: string }; runtimeGeneration: number };
 
@@ -29,7 +29,7 @@ const pendingAdmissionItem: MessageQueuePendingAdmissionItem = { kind: 'pending-
 describe('QueuedMessageChips production queue boundary', () => {
     beforeEach(() => {
         setMessageQueueMutationFence('open');
-        useMessageQueueStore.setState({ queuedMessages: {}, followUpBehavior: 'queue' });
+        useMessageQueueStore.setState({ queuedMessages: {}, followUpBehavior: 'queue', pendingAdmissions: {} });
     });
 
     test('merges a visible legacy row before bound rows and edits from its owner scope', () => {
@@ -348,5 +348,54 @@ describe('QueuedMessageChips production queue boundary', () => {
         expect(result.map((item) => item.queueItemID)).toEqual(['sending', 'second']);
         expect(result[0]).toBe(sending);
         expect(projectServerQueueChipItems([first, sending, second, third], operations).map((item) => item.queueItemID)).toEqual(['second']);
+    });
+});
+
+
+describe('QueuedMessageChips legacy pending admission display', () => {
+    beforeEach(() => {
+        setMessageQueueMutationFence('open');
+        useMessageQueueStore.setState({ queuedMessages: {}, followUpBehavior: 'queue', pendingAdmissions: {} });
+    });
+
+    test('selectLegacyQueueDisplayItemsForScope appends ephemeral pending chips after durable rows', () => {
+        const durable = add(scope, 'durable');
+        useMessageQueueStore.getState().stageAdmission(scope, {
+            requestID: 'request-pending',
+            queueItemID: 'pending-local',
+            operationID: 'operation-pending-local',
+            messageID: 'msg_pending_local',
+            content: 'queuing body',
+            createdAt: 9,
+            attachmentCount: 1,
+        });
+        const display = selectLegacyQueueDisplayItemsForScope(useMessageQueueStore.getState(), scope);
+        expect(display).toHaveLength(2);
+        expect(display[0]).toBe(durable);
+        const pendingChip = display[1]!;
+        expect(isMessageQueuePendingAdmissionItem(pendingChip)).toBe(true);
+        if (!isMessageQueuePendingAdmissionItem(pendingChip)) throw new Error('expected pending admission');
+        expect(pendingChip.kind).toBe('pending-admission');
+        expect(pendingChip.queueItemID).toBe('pending-local');
+        expect(pendingChip.content).toBe('queuing body');
+        expect(pendingChip.attachmentCount).toBe(1);
+        // Durable selector stays free of temporary markers.
+        expect(selectQueuedMessagesForScope(useMessageQueueStore.getState(), scope)).toEqual([durable]);
+    });
+
+    test('pending admission disables edit/remove/send for legacy chips', () => {
+        useMessageQueueStore.getState().stageAdmission(scope, {
+            requestID: 'request-pending',
+            queueItemID: 'pending-local',
+            operationID: 'operation-pending-local',
+            messageID: 'msg_pending_local',
+            content: 'queuing body',
+            createdAt: 9,
+        });
+        const pending = selectLegacyQueueDisplayItemsForScope(useMessageQueueStore.getState(), scope)[0]!;
+        expect(isMessageQueuePendingAdmissionItem(pending)).toBe(true);
+        expect(canEditQueuedMessage(pending, { frozen: false })).toBe(false);
+        expect(canRemoveQueuedMessage(pending, { frozen: false })).toBe(false);
+        expect(canSendServerQueuedMessage(pending as MessageQueuePendingAdmissionItem, false)).toBe(false);
     });
 });

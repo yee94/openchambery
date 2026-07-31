@@ -7,7 +7,7 @@ import { ComposerDictation } from '@/components/dictation/ComposerDictation';
 import { getConfigDirectoryKey, useConfigStore } from '@/stores/useConfigStore';
 import { useUIStore } from '@/stores/useUIStore';
 import { useLeaderKeyStore } from '@/stores/useLeaderKeyStore';
-import { useMessageQueueStore, getQueueForScope, legacyQueueScope, queueScopeKey, type QueueItem, type QueueScope, type QueuedMessage } from '@/stores/messageQueueStore';
+import { useMessageQueueStore, getPendingAdmissionsForScope, getQueueForScope, legacyQueueScope, queueScopeKey, type QueueItem, type QueueScope, type QueuedMessage } from '@/stores/messageQueueStore';
 import { useAutoReviewStore } from '@/stores/useAutoReviewStore';
 import { usePermissionStore } from '@/stores/permissionStore';
 import { autoRespondsPermission } from '@/stores/utils/permissionAutoAccept';
@@ -20,6 +20,7 @@ import { createDraftAttachmentResourceAdapter } from '@/sync/draft-attachment-re
 import { buildQueueComposerRestoration, commitComposerRestoration } from '@/sync/message-composer-restoration';
 import type { AttachedFile } from '@/stores/types/sessionTypes';
 import * as sessionActions from '@/sync/session-actions';
+import type { MessageEditHideHandle, OptimisticSendTicket } from '@/sync/session-actions';
 import { useDirectorySync, useSessionMessages, useUserMessageHistory } from '@/sync/sync-context';
 import { getAllSyncSessionMap, getSyncMessages, resolveMaterializedSessionDirectory } from '@/sync/sync-refs';
 import { useSync } from '@/sync/use-sync';
@@ -141,9 +142,16 @@ import { runImmediateSessionCommand } from './immediateSessionCommandAction';
 import {
     shouldConsumeRootAttachmentsOnSubmit,
 } from './chat-input-recovery';
-import { admitChatInputQueueMessageAndConsumeResources, admitServerQueueMessageAndConsumeResources, assistantQueueAdmissionAvailable, attachedFilesToQueueCandidates, createServerQueueAdmissionCapture, createServerQueueAdmissionIdentity, isCompleteQueueSendConfig, isQueueAdmissionRuntimeCurrent } from './queueAdmission';
+import { shouldOptimisticPrimarySend } from './optimisticPrimarySend';
+import { runQueueMessageFireAndForget } from './queueMessageFireAndForget';
+import { admitServerQueueMessageAndConsumeResources, assistantQueueAdmissionAvailable, attachedFilesToQueueCandidates, beginQueueAdmissionOptimisticClear, createServerQueueAdmissionCapture, createServerQueueAdmissionIdentity, isCompleteQueueSendConfig, isQueueAdmissionRuntimeCurrent } from './queueAdmission';
 import { shouldShowPermissionAutoAcceptControl, togglePermissionAutoAccept } from './permissionAutoAccept';
 import { getSlashTokenRange } from './commandSelection';
+import {
+    advancePastTrailingBoundarySpace,
+    insertTokenWithReferenceBoundaries,
+    withReferenceInsertionBoundaries,
+} from './insertionBoundaries';
 import { isCommandAllowedForSubmission } from './commandSelection';
 import { clearActiveChatInputSurface, setActiveChatInputSurface } from './activeChatInputSurface';
 import { resolveComposerVisibleAgents } from './chatComposerCatalog';
@@ -243,32 +251,6 @@ const getInsertedTextFromChange = (previousValue: string, nextValue: string): st
 const getFileMentionInputSourceForInsertedText = (insertedText: string): FileMentionAutocompleteInputSource => (
     insertedText.includes('@') ? 'paste' : 'manual'
 );
-
-const withInlineInsertionBoundaries = (content: string, before: string, after: string): string => {
-    if (!content) {
-        return content;
-    }
-
-    const needsLeadingSpace = before.length > 0
-        && !/\s$/.test(before)
-        && !/^\s/.test(content)
-        && !/[([{]$/.test(before);
-    const needsTrailingSpace = after.length > 0
-        && !/\s$/.test(content)
-        && !/^\s/.test(after)
-        && !/^[\])}.,;:!?]/.test(after);
-
-    return `${needsLeadingSpace ? ' ' : ''}${content}${needsTrailingSpace ? ' ' : ''}`;
-};
-
-const withReferenceInsertionBoundaries = (content: string, before: string, after: string): string => {
-    const insertion = withInlineInsertionBoundaries(content, before, after);
-    // Only pad when the citation sits alone at a message edge — never force a
-    // multi-space lead-in mid-line (that reads as a huge gap before the icon).
-    const leadingSpace = before.length === 0 && !/^\s/.test(insertion) ? ' ' : '';
-    const trailingSpace = after.length === 0 && !/\s$/.test(insertion) ? ' ' : '';
-    return `${leadingSpace}${insertion}${trailingSpace}`;
-};
 
 const normalizeReferenceDeletionWhitespace = (text: string, caret: number): { text: string; caret: number } => {
     let start = caret;
@@ -749,6 +731,7 @@ type ComposerActionButtonsProps = {
     draftSubmitting?: boolean;
     submissionBlocked: boolean;
     submissionInFlight?: boolean;
+    submissionFlightKind?: 'send' | 'queue' | null;
     queueFrozen: boolean;
     queueFallbackAvailable: boolean;
     onPrimaryAction: () => void;
@@ -769,6 +752,7 @@ const ComposerActionButtons = React.memo(function ComposerActionButtons(props: C
         draftSubmitting,
         submissionBlocked,
         submissionInFlight,
+        submissionFlightKind,
         queueFrozen,
         queueFallbackAvailable,
         onPrimaryAction,
@@ -801,10 +785,25 @@ const ComposerActionButtons = React.memo(function ComposerActionButtons(props: C
         }
         : {};
 
+    const inFlight = Boolean(submissionInFlight);
+    const queueInFlight = inFlight && submissionFlightKind === 'queue';
+    const sendInFlight = inFlight && submissionFlightKind !== 'queue';
+    const primaryAria = queueInFlight
+        ? t('chat.chatInput.actions.queuingMessageAria')
+        : sendInFlight
+            ? t('chat.chatInput.actions.sendingMessageAria')
+            : t(queueFrozen && queueFallbackAvailable && canAbort
+                ? 'chat.chatInput.actions.sendMessageAria'
+                : canAbort
+                    ? 'chat.chatInput.actions.queueMessageAria'
+                    : 'chat.chatInput.actions.sendMessageAria');
+    const primaryIcon = inFlight ? 'loader-4' : 'send-plane-2';
+
     const sendButton = (
         <button
             type={isMobile ? 'button' : 'submit'}
             disabled={actionAvailability.sendDisabled}
+            aria-busy={inFlight || undefined}
             {...keepKeyboardFocusProps}
             onClick={(event) => {
                 if (!isMobile) {
@@ -819,9 +818,11 @@ const ComposerActionButtons = React.memo(function ComposerActionButtons(props: C
                     ? 'text-primary hover:text-primary'
                     : actionAvailability.disabledClass
             )}
-            aria-label={t('chat.chatInput.actions.sendMessageAria')}
+            aria-label={sendInFlight || (!canAbort && inFlight)
+                ? t(queueInFlight ? 'chat.chatInput.actions.queuingMessageAria' : 'chat.chatInput.actions.sendingMessageAria')
+                : t('chat.chatInput.actions.sendMessageAria')}
         >
-            <Icon name="send-plane-2" className={cn(sendIconSizeClass)} />
+            <Icon name={inFlight ? 'loader-4' : 'send-plane-2'} className={cn(sendIconSizeClass, inFlight && 'animate-spin')} />
         </button>
     );
 
@@ -832,29 +833,31 @@ const ComposerActionButtons = React.memo(function ComposerActionButtons(props: C
     // Busy follow-up: same primary action as Enter (queue or steer). Use sendDisabled
     // (content + session + blocked), not queueDisabled — queue freeze still allows
     // steer while canAbort is true. Stack above the textarea (z-10).
+    // Keep the floating control visible while queue admission is in flight even
+    // after the composer cleared, so the user sees an immediate "queuing" state.
     return (
         <div className="relative z-30 overflow-visible">
-            {hasContent ? (
+            {(hasContent || queueInFlight) ? (
                 <button
                     type="button"
-                    disabled={actionAvailability.sendDisabled}
+                    disabled={actionAvailability.sendDisabled || queueInFlight}
+                    aria-busy={queueInFlight || undefined}
                     {...keepKeyboardFocusProps}
                     onClick={(event) => {
                         event.preventDefault();
+                        if (queueInFlight) return;
                         onPrimaryAction();
                     }}
                     className={cn(
                         footerIconButtonClass,
                         'absolute z-30 bottom-full left-1/2 -translate-x-1/2 mb-1',
-                        !actionAvailability.sendDisabled
+                        !actionAvailability.sendDisabled && !queueInFlight
                             ? 'text-primary hover:text-primary'
                             : actionAvailability.disabledClass
                     )}
-                    aria-label={t(queueFrozen && queueFallbackAvailable
-                        ? 'chat.chatInput.actions.sendMessageAria'
-                        : 'chat.chatInput.actions.queueMessageAria')}
+                    aria-label={primaryAria}
                 >
-                    <Icon name="send-plane-2" className={cn(sendIconSizeClass, '-rotate-90')} />
+                    <Icon name={primaryIcon} className={cn(sendIconSizeClass, queueInFlight ? 'animate-spin' : '-rotate-90')} />
                 </button>
             ) : null}
             <button
@@ -883,6 +886,7 @@ const ComposerActionButtons = React.memo(function ComposerActionButtons(props: C
     &&     prev.draftSubmitting === next.draftSubmitting
     && prev.submissionBlocked === next.submissionBlocked
     && prev.submissionInFlight === next.submissionInFlight
+    && prev.submissionFlightKind === next.submissionFlightKind
     && prev.queueFrozen === next.queueFrozen
     && prev.queueFallbackAvailable === next.queueFallbackAvailable
     && prev.onPrimaryAction === next.onPrimaryAction
@@ -1415,7 +1419,13 @@ const ChatInputRuntime: React.FC<ChatInputProps> = ({ onOpenSettings, scrollToBo
             : false;
         return resolveChatInputCommandContext(surface, primaryHasMessages, newSessionDraftOpen);
     }, [surface, currentSessionId, currentSessionDirectoryForSync, newSessionDraftOpen]);
-    const sendMessage = (text: string, providerID: string, modelID: string, agent: string | undefined, attachments: readonly AttachedFile[], agentMention: string | undefined, parts: readonly { text: string; attachments?: readonly AttachedFile[]; synthetic?: boolean }[] | undefined, variant: string | undefined, inputMode: 'normal' | 'shell', options: { delivery?: string; commitStagedMessageEdit?: boolean; messageID?: string }) => {
+    const sendMessage = (text: string, providerID: string, modelID: string, agent: string | undefined, attachments: readonly AttachedFile[], agentMention: string | undefined, parts: readonly { text: string; attachments?: readonly AttachedFile[]; synthetic?: boolean }[] | undefined, variant: string | undefined, inputMode: 'normal' | 'shell', options: {
+        delivery?: string;
+        commitStagedMessageEdit?: boolean;
+        messageID?: string;
+        ticket?: OptimisticSendTicket;
+        messageEditHideHandle?: MessageEditHideHandle;
+    }) => {
         if (!controllerWiring) return Promise.reject(new Error('chat-input-surface-incomplete'));
         return controllerWiring.send({ providerID, modelID, agent, variant, text, attachments, agentMention, parts, systemContext: parts?.filter((part) => part.synthetic).map((part) => ({ text: part.text, synthetic: true })), inputMode, options });
     };
@@ -1673,7 +1683,6 @@ const ChatInputRuntime: React.FC<ChatInputProps> = ({ onOpenSettings, scrollToBo
     const fetchGitStatus = useGitStore((state) => state.fetchStatus);
     const [showAbortStatus, setShowAbortStatus] = React.useState(false);
     const composerHighlightRef = React.useRef<HTMLDivElement | null>(null);
-    const [agentPortalContainer, setAgentPortalContainer] = React.useState<HTMLDivElement | null>(null);
     const [desktopComposerFocused, setDesktopComposerFocused] = React.useState(false);
     const isAgentSelectorOpen = useUIStore((state) => state.isAgentSelectorOpen);
     const isModelSelectorOpen = useUIStore((state) => state.isModelSelectorOpen);
@@ -2028,7 +2037,12 @@ const ChatInputRuntime: React.FC<ChatInputProps> = ({ onOpenSettings, scrollToBo
         return [...legacyQueuedMessages, ...boundQueuedMessages];
     }, [boundQueuedMessages, legacyQueuedMessages]);
     const queuedMessages = serverQueue.mode === 'server' ? EMPTY_QUEUE : legacyQueuedMessagesForScope;
-    const addToQueue = useMessageQueueStore((state) => state.addToQueue);
+    const legacyPendingAdmissions = useMessageQueueStore(
+        React.useCallback(
+            (state) => (currentQueueScope ? getPendingAdmissionsForScope(state, currentQueueScope) : EMPTY_QUEUE),
+            [currentQueueScope],
+        ),
+    );
     const clearQueue = useMessageQueueStore((state) => state.clearQueue);
     const removeFromQueue = useMessageQueueStore((state) => state.removeFromQueue);
 
@@ -2152,7 +2166,9 @@ const ChatInputRuntime: React.FC<ChatInputProps> = ({ onOpenSettings, scrollToBo
     }, [pendingInput, consumePendingInput, replacePlainDocument, applyProgrammaticEdit]);
 
     const hasContent = message.trim().length > 0 || sendableAttachedFiles.length > 0 || hasDrafts;
-    const hasQueuedMessages = serverQueue.mode === 'server' ? serverQueue.items.length > 0 : queuedMessages.length > 0;
+    const hasQueuedMessages = serverQueue.mode === 'server'
+        ? serverQueue.items.length > 0
+        : queuedMessages.length > 0 || legacyPendingAdmissions.length > 0;
     const queueFrozen = !queueModeAllowsMutations(serverQueue.mode);
     const canSend = hasContent || hasQueuedMessages;
 
@@ -2189,18 +2205,28 @@ const ChatInputRuntime: React.FC<ChatInputProps> = ({ onOpenSettings, scrollToBo
     // or admission settle (queue). Re-entry via button/form/Enter/preset/dictation
     // is ignored while held.
     const [submissionInFlight, setSubmissionInFlight] = React.useState(false);
+    const [submissionFlightKind, setSubmissionFlightKind] = React.useState<'send' | 'queue' | null>(null);
     const submissionInFlightRef = React.useRef(false);
-    const beginSubmissionFlight = (): boolean => {
+    const submissionFlightKindRef = React.useRef<'send' | 'queue' | null>(null);
+    const beginSubmissionFlight = (kind: 'send' | 'queue' = 'send'): boolean => {
         if (submissionInFlightRef.current) return false;
         submissionInFlightRef.current = true;
+        submissionFlightKindRef.current = kind;
         setSubmissionInFlight(true);
+        setSubmissionFlightKind(kind);
         return true;
     };
     const endSubmissionFlight = () => {
         submissionInFlightRef.current = false;
+        submissionFlightKindRef.current = null;
         setSubmissionInFlight(false);
+        setSubmissionFlightKind(null);
     };
-    // Add message to queue instead of sending
+    // Add message to queue instead of sending.
+    // Server + legacy: after inputSnapshot/flight, stage a stable admission identity
+    // and clear the composer synchronously before the first await (selection.flush).
+    // Flush/runtime/scope/config/compile/admit failures unstage and restore via
+    // submission capture; committed admits keep the empty composer.
     const handleQueueMessage = useEvent(async () => {
         if (!surface.active) return;
         if (submissionInFlightRef.current) return;
@@ -2226,8 +2252,14 @@ const ChatInputRuntime: React.FC<ChatInputProps> = ({ onOpenSettings, scrollToBo
             void handleSubmitRef.current(sessionIsRunning ? { delivery: 'steer' } : undefined);
             return;
         }
+        // Resource-preserving commands never optimistic-clear or stage a chip.
+        const resourcePolicy = initialPlan.chunks.every((chunk) => chunk.provenance === 'authored') && preservesComposerResources(logicalMessage, inputMode);
+        if (resourcePolicy) {
+            void handleSubmitRef.current();
+            return;
+        }
         // Claim flight before the first await so button/keyboard re-entry is blocked.
-        if (!beginSubmissionFlight()) return;
+        if (!beginSubmissionFlight('queue')) return;
         // Pin surface/runtime/scope/session before flush so runtime switch cannot
         // pair new sendConfig with the pre-switch composer surface.
         const surfaceTransportAtStart = surface.transportIdentity;
@@ -2237,28 +2269,123 @@ const ChatInputRuntime: React.FC<ChatInputProps> = ({ onOpenSettings, scrollToBo
         const primaryQueueSessionIdAtStart = surface.kind === 'primary'
             ? (currentQueueScope?.sessionID ?? currentSessionId)
             : null;
-        // When true, flight is released before delegating to handleSubmit so the
-        // direct-send path can claim its own flight (avoid self-deadlock).
-        let releaseFlightForSubmitDelegate = false;
+        const drafts = [...surfaceResources.inlineDrafts].sort((a, b) => a.createdAt - b.createdAt);
+        const documentToQueue = drafts.length > 0
+            ? validateComposerDocument(appendInlineComments(inputSnapshot.document.text, drafts), inputSnapshot.document.references).document
+            : inputSnapshot.document;
+        const serialized = serializeComposerDocument(documentToQueue, 'queue-canonical');
+        if (!serialized.ok) {
+            endSubmissionFlight();
+            toast.error(t('chat.chatInput.toast.messageSendFailed'));
+            return;
+        }
+        const attachmentsToQueue = sanitizeAttachmentsForSend(sendableAttachedFiles);
+        const queueSubmissionCapture = captureSubmission();
+        const queueAttachmentSnapshot = attachmentsToQueue;
+        // Pre-await optimistic stage + clear (server pending chip or legacy placeholder).
+        const identity = createServerQueueAdmissionIdentity();
+        let stagedServerAdmission = false;
+        let stagedLegacyRequestID: string | null = null;
+        const unstageOptimisticAdmission = () => {
+            if (stagedServerAdmission && queueScopeAtStart) {
+                serverQueue.actions.unstageAdmission({
+                    requestID: identity.requestID,
+                    scope: { directory: queueScopeAtStart.directory, sessionID: queueScopeAtStart.sessionID },
+                });
+                stagedServerAdmission = false;
+            }
+            if (stagedLegacyRequestID && queueScopeAtStart) {
+                // Ephemeral marker only — never a durable QueueItemStatus row.
+                useMessageQueueStore.getState().unstageAdmission(queueScopeAtStart, stagedLegacyRequestID);
+                stagedLegacyRequestID = null;
+            }
+        };
+        const restoreQueueComposer = async (assistantSyntheticParts?: Parameters<typeof surfaceResources.restoreSyntheticParts>[0] | null) => {
+            unstageOptimisticAdmission();
+            if (queueSubmissionCapture) recoverSubmission(queueSubmissionCapture);
+            if (queueAttachmentSnapshot.length > 0) {
+                await surfaceResources.restoreAttachments(queueAttachmentSnapshot);
+            }
+            if (assistantSyntheticParts) surfaceResources.restoreSyntheticParts(assistantSyntheticParts);
+            if (drafts.length > 0) surfaceResources.restoreInlineDrafts(drafts);
+        };
         try {
+            if (!queueScopeAtStart) {
+                toast.error(t('chat.chatInput.toast.messageSendFailed'));
+                return;
+            }
+            if (serverQueue.mode === 'server') {
+                if (!draftKey) {
+                    toast.error(t('chat.chatInput.toast.messageSendFailed'));
+                    return;
+                }
+                beginQueueAdmissionOptimisticClear({
+                    stage: () => {
+                        serverQueue.actions.stageAdmission({
+                            requestID: identity.requestID,
+                            scope: { directory: queueScopeAtStart.directory, sessionID: queueScopeAtStart.sessionID },
+                            item: {
+                                queueItemID: identity.queueItemID,
+                                operationID: identity.operationID,
+                                messageID: identity.messageID,
+                                content: serialized.text,
+                                createdAt: identity.createdAt,
+                                attachmentCount: attachmentsToQueue.length,
+                                composerDocument: documentToQueue,
+                                composerMentions,
+                            },
+                        });
+                        stagedServerAdmission = true;
+                    },
+                    clearComposer: () => {
+                        replacePlainDocument('');
+                        setHistoryIndex(-1);
+                        setExpandedInput(false);
+                    },
+                });
+            } else {
+                // Legacy: ephemeral pending-admission chip before await (not durable ledger).
+                beginQueueAdmissionOptimisticClear({
+                    stage: () => {
+                        useMessageQueueStore.getState().bindLegacyQueue(legacyQueueScope(queueScopeAtStart.sessionID), queueScopeAtStart);
+                        useMessageQueueStore.getState().stageAdmission(queueScopeAtStart, {
+                            requestID: identity.requestID,
+                            queueItemID: identity.queueItemID,
+                            operationID: identity.operationID,
+                            messageID: identity.messageID,
+                            content: serialized.text,
+                            createdAt: identity.createdAt,
+                            attachmentCount: attachmentsToQueue.length,
+                            composerDocument: documentToQueue,
+                            composerMentions,
+                        });
+                        stagedLegacyRequestID = identity.requestID;
+                    },
+                    clearComposer: () => {
+                        replacePlainDocument('');
+                        setHistoryIndex(-1);
+                        setExpandedInput(false);
+                    },
+                });
+            }
+
             await surface.selection.flush();
             if (!isQueueAdmissionRuntimeCurrent(
                 { transportIdentity: surfaceTransportAtStart, generation: surfaceGenerationAtStart },
                 { transportIdentity: getRuntimeTransportIdentity(), generation: getRuntimeGeneration() },
             )) {
+                await restoreQueueComposer();
                 return;
             }
             if (!isQueueAdmissionRuntimeCurrent(draftRuntimeAtStart, surfaceResources.captureRuntime())) {
+                await restoreQueueComposer();
                 return;
             }
             if (
                 primaryQueueSessionIdAtStart
                 && useSessionUIStore.getState().currentSessionId !== primaryQueueSessionIdAtStart
             ) {
-                return;
-            }
-            if (!queueScopeAtStart) {
-                toast.error(t('chat.chatInput.toast.messageSendFailed'));
+                await restoreQueueComposer();
                 return;
             }
             // Re-check scope against live transport + primary session directory (not render-closed values).
@@ -2271,6 +2398,7 @@ const ChatInputRuntime: React.FC<ChatInputProps> = ({ onOpenSettings, scrollToBo
                     && (useSessionUIStore.getState().getDirectoryForSession(primaryQueueSessionIdAtStart) ?? null) !== queueScopeAtStart.directory
                 )
             ) {
+                await restoreQueueComposer();
                 return;
             }
             const scope = queueScopeAtStart;
@@ -2292,29 +2420,13 @@ const ChatInputRuntime: React.FC<ChatInputProps> = ({ onOpenSettings, scrollToBo
                     : undefined);
             // New queue admission requires a complete sendConfig; keep composer resources.
             if (!isCompleteQueueSendConfig(sendConfig)) {
+                await restoreQueueComposer();
                 return;
             }
-
-            const resourcePolicy = initialPlan.chunks.every((chunk) => chunk.provenance === 'authored') && preservesComposerResources(logicalMessage, inputMode);
-            if (resourcePolicy) {
-                // Release then delegate so handleSubmit can claim flight without self-lock.
-                releaseFlightForSubmitDelegate = true;
-                endSubmissionFlight();
-                void handleSubmitRef.current();
-                return;
-            }
-
-            const drafts = [...surfaceResources.inlineDrafts].sort((a, b) => a.createdAt - b.createdAt);
-
-            const documentToQueue = drafts.length > 0
-                ? validateComposerDocument(appendInlineComments(inputSnapshot.document.text, drafts), inputSnapshot.document.references).document
-                : inputSnapshot.document;
-            const serialized = serializeComposerDocument(documentToQueue, 'queue-canonical');
-            if (!serialized.ok) { toast.error(t('chat.chatInput.toast.messageSendFailed')); return; }
-            const attachmentsToQueue = sanitizeAttachmentsForSend(sendableAttachedFiles);
 
             if (serverQueue.mode === 'server') {
                 if (!draftKey) {
+                    await restoreQueueComposer();
                     toast.error(t('chat.chatInput.toast.messageSendFailed'));
                     return;
                 }
@@ -2325,7 +2437,6 @@ const ChatInputRuntime: React.FC<ChatInputProps> = ({ onOpenSettings, scrollToBo
                     attachments: sendableAttachedFiles,
                     inlineDrafts: drafts,
                 });
-                const identity = createServerQueueAdmissionIdentity();
                 const assistantSyntheticParts = scope.deliveryTarget.kind === 'assistant'
                     ? surfaceResources.consumeSyntheticParts()?.map((part) => ({ ...part, partID: part.partID ?? createUuid() })) ?? null
                     : null;
@@ -2361,90 +2472,111 @@ const ChatInputRuntime: React.FC<ChatInputProps> = ({ onOpenSettings, scrollToBo
                     const referencedAttachmentIDs = assistantDeliveryParts ? new Set(assistantDeliveryParts.flatMap((part) => part.type === 'file' ? [part.attachmentID] : [])) : null;
                     attachmentCandidates = candidates.filter((candidate, index) => candidates.findIndex((entry) => entry.attachmentID === candidate.attachmentID) === index && (!referencedAttachmentIDs || referencedAttachmentIDs.has(candidate.attachmentID)));
                 } catch (error) {
-                    if (assistantSyntheticParts) surfaceResources.restoreSyntheticParts(assistantSyntheticParts);
+                    await restoreQueueComposer(assistantSyntheticParts);
                     toast.error(t(error instanceof RangeError ? 'chat.chatInput.toast.attachmentsTooLarge' : 'chat.chatInput.toast.messageSendFailed'));
                     return;
                 }
                 const assistantSyntheticSidecar = assistantDeliveryParts && assistantSyntheticParts
                     ? buildAssistantQueueSyntheticSidecar(assistantDeliveryParts, assistantSyntheticParts.map((part) => ({ ...part, partID: part.partID })))
                     : undefined;
-                // Await admission so flight holds until settle; body clear stays in
-                // admit helper (after admit success) to preserve draft on failure.
                 try {
+                    let admitCommitted = false;
                     const result = await admitServerQueueMessageAndConsumeResources({
                         capture: admissionCapture,
-                        admit: () => serverQueue.actions.admit({
-                            requestID: identity.requestID,
-                            scope: { directory: scope.directory, sessionID: scope.sessionID },
-                            item: {
-                                queueItemID: identity.queueItemID,
-                                operationID: identity.operationID,
-                                messageID: identity.messageID,
-                                content: serialized.text,
-                                composerDocument: documentToQueue,
-                                composerMentions,
-                                sendConfig,
-                                deliveryTarget: scope.deliveryTarget,
-                                ...(assistantDeliveryParts ? { deliveryParts: assistantDeliveryParts } : {}),
-                                ...(assistantSyntheticSidecar ? { syntheticParts: assistantSyntheticSidecar } : {}),
-                                attachmentIssues: [],
-                                createdAt: identity.createdAt,
-                            },
-                            attachments: attachmentCandidates,
-                        }),
+                        admit: async () => {
+                            // Reuse the same identity staged before the first await.
+                            const admission = await serverQueue.actions.admit({
+                                requestID: identity.requestID,
+                                scope: { directory: scope.directory, sessionID: scope.sessionID },
+                                item: {
+                                    queueItemID: identity.queueItemID,
+                                    operationID: identity.operationID,
+                                    messageID: identity.messageID,
+                                    content: serialized.text,
+                                    composerDocument: documentToQueue,
+                                    composerMentions,
+                                    sendConfig,
+                                    deliveryTarget: scope.deliveryTarget,
+                                    ...(assistantDeliveryParts ? { deliveryParts: assistantDeliveryParts } : {}),
+                                    ...(assistantSyntheticSidecar ? { syntheticParts: assistantSyntheticSidecar } : {}),
+                                    attachmentIssues: [],
+                                    createdAt: identity.createdAt,
+                                },
+                                attachments: attachmentCandidates,
+                            });
+                            if (admission.status === 'committed') {
+                                admitCommitted = true;
+                                stagedServerAdmission = false;
+                            }
+                            return admission;
+                        },
                         captureRuntime: surfaceResources.captureRuntime,
                         getCurrentDraftKey: () => draftKey,
                         getDocument,
+                        // Body already cleared; helper no-ops when fingerprint drifted.
                         consumeBody: () => replacePlainDocument(''),
                         getAttachments: () => surfaceResources.attachments,
                         removeAttachment: surfaceResources.removeAttachment,
                         getInlineDrafts: () => surfaceResources.inlineDrafts,
                         removeInlineDraft: surfaceResources.removeInlineDraft,
                     });
+                    if (!admitCommitted) {
+                        await restoreQueueComposer(assistantSyntheticParts);
+                        if (result.status === 'stale') {
+                            toast.error(t('chat.chatInput.toast.messageSendFailed'));
+                        }
+                        return;
+                    }
                     // partial = queue committed but composer attachment cleanup incomplete
-                    if (result.status === 'stale' && assistantSyntheticParts) surfaceResources.restoreSyntheticParts(assistantSyntheticParts);
                     if (result.status === 'partial') {
                         toast.error(t('chat.chatInput.toast.messageSendFailed'));
                         return;
                     }
                     if (result.status === 'committed' && !isMobile) textareaRef.current?.focus();
                 } catch (error) {
-                    if (assistantSyntheticParts) surfaceResources.restoreSyntheticParts(assistantSyntheticParts);
+                    await restoreQueueComposer(assistantSyntheticParts);
                     toast.error(t(error instanceof RangeError ? 'chat.chatInput.toast.attachmentsTooLarge' : 'chat.chatInput.toast.messageSendFailed'));
                 }
                 return;
             }
             // Primary-only legacy queue path. Assistant is handled above.
-            const admission = await admitChatInputQueueMessageAndConsumeResources({
-                bindLegacy: () => useMessageQueueStore.getState().bindLegacyQueue(legacyQueueScope(scope.sessionID), scope),
-                addComposer: () => addToQueue(scope, {
-                    content: serialized.text,
-                    composerDocument: documentToQueue,
-                    composerMentions,
-                    attachments: attachmentsToQueue.length > 0 ? attachmentsToQueue : undefined,
-                    sendConfig,
-                }),
-                drafts,
-                consumeDraft: (draft) => surfaceResources.removeInlineDraft(draft.id),
-                consumeBody: () => {
-                    replacePlainDocument('');
-                },
-                consumeAttachments: () => {
-                    if (attachmentsToQueue.length > 0) void surfaceResources.clearAttachments();
-                },
+            // Promote the staged pending chip into a durable queued row with sendConfig.
+            const confirmed = useMessageQueueStore.getState().confirmAdmission(scope, {
+                requestID: identity.requestID,
+                sendConfig,
+                attachments: attachmentsToQueue.length > 0 ? attachmentsToQueue : undefined,
             });
-            if (!admission.ok) {
+            if (!confirmed.ok) {
+                await restoreQueueComposer();
                 toast.error(t('chat.chatInput.toast.messageSendFailed'));
                 return;
             }
+            stagedLegacyRequestID = null;
+            // Consume inline drafts/attachments now that the row is confirmed.
+            for (const draft of drafts) {
+                surfaceResources.removeInlineDraft(draft.id);
+            }
+            if (attachmentsToQueue.length > 0) void surfaceResources.clearAttachments();
             if (!isMobile) {
                 textareaRef.current?.focus();
             }
+        } catch (error) {
+            await restoreQueueComposer();
+            toast.error(t(error instanceof RangeError ? 'chat.chatInput.toast.attachmentsTooLarge' : 'chat.chatInput.toast.messageSendFailed'));
         } finally {
-            if (!releaseFlightForSubmitDelegate) {
-                endSubmissionFlight();
-            }
+            endSubmissionFlight();
         }
+    });
+
+    // Stable fire-and-forget entry for queue admission. Keeps internal toasts;
+    // outer toast only for leaked rejections (restoreQueueComposer etc.).
+    const queueMessageFromEvent = useEvent(() => {
+        void runQueueMessageFireAndForget(
+            () => handleQueueMessage(),
+            () => {
+                toast.error(t('chat.chatInput.toast.messageSendFailed'));
+            },
+        );
     });
 
     const handleQueuedMessageEdit = useEvent(async (content: string, attachments?: QueuedMessage['attachments'], composerDocument?: QueuedMessage['composerDocument'], composerMentions?: QueuedMessage['composerMentions']): Promise<boolean> => {
@@ -2558,10 +2690,10 @@ const ChatInputRuntime: React.FC<ChatInputProps> = ({ onOpenSettings, scrollToBo
             return;
         } else if (!queuedOnly && currentSessionId && hasQueuedMessages && serverQueue.mode === 'server') {
             // No flight yet: queue path claims its own before its first await.
-            if (inputSnapshot.hasContent) handleQueueMessage();
+            if (inputSnapshot.hasContent) queueMessageFromEvent();
             return;
         } else if (!queuedOnly && currentSessionId && hasQueuedMessages) {
-            if (inputSnapshot.hasContent) handleQueueMessage();
+            if (inputSnapshot.hasContent) queueMessageFromEvent();
             const queuedHead = queuedMessages[0];
             if (queuedHead && controllerWiring) {
                 await controllerWiring.sendQueued(queuedHead.queueItemID, { options: sessionIsRunning ? { delivery: 'steer' } : undefined });
@@ -2603,8 +2735,62 @@ const ChatInputRuntime: React.FC<ChatInputProps> = ({ onOpenSettings, scrollToBo
         let transferFlightToSendPromise = false;
         // When true, flight was released before delegating to handleQueueMessage.
         let releasedForQueueDelegate = false;
+        // Pre-await optimistic paint for an existing primary session (not secondary/queue/local-command).
+        let optimisticTicket: OptimisticSendTicket | undefined;
+        let messageEditHideHandle: MessageEditHideHandle | undefined;
+        let handedOptimisticToSendPromise = false;
 
         try {
+        // Existing primary session ordinary send: paint user row + "sending message"
+        // synchronously before selection.flush so the list does not wait on async work.
+        // Incomplete provider/model snapshots skip the ticket (no fabricated display IDs).
+        // Secondary surfaces keep their pending-row path and never create a primary ticket.
+        // Shell skips tickets: routeMessage shell path does not settle/consume them.
+        const shouldCreateOptimisticPrimarySend = shouldOptimisticPrimarySend({
+            surfaceKind: surface.kind,
+            currentSessionId,
+            queuedOnly,
+            resourcePolicy,
+            inputMode,
+            localCommand,
+        });
+        if (shouldCreateOptimisticPrimarySend && currentSessionId) {
+            const sessionDirectoryForOptimistic =
+                useSessionUIStore.getState().getDirectoryForSession(currentSessionId)
+                ?? currentDirectory
+                ?? null;
+            const stagedEdit = useSessionUIStore.getState().stagedMessageEdit;
+            if (stagedEdit && stagedEdit.sessionId === currentSessionId) {
+                messageEditHideHandle = sessionActions.hideMessageEditTarget(
+                    stagedEdit.sessionId,
+                    stagedEdit.messageId,
+                    { directory: sessionDirectoryForOptimistic ?? undefined },
+                );
+            }
+            const configState = useConfigStore.getState();
+            const optimisticConfig = capturePrimaryComposerSendConfig(configState, {
+                expectedConfigKey: getConfigDirectoryKey(sessionDirectoryForOptimistic),
+                activeDirectoryKey: configState.activeDirectoryKey,
+            });
+            if (optimisticConfig?.providerID && optimisticConfig?.modelID) {
+                const rootAttachments = sanitizeAttachmentsForSend(sendableAttachedFiles);
+                optimisticTicket = sessionActions.beginOptimisticSend({
+                    sessionId: currentSessionId,
+                    directory: sessionDirectoryForOptimistic,
+                    content: inputSnapshot.message,
+                    providerID: optimisticConfig.providerID,
+                    modelID: optimisticConfig.modelID,
+                    agent: optimisticConfig.agent,
+                    files: rootAttachments.map((attachment) => ({
+                        type: 'file' as const,
+                        mime: attachment.mimeType,
+                        url: attachment.dataUrl,
+                        filename: attachment.filename,
+                    })),
+                });
+            }
+        }
+
         // Primary: pin session before any await so A→B switch mid-flush aborts send.
         // Queued-only prefers the bound queue owner / first queued item owner when present.
         const primarySubmitSessionIdAtStart = surface.kind === 'primary'
@@ -2674,7 +2860,7 @@ const ChatInputRuntime: React.FC<ChatInputProps> = ({ onOpenSettings, scrollToBo
             if (submissionCapture) recoverSubmission(submissionCapture);
             releasedForQueueDelegate = true;
             endSubmissionFlight();
-            handleQueueMessage();
+            queueMessageFromEvent();
             return;
         }
 
@@ -2684,7 +2870,7 @@ const ChatInputRuntime: React.FC<ChatInputProps> = ({ onOpenSettings, scrollToBo
                 if (submissionCapture) recoverSubmission(submissionCapture);
                 releasedForQueueDelegate = true;
                 endSubmissionFlight();
-                handleQueueMessage();
+                queueMessageFromEvent();
                 return;
             }
         }
@@ -2696,7 +2882,12 @@ const ChatInputRuntime: React.FC<ChatInputProps> = ({ onOpenSettings, scrollToBo
         const sendMessageOptions = {
             ...(delivery ? { delivery } : {}),
             commitStagedMessageEdit: !queuedOnly,
-            ...(draftMessageID ? { messageID: draftMessageID } : {}),
+            ...(optimisticTicket
+                ? { messageID: optimisticTicket.messageID, ticket: optimisticTicket }
+                : draftMessageID
+                    ? { messageID: draftMessageID }
+                    : {}),
+            ...(messageEditHideHandle ? { messageEditHideHandle } : {}),
             ...(primarySubmitSessionIdAtStart
                 ? {
                     sessionId: primarySubmitSessionIdAtStart,
@@ -3263,6 +3454,10 @@ const ChatInputRuntime: React.FC<ChatInputProps> = ({ onOpenSettings, scrollToBo
             console.warn('[ChatInput] Failed to expand snippets, sending original text:', error);
         }
 
+        // Hand optimistic ticket/edit handle to the final send path; early exits
+        // roll them back in finally. sendPromise rejection rolls back the ticket
+        // only — edit tail restore is owned by commitMessageEdit remote failure.
+        handedOptimisticToSendPromise = true;
         const sendPromise = sendMessage(
             primaryText,
             providerIdToSend,
@@ -3299,6 +3494,9 @@ const ChatInputRuntime: React.FC<ChatInputProps> = ({ onOpenSettings, scrollToBo
                 setLinkedPr(null);
             }
         }).catch((error: unknown) => {
+            if (optimisticTicket) {
+                sessionActions.rollbackOptimisticSend(optimisticTicket);
+            }
             void restoreFailedSubmission().then((ok) => {
                 if (!ok) toast.error(t('chat.chatInput.toast.messageSendFailed'));
             });
@@ -3342,6 +3540,16 @@ const ChatInputRuntime: React.FC<ChatInputProps> = ({ onOpenSettings, scrollToBo
             textareaRef.current?.focus();
         }
         } finally {
+            // Ticket not handed to sendPromise: rollback optimistic row and restore
+            // any pre-hidden edit tail (flush stale, missing model, queue delegate, etc.).
+            if (!handedOptimisticToSendPromise) {
+                if (optimisticTicket) {
+                    sessionActions.rollbackOptimisticSend(optimisticTicket);
+                }
+                if (messageEditHideHandle) {
+                    messageEditHideHandle.rollback();
+                }
+            }
             if (!transferFlightToSendPromise && !releasedForQueueDelegate) {
                 if (clearedComposerBeforeDispatch && submissionCapture) {
                     recoverSubmission(submissionCapture);
@@ -3367,14 +3575,14 @@ const ChatInputRuntime: React.FC<ChatInputProps> = ({ onOpenSettings, scrollToBo
             && queueModeAllowsMutations(serverQueue.mode)
             && assistantQueueAdmissionAvailable(surface.deliveryTarget?.kind, serverQueue.mode);
         if (followUpBehavior === 'queue' && queueUsable) {
-            handleQueueMessage();
+            queueMessageFromEvent();
         } else if ((followUpBehavior === 'steer' && canQueue) || (followUpBehavior === 'queue' && canQueue && !queueUsable)) {
             // Queue-unavailable busy sessions steer into the captured running turn.
             void handleSubmitRef.current(canQueue ? { delivery: 'steer' } : undefined);
         } else {
             void handleSubmitRef.current();
         }
-    }, [inputMode, getCurrentInputSnapshot, currentSessionId, sessionIsRunning, autoReviewRunning, followUpBehavior, handleQueueMessage, serverQueue.mode, surface.deliveryTarget?.kind]);
+    }, [inputMode, getCurrentInputSnapshot, currentSessionId, sessionIsRunning, autoReviewRunning, followUpBehavior, queueMessageFromEvent, serverQueue.mode, surface.deliveryTarget?.kind]);
 
     // Draft welcome presets: submit immediately.
     const submitPresetPrompt = React.useCallback((text: string) => {
@@ -3788,7 +3996,7 @@ const ChatInputRuntime: React.FC<ChatInputProps> = ({ onOpenSettings, scrollToBo
                 if (isCtrlEnter || !canQueue) {
                     handleSubmit();
                 } else if (queueUsable) {
-                    handleQueueMessage();
+                    queueMessageFromEvent();
                 } else {
                     // Queue-unavailable busy sessions steer into the captured turn.
                     handleSubmit({ delivery: 'steer' });
@@ -4346,7 +4554,7 @@ const ChatInputRuntime: React.FC<ChatInputProps> = ({ onOpenSettings, scrollToBo
         const textarea = textareaRef.current;
         const selectionStart = textarea?.selectionStart ?? message.length;
         const selectionEnd = textarea?.selectionEnd ?? message.length;
-        const insertion = withInlineInsertionBoundaries(
+        const insertion = withReferenceInsertionBoundaries(
             mentions,
             message.slice(0, selectionStart),
             message.slice(selectionEnd),
@@ -4437,13 +4645,14 @@ const ChatInputRuntime: React.FC<ChatInputProps> = ({ onOpenSettings, scrollToBo
                     characterCount: reference.characterCount,
                     index: reference.index,
                     display: reference.token,
-                }, { inlineBoundaries: true });
+                }, { inlineBoundaries: true, padDocumentEdges: true });
+                const caret = advancePastTrailingBoundarySpace(next.document.text, next.caret);
                 if (textareaRef.current) textareaRef.current.value = next.document.text;
                 requestAnimationFrame(() => {
-                    textareaRef.current?.setSelectionRange(next.caret, next.caret);
+                    textareaRef.current?.setSelectionRange(caret, caret);
                     adjustTextareaHeight();
                 });
-                updateAutocompleteState(next.document.text, next.caret);
+                updateAutocompleteState(next.document.text, caret);
                 return;
             }
             if (pastedText.includes('@')) {
@@ -4497,9 +4706,11 @@ const ChatInputRuntime: React.FC<ChatInputProps> = ({ onOpenSettings, scrollToBo
                 characterCount: pastedTextReference.characterCount,
                 index: pastedTextReference.index,
                 display: pastedTextReference.token,
-            }, { inlineBoundaries: true });
-            const nextText = `${inserted.document.text.slice(0, inserted.caret)} ${citationText}${inserted.document.text.slice(inserted.caret)}`;
-            commitBrowserTextChange(nextText, inserted.caret + citationText.length + 1, inserted.caret + citationText.length + 1, getFileMentionInputSourceForInsertedText(nextText), citationText);
+            }, { inlineBoundaries: true, padDocumentEdges: true });
+            const pasteCaret = advancePastTrailingBoundarySpace(inserted.document.text, inserted.caret);
+            const nextText = `${inserted.document.text.slice(0, pasteCaret)}${citationText}${inserted.document.text.slice(pasteCaret)}`;
+            // paste chip already left a trailing boundary space; citation follows immediately
+            commitBrowserTextChange(nextText, pasteCaret + citationText.length, pasteCaret + citationText.length, getFileMentionInputSourceForInsertedText(nextText), citationText);
         } else {
             insertTextAtSelection(insertionText, getFileMentionInputSourceForInsertedText(insertionText));
         }
@@ -4536,38 +4747,17 @@ const ChatInputRuntime: React.FC<ChatInputProps> = ({ onOpenSettings, scrollToBo
             : (toProjectRelativeMentionPath(file.path) || file.name);
         const directoryPaths = file.isDirectory ? [mentionPath] : [];
 
-
-        if (lastAtSymbol !== -1) {
-            const newMessage =
-                message.substring(0, lastAtSymbol) +
-                `@${mentionPath} ` +
-                message.substring(cursorPosition);
-            replaceWithConfirmedFileMentions(newMessage, [mentionPath], directoryPaths);
-            const nextCursor = lastAtSymbol + mentionPath.length + 2;
-            requestAnimationFrame(() => {
-                if (textareaRef.current) {
-                    textareaRef.current.selectionStart = nextCursor;
-                    textareaRef.current.selectionEnd = nextCursor;
-                }
-                adjustTextareaHeight();
-                updateAutocompleteState(newMessage, nextCursor);
-            });
-        } else if (textareaRef.current) {
-            const newMessage =
-                message.substring(0, cursorPosition) +
-                `@${mentionPath} ` +
-                message.substring(cursorPosition);
-            replaceWithConfirmedFileMentions(newMessage, [mentionPath], directoryPaths);
-            const nextCursor = cursorPosition + mentionPath.length + 2;
-            requestAnimationFrame(() => {
-                if (textareaRef.current) {
-                    textareaRef.current.selectionStart = nextCursor;
-                    textareaRef.current.selectionEnd = nextCursor;
-                }
-                adjustTextareaHeight();
-                updateAutocompleteState(newMessage, nextCursor);
-            });
-        }
+        const startIndex = lastAtSymbol !== -1 ? lastAtSymbol : cursorPosition;
+        const inserted = insertTokenWithReferenceBoundaries(message, startIndex, cursorPosition, `@${mentionPath}`);
+        replaceWithConfirmedFileMentions(inserted.text, [mentionPath], directoryPaths);
+        requestAnimationFrame(() => {
+            if (textareaRef.current) {
+                textareaRef.current.selectionStart = inserted.caret;
+                textareaRef.current.selectionEnd = inserted.caret;
+            }
+            adjustTextareaHeight();
+            updateAutocompleteState(inserted.text, inserted.caret);
+        });
 
         setShowFileMention(false);
         setMentionQuery('');
@@ -4585,40 +4775,18 @@ const ChatInputRuntime: React.FC<ChatInputProps> = ({ onOpenSettings, scrollToBo
         );
         const textBeforeCursor = message.substring(0, cursorPosition);
         const lastAtSymbol = textBeforeCursor.lastIndexOf('@');
+        const startIndex = lastAtSymbol !== -1 ? lastAtSymbol : cursorPosition;
+        const inserted = insertTokenWithReferenceBoundaries(message, startIndex, cursorPosition, `@${agentName}`);
+        applyProgrammaticEdit(inserted.text);
 
-        if (lastAtSymbol !== -1) {
-            const newMessage =
-                message.substring(0, lastAtSymbol) +
-                `@${agentName} ` +
-                message.substring(cursorPosition);
-            applyProgrammaticEdit(newMessage);
-
-            const nextCursor = lastAtSymbol + agentName.length + 2;
-            requestAnimationFrame(() => {
-                if (textareaRef.current) {
-                    textareaRef.current.selectionStart = nextCursor;
-                    textareaRef.current.selectionEnd = nextCursor;
-                }
-                adjustTextareaHeight();
-                updateAutocompleteState(newMessage, nextCursor);
-            });
-        } else if (textareaRef.current) {
-            const newMessage =
-                message.substring(0, cursorPosition) +
-                `@${agentName} ` +
-                message.substring(cursorPosition);
-            applyProgrammaticEdit(newMessage);
-
-            const nextCursor = cursorPosition + agentName.length + 2;
-            requestAnimationFrame(() => {
-                if (textareaRef.current) {
-                    textareaRef.current.selectionStart = nextCursor;
-                    textareaRef.current.selectionEnd = nextCursor;
-                }
-                adjustTextareaHeight();
-                updateAutocompleteState(newMessage, nextCursor);
-            });
-        }
+        requestAnimationFrame(() => {
+            if (textareaRef.current) {
+                textareaRef.current.selectionStart = inserted.caret;
+                textareaRef.current.selectionEnd = inserted.caret;
+            }
+            adjustTextareaHeight();
+            updateAutocompleteState(inserted.text, inserted.caret);
+        });
 
         setShowFileMention(false);
         setMentionQuery('');
@@ -4657,14 +4825,15 @@ const ChatInputRuntime: React.FC<ChatInputProps> = ({ onOpenSettings, scrollToBo
                     sessionId: session.id,
                     display: composerTriggerIconDisplay({ trigger: '@', icon: 'chat-thread', label: sessionTitle }),
                 };
-                const inserted = insertReference(mentionStart, cursorPosition, sessionReference, { inlineBoundaries: true });
+                const inserted = insertReference(mentionStart, cursorPosition, sessionReference, { inlineBoundaries: true, padDocumentEdges: true });
+                const caret = advancePastTrailingBoundarySpace(inserted.document.text, inserted.caret);
                 requestAnimationFrame(() => {
                     if (textareaRef.current) {
-                        textareaRef.current.selectionStart = inserted.caret;
-                        textareaRef.current.selectionEnd = inserted.caret;
+                        textareaRef.current.selectionStart = caret;
+                        textareaRef.current.selectionEnd = caret;
                     }
                     adjustTextareaHeight();
-                    updateAutocompleteState(inserted.document.text, inserted.caret);
+                    updateAutocompleteState(inserted.document.text, caret);
                 });
                 setShowFileMention(false);
                 setMentionQuery('');
@@ -4684,15 +4853,16 @@ const ChatInputRuntime: React.FC<ChatInputProps> = ({ onOpenSettings, scrollToBo
         const range = getSlashTokenRange(document.text, cursorPosition);
         if (!range) return false;
 
-        const inserted = insertReference(range.start, range.end, reference, { inlineBoundaries: true });
+        const inserted = insertReference(range.start, range.end, reference, { inlineBoundaries: true, padDocumentEdges: true });
         const insertedReference = inserted.document.references.some((candidate) => candidate.id === reference.id);
+        const caret = advancePastTrailingBoundarySpace(inserted.document.text, inserted.caret);
         requestAnimationFrame(() => {
             if (textareaRef.current) {
-                textareaRef.current.selectionStart = inserted.caret;
-                textareaRef.current.selectionEnd = inserted.caret;
+                textareaRef.current.selectionStart = caret;
+                textareaRef.current.selectionEnd = caret;
             }
             adjustTextareaHeight();
-            updateAutocompleteState(inserted.document.text, inserted.caret);
+            updateAutocompleteState(inserted.document.text, caret);
             if (insertedReference) {
                 setShowCommandAutocomplete(false);
                 setShowSkillAutocomplete(false);
@@ -4938,22 +5108,17 @@ const ChatInputRuntime: React.FC<ChatInputProps> = ({ onOpenSettings, scrollToBo
             if (textarea) {
                 const pos = textarea.selectionStart ?? cursorPosRef.current;
                 const end = textarea.selectionEnd ?? pos;
-                const before = currentMessage.slice(0, pos);
-                const after = currentMessage.slice(end);
-                const needSpaceBefore = before.length > 0 && !/\s$/.test(before);
-                const needSpaceAfter = after.length > 0 && !/^\s/.test(after);
-                const insert = `${needSpaceBefore ? ' ' : ''}${mention}${needSpaceAfter ? ' ' : ''}`;
-                const nextMessage = `${before}${insert}${after}`;
-                applyProgrammaticEdit(nextMessage);
+                const inserted = insertTokenWithReferenceBoundaries(currentMessage, pos, end, mention);
+                applyProgrammaticEdit(inserted.text);
                 requestAnimationFrame(() => {
-                    const cursorPos = pos + insert.length;
-                    textarea.selectionStart = cursorPos;
-                    textarea.selectionEnd = cursorPos;
-                    cursorPosRef.current = cursorPos;
+                    textarea.selectionStart = inserted.caret;
+                    textarea.selectionEnd = inserted.caret;
+                    cursorPosRef.current = inserted.caret;
                     textarea.focus();
                 });
             } else {
-                applyProgrammaticEdit(appendInlineText(getDocument().text, mention));
+                const inserted = insertTokenWithReferenceBoundaries(currentMessage, currentMessage.length, currentMessage.length, mention);
+                applyProgrammaticEdit(inserted.text);
             }
             clearDropTextSuppression();
             return;
@@ -5965,6 +6130,7 @@ const ChatInputRuntime: React.FC<ChatInputProps> = ({ onOpenSettings, scrollToBo
                             draftSubmitting={resolvedDraftBusy}
                             submissionBlocked={submissionBlocked}
                             submissionInFlight={submissionInFlight}
+                            submissionFlightKind={submissionFlightKind}
                             queueFrozen={queueFrozen}
                             // Abort-capable sessions can still steer when queue ownership is frozen.
                             queueFallbackAvailable={canAbort || sessionIsRunning}
@@ -6025,6 +6191,7 @@ const ChatInputRuntime: React.FC<ChatInputProps> = ({ onOpenSettings, scrollToBo
                         draftSubmitting={resolvedDraftBusy}
                         submissionBlocked={submissionBlocked}
                         submissionInFlight={submissionInFlight}
+                            submissionFlightKind={submissionFlightKind}
                         queueFrozen={queueFrozen}
                         queueFallbackAvailable={canAbort || sessionIsRunning}
                         onPrimaryAction={handlePrimaryAction}
@@ -6062,7 +6229,6 @@ const ChatInputRuntime: React.FC<ChatInputProps> = ({ onOpenSettings, scrollToBo
                         onToggleFailed={handlePermissionAutoAcceptToggleFailed}
                     />
                 ) : null}
-                <div ref={setAgentPortalContainer} className="flex items-center" />
                 <SessionGoalButton
                     sessionId={currentSessionId}
                     directory={currentSessionDirectoryForSync ?? currentDirectory}
@@ -6070,13 +6236,11 @@ const ChatInputRuntime: React.FC<ChatInputProps> = ({ onOpenSettings, scrollToBo
                 />
                 <SessionGoalObjectiveCounter length={message.length} />
             </div>
-            <div className={cn('relative z-30 flex flex-1 items-center justify-end md:gap-x-3', footerGapClass)}>
+            <div className={cn('relative z-30 flex flex-1 items-center justify-end md:gap-x-1.5', footerGapClass)}>
                 <MemoModelControls
                     className="min-w-0 flex-1 justify-end"
                     composerTextareaRef={textareaRef}
                     selectionAdapter={modelControlsSelectionAdapter}
-                    relocateAgent
-                    agentPortalContainer={agentPortalContainer}
                 />
                 <MemoComposerDictation
                     radius={chatInputRadius}
@@ -6103,6 +6267,7 @@ const ChatInputRuntime: React.FC<ChatInputProps> = ({ onOpenSettings, scrollToBo
                     draftSubmitting={resolvedDraftBusy}
                     submissionBlocked={submissionBlocked}
                     submissionInFlight={submissionInFlight}
+                            submissionFlightKind={submissionFlightKind}
                     queueFrozen={queueFrozen}
                     queueFallbackAvailable={canAbort || sessionIsRunning}
                     onPrimaryAction={handlePrimaryAction}
