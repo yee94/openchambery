@@ -157,6 +157,19 @@ const ChatMessage: React.FC<ChatMessageProps> = ({
     const revertToMessage = useSessionUIStore((s) => s.revertToMessage);
     const editMessagePreservingChanges = useSessionUIStore((s) => s.editMessagePreservingChanges);
     const forkFromMessage = useSessionUIStore((s) => s.forkFromMessage);
+    // Edit commit in flight for this exact row: actions collapse into a single
+    // highlighted "editing" indicator until the commit settles.
+    const isEditCommitting = useSessionUIStore(
+        (s) => s.messageEditCommitting?.messageId === message.info.id
+            && s.messageEditCommitting?.sessionId === message.info.sessionID,
+    );
+    // Staged edit armed for this row: visible before send so the pending delete is
+    // never a surprise, and cancellable from the row itself.
+    const isEditStaged = useSessionUIStore(
+        (s) => s.stagedMessageEdit?.messageId === message.info.id
+            && s.stagedMessageEdit?.sessionId === message.info.sessionID,
+    );
+    const clearStagedMessageEdit = useSessionUIStore((s) => s.clearStagedMessageEdit);
 
     streamPerfCount('ui.chat_message.render');
     if (isInActiveTurn) {
@@ -783,6 +796,11 @@ const ChatMessage: React.FC<ChatMessageProps> = ({
         });
     });
 
+    const handleCancelEdit = useEvent(() => {
+        if (!sessionId) return;
+        clearStagedMessageEdit(sessionId);
+    });
+
     // NEW: Fork handler
     const handleFork = React.useCallback(async () => {
         console.info('[session-fork] message action clicked', {
@@ -1082,9 +1100,12 @@ const ChatMessage: React.FC<ChatMessageProps> = ({
                                                 showReasoningTraces={showReasoningTraces}
                                                 onAuxiliaryContentComplete={handleAuxiliaryContentComplete}
                                                 agentMention={agentMention}
-                                                onEdit={sessionSurfaceActions.edit ? handleEdit : undefined}
-                                                onRevert={sessionSurfaceActions.revert ? handleRevert : undefined}
-                                                onFork={isUser && sessionSurfaceActions.fork ? handleFork : undefined}
+                                                onEdit={!isEditCommitting && sessionSurfaceActions.edit ? handleEdit : undefined}
+                                                onRevert={!isEditCommitting && sessionSurfaceActions.revert ? handleRevert : undefined}
+                                                onFork={!isEditCommitting && isUser && sessionSurfaceActions.fork ? handleFork : undefined}
+                                                editing={isEditCommitting}
+                                                editStaged={isEditStaged}
+                                                onCancelEdit={isEditStaged ? handleCancelEdit : undefined}
                                                 pendingMessageAction={pendingMessageAction}
                                                 errorMessage={assistantErrorText}
                                                 errorVariant={assistantErrorVariant}
@@ -1119,9 +1140,12 @@ const ChatMessage: React.FC<ChatMessageProps> = ({
                                                 showReasoningTraces={showReasoningTraces}
                                                 onAuxiliaryContentComplete={handleAuxiliaryContentComplete}
                                                 agentMention={agentMention}
-                                                onEdit={sessionSurfaceActions.edit ? handleEdit : undefined}
-                                                onRevert={sessionSurfaceActions.revert ? handleRevert : undefined}
-                                                onFork={isUser && sessionSurfaceActions.fork ? handleFork : undefined}
+                                                onEdit={!isEditCommitting && sessionSurfaceActions.edit ? handleEdit : undefined}
+                                                onRevert={!isEditCommitting && sessionSurfaceActions.revert ? handleRevert : undefined}
+                                                onFork={!isEditCommitting && isUser && sessionSurfaceActions.fork ? handleFork : undefined}
+                                                editing={isEditCommitting}
+                                                editStaged={isEditStaged}
+                                                onCancelEdit={isEditStaged ? handleCancelEdit : undefined}
                                                 pendingMessageAction={pendingMessageAction}
                                                 errorMessage={assistantErrorText}
                                                 errorVariant={assistantErrorVariant}

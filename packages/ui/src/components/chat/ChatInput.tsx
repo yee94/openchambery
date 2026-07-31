@@ -20,7 +20,7 @@ import { createDraftAttachmentResourceAdapter } from '@/sync/draft-attachment-re
 import { buildQueueComposerRestoration, commitComposerRestoration } from '@/sync/message-composer-restoration';
 import type { AttachedFile } from '@/stores/types/sessionTypes';
 import * as sessionActions from '@/sync/session-actions';
-import type { MessageEditHideHandle, OptimisticSendTicket } from '@/sync/session-actions';
+import type { OptimisticSendTicket } from '@/sync/session-actions';
 import { useDirectorySync, useSessionMessages, useUserMessageHistory } from '@/sync/sync-context';
 import { getAllSyncSessionMap, getSyncMessages, resolveMaterializedSessionDirectory } from '@/sync/sync-refs';
 import { useSync } from '@/sync/use-sync';
@@ -142,6 +142,7 @@ import {
     shouldConsumeRootAttachmentsOnSubmit,
 } from './chat-input-recovery';
 import { shouldOptimisticPrimarySend } from './optimisticPrimarySend';
+import { resolveStagedEditDisarm } from './stagedMessageEditDisarm';
 import {
     composerSendPhase,
     selectComposerFlightKind,
@@ -1430,7 +1431,6 @@ const ChatInputRuntime: React.FC<ChatInputProps> = ({ onOpenSettings, scrollToBo
         commitStagedMessageEdit?: boolean;
         messageID?: string;
         ticket?: OptimisticSendTicket;
-        messageEditHideHandle?: MessageEditHideHandle;
     }) => {
         if (!controllerWiring) return Promise.reject(new Error('chat-input-surface-incomplete'));
         return controllerWiring.send({ providerID, modelID, agent, variant, text, attachments, agentMention, parts, systemContext: parts?.filter((part) => part.synthetic).map((part) => ({ text: part.text, synthetic: true })), inputMode, options });
@@ -2178,6 +2178,27 @@ const ChatInputRuntime: React.FC<ChatInputProps> = ({ onOpenSettings, scrollToBo
     const queueFrozen = !queueModeAllowsMutations(serverQueue.mode);
     const canSend = hasContent || hasQueuedMessages;
 
+    // Emptying the composer disarms a staged edit: the restored text is gone, so the
+    // next send is an ordinary message and must not delete the turn it came from.
+    // Only a transition out of non-empty counts, so staging itself never self-cancels.
+    const stagedEditSessionId = useSessionUIStore(
+        (s) => (s.stagedMessageEdit?.sessionId === currentSessionId ? s.stagedMessageEdit.sessionId : null),
+    );
+    const stagedEditSawContentRef = React.useRef(false);
+    React.useEffect(() => {
+        const decision = resolveStagedEditDisarm({
+            surfaceKind: surface.kind,
+            stagedSessionId: stagedEditSessionId,
+            composerHasContent: message.trim().length > 0 || sendableAttachedFiles.length > 0,
+            sawComposerContent: stagedEditSawContentRef.current,
+        });
+        if (decision.action === 'hold') return;
+        stagedEditSawContentRef.current = decision.action === 'arm';
+        if (decision.action === 'disarm') {
+            useSessionUIStore.getState().clearStagedMessageEdit(decision.sessionId);
+        }
+    }, [message, sendableAttachedFiles.length, stagedEditSessionId, surface.kind]);
+
     const sessionIsRunning = sessionPhase === 'busy' || sessionPhase === 'retry';
     const canAbort = surface.activity?.canAbort ?? sessionIsRunning;
 
@@ -2856,6 +2877,18 @@ const ChatInputRuntime: React.FC<ChatInputProps> = ({ onOpenSettings, scrollToBo
                     : undefined,
             });
         };
+        // An auto-review run owns the turn and is not steerable, so a direct send
+        // would be discarded by the runner. Queue instead: the queued-message
+        // auto-send hook delivers it once the review finishes. This must happen
+        // BEFORE the composer is cleared — handleQueueMessage reads the live
+        // composer, and a cleared draft restored through recoverSubmission only
+        // lands in the store on a later render, so the queue path would read an
+        // empty composer and drop the message.
+        if (currentSessionId && !queuedOnly && !resourcePolicy && autoReviewRunning) {
+            endSubmissionFlight();
+            queueMessageFromEvent();
+            return;
+        }
         // Direct messages leave the Composer before selection/configuration work
         // starts. The captured submission restores this exact draft if dispatch
         // cannot proceed. Local commands retain their existing resource policy.
@@ -2867,11 +2900,10 @@ const ChatInputRuntime: React.FC<ChatInputProps> = ({ onOpenSettings, scrollToBo
         }
         // When true, flight ownership transfers to sendPromise.finally (do not release in finally).
         let transferFlightToSendPromise = false;
-        // When true, flight was released before delegating to handleQueueMessage.
-        let releasedForQueueDelegate = false;
         // Pre-await optimistic paint for an existing primary session (not secondary/queue/local-command).
         let optimisticTicket: OptimisticSendTicket | undefined;
-        let messageEditHideHandle: MessageEditHideHandle | undefined;
+        // Edit target painted as "editing" at submit time; released if we never dispatch.
+        let messageEditCommitTarget: { sessionId: string; messageId: string } | undefined;
         let handedOptimisticToSendPromise = false;
 
         try {
@@ -2893,13 +2925,13 @@ const ChatInputRuntime: React.FC<ChatInputProps> = ({ onOpenSettings, scrollToBo
                 useSessionUIStore.getState().getDirectoryForSession(currentSessionId)
                 ?? currentDirectory
                 ?? null;
+            // Staged edit: paint the target as "editing" instead of hiding it. The
+            // transcript keeps every row it has until a remote delete confirms, so
+            // the optimistic reply row and the pending edit never fight over it.
             const stagedEdit = useSessionUIStore.getState().stagedMessageEdit;
             if (stagedEdit && stagedEdit.sessionId === currentSessionId) {
-                messageEditHideHandle = sessionActions.hideMessageEditTarget(
-                    stagedEdit.sessionId,
-                    stagedEdit.messageId,
-                    { directory: sessionDirectoryForOptimistic ?? undefined },
-                );
+                messageEditCommitTarget = { sessionId: stagedEdit.sessionId, messageId: stagedEdit.messageId };
+                useSessionUIStore.getState().beginMessageEditCommit(stagedEdit.sessionId, stagedEdit.messageId);
             }
             const configState = useConfigStore.getState();
             const optimisticConfig = capturePrimaryComposerSendConfig(configState, {
@@ -2984,28 +3016,17 @@ const ChatInputRuntime: React.FC<ChatInputProps> = ({ onOpenSettings, scrollToBo
         // Sending is authoritative: if a question prompt is open, dismiss it
         // so the prompt cannot linger or strand the session. The dismiss clears
         // the card instantly (optimistic) and formally rejects the question.
-        // Rejecting unblocks the agent's tool but does NOT end its turn, so a
-        // direct send would race with the still-active run and be silently
-        // discarded by the OpenCode runner. Instead we queue the message; the
-        // queued-message auto-send hook delivers it as the next turn once the
-        // rejected turn winds down and the session returns to idle. This avoids
-        // aborting the turn (which would surface an "aborted" notice).
-        if (currentSessionId && !queuedOnly && !resourcePolicy && autoReviewRunning) {
-            if (submissionCapture) recoverSubmission(submissionCapture);
-            releasedForQueueDelegate = true;
-            endSubmissionFlight();
-            queueMessageFromEvent();
-            return;
-        }
-
+        // Rejecting unblocks the agent's tool but does NOT end its turn, and a
+        // prompt that arrives while the run is still active is discarded by the
+        // OpenCode runner — so abort the rejected turn to reach idle and then
+        // keep going down this same send. The message must never be handed to
+        // the queue here: this submission already owns its payload
+        // (inputSnapshot), while the queue path re-reads the composer we just
+        // cleared and would silently admit nothing.
         if (currentSessionId && !queuedOnly && !resourcePolicy) {
             const dismissedQuestions = await sessionActions.dismissOpenQuestionsForSession(currentSessionId);
             if (dismissedQuestions) {
-                if (submissionCapture) recoverSubmission(submissionCapture);
-                releasedForQueueDelegate = true;
-                endSubmissionFlight();
-                queueMessageFromEvent();
-                return;
+                await sessionActions.abortCurrentOperation(currentSessionId);
             }
         }
 
@@ -3019,7 +3040,6 @@ const ChatInputRuntime: React.FC<ChatInputProps> = ({ onOpenSettings, scrollToBo
                 : draftMessageID
                     ? { messageID: draftMessageID }
                     : {}),
-            ...(messageEditHideHandle ? { messageEditHideHandle } : {}),
             ...(primarySubmitSessionIdAtStart
                 ? {
                     sessionId: primarySubmitSessionIdAtStart,
@@ -3591,9 +3611,9 @@ const ChatInputRuntime: React.FC<ChatInputProps> = ({ onOpenSettings, scrollToBo
             console.warn('[ChatInput] Failed to expand snippets, sending original text:', error);
         }
 
-        // Hand optimistic ticket/edit handle to the final send path; early exits
+        // Hand optimistic ticket / edit paint to the final send path; early exits
         // roll them back in finally. sendPromise rejection rolls back the ticket
-        // only — edit tail restore is owned by commitMessageEdit remote failure.
+        // only — the editing paint is released around the commit in sendMessage.
         handedOptimisticToSendPromise = true;
         const sendPromise = sendMessage(
             primaryText,
@@ -3685,17 +3705,20 @@ const ChatInputRuntime: React.FC<ChatInputProps> = ({ onOpenSettings, scrollToBo
             textareaRef.current?.focus();
         }
         } finally {
-            // Ticket not handed to sendPromise: rollback optimistic row and restore
-            // any pre-hidden edit tail (flush stale, missing model, queue delegate, etc.).
+            // Ticket not handed to sendPromise: rollback optimistic row and drop the
+            // "editing" paint (flush stale, missing model, queue delegate, etc.).
             if (!handedOptimisticToSendPromise) {
                 if (optimisticTicket) {
                     sessionActions.rollbackOptimisticSend(optimisticTicket);
                 }
-                if (messageEditHideHandle) {
-                    messageEditHideHandle.rollback();
+                if (messageEditCommitTarget) {
+                    useSessionUIStore.getState().endMessageEditCommit(
+                        messageEditCommitTarget.sessionId,
+                        messageEditCommitTarget.messageId,
+                    );
                 }
             }
-            if (!transferFlightToSendPromise && !releasedForQueueDelegate) {
+            if (!transferFlightToSendPromise) {
                 if (clearedComposerBeforeDispatch && submissionCapture) {
                     recoverSubmission(submissionCapture);
                 }

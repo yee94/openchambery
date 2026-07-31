@@ -192,11 +192,13 @@ mock.module("@/stores/useConfigStore", () => ({
 
 // Mock useSessionUIStore
 let uiCurrentSessionId: string | null = "session-a"
+let uiPendingSendMessageIDs = new Map<string, string>()
 const setCurrentSessionCalls: Array<{ sessionId: string; directory?: string | null }> = []
 mock.module("./session-ui-store", () => ({
   useSessionUIStore: {
     getState: () => ({
       currentSessionId: uiCurrentSessionId,
+      pendingSendMessageIDs: uiPendingSendMessageIDs,
       getDirectoryForSession: (sessionId: string) => {
         if (sessionId === "session-a") return "/test/project"
         if (sessionId === "session-b") return "/other/project"
@@ -2130,6 +2132,7 @@ describe("message edit staging", () => {
     replyCalls.length = 0
     sessionDeleteMessageFailureID = null
     sessionMessagesResult = { data: [] }
+    uiPendingSendMessageIDs = new Map()
     draftCommits.length = 0
     draftRevisionByKey = new Map()
     draftCommitShouldFail = false
@@ -2253,6 +2256,13 @@ describe("message edit staging", () => {
       },
     })
     const childStores = createChildStores([["/test/project", sessionStore]])
+    sessionMessagesResult = {
+      data: [
+        { info: targetMessage, parts: [] },
+        { info: assistantMessage, parts: [] },
+        { info: laterMessage, parts: [] },
+      ],
+    }
 
     const { commitMessageEdit, setActionRefs } = await import("./session-actions")
     setActionRefs(mockSdk as unknown as OpencodeClient, childStores, () => "/current/project")
@@ -2267,7 +2277,7 @@ describe("message edit staging", () => {
     expect(sessionStore.getState().message["session-a"]).toEqual([])
   })
 
-  test("restores the optimistic message tail when a later-message deletion fails", async () => {
+  test("leaves rows whose delete never landed in the transcript", async () => {
     const session = { id: "session-a", time: { created: 1 } } as Session
     const targetMessage = { id: "msg_2", sessionID: "session-a", role: "user", time: { created: 2 } } as Message
     const laterMessage = { id: "msg_3", sessionID: "session-a", role: "assistant", time: { created: 3 } } as Message
@@ -2283,54 +2293,24 @@ describe("message edit staging", () => {
     })
     const childStores = createChildStores([["/test/project", sessionStore]])
     sessionDeleteMessageFailureID = "msg_3"
+    sessionMessagesResult = {
+      data: [
+        { info: targetMessage, parts: [] },
+        { info: laterMessage, parts: [] },
+        { info: latestMessage, parts: [] },
+      ],
+    }
 
     const { commitMessageEdit, setActionRefs } = await import("./session-actions")
     setActionRefs(mockSdk as unknown as OpencodeClient, childStores, () => "/current/project")
 
     await expect(commitMessageEdit("session-a", "msg_2")).rejects.toThrow("session.deleteMessage failed (500)")
 
-    // Optimistic hide rolls back fully — no half-deleted tail after remote failure.
-    expect(sessionStore.getState().message["session-a"].map((message) => message.id)).toEqual(["msg_2", "msg_3", "msg_4"])
-    expect(sessionStore.getState().part["msg_4"]).toEqual([{ id: "prt_4", messageID: "msg_4", type: "text", text: "later" }])
+    // No pre-hide: a row leaves the transcript only once its own delete lands.
+    expect(sessionStore.getState().message["session-a"].map((message) => message.id)).toEqual(["msg_2", "msg_3"])
     expect(inputState.pendingInputText).toBe("previous draft")
     expect(inputState.pendingInputMode).toBe("normal")
     expect(inputState.attachedFiles).toEqual([{ url: "file:///previous.txt", mimeType: "text/plain", filename: "previous.txt" }])
-  })
-
-  test("hides the edited turn immediately before remote deletes settle", async () => {
-    const session = { id: "session-a", time: { created: 1 } } as Session
-    const targetMessage = { id: "msg_2", sessionID: "session-a", role: "user", time: { created: 2 } } as Message
-    const laterMessage = { id: "msg_3", sessionID: "session-a", role: "assistant", time: { created: 3 } } as Message
-    const sessionStore = createStore({}, {
-      session: [session],
-      message: { "session-a": [targetMessage, laterMessage] },
-      part: {
-        "msg_2": [{ id: "prt_2", messageID: "msg_2", type: "text", text: "edit this" } as Part],
-        "msg_3": [{ id: "prt_3", messageID: "msg_3", type: "text", text: "answer" } as Part],
-      },
-    })
-    const childStores = createChildStores([["/test/project", sessionStore]])
-    const client = (await import("@/lib/opencode/client")).opencodeClient as {
-      deleteSessionMessage: (sessionId: string, messageId: string, directory?: string | null) => Promise<unknown>
-    }
-    let sawEmptyDuringDelete = false
-    const original = client.deleteSessionMessage
-    client.deleteSessionMessage = (async (...args: Parameters<typeof original>) => {
-      if (!sawEmptyDuringDelete) {
-        expect(sessionStore.getState().message["session-a"]).toEqual([])
-        sawEmptyDuringDelete = true
-      }
-      return original(...args)
-    }) as typeof original
-    const { commitMessageEdit, setActionRefs } = await import("./session-actions")
-    setActionRefs(mockSdk as unknown as OpencodeClient, childStores, () => "/current/project")
-    try {
-      await commitMessageEdit("session-a", "msg_2")
-      expect(sawEmptyDuringDelete).toBe(true)
-      expect(sessionStore.getState().message["session-a"]).toEqual([])
-    } finally {
-      client.deleteSessionMessage = original
-    }
   })
 
   test("stages into an explicit surfaceDraftKey without touching the primary session draft key", async () => {
@@ -2407,6 +2387,12 @@ describe("message edit staging", () => {
       ["/assistant/workspace", sessionStore],
       ["/current/project", wrongStore],
     ])
+    sessionMessagesResult = {
+      data: [
+        { info: { id: "msg_2", sessionID: "session-a", role: "user", time: { created: 2 } } as Message, parts: [] },
+        { info: { id: "msg_3", sessionID: "session-a", role: "assistant", time: { created: 3 } } as Message, parts: [] },
+      ],
+    }
     const { commitMessageEdit, setActionRefs } = await import("./session-actions")
     setActionRefs(mockSdk as unknown as OpencodeClient, childStores, () => "/current/project")
 
@@ -2417,131 +2403,74 @@ describe("message edit staging", () => {
     expect(wrongStore.getState().message["session-a"]).toBe(undefined)
   })
 
-  test("hideMessageEditTarget synchronously hides the edit tail without remote deletes", async () => {
+  test("commitMessageEdit deletes forward only — earlier history is never a candidate", async () => {
     const session = { id: "session-a", time: { created: 1 } } as Session
-    const targetMessage = { id: "msg_2", sessionID: "session-a", role: "user", time: { created: 2 } } as Message
-    const laterMessage = { id: "msg_3", sessionID: "session-a", role: "assistant", time: { created: 3 } } as Message
+    const olderUser = { id: "msg_1", sessionID: "session-a", role: "user", time: { created: 1 } } as Message
+    const olderReply = { id: "msg_2", sessionID: "session-a", role: "assistant", time: { created: 2 } } as Message
+    const targetMessage = { id: "msg_3", sessionID: "session-a", role: "user", time: { created: 3 } } as Message
+    const targetReply = { id: "msg_4", sessionID: "session-a", role: "assistant", time: { created: 4 } } as Message
     const sessionStore = createStore({}, {
       session: [session],
-      message: { "session-a": [targetMessage, laterMessage] },
+      message: { "session-a": [olderUser, olderReply, targetMessage, targetReply] },
       part: {
-        "msg_2": [{ id: "prt_2", messageID: "msg_2", type: "text", text: "edit this" } as Part],
-        "msg_3": [{ id: "prt_3", messageID: "msg_3", type: "text", text: "answer" } as Part],
+        "msg_3": [{ id: "prt_3", messageID: "msg_3", type: "text", text: "edit this" } as Part],
+        "msg_4": [{ id: "prt_4", messageID: "msg_4", type: "text", text: "answer" } as Part],
       },
     })
     const childStores = createChildStores([["/test/project", sessionStore]])
-    const { hideMessageEditTarget, setActionRefs } = await import("./session-actions")
-    setActionRefs(mockSdk as unknown as OpencodeClient, childStores, () => "/test/project")
-
-    const handle = hideMessageEditTarget("session-a", "msg_2")
-
-    expect(sessionStore.getState().message["session-a"]).toEqual([])
-    expect(sessionStore.getState().part["msg_2"]).toBe(undefined)
-    expect(replyCalls.filter((call) => call.method === "session.deleteMessage")).toHaveLength(0)
-
-    handle.rollback()
-    expect(sessionStore.getState().message["session-a"].map((message) => message.id)).toEqual(["msg_2", "msg_3"])
-    expect(sessionStore.getState().part["msg_3"]).toEqual([{ id: "prt_3", messageID: "msg_3", type: "text", text: "answer" }])
-  })
-
-  test("hide/restore preserves missing part-key semantics for user messages", async () => {
-    const session = { id: "session-a", time: { created: 1 } } as Session
-    const targetMessage = { id: "msg_2", sessionID: "session-a", role: "user", time: { created: 2 } } as Message
-    const laterMessage = { id: "msg_3", sessionID: "session-a", role: "assistant", time: { created: 3 } } as Message
-    const sessionStore = createStore({}, {
-      session: [session],
-      message: { "session-a": [targetMessage, laterMessage] },
-      // User message intentionally has no part key; assistant keeps an explicit [].
-      part: {
-        "msg_3": [],
-      },
-    })
-    const childStores = createChildStores([["/test/project", sessionStore]])
-    const { hideMessageEditTarget, setActionRefs } = await import("./session-actions")
-    setActionRefs(mockSdk as unknown as OpencodeClient, childStores, () => "/test/project")
-
-    expect(Object.prototype.hasOwnProperty.call(sessionStore.getState().part, "msg_2")).toBe(false)
-    const handle = hideMessageEditTarget("session-a", "msg_2")
-    handle.rollback()
-
-    expect(Object.prototype.hasOwnProperty.call(sessionStore.getState().part, "msg_2")).toBe(false)
-    expect(sessionStore.getState().part["msg_3"]).toEqual([])
-  })
-
-  test("commitMessageEdit with hideHandle refetches, expands deletes, and restores snapshot+extras in id order", async () => {
-    const session = { id: "session-a", time: { created: 1 } } as Session
-    const targetMessage = { id: "msg_2", sessionID: "session-a", role: "user", time: { created: 2 } } as Message
-    const laterMessage = { id: "msg_3", sessionID: "session-a", role: "assistant", time: { created: 3 } } as Message
-    const latestMessage = { id: "msg_4", sessionID: "session-a", role: "user", time: { created: 4 } } as Message
-    const arrivedAfterHide = { id: "msg_5", sessionID: "session-a", role: "assistant", time: { created: 5 } } as Message
-    const sessionStore = createStore({}, {
-      session: [session],
-      message: { "session-a": [targetMessage, laterMessage, latestMessage] },
-      part: {
-        "msg_2": [{ id: "prt_2", messageID: "msg_2", type: "text", text: "edit this" } as Part],
-        "msg_3": [{ id: "prt_3", messageID: "msg_3", type: "text", text: "answer" } as Part],
-        "msg_4": [{ id: "prt_4", messageID: "msg_4", type: "text", text: "later" } as Part],
-      },
-    })
-    const childStores = createChildStores([["/test/project", sessionStore]])
-    sessionDeleteMessageFailureID = "msg_3"
     sessionMessagesResult = {
       data: [
-        { info: targetMessage, parts: [{ id: "prt_2", messageID: "msg_2", type: "text", text: "edit this" } as Part] },
-        { info: laterMessage, parts: [{ id: "prt_3", messageID: "msg_3", type: "text", text: "answer" } as Part] },
-        { info: latestMessage, parts: [{ id: "prt_4", messageID: "msg_4", type: "text", text: "later" } as Part] },
-        { info: arrivedAfterHide, parts: [{ id: "prt_5", messageID: "msg_5", type: "text", text: "late tail" } as Part] },
+        { info: olderUser, parts: [] },
+        { info: olderReply, parts: [] },
+        { info: targetMessage, parts: [{ id: "prt_3", messageID: "msg_3", type: "text", text: "edit this" } as Part] },
+        { info: targetReply, parts: [{ id: "prt_4", messageID: "msg_4", type: "text", text: "answer" } as Part] },
       ],
     }
-    const { hideMessageEditTarget, commitMessageEdit, setActionRefs } = await import("./session-actions")
+    const { commitMessageEdit, setActionRefs } = await import("./session-actions")
     setActionRefs(mockSdk as unknown as OpencodeClient, childStores, () => "/test/project")
 
-    const hideHandle = hideMessageEditTarget("session-a", "msg_2")
-    expect(sessionStore.getState().message["session-a"]).toEqual([])
+    await commitMessageEdit("session-a", "msg_3")
 
-    await expect(commitMessageEdit("session-a", "msg_2", { hideHandle })).rejects.toThrow("session.deleteMessage failed (500)")
-
-    expect(replyCalls.filter((call) => call.method === "session.messages")).toHaveLength(1)
     expect(
       replyCalls
         .filter((call) => call.method === "session.deleteMessage")
         .map((call) => call.params.messageID),
-    ).toEqual(["msg_5", "msg_4", "msg_3"])
-    // Original click-time snapshot plus the refetch-only tail, message-id ascending.
-    expect(sessionStore.getState().message["session-a"].map((message) => message.id)).toEqual([
-      "msg_2",
-      "msg_3",
-      "msg_4",
-      "msg_5",
-    ])
+    ).toEqual(["msg_4", "msg_3"])
+    expect(sessionStore.getState().message["session-a"].map((message) => message.id)).toEqual(["msg_1", "msg_2"])
   })
 
-  test("commitMessageEdit with hideHandle restores the pre-hidden tail when refetch fails", async () => {
+  test("commitMessageEdit never deletes the in-flight replacement the server already echoed", async () => {
     const session = { id: "session-a", time: { created: 1 } } as Session
-    const targetMessage = { id: "msg_2", sessionID: "session-a", role: "user", time: { created: 2 } } as Message
-    const laterMessage = { id: "msg_3", sessionID: "session-a", role: "assistant", time: { created: 3 } } as Message
+    const targetMessage = { id: "msg_3", sessionID: "session-a", role: "user", time: { created: 3 } } as Message
+    const targetReply = { id: "msg_4", sessionID: "session-a", role: "assistant", time: { created: 4 } } as Message
+    const inFlightMessage = { id: "msg_9", sessionID: "session-a", role: "user", time: { created: 9 } } as Message
     const sessionStore = createStore({}, {
       session: [session],
-      message: { "session-a": [targetMessage, laterMessage] },
-      part: {
-        "msg_2": [{ id: "prt_2", messageID: "msg_2", type: "text", text: "edit this" } as Part],
-        "msg_3": [{ id: "prt_3", messageID: "msg_3", type: "text", text: "answer" } as Part],
-      },
+      message: { "session-a": [targetMessage, targetReply, inFlightMessage] },
+      part: {},
     })
     const childStores = createChildStores([["/test/project", sessionStore]])
-    sessionMessagesResult = { error: true, response: { status: 500 } }
-    const { hideMessageEditTarget, commitMessageEdit, setActionRefs } = await import("./session-actions")
+    uiPendingSendMessageIDs = new Map([["session-a", "msg_9"]])
+    sessionMessagesResult = {
+      data: [
+        { info: targetMessage, parts: [] },
+        { info: targetReply, parts: [] },
+        { info: inFlightMessage, parts: [] },
+      ],
+    }
+    const { commitMessageEdit, setActionRefs } = await import("./session-actions")
     setActionRefs(mockSdk as unknown as OpencodeClient, childStores, () => "/test/project")
 
-    const hideHandle = hideMessageEditTarget("session-a", "msg_2")
-    expect(sessionStore.getState().message["session-a"]).toEqual([])
+    await commitMessageEdit("session-a", "msg_3")
 
-    await expect(commitMessageEdit("session-a", "msg_2", { hideHandle })).rejects.toThrow()
-
-    expect(replyCalls.filter((call) => call.method === "session.deleteMessage")).toHaveLength(0)
-    expect(sessionStore.getState().message["session-a"].map((message) => message.id)).toEqual(["msg_2", "msg_3"])
-    expect(sessionStore.getState().part["msg_2"]).toEqual([{ id: "prt_2", messageID: "msg_2", type: "text", text: "edit this" }])
+    expect(
+      replyCalls
+        .filter((call) => call.method === "session.deleteMessage")
+        .map((call) => call.params.messageID),
+    ).toEqual(["msg_4", "msg_3"])
+    expect(sessionStore.getState().message["session-a"].map((message) => message.id)).toEqual(["msg_9"])
   })
+
 })
 
 describe("session history mutation serial coordinator", () => {

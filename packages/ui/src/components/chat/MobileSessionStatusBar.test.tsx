@@ -89,6 +89,7 @@ describe('MobileSessionStatusBar SessionItem', () => {
           isPinned={false}
           getSessionTitle={(value) => value.title ?? value.id}
           onClick={() => undefined}
+          onRename={() => undefined}
           onTogglePinned={() => undefined}
           onShare={() => undefined}
           onCopyShareUrl={() => undefined}
@@ -119,5 +120,19 @@ describe('MobileSessionStatusBar phone navigation contracts', () => {
     expect(statusBarSource).toContain('startNewSessionDraft({\n              selectedProjectId: worktreeDialogProjectId,');
     expect(statusBarSource).toContain('useMobileNavigationStore.getState().openSession({');
     expect(statusBarSource).toContain('forceRefreshProjectWorktreeCatalog');
+  });
+
+  test('session action sheet exposes rename and submits smart title without waiting for generation', () => {
+    expect(statusBarSource).toContain("label={t('sessions.sidebar.session.menu.rename')}");
+    expect(statusBarSource).toContain('beginSessionRename(session)');
+    expect(statusBarSource).toContain("t('sessions.sidebar.session.rename.smartTitle')");
+    expect(statusBarSource).toContain('onRename={() => beginSessionRename(session)}');
+    expect(statusBarSource).toContain('await requestSessionSmartTitle(sessionId)');
+    // Close rename UI before awaiting title generation — submit-only.
+    const smartTitleHandler = statusBarSource.slice(
+      statusBarSource.indexOf('const handleRequestSmartTitle'),
+      statusBarSource.indexOf('await requestSessionSmartTitle(sessionId)'),
+    );
+    expect(smartTitleHandler).toContain('setRenamingSession(null)');
   });
 });

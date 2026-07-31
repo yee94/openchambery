@@ -327,13 +327,16 @@ export function MobileProjectsHomeContainer({
     }
   });
 
+  // Smart title only queues the server-side refresh (metadata.requestedAt).
+  // Close immediately after submit — do not wait for generation to finish.
   const handleRequestSmartTitle = useEvent(async () => {
     if (!renamingSession || smartTitleRequesting) return;
+    const sessionId = renamingSession.id;
+    setRenamingSession(null);
+    setRenameDraft('');
     setSmartTitleRequesting(true);
     try {
-      await requestSessionSmartTitle(renamingSession.id);
-      setRenamingSession(null);
-      setRenameDraft('');
+      await requestSessionSmartTitle(sessionId);
     } catch {
       toast.error(t('sessions.sidebar.session.rename.smartTitle'), {
         description: t('sessions.sidebar.dialogs.deleteResult.tryAgain'),

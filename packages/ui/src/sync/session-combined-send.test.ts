@@ -748,7 +748,10 @@ describe('staged message edits', () => {
     }
     setActionRefs({
       session: {
-        messages: async () => ({ data: [] }),
+        // Authoritative snapshot: the commit range is derived from this, not the store.
+        messages: async () => ({
+          data: messages[SESSION_ID].map((info) => ({ info, parts: parts[info.id as 'msg_2' | 'msg_3'] ?? [] })),
+        }),
         abort: async () => ({ data: true }),
       },
     } as any, childStores as any, () => PROJECT.path)

@@ -27,6 +27,7 @@ import {
   ContextMenuSeparator,
   ContextMenuTrigger,
 } from '@/components/ui/context-menu';
+import { Input } from '@/components/ui/input';
 import { toast } from '@/components/ui/toast';
 import { useThemeSystem } from '@/contexts/useThemeSystem';
 import { useNotificationStore } from '@/sync/notification-store';
@@ -418,6 +419,7 @@ export function SessionItem({
   contextLabel,
   getSessionTitle,
   onClick,
+  onRename,
   onTogglePinned,
   onShare,
   onCopyShareUrl,
@@ -432,6 +434,7 @@ export function SessionItem({
   contextLabel?: string;
   getSessionTitle: (s: Session) => string;
   onClick: () => void;
+  onRename: () => void;
   onTogglePinned: () => void;
   onShare: () => void;
   onCopyShareUrl: (url: string) => void;
@@ -511,6 +514,10 @@ export function SessionItem({
         )}
       </ContextMenuTrigger>
       <ContextMenuContent className="min-w-[200px] p-1.5">
+        <ContextMenuItem className="min-h-10 px-3" onClick={onRename}>
+          <Icon name="pencil-ai" className="size-4" />
+          {t('sessions.sidebar.session.menu.rename')}
+        </ContextMenuItem>
         <ContextMenuItem className="min-h-10 px-3" onClick={onTogglePinned}>
           <Icon name={isPinned ? 'unpin' : 'pushpin'} className="size-4" />
           {isPinned
@@ -640,6 +647,8 @@ export const MobileSessionStatusBar: React.FC<MobileSessionStatusBarProps> = ({
   const archiveSession = useSessionUIStore((state) => state.archiveSession);
   const shareSession = useSessionUIStore((state) => state.shareSession);
   const unshareSession = useSessionUIStore((state) => state.unshareSession);
+  const updateSessionTitle = useSessionUIStore((state) => state.updateSessionTitle);
+  const requestSessionSmartTitle = useSessionUIStore((state) => state.requestSessionSmartTitle);
   const open = useUIStore((state) => state.mobileSessionPanelOpen);
   const setOpen = useUIStore((state) => state.setMobileSessionPanelOpen);
   const sessionSheetSnap = useMobileSheetSnap({ onDismiss: () => setOpen(false) });
@@ -663,6 +672,8 @@ export const MobileSessionStatusBar: React.FC<MobileSessionStatusBarProps> = ({
   const [worktreeDialogProjectId, setWorktreeDialogProjectId] = React.useState<string | null>(null);
   const [actionTarget, setActionTarget] = React.useState<MobileActionTarget | null>(null);
   const [pressedActionKey, setPressedActionKey] = React.useState<string | null>(null);
+  const [renamingSession, setRenamingSession] = React.useState<Session | null>(null);
+  const [renameDraft, setRenameDraft] = React.useState('');
   const [worktreeToDelete, setWorktreeToDelete] = React.useState<{
     project: ProjectEntry;
     worktree: WorktreeMetadata;
@@ -1025,6 +1036,43 @@ export const MobileSessionStatusBar: React.FC<MobileSessionStatusBarProps> = ({
     });
   }, [archiveSession, t]);
 
+  // Open the same rename sheet used on mobile home / sessions list.
+  const beginSessionRename = React.useCallback((session: Session) => {
+    setRenameDraft(getSessionTitle(session));
+    setRenamingSession(session);
+  }, [getSessionTitle]);
+
+  const handleSaveSessionRename = React.useCallback(async () => {
+    if (!renamingSession) return;
+    const title = renameDraft.trim();
+    if (!title) return;
+    try {
+      await updateSessionTitle(renamingSession.id, title);
+      setRenamingSession(null);
+      setRenameDraft('');
+    } catch {
+      toast.error(t('sessions.sidebar.session.menu.rename'), {
+        description: t('sessions.sidebar.dialogs.deleteResult.tryAgain'),
+      });
+    }
+  }, [renameDraft, renamingSession, t, updateSessionTitle]);
+
+  // Smart title only queues the server-side refresh (metadata.requestedAt).
+  // Close immediately after submit — do not wait for generation to finish.
+  const handleRequestSmartTitle = React.useCallback(async () => {
+    if (!renamingSession) return;
+    const sessionId = renamingSession.id;
+    setRenamingSession(null);
+    setRenameDraft('');
+    try {
+      await requestSessionSmartTitle(sessionId);
+    } catch {
+      toast.error(t('sessions.sidebar.session.rename.smartTitle'), {
+        description: t('sessions.sidebar.dialogs.deleteResult.tryAgain'),
+      });
+    }
+  }, [renamingSession, requestSessionSmartTitle, t]);
+
   // "+" — start a new session draft. Target the project selected in the filter;
   // for "All", use the most recently active session's directory, falling back to
   // the store's own default target when there are no sessions.
@@ -1224,6 +1272,7 @@ export const MobileSessionStatusBar: React.FC<MobileSessionStatusBarProps> = ({
                 isPinned={pinnedSessionIds.has(session.id)}
                 getSessionTitle={getSessionTitle}
                 onClick={() => runRowClick(`session:${session.id}`, () => handleSessionClick(session))}
+                onRename={() => beginSessionRename(session)}
                 onTogglePinned={() => togglePinnedSession(session.id)}
                 onShare={() => { void handleShareSession(session); }}
                 onCopyShareUrl={(url) => { void handleCopyShareUrl(url); }}
@@ -1408,6 +1457,15 @@ export const MobileSessionStatusBar: React.FC<MobileSessionStatusBarProps> = ({
   ) : actionTarget?.kind === 'session' ? (
     <div className="flex flex-col gap-1" data-mobile-session-action-sheet="session">
       <MobileActionButton
+        icon="pencil-ai"
+        label={t('sessions.sidebar.session.menu.rename')}
+        onClick={() => {
+          const session = actionTarget.session;
+          closeActionMenu();
+          beginSessionRename(session);
+        }}
+      />
+      <MobileActionButton
         icon={pinnedSessionIds.has(actionTarget.session.id) ? 'unpin' : 'pushpin'}
         label={pinnedSessionIds.has(actionTarget.session.id)
           ? t('sessions.sidebar.session.menu.unpin')
@@ -1514,6 +1572,7 @@ export const MobileSessionStatusBar: React.FC<MobileSessionStatusBarProps> = ({
                     contextLabel={sessionContextLabel(session)}
                     getSessionTitle={getSessionTitle}
                     onClick={() => runRowClick(`session:${session.id}`, () => handleSessionClick(session))}
+                    onRename={() => beginSessionRename(session)}
                     onTogglePinned={() => togglePinnedSession(session.id)}
                     onShare={() => { void handleShareSession(session); }}
                     onCopyShareUrl={(url) => { void handleCopyShareUrl(url); }}
@@ -1536,6 +1595,62 @@ export const MobileSessionStatusBar: React.FC<MobileSessionStatusBarProps> = ({
         contentMaxHeightClassName="max-h-[min(68dvh,560px)]"
       >
         {actionMenuContent}
+      </MobileOverlayPanel>
+      <MobileOverlayPanel
+        open={Boolean(renamingSession)}
+        title={t('sessions.sidebar.session.menu.rename')}
+        onClose={() => {
+          setRenamingSession(null);
+          setRenameDraft('');
+        }}
+        footer={
+          <div className="flex gap-2">
+            <Button
+              type="button"
+              variant="ghost"
+              className="flex-1"
+              onClick={() => {
+                setRenamingSession(null);
+                setRenameDraft('');
+              }}
+            >
+              {t('sessions.sidebar.dialogs.cancel')}
+            </Button>
+            <Button
+              type="button"
+              variant="default"
+              className="flex-1"
+              disabled={!renameDraft.trim()}
+              onClick={() => void handleSaveSessionRename()}
+            >
+              {t('sessions.sidebar.session.rename.save')}
+            </Button>
+          </div>
+        }
+      >
+        <form
+          className="flex flex-col gap-3 px-1 py-1"
+          onSubmit={(event) => {
+            event.preventDefault();
+            void handleSaveSessionRename();
+          }}
+        >
+          <Input
+            value={renameDraft}
+            onChange={(event) => setRenameDraft(event.target.value)}
+            autoFocus
+            className="h-12"
+          />
+          <Button
+            type="button"
+            variant="outline"
+            className="w-full gap-2"
+            onClick={() => void handleRequestSmartTitle()}
+          >
+            <Icon name="ai-generate-2" className="size-4" />
+            {t('sessions.sidebar.session.rename.smartTitle')}
+          </Button>
+        </form>
       </MobileOverlayPanel>
       <NewWorktreeDialog
         open={newWorktreeDialogOpen}

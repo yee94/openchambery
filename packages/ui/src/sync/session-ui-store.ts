@@ -69,7 +69,6 @@ import {
   materializeConfirmedSendRecords,
   dirStoreForDirectory,
   type OptimisticSendTicket,
-  type MessageEditHideHandle,
 } from "./session-actions"
 import { useInputStore, type InputDraftRuntimeCapture, type DraftOwnershipCommitResult, type SyntheticContextPart } from "./input-store"
 import { newSessionDraftKey, sessionDraftKey, type DraftKey } from "./input-draft-types"
@@ -309,8 +308,6 @@ type SendMessageOptions = {
   messageID?: string
   /** Ticket from a prior `beginOptimisticSend` — passed through to routeMessage / optimisticSend. */
   ticket?: OptimisticSendTicket
-  /** Optional pre-hide handle from `hideMessageEditTarget` for staged edit commit. */
-  messageEditHideHandle?: MessageEditHideHandle
   preserveOptimisticOnAmbiguous?: boolean
   onSendConfirmed?: (messageID: string) => void
 }
@@ -468,10 +465,16 @@ export type SessionUIState = {
   // Non-Git mode: dismissed signature hash per session, hides bar until new turn arrives
   pendingChangesBarDismissed: Map<string, string>
   stagedMessageEdit: { sessionId: string; messageId: string } | null
+  /** Target painted as "editing" while its commit + replacement send are in flight. */
+  messageEditCommitting: { sessionId: string; messageId: string } | null
   pendingSendMessageIDs: Map<string, string>
   dismissPendingChangesBar: (sessionId: string, signature: string | null) => void
   markMessageSending: (sessionId: string, messageID: string) => void
   clearMessageSending: (sessionId: string, messageID: string) => void
+  /** Drop the armed staged edit so a later ordinary send cannot commit it. */
+  clearStagedMessageEdit: (sessionId?: string) => void
+  beginMessageEditCommit: (sessionId: string, messageId: string) => void
+  endMessageEditCommit: (sessionId: string, messageId: string) => void
 
   // Actions — UI state management
   setCurrentSession: (id: string | null, directoryHint?: string | null) => void
@@ -1168,7 +1171,28 @@ export const useSessionUIStore = create<SessionUIState>()((set, get) => ({
   sessionPlanAvailable: new Map(),
   pendingChangesBarDismissed: new Map(),
   stagedMessageEdit: null,
+  messageEditCommitting: null,
   pendingSendMessageIDs: new Map(),
+
+  clearStagedMessageEdit: (sessionId) => {
+    set((state) => {
+      if (!state.stagedMessageEdit) return state
+      if (sessionId && state.stagedMessageEdit.sessionId !== sessionId) return state
+      return { stagedMessageEdit: null }
+    })
+  },
+
+  beginMessageEditCommit: (sessionId, messageId) => {
+    set({ messageEditCommitting: { sessionId, messageId } })
+  },
+
+  endMessageEditCommit: (sessionId, messageId) => {
+    set((state) => {
+      const committing = state.messageEditCommitting
+      if (!committing || committing.sessionId !== sessionId || committing.messageId !== messageId) return state
+      return { messageEditCommitting: null }
+    })
+  },
 
   markMessageSending: (sessionId, messageID) => {
     set((state) => {
@@ -1198,6 +1222,9 @@ export const useSessionUIStore = create<SessionUIState>()((set, get) => ({
     const previousDirectory = get().currentSessionDirectory
     if (previousSessionId !== id) {
       beginSessionSwitchMeasure()
+      // Leaving the session disarms its staged edit: coming back and sending is
+      // an ordinary message, never a delete of a turn the user forgot about.
+      set({ stagedMessageEdit: null, messageEditCommitting: null })
     }
     if (id) {
       get().closeNewSessionDraft()
@@ -1325,6 +1352,7 @@ export const useSessionUIStore = create<SessionUIState>()((set, get) => ({
       queueAbortBlocks: new Map(),
       pendingChangesBarDismissed: new Map(),
       stagedMessageEdit: null,
+      messageEditCommitting: null,
       pendingSendMessageIDs: new Map(),
     })
     useInputStore.getState().setActiveAttachmentDraft(
@@ -1351,6 +1379,8 @@ export const useSessionUIStore = create<SessionUIState>()((set, get) => ({
     if (useComposerSendStore.getState().shouldBlockNewSessionDraftOpen()) {
       return
     }
+    // Same disarm as a session switch — this path does not go through setCurrentSession.
+    get().clearStagedMessageEdit()
     const existingDraft = get().newSessionDraft
     let projectsState = useProjectsStore.getState()
     const projects = projectsState.projects
@@ -1789,9 +1819,13 @@ export const useSessionUIStore = create<SessionUIState>()((set, get) => ({
     const stagedMessageEdit = get().stagedMessageEdit
     const requestedSessionId = options?.sessionId ?? get().currentSessionId
     if (options?.commitStagedMessageEdit && stagedMessageEdit && stagedMessageEdit.sessionId === requestedSessionId) {
-      await commitMessageEdit(stagedMessageEdit.sessionId, stagedMessageEdit.messageId, {
-        hideHandle: options.messageEditHideHandle,
-      })
+      try {
+        await commitMessageEdit(stagedMessageEdit.sessionId, stagedMessageEdit.messageId)
+      } finally {
+        // Success deletes the row; failure keeps it — either way the "editing"
+        // paint is done and its actions come back.
+        get().endMessageEditCommit(stagedMessageEdit.sessionId, stagedMessageEdit.messageId)
+      }
       if (get().stagedMessageEdit === stagedMessageEdit) {
         set({ stagedMessageEdit: null })
       }

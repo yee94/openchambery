@@ -2189,118 +2189,31 @@ export async function stageMessageEdit(
   }
 }
 
-/**
- * Opaque handle for a synchronous local hide of an edit target and later
- * messages. Does not touch the remote; use with `commitMessageEdit` or call
- * `rollback()` on send failure to restore the local snapshot.
- */
-export type MessageEditHideHandle = {
-  readonly sessionId: string
-  readonly messageId: string
-  readonly directory?: string
-  /** Restore the hidden tail into the same child store (message-id ascending). */
-  rollback: () => void
-  /** Snapshot used by commit for remote deletes and failure restore. */
-  readonly _snapshot: {
-    store: DirectoryStoreApi
-    directory?: string
-    removedMessages: Message[]
-    /** Only messages that had a present part key (user messages omit, not `[]`). */
-    removedParts: Record<string, Part[]>
-  }
-}
-
 const cmpMessageId = (a: string, b: string) => (a < b ? -1 : a > b ? 1 : 0)
 
-/** Capture only present part keys — user messages use absence, not `[]`. */
-function capturePresentParts(
-  partState: Record<string, Part[]>,
-  messages: readonly Message[],
-): Record<string, Part[]> {
-  const removedParts: Record<string, Part[]> = {}
-  for (const message of messages) {
-    if (Object.prototype.hasOwnProperty.call(partState, message.id)) {
-      removedParts[message.id] = partState[message.id]!
-    }
-  }
-  return removedParts
-}
-
-/** Restore messages by id ascending; rewrite part keys only when they were present. */
-function restoreMessageTailWithParts(
-  store: DirectoryStoreApi,
-  sessionId: string,
-  messagesToRestore: readonly Message[],
-  partsToRestore: Record<string, Part[]>,
-): void {
-  store.setState((state) => {
-    const current = state.message[sessionId] ?? []
-    const present = new Set(current.map((message) => message.id))
-    const restoredMessages = [
-      ...current,
-      ...messagesToRestore.filter((message) => !present.has(message.id)),
-    ].sort((a, b) => cmpMessageId(a.id, b.id))
-    const nextParts = { ...state.part }
-    for (const message of messagesToRestore) {
-      if (nextParts[message.id] !== undefined) continue
-      if (Object.prototype.hasOwnProperty.call(partsToRestore, message.id)) {
-        nextParts[message.id] = partsToRestore[message.id]!
-      }
-    }
-    return {
-      message: { ...state.message, [sessionId]: restoredMessages },
-      part: nextParts,
-    }
-  })
-}
-
-function hideMessageTailInStore(
-  store: DirectoryStoreApi,
-  sessionId: string,
-  messages: readonly Message[],
-  targetIndex: number,
-  removedMessages: readonly Message[],
-): void {
-  store.setState((state) => {
-    const nextMessages = { ...state.message, [sessionId]: messages.slice(0, targetIndex) }
-    const nextParts = { ...state.part }
-    for (const message of removedMessages) {
-      delete nextParts[message.id]
-    }
-    return { message: nextMessages, part: nextParts }
-  })
-}
-
 /**
- * Synchronously hide the staged edit target and every later local message in
- * the current directory child store. Safe to call before the first await in
- * ChatInput. Does not trigger remote deletes — pair with `commitMessageEdit`
- * (pass this handle) or call `handle.rollback()` if the send aborts early.
+ * Resolve the delete range for an edit commit from the authoritative snapshot.
+ * Two invariants protect history: the range is forward-only — nothing older than
+ * the target can enter it — and it holds server-known ids only, so an in-flight
+ * optimistic row (including a replacement the server already echoed back) is
+ * never a delete candidate.
  */
-export function hideMessageEditTarget(
+function resolveMessageEditDeleteRange(
   sessionId: string,
   messageId: string,
-  options?: { directory?: string },
-): MessageEditHideHandle {
-  const { store, directory } = dirStoreForSession(sessionId, options?.directory)
-  const messages = store.getState().message[sessionId] ?? []
-  const targetIndex = messages.findIndex((message) => message.id === messageId)
-  const targetMessage = targetIndex >= 0 ? messages[targetIndex] : undefined
+  authoritative: readonly Message[],
+): Message[] {
+  const ordered = [...authoritative].sort((left, right) => cmpMessageId(left.id, right.id))
+  const targetIndex = ordered.findIndex((message) => message.id === messageId)
+  const targetMessage = targetIndex >= 0 ? ordered[targetIndex] : undefined
   if (!targetMessage || targetMessage.role !== "user") {
     throw new Error("The selected user message is unavailable")
   }
 
-  const removedMessages = messages.slice(targetIndex)
-  const removedParts = capturePresentParts(store.getState().part, removedMessages)
-  hideMessageTailInStore(store, sessionId, messages, targetIndex, removedMessages)
-
-  return {
-    sessionId,
-    messageId,
-    directory,
-    rollback: () => restoreMessageTailWithParts(store, sessionId, removedMessages, removedParts),
-    _snapshot: { store, directory, removedMessages, removedParts },
-  }
+  const inFlightMessageId = useSessionUIStore.getState().pendingSendMessageIDs.get(sessionId)
+  return ordered
+    .slice(targetIndex)
+    .filter((message) => cmpMessageId(message.id, messageId) >= 0 && message.id !== inFlightMessageId)
 }
 
 /**
@@ -2308,33 +2221,18 @@ export function hideMessageEditTarget(
  * The official delete-message endpoint removes conversation data only, so the
  * action deletes the target turn and every later message while retaining files.
  *
- * Optimistic client policy: drop the edited turn and every later message from
- * the local store before remote deletes settle, then restore the snapshot if
- * any delete fails so the UI never sits on a half-deleted tail.
- *
- * Pass a prior `hideHandle` from `hideMessageEditTarget` to keep the click-time
- * sync hide, then abort + refetch authoritative messages and expand hide/delete
- * to the refreshed target range (covers tails that arrive after the pre-hide).
- * Without a handle, behavior matches the historical refetch + hide + remote-
- * delete path.
+ * Local rows are dropped one by one as their remote delete succeeds — nothing is
+ * hidden up front. The composer paints an "editing" affordance on the target
+ * instead, so a failed abort / refetch / delete can never leave the transcript
+ * showing a tail the server still holds (or hiding one it no longer does).
  */
 export async function commitMessageEdit(
   sessionId: string,
   messageId: string,
-  options?: { directory?: string; hideHandle?: MessageEditHideHandle },
+  options?: { directory?: string },
 ): Promise<void> {
-  const hideHandle = options?.hideHandle
-  if (
-    hideHandle
-    && (hideHandle.sessionId !== sessionId || hideHandle.messageId !== messageId)
-  ) {
-    throw new Error("Message edit hide handle does not match commit target")
-  }
-
-  const directoryOverride = hideHandle?.directory ?? options?.directory
-  const { store, directory } = hideHandle
-    ? { store: hideHandle._snapshot.store, directory: hideHandle._snapshot.directory }
-    : dirStoreForSession(sessionId, directoryOverride)
+  const directoryOverride = options?.directory
+  const { store, directory } = dirStoreForSession(sessionId, directoryOverride)
 
   const status = store.getState().session_status[sessionId]
   if (status && status.type !== "idle") {
@@ -2345,77 +2243,17 @@ export async function commitMessageEdit(
     }
   }
 
-  let removedMessages: Message[]
-  let removedParts: Record<string, Part[]>
-  let restoreMessages: Message[]
-  let restoreParts: Record<string, Part[]>
+  const authoritative = await refetchSessionMessages(sessionId, directoryOverride)
+  const removedMessages = resolveMessageEditDeleteRange(sessionId, messageId, authoritative)
 
-  if (hideHandle) {
-    const preHiddenMessages = hideHandle._snapshot.removedMessages
-    const preHiddenParts = hideHandle._snapshot.removedParts
-
-    try {
-      await refetchSessionMessages(sessionId, directoryOverride)
-    } catch (error) {
-      // Refetch failed — put back the click-time hidden tail and surface the error.
-      hideHandle.rollback()
-      throw error
-    }
-
-    const messages = store.getState().message[sessionId] ?? []
-    const targetIndex = messages.findIndex((message) => message.id === messageId)
-    const targetMessage = targetIndex >= 0 ? messages[targetIndex] : undefined
-    if (!targetMessage || targetMessage.role !== "user") {
-      hideHandle.rollback()
-      throw new Error("The selected user message is unavailable")
-    }
-
-    removedMessages = messages.slice(targetIndex)
-    removedParts = capturePresentParts(store.getState().part, removedMessages)
-    // Re-hide / expand hide for anything the refetch put back (or newly revealed).
-    hideMessageTailInStore(store, sessionId, messages, targetIndex, removedMessages)
-
-    const preHiddenIds = new Set(preHiddenMessages.map((message) => message.id))
-    const refreshedExtras = removedMessages.filter((message) => !preHiddenIds.has(message.id))
-    restoreMessages = [...preHiddenMessages, ...refreshedExtras].sort((a, b) => cmpMessageId(a.id, b.id))
-    restoreParts = { ...preHiddenParts }
-    for (const message of refreshedExtras) {
-      if (Object.prototype.hasOwnProperty.call(removedParts, message.id)) {
-        restoreParts[message.id] = removedParts[message.id]!
-      }
-    }
-  } else {
-    await refetchSessionMessages(sessionId, directoryOverride)
-    const messages = store.getState().message[sessionId] ?? []
-    const targetIndex = messages.findIndex((message) => message.id === messageId)
-    const targetMessage = targetIndex >= 0 ? messages[targetIndex] : undefined
-    if (!targetMessage || targetMessage.role !== "user") {
-      throw new Error("The selected user message is unavailable")
-    }
-
-    removedMessages = messages.slice(targetIndex)
-    removedParts = capturePresentParts(store.getState().part, removedMessages)
-    restoreMessages = removedMessages
-    restoreParts = removedParts
-
-    // Immediately hide the edited turn and everything after it so send/edit
-    // feels local even though remote deletes are still in flight.
-    hideMessageTailInStore(store, sessionId, messages, targetIndex, removedMessages)
-  }
-
-  try {
-    for (const message of [...removedMessages].reverse()) {
-      await opencodeClient.deleteSessionMessage(sessionId, message.id, directory)
-      // Local remove is already applied; keep the call idempotent for races.
-      removeSessionMessageFromStore(store, sessionId, message.id)
-    }
-  } catch (error) {
-    restoreMessageTailWithParts(store, sessionId, restoreMessages, restoreParts)
-    throw error
+  for (const message of [...removedMessages].reverse()) {
+    await opencodeClient.deleteSessionMessage(sessionId, message.id, directory)
+    removeSessionMessageFromStore(store, sessionId, message.id)
   }
 }
 
-export async function refetchSessionMessages(sessionId: string, directoryOverride?: string): Promise<void> {
+/** Resolves to the authoritative snapshot this refetch materialized. */
+export async function refetchSessionMessages(sessionId: string, directoryOverride?: string): Promise<Message[]> {
   const { store, directory } = dirStoreForSession(sessionId, directoryOverride)
   const result = await sdk().session.messages({
     sessionID: sessionId,
@@ -2424,20 +2262,24 @@ export async function refetchSessionMessages(sessionId: string, directoryOverrid
   })
   const records = (assertSdkSuccess(result, "session.messages") ?? [])
     .filter((record: { info?: { id?: string } }) => !!record?.info?.id)
-  if (records.length === 0) return
+  if (records.length === 0) return []
+
+  const snapshots = records.map((record: { info: Message; parts?: Part[] }) => ({
+    info: stripMessageDiffSnapshots(record.info),
+    parts: record.parts ?? [],
+  }))
 
   store.setState((state) => {
     const materialized = materializeSessionSnapshots(
       state,
       sessionId,
-      records.map((record: { info: Message; parts?: Part[] }) => ({
-        info: stripMessageDiffSnapshots(record.info),
-        parts: record.parts ?? [],
-      })),
+      snapshots,
       { skipPartTypes: MESSAGE_REFETCH_SKIP_PARTS },
     )
     return { message: materialized.message, part: materialized.part }
   })
+
+  return snapshots.map((snapshot: { info: Message }) => snapshot.info)
 }
 
 /**

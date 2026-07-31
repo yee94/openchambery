@@ -457,6 +457,11 @@ interface MessageBodyProps {
     onRevert?: () => Promise<void>;
     onFork?: () => Promise<void>;
     pendingMessageAction?: 'revert' | 'fork' | null;
+    /** User rows only: replaces the action row with a highlighted "editing" label. */
+    editing?: boolean;
+    /** User rows only: edit staged for the next send — label + cancel replace the row. */
+    editStaged?: boolean;
+    onCancelEdit?: () => void;
     errorMessage?: string;
     errorVariant?: 'error' | 'info';
     userActionsMode?: 'inline' | 'external-content' | 'external-actions';
@@ -482,7 +487,7 @@ const writeRevealedToolIds = (messageId: string, value: Set<string>): void => {
     revealedToolIdsByMessage.set(messageId, new Set(value));
 };
 
-const UserMessageBody = React.memo(({ messageId, parts, sourceParts, messageCreatedAt, isMobile, alwaysShowActions = isMobile, hasTouchInput, hasTextContent, onCopyMessage, copiedMessage, onShowPopup, agentMention, onEdit, onRevert, onFork, pendingMessageAction, userActionsMode = 'inline', stickyUserHeaderEnabled = true }: {
+const UserMessageBody = React.memo(({ messageId, parts, sourceParts, messageCreatedAt, isMobile, alwaysShowActions = isMobile, hasTouchInput, hasTextContent, onCopyMessage, copiedMessage, onShowPopup, agentMention, onEdit, onRevert, onFork, pendingMessageAction, editing, editStaged, onCancelEdit, userActionsMode = 'inline', stickyUserHeaderEnabled = true }: {
     messageId: string;
     parts: Part[];
     sourceParts?: Part[];
@@ -499,6 +504,11 @@ const UserMessageBody = React.memo(({ messageId, parts, sourceParts, messageCrea
     onRevert?: () => Promise<void>;
     onFork?: () => Promise<void>;
     pendingMessageAction?: 'revert' | 'fork' | null;
+    /** Replaces the whole action row with a highlighted "editing" label. */
+    editing?: boolean;
+    /** Edit staged for the next send: replaces the action row with a label + cancel. */
+    editStaged?: boolean;
+    onCancelEdit?: () => void;
     userActionsMode?: 'inline' | 'external-content' | 'external-actions';
     stickyUserHeaderEnabled?: boolean;
 }) => {
@@ -588,19 +598,80 @@ const UserMessageBody = React.memo(({ messageId, parts, sourceParts, messageCrea
         const formatted = formatTimestampForDisplay(messageCreatedAt, timeFormatPreference);
         return formatted.length > 0 ? formatted : null;
     }, [locale, messageCreatedAt, timeFormatPreference]);
-    const actionsBlock = ((canCopyMessage && hasCopyableText) || onEdit || onRevert || effectiveOnFork) && showUserActions ? (
-        <div className={cn(
-            'group/user-actions',
-            isMobile
-                ? userActionsMode === 'inline'
-                    ? 'flex items-center justify-end pt-2 pb-3'
-                    : stickyUserHeaderEnabled
-                        ? 'flex h-9 items-start justify-end pt-0'
-                        : 'flex h-11 items-start justify-end pt-0'
-                : userActionsMode === 'inline'
-                    ? 'absolute top-full left-0 right-0 z-10 pt-5'
-                    : 'flex h-8 items-start justify-end pt-2'
-        )}>
+    const actionsRowClass = cn(
+        'group/user-actions',
+        isMobile
+            ? userActionsMode === 'inline'
+                ? 'flex items-center justify-end pt-2 pb-3'
+                : stickyUserHeaderEnabled
+                    ? 'flex h-9 items-start justify-end pt-0'
+                    : 'flex h-11 items-start justify-end pt-0'
+            : userActionsMode === 'inline'
+                ? 'absolute top-full left-0 right-0 z-10 pt-5'
+                : 'flex h-8 items-start justify-end pt-2'
+    );
+    // Staged edit armed but not yet sent: the row advertises the pending edit and
+    // carries the only disarm affordance, so a forgotten edit cannot silently
+    // delete this turn on the next unrelated send.
+    const editStagedBlock = !editing && editStaged && showUserActions ? (
+        <div className={actionsRowClass}>
+            <div
+                className={cn(
+                    MESSAGE_ACTION_GROUP_CLASS,
+                    'justify-end',
+                    !isMobile && userActionsMode === 'inline' && 'translate-x-5',
+                    'pointer-events-auto opacity-100',
+                )}
+                data-message-action-group="true"
+            >
+                <span className={cn(MESSAGE_FOOTER_META_CLASS, 'text-primary')} aria-live="polite">
+                    <Icon weight={MESSAGE_ACTION_ICON_WEIGHT} name="edit" className={MESSAGE_FOOTER_META_ICON_CLASS} />
+                    <span className="message-footer__label">{t('chat.messageBody.actions.editStaged')}</span>
+                </span>
+                {onCancelEdit ? (
+                    <Tooltip>
+                        <TooltipTrigger asChild>
+                            <Button
+                                type="button"
+                                variant="ghost"
+                                size="icon"
+                                className={MESSAGE_ACTION_ICON_BUTTON_CLASS}
+                                aria-label={t('chat.messageBody.actions.cancelEdit')}
+                                onPointerDown={(event) => event.stopPropagation()}
+                                onClick={(event) => {
+                                    event.stopPropagation();
+                                    onCancelEdit();
+                                }}
+                            >
+                                <Icon weight={MESSAGE_ACTION_ICON_WEIGHT} name="close" className={MESSAGE_ACTION_ICON_CLASS} />
+                            </Button>
+                        </TooltipTrigger>
+                        <TooltipContent sideOffset={6}>{t('chat.messageBody.actions.cancelEdit')}</TooltipContent>
+                    </Tooltip>
+                ) : null}
+            </div>
+        </div>
+    ) : null;
+    // Edit commit in flight: the row keeps its geometry but carries only the
+    // highlighted label, so no action can fire against a turn being replaced.
+    const editingBlock = editing && showUserActions ? (
+        <div className={actionsRowClass}>
+            <div
+                className={cn(
+                    MESSAGE_ACTION_GROUP_CLASS,
+                    'justify-end',
+                    !isMobile && userActionsMode === 'inline' && 'translate-x-5',
+                    'pointer-events-none opacity-100',
+                )}
+            >
+                <span className={cn(MESSAGE_FOOTER_META_CLASS, 'animate-text-shimmer')} aria-live="polite">
+                    {t('chat.messageBody.actions.editing')}
+                </span>
+            </div>
+        </div>
+    ) : null;
+    const actionsBlock = editingBlock ?? editStagedBlock ?? (((canCopyMessage && hasCopyableText) || onEdit || onRevert || effectiveOnFork) && showUserActions ? (
+        <div className={actionsRowClass}>
             <div
                 className={cn(
                     MESSAGE_ACTION_GROUP_CLASS,
@@ -734,7 +805,7 @@ const UserMessageBody = React.memo(({ messageId, parts, sourceParts, messageCrea
                 )}
             </div>
         </div>
-    ) : null;
+    ) : null);
 
     if (!showUserContent) {
         return <>{actionsBlock}</>;
@@ -2102,6 +2173,9 @@ const MessageBody = React.memo(({ isUser, ...props }: MessageBodyProps) => {
                 onRevert={props.onRevert}
                 onFork={props.onFork}
                 pendingMessageAction={props.pendingMessageAction}
+                editing={props.editing}
+                editStaged={props.editStaged}
+                onCancelEdit={props.onCancelEdit}
                 userActionsMode={props.userActionsMode}
                 stickyUserHeaderEnabled={props.stickyUserHeaderEnabled}
             />
