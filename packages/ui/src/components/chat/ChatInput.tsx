@@ -142,7 +142,7 @@ import {
     shouldConsumeRootAttachmentsOnSubmit,
 } from './chat-input-recovery';
 import { shouldOptimisticPrimarySend } from './optimisticPrimarySend';
-import { resolveStagedEditDisarm } from './stagedMessageEditDisarm';
+import { resolveStagedEditBlurDisarm } from './stagedMessageEditDisarm';
 import {
     composerSendPhase,
     selectComposerFlightKind,
@@ -2178,8 +2178,8 @@ const ChatInputRuntime: React.FC<ChatInputProps> = ({ onOpenSettings, scrollToBo
     const queueFrozen = !queueModeAllowsMutations(serverQueue.mode);
     const canSend = hasContent || hasQueuedMessages;
 
-    const stagedEditSessionId = useSessionUIStore(
-        (s) => (s.stagedMessageEdit?.sessionId === currentSessionId ? s.stagedMessageEdit.sessionId : null),
+    const stagedEditMessageId = useSessionUIStore(
+        (s) => (s.stagedMessageEdit?.sessionId === currentSessionId ? s.stagedMessageEdit.messageId : null),
     );
 
     const sessionIsRunning = sessionPhase === 'busy' || sessionPhase === 'retry';
@@ -2236,32 +2236,23 @@ const ChatInputRuntime: React.FC<ChatInputProps> = ({ onOpenSettings, scrollToBo
         useComposerSendStore.getState().isInFlight(composerSendScopeKey)
     );
 
-    // Emptying the composer disarms a staged edit: the restored text is gone, so the
-    // next send is an ordinary message and must not delete the turn it came from.
-    // Only a transition out of non-empty counts, so staging itself never self-cancels,
-    // and dispatch clearing the composer is held so it cannot drop its own edit.
-    // Arming also focuses the composer: Edit restored the old text here, so typing
-    // should continue without a second tap (mobile shares this node with the pill).
-    const stagedEditSawContentRef = React.useRef(false);
+    // Edit restored the old text into the composer, so put the caret there too:
+    // typing should continue without a second tap (mobile shares this node with the
+    // pill, so this is also what raises the keyboard). Keyed on the staged row so
+    // re-editing a different message re-focuses, but typing never steals focus back.
+    const stagedEditFocusedRowRef = React.useRef<string | null>(null);
     React.useEffect(() => {
-        const decision = resolveStagedEditDisarm({
-            surfaceKind: surface.kind,
-            stagedSessionId: stagedEditSessionId,
-            composerHasContent: message.trim().length > 0 || sendableAttachedFiles.length > 0,
-            sawComposerContent: stagedEditSawContentRef.current,
-            submitInFlight: submissionFlightKind !== null,
-        });
-        if (decision.action === 'hold') return;
-        const armedNow = decision.action === 'arm' && !stagedEditSawContentRef.current;
-        stagedEditSawContentRef.current = decision.action === 'arm';
-        if (armedNow && !focusComposerTextarea(textareaRef)) {
+        if (surface.kind !== 'primary' || !stagedEditMessageId) {
+            stagedEditFocusedRowRef.current = null;
+            return;
+        }
+        if (stagedEditFocusedRowRef.current === stagedEditMessageId) return;
+        stagedEditFocusedRowRef.current = stagedEditMessageId;
+        if (!focusComposerTextarea(textareaRef)) {
             // Staging can land a frame before the textarea is mounted/enabled.
             requestAnimationFrame(() => focusComposerTextarea(textareaRef));
         }
-        if (decision.action === 'disarm') {
-            useSessionUIStore.getState().clearStagedMessageEdit(decision.sessionId);
-        }
-    }, [message, sendableAttachedFiles.length, stagedEditSessionId, submissionFlightKind, surface.kind]);
+    }, [stagedEditMessageId, surface.kind]);
     const establishingPendingItems = useComposerSendStore(
         React.useMemo(() => selectEstablishingPendingItems(establishingDraftID), [establishingDraftID]),
     );
@@ -5909,6 +5900,35 @@ const ChatInputRuntime: React.FC<ChatInputProps> = ({ onOpenSettings, scrollToBo
     const skipNextOverlayCloseRestoreRef = React.useRef(false);
     const openSheetCountRef = React.useRef(0);
     const holdComposerFocusUntilRef = React.useRef(0);
+
+    // Leaving the composer releases a staged edit. Deferred a tick because the
+    // decision needs where focus *landed*, and because clicking Edit on another row
+    // blurs before it re-stages — reading the staged row again catches that.
+    const releaseStagedEditOnComposerBlur = useEvent(() => {
+        const blurred = useSessionUIStore.getState().stagedMessageEdit;
+        if (!blurred || blurred.sessionId !== currentSessionId) return;
+        window.setTimeout(() => {
+            const staged = useSessionUIStore.getState().stagedMessageEdit;
+            const active = document.activeElement;
+            const decision = resolveStagedEditBlurDisarm({
+                surfaceKind: surface.kind,
+                stagedSessionId: staged?.sessionId ?? null,
+                stagedMessageId: staged?.messageId ?? null,
+                blurredMessageId: blurred.messageId,
+                submitInFlight: isSubmissionInFlight(),
+                focusHeld: Date.now() < holdComposerFocusUntilRef.current,
+                overlayOpen: openSheetCountRef.current > 0 || mobilePickerDialogsOpenRef.current,
+                focusInsideComposer: active instanceof Element && Boolean(
+                    active.closest('[data-chat-input="true"]')
+                    || active.closest('[data-chat-input-footer="true"]')
+                    || active.closest('[data-slot="dropdown-menu-content"]'),
+                ),
+            });
+            if (decision.action === 'disarm') {
+                useSessionUIStore.getState().clearStagedMessageEdit(decision.sessionId);
+            }
+        }, 0);
+    });
     React.useEffect(() => {
         if (!isMobile || isCapacitorApp() || typeof window === 'undefined') return;
         if (!window.matchMedia?.('(display-mode: standalone)')?.matches) return;
@@ -7126,6 +7146,7 @@ const ChatInputRuntime: React.FC<ChatInputProps> = ({ onOpenSettings, scrollToBo
                         onBlur: (event) => {
                             nativeCompositionActiveRef.current = false;
                             cursorPosRef.current = event.currentTarget.selectionStart ?? cursorPosRef.current;
+                            releaseStagedEditOnComposerBlur();
                             if (!isMobile) {
                                 window.setTimeout(() => {
                                     const active = document.activeElement;

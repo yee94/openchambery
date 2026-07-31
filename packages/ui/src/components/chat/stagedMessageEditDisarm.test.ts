@@ -1,55 +1,64 @@
 import { describe, expect, test } from 'bun:test';
 import { readFileSync } from 'node:fs';
 import { join } from 'node:path';
-import { resolveStagedEditDisarm } from './stagedMessageEditDisarm';
+import { resolveStagedEditBlurDisarm } from './stagedMessageEditDisarm';
 
 const chatInputSource = readFileSync(join(__dirname, 'ChatInput.tsx'), 'utf-8');
 
-const staged = {
+const blurred = {
     surfaceKind: 'primary' as const,
     stagedSessionId: 'session-a',
-    composerHasContent: true,
-    sawComposerContent: false,
+    stagedMessageId: 'msg-1',
+    blurredMessageId: 'msg-1',
     submitInFlight: false,
+    focusHeld: false,
+    overlayOpen: false,
+    focusInsideComposer: false,
 };
 
-describe('resolveStagedEditDisarm', () => {
-    test('arms once the restored composer content is observed', () => {
-        expect(resolveStagedEditDisarm(staged)).toEqual({ action: 'arm' });
+describe('resolveStagedEditBlurDisarm', () => {
+    test('disarms when focus leaves the composer entirely', () => {
+        expect(resolveStagedEditBlurDisarm(blurred)).toEqual({ action: 'disarm', sessionId: 'session-a' });
     });
 
-    test('holds while the composer is still empty right after staging', () => {
-        expect(resolveStagedEditDisarm({ ...staged, composerHasContent: false })).toEqual({ action: 'hold' });
+    test('keeps the edit when focus stays in composer chrome', () => {
+        expect(resolveStagedEditBlurDisarm({ ...blurred, focusInsideComposer: true })).toEqual({ action: 'keep' });
     });
 
-    test('disarms when an armed composer is emptied', () => {
-        expect(resolveStagedEditDisarm({ ...staged, composerHasContent: false, sawComposerContent: true }))
-            .toEqual({ action: 'disarm', sessionId: 'session-a' });
+    test('keeps the edit while its own submit is in flight', () => {
+        expect(resolveStagedEditBlurDisarm({ ...blurred, submitInFlight: true })).toEqual({ action: 'keep' });
     });
 
-    test('holds while a submit is in flight so dispatch clearing the composer cannot disarm', () => {
-        expect(resolveStagedEditDisarm({
-            ...staged,
-            composerHasContent: false,
-            sawComposerContent: true,
-            submitInFlight: true,
-        })).toEqual({ action: 'hold' });
+    test('keeps the edit across held-focus and overlay windows', () => {
+        expect(resolveStagedEditBlurDisarm({ ...blurred, focusHeld: true })).toEqual({ action: 'keep' });
+        expect(resolveStagedEditBlurDisarm({ ...blurred, overlayOpen: true })).toEqual({ action: 'keep' });
     });
 
-    test('resets when nothing is staged or the surface is secondary', () => {
-        expect(resolveStagedEditDisarm({ ...staged, stagedSessionId: null })).toEqual({ action: 'reset' });
-        expect(resolveStagedEditDisarm({ ...staged, surfaceKind: 'secondary' })).toEqual({ action: 'reset' });
+    test('keeps the incoming edit when another row re-staged during the blur', () => {
+        expect(resolveStagedEditBlurDisarm({ ...blurred, stagedMessageId: 'msg-2' })).toEqual({ action: 'keep' });
+    });
+
+    test('keeps when nothing is staged or the surface is secondary', () => {
+        expect(resolveStagedEditBlurDisarm({ ...blurred, stagedSessionId: null, stagedMessageId: null }))
+            .toEqual({ action: 'keep' });
+        expect(resolveStagedEditBlurDisarm({ ...blurred, surfaceKind: 'secondary' })).toEqual({ action: 'keep' });
     });
 });
 
 describe('ChatInput staged-edit wiring', () => {
-    test('feeds submit flight into the disarm decision', () => {
-        expect(chatInputSource).toContain('submitInFlight: submissionFlightKind !== null');
+    test('an empty composer is no longer a cancel signal', () => {
+        expect(chatInputSource).not.toContain('sawComposerContent');
+        expect(chatInputSource).not.toContain('composerHasContent');
     });
 
-    test('focuses the composer when a staged edit arms', () => {
-        expect(chatInputSource).toContain('const armedNow = decision.action === \'arm\' && !stagedEditSawContentRef.current');
-        expect(chatInputSource).toContain('if (armedNow && !focusComposerTextarea(textareaRef))');
+    test('releases the staged edit from the composer blur handler', () => {
+        expect(chatInputSource).toContain('releaseStagedEditOnComposerBlur();');
+        expect(chatInputSource).toContain('resolveStagedEditBlurDisarm({');
+    });
+
+    test('focuses the composer once per staged row', () => {
+        expect(chatInputSource).toContain('if (stagedEditFocusedRowRef.current === stagedEditMessageId) return;');
+        expect(chatInputSource).toContain('if (!focusComposerTextarea(textareaRef))');
     });
 
     test('releases the editing paint when the send settles, not only on commit', () => {
