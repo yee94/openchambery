@@ -306,6 +306,78 @@ describe('assistants service', () => {
     const persisted = new Database(path.join(directory, 'assistants.sqlite')); expect(persisted.prepare('SELECT message_id FROM assistant_message_mirror').all()).toEqual([{ message_id: 'msg_saved' }]); persisted.close();
   });
 
+  it('retries a transient session.messages failure once then succeeds', async () => {
+    const directory = root(); let creates = 0; let calls = 0;
+    const service = setup(directory, {
+      create: async () => ({ data: { id: `ses_${++creates}` } }),
+      messages: async ({ sessionID }) => {
+        calls += 1;
+        if (calls === 1) return { error: { status: 503 } };
+        return { data: [{ info: { id: 'msg_ok', sessionID, role: 'assistant', time: { created: 1 } }, parts: [] }] };
+      },
+    });
+    const assistant = service.createAssistant({ ...assistantInput, mode: 'stateless' });
+    const first = await service.ensure(assistant.id);
+    await service.createNew(assistant.id);
+    const page = await service.historicalMessages(assistant.id, { limit: 10 });
+    expect(calls).toBe(2);
+    expect(page.entries.map((entry) => entry.info.id)).toEqual(['msg_ok']);
+    expect(page.complete).toBe(true);
+    service.close();
+  });
+
+  it('surfaces upstream_error after persistent transient session.messages failures', async () => {
+    const directory = root(); let creates = 0; let calls = 0;
+    const service = setup(directory, {
+      create: async () => ({ data: { id: `ses_${++creates}` } }),
+      messages: async () => { calls += 1; return { error: { status: 503 } }; },
+    });
+    const assistant = service.createAssistant({ ...assistantInput, mode: 'stateless' });
+    const first = await service.ensure(assistant.id);
+    await service.createNew(assistant.id);
+    await expect(service.historicalMessages(assistant.id, { limit: 10 })).rejects.toMatchObject({ code: 'upstream_error' });
+    expect(calls).toBe(3);
+    service.close();
+  });
+
+  it('completes a missing archived session without deleting covered rows or blocking other history', async () => {
+    const directory = root(); let creates = 0;
+    const service = setup(directory, {
+      create: async () => ({ data: { id: `ses_${++creates}` } }),
+      messages: async ({ sessionID }) => {
+        if (sessionID === 'ses_1') return { error: { status: 404 } };
+        return {
+          data: [{ info: { id: 'msg_older', sessionID, role: 'assistant', time: { created: 1 } }, parts: [] }],
+        };
+      },
+    });
+    const assistant = service.createAssistant({ ...assistantInput, mode: 'stateless' });
+    const first = await service.ensure(assistant.id);
+    const second = await service.createNew(assistant.id);
+    const third = await service.createNew(assistant.id);
+    expect(first.sessionID).toBe('ses_1');
+    expect(second.sessionID).toBe('ses_2');
+    expect(third.sessionID).toBe('ses_3');
+    // Seed a covered admitted user row plus an uncovered event-only row on the
+    // deleted archive so 404 completion must preserve covered and drop uncovered.
+    const Database = require('better-sqlite3');
+    const seed = new Database(path.join(directory, 'assistants.sqlite'));
+    seed.prepare('INSERT INTO assistant_message_mirror(assistant_id,session_id,message_id,info_json,ordinal,covered,updated_at) VALUES (?,?,?,?,?,?,?)').run(assistant.id, first.sessionID, 'msg_covered', JSON.stringify({ id: 'msg_covered', sessionID: first.sessionID, role: 'user', time: { created: 2 }, openchamberAssistantAdmission: true }), 2, 1, 1);
+    seed.prepare('INSERT INTO assistant_message_mirror(assistant_id,session_id,message_id,info_json,ordinal,covered,updated_at) VALUES (?,?,?,?,?,?,?)').run(assistant.id, first.sessionID, 'msg_uncovered', JSON.stringify({ id: 'msg_uncovered', sessionID: first.sessionID, role: 'assistant', time: { created: 3 } }), 3, 0, 1);
+    seed.prepare('DELETE FROM assistant_message_backfill WHERE assistant_id=? AND session_id=?').run(assistant.id, first.sessionID);
+    seed.prepare('DELETE FROM assistant_message_backfill WHERE assistant_id=? AND session_id=?').run(assistant.id, second.sessionID);
+    seed.close();
+    const page = await service.historicalMessages(assistant.id, { limit: 10 });
+    expect(page.entries.map((entry) => entry.info.id)).toEqual(['msg_covered', 'msg_older']);
+    expect(page.complete).toBe(true);
+    const persisted = new Database(path.join(directory, 'assistants.sqlite'));
+    expect(persisted.prepare('SELECT message_id,covered FROM assistant_message_mirror WHERE session_id=? ORDER BY message_id').all(first.sessionID)).toEqual([{ message_id: 'msg_covered', covered: 1 }]);
+    expect(persisted.prepare('SELECT complete FROM assistant_message_backfill WHERE session_id=?').get(first.sessionID)).toEqual({ complete: 1 });
+    expect(persisted.prepare('SELECT message_id FROM assistant_message_mirror WHERE session_id=?').all(second.sessionID)).toEqual([{ message_id: 'msg_older' }]);
+    persisted.close();
+    service.close();
+  });
+
   it('demand-backfills bounded history pages with stable cursors and archived directories', async () => {
     const directory = root(); const oldWorkspace = path.join(directory, 'old'); const newWorkspace = path.join(directory, 'new'); fs.mkdirSync(oldWorkspace); fs.mkdirSync(newWorkspace);
     const messages = Array.from({ length: 250 }, (_, index) => ({ info: { id: `msg_${String(250 - index).padStart(3, '0')}`, sessionID: 'ses_1', role: 'assistant', time: { created: 250 - index } }, parts: [] })); let calls = 0;

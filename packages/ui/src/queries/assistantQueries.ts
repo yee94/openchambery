@@ -4,6 +4,7 @@ import { queryClient } from '@/lib/queryRuntime';
 import { subscribeOpenchamberEvents } from '@/lib/openchamberEvents';
 import { runtimeFetch } from '@/lib/runtime-fetch';
 import { getRuntimeGeneration, getRuntimeTransportIdentity } from '@/lib/runtime-switch';
+import { waitForSessionStartupBarrier } from '@/lib/session-startup-barrier';
 import { AssistantAPIError, AssistantShareOperationError, parseAssistantCapabilityDTO, parseAssistantDTO, parseAssistantHistoryPage, parseAssistantSnapshotDTO, parseCompactResponse, parseMessageAdmission, parseSessionBinding, parseShareOperation, type AssistantCapabilityDTO, type AssistantDTO, type AssistantHistoryPage, type AssistantMode, type AssistantPart, type AssistantSnapshotDTO, type AssistantSource, type CompactResponse, type MessageAdmission, type SessionBinding, type ShareOperation } from './assistantDTO';
 export type { AssistantDTO, AssistantHistoryEntry, AssistantHistoryPage, AssistantMode, AssistantPart, AssistantSource, CompactResponse, MessageAdmission, SessionBinding, ShareOperation } from './assistantDTO';
 export type AssistantSnapshot = AssistantSnapshotDTO;
@@ -59,6 +60,10 @@ export const assistantHistoryInfiniteQueryOptions = (
 ) => ({
   queryKey: key.history(assistantID, sessionID, sessionGeneration, transport, runtimeGeneration),
   queryFn: async ({ signal, pageParam }: { signal: AbortSignal; pageParam: string | null }) => {
+    // Capture identity is fixed in the query key; re-assert after the startup
+    // barrier so a runtime switch during boot cannot reuse a stale flight.
+    assertCurrent(transport, runtimeGeneration);
+    await waitForSessionStartupBarrier();
     assertCurrent(transport, runtimeGeneration);
     const query = new URLSearchParams({ limit: String(ASSISTANT_HISTORY_PAGE_SIZE) });
     if (pageParam) query.set('before', pageParam);
@@ -85,7 +90,18 @@ export const useAssistantCapabilityQuery = () => useQuery(assistantCapabilityQue
 export const readAssistantSnapshot = (client: Pick<QueryClient, 'getQueryData'> = queryClient, transport = getRuntimeTransportIdentity()): AssistantSnapshot | undefined => client.getQueryData<AssistantSnapshot>(key.snapshot(transport));
 export const ensureAssistantSnapshot = (client: Pick<QueryClient, 'fetchQuery'> = queryClient, transport = getRuntimeTransportIdentity()) => client.fetchQuery(assistantSnapshotQueryOptions(transport));
 export const forceRefreshAssistantSnapshot = async (client: Pick<QueryClient, 'invalidateQueries' | 'fetchQuery'> = queryClient): Promise<AssistantSnapshot> => { const transport = getRuntimeTransportIdentity(); const generation = getRuntimeGeneration(); await client.invalidateQueries({ queryKey: key.snapshot(transport), exact: true }); assertCurrent(transport, generation); const snapshot = await client.fetchQuery(assistantSnapshotQueryOptions(transport)); assertCurrent(transport, generation); return snapshot; };
-export const ensureAssistantSession = async (assistantID: string): Promise<SessionBinding> => { const transport = getRuntimeTransportIdentity(); const generation = getRuntimeGeneration(); const binding = parseSessionBinding(await requestJSON<unknown>(`/api/openchamber/assistants/${encodeURIComponent(assistantID)}/session/ensure`, jsonInit('POST'))); assertCurrent(transport, generation); applyBinding(assistantID, binding, transport); return binding; };
+export const ensureAssistantSession = async (assistantID: string): Promise<SessionBinding> => {
+  // Capture transport/generation before the startup barrier so identity cannot
+  // silently rewrite while boot work holds the gate.
+  const transport = getRuntimeTransportIdentity();
+  const generation = getRuntimeGeneration();
+  await waitForSessionStartupBarrier();
+  assertCurrent(transport, generation);
+  const binding = parseSessionBinding(await requestJSON<unknown>(`/api/openchamber/assistants/${encodeURIComponent(assistantID)}/session/ensure`, jsonInit('POST')));
+  assertCurrent(transport, generation);
+  applyBinding(assistantID, binding, transport);
+  return binding;
+};
 export const newAssistantSession = async (assistantID: string): Promise<SessionBinding> => { const transport = getRuntimeTransportIdentity(); const generation = getRuntimeGeneration(); const binding = parseSessionBinding(await requestJSON<unknown>(`/api/openchamber/assistants/${encodeURIComponent(assistantID)}/session/new`, jsonInit('POST'))); assertCurrent(transport, generation); applyBinding(assistantID, binding, transport); return binding; };
 export const compactAssistantSession = async (assistantID: string, binding: SessionBinding): Promise<CompactResponse> => { const transport = getRuntimeTransportIdentity(); const generation = getRuntimeGeneration(); const result = parseCompactResponse(await requestJSON<unknown>(`/api/openchamber/assistants/${encodeURIComponent(assistantID)}/session/compact`, jsonInit('POST', { sessionID: binding.sessionID, sessionGeneration: binding.sessionGeneration }))); assertCurrent(transport, generation); applyBinding(assistantID, result.binding, transport); return result; };
 export const abortAssistantSession = async (assistantID: string, binding: SessionBinding): Promise<void> => { const transport = getRuntimeTransportIdentity(); const generation = getRuntimeGeneration(); await requestJSON<unknown>(`/api/openchamber/assistants/${encodeURIComponent(assistantID)}/session/abort`, jsonInit('POST', { sessionID: binding.sessionID, sessionGeneration: binding.sessionGeneration })); assertCurrent(transport, generation); };

@@ -9,6 +9,8 @@ const require = createRequire(import.meta.url);
 const SCHEMA_VERSION = 11;
 const BACKFILL_PAGE_SIZE = 100;
 const BACKFILL_MAX_PAGES = 3;
+const BACKFILL_MESSAGES_ATTEMPTS = 3;
+const BACKFILL_RETRY_MS = Object.freeze([25, 75]);
 const SHARE_RETENTION_MS = 7 * 24 * 60 * 60 * 1000;
 const SHARE_LEASE_MS = 30_000;
 const SHARE_MAX_ATTEMPTS = 3;
@@ -22,6 +24,20 @@ const fail = (code) => { throw new AssistantError(code); };
 const string = (value, max = 10_000, required = false) => { if (value == null && !required) return null; if (typeof value !== 'string' || value.length > max || (required && !value.trim())) fail('validation_error'); return value.trim(); };
 const nonEmptyString = (value, max = 10_000) => typeof value === 'string' && value.length > 0 && value.length <= max;
 const isMissing = (result) => result?.error?.status === 404 || result?.error?.statusCode === 404 || result?.error?.code === 'not_found' || result?.status === 404;
+const messagesErrorStatus = (result) => { const status = result?.error?.status ?? result?.error?.statusCode ?? result?.status; return Number.isFinite(status) ? status : null; };
+const isTransientMessagesFailure = (result, error) => {
+  if (error) {
+    if (error instanceof AssistantError) return false;
+    if (error?.name === 'TypeError' || error?.name === 'FetchError') return true;
+    const code = error?.cause?.code || error?.code;
+    if (code === 'ECONNREFUSED' || code === 'ENOTFOUND' || code === 'ECONNRESET' || code === 'ETIMEDOUT' || code === 'EPIPE') return true;
+    return false;
+  }
+  const status = messagesErrorStatus(result);
+  if (status == null) return true;
+  return status === 408 || status === 429 || status >= 500;
+};
+const sleep = (ms) => new Promise((resolve) => setTimeout(resolve, ms));
 const promptAdmitted = (result) => !result?.error && (result?.response?.status === 204 || result?.status === 204 || result?.data !== undefined || result?.response?.ok === true);
 
 export const createAssistantsService = ({ dbPath, dataDir, buildOpenCodeUrl, getOpenCodeAuthHeaders, getServerId = async () => null, getAllowedRoots = () => [], globalEventHub = null, onRevisionTip = null, clock = () => Date.now(), setIntervalFn = setInterval, clearIntervalFn = clearInterval, reconcileIntervalMs = 60_000, clientFactory } = {}) => {
@@ -225,6 +241,41 @@ export const createAssistantsService = ({ dbPath, dataDir, buildOpenCodeUrl, get
     }
     return null;
   };
+  const clearUncoveredSessionMirror = (assistantID, sessionID) => {
+    db.prepare('DELETE FROM assistant_message_part_mirror WHERE assistant_id=? AND session_id=? AND message_id IN (SELECT message_id FROM assistant_message_mirror WHERE assistant_id=? AND session_id=? AND covered=0)').run(assistantID, sessionID, assistantID, sessionID);
+    db.prepare('DELETE FROM assistant_message_mirror WHERE assistant_id=? AND session_id=? AND covered=0').run(assistantID, sessionID);
+  };
+  const markSessionBackfillComplete = (assistantID, sessionID) => {
+    db.prepare('INSERT INTO assistant_message_backfill(assistant_id,session_id,cursor,complete,updated_at) VALUES (?,?,?,?,?) ON CONFLICT(assistant_id,session_id) DO UPDATE SET cursor=excluded.cursor,complete=excluded.complete,updated_at=excluded.updated_at').run(assistantID, sessionID, null, 1, now());
+  };
+  // Authoritative 404 means this session ID is gone from OpenCode. Converge its
+  // backfill so one deleted archive cannot block demand scans of other sessions.
+  // Covered/admitted rows stay; only uncovered event mirrors are dropped. Safe
+  // under concurrent ensure: a replaced current binding archives under its old
+  // ID, while a still-current missing ID is recreated with a new session ID.
+  const completeMissingSessionBackfill = (assistantID, sessionID) => {
+    db.exec('BEGIN IMMEDIATE');
+    try {
+      clearUncoveredSessionMirror(assistantID, sessionID);
+      markSessionBackfillComplete(assistantID, sessionID);
+      db.exec('COMMIT');
+      return true;
+    } catch (error) { db.exec('ROLLBACK'); throw error; }
+  };
+  const fetchBackfillMessages = async (history, directory, cursor) => {
+    for (let attempt = 0; attempt < BACKFILL_MESSAGES_ATTEMPTS; attempt++) {
+      try {
+        const result = await client().session.messages({ sessionID: history.session_id, ...(directory ? { directory } : {}), limit: BACKFILL_PAGE_SIZE, ...(cursor ? { before: cursor } : {}) });
+        if (!result?.error || isMissing(result)) return result;
+        if (!isTransientMessagesFailure(result, null) || attempt === BACKFILL_MESSAGES_ATTEMPTS - 1) fail('upstream_error');
+      } catch (error) {
+        if (error instanceof AssistantError) throw error;
+        if (!isTransientMessagesFailure(null, error) || attempt === BACKFILL_MESSAGES_ATTEMPTS - 1) fail('upstream_error');
+      }
+      await sleep(BACKFILL_RETRY_MS[Math.min(attempt, BACKFILL_RETRY_MS.length - 1)]);
+    }
+    fail('upstream_error');
+  };
   const backfillSession = async (history) => {
     const state = db.prepare('SELECT cursor,complete FROM assistant_message_backfill WHERE assistant_id=? AND session_id=?').get(history.assistant_id, history.session_id);
     if (state?.complete) return true;
@@ -238,7 +289,8 @@ export const createAssistantsService = ({ dbPath, dataDir, buildOpenCodeUrl, get
         directory = resolved;
       }
     }
-    const result = await client().session.messages({ sessionID: history.session_id, ...(directory ? { directory } : {}), limit: BACKFILL_PAGE_SIZE, ...(cursor ? { before: cursor } : {}) });
+    const result = await fetchBackfillMessages(history, directory, cursor);
+    if (isMissing(result)) return completeMissingSessionBackfill(history.assistant_id, history.session_id);
     if (result?.error) fail('upstream_error');
     const entries = Array.isArray(result?.data) ? result.data : Array.isArray(result?.data?.items) ? result.data.items : null;
     if (!entries) fail('upstream_error');
@@ -247,7 +299,7 @@ export const createAssistantsService = ({ dbPath, dataDir, buildOpenCodeUrl, get
       entries.forEach((entry) => { const info = entry?.info ?? entry; if (nonEmptyString(info?.sessionID) && info.sessionID !== history.session_id) return; const parts = Array.isArray(entry?.parts) ? entry.parts : []; const messageOrdinal = Number.isSafeInteger(info?.time?.created) ? info.time.created : undefined; mirrorMessage(history.assistant_id, history.session_id, info, messageOrdinal, true); const partIDs = parts.filter((part) => nonEmptyString(part?.id)).map((part) => part.id); if (partIDs.length) db.prepare(`DELETE FROM assistant_message_part_mirror WHERE assistant_id=? AND session_id=? AND message_id=? AND part_id NOT IN (${partIDs.map(() => '?').join(',')})`).run(history.assistant_id, history.session_id, info?.id, ...partIDs); else db.prepare('DELETE FROM assistant_message_part_mirror WHERE assistant_id=? AND session_id=? AND message_id=?').run(history.assistant_id, history.session_id, info?.id); parts.forEach((part, partIndex) => mirrorPart(history.assistant_id, history.session_id, part, partIndex + 1)); });
       const nextCursor = result?.response?.headers?.get('x-next-cursor') ?? null;
       const complete = !nextCursor;
-      if (complete) { db.prepare('DELETE FROM assistant_message_part_mirror WHERE assistant_id=? AND session_id=? AND message_id IN (SELECT message_id FROM assistant_message_mirror WHERE assistant_id=? AND session_id=? AND covered=0)').run(history.assistant_id, history.session_id, history.assistant_id, history.session_id); db.prepare('DELETE FROM assistant_message_mirror WHERE assistant_id=? AND session_id=? AND covered=0').run(history.assistant_id, history.session_id); }
+      if (complete) clearUncoveredSessionMirror(history.assistant_id, history.session_id);
       db.prepare('INSERT INTO assistant_message_backfill(assistant_id,session_id,cursor,complete,updated_at) VALUES (?,?,?,?,?) ON CONFLICT(assistant_id,session_id) DO UPDATE SET cursor=excluded.cursor,complete=excluded.complete,updated_at=excluded.updated_at').run(history.assistant_id, history.session_id, nextCursor, complete ? 1 : 0, now());
       db.exec('COMMIT');
       return complete;
