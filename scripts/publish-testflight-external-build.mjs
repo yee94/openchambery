@@ -4,6 +4,7 @@ import { appendFileSync, existsSync, readFileSync } from 'node:fs';
 const ASC_API_URL = 'https://api.appstoreconnect.apple.com';
 const BUILD_PROCESSING_TIMEOUT_MS = 60 * 60 * 1000;
 const BUILD_PROCESSING_POLL_MS = 30 * 1000;
+const EXTERNAL_GROUP_BUILD_RETENTION = 3;
 
 function requireEnv(name) {
   const value = process.env[name]?.trim();
@@ -124,6 +125,34 @@ async function addBuildToExternalGroup(buildId) {
   assertSuccess(result, 'Add TestFlight build to external group');
 }
 
+async function removeOldExternalGroupBuilds(currentBuildId) {
+  const result = await api(
+    `/v1/betaGroups/${betaGroupId}/builds?${query({ sort: '-uploadedDate', limit: '200' })}`,
+  );
+  const builds = assertSuccess(result, 'List external TestFlight group builds')?.data ?? [];
+  const retained = new Set([
+    currentBuildId,
+    ...builds.slice(0, EXTERNAL_GROUP_BUILD_RETENTION).map((build) => build.id),
+  ]);
+  const removable = builds
+    .filter((build) => !retained.has(build.id))
+    .map((build) => ({ type: 'builds', id: build.id }));
+  if (removable.length === 0) return 0;
+
+  const removed = await api(`/v1/betaGroups/${betaGroupId}/relationships/builds`, {
+    method: 'DELETE',
+    body: JSON.stringify({ data: removable }),
+  });
+  assertSuccess(removed, 'Remove old builds from external TestFlight group');
+  return removable.length;
+}
+
+function isSubmissionLimitReached(result) {
+  return result.response.status === 422
+    && Array.isArray(result.body?.errors)
+    && result.body.errors.some((error) => `${error.detail ?? ''} ${error.title ?? ''}`.includes('Submission limit has been reached'));
+}
+
 async function submitBetaReview(build) {
   const existing = await api(`/v1/builds/${build.id}/betaAppReviewSubmission`);
   if (existing.response.ok && existing.body?.data) return 'already-submitted';
@@ -138,6 +167,7 @@ async function submitBetaReview(build) {
       },
     }),
   });
+  if (isSubmissionLimitReached(result)) return 'deferred-submission-limit';
   assertSuccess(result, 'Submit build for Beta App Review');
   return 'submitted';
 }
@@ -154,16 +184,23 @@ async function main() {
   const app = await getApp();
   const build = await waitForProcessedBuild(app.id);
   await addBuildToExternalGroup(build.id);
+  let removedBuildCount = 0;
+  try {
+    removedBuildCount = await removeOldExternalGroupBuilds(build.id);
+  } catch (error) {
+    console.warn(`External TestFlight group cleanup deferred: ${error instanceof Error ? error.message : error}`);
+  }
   const reviewStatus = await submitBetaReview(build);
   const publicLink = await getPublicLink();
 
   console.log(`External TestFlight build ${buildNumber}: ${reviewStatus}`);
+  console.log(`Removed ${removedBuildCount} old build(s) from the external TestFlight group.`);
   console.log(`Public TestFlight link: ${publicLink}`);
 
   if (process.env.GITHUB_STEP_SUMMARY) {
     appendFileSync(
       process.env.GITHUB_STEP_SUMMARY,
-      `## External TestFlight\n\n- Build: \`${buildNumber}\`\n- Beta review: \`${reviewStatus}\`\n- Public link: ${publicLink}\n`,
+      `## External TestFlight\n\n- Build: \`${buildNumber}\`\n- Beta review: \`${reviewStatus}\`\n- Old group builds removed: \`${removedBuildCount}\`\n- Public link: ${publicLink}\n`,
     );
   }
 }

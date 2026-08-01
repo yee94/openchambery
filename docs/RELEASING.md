@@ -112,6 +112,8 @@ Agent 入口命令：`.opencode/commands/release.md`。
 
 `mobile-release.yml` 会把每次 iOS 构建关联到这个固定群组。群组的 TestFlight Public Link 保持不变；Apple 批准新的 Beta App Review 后，该链接会自动提供最新获准构建。
 
+CI 每次关联新构建后保留外测组最近三个构建，并通过 App Store Connect API 移除更旧的组关联。Apple 的 TestFlight App Review 采用滚动 24 小时提交额度；额度耗尽时构建保持在外测组并记录为 `deferred-submission-limit`，GitHub Release 继续完成，后续构建在额度恢复后重新提交。
+
 手动运行 `release.yml` 时，提供版本号；该 workflow 会执行桌面端和 Android 发布。`dry_run=true` 会保留 Draft Release，用于验证构建和产物：
 
 ```bash
