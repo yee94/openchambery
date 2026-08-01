@@ -441,6 +441,7 @@ export const settingsDict = {
   'settings.openchamber.about.actions.updateToVersion': '更新到 {version}',
   'settings.openchamber.about.actions.checkForUpdates': '检查更新',
   'settings.openchamber.about.toast.latestVersion': '你已是最新版本',
+  'settings.openchamber.about.toast.checkFailed': '无法检查更新',
   'settings.agents.sidebar.title': '智能体',
   'settings.agents.sidebar.total': '总计 {count}',
   'settings.agents.sidebar.empty.title': '未配置智能体',

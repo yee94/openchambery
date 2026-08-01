@@ -27,6 +27,8 @@ export type UpdateInfo = {
   updateCommand?: string;
   /** The update was found through GitHub Releases and must be installed manually. */
   manualUpdate?: boolean;
+  /** Set when the update service or instance proxy could not produce a definitive result. */
+  error?: string;
 };
 
 export type UpdateProgress = {

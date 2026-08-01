@@ -438,6 +438,7 @@
   'settings.openchamber.about.actions.updateToVersion': '更新到 {version}',
   'settings.openchamber.about.actions.checkForUpdates': '檢查更新',
   'settings.openchamber.about.toast.latestVersion': '你已是最新版本',
+  'settings.openchamber.about.toast.checkFailed': '無法檢查更新',
   'settings.agents.sidebar.title': 'Agents',
   'settings.agents.sidebar.total': '總計 {count}',
   'settings.agents.sidebar.empty.title': '未設定 agents',

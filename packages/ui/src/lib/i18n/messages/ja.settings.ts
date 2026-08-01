@@ -474,6 +474,7 @@ export const settingsDict = {
   'settings.openchamber.about.actions.updateToVersion': '{version} にアップデート',
   'settings.openchamber.about.actions.checkForUpdates': 'アップデートを確認',
   'settings.openchamber.about.toast.latestVersion': '最新バージョンです',
+  'settings.openchamber.about.toast.checkFailed': '更新を確認できませんでした',
   'settings.agents.sidebar.title': 'エージェント',
   'settings.agents.sidebar.total': '合計 {count}',
   'settings.agents.sidebar.empty.title': 'Agent が設定されていません',

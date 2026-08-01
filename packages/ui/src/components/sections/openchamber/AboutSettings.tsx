@@ -123,8 +123,13 @@ export const AboutSettings: React.FC<AboutSettingsProps> = ({ initialUpdateDialo
     } else if (showChecking) {
       const timer = setTimeout(() => {
         setShowChecking(false);
-        // Show toast if check completed with no update available
-        if (didInitiateCheck.current && !updateStore.available && !updateStore.error) {
+        // Surface check failures separately from a confirmed up-to-date result.
+        if (didInitiateCheck.current && updateStore.error) {
+          toast.error(t('settings.openchamber.about.toast.checkFailed'), {
+            description: updateStore.error,
+          });
+          didInitiateCheck.current = false;
+        } else if (didInitiateCheck.current && !updateStore.available && !updateStore.error) {
           toast.success(t('settings.openchamber.about.toast.latestVersion'));
           didInitiateCheck.current = false;
         }
@@ -158,7 +163,17 @@ export const AboutSettings: React.FC<AboutSettingsProps> = ({ initialUpdateDialo
             </span>
           </SettingsRow>
           <SettingsRow>
-            {!updateStore.available && !updateStore.error && (
+            {!isChecking && updateStore.available ? (
+              <Button
+                type="button"
+                variant="default"
+                size="sm"
+                onClick={() => setUpdateDialogOpen(true)}
+              >
+                <Icon name="download" className="size-4" />
+                {t('settings.openchamber.about.actions.updateToVersion', { version: updateStore.info?.version || '' })}
+              </Button>
+            ) : (
               <Button
                 type="button"
                 variant="outline"
@@ -168,18 +183,6 @@ export const AboutSettings: React.FC<AboutSettingsProps> = ({ initialUpdateDialo
               >
                 {isChecking ? <Icon name="loader" className="size-4 animate-spin" /> : <Icon name="refresh" className="size-4" />}
                 {isChecking ? t('settings.openchamber.about.state.checking') : t('settings.openchamber.about.actions.checkForUpdates')}
-              </Button>
-            )}
-
-            {!isChecking && updateStore.available && (
-              <Button
-                type="button"
-                variant="default"
-                size="sm"
-                onClick={() => setUpdateDialogOpen(true)}
-              >
-                <Icon name="download" className="size-4" />
-                {t('settings.openchamber.about.actions.updateToVersion', { version: updateStore.info?.version || '' })}
               </Button>
             )}
           </SettingsRow>

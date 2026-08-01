@@ -474,6 +474,7 @@ export const settingsDict = {
   'settings.openchamber.about.actions.updateToVersion': 'Update to {version}',
   'settings.openchamber.about.actions.checkForUpdates': 'Check for updates',
   'settings.openchamber.about.toast.latestVersion': 'You are on the latest version',
+  'settings.openchamber.about.toast.checkFailed': 'Could not check for updates',
   'settings.agents.sidebar.title': 'Agents',
   'settings.agents.sidebar.total': 'Total {count}',
   'settings.agents.sidebar.empty.title': 'No agents configured',

@@ -113,6 +113,7 @@ function mapRuntimeParams(runtime: ClientRuntime): URLSearchParams {
 }
 
 async function checkForWebUpdates(runtime: ClientRuntime, currentVersion?: string): Promise<UpdateInfo | null> {
+  const resolvedCurrentVersion = currentVersion ?? 'unknown';
   try {
     const params = mapRuntimeParams(runtime);
     const vscodeVersion = typeof window !== 'undefined'
@@ -125,28 +126,58 @@ async function checkForWebUpdates(runtime: ClientRuntime, currentVersion?: strin
       headers: { Accept: 'application/json' },
     });
 
-    if (!response.ok) {
-      throw new Error(`Server responded with ${response.status}`);
+    let data: Record<string, unknown> | null = null;
+    try {
+      data = await response.json() as Record<string, unknown>;
+    } catch {
+      data = null;
     }
 
-    const data = await response.json();
+    if (!response.ok) {
+      const responseError = typeof data?.error === 'string' && data.error.trim().length > 0
+        ? data.error.trim()
+        : `Server responded with ${response.status}`;
+      return {
+        available: false,
+        currentVersion: resolvedCurrentVersion,
+        error: responseError,
+      };
+    }
+
+    if (!data) {
+      return {
+        available: false,
+        currentVersion: resolvedCurrentVersion,
+        error: 'Update check returned an invalid response',
+      };
+    }
+
+    const responseError = typeof data.error === 'string' && data.error.trim().length > 0
+      ? data.error.trim()
+      : undefined;
+
     return {
-      available: data.available ?? false,
-      version: data.version,
-      currentVersion: data.currentVersion ?? 'unknown',
-      body: data.body,
-      releaseUrl: data.releaseUrl,
-      downloadUrl: data.downloadUrl,
+      available: data.available === true,
+      version: typeof data.version === 'string' ? data.version : undefined,
+      currentVersion: typeof data.currentVersion === 'string' ? data.currentVersion : resolvedCurrentVersion,
+      body: typeof data.body === 'string' ? data.body : undefined,
+      releaseUrl: typeof data.releaseUrl === 'string' ? data.releaseUrl : undefined,
+      downloadUrl: typeof data.downloadUrl === 'string' ? data.downloadUrl : undefined,
       nextSuggestedCheckInSec:
         typeof data.nextSuggestedCheckInSec === 'number' && Number.isFinite(data.nextSuggestedCheckInSec)
           ? data.nextSuggestedCheckInSec
           : undefined,
-      packageManager: data.packageManager,
-      updateCommand: data.updateCommand,
+      packageManager: typeof data.packageManager === 'string' ? data.packageManager : undefined,
+      updateCommand: typeof data.updateCommand === 'string' ? data.updateCommand : undefined,
+      error: responseError,
     };
   } catch (error) {
     console.warn('Failed to check for updates:', error);
-    return null;
+    return {
+      available: false,
+      currentVersion: resolvedCurrentVersion,
+      error: error instanceof Error ? error.message : 'Failed to check for updates',
+    };
   }
 }
 
@@ -196,6 +227,7 @@ export const useUpdateStore = create<UpdateStore>()((set, get) => ({
           // Main may already have finished an idle auto-download for this version.
           downloaded: desktopInfo?.downloaded ?? false,
           info: desktopInfo,
+          error: null,
           lastChecked: Date.now(),
           nextCheckInSec: null,
         });
@@ -217,6 +249,7 @@ export const useUpdateStore = create<UpdateStore>()((set, get) => ({
         checking: false,
         available: runtime === 'vscode' ? false : (info?.available ?? false),
         info: runtime === 'vscode' ? null : info,
+        error: runtime === 'vscode' ? null : (info?.error ?? null),
         lastChecked: Date.now(),
         nextCheckInSec: suggestedSec,
       });
