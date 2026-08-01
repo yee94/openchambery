@@ -22,7 +22,7 @@ describe('Assistant UI product contract', () => {
       read('../../apps/MobileApp.tsx'),
     ]);
     const sidebarMenu = sidebar.slice(sidebar.indexOf('const topContent ='), sidebar.indexOf('const isInlineEditing'));
-    expect(sidebarMenu.indexOf('sessions.scheduledTasks.dialog.actions.newTask')).toBeLessThan(sidebarMenu.indexOf('sessions.sidebar.header.actions.scheduledTasks'));
+    expect(sidebarMenu.indexOf('sessions.sidebar.header.actions.newSession')).toBeLessThan(sidebarMenu.indexOf('sessions.sidebar.header.actions.scheduledTasks'));
     expect(sidebarMenu.indexOf('sessions.sidebar.header.actions.scheduledTasks')).toBeLessThan(sidebarMenu.indexOf('t("assistants.title")'));
     // Product entry only appears when the host supports Assistants and the global switch is on.
     expect(sidebarMenu).toContain('assistantCapability.data?.supported && assistantCapability.data?.enabled ? <Button');

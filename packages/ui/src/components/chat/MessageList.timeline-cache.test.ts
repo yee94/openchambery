@@ -33,7 +33,7 @@ mock.module('./markdown/MarkdownHydrationProvider', () => ({ MarkdownHydrationPr
 mock.module('./lib/markdownHydrationWindow', () => ({
     createInitialMarkdownHydratedKeys: () => new Set(),
     ensureNewestMarkdownKeyHydrated: (keys: Set<string>) => keys,
-    getMarkdownHydrationCandidates: () => [],
+    getMarkdownHydrationBatch: () => [],
     pruneMarkdownHydratedKeys: (keys: Set<string>) => keys,
 }));
 mock.module('./lib/shellBridge', () => ({

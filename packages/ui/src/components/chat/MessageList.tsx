@@ -35,7 +35,7 @@ import { SessionSurfaceContext, useSessionSurface } from './SessionSurfaceContex
 import {
     createInitialMarkdownHydratedKeys,
     ensureNewestMarkdownKeyHydrated,
-    getMarkdownHydrationCandidates,
+    getMarkdownHydrationBatch,
     pruneMarkdownHydratedKeys,
     type MarkdownHydrationScrollDirection,
 } from './lib/markdownHydrationWindow';
@@ -1194,7 +1194,7 @@ const StaticHistoryList = React.memo(({ entries, engine, contentRef, scrollRef, 
     const visibleRangeEnd = tanstackVirtualizer.range?.endIndex
         ?? virtualItems[virtualItems.length - 1]?.index
         ?? Math.max(0, renderEntries.length - 1);
-    const markdownHydrationCandidates = getMarkdownHydrationCandidates({
+    const markdownHydrationBatch = getMarkdownHydrationBatch({
         entryKeys,
         mountedIndexes,
         visibleStartIndex: visibleRangeStart,
@@ -1203,27 +1203,35 @@ const StaticHistoryList = React.memo(({ entries, engine, contentRef, scrollRef, 
         preloadEntries: MARKDOWN_PRELOAD_ENTRIES,
         hydratedKeys: activeHydratedMarkdownEntryKeys,
     });
-    const nextMarkdownHydrationKey = markdownHydrationCandidates[0];
+    // The batch identity, not its array identity, is what the release effect
+    // reacts to. The ref lets the after-paint task release the batch the list
+    // wants now rather than the one that happened to schedule the task.
+    const markdownHydrationBatchKey = markdownHydrationBatch.join('\u0000');
+    const markdownHydrationBatchRef = React.useRef(markdownHydrationBatch);
+    markdownHydrationBatchRef.current = markdownHydrationBatch;
     const deferMarkdownHydrationForMobileScroll = isMobileSurfaceRuntime()
         && tanstackVirtualizer.isScrolling;
 
     React.useEffect(() => {
-        if (!isTanstack || !nextMarkdownHydrationKey || deferMarkdownHydrationForMobileScroll) {
+        if (!isTanstack || !markdownHydrationBatchKey || deferMarkdownHydrationForMobileScroll) {
             return;
         }
         return scheduleAfterPaintTask(() => {
             React.startTransition(() => {
                 setHydratedMarkdownEntryKeys((current) => {
-                    if (current.has(nextMarkdownHydrationKey)) {
-                        return current;
+                    let next: Set<string> | null = null;
+                    for (const key of markdownHydrationBatchRef.current) {
+                        if (current.has(key)) {
+                            continue;
+                        }
+                        next ??= new Set(current);
+                        next.add(key);
                     }
-                    const next = new Set(current);
-                    next.add(nextMarkdownHydrationKey);
-                    return next;
+                    return next ?? current;
                 });
             });
         });
-    }, [deferMarkdownHydrationForMobileScroll, isTanstack, nextMarkdownHydrationKey]);
+    }, [deferMarkdownHydrationForMobileScroll, isTanstack, markdownHydrationBatchKey]);
 
     React.useEffect(() => {
         setHydratedMarkdownEntryKeys((current) => pruneMarkdownHydratedKeys(current, entryKeys));

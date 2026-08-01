@@ -225,7 +225,7 @@ export const dict: Record<I18nKey, string> = {
   'layout.services.usage': '用量',
   'sessions.sidebar.header.actions.closeSessions': '关闭会话',
   'sessions.sidebar.header.actions.addProject': '添加项目',
-  'sessions.sidebar.header.actions.newSession': '新建会话',
+  'sessions.sidebar.header.actions.newSession': '新建对话',
   'sessions.sidebar.header.actions.newMultiRun': '新建多运行',
   'sessions.sidebar.header.actions.scheduledTasks': '计划',
   'sessions.scheduledTasks.dialog.title': '计划',

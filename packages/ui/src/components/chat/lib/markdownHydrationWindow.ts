@@ -10,6 +10,11 @@ type MarkdownHydrationCandidatesInput = {
     hydratedKeys: ReadonlySet<string>;
 };
 
+type MarkdownHydrationPlan = {
+    visible: string[];
+    preload: string[];
+};
+
 export const createInitialMarkdownHydratedKeys = (entryKeys: readonly string[]): Set<string> => {
     const newestKey = entryKeys[entryKeys.length - 1];
     return newestKey ? new Set([newestKey]) : new Set();
@@ -33,7 +38,7 @@ export const ensureNewestMarkdownKeyHydrated = (
     return next;
 };
 
-export const getMarkdownHydrationCandidates = ({
+const planMarkdownHydration = ({
     entryKeys,
     mountedIndexes,
     visibleStartIndex,
@@ -41,15 +46,16 @@ export const getMarkdownHydrationCandidates = ({
     scrollDirection,
     preloadEntries,
     hydratedKeys,
-}: MarkdownHydrationCandidatesInput): string[] => {
+}: MarkdownHydrationCandidatesInput): MarkdownHydrationPlan => {
     if (entryKeys.length === 0 || mountedIndexes.length === 0) {
-        return [];
+        return { visible: [], preload: [] };
     }
 
     const mounted = new Set(mountedIndexes);
-    const candidates: string[] = [];
+    const visible: string[] = [];
+    const preload: string[] = [];
     const queued = new Set<string>();
-    const addIndex = (index: number) => {
+    const addIndex = (candidates: string[], index: number) => {
         if (index < 0 || index >= entryKeys.length || !mounted.has(index)) {
             return;
         }
@@ -68,18 +74,36 @@ export const getMarkdownHydrationCandidates = ({
     // The newest visible turn wins. Do not reverse DOM order; only reverse the
     // order in which rows are allowed to mount rich Markdown.
     for (let index = end; index >= start; index -= 1) {
-        addIndex(index);
+        addIndex(visible, index);
     }
 
     if (scrollDirection === 'backward') {
         const preloadCount = Math.max(0, Math.floor(preloadEntries));
         const preloadStart = Math.max(0, start - preloadCount);
         for (let index = start - 1; index >= preloadStart; index -= 1) {
-            addIndex(index);
+            addIndex(preload, index);
         }
     }
 
-    return candidates;
+    return { visible, preload };
+};
+
+/**
+ * Keys to release in the next commit: the whole visible window at once, and
+ * otherwise the single nearest off-screen preload row.
+ *
+ * Releasing visible rows one per commit makes the virtualizer remeasure the row
+ * and re-anchor the scroll offset once per row, so entering a session walks
+ * through one visible reflow per turn before it settles. Off-screen preload
+ * rows keep the incremental cadence: they grow above the fold where the
+ * anchoring rules already compensate their height, and they are not worth a
+ * larger burst of Markdown work on a scroll path.
+ */
+export const getMarkdownHydrationBatch = (
+    input: MarkdownHydrationCandidatesInput,
+): string[] => {
+    const { visible, preload } = planMarkdownHydration(input);
+    return visible.length > 0 ? visible : preload.slice(0, 1);
 };
 
 export const pruneMarkdownHydratedKeys = (

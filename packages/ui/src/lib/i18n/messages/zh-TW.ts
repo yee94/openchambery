@@ -238,7 +238,7 @@ export const dict: Record<I18nKey, string> = {
   'layout.services.usage': '用量',
   'sessions.sidebar.header.actions.closeSessions': '關閉會話',
   'sessions.sidebar.header.actions.addProject': '新增專案',
-  'sessions.sidebar.header.actions.newSession': '新增會話',
+  'sessions.sidebar.header.actions.newSession': '新增對話',
   'sessions.sidebar.header.actions.newMultiRun': '新增 Multi-run',
   'sessions.sidebar.header.actions.scheduledTasks': '排程任務',
   'sessions.scheduledTasks.dialog.title': '排程任務',

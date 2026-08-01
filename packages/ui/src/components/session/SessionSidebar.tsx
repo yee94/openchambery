@@ -2531,7 +2531,7 @@ export const SessionSidebar: React.FC<SessionSidebarProps> = ({
           >
             <Icon name="chat-new" className="size-4" />
             <span className="truncate">
-              {t("sessions.scheduledTasks.dialog.actions.newTask")}
+              {t("sessions.sidebar.header.actions.newSession")}
             </span>
           </Button>
           <Button

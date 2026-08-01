@@ -225,7 +225,7 @@ export const dict: Record<I18nKey, string> = {
   'layout.services.usage': '使用量',
   'sessions.sidebar.header.actions.closeSessions': 'セッションを閉じる',
   'sessions.sidebar.header.actions.addProject': 'プロジェクトを追加',
-  'sessions.sidebar.header.actions.newSession': '新しいセッション',
+  'sessions.sidebar.header.actions.newSession': '新しいチャット',
   'sessions.sidebar.header.actions.newMultiRun': '新規マルチラン',
   'sessions.sidebar.header.actions.scheduledTasks': 'スケジュールタスク',
   'sessions.scheduledTasks.dialog.title': 'スケジュールタスク',

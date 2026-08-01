@@ -3,7 +3,7 @@ import { describe, expect, test } from 'bun:test';
 import {
     createInitialMarkdownHydratedKeys,
     ensureNewestMarkdownKeyHydrated,
-    getMarkdownHydrationCandidates,
+    getMarkdownHydrationBatch,
     pruneMarkdownHydratedKeys,
 } from './markdownHydrationWindow';
 
@@ -22,8 +22,8 @@ describe('markdown hydration window', () => {
         expect(ensureNewestMarkdownKeyHydrated(next, keys(2))).toBe(next);
     });
 
-    test('orders visible candidates from newest to oldest', () => {
-        const candidates = getMarkdownHydrationCandidates({
+    test('releases the whole visible window in one batch, newest to oldest', () => {
+        const batch = getMarkdownHydrationBatch({
             entryKeys: keys(100),
             mountedIndexes: [92, 93, 94, 95, 96, 97, 98, 99],
             visibleStartIndex: 94,
@@ -33,25 +33,55 @@ describe('markdown hydration window', () => {
             hydratedKeys: new Set(['turn-99']),
         });
 
-        expect(candidates).toEqual(['turn-98', 'turn-97', 'turn-96', 'turn-95', 'turn-94']);
+        expect(batch).toEqual(['turn-98', 'turn-97', 'turn-96', 'turn-95', 'turn-94']);
     });
 
-    test('preloads only the nearest mounted entries above an upward-moving viewport', () => {
-        const candidates = getMarkdownHydrationCandidates({
-            entryKeys: keys(100),
+    test('entering a populated viewport settles in a single release', () => {
+        const entryKeys = keys(100);
+        const hydrated = createInitialMarkdownHydratedKeys(entryKeys);
+        const read = () => getMarkdownHydrationBatch({
+            entryKeys,
+            mountedIndexes: [94, 95, 96, 97, 98, 99],
+            visibleStartIndex: 94,
+            visibleEndIndex: 99,
+            scrollDirection: null,
+            preloadEntries: 3,
+            hydratedKeys: hydrated,
+        });
+
+        for (const key of read()) hydrated.add(key);
+
+        expect([...hydrated].sort()).toEqual([
+            'turn-94', 'turn-95', 'turn-96', 'turn-97', 'turn-98', 'turn-99',
+        ]);
+        expect(read()).toEqual([]);
+    });
+
+    test('preloads one nearest mounted entry per release above an upward-moving viewport', () => {
+        const entryKeys = keys(100);
+        const hydrated = new Set(['turn-92', 'turn-93', 'turn-94', 'turn-95']);
+        const read = () => getMarkdownHydrationBatch({
+            entryKeys,
             mountedIndexes: [89, 90, 91, 92, 93, 94, 95],
             visibleStartIndex: 92,
             visibleEndIndex: 95,
             scrollDirection: 'backward',
             preloadEntries: 3,
-            hydratedKeys: new Set(['turn-92', 'turn-93', 'turn-94', 'turn-95']),
+            hydratedKeys: hydrated,
         });
 
-        expect(candidates).toEqual(['turn-91', 'turn-90', 'turn-89']);
+        const released: string[] = [];
+        for (let step = 0; step < 4; step += 1) {
+            const batch = read();
+            released.push(...batch);
+            for (const key of batch) hydrated.add(key);
+        }
+
+        expect(released).toEqual(['turn-91', 'turn-90', 'turn-89']);
     });
 
     test('does not preload older rows while moving forward', () => {
-        const candidates = getMarkdownHydrationCandidates({
+        const batch = getMarkdownHydrationBatch({
             entryKeys: keys(100),
             mountedIndexes: [89, 90, 91, 92, 93, 94, 95],
             visibleStartIndex: 92,
@@ -61,11 +91,11 @@ describe('markdown hydration window', () => {
             hydratedKeys: new Set(['turn-92', 'turn-93', 'turn-94', 'turn-95']),
         });
 
-        expect(candidates).toEqual([]);
+        expect(batch).toEqual([]);
     });
 
     test('a far jump hydrates the new viewport without filling intermediate history', () => {
-        const candidates = getMarkdownHydrationCandidates({
+        const batch = getMarkdownHydrationBatch({
             entryKeys: keys(100),
             mountedIndexes: [27, 28, 29, 30, 31, 32, 33, 34, 35],
             visibleStartIndex: 30,
@@ -75,11 +105,10 @@ describe('markdown hydration window', () => {
             hydratedKeys: new Set(['turn-99']),
         });
 
-        expect(candidates).toEqual([
+        expect(batch).toEqual([
             'turn-35', 'turn-34', 'turn-33', 'turn-32', 'turn-31', 'turn-30',
-            'turn-29', 'turn-28', 'turn-27',
         ]);
-        expect(candidates).not.toContain('turn-80');
+        expect(batch).not.toContain('turn-80');
     });
 
     test('stable hydrated keys survive prepends and removed keys are pruned', () => {

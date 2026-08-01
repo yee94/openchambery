@@ -225,7 +225,7 @@ export const dict: Record<I18nKey, string> = {
   "layout.services.usage": "Uso",
   "sessions.sidebar.header.actions.closeSessions": "Cerrar sesiones",
   "sessions.sidebar.header.actions.addProject": "Añadir proyecto",
-  "sessions.sidebar.header.actions.newSession": "Nueva sesión",
+  "sessions.sidebar.header.actions.newSession": "Nuevo chat",
   "sessions.sidebar.header.actions.newMultiRun": "Nuevo multi-run",
   "sessions.sidebar.header.actions.scheduledTasks": "Tareas programadas",
   "sessions.scheduledTasks.dialog.title": "Tareas programadas",

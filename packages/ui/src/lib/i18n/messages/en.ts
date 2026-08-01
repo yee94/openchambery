@@ -225,7 +225,7 @@ export const dict = {
   'layout.services.usage': 'Usage',
   'sessions.sidebar.header.actions.closeSessions': 'Close sessions',
   'sessions.sidebar.header.actions.addProject': 'Add project',
-  'sessions.sidebar.header.actions.newSession': 'New Session',
+  'sessions.sidebar.header.actions.newSession': 'New chat',
   'sessions.sidebar.header.actions.newMultiRun': 'New multi-run',
   'sessions.sidebar.header.actions.scheduledTasks': 'Schedule',
   'sessions.scheduledTasks.dialog.title': 'Schedule',
