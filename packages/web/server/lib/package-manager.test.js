@@ -49,6 +49,7 @@ describe('checkForUpdates', () => {
 
   afterEach(() => {
     globalThis.fetch = originalFetch;
+    vi.unstubAllEnvs();
   });
 
   // --- Scenario: API says update available, npm confirms ---
@@ -305,6 +306,51 @@ describe('checkForUpdates', () => {
 
     expect(result.available).toBe(false);
     expect(result.error).toBe('Unable to check for mobile updates');
+  });
+
+  it('mobile: uses the configured update service before Vercel and GitHub', async () => {
+    vi.stubEnv('OPENCHAMBER_UPDATE_API_URL', 'https://updates.example.com/v1/update/check');
+    fetchMock.when('updates.example.com', {
+      ok: true,
+      json: async () => ({
+        latestVersion: '1.16.104',
+        updateAvailable: true,
+        downloadUrl: 'https://github.com/yee94/openchamber/releases/download/v1.16.104/app-release.apk',
+      }),
+    });
+
+    const result = await checkForUpdates({
+      appType: 'mobile-capacitor',
+      platform: 'android',
+      currentVersion: '1.16.103',
+    });
+
+    expect(result.available).toBe(true);
+    expect(result.version).toBe('1.16.104');
+    expect(fetchMock).toHaveBeenCalledTimes(1);
+    expect(String(fetchMock.mock.calls[0][0])).toContain('updates.example.com');
+  });
+
+  it('mobile: falls through the configured service and Vercel to GitHub releases', async () => {
+    vi.stubEnv('OPENCHAMBER_UPDATE_API_URL', 'https://updates.example.com/v1/update/check');
+    fetchMock
+      .when('updates.example.com', Promise.reject(new Error('EdgeOne unreachable')))
+      .when('openchamber-update.vercel.app', Promise.reject(new Error('Vercel unreachable')))
+      .when('github.com/yee94/openchamber/releases/latest', {
+        ok: true,
+        url: 'https://github.com/yee94/openchamber/releases/tag/v1.16.104',
+      });
+
+    const result = await checkForUpdates({
+      appType: 'mobile-capacitor',
+      platform: 'android',
+      currentVersion: '1.16.103',
+    });
+
+    expect(result.available).toBe(true);
+    expect(result.version).toBe('1.16.104');
+    expect(result.downloadUrl).toBe('https://github.com/yee94/openchamber/releases/download/v1.16.104/app-release.apk');
+    expect(fetchMock).toHaveBeenCalledTimes(3);
   });
 
   it('mobile: falls back to the release page when the update API omits a download URL', async () => {

@@ -159,7 +159,7 @@ environment:
   UI_PASSWORD: your_secure_password
   OPENCHAMBER_TUNNEL_MODE: quick # quick | managed-remote | managed-local
   OPENCHAMBER_TUNNEL_PROVIDER: cloudflare
-  OPENCHAMBER_UPDATE_API_URL: https://updates.example.com/v1/update/check # Optional compatible update-check override
+  OPENCHAMBER_UPDATE_API_URL: https://updates.example.com/v1/update/check # Primary compatible update-check service; Vercel and GitHub Releases provide fallback
 ```
 
 For `managed-remote` mode, also set:

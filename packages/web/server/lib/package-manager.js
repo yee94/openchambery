@@ -13,12 +13,17 @@ const PACKAGE_PATH_SEGMENTS = PACKAGE_NAME.split('/');
 const NPM_REGISTRY_URL = `https://registry.npmjs.org/${PACKAGE_NAME}`;
 const CHANGELOG_URL = 'https://raw.githubusercontent.com/yee94/openchamber/main/CHANGELOG.md';
 const GITHUB_RELEASES_URL = 'https://github.com/yee94/openchamber/releases';
+const VERCEL_UPDATE_CHECK_URL = 'https://openchamber-update.vercel.app/v1/update/check';
+const GITHUB_LATEST_RELEASE_URL = `${GITHUB_RELEASES_URL}/latest`;
 let cachedDetectedPm = null;
 
 function getSpawnSyncBaseOptions() {
   return process.platform === 'win32' ? { windowsHide: true } : {};
 }
-const UPDATE_CHECK_URL = process.env.OPENCHAMBER_UPDATE_API_URL || 'https://openchamber-update.vercel.app/v1/update/check';
+function getUpdateCheckUrls() {
+  const configuredUrl = process.env.OPENCHAMBER_UPDATE_API_URL?.trim();
+  return [...new Set([configuredUrl, VERCEL_UPDATE_CHECK_URL].filter(Boolean))];
+}
 
 function getOpenChamberConfigDir() {
   if (process.platform === 'win32') {
@@ -85,7 +90,7 @@ function normalizeArch(value) {
   return mapArch(process.arch);
 }
 
-async function checkForUpdatesFromApi(currentVersion, options = {}) {
+async function checkForUpdatesFromUpdateService(updateCheckUrl, currentVersion, options = {}) {
   try {
     const appType = normalizeAppType(options.appType);
     const hostPlatform = mapPlatform(process.platform);
@@ -105,7 +110,7 @@ async function checkForUpdatesFromApi(currentVersion, options = {}) {
       reportUsage: options.reportUsage !== false,
     };
 
-    const response = await fetch(UPDATE_CHECK_URL, {
+    const response = await fetch(updateCheckUrl, {
       method: 'POST',
       headers: {
         Accept: 'application/json',
@@ -143,6 +148,43 @@ async function checkForUpdatesFromApi(currentVersion, options = {}) {
   } catch {
     return null;
   }
+}
+
+async function checkForUpdatesFromGitHub(currentVersion, options = {}) {
+  try {
+    const response = await fetch(GITHUB_LATEST_RELEASE_URL, {
+      headers: { Accept: 'text/html' },
+      signal: AbortSignal.timeout(10000),
+    });
+    if (!response.ok) return null;
+
+    const match = new URL(response.url).pathname.match(/\/releases\/tag\/v(\d+\.\d+\.\d+(?:-[\w.]+)?)/);
+    if (!match) return null;
+
+    const version = match[1];
+    const versionComparison = compareVersions(version, currentVersion);
+    const releaseUrl = `${GITHUB_RELEASES_URL}/tag/v${version}`;
+    return {
+      available: versionComparison > 0,
+      version,
+      currentVersion,
+      releaseUrl,
+      downloadUrl: normalizeAppType(options.appType) === 'mobile-capacitor'
+        ? `${GITHUB_RELEASES_URL}/download/v${version}/app-release.apk`
+        : undefined,
+    };
+  } catch {
+    return null;
+  }
+}
+
+async function checkForUpdatesFromApi(currentVersion, options = {}) {
+  for (const updateCheckUrl of getUpdateCheckUrls()) {
+    const update = await checkForUpdatesFromUpdateService(updateCheckUrl, currentVersion, options);
+    if (update) return update;
+  }
+
+  return checkForUpdatesFromGitHub(currentVersion, options);
 }
 
 function normalizePathForComparison(filePath) {
