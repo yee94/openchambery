@@ -16,6 +16,8 @@ import {
 import { runtimeFetch } from '@/lib/runtime-fetch';
 import { getClientPlatform, isCapacitorApp } from '@/lib/platform';
 import { getMobileClientVersion } from '@/lib/mobileAppVersion';
+import { checkForMobileClientUpdates } from '@/lib/mobileClientUpdateCheck';
+
 
 type UpdateState = {
   checking: boolean;
@@ -241,7 +243,16 @@ export const useUpdateStore = create<UpdateStore>()((set, get) => ({
         suggestedSec = vscodeInfo?.nextSuggestedCheckInSec ?? null;
       } else if (runtime === 'mobile') {
         const appVersion = await getMobileClientVersion();
-        info = await checkForWebUpdates('mobile', appVersion ?? 'unknown');
+        // Capacitor client updates compare the native APK/IPA version against
+        // public update feeds directly. Do not route this through the connected
+        // OpenChamber Server — that instance's network and version are unrelated.
+        info = await checkForMobileClientUpdates({
+          currentVersion: appVersion ?? 'unknown',
+          platform: detectPlatform() === 'ios' ? 'ios' : 'android',
+          deviceClass: detectDeviceClass(),
+          arch: detectArch(),
+          reportUsage: useUIStore.getState().reportUsage,
+        });
         suggestedSec = info?.nextSuggestedCheckInSec ?? null;
       }
 

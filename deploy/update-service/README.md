@@ -46,14 +46,17 @@ repository `contents: write` permission for this manifest commit.
 Connect the repository so pushes to `main` create production deployments, or
 deploy with the Vercel CLI from `deploy/update-service`.
 
-OpenChamber Web, CLI, VS Code, and Capacitor mobile use
-`https://openchamber-update.vercel.app/v1/update/check`. Packaged Desktop
-builds on macOS, Windows, and Linux use Electron updater metadata under
-`/desktop/`. Those metadata responses point signed package downloads at GitHub
-Release assets.
+OpenChamber Web, CLI, and VS Code use
+`https://openchamber-update.vercel.app/v1/update/check` through the connected
+OpenChamber Server (with optional `OPENCHAMBER_UPDATE_API_URL` override). Capacitor
+mobile clients call the public update API **directly** from the app process,
+preferring EdgeOne (`https://openchamber.xiaobe.top/v1/update/check`), then
+this Vercel endpoint, then GitHub Releases. Packaged Desktop builds on macOS,
+Windows, and Linux use Electron updater metadata under `/desktop/`. Those
+metadata responses point signed package downloads at GitHub Release assets.
 
 `OPENCHAMBER_UPDATE_API_URL` remains available as a compatible JSON API
-override for Web, VS Code, and Capacitor mobile.
+override for Web, VS Code, and server-side package update checks.
 
 ## EdgeOne transition compatibility
 
