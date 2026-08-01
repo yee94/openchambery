@@ -656,6 +656,13 @@ Cutover refreshes are single-flight, and `start`/`stop` use the same deferred-st
   and seeds the baseline while performing zero blob mutations and metadata writes.
 
 - Queue ownership uses stable transport identity plus directory and session ID.
+  The v3 ledger address (`queueScopeKey`) is exactly that tuple plus the delivery
+  target. Runtime generation must never enter it: rows persist in `localStorage`,
+  while generation only counts transport switches inside one process, so an
+  A→B→A bounce (LAN⇄relay, host restore) would re-address rows that still belong
+  to the same endpoint and strand them until a restart reset the counter. It
+  stays on the owner as staleness metadata, and hydration re-keys every persisted
+  row from its own owner, so rows stranded by an earlier encoding are recovered.
   Queue admission captures an OpenCode-compatible `msg_` message identity.
   Legacy migration constructs recovery metadata, then degrades every unbound
   attachment into a `legacy-unbound-data` issue before source validation, URL

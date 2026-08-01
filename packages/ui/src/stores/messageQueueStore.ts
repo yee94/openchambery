@@ -14,13 +14,27 @@ export type QueueItemStatus = 'queued' | 'sending' | 'retrying' | 'reconciling' 
 type QueueFailureKind = 'pre-dispatch' | 'ambiguous-dispatch' | 'definitive';
 export type QueueDeliveryTarget = { kind: 'primary' } | { kind: 'assistant'; assistantID: string };
 export type QueueScope =
-  | { state: 'bound'; transportIdentity: string; directory: string; sessionID: string; deliveryTarget?: QueueDeliveryTarget; runtimeGeneration?: number }
+  | {
+    state: 'bound'; transportIdentity: string; directory: string; sessionID: string; deliveryTarget?: QueueDeliveryTarget;
+    /** Staleness metadata carried on the owner only. Never part of the ledger address — see queueScopeKey. */
+    runtimeGeneration?: number;
+  }
   | { state: 'unbound-legacy'; sessionID: string };
 export type QueueOwner = QueueScope;
 
 export const legacyQueueScope = (sessionID: string): QueueScope => ({ state: 'unbound-legacy', sessionID });
+/**
+ * Physical ledger address. Only fields that identify WHERE a row belongs may
+ * appear here: rows outlive the browser session in localStorage, so a key
+ * component with a shorter lifetime than the row orphans it permanently.
+ * `runtimeGeneration` is exactly that — it counts transport switches inside one
+ * process, so an A→B→A bounce (LAN⇄relay, host restore) re-addresses rows that
+ * still belong to the same endpoint, and a restart resets it to zero.
+ * `transportIdentity` stays because it is the real addressing unit that keeps
+ * one session ID isolated across different runtimes.
+ */
 export const queueScopeKey = (scope: QueueScope): string => scope.state === 'bound'
-  ? `bound:${JSON.stringify([scope.transportIdentity, scope.directory, scope.sessionID, scope.deliveryTarget ?? { kind: 'primary' }, scope.runtimeGeneration ?? 0])}`
+  ? `bound:${JSON.stringify([scope.transportIdentity, scope.directory, scope.sessionID, scope.deliveryTarget ?? { kind: 'primary' }])}`
   : `unbound-legacy:${JSON.stringify([scope.sessionID])}`;
 export const getQueueForScope = (state: { queuedMessages: Record<string, QueueItem[]> }, scope: QueueScope): QueueItem[] => state.queuedMessages[queueScopeKey(scope)] ?? EMPTY_QUEUE;
 const EMPTY_QUEUE: QueueItem[] = [];

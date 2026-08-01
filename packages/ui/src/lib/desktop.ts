@@ -22,6 +22,10 @@ export type UpdateInfo = {
   nextSuggestedCheckInSec?: number;
   /** True when the desktop package is already on disk and ready to install on restart. */
   downloaded?: boolean;
+  /** True when main is already running an idle or manual package download. */
+  downloading?: boolean;
+  /** Latest transferred bytes while `downloading` is true (idle or manual). */
+  progress?: UpdateProgress | null;
   // Web-specific fields
   packageManager?: string;
   updateCommand?: string;

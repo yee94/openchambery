@@ -223,11 +223,15 @@ export const useUpdateStore = create<UpdateStore>()((set, get) => ({
 
       if (runtime === 'desktop') {
         const desktopInfo = await checkForDesktopUpdates();
+        const alreadyDownloaded = desktopInfo?.downloaded === true;
         set({
           checking: false,
           available: desktopInfo?.available ?? false,
           // Main may already have finished an idle auto-download for this version.
-          downloaded: desktopInfo?.downloaded ?? false,
+          // Idle downloads stay silent until the user clicks "Download Update".
+          downloaded: alreadyDownloaded,
+          // If main already has the package, clear any foreground download UI.
+          ...(alreadyDownloaded ? { downloading: false, progress: null } : {}),
           info: desktopInfo,
           error: null,
           lastChecked: Date.now(),
@@ -282,6 +286,9 @@ export const useUpdateStore = create<UpdateStore>()((set, get) => ({
       return;
     }
 
+    // Enter the foreground download UI only after the user clicks Download.
+    // If main already has an idle download in flight, seed progress from that
+    // snapshot so the bar does not restart at 0%.
     set({ downloading: true, error: null, progress: null });
 
     try {
@@ -306,8 +313,16 @@ export const useUpdateStore = create<UpdateStore>()((set, get) => ({
 
       // Already idle-downloaded while the dialog was open — just flip the CTA.
       if (desktopInfo.downloaded || get().downloaded) {
-        set({ downloading: false, downloaded: true });
+        set({ downloading: false, downloaded: true, progress: null });
         return;
+      }
+
+      // Promote an in-flight idle download into the dialog progress UI.
+      if (desktopInfo.downloading) {
+        set({
+          downloading: true,
+          progress: desktopInfo.progress ?? { downloaded: 0 },
+        });
       }
 
       const ok = await downloadDesktopUpdate((progress) => {
@@ -316,7 +331,7 @@ export const useUpdateStore = create<UpdateStore>()((set, get) => ({
       if (!ok) {
         throw new Error('Failed to download update');
       }
-      set({ downloading: false, downloaded: true });
+      set({ downloading: false, downloaded: true, progress: null });
     } catch (error) {
       set({
         downloading: false,
@@ -336,9 +351,11 @@ export const useUpdateStore = create<UpdateStore>()((set, get) => ({
       const eventName = payload.event;
       const eventData = payload.data ?? null;
 
+      // Idle auto-download stays silent. Progress only drives the dialog bar
+      // after the user clicks "Download Update" (store.downloading === true).
       if (eventName === 'Started') {
+        if (!get().downloading) return;
         set({
-          downloading: true,
           error: null,
           progress: {
             downloaded: 0,
@@ -349,21 +366,24 @@ export const useUpdateStore = create<UpdateStore>()((set, get) => ({
       }
 
       if (eventName === 'Progress') {
+        if (!get().downloading) return;
         const downloaded = typeof eventData?.downloaded === 'number' ? eventData.downloaded : 0;
         const total = typeof eventData?.total === 'number' ? eventData.total : undefined;
-        set({ downloading: true, progress: { downloaded, total } });
+        set({ progress: { downloaded, total } });
         return;
       }
 
       if (eventName === 'Finished') {
-        set({ downloading: false, downloaded: true });
+        set({ downloading: false, downloaded: true, progress: null });
       }
     });
     if (unlistenProgress) cleanups.push(unlistenProgress);
 
     const unlistenReady = await listenDesktopUpdateReady((payload) => {
       if (payload.downloaded) {
-        set({ downloading: false, downloaded: true, available: true });
+        // Idle or manual completion: flip CTA to Restart without forcing a
+        // progress bar if the user never entered the foreground download UI.
+        set({ downloading: false, downloaded: true, available: true, progress: null });
       }
     });
     if (unlistenReady) cleanups.push(unlistenReady);

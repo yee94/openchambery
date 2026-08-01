@@ -512,7 +512,7 @@ export const UpdateDialog: React.FC<UpdateDialogProps> = ({
             {!isWebRuntime && !isMobileRuntime && downloaded && (
               <button
                 onClick={onRestart}
-                className="flex items-center justify-center gap-2 px-5 py-2 rounded-md text-sm font-medium bg-[var(--status-success)] text-white hover:opacity-90 transition-opacity"
+                className="flex items-center justify-center gap-2 px-5 py-2 rounded-md text-sm font-medium bg-[var(--primary-base)] text-[var(--primary-foreground)] hover:opacity-90 transition-opacity"
               >
                 <Icon name="restart" className="h-4 w-4" />
                 {t('updateDialog.actions.restartToUpdate')}

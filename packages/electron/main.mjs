@@ -17,6 +17,7 @@ import { sanitizeRuntimeRequestHeaders } from './runtime-request-headers.mjs';
 import { assertUpdaterCapability } from './updater-capability.mjs';
 import { checkForDesktopUpdate } from './updater-check.mjs';
 import { createIdleUpdateDownloadScheduler } from './updater-idle-download.mjs';
+import { getUpdateDownloadSnapshot } from './updater-download-status.mjs';
 import { resolveUpdaterFeed } from './updater-feed.mjs';
 import { resolveQuitInterception } from './quit-confirmation.mjs';
 import { isRemoteIpcCommandAllowed } from './ipc-command-gate.mjs';
@@ -3171,6 +3172,9 @@ const compareSemver = (left, right) => {
 // button await the same promise instead of racing two electron-updater calls.
 let updateDownloadPromise = null;
 let idleUpdateDownloadScheduler = null;
+// Latest progress for idle/manual downloads so reopening the dialog can show
+// an accurate bar even if the renderer missed earlier progress events.
+let updateDownloadProgress = null;
 
 const hasPendingUpdateDownload = () =>
   Boolean(state.pendingUpdate?.electronUpdate && !state.pendingUpdate.downloaded);
@@ -3191,6 +3195,7 @@ const downloadPendingUpdate = async () => {
   }
 
   updateDownloadPromise = (async () => {
+    updateDownloadProgress = { downloaded: 0 };
     setTaskbarProgress(0.01);
     emitToAllWindows('openchamber:update-progress', mapUpdaterProgressEvent({
       event: 'Started',
@@ -3220,6 +3225,7 @@ const downloadPendingUpdate = async () => {
       if (state.pendingUpdate) {
         state.pendingUpdate.downloaded = true;
       }
+      updateDownloadProgress = null;
       emitToAllWindows('openchamber:update-progress', mapUpdaterProgressEvent({
         event: 'Finished',
         data: {},
@@ -3234,6 +3240,11 @@ const downloadPendingUpdate = async () => {
     }
   })().finally(() => {
     updateDownloadPromise = null;
+    if (!state.pendingUpdate?.downloaded) {
+      // Keep the last progress only while a download is still considered active;
+      // failed/aborted flights clear the snapshot so the UI does not stick.
+      updateDownloadProgress = null;
+    }
   });
 
   return updateDownloadPromise;
@@ -3279,6 +3290,10 @@ const setupAutoUpdater = () => {
   autoUpdater.on('download-progress', (progress) => {
     const total = Number(progress.total || 0);
     const transferred = Number(progress.transferred || 0);
+    updateDownloadProgress = {
+      downloaded: Math.round(progress.transferred || 0),
+      ...(total > 0 ? { total: Math.round(progress.total || 0) } : {}),
+    };
     setTaskbarProgress(total > 0 ? Math.max(0, Math.min(1, transferred / total)) : 0.01);
     emitToAllWindows('openchamber:update-progress', mapUpdaterProgressEvent({
       event: 'Progress',
@@ -3293,6 +3308,7 @@ const setupAutoUpdater = () => {
   autoUpdater.on('update-downloaded', (info) => {
     log.info(`[electron] update-downloaded version=${info?.version || 'unknown'}`);
     setTaskbarProgress(-1);
+    updateDownloadProgress = null;
     if (state.pendingUpdate) {
       state.pendingUpdate.downloaded = true;
     }
@@ -3300,6 +3316,7 @@ const setupAutoUpdater = () => {
 
   autoUpdater.on('error', (err) => {
     setTaskbarProgress(-1);
+    updateDownloadProgress = null;
     log.error('[electron] autoUpdater error', err);
   });
 };
@@ -4398,6 +4415,11 @@ const handleInvoke = async (browserWindow, command, args = {}) => {
       } else {
         idleUpdateDownloadScheduler?.stop();
       }
+      const downloadSnapshot = getUpdateDownloadSnapshot({
+        pendingUpdate,
+        downloadInFlight: Boolean(updateDownloadPromise),
+        progress: updateDownloadProgress,
+      });
       return {
         available,
         currentVersion,
@@ -4406,7 +4428,9 @@ const handleInvoke = async (browserWindow, command, args = {}) => {
         date:
           (typeof updateInfo?.releaseDate === 'string' && updateInfo.releaseDate) ||
           null,
-        downloaded: Boolean(pendingUpdate?.downloaded),
+        downloaded: downloadSnapshot.downloaded,
+        downloading: downloadSnapshot.downloading,
+        progress: downloadSnapshot.progress,
       };
     }
 

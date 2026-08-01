@@ -27,6 +27,20 @@ describe('messageQueueStore scoped ledger', () => {
     expect(migrated.queuedMessages[queueScopeKey(assistant)]?.[0]?.owner).toEqual({ ...assistant });
     expect(item.owner.state === 'bound' && item.owner.deliveryTarget).toEqual({ kind: 'assistant', assistantID: 'assistant-a' });
   });
+  test('addresses a session by transport and directory, never by transport generation', () => {
+    const first = mustAdd({ ...a, runtimeGeneration: 0 });
+    expect(queueScopeKey({ ...a, runtimeGeneration: 5 })).toBe(queueScopeKey(a));
+    expect(useMessageQueueStore.getState().getQueueForScope({ ...a, runtimeGeneration: 5 })[0]).toBe(first);
+  });
+  test('recovers rows persisted under superseded generations into one live scope in order', () => {
+    // An A→B→A transport bounce persisted the same endpoint under two generations.
+    const oldKey = (generation: number) => `bound:${JSON.stringify([a.transportIdentity, a.directory, a.sessionID, { kind: 'primary' }, generation])}`;
+    const row = (generation: number, content: string) => [{ id: `queued-${content}`, content, createdAt: generation, owner: { ...a, runtimeGeneration: generation }, status: 'queued', attemptCount: 0 }];
+    const migrated = migrateMessageQueueState({ queuedMessages: { [oldKey(0)]: row(0, 'first'), [oldKey(2)]: row(2, 'second') } });
+    expect(migrated.queuedMessages[oldKey(0)]).toBe(undefined);
+    expect(migrated.queuedMessages[oldKey(2)]).toBe(undefined);
+    expect(migrated.queuedMessages[queueScopeKey(a)]?.map((item) => item.content)).toEqual(['first', 'second']);
+  });
   test('fences user mutations while allowing an in-flight item to settle', () => {
     const item = mustAdd();
     const identity = { queueItemID: item.queueItemID, operationID: item.operationID, messageID: item.messageID };
