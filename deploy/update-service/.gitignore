@@ -1,3 +1,4 @@
 .vercel
 public
+dist
 .test-dist-*

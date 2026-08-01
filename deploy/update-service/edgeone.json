@@ -1,0 +1,25 @@
+{
+  "buildCommand": "OPENCHAMBER_UPDATE_OUTPUT_DIR=dist node scripts/build.mjs",
+  "installCommand": "echo 'no package dependencies'",
+  "outputDirectory": "dist",
+  "headers": [
+    {
+      "source": "/update-manifest.json",
+      "headers": [
+        {
+          "key": "Cache-Control",
+          "value": "public, max-age=60, stale-while-revalidate=300"
+        }
+      ]
+    },
+    {
+      "source": "/CHANGELOG.md",
+      "headers": [
+        {
+          "key": "Cache-Control",
+          "value": "public, max-age=300, stale-while-revalidate=900"
+        }
+      ]
+    }
+  ]
+}

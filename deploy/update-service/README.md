@@ -54,3 +54,12 @@ Release assets.
 
 `OPENCHAMBER_UPDATE_API_URL` remains available as a compatible JSON API
 override for Web, VS Code, and Capacitor mobile.
+
+## EdgeOne transition compatibility
+
+`edgeone.json` and `edge-functions/` keep the retired
+`openchamber-update.edgeone.dev` feed available for already-installed clients.
+Its build command writes `dist/`, while Vercel continues to build `public/`.
+The EdgeOne project must permit public requests to its project domain; this
+transition feed uses the same stable release manifest and GitHub release assets
+as Vercel.
