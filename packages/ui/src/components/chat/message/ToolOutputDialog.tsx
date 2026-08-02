@@ -29,6 +29,8 @@ import { Icon } from "@/components/icon/Icon";
 import { useI18n, type I18nKey, type I18nParams } from '@/lib/i18n';
 import { runtimeFetch } from '@/lib/runtime-fetch';
 import { MermaidLoadFailure, getMermaidDataUrlSourcePromise, isCurrentMermaidLoadRequest, isMermaidLoadFailure, nextMermaidLoadRequestId } from './toolOutputDialogMermaid';
+import { useEffectiveDirectory } from '@/hooks/useEffectiveDirectory';
+import { useResolvedImageSource } from '../imageSource';
 
 interface ToolOutputDialogProps {
     popup: ToolPopupContent;
@@ -311,6 +313,7 @@ const ImagePreviewDialog: React.FC<{
     isMobile: boolean;
 }> = ({ popup, onOpenChange, isMobile }) => {
     const { t } = useI18n();
+    const effectiveDirectory = useEffectiveDirectory() ?? '';
     const gallery = React.useMemo(() => {
         const baseImage = popup.image;
         if (!baseImage) return [] as Array<{ url: string; mimeType?: string; filename?: string; size?: number }>;
@@ -353,6 +356,7 @@ const ImagePreviewDialog: React.FC<{
     }, [gallery, popup.image?.index, popup.image?.url, popup.open]);
 
     const currentImage = gallery[currentIndex] ?? gallery[0] ?? popup.image;
+    const displayImageSource = useResolvedImageSource(currentImage?.url ?? '', effectiveDirectory);
     const imageTitle = currentImage?.filename || popup.title || 'Image preview';
     const hasMultipleImages = gallery.length > 1;
 
@@ -397,7 +401,7 @@ const ImagePreviewDialog: React.FC<{
 
     React.useEffect(() => {
         setImageNaturalSize(null);
-    }, [currentImage?.url]);
+    }, [currentImage?.url, displayImageSource]);
 
     const imageDisplaySize = React.useMemo(() => {
         const maxWidth = Math.max(160, viewport.width * (isMobile ? 0.86 : 0.75));
@@ -488,7 +492,7 @@ const ImagePreviewDialog: React.FC<{
                     </div>
 
                     <img
-                        src={currentImage.url}
+                        src={displayImageSource || undefined}
                         alt={imageTitle}
                         className="block object-contain"
                         style={{ width: `${imageDisplaySize.width}px`, height: `${imageDisplaySize.height}px` }}

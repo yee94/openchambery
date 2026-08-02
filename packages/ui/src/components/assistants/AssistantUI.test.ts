@@ -335,6 +335,9 @@ describe('Assistant UI product contract', () => {
     expect(conversation).toContain('openSourceSession');
     expect(conversation).toContain("setActiveMainTab('chat')");
     expect(conversation).toContain('setCurrentSession(targetSessionID, targetDirectory)');
+    expect(conversation).toContain('useMobileNavigationStore.getState()');
+    expect(conversation).toContain('useMobileNavigationStore.getState().openSession({ sessionId: targetSessionID, directory: targetDirectory })');
+    expect(conversation).toContain("if (!useUIStore.getState().setActiveMainTab('chat')) return;");
     expect(conversation).toContain("targetSessionID === sessionID");
     expect(conversation).toContain('historyDirectories.get(targetSessionID)');
     expect(conversation).toContain('expectedDirectory !== targetDirectory');
@@ -343,6 +346,7 @@ describe('Assistant UI product contract', () => {
     expect(sessionSurface).toContain('onEditMessage?: (messageId: string, snapshot: SessionSurfaceMessageEditSnapshot) => Promise<void>');
     expect(messageBody).toContain("t('chat.messageBody.actions.openSourceSession')");
     expect(messageBody).toContain('sessionId={sessionId}');
+    expect(messageBody).toContain('name="target"');
     // ChatMessage prefers surface edit callback over primary staged edit store.
     expect(chatMessage).toContain('sessionSurface.onEditMessage');
     expect(chatMessage).toContain('editMessagePreservingChanges(sessionId, message.info.id, snapshot)');

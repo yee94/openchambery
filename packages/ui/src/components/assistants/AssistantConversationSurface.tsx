@@ -7,6 +7,8 @@ import { PRIMARY_SESSION_SURFACE_CAPABILITIES, type SessionSurfaceMessageEditSna
 import type { AssistantDTO } from '@/queries/assistantQueries';
 import { useAssistantHistoryInfiniteQuery } from '@/queries/assistantQueries';
 import { useEvent } from '@reactuses/core';
+import { isCapacitorApp, isIPadApp } from '@/lib/platform';
+import { useMobileNavigationStore } from '@/mobile/useMobileNavigationStore';
 import { useSessionUIStore } from '@/sync/session-ui-store';
 import { useUIStore } from '@/stores/useUIStore';
 import type { PendingUserMessagePresentation } from '@/sync/session-ui-store';
@@ -68,7 +70,11 @@ export const AssistantConversationSurface: React.FC<AssistantConversationSurface
     const expectedDirectory = targetSessionID === sessionID ? directory : historyDirectories.get(targetSessionID);
     if (!expectedDirectory || expectedDirectory !== targetDirectory) return;
     // Leave the Assistant tab and continue the underlying OpenCode session in Chat.
-    useUIStore.getState().setActiveMainTab('chat');
+    if (isCapacitorApp() && !isIPadApp()) {
+      useMobileNavigationStore.getState().openSession({ sessionId: targetSessionID, directory: targetDirectory });
+      return;
+    }
+    if (!useUIStore.getState().setActiveMainTab('chat')) return;
     void useSessionUIStore.getState().setCurrentSession(targetSessionID, targetDirectory);
   });
   const sessionSurface = React.useMemo(() => ({

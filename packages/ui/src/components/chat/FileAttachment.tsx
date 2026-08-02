@@ -18,6 +18,8 @@ import {
   isDirectoryAttachmentPath,
 } from './attachmentCitations';
 import { attachmentCitationDisplay } from '@/composer/inline-visual';
+import { useEffectiveDirectory } from '@/hooks/useEffectiveDirectory';
+import { useResolvedImageSource } from './imageSource';
 
 import type { ToolPopupContent } from './message/types';
 
@@ -150,6 +152,8 @@ const ImagePreview = memo(({ file, onRemove, onShowPopup, gallery, index = 0 }: 
     file.dataUrl.startsWith('data:image/');
 
   const imageUrl = isLocalImagePreview ? file.dataUrl : (file.serverPath || '');
+  const effectiveDirectory = useEffectiveDirectory() ?? '';
+  const displayImageUrl = useResolvedImageSource(imageUrl, effectiveDirectory);
 
   const extractFilename = (path: string): string => {
     const normalized = path.replace(/\\/g, '/');
@@ -229,7 +233,7 @@ const ImagePreview = memo(({ file, onRemove, onShowPopup, gallery, index = 0 }: 
       aria-label={displayName}
     >
       <img
-        src={imageUrl}
+        src={displayImageUrl || undefined}
         alt={displayName}
         className="h-full w-full object-cover"
         loading="lazy"
@@ -626,6 +630,52 @@ const filePartDedupeKey = (file: FilePart): string => {
   return `meta:${filename}|${mime}|${file.size ?? ''}`;
 };
 
+const MessageImageThumbnail = ({ source, filename }: { source: string; filename: string }) => {
+  const effectiveDirectory = useEffectiveDirectory() ?? '';
+  const displaySource = useResolvedImageSource(source, effectiveDirectory);
+  return (
+    <img
+      src={displaySource || undefined}
+      alt={filename}
+      className="h-full w-full object-cover"
+      loading="lazy"
+      onError={(event) => {
+        event.currentTarget.style.visibility = 'hidden';
+      }}
+    />
+  );
+};
+
+const MessageImageCard = ({
+  source,
+  filename,
+  sizeText,
+  onOpen,
+}: {
+  source: string;
+  filename: string;
+  sizeText: string;
+  onOpen: () => void;
+}) => {
+  const effectiveDirectory = useEffectiveDirectory() ?? '';
+  const displaySource = useResolvedImageSource(source, effectiveDirectory);
+  return (
+    <button
+      type="button"
+      onClick={onOpen}
+      className="relative aspect-video rounded-lg border border-border/40 bg-muted/10 overflow-hidden group text-left"
+      aria-label={filename}
+    >
+      <img src={displaySource || undefined} alt={filename} className="h-full w-full object-cover" loading="lazy" />
+      <div className="absolute inset-0 bg-gradient-to-t from-black/60 via-transparent to-transparent opacity-0 group-hover:opacity-100 transition-opacity" />
+      <div className="absolute bottom-0 left-0 right-0 p-2 text-white opacity-0 group-hover:opacity-100 transition-opacity">
+        <p className="text-xs font-medium truncate">{filename}</p>
+        {sizeText && <p className="text-xs opacity-80">{sizeText}</p>}
+      </div>
+    </button>
+  );
+};
+
 const MessageImageRow = memo(({
   imageFiles,
   resolveDisplayName,
@@ -682,16 +732,7 @@ const MessageImageRow = memo(({
                   aria-label={filename}
                 >
                   {file.url ? (
-                    <img
-                      src={file.url}
-                      alt={filename}
-                      className="h-full w-full object-cover"
-                      loading="lazy"
-                      onError={(e) => {
-                        const target = e.target as HTMLImageElement;
-                        target.style.visibility = 'hidden';
-                      }}
-                    />
+                    <MessageImageThumbnail source={file.url} filename={filename} />
                   ) : (
                     <div className="flex h-full w-full items-center justify-center text-muted-foreground">
                       <Icon name="file-image" className="h-4 w-4" />
@@ -904,22 +945,13 @@ export const MessageFilesDisplay = memo(({ files, onShowPopup, compact = false }
 
         if (isImage && file.url) {
           return (
-            <div
+            <MessageImageCard
               key={file.url || `${fileName}-${index}`}
-              className="relative aspect-video rounded-lg border border-border/40 bg-muted/10 overflow-hidden group"
-            >
-              <img
-                src={file.url}
-                alt={fileName}
-                className="h-full w-full object-cover"
-                loading="lazy"
-              />
-              <div className="absolute inset-0 bg-gradient-to-t from-black/60 via-transparent to-transparent opacity-0 group-hover:opacity-100 transition-opacity" />
-              <div className="absolute bottom-0 left-0 right-0 p-2 text-white opacity-0 group-hover:opacity-100 transition-opacity">
-                <p className="text-xs font-medium truncate">{fileName}</p>
-                {sizeText && <p className="text-xs opacity-80">{sizeText}</p>}
-              </div>
-            </div>
+              source={file.url}
+              filename={fileName}
+              sizeText={sizeText}
+              onOpen={() => handleImageClick(imageGallery.findIndex((image) => image.url === file.url))}
+            />
           );
         }
 

@@ -1131,6 +1131,29 @@ html:not(.dark) .chat-scroll {
   font-size: var(--text-code);
 }
 
+.markdown-content
+  [data-md-image-presentation='true']
+  > img[data-md-image-state='loaded']
+  ~ [data-md-image-placeholder-visual='true'] {
+  display: none;
+}
+
+.markdown-content
+  [data-md-image-presentation='true']
+  > img[data-md-image-state='loading']
+  ~ [data-md-image-placeholder-visual='true']
+  [data-md-image-download-badge='true'] {
+  display: none;
+}
+
+.markdown-content
+  [data-md-image-presentation='true']
+  > img[data-md-image-state='loading']
+  ~ [data-md-image-placeholder-visual='true']
+  [data-md-image-loading-badge='true'] {
+  display: flex;
+}
+
 /*
  * Markdown tables: outer wrapper provides vertical rhythm; the scroll surface
  * owns horizontal overflow so wide tables pan instead of crushing cells.

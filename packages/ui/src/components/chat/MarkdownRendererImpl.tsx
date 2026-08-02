@@ -2,6 +2,7 @@ import React from 'react';
 import morphdom from 'morphdom';
 import { renderMermaidASCII, renderMermaidSVG } from 'beautiful-mermaid';
 import type { Part } from '@opencode-ai/sdk/v2';
+import { useEvent } from '@reactuses/core';
 import { cn } from '@/lib/utils';
 import { useI18n } from '@/lib/i18n';
 import { runtimeFetch } from '@/lib/runtime-fetch';
@@ -27,8 +28,11 @@ import { MarkdownLoadingPlaceholder } from './markdown/MarkdownLoadingSkeleton';
 import {
   attachMarkdownInteractions,
   applyMarkdownCodeBlockWrapState,
+  clearMarkdownImagePlaceholder,
   decorateMarkdown,
+  decorateMarkdownImages,
   scheduleMarkdownCodeLineNumberSync,
+  setMarkdownImagePlaceholder,
   syncMarkdownCodeLineNumbers,
   type DecorateContext,
   type DecorateLabels,
@@ -39,6 +43,8 @@ import { createMermaidViewerRegistry, MERMAID_BLOCK_SELECTOR, shouldRefreshMerma
 import { scheduleAfterPaintTask } from '@/lib/afterPaintTaskQueue';
 import { DualLimitLru } from '@/lib/dualLimitLru';
 import { resolveStreamingRenderCadence } from './streamingRenderCadence';
+import { fetchRuntimeImageObjectUrl, isRelayTransport, resolveImageSource } from './imageSource';
+import { getRuntimeTransportIdentity } from '@/lib/runtime-switch';
 import {
   BLOCK_PATH_TOKEN_RE,
   PARAGRAPH_PATH_TOKEN_RE,
@@ -87,6 +93,10 @@ const useExternalLinkInteractions = ({
         return;
       }
 
+      if (target.closest(MARKDOWN_IMAGE_SELECTOR)) {
+        return;
+      }
+
       const anchor = target.closest('a[href]');
       if (!(anchor instanceof HTMLAnchorElement)) {
         return;
@@ -111,6 +121,229 @@ const useExternalLinkInteractions = ({
       container.removeEventListener('click', handleClick);
     };
   }, [containerRef, enabled]);
+};
+
+const MARKDOWN_IMAGE_SELECTOR = 'img:not([data-md-link-favicon="true"])';
+
+const getMarkdownImageSource = (image: HTMLImageElement): string => (
+  image.getAttribute('data-md-image-source') ?? image.getAttribute('src') ?? ''
+);
+
+type RelayImageState = {
+  key: string;
+  controller?: AbortController;
+  objectUrl?: string;
+};
+
+const useMarkdownImageInteractions = ({
+  containerRef,
+  effectiveDirectory,
+  onShowPopup,
+}: {
+  containerRef: React.RefObject<HTMLDivElement | null>;
+  effectiveDirectory: string;
+  onShowPopup?: (content: ToolPopupContent) => void;
+}) => {
+  const transportIdentityRef = React.useRef<string | null>(null);
+  transportIdentityRef.current ??= getRuntimeTransportIdentity();
+  const transportIdentity = transportIdentityRef.current;
+  const imagePreviewEnabled = Boolean(onShowPopup);
+  const showPopup = useEvent((content: ToolPopupContent) => onShowPopup?.(content));
+  const reconcileRef = React.useRef<(root: HTMLElement) => void>(() => {});
+  const reconcileMarkdownImageResources = React.useMemo(
+    () => (root: HTMLElement) => reconcileRef.current(root),
+    [],
+  );
+
+  React.useEffect(() => {
+    reconcileRef.current = () => {};
+    if (!imagePreviewEnabled) {
+      return;
+    }
+
+    const container = containerRef.current;
+    if (!container) return;
+
+    const openImage = (image: HTMLImageElement) => {
+      const images = Array.from(container.querySelectorAll<HTMLImageElement>(MARKDOWN_IMAGE_SELECTOR));
+      const index = images.indexOf(image);
+      if (index < 0) return;
+      const gallery = images.map((item) => ({
+        url: getMarkdownImageSource(item),
+        filename: item.alt || getMarkdownImageSource(item) || undefined,
+      })).filter((item) => item.url);
+      const selectedSource = getMarkdownImageSource(image);
+      const galleryIndex = gallery.findIndex((item) => item.url === selectedSource);
+      const filename = image.alt || selectedSource;
+      showPopup({
+        open: true,
+        title: filename,
+        content: '',
+        metadata: { tool: 'image-preview', filename },
+        image: { url: selectedSource, filename, gallery, index: Math.max(0, galleryIndex) },
+      });
+    };
+
+    if (!isRelayTransport(transportIdentity)) {
+      const handleDirectClick = (event: MouseEvent) => {
+        const target = event.target;
+        if (!(target instanceof Element)) return;
+        const image = target.closest<HTMLImageElement>(MARKDOWN_IMAGE_SELECTOR);
+        if (!image) return;
+        event.preventDefault();
+        event.stopPropagation();
+        openImage(image);
+      };
+      const handleDirectKeyDown = (event: KeyboardEvent) => {
+        if (event.key !== 'Enter' && event.key !== ' ') return;
+        const target = event.target;
+        if (!(target instanceof HTMLImageElement) || !target.matches(MARKDOWN_IMAGE_SELECTOR)) return;
+        event.preventDefault();
+        event.stopPropagation();
+        openImage(target);
+      };
+      container.addEventListener('click', handleDirectClick);
+      container.addEventListener('keydown', handleDirectKeyDown);
+      return () => {
+        container.removeEventListener('click', handleDirectClick);
+        container.removeEventListener('keydown', handleDirectKeyDown);
+      };
+    }
+
+    const images = new Map<HTMLImageElement, RelayImageState>();
+
+    const clearImage = (image: HTMLImageElement) => {
+      const state = images.get(image);
+      if (!state) return;
+      state.controller?.abort();
+      if (state.objectUrl) {
+        URL.revokeObjectURL(state.objectUrl);
+      }
+      images.delete(image);
+    };
+
+    const getImageKey = (image: HTMLImageElement): string | undefined => {
+      const source = getMarkdownImageSource(image);
+      const resolved = resolveImageSource(source, effectiveDirectory);
+      if (resolved.kind !== 'runtime-file' || !resolved.path) {
+        return undefined;
+      }
+      return `${transportIdentity}\n${effectiveDirectory}\n${source}`;
+    };
+
+    const ensureImageState = (image: HTMLImageElement): RelayImageState | undefined => {
+      const key = getImageKey(image);
+      if (!key) {
+        clearImage(image);
+        return undefined;
+      }
+
+      const existing = images.get(image);
+      if (existing?.key === key) {
+        return existing;
+      }
+
+      clearImage(image);
+      const state = { key };
+      images.set(image, state);
+      return state;
+    };
+
+    const loadImage = (image: HTMLImageElement, state: RelayImageState) => {
+      if (state.controller || state.objectUrl || !container.contains(image)) {
+        return;
+      }
+
+      const source = getMarkdownImageSource(image);
+      const resolved = resolveImageSource(source, effectiveDirectory);
+      if (resolved.kind !== 'runtime-file' || !resolved.path) {
+        clearImage(image);
+        return;
+      }
+
+      const controller = new AbortController();
+      state.controller = controller;
+      image.setAttribute('data-md-image-state', 'loading');
+      image.setAttribute('aria-busy', 'true');
+      void fetchRuntimeImageObjectUrl(resolved.path, controller.signal)
+        .then((objectUrl) => {
+          const latest = images.get(image);
+          if (
+            !latest
+            || latest !== state
+            || latest.controller !== controller
+            || controller.signal.aborted
+          ) {
+            URL.revokeObjectURL(objectUrl);
+            return;
+          }
+          latest.controller = undefined;
+          latest.objectUrl = objectUrl;
+          clearMarkdownImagePlaceholder(image);
+          image.setAttribute('data-md-image-state', 'loaded');
+          image.src = objectUrl;
+        })
+        .catch(() => {
+          const latest = images.get(image);
+          if (latest === state) {
+            latest.controller = undefined;
+            image.removeAttribute('aria-busy');
+            image.setAttribute('data-md-image-state', 'placeholder');
+          }
+        });
+    };
+
+    reconcileRef.current = (root) => {
+      for (const [image, state] of images) {
+        if (!root.contains(image) || getImageKey(image) !== state.key) {
+          clearImage(image);
+        }
+      }
+    };
+
+    const activateImage = (image: HTMLImageElement) => {
+      const state = ensureImageState(image);
+      if (state && !state.objectUrl) {
+        loadImage(image, state);
+        return;
+      }
+      openImage(image);
+    };
+    const handleClick = (event: MouseEvent) => {
+      const target = event.target;
+      if (!(target instanceof Element)) return;
+      const image = target.closest<HTMLImageElement>(MARKDOWN_IMAGE_SELECTOR);
+      if (!image) return;
+      event.preventDefault();
+      event.stopPropagation();
+      activateImage(image);
+    };
+    const handleKeyDown = (event: KeyboardEvent) => {
+      if (event.key !== 'Enter' && event.key !== ' ') return;
+      const target = event.target;
+      if (!(target instanceof HTMLImageElement) || !target.matches(MARKDOWN_IMAGE_SELECTOR)) return;
+      event.preventDefault();
+      event.stopPropagation();
+      activateImage(target);
+    };
+    container.addEventListener('click', handleClick);
+    container.addEventListener('keydown', handleKeyDown);
+
+    return () => {
+      reconcileRef.current = () => {};
+      container.removeEventListener('click', handleClick);
+      container.removeEventListener('keydown', handleKeyDown);
+      for (const image of Array.from(images.keys())) {
+        if (container.contains(image)) {
+          setMarkdownImagePlaceholder(image);
+        }
+        clearImage(image);
+      }
+    };
+    // eslint-disable-next-line react-hooks/exhaustive-deps -- lifecycle inputs are explicit; useEvent supplies the latest popup callback.
+  }, [containerRef, effectiveDirectory, imagePreviewEnabled, transportIdentity]);
+
+  return { reconcileMarkdownImageResources, transportIdentity };
 };
 
 const DEFAULT_MERMAID_CONTROLS: MermaidControlOptions = {
@@ -720,6 +953,10 @@ const useFileReferenceInteractions = ({
         return;
       }
 
+      if (target.closest(MARKDOWN_IMAGE_SELECTOR)) {
+        return;
+      }
+
       const fileRefElement = target.closest(FILE_LINK_SELECTOR);
       if (!(fileRefElement instanceof HTMLElement)) {
         return;
@@ -974,6 +1211,9 @@ const useDecorateContext = (
   deferCodeLineNumberSync: boolean,
   onPreviewLoopback?: (url: string) => void,
   mermaidControls: MermaidControlOptions = DEFAULT_MERMAID_CONTROLS,
+  imageTransportIdentity = getRuntimeTransportIdentity(),
+  imageEffectiveDirectory = '',
+  imagePreviewEnabled = false,
 ): DecorateContext => {
   const { t } = useI18n();
   const labels: DecorateLabels = React.useMemo(() => ({
@@ -1009,8 +1249,19 @@ const useDecorateContext = (
           return {};
         }
       });
-    return { labels, mermaidControls, codeBlockLineWrap, deferCodeLineNumberSync, onToggleCodeBlockLineWrap: toggleCodeBlockLineWrap, renderMermaid, onPreviewLoopback };
-  }, [currentTheme, labels, mermaidControls, codeBlockLineWrap, deferCodeLineNumberSync, toggleCodeBlockLineWrap, onPreviewLoopback]);
+    return {
+      labels,
+      mermaidControls,
+      codeBlockLineWrap,
+      deferCodeLineNumberSync,
+      onToggleCodeBlockLineWrap: toggleCodeBlockLineWrap,
+      renderMermaid,
+      onPreviewLoopback,
+      imageTransportIdentity,
+      imageEffectiveDirectory,
+      imagePreviewEnabled,
+    };
+  }, [currentTheme, labels, mermaidControls, codeBlockLineWrap, deferCodeLineNumberSync, toggleCodeBlockLineWrap, onPreviewLoopback, imageTransportIdentity, imageEffectiveDirectory, imagePreviewEnabled]);
 };
 
 // Runs the async render pipeline into the container and keeps a stable
@@ -1022,6 +1273,7 @@ const useMorphdomMarkdown = ({
   cacheKey,
   syntaxVars,
   ctx,
+  reconcileMarkdownImageResources,
   onRichContentReady,
 }: {
   containerRef: React.RefObject<HTMLDivElement | null>;
@@ -1030,6 +1282,7 @@ const useMorphdomMarkdown = ({
   cacheKey: string;
   syntaxVars: Record<string, string>;
   ctx: DecorateContext;
+  reconcileMarkdownImageResources: (root: HTMLElement) => void;
   onRichContentReady?: (target: HTMLElement) => void;
 }) => {
   React.useEffect(() => {
@@ -1068,12 +1321,14 @@ const useMorphdomMarkdown = ({
       // HTML body — the wrapper exists only for per-block reconciliation.
       block.style.display = 'contents';
       block.innerHTML = renderMarkdownSync(text);
+      decorateMarkdownImages(block, ctx);
       target.appendChild(block);
+      reconcileMarkdownImageResources(target);
       if (!streaming) {
         onRichContentReady?.(target);
       }
     }
-  }, [containerRef, onRichContentReady, streaming, text]);
+  }, [containerRef, ctx, onRichContentReady, reconcileMarkdownImageResources, streaming, text]);
 
   React.useEffect(() => () => {
     mermaidViewerRef.current?.cleanup();
@@ -1103,6 +1358,7 @@ const useMorphdomMarkdown = ({
       fallback.textContent = text;
       block.appendChild(fallback);
       target.appendChild(block);
+      reconcileMarkdownImageResources(target);
       onRichContentReady?.(target);
     };
 
@@ -1132,7 +1388,23 @@ const useMorphdomMarkdown = ({
         const tempHasMermaidBlock = shouldRefreshMermaidViewers(temp);
         morphdom(el, temp, {
           childrenOnly: true,
-          onBeforeElUpdated: (fromEl, toEl) => !fromEl.isEqualNode(toEl),
+          onBeforeElUpdated: (fromEl, toEl) => {
+            if (fromEl instanceof HTMLImageElement && toEl instanceof HTMLImageElement) {
+              const source = fromEl.getAttribute('data-md-image-source');
+              if (source && source === toEl.getAttribute('data-md-image-source')) {
+                const src = fromEl.getAttribute('src');
+                if (src === null) toEl.removeAttribute('src');
+                else toEl.setAttribute('src', src);
+                toEl.className = fromEl.className;
+                for (const attribute of ['data-md-image-state', 'data-md-placeholder-source', 'aria-busy']) {
+                  const value = fromEl.getAttribute(attribute);
+                  if (value === null) toEl.removeAttribute(attribute);
+                  else toEl.setAttribute(attribute, value);
+                }
+              }
+            }
+            return !fromEl.isEqualNode(toEl);
+          },
         });
         el.setAttribute('data-md-id', block.id);
         if (hadMermaidBlock || tempHasMermaidBlock || shouldRefreshMermaidViewers(el)) {
@@ -1153,6 +1425,7 @@ const useMorphdomMarkdown = ({
       if (removedMermaidBlock || (existing.length > blocks.length && hadMermaidBeforeTrailingCleanup)) {
         refreshMermaidViewers();
       }
+      reconcileMarkdownImageResources(target);
 
       if (!ctx.deferCodeLineNumberSync) {
         scheduleMarkdownCodeLineNumberSync(target);
@@ -1196,7 +1469,7 @@ const useMorphdomMarkdown = ({
       cancelQueuedRender();
       cancelQueuedCommit();
     };
-  }, [containerRef, text, streaming, cacheKey, ctx, onRichContentReady, refreshMermaidViewers]);
+  }, [containerRef, text, streaming, cacheKey, ctx, onRichContentReady, reconcileMarkdownImageResources, refreshMermaidViewers]);
 
   React.useEffect(() => {
     const container = containerRef.current;
@@ -1319,9 +1592,21 @@ const MarkdownRendererImpl: React.FC<MarkdownRendererProps> = ({
     enabled: enableFileReferences && !isStreaming,
   });
   useExternalLinkInteractions({ containerRef });
+  const {
+    reconcileMarkdownImageResources,
+    transportIdentity: imageTransportIdentity,
+  } = useMarkdownImageInteractions({ containerRef, effectiveDirectory, onShowPopup });
 
   const syntaxVars = React.useMemo(() => getMarkdownSyntaxVars(currentTheme), [currentTheme]);
-  const ctx = useDecorateContext(currentTheme, live, effectiveDirectory ? handlePreviewLoopback : undefined, DEFAULT_MERMAID_CONTROLS);
+  const ctx = useDecorateContext(
+    currentTheme,
+    live,
+    effectiveDirectory ? handlePreviewLoopback : undefined,
+    DEFAULT_MERMAID_CONTROLS,
+    imageTransportIdentity,
+    effectiveDirectory,
+    Boolean(onShowPopup),
+  );
   const cacheKey = `markdown-${part?.id ? `part-${part.id}` : `message-${messageId}`}`;
 
   useMorphdomMarkdown({
@@ -1331,6 +1616,7 @@ const MarkdownRendererImpl: React.FC<MarkdownRendererProps> = ({
     cacheKey,
     syntaxVars,
     ctx,
+    reconcileMarkdownImageResources,
     onRichContentReady: revealRichContent,
   });
 
@@ -1428,9 +1714,21 @@ const SimpleMarkdownRendererImpl: React.FC<{
     enabled: enableFileReferences,
   });
   useExternalLinkInteractions({ containerRef, enabled: !disableLinkSafety });
+  const {
+    reconcileMarkdownImageResources,
+    transportIdentity: imageTransportIdentity,
+  } = useMarkdownImageInteractions({ containerRef, effectiveDirectory, onShowPopup });
 
   const syntaxVars = React.useMemo(() => getMarkdownSyntaxVars(currentTheme), [currentTheme]);
-  const ctx = useDecorateContext(currentTheme, false, undefined, mermaidControls);
+  const ctx = useDecorateContext(
+    currentTheme,
+    false,
+    undefined,
+    mermaidControls,
+    imageTransportIdentity,
+    effectiveDirectory,
+    Boolean(onShowPopup),
+  );
 
   useMorphdomMarkdown({
     containerRef,
@@ -1439,6 +1737,7 @@ const SimpleMarkdownRendererImpl: React.FC<{
     cacheKey: `simple:${variant}`,
     syntaxVars,
     ctx,
+    reconcileMarkdownImageResources,
     onRichContentReady: revealRichContent,
   });
 

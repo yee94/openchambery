@@ -2,6 +2,7 @@ import { copyTextToClipboard } from '@/lib/clipboard';
 import { getExternalFaviconUrl, isExternalHttpUrl, isLoopbackHttpUrl } from '@/lib/url';
 import type { IconName } from '@/components/icon/icons';
 import { getMermaidViewerController } from './mermaidViewer';
+import { isRelayTransport, resolveImageSource } from '../imageSource';
 
 // ---------------------------------------------------------------------------
 // Shared decoration context
@@ -38,13 +39,16 @@ export type DecorateContext = {
   // Renders a mermaid block source to svg/ascii using current theme colors.
   renderMermaid: (source: string) => MermaidRender;
   onPreviewLoopback?: (url: string) => void;
+  imageTransportIdentity: string;
+  imageEffectiveDirectory: string;
+  imagePreviewEnabled: boolean;
 };
 
 // Reference the app's icon sprite (injected into <body> by the shared Icon
 // component) so DOM-built controls use the same themed icons as the rest of
 // the app. Sprite symbols are registered under `#oc-<name>`.
-const spriteIcon = (name: IconName): string =>
-  `<svg class="oc-icon size-3.5" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><use href="#oc-${name}"></use></svg>`;
+const spriteIcon = (name: IconName, className = 'size-3.5'): string =>
+  `<svg class="oc-icon ${className}" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><use href="#oc-${name}"></use></svg>`;
 
 const ICONS = {
   copy: spriteIcon('file-copy'),
@@ -54,6 +58,9 @@ const ICONS = {
   zoomOut: spriteIcon('subtract'),
   fit: spriteIcon('refresh'),
   textWrap: spriteIcon('text-wrap'),
+  image: spriteIcon('file-image', 'size-10'),
+  imageDownload: spriteIcon('download', 'size-3'),
+  imageLoading: spriteIcon('loader-4', 'size-3.5 animate-spin motion-reduce:animate-none'),
 } as const;
 
 const ICON_BTN_CLASS =
@@ -426,6 +433,7 @@ const decorateLinks = (root: HTMLElement, ctx: DecorateContext): void => {
       favWrap.className =
         'mr-1 inline-flex size-[18px] items-center justify-center rounded border border-[var(--border)] bg-[var(--interactive-hover)] align-middle';
       const img = document.createElement('img');
+      img.setAttribute('data-md-link-favicon', 'true');
       img.src = faviconUrl;
       img.alt = '';
       img.setAttribute('aria-hidden', 'true');
@@ -451,6 +459,97 @@ const decorateLinks = (root: HTMLElement, ctx: DecorateContext): void => {
   }
 };
 
+const MARKDOWN_IMAGE_SELECTOR = 'img:not([data-md-link-favicon="true"])';
+const MARKDOWN_IMAGE_PRESENTATION_SELECTOR = '[data-md-image-presentation="true"]';
+const MARKDOWN_IMAGE_PLACEHOLDER_SOURCE = 'data:image/svg+xml,%3Csvg xmlns="http://www.w3.org/2000/svg" width="576" height="324" viewBox="0 0 576 324"%3E%3C/svg%3E';
+const MARKDOWN_IMAGE_CLASS = [
+  'block',
+  'max-w-full',
+  'rounded-xl',
+  'border',
+  'border-border/80',
+  'bg-[var(--surface-muted)]',
+  'transition-colors',
+  'focus-visible:outline',
+  'focus-visible:outline-2',
+  'focus-visible:outline-offset-2',
+  'focus-visible:outline-[var(--interactive-focus-ring)]',
+];
+const MARKDOWN_IMAGE_INTERACTIVE_CLASS = ['cursor-pointer', 'hover:bg-interactive-hover/60'];
+const MARKDOWN_IMAGE_PLACEHOLDER_CLASS = ['aspect-video', 'h-auto', 'w-full', 'max-w-xl', 'object-contain'];
+
+const ensureMarkdownImagePresentation = (image: HTMLImageElement): HTMLElement => {
+  const parent = image.parentElement;
+  if (parent?.matches(MARKDOWN_IMAGE_PRESENTATION_SELECTOR)) {
+    return parent;
+  }
+
+  const presentation = document.createElement('span');
+  presentation.setAttribute('data-md-image-presentation', 'true');
+  presentation.className = 'relative my-4 block w-fit max-w-full';
+
+  const visual = document.createElement('span');
+  visual.setAttribute('data-md-image-placeholder-visual', 'true');
+  visual.setAttribute('aria-hidden', 'true');
+  visual.className = 'pointer-events-none absolute inset-0 flex items-center justify-center text-muted-foreground';
+
+  const imageIcon = document.createElement('span');
+  imageIcon.className = 'relative flex size-14 items-center justify-center rounded-2xl border border-border/80 bg-[var(--surface-elevated)] shadow-sm';
+  setIconHtml(imageIcon, ICONS.image);
+
+  const downloadBadge = document.createElement('span');
+  downloadBadge.setAttribute('data-md-image-download-badge', 'true');
+  downloadBadge.className = 'absolute -right-1.5 -bottom-1.5 flex size-6 items-center justify-center rounded-full border border-border bg-[var(--surface-elevated)] text-foreground shadow-sm';
+  setIconHtml(downloadBadge, ICONS.imageDownload);
+
+  const loadingBadge = document.createElement('span');
+  loadingBadge.setAttribute('data-md-image-loading-badge', 'true');
+  loadingBadge.className = 'absolute -right-1.5 -bottom-1.5 hidden size-6 items-center justify-center rounded-full border border-border bg-[var(--surface-elevated)] text-foreground shadow-sm';
+  setIconHtml(loadingBadge, ICONS.imageLoading);
+
+  imageIcon.appendChild(downloadBadge);
+  imageIcon.appendChild(loadingBadge);
+  visual.appendChild(imageIcon);
+  parent?.replaceChild(presentation, image);
+  presentation.appendChild(image);
+  presentation.appendChild(visual);
+  return presentation;
+};
+
+export const setMarkdownImagePlaceholder = (image: HTMLImageElement): void => {
+  image.src = MARKDOWN_IMAGE_PLACEHOLDER_SOURCE;
+  image.setAttribute('data-md-placeholder-source', MARKDOWN_IMAGE_PLACEHOLDER_SOURCE);
+  image.setAttribute('data-md-image-state', 'placeholder');
+  image.classList.add(...MARKDOWN_IMAGE_PLACEHOLDER_CLASS);
+};
+
+export const clearMarkdownImagePlaceholder = (image: HTMLImageElement): void => {
+  image.removeAttribute('data-md-image-state');
+  image.removeAttribute('data-md-placeholder-source');
+  image.removeAttribute('aria-busy');
+  image.classList.remove(...MARKDOWN_IMAGE_PLACEHOLDER_CLASS);
+};
+
+export const decorateMarkdownImages = (root: HTMLElement, ctx: DecorateContext): void => {
+  if (!ctx.imagePreviewEnabled || !isRelayTransport(ctx.imageTransportIdentity)) {
+    return;
+  }
+
+  const images = root.querySelectorAll<HTMLImageElement>(MARKDOWN_IMAGE_SELECTOR);
+  for (const image of Array.from(images)) {
+    const source = image.getAttribute('data-md-image-source') ?? image.getAttribute('src') ?? '';
+    const resolved = resolveImageSource(source, ctx.imageEffectiveDirectory);
+    if (resolved.kind !== 'runtime-file') continue;
+
+    image.classList.add(...MARKDOWN_IMAGE_CLASS, ...MARKDOWN_IMAGE_INTERACTIVE_CLASS);
+    image.setAttribute('role', 'button');
+    image.setAttribute('tabindex', '0');
+    image.setAttribute('data-md-image-source', source);
+    ensureMarkdownImagePresentation(image);
+    setMarkdownImagePlaceholder(image);
+  }
+};
+
 /** Run all idempotent DOM decoration passes over freshly-rendered markdown. */
 export const decorateMarkdown = (root: HTMLElement, ctx: DecorateContext): void => {
   decorateInlineCode(root);
@@ -458,6 +557,7 @@ export const decorateMarkdown = (root: HTMLElement, ctx: DecorateContext): void 
   decorateCodeBlocks(root, ctx);
   decorateTables(root);
   decorateLinks(root, ctx);
+  decorateMarkdownImages(root, ctx);
 };
 
 // ---------------------------------------------------------------------------

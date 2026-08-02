@@ -1096,7 +1096,7 @@ const AssistantMessageActionButtons = React.memo(({
                             onPointerDown={(event) => event.stopPropagation()}
                             onClick={handleOpenSourceSessionClick}
                         >
-                            <Icon weight={MESSAGE_ACTION_ICON_WEIGHT} name="external-link" className={MESSAGE_ACTION_ICON_CLASS} />
+                            <Icon weight={MESSAGE_ACTION_ICON_WEIGHT} name="target" className={MESSAGE_ACTION_ICON_CLASS} />
                         </Button>
                     </TooltipTrigger>
                     <TooltipContent sideOffset={6}>{t('chat.messageBody.actions.openSourceSession')}</TooltipContent>

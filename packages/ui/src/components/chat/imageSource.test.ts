@@ -1,0 +1,165 @@
+import { describe, expect, test } from 'bun:test';
+import { readFileSync } from 'node:fs';
+import { dirname, join } from 'node:path';
+import { fileURLToPath } from 'node:url';
+import { isRelayTransport, resolveImageSource } from './imageSource';
+
+const sourceDirectory = dirname(fileURLToPath(import.meta.url));
+const helperSource = readFileSync(join(sourceDirectory, 'imageSource.ts'), 'utf8');
+const rendererSource = readFileSync(join(sourceDirectory, 'MarkdownRendererImpl.tsx'), 'utf8');
+const decorateSource = readFileSync(join(sourceDirectory, 'markdown/decorate.ts'), 'utf8');
+const stylesSource = readFileSync(join(sourceDirectory, '../../index.css'), 'utf8');
+const attachmentSource = readFileSync(join(sourceDirectory, 'FileAttachment.tsx'), 'utf8');
+const dialogSource = readFileSync(join(sourceDirectory, 'message/ToolOutputDialog.tsx'), 'utf8');
+
+describe('resolveImageSource', () => {
+  test('resolves relative POSIX and Windows paths from the effective directory', () => {
+    expect(resolveImageSource('assets/photo.png', '/workspace/project')).toEqual({
+      kind: 'runtime-file',
+      source: 'assets/photo.png',
+      path: '/workspace/project/assets/photo.png',
+    });
+    expect(resolveImageSource('assets\\photo.png', 'C:\\workspace\\project')).toEqual({
+      kind: 'runtime-file',
+      source: 'assets\\photo.png',
+      path: 'C:/workspace/project/assets/photo.png',
+    });
+    expect(resolveImageSource('assets/My%20Photo.png', '/workspace/project')).toEqual({
+      kind: 'runtime-file',
+      source: 'assets/My%20Photo.png',
+      path: '/workspace/project/assets/My Photo.png',
+    });
+  });
+
+  test('normalizes POSIX and Windows file URLs', () => {
+    expect(resolveImageSource('file:///tmp/My%20Image.png', '/workspace')).toEqual({
+      kind: 'runtime-file',
+      source: 'file:///tmp/My%20Image.png',
+      path: '/tmp/My Image.png',
+    });
+    expect(resolveImageSource('file:///C:/Users/demo/image.png', '/workspace')).toEqual({
+      kind: 'runtime-file',
+      source: 'file:///C:/Users/demo/image.png',
+      path: 'C:/Users/demo/image.png',
+    });
+    expect(resolveImageSource('file://C:/Users/demo/image.png', '/workspace')).toEqual({
+      kind: 'runtime-file',
+      source: 'file://C:/Users/demo/image.png',
+      path: 'C:/Users/demo/image.png',
+    });
+  });
+
+  test('keeps absolute local paths on the runtime file route', () => {
+    expect(resolveImageSource('/var/tmp/image.png', '/workspace')).toEqual({
+      kind: 'runtime-file',
+      source: '/var/tmp/image.png',
+      path: '/var/tmp/image.png',
+    });
+    expect(resolveImageSource('D:\\images\\image.png', '/workspace')).toEqual({
+      kind: 'runtime-file',
+      source: 'D:\\images\\image.png',
+      path: 'D:/images/image.png',
+    });
+  });
+
+  test('keeps browser and runtime API sources direct', () => {
+    for (const source of [
+      'https://example.com/image.png',
+      'http://example.com/image.png',
+      'data:image/png;base64,AAAA',
+      'blob:https://example.com/id',
+      '/api/fs/raw?path=image.png',
+      '/api?asset=image.png',
+    ]) {
+      expect(resolveImageSource(source, '/workspace')).toEqual({ kind: 'direct', source });
+    }
+  });
+});
+
+describe('isRelayTransport', () => {
+  test('gates runtime file reads to the relay transport', () => {
+    expect(isRelayTransport('direct:url:http://127.0.0.1:4096')).toBe(false);
+    expect(isRelayTransport('relay:{"serverId":"srv_123"}')).toBe(true);
+  });
+});
+
+describe('image source contracts', () => {
+  test('loads local images through relay-aware runtimeFetch and cleans object URLs', () => {
+    expect(helperSource).toContain("runtimeFetch('/api/fs/raw'");
+    expect(helperSource).toContain('query: { path }');
+    expect(helperSource).toContain('signal,');
+    expect(helperSource).toContain('subscribeRuntimeEndpointChanged');
+    expect(helperSource).toContain('getRuntimeTransportIdentity');
+    expect(helperSource).toContain("isRelayTransport(transportIdentity) && resolved.kind === 'runtime-file'");
+    expect(helperSource).toContain('controller.abort()');
+    expect(helperSource).toContain('URL.revokeObjectURL(objectUrl)');
+  });
+
+  test('keeps direct Markdown images on the browser path and loads relay-local placeholders on activation', () => {
+    expect(decorateSource).toContain("data-md-link-favicon");
+    expect(decorateSource).not.toContain('decorateMessageImages');
+    expect(rendererSource).toContain('img:not([data-md-link-favicon="true"])');
+    expect(rendererSource).toContain('if (!isRelayTransport(transportIdentity))');
+    expect(rendererSource).not.toContain('IntersectionObserver');
+    expect(rendererSource).toContain('const activateImage = (image: HTMLImageElement)');
+    expect(rendererSource).toContain('if (state && !state.objectUrl)');
+    expect(rendererSource).toContain('loadImage(image, state);');
+    expect(rendererSource).toContain('openImage(image);');
+    expect(rendererSource.match(/loadImage\(image, state\);/g)).toHaveLength(1);
+    expect(rendererSource).toContain('state.controller || state.objectUrl');
+    expect(rendererSource).toContain('decorateMarkdownImages(block, ctx)');
+    expect(decorateSource).toContain("image.setAttribute('data-md-image-source', source)");
+    expect(decorateSource).toContain("spriteIcon('file-image', 'size-10')");
+    expect(decorateSource).toContain("spriteIcon('download', 'size-3')");
+    expect(decorateSource).toContain("spriteIcon('loader-4', 'size-3.5 animate-spin motion-reduce:animate-none')");
+    expect(decorateSource).toContain("presentation.setAttribute('data-md-image-presentation', 'true')");
+    expect(decorateSource).toContain("parent?.matches(MARKDOWN_IMAGE_PRESENTATION_SELECTOR)");
+    expect(decorateSource).toContain("visual.setAttribute('data-md-image-placeholder-visual', 'true')");
+    expect(decorateSource).toContain("loadingBadge.setAttribute('data-md-image-loading-badge', 'true')");
+    expect(stylesSource).toContain("img[data-md-image-state='loaded']");
+    expect(stylesSource).toContain("img[data-md-image-state='loading']");
+    expect(stylesSource).toContain("[data-md-image-loading-badge='true']");
+    expect(decorateSource).toContain('setMarkdownImagePlaceholder(image)');
+    expect(decorateSource).toContain('if (!ctx.imagePreviewEnabled || !isRelayTransport(ctx.imageTransportIdentity))');
+    const decorateImagesStart = decorateSource.indexOf('export const decorateMarkdownImages');
+    const imageScanStart = decorateSource.indexOf('root.querySelectorAll<HTMLImageElement>(MARKDOWN_IMAGE_SELECTOR)', decorateImagesStart);
+    expect(decorateSource.indexOf('if (!ctx.imagePreviewEnabled || !isRelayTransport(ctx.imageTransportIdentity))', decorateImagesStart)).toBeLessThan(imageScanStart);
+    expect(decorateSource).toContain("'focus-visible:outline-[var(--interactive-focus-ring)]'");
+    expect(decorateSource).toContain("'rounded-xl'");
+    expect(decorateSource).toContain("'border-border/80'");
+    const imageHookStart = rendererSource.indexOf('const useMarkdownImageInteractions');
+    const imageHookEnd = rendererSource.indexOf('const DEFAULT_MERMAID_CONTROLS', imageHookStart);
+    const imageHook = rendererSource.slice(imageHookStart, imageHookEnd);
+    expect(imageHook).not.toContain('subscribeRuntimeEndpointChanged');
+    expect(imageHook).not.toContain('new MutationObserver');
+    expect(imageHook).toContain('transportIdentityRef.current ??= getRuntimeTransportIdentity()');
+    expect(imageHook).toContain('const ensureImageState = (image: HTMLImageElement)');
+    expect(imageHook).toContain('images.set(image, state)');
+    expect(imageHook).toContain('reconcileRef.current = (root)');
+    const imageReconcileStart = imageHook.indexOf('reconcileRef.current = (root)');
+    const imageReconcileEnd = imageHook.indexOf('const activateImage', imageReconcileStart);
+    const imageReconcile = imageHook.slice(imageReconcileStart, imageReconcileEnd);
+    expect(imageReconcile).toContain('for (const [image, state] of images)');
+    expect(imageReconcile).not.toContain('querySelectorAll');
+    expect(rendererSource.match(/reconcileMarkdownImageResources\(target\);/g)).toHaveLength(3);
+    const directBranchStart = rendererSource.indexOf('if (!isRelayTransport(transportIdentity))');
+    const relayRegistryStart = rendererSource.indexOf('const images = new Map<HTMLImageElement, RelayImageState>()', directBranchStart);
+    const directBranch = rendererSource.slice(directBranchStart, relayRegistryStart);
+    expect(directBranch).not.toContain('MutationObserver');
+    expect(directBranch).not.toContain('fetchRuntimeImageObjectUrl');
+    expect(directBranch).not.toContain('URL.createObjectURL');
+    expect(rendererSource).toContain("event.key !== 'Enter' && event.key !== ' '");
+    expect(rendererSource).toContain("metadata: { tool: 'image-preview', filename }");
+    expect(rendererSource).toContain('image: { url: selectedSource');
+    expect(rendererSource).toContain('URL.revokeObjectURL(state.objectUrl)');
+    expect(rendererSource).toContain('state.controller?.abort()');
+  });
+
+  test('shares resolved display sources while popup payloads retain original URLs', () => {
+    expect(attachmentSource).toContain("import { useResolvedImageSource } from './imageSource'");
+    expect(attachmentSource).toContain('source={file.url}');
+    expect(attachmentSource).toContain('url: file.url');
+    expect(dialogSource).toContain("import { useResolvedImageSource } from '../imageSource'");
+    expect(dialogSource).toContain('src={displayImageSource || undefined}');
+  });
+});
