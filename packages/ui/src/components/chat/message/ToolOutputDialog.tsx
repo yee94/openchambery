@@ -46,6 +46,7 @@ import {
     type ImageViewerPoint,
     type ImageViewerTransform,
 } from './imageViewerTransform';
+import { closeImageViewerAfterMobileTap } from './imageViewerTapGuard';
 
 interface ToolOutputDialogProps {
     popup: ToolPopupContent;
@@ -729,7 +730,13 @@ const ImagePreviewDialog: React.FC<{
             });
             if (action === 'next') showNext();
             if (action === 'previous') showPrevious();
-            if (action === 'close') onOpenChange(false);
+            if (action === 'close') {
+                if (isMobile && gesture.pointerType !== 'mouse') {
+                    closeImageViewerAfterMobileTap(point, () => onOpenChange(false));
+                    return;
+                }
+                onOpenChange(false);
+            }
         }
 
         if (pointersRef.current.size === 1) {

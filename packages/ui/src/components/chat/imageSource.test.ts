@@ -202,15 +202,16 @@ describe('image source contracts', () => {
     expect(dialogSource).toContain('previousFocus.focus({ preventScroll: true })');
   });
 
-  test('keeps the closing viewer interactive long enough to consume the trailing click', () => {
+  test('arms the native trailing-click guard before a mobile tap unmounts the viewer', () => {
     const viewerStart = dialogSource.indexOf('const ImagePreviewDialog');
     const viewerEnd = dialogSource.indexOf('// ── PERF-007', viewerStart);
     const viewerSource = dialogSource.slice(viewerStart, viewerEnd);
     expect(viewerSource).toContain('const consumeViewerClick = useEvent');
     expect(viewerSource).toContain('event.preventDefault()');
     expect(viewerSource).toContain('event.stopPropagation()');
-    expect(viewerSource).toContain("'pointer-events-auto',");
     expect(viewerSource).toContain('onClick={consumeViewerClick}');
-    expect(viewerSource).not.toContain("popup.open ? 'pointer-events-auto' : 'pointer-events-none'");
+    expect(viewerSource).toContain("if (isMobile && gesture.pointerType !== 'mouse')");
+    expect(viewerSource).toContain('closeImageViewerAfterMobileTap(point, () => onOpenChange(false))');
+    expect(viewerSource).toContain('closeImageViewerAfterMobileTap(point, () => onOpenChange(false));\n                    return;');
   });
 });
