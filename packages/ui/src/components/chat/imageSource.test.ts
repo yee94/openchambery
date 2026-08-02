@@ -162,4 +162,43 @@ describe('image source contracts', () => {
     expect(dialogSource).toContain("import { useResolvedImageSource } from '../imageSource'");
     expect(dialogSource).toContain('src={displayImageSource || undefined}');
   });
+
+  test('keeps immersive image viewer gestures split by mobile and desktop contracts', () => {
+    expect(dialogSource).toContain('resolveImageViewerPointerRelease({');
+    expect(dialogSource).toContain('onDoubleClick={isMobile ? undefined : handleDoubleClick}');
+    expect(dialogSource).toContain("if (event.pointerType !== 'mouse') event.preventDefault();");
+    expect(dialogSource).toContain('targetWasCanvas: event.target === event.currentTarget');
+    expect(dialogSource).toContain('pointerType: remainingPointer.pointerType');
+    expect(dialogSource).not.toContain('lastTapRef');
+    expect(dialogSource).not.toContain('chat.toolOutputDialog.image.closeAria');
+    expect(dialogSource).not.toContain('chat.toolOutputDialog.image.previewTitle');
+  });
+
+  test('protects viewer controls and source resets from canvas gesture side effects', () => {
+    const pointerDownStart = dialogSource.indexOf('const handlePointerDown');
+    const pointerDownEnd = dialogSource.indexOf('const handlePointerMove', pointerDownStart);
+    const pointerDownSource = dialogSource.slice(pointerDownStart, pointerDownEnd);
+    expect(pointerDownSource).toContain("if (event.pointerType !== 'mouse') event.preventDefault();");
+    expect(pointerDownSource.match(/event\.preventDefault\(\);/g)).toHaveLength(1);
+    expect(dialogSource).toContain('onDoubleClick={(event) => event.stopPropagation()}');
+
+    const resetStart = dialogSource.indexOf('React.useEffect(() => {\n        if (pendingFrameRef.current !== null)');
+    const resetEnd = dialogSource.indexOf('React.useLayoutEffect(() => {', resetStart);
+    const resetSource = dialogSource.slice(resetStart, resetEnd);
+    expect(resetSource).toContain('window.cancelAnimationFrame(pendingFrameRef.current)');
+    expect(resetSource).toContain('pendingFrameRef.current = null');
+    expect(resetSource).toContain('pendingTransformRef.current = null');
+    expect(resetSource.indexOf('pendingTransformRef.current = null')).toBeLessThan(resetSource.indexOf("imageRef.current.style.transform = 'translate3d(0, 0, 0) scale(1)'"));
+  });
+
+  test('keeps the viewer full-width and traps focus with an invisible close action', () => {
+    expect(dialogSource).toContain('className="absolute inset-0 flex items-center justify-center overflow-hidden touch-none [overscroll-behavior:none]"');
+    expect(dialogSource).toContain('ref={closeButtonRef}');
+    expect(dialogSource).toContain('className="sr-only"');
+    expect(dialogSource).toContain("{t('dialog.common.actions.close')}");
+    expect(dialogSource).toContain("if (event.key === 'Tab')");
+    expect(dialogSource).toContain("if (event.key === 'Escape')");
+    expect(dialogSource).toContain('previousFocusRef.current = document.activeElement');
+    expect(dialogSource).toContain('previousFocus.focus({ preventScroll: true })');
+  });
 });

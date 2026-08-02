@@ -1,5 +1,7 @@
 import React from 'react';
+import { useEvent } from '@reactuses/core';
 import { Dialog, DialogContent } from '@/components/ui/dialog';
+import { Button } from '@/components/ui/button';
 import { File as PierreFile, PatchDiff } from '@pierre/diffs/react';
 import { WorkerHighlightedCode } from '@/components/code/WorkerHighlightedCode';
 import { createPortal } from 'react-dom';
@@ -31,6 +33,19 @@ import { runtimeFetch } from '@/lib/runtime-fetch';
 import { MermaidLoadFailure, getMermaidDataUrlSourcePromise, isCurrentMermaidLoadRequest, isMermaidLoadFailure, nextMermaidLoadRequestId } from './toolOutputDialogMermaid';
 import { useEffectiveDirectory } from '@/hooks/useEffectiveDirectory';
 import { useResolvedImageSource } from '../imageSource';
+import {
+    IMAGE_VIEWER_MAX_SCALE,
+    IMAGE_VIEWER_TAP_MOVE_THRESHOLD,
+    clampImageViewerTransform,
+    getFittedImageSize,
+    panImageViewer,
+    pinchImageViewer,
+    resolveImageViewerPointerRelease,
+    zoomImageViewerAtPoint,
+    type ImageViewerGeometry,
+    type ImageViewerPoint,
+    type ImageViewerTransform,
+} from './imageViewerTransform';
 
 interface ToolOutputDialogProps {
     popup: ToolPopupContent;
@@ -313,6 +328,7 @@ const ImagePreviewDialog: React.FC<{
     isMobile: boolean;
 }> = ({ popup, onOpenChange, isMobile }) => {
     const { t } = useI18n();
+    const themeSystem = useOptionalThemeSystem();
     const effectiveDirectory = useEffectiveDirectory() ?? '';
     const gallery = React.useMemo(() => {
         const baseImage = popup.image;
@@ -335,8 +351,38 @@ const ImagePreviewDialog: React.FC<{
 
     const [currentIndex, setCurrentIndex] = React.useState(0);
     const [imageNaturalSize, setImageNaturalSize] = React.useState<{ width: number; height: number } | null>(null);
+    const [imageLoaded, setImageLoaded] = React.useState(false);
     const { isRendered, isVisible, isTransitioning } = usePreviewOverlayState(popup.open);
     const viewport = usePreviewViewport(popup.open);
+    const canvasRef = React.useRef<HTMLDivElement | null>(null);
+    const viewerRef = React.useRef<HTMLDivElement | null>(null);
+    const closeButtonRef = React.useRef<HTMLButtonElement | null>(null);
+    const previousFocusRef = React.useRef<HTMLElement | null>(null);
+    const imageRef = React.useRef<HTMLImageElement | null>(null);
+    const zoomLabelRef = React.useRef<HTMLSpanElement | null>(null);
+    const transformRef = React.useRef<ImageViewerTransform>({ scale: 1, x: 0, y: 0 });
+    const geometryRef = React.useRef<ImageViewerGeometry>({
+        image: { width: 1, height: 1 },
+        viewport: { width: 1, height: 1 },
+        maxScale: IMAGE_VIEWER_MAX_SCALE,
+    });
+    const pointersRef = React.useRef(new Map<number, { point: ImageViewerPoint; pointerType: string }>());
+    const singleGestureRef = React.useRef<{
+        pointerId: number;
+        pointerType: string;
+        start: ImageViewerPoint;
+        transform: ImageViewerTransform;
+        moved: boolean;
+        targetWasCanvas: boolean;
+        suppressTap: boolean;
+    } | null>(null);
+    const pinchGestureRef = React.useRef<{
+        distance: number;
+        midpoint: ImageViewerPoint;
+        transform: ImageViewerTransform;
+    } | null>(null);
+    const pendingFrameRef = React.useRef<number | null>(null);
+    const pendingTransformRef = React.useRef<{ transform: ImageViewerTransform; animate: boolean } | null>(null);
 
     React.useEffect(() => {
         if (!popup.open || gallery.length === 0) {
@@ -357,160 +403,503 @@ const ImagePreviewDialog: React.FC<{
 
     const currentImage = gallery[currentIndex] ?? gallery[0] ?? popup.image;
     const displayImageSource = useResolvedImageSource(currentImage?.url ?? '', effectiveDirectory);
-    const imageTitle = currentImage?.filename || popup.title || 'Image preview';
+    const imageAccessibleLabel = currentImage?.filename || popup.title;
     const hasMultipleImages = gallery.length > 1;
 
-    const showPrevious = React.useCallback(() => {
+    const showPrevious = useEvent(() => {
         if (gallery.length <= 1) return;
         setCurrentIndex((prev) => (prev - 1 + gallery.length) % gallery.length);
-    }, [gallery.length]);
+    });
 
-    const showNext = React.useCallback(() => {
+    const showNext = useEvent(() => {
         if (gallery.length <= 1) return;
         setCurrentIndex((prev) => (prev + 1) % gallery.length);
-    }, [gallery.length]);
+    });
+
+    const imageDisplaySize = React.useMemo(() => {
+        const viewingArea = {
+            width: Math.max(1, viewport.width),
+            height: Math.max(1, viewport.height),
+        };
+        return imageNaturalSize
+            ? getFittedImageSize(imageNaturalSize, viewingArea)
+            : viewingArea;
+    }, [imageNaturalSize, viewport.height, viewport.width]);
+
+    const geometry = React.useMemo<ImageViewerGeometry>(() => ({
+        image: imageDisplaySize,
+        viewport: { width: Math.max(1, viewport.width), height: Math.max(1, viewport.height) },
+        maxScale: IMAGE_VIEWER_MAX_SCALE,
+    }), [imageDisplaySize, viewport.height, viewport.width]);
+
+    const writeTransform = useEvent((next: ImageViewerTransform, animate = false) => {
+        const transform = clampImageViewerTransform(next, geometryRef.current);
+        transformRef.current = transform;
+        pendingTransformRef.current = { transform, animate };
+        if (pendingFrameRef.current !== null || typeof window === 'undefined') {
+            return;
+        }
+
+        pendingFrameRef.current = window.requestAnimationFrame(() => {
+            pendingFrameRef.current = null;
+            const pending = pendingTransformRef.current;
+            pendingTransformRef.current = null;
+            if (!pending) return;
+
+            if (imageRef.current) {
+                imageRef.current.style.transition = pending.animate
+                    ? 'transform 180ms cubic-bezier(0.22, 1, 0.36, 1)'
+                    : 'none';
+                imageRef.current.style.transform = `translate3d(${pending.transform.x}px, ${pending.transform.y}px, 0) scale(${pending.transform.scale})`;
+            }
+            if (zoomLabelRef.current) {
+                zoomLabelRef.current.textContent = `${Math.round(pending.transform.scale * 100)}%`;
+            }
+            if (canvasRef.current) {
+                canvasRef.current.style.cursor = pending.transform.scale > 1 ? 'grab' : 'zoom-in';
+            }
+        });
+    });
+
+    const resetTransform = useEvent((animate = true) => {
+        writeTransform({ scale: 1, x: 0, y: 0 }, animate);
+    });
+
+    const viewportCenter = useEvent((): ImageViewerPoint => ({
+        x: geometryRef.current.viewport.width / 2,
+        y: geometryRef.current.viewport.height / 2,
+    }));
+
+    const zoomAtPoint = useEvent((nextScale: number, point: ImageViewerPoint, animate = false) => {
+        writeTransform(zoomImageViewerAtPoint(
+            transformRef.current,
+            nextScale,
+            point,
+            viewportCenter(),
+            geometryRef.current,
+        ), animate);
+    });
+
+    const toggleZoom = useEvent((point: ImageViewerPoint) => {
+        if (transformRef.current.scale > 1.01) {
+            resetTransform(true);
+            return;
+        }
+        zoomAtPoint(2, point, true);
+    });
+
+    const handleKeyDown = useEvent((event: KeyboardEvent) => {
+        if (event.key === 'Escape') {
+            event.preventDefault();
+            onOpenChange(false);
+            return;
+        }
+
+        if (event.key === 'Tab') {
+            const viewer = viewerRef.current;
+            if (!viewer) return;
+            const focusable = Array.from(viewer.querySelectorAll<HTMLElement>(
+                'button:not([disabled]), [href], input:not([disabled]), select:not([disabled]), textarea:not([disabled]), [tabindex]:not([tabindex="-1"])',
+            ));
+            if (focusable.length === 0) {
+                event.preventDefault();
+                viewer.focus({ preventScroll: true });
+                return;
+            }
+            const first = focusable[0];
+            const last = focusable[focusable.length - 1];
+            if (event.shiftKey && (document.activeElement === first || !viewer.contains(document.activeElement))) {
+                event.preventDefault();
+                last.focus({ preventScroll: true });
+                return;
+            }
+            if (!event.shiftKey && (document.activeElement === last || !viewer.contains(document.activeElement))) {
+                event.preventDefault();
+                first.focus({ preventScroll: true });
+            }
+            return;
+        }
+
+        if (isMobile) return;
+
+        if (event.key === '+' || event.key === '=') {
+            event.preventDefault();
+            zoomAtPoint(transformRef.current.scale * 1.4, viewportCenter(), true);
+            return;
+        }
+
+        if (event.key === '-' || event.key === '_') {
+            event.preventDefault();
+            zoomAtPoint(transformRef.current.scale / 1.4, viewportCenter(), true);
+            return;
+        }
+
+        if (event.key === '0') {
+            event.preventDefault();
+            resetTransform(true);
+            return;
+        }
+
+        if (event.key === 'ArrowLeft' && hasMultipleImages) {
+            event.preventDefault();
+            showPrevious();
+            return;
+        }
+
+        if (event.key === 'ArrowRight' && hasMultipleImages) {
+            event.preventDefault();
+            showNext();
+        }
+    });
 
     React.useEffect(() => {
         if (!popup.open) {
             return;
         }
 
-        const onKeyDown = (event: KeyboardEvent) => {
-            if (event.key === 'Escape') {
-                onOpenChange(false);
-                return;
-            }
-
-            if (event.key === 'ArrowLeft' && hasMultipleImages) {
-                event.preventDefault();
-                showPrevious();
-                return;
-            }
-
-            if (event.key === 'ArrowRight' && hasMultipleImages) {
-                event.preventDefault();
-                showNext();
-            }
-        };
-
-        window.addEventListener('keydown', onKeyDown);
+        window.addEventListener('keydown', handleKeyDown);
         return () => {
-            window.removeEventListener('keydown', onKeyDown);
+            window.removeEventListener('keydown', handleKeyDown);
         };
-    }, [hasMultipleImages, onOpenChange, popup.open, showNext, showPrevious]);
+        // eslint-disable-next-line react-hooks/exhaustive-deps -- popup.open controls the subscription lifecycle; useEvent supplies the latest callback.
+    }, [popup.open]);
+
+    React.useLayoutEffect(() => {
+        if (!popup.open || !isRendered) return;
+
+        previousFocusRef.current = document.activeElement instanceof HTMLElement ? document.activeElement : null;
+        closeButtonRef.current?.focus({ preventScroll: true });
+
+        return () => {
+            const previousFocus = previousFocusRef.current;
+            previousFocusRef.current = null;
+            if (previousFocus?.isConnected) previousFocus.focus({ preventScroll: true });
+        };
+    }, [isRendered, popup.open]);
 
     React.useEffect(() => {
+        if (pendingFrameRef.current !== null) {
+            window.cancelAnimationFrame(pendingFrameRef.current);
+        }
+        pendingFrameRef.current = null;
+        pendingTransformRef.current = null;
         setImageNaturalSize(null);
+        setImageLoaded(false);
+        transformRef.current = { scale: 1, x: 0, y: 0 };
+        pointersRef.current.clear();
+        singleGestureRef.current = null;
+        pinchGestureRef.current = null;
+        if (imageRef.current) {
+            imageRef.current.style.transform = 'translate3d(0, 0, 0) scale(1)';
+        }
+        if (zoomLabelRef.current) {
+            zoomLabelRef.current.textContent = '100%';
+        }
     }, [currentImage?.url, displayImageSource]);
 
-    const imageDisplaySize = React.useMemo(() => {
-        const maxWidth = Math.max(160, viewport.width * (isMobile ? 0.86 : 0.75));
-        const maxHeight = Math.max(160, viewport.height * (isMobile ? 0.72 : 0.75));
+    React.useLayoutEffect(() => {
+        geometryRef.current = geometry;
+        const transform = clampImageViewerTransform(transformRef.current, geometryRef.current);
+        transformRef.current = transform;
+        if (imageRef.current) {
+            imageRef.current.style.transition = 'none';
+            imageRef.current.style.transform = `translate3d(${transform.x}px, ${transform.y}px, 0) scale(${transform.scale})`;
+        }
+    }, [geometry]);
 
-        if (!imageNaturalSize) {
-            return {
-                width: Math.round(maxWidth),
-                height: Math.round(maxHeight),
+    React.useEffect(() => () => {
+        if (pendingFrameRef.current !== null) {
+            window.cancelAnimationFrame(pendingFrameRef.current);
+        }
+        pendingFrameRef.current = null;
+        pendingTransformRef.current = null;
+    }, []);
+
+    const handleWheel = useEvent((event: WheelEvent) => {
+        if (isMobile) return;
+        event.preventDefault();
+        const point = { x: event.clientX, y: event.clientY };
+        const factor = Math.exp(-event.deltaY * 0.002);
+        zoomAtPoint(transformRef.current.scale * factor, point);
+    });
+
+    React.useEffect(() => {
+        const canvas = canvasRef.current;
+        if (!isRendered || isMobile || !canvas) return;
+        canvas.addEventListener('wheel', handleWheel, { passive: false });
+        return () => canvas.removeEventListener('wheel', handleWheel);
+        // eslint-disable-next-line react-hooks/exhaustive-deps -- isRendered and isMobile control the subscription lifecycle; useEvent supplies the latest callback.
+    }, [isMobile, isRendered]);
+
+    const handleDoubleClick = useEvent((event: React.MouseEvent<HTMLDivElement>) => {
+        if (isMobile) return;
+        event.preventDefault();
+        toggleZoom({ x: event.clientX, y: event.clientY });
+    });
+
+    const handlePointerDown = useEvent((event: React.PointerEvent<HTMLDivElement>) => {
+        if (event.pointerType !== 'mouse') event.preventDefault();
+        event.currentTarget.setPointerCapture(event.pointerId);
+        const point = { x: event.clientX, y: event.clientY };
+        pointersRef.current.set(event.pointerId, { point, pointerType: event.pointerType });
+
+        if (pointersRef.current.size === 1) {
+            singleGestureRef.current = {
+                pointerId: event.pointerId,
+                pointerType: event.pointerType,
+                start: point,
+                transform: transformRef.current,
+                moved: false,
+                targetWasCanvas: event.target === event.currentTarget,
+                suppressTap: false,
             };
+            if (canvasRef.current && transformRef.current.scale > 1) {
+                canvasRef.current.style.cursor = 'grabbing';
+            }
+            return;
         }
 
-        const widthScale = maxWidth / imageNaturalSize.width;
-        const heightScale = maxHeight / imageNaturalSize.height;
-        const scale = Math.min(widthScale, heightScale);
-
-        return {
-            width: Math.max(1, Math.round(imageNaturalSize.width * scale)),
-            height: Math.max(1, Math.round(imageNaturalSize.height * scale)),
+        const points = Array.from(pointersRef.current.values()).slice(0, 2).map((pointer) => pointer.point);
+        const dx = points[1].x - points[0].x;
+        const dy = points[1].y - points[0].y;
+        pinchGestureRef.current = {
+            distance: Math.max(1, Math.hypot(dx, dy)),
+            midpoint: { x: (points[0].x + points[1].x) / 2, y: (points[0].y + points[1].y) / 2 },
+            transform: transformRef.current,
         };
-    }, [imageNaturalSize, isMobile, viewport.height, viewport.width]);
+        if (singleGestureRef.current) singleGestureRef.current.suppressTap = true;
+    });
+
+    const handlePointerMove = useEvent((event: React.PointerEvent<HTMLDivElement>) => {
+        if (!pointersRef.current.has(event.pointerId)) return;
+        event.preventDefault();
+        const point = { x: event.clientX, y: event.clientY };
+        pointersRef.current.set(event.pointerId, { point, pointerType: event.pointerType });
+
+        if (pointersRef.current.size >= 2 && pinchGestureRef.current) {
+            const points = Array.from(pointersRef.current.values()).slice(0, 2).map((pointer) => pointer.point);
+            const dx = points[1].x - points[0].x;
+            const dy = points[1].y - points[0].y;
+            const midpoint = { x: (points[0].x + points[1].x) / 2, y: (points[0].y + points[1].y) / 2 };
+            const nextScale = pinchGestureRef.current.transform.scale
+                * Math.hypot(dx, dy) / pinchGestureRef.current.distance;
+            writeTransform(pinchImageViewer(
+                pinchGestureRef.current.transform,
+                pinchGestureRef.current.midpoint,
+                midpoint,
+                nextScale,
+                viewportCenter(),
+                geometryRef.current,
+            ));
+            return;
+        }
+
+        const gesture = singleGestureRef.current;
+        if (!gesture || gesture.pointerId !== event.pointerId) return;
+        const delta = { x: point.x - gesture.start.x, y: point.y - gesture.start.y };
+        if (Math.hypot(delta.x, delta.y) > IMAGE_VIEWER_TAP_MOVE_THRESHOLD) gesture.moved = true;
+        if (gesture.transform.scale > 1.01) {
+            writeTransform(panImageViewer(gesture.transform, delta, geometryRef.current));
+        }
+    });
+
+    const finishPointer = useEvent((event: React.PointerEvent<HTMLDivElement>, cancelled: boolean) => {
+        const gesture = singleGestureRef.current;
+        const trackedPointer = pointersRef.current.get(event.pointerId);
+        const point = trackedPointer ? { x: event.clientX, y: event.clientY } : undefined;
+        pointersRef.current.delete(event.pointerId);
+
+        if (gesture?.pointerId === event.pointerId && point) {
+            const action = resolveImageViewerPointerRelease({
+                isMobile,
+                pointerType: gesture.pointerType,
+                cancelled,
+                moved: gesture.moved || Math.hypot(point.x - gesture.start.x, point.y - gesture.start.y) > IMAGE_VIEWER_TAP_MOVE_THRESHOLD,
+                suppressTap: gesture.suppressTap,
+                targetWasCanvas: gesture.targetWasCanvas,
+                start: gesture.start,
+                end: point,
+                startScale: gesture.transform.scale,
+                hasMultipleImages,
+            });
+            if (action === 'next') showNext();
+            if (action === 'previous') showPrevious();
+            if (action === 'close') onOpenChange(false);
+        }
+
+        if (pointersRef.current.size === 1) {
+            const [remainingId, remainingPointer] = Array.from(pointersRef.current.entries())[0];
+            singleGestureRef.current = {
+                pointerId: remainingId,
+                pointerType: remainingPointer.pointerType,
+                start: remainingPointer.point,
+                transform: transformRef.current,
+                moved: false,
+                targetWasCanvas: false,
+                suppressTap: true,
+            };
+            pinchGestureRef.current = null;
+        } else if (pointersRef.current.size === 0) {
+            singleGestureRef.current = null;
+            pinchGestureRef.current = null;
+            if (canvasRef.current) {
+                canvasRef.current.style.cursor = transformRef.current.scale > 1 ? 'grab' : 'zoom-in';
+            }
+        }
+
+        if (event.currentTarget.hasPointerCapture(event.pointerId)) {
+            event.currentTarget.releasePointerCapture(event.pointerId);
+        }
+    });
+
+    const handleImageLoad = useEvent((event: React.SyntheticEvent<HTMLImageElement>) => {
+        const element = event.currentTarget;
+        if (element.naturalWidth > 0 && element.naturalHeight > 0) {
+            setImageNaturalSize((previous) => {
+                if (previous?.width === element.naturalWidth && previous.height === element.naturalHeight) return previous;
+                return { width: element.naturalWidth, height: element.naturalHeight };
+            });
+        }
+        setImageLoaded(true);
+    });
 
     if (!isRendered || !currentImage || typeof document === 'undefined') {
         return null;
     }
 
+    const isDarkTheme = themeSystem?.currentTheme.metadata.variant === 'dark';
+    const viewerTone = isDarkTheme
+        ? 'bg-background text-foreground'
+        : 'bg-foreground text-background';
+    const toolbarTone = isDarkTheme
+        ? 'border-foreground/15 bg-foreground/10 text-foreground'
+        : 'border-background/15 bg-background/10 text-background';
+    const controlTone = isDarkTheme
+        ? 'text-foreground hover:bg-foreground/15 hover:text-foreground'
+        : 'text-background hover:bg-background/15 hover:text-background';
+
     const content = (
-        <div className={cn('fixed inset-0 z-50', popup.open ? 'pointer-events-auto' : 'pointer-events-none')}>
-            <div
-                aria-hidden="true"
-                className={cn(
-                    'absolute inset-0 bg-black/40',
-                    isTransitioning && 'transition-opacity duration-150 ease-out',
-                    isVisible ? 'opacity-100' : 'opacity-0'
-                )}
-                onMouseDown={() => onOpenChange(false)}
-            />
-
-            {hasMultipleImages && (
-                <>
-                    <button
-                        type="button"
-                        onMouseDown={(event) => event.stopPropagation()}
-                        onClick={showPrevious}
-                        className="absolute left-3 top-1/2 -translate-y-1/2 z-10 h-10 w-10 flex items-center justify-center rounded-full bg-black/40 text-foreground/90 hover:bg-black/55 focus:outline-none focus:ring-2 focus:ring-primary/60"
-                        aria-label={t('chat.toolOutputDialog.image.previousAria')}
-                    >
-                        <Icon name="arrow-left-s" className="h-6 w-6" />
-                    </button>
-                    <button
-                        type="button"
-                        onMouseDown={(event) => event.stopPropagation()}
-                        onClick={showNext}
-                        className="absolute right-3 top-1/2 -translate-y-1/2 z-10 h-10 w-10 flex items-center justify-center rounded-full bg-black/40 text-foreground/90 hover:bg-black/55 focus:outline-none focus:ring-2 focus:ring-primary/60"
-                        aria-label={t('chat.toolOutputDialog.image.nextAria')}
-                    >
-                        <Icon name="arrow-right-s" className="h-6 w-6" />
-                    </button>
-                </>
+        <div
+            ref={viewerRef}
+            className={cn(
+                'fixed inset-0 z-50 overflow-hidden select-none',
+                viewerTone,
+                isTransitioning && 'transition-opacity duration-150 ease-out',
+                isVisible ? 'opacity-100' : 'opacity-0',
+                popup.open ? 'pointer-events-auto' : 'pointer-events-none',
             )}
-
-            <div
-                className={cn(
-                    'absolute inset-0 flex items-center justify-center pointer-events-none',
-                    isMobile ? 'p-2.5' : 'p-4'
-                )}
+            role="dialog"
+            aria-modal="true"
+            aria-label={imageAccessibleLabel}
+            tabIndex={-1}
+        >
+            <Button
+                ref={closeButtonRef}
+                className="sr-only"
+                onClick={() => onOpenChange(false)}
             >
-                <div
-                    className={cn(
-                        'pointer-events-auto flex flex-col gap-2',
-                        isTransitioning && 'transition-opacity duration-150 ease-out',
-                        isVisible ? 'opacity-100' : 'opacity-0'
-                    )}
-                    style={{ width: `${imageDisplaySize.width}px` }}
-                >
-                    <div className="flex items-center justify-between gap-2">
-                        <div className="min-w-0 flex-1 text-foreground typography-ui-header font-semibold truncate" title={imageTitle}>
-                            {imageTitle}
-                        </div>
-                        <button
-                            type="button"
-                            className="h-8 w-8 flex items-center justify-center rounded-lg text-muted-foreground/80 hover:text-foreground focus:outline-none focus:ring-2 focus:ring-primary/60"
-                            onClick={() => onOpenChange(false)}
-                            aria-label={t('chat.toolOutputDialog.image.closeAria')}
-                        >
-                            <Icon name="close" className="h-4 w-4" />
-                        </button>
+                {t('dialog.common.actions.close')}
+            </Button>
+            <div
+                ref={canvasRef}
+                className="absolute inset-0 flex items-center justify-center overflow-hidden touch-none [overscroll-behavior:none]"
+                onDoubleClick={isMobile ? undefined : handleDoubleClick}
+                onPointerDown={handlePointerDown}
+                onPointerMove={handlePointerMove}
+                onPointerUp={(event) => finishPointer(event, false)}
+                onPointerCancel={(event) => finishPointer(event, true)}
+                onLostPointerCapture={(event) => finishPointer(event, true)}
+            >
+                {!imageLoaded && (
+                    <div className="pointer-events-none absolute inset-0 flex items-center justify-center" role="status">
+                        <span className="flex items-center gap-2 typography-ui-label opacity-70">
+                            <Icon name="loader-4" className="size-4 animate-spin" />
+                            {t('common.loading')}
+                        </span>
                     </div>
+                )}
+                <img
+                    ref={imageRef}
+                    src={displayImageSource || undefined}
+                    alt={imageAccessibleLabel ?? ''}
+                    className={cn(
+                        'block max-w-none object-contain will-change-transform',
+                        imageLoaded ? 'opacity-100' : 'opacity-0',
+                    )}
+                    style={{ width: `${imageDisplaySize.width}px`, height: `${imageDisplaySize.height}px` }}
+                    loading="lazy"
+                    draggable={false}
+                    onLoad={handleImageLoad}
+                />
+            </div>
 
-                    <img
-                        src={displayImageSource || undefined}
-                        alt={imageTitle}
-                        className="block object-contain"
-                        style={{ width: `${imageDisplaySize.width}px`, height: `${imageDisplaySize.height}px` }}
-                        loading="lazy"
-                        onLoad={(event) => {
-                            const element = event.currentTarget;
-                            const width = element.naturalWidth;
-                            const height = element.naturalHeight;
-                            if (width > 0 && height > 0) {
-                                setImageNaturalSize((previous) => {
-                                    if (previous && previous.width === width && previous.height === height) {
-                                        return previous;
-                                    }
-                                    return { width, height };
-                                });
-                            }
-                        }}
-                    />
+            <div className="pointer-events-none absolute inset-x-0 bottom-0 z-10 flex justify-center px-2 pb-[max(0.5rem,env(safe-area-inset-bottom))]">
+                <div
+                    className={cn('pointer-events-auto flex h-10 items-center gap-0.5 rounded-full border px-1 shadow-lg backdrop-blur-xl', toolbarTone)}
+                    onPointerDown={(event) => event.stopPropagation()}
+                    onDoubleClick={(event) => event.stopPropagation()}
+                >
+                    {hasMultipleImages && (
+                        <Button
+                            variant="ghost"
+                            size="icon"
+                            className={cn('size-8 rounded-full', controlTone)}
+                            onClick={showPrevious}
+                            aria-label={t('chat.toolOutputDialog.image.previousAria')}
+                            title={t('chat.toolOutputDialog.image.previousAria')}
+                        >
+                            <Icon name="arrow-left-s" className="size-5" />
+                        </Button>
+                    )}
+                    {hasMultipleImages && (
+                        <span className="min-w-10 px-1 text-center typography-micro tabular-nums opacity-80">
+                            {currentIndex + 1} / {gallery.length}
+                        </span>
+                    )}
+                    {hasMultipleImages && (
+                        <Button
+                            variant="ghost"
+                            size="icon"
+                            className={cn('size-8 rounded-full', controlTone)}
+                            onClick={showNext}
+                            aria-label={t('chat.toolOutputDialog.image.nextAria')}
+                            title={t('chat.toolOutputDialog.image.nextAria')}
+                        >
+                            <Icon name="arrow-right-s" className="size-5" />
+                        </Button>
+                    )}
+                    {hasMultipleImages && <span className="mx-0.5 h-4 w-px bg-current opacity-15" aria-hidden="true" />}
+                    <Button
+                        variant="ghost"
+                        size="icon"
+                        className={cn('size-8 rounded-full', controlTone)}
+                        onClick={() => zoomAtPoint(transformRef.current.scale / 1.4, viewportCenter(), true)}
+                        aria-label={t('chat.toolOutputDialog.image.zoomOutAria')}
+                        title={t('chat.toolOutputDialog.image.zoomOutAria')}
+                    >
+                        <Icon name="subtract" className="size-4" />
+                    </Button>
+                    <Button
+                        variant="ghost"
+                        size="sm"
+                        className={cn('h-8 min-w-14 rounded-full px-2 tabular-nums', controlTone)}
+                        onClick={() => resetTransform(true)}
+                        aria-label={t('chat.toolOutputDialog.image.resetZoomAria')}
+                        title={t('chat.toolOutputDialog.image.resetZoomAria')}
+                    >
+                        <Icon name="restart" className="size-3.5" />
+                        <span ref={zoomLabelRef}>100%</span>
+                    </Button>
+                    <Button
+                        variant="ghost"
+                        size="icon"
+                        className={cn('size-8 rounded-full', controlTone)}
+                        onClick={() => zoomAtPoint(transformRef.current.scale * 1.4, viewportCenter(), true)}
+                        aria-label={t('chat.toolOutputDialog.image.zoomInAria')}
+                        title={t('chat.toolOutputDialog.image.zoomInAria')}
+                    >
+                        <Icon name="add" className="size-4" />
+                    </Button>
                 </div>
             </div>
         </div>
