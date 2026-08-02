@@ -637,6 +637,11 @@ const ImagePreviewDialog: React.FC<{
         toggleZoom({ x: event.clientX, y: event.clientY });
     });
 
+    const consumeViewerClick = useEvent((event: React.MouseEvent<HTMLDivElement>) => {
+        event.preventDefault();
+        event.stopPropagation();
+    });
+
     const handlePointerDown = useEvent((event: React.PointerEvent<HTMLDivElement>) => {
         if (event.pointerType !== 'mouse') event.preventDefault();
         event.currentTarget.setPointerCapture(event.pointerId);
@@ -786,12 +791,13 @@ const ImagePreviewDialog: React.FC<{
                 viewerTone,
                 isTransitioning && 'transition-opacity duration-150 ease-out',
                 isVisible ? 'opacity-100' : 'opacity-0',
-                popup.open ? 'pointer-events-auto' : 'pointer-events-none',
+                'pointer-events-auto',
             )}
             role="dialog"
             aria-modal="true"
             aria-label={imageAccessibleLabel}
             tabIndex={-1}
+            onClick={consumeViewerClick}
         >
             <Button
                 ref={closeButtonRef}
