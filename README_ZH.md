@@ -10,7 +10,16 @@ Desktop · Browser · Phone · VS Code
 
 [English](./README.md)
 
-![OpenChamber 主界面](docs/references/chat_example.png)
+<table align="center" border="0" cellspacing="0" cellpadding="6">
+  <tr>
+    <td width="75%" valign="top">
+      <img src="docs/references/chat_example.png" alt="OpenChamber 主界面 — 桌面" width="100%" />
+    </td>
+    <td width="25%" valign="top">
+      <img src="docs/references/chat_mobile.png" alt="OpenChamber 移动端 — 项目" width="100%" />
+    </td>
+  </tr>
+</table>
 
 ---
 
@@ -57,6 +66,16 @@ Desktop · Browser · Phone · VS Code
 
 完整变更见 [CHANGELOG.md](./CHANGELOG.md) 与 [Releases](https://github.com/yee94/openchamber/releases)。
 
+## 下载地址
+
+| 端 | 安装方式 |
+|----|----------|
+| **桌面**（macOS / Windows / Linux） | [GitHub Releases](https://github.com/yee94/openchamber/releases) |
+| **iOS**（TestFlight） | [加入测试](https://testflight.apple.com/join/ZCENBHtm) — 先在 iPhone / iPad 安装 [TestFlight](https://apps.apple.com/app/testflight/id899247664)，再打开链接 |
+| **Android** | [GitHub Releases](https://github.com/yee94/openchamber/releases)（`app-release.apk`） |
+| **VS Code** | [Visual Studio Marketplace](https://marketplace.visualstudio.com/items?itemName=fedaykindev.openchamber) |
+| **Web / CLI** | [安装脚本](https://raw.githubusercontent.com/yee94/openchamber/main/scripts/install.sh) · `openchamber` |
+
 ## 快速开始
 
 > **前置：** 桌面版内置匹配的 OpenCode CLI；CLI / Web / VS Code 使用你本机已安装的 [OpenCode](https://opencode.ai)。
@@ -77,9 +96,9 @@ APPIMAGE_EXTRACT_AND_RUN=1 ./OpenChamber-*-linux-*.AppImage
 
 ### 移动端（iOS TestFlight + Android）
 
-- **iOS（TestFlight）：** https://testflight.apple.com/join/ZCENBHtm  
-  公开测试链接。首次外部测试可能需等待 Apple Beta App Review 通过后才可安装。
-- **Android：** 从 [Releases](https://github.com/yee94/openchamber/releases) 下载签名 APK/AAB。
+- **iOS（TestFlight）：** [testflight.apple.com/join/ZCENBHtm](https://testflight.apple.com/join/ZCENBHtm)  
+  公开测试链接。请先在设备上安装 [TestFlight](https://apps.apple.com/app/testflight/id899247664)，再打开链接。首次外部测试可能需等待 Apple Beta App Review 通过后才可安装。
+- **Android：** 从 [Releases](https://github.com/yee94/openchamber/releases/latest) 下载签名 APK（`app-release.apk`）。
 
 原生 App 连接已有的 OpenChamber 服务端，本身不内嵌 OpenCode。
 

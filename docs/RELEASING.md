@@ -155,6 +155,8 @@ gh release view "v$VERSION" --repo yee94/openchamber --json isDraft,isPrerelease
 
 Android 客户端通过 `https://api.github.com/repos/yee94/openchamber/releases/latest` 获取最新稳定 Release，并使用第一个 `.apk` asset 的 `browser_download_url` 作为下载地址。
 
+iOS 客户端通过更新 API 或 GitHub 回退获取版本信息后，使用固定外测 Public Link 安装：`https://testflight.apple.com/join/ZCENBHtm`。CI 每次上传会把新构建关联到 App Store Connect 外测群组；Apple 批准 Beta App Review 后，该链接自动提供最新获准构建。
+
 ## 常见恢复路径
 
 ### `Extract changelog for release` 失败

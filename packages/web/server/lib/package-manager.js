@@ -13,6 +13,7 @@ const PACKAGE_PATH_SEGMENTS = PACKAGE_NAME.split('/');
 const NPM_REGISTRY_URL = `https://registry.npmjs.org/${PACKAGE_NAME}`;
 const CHANGELOG_URL = 'https://raw.githubusercontent.com/yee94/openchamber/main/CHANGELOG.md';
 const GITHUB_RELEASES_URL = 'https://github.com/yee94/openchamber/releases';
+const IOS_TESTFLIGHT_PUBLIC_URL = 'https://testflight.apple.com/join/ZCENBHtm';
 const VERCEL_UPDATE_CHECK_URL = 'https://openchamber-update.vercel.app/v1/update/check';
 const GITHUB_LATEST_RELEASE_URL = `${GITHUB_RELEASES_URL}/latest`;
 let cachedDetectedPm = null;
@@ -170,7 +171,9 @@ async function checkForUpdatesFromGitHub(currentVersion, options = {}) {
       currentVersion,
       releaseUrl,
       downloadUrl: normalizeAppType(options.appType) === 'mobile-capacitor'
-        ? `${GITHUB_RELEASES_URL}/download/v${version}/app-release.apk`
+        ? normalizePlatform(options.platform) === 'ios'
+          ? IOS_TESTFLIGHT_PUBLIC_URL
+          : `${GITHUB_RELEASES_URL}/download/v${version}/app-release.apk`
         : undefined,
     };
   } catch {

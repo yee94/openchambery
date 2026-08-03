@@ -3,6 +3,7 @@ const DEFAULT_CHECK_INTERVAL_SECONDS = 3600;
 const MANIFEST_PATH = '/update-manifest.json';
 const CHANGELOG_PATH = '/CHANGELOG.md';
 const RELEASE_DOWNLOAD_BASE = 'https://github.com/yee94/openchamber/releases/download';
+const IOS_TESTFLIGHT_PUBLIC_URL = 'https://testflight.apple.com/join/ZCENBHtm';
 
 function responseHeaders(headers = {}) {
   return {
@@ -173,7 +174,7 @@ export async function handleUpdateCheck(request) {
   const downloadUrl = appType === 'mobile-capacitor' && platform === 'android'
     ? `${RELEASE_DOWNLOAD_BASE}/v${manifest.latestVersion}/app-release.apk`
     : appType === 'mobile-capacitor' && platform === 'ios'
-      ? manifest.releaseNotesUrl
+      ? IOS_TESTFLIGHT_PUBLIC_URL
       : undefined;
 
   return jsonResponse({

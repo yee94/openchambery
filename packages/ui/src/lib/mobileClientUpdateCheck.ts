@@ -5,6 +5,7 @@ export const MOBILE_EDGEONE_UPDATE_CHECK_URL = 'https://openchamber.xiaobe.top/v
 export const MOBILE_VERCEL_UPDATE_CHECK_URL = 'https://openchamber-update.vercel.app/v1/update/check';
 export const MOBILE_GITHUB_LATEST_RELEASE_URL = 'https://github.com/yee94/openchamber/releases/latest';
 export const MOBILE_GITHUB_RELEASES_URL = 'https://github.com/yee94/openchamber/releases';
+export const MOBILE_IOS_TESTFLIGHT_URL = 'https://testflight.apple.com/join/ZCENBHtm';
 export const MOBILE_UPDATE_CHECK_TIMEOUT_MS = 10_000;
 
 export type MobileClientUpdateCheckOptions = {
@@ -159,9 +160,18 @@ async function requestWithTimeout(
   }
 }
 
+function getDefaultMobileDownloadUrl(
+  platform: MobileClientUpdateCheckOptions['platform'],
+  latestVersion: string,
+): string {
+  if (platform === 'ios') return MOBILE_IOS_TESTFLIGHT_URL;
+  return `${MOBILE_GITHUB_RELEASES_URL}/download/v${latestVersion}/app-release.apk`;
+}
+
 function mapUpdateServiceResult(
   data: UpdateServiceResponse,
   currentVersion: string,
+  platform: MobileClientUpdateCheckOptions['platform'],
 ): UpdateInfo | null {
   if (typeof data.latestVersion !== 'string' || data.latestVersion.trim().length === 0) {
     return null;
@@ -178,7 +188,7 @@ function mapUpdateServiceResult(
     ? data.downloadUrl.trim()
     : typeof data.download?.url === 'string' && data.download.url.trim().length > 0
       ? data.download.url.trim()
-      : `${MOBILE_GITHUB_RELEASES_URL}/download/v${latestVersion}/app-release.apk`;
+      : getDefaultMobileDownloadUrl(platform, latestVersion);
 
   return {
     available: Boolean(data.updateAvailable) && versionComparison > 0,
@@ -223,11 +233,12 @@ async function checkFromUpdateService(
     return null;
   }
 
-  return mapUpdateServiceResult(data, options.currentVersion);
+  return mapUpdateServiceResult(data, options.currentVersion, options.platform);
 }
 
 async function checkFromGitHub(
   currentVersion: string,
+  platform: MobileClientUpdateCheckOptions['platform'],
   timeoutMs: number,
   fetchImpl: typeof fetch,
 ): Promise<UpdateInfo | null> {
@@ -262,7 +273,7 @@ async function checkFromGitHub(
     version,
     currentVersion,
     releaseUrl,
-    downloadUrl: `${MOBILE_GITHUB_RELEASES_URL}/download/v${version}/app-release.apk`,
+    downloadUrl: getDefaultMobileDownloadUrl(platform, version),
   };
 }
 
@@ -297,7 +308,7 @@ export async function checkForMobileClientUpdates(
 
   const githubTimeoutMs = getMobileUpdateCheckTimeoutMs(deadline, 1, now);
   if (githubTimeoutMs !== null) {
-    const githubUpdate = await checkFromGitHub(currentVersion, githubTimeoutMs, fetchImpl);
+    const githubUpdate = await checkFromGitHub(currentVersion, options.platform, githubTimeoutMs, fetchImpl);
     if (githubUpdate) return githubUpdate;
   }
 

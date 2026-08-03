@@ -10,7 +10,16 @@ Desktop · Browser · Phone · VS Code
 
 [中文说明](./README_ZH.md)
 
-![OpenChamber main UI](docs/references/chat_example.png)
+<table align="center" border="0" cellspacing="0" cellpadding="6">
+  <tr>
+    <td width="75%" valign="top">
+      <img src="docs/references/chat_example.png" alt="OpenChamber main UI — desktop" width="100%" />
+    </td>
+    <td width="25%" valign="top">
+      <img src="docs/references/chat_mobile.png" alt="OpenChamber mobile UI — projects" width="100%" />
+    </td>
+  </tr>
+</table>
 
 ---
 
@@ -43,6 +52,16 @@ Highlights toward “Codex feel + OpenCode power”:
 
 See [CHANGELOG.md](./CHANGELOG.md) and [Releases](https://github.com/yee94/openchamber/releases) for the full trail.
 
+## Downloads
+
+| Surface | Install |
+|---------|---------|
+| **Desktop** (macOS / Windows / Linux) | [GitHub Releases](https://github.com/yee94/openchamber/releases) |
+| **iOS** (TestFlight) | [Join the beta](https://testflight.apple.com/join/ZCENBHtm) — install [TestFlight](https://apps.apple.com/app/testflight/id899247664) on your iPhone or iPad, then open the link |
+| **Android** | [GitHub Releases](https://github.com/yee94/openchamber/releases) (`app-release.apk`) |
+| **VS Code** | [Visual Studio Marketplace](https://marketplace.visualstudio.com/items?itemName=fedaykindev.openchamber) |
+| **Web / CLI** | [Install script](https://raw.githubusercontent.com/yee94/openchamber/main/scripts/install.sh) · `openchamber` |
+
 ## Quick Start
 
 > **Prerequisite:** Desktop bundles a matching OpenCode CLI. CLI/Web and VS Code use your installed [OpenCode CLI](https://opencode.ai).
@@ -63,9 +82,9 @@ Install from the [Marketplace](https://marketplace.visualstudio.com/items?itemNa
 
 ### Mobile (iOS TestFlight + Android)
 
-- **iOS (TestFlight):** https://testflight.apple.com/join/ZCENBHtm  
-  Public beta. First-time external testers may need Apple Beta App Review approval before the build becomes installable.
-- **Android:** download the signed APK/AAB from [Releases](https://github.com/yee94/openchamber/releases).
+- **iOS (TestFlight):** [testflight.apple.com/join/ZCENBHtm](https://testflight.apple.com/join/ZCENBHtm)  
+  Public beta. Install [TestFlight](https://apps.apple.com/app/testflight/id899247664) first, then open the link on your device. First-time external testers may need Apple Beta App Review approval before the build becomes installable.
+- **Android:** download the signed APK from [Releases](https://github.com/yee94/openchamber/releases/latest) (`app-release.apk`).
 
 The native app connects to an existing OpenChamber server; it does not embed OpenCode itself.
 

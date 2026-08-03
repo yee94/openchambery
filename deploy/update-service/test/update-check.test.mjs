@@ -132,7 +132,7 @@ test('returns platform download targets for Capacitor clients', async () => {
     currentVersion: '1.16.49', appType: 'mobile-capacitor', platform: 'ios',
   }));
   const ios = await iosResponse.json();
-  assert.equal(ios.downloadUrl, manifest.releaseNotesUrl);
+  assert.equal(ios.downloadUrl, 'https://testflight.apple.com/join/ZCENBHtm');
 });
 
 test('returns a controlled error for malformed request JSON', async () => {

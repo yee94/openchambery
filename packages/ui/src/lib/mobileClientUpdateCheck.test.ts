@@ -68,6 +68,33 @@ describe('checkForMobileClientUpdates', () => {
     expect(fetchCalls).toEqual([MOBILE_EDGEONE_UPDATE_CHECK_URL]);
   });
 
+  test('falls through to GitHub Releases on iOS with the TestFlight install URL', async () => {
+    const fetchImpl = mock(async (input: RequestInfo | URL) => {
+      const url = String(input);
+      if (url === MOBILE_EDGEONE_UPDATE_CHECK_URL || url === MOBILE_VERCEL_UPDATE_CHECK_URL) {
+        throw new Error('unreachable');
+      }
+      if (url === MOBILE_GITHUB_LATEST_RELEASE_URL) {
+        return {
+          ok: true,
+          status: 200,
+          url: 'https://github.com/yee94/openchamber/releases/tag/v1.16.106',
+          json: async () => ({}),
+        } as Response;
+      }
+      throw new Error(`Unexpected fetch: ${url}`);
+    });
+
+    const result = await checkForMobileClientUpdates({
+      currentVersion: '1.16.105',
+      platform: 'ios',
+      fetchImpl: fetchImpl as unknown as typeof fetch,
+    });
+
+    expect(result.available).toBe(true);
+    expect(result.downloadUrl).toBe('https://testflight.apple.com/join/ZCENBHtm');
+  });
+
   test('falls through EdgeOne and Vercel to GitHub Releases', async () => {
     const fetchCalls: string[] = [];
     const fetchImpl = mock(async (input: RequestInfo | URL) => {
