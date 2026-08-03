@@ -43,11 +43,42 @@ mock.module('./lib/shellBridge', () => ({
 }));
 
 const {
+    buildMeasurementSeedFromSizes,
     createTanstackTimelineSnapshotCache,
     resolveMessageListKeys,
     shouldAdjustHistoryScrollForSizeChange,
     syncCurrentHistoryVirtualization,
 } = await import('./MessageList');
+
+describe('buildMeasurementSeedFromSizes', () => {
+    test('lays out measured rows end to end so the virtualizer inherits the real height', () => {
+        const seed = buildMeasurementSeedFromSizes(
+            ['turn:1', 'turn:2'],
+            new Map([['turn:1', 400], ['turn:2', 250]]),
+            320,
+        );
+
+        expect(seed).toEqual([
+            { index: 0, key: 'turn:1', start: 0, size: 400, end: 400, lane: 0 },
+            { index: 1, key: 'turn:2', start: 400, size: 250, end: 650, lane: 0 },
+        ]);
+    });
+
+    test('falls back to the estimate for entries the switching commit just added', () => {
+        const seed = buildMeasurementSeedFromSizes(
+            ['turn:new', 'turn:1'],
+            new Map([['turn:1', 400]]),
+            320,
+        );
+
+        expect(seed.map((item) => item.size)).toEqual([320, 400]);
+        expect(seed[1]?.start).toBe(320);
+    });
+
+    test('stays empty with nothing measured so a cold mount keeps its own estimates', () => {
+        expect(buildMeasurementSeedFromSizes(['turn:1'], new Map(), 320)).toEqual([]);
+    });
+});
 
 describe('TanStack timeline snapshot cache', () => {
     test('keeps snapshots isolated by virtualizer key', () => {

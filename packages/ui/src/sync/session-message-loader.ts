@@ -99,8 +99,15 @@ function isRole(record: SessionMessageRecord, role: string): boolean {
   return info.role === role || info.clientRole === role
 }
 
+/**
+ * Collect parent user IDs referenced by assistant rows but absent from the page.
+ *
+ * A mixed tail is common: the newest user+assistant turn lands in the page while
+ * older multi-step assistant rows still point at a parent that fell outside the
+ * limit window. Turn grouping requires those parents, so recover them even when
+ * the page already contains some other user message.
+ */
 export function findMissingAssistantParentUserIDs(records: SessionMessageRecord[]): string[] {
-  if (records.some((record) => isRole(record, "user"))) return []
   const present = new Set(records.map((record) => record.info.id))
   const parentIDs: string[] = []
   const seen = new Set<string>()
@@ -120,14 +127,18 @@ export async function recoverAssistantTailBoundary<T extends SessionMessageRecor
   complete: boolean
   requestMessage: (messageID: string) => Promise<T>
 }): Promise<{ records: T[]; boundaryFound: boolean; partial: boolean }> {
-  const initialBoundaryFound = input.records.some((record) => isRole(record, "user"))
-  if (initialBoundaryFound || input.complete) {
-    return { records: input.records, boundaryFound: initialBoundaryFound, partial: false }
+  // Authoritative complete pages already contain every message; exact parent
+  // fetches would only chase deleted/missing IDs. Incomplete tails may still
+  // omit parents of assistant steps that sit above a newer user turn.
+  if (input.complete) {
+    const boundaryFound = input.records.some((record) => isRole(record, "user"))
+    return { records: input.records, boundaryFound, partial: false }
   }
 
   const parentIDs = findMissingAssistantParentUserIDs(input.records)
   if (parentIDs.length === 0) {
-    return { records: input.records, boundaryFound: false, partial: true }
+    const boundaryFound = input.records.some((record) => isRole(record, "user"))
+    return { records: input.records, boundaryFound, partial: !boundaryFound }
   }
 
   const parents = await Promise.all(parentIDs.map(input.requestMessage))

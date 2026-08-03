@@ -1,4 +1,5 @@
 import React from 'react';
+import { useEvent, useEventListener, useResizeObserver } from '@reactuses/core';
 
 import { MessageFreshnessDetector } from '@/lib/messageFreshness';
 import { createScrollSpy } from '@/components/chat/lib/scroll/scrollSpy';
@@ -134,23 +135,47 @@ const now = (): number => (typeof performance !== 'undefined' ? performance.now(
 // — its height is exactly how far above scrollHeight the user can be while still
 // looking at "empty" space. We use that same value as the threshold for both
 // re-pinning auto-follow and showing the scroll-to-bottom button.
-const computeBottomZoneThreshold = (isMobile: boolean, container?: HTMLElement | null): number => {
+// One scroll event used to read scrollTop/scrollHeight/clientHeight five times
+// through the helpers below, with React writes interleaved between the reads —
+// every read after a write is a forced layout, and it showed up as the single
+// largest reflow source while scrolling. Read the box once and pass the snapshot
+// to the geometry helpers instead.
+type ScrollGeometry = {
+    scrollTop: number;
+    scrollHeight: number;
+    clientHeight: number;
+};
+
+const readScrollGeometry = (el: HTMLElement): ScrollGeometry => ({
+    scrollTop: el.scrollTop,
+    scrollHeight: el.scrollHeight,
+    clientHeight: el.clientHeight,
+});
+
+const computeBottomZoneThresholdFor = (isMobile: boolean, clientHeight: number): number => {
     if (isMobile) return BOTTOM_SPACER_MOBILE_PX;
-    const height = container?.clientHeight ?? 0;
-    if (height <= 0) return 96;
-    return Math.max(48, height * BOTTOM_SPACER_DESKTOP_VH);
+    if (clientHeight <= 0) return 96;
+    return Math.max(48, clientHeight * BOTTOM_SPACER_DESKTOP_VH);
+};
+
+const distanceFromBottomOf = (geometry: ScrollGeometry): number => {
+    return geometry.scrollHeight - geometry.scrollTop - geometry.clientHeight;
 };
 
 const distanceFromBottom = (el: HTMLElement): number => {
-    return el.scrollHeight - el.scrollTop - el.clientHeight;
+    return distanceFromBottomOf(readScrollGeometry(el));
+};
+
+const canScrollGeometry = (geometry: ScrollGeometry): boolean => {
+    return geometry.scrollHeight - geometry.clientHeight > 1;
 };
 
 const canScroll = (el: HTMLElement): boolean => {
-    return el.scrollHeight - el.clientHeight > 1;
+    return canScrollGeometry(readScrollGeometry(el));
 };
 
-const isNearBottom = (el: HTMLElement, isMobile: boolean): boolean => {
-    return distanceFromBottom(el) <= computeBottomZoneThreshold(isMobile, el);
+const isNearBottomOf = (geometry: ScrollGeometry, isMobile: boolean): boolean => {
+    return distanceFromBottomOf(geometry) <= computeBottomZoneThresholdFor(isMobile, geometry.clientHeight);
 };
 
 const isReleaseKey = (event: KeyboardEvent): boolean => {
@@ -267,14 +292,14 @@ export const useChatAutoFollow = ({
         }
     });
 
-    const setStateValue = React.useCallback((next: AutoFollowState) => {
+    const setStateValue = useEvent((next: AutoFollowState) => {
         if (stateRef.current === next) return;
         stateRef.current = next;
         setState(next);
-    }, []);
+    });
 
     // ── auto marker ────────────────────────────────────────────────────────
-    const markAuto = React.useCallback((el: HTMLElement) => {
+    const markAuto = useEvent((el: HTMLElement) => {
         autoRef.current = {
             top: Math.max(0, el.scrollHeight - el.clientHeight),
             time: now(),
@@ -284,9 +309,9 @@ export const useChatAutoFollow = ({
             autoRef.current = null;
             autoTimerRef.current = null;
         }, AUTO_MARK_TTL_MS);
-    }, []);
+    });
 
-    const isAuto = React.useCallback((el: HTMLElement): boolean => {
+    const isAuto = useEvent((el: HTMLElement): boolean => {
         const a = autoRef.current;
         if (!a) return false;
         if (now() - a.time > AUTO_MARK_TTL_MS) {
@@ -294,14 +319,14 @@ export const useChatAutoFollow = ({
             return false;
         }
         return Math.abs(el.scrollTop - a.top) < AUTO_MATCH_TOLERANCE_PX;
-    }, []);
+    });
 
-    const isAnimationGuardActive = React.useCallback((): boolean => {
+    const isAnimationGuardActive = useEvent((): boolean => {
         return now() < animationGuardUntilRef.current;
-    }, []);
+    });
 
     // ── entry-stick window ───────────────────────────────────────────────────
-    const endEntryStick = React.useCallback(() => {
+    const endEntryStick = useEvent(() => {
         entryStickRef.current = false;
         if (entryStickQuietTimerRef.current) {
             clearTimeout(entryStickQuietTimerRef.current);
@@ -311,11 +336,11 @@ export const useChatAutoFollow = ({
             clearTimeout(entryStickCapTimerRef.current);
             entryStickCapTimerRef.current = null;
         }
-    }, []);
+    });
 
     // (Re)arm the quiescence timer: the window closes this long after the last
     // growth. Called once on begin and again on every growth-driven re-pin.
-    const armEntryStickQuiet = React.useCallback(() => {
+    const armEntryStickQuiet = useEvent(() => {
         if (entryStickQuietTimerRef.current) {
             clearTimeout(entryStickQuietTimerRef.current);
         }
@@ -323,9 +348,9 @@ export const useChatAutoFollow = ({
             entryStickQuietTimerRef.current = null;
             endEntryStick();
         }, ENTRY_STICK_QUIESCENCE_MS);
-    }, [endEntryStick]);
+    });
 
-    const beginEntryStick = React.useCallback(() => {
+    const beginEntryStick = useEvent(() => {
         const el = scrollRef.current;
         if (!el) return;
         entryStickRef.current = true;
@@ -340,28 +365,29 @@ export const useChatAutoFollow = ({
             entryStickCapTimerRef.current = null;
             endEntryStick();
         }, ENTRY_STICK_MAX_MS);
-    }, [armEntryStickQuiet, endEntryStick]);
+    });
 
     // ── overflow / scroll-to-bottom button ──────────────────────────────────
-    const updateOverflowAndButton = React.useCallback(() => {
+    const updateOverflowAndButton = useEvent((geometry?: ScrollGeometry) => {
         const container = scrollRef.current;
         if (!container) {
             setIsOverflowing(false);
             setShowScrollButton(false);
             return;
         }
-        const overflowing = canScroll(container);
+        const box = geometry ?? readScrollGeometry(container);
+        const overflowing = canScrollGeometry(box);
         setIsOverflowing(overflowing);
         if (!overflowing) {
             setShowScrollButton(false);
             return;
         }
-        const showButton = stateRef.current === 'released' && !isNearBottom(container, isMobileRef.current);
+        const showButton = stateRef.current === 'released' && !isNearBottomOf(box, isMobileRef.current);
         setShowScrollButton(showButton);
-    }, []);
+    });
 
     // ── core scroll primitives ───────────────────────────────────────────────
-    const cancelForcedBottom = React.useCallback(() => {
+    const cancelForcedBottom = useEvent(() => {
         forceBottomGenerationRef.current += 1;
         if (forceBottomFrameRef.current !== null && typeof window !== 'undefined') {
             window.cancelAnimationFrame(forceBottomFrameRef.current);
@@ -369,11 +395,13 @@ export const useChatAutoFollow = ({
         }
         forceBottomTouchCleanupRef.current?.();
         forceBottomTouchCleanupRef.current = null;
-    }, []);
+    });
 
-    React.useEffect(() => () => cancelForcedBottom(), [cancelForcedBottom, containerEl]);
+    // containerEl identity is the real rebind condition; cancelForcedBottom is useEvent.
+    // eslint-disable-next-line react-hooks/exhaustive-deps -- cancelForcedBottom is useEvent-stable; identity must not control this effect.
+    React.useEffect(() => () => cancelForcedBottom(), [containerEl]);
 
-    const forceBottomDefeatingMomentum = React.useCallback(() => {
+    const forceBottomDefeatingMomentum = useEvent(() => {
         const el = scrollRef.current;
         if (!el) return;
 
@@ -416,9 +444,9 @@ export const useChatAutoFollow = ({
             forceBottomFrameRef.current = window.requestAnimationFrame(watch);
         };
         forceBottomFrameRef.current = window.requestAnimationFrame(watch);
-    }, [cancelForcedBottom, markAuto, updateOverflowAndButton]);
+    });
 
-    const scrollToBottomNow = React.useCallback((behavior: ScrollBehavior) => {
+    const scrollToBottomNow = useEvent((behavior: ScrollBehavior) => {
         const el = scrollRef.current;
         if (!el) return;
         markAuto(el);
@@ -429,11 +457,11 @@ export const useChatAutoFollow = ({
         // Direct `scrollTop` assignment bypasses any CSS `scroll-behavior: smooth`
         // and lands in the same frame — no visible catch-up animation.
         el.scrollTop = el.scrollHeight;
-    }, [markAuto]);
+    });
 
     // `force` true = user-intent jump (clears released and always scrolls).
     // `force` false = passive follow (only while still following — idle ok).
-    const scrollToBottom = React.useCallback((force: boolean, behavior: ScrollBehavior = 'auto') => {
+    const scrollToBottom = useEvent((force: boolean, behavior: ScrollBehavior = 'auto') => {
         const el = scrollRef.current;
 
         if (force && stateRef.current !== 'following') {
@@ -452,23 +480,24 @@ export const useChatAutoFollow = ({
             return;
         }
         scrollToBottomNow(force ? behavior : 'auto');
-    }, [markAuto, scrollToBottomNow, setStateValue]);
+    });
 
     // User left the bottom — release auto-follow.
-    const stop = React.useCallback(() => {
+    const stop = useEvent((geometry?: ScrollGeometry) => {
         const el = scrollRef.current;
         if (!el) return;
-        if (!canScroll(el)) {
+        const box = geometry ?? readScrollGeometry(el);
+        if (!canScrollGeometry(box)) {
             setStateValue('following');
             return;
         }
         if (stateRef.current === 'released') return;
         setStateValue('released');
-        updateOverflowAndButton();
-    }, [setStateValue, updateOverflowAndButton]);
+        updateOverflowAndButton(box);
+    });
 
     // ── public scroll API (mapped onto the primitives) ───────────────────────
-    const goToBottom = React.useCallback((mode: 'instant' | 'smooth' = 'instant') => {
+    const goToBottom = useEvent((mode: 'instant' | 'smooth' = 'instant') => {
         setStateValue('following');
         endEntryStick();
         if (mode === 'instant') {
@@ -478,31 +507,31 @@ export const useChatAutoFollow = ({
         cancelForcedBottom();
         scrollToBottom(true, 'smooth');
         updateOverflowAndButton();
-    }, [cancelForcedBottom, endEntryStick, forceBottomDefeatingMomentum, scrollToBottom, setStateValue, updateOverflowAndButton]);
+    });
 
-    const scrollToBottomOnSend = React.useCallback(() => {
+    const scrollToBottomOnSend = useEvent(() => {
         // Single movement to the just-sent message. Force re-pins to the bottom
         // whether we were following or scrolled up; the content ResizeObserver
         // keeps us pinned as the optimistic message and its reply stream in.
         scrollToBottom(true);
-    }, [scrollToBottom]);
+    });
 
-    const releaseAutoFollow = React.useCallback(() => {
+    const releaseAutoFollow = useEvent(() => {
         cancelForcedBottom();
         setStateValue('released');
         updateOverflowAndButton();
-    }, [cancelForcedBottom, setStateValue, updateOverflowAndButton]);
+    });
 
-    const releaseFromUserIntent = React.useCallback(() => {
+    const releaseFromUserIntent = useEvent(() => {
         // A genuine user gesture (wheel/touch/key/scrollbar) cancels the entry
         // window immediately so we never fight the user's read position.
         cancelForcedBottom();
         endEntryStick();
         stop();
-    }, [cancelForcedBottom, endEntryStick, stop]);
+    });
 
     // ── per-session snapshot persistence (kept; restore still goes to bottom) ─
-    const flushSave = React.useCallback(() => {
+    const flushSave = useEvent(() => {
         if (saveTimerRef.current !== null) {
             clearTimeout(saveTimerRef.current);
             saveTimerRef.current = null;
@@ -520,9 +549,9 @@ export const useChatAutoFollow = ({
             pending.identity.viewportKey,
         );
         pendingSaveRef.current = null;
-    }, [updateViewportAnchor]);
+    });
 
-    const queueSave = React.useCallback(() => {
+    const queueSave = useEvent(() => {
         const identity = currentViewportIdentityRef.current;
         if (!identity.sessionId) return;
         const container = scrollRef.current;
@@ -544,13 +573,13 @@ export const useChatAutoFollow = ({
             saveTimerRef.current = null;
             flushSave();
         }, SAVE_DEBOUNCE_MS);
-    }, [flushSave]);
+    });
 
-    const saveSnapshotNow = React.useCallback(() => {
+    const saveSnapshotNow = useEvent(() => {
         flushSave();
-    }, [flushSave]);
+    });
 
-    const restoreSnapshot = React.useCallback(async (identity = currentViewportIdentityRef.current): Promise<boolean> => {
+    const restoreSnapshot = useEvent(async (identity = currentViewportIdentityRef.current): Promise<boolean> => {
         if (!identity.sessionId) return false;
         const snapshot = getViewportSessionMemory(identity.sessionId, identity.viewportKey);
 
@@ -576,7 +605,7 @@ export const useChatAutoFollow = ({
         beginEntryStick();
         updateOverflowAndButton();
         return false;
-    }, [beginEntryStick, scrollToBottom, setStateValue, updateOverflowAndButton]);
+    });
 
     // ── session change ───────────────────────────────────────────────────────
     React.useEffect(() => {
@@ -596,7 +625,8 @@ export const useChatAutoFollow = ({
         if (currentSessionId && currentSessionId !== previousIdentity?.sessionId) {
             MessageFreshnessDetector.getInstance().recordSessionStart(currentSessionId);
         }
-    }, [cancelForcedBottom, currentSessionId, endEntryStick, flushSave, setStateValue, viewportKey]);
+        // eslint-disable-next-line react-hooks/exhaustive-deps -- viewport identity is the real input; cancelForcedBottom/endEntryStick/flushSave/setStateValue are useEvent-stable.
+    }, [currentSessionId, viewportKey]);
 
     // When work begins and we are still following, pin to the bottom so the
     // first streaming frame does not paint mid-history.
@@ -604,7 +634,8 @@ export const useChatAutoFollow = ({
         if (sessionIsWorking && stateRef.current === 'following') {
             scrollToBottom(true);
         }
-    }, [sessionIsWorking, scrollToBottom]);
+        // eslint-disable-next-line react-hooks/exhaustive-deps -- sessionIsWorking is the real input; scrollToBottom is useEvent-stable.
+    }, [sessionIsWorking]);
 
     // Suppress the overlay scrollbar thumb only while we are actively following a
     // live stream (the thumb would otherwise jump on every instant re-pin). When
@@ -623,24 +654,26 @@ export const useChatAutoFollow = ({
         if (pendingIdentity && shouldReplayViewportRestore(pendingIdentity, currentViewportIdentityRef.current)) {
             void restoreSnapshot(pendingIdentity);
         }
-    }, [containerEl, currentSessionId, viewportKey, restoreSnapshot]);
+        // eslint-disable-next-line react-hooks/exhaustive-deps -- container/session identity is the real input; restoreSnapshot is useEvent-stable.
+    }, [containerEl, currentSessionId, viewportKey]);
 
     // ── scroll event handling ────────────────────────────────────────────────
-    const handleScrollEvent = React.useCallback(() => {
+    const handleScrollEvent = useEvent(() => {
         const el = scrollRef.current;
         if (!el) return;
 
+        const geometry = readScrollGeometry(el);
         const previousTop = lastScrollTopRef.current;
-        lastScrollTopRef.current = el.scrollTop;
-        const scrollingDown = el.scrollTop > previousTop + 0.5;
+        lastScrollTopRef.current = geometry.scrollTop;
+        const scrollingDown = geometry.scrollTop > previousTop + 0.5;
         // Pure content growth (history paint / remeasure) often fires `scroll`
         // without changing scrollTop. That must re-pin, not release — otherwise
         // a cold load leaves following stranded mid-timeline.
-        const scrollTopUnchanged = Math.abs(el.scrollTop - previousTop) < 0.5;
+        const scrollTopUnchanged = Math.abs(geometry.scrollTop - previousTop) < 0.5;
 
-        updateOverflowAndButton();
+        updateOverflowAndButton(geometry);
 
-        if (!canScroll(el)) {
+        if (!canScrollGeometry(geometry)) {
             setStateValue('following');
             return;
         }
@@ -652,8 +685,8 @@ export const useChatAutoFollow = ({
         // in the bottom spacer zone must NOT be yanked back into follow — that is
         // the dead-zone fight that made small upward scrolls impossible while
         // content streams.
-        if (isNearBottom(el, isMobileRef.current)) {
-            const atTrueBottom = distanceFromBottom(el) <= AUTO_MATCH_TOLERANCE_PX;
+        if (isNearBottomOf(geometry, isMobileRef.current)) {
+            const atTrueBottom = distanceFromBottomOf(geometry) <= AUTO_MATCH_TOLERANCE_PX;
             if (scrollingDown || stateRef.current === 'following' || atTrueBottom) {
                 setStateValue('following');
             }
@@ -677,132 +710,137 @@ export const useChatAutoFollow = ({
         }
 
         // Genuine user scroll away from the bottom.
-        stop();
+        stop(geometry);
         queueSave();
-    }, [isAnimationGuardActive, isAuto, queueSave, scrollToBottom, setStateValue, stop, updateOverflowAndButton]);
+    });
 
+    // Seed lastScrollTop when the scroller attaches so the first scroll event
+    // has a real previousTop baseline (direction / unchanged detection).
     React.useEffect(() => {
-        if (!enabled) return;
-        const container = containerEl;
+        if (!enabled || !containerEl) return;
+        lastScrollTopRef.current = containerEl.scrollTop;
+    }, [containerEl, enabled]);
+
+    const touchLastYRef = React.useRef<number | null>(null);
+
+    const handleWheel = useEvent((event: WheelEvent) => {
+        const container = scrollRef.current;
         if (!container) return;
+        if (event.deltaY >= 0) return;
+        if (nestedScrollableCanConsumeUp(container, event.target)) return;
+        releaseFromUserIntent();
+    });
 
-        lastScrollTopRef.current = container.scrollTop;
+    const handleTouchStart = useEvent((event: TouchEvent) => {
+        const touch = event.touches.item(0);
+        touchLastYRef.current = touch ? touch.clientY : null;
+    });
 
-        const handleWheel = (event: WheelEvent) => {
-            if (event.deltaY >= 0) return;
-            if (nestedScrollableCanConsumeUp(container, event.target)) return;
-            releaseFromUserIntent();
-        };
-
-        let touchLastY: number | null = null;
-        const handleTouchStart = (event: TouchEvent) => {
-            const touch = event.touches.item(0);
-            touchLastY = touch ? touch.clientY : null;
-        };
-        const handleTouchMove = (event: TouchEvent) => {
-            const touch = event.touches.item(0);
-            if (!touch) {
-                touchLastY = null;
-                return;
-            }
-            const previousY = touchLastY;
-            touchLastY = touch.clientY;
-            if (previousY === null) return;
-            const fingerDelta = touch.clientY - previousY;
-            if (fingerDelta <= TOUCH_FINGER_DOWN_THRESHOLD) return;
-            if (nestedScrollableCanConsumeUp(container, event.target)) return;
-            releaseFromUserIntent();
-        };
-        const handleTouchEnd = () => {
-            touchLastY = null;
-        };
-
-        const handleKeyDown = (event: KeyboardEvent) => {
-            if (!isReleaseKey(event)) return;
-            releaseFromUserIntent();
-        };
-
-        const handlePointerDownIntent = (event: PointerEvent) => {
-            const target = event.target;
-            if (!(target instanceof Element)) return;
-            if (!target.closest('[data-overlay-scrollbar-thumb]')) return;
-            releaseFromUserIntent();
-        };
-
-        container.addEventListener('scroll', handleScrollEvent, { passive: true });
-        container.addEventListener('wheel', handleWheel, { passive: true });
-        container.addEventListener('touchstart', handleTouchStart, { passive: true });
-        container.addEventListener('touchmove', handleTouchMove, { passive: true });
-        container.addEventListener('touchend', handleTouchEnd, { passive: true });
-        container.addEventListener('touchcancel', handleTouchEnd, { passive: true });
-        container.addEventListener('keydown', handleKeyDown);
-        if (typeof window !== 'undefined') {
-            window.addEventListener('pointerdown', handlePointerDownIntent, true);
+    const handleTouchMove = useEvent((event: TouchEvent) => {
+        const container = scrollRef.current;
+        const touch = event.touches.item(0);
+        if (!touch) {
+            touchLastYRef.current = null;
+            return;
         }
+        const previousY = touchLastYRef.current;
+        touchLastYRef.current = touch.clientY;
+        if (previousY === null) return;
+        const fingerDelta = touch.clientY - previousY;
+        if (fingerDelta <= TOUCH_FINGER_DOWN_THRESHOLD) return;
+        if (!container) return;
+        if (nestedScrollableCanConsumeUp(container, event.target)) return;
+        releaseFromUserIntent();
+    });
 
-        return () => {
-            container.removeEventListener('scroll', handleScrollEvent);
-            container.removeEventListener('wheel', handleWheel);
-            container.removeEventListener('touchstart', handleTouchStart);
-            container.removeEventListener('touchmove', handleTouchMove);
-            container.removeEventListener('touchend', handleTouchEnd);
-            container.removeEventListener('touchcancel', handleTouchEnd);
-            container.removeEventListener('keydown', handleKeyDown);
-            if (typeof window !== 'undefined') {
-                window.removeEventListener('pointerdown', handlePointerDownIntent, true);
-            }
-        };
-    }, [containerEl, enabled, handleScrollEvent, releaseFromUserIntent]);
+    const handleTouchEnd = useEvent(() => {
+        touchLastYRef.current = null;
+    });
+
+    const handleKeyDown = useEvent((event: KeyboardEvent) => {
+        if (!isReleaseKey(event)) return;
+        releaseFromUserIntent();
+    });
+
+    const handlePointerDownIntent = useEvent((event: PointerEvent) => {
+        const target = event.target;
+        if (!(target instanceof Element)) return;
+        if (!target.closest('[data-overlay-scrollbar-thumb]')) return;
+        releaseFromUserIntent();
+    });
+
+    // Target is the real attach/detach condition; handlers are useEvent so they
+    // must not appear in effect-style rebind deps (useEventListener already
+    // keeps the latest handler via useLatest).
+    // useEventListener falls back to window when the target is null/undefined —
+    // pass a getter that resolves to undefined so we attach nowhere until ready.
+    const noEventTarget = React.useMemo(() => () => undefined, []);
+    const scrollListenerTarget = enabled && containerEl ? containerEl : noEventTarget;
+    const passiveScrollOptions = React.useMemo(() => ({ passive: true } as const), []);
+    useEventListener('scroll', handleScrollEvent, scrollListenerTarget, passiveScrollOptions);
+    useEventListener('wheel', handleWheel, scrollListenerTarget, passiveScrollOptions);
+    useEventListener('touchstart', handleTouchStart, scrollListenerTarget, passiveScrollOptions);
+    useEventListener('touchmove', handleTouchMove, scrollListenerTarget, passiveScrollOptions);
+    useEventListener('touchend', handleTouchEnd, scrollListenerTarget, passiveScrollOptions);
+    useEventListener('touchcancel', handleTouchEnd, scrollListenerTarget, passiveScrollOptions);
+    useEventListener('keydown', handleKeyDown, scrollListenerTarget);
+    useEventListener(
+        'pointerdown',
+        handlePointerDownIntent,
+        enabled && typeof window !== 'undefined' ? window : noEventTarget,
+        true,
+    );
 
     // The heart of the follow behaviour: the content ResizeObserver fires after
     // layout and before paint, so re-pinning to the bottom here is invisible —
     // there is no "jump up then catch up". Observe both the container (composer
     // growth shrinks the viewport) and the inner content (streaming growth).
-    React.useEffect(() => {
-        if (!enabled) return;
-        const container = containerEl;
-        if (!container || typeof ResizeObserver === 'undefined') return;
-
-        const observer = new ResizeObserver(() => {
-            // Keyboard open / animating / composer expand: viewport and composer
-            // height changes must not re-pin the message list. Keeping scrollTop
-            // leaves the main chat stable while the keyboard and input ride up.
-            if (keyboardGeometryFreezeRef.current) {
-                updateOverflowAndButton();
-                return;
-            }
-            const el = scrollRef.current;
-            if (el && !canScroll(el)) {
-                setStateValue('following');
-                updateOverflowAndButton();
-                return;
-            }
+    const handleContentResize = useEvent(() => {
+        // Keyboard open / animating / composer expand: viewport and composer
+        // height changes must not re-pin the message list. Keeping scrollTop
+        // leaves the main chat stable while the keyboard and input ride up.
+        if (keyboardGeometryFreezeRef.current) {
             updateOverflowAndButton();
-            // Entry-stick window: on first session open, FORCE the bottom on
-            // every growth so late async data (task/subagent child rows, code
-            // highlight, mermaid) can't strand the viewport mid-history. Force
-            // overrides any false `released` from the growth itself; only a real
-            // user gesture clears the window (releaseFromUserIntent).
-            if (entryStickRef.current && el) {
-                const grew = el.scrollHeight > entryStickLastHeightRef.current + 1;
-                entryStickLastHeightRef.current = el.scrollHeight;
-                scrollToBottom(true);
-                if (grew) armEntryStickQuiet();
-                return;
-            }
-            // Still following (including idle): re-pin on any content growth so
-            // cold history / async measure cannot leave the viewport mid-list.
-            // Released users are left alone — their gesture already opted out.
-            if (stateRef.current !== 'following') return;
-            scrollToBottom(false);
-        });
-        observer.observe(container);
-        const inner = container.firstElementChild;
-        if (inner instanceof Element) {
-            observer.observe(inner);
+            return;
         }
-        return () => observer.disconnect();
-    }, [armEntryStickQuiet, containerEl, enabled, scrollToBottom, setStateValue, updateOverflowAndButton]);
+        const el = scrollRef.current;
+        if (el && !canScroll(el)) {
+            setStateValue('following');
+            updateOverflowAndButton();
+            return;
+        }
+        updateOverflowAndButton();
+        // Entry-stick window: on first session open, FORCE the bottom on
+        // every growth so late async data (task/subagent child rows, code
+        // highlight, mermaid) can't strand the viewport mid-history. Force
+        // overrides any false `released` from the growth itself; only a real
+        // user gesture clears the window (releaseFromUserIntent).
+        if (entryStickRef.current && el) {
+            const grew = el.scrollHeight > entryStickLastHeightRef.current + 1;
+            entryStickLastHeightRef.current = el.scrollHeight;
+            scrollToBottom(true);
+            if (grew) armEntryStickQuiet();
+            return;
+        }
+        // Still following (including idle): re-pin on any content growth so
+        // cold history / async measure cannot leave the viewport mid-list.
+        // Released users are left alone — their gesture already opted out.
+        if (stateRef.current !== 'following') return;
+        scrollToBottom(false);
+    });
+
+    const canObserveResize = typeof ResizeObserver !== 'undefined';
+    const resizeContainerTarget = canObserveResize && enabled ? containerEl : null;
+    const resizeContentTarget = (
+        canObserveResize
+        && enabled
+        && containerEl
+        && containerEl.firstElementChild instanceof Element
+    )
+        ? containerEl.firstElementChild
+        : null;
+    useResizeObserver(resizeContainerTarget, handleContentResize);
+    useResizeObserver(resizeContentTarget, handleContentResize);
 
     // ── native keyboard transitions (Capacitor choreography) ────────────────
     // The chat scroller gets NO transforms and NO auto re-pin for keyboard
@@ -815,105 +853,105 @@ export const useChatAutoFollow = ({
     // Streaming / send still pin via notifyContentChange and scrollToBottomOnSend.
     // These events never fire outside the Capacitor app (except intent from
     // composer expand, which only freezes chase).
+    const clearExpandFreezeTimer = useEvent(() => {
+        if (keyboardExpandFreezeTimerRef.current === null) return;
+        clearTimeout(keyboardExpandFreezeTimerRef.current);
+        keyboardExpandFreezeTimerRef.current = null;
+    });
+
+    const freezeGeometry = useEvent((durationMs?: number) => {
+        keyboardGeometryFreezeRef.current = true;
+        // Clamp/resize can dispatch scroll events away from the auto marker —
+        // never read those as a user scroll-away while the keyboard moves.
+        if (typeof durationMs === 'number' && durationMs > 0) {
+            animationGuardUntilRef.current = now() + durationMs + ANIMATION_GUARD_MS;
+        } else {
+            animationGuardUntilRef.current = Math.max(
+                animationGuardUntilRef.current,
+                now() + ANIMATION_GUARD_MS,
+            );
+        }
+    });
+
+    const handleKeyboardIntent = useEvent((event: Event) => {
+        const detail = (event as CustomEvent<{ open?: boolean }>).detail;
+        if (!detail) return;
+        // Expand path: freeze before the pill→full composer DOM swap so the
+        // ResizeObserver does not chase the bottom on the first jump. This
+        // is provisional — if the IME never opens, drop the freeze so
+        // streaming / history growth can re-pin again.
+        if (detail.open === true) {
+            freezeGeometry();
+            clearExpandFreezeTimer();
+            keyboardExpandFreezeTimerRef.current = setTimeout(() => {
+                keyboardExpandFreezeTimerRef.current = null;
+                if (!keyboardOpenRef.current) {
+                    keyboardGeometryFreezeRef.current = false;
+                }
+            }, 1500);
+            return;
+        }
+        // Collapse path still freezes through the hide transition; settled
+        // (open:false) clears the freeze when the keyboard is fully gone.
+        clearExpandFreezeTimer();
+        freezeGeometry();
+    });
+
+    const handleKeyboardAnim = useEvent((event: Event) => {
+        const detail = (event as CustomEvent<{ phase: 'show' | 'hide'; slide: number; durationMs: number; easing: string }>).detail;
+        if (!detail) return;
+        clearExpandFreezeTimer();
+        freezeGeometry(detail.durationMs);
+    });
+
+    const handleKeyboardSettled = useEvent((event: Event) => {
+        const detail = (event as CustomEvent<{ open?: boolean }>).detail;
+        clearExpandFreezeTimer();
+        // Keep freeze while the keyboard remains open so residual layout
+        // (SystemBars, safe-area, late composer measure) cannot re-pin.
+        // Only unfreeze after hide has settled.
+        if (detail?.open === true) {
+            keyboardOpenRef.current = true;
+            keyboardGeometryFreezeRef.current = true;
+        } else {
+            keyboardOpenRef.current = false;
+            // Keep freeze briefly after hide so residual shell/composer
+            // ResizeObserver callbacks cannot re-pin when the viewport grows.
+            keyboardGeometryFreezeRef.current = true;
+            keyboardExpandFreezeTimerRef.current = setTimeout(() => {
+                keyboardExpandFreezeTimerRef.current = null;
+                if (!keyboardOpenRef.current) {
+                    keyboardGeometryFreezeRef.current = false;
+                }
+            }, ANIMATION_GUARD_MS);
+        }
+        // Never re-pin on keyboard settle — scrollTop stays where the user
+        // left it; overflow UI still needs a refresh for the new viewport.
+        updateOverflowAndButton();
+    });
+
+    const keyboardListenerTarget = enabled && typeof window !== 'undefined' ? window : noEventTarget;
+    useEventListener('oc:keyboard-intent', handleKeyboardIntent, keyboardListenerTarget);
+    useEventListener('oc:keyboard-anim', handleKeyboardAnim, keyboardListenerTarget);
+    useEventListener('oc:keyboard-settled', handleKeyboardSettled, keyboardListenerTarget);
+
     React.useEffect(() => {
         if (!enabled || typeof window === 'undefined') return;
-
-        const clearExpandFreezeTimer = () => {
-            if (keyboardExpandFreezeTimerRef.current === null) return;
-            clearTimeout(keyboardExpandFreezeTimerRef.current);
-            keyboardExpandFreezeTimerRef.current = null;
-        };
-
-        const freezeGeometry = (durationMs?: number) => {
-            keyboardGeometryFreezeRef.current = true;
-            // Clamp/resize can dispatch scroll events away from the auto marker —
-            // never read those as a user scroll-away while the keyboard moves.
-            if (typeof durationMs === 'number' && durationMs > 0) {
-                animationGuardUntilRef.current = now() + durationMs + ANIMATION_GUARD_MS;
-            } else {
-                animationGuardUntilRef.current = Math.max(
-                    animationGuardUntilRef.current,
-                    now() + ANIMATION_GUARD_MS,
-                );
-            }
-        };
-
-        const handleKeyboardIntent = (event: Event) => {
-            const detail = (event as CustomEvent<{ open?: boolean }>).detail;
-            if (!detail) return;
-            // Expand path: freeze before the pill→full composer DOM swap so the
-            // ResizeObserver does not chase the bottom on the first jump. This
-            // is provisional — if the IME never opens, drop the freeze so
-            // streaming / history growth can re-pin again.
-            if (detail.open === true) {
-                freezeGeometry();
-                clearExpandFreezeTimer();
-                keyboardExpandFreezeTimerRef.current = setTimeout(() => {
-                    keyboardExpandFreezeTimerRef.current = null;
-                    if (!keyboardOpenRef.current) {
-                        keyboardGeometryFreezeRef.current = false;
-                    }
-                }, 1500);
-                return;
-            }
-            // Collapse path still freezes through the hide transition; settled
-            // (open:false) clears the freeze when the keyboard is fully gone.
-            clearExpandFreezeTimer();
-            freezeGeometry();
-        };
-
-        const handleKeyboardAnim = (event: Event) => {
-            const detail = (event as CustomEvent<{ phase: 'show' | 'hide'; slide: number; durationMs: number; easing: string }>).detail;
-            if (!detail) return;
-            clearExpandFreezeTimer();
-            freezeGeometry(detail.durationMs);
-        };
-
-        const handleKeyboardSettled = (event: Event) => {
-            const detail = (event as CustomEvent<{ open?: boolean }>).detail;
-            clearExpandFreezeTimer();
-            // Keep freeze while the keyboard remains open so residual layout
-            // (SystemBars, safe-area, late composer measure) cannot re-pin.
-            // Only unfreeze after hide has settled.
-            if (detail?.open === true) {
-                keyboardOpenRef.current = true;
-                keyboardGeometryFreezeRef.current = true;
-            } else {
-                keyboardOpenRef.current = false;
-                // Keep freeze briefly after hide so residual shell/composer
-                // ResizeObserver callbacks cannot re-pin when the viewport grows.
-                keyboardGeometryFreezeRef.current = true;
-                keyboardExpandFreezeTimerRef.current = setTimeout(() => {
-                    keyboardExpandFreezeTimerRef.current = null;
-                    if (!keyboardOpenRef.current) {
-                        keyboardGeometryFreezeRef.current = false;
-                    }
-                }, ANIMATION_GUARD_MS);
-            }
-            // Never re-pin on keyboard settle — scrollTop stays where the user
-            // left it; overflow UI still needs a refresh for the new viewport.
-            updateOverflowAndButton();
-        };
-
-        window.addEventListener('oc:keyboard-intent', handleKeyboardIntent);
-        window.addEventListener('oc:keyboard-anim', handleKeyboardAnim);
-        window.addEventListener('oc:keyboard-settled', handleKeyboardSettled);
         return () => {
-            window.removeEventListener('oc:keyboard-intent', handleKeyboardIntent);
-            window.removeEventListener('oc:keyboard-anim', handleKeyboardAnim);
-            window.removeEventListener('oc:keyboard-settled', handleKeyboardSettled);
             clearExpandFreezeTimer();
             keyboardGeometryFreezeRef.current = false;
             keyboardOpenRef.current = false;
         };
-    }, [enabled, updateOverflowAndButton]);
+        // eslint-disable-next-line react-hooks/exhaustive-deps -- enabled controls the freeze lifecycle; clearExpandFreezeTimer is useEvent-stable.
+    }, [enabled]);
 
     React.useEffect(() => {
         if (!enabled) return;
         updateOverflowAndButton();
-    }, [enabled, sessionMessageCount, updateOverflowAndButton]);
+        // eslint-disable-next-line react-hooks/exhaustive-deps -- enabled/sessionMessageCount are the real inputs; updateOverflowAndButton is useEvent-stable.
+    }, [enabled, sessionMessageCount]);
 
-    const notifyContentChange = React.useCallback((reason?: ContentChangeReason) => {
+    const notifyContentChange = useEvent((reason?: ContentChangeReason) => {
         if (!enabled) return;
         // A tracked height animation (e.g. Thinking auto-collapse) opens a guard
         // window so its transient geometry / async scroll events are not misread
@@ -935,11 +973,11 @@ export const useChatAutoFollow = ({
         if (stateRef.current === 'following') {
             scrollToBottom(false);
         }
-    }, [armEntryStickQuiet, enabled, scrollToBottom, updateOverflowAndButton]);
+    });
 
     const animationHandlersRef = React.useRef<Map<string, AnimationHandlers>>(new Map());
 
-    const getAnimationHandlers = React.useCallback((messageId: string): AnimationHandlers => {
+    const getAnimationHandlers = useEvent((messageId: string): AnimationHandlers => {
         const cached = animationHandlersRef.current.get(messageId);
         if (cached) return cached;
 
@@ -964,7 +1002,7 @@ export const useChatAutoFollow = ({
         };
         animationHandlersRef.current.set(messageId, handlers);
         return handlers;
-    }, [enabled, scrollToBottom, updateOverflowAndButton]);
+    });
 
     React.useEffect(() => {
         return () => {
@@ -980,10 +1018,18 @@ export const useChatAutoFollow = ({
                 saveTimerRef.current = null;
             }
         };
-    }, [cancelForcedBottom, endEntryStick, flushSave]);
+        // eslint-disable-next-line react-hooks/exhaustive-deps -- unmount cleanup only; cancelForcedBottom/endEntryStick/flushSave are useEvent-stable.
+    }, []);
+
+    // onActiveTurnChange is a call-site callback; keep latest via useEvent so the
+    // spy effect rebinds only when the scroller, enablement, or listener presence changes.
+    const onActiveTurnChangeEvent = useEvent((turnId: string | null) => {
+        onActiveTurnChange?.(turnId);
+    });
+    const hasActiveTurnListener = Boolean(onActiveTurnChange);
 
     React.useEffect(() => {
-        if (!enabled || !onActiveTurnChange) return;
+        if (!enabled || !hasActiveTurnListener) return;
         const container = containerEl;
         if (!container) return;
 
@@ -992,7 +1038,7 @@ export const useChatAutoFollow = ({
             onActive: (turnId) => {
                 if (turnId === lastActiveTurnId) return;
                 lastActiveTurnId = turnId;
-                onActiveTurnChange(turnId);
+                onActiveTurnChangeEvent(turnId);
             },
         });
         spy.setContainer(container);
@@ -1050,7 +1096,8 @@ export const useChatAutoFollow = ({
             mutationObserver.disconnect();
             spy.destroy();
         };
-    }, [containerEl, enabled, onActiveTurnChange]);
+        // eslint-disable-next-line react-hooks/exhaustive-deps -- container/enabled/listener presence control lifecycle; onActiveTurnChangeEvent is useEvent-stable.
+    }, [containerEl, enabled, hasActiveTurnListener]);
 
     return {
         scrollRef,

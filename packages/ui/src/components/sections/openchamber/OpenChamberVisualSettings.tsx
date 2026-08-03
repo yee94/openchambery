@@ -872,114 +872,120 @@ export const OpenChamberVisualSettings: React.FC<OpenChamberVisualSettingsProps>
                         {hasThemeSettings && (
                             <ResponsiveSettingsGroup
                                 isMobile={isMobile}
-                                label={t('settings.openchamber.visual.section.colorMode')}
+                                label={(
+                                    <div className="flex w-full min-w-0 items-center justify-between gap-2">
+                                        <span>{t('settings.openchamber.visual.section.colorMode')}</span>
+                                        <div className="inline-flex shrink-0 items-center gap-1">
+                                            <button
+                                                type="button"
+                                                data-settings-item="appearance.reload-themes"
+                                                disabled={customThemesLoading || themesReloading}
+                                                onClick={() => {
+                                                    const startedAt = Date.now();
+                                                    setThemesReloading(true);
+                                                    void reloadCustomThemes().finally(() => {
+                                                        const elapsed = Date.now() - startedAt;
+                                                        if (elapsed < 500) {
+                                                            window.setTimeout(() => {
+                                                                setThemesReloading(false);
+                                                            }, 500 - elapsed);
+                                                            return;
+                                                        }
+                                                        setThemesReloading(false);
+                                                    });
+                                                }}
+                                                className="inline-flex items-center typography-micro font-normal text-muted-foreground underline decoration-[1px] underline-offset-2 hover:text-foreground disabled:cursor-not-allowed disabled:text-muted-foreground/60"
+                                            >
+                                                {themesReloading
+                                                    ? t('settings.openchamber.visual.actions.reloadingThemes')
+                                                    : t('settings.openchamber.visual.actions.reloadThemes')}
+                                            </button>
+                                            <Tooltip>
+                                                <TooltipTrigger asChild>
+                                                    <button
+                                                        type="button"
+                                                        className="flex items-center justify-center rounded-md p-0.5 text-muted-foreground/70 hover:text-foreground"
+                                                        aria-label={t('settings.openchamber.visual.field.themeImportInfoAria')}
+                                                    >
+                                                        <Icon name="information" className="h-3.5 w-3.5" />
+                                                    </button>
+                                                </TooltipTrigger>
+                                                <TooltipContent sideOffset={8}>
+                                                    {t('settings.openchamber.visual.field.themeImportInfoTooltip')}
+                                                </TooltipContent>
+                                            </Tooltip>
+                                        </div>
+                                    </div>
+                                )}
                             >
-                                <div
-                                    className="oc-settings-group-row flex flex-wrap items-center justify-end gap-1"
-                                    role="group"
-                                    aria-label={t('settings.openchamber.visual.section.colorMode')}
+                                <ResponsiveSettingsRow
+                                    isMobile={isMobile}
+                                    itemId="appearance.color-mode"
+                                    label={t('settings.openchamber.visual.field.themeMode')}
                                 >
-                                    {THEME_MODE_OPTIONS.map((option) => (
-                                        <Button
-                                            key={option.value}
-                                            variant="chip"
-                                            size="xs"
-                                            aria-pressed={themeMode === option.value}
-                                            className="oc-mobile-settings-chip !font-normal"
-                                            onClick={() => setThemeMode(option.value)}
-                                        >
-                                            {tUnsafe(option.labelKey)}
-                                        </Button>
-                                    ))}
-                                </div>
-
-                                <>
-                                    <ResponsiveSettingsRow
-                                        isMobile={isMobile}
-                                        itemId="appearance.light-theme"
-                                        label={t('settings.openchamber.visual.field.lightTheme')}
+                                    <div
+                                        className="flex flex-wrap items-center justify-end gap-1"
+                                        role="group"
+                                        aria-label={t('settings.openchamber.visual.field.themeMode')}
                                     >
-                                        <Select value={selectedLightTheme?.metadata.id ?? ''} onValueChange={setLightThemePreference}>
-                                            <SelectTrigger aria-label={t('settings.openchamber.visual.field.selectLightThemeAria')} className="w-fit">
-                                                <SelectValue placeholder={t('settings.openchamber.visual.field.selectThemePlaceholder')}>
-                                                    {selectedLightTheme
-                                                        ? formatThemeLabel(selectedLightTheme.metadata.name, 'light')
-                                                        : undefined}
-                                                </SelectValue>
-                                            </SelectTrigger>
-                                            <SelectContent>
-                                                {lightThemes.map((theme) => (
-                                                    <SelectItem key={theme.metadata.id} value={theme.metadata.id}>
-                                                        {formatThemeLabel(theme.metadata.name, 'light')}
-                                                    </SelectItem>
-                                                ))}
-                                            </SelectContent>
-                                        </Select>
-                                    </ResponsiveSettingsRow>
-                                    <ResponsiveSettingsRow
-                                        isMobile={isMobile}
-                                        itemId="appearance.dark-theme"
-                                        label={t('settings.openchamber.visual.field.darkTheme')}
-                                    >
-                                        <Select value={selectedDarkTheme?.metadata.id ?? ''} onValueChange={setDarkThemePreference}>
-                                            <SelectTrigger aria-label={t('settings.openchamber.visual.field.selectDarkThemeAria')} className="w-fit">
-                                                <SelectValue placeholder={t('settings.openchamber.visual.field.selectThemePlaceholder')}>
-                                                    {selectedDarkTheme
-                                                        ? formatThemeLabel(selectedDarkTheme.metadata.name, 'dark')
-                                                        : undefined}
-                                                </SelectValue>
-                                            </SelectTrigger>
-                                            <SelectContent>
-                                                {darkThemes.map((theme) => (
-                                                    <SelectItem key={theme.metadata.id} value={theme.metadata.id}>
-                                                        {formatThemeLabel(theme.metadata.name, 'dark')}
-                                                    </SelectItem>
-                                                ))}
-                                            </SelectContent>
-                                        </Select>
-                                    </ResponsiveSettingsRow>
-                                </>
+                                        {THEME_MODE_OPTIONS.map((option) => (
+                                            <Button
+                                                key={option.value}
+                                                variant="chip"
+                                                size="xs"
+                                                aria-pressed={themeMode === option.value}
+                                                className="oc-mobile-settings-chip !font-normal"
+                                                onClick={() => setThemeMode(option.value)}
+                                            >
+                                                {tUnsafe(option.labelKey)}
+                                            </Button>
+                                        ))}
+                                    </div>
+                                </ResponsiveSettingsRow>
 
                                 <ResponsiveSettingsRow
                                     isMobile={isMobile}
-                                    label={null}
-                                    mobileLabel={null}
+                                    itemId="appearance.light-theme"
+                                    label={t('settings.openchamber.visual.field.lightTheme')}
                                 >
-                                    <button
-                                        type="button"
-                                        disabled={customThemesLoading || themesReloading}
-                                        onClick={() => {
-                                            const startedAt = Date.now();
-                                            setThemesReloading(true);
-                                            void reloadCustomThemes().finally(() => {
-                                                const elapsed = Date.now() - startedAt;
-                                                if (elapsed < 500) {
-                                                    window.setTimeout(() => {
-                                                        setThemesReloading(false);
-                                                    }, 500 - elapsed);
-                                                    return;
-                                                }
-                                                setThemesReloading(false);
-                                            });
-                                        }}
-                                        className="inline-flex items-center typography-ui-label font-normal text-foreground underline decoration-[1px] underline-offset-2 hover:text-foreground/80 disabled:cursor-not-allowed disabled:text-muted-foreground/60"
-                                    >
-                                        {themesReloading ? t('settings.openchamber.visual.actions.reloadingThemes') : t('settings.openchamber.visual.actions.reloadThemes')}
-                                    </button>
-                                    <Tooltip>
-                                        <TooltipTrigger asChild>
-                                            <button
-                                                type="button"
-                                                className="flex items-center justify-center rounded-md p-1 text-muted-foreground/70 hover:text-foreground"
-                                                aria-label={t('settings.openchamber.visual.field.themeImportInfoAria')}
-                                            >
-                                                <Icon name="information" className="h-3.5 w-3.5" />
-                                            </button>
-                                        </TooltipTrigger>
-                                        <TooltipContent sideOffset={8}>
-                                            {t('settings.openchamber.visual.field.themeImportInfoTooltip')}
-                                        </TooltipContent>
-                                    </Tooltip>
+                                    <Select value={selectedLightTheme?.metadata.id ?? ''} onValueChange={setLightThemePreference}>
+                                        <SelectTrigger aria-label={t('settings.openchamber.visual.field.selectLightThemeAria')} className="w-fit">
+                                            <SelectValue placeholder={t('settings.openchamber.visual.field.selectThemePlaceholder')}>
+                                                {selectedLightTheme
+                                                    ? formatThemeLabel(selectedLightTheme.metadata.name, 'light')
+                                                    : undefined}
+                                            </SelectValue>
+                                        </SelectTrigger>
+                                        <SelectContent>
+                                            {lightThemes.map((theme) => (
+                                                <SelectItem key={theme.metadata.id} value={theme.metadata.id}>
+                                                    {formatThemeLabel(theme.metadata.name, 'light')}
+                                                </SelectItem>
+                                            ))}
+                                        </SelectContent>
+                                    </Select>
+                                </ResponsiveSettingsRow>
+                                <ResponsiveSettingsRow
+                                    isMobile={isMobile}
+                                    itemId="appearance.dark-theme"
+                                    label={t('settings.openchamber.visual.field.darkTheme')}
+                                >
+                                    <Select value={selectedDarkTheme?.metadata.id ?? ''} onValueChange={setDarkThemePreference}>
+                                        <SelectTrigger aria-label={t('settings.openchamber.visual.field.selectDarkThemeAria')} className="w-fit">
+                                            <SelectValue placeholder={t('settings.openchamber.visual.field.selectThemePlaceholder')}>
+                                                {selectedDarkTheme
+                                                    ? formatThemeLabel(selectedDarkTheme.metadata.name, 'dark')
+                                                    : undefined}
+                                            </SelectValue>
+                                        </SelectTrigger>
+                                        <SelectContent>
+                                            {darkThemes.map((theme) => (
+                                                <SelectItem key={theme.metadata.id} value={theme.metadata.id}>
+                                                    {formatThemeLabel(theme.metadata.name, 'dark')}
+                                                </SelectItem>
+                                            ))}
+                                        </SelectContent>
+                                    </Select>
                                 </ResponsiveSettingsRow>
 
                                 {macVibrancySupported && (

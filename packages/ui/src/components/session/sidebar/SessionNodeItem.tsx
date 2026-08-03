@@ -1,4 +1,5 @@
 import React from 'react';
+import { useClickOutside, useEvent } from '@reactuses/core';
 import type { Session } from '@opencode-ai/sdk/v2';
 import { ContextMenu } from '@base-ui/react/context-menu';
 import { dropdownMenuItemClass, dropdownMenuPopupClass, dropdownMenuSeparatorClass, dropdownMenuSubTriggerClass } from '@/components/ui/dropdown-menu.styles';
@@ -15,7 +16,7 @@ import { buildSessionMessageRecordsSnapshot, useDirectoryStore, useGlobalSession
 import { useSync } from '@/sync/use-sync';
 import { useViewportStore, viewportSessionKey } from '@/sync/viewport-store';
 import { DraggableSessionRow } from './sessionFolderDnd';
-import { nodeContainsSessionId } from './sessionNodeItemUtils';
+import { nodeContainsSessionId, resolvedSessionRenderKey } from './sessionNodeItemUtils';
 import type { SessionNodeChildRenderExtras, SessionNodeRenderExtras } from './sessionNodeItemUtils';
 import type { SessionNode } from './types';
 import { formatSessionCompactDateLabel, formatSessionDateLabel, normalizePath, renderHighlightedText, SIDEBAR_ROW_ACTIVE_CLASS, SIDEBAR_ROW_HOVER_CLASS, getSidebarRowPaddingLeft } from './utils';
@@ -41,6 +42,18 @@ import {
   isSessionFocusEqual,
   type SessionFocusIdentity,
 } from '@/stores/useSessionFocusStore';
+
+const collectNodeDescendantIds = (root: SessionNode): string[] => {
+  const out: string[] = [];
+  const walk = (n: SessionNode) => {
+    n.children.forEach((child) => {
+      out.push(child.session.id);
+      walk(child);
+    });
+  };
+  walk(root);
+  return out;
+};
 
 type Folder = { id: string; name: string; sessionIds: string[] };
 
@@ -401,29 +414,21 @@ function SessionNodeItemComponent(props: Props): React.ReactNode {
 
   const selectionModeEnabled = useSessionMultiSelectStore((state) => state.enabled);
   const isRowSelected = useSessionMultiSelectStore(
-    React.useCallback((state) => state.selectedIds.has(session.id), [session.id]),
+    React.useMemo(() => (state: { selectedIds: Set<string> }) => state.selectedIds.has(session.id), [session.id]),
   );
   const toggleRowSelected = useSessionMultiSelectStore((state) => state.toggleSelected);
   const setRowRange = useSessionMultiSelectStore((state) => state.setRange);
-
-  const collectNodeDescendantIds = React.useCallback((root: SessionNode): string[] => {
-    const out: string[] = [];
-    const walk = (n: SessionNode) => {
-      n.children.forEach((child) => {
-        out.push(child.session.id);
-        walk(child);
-      });
-    };
-    walk(root);
-    return out;
-  }, []);
 
   const [exportDialogOpen, setExportDialogOpen] = React.useState(false);
   const [exportIncludeSubtasks, setExportIncludeSubtasks] = React.useState(true);
 
   const menuInstanceKey = `${renderContext}:${archivedBucket ? 'archived' : 'active'}:${session.id}`;
   const isZombie = useViewportStore(
-    React.useCallback((state) => Boolean(state.sessionMemoryState.get(viewportSessionKey(session.id))?.isZombie), [session.id]),
+    React.useMemo(
+      () => (state: { sessionMemoryState: Map<string, { isZombie?: boolean } | undefined> }) =>
+        Boolean(state.sessionMemoryState.get(viewportSessionKey(session.id))?.isZombie),
+      [session.id],
+    ),
   );
   const sessionStatus = useGlobalSessionStatus(session.id);
   const sessionPermissions = useSessionPermissions(
@@ -447,7 +452,7 @@ function SessionNodeItemComponent(props: Props): React.ReactNode {
   const rowFocusKey = React.useMemo(() => getSessionFocusKey(rowFocus) ?? '', [rowFocus]);
   const rowElementRef = React.useRef<HTMLDivElement | null>(null);
   const isActive = useSidebarVisualSelectionStore(
-    React.useCallback((state) => isSessionFocusEqual(state.focus, rowFocus), [rowFocus]),
+    React.useMemo(() => (state: { focus: SessionFocusIdentity | null }) => isSessionFocusEqual(state.focus, rowFocus), [rowFocus]),
   );
   React.useLayoutEffect(() => {
     if (isActive) {
@@ -505,9 +510,9 @@ function SessionNodeItemComponent(props: Props): React.ReactNode {
   const isMultiRunLikeSession = React.useMemo(() => parseMultiRunSessionTitle(resolvedSession.title) !== null, [resolvedSession.title]);
   const [fusionDialogOpen, setFusionDialogOpen] = React.useState(false);
 
-  const descendantCount = React.useMemo(() => collectNodeDescendantIds(node).length, [collectNodeDescendantIds, node]);
+  const descendantCount = React.useMemo(() => collectNodeDescendantIds(node).length, [node]);
 
-  const collectChildExports = React.useCallback(async (children: SessionNode[]): Promise<{ children: ChildSessionExport[]; skipped: number }> => {
+  const collectChildExports = useEvent(async (children: SessionNode[]): Promise<{ children: ChildSessionExport[]; skipped: number }> => {
     const results: ChildSessionExport[] = [];
     let skipped = 0;
     for (const child of children) {
@@ -529,16 +534,16 @@ function SessionNodeItemComponent(props: Props): React.ReactNode {
       }
     }
     return { children: results, skipped };
-  }, [collectNodeDescendantIds, directoryStore, sync, t]);
+  });
 
-  const showSkippedSubtasksWarning = React.useCallback((count: number) => {
+  const showSkippedSubtasksWarning = useEvent((count: number) => {
     if (count <= 0) return;
     toast.warning(count === 1
       ? t('sessions.sidebar.session.export.skippedSubtaskSingle', { count })
       : t('sessions.sidebar.session.export.skippedSubtaskMany', { count }));
-  }, [t]);
+  });
 
-  const doExportSession = React.useCallback(async (includeSubtasks: boolean) => {
+  const doExportSession = useEvent(async (includeSubtasks: boolean) => {
     if (!sessionDirectory) {
       toast.error(t('sessions.sidebar.session.export.nothingToExport'));
       return;
@@ -584,17 +589,17 @@ function SessionNodeItemComponent(props: Props): React.ReactNode {
     downloadAsMarkdown(markdown, filename);
     toast.success(t('sessions.sidebar.session.export.success'));
     showSkippedSubtasksWarning(skippedSubtaskCount);
-  }, [collectChildExports, directoryStore, node.children, resolvedSession.title, session.id, sessionDirectory, showSkippedSubtasksWarning, sync, t]);
-  const handleExportSession = React.useCallback(async () => {
+  });
+  const handleExportSession = useEvent(async () => {
     if (node.children.length > 0) {
       setExportIncludeSubtasks(true);
       setExportDialogOpen(true);
       return;
     }
     await doExportSession(false);
-  }, [doExportSession, node.children.length]);
+  });
 
-  const handleOpenMiniChatWindow = React.useCallback(() => {
+  const handleOpenMiniChatWindow = useEvent(() => {
     if (!sessionDirectory) return;
     void invokeDesktop('desktop_open_session_mini_chat_window', {
       sessionId: session.id,
@@ -604,19 +609,18 @@ function SessionNodeItemComponent(props: Props): React.ReactNode {
     }).catch((error) => {
       console.warn('[session-sidebar] failed to open mini chat window', error);
     });
-  }, [session.id, sessionDirectory]);
+  });
 
   // Capture outside-clicks to save edits — immune to focus-race with onBlur.
-  React.useEffect(() => {
-    if (editingId !== session.id) return;
-    const handleDocMouseDown = (e: MouseEvent) => {
-      if (formRef.current && !formRef.current.contains(e.target as Node)) {
-        handleSaveEditRef.current(renameDraftRef.current);
-      }
-    };
-    document.addEventListener('mousedown', handleDocMouseDown);
-    return () => document.removeEventListener('mousedown', handleDocMouseDown);
-  }, [editingId, session.id]);
+  // useClickOutside owns the document listener; enabled only while this row is
+  // being renamed so other rows do not attach listeners.
+  useClickOutside(
+    formRef,
+    () => {
+      handleSaveEditRef.current(renameDraftRef.current);
+    },
+    editingId === session.id,
+  );
 
   React.useLayoutEffect(() => {
     if (editingId !== session.id) {
@@ -630,6 +634,150 @@ function SessionNodeItemComponent(props: Props): React.ReactNode {
     setRenameDraft(editTitle);
     queueMicrotask(() => renameInputRef.current?.select());
   }, [editingId, editTitle, session.id]);
+
+  // Event handlers live above the rename early-return so useEvent hook order is
+  // stable across edit vs display modes (rules-of-hooks).
+  const handleMenuOpenChangeComplete = useEvent((open: boolean) => {
+    if (!open && pendingRenameRef.current) {
+      const { id, title } = pendingRenameRef.current;
+      pendingRenameRef.current = null;
+      setEditingId(id);
+      setEditTitle(title);
+    }
+  });
+
+  const handleContextMenuOpenChange = useEvent((open: boolean) => {
+    setIsContextMenuOpen(open);
+  });
+
+  const handleQuickPinPointerDown = useEvent((event: React.PointerEvent<HTMLButtonElement>) => {
+    event.preventDefault();
+    event.stopPropagation();
+  });
+
+  const handleQuickPinMouseDown = useEvent((event: React.MouseEvent<HTMLButtonElement>) => {
+    event.preventDefault();
+    event.stopPropagation();
+  });
+
+  const handleQuickPinClick = useEvent((event: React.MouseEvent<HTMLButtonElement>) => {
+    event.preventDefault();
+    event.stopPropagation();
+    setOpenSidebarMenuKey(null);
+    togglePinnedSession(session.id);
+  });
+
+  const handleQuickArchiveClick = useEvent((event: React.MouseEvent<HTMLButtonElement>) => {
+    event.preventDefault();
+    event.stopPropagation();
+    setOpenSidebarMenuKey(null);
+    handleDeleteSession(session, { archivedBucket });
+  });
+
+  const handleQuickHardDeleteClick = useEvent((event: React.MouseEvent<HTMLButtonElement>) => {
+    event.preventDefault();
+    event.stopPropagation();
+    setOpenSidebarMenuKey(null);
+    // Quick row action matches pin+Shift: skip the confirm dialog.
+    handleDeleteSession(session, { archivedBucket, hardDelete: true, skipConfirm: true });
+  });
+
+  const handleQuickUnpinClick = useEvent((event: React.MouseEvent<HTMLButtonElement>) => {
+    event.preventDefault();
+    event.stopPropagation();
+    setOpenSidebarMenuKey(null);
+    togglePinnedSession(session.id);
+  });
+
+  const handleOpenInEditorPointerDown = useEvent((event: React.PointerEvent<HTMLButtonElement>) => {
+    event.preventDefault();
+    event.stopPropagation();
+  });
+
+  const handleOpenInEditorMouseDown = useEvent((event: React.MouseEvent<HTMLButtonElement>) => {
+    event.preventDefault();
+    event.stopPropagation();
+  });
+
+  const handleOpenInEditorClick = useEvent((event: React.MouseEvent<HTMLButtonElement>) => {
+    event.preventDefault();
+    event.stopPropagation();
+    void runtimeApis?.vscode?.executeCommand('openchamber.openSessionInEditor', session.id, sessionTitle);
+  });
+
+  const handleRowSelect = useEvent((event?: React.MouseEvent<HTMLButtonElement>) => {
+    if (suppressNextSelectRef.current) {
+      suppressNextSelectRef.current = false;
+      return;
+    }
+    if (selectionModeEnabled) {
+      event?.preventDefault();
+      event?.stopPropagation();
+      if (event?.shiftKey) {
+        const rows = typeof document !== 'undefined'
+          ? Array.from(document.querySelectorAll<HTMLElement>('[data-session-row]'))
+          : [];
+        const orderedIds = rows
+          .map((el) => el.getAttribute('data-session-row'))
+          .filter((id): id is string => typeof id === 'string' && id.length > 0);
+        const currentAnchor = useSessionMultiSelectStore.getState().anchorId;
+        const descendantsById = new Map<string, string[]>();
+        descendantsById.set(session.id, collectNodeDescendantIds(node));
+        setRowRange(currentAnchor, session.id, orderedIds, sessionDirectory ?? null, descendantsById);
+        return;
+      }
+      toggleRowSelected(session.id, sessionDirectory ?? null, collectNodeDescendantIds(node));
+      return;
+    }
+    handleSessionSelect(session.id, sessionDirectory, projectId, renderContext);
+  });
+
+  // The selection/active highlight is an inset rounded chip (Codex-style).
+  // The primary click target is the inner title button; make the rest of the
+  // highlighted box clickable too — but only for clicks that did not originate
+  // from an interactive child (title button, chevron, action menu), so nothing
+  // double-fires.
+  const handleRowBackgroundClick = useEvent((event: React.MouseEvent<HTMLDivElement>) => {
+    if (event.defaultPrevented) return;
+    const target = event.target as HTMLElement | null;
+    if (target?.closest('button, a, input, [role="menuitem"], [role="menu"]')) return;
+    handleRowSelect(event as unknown as React.MouseEvent<HTMLButtonElement>);
+  });
+
+  const handleRowMouseDown = useEvent((event: React.MouseEvent<HTMLButtonElement>) => {
+    if (event.button === 2 || (event.button === 0 && event.ctrlKey && !selectionModeEnabled)) {
+      suppressNextSelectRef.current = true;
+    }
+  });
+  const handleRowPointerDown = useEvent((event: React.PointerEvent<HTMLButtonElement>) => {
+    mouseFocusedTitleRef.current = event.pointerType === 'mouse';
+    if (mobileVariant && event.pointerType === 'touch') {
+      setIsTouchPressed(true);
+    }
+  });
+  const handleRowPointerEnd = useEvent((event: React.PointerEvent<HTMLButtonElement>) => {
+    if (mobileVariant && event.pointerType === 'touch') {
+      setIsTouchPressed(false);
+    }
+  });
+  const handleRowKeyDown = useEvent((event: React.KeyboardEvent<HTMLButtonElement>) => {
+    if (event.key !== 'Enter' || !mouseFocusedTitleRef.current) return;
+    event.preventDefault();
+    event.stopPropagation();
+    handleSessionDoubleClick(session.id, sessionTitle);
+  });
+  const handleTitleClick = useEvent((event: React.MouseEvent<HTMLButtonElement>) => {
+    handleRowSelect(event);
+    if (!mouseFocusedTitleRef.current) return;
+    const titleButton = event.currentTarget;
+    window.requestAnimationFrame(() => {
+      mouseFocusedTitleRef.current = true;
+      titleButton.focus({ preventScroll: true });
+    });
+  });
+  const handleRowBlur = useEvent(() => {
+    mouseFocusedTitleRef.current = false;
+  });
 
   if (editingId === session.id) {
     const handleEnableSmartTitle = async () => {
@@ -822,148 +970,6 @@ function SessionNodeItemComponent(props: Props): React.ReactNode {
   const streamingIndicator = isZombie
     ? <Icon name="error-warning" className="h-4 w-4 text-status-warning" />
     : null;
-
-  const handleMenuOpenChangeComplete = (open: boolean) => {
-    if (!open && pendingRenameRef.current) {
-      const { id, title } = pendingRenameRef.current;
-      pendingRenameRef.current = null;
-      setEditingId(id);
-      setEditTitle(title);
-    }
-  };
-
-  const handleContextMenuOpenChange = (open: boolean) => {
-    setIsContextMenuOpen(open);
-  };
-
-  const handleQuickPinPointerDown = (event: React.PointerEvent<HTMLButtonElement>) => {
-    event.preventDefault();
-    event.stopPropagation();
-  };
-
-  const handleQuickPinMouseDown = (event: React.MouseEvent<HTMLButtonElement>) => {
-    event.preventDefault();
-    event.stopPropagation();
-  };
-
-  const handleQuickPinClick = (event: React.MouseEvent<HTMLButtonElement>) => {
-    event.preventDefault();
-    event.stopPropagation();
-    setOpenSidebarMenuKey(null);
-    togglePinnedSession(session.id);
-  };
-
-  const handleQuickArchiveClick = (event: React.MouseEvent<HTMLButtonElement>) => {
-    event.preventDefault();
-    event.stopPropagation();
-    setOpenSidebarMenuKey(null);
-    handleDeleteSession(session, { archivedBucket });
-  };
-
-  const handleQuickHardDeleteClick = (event: React.MouseEvent<HTMLButtonElement>) => {
-    event.preventDefault();
-    event.stopPropagation();
-    setOpenSidebarMenuKey(null);
-    // Quick row action matches pin+Shift: skip the confirm dialog.
-    handleDeleteSession(session, { archivedBucket, hardDelete: true, skipConfirm: true });
-  };
-
-  const handleQuickUnpinClick = (event: React.MouseEvent<HTMLButtonElement>) => {
-    event.preventDefault();
-    event.stopPropagation();
-    setOpenSidebarMenuKey(null);
-    togglePinnedSession(session.id);
-  };
-
-  const handleOpenInEditorPointerDown = (event: React.PointerEvent<HTMLButtonElement>) => {
-    event.preventDefault();
-    event.stopPropagation();
-  };
-
-  const handleOpenInEditorMouseDown = (event: React.MouseEvent<HTMLButtonElement>) => {
-    event.preventDefault();
-    event.stopPropagation();
-  };
-
-  const handleOpenInEditorClick = (event: React.MouseEvent<HTMLButtonElement>) => {
-    event.preventDefault();
-    event.stopPropagation();
-    void runtimeApis?.vscode?.executeCommand('openchamber.openSessionInEditor', session.id, sessionTitle);
-  };
-
-  const handleRowSelect = (event?: React.MouseEvent<HTMLButtonElement>) => {
-    if (suppressNextSelectRef.current) {
-      suppressNextSelectRef.current = false;
-      return;
-    }
-    if (selectionModeEnabled) {
-      event?.preventDefault();
-      event?.stopPropagation();
-      if (event?.shiftKey) {
-        const rows = typeof document !== 'undefined'
-          ? Array.from(document.querySelectorAll<HTMLElement>('[data-session-row]'))
-          : [];
-        const orderedIds = rows
-          .map((el) => el.getAttribute('data-session-row'))
-          .filter((id): id is string => typeof id === 'string' && id.length > 0);
-        const currentAnchor = useSessionMultiSelectStore.getState().anchorId;
-        const descendantsById = new Map<string, string[]>();
-        descendantsById.set(session.id, collectNodeDescendantIds(node));
-        setRowRange(currentAnchor, session.id, orderedIds, sessionDirectory ?? null, descendantsById);
-        return;
-      }
-      toggleRowSelected(session.id, sessionDirectory ?? null, collectNodeDescendantIds(node));
-      return;
-    }
-    handleSessionSelect(session.id, sessionDirectory, projectId, renderContext);
-  };
-
-  // The selection/active highlight is an inset rounded chip (Codex-style).
-  // The primary click target is the inner title button; make the rest of the
-  // highlighted box clickable too — but only for clicks that did not originate
-  // from an interactive child (title button, chevron, action menu), so nothing
-  // double-fires.
-  const handleRowBackgroundClick = (event: React.MouseEvent<HTMLDivElement>) => {
-    if (event.defaultPrevented) return;
-    const target = event.target as HTMLElement | null;
-    if (target?.closest('button, a, input, [role="menuitem"], [role="menu"]')) return;
-    handleRowSelect(event as unknown as React.MouseEvent<HTMLButtonElement>);
-  };
-
-  const handleRowMouseDown = (event: React.MouseEvent<HTMLButtonElement>) => {
-    if (event.button === 2 || (event.button === 0 && event.ctrlKey && !selectionModeEnabled)) {
-      suppressNextSelectRef.current = true;
-    }
-  };
-  const handleRowPointerDown = (event: React.PointerEvent<HTMLButtonElement>) => {
-    mouseFocusedTitleRef.current = event.pointerType === 'mouse';
-    if (mobileVariant && event.pointerType === 'touch') {
-      setIsTouchPressed(true);
-    }
-  };
-  const handleRowPointerEnd = (event: React.PointerEvent<HTMLButtonElement>) => {
-    if (mobileVariant && event.pointerType === 'touch') {
-      setIsTouchPressed(false);
-    }
-  };
-  const handleRowKeyDown = (event: React.KeyboardEvent<HTMLButtonElement>) => {
-    if (event.key !== 'Enter' || !mouseFocusedTitleRef.current) return;
-    event.preventDefault();
-    event.stopPropagation();
-    handleSessionDoubleClick(session.id, sessionTitle);
-  };
-  const handleTitleClick = (event: React.MouseEvent<HTMLButtonElement>) => {
-    handleRowSelect(event);
-    if (!mouseFocusedTitleRef.current) return;
-    const titleButton = event.currentTarget;
-    window.requestAnimationFrame(() => {
-      mouseFocusedTitleRef.current = true;
-      titleButton.focus({ preventScroll: true });
-    });
-  };
-  const handleRowBlur = () => {
-    mouseFocusedTitleRef.current = false;
-  };
 
   const renderSessionMenuItems = ({
     Item,
@@ -1520,7 +1526,10 @@ const hasResolvedSessionChangeInNode = (
 ): boolean => {
   if (prevNode.session.id !== nextNode.session.id) return true;
   const sessionId = prevNode.session.id;
-  if ((prevLiveSessionById.get(sessionId) ?? prevNode.session) !== (nextLiveSessionById.get(sessionId) ?? nextNode.session)) {
+  const prevSession = prevLiveSessionById.get(sessionId) ?? prevNode.session;
+  const nextSession = nextLiveSessionById.get(sessionId) ?? nextNode.session;
+  if (prevSession !== nextSession
+    && resolvedSessionRenderKey(prevSession) !== resolvedSessionRenderKey(nextSession)) {
     return true;
   }
   if (prevNode.children.length !== nextNode.children.length) return true;

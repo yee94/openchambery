@@ -79,7 +79,13 @@ before touching the filesystem). Rationale: metadata rides every
 3. On fire (`tick`), gated by the `sessionGoalEnabled` setting:
    - fetch session (skip sub-agent sessions), require an `active` goal;
    - quiescence check via the message tail (trailing user message or
-     unfinished assistant reply → bail; the next idle transition re-arms);
+     unfinished assistant reply → bail; the next idle transition re-arms).
+     Exception: an unfinished assistant reply that also carries no error can
+     be an ORPHAN left by force-killing the app mid-turn — the session is
+     really idle even though the tail looks incomplete. In that case the tick
+     corroborates against the live `/session/status` and, if the session is
+     idle, resumes past the orphan instead of bailing forever. A genuinely
+     busy session still bails;
    - token accounting as a SNAPSHOT of the latest completed assistant turn:
      `input + cache.read + output`. Earlier turns' inputs and outputs fold
      into the next turn's cache, so the latest snapshot already carries the

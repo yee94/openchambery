@@ -61,8 +61,9 @@ export const SessionGoalRow: React.FC<SessionGoalRowProps> = React.memo(({ sessi
   return (
     <div
       className={cn(
-        'flex w-full min-w-0 items-center gap-2 rounded-lg border px-2 py-1',
-        'border-[var(--interactive-border)]',
+        // Row chrome only — outer shell (border/surface) is owned by the
+        // composer queue stack when this is rendered as its trailing strip.
+        'flex w-full min-w-0 items-center gap-2 py-0.5',
         className,
       )}
       aria-label={t('chat.goal.row.aria')}

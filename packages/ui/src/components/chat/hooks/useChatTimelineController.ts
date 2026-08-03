@@ -14,6 +14,15 @@ import { isMobileSurfaceRuntime } from '@/lib/runtimeSurface';
 
 type ViewportAnchor = { messageId: string; offsetTop: number };
 
+type PrePrependSnapshot = {
+    sessionId: string | null;
+    height: number;
+    top: number;
+    anchor: ViewportAnchor | null;
+    oldestId: string | null;
+    newestId: string | null;
+};
+
 type PendingScrollRequest = {
     sessionId: string;
     kind: 'turn' | 'message';
@@ -401,17 +410,14 @@ export const useChatTimelineController = ({
     }, [attemptPendingScrollRequest, renderedMessages, resolvePendingRenderWaiters]);
 
     // --- Synchronous scroll compensation for load-more / reveal ---
-    // fetchOlderHistory and revealBufferedTurns store a snapshot here
-    // before triggering the state change. useLayoutEffect consumes it
-    // after React commits new DOM — before the browser paints.
-    const prePrependScrollRef = React.useRef<{
-        sessionId: string | null;
-        height: number;
-        top: number;
-        anchor: ViewportAnchor | null;
-        oldestId: string | null;
-        newestId: string | null;
-    } | null>(null);
+    // fetchOlderHistory stores a snapshot here before triggering the fetch and
+    // keeps it armed for the whole load. useLayoutEffect re-asserts it after
+    // every commit React makes in between — before the browser paints.
+    const prePrependScrollRef = React.useRef<PrePrependSnapshot | null>(null);
+    // The snapshot whose anchor already has a post-commit hold running, so a
+    // settling virtualized list gets one hold per page instead of one per
+    // render.
+    const heldAnchorMessagesRef = React.useRef<ChatMessageEntry[] | null>(null);
 
     const captureViewportAnchor = React.useCallback((): ViewportAnchor | null => {
         return messageListRef.current?.captureViewportAnchor() ?? null;
@@ -436,6 +442,7 @@ export const useChatTimelineController = ({
     React.useLayoutEffect(() => {
         prePrependScrollRef.current = null;
         prependTrackingRef.current = null;
+        heldAnchorMessagesRef.current = null;
     }, [sessionId]);
 
     React.useLayoutEffect(() => {
@@ -473,29 +480,12 @@ export const useChatTimelineController = ({
             }) || hasInsertedBeforeKnownOldest(snap.oldestId, currentOldestId, renderedMessages)
             : false;
         const didPrepend = isPrepend || isSnapshotPrepend;
-        const shouldConsumeSnapshot = Boolean(snap && (isPrepend || isSnapshotPrepend));
 
         const updateTracking = () => {
             prependTrackingRef.current = {
                 oldestId: currentOldestId,
                 newestId: currentNewestId,
                 scrollHeight: container.scrollHeight,
-            };
-        };
-
-        const refreshPendingSnapshot = () => {
-            const pending = prePrependScrollRef.current;
-            if (!pending) {
-                return;
-            }
-
-            prePrependScrollRef.current = {
-                ...pending,
-                height: container.scrollHeight,
-                top: container.scrollTop,
-                anchor: captureViewportAnchor(),
-                oldestId: currentOldestId,
-                newestId: currentNewestId,
             };
         };
 
@@ -516,53 +506,64 @@ export const useChatTimelineController = ({
             if (didPrepend) {
                 prePrependScrollRef.current = null;
                 goToBottom('instant');
-            } else if (snap) {
-                refreshPendingSnapshot();
             }
             updateTracking();
             return;
         }
 
         const historyVirtualized = messageListRef.current?.isHistoryVirtualized() ?? false;
-        const compensation = resolveHistoryPrependCompensation(historyVirtualized);
 
-        // TanStack core owns released virtualized prepends end to end. Stable
-        // keys preserve the visible item, and core batches iOS momentum writes
-        // with later measurements under anchorTo:'end'.
-        if (didPrepend && compensation.owner === 'tanstack-core') {
-            if (shouldConsumeSnapshot) {
-                prePrependScrollRef.current = null;
+        // A history load owns the read position for its whole duration, so the
+        // armed snapshot is re-asserted on EVERY commit it produces: the
+        // loading row, the page itself, and any virtualizer remeasure after it.
+        // Restoration is absolute — it measures where the anchor message sits
+        // now and corrects the residual — so repeating it cannot
+        // double-compensate, and it stays exact even when the virtualizer
+        // already moved the offset itself.
+        //
+        // Edge-id heuristics are blind to most of these commits. A multi-step
+        // assistant turn spans pages, so an older page routinely carries only
+        // more rows for the turn that is already on screen: they land BELOW the
+        // current first message and leave both timeline edges untouched. That
+        // is content added above the viewport all the same, and TanStack cannot
+        // see it either (neither the item count nor the first/last item key
+        // changes, so its key anchoring never runs).
+        if (snap) {
+            const heightDelta = container.scrollHeight - snap.height;
+
+            // iOS overwrites plain scrollTop writes while a fling runs, so
+            // mobile keeps the momentum-defeating writer and its height delta.
+            if (isMobileSurfaceRuntime()) {
+                if (heightDelta > 0) {
+                    setScrollTopDefeatingMomentum(container, snap.top + heightDelta);
+                }
+                updateTracking();
+                return;
+            }
+
+            const anchor = snap.anchor;
+            const restoredAnchor = Boolean(anchor && restoreViewportAnchor(anchor));
+            if (!restoredAnchor) {
+                if (heightDelta > 0) {
+                    container.scrollTop = snap.top + heightDelta;
+                }
+            } else if (anchor && historyVirtualized && heldAnchorMessagesRef.current !== renderedMessages) {
+                // Virtualized rows measure in over the frames that follow the
+                // commit, each one moving geometry above the viewport. Hold the
+                // anchor until that settles; the hold releases itself on the
+                // user's next gesture.
+                heldAnchorMessagesRef.current = renderedMessages;
+                messageListRef.current?.holdViewportAnchor(anchor);
             }
             updateTracking();
             return;
         }
 
-        if (snap && shouldConsumeSnapshot) {
-            prePrependScrollRef.current = null;
-            const heightDelta = container.scrollHeight - snap.height;
-            const applyHeightDelta = (): boolean => {
-                if (heightDelta <= 0) {
-                    return false;
-                }
-                container.scrollTop = snap.top + heightDelta;
-                return true;
-            };
-
-            // The non-virtualized mobile list keeps its exact height delta
-            // through iOS momentum.
-            if (isMobileSurfaceRuntime() && heightDelta > 0) {
-                setScrollTopDefeatingMomentum(container, snap.top + heightDelta);
-                updateTracking();
-                return;
-            }
-
-            // The non-virtualized list restores the exact mounted anchor, with
-            // height delta as its fallback.
-            const restoredAnchor = Boolean(snap.anchor && restoreViewportAnchor(snap.anchor));
-            if (!restoredAnchor) {
-                applyHeightDelta();
-            }
-        } else if (isPrepend && prev) {
+        // Background prepends (a history page dispatched from useSync rather
+        // than from loadEarlier) arrive without a snapshot. TanStack core owns
+        // those when virtualized: stable keys preserve the visible item and
+        // core batches iOS momentum writes with later measurements.
+        if (isPrepend && prev && resolveHistoryPrependCompensation(historyVirtualized).owner === 'controller') {
             // Released viewport: preserve the read position by compensating for the
             // exact height the non-virtualized prepend added above, with no
             // intermediate frame for auto-follow to fight.
@@ -575,15 +576,10 @@ export const useChatTimelineController = ({
                     container.scrollTop = target;
                 }
             }
-        } else if (snap) {
-            // setIsLoadingOlder/historyMeta can commit before the server page
-            // arrives. Keep the snapshot armed, but refresh it so later fallback
-            // compensation only accounts for rows actually prepended above.
-            refreshPendingSnapshot();
         }
 
         updateTracking();
-    }, [captureViewportAnchor, messageListRef, renderedMessages, scrollRef, restoreViewportAnchor, goToBottom]);
+    }, [messageListRef, renderedMessages, scrollRef, restoreViewportAnchor, goToBottom]);
 
     const revealBufferedTurns = React.useCallback(async (): Promise<boolean> => false, []);
 
@@ -605,8 +601,9 @@ export const useChatTimelineController = ({
 
         // Store scroll snapshot BEFORE the fetch so useLayoutEffect can
         // compensate synchronously when React commits the new messages.
+        let armedSnapshot: PrePrependSnapshot | null = null;
         if (input.preserveViewport && container) {
-            prePrependScrollRef.current = {
+            armedSnapshot = {
                 sessionId: sessionIdRef.current,
                 height: container.scrollHeight,
                 top: container.scrollTop,
@@ -614,7 +611,14 @@ export const useChatTimelineController = ({
                 oldestId: beforeOldestMessageId,
                 newestId: beforeMessages[beforeMessages.length - 1]?.info?.id ?? null,
             };
+            prePrependScrollRef.current = armedSnapshot;
         }
+
+        const releaseSnapshot = () => {
+            if (armedSnapshot && prePrependScrollRef.current === armedSnapshot) {
+                prePrependScrollRef.current = null;
+            }
+        };
 
         beginHistoryInteraction();
         setIsLoadingOlder(true);
@@ -622,19 +626,19 @@ export const useChatTimelineController = ({
         try {
             const targetSessionId = sessionIdRef.current;
             if (!targetSessionId) {
-                prePrependScrollRef.current = null;
+                releaseSnapshot();
                 return false;
             }
 
             let loadedMessageCount = beforeMessageCount;
             let loadedOldestMessageId = beforeOldestMessageId;
             let loadedLimit = beforeLimit;
-            const beforeTurnCount = turnModelRef.current.turnCount;
+            const beforeRenderedCount = turnModelRef.current.messageToTurnIndex.size;
 
             while (true) {
                 await loadMoreMessages(targetSessionId, 'up');
                 if (sessionIdRef.current !== targetSessionId) {
-                    prePrependScrollRef.current = null;
+                    releaseSnapshot();
                     return false;
                 }
 
@@ -650,13 +654,21 @@ export const useChatTimelineController = ({
                         && typeof afterOldestMessageId === 'string'
                         && loadedOldestMessageId !== afterOldestMessageId)
                     || afterLimit > loadedLimit;
-                const turnGrowth = turnModelRef.current.turnCount - beforeTurnCount;
+                // Turn COUNT is the wrong stop signal. A multi-step assistant
+                // turn spans several pages, so a page routinely adds dozens of
+                // visible rows to a turn that already exists without creating a
+                // new one — looping past that pulls three or four pages per
+                // gesture and multiplies the geometry the viewport
+                // compensation has to absorb. Stop as soon as the page
+                // contributed anything the user can actually see; keep paging
+                // only while every row is still an orphan the timeline drops.
+                const renderedGrowth = turnModelRef.current.messageToTurnIndex.size - beforeRenderedCount;
 
-                if (turnGrowth > 0) {
+                if (renderedGrowth > 0) {
                     return true;
                 }
                 if (!messageGrowth) {
-                    prePrependScrollRef.current = null;
+                    releaseSnapshot();
                     return false;
                 }
                 if (!historySignalsRef.current.hasMoreAboveTurns) {
@@ -668,11 +680,16 @@ export const useChatTimelineController = ({
                 loadedLimit = afterLimit;
             }
         } catch (error) {
-            prePrependScrollRef.current = null;
+            releaseSnapshot();
             throw error;
         } finally {
             setIsLoadingOlder(false);
             settleHistoryInteraction();
+            // Removing the loading row is itself a geometry change above the
+            // viewport, so the anchor stays armed until that commit has been
+            // compensated. Releasing it afterwards keeps ordinary commits
+            // (streaming, live events) free of a stale read position.
+            void waitForNextRenderCommitOrTimeout().then(releaseSnapshot);
         }
     }, [beginHistoryInteraction, captureViewportAnchor, loadMoreMessages, scrollRef, settleHistoryInteraction, waitForNextRenderCommitOrTimeout]);
 

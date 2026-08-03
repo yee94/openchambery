@@ -1747,6 +1747,7 @@ export const settingsDict = {
   "settings.voice.page.field.ttsInputModeRaw": "Сирий Markdown",
   "settings.voice.page.field.ttsInputModeSummarized": "скорочений",
   "settings.openchamber.visual.section.colorMode": "Режим теми",
+  "settings.openchamber.visual.field.themeMode": "Змінити тему",
   "settings.openchamber.visual.field.display": "Відображення",
   "settings.openchamber.visual.section.localization": "Локалізація",
   "settings.openchamber.visual.section.spacingAndLayout": "Відступи й компонування",

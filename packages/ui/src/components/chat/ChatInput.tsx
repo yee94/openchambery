@@ -134,6 +134,7 @@ import {
 } from './fileDropReferences';
 import { SessionGoalRow } from '@/components/chat/SessionGoalRow';
 import { SessionGoalButton, SessionGoalObjectiveCounter } from '@/components/chat/SessionGoalButton';
+import { useSessionGoal } from '@/hooks/useSessionGoal';
 import { useSessionGoalArmStore } from '@/stores/useSessionGoalArmStore';
 import type { Part } from '@opencode-ai/sdk/v2/client';
 import { consumesImmediateCommandText, getGoalCommandObjective, getLocalChatCommand, preservesComposerResources } from './localCommandClassifier';
@@ -6585,6 +6586,18 @@ const ChatInputRuntime: React.FC<ChatInputProps> = ({ onOpenSettings, scrollToBo
         });
     });
 
+    // Gate trailing so an empty SessionGoalRow (no goal / disabled) does not keep
+    // the queue shell open with only the composer-overlap spacer.
+    const sessionGoalDirectory = currentSessionDirectoryForSync ?? currentDirectory;
+    const { goal: sessionGoal, enabled: sessionGoalEnabled } = useSessionGoal(currentSessionId ?? '', sessionGoalDirectory);
+    const sessionGoalLeading = currentSessionId && sessionGoalEnabled && sessionGoal
+        ? (
+            <SessionGoalRow
+                sessionId={currentSessionId}
+                directory={sessionGoalDirectory}
+            />
+        )
+        : null;
     const queuedMessageSurface = (
         <QueuedMessageChips
             onEditMessage={handleQueuedMessageEdit}
@@ -6608,6 +6621,7 @@ const ChatInputRuntime: React.FC<ChatInputProps> = ({ onOpenSettings, scrollToBo
                     void surfaceResources.restoreAttachments(removed.attachments);
                 }
             }}
+            trailing={sessionGoalLeading}
         />
     );
 
@@ -6983,11 +6997,6 @@ const ChatInputRuntime: React.FC<ChatInputProps> = ({ onOpenSettings, scrollToBo
                         isMobileExpanded && 'flex min-h-0 flex-1 flex-col',
                     )}
                 >
-                <SessionGoalRow
-                    sessionId={currentSessionId}
-                    directory={currentSessionDirectoryForSync ?? currentDirectory}
-                    className="mb-1.5"
-                />
                 {queuedMessageSurface}
                 <ChatPromptComposer
                     value={message}

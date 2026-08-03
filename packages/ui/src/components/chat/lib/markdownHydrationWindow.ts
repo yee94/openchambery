@@ -15,6 +15,15 @@ type MarkdownHydrationPlan = {
     preload: string[];
 };
 
+export type MarkdownHydrationReleaseInput = MarkdownHydrationCandidatesInput & {
+    /**
+     * Visible rows swap in front of the user, so a scrolling list withholds them
+     * and lets only off-screen preload through.
+     */
+    allowVisibleRelease: boolean;
+    preloadReleaseLimit: number;
+};
+
 export const createInitialMarkdownHydratedKeys = (entryKeys: readonly string[]): Set<string> => {
     const newestKey = entryKeys[entryKeys.length - 1];
     return newestKey ? new Set([newestKey]) : new Set();
@@ -77,33 +86,54 @@ const planMarkdownHydration = ({
         addIndex(visible, index);
     }
 
-    if (scrollDirection === 'backward') {
-        const preloadCount = Math.max(0, Math.floor(preloadEntries));
+    // Preload runs on both sides of the fold. A row that only starts hydrating
+    // once it is already on screen guarantees a visible placeholder-to-Markdown
+    // swap; widening the window in the direction of travel means the row is
+    // usually settled before it is ever painted.
+    const preloadCount = Math.max(0, Math.floor(preloadEntries));
+    const addAfter = () => {
+        const preloadEnd = Math.min(lastIndex, end + preloadCount);
+        for (let index = end + 1; index <= preloadEnd; index += 1) {
+            addIndex(preload, index);
+        }
+    };
+    const addBefore = () => {
         const preloadStart = Math.max(0, start - preloadCount);
         for (let index = start - 1; index >= preloadStart; index -= 1) {
             addIndex(preload, index);
         }
+    };
+
+    if (scrollDirection === 'backward') {
+        addBefore();
+        addAfter();
+    } else {
+        addAfter();
+        addBefore();
     }
 
     return { visible, preload };
 };
 
 /**
- * Keys to release in the next commit: the whole visible window at once, and
- * otherwise the single nearest off-screen preload row.
+ * Keys to release in the next commit.
  *
- * Releasing visible rows one per commit makes the virtualizer remeasure the row
- * and re-anchor the scroll offset once per row, so entering a session walks
- * through one visible reflow per turn before it settles. Off-screen preload
- * rows keep the incremental cadence: they grow above the fold where the
- * anchoring rules already compensate their height, and they are not worth a
- * larger burst of Markdown work on a scroll path.
+ * Visible rows go out as one batch rather than one per commit: releasing them
+ * individually makes the virtualizer remeasure and re-anchor once per row, so
+ * entering a session walks through one visible reflow per turn before it
+ * settles. Off-screen preload rows are metered instead, because they are pure
+ * background work and a whole window of them in a single commit is exactly the
+ * burst that shows up as one large layout shift.
  */
 export const getMarkdownHydrationBatch = (
-    input: MarkdownHydrationCandidatesInput,
+    input: MarkdownHydrationReleaseInput,
 ): string[] => {
     const { visible, preload } = planMarkdownHydration(input);
-    return visible.length > 0 ? visible : preload.slice(0, 1);
+    const metered = preload.slice(0, Math.max(0, Math.floor(input.preloadReleaseLimit)));
+    if (!input.allowVisibleRelease) {
+        return metered;
+    }
+    return visible.length > 0 ? [...visible, ...metered] : metered;
 };
 
 export const pruneMarkdownHydratedKeys = (

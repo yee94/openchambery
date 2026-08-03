@@ -1780,6 +1780,7 @@ export const settingsDict = {
   'settings.voice.page.field.ttsInputModeRaw': '生 Markdown',
   'settings.voice.page.field.ttsInputModeSummarized': '要約',
   'settings.openchamber.visual.section.colorMode': 'カラーモード',
+  'settings.openchamber.visual.field.themeMode': 'テーマを切り替え',
   'settings.openchamber.visual.field.display': '表示',
   'settings.openchamber.visual.section.localization': 'ローカライゼーション',
   'settings.openchamber.visual.section.spacingAndLayout': '間隔とレイアウト',

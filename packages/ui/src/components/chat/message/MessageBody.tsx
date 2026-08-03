@@ -1428,6 +1428,9 @@ const AssistantMessageBody = React.memo(({
     const collapsedPreviewCount = 7;
     const isLastAssistantInTurn = turnGroupingContext?.isLastAssistantInTurn ?? false;
     const hasStopFinish = messageFinish === 'stop';
+    // User interrupt often sets time.completed + error without finish === 'stop'.
+    // Duration/TPS should still render for any settled assistant turn.
+    const isTurnSettled = hasStopFinish || isMessageCompleted || Boolean(errorMessage);
     const effectiveStreamPhase: StreamPhase = hasStopFinish ? 'completed' : streamPhase;
 
     const hasTools = toolParts.length > 0;
@@ -1666,7 +1669,11 @@ const AssistantMessageBody = React.memo(({
     const showErrorMessage = Boolean(errorMessage);
     const errorIconName = errorVariant === 'info' ? 'information' : 'error-warning';
     const shouldShowMessageActions = hasCopyableText;
-    const shouldShowTurnFooter = isLastAssistantInTurn && hasTextContent && (hasStopFinish || Boolean(errorMessage));
+    // Settled turns (stop / completed / interrupt-error) get the footer even
+    // when text is empty, so duration + TPS still show after user abort.
+    const shouldShowTurnFooter = isLastAssistantInTurn
+        && isTurnSettled
+        && (hasTextContent || Boolean(errorMessage) || isMessageCompleted);
     const shouldRenderActionsInActivity = isSortedRenderMode;
     const shouldShowStandaloneMessageActions = showSplitAssistantMessageActions && shouldShowMessageActions && !shouldShowTurnFooter && !shouldRenderActionsInActivity;
 
@@ -1963,12 +1970,12 @@ const AssistantMessageBody = React.memo(({
     ]);
 
     const turnDurationText = React.useMemo(() => {
-        if (!isLastAssistantInTurn || !hasStopFinish) return undefined;
+        if (!isLastAssistantInTurn || !isTurnSettled) return undefined;
         const userCreatedAt = turnGroupingContext?.userMessageCreatedAt;
         if (typeof userCreatedAt !== 'number' || typeof messageCompletedAt !== 'number') return undefined;
         if (messageCompletedAt <= userCreatedAt) return undefined;
         return formatTurnDuration(messageCompletedAt - userCreatedAt);
-    }, [isLastAssistantInTurn, hasStopFinish, turnGroupingContext?.userMessageCreatedAt, messageCompletedAt]);
+    }, [isLastAssistantInTurn, isTurnSettled, turnGroupingContext?.userMessageCreatedAt, messageCompletedAt]);
 
     const footerTimestamp = React.useMemo(() => {
         void locale;
@@ -1982,7 +1989,7 @@ const AssistantMessageBody = React.memo(({
     }, [messageCompletedAt, messageCreatedAt, timeFormatPreference, locale]);
 
     const assistantTpsText = React.useMemo(() => {
-        if (!showAssistantTps || !isLastAssistantInTurn || !hasStopFinish) return null;
+        if (!showAssistantTps || !isLastAssistantInTurn || !isTurnSettled) return null;
         // Prefer sourceParts so tool intervals remain available even when
         // visible parts hide reasoning/aux content for display.
         const timingParts = sourceParts ?? parts;
@@ -2000,7 +2007,7 @@ const AssistantMessageBody = React.memo(({
     }, [
         showAssistantTps,
         isLastAssistantInTurn,
-        hasStopFinish,
+        isTurnSettled,
         parts,
         sourceParts,
         messageTokens,
@@ -2166,19 +2173,8 @@ const AssistantMessageBody = React.memo(({
                             {messageActionButtons}
                             {finalTurnActionButtons}
                         </div>
-                        {(turnDurationText || assistantTpsText || footerTimestamp) ? (
+                        {(assistantTpsText || turnDurationText || footerTimestamp) ? (
                             <div className={MESSAGE_FOOTER_META_GROUP_CLASS}>
-                                {turnDurationText ? (
-                                    <Tooltip>
-                                        <TooltipTrigger asChild>
-                                            <span className={MESSAGE_FOOTER_META_CLASS}>
-                                                <Icon weight={MESSAGE_ACTION_ICON_WEIGHT} name="hourglass" className={MESSAGE_FOOTER_META_ICON_CLASS} />
-                                                <span className="message-footer__label">{turnDurationText}</span>
-                                            </span>
-                                        </TooltipTrigger>
-                                        <TooltipContent>{turnDurationText}</TooltipContent>
-                                    </Tooltip>
-                                ) : null}
                                 {assistantTpsText ? (
                                     <Tooltip>
                                         <TooltipTrigger asChild>
@@ -2191,6 +2187,17 @@ const AssistantMessageBody = React.memo(({
                                             </span>
                                         </TooltipTrigger>
                                         <TooltipContent>{t('chat.messageBody.meta.tpsTooltip')}</TooltipContent>
+                                    </Tooltip>
+                                ) : null}
+                                {turnDurationText ? (
+                                    <Tooltip>
+                                        <TooltipTrigger asChild>
+                                            <span className={MESSAGE_FOOTER_META_CLASS}>
+                                                <Icon weight={MESSAGE_ACTION_ICON_WEIGHT} name="hourglass" className={MESSAGE_FOOTER_META_ICON_CLASS} />
+                                                <span className="message-footer__label">{turnDurationText}</span>
+                                            </span>
+                                        </TooltipTrigger>
+                                        <TooltipContent>{turnDurationText}</TooltipContent>
                                     </Tooltip>
                                 ) : null}
                                 {footerTimestamp ? (

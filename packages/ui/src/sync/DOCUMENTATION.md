@@ -467,11 +467,13 @@ Rules that keep this single-sourced:
   share the same transport flight and never diverge into per-callsite hardcoded
   numbers. Recovery and materialization use the same limit as initial. A failed
   first load retains its requested page size; retries never degrade into an
-  unbounded `limit=0` history read. An assistant-only partial tail fetches up to
-  eight missing parent user messages by exact message ID, then commits the
-  merged records; it never expands to a 100/150-message page while searching for
-  a turn boundary. Loading failures are subscribable and preserve the prior
-  ready records for retry.
+  unbounded `limit=0` history read. An incomplete tail page fetches up to eight
+  missing parent user messages by exact message ID when any assistant row's
+  `parentID` is absent from the page — including mixed tails that already contain
+  a newer user turn — then commits the merged records; it never expands to a
+  100/150-message page while searching for a turn boundary. Authoritative
+  complete pages skip parent recovery. Loading failures are subscribable and
+  preserve the prior ready records for retry.
 - Message loading status is runtime-scoped. Reactive request de-duplication is
   local to the owning directory-store lifecycle, so a remounted provider still
   commits a shared transport response into its own store.

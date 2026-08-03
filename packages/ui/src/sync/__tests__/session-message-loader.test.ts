@@ -278,22 +278,61 @@ describe("assistant-tail helpers", () => {
     expect(recovered.partial).toBe(false)
   })
 
-  test("keeps a user boundary and complete pages free of parent requests", async () => {
-    let calls = 0
-    const requestMessage = async (messageID: string) => {
-      calls += 1
-      return record(messageID, "user")
-    }
-
-    await recoverAssistantTailBoundary({
-      records: [record("user", "user"), record("assistant", "assistant", "missing")],
+  test("recovers orphan assistant parents even when a newer user turn is already present", async () => {
+    const requested: string[] = []
+    const recovered = await recoverAssistantTailBoundary({
+      records: [
+        record("assistant-old", "assistant", "user-old"),
+        record("assistant-old-2", "assistant", "user-old"),
+        record("user-new", "user"),
+        record("assistant-new", "assistant", "user-new"),
+      ],
       complete: false,
-      requestMessage,
+      requestMessage: async (messageID) => {
+        requested.push(messageID)
+        return record(messageID, "user")
+      },
     })
+
+    expect(requested).toEqual(["user-old"])
+    expect(recovered.records.map((item) => item.info.id)).toEqual([
+      "assistant-new",
+      "assistant-old",
+      "assistant-old-2",
+      "user-new",
+      "user-old",
+    ])
+    expect(recovered.boundaryFound).toBe(true)
+    expect(recovered.partial).toBe(false)
+  })
+
+  test("skips parent recovery when every assistant parent is already on the page", async () => {
+    let calls = 0
+    const recovered = await recoverAssistantTailBoundary({
+      records: [
+        record("user", "user"),
+        record("assistant", "assistant", "user"),
+      ],
+      complete: false,
+      requestMessage: async (messageID) => {
+        calls += 1
+        return record(messageID, "user")
+      },
+    })
+    expect(calls).toBe(0)
+    expect(recovered.boundaryFound).toBe(true)
+    expect(recovered.partial).toBe(false)
+  })
+
+  test("keeps complete pages free of parent requests", async () => {
+    let calls = 0
     await recoverAssistantTailBoundary({
       records: [record("assistant", "assistant", "missing")],
       complete: true,
-      requestMessage,
+      requestMessage: async (messageID) => {
+        calls += 1
+        return record(messageID, "user")
+      },
     })
     expect(calls).toBe(0)
   })
@@ -303,6 +342,8 @@ describe("assistant-tail helpers", () => {
       record(`assistant-${index}`, "assistant", `user-${index}`),
     )
     records.push(record("assistant-duplicate", "assistant", "user-0"))
+    // A newer user on the same page must not hide older orphan parents.
+    records.push(record("user-new", "user"))
     expect(findMissingAssistantParentUserIDs(records)).toEqual(
       Array.from({ length: MAX_ASSISTANT_TAIL_PARENT_LOADS }, (_, index) => `user-${index}`),
     )

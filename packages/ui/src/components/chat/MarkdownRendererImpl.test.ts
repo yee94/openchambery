@@ -12,6 +12,16 @@ import {
 const parse = (value: string): ParsedFileReference | null => parseFileReference(value);
 const sourceDirectory = dirname(fileURLToPath(import.meta.url));
 const markdownRendererSource = readFileSync(join(sourceDirectory, 'MarkdownRendererImpl.tsx'), 'utf-8');
+// `markdownCore` imports the Shiki worker through a Vite-only specifier, so it
+// cannot be loaded here; assert on its source the way the binary-reference
+// suite below does.
+const markdownCoreSource = readFileSync(join(sourceDirectory, 'markdown', 'markdownCore.ts'), 'utf-8');
+const messageListSource = readFileSync(join(sourceDirectory, 'MessageList.tsx'), 'utf-8');
+const decorateSource = readFileSync(join(sourceDirectory, 'markdown', 'decorate.ts'), 'utf-8');
+const autoFollowSource = readFileSync(
+    join(sourceDirectory, '..', '..', 'hooks', 'useChatAutoFollow.ts'),
+    'utf-8',
+);
 
 describe('parseFileReference', () => {
     test('returns null for empty or whitespace input', () => {
@@ -118,6 +128,98 @@ describe('isLikelyFileReferencePath', () => {
         expect(isLikelyFileReferencePath('.omo/notepads/run/learnings.md')).toBe(true);
         expect(isLikelyFileReferencePath('Dockerfile')).toBe(true);
         expect(isLikelyFileReferencePath('.gitignore')).toBe(true);
+    });
+});
+
+describe('stream completion reuses the streamed DOM', () => {
+    test('block segmentation keeps the streamed boundaries once the stream ends', () => {
+        // Collapsing a finished message back into one whole-document block
+        // misses every per-block cache entry and re-morphs the entire message
+        // in a single commit, which reads as a full-message flash.
+        expect(markdownCoreSource).toContain("const tailMode: MarkdownBlock['mode'] = live ? 'live' : 'full';");
+        expect(markdownCoreSource).toContain("mode: isLast ? tailMode : 'full',");
+    });
+
+    test('the non-streaming render yields on a time budget, not once per block', () => {
+        expect(markdownCoreSource).toContain('sliceDeadline = nowMs() + RENDER_SLICE_BUDGET_MS;');
+    });
+
+    test('first paint lays down one element per async render block', () => {
+        expect(markdownRendererSource).toContain('for (const html of renderMarkdownSyncBlocks(text))');
+    });
+
+    test('decorated code blocks do not depend on the line-number defer flag', () => {
+        // If decorate inlined the gutter, every already-painted code block would
+        // be rebuilt the moment the defer flag flips at the end of a stream.
+        expect(decorateSource).toContain("body.className = 'px-3 py-2.5 overflow-x-auto';");
+        expect(decorateSource).not.toContain('body.appendChild(createCodeLineNumbers(pre));');
+        expect(markdownRendererSource).toContain('applyMarkdownCodeBlockWrapState(target, ctx.codeBlockLineWrap, ctx.labels);');
+    });
+
+    test('the live tail slot outlives the stream so the finished turn is not remounted', () => {
+        // `staticTurns` and `streamingTurn` are rendered by different
+        // components; releasing the tail on completion unmounts the turn and
+        // rebuilds all of its Markdown from an empty node.
+        expect(messageListSource).toContain('hasLiveTail: liveTailActive || stickyLiveTailRef.current');
+    });
+});
+
+describe('markdown hydration while scrolling', () => {
+    test('only visible rows are withheld while the list is scrolling', () => {
+        // Swapping a size spacer for real Markdown mid-scroll makes the
+        // virtualizer compensate a row it already measured, which drags the
+        // viewport back toward earlier entries. Off-screen preload has no such
+        // cost and must keep running, otherwise the whole window lands in the
+        // single commit that follows the scroll.
+        expect(messageListSource).toContain('allowVisibleRelease: !isScrolling,');
+        expect(messageListSource).not.toContain('deferMarkdownHydrationWhileScrolling');
+        expect(messageListSource).not.toContain('deferMarkdownHydrationForMobileScroll');
+    });
+
+    test('preload releases stay metered so no commit swaps a screenful at once', () => {
+        expect(messageListSource).toContain('preloadReleaseLimit: isScrolling');
+        expect(messageListSource).toContain('MARKDOWN_PRELOAD_RELEASE_SCROLLING');
+        expect(messageListSource).toContain('MARKDOWN_PRELOAD_RELEASE_IDLE');
+    });
+
+    test('the deferred placeholder reserves the height the content last rendered at', () => {
+        // The plain-text spacer overshoots badly — fenced code, link targets and
+        // table pipes all collapse when rendered — so the swap into real Markdown
+        // shrank the row and the virtualizer yanked the scroll offset to match.
+        expect(markdownRendererSource).toContain('useMarkdownHeightMemo(');
+        expect(markdownRendererSource).toContain('rememberMarkdownHeight(cacheKeyRef.current, height, width)');
+    });
+});
+
+describe('forced layout while scrolling', () => {
+    test('a scroll event reads the scroll box once and reuses the snapshot', () => {
+        // Reading scrollTop/scrollHeight/clientHeight repeatedly through the
+        // handler forces a layout on every read that lands after React has
+        // written to the DOM; it was the largest reflow source in a scroll trace.
+        const handlerStart = autoFollowSource.indexOf('const handleScrollEvent = useEvent(');
+        const handlerEnd = autoFollowSource.indexOf('React.useEffect(', handlerStart);
+        const handler = autoFollowSource.slice(handlerStart, handlerEnd);
+
+        expect(handler).toContain('const geometry = readScrollGeometry(el);');
+        expect(/\bel\.(scrollTop|scrollHeight|clientHeight)\b/.test(handler)).toBe(false);
+        expect(/\b(canScroll|isNearBottom|distanceFromBottom)\(el\b/.test(handler)).toBe(false);
+    });
+
+    test('revealing rendered Markdown does not measure the container', () => {
+        const revealStart = markdownRendererSource.indexOf('const useRichMarkdownReveal =');
+        const revealEnd = markdownRendererSource.indexOf('const MarkdownRendererImpl', revealStart);
+        const reveal = markdownRendererSource.slice(revealStart, revealEnd);
+
+        expect(reveal).not.toContain('getBoundingClientRect');
+        expect(reveal).not.toContain('minHeight');
+    });
+
+    test('the rendered Markdown holds the box open, not the placeholder', () => {
+        // With the placeholder in flow and the content absolute, every reveal
+        // resized the row — the virtualizer then compensated scroll for a size
+        // change the user never caused.
+        expect(markdownRendererSource).not.toContain("!richReady && 'pointer-events-none absolute inset-x-0 top-0 invisible'");
+        expect(markdownRendererSource).toContain("className={cn(markdownContentClassName(variant), !richReady && 'invisible')}");
     });
 });
 

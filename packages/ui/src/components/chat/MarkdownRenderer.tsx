@@ -4,6 +4,7 @@ import { cn } from '@/lib/utils';
 import { loadMarkdownRendererModule } from './markdownRendererLoader';
 import { useMarkdownHydrationEnabled } from './markdown/markdownHydrationContext';
 import { MarkdownLoadingPlaceholder } from './markdown/MarkdownLoadingSkeleton';
+import { markdownHeightCacheKey, recallMarkdownHeight } from './markdown/markdownHeightCache';
 
 // Thin lazy wrapper around the MarkdownRenderer implementation.
 // The full implementation (marked + Shiki highlighting + KaTeX + morphdom
@@ -29,8 +30,16 @@ const MarkdownSkeletonFallback = (props: {
   content?: unknown;
   className?: unknown;
   variant?: unknown;
+  // Only the rich renderer records measured heights, so only its placeholder
+  // may reserve one. The simple renderer produces different output for the
+  // same source and would reserve the wrong box.
+  reserveMeasuredHeight?: boolean;
 }) => {
   const content = typeof props.content === 'string' ? props.content : '';
+  const variant = typeof props.variant === 'string' ? props.variant : 'assistant';
+  const reservedHeight = props.reserveMeasuredHeight
+    ? recallMarkdownHeight(markdownHeightCacheKey(content, variant))
+    : undefined;
   return (
     <div
       className={cn(
@@ -41,7 +50,11 @@ const MarkdownSkeletonFallback = (props: {
       aria-busy="true"
       data-markdown-hydration="deferred"
     >
-      <MarkdownLoadingPlaceholder animated={props.animated} content={content} />
+      <MarkdownLoadingPlaceholder
+        animated={props.animated}
+        content={content}
+        reservedHeight={reservedHeight}
+      />
     </div>
   );
 };
@@ -49,11 +62,11 @@ const MarkdownSkeletonFallback = (props: {
 export const MarkdownRenderer: React.FC<React.ComponentPropsWithoutRef<typeof MarkdownRendererLazy>> = (props) => {
   const hydrationEnabled = useMarkdownHydrationEnabled();
   if (!hydrationEnabled && props.isStreaming !== true) {
-    return <MarkdownSkeletonFallback {...props} animated={false} />;
+    return <MarkdownSkeletonFallback {...props} animated={false} reserveMeasuredHeight />;
   }
 
   return (
-    <React.Suspense fallback={<MarkdownSkeletonFallback {...props} />}>
+    <React.Suspense fallback={<MarkdownSkeletonFallback {...props} reserveMeasuredHeight />}>
       <MarkdownRendererLazy {...props} />
     </React.Suspense>
   );

@@ -1,6 +1,7 @@
 import { copyTextToClipboard } from '@/lib/clipboard';
 import { getExternalFaviconUrl, isExternalHttpUrl, isLoopbackHttpUrl } from '@/lib/url';
 import type { IconName } from '@/components/icon/icons';
+import { parseCodeFenceInfo } from './codeFenceInfo';
 import { getMermaidViewerController } from './mermaidViewer';
 import { isRelayTransport, resolveImageSource } from '../imageSource';
 
@@ -259,11 +260,14 @@ const decorateCodeBlocks = (root: HTMLElement, ctx: DecorateContext): void => {
     // Already wrapped (idempotent across morphdom passes).
     if (parent.closest('[data-component="markdown-code"]')) continue;
 
-    // `data-md-lang` is stamped by the async highlight pass; on the synchronous
-    // first paint it isn't set yet, so fall back to the `language-*` class marked
-    // emits — keeps the card header label stable instead of flashing 'text'.
-    const classLang = pre.querySelector('code')?.className.match(/language-([\w+#.-]+)/)?.[1];
-    const language = pre.getAttribute('data-md-lang') ?? classLang ?? 'text';
+    // The label attributes are stamped by the async highlight pass; on the
+    // synchronous first paint they aren't set yet, so fall back to parsing the
+    // `language-*` class marked emits — keeps the card header label stable
+    // instead of flashing 'text'.
+    const classInfo = pre.querySelector('code')?.className.match(/language-([^\s"]+)/)?.[1];
+    const label = pre.getAttribute('data-md-label')
+      ?? pre.getAttribute('data-md-lang')
+      ?? parseCodeFenceInfo(classInfo).label;
 
     const wrapper = document.createElement('div');
     wrapper.setAttribute('data-component', 'markdown-code');
@@ -274,7 +278,7 @@ const decorateCodeBlocks = (root: HTMLElement, ctx: DecorateContext): void => {
     header.className = 'flex items-center justify-between border-b border-border/70 px-3 py-1.5';
     const langLabel = document.createElement('span');
     langLabel.className = 'font-mono text-[13px] text-muted-foreground';
-    langLabel.textContent = language;
+    langLabel.textContent = label;
     const copyBtn = makeIconButton('copy', ctx.labels.copy, 'copy-code');
     const wrapBtn = makeIconButton('textWrap', ctx.codeBlockLineWrap ? ctx.labels.disableCodeWrap : ctx.labels.enableCodeWrap, 'toggle-code-wrap');
     header.appendChild(langLabel);
@@ -286,22 +290,21 @@ const decorateCodeBlocks = (root: HTMLElement, ctx: DecorateContext): void => {
 
     const body = document.createElement('div');
     body.setAttribute('data-md-code-body', '');
-    body.className = ctx.deferCodeLineNumberSync ? 'px-3 py-2.5 overflow-x-auto' : 'flex gap-3 px-3 py-2.5 overflow-x-auto';
+    // The gutter is never inlined here — `applyMarkdownCodeBlockWrapState` adds
+    // it once the content settles. Keeping the decorated HTML independent of
+    // `deferCodeLineNumberSync` means a stream ending does not change what
+    // decorate produces, so every already-painted code block morphs to itself
+    // instead of being rebuilt at the moment the turn completes.
+    body.className = 'px-3 py-2.5 overflow-x-auto';
 
     parent.replaceChild(wrapper, pre);
     pre.style.margin = '0';
     pre.style.background = 'transparent';
     pre.classList.add('min-w-0', 'w-full', 'flex-1');
-    if (!ctx.deferCodeLineNumberSync) {
-      body.appendChild(createCodeLineNumbers(pre));
-    }
     body.appendChild(pre);
     wrapper.appendChild(header);
     wrapper.appendChild(body);
     applyCodeBlockWrapState(wrapper, ctx.codeBlockLineWrap, ctx.labels);
-    if (!ctx.deferCodeLineNumberSync) {
-      scheduleMarkdownCodeLineNumberSync(wrapper);
-    }
   }
 };
 

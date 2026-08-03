@@ -1747,6 +1747,7 @@ export const settingsDict = {
   'settings.voice.page.field.ttsInputModeRaw': '원본 Markdown',
   'settings.voice.page.field.ttsInputModeSummarized': '요약',
   'settings.openchamber.visual.section.colorMode': '색상 모드',
+  'settings.openchamber.visual.field.themeMode': '테마 전환',
   'settings.openchamber.visual.field.display': '표시',
   'settings.openchamber.visual.section.localization': '지역화',
   'settings.openchamber.visual.section.spacingAndLayout': '간격 및 레이아웃',

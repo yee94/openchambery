@@ -11,6 +11,7 @@ import { computeCacheHitRate } from '@/stores/utils/tokenUtils';
 import { useSessions, useSessionMessageRecords } from '@/sync/sync-context';
 import { copyTextToClipboard } from '@/lib/clipboard';
 import { getCurrentIntlLocale, useI18n } from '@/lib/i18n';
+import { cn } from '@/lib/utils';
 import {
   derivePartsLabel,
   deriveUserSnippet,
@@ -497,24 +498,35 @@ export const ContextPanelContent: React.FC = () => {
         </div>
 
         {/* ── Stat grid ── */}
-        <div className="mb-5 grid grid-cols-2 gap-2">
-          {([
-            { label: t('contextSidebar.stats.messages'), value: formatNumber(viewModel.messagesCount) },
-            { label: t('contextSidebar.stats.user'), value: formatNumber(viewModel.userMessagesCount) },
-            { label: t('contextSidebar.stats.assistant'), value: formatNumber(viewModel.assistantMessagesCount) },
-            { label: t('contextSidebar.stats.cost'), value: formatMoney(viewModel.totalAssistantCost) },
-            ...(showAssistantTps
-              ? [{
-                  label: t('contextSidebar.stats.sessionTps'),
-                  value: viewModel.sessionTpsLabel ?? '—',
-                }] as const
-              : []),
-          ] as const).map((item) => (
-            <div key={item.label} className="rounded-lg bg-[var(--surface-elevated)]/70 px-3 py-2.5">
-              <div className="typography-micro text-muted-foreground/70">{item.label}</div>
-              <div className="mt-0.5 typography-ui-label tabular-nums text-foreground">{item.value}</div>
+        <div className="mb-5 space-y-2">
+          <div className="grid grid-cols-3 gap-2">
+            {([
+              { label: t('contextSidebar.stats.messages'), value: formatNumber(viewModel.messagesCount) },
+              { label: t('contextSidebar.stats.user'), value: formatNumber(viewModel.userMessagesCount) },
+              { label: t('contextSidebar.stats.assistant'), value: formatNumber(viewModel.assistantMessagesCount) },
+            ] as const).map((item) => (
+              <div key={item.label} className="rounded-lg bg-[var(--surface-elevated)]/70 px-3 py-2.5">
+                <div className="typography-micro text-muted-foreground/70">{item.label}</div>
+                <div className="mt-0.5 typography-ui-label tabular-nums text-foreground">{item.value}</div>
+              </div>
+            ))}
+          </div>
+          <div className={cn('grid gap-2', showAssistantTps ? 'grid-cols-2' : 'grid-cols-1')}>
+            <div className="rounded-lg bg-[var(--surface-elevated)]/70 px-3 py-2.5">
+              <div className="typography-micro text-muted-foreground/70">{t('contextSidebar.stats.cost')}</div>
+              <div className="mt-0.5 typography-ui-label tabular-nums text-foreground">
+                {formatMoney(viewModel.totalAssistantCost)}
+              </div>
             </div>
-          ))}
+            {showAssistantTps ? (
+              <div className="rounded-lg bg-[var(--surface-elevated)]/70 px-3 py-2.5">
+                <div className="typography-micro text-muted-foreground/70">{t('contextSidebar.stats.sessionTps')}</div>
+                <div className="mt-0.5 typography-ui-label tabular-nums text-foreground">
+                  {viewModel.sessionTpsLabel ?? '—'}
+                </div>
+              </div>
+            ) : null}
+          </div>
         </div>
 
         {/* ── Last turn tokens ── */}

@@ -269,6 +269,12 @@ interface QueuedMessageChipsProps {
     clientPendingItems?: readonly QueuePendingAdmissionItem[];
     /** Remove a client-only pending chip (restoring content is caller-owned). */
     onRemoveClientPending?: (requestID: string) => void;
+    /**
+     * Optional trailing strip inside the same shell as queue chips (e.g. session goal).
+     * Renders below the queue with a divider when both are present; shell still
+     * opens when only this strip exists.
+     */
+    trailing?: React.ReactNode;
 }
 
 const EMPTY_QUEUE: QueueItem[] = [];
@@ -314,7 +320,7 @@ export const queuedMessageItemScope = (message: QueuedMessage, scope: BoundQueue
     return queueScopeKey(owner) === queueScopeKey(scope) ? scope : null;
 };
 
-export const QueuedMessageChips = memo(({ onEditMessage, onSendMessage, onEditCommitted, draftKey, scope: queueScope, draftTarget, clientPendingItems = EMPTY_PENDING_CLIENT, onRemoveClientPending }: QueuedMessageChipsProps) => {
+export const QueuedMessageChips = memo(({ onEditMessage, onSendMessage, onEditCommitted, draftKey, scope: queueScope, draftTarget, clientPendingItems = EMPTY_PENDING_CLIENT, onRemoveClientPending, trailing }: QueuedMessageChipsProps) => {
     const { t } = useI18n();
     const isMobile = useUIStore((state) => state.isMobile);
     const serverQueue = useMessageQueueServerScope({
@@ -619,12 +625,11 @@ export const QueuedMessageChips = memo(({ onEditMessage, onSendMessage, onEditCo
         if (itemScope) useMessageQueueStore.getState().removeFromQueue(itemScope, legacyMessage.queueItemID ?? legacyMessage.id, legacyMessage.operationID);
     });
 
-    if (queuedMessages.length === 0) {
-        return null;
-    }
+    const hasQueue = queuedMessages.length > 0;
     // Session-bound queue actions need a scope; establishing client-pending chips
     // may render before the draft materializes into a session.
-    if (!queueScope && clientPendingItems.length === 0) {
+    const hasQueueSurface = hasQueue && (queueScope || clientPendingItems.length > 0);
+    if (!hasQueueSurface && !trailing) {
         return null;
     }
 
@@ -634,43 +639,56 @@ export const QueuedMessageChips = memo(({ onEditMessage, onSendMessage, onEditCo
             isMobile ? 'px-2' : 'px-4',
         )}>
             <div className={cn(
-                // PC radius matches chat input (1.5rem); border only, no elevation shadow.
-                'overflow-hidden border border-border/60 bg-[var(--surface-elevated)] text-[var(--surface-elevated-foreground)]',
+                // Match composer surface (subtle + border, no elevation shadow). PC radius = chat input 1.5rem.
+                'overflow-hidden border border-border/60 bg-[var(--surface-subtle)] text-foreground',
                 isMobile ? 'rounded-[1.25rem]' : 'rounded-3xl',
             )}>
-                <DndContext
-                    sensors={sensors}
-                    collisionDetection={closestCenter}
-                    onDragEnd={handleDragEnd}
-                >
-                    <SortableContext
-                        items={queuedMessages.map((message) => message.queueItemID || (message as QueuedMessage).id)}
-                        strategy={verticalListSortingStrategy}
-                    >
-                        <div className={cn(
-                            'flex flex-col',
-                            isMobile
-                                // Match composer footer left inset.
-                                ? 'px-1.5 py-1'
-                                : 'gap-0.5 px-3 pb-1 pt-1.5',
-                        )}>
-                            {queuedMessages.map((message) => (
-                                <QueuedMessageChip
-                                    key={message.queueItemID || (message as QueuedMessage).id}
-                                    message={message}
-                                    server={serverQueue.mode === 'server'}
-                                    frozen={frozen}
-                                    hasDispatchLock={hasDispatchLock}
-                                    pendingOperationKinds={pendingKindsByItem.get(message.queueItemID || (message as QueuedMessage).id) ?? EMPTY_PENDING_OPERATION_KINDS}
-                                    isMobile={isMobile}
-                                    onEdit={handleEdit}
-                                    onSend={handleSend}
-                                    onRemove={handleRemove}
+                <div className={cn(
+                    'flex flex-col',
+                    isMobile
+                        // Match composer footer left inset.
+                        ? 'px-1.5 py-1'
+                        : 'gap-0.5 px-3 pb-1 pt-1.5',
+                )}>
+                    {hasQueueSurface ? (
+                        <DndContext
+                            sensors={sensors}
+                            collisionDetection={closestCenter}
+                            onDragEnd={handleDragEnd}
+                        >
+                            <SortableContext
+                                items={queuedMessages.map((message) => message.queueItemID || (message as QueuedMessage).id)}
+                                strategy={verticalListSortingStrategy}
+                            >
+                                {queuedMessages.map((message) => (
+                                    <QueuedMessageChip
+                                        key={message.queueItemID || (message as QueuedMessage).id}
+                                        message={message}
+                                        server={serverQueue.mode === 'server'}
+                                        frozen={frozen}
+                                        hasDispatchLock={hasDispatchLock}
+                                        pendingOperationKinds={pendingKindsByItem.get(message.queueItemID || (message as QueuedMessage).id) ?? EMPTY_PENDING_OPERATION_KINDS}
+                                        isMobile={isMobile}
+                                        onEdit={handleEdit}
+                                        onSend={handleSend}
+                                        onRemove={handleRemove}
+                                    />
+                                ))}
+                            </SortableContext>
+                        </DndContext>
+                    ) : null}
+                    {trailing ? (
+                        <>
+                            {hasQueueSurface ? (
+                                <div
+                                    aria-hidden="true"
+                                    className="my-0.5 border-t border-border/40"
                                 />
-                            ))}
-                        </div>
-                    </SortableContext>
-                </DndContext>
+                            ) : null}
+                            {trailing}
+                        </>
+                    ) : null}
+                </div>
                 <div aria-hidden="true" className={isMobile ? 'h-4' : 'h-5'} />
             </div>
         </div>

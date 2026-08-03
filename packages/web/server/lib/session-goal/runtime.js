@@ -293,6 +293,23 @@ export const createSessionGoalRuntime = ({
     return Array.isArray(messages) ? messages : null;
   };
 
+  // Live session status is authoritative for whether the session is actually
+  // busy. The message-tail quiescence heuristics below treat an unfinished
+  // assistant reply as "busy", but that is only true while a turn is genuinely
+  // running. After the app is killed mid-turn, opencode leaves an orphaned
+  // incomplete assistant message (no time.completed, no error) even though the
+  // session is really idle — so the heuristic must be corroborated against the
+  // live status or a restarted active goal bails forever. Returns 'idle' |
+  // 'busy' | 'retry' | null (null when the status cannot be read — callers
+  // fall back to the message-tail heuristic).
+  const fetchSessionLiveStatus = async (sessionId, directory) => {
+    const statusMap = await openCodeFetch('/session/status', { directory }).catch(() => null);
+    const status = statusMap?.[sessionId];
+    const type = typeof status?.type === 'string' ? status.type.trim() : '';
+    if (type === 'idle' || type === 'busy' || type === 'retry') return type;
+    return null;
+  };
+
   // Merge-write the goal payload from a FRESH session read so concurrent
   // metadata writes (assist payloads, dismissals, UI goal edits) survive.
   // Returns the written goal, or null when the stored goal no longer matches
@@ -467,8 +484,22 @@ export const createSessionGoalRuntime = ({
     // the kickoff path arms without knowing the live status at all. A trailing
     // user message or an unfinished assistant reply means the session is (or
     // is about to be) busy — the next idle transition re-arms us.
+    //
+    // Exception: after the app is force-killed mid-turn, opencode leaves an
+    // orphaned assistant message that never got time.completed NOR an error,
+    // while the session itself is actually idle. The tail heuristic alone would
+    // classify that as "busy" and bail forever, stranding a restarted active
+    // goal on "evaluating". Corroborate against the live session status before
+    // bailing — if the session is really idle, treat the orphan as a dead tail
+    // and let the loop resume; only a genuinely busy session bails here.
     if (lastMessageInfo?.role === 'user') return;
-    if (lastAssistantInfo && !(lastAssistantInfo.time?.completed > 0) && !lastAssistantInfo.error) return;
+    if (lastAssistantInfo && !(lastAssistantInfo.time?.completed > 0) && !lastAssistantInfo.error) {
+      const live = await fetchSessionLiveStatus(sessionId, directory);
+      // live === 'idle' → restart orphan: resume past it. live === null →
+      // status unreadable: keep the conservative bail (a real busy turn must
+      // never be double-prompted; the next idle event re-arms us).
+      if (live !== 'idle') return;
+    }
 
     // A goal on a session with no assistant reply yet: there is no message to
     // take provider/model from, so the loop starts after the user's first

@@ -6,6 +6,7 @@ import { DualLimitLru } from '@/lib/dualLimitLru';
 import { scheduleAfterPaintTask } from '@/lib/afterPaintTaskQueue';
 import { buildAgentMentionUrl, parseAgentHref, parseSkillHref } from '@/lib/messages/inlineMessageLinks';
 import { isVSCodeRuntime } from '@/lib/desktop';
+import { parseCodeFenceInfo, type CodeFenceInfo } from './codeFenceInfo';
 import { highlightCodeInWorker } from './markdown-worker';
 import type { MarkdownWorkerPriority } from './markdown-worker-protocol';
 
@@ -52,24 +53,30 @@ const heal = (text: string): string => {
 };
 
 /**
- * Split markdown into render blocks. When not streaming, returns a single
- * `full` block. While streaming, heals incomplete syntax and isolates an
- * unclosed trailing code fence into its own `live` block so a partial fence
- * does not corrupt the parse of stable content above it.
+ * Split markdown into render blocks. Heals incomplete syntax and isolates an
+ * unclosed trailing code fence into its own block so a partial fence does not
+ * corrupt the parse of stable content above it.
+ *
+ * Segmentation is deliberately identical whether or not the stream is still
+ * live: only `mode` differs (the trailing block is `live` while streaming). A
+ * completed message therefore lands on the SAME per-block boundaries — and the
+ * same block hashes — the stream already rendered, so finishing a turn reuses
+ * the per-block HTML cache and morphs nothing instead of tearing the whole
+ * message down and re-parsing/re-highlighting it in one shot.
  */
-const streamBlocks = (text: string, live: boolean): MarkdownBlock[] => {
-  if (!live) return [{ raw: text, src: text, mode: 'full', highlight: true }];
+const segmentBlocks = (text: string, live: boolean): MarkdownBlock[] => {
+  const tailMode: MarkdownBlock['mode'] = live ? 'live' : 'full';
   // Reference-style links/footnotes span multiple tokens (definition elsewhere);
   // keep them as a single block so per-block parsing doesn't break the refs.
   if (hasReferenceDefinitions(text)) {
-    return [{ raw: text, src: heal(text), mode: 'live', highlight: true }];
+    return [{ raw: text, src: heal(text), mode: tailMode, highlight: true }];
   }
 
   let tokens: Tokens.Generic[];
   try {
     tokens = marked.lexer(text) as Tokens.Generic[];
   } catch {
-    return [{ raw: text, src: heal(text), mode: 'live', highlight: true }];
+    return [{ raw: text, src: heal(text), mode: tailMode, highlight: true }];
   }
 
   let tail = -1;
@@ -79,7 +86,7 @@ const streamBlocks = (text: string, live: boolean): MarkdownBlock[] => {
       break;
     }
   }
-  if (tail < 0) return [{ raw: text, src: heal(text), mode: 'live', highlight: true }];
+  if (tail < 0) return [{ raw: text, src: heal(text), mode: tailMode, highlight: true }];
 
   // Split into per-token blocks. Stable leading blocks become `full` (complete,
   // cache-stable, not re-healed); only the trailing block is `live` and gets
@@ -95,14 +102,40 @@ const streamBlocks = (text: string, live: boolean): MarkdownBlock[] => {
     blocks.push({
       raw,
       src: openFence ? raw : heal(raw),
-      mode: isLast ? 'live' : 'full',
+      mode: isLast ? tailMode : 'full',
       highlight: !openFence,
     });
   }
 
   if (blocks.length === 0) {
-    return [{ raw: text, src: heal(text), mode: 'live', highlight: true }];
+    return [{ raw: text, src: heal(text), mode: tailMode, highlight: true }];
   }
+  return blocks;
+};
+
+// Segmentation runs twice for the same text on a cold mount: once for the
+// synchronous first paint and once for the async pipeline. Lexing a long
+// message twice per hydrated row is enough to show up while scrolling through
+// history, so hand the second caller the blocks the first one already computed.
+const SEGMENTATION_CACHE_MAX = 16;
+const segmentationCache = new Map<string, MarkdownBlock[]>();
+
+const streamBlocks = (text: string, live: boolean): MarkdownBlock[] => {
+  const key = `${live ? 1 : 0}:${text}`;
+  const cached = segmentationCache.get(key);
+  if (cached) {
+    segmentationCache.delete(key);
+    segmentationCache.set(key, cached);
+    return cached;
+  }
+
+  const blocks = segmentBlocks(text, live);
+  while (segmentationCache.size >= SEGMENTATION_CACHE_MAX) {
+    const oldest = segmentationCache.keys().next().value;
+    if (typeof oldest !== 'string') break;
+    segmentationCache.delete(oldest);
+  }
+  segmentationCache.set(key, blocks);
   return blocks;
 };
 
@@ -243,6 +276,14 @@ const unescapeHtml = (value: string): string =>
     .replace(/&#39;/g, "'")
     .replace(/&amp;/g, '&');
 
+// Only a reference needs its own label; leaving plain fences with the single
+// attribute they had before keeps them morphing to identical markup.
+const codeLangAttrs = (info: CodeFenceInfo): string => (
+  info.reference
+    ? `data-md-lang="${escapeAttr(info.lang)}" data-md-label="${escapeAttr(info.label)}"`
+    : `data-md-lang="${escapeAttr(info.lang)}"`
+);
+
 const highlightCodeBlocks = async (
   html: string,
   signal: AbortSignal | undefined,
@@ -258,26 +299,27 @@ const highlightCodeBlocks = async (
   for (const match of matches) {
     if (signal?.aborted) return null;
     const [full, rawLang, escapedCode] = match;
-    const requested = (rawLang || 'text').toLowerCase();
+    const info = parseCodeFenceInfo(rawLang);
     // Leave mermaid fences untouched so the decorate pass can render them as
-    // diagrams (highlighting would strip the `language-mermaid` class).
-    if (requested === 'mermaid') continue;
+    // diagrams (highlighting would strip the `language-mermaid` class). A
+    // reference to a `.mmd` file is source, not a diagram, so it still colors.
+    if (info.lang === 'mermaid' && !info.reference) continue;
 
     const code = unescapeHtml(escapedCode ?? '');
 
     // Oversized block: skip highlight, keep plain code but stamp the language.
     if (exceedsLineLimit(code, lineLimit)) {
-      result = result.replace(full, () => full.replace('<pre', `<pre data-md-lang="${requested}"`));
+      result = result.replace(full, () => full.replace('<pre', `<pre ${codeLangAttrs(info)}`));
       continue;
     }
 
     // Tokenize off the main thread. On failure the worker resolves to null and
     // we keep the original escaped <pre><code> (no main-thread highlight).
-    const highlighted = await highlightCodeInWorker(code, requested, { signal, priority });
+    const highlighted = await highlightCodeInWorker(code, info.lang, { signal, priority });
     if (signal?.aborted) return null;
     if (highlighted) {
       // Stamp the language so the decorate pass can show a header label.
-      const stamped = highlighted.replace(/^<pre/, `<pre data-md-lang="${requested}"`);
+      const stamped = highlighted.replace(/^<pre/, `<pre ${codeLangAttrs(info)}`);
       result = result.replace(full, () => stamped);
     }
   }
@@ -314,6 +356,41 @@ const sanitize = (html: string): string => {
   if (!DOMPurify.isSupported) return '';
   ensureSanitizeHook();
   return DOMPurify.sanitize(html, SANITIZE_CONFIG) as unknown as string;
+};
+
+// Marks block boundaries while a batch shares one sanitize pass. Data
+// attributes survive DOMPurify, and the wrapper is unwrapped again below.
+const BLOCK_MARKER_ATTR = 'data-md-sanitize-block';
+
+/**
+ * Sanitize many blocks in a single DOMPurify pass.
+ *
+ * Every `DOMPurify.sanitize` call builds and parses its own document, a fixed
+ * cost that dwarfs the markup for a short block. Sanitizing block-by-block
+ * multiplied it by the block count, which is what made a cold mount of a long
+ * message expensive. Wrapping the blocks in marked containers pays it once.
+ */
+const sanitizeBatch = (htmls: string[]): string[] => {
+  if (htmls.length === 0) return [];
+  if (htmls.length === 1) return [sanitize(htmls[0])];
+  if (!DOMPurify.isSupported || typeof document === 'undefined') {
+    return htmls.map((html) => sanitize(html));
+  }
+
+  const joined = htmls
+    .map((html, index) => `<div ${BLOCK_MARKER_ATTR}="${index}">${html}</div>`)
+    .join('');
+  const host = document.createElement('div');
+  host.innerHTML = sanitize(joined);
+
+  const results = htmls.map(() => '');
+  host.querySelectorAll(`[${BLOCK_MARKER_ATTR}]`).forEach((node) => {
+    const index = Number(node.getAttribute(BLOCK_MARKER_ATTR));
+    if (Number.isInteger(index) && index >= 0 && index < results.length) {
+      results[index] = node.innerHTML;
+    }
+  });
+  return results;
 };
 
 
@@ -381,23 +458,70 @@ const parseBlock = async (
  * is synchronous (marked is not configured `async`), so this never blocks on a
  * worker round-trip.
  */
-export const renderMarkdownSync = (text: string): string => {
-  if (!text) return '';
-  const contentHash = hash(text);
-  const key = `${contentHash}:${text.length}`;
-  const cached = syncHtmlCache.get(key);
-  if (cached?.source === text) {
-    return cached.html;
-  }
-  const parsed = parser.parse(text) as string;
-  const withMath = renderMathExpressions(parsed);
-  const html = sanitize(withMath);
+const syncCacheKey = (text: string): string => `${hash(text)}:${text.length}`;
+
+const readSyncCache = (text: string): string | undefined => {
+  const cached = syncHtmlCache.get(syncCacheKey(text));
+  return cached?.source === text ? cached.html : undefined;
+};
+
+const writeSyncCache = (text: string, html: string): void => {
+  const key = syncCacheKey(text);
   syncHtmlCache.set(
     key,
     { source: text, html },
     stringBytes(key) + stringBytes(text) + stringBytes(html),
   );
+};
+
+// Markdown -> HTML for one block, everything except sanitization.
+const renderSyncUnsafe = (text: string): string => (
+  renderMathExpressions(parser.parse(text) as string)
+);
+
+export const renderMarkdownSync = (text: string): string => {
+  if (!text) return '';
+  const cached = readSyncCache(text);
+  if (cached !== undefined) {
+    return cached;
+  }
+  const html = sanitize(renderSyncUnsafe(text));
+  writeSyncCache(text, html);
   return html;
+};
+
+/**
+ * Same first-paint render as `renderMarkdownSync`, but split on the block
+ * boundaries `renderMarkdownBlocks` will use. The first paint therefore lays
+ * down the block elements the async pass expects, so upgrading to the
+ * highlighted DOM morphs each block in place instead of reshaping a single
+ * whole-document block into many.
+ */
+export const renderMarkdownSyncBlocks = (text: string): string[] => {
+  if (!text) return [];
+  const sources = streamBlocks(text, false).map((block) => block.src);
+  const results: string[] = new Array(sources.length).fill('');
+  const pendingIndexes: number[] = [];
+  const pendingHtml: string[] = [];
+
+  sources.forEach((src, index) => {
+    const cached = readSyncCache(src);
+    if (cached !== undefined) {
+      results[index] = cached;
+      return;
+    }
+    pendingIndexes.push(index);
+    pendingHtml.push(renderSyncUnsafe(src));
+  });
+
+  const sanitized = sanitizeBatch(pendingHtml);
+  pendingIndexes.forEach((index, slot) => {
+    const html = sanitized[slot] ?? '';
+    results[index] = html;
+    writeSyncCache(sources[index], html);
+  });
+
+  return results;
 };
 
 export type RenderedBlock = {
@@ -406,6 +530,40 @@ export type RenderedBlock = {
   // block) to re-morph; unchanged leading blocks are skipped entirely.
   id: string;
   html: string;
+};
+
+// How long a non-streaming render may keep the main thread before yielding to
+// the next paint.
+const RENDER_SLICE_BUDGET_MS = 8;
+
+const nowMs = (): number => (
+  typeof performance !== 'undefined' ? performance.now() : Date.now()
+);
+
+// Resolves after the next paint, or `false` as soon as the render is aborted.
+const waitForAfterPaint = (signal?: AbortSignal): Promise<boolean> => {
+  if (signal?.aborted) {
+    return Promise.resolve(false);
+  }
+  return new Promise<boolean>((resolve) => {
+    let settled = false;
+    const finish = (value: boolean) => {
+      if (settled) {
+        return;
+      }
+      settled = true;
+      signal?.removeEventListener('abort', handleAbort);
+      resolve(value);
+    };
+    const cancel = scheduleAfterPaintTask(() => {
+      finish(!signal?.aborted);
+    }, { priority: 'visible' });
+    const handleAbort = () => {
+      cancel();
+      finish(false);
+    };
+    signal?.addEventListener('abort', handleAbort, { once: true });
+  });
 };
 
 /**
@@ -444,7 +602,14 @@ export const renderMarkdownBlocks = async (
     return results.filter((result): result is RenderedBlock => result !== null);
   }
 
+  // Non-streaming renders yield to paint so a long message never blocks the
+  // frame, but yielding once per block would cost one frame per block now that
+  // a finished message keeps the streamed segmentation (the caller only commits
+  // once every block has resolved). Yield on a time budget instead: cache hits
+  // and cheap blocks drain within a single slice, and only genuinely expensive
+  // work pushes the next slice to the following paint.
   const rendered: RenderedBlock[] = [];
+  let sliceDeadline = 0;
   for (let index = 0; index < blocks.length; index += 1) {
     if (signal?.aborted) {
       break;
@@ -453,29 +618,13 @@ export const renderMarkdownBlocks = async (
     if (!block) {
       continue;
     }
-    const result = await new Promise<RenderedBlock | null>((resolve) => {
-      let settled = false;
-      const finish = (value: RenderedBlock | null) => {
-        if (settled) {
-          return;
-        }
-        settled = true;
-        signal?.removeEventListener('abort', handleAbort);
-        resolve(value);
-      };
-      const cancel = scheduleAfterPaintTask(() => {
-        if (signal?.aborted) {
-          finish(null);
-          return;
-        }
-        void renderBlock(block, index).then((value) => finish(value));
-      }, { priority: 'visible' });
-      const handleAbort = () => {
-        cancel();
-        finish(null);
-      };
-      signal?.addEventListener('abort', handleAbort, { once: true });
-    });
+    if (nowMs() >= sliceDeadline) {
+      if (!await waitForAfterPaint(signal)) {
+        break;
+      }
+      sliceDeadline = nowMs() + RENDER_SLICE_BUDGET_MS;
+    }
+    const result = await renderBlock(block, index);
     if (result) {
       rendered.push(result);
     }

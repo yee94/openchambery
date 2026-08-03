@@ -2,7 +2,7 @@ import React from 'react';
 import morphdom from 'morphdom';
 import { renderMermaidASCII, renderMermaidSVG } from 'beautiful-mermaid';
 import type { Part } from '@opencode-ai/sdk/v2';
-import { useEvent } from '@reactuses/core';
+import { useEvent, useEventListener, useResizeObserver } from '@reactuses/core';
 import { cn } from '@/lib/utils';
 import { useI18n } from '@/lib/i18n';
 import { runtimeFetch } from '@/lib/runtime-fetch';
@@ -22,16 +22,16 @@ import { getDirectoryForFilePath, isFilePathWithinDirectory, toAbsoluteFilePath 
 import { isImageFile } from '@/lib/toolHelpers';
 import { isMobileSurfaceRuntime } from '@/lib/runtimeSurface';
 import { getClientPlatform } from '@/lib/platform';
-import { renderMarkdownBlocks, renderMarkdownSync } from './markdown/markdownCore';
+import { renderMarkdownBlocks, renderMarkdownSyncBlocks } from './markdown/markdownCore';
 import { ensureMarkdownShikiTheme, getMarkdownSyntaxVars } from './markdown/markdownTheme';
 import { MarkdownLoadingPlaceholder } from './markdown/MarkdownLoadingSkeleton';
+import { markdownHeightCacheKey, rememberMarkdownHeight } from './markdown/markdownHeightCache';
 import {
   attachMarkdownInteractions,
   applyMarkdownCodeBlockWrapState,
   clearMarkdownImagePlaceholder,
   decorateMarkdown,
   decorateMarkdownImages,
-  scheduleMarkdownCodeLineNumberSync,
   setMarkdownImagePlaceholder,
   syncMarkdownCodeLineNumbers,
   type DecorateContext,
@@ -73,54 +73,46 @@ const useExternalLinkInteractions = ({
   containerRef: React.RefObject<HTMLDivElement | null>;
   enabled?: boolean;
 }) => {
-  React.useEffect(() => {
+  const handleClick = useEvent((event: MouseEvent) => {
     if (enabled === false) {
       return;
     }
 
-    const container = containerRef.current;
-    if (!container) {
+    if (event.defaultPrevented || event.button !== 0 || event.metaKey || event.ctrlKey || event.altKey || event.shiftKey) {
       return;
     }
 
-    const handleClick = (event: MouseEvent) => {
-      if (event.defaultPrevented || event.button !== 0 || event.metaKey || event.ctrlKey || event.altKey || event.shiftKey) {
-        return;
-      }
+    const target = event.target;
+    if (!(target instanceof Element)) {
+      return;
+    }
 
-      const target = event.target;
-      if (!(target instanceof Element)) {
-        return;
-      }
+    if (target.closest(MARKDOWN_IMAGE_SELECTOR)) {
+      return;
+    }
 
-      if (target.closest(MARKDOWN_IMAGE_SELECTOR)) {
-        return;
-      }
+    const anchor = target.closest('a[href]');
+    if (!(anchor instanceof HTMLAnchorElement)) {
+      return;
+    }
 
-      const anchor = target.closest('a[href]');
-      if (!(anchor instanceof HTMLAnchorElement)) {
-        return;
-      }
+    if (anchor.getAttribute('data-openchamber-file-link') === 'true') {
+      return;
+    }
 
-      if (anchor.getAttribute('data-openchamber-file-link') === 'true') {
-        return;
-      }
+    const href = anchor.getAttribute('href') ?? '';
+    if (!isExternalHttpUrl(href)) {
+      return;
+    }
 
-      const href = anchor.getAttribute('href') ?? '';
-      if (!isExternalHttpUrl(href)) {
-        return;
-      }
+    event.preventDefault();
+    event.stopPropagation();
+    void openExternalUrl(href);
+  });
 
-      event.preventDefault();
-      event.stopPropagation();
-      void openExternalUrl(href);
-    };
-
-    container.addEventListener('click', handleClick);
-    return () => {
-      container.removeEventListener('click', handleClick);
-    };
-  }, [containerRef, enabled]);
+  // Always attach to the container; the handler no-ops when disabled. Passing
+  // null would fall through useEventListener to window, which is wrong.
+  useEventListener('click', handleClick, containerRef);
 };
 
 const MARKDOWN_IMAGE_SELECTOR = 'img:not([data-md-link-favicon="true"])';
@@ -1023,91 +1015,99 @@ const useMermaidInlineInteractions = ({
   enablePanZoom?: boolean;
   allowMermaidWheelEvents?: boolean;
 }) => {
-  React.useEffect(() => {
+  const showPopup = useEvent((content: ToolPopupContent) => onShowPopup?.(content));
+  const popupEnabled = Boolean(onShowPopup);
+
+  const handleMermaidClick = useEvent((event: MouseEvent) => {
+    if (!enableFullscreen || !popupEnabled) {
+      return;
+    }
+
     const container = containerRef.current;
     if (!container) {
       return;
     }
 
-    const handleMermaidClick = (event: MouseEvent) => {
-      if (!enableFullscreen || !onShowPopup) {
-        return;
-      }
+    const target = event.target;
+    if (!(target instanceof Element)) {
+      return;
+    }
 
-      const target = event.target;
-      if (!(target instanceof Element)) {
-        return;
-      }
+    if (target.closest('button, a, [role="button"]')) {
+      return;
+    }
 
-      if (target.closest('button, a, [role="button"]')) {
-        return;
-      }
+    const block = target.closest(MERMAID_BLOCK_SELECTOR);
+    if (!block) {
+      return;
+    }
 
-      const block = target.closest(MERMAID_BLOCK_SELECTOR);
-      if (!block) {
-        return;
-      }
+    if (block instanceof HTMLElement && block.hasAttribute('data-mermaid-suppress-click')) {
+      block.removeAttribute('data-mermaid-suppress-click');
+      return;
+    }
 
-      if (block instanceof HTMLElement && block.hasAttribute('data-mermaid-suppress-click')) {
-        block.removeAttribute('data-mermaid-suppress-click');
-        return;
-      }
+    const renderedBlocks = Array.from(container.querySelectorAll<HTMLElement>(MERMAID_BLOCK_SELECTOR));
+    const blockIndex = renderedBlocks.indexOf(block as HTMLElement);
+    if (blockIndex < 0) {
+      return;
+    }
 
-      const renderedBlocks = Array.from(container.querySelectorAll<HTMLElement>(MERMAID_BLOCK_SELECTOR));
-      const blockIndex = renderedBlocks.indexOf(block as HTMLElement);
-      if (blockIndex < 0) {
-        return;
-      }
+    const source = block instanceof HTMLElement ? block.getAttribute('data-md-source') : null;
+    if (!source || source.trim().length === 0) {
+      return;
+    }
 
-      const source = block instanceof HTMLElement ? block.getAttribute('data-md-source') : null;
-      if (!source || source.trim().length === 0) {
-        return;
-      }
+    const filename = `Diagram ${blockIndex + 1}`;
+    showPopup({
+      open: true,
+      title: filename,
+      content: '',
+      metadata: {
+        tool: 'mermaid-preview',
+        filename,
+      },
+      mermaid: {
+        url: `data:text/plain;charset=utf-8,${encodeURIComponent(source)}`,
+        source,
+        filename,
+      },
+    });
+  });
 
-      const filename = `Diagram ${blockIndex + 1}`;
-      onShowPopup({
-        open: true,
-        title: filename,
-        content: '',
-        metadata: {
-          tool: 'mermaid-preview',
-          filename,
-        },
-        mermaid: {
-          url: `data:text/plain;charset=utf-8,${encodeURIComponent(source)}`,
-          source,
-          filename,
-        },
-      });
-    };
+  const handleInlineWheel = useEvent((event: WheelEvent) => {
+    if (allowMermaidWheelEvents || enablePanZoom) {
+      return;
+    }
 
-    const handleInlineWheel = (event: WheelEvent) => {
-      if (allowMermaidWheelEvents || enablePanZoom) {
-        return;
-      }
+    const target = event.target;
+    if (!(target instanceof Element)) {
+      return;
+    }
 
-      const target = event.target;
-      if (!(target instanceof Element)) {
-        return;
-      }
+    const block = target.closest(MERMAID_BLOCK_SELECTOR);
+    if (!block) {
+      return;
+    }
 
-      const block = target.closest(MERMAID_BLOCK_SELECTOR);
-      if (!block) {
-        return;
-      }
+    // Keep regular page scroll while preventing Streamdown inline wheel-zoom handlers.
+    event.stopPropagation();
+  });
 
-      // Keep regular page scroll while preventing Streamdown inline wheel-zoom handlers.
-      event.stopPropagation();
-    };
-
-    container.addEventListener('click', handleMermaidClick);
+  useEventListener('click', handleMermaidClick, containerRef);
+  // Capture-phase wheel needs matching removeEventListener options;
+  // @reactuses/core useEventListener cleanup omits options, so keep a manual effect.
+  React.useEffect(() => {
+    const container = containerRef.current;
+    if (!container) {
+      return;
+    }
     container.addEventListener('wheel', handleInlineWheel, { capture: true, passive: true });
-
     return () => {
-      container.removeEventListener('click', handleMermaidClick);
       container.removeEventListener('wheel', handleInlineWheel, true);
     };
-  }, [allowMermaidWheelEvents, containerRef, enableFullscreen, enablePanZoom, onShowPopup]);
+    // eslint-disable-next-line react-hooks/exhaustive-deps -- handleInlineWheel is useEvent-stable; identity must not control this effect.
+  }, [containerRef]);
 };
 
 // ---------------------------------------------------------------------------
@@ -1232,9 +1232,9 @@ const useDecorateContext = (
 
   const codeBlockLineWrap = useUIStore((state) => state.codeBlockLineWrap);
   const setCodeBlockLineWrap = useUIStore((state) => state.setCodeBlockLineWrap);
-  const toggleCodeBlockLineWrap = React.useCallback(() => {
+  const toggleCodeBlockLineWrap = useEvent(() => {
     setCodeBlockLineWrap(!useUIStore.getState().codeBlockLineWrap);
-  }, [setCodeBlockLineWrap]);
+  });
 
   return React.useMemo<DecorateContext>(() => {
     const colors = mermaidColorsFromTheme(currentTheme);
@@ -1261,7 +1261,8 @@ const useDecorateContext = (
       imageEffectiveDirectory,
       imagePreviewEnabled,
     };
-  }, [currentTheme, labels, mermaidControls, codeBlockLineWrap, deferCodeLineNumberSync, toggleCodeBlockLineWrap, onPreviewLoopback, imageTransportIdentity, imageEffectiveDirectory, imagePreviewEnabled]);
+    // eslint-disable-next-line react-hooks/exhaustive-deps -- toggleCodeBlockLineWrap is useEvent-stable; identity must not control this memo.
+  }, [currentTheme, labels, mermaidControls, codeBlockLineWrap, deferCodeLineNumberSync, onPreviewLoopback, imageTransportIdentity, imageEffectiveDirectory, imagePreviewEnabled]);
 };
 
 // Runs the async render pipeline into the container and keeps a stable
@@ -1283,14 +1284,17 @@ const useMorphdomMarkdown = ({
   syntaxVars: Record<string, string>;
   ctx: DecorateContext;
   reconcileMarkdownImageResources: (root: HTMLElement) => void;
-  onRichContentReady?: (target: HTMLElement) => void;
+  onRichContentReady?: () => void;
 }) => {
   React.useEffect(() => {
     ensureMarkdownShikiTheme();
   }, []);
 
   const mermaidViewerRef = React.useRef<ReturnType<typeof createMermaidViewerRegistry> | null>(null);
-  const refreshMermaidViewers = React.useCallback(() => {
+  const notifyRichContentReady = useEvent(() => {
+    onRichContentReady?.();
+  });
+  const refreshMermaidViewers = useEvent(() => {
     const container = containerRef.current;
     if (!container) {
       return;
@@ -1303,7 +1307,7 @@ const useMorphdomMarkdown = ({
       return;
     }
     mermaidViewerRef.current.refresh();
-  }, [containerRef]);
+  });
 
   // First paint must never flash a loading skeleton over Markdown that the user
   // already saw while streaming. Sync-render into an empty target for both live
@@ -1315,20 +1319,25 @@ const useMorphdomMarkdown = ({
     const target = container?.querySelector<HTMLElement>('[data-markdown-content]') ?? container;
     if (!target) return;
     if (text && target.childNodes.length === 0) {
-      const block = document.createElement('div');
-      block.setAttribute('data-md-block', '');
-      // `display:contents` keeps margin-collapsing/spacing identical to a flat
-      // HTML body — the wrapper exists only for per-block reconciliation.
-      block.style.display = 'contents';
-      block.innerHTML = renderMarkdownSync(text);
-      decorateMarkdownImages(block, ctx);
-      target.appendChild(block);
+      // One element per async render block, so the async pass upgrades each
+      // block in place rather than reshaping one whole-document block.
+      for (const html of renderMarkdownSyncBlocks(text)) {
+        const block = document.createElement('div');
+        block.setAttribute('data-md-block', '');
+        // `display:contents` keeps margin-collapsing/spacing identical to a flat
+        // HTML body — the wrapper exists only for per-block reconciliation.
+        block.style.display = 'contents';
+        block.innerHTML = html;
+        decorateMarkdownImages(block, ctx);
+        target.appendChild(block);
+      }
       reconcileMarkdownImageResources(target);
       if (!streaming) {
-        onRichContentReady?.(target);
+        notifyRichContentReady();
       }
     }
-  }, [containerRef, ctx, onRichContentReady, reconcileMarkdownImageResources, streaming, text]);
+    // eslint-disable-next-line react-hooks/exhaustive-deps -- notifyRichContentReady is useEvent-stable and must not control this effect.
+  }, [containerRef, ctx, reconcileMarkdownImageResources, streaming, text]);
 
   React.useEffect(() => () => {
     mermaidViewerRef.current?.cleanup();
@@ -1359,7 +1368,7 @@ const useMorphdomMarkdown = ({
       block.appendChild(fallback);
       target.appendChild(block);
       reconcileMarkdownImageResources(target);
-      onRichContentReady?.(target);
+      notifyRichContentReady();
     };
 
     const commitBlocks = (blocks: Awaited<ReturnType<typeof renderMarkdownBlocks>>) => {
@@ -1427,10 +1436,12 @@ const useMorphdomMarkdown = ({
       }
       reconcileMarkdownImageResources(target);
 
+      // Decorate leaves the line-number gutter out, so settled content adds it
+      // here (idempotent — blocks that already have one are left alone).
       if (!ctx.deferCodeLineNumberSync) {
-        scheduleMarkdownCodeLineNumberSync(target);
+        applyMarkdownCodeBlockWrapState(target, ctx.codeBlockLineWrap, ctx.labels);
       }
-      onRichContentReady?.(target);
+      notifyRichContentReady();
     };
 
     const commitBlocksSafely = (blocks: Awaited<ReturnType<typeof renderMarkdownBlocks>>) => {
@@ -1469,7 +1480,8 @@ const useMorphdomMarkdown = ({
       cancelQueuedRender();
       cancelQueuedCommit();
     };
-  }, [containerRef, text, streaming, cacheKey, ctx, onRichContentReady, reconcileMarkdownImageResources, refreshMermaidViewers]);
+    // eslint-disable-next-line react-hooks/exhaustive-deps -- refreshMermaidViewers / notifyRichContentReady are useEvent-stable and must not control this effect.
+  }, [containerRef, text, streaming, cacheKey, ctx, reconcileMarkdownImageResources]);
 
   React.useEffect(() => {
     const container = containerRef.current;
@@ -1495,24 +1507,25 @@ const useMorphdomMarkdown = ({
     applyMarkdownCodeBlockWrapState(target, ctx.codeBlockLineWrap, ctx.labels);
   }, [containerRef, ctx.codeBlockLineWrap, ctx.deferCodeLineNumberSync, ctx.labels]);
 
-  React.useEffect(() => {
+  const codeLineNumberFrameRef = React.useRef<number | null>(null);
+  const handleCodeLineNumberResize = useEvent(() => {
     const container = containerRef.current;
     const target = container?.querySelector<HTMLElement>('[data-markdown-content]') ?? container;
-    if (!target || typeof ResizeObserver === 'undefined') return;
-    let frame: number | null = null;
-    const observer = new ResizeObserver(() => {
-      if (frame !== null) window.cancelAnimationFrame(frame);
-      frame = window.requestAnimationFrame(() => {
-        frame = null;
-        syncMarkdownCodeLineNumbers(target);
-      });
+    if (!target) return;
+    if (codeLineNumberFrameRef.current !== null) {
+      window.cancelAnimationFrame(codeLineNumberFrameRef.current);
+    }
+    codeLineNumberFrameRef.current = window.requestAnimationFrame(() => {
+      codeLineNumberFrameRef.current = null;
+      syncMarkdownCodeLineNumbers(target);
     });
-    observer.observe(target);
-    return () => {
-      observer.disconnect();
-      if (frame !== null) window.cancelAnimationFrame(frame);
-    };
-  }, [containerRef]);
+  });
+  useResizeObserver(containerRef, handleCodeLineNumberResize);
+  React.useEffect(() => () => {
+    if (codeLineNumberFrameRef.current !== null) {
+      window.cancelAnimationFrame(codeLineNumberFrameRef.current);
+    }
+  }, []);
 };
 
 const markdownContentClassName = (variant: MarkdownVariant): string =>
@@ -1522,31 +1535,50 @@ const markdownContentClassName = (variant: MarkdownVariant): string =>
       ? 'markdown-content markdown-reasoning'
       : 'markdown-content leading-relaxed';
 
-const useRichMarkdownReveal = (
-  containerRef: React.RefObject<HTMLDivElement | null>,
-  initiallyReady: boolean,
-): [boolean, (target: HTMLElement) => void] => {
+// The rendered Markdown — not the placeholder — is what holds the container
+// open, so revealing it never changes the box height and needs no measurement.
+// Measuring here used to force a synchronous layout per renderer, and a batch of
+// rows revealing together turned that into read/write layout thrashing.
+const useRichMarkdownReveal = (initiallyReady: boolean): [boolean, () => void] => {
   const [richReady, setRichReady] = React.useState(initiallyReady);
   const revealedRef = React.useRef(initiallyReady);
 
-  const reveal = React.useCallback((target: HTMLElement) => {
+  const reveal = useEvent(() => {
     if (revealedRef.current) return;
     revealedRef.current = true;
-    const container = containerRef.current;
-    const bounds = target.getBoundingClientRect();
-    const height = Math.ceil(Math.max(bounds.height, target.scrollHeight));
-    if (container && height > 0) {
-      container.style.minHeight = `${height}px`;
-    }
     setRichReady(true);
-  }, [containerRef]);
-
-  React.useLayoutEffect(() => {
-    if (!richReady) return;
-    containerRef.current?.style.removeProperty('min-height');
-  }, [containerRef, richReady]);
+  });
 
   return [richReady, reveal];
+};
+
+/**
+ * Records what this content actually renders to, so the deferred placeholder in
+ * `MarkdownRenderer` can reserve the right box next time the row is recycled
+ * out of and back into the virtualized window. Observed box sizes come from the
+ * ResizeObserver entry, so nothing here forces a synchronous layout.
+ */
+const useMarkdownHeightMemo = (
+  containerRef: React.RefObject<HTMLDivElement | null>,
+  cacheKey: string,
+  enabled: boolean,
+): void => {
+  const enabledRef = React.useRef(enabled);
+  enabledRef.current = enabled;
+  const cacheKeyRef = React.useRef(cacheKey);
+  cacheKeyRef.current = cacheKey;
+
+  const handleResize = useEvent<ResizeObserverCallback>((entries) => {
+    if (!enabledRef.current) return;
+    const entry = entries[0];
+    if (!entry) return;
+    const box = entry.borderBoxSize?.[0];
+    const height = box ? box.blockSize : entry.contentRect.height;
+    const width = box ? box.inlineSize : entry.contentRect.width;
+    rememberMarkdownHeight(cacheKeyRef.current, height, width);
+  });
+
+  useResizeObserver(containerRef, handleResize);
 };
 
 const MarkdownRendererImpl: React.FC<MarkdownRendererProps> = ({
@@ -1568,15 +1600,15 @@ const MarkdownRendererImpl: React.FC<MarkdownRendererProps> = ({
   const effectiveDirectory = useEffectiveDirectory() ?? '';
   const openContextPreview = useUIStore((state) => state.openContextPreview);
 
-  const handlePreviewLoopback = React.useCallback((url: string) => {
+  const handlePreviewLoopback = useEvent((url: string) => {
     if (!effectiveDirectory) return;
     openContextPreview(effectiveDirectory, url);
-  }, [effectiveDirectory, openContextPreview]);
+  });
 
   const live = isStreaming && !disableStreamAnimation;
   const streamingRenderCadence = resolveStreamingRenderCadence(getClientPlatform());
   const pacedText = usePacedText(content, live, streamingRenderCadence.markdownPaceMs);
-  const [richReady, revealRichContent] = useRichMarkdownReveal(containerRef, live);
+  const [richReady, revealRichContent] = useRichMarkdownReveal(live);
 
   useMermaidInlineInteractions({
     containerRef,
@@ -1620,6 +1652,14 @@ const MarkdownRendererImpl: React.FC<MarkdownRendererProps> = ({
     onRichContentReady: revealRichContent,
   });
 
+  // A streaming turn grows every frame, and an unrevealed container is still
+  // showing the placeholder — neither height describes the settled render.
+  useMarkdownHeightMemo(
+    containerRef,
+    markdownHeightCacheKey(content, variant),
+    richReady && !live,
+  );
+
   const markdownContent = (
     <div
       aria-busy={!richReady || undefined}
@@ -1627,16 +1667,18 @@ const MarkdownRendererImpl: React.FC<MarkdownRendererProps> = ({
       ref={containerRef}
     >
       {!richReady && (
-        <div className={markdownContentClassName(variant)}>
+        <div
+          className={cn(
+            markdownContentClassName(variant),
+            'pointer-events-none absolute inset-0 overflow-hidden',
+          )}
+        >
           <MarkdownLoadingPlaceholder content={pacedText} />
         </div>
       )}
       <div
         aria-hidden={!richReady || undefined}
-        className={cn(
-          markdownContentClassName(variant),
-          !richReady && 'pointer-events-none absolute inset-x-0 top-0 invisible',
-        )}
+        className={cn(markdownContentClassName(variant), !richReady && 'invisible')}
         data-markdown-content
       />
     </div>
@@ -1691,7 +1733,7 @@ const SimpleMarkdownRendererImpl: React.FC<{
   const { editor, runtime } = useRuntimeAPIs();
   const currentTheme = useCurrentMermaidTheme();
   const containerRef = React.useRef<HTMLDivElement>(null);
-  const [richReady, revealRichContent] = useRichMarkdownReveal(containerRef, false);
+  const [richReady, revealRichContent] = useRichMarkdownReveal(false);
   const effectiveDirectory = useEffectiveDirectory() ?? '';
 
   const renderedContent = React.useMemo(
@@ -1748,16 +1790,18 @@ const SimpleMarkdownRendererImpl: React.FC<{
       ref={containerRef}
     >
       {!richReady && (
-        <div className={markdownContentClassName(variant)}>
+        <div
+          className={cn(
+            markdownContentClassName(variant),
+            'pointer-events-none absolute inset-0 overflow-hidden',
+          )}
+        >
           <MarkdownLoadingPlaceholder content={renderedContent} />
         </div>
       )}
       <div
         aria-hidden={!richReady || undefined}
-        className={cn(
-          markdownContentClassName(variant),
-          !richReady && 'pointer-events-none absolute inset-x-0 top-0 invisible',
-        )}
+        className={cn(markdownContentClassName(variant), !richReady && 'invisible')}
         data-markdown-content
       />
     </div>

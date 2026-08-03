@@ -1,4 +1,5 @@
 import React from 'react';
+import { useEvent, useResizeObserver } from '@reactuses/core';
 import { useVirtualizer } from '@tanstack/react-virtual';
 import type { Session } from '@opencode-ai/sdk/v2';
 
@@ -28,6 +29,7 @@ import {
   computeNodeStructureKey,
   nodeContainsSessionId,
   resolveMenuOpenSessionId,
+  resolvedSessionRenderKey,
 } from './sessionNodeItemUtils';
 import { buildSessionActivitySnapshot, buildVisibleSortableSessionOrder, createSessionNodeComparator } from './sessionSortableOrder';
 import type { SessionNodeRenderExtras } from './sessionNodeItemUtils';
@@ -221,7 +223,10 @@ const groupHasResolvedSessionChange = (
 ): boolean => {
   const visit = (node: SessionNode): boolean => {
     const sessionId = node.session.id;
-    if ((prevLiveSessionById.get(sessionId) ?? node.session) !== (nextLiveSessionById.get(sessionId) ?? node.session)) {
+    const prevSession = prevLiveSessionById.get(sessionId) ?? node.session;
+    const nextSession = nextLiveSessionById.get(sessionId) ?? node.session;
+    if (prevSession !== nextSession
+      && resolvedSessionRenderKey(prevSession) !== resolvedSessionRenderKey(nextSession)) {
       return true;
     }
     return node.children.some(visit);
@@ -234,6 +239,30 @@ const getProjectRepoStatusValue = (props: Props): boolean | null | undefined => 
   return props.projectRepoStatus.has(props.projectId)
     ? props.projectRepoStatus.get(props.projectId)
     : undefined;
+};
+
+const buildNodeStructureKeyByNode = (nodes: SessionNode[]): WeakMap<SessionNode, string> => {
+  const map = new WeakMap<SessionNode, string>();
+  const visit = (node: SessionNode): void => {
+    map.set(node, computeNodeStructureKey(node));
+    for (const child of node.children) {
+      visit(child);
+    }
+  };
+  nodes.forEach(visit);
+  return map;
+};
+
+const collectGroupSessions = (nodes: SessionNode[]): Session[] => {
+  const collected: Session[] = [];
+  const visit = (list: SessionNode[]) => {
+    list.forEach((node) => {
+      collected.push(node.session);
+      if (node.children.length > 0) visit(node.children);
+    });
+  };
+  visit(nodes);
+  return collected;
 };
 
 const areGroupPropsEqual = (prev: Props, next: Props): boolean => {
@@ -561,21 +590,9 @@ function SessionGroupSectionBase(props: Props): React.ReactNode {
     return null;
   }, [openSidebarMenuKey, sourceGroupNodes, allFoldersForGroup, group.isArchivedBucket]);
 
-  const buildNodeStructureKeyByNode = React.useCallback((nodes: SessionNode[]): WeakMap<SessionNode, string> => {
-    const map = new WeakMap<SessionNode, string>();
-    const visit = (node: SessionNode): void => {
-      map.set(node, computeNodeStructureKey(node));
-      for (const child of node.children) {
-        visit(child);
-      }
-    };
-    nodes.forEach(visit);
-    return map;
-  }, []);
-
   const nodeStructureKeyBySourceNode = React.useMemo(
     () => buildNodeStructureKeyByNode(sourceGroupNodes),
-    [buildNodeStructureKeyByNode, sourceGroupNodes],
+    [sourceGroupNodes],
   );
   const nodeStructureKeyByFolderNode = React.useMemo(
     () => {
@@ -588,16 +605,25 @@ function SessionGroupSectionBase(props: Props): React.ReactNode {
     [allFoldersForGroup],
   );
 
-  const resolveNodeStructureKey = React.useCallback((node: SessionNode): string => {
-    return nodeStructureKeyBySourceNode.get(node) ?? nodeStructureKeyByFolderNode.get(node) ?? '';
-  }, [nodeStructureKeyBySourceNode, nodeStructureKeyByFolderNode]);
+  // Render-phase lookup factory: useMemo keeps identity stable while the maps
+  // are unchanged; useEvent would update during layout and is reserved for
+  // event-time callbacks.
+  const resolveNodeStructureKey = React.useMemo(
+    () => (node: SessionNode): string => {
+      return nodeStructureKeyBySourceNode.get(node) ?? nodeStructureKeyByFolderNode.get(node) ?? '';
+    },
+    [nodeStructureKeyBySourceNode, nodeStructureKeyByFolderNode],
+  );
 
-  const childRenderExtrasFor = React.useCallback((child: SessionNode) => ({
-    subtreeContainsActive,
-    subtreeContainsEditing,
-    menuOpenSessionId,
-    nodeStructureKey: resolveNodeStructureKey(child),
-  }), [subtreeContainsActive, subtreeContainsEditing, menuOpenSessionId, resolveNodeStructureKey]);
+  const childRenderExtrasFor = React.useMemo(
+    () => (child: SessionNode) => ({
+      subtreeContainsActive,
+      subtreeContainsEditing,
+      menuOpenSessionId,
+      nodeStructureKey: resolveNodeStructureKey(child),
+    }),
+    [subtreeContainsActive, subtreeContainsEditing, menuOpenSessionId, resolveNodeStructureKey],
+  );
 
   const totalSessions = ungroupedSessions.length;
   const baseVisibleSessions = group.isArchivedBucket
@@ -679,15 +705,12 @@ function SessionGroupSectionBase(props: Props): React.ReactNode {
   // dep-gated effect that only fires when shouldVirtualizeArchived flips
   // would miss the eventual mount and leave the scroll element null.
   const [, setLayoutVersion] = React.useState(0);
-  React.useEffect(() => {
-    if (!shouldVirtualize) return;
-    const container = archivedVirtualContainerRef.current;
-    if (!container) return;
-    if (typeof ResizeObserver === 'undefined') return;
-    const ro = new ResizeObserver(() => setLayoutVersion((v) => v + 1));
-    ro.observe(container);
-    return () => ro.disconnect();
-  }, [shouldVirtualize]);
+  // useResizeObserver owns observe/disconnect. Pass the ref only while
+  // virtualization is active so target identity changes when the body mounts
+  // (ref alone is stable and would not re-run after a null-element no-op).
+  useResizeObserver(shouldVirtualize ? archivedVirtualContainerRef : null, () => {
+    setLayoutVersion((v) => v + 1);
+  });
 
   // eslint-disable-next-line react-hooks/exhaustive-deps
   React.useLayoutEffect(() => {
@@ -800,25 +823,13 @@ function SessionGroupSectionBase(props: Props): React.ReactNode {
 
   // Hooks below MUST stay above the search-empty early-return so they
   // fire in the same order every render — rules-of-hooks.
-  const collectGroupSessions = React.useCallback((nodes: SessionNode[]): Session[] => {
-    const collected: Session[] = [];
-    const visit = (list: SessionNode[]) => {
-      list.forEach((node) => {
-        collected.push(node.session);
-        if (node.children.length > 0) visit(node.children);
-      });
-    };
-    visit(nodes);
-    return collected;
-  }, []);
-
   // Flat list of all sessions in this group (including nested children).
   // Used by both the "delete all archived" button and the "delete worktree"
   // button. Memoize so the recursive flatten only runs when the underlying
   // source group nodes change, not on every render.
   const allGroupSessions = React.useMemo(
     () => collectGroupSessions(sourceGroupNodes),
-    [collectGroupSessions, sourceGroupNodes],
+    [sourceGroupNodes],
   );
 
   // Precompute the per-folder "delete all sessions in folder" list once
@@ -851,7 +862,7 @@ function SessionGroupSectionBase(props: Props): React.ReactNode {
       result.set(folder.id, visit(folder.id, new Set()));
     }
     return result;
-  }, [allFoldersForGroup, collectGroupSessions, group.isArchivedBucket]);
+  }, [allFoldersForGroup, group.isArchivedBucket]);
 
   const groupSessionSecondaryMeta = React.useMemo(
     () => ({
@@ -860,6 +871,23 @@ function SessionGroupSectionBase(props: Props): React.ReactNode {
     }),
     [group.branch, group.isMain, group.label],
   );
+
+  // useEvent must sit above the search-empty early-return (rules-of-hooks).
+  // Resolve the PR URL at event time so this hook does not depend on
+  // post-return local prIndicator binding.
+  const handlePrLinkClick = useEvent((event: React.MouseEvent<HTMLElement>) => {
+    event.preventDefault();
+    event.stopPropagation();
+    const groupDirectoryKey = normalizePath(group.directory ?? null);
+    const groupBranchKey = group.branch?.trim() ?? null;
+    const url = groupDirectoryKey && groupBranchKey
+      ? (prVisualStateByDirectoryBranch.get(`${groupDirectoryKey}::${groupBranchKey}`)?.url ?? null)
+      : null;
+    if (!url) {
+      return;
+    }
+    void openExternalUrl(url);
+  });
 
   if (hasSessionSearchQuery && !groupMatchesSearch && rootFolders.length === 0 && ungroupedSessions.length === 0) {
     return null;
@@ -929,15 +957,6 @@ function SessionGroupSectionBase(props: Props): React.ReactNode {
         return null;
     }
   })();
-  const handlePrLinkClick = (event: React.MouseEvent<HTMLElement>) => {
-    event.preventDefault();
-    event.stopPropagation();
-    const url = prIndicator?.url;
-    if (!url) {
-      return;
-    }
-    void openExternalUrl(url);
-  };
 
   const renderOneFolderItem = (folder: SessionFolder, nodes: SessionNode[], depth: number): React.ReactNode => {
     const directSubFolders = allFoldersForGroup.filter(({ folder: f }) => f.parentId === folder.id);

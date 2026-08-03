@@ -22,26 +22,45 @@ const estimateSkeletonLineCount = (content: string): number => {
 };
 
 /**
- * Keeps the cheap plain-text layout as an invisible size spacer while showing
- * only a bounded skeleton. Rich Markdown can replace it without exposing raw
- * source syntax or creating dozens of animated placeholder nodes.
+ * Keeps a size spacer in place while showing only a bounded skeleton, so rich
+ * Markdown can replace it without exposing raw source syntax or creating dozens
+ * of animated placeholder nodes.
+ *
+ * The spacer prefers `reservedHeight` — the height this content actually
+ * rendered at last time. Rendered Markdown is far shorter than its source
+ * (fenced code, link targets and table pipes all collapse), so the plain-text
+ * fallback overshoots badly and the swap to real content collapses the row,
+ * which the virtualizer then compensates by yanking the scroll offset.
  */
 export const MarkdownLoadingPlaceholder: React.FC<{
   animated?: boolean;
   content: string;
-}> = ({ animated = true, content }) => {
+  reservedHeight?: number;
+}> = ({ animated = true, content, reservedHeight }) => {
   const lineCount = estimateSkeletonLineCount(content);
   const showSkeleton = content.trim().length > 0;
+  const hasReservedHeight = typeof reservedHeight === 'number'
+    && Number.isFinite(reservedHeight)
+    && reservedHeight > 0;
 
   return (
     <>
-      <span
-        aria-hidden="true"
-        className="invisible block whitespace-pre-wrap"
-        data-markdown-size-spacer="true"
-      >
-        {content || '\u00a0'}
-      </span>
+      {hasReservedHeight ? (
+        <span
+          aria-hidden="true"
+          className="block"
+          data-markdown-size-spacer="measured"
+          style={{ height: `${reservedHeight}px` }}
+        />
+      ) : (
+        <span
+          aria-hidden="true"
+          className="invisible block whitespace-pre-wrap"
+          data-markdown-size-spacer="true"
+        >
+          {content || '\u00a0'}
+        </span>
+      )}
       {showSkeleton && (
         <div
           aria-hidden="true"

@@ -1747,6 +1747,7 @@ export const settingsDict = {
   "settings.voice.page.field.ttsInputModeRaw": "Markdown bruto",
   "settings.voice.page.field.ttsInputModeSummarized": "resumido",
   "settings.openchamber.visual.section.colorMode": "Modo de cor",
+  "settings.openchamber.visual.field.themeMode": "Alternar tema",
   "settings.openchamber.visual.field.display": "Exibição",
   "settings.openchamber.visual.section.localization": "Localização",
   "settings.openchamber.visual.section.spacingAndLayout": "Espaçamento e layout",

@@ -1,4 +1,45 @@
+import type { Session } from '@opencode-ai/sdk/v2';
+import { getSessionActivityUpdatedAt } from '@/lib/sessionActivity';
 import type { SessionNode } from './types';
+
+// The activity timestamp reaches a row only through `formatSessionDateLabel` and
+// its compact variant, neither of which resolves finer than this.
+const SESSION_ACTIVITY_LABEL_GRANULARITY_MS = 30_000;
+
+/**
+ * The fields a sidebar row actually renders from its live session.
+ *
+ * The row memo comparators used to compare the live `Session` by identity, which
+ * re-rendered the streaming session's row — and every ancestor row holding it —
+ * on every SSE event, so at token rate. Each of those renders re-ran
+ * `useSortable` and rebuilt the row's tooltips and menus just to redraw a date
+ * label that only moves by the minute.
+ */
+export const resolvedSessionRenderKey = (session: Session): string => {
+  const extended = session as Session & {
+    hasChildren?: boolean;
+    parentID?: string | null;
+    metadata?: {
+      openchamber?: {
+        assistant?: unknown;
+        titleRefresh?: { isGenerating?: unknown; lastError?: unknown; failedAt?: unknown };
+      };
+    };
+  };
+  const titleRefresh = extended.metadata?.openchamber?.titleRefresh;
+  const activity = getSessionActivityUpdatedAt(session) || 0;
+  return [
+    session.title ?? '',
+    session.share ? (session.share.url ?? '1') : '',
+    extended.hasChildren ? '1' : '',
+    extended.parentID ?? '',
+    extended.metadata?.openchamber?.assistant ? '1' : '',
+    titleRefresh?.isGenerating ? '1' : '',
+    String(titleRefresh?.lastError ?? ''),
+    String(titleRefresh?.failedAt ?? ''),
+    Math.floor(activity / SESSION_ACTIVITY_LABEL_GRANULARITY_MS),
+  ].join('\u0000');
+};
 
 /**
  * Per-row render extras precomputed once per group render and threaded down to

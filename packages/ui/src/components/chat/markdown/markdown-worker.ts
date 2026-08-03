@@ -6,6 +6,14 @@ import type {
   MarkdownWorkerRequest,
   MarkdownWorkerResponse,
 } from './markdown-worker-protocol';
+import {
+  HighlightMemo,
+  highlightCacheKey,
+  highlightTokensCacheKey,
+  weighHtml,
+  weighLines,
+  weighTokenLines,
+} from './markdownHighlightCache';
 
 // Main-thread client for the markdown Shiki worker. Moves syntax tokenization
 // off the UI thread: a closed code block is shipped to the worker, which returns
@@ -102,32 +110,66 @@ const request = (
   });
 };
 
+// Tokenized output is pure and expensive, so results are memoized by content
+// and concurrent requests for the same snippet share one worker job. Budgets
+// are per shape: block HTML is the bulkiest and the most re-requested, because
+// scrolling history remounts the same code blocks over and over.
+const htmlMemo = new HighlightMemo<string>({
+  maxEntries: 192,
+  maxBytes: 12 * 1024 * 1024,
+  weigh: weighHtml,
+});
+const linesMemo = new HighlightMemo<string[]>({
+  maxEntries: 96,
+  maxBytes: 8 * 1024 * 1024,
+  weigh: weighLines,
+});
+const tokensMemo = new HighlightMemo<MarkdownTokenRun[][]>({
+  maxEntries: 96,
+  maxBytes: 8 * 1024 * 1024,
+  weigh: weighTokenLines,
+});
+
 /**
  * Highlight a complete code block in the worker. Resolves to Shiki `<pre>` HTML,
  * or `null` if highlighting is unavailable or failed (caller keeps plain code).
  */
-export const highlightCodeInWorker = async (
+export const highlightCodeInWorker = (
   code: string,
   lang: string,
   options?: MarkdownWorkerRequestOptions,
-): Promise<string | null> => {
-  const response = await request((id, priority) => ({ type: 'highlight', id, code, lang, priority }), options);
-  return response?.type === 'highlight' ? response.html : null;
-};
+): Promise<string | null> => htmlMemo.run(
+  highlightCacheKey(lang, code),
+  async (signal) => {
+    const response = await request(
+      (id, priority) => ({ type: 'highlight', id, code, lang, priority }),
+      { ...options, signal },
+    );
+    return response?.type === 'highlight' ? response.html : null;
+  },
+  options?.signal,
+);
 
 /**
  * Highlight a whole block and return per-line inner HTML (one entry per source
  * line). For per-line layouts (diffs, gutters, virtualization) — one worker
  * round-trip instead of one per line. Resolves to `null` on failure.
  */
-export const highlightLinesInWorker = async (
+export const highlightLinesInWorker = (
   code: string,
   lang: string,
   options?: MarkdownWorkerRequestOptions,
-): Promise<string[] | null> => {
-  const response = await request((id, priority) => ({ type: 'highlightLines', id, code, lang, priority }), options);
-  return response?.type === 'highlightLines' ? response.lines : null;
-};
+): Promise<string[] | null> => linesMemo.run(
+  highlightCacheKey(lang, code),
+  async (signal) => {
+    const response = await request(
+      (id, priority) => ({ type: 'highlightLines', id, code, lang, priority }),
+      { ...options, signal },
+    );
+    return response?.type === 'highlightLines' ? response.lines : null;
+  },
+  options?.signal,
+);
 
 /**
  * Tokenize `code` with the given resolved TextMate theme and return per-line
@@ -135,26 +177,33 @@ export const highlightLinesInWorker = async (
  * Shiki file view exactly. The full theme object is shipped only the first time
  * a theme name is seen by the live worker. Resolves to `null` on failure.
  */
-export const highlightTokensInWorker = async (
+export const highlightTokensInWorker = (
   code: string,
   lang: string,
   themeName: string,
   theme: unknown,
   options?: MarkdownWorkerRequestOptions,
-): Promise<MarkdownTokenRun[][] | null> => {
-  const needsTheme = !sentThemes.has(themeName);
-  const response = await request((id, priority) => ({
-    type: 'highlightTokens',
-    id,
-    code,
-    lang,
-    themeName,
-    priority,
-    ...(needsTheme ? { theme } : {}),
-  }), options);
-  if (response?.type === 'highlightTokens') {
-    sentThemes.add(themeName);
-    return response.lines;
-  }
-  return null;
-};
+): Promise<MarkdownTokenRun[][] | null> => tokensMemo.run(
+  highlightTokensCacheKey(themeName, lang, code),
+  async (signal) => {
+    // Resolved inside the job: a cache hit never reaches the worker, so
+    // whether the live worker already holds this theme can only be decided
+    // when a request is actually about to be posted.
+    const needsTheme = !sentThemes.has(themeName);
+    const response = await request((id, priority) => ({
+      type: 'highlightTokens',
+      id,
+      code,
+      lang,
+      themeName,
+      priority,
+      ...(needsTheme ? { theme } : {}),
+    }), { ...options, signal });
+    if (response?.type === 'highlightTokens') {
+      sentThemes.add(themeName);
+      return response.lines;
+    }
+    return null;
+  },
+  options?.signal,
+);
