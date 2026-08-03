@@ -667,6 +667,7 @@ export interface SettingsPayload {
   activityRenderMode?: 'collapsed' | 'summary';
   mermaidRenderingMode?: 'svg' | 'ascii';
   showSplitAssistantMessageActions?: boolean;
+  showAssistantTps?: boolean;
   fontSize?: number;
   terminalFontSize?: number;
   editorFontSize?: number;

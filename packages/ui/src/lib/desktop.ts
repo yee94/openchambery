@@ -179,6 +179,7 @@ export type DesktopSettings = {
   expandedEditorToolbar?: boolean;
   wideChatLayoutEnabled?: boolean;
   showSplitAssistantMessageActions?: boolean;
+  showAssistantTps?: boolean;
   fontSize?: number;
   terminalFontSize?: number;
   editorFontSize?: number;

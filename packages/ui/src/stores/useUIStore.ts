@@ -812,6 +812,8 @@ interface UIStore {
   promptNavigatorEnabled: boolean;
   expandedEditorToolbar: boolean;
   showSplitAssistantMessageActions: boolean;
+  /** Show assistant generation TPS (tok/s) next to message duration/meta. */
+  showAssistantTps: boolean;
   allowPromptingSubagentSessions: boolean;
   isMobileSessionStatusBarCollapsed: boolean;
   mobileSessionPanelOpen: boolean;
@@ -983,6 +985,7 @@ interface UIStore {
   setPromptNavigatorEnabled: (value: boolean) => void;
   setExpandedEditorToolbar: (value: boolean) => void;
   setShowSplitAssistantMessageActions: (value: boolean) => void;
+  setShowAssistantTps: (value: boolean) => void;
   setAllowPromptingSubagentSessions: (value: boolean) => void;
   setIsMobileSessionStatusBarCollapsed: (value: boolean) => void;
   setMobileSessionPanelOpen: (value: boolean) => void;
@@ -1141,6 +1144,7 @@ export const useUIStore = create<UIStore>()(
         promptNavigatorEnabled: false,
         expandedEditorToolbar: false,
         showSplitAssistantMessageActions: false,
+        showAssistantTps: true,
         allowPromptingSubagentSessions: false,
         isMobileSessionStatusBarCollapsed: false,
         mobileSessionPanelOpen: false,
@@ -2570,6 +2574,9 @@ export const useUIStore = create<UIStore>()(
         setShowSplitAssistantMessageActions: (value) => {
           set({ showSplitAssistantMessageActions: value });
         },
+        setShowAssistantTps: (value) => {
+          set({ showAssistantTps: value });
+        },
         setAllowPromptingSubagentSessions: (value) => {
           set({ allowPromptingSubagentSessions: value });
         },
@@ -2823,6 +2830,7 @@ export const useUIStore = create<UIStore>()(
           promptNavigatorEnabled: state.promptNavigatorEnabled,
           expandedEditorToolbar: state.expandedEditorToolbar,
           showSplitAssistantMessageActions: state.showSplitAssistantMessageActions,
+          showAssistantTps: state.showAssistantTps,
           allowPromptingSubagentSessions: state.allowPromptingSubagentSessions,
           isMobileSessionStatusBarCollapsed: state.isMobileSessionStatusBarCollapsed,
           mobileSessionFilterProjectId: state.mobileSessionFilterProjectId,

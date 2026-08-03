@@ -1,16 +1,36 @@
 import { describe, expect, test } from 'bun:test';
-import { getSlashTokenRange, isCommandAllowedForSubmission, shouldSubmitCommandOnSelection } from './commandSelection';
+import {
+  AUTO_SUBMIT_SLASH_COMMANDS,
+  getSlashTokenRange,
+  isCommandAllowedForSubmission,
+  shouldSubmitCommandOnSelection,
+} from './commandSelection';
 
 describe('shouldSubmitCommandOnSelection', () => {
-  test('submits commands selected with an immediate-submit interaction', () => {
-    expect(shouldSubmitCommandOnSelection({ source: 'openchamber' }, true)).toBe(true);
-    expect(shouldSubmitCommandOnSelection({ source: 'opencode', isBuiltIn: true }, true)).toBe(true);
+  test('auto-submits only the immediate local whitelist on Enter/tap', () => {
+    for (const name of AUTO_SUBMIT_SLASH_COMMANDS) {
+      expect(shouldSubmitCommandOnSelection({ name, source: 'openchamber' }, true)).toBe(true);
+      expect(shouldSubmitCommandOnSelection({ name, source: 'opencode', isBuiltIn: true }, true)).toBe(true);
+    }
+  });
+
+  test('inserts draft-style and confirm-first commands instead of auto-sending', () => {
+    for (const name of [
+      // Custom / prompt templates
+      'loop', 'craft-goal', 'plan-feature', 'catch-up', 'debug', 'weigh', 'explore', 'summary', 'init', 'review',
+      // Local UI that still wants a deliberate second Enter
+      'timeline',
+    ]) {
+      expect(shouldSubmitCommandOnSelection({ name, source: 'openchamber' }, true)).toBe(false);
+      expect(shouldSubmitCommandOnSelection({ name, source: 'opencode', isBuiltIn: true }, true)).toBe(false);
+    }
   });
 
   test('keeps durable references and insert-only interactions in the composer', () => {
-    expect(shouldSubmitCommandOnSelection({ source: 'skill', isSkill: true }, true)).toBe(false);
-    expect(shouldSubmitCommandOnSelection({ source: 'opencode', isBuiltIn: false }, true)).toBe(false);
-    expect(shouldSubmitCommandOnSelection({ source: 'openchamber' }, false)).toBe(false);
+    expect(shouldSubmitCommandOnSelection({ name: 'compact', source: 'skill', isSkill: true }, true)).toBe(false);
+    expect(shouldSubmitCommandOnSelection({ name: 'loop', source: 'opencode', isBuiltIn: false }, true)).toBe(false);
+    expect(shouldSubmitCommandOnSelection({ name: 'compact', source: 'openchamber' }, false)).toBe(false);
+    expect(shouldSubmitCommandOnSelection({ source: 'openchamber' }, true)).toBe(false);
   });
 });
 

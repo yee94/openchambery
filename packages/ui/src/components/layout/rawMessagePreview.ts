@@ -107,6 +107,23 @@ export const formatAssistantTokens = (
   formatNumber: (value: number) => string,
 ): string => `${formatNumber(input)} / ${formatNumber(output)}`;
 
+/**
+ * Append a compact TPS suffix when available.
+ * Example: `7,343 / 79 · 42.1 tok/s`
+ */
+export const formatAssistantTokensWithTps = (
+  input: number,
+  output: number,
+  formatNumber: (value: number) => string,
+  tpsLabel?: string | null,
+): string => {
+  const base = formatAssistantTokens(input, output, formatNumber);
+  if (typeof tpsLabel === 'string' && tpsLabel.trim().length > 0) {
+    return `${base} · ${tpsLabel.trim()}`;
+  }
+  return base;
+};
+
 const resolveHour12 = (preference: TimeFormatPreference): boolean | undefined => {
   if (preference === '12h') return true;
   if (preference === '24h') return false;

@@ -375,7 +375,7 @@ const normalizeUserMessageRenderingMode = (mode: unknown): 'markdown' | 'plain' 
     return mode === 'markdown' ? 'markdown' : 'plain';
 };
 
-type VisibleSetting = 'sessionAssist' | 'sessionGoal' | 'theme' | 'sidebarBrand' | 'pwaInstallName' | 'pwaOrientation' | 'mobileKeyboardMode' | 'timeFormat' | 'weekStart' | 'fontSize' | 'codeFontSize' | 'terminalFontSize' | 'editorFontSize' | 'spacing' | 'inputBarOffset' | 'mermaidRendering' | 'userMessageRendering' | 'chatRenderMode' | 'messageTransport' | 'activityRenderMode' | 'collapsibleUserMessages' | 'stickyUserHeader' | 'promptNavigatorEnabled' | 'wideChatLayout' | 'codeBlockLineWrap' | 'splitAssistantMessageActions' | 'subagentReadOnlyBanner' | 'diffLayout' | 'mobileStatusBar' | 'dotfiles' | 'fileViewerPreview' | 'reasoning' | 'showToolFileIcons' | 'showTurnChangedFiles' | 'showSubagentTaskDetails' | 'expandedTools' | 'followUpBehavior' | 'terminalQuickKeys' | 'fileEditorKeymap' | 'persistDraft' | 'inputSpellcheck' | 'reportUsage' | 'expandedEditorToolbar';
+type VisibleSetting = 'sessionAssist' | 'sessionGoal' | 'theme' | 'sidebarBrand' | 'pwaInstallName' | 'pwaOrientation' | 'mobileKeyboardMode' | 'timeFormat' | 'weekStart' | 'fontSize' | 'codeFontSize' | 'terminalFontSize' | 'editorFontSize' | 'spacing' | 'inputBarOffset' | 'mermaidRendering' | 'userMessageRendering' | 'chatRenderMode' | 'messageTransport' | 'activityRenderMode' | 'collapsibleUserMessages' | 'stickyUserHeader' | 'promptNavigatorEnabled' | 'wideChatLayout' | 'codeBlockLineWrap' | 'splitAssistantMessageActions' | 'showAssistantTps' | 'subagentReadOnlyBanner' | 'diffLayout' | 'mobileStatusBar' | 'dotfiles' | 'fileViewerPreview' | 'reasoning' | 'showToolFileIcons' | 'showTurnChangedFiles' | 'showSubagentTaskDetails' | 'expandedTools' | 'followUpBehavior' | 'terminalQuickKeys' | 'fileEditorKeymap' | 'persistDraft' | 'inputSpellcheck' | 'reportUsage' | 'expandedEditorToolbar';
 
 interface OpenChamberVisualSettingsProps {
     /** Which settings to show. If undefined, shows all. */
@@ -470,6 +470,8 @@ export const OpenChamberVisualSettings: React.FC<OpenChamberVisualSettingsProps>
     const setWeekStartPreference = useUIStore(state => state.setWeekStartPreference);
     const showSplitAssistantMessageActions = useUIStore(state => state.showSplitAssistantMessageActions);
     const setShowSplitAssistantMessageActions = useUIStore(state => state.setShowSplitAssistantMessageActions);
+    const showAssistantTps = useUIStore(state => state.showAssistantTps);
+    const setShowAssistantTps = useUIStore(state => state.setShowAssistantTps);
     const sidebarBrandName = useSidebarBrandStore(state => state.sidebarBrandName);
     const setSidebarBrandName = useSidebarBrandStore(state => state.setSidebarBrandName);
     const allowPromptingSubagentSessions = useUIStore(state => state.allowPromptingSubagentSessions);
@@ -605,6 +607,11 @@ export const OpenChamberVisualSettings: React.FC<OpenChamberVisualSettingsProps>
         void updateDesktopSettings({ showSplitAssistantMessageActions: enabled });
     }, [setShowSplitAssistantMessageActions]);
 
+    const handleShowAssistantTpsChange = React.useCallback((enabled: boolean) => {
+        setShowAssistantTps(enabled);
+        void updateDesktopSettings({ showAssistantTps: enabled });
+    }, [setShowAssistantTps]);
+
     const handleInputSpellcheckChange = React.useCallback((enabled: boolean) => {
         setInputSpellcheckEnabled(enabled);
         void updateDesktopSettings({ inputSpellcheckEnabled: enabled });
@@ -719,6 +726,7 @@ export const OpenChamberVisualSettings: React.FC<OpenChamberVisualSettingsProps>
         || shouldShow('wideChatLayout')
         || shouldShow('codeBlockLineWrap')
         || shouldShow('splitAssistantMessageActions')
+        || shouldShow('showAssistantTps')
         || shouldShow('subagentReadOnlyBanner')
         || shouldShow('diffLayout')
         || shouldShow('dotfiles')
@@ -1965,7 +1973,7 @@ export const OpenChamberVisualSettings: React.FC<OpenChamberVisualSettingsProps>
                                 </ResponsiveSettingsGroup>
                             )}
 
-                            {(shouldShow('sessionAssist') || shouldShow('collapsibleUserMessages') || shouldShow('stickyUserHeader') || (shouldShow('promptNavigatorEnabled') && !isVSCode) || shouldShow('wideChatLayout') || shouldShow('codeBlockLineWrap') || shouldShow('splitAssistantMessageActions') || shouldShow('subagentReadOnlyBanner') || shouldShow('dotfiles') || shouldShow('fileViewerPreview') || shouldShow('persistDraft') || shouldShow('showToolFileIcons') || shouldShow('showSubagentTaskDetails') || shouldShow('showTurnChangedFiles') || (!isMobile && shouldShow('inputSpellcheck')) || shouldShow('reasoning')) && (
+                            {(shouldShow('sessionAssist') || shouldShow('collapsibleUserMessages') || shouldShow('stickyUserHeader') || (shouldShow('promptNavigatorEnabled') && !isVSCode) || shouldShow('wideChatLayout') || shouldShow('codeBlockLineWrap') || shouldShow('splitAssistantMessageActions') || shouldShow('showAssistantTps') || shouldShow('subagentReadOnlyBanner') || shouldShow('dotfiles') || shouldShow('fileViewerPreview') || shouldShow('persistDraft') || shouldShow('showToolFileIcons') || shouldShow('showSubagentTaskDetails') || shouldShow('showTurnChangedFiles') || (!isMobile && shouldShow('inputSpellcheck')) || shouldShow('reasoning')) && (
                                 <div className="oc-settings-section-stack">
                                     {(shouldShow('sessionAssist') || shouldShow('subagentReadOnlyBanner')) && (
                                         <ResponsiveSettingsGroup
@@ -2097,7 +2105,7 @@ export const OpenChamberVisualSettings: React.FC<OpenChamberVisualSettingsProps>
                                         </ResponsiveSettingsGroup>
                                     )}
 
-                                    {(shouldShow('collapsibleUserMessages') || shouldShow('stickyUserHeader') || (shouldShow('promptNavigatorEnabled') && !isVSCode) || shouldShow('wideChatLayout') || shouldShow('splitAssistantMessageActions') || shouldShow('codeBlockLineWrap')) && (
+                                    {(shouldShow('collapsibleUserMessages') || shouldShow('stickyUserHeader') || (shouldShow('promptNavigatorEnabled') && !isVSCode) || shouldShow('wideChatLayout') || shouldShow('splitAssistantMessageActions') || shouldShow('showAssistantTps') || shouldShow('codeBlockLineWrap')) && (
                                         <ResponsiveSettingsGroup
                                             isMobile={isMobile}
                                             label={<span data-settings-item="chat.message-appearance">{t('settings.openchamber.visual.section.messageAppearance')}</span>}
@@ -2226,6 +2234,40 @@ export const OpenChamberVisualSettings: React.FC<OpenChamberVisualSettingsProps>
                                                     </TooltipTrigger>
                                                     <TooltipContent sideOffset={8} className="max-w-xs">
                                                         {t('settings.openchamber.visual.field.showSplitAssistantMessageActionsTooltip')}
+                                                    </TooltipContent>
+                                                </Tooltip>
+                                            </div>
+                                        </div>
+                                    )}
+
+                                    {shouldShow('showAssistantTps') && (
+                                        <div
+                                            data-settings-item="chat.assistant-tps"
+                                            className="group flex cursor-pointer items-center gap-2 py-0.5"
+                                            role="button"
+                                            tabIndex={0}
+                                            aria-pressed={showAssistantTps}
+                                            onClick={() => handleShowAssistantTpsChange(!showAssistantTps)}
+                                            onKeyDown={(event) => {
+                                                if (event.key === ' ' || event.key === 'Enter') {
+                                                    event.preventDefault();
+                                                    handleShowAssistantTpsChange(!showAssistantTps);
+                                                }
+                                            }}
+                                        >
+                                            <Checkbox
+                                                checked={showAssistantTps}
+                                                onChange={handleShowAssistantTpsChange}
+                                                ariaLabel={t('settings.openchamber.visual.field.showAssistantTpsAria')}
+                                            />
+                                            <div className="flex min-w-0 items-center gap-1.5">
+                                                <span className="typography-ui-label text-foreground">{t('settings.openchamber.visual.field.showAssistantTps')}</span>
+                                                <Tooltip>
+                                                    <TooltipTrigger asChild>
+                                                        <Icon name="information" className="h-3.5 w-3.5 cursor-help text-muted-foreground/60" />
+                                                    </TooltipTrigger>
+                                                    <TooltipContent sideOffset={8} className="max-w-xs">
+                                                        {t('settings.openchamber.visual.field.showAssistantTpsTooltip')}
                                                     </TooltipContent>
                                                 </Tooltip>
                                             </div>

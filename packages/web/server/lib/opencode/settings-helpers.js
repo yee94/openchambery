@@ -644,6 +644,9 @@ export const createSettingsHelpers = (dependencies) => {
     if (typeof candidate.showSplitAssistantMessageActions === 'boolean') {
       result.showSplitAssistantMessageActions = candidate.showSplitAssistantMessageActions;
     }
+    if (typeof candidate.showAssistantTps === 'boolean') {
+      result.showAssistantTps = candidate.showAssistantTps;
+    }
     if (typeof candidate.fontSize === 'number' && Number.isFinite(candidate.fontSize)) {
       result.fontSize = Math.max(50, Math.min(200, Math.round(candidate.fontSize)));
     }

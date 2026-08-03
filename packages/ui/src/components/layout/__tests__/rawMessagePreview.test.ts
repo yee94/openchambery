@@ -5,6 +5,7 @@ import {
   derivePartsLabel,
   deriveUserSnippet,
   formatAssistantTokens,
+  formatAssistantTokensWithTps,
   formatMessagePreviewTime,
   truncateMessageId,
 } from '../rawMessagePreview';
@@ -176,5 +177,18 @@ describe('formatAssistantTokens', () => {
 
   test('honors the caller-provided number formatter', () => {
     expect(formatAssistantTokens(1234, 5678, (n) => String(n))).toBe('1234 / 5678');
+  });
+});
+
+describe('formatAssistantTokensWithTps', () => {
+  const fmt = (n: number) => n.toLocaleString('en-US');
+
+  test('appends TPS when provided', () => {
+    expect(formatAssistantTokensWithTps(7343, 79, fmt, '42.1 tok/s')).toBe('7,343 / 79 · 42.1 tok/s');
+  });
+
+  test('omits TPS when empty/null', () => {
+    expect(formatAssistantTokensWithTps(1, 2, fmt, null)).toBe('1 / 2');
+    expect(formatAssistantTokensWithTps(1, 2, fmt, '   ')).toBe('1 / 2');
   });
 });

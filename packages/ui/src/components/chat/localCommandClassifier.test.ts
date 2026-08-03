@@ -1,5 +1,12 @@
 import { describe, expect, test } from 'bun:test';
-import { consumesImmediateCommandText, getLocalChatCommand, IMMEDIATE_LOCAL_CHAT_COMMANDS, LOCAL_CHAT_COMMANDS, preservesComposerResources } from './localCommandClassifier';
+import {
+  consumesImmediateCommandText,
+  getGoalCommandObjective,
+  getLocalChatCommand,
+  IMMEDIATE_LOCAL_CHAT_COMMANDS,
+  LOCAL_CHAT_COMMANDS,
+  preservesComposerResources,
+} from './localCommandClassifier';
 
 describe('getLocalChatCommand', () => {
   test('classifies every local command', () => {
@@ -14,8 +21,24 @@ describe('getLocalChatCommand', () => {
     expect(getLocalChatCommand('/fork from-here', 'normal')).toBe('fork');
     expect(getLocalChatCommand('/undo', 'normal')).toBe('undo');
   });
-  test('keeps every local command resource-preserving and admits remote commands', () => {
-    for (const command of LOCAL_CHAT_COMMANDS) expect(preservesComposerResources(`/${command}`, 'normal')).toBe(true);
+  test('parses /goal objective draft without treating bare /goal as content', () => {
+    expect(getGoalCommandObjective('/goal', 'normal')).toBe('');
+    expect(getGoalCommandObjective('/goal   ', 'normal')).toBe('');
+    expect(getGoalCommandObjective('/goal keep going until phases finish', 'normal')).toBe('keep going until phases finish');
+    expect(getGoalCommandObjective('/\u2003goal keep going', 'normal')).toBe('keep going');
+    expect(getGoalCommandObjective('/craft-goal idea', 'normal')).toBeNull();
+    expect(getGoalCommandObjective('/goal idea', 'shell')).toBeNull();
+  });
+  test('recognizes reserved-slot slash chips as local commands', () => {
+    expect(getLocalChatCommand('/\u2003undo', 'normal')).toBe('undo');
+    expect(getLocalChatCommand('/\u2003goal finish', 'normal')).toBe('goal');
+    expect(preservesComposerResources('/\u2003compact', 'normal')).toBe(true);
+  });
+  test('keeps every local command resource-preserving, including /goal with draft text', () => {
+    for (const command of LOCAL_CHAT_COMMANDS) {
+      expect(preservesComposerResources(`/${command}`, 'normal')).toBe(true);
+      expect(preservesComposerResources(`/${command} trailing draft`, 'normal')).toBe(true);
+    }
     expect(preservesComposerResources('/remote-command', 'normal')).toBe(false);
   });
   test('consumes text only for immediate local actions', () => {
@@ -44,7 +67,8 @@ describe('getLocalChatCommand', () => {
     for (const command of LOCAL_CHAT_COMMANDS) {
       for (const outcome of ['success', 'throw'] as const) {
         const recorder = consume();
-        recorder.action(`/${command}`, outcome);
+        // `/goal` (with or without draft) is arm-only and never ordinary delivery.
+        recorder.action(command === 'goal' ? '/goal finish the phases' : `/${command}`, outcome);
         expect(recorder.calls()).toEqual({ queue: 0, legacyBinding: 0, attachments: 0, synthetic: 0, inlineDrafts: 0 });
       }
     }

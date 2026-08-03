@@ -12,7 +12,8 @@ import {
 } from './attachmentCitations';
 import { collectSessionMentionIds, replaceSessionMentionTokens } from './fileMentionAutocompleteState';
 
-const INLINE_SKILL_TOKEN_PATTERN = /(^|\s)\/([a-z0-9](?:[a-z0-9-]{0,62}[a-z0-9])?)/g;
+// Optional reserved icon em-space between `/` and the skill name.
+const INLINE_SKILL_TOKEN_PATTERN = /(^|\s)\/\u2003?([a-z0-9](?:[a-z0-9-]{0,62}[a-z0-9])?)/g;
 const toServerFileUrl = (filepath: string): string => {
     const normalized = filepath.replace(/\\/g, '/').trim();
     if (normalized.toLowerCase().startsWith('file://')) return normalized;

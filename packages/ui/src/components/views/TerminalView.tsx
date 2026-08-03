@@ -168,7 +168,9 @@ export const TerminalView: React.FC = () => {
     const [isReconnectPending, setIsReconnectPending] = React.useState(false);
     const [activeModifier, setActiveModifier] = React.useState<Modifier | null>(null);
     const [isRestarting, setIsRestarting] = React.useState(false);
-    const [viewportSizeVersion, setViewportSizeVersion] = React.useState(0);
+    // Only the first measured viewport size should re-enter session creation.
+    // Later fits/resizes must resize the live PTY without tearing down the stream.
+    const [viewportReadyToken, setViewportReadyToken] = React.useState(0);
 
     const streamCleanupRef = React.useRef<(() => void) | null>(null);
     const activeTerminalIdRef = React.useRef<string | null>(null);
@@ -177,7 +179,9 @@ export const TerminalView: React.FC = () => {
     const directoryRef = React.useRef<string | null>(effectiveDirectory);
     const terminalControllerRef = React.useRef<TerminalController | null>(null);
     const lastViewportSizeRef = React.useRef<{ cols: number; rows: number } | null>(null);
+    const hasViewportSizeRef = React.useRef(false);
     const isTerminalVisibleRef = React.useRef(false);
+    const streamConnectedTerminalIdRef = React.useRef<string | null>(null);
     const nudgeOnConnectTerminalIdRef = React.useRef<string | null>(null);
     const rehydratedTerminalIdsRef = React.useRef<Set<string>>(new Set());
     const rehydratedSnapshotTakenRef = React.useRef(false);
@@ -284,6 +288,7 @@ export const TerminalView: React.FC = () => {
         streamCleanupRef.current?.();
         streamCleanupRef.current = null;
         activeTerminalIdRef.current = null;
+        streamConnectedTerminalIdRef.current = null;
         setIsReconnectPending(false);
     }, []);
 
@@ -363,6 +368,7 @@ export const TerminalView: React.FC = () => {
 
                         switch (event.type) {
                             case 'connected': {
+                                streamConnectedTerminalIdRef.current = terminalId;
                                 setConnecting(directory, tabId, false);
                                 setConnectionError(null);
                                 setIsFatalError(false);
@@ -486,6 +492,8 @@ export const TerminalView: React.FC = () => {
         ]
     );
 
+    // Create a PTY only when the active tab has none. Do not own stream lifecycle here —
+    // resize/fit storms used to re-enter this path and rebind/replay the same prompt.
     React.useEffect(() => {
         let cancelled = false;
 
@@ -499,7 +507,6 @@ export const TerminalView: React.FC = () => {
                     ? t('terminalView.empty.noWorkingDirectory')
                     : t('terminalView.empty.selectSession')
             );
-            disconnectStream();
             return;
         }
 
@@ -522,102 +529,84 @@ export const TerminalView: React.FC = () => {
             }
 
             const tab = state.tabs.find((t) => t.id === tabId) ?? state.tabs[0];
-            let terminalId = tab?.terminalSessionId ?? null;
-            const terminalLifecycle = tab?.lifecycle ?? 'idle';
+            const existingTerminalId = tab?.terminalSessionId ?? null;
+            const tabLifecycle = tab?.lifecycle ?? 'idle';
             const isActionTab = Boolean(tab?.label?.startsWith('Action:'));
             const hasBufferedOutput = (tab?.bufferLength ?? 0) > 0 || (tab?.bufferChunks?.length ?? 0) > 0;
 
-            const shouldNudgeExisting =
-                Boolean(terminalId) &&
-                rehydratedTerminalIdsRef.current.has(terminalId as string) &&
-                (tab?.bufferLength ?? 0) === 0 &&
-                (tab?.bufferChunks?.length ?? 0) === 0;
+            if (existingTerminalId) {
+                return;
+            }
 
-            const isRehydratedSession =
-                Boolean(terminalId) && rehydratedTerminalIdsRef.current.has(terminalId as string);
+            if (tabLifecycle === 'exited') {
+                setConnecting(directory, tabId, false);
+                return;
+            }
 
-            if (!terminalId) {
-                if (terminalLifecycle === 'exited') {
+            if (isActionTab && hasBufferedOutput) {
+                setConnecting(directory, tabId, false);
+                return;
+            }
+
+            // Prefer a measured viewport size so the first shell prompt is laid out correctly.
+            // Wait rather than spawning with a wrong size and then thrashing rebinds.
+            const size = lastViewportSizeRef.current;
+            if (!size && isTerminalVisibleRef.current) {
+                return;
+            }
+
+            setConnectionError(null);
+            setIsFatalError(false);
+            setIsReconnectPending(false);
+            setConnecting(directory, tabId, true);
+            try {
+                const session = await terminal.createSession({
+                    cwd: directory,
+                    cols: size?.cols,
+                    rows: size?.rows,
+                });
+
+                const stillActive =
+                    !cancelled &&
+                    directoryRef.current === directory &&
+                    activeTabIdRef.current === tabId;
+
+                if (!stillActive) {
+                    try {
+                        await terminal.close(session.sessionId);
+                    } catch { /* ignored */ }
+                    return;
+                }
+
+                const latestTab = useTerminalStore.getState()
+                    .getDirectoryState(directory)
+                    ?.tabs.find((candidate) => candidate.id === tabId);
+                if (latestTab?.terminalSessionId) {
+                    try {
+                        await terminal.close(session.sessionId);
+                    } catch { /* ignored */ }
+                    return;
+                }
+
+                setTabSessionId(directory, tabId, session.sessionId);
+            } catch (error) {
+                if (!cancelled) {
+                    setConnectionError(
+                        error instanceof Error
+                            ? error.message
+                            : t('terminalView.error.startSessionFailed')
+                    );
+                    setIsFatalError(true);
+                    setIsReconnectPending(false);
                     setConnecting(directory, tabId, false);
-                    return;
-                }
-
-                if (isActionTab && hasBufferedOutput) {
-                    setConnecting(directory, tabId, false);
-                    return;
-                }
-
-                const size = lastViewportSizeRef.current;
-                if (!size && isTerminalVisibleRef.current) {
-                    return;
-                }
-
-                setConnectionError(null);
-                setIsFatalError(false);
-                setIsReconnectPending(false);
-                setConnecting(directory, tabId, true);
-                try {
-                    const session = await terminal.createSession({
-                        cwd: directory,
-                        cols: size?.cols,
-                        rows: size?.rows,
-                    });
-
-                    const stillActive =
-                        !cancelled &&
-                        directoryRef.current === directory &&
-                        activeTabIdRef.current === tabId;
-
-                    if (!stillActive) {
-                        try {
-                            await terminal.close(session.sessionId);
-                        } catch { /* ignored */ }
-                        return;
-                    }
-
-                    setTabSessionId(directory, tabId, session.sessionId);
-                    terminalId = session.sessionId;
-                } catch (error) {
-                    if (!cancelled) {
-                        setConnectionError(
-                            error instanceof Error
-                                ? error.message
-                                : t('terminalView.error.startSessionFailed')
-                        );
-                        setIsFatalError(true);
-                        setIsReconnectPending(false);
-                        setConnecting(directory, tabId, false);
-                    }
-                    return;
                 }
             }
-
-            if (!terminalId || cancelled) return;
-
-            terminalIdRef.current = terminalId;
-
-            if (isRehydratedSession) {
-                rehydratedTerminalIdsRef.current.delete(terminalId);
-            }
-
-            if (shouldNudgeExisting) {
-                nudgeOnConnectTerminalIdRef.current = terminalId;
-            }
-            startStream(
-                directory,
-                tabId,
-                terminalId,
-                isRehydratedSession ? REHYDRATED_STREAM_OPTIONS : STREAM_OPTIONS,
-                isRehydratedSession
-            );
         };
 
         void ensureSession();
 
         return () => {
             cancelled = true;
-            terminalIdRef.current = null;
-            disconnectStream();
         };
     }, [
         hasActiveContext,
@@ -626,17 +615,94 @@ export const TerminalView: React.FC = () => {
         terminalLifecycle,
         activeTabId,
         hasOpenedTerminalViewport,
-        viewportSizeVersion,
+        viewportReadyToken,
         enableTabs,
         terminalHydrated,
         ensureDirectory,
         setConnecting,
-        setTabLifecycle,
         setTabSessionId,
-        startStream,
-        disconnectStream,
         t,
         terminal,
+    ]);
+
+    const startStreamRef = React.useRef(startStream);
+    startStreamRef.current = startStream;
+    const disconnectStreamRef = React.useRef(disconnectStream);
+    disconnectStreamRef.current = disconnectStream;
+
+    // Bind the stream only when the active tab's session identity changes.
+    // Do not disconnect in this effect's cleanup on every dep re-run — that
+    // rebind/replay race was corrupting the shell prompt and key echo.
+    // Unmount cleanup is owned by the existing disconnectStream effect above.
+    React.useEffect(() => {
+        if (!terminalHydrated || !hasOpenedTerminalViewport) {
+            return;
+        }
+
+        if (!effectiveDirectory) {
+            disconnectStreamRef.current();
+            return;
+        }
+
+        const directory = effectiveDirectory;
+        const state = useTerminalStore.getState().getDirectoryState(directory);
+        if (!state || state.tabs.length === 0) {
+            disconnectStreamRef.current();
+            return;
+        }
+
+        const tabId = enableTabs
+            ? (state.activeTabId ?? state.tabs[0]?.id ?? null)
+            : (state.tabs[0]?.id ?? null);
+        if (!tabId) {
+            disconnectStreamRef.current();
+            return;
+        }
+
+        const tab = state.tabs.find((candidate) => candidate.id === tabId) ?? state.tabs[0];
+        const terminalId = tab?.terminalSessionId ?? null;
+        if (!terminalId) {
+            disconnectStreamRef.current();
+            terminalIdRef.current = null;
+            return;
+        }
+
+        // Keep an already-bound stream for this session.
+        if (activeTerminalIdRef.current === terminalId && streamCleanupRef.current) {
+            terminalIdRef.current = terminalId;
+            return;
+        }
+
+        terminalIdRef.current = terminalId;
+
+        const isRehydratedSession = rehydratedTerminalIdsRef.current.has(terminalId);
+        const shouldNudgeExisting =
+            isRehydratedSession &&
+            (tab?.bufferLength ?? 0) === 0 &&
+            (tab?.bufferChunks?.length ?? 0) === 0;
+
+        if (isRehydratedSession) {
+            rehydratedTerminalIdsRef.current.delete(terminalId);
+        }
+
+        if (shouldNudgeExisting) {
+            nudgeOnConnectTerminalIdRef.current = terminalId;
+        }
+
+        startStreamRef.current(
+            directory,
+            tabId,
+            terminalId,
+            isRehydratedSession ? REHYDRATED_STREAM_OPTIONS : STREAM_OPTIONS,
+            isRehydratedSession
+        );
+    }, [
+        effectiveDirectory,
+        terminalSessionId,
+        activeTabId,
+        enableTabs,
+        hasOpenedTerminalViewport,
+        terminalHydrated,
     ]);
 
     React.useEffect(() => {
@@ -758,7 +824,11 @@ export const TerminalView: React.FC = () => {
             }
 
             const terminalId = terminalIdRef.current;
-            if (!terminalId) return;
+            // Drop keystrokes until the stream is actually bound. Sending early can
+            // race bind/replay and leave the shell echo / prompt drawing corrupted.
+            if (!terminalId || streamConnectedTerminalIdRef.current !== terminalId) {
+                return;
+            }
 
             void terminal.sendInput(terminalId, payload).catch((error) => {
                 if (!isReconnectPending) {
@@ -781,13 +851,21 @@ export const TerminalView: React.FC = () => {
             const previous = lastViewportSizeRef.current;
             if (!previous || previous.cols !== cols || previous.rows !== rows) {
                 lastViewportSizeRef.current = { cols, rows };
-                setViewportSizeVersion((version) => version + 1);
             }
+
+            // First successful measurement unblocks session creation for a visible terminal.
+            if (!hasViewportSizeRef.current) {
+                hasViewportSizeRef.current = true;
+                setViewportReadyToken((token) => token + 1);
+            }
+
             if (!isTerminalVisibleRef.current) {
                 return;
             }
             const terminalId = terminalIdRef.current;
-            if (!terminalId) return;
+            if (!terminalId || streamConnectedTerminalIdRef.current !== terminalId) {
+                return;
+            }
             void terminal.resize({ sessionId: terminalId, cols, rows }).catch(() => {
 
             });
@@ -917,12 +995,13 @@ export const TerminalView: React.FC = () => {
 
     const xtermTheme = React.useMemo(() => convertThemeToXterm(currentTheme), [currentTheme]);
 
+    // Key by directory + tab only. Including sessionId remounted Ghostty on every
+    // create/recreate and raced buffer replay against a half-initialized renderer.
     const terminalViewportKey = React.useMemo(() => {
         const directoryPart = effectiveDirectory ?? 'no-dir';
         const tabPart = activeTabId ?? 'no-tab';
-        const terminalPart = terminalSessionId ?? 'no-terminal';
-        return `${directoryPart}::${tabPart}::${terminalPart}`;
-    }, [effectiveDirectory, activeTabId, terminalSessionId]);
+        return `${directoryPart}::${tabPart}`;
+    }, [effectiveDirectory, activeTabId]);
 
     React.useEffect(() => {
         if (!isTerminalVisible || useTouchTerminalInput) {

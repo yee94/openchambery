@@ -289,6 +289,13 @@ const SETTINGS_SEARCH_ITEMS: readonly SettingsSearchItem[] = [
     keywords: ['copy', 'read aloud'],
   },
   {
+    id: 'chat.assistant-tps',
+    page: 'chat',
+    titleKey: 'settings.openchamber.visual.field.showAssistantTps',
+    descriptionKey: 'settings.openchamber.visual.field.showAssistantTpsTooltip',
+    keywords: ['tps', 'tokens', 'speed', 'rate', 'tok/s', 'throughput'],
+  },
+  {
     id: 'chat.subagent-read-only-banner',
     page: 'chat',
     titleKey: 'settings.openchamber.visual.field.allowPromptingSubagentSessions',

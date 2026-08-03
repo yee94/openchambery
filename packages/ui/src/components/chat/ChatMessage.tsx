@@ -431,6 +431,16 @@ const ChatMessage: React.FC<ChatMessageProps> = ({
         return typeof finish === 'string' ? finish : undefined;
     }, [message.info]);
 
+    const messageTokens = React.useMemo(() => {
+        if (isUser) return null;
+        const tokens = (message.info as { tokens?: { output?: number; reasoning?: number } }).tokens;
+        if (!tokens || typeof tokens !== 'object') return null;
+        return {
+            output: typeof tokens.output === 'number' ? tokens.output : undefined,
+            reasoning: typeof tokens.reasoning === 'number' ? tokens.reasoning : undefined,
+        };
+    }, [isUser, message.info]);
+
     const visibleParts = React.useMemo(
         () =>
             filterVisibleParts(normalizedParts, {
@@ -1175,11 +1185,13 @@ const ChatMessage: React.FC<ChatMessageProps> = ({
                                 sessionId={message.info.sessionID}
                                 messageId={message.info.id}
                                 parts={visibleParts}
+                                sourceParts={normalizedParts}
                                 isUser={isUser}
                                 isMessageCompleted={isMessageCompleted}
                                 messageFinish={messageFinish}
                                 messageCompletedAt={messageCompletedAt ?? undefined}
                                 messageCreatedAt={messageCreatedAt ?? undefined}
+                                messageTokens={messageTokens}
                                  isMobile={isMobile}
                                  alwaysShowActions={alwaysShowMessageActions}
                                  hasTouchInput={hasTouchInput}

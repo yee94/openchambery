@@ -35,6 +35,7 @@ import { useChatSurfaceMode } from '@/components/chat/useChatSurfaceMode';
 import { isVSCodeRuntime } from '@/lib/desktop';
 import { Icon } from "@/components/icon/Icon";
 import { formatTimestampForDisplay } from './timeFormat';
+import { computeAssistantTps, formatAssistantTps } from './assistantTps';
 import { ToolRevealOnMount } from './parts/ToolRevealOnMount';
 import { StaticToolRow } from './parts/ProgressiveGroup';
 import { getToolRowBlockClass, TOOL_ROW_CHIP_GEOMETRY_CLASS } from './parts/toolRowChrome';
@@ -421,6 +422,35 @@ const formatTurnDuration = (durationMs: number): string => {
     return `${minutes}m ${seconds}s`;
 };
 
+const extractAssistantTokenCounts = (
+    parts: Part[],
+    messageTokens?: { output?: number; reasoning?: number } | null,
+): { output: number; reasoning: number } => {
+    if (messageTokens && typeof messageTokens === 'object') {
+        return {
+            output: typeof messageTokens.output === 'number' && Number.isFinite(messageTokens.output)
+                ? Math.max(0, messageTokens.output)
+                : 0,
+            reasoning: typeof messageTokens.reasoning === 'number' && Number.isFinite(messageTokens.reasoning)
+                ? Math.max(0, messageTokens.reasoning)
+                : 0,
+        };
+    }
+    for (const part of parts) {
+        const tokens = (part as { tokens?: { output?: number; reasoning?: number } }).tokens;
+        if (!tokens || typeof tokens !== 'object') continue;
+        return {
+            output: typeof tokens.output === 'number' && Number.isFinite(tokens.output)
+                ? Math.max(0, tokens.output)
+                : 0,
+            reasoning: typeof tokens.reasoning === 'number' && Number.isFinite(tokens.reasoning)
+                ? Math.max(0, tokens.reasoning)
+                : 0,
+        };
+    }
+    return { output: 0, reasoning: 0 };
+};
+
 interface MessageBodyProps {
     sessionId?: string;
     messageId: string;
@@ -431,7 +461,7 @@ interface MessageBodyProps {
     messageFinish?: string;
     messageCompletedAt?: number;
     messageCreatedAt?: number;
-
+    messageTokens?: { output?: number; reasoning?: number } | null;
 
     isMobile: boolean;
     alwaysShowActions?: boolean;
@@ -1163,10 +1193,12 @@ const AssistantMessageBody = React.memo(({
     sessionId,
     messageId,
     parts,
+    sourceParts,
     isMessageCompleted,
     messageFinish,
     messageCompletedAt,
     messageCreatedAt,
+    messageTokens,
 
     isMobile,
     alwaysShowActions,
@@ -1390,6 +1422,7 @@ const AssistantMessageBody = React.memo(({
     const chatRenderMode = useUIStore((state) => state.chatRenderMode);
     const collapsibleThinkingBlocks = useUIStore((state) => state.collapsibleThinkingBlocks);
     const showSplitAssistantMessageActions = useUIStore((state) => state.showSplitAssistantMessageActions);
+    const showAssistantTps = useUIStore((state) => state.showAssistantTps);
     const timeFormatPreference = useUIStore((state) => state.timeFormatPreference);
     const isSortedRenderMode = chatRenderMode === 'sorted';
     const collapsedPreviewCount = 7;
@@ -1948,6 +1981,33 @@ const AssistantMessageBody = React.memo(({
         return formatted.length > 0 ? formatted : null;
     }, [messageCompletedAt, messageCreatedAt, timeFormatPreference, locale]);
 
+    const assistantTpsText = React.useMemo(() => {
+        if (!showAssistantTps || !isLastAssistantInTurn || !hasStopFinish) return null;
+        // Prefer sourceParts so tool intervals remain available even when
+        // visible parts hide reasoning/aux content for display.
+        const timingParts = sourceParts ?? parts;
+        const counts = extractAssistantTokenCounts(timingParts, messageTokens);
+        const tps = computeAssistantTps({
+            createdAt: messageCreatedAt,
+            completedAt: messageCompletedAt,
+            outputTokens: counts.output,
+            reasoningTokens: counts.reasoning,
+            parts: timingParts,
+        });
+        if (tps === null) return null;
+        const label = formatAssistantTps(tps);
+        return label.length > 0 ? label : null;
+    }, [
+        showAssistantTps,
+        isLastAssistantInTurn,
+        hasStopFinish,
+        parts,
+        sourceParts,
+        messageTokens,
+        messageCreatedAt,
+        messageCompletedAt,
+    ]);
+
     const canOpenMessagePreview = !isMiniChatSurface && !isMobile && !isVSCode;
 
     const finalTurnActionButtons = (
@@ -2106,7 +2166,7 @@ const AssistantMessageBody = React.memo(({
                             {messageActionButtons}
                             {finalTurnActionButtons}
                         </div>
-                        {(turnDurationText || footerTimestamp) ? (
+                        {(turnDurationText || assistantTpsText || footerTimestamp) ? (
                             <div className={MESSAGE_FOOTER_META_GROUP_CLASS}>
                                 {turnDurationText ? (
                                     <Tooltip>
@@ -2117,6 +2177,20 @@ const AssistantMessageBody = React.memo(({
                                             </span>
                                         </TooltipTrigger>
                                         <TooltipContent>{turnDurationText}</TooltipContent>
+                                    </Tooltip>
+                                ) : null}
+                                {assistantTpsText ? (
+                                    <Tooltip>
+                                        <TooltipTrigger asChild>
+                                            <span
+                                                className={MESSAGE_FOOTER_META_CLASS}
+                                                aria-label={t('chat.messageBody.meta.tpsAria', { rate: assistantTpsText })}
+                                            >
+                                                <Icon weight={MESSAGE_ACTION_ICON_WEIGHT} name="pulse" className={MESSAGE_FOOTER_META_ICON_CLASS} />
+                                                <span className="message-footer__label">{assistantTpsText}</span>
+                                            </span>
+                                        </TooltipTrigger>
+                                        <TooltipContent>{t('chat.messageBody.meta.tpsTooltip')}</TooltipContent>
                                     </Tooltip>
                                 ) : null}
                                 {footerTimestamp ? (

@@ -14,11 +14,16 @@ import { getCurrentIntlLocale, useI18n } from '@/lib/i18n';
 import {
   derivePartsLabel,
   deriveUserSnippet,
-  formatAssistantTokens,
+  formatAssistantTokensWithTps,
   formatMessagePreviewTime,
 } from './rawMessagePreview';
 import type { TimeFormatPreference } from '@/stores/useUIStore';
 import { formatDateTimeForPreference } from '@/lib/timeFormat';
+import {
+  computeAssistantTps,
+  computeGenerationDurationMs,
+  formatAssistantTps,
+} from '@/components/chat/message/assistantTps';
 
 type SessionMessage = { info: Message; parts: Part[] };
 
@@ -270,6 +275,7 @@ const resolveProviderAndModel = (
 export const ContextPanelContent: React.FC = () => {
   const { t } = useI18n();
   const timeFormatPreference = useUIStore((state) => state.timeFormatPreference);
+  const showAssistantTps = useUIStore((state) => state.showAssistantTps);
   const [expandedRawMessages, setExpandedRawMessages] = React.useState<Record<string, boolean>>({});
   const [copiedRawMessageId, setCopiedRawMessageId] = React.useState<string | null>(null);
   const copyResetTimeoutRef = React.useRef<number | null>(null);
@@ -342,6 +348,42 @@ export const ContextPanelContent: React.FC = () => {
       return sum + cost;
     }, 0);
 
+    // Generation-only TPS (excludes tool wall time). Session rate is a token-
+    // weighted average over every completed assistant message that has
+    // measurable generation duration — not a mean of per-message rates.
+    let sessionGeneratedTokens = 0;
+    let sessionGenerationMs = 0;
+    for (const message of assistantMessages) {
+      const breakdown = extractTokenBreakdown(message);
+      const createdAt = (message.info.time?.created ?? null) as number | null;
+      const completedAt = (
+        (message.info.time as { completed?: number } | undefined)?.completed ?? null
+      ) as number | null;
+      const generationMs = computeGenerationDurationMs(createdAt, completedAt, message.parts);
+      if (generationMs === null) continue;
+      const generated = breakdown.output + breakdown.reasoning;
+      if (generated <= 0) continue;
+      sessionGeneratedTokens += generated;
+      sessionGenerationMs += generationMs;
+    }
+    const sessionTps = sessionGenerationMs > 0 && sessionGeneratedTokens > 0
+      ? sessionGeneratedTokens / (sessionGenerationMs / 1000)
+      : null;
+    const sessionTpsLabel = sessionTps !== null ? formatAssistantTps(sessionTps) : null;
+
+    const lastAssistantTps = contextMessage
+      ? computeAssistantTps({
+          createdAt: (contextMessage.info.time?.created ?? null) as number | null,
+          completedAt: (
+            (contextMessage.info.time as { completed?: number } | undefined)?.completed ?? null
+          ) as number | null,
+          outputTokens: tokenBreakdown.output,
+          reasoningTokens: tokenBreakdown.reasoning,
+          parts: contextMessage.parts,
+        })
+      : null;
+    const lastAssistantTpsLabel = lastAssistantTps !== null ? formatAssistantTps(lastAssistantTps) : null;
+
     const latestAssistantInfo = (contextMessage?.info ?? null) as (Message & { providerID?: string; modelID?: string }) | null;
     const providerModel = resolveProviderAndModel(
       providers as ProviderLike[],
@@ -383,6 +425,8 @@ export const ContextPanelContent: React.FC = () => {
       usagePercent,
       cacheHitRate,
       totalAssistantCost,
+      sessionTpsLabel: sessionTpsLabel && sessionTpsLabel.length > 0 ? sessionTpsLabel : null,
+      lastAssistantTpsLabel: lastAssistantTpsLabel && lastAssistantTpsLabel.length > 0 ? lastAssistantTpsLabel : null,
       contextLimit,
       breakdown: {
         user: userTokens,
@@ -459,6 +503,12 @@ export const ContextPanelContent: React.FC = () => {
             { label: t('contextSidebar.stats.user'), value: formatNumber(viewModel.userMessagesCount) },
             { label: t('contextSidebar.stats.assistant'), value: formatNumber(viewModel.assistantMessagesCount) },
             { label: t('contextSidebar.stats.cost'), value: formatMoney(viewModel.totalAssistantCost) },
+            ...(showAssistantTps
+              ? [{
+                  label: t('contextSidebar.stats.sessionTps'),
+                  value: viewModel.sessionTpsLabel ?? '—',
+                }] as const
+              : []),
           ] as const).map((item) => (
             <div key={item.label} className="rounded-lg bg-[var(--surface-elevated)]/70 px-3 py-2.5">
               <div className="typography-micro text-muted-foreground/70">{item.label}</div>
@@ -472,25 +522,34 @@ export const ContextPanelContent: React.FC = () => {
           <div className="typography-micro text-muted-foreground mb-2.5">{t('contextSidebar.section.lastAssistantMessage')}</div>
           <div className="grid grid-cols-3 gap-x-4 gap-y-2.5">
             {([
-              { label: t('contextSidebar.tokens.input'), value: viewModel.tokenBreakdown.input, format: 'count' },
-              { label: t('contextSidebar.tokens.output'), value: viewModel.tokenBreakdown.output, format: 'count' },
-              { label: t('contextSidebar.tokens.reasoning'), value: viewModel.tokenBreakdown.reasoning, format: 'count' },
-              { label: t('contextSidebar.tokens.cacheRead'), value: viewModel.tokenBreakdown.cacheRead, format: 'count' },
-              { label: t('contextSidebar.tokens.cacheWrite'), value: viewModel.tokenBreakdown.cacheWrite, format: 'count' },
+              { label: t('contextSidebar.tokens.input'), value: viewModel.tokenBreakdown.input, format: 'count' as const },
+              { label: t('contextSidebar.tokens.output'), value: viewModel.tokenBreakdown.output, format: 'count' as const },
+              { label: t('contextSidebar.tokens.reasoning'), value: viewModel.tokenBreakdown.reasoning, format: 'count' as const },
+              { label: t('contextSidebar.tokens.cacheRead'), value: viewModel.tokenBreakdown.cacheRead, format: 'count' as const },
+              { label: t('contextSidebar.tokens.cacheWrite'), value: viewModel.tokenBreakdown.cacheWrite, format: 'count' as const },
               {
                 label: t('contextSidebar.tokens.cacheHit'),
                 value: viewModel.cacheHitRate.hasInput ? viewModel.cacheHitRate.percent : null,
-                format: 'percent',
+                format: 'percent' as const,
               },
-            ] as const).map((item) => (
+              ...(showAssistantTps
+                ? [{
+                    label: t('contextSidebar.tokens.tps'),
+                    value: viewModel.lastAssistantTpsLabel,
+                    format: 'text' as const,
+                  }]
+                : []),
+            ]).map((item) => (
               <div key={item.label}>
                 <div className="typography-micro text-muted-foreground/70">{item.label}</div>
                 <div className="mt-0.5 typography-ui-label tabular-nums text-foreground">
-                  {item.value !== null && item.value !== undefined
-                    ? item.format === 'percent'
-                      ? `${item.value.toFixed(1)}%`
-                      : formatNumber(item.value)
-                    : '—'}
+                  {item.format === 'text'
+                    ? (typeof item.value === 'string' && item.value.length > 0 ? item.value : '—')
+                    : item.value !== null && item.value !== undefined
+                      ? item.format === 'percent'
+                        ? `${Number(item.value).toFixed(1)}%`
+                        : formatNumber(Number(item.value))
+                      : '—'}
                 </div>
               </div>
             ))}
@@ -540,6 +599,9 @@ export const ContextPanelContent: React.FC = () => {
               const isExpanded = expandedRawMessages[message.info.id] === true;
               const isCopied = copiedRawMessageId === message.info.id;
               const messageCreatedAt = (message.info.time?.created ?? null) as number | null;
+              const messageCompletedAt = (
+                (message.info.time as { completed?: number } | undefined)?.completed ?? null
+              ) as number | null;
               const partsLabel = derivePartsLabel(message.parts);
               const tokens = isAssistant ? extractTokenBreakdown({ info: message.info, parts: message.parts }) : null;
               const userSnippet = isUser ? deriveUserSnippet(message.parts) : '';
@@ -547,8 +609,21 @@ export const ContextPanelContent: React.FC = () => {
               // Keep token/time columns stable; the message label owns all
               // remaining space and truncates before it can push metrics.
               const assistantLeft = partsLabel || '\u2014';
+              const assistantTpsLabel = (() => {
+                if (!showAssistantTps || !isAssistant || !tokens) return null;
+                const tps = computeAssistantTps({
+                  createdAt: messageCreatedAt,
+                  completedAt: messageCompletedAt,
+                  outputTokens: tokens.output,
+                  reasoningTokens: tokens.reasoning,
+                  parts: message.parts,
+                });
+                if (tps === null) return null;
+                const label = formatAssistantTps(tps);
+                return label.length > 0 ? label : null;
+              })();
               const assistantMiddle = tokens
-                ? formatAssistantTokens(tokens.input, tokens.output, formatNumber)
+                ? formatAssistantTokensWithTps(tokens.input, tokens.output, formatNumber, assistantTpsLabel)
                 : '';
               const otherLeft = role || 'unknown';
               const otherLabel = partsLabel ? `${otherLeft}: ${partsLabel}` : otherLeft;
@@ -575,7 +650,7 @@ export const ContextPanelContent: React.FC = () => {
                   >
                     <div
                       className="grid items-center gap-x-2 whitespace-nowrap typography-micro"
-                      style={{ gridTemplateColumns: isAssistant ? 'minmax(0, 1fr) 7.5rem max-content' : 'minmax(0, 1fr) max-content' }}
+                      style={{ gridTemplateColumns: isAssistant ? 'minmax(0, 1fr) minmax(7.5rem, max-content) max-content' : 'minmax(0, 1fr) max-content' }}
                     >
                       {isUser ? (
                         <span

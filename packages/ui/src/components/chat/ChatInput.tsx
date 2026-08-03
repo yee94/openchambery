@@ -136,7 +136,8 @@ import { SessionGoalRow } from '@/components/chat/SessionGoalRow';
 import { SessionGoalButton, SessionGoalObjectiveCounter } from '@/components/chat/SessionGoalButton';
 import { useSessionGoalArmStore } from '@/stores/useSessionGoalArmStore';
 import type { Part } from '@opencode-ai/sdk/v2/client';
-import { consumesImmediateCommandText, getLocalChatCommand, preservesComposerResources } from './localCommandClassifier';
+import { consumesImmediateCommandText, getGoalCommandObjective, getLocalChatCommand, preservesComposerResources } from './localCommandClassifier';
+import { promoteTypedSlashChipSlots, stripLeadingSlashCommandSlot } from './typedSlashChipPromotion';
 import { consumeImmediateCommandText } from './immediateCommandTextConsumption';
 import { runImmediateSessionCommand } from './immediateSessionCommandAction';
 import {
@@ -2349,7 +2350,7 @@ const ChatInputRuntime: React.FC<ChatInputProps> = ({ onOpenSettings, scrollToBo
         const logicalMessage = initialSerialization.text;
         const normalizedCommand = logicalMessage.trimStart();
         const requestedCommandName = initialPlan.chunks.every((chunk) => chunk.provenance === 'authored') && inputMode === 'normal' && normalizedCommand.startsWith('/')
-            ? normalizedCommand.slice(1).trim().split(/\s+/)[0]?.toLowerCase()
+            ? stripLeadingSlashCommandSlot(normalizedCommand.slice(1).trim()).split(/\s+/)[0]?.toLowerCase()
             : undefined;
         if (requestedCommandName && !isCommandAllowedForSubmission(requestedCommandName, (command) => isChatInputCommandAllowed(surface, {
             name: command.name,
@@ -2774,7 +2775,7 @@ const ChatInputRuntime: React.FC<ChatInputProps> = ({ onOpenSettings, scrollToBo
         const resourcePolicy = directInputIsAuthored && preservesComposerResources(logicalInputMessage, inputMode);
         const isModelCommand = directInputIsAuthored && inputMode === 'normal' && /^\/model(?:\s|$)/i.test(normalizedInput);
         const requestedCommandName = directInputIsAuthored && inputMode === 'normal' && normalizedInput.startsWith('/')
-            ? normalizedInput.slice(1).trim().split(/\s+/)[0]?.toLowerCase()
+            ? stripLeadingSlashCommandSlot(normalizedInput.slice(1).trim()).split(/\s+/)[0]?.toLowerCase()
             : undefined;
 
         // Policy is resolved before model routing, queue admission, and every
@@ -3318,9 +3319,10 @@ const ChatInputRuntime: React.FC<ChatInputProps> = ({ onOpenSettings, scrollToBo
         // Handle local slash commands only in normal mode
         const normalizedCommand = primaryText.trimStart();
         if (inputMode === 'normal' && normalizedCommand.startsWith('/')) {
-            const commandName = normalizedCommand
-                .slice(1)
-                .trim()
+            // Reserved-slot chips (`/\u2003undo`) still parse as the bare name.
+            const commandName = stripLeadingSlashCommandSlot(
+                normalizedCommand.slice(1).trim(),
+            )
                 .split(/\s+/)[0]
                 ?.toLowerCase();
 
@@ -3402,7 +3404,7 @@ const ChatInputRuntime: React.FC<ChatInputProps> = ({ onOpenSettings, scrollToBo
                     await sessionActions.waitForConnectionOrThrow();
                     // Everything after `/summary ` is an optional topic hint
                     // the user wants the summary focused on.
-                    const topic = normalizedCommand.replace(/^\/summary\b/i, '').trim();
+                    const topic = normalizedCommand.replace(/^\/\u2003?summary\b/i, '').trim();
                     const topicLine = topic ? ` focused on: ${topic}` : '';
                     const topicBlock = topic
                         ? `The user asked you to focus this summary on: ${topic}. Prioritize that topic; mention unrelated threads only in passing.`
@@ -3481,15 +3483,22 @@ const ChatInputRuntime: React.FC<ChatInputProps> = ({ onOpenSettings, scrollToBo
                 return;
             }
             else if (commandName === 'goal' && (currentSessionId || newSessionDraftOpen)) {
-                // /goal only arms the next send — drop the establishing prelude.
+                // `/goal` only arms goal mode — never auto-sends. Strip the slash
+                // token and leave any trailing objective in the composer so the
+                // user can keep editing, then send as a normal armed message.
                 abortEstablishing();
                 useSessionGoalArmStore.getState().setArmed(true);
+                const objectiveDraft = getGoalCommandObjective(normalizedCommand, inputMode) ?? '';
+                replacePlainDocument(objectiveDraft);
+                messageRef.current = objectiveDraft;
+                setHistoryIndex(-1);
+                if (!objectiveDraft) setExpandedInput(false);
                 return;
             }
             else if (commandName === 'craft-goal' && (currentSessionId || newSessionDraftOpen)) {
                 try {
                     await sessionActions.waitForConnectionOrThrow();
-                    const idea = normalizedCommand.replace(/^\/craft-goal\b/i, '').trim();
+                    const idea = normalizedCommand.replace(/^\/\u2003?craft-goal\b/i, '').trim();
                     const visibleText = await renderMagicPrompt('session.craftGoal.visible', {
                         idea_block: idea ? `\n\nHere is my initial idea:\n${idea}` : '',
                     });
@@ -4520,7 +4529,9 @@ const ChatInputRuntime: React.FC<ChatInputProps> = ({ onOpenSettings, scrollToBo
             );
 
             if (cursorPosition <= commandEnd && firstSpace === -1) {
-                const commandText = value.substring(1, commandEnd);
+                // Strip the reserved icon slot so autocomplete ranking still
+                // matches hand-typed `/␠undo` chips against `undo`.
+                const commandText = stripLeadingSlashCommandSlot(value.substring(1, commandEnd));
                 setCommandQuery(commandText);
                 setShowCommandAutocomplete(true);
                 setShowFileMention(false);
@@ -4537,7 +4548,7 @@ const ChatInputRuntime: React.FC<ChatInputProps> = ({ onOpenSettings, scrollToBo
         const lastSlashSymbol = textBeforeCursor.lastIndexOf('/');
         if (lastSlashSymbol !== -1) {
             const charBefore = lastSlashSymbol > 0 ? textBeforeCursor[lastSlashSymbol - 1] : null;
-            const textAfterSlash = textBeforeCursor.substring(lastSlashSymbol + 1);
+            const textAfterSlash = stripLeadingSlashCommandSlot(textBeforeCursor.substring(lastSlashSymbol + 1));
             const hasSeparator = textAfterSlash.includes(' ') || textAfterSlash.includes('\n');
             const isWordBoundary = !charBefore || /\s/.test(charBefore);
 
@@ -4587,15 +4598,39 @@ const ChatInputRuntime: React.FC<ChatInputProps> = ({ onOpenSettings, scrollToBo
     ]);
 
     const commitBrowserTextChange = React.useCallback((nextText: string, selectionStart: number, selectionEnd: number, inputSource: FileMentionAutocompleteInputSource = 'manual', insertedText?: string) => {
-        const selection = applyBrowserEdit(nextText, selectionStart, selectionEnd);
+        // Hand-typed complete slash commands paint as chips. Promote compact
+        // `/undo` source text to the reserved-slot form (`/\u2003undo`) so icon
+        // spacing matches autocomplete selection. Skip during IME composition
+        // so partial CJK input is not rewritten mid-composition.
+        let textToCommit = nextText;
+        let caretStart = selectionStart;
+        let caretEnd = selectionEnd;
+        if (
+            inputMode === 'normal'
+            && !nativeCompositionActiveRef.current
+            && knownSlashNames.size > 0
+            && nextText.includes('/')
+        ) {
+            const promoted = promoteTypedSlashChipSlots(nextText, knownSlashNames, selectionEnd);
+            if (promoted) {
+                textToCommit = promoted.text;
+                const delta = promoted.caret - selectionEnd;
+                caretStart = selectionStart + delta;
+                caretEnd = promoted.caret;
+            }
+        }
+
+        const selection = applyBrowserEdit(textToCommit, caretStart, caretEnd);
         const document = getDocument();
         const shouldCorrectTextarea = selection.requiresTextCorrection
-            || selectionStart !== selection.start
-            || selectionEnd !== selection.end;
+            || caretStart !== selection.start
+            || caretEnd !== selection.end
+            || textToCommit !== nextText;
         requestAnimationFrame(() => {
             const textarea = textareaRef.current;
             // Native dictation and IMEs own an active replacement range. Preserve
             // it when Composer accepted the browser value and caret unchanged.
+            // Promotion always rewrites source text, so force DOM correction then.
             if (textarea && shouldApplyComposerDomCorrection(shouldCorrectTextarea, nativeCompositionActiveRef.current)) {
                 textarea.value = document.text;
                 textarea.setSelectionRange(selection.start, selection.end);
@@ -4604,7 +4639,7 @@ const ChatInputRuntime: React.FC<ChatInputProps> = ({ onOpenSettings, scrollToBo
         });
         updateAutocompleteState(document.text, selection.end, inputSource, insertedText);
         return { document, selection };
-    }, [adjustTextareaHeight, applyBrowserEdit, getDocument, updateAutocompleteState]);
+    }, [adjustTextareaHeight, applyBrowserEdit, getDocument, inputMode, knownSlashNames, updateAutocompleteState]);
 
     const insertTextAtSelection = React.useCallback((
         text: string,

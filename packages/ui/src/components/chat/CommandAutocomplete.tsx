@@ -401,9 +401,9 @@ export const CommandAutocomplete = React.forwardRef<CommandAutocompleteHandle, C
         const safeIndex = ((selectedIndexRef.current % total) + total) % total;
         const command = commands[safeIndex];
         if (command) {
-          // Enter immediately runs system/opencode commands (e.g. /new, /fork,
-          // /model). Skills only get inserted — they usually need arguments or
-          // surrounding context before the user actually sends.
+          // Enter only auto-runs the short immediate whitelist (compact/fork/
+          // new/undo/redo/model/goal). /loop and other draft-style commands just
+          // insert so the user can keep typing or confirm with a second Enter.
           const shouldSubmit = shouldSubmitCommandOnSelection(command, key === 'Enter');
           onCommandSelect(command, shouldSubmit);
         }

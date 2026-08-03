@@ -634,8 +634,9 @@ export const QueuedMessageChips = memo(({ onEditMessage, onSendMessage, onEditCo
             isMobile ? 'px-2' : 'px-4',
         )}>
             <div className={cn(
-                'overflow-hidden border border-border/60 bg-[var(--surface-elevated)] text-[var(--surface-elevated-foreground)] shadow-sm dark:shadow-none',
-                isMobile ? 'rounded-[1.25rem]' : 'rounded-2xl',
+                // PC radius matches chat input (1.5rem); border only, no elevation shadow.
+                'overflow-hidden border border-border/60 bg-[var(--surface-elevated)] text-[var(--surface-elevated-foreground)]',
+                isMobile ? 'rounded-[1.25rem]' : 'rounded-3xl',
             )}>
                 <DndContext
                     sensors={sensors}

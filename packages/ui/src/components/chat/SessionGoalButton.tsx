@@ -16,8 +16,9 @@ interface SessionGoalButtonProps {
   draftOpen?: boolean;
 }
 
-// Goal mode starts through /goal. This compact chip is visible only while the
-// next message is armed or the session has a goal, and provides direct removal.
+// Goal mode starts through /goal (arm only — never auto-sends). This compact
+// chip is visible only while the next message is armed or the session has a
+// goal, and provides direct removal.
 export const SessionGoalButton: React.FC<SessionGoalButtonProps> = React.memo(({
   sessionId,
   directory,
