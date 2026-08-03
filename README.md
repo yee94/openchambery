@@ -16,7 +16,7 @@ Desktop · Browser · Phone · VS Code
       <img src="docs/references/chat_example.png" alt="OpenChamber main UI — desktop" width="100%" />
     </td>
     <td width="25%" valign="top">
-      <img src="docs/references/chat_mobile.png" alt="OpenChamber mobile UI — projects" width="100%" />
+      <img src="docs/references/chat_mobile_dark.png" alt="OpenChamber mobile UI — projects" width="100%" />
     </td>
   </tr>
 </table>
