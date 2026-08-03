@@ -1123,8 +1123,9 @@ export type ReprobeOutcome = 'switched' | 'unchanged' | 'unreachable' | 'no-conn
 // away, no re-pairing" swap. Efficient: it only probes candidates HIGHER priority
 // than the current one ("did a better transport come back?"); if none, it
 // validates the current transport over its live channel; only if that is dead does
-// it fall through to the lower-priority candidates. 'unchanged' → keep the runtime
-// and just refresh; 'unreachable'/'no-connection' → show the connect screen.
+// it fall through to the lower-priority candidates. 'unchanged' refreshes in place;
+// 'unreachable' preserves the active runtime for transport recovery; 'no-connection'
+// lets the app clear a saved connection that no longer exists.
 export const reprobeActiveConnection = async (): Promise<ReprobeOutcome> => {
   const active = findActiveConnection();
   if (!active) return 'no-connection';

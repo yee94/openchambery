@@ -3651,7 +3651,7 @@ export function MobileApp({ apis }: MobileAppProps) {
         // Right after a resume or Wi-Fi switch the network is often still
         // settling (on Android without a SIM there is NO connectivity at all for
         // a few seconds), so a single fast probe races the network coming up.
-        // Retry once after a grace period before tearing the connection down.
+        // Retry once after a grace period while the active transport recovers.
         window.setTimeout(() => {
           if (nativeResumeValidationSeqRef.current !== validationSeq) return;
           void reprobeActiveConnection().then((retry) => {
@@ -3661,7 +3661,11 @@ export function MobileApp({ apis }: MobileAppProps) {
               refreshInPlace();
               return;
             }
-            disconnect();
+            // A reachability probe can lose a short network race while the
+            // active Relay tunnel is reconnecting. Keep the current runtime
+            // and its catalog snapshot so the tunnel/event recovery path can
+            // restore the connection without blanking the model picker.
+            return;
           });
         }, 4000);
         return;
