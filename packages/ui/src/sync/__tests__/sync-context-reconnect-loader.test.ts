@@ -68,6 +68,7 @@ function installModuleMocks() {
 
   mock.module("@/lib/desktop", () => ({
     isVSCodeRuntime: () => false,
+    getDesktopHomeDirectory: async () => null,
   }))
 
   mock.module("@/lib/relay/runtime-tunnel", () => ({
