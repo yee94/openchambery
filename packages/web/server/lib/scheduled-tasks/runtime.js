@@ -15,6 +15,15 @@ const MAX_TIMER_DELAY_MS = 2_147_483_647;
 const PROJECT_SYNC_RETRY_DELAY_MS = 1_000;
 const MAX_PROJECT_SYNC_RETRIES = 3;
 const ARCHIVE_404_RETRY_DELAY_MS = 250;
+/** Poll interval while waiting for the OpenCode session turn (or goal) to settle. */
+const SESSION_SETTLEMENT_POLL_MS = 1_000;
+/**
+ * Incomplete assistant tails while idle need a couple of stable polls before we
+ * treat them as settled (OpenCode sometimes leaves time.completed unset).
+ */
+const INCOMPLETE_ASSISTANT_SETTLE_PROBES = 2;
+/** Goal terminal statuses — active/paused mean the run is still open. */
+const GOAL_TERMINAL_STATUSES = new Set(['complete', 'blocked', 'budgetLimited']);
 
 const buildTaskKey = (projectID, taskID) => `${projectID}:${taskID}`;
 
@@ -260,6 +269,41 @@ const sleep = (ms, signal) => new Promise((resolve, reject) => {
     signal.addEventListener('abort', onAbort, { once: true });
   }
 });
+
+const readMessageInfo = (entry) => {
+  if (!entry || typeof entry !== 'object') return null;
+  const info = entry.info && typeof entry.info === 'object' ? entry.info : entry;
+  if (!info || typeof info !== 'object') return null;
+  return info;
+};
+
+const formatAssistantError = (error) => {
+  if (!error || typeof error !== 'object') {
+    return 'assistant error';
+  }
+  if (typeof error.name === 'string' && error.name.trim()) {
+    return error.name.trim();
+  }
+  if (typeof error.message === 'string' && error.message.trim()) {
+    return error.message.trim();
+  }
+  return 'assistant error';
+};
+
+const extractGoalFromSession = (session) => {
+  const metadata = session?.metadata;
+  if (!metadata || typeof metadata !== 'object') return null;
+  const namespace = metadata.openchamber;
+  if (!namespace || typeof namespace !== 'object') return null;
+  const goal = namespace.goal;
+  if (!goal || typeof goal !== 'object') return null;
+  const status = typeof goal.status === 'string' ? goal.status.trim() : '';
+  if (!status) return null;
+  return {
+    status,
+    note: typeof goal.note === 'string' ? goal.note.trim() : '',
+  };
+};
 
 export const createScheduledTasksRuntime = (deps) => {
   const {
@@ -689,6 +733,120 @@ export const createScheduledTasksRuntime = (deps) => {
     }
   };
 
+  /**
+   * prompt_async / command return when the turn is *admitted*, not when the
+   * agent finishes. History must reflect the real session (or goal) outcome and
+   * wall-clock duration — poll OpenCode until idle+settled or a terminal goal.
+   */
+  const waitForRunOutcome = async ({
+    client,
+    sessionID,
+    projectPath,
+    goalEnabled,
+    signal,
+  }) => {
+    const requestOptions = signal ? { signal } : undefined;
+    let incompleteAssistantProbes = 0;
+    let emptyIdleProbes = 0;
+
+    for (;;) {
+      signal?.throwIfAborted?.();
+
+      if (goalEnabled && typeof client?.session?.get === 'function') {
+        try {
+          const sessionResult = await client.session.get({
+            sessionID,
+            directory: projectPath,
+          }, requestOptions);
+          if (!sessionResult?.error) {
+            const goal = extractGoalFromSession(sessionResult?.data);
+            if (goal && GOAL_TERMINAL_STATUSES.has(goal.status)) {
+              if (goal.status === 'complete') {
+                return { outcome: 'success' };
+              }
+              return {
+                outcome: 'error',
+                error: goal.note || `goal ${goal.status}`,
+              };
+            }
+          }
+        } catch (error) {
+          if (signal?.aborted) throw error;
+          // Transient get failures: keep polling until watchdog aborts.
+        }
+      }
+
+      let sessionBusy = false;
+      if (typeof client?.session?.status === 'function') {
+        try {
+          const statusResult = await client.session.status({
+            directory: projectPath,
+          }, requestOptions);
+          if (!statusResult?.error && statusResult?.data && typeof statusResult.data === 'object') {
+            const statusValue = statusResult.data[sessionID];
+            const type = statusValue?.type ?? statusValue?.status;
+            sessionBusy = type === 'busy' || type === 'retry';
+          }
+        } catch (error) {
+          if (signal?.aborted) throw error;
+        }
+      }
+
+      if (sessionBusy) {
+        incompleteAssistantProbes = 0;
+        emptyIdleProbes = 0;
+        await sleep(SESSION_SETTLEMENT_POLL_MS, signal);
+        continue;
+      }
+
+      // Non-goal runs settle on the first idle assistant tail. Goal runs only
+      // finish via terminal goal status above — idle between goal turns is normal.
+      if (!goalEnabled && typeof client?.session?.messages === 'function') {
+        try {
+          const messagesResult = await client.session.messages({
+            sessionID,
+            directory: projectPath,
+            limit: 50,
+          }, requestOptions);
+          if (!messagesResult?.error && Array.isArray(messagesResult?.data)) {
+            const lastInfo = readMessageInfo(messagesResult.data.at(-1));
+            if (lastInfo?.role === 'assistant') {
+              emptyIdleProbes = 0;
+              if (lastInfo.error) {
+                return {
+                  outcome: 'error',
+                  error: formatAssistantError(lastInfo.error),
+                };
+              }
+              if (lastInfo.time?.completed) {
+                return { outcome: 'success' };
+              }
+              incompleteAssistantProbes += 1;
+              if (incompleteAssistantProbes >= INCOMPLETE_ASSISTANT_SETTLE_PROBES) {
+                return { outcome: 'success' };
+              }
+            } else {
+              incompleteAssistantProbes = 0;
+              emptyIdleProbes += 1;
+              // Prompt admitted but no assistant yet, or aborted before reply.
+              // Allow several idle probes so we don't race the first token.
+              if (emptyIdleProbes >= 5 && lastInfo?.role === 'user') {
+                return {
+                  outcome: 'error',
+                  error: 'session ended without assistant response',
+                };
+              }
+            }
+          }
+        } catch (error) {
+          if (signal?.aborted) throw error;
+        }
+      }
+
+      await sleep(SESSION_SETTLEMENT_POLL_MS, signal);
+    }
+  };
+
   const runScheduledCommandIfApplicable = async ({ client, projectPath, sessionID, task, signal }) => {
     signal?.throwIfAborted?.();
     const parsed = parseScheduledCommandPrompt(task?.execution?.prompt);
@@ -888,10 +1046,22 @@ export const createScheduledTasksRuntime = (deps) => {
         });
       }
 
+      // Do not finalize on admission alone — wait for the real agent turn (or
+      // goal loop) so history status/duration match what the user sees in chat.
+      const settlement = await waitForRunOutcome({
+        client,
+        sessionID,
+        projectPath,
+        goalEnabled: Boolean(task.execution?.goalEnabled),
+        signal,
+      });
+
       const finishedAt = Date.now();
       return {
         sessionID,
         durationMs: Math.max(0, finishedAt - startedAt),
+        outcome: settlement.outcome === 'error' ? 'error' : 'success',
+        ...(settlement.error ? { error: settlement.error } : {}),
         reason,
         startedAt,
         finishedAt,
@@ -1041,11 +1211,22 @@ export const createScheduledTasksRuntime = (deps) => {
           const result = raced.settled.result;
           sessionID = result.sessionID;
           durationMs = result.durationMs;
-          status = 'success';
-          logger.info?.(
-            '[ScheduledTasks] run completed',
-            { projectID, taskID, status, reason, sessionID, durationMs, runID }
-          );
+          if (result.outcome === 'error') {
+            status = 'error';
+            errorMessage = typeof result.error === 'string' && result.error.trim()
+              ? result.error.trim()
+              : 'scheduled run failed';
+            logger.warn?.(
+              '[ScheduledTasks] run completed with error outcome',
+              { projectID, taskID, status, reason, sessionID, durationMs, runID, error: errorMessage },
+            );
+          } else {
+            status = 'success';
+            logger.info?.(
+              '[ScheduledTasks] run completed',
+              { projectID, taskID, status, reason, sessionID, durationMs, runID },
+            );
+          }
         } catch (error) {
           errorMessage = safeErrorMessage(error);
           // Prefer the canonical timeout message when the watchdog fired,

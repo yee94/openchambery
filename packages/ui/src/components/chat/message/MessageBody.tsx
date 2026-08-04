@@ -1060,8 +1060,12 @@ const AssistantMessageActionButtons = React.memo(({
     const copyHintTimeoutRef = React.useRef<number | null>(null);
     const copiedResetTimeoutRef = React.useRef<number | null>(null);
     const canCopyMessage = Boolean(onCopyMessage);
+    // Prefer the surface session/directory: history rows rebind the surface to
+    // sourceSessionID + sourceDirectory, while live Assistant replies use the host
+    // binding. message.info.sessionID alone can lag or disagree with the surface.
+    const openSourceSessionId = sessionSurface.sessionId || sessionId;
     const canOpenSourceSession = Boolean(
-        sessionId
+        openSourceSessionId
         && sessionSurface.directory
         && sessionSurfaceActions.openSourceSession
         && chatSurfaceMode !== 'mini-chat',
@@ -1160,8 +1164,9 @@ const AssistantMessageActionButtons = React.memo(({
         (event: React.MouseEvent<HTMLButtonElement>) => {
             event.stopPropagation();
             event.preventDefault();
-            if (!sessionId || !sessionSurface.directory || !sessionSurface.openSourceSession) return;
-            sessionSurface.openSourceSession(sessionId, sessionSurface.directory);
+            const targetSessionId = sessionSurface.sessionId || sessionId;
+            if (!targetSessionId || !sessionSurface.directory || !sessionSurface.openSourceSession) return;
+            sessionSurface.openSourceSession(targetSessionId, sessionSurface.directory);
         },
         [sessionId, sessionSurface],
     );

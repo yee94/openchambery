@@ -312,18 +312,95 @@ describe('scheduled-tasks run history and session lifecycle', () => {
     };
   };
 
-  const createSuccessfulClient = ({ updateResult, sessionID = 'ses_1' } = {}) => {
+  const createSuccessfulClient = ({
+    updateResult,
+    sessionID = 'ses_1',
+    /** Override session settlement polls after prompt/command admission. */
+    settlement = 'success',
+  } = {}) => {
     const create = vi.fn(async () => ({ data: { id: sessionID } }));
     const update = vi.fn(async () => updateResult ?? { data: { id: sessionID } });
     const command = vi.fn(async () => ({ data: {} }));
     const abort = vi.fn(async () => ({ data: true }));
     const list = vi.fn(async () => ({ data: [] }));
+    // Default settlement: idle + completed assistant so history records the real
+    // turn outcome (not prompt_async admission alone).
+    let poll = 0;
+    const status = vi.fn(async () => {
+      poll += 1;
+      if (settlement === 'busy-then-success' && poll < 2) {
+        return { data: { [sessionID]: { type: 'busy' } } };
+      }
+      return { data: { [sessionID]: { type: 'idle' } } };
+    });
+    const messages = vi.fn(async () => {
+      if (settlement === 'assistant-error') {
+        return {
+          data: [{
+            info: {
+              id: 'msg_err',
+              role: 'assistant',
+              error: { name: 'ProviderError', message: 'upstream failed' },
+            },
+          }],
+        };
+      }
+      if (settlement === 'busy-then-success') {
+        if (poll < 2) {
+          return { data: [{ info: { id: 'msg_user', role: 'user' } }] };
+        }
+      }
+      return {
+        data: [{
+          info: {
+            id: 'msg_ok',
+            role: 'assistant',
+            time: { completed: Date.now() },
+          },
+        }],
+      };
+    });
+    const get = vi.fn(async () => {
+      if (settlement === 'goal-complete') {
+        return {
+          data: {
+            id: sessionID,
+            metadata: {
+              openchamber: {
+                goal: { id: 'g1', status: 'complete', objective: 'done' },
+              },
+            },
+          },
+        };
+      }
+      if (settlement === 'goal-blocked') {
+        return {
+          data: {
+            id: sessionID,
+            metadata: {
+              openchamber: {
+                goal: { id: 'g1', status: 'blocked', objective: 'x', note: 'stuck' },
+              },
+            },
+          },
+        };
+      }
+      return { data: { id: sessionID, metadata: {} } };
+    });
     createOpencodeClient.mockReturnValue({
-      session: { create, update, command, abort },
+      session: { create, update, command, abort, status, messages, get },
       command: { list },
     });
-    return { create, update, command, abort, list };
+    return { create, update, command, abort, list, status, messages, get };
   };
+
+  const settledSessionApis = (sessionID = 'ses_1') => ({
+    status: vi.fn(async () => ({ data: { [sessionID]: { type: 'idle' } } })),
+    messages: vi.fn(async () => ({
+      data: [{ info: { id: 'msg_ok', role: 'assistant', time: { completed: Date.now() } } }],
+    })),
+    get: vi.fn(async () => ({ data: { id: sessionID, metadata: {} } })),
+  });
 
   it('creates session with Scheduled title and scheduledTask metadata, attaches history, archives before prompt', async () => {
     const history = createHistoryStore();
@@ -383,8 +460,88 @@ describe('scheduled-tasks run history and session lifecycle', () => {
       status: 'success',
       sessionId: 'ses_1',
     }));
+    // Must wait for session settlement, not finish on prompt_async admission alone.
+    expect(client.status).toHaveBeenCalled();
+    expect(client.messages).toHaveBeenCalled();
+    expect(client.status.mock.invocationCallOrder[0]).toBeGreaterThan(fetchMock.mock.invocationCallOrder[0]);
 
     vi.unstubAllGlobals();
+  });
+
+  it('records error outcome and real duration when the assistant turn fails after admission', async () => {
+    const history = createHistoryStore();
+    const client = createSuccessfulClient({ settlement: 'assistant-error' });
+    const fetchMock = vi.fn(async (url) => {
+      if (String(url).includes('prompt_async')) {
+        return { ok: true, text: async () => '' };
+      }
+      throw new Error(`unexpected fetch ${url}`);
+    });
+    vi.stubGlobal('fetch', fetchMock);
+
+    const updateScheduledTaskState = vi.fn(async (_projectID, _taskID, state) => ({
+      task: { ...scheduledTask, state: { ...scheduledTask.state, ...state } },
+    }));
+    const runtime = createRuntime(updateScheduledTaskState, {
+      runHistoryStore: history,
+      waitForOpenCodeReady: vi.fn(async () => {}),
+    });
+    await runtime.syncProject('project-1');
+    const result = await runtime.runNow('project-1', 'task-1');
+
+    expect(result.ok).toBe(false);
+    expect(result.status).toBe('error');
+    expect(history.finishRun).toHaveBeenCalledWith(
+      expect.any(String),
+      expect.objectContaining({
+        status: 'error',
+        error: 'ProviderError',
+        sessionId: 'ses_1',
+        durationMs: expect.any(Number),
+      }),
+    );
+    expect(client.messages).toHaveBeenCalled();
+
+    vi.unstubAllGlobals();
+  });
+
+  it('keeps the run open while the session is busy and only finalizes after idle settlement', async () => {
+    vi.useFakeTimers();
+    const history = createHistoryStore();
+    createSuccessfulClient({ settlement: 'busy-then-success' });
+    const fetchMock = vi.fn(async (url) => {
+      if (String(url).includes('prompt_async')) {
+        return { ok: true, text: async () => '' };
+      }
+      throw new Error(`unexpected fetch ${url}`);
+    });
+    vi.stubGlobal('fetch', fetchMock);
+
+    const updateScheduledTaskState = vi.fn(async (_projectID, _taskID, state) => ({
+      task: { ...scheduledTask, state: { ...scheduledTask.state, ...state } },
+    }));
+    const runtime = createRuntime(updateScheduledTaskState, {
+      runHistoryStore: history,
+      waitForOpenCodeReady: vi.fn(async () => {}),
+    });
+    await runtime.syncProject('project-1');
+
+    const runPromise = runtime.runNow('project-1', 'task-1');
+    // First settlement poll sees busy and sleeps — history must still be open.
+    await vi.advanceTimersByTimeAsync(0);
+    expect(history.finishRun).not.toHaveBeenCalled();
+
+    await vi.advanceTimersByTimeAsync(1_000);
+    const result = await runPromise;
+
+    expect(result.ok).toBe(true);
+    expect(history.finishRun).toHaveBeenCalledWith(
+      expect.any(String),
+      expect.objectContaining({ status: 'success', sessionId: 'ses_1' }),
+    );
+
+    vi.unstubAllGlobals();
+    vi.useRealTimers();
   });
 
   it('does not prompt when archive fails and finalizes the run as error', async () => {
@@ -424,7 +581,7 @@ describe('scheduled-tasks run history and session lifecycle', () => {
       .mockResolvedValueOnce({ error: { status: 404 } })
       .mockResolvedValueOnce({ data: { id: 'ses_404' } });
     createOpencodeClient.mockReturnValue({
-      session: { create, update, command: vi.fn() },
+      session: { create, update, command: vi.fn(), ...settledSessionApis('ses_404') },
       command: { list: vi.fn(async () => ({ data: [] })) },
     });
     const fetchMock = vi.fn(async () => ({ ok: true, text: async () => '' }));
@@ -747,7 +904,8 @@ describe('scheduled-tasks run history and session lifecycle', () => {
 
   it('goalEnabled PATCH preserves scheduledTask marker alongside goal', async () => {
     const history = createHistoryStore();
-    const client = createSuccessfulClient({ sessionID: 'ses_goal' });
+    // Goal runs settle on terminal goal metadata, not the first idle turn.
+    const client = createSuccessfulClient({ sessionID: 'ses_goal', settlement: 'goal-complete' });
     const fetchMock = vi.fn(async (url, init) => {
       if (String(url).includes('/session/ses_goal') && init?.method === 'PATCH') {
         return { ok: true, text: async () => '' };
@@ -788,6 +946,7 @@ describe('scheduled-tasks run history and session lifecycle', () => {
     const result = await runtime.runNow('project-1', 'task-1');
 
     expect(result.ok).toBe(true);
+    expect(client.get).toHaveBeenCalled();
     const patchCall = fetchMock.mock.calls.find(
       ([url, init]) => String(url).includes('/session/ses_goal') && init?.method === 'PATCH',
     );

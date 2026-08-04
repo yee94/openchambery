@@ -40,7 +40,7 @@ import { useMobileBackRoute } from '@/mobile/mobileBackNavigation';
 import { MobileTabPageHeader } from '@/mobile/MobileTabPageHeader';
 import { useMobileNavigationStore } from '@/mobile/useMobileNavigationStore';
 import { openSessionFromToast } from '@/sync/session-opener';
-import { isCapacitorApp, isIPadApp } from '@/lib/platform';
+import { isIPadApp } from '@/lib/platform';
 
 const scheduleTimes = (task: ScheduledTask): string[] => {
   const raw = Array.isArray(task.schedule.times)
@@ -153,16 +153,43 @@ const formatRunDateTime = (value: number): string => new Intl.DateTimeFormat(get
   timeStyle: 'short',
 }).format(new Date(value));
 
-const formatRunDuration = (durationMs: number | null, t: ReturnType<typeof useI18n>['t']): string => {
-  if (durationMs === null) return t('sessions.scheduledTasks.history.duration.pending');
-  if (durationMs < 1_000) return t('sessions.scheduledTasks.history.duration.milliseconds', { count: Math.max(0, Math.round(durationMs)) });
-  const seconds = Math.round(durationMs / 1_000);
-  if (seconds < 60) return t('sessions.scheduledTasks.history.duration.seconds', { count: seconds });
-  const minutes = Math.floor(seconds / 60);
-  const remainingSeconds = seconds % 60;
-  return remainingSeconds > 0
-    ? t('sessions.scheduledTasks.history.duration.minutesSeconds', { minutes, seconds: remainingSeconds })
-    : t('sessions.scheduledTasks.history.duration.minutes', { count: minutes });
+/** Prefer wall-clock span when finished; live elapsed while running. */
+const resolveRunDurationMs = (run: ScheduledTaskRun, nowMs: number): number | null => {
+  if (run.status === 'running') {
+    return Math.max(0, nowMs - run.startedAt);
+  }
+  if (typeof run.finishedAt === 'number' && Number.isFinite(run.finishedAt)) {
+    const wallMs = Math.max(0, run.finishedAt - run.startedAt);
+    if (typeof run.durationMs === 'number' && Number.isFinite(run.durationMs) && run.durationMs >= 0) {
+      // Prefer the longer span so a short dispatch sample never under-reports
+      // a later finishAt from state/history convergence.
+      return Math.max(run.durationMs, wallMs);
+    }
+    return wallMs;
+  }
+  if (typeof run.durationMs === 'number' && Number.isFinite(run.durationMs) && run.durationMs >= 0) {
+    return run.durationMs;
+  }
+  return null;
+};
+
+/**
+ * Compact wall-clock duration beside status (e.g. 12s, 2m 50s, 1h 2m).
+ * Units are symbols shared with goal-strip duration; no prose labels.
+ */
+const formatCompactRunDuration = (durationMs: number | null): string | null => {
+  if (durationMs === null || !Number.isFinite(durationMs) || durationMs < 0) return null;
+  if (durationMs < 1_000) return '<1s';
+  const totalSeconds = Math.floor(durationMs / 1_000);
+  if (totalSeconds < 60) return `${totalSeconds}s`;
+  const totalMinutes = Math.floor(totalSeconds / 60);
+  const seconds = totalSeconds % 60;
+  if (totalMinutes < 60) {
+    return seconds > 0 ? `${totalMinutes}m ${seconds}s` : `${totalMinutes}m`;
+  }
+  const hours = Math.floor(totalMinutes / 60);
+  const minutes = totalMinutes % 60;
+  return minutes > 0 ? `${hours}h ${minutes}m` : `${hours}h`;
 };
 
 type StatusTone = 'success' | 'error' | 'warning' | 'muted';
@@ -343,6 +370,18 @@ export function ScheduledTasksWorkspace({
     }
     return result;
   }, [runsQuery.data]);
+  const hasRunningRuns = React.useMemo(() => runs.some((run) => run.status === 'running'), [runs]);
+  // Wall-clock tick so running history rows advance elapsed duration without
+  // waiting for the next scheduled-task-ran event.
+  const [historyNowMs, setHistoryNowMs] = React.useState(() => Date.now());
+  React.useEffect(() => {
+    if (!open || workspaceView !== 'history' || !hasRunningRuns) {
+      return undefined;
+    }
+    setHistoryNowMs(Date.now());
+    const timerID = window.setInterval(() => setHistoryNowMs(Date.now()), 1_000);
+    return () => window.clearInterval(timerID);
+  }, [hasRunningRuns, open, workspaceView]);
   const projectById = React.useMemo(() => new Map(projects.map((project) => [project.id, project])), [projects]);
 
   React.useEffect(() => {
@@ -473,8 +512,15 @@ export function ScheduledTasksWorkspace({
   const handleOpenRunSession = useEvent((run: ScheduledTaskRun) => {
     if (!run.sessionId || !run.directory) return;
     if (presentation === 'mobile-panel') onOpenChange?.(false);
-    if (isCapacitorApp() && !isIPadApp()) {
-      useMobileNavigationStore.getState().openSession({ sessionId: run.sessionId, directory: run.directory });
+    // Phone shell (Capacitor or hosted H5): chat is a secondary route owned by
+    // the mobile navigation store. Updating the session store alone changes
+    // the URL without mounting the chat page. Do not gate on isCapacitorApp —
+    // hosted mobile uses the same phone shell with presentation mobile-tab.
+    if (isMobilePanel && !isIPadApp()) {
+      useMobileNavigationStore.getState().openSession({
+        sessionId: run.sessionId,
+        directory: run.directory,
+      });
       return;
     }
     useUIStore.getState().setActiveMainTab('chat');
@@ -889,77 +935,177 @@ export function ScheduledTasksWorkspace({
                   <p className="mt-1 typography-meta text-muted-foreground">{t('sessions.scheduledTasks.history.empty.description')}</p>
                 </div>
               ) : (
-                <div className="space-y-2">
+                <div className={cn(isMobilePanel ? 'space-y-2' : 'divide-y divide-border/50 overflow-hidden rounded-xl border border-border/60 bg-[var(--surface-elevated)]')}>
                   {runs.map((run) => {
                     const project = projectById.get(run.projectId);
                     const projectLabel = project ? formatDirectoryName(project.path) : run.projectId;
                     const directoryLabel = run.directory ? formatDirectoryName(run.directory) : null;
+                    const locationLabel = directoryLabel && directoryLabel !== projectLabel
+                      ? `${projectLabel} · ${directoryLabel}`
+                      : projectLabel;
                     const statusMeta = STATUS_META[run.status];
                     const canOpenSession = Boolean(run.sessionId && run.directory);
+                    const durationMs = resolveRunDurationMs(run, historyNowMs);
+                    const durationLabel = formatCompactRunDuration(durationMs)
+                      ?? (run.status === 'running' ? t('sessions.scheduledTasks.history.duration.pending') : null);
+                    const startedLabel = formatRunDateTime(run.startedAt);
+                    const triggerLabel = t(`sessions.scheduledTasks.history.trigger.${run.trigger}`);
+                    const triggerIcon: IconName = run.trigger === 'manual' ? 'play' : 'calendar-schedule';
+                    const statusLabel = t(`sessions.scheduledTasks.dialog.status.${run.status}`);
+                    const statusColor = statusMeta.tone === 'muted' ? undefined : { color: `var(--status-${statusMeta.tone})` };
+                    const projectIconName: IconName = project?.icon
+                      ? (PROJECT_ICON_MAP[project.icon] ?? 'folder')
+                      : 'folder';
+                    const projectIconColor = project?.color ? PROJECT_COLOR_MAP[project.color] : undefined;
+                    const projectIcon = (
+                      <span className="flex size-3.5 shrink-0 items-center justify-center overflow-hidden text-muted-foreground">
+                        {project?.iconImage ? (
+                          <ProjectIconImage
+                            project={project}
+                            className="size-full object-contain"
+                            fallback={(
+                              <Icon
+                                name={projectIconName}
+                                className="size-3.5"
+                                style={projectIconColor ? { color: projectIconColor } : undefined}
+                              />
+                            )}
+                          />
+                        ) : (
+                          <Icon
+                            name={projectIconName}
+                            className="size-3.5"
+                            style={projectIconColor ? { color: projectIconColor } : undefined}
+                          />
+                        )}
+                      </span>
+                    );
+                    const statusIcon = (
+                      <span
+                        className="mt-0.5 flex size-8 shrink-0 items-center justify-center rounded-full border"
+                        style={toneStyle(statusMeta.tone)}
+                        title={statusLabel}
+                        aria-label={statusLabel}
+                      >
+                        <Icon name={statusMeta.Icon} className={cn('size-4', statusMeta.spin && 'animate-spin motion-reduce:animate-none')} />
+                      </span>
+                    );
+                    const locationRow = (
+                      <p
+                        className="mt-0.5 flex min-w-0 items-center gap-1.5 truncate typography-meta text-muted-foreground"
+                        title={run.directory ?? projectLabel}
+                      >
+                        {projectIcon}
+                        <span className="min-w-0 truncate">{locationLabel}</span>
+                      </p>
+                    );
+                    // Compact cluster: duration (muted) immediately left of status.
+                    const durationStatus = (
+                      <div className="flex shrink-0 items-center gap-1.5">
+                        {durationLabel ? (
+                          <span className="typography-micro tabular-nums text-muted-foreground" title={durationLabel}>
+                            {durationLabel}
+                          </span>
+                        ) : null}
+                        <span className="typography-micro font-medium" style={statusColor}>
+                          {statusLabel}
+                        </span>
+                      </div>
+                    );
+
+                    // Shared card body (mobile card chrome vs desktop list row).
+                    // Must be full width so justify-between can pin duration / open
+                    // session to the trailing edge and keep rows vertically aligned.
+                    const runBody = (
+                      <div className="flex w-full min-w-0 items-start gap-3">
+                        {statusIcon}
+                        <div className="min-w-0 flex-1">
+                          <div className="flex w-full min-w-0 items-center justify-between gap-3">
+                            <h3 className="min-w-0 flex-1 truncate typography-ui-label font-semibold text-foreground">{run.taskName}</h3>
+                            {durationStatus}
+                          </div>
+                          {locationRow}
+                          <div className={cn(
+                            'mt-1 flex w-full min-w-0 items-center justify-between gap-3',
+                            isMobilePanel && 'min-h-11',
+                          )}>
+                            <div className="flex min-w-0 flex-1 flex-wrap items-center gap-x-3 gap-y-1 typography-micro text-muted-foreground">
+                              <span className="inline-flex min-w-0 items-center gap-1.5" title={startedLabel}>
+                                <Icon name="time" className="size-3.5 shrink-0" aria-hidden="true" />
+                                <span className="truncate tabular-nums">{startedLabel}</span>
+                              </span>
+                              <span className="inline-flex min-w-0 items-center gap-1.5" title={triggerLabel}>
+                                <Icon name={triggerIcon} className="size-3.5 shrink-0" aria-hidden="true" />
+                                <span className="truncate">{triggerLabel}</span>
+                              </span>
+                            </div>
+                            {canOpenSession ? (
+                              <Button
+                                variant="ghost"
+                                size="sm"
+                                className={cn(
+                                  'shrink-0 self-center text-foreground',
+                                  isMobilePanel ? 'h-11 min-h-11' : 'h-7',
+                                )}
+                                onClick={() => handleOpenRunSession(run)}
+                              >
+                                {t('sessions.scheduledTasks.history.openSession')}
+                              </Button>
+                            ) : null}
+                          </div>
+                          {run.error ? (
+                            <p
+                              className={cn(
+                                'break-words typography-micro text-[var(--status-error-foreground)]',
+                                isMobilePanel
+                                  ? 'mt-2 line-clamp-2 rounded-lg bg-[var(--status-error-background)] px-2.5 py-2'
+                                  : 'mt-1.5 line-clamp-1',
+                              )}
+                              title={run.error.slice(0, 300)}
+                            >
+                              {run.error.slice(0, 300)}
+                            </p>
+                          ) : null}
+                        </div>
+                      </div>
+                    );
+
+                    if (isMobilePanel) {
+                      return (
+                        <article
+                          key={run.id}
+                          className={cn(
+                            'w-full rounded-xl border border-border/60 bg-[var(--surface-elevated)] p-4 shadow-sm dark:shadow-none',
+                            isMobileTab && 'oc-mobile-floating-surface',
+                          )}
+                        >
+                          {runBody}
+                        </article>
+                      );
+                    }
+
                     return (
                       <article
                         key={run.id}
-                        className={cn(
-                          'rounded-xl border border-border/60 bg-[var(--surface-elevated)] p-4 shadow-sm dark:shadow-none',
-                          isMobileTab && 'oc-mobile-floating-surface',
-                        )}
+                        className="w-full min-w-0 px-4 py-3"
                       >
-                        <div className="flex min-w-0 items-start gap-3">
-                          <span
-                            className="mt-0.5 flex size-8 shrink-0 items-center justify-center rounded-full border"
-                            style={toneStyle(statusMeta.tone)}
-                          >
-                            <Icon name={statusMeta.Icon} className={cn('size-4', statusMeta.spin && 'animate-spin motion-reduce:animate-none')} />
-                          </span>
-                          <div className="min-w-0 flex-1">
-                            <div className="flex min-w-0 flex-wrap items-center gap-x-2 gap-y-1">
-                              <h3 className="min-w-0 flex-1 truncate typography-ui-label font-semibold text-foreground">{run.taskName}</h3>
-                              <span className="shrink-0 typography-micro font-medium" style={statusMeta.tone === 'muted' ? undefined : { color: `var(--status-${statusMeta.tone})` }}>
-                                {t(`sessions.scheduledTasks.dialog.status.${run.status}`)}
-                              </span>
-                            </div>
-                            <p className="mt-1 truncate typography-meta text-muted-foreground" title={run.directory ?? projectLabel}>
-                              {directoryLabel && directoryLabel !== projectLabel ? `${projectLabel} · ${directoryLabel}` : projectLabel}
-                            </p>
-                            <div className="mt-2 flex flex-wrap items-center gap-x-3 gap-y-1 typography-micro text-muted-foreground">
-                              <span className="inline-flex items-center gap-1.5">
-                                <Icon name="time" className="size-3.5" />
-                                {formatRunDateTime(run.startedAt)}
-                              </span>
-                              <span>{t(`sessions.scheduledTasks.history.trigger.${run.trigger}`)}</span>
-                              <span>{formatRunDuration(run.durationMs, t)}</span>
-                            </div>
-                            {run.error ? (
-                              <p className="mt-2 line-clamp-2 break-words rounded-lg bg-[var(--status-error-background)] px-2.5 py-2 typography-micro text-[var(--status-error-foreground)]" title={run.error.slice(0, 300)}>
-                                {run.error.slice(0, 300)}
-                              </p>
-                            ) : null}
-                          </div>
-                        </div>
-                        {canOpenSession ? (
-                          <div className="mt-3 flex justify-end border-t border-border/40 pt-3">
-                            <Button
-                              variant="ghost"
-                              size="sm"
-                              className={cn('text-foreground', isMobilePanel && 'min-h-11')}
-                              onClick={() => handleOpenRunSession(run)}
-                            >
-                              {t('sessions.scheduledTasks.history.openSession')}
-                              <Icon name="external-link" className="size-4" />
-                            </Button>
-                          </div>
-                        ) : null}
+                        {runBody}
                       </article>
                     );
                   })}
                   {runsQuery.error ? (
-                    <div className="flex flex-wrap items-center justify-between gap-2 rounded-xl border border-[var(--status-error-border)] bg-[var(--status-error-background)] p-3 typography-meta text-[var(--status-error-foreground)]">
+                    <div className={cn(
+                      'flex flex-wrap items-center justify-between gap-2 p-3 typography-meta text-[var(--status-error-foreground)]',
+                      isMobilePanel
+                        ? 'rounded-xl border border-[var(--status-error-border)] bg-[var(--status-error-background)]'
+                        : 'border-t border-[var(--status-error-border)] bg-[var(--status-error-background)]',
+                    )}>
                       <span>{t('sessions.scheduledTasks.history.error.more')}</span>
                       <Button variant="outline" size="sm" onClick={() => void handleRetryRuns()}>{t('sessions.scheduledTasks.history.retry')}</Button>
                     </div>
                   ) : null}
                   {runsQuery.hasNextPage ? (
-                    <div className="flex justify-center pt-2">
+                    <div className={cn('flex justify-center', isMobilePanel ? 'pt-2' : 'border-t border-border/40 px-4 py-3')}>
                       <Button
                         variant="outline"
                         size="sm"

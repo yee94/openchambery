@@ -185,20 +185,31 @@ Every actual run (timer or manual):
     `scheduledTask` marker together with `goal`), then command or `prompt_async`.
     Non-cancellable async gaps (small-model distill, objective file write) check
     `signal.throwIfAborted()` before continuing so a timed-out run never prompts.
- 8. On watchdog timeout after a session exists: immediately throw the canonical
+    **Admission is not completion:** `prompt_async` / command return when the
+    turn is accepted, not when the agent finishes.
+ 8. Wait for the real session outcome (bounded by the same watchdog):
+    - Poll `session.status` + `session.messages` until the session is idle and
+      the tail is a settled assistant turn (completed, or incomplete-but-stable
+      while idle). Assistant `error` (including abort) finalizes as `error`.
+    - Goal-enabled runs poll `session.get` for terminal goal status
+      (`complete` → success; `blocked` / `budgetLimited` → error) and do not
+      finish on the first idle between goal turns.
+    - `durationMs` / `finishedAt` are wall-clock from run start through this
+      settlement — not the prompt admission latency.
+ 9. On watchdog timeout after a session exists: immediately throw the canonical
     `schedule run timed out` without awaiting non-cancellable helper work. A
     once-only abort listener registered after session create starts best-effort
     `client.session.abort({ sessionID, directory })` as soon as the watchdog
     aborts the signal (or right after create if the signal already aborted).
     Abort failures must not replace the timeout error. Successful runs and
     ordinary non-timeout failures never call session abort.
- 9. Finalize history with the ultimate run status (timeout → `error` with
-    `schedule run timed out`). An already-attached `session_id` remains on the
-    history row so the session stays openable from history. Task state
-    persistence failures also finalize history as `error`. A failed history
-    finalize returns error and may leave a `running` row for next-start
-    convergence.
- 10. `lastSessionId` remains success-only on the task state; full association
+ 10. Finalize history with the ultimate run status (timeout → `error` with
+    `schedule run timed out`; assistant/goal failure → `error` with the
+    recorded reason). An already-attached `session_id` remains on the history
+    row so the session stays openable from history. Task state persistence
+    failures also finalize history as `error`. A failed history finalize
+    returns error and may leave a `running` row for next-start convergence.
+ 11. `lastSessionId` remains success-only on the task state; full association
      lives in the history table.
 
 SSE events keep the existing `openchamber:scheduled-task-ran` shape.

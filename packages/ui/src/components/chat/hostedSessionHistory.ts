@@ -65,9 +65,31 @@ export const stitchHostedSessionHistory = (
 };
 
 /**
+ * Prefer live directory-sync identity, but never let a part-less live row wipe
+ * Assistant SQLite provisional parts. Stateless admits land in SQLite before
+ * OpenCode SSE parts arrive; `ChatMessage` renders user rows with empty parts
+ * as `null`, so an overwrite here eats the bubble until a full refresh.
+ */
+const mergeLiveOverHistoryEntry = (
+  live: ChatMessageEntry,
+  existing: ChatMessageEntry | undefined,
+): ChatMessageEntry => {
+  if (!existing) return live;
+  if (live.parts.length > 0 || existing.parts.length === 0) return live;
+  // Live info can be newer (status / timestamps) while parts still lag SSE.
+  if (live.info === existing.info && live.parts === existing.parts) return existing;
+  return {
+    ...live,
+    parts: existing.parts,
+    ...(existing.sourceParts && !live.sourceParts ? { sourceParts: existing.sourceParts } : {}),
+  };
+};
+
+/**
  * Assistant SQLite includes the current binding as a durable fallback. Live
- * directory sync wins per message ID, while a not-yet-materialized admitted
- * user row remains visible across binding changes and remounts.
+ * directory sync wins per message ID once it carries parts; part-less live rows
+ * keep SQLite parts so admitted user bubbles stay visible. A not-yet-materialized
+ * admitted user row also remains visible via pending presentations.
  */
 export const mergeHostedCurrentSessionHistory = (
   entries: readonly AssistantHistoryEntry[],
@@ -84,7 +106,10 @@ export const mergeHostedCurrentSessionHistory = (
   }
   for (const message of liveMessages) {
     const existing = byID.get(message.info.id);
-    byID.set(message.info.id, { message, order: existing?.order ?? order++ });
+    byID.set(message.info.id, {
+      message: mergeLiveOverHistoryEntry(message, existing?.message),
+      order: existing?.order ?? order++,
+    });
   }
   if (byID.size === 0) return EMPTY_PREFIX;
   const result = [...byID.values()]

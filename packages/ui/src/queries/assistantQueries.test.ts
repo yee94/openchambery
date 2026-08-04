@@ -46,6 +46,7 @@ mock.module('@/lib/openchamberEvents', () => ({
 const {
   assistantHistoryInfiniteQueryOptions,
   ensureAssistantSession,
+  retainAssistantHistoryPlaceholder,
 } = await import('./assistantQueries');
 
 const holdBarrier = () => {
@@ -179,6 +180,29 @@ describe('Assistant query contract', () => {
     expect(source).toContain("query.set('before', pageParam)");
     expect(source).toContain('parseAssistantHistoryPage');
     expect(source).toContain('assertCurrent(transport, runtimeGeneration)');
+    expect(source).toContain('retainAssistantHistoryPlaceholder');
+    expect(source).toContain('placeholderData:');
+  });
+
+  test('retains same-assistant history placeholder across binding key advances only', () => {
+    const previousData = {
+      pages: [{ entries: [], nextCursor: null, complete: true }],
+      pageParams: [null],
+    };
+    const sameAssistantKey = ['runtime-a', 1, 'assistants', 'history', 'assistant_1', 'ses_old', 1] as const;
+    const next = { assistantID: 'assistant_1', transport: 'runtime-a', runtimeGeneration: 1 };
+
+    expect(retainAssistantHistoryPlaceholder(previousData, { queryKey: [...sameAssistantKey] }, next)).toBe(previousData);
+    expect(retainAssistantHistoryPlaceholder(previousData, {
+      queryKey: ['runtime-a', 1, 'assistants', 'history', 'assistant_2', 'ses_old', 1],
+    }, next)).toBeUndefined();
+    expect(retainAssistantHistoryPlaceholder(previousData, {
+      queryKey: ['runtime-b', 1, 'assistants', 'history', 'assistant_1', 'ses_old', 1],
+    }, next)).toBeUndefined();
+    expect(retainAssistantHistoryPlaceholder(previousData, {
+      queryKey: ['runtime-a', 2, 'assistants', 'history', 'assistant_1', 'ses_old', 1],
+    }, next)).toBeUndefined();
+    expect(retainAssistantHistoryPlaceholder(undefined, { queryKey: [...sameAssistantKey] }, next)).toBeUndefined();
   });
 
   test('repairs worker-driven binding changes from shared revision tips and rejects older bindings', async () => {
@@ -202,6 +226,7 @@ describe('Assistant query contract', () => {
     const history = source.slice(source.indexOf('export const assistantHistoryInfiniteQueryOptions'), source.indexOf('export const useAssistantHistoryInfiniteQuery'));
     expect(history).toContain('initialPageParam: null as string | null');
     expect(history).toContain('getNextPageParam: getNextAssistantHistoryPageParam');
+    expect(history).toContain('placeholderData:');
     expect(history.match(/queryFn:/g)).toHaveLength(1);
   });
 

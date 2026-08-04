@@ -7,7 +7,8 @@ import { PRIMARY_SESSION_SURFACE_CAPABILITIES, type SessionSurfaceMessageEditSna
 import type { AssistantDTO } from '@/queries/assistantQueries';
 import { useAssistantHistoryInfiniteQuery } from '@/queries/assistantQueries';
 import { useEvent } from '@reactuses/core';
-import { isCapacitorApp, isIPadApp } from '@/lib/platform';
+import { useMobileAppActions } from '@/apps/mobileAppContext';
+import { isIPadApp } from '@/lib/platform';
 import { useMobileNavigationStore } from '@/mobile/useMobileNavigationStore';
 import { useSessionUIStore } from '@/sync/session-ui-store';
 import { useUIStore } from '@/stores/useUIStore';
@@ -66,11 +67,17 @@ export const AssistantConversationSurface: React.FC<AssistantConversationSurface
   });
   // Stateless turns cannot rewrite history; keep continuous Assistants mutable.
   const mutateSession = assistant.mode === 'continuous';
+  // Dedicated MobileApp (Capacitor phone + hosted H5 phone shell) owns chat as a
+  // secondary route. Detect it the same way ChatContainer does — not Capacitor alone.
+  const mobileActions = useMobileAppActions();
   const openSourceSession = useEvent((targetSessionID: string, targetDirectory: string) => {
     const expectedDirectory = targetSessionID === sessionID ? directory : historyDirectories.get(targetSessionID);
     if (!expectedDirectory || expectedDirectory !== targetDirectory) return;
-    // Leave the Assistant tab and continue the underlying OpenCode session in Chat.
-    if (isCapacitorApp() && !isIPadApp()) {
+    // Leave the Assistant surface and continue the underlying OpenCode session in Chat.
+    // Phone shell (native or hosted H5): secondary chat route owns mounting.
+    // Updating the session store alone changes selection without mounting chat —
+    // same contract as scheduled-task history open. Do not gate on isCapacitorApp.
+    if (mobileActions && !isIPadApp()) {
       useMobileNavigationStore.getState().openSession({ sessionId: targetSessionID, directory: targetDirectory });
       return;
     }

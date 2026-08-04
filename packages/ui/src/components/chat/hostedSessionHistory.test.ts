@@ -116,4 +116,42 @@ describe('hostedSessionHistory', () => {
     expect(merged[1]).toBe(liveReply);
     expect(mergeHostedCurrentSessionHistory([persisted, persistedReply], 'ses_live', [liveReply], merged)).toBe(merged);
   });
+
+  test('does not let a part-less live row wipe SQLite admission parts for the same message ID', () => {
+    const admissionParts = [{ type: 'text', text: '哈喽，大哥招呼' } as never];
+    const persisted: AssistantHistoryEntry = {
+      sessionID: 'ses_live',
+      directory: '/workspace',
+      info: { ...bare('msg_user'), sessionID: 'ses_live', time: { created: 20 } },
+      parts: admissionParts,
+    };
+    const livePartless = {
+      info: { ...bare('msg_user'), sessionID: 'ses_live', time: { created: 20 }, agent: 'build' },
+      parts: [],
+    };
+
+    const merged = mergeHostedCurrentSessionHistory([persisted], 'ses_live', [livePartless]);
+
+    expect(merged).toHaveLength(1);
+    expect(merged[0]?.info).toBe(livePartless.info);
+    expect(merged[0]?.parts).toEqual(admissionParts);
+  });
+
+  test('lets live parts replace SQLite provisional parts for the same message ID', () => {
+    const persisted: AssistantHistoryEntry = {
+      sessionID: 'ses_live',
+      directory: '/workspace',
+      info: { ...bare('msg_user'), sessionID: 'ses_live', time: { created: 20 } },
+      parts: [{ type: 'text', text: 'provisional' } as never],
+    };
+    const liveWithParts = {
+      info: { ...bare('msg_user'), sessionID: 'ses_live', time: { created: 20 } },
+      parts: [{ type: 'text', text: 'authoritative' } as never],
+    };
+
+    const merged = mergeHostedCurrentSessionHistory([persisted], 'ses_live', [liveWithParts]);
+
+    expect(merged).toHaveLength(1);
+    expect(merged[0]).toBe(liveWithParts);
+  });
 });

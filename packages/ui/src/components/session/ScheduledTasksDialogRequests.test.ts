@@ -66,18 +66,48 @@ describe('ScheduledTasksDialog queries', () => {
     expect(content).toContain('invalidateQueries({ queryKey: globalScheduledTaskRunsQueryKey, exact: true })');
   });
 
+  test('renders history with compact duration beside status and icon-value meta', async () => {
+    const content = await readFile(join(dirname(fileURLToPath(import.meta.url)), 'ScheduledTasksDialog.tsx'), 'utf8');
+    expect(content).toContain('const resolveRunDurationMs = (run: ScheduledTaskRun, nowMs: number)');
+    expect(content).toContain('const formatCompactRunDuration = (durationMs: number | null)');
+    expect(content).toContain('const durationMs = resolveRunDurationMs(run, historyNowMs)');
+    expect(content).toContain('const durationLabel = formatCompactRunDuration(durationMs)');
+    // Compact units: 2m 50s style — duration sits left of status.
+    expect(content).toContain('`${totalMinutes}m ${seconds}s`');
+    expect(content).toContain('typography-micro tabular-nums text-muted-foreground');
+    // Icon + value meta only (no labeled meta grid).
+    expect(content).not.toContain("t('sessions.scheduledTasks.history.meta.trigger')");
+    expect(content).not.toContain("t('sessions.scheduledTasks.history.meta.duration')");
+    expect(content).toContain("name=\"time\"");
+    expect(content).toContain("run.trigger === 'manual' ? 'play' : 'calendar-schedule'");
+    // Shared PC/mobile rows: full-width body so justify-between pins trailing actions.
+    expect(content).toContain('const runBody = (');
+    expect(content).toContain('className="flex w-full min-w-0 items-start gap-3"');
+    expect(content).toContain("t('sessions.scheduledTasks.history.openSession')");
+    expect(content).toContain("isMobilePanel ? 'h-11 min-h-11' : 'h-7'");
+    // Text-only ghost button (keeps hover); no external-link glyph.
+    expect(content).not.toContain('<Icon name="external-link" className="size-4" />');
+    expect(content).toContain("divide-y divide-border/50 overflow-hidden rounded-xl border border-border/60");
+  });
+
   test('opens linked run sessions through phone navigation or the desktop chat path and omits incomplete identities', async () => {
     const content = await readFile(join(dirname(fileURLToPath(import.meta.url)), 'ScheduledTasksDialog.tsx'), 'utf8');
     const handler = content.slice(content.indexOf('const handleOpenRunSession'), content.indexOf('const handleRetryRuns'));
     expect(handler).toContain("if (presentation === 'mobile-panel') onOpenChange?.(false)");
-    expect(handler).toContain("if (isCapacitorApp() && !isIPadApp()) {");
-    expect(handler).toContain('useMobileNavigationStore.getState().openSession({ sessionId: run.sessionId, directory: run.directory })');
+    // Hosted H5 and Capacitor phone both use presentation mobile-tab/panel;
+    // gating on isCapacitorApp alone left H5 with a URL change and no chat page.
+    expect(handler).toContain('if (isMobilePanel && !isIPadApp())');
+    expect(handler).not.toContain('isCapacitorApp()');
+    expect(handler).toContain('useMobileNavigationStore.getState().openSession({');
+    expect(handler).toContain('sessionId: run.sessionId');
+    expect(handler).toContain('directory: run.directory');
     expect(handler).toContain('return;');
     expect(handler).toContain("useUIStore.getState().setActiveMainTab('chat')");
     expect(handler).toContain('openSessionFromToast(run.sessionId, run.directory)');
     expect(content).toContain('const canOpenSession = Boolean(run.sessionId && run.directory)');
     expect(content).toContain("t('sessions.scheduledTasks.history.openSession')");
     expect(content).toContain('{canOpenSession ? (');
+    expect(content).toContain('onClick={() => handleOpenRunSession(run)}');
   });
 
   test('shares short enabled-state action labels between task dropdown and context menus', async () => {

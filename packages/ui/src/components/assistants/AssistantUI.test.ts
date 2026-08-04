@@ -337,6 +337,10 @@ describe('Assistant UI product contract', () => {
     expect(conversation).toContain('setCurrentSession(targetSessionID, targetDirectory)');
     expect(conversation).toContain('useMobileNavigationStore.getState()');
     expect(conversation).toContain('useMobileNavigationStore.getState().openSession({ sessionId: targetSessionID, directory: targetDirectory })');
+    // Phone shell = dedicated MobileApp context (Capacitor + hosted H5), not Capacitor alone.
+    expect(conversation).toContain('useMobileAppActions');
+    expect(conversation).toContain('mobileActions && !isIPadApp()');
+    expect(conversation).not.toContain('isCapacitorApp() && !isIPadApp()');
     expect(conversation).toContain("if (!useUIStore.getState().setActiveMainTab('chat')) return;");
     expect(conversation).toContain("targetSessionID === sessionID");
     expect(conversation).toContain('historyDirectories.get(targetSessionID)');

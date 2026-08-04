@@ -1,5 +1,5 @@
 import React from 'react';
-import { useInfiniteQuery, useQuery, type QueryClient } from '@tanstack/react-query';
+import { useInfiniteQuery, useQuery, type InfiniteData, type QueryClient, type QueryKey } from '@tanstack/react-query';
 import { queryClient } from '@/lib/queryRuntime';
 import { subscribeOpenchamberEvents } from '@/lib/openchamberEvents';
 import { runtimeFetch } from '@/lib/runtime-fetch';
@@ -17,6 +17,34 @@ const key = {
   snapshot: (transport = getRuntimeTransportIdentity()) => [transport, 'assistants', 'snapshot'] as const,
   capability: (transport = getRuntimeTransportIdentity()) => [transport, 'assistants', 'capability'] as const,
   history: (assistantID: string, sessionID: string, sessionGeneration: number, transport = getRuntimeTransportIdentity(), runtimeGeneration = getRuntimeGeneration()) => [transport, runtimeGeneration, 'assistants', 'history', assistantID, sessionID, sessionGeneration] as const,
+};
+
+/**
+ * Keep the prior Assistant transcript visible while a stateless/compact binding
+ * advance changes the history query key. Never cross assistants or runtimes —
+ * those must cold-start so one conversation cannot paint under another.
+ */
+export const retainAssistantHistoryPlaceholder = (
+  previousData: InfiniteData<AssistantHistoryPage> | undefined,
+  previousQuery: { queryKey: QueryKey } | undefined,
+  next: {
+    assistantID: string;
+    transport: string;
+    runtimeGeneration: number;
+  },
+): InfiniteData<AssistantHistoryPage> | undefined => {
+  if (!previousData || !previousQuery) return undefined;
+  const previousKey = previousQuery.queryKey;
+  if (
+    previousKey[0] !== next.transport
+    || previousKey[1] !== next.runtimeGeneration
+    || previousKey[2] !== 'assistants'
+    || previousKey[3] !== 'history'
+    || previousKey[4] !== next.assistantID
+  ) {
+    return undefined;
+  }
+  return previousData;
 };
 const requestJSON = async <T>(path: string, init: RequestInit = {}): Promise<T> => { const response = await runtimeFetch(path, init); const payload = await response.json().catch(() => null) as { error?: unknown } | T | null; if (!response.ok) throw new AssistantAPIError(payload && typeof payload === 'object' && 'error' in payload && typeof payload.error === 'string' ? payload.error : 'request_failed', response.status); return payload as T; };
 const jsonInit = (method: string, body?: unknown): RequestInit => ({ method, headers: { 'Content-Type': 'application/json' }, body: body === undefined ? undefined : JSON.stringify(body) });
@@ -73,6 +101,17 @@ export const assistantHistoryInfiniteQueryOptions = (
   },
   initialPageParam: null as string | null,
   getNextPageParam: getNextAssistantHistoryPageParam,
+  // Stateless turns bump sessionGeneration in the key. Without a same-assistant
+  // placeholder the transcript blanks until the new key resolves, which also
+  // drops SQLite admission rows the live binding has not mirrored yet.
+  placeholderData: (
+    previousData: InfiniteData<AssistantHistoryPage> | undefined,
+    previousQuery: { queryKey: QueryKey } | undefined,
+  ) => retainAssistantHistoryPlaceholder(previousData, previousQuery, {
+    assistantID,
+    transport,
+    runtimeGeneration,
+  }),
   retry: 2,
 });
 export const getNextAssistantHistoryPageParam = (page: AssistantHistoryPage): string | undefined => page.complete ? undefined : page.nextCursor ?? undefined;
