@@ -158,8 +158,9 @@ const ContextPanelSessionTranscriptContent: React.FC<ContextPanelSessionTranscri
         prependAnchorRef.current = null;
     }, [completedPrependToken, scrollRef, sessionMessages, viewportKey]);
 
-    const hasMore = sync.hasMore(sessionId);
-    const isLoading = prefetch?.status === 'loading' || sync.isLoading(sessionId);
+    const sessionDir = React.useMemo(() => ({ directory: normalizedDirectory }), [normalizedDirectory]);
+    const hasMore = sync.hasMore(sessionId, sessionDir);
+    const isLoading = prefetch?.status === 'loading' || sync.isLoading(sessionId, sessionDir);
     const loadOlder = React.useCallback(() => {
         if (!shouldRequestContextPanelLoadOlder(hasMore, isLoading)) return;
         const token = prependRequestRef.current + 1;
@@ -173,10 +174,10 @@ const ContextPanelSessionTranscriptContent: React.FC<ContextPanelSessionTranscri
             scrollTop: element.scrollTop,
         }) : null;
         prependAnchorRef.current = anchor ? { token, viewportKey, anchor } : null;
-        void sync.loadMore(sessionId).finally(() => {
+        void sync.loadMore(sessionId, sessionDir).finally(() => {
             setCompletedPrependToken(token);
         });
-    }, [hasMore, isLoading, scrollRef, sessionId, sync, viewportKey]);
+    }, [hasMore, isLoading, scrollRef, sessionDir, sessionId, sync, viewportKey]);
     const transcriptState = resolveContextPanelTranscriptState({
         directoryMatches: true,
         requested: active,

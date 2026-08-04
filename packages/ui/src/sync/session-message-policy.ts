@@ -2,8 +2,8 @@
  * Session history window policy — **limit means authored-user turns**.
  *
  * Link tier (product turn budgets):
- * - **local** — 本机 / 局域网 direct：首屏更大，loadMore 与 Relay 同为 **2 轮**
- * - **relay** — 经 private Relay 隧道，首屏与 prepend 固定 **2 轮**
+ * - **local** — 本机 / 局域网 direct：首屏更大，loadMore 与 Relay 同为 **4 轮**
+ * - **relay** — 经 private Relay 隧道，首屏 **2 轮**，prepend/loadMore **4 轮**
  *
  * Surface (only used for optional legacy helpers; product turns are link-tiered):
  * - desktop / mobile — no longer shrinks turn budgets when on local LAN
@@ -29,9 +29,9 @@ const INITIAL_TURN_LIMIT_LOCAL = 6
 /** First paint turns over Relay. */
 const INITIAL_TURN_LIMIT_RELAY = 2
 /** History prepend / loadMore turns on 本机 / 局域网 (same page size as Relay). */
-const HISTORY_TURN_LIMIT_LOCAL = 2
-/** History prepend turns over Relay. */
-const HISTORY_TURN_LIMIT_RELAY = 2
+const HISTORY_TURN_LIMIT_LOCAL = 4
+/** History prepend / loadMore turns over Relay. */
+const HISTORY_TURN_LIMIT_RELAY = 4
 
 /** SDK message refetch after edits (not a product history limit). */
 const MESSAGE_REFETCH_MESSAGE_LIMIT = 100
@@ -71,7 +71,7 @@ export function getInitialSessionTurnBudget(
 
 /**
  * Product `limit` for prepend / loadMore: authored-user turns for one Host page.
- * Local/LAN and Relay both use 2 turns per page.
+ * Local/LAN and Relay both use 4 turns per page.
  */
 export function getHistorySessionTurnLimit(
   link: SessionMessageLinkTier = resolveSessionMessageLinkTier(),

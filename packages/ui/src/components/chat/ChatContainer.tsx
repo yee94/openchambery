@@ -753,16 +753,20 @@ const ChatContainerContent: React.FC<ChatContainerContentProps> = ({
         EMPTY_PREFETCH_SERVER_SNAPSHOT,
     );
     const loadMoreMessages = useEvent(async (sessionId: string) => {
-        const syncComplete = sync.isComplete(sessionId);
+        // Always scope meta/loadMore to the session workspace. Prefetch is already
+        // directory-keyed; without this, cross-project sessions show canLoadEarlier
+        // from prefetch but loadMore silent-no-ops on the primary directory meta.
+        const sessionDir = { directory: effectiveSessionDirectory };
+        const syncComplete = sync.isComplete(sessionId, sessionDir);
         const prefetchHasMore = !syncComplete
             && Boolean(sessionPrefetchInfo?.cursor)
             && sessionPrefetchInfo?.complete !== true;
-        if (sync.hasMore(sessionId) || prefetchHasMore) {
-            await sync.loadMore(sessionId);
+        if (sync.hasMore(sessionId, sessionDir) || prefetchHasMore) {
+            await sync.loadMore(sessionId, sessionDir);
             return;
         }
         if (!syncComplete) {
-            await sync.loadMore(sessionId);
+            await sync.loadMore(sessionId, sessionDir);
             return;
         }
         // Only page assistant-owned archives after live pagination is authoritative-complete.
@@ -872,19 +876,20 @@ const ChatContainerContent: React.FC<ChatContainerContentProps> = ({
         };
     }, [activeRetryStatus, retryFallbackTimestamp]);
 
-    // History metadata — use sync's hasMore/isLoading
+    // History metadata — use sync's hasMore/isLoading (scoped to session directory)
     const historyMeta = React.useMemo(() => {
         if (!currentSessionId) return null;
         // Sync isComplete is the only positive live "exhausted" signal. Missing
         // cursor must neither look complete nor enable load-more. Prefetch may
         // extend has-more only while live is not yet complete.
-        const syncComplete = sync.isComplete(currentSessionId);
+        const sessionDir = { directory: effectiveSessionDirectory };
+        const syncComplete = sync.isComplete(currentSessionId, sessionDir);
         const prefetchHasMore = !syncComplete
             && Boolean(sessionPrefetchInfo?.cursor)
             && sessionPrefetchInfo?.complete !== true;
         const loadState = resolveChatHistoryLoadState({
             syncComplete,
-            syncHasMore: sync.hasMore(currentSessionId),
+            syncHasMore: sync.hasMore(currentSessionId, sessionDir),
             prefetchHasMore,
             assistantComplete: assistantHistory?.complete ?? true,
         });
@@ -896,9 +901,15 @@ const ChatContainerContent: React.FC<ChatContainerContentProps> = ({
             limit: turnLimit,
             complete: loadState.complete,
             canLoadEarlier: loadState.canLoadEarlier,
-            loading: sync.isLoading(currentSessionId) || Boolean(assistantHistory?.loading),
+            // Prefetch status is the reactive loading signal (meta.loading is a
+            // ref and only updates when something else re-renders). Without
+            // status==='loading', concurrent materialize/tail pulls leave the
+            // mobile button enabled while fetchOlderHistory silent-returns.
+            loading: sync.isLoading(currentSessionId, sessionDir)
+                || sessionPrefetchInfo?.status === 'loading'
+                || Boolean(assistantHistory?.loading),
         };
-    }, [assistantHistory?.complete, assistantHistory?.loading, currentSessionId, sessionPrefetchInfo, sync]);
+    }, [assistantHistory?.complete, assistantHistory?.loading, currentSessionId, effectiveSessionDirectory, sessionPrefetchInfo, sync]);
 
     const isMobile = useUIStore((state) => state.isMobile);
     const isDedicatedMobileApp = useMobileAppActions() !== null;
@@ -1128,8 +1139,13 @@ const ChatContainerContent: React.FC<ChatContainerContentProps> = ({
     });
     // Mobile loads older history via an explicit top button instead of a
     // scroll-position trigger (see handleHistoryScroll in the controller).
+    // Disable while sync is mid-flight (historyLoading) too — otherwise a
+    // concurrent materialize/tail pull makes the button look live but the
+    // click is a silent no-op until that flight settles.
     const showLoadOlderButton = isMobileSurfaceRuntime()
         && timelineController.historySignals.canLoadEarlier;
+    const isLoadOlderBusy = timelineController.isLoadingOlder
+        || timelineController.historySignals.historyLoading;
     const timelineLoadEarlier = timelineController.loadEarlier;
     const handleLoadOlderClick = useEvent(() => {
         void timelineLoadEarlier({ userInitiated: true });
@@ -1276,7 +1292,7 @@ const ChatContainerContent: React.FC<ChatContainerContentProps> = ({
             || historyPrefix.length > 0,
         hasRenderableSessionSnapshot,
         prefetchStatus: sessionPrefetchInfo?.status,
-        syncLoading: Boolean(currentSessionId && sync.isLoading(currentSessionId)),
+        syncLoading: Boolean(currentSessionId && sync.isLoading(currentSessionId, { directory: effectiveSessionDirectory })),
     });
     const isSessionHydrating = Boolean(currentSessionId) && sessionTranscriptGate === 'hydrating';
     // Assistant-owned history is authoritative for prior bindings. Do not replace
@@ -1691,7 +1707,7 @@ const ChatContainerContent: React.FC<ChatContainerContentProps> = ({
                 messageListRef={messageListRef}
                 pendingRevealWork={timelineController.pendingRevealWork}
                 renderedMessages={timelineController.renderedMessages}
-                isLoadingOlder={timelineController.isLoadingOlder}
+                isLoadingOlder={isLoadOlderBusy}
                 sessionIsWorking={sessionIsWorking}
                 streamingMessageId={streamingMessageId}
                 activeStreamingPhase={activeStreamingPhase}
@@ -1710,7 +1726,7 @@ const ChatContainerContent: React.FC<ChatContainerContentProps> = ({
                 onSelectTurn={handlePromptNavigatorSelect}
                 showPromptNavigator={showPromptNavigator}
                 canLoadEarlierPrompts={canLoadEarlierPrompts}
-                isLoadingOlderPrompts={timelineController.isLoadingOlder}
+                isLoadingOlderPrompts={isLoadOlderBusy}
                 onLoadEarlierPrompts={handleLoadOlderClick}
             />
 
@@ -1741,7 +1757,7 @@ const ChatContainerContent: React.FC<ChatContainerContentProps> = ({
                 onScrollByTurnOffset={navigation.scrollByTurnOffset}
                 onResumeToLatest={resumeToLatestInstant}
                 canLoadEarlier={timelineController.historySignals.canLoadEarlier}
-                isLoadingEarlier={timelineController.isLoadingOlder}
+                isLoadingEarlier={isLoadOlderBusy}
                 onLoadEarlier={handleLoadOlderClick}
             />
         </div>

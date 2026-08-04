@@ -593,15 +593,22 @@ export function useSync() {
     [childStores, keyFor, touch, getMetaFor, loadMessages, directory],
   )
 
-  // Load more (pagination)
+  // Load more (pagination). Directory must match the session's workspace —
+  // meta/prefetch cursor is keyed by directory, and a missing directory falls
+  // through to default meta (no cursor) which would silent-no-op.
   const loadMore = useCallback(
-    async (sessionID: string) => {
-      touch(sessionID)
-      const m = getMetaFor(sessionID)
+    async (sessionID: string, options?: { directory?: string }) => {
+      const targetDirectory = options?.directory ?? directory
+      touch(sessionID, targetDirectory)
+      const m = getMetaFor(sessionID, targetDirectory)
       if (m.loading || m.complete || !m.cursor) return
-      await loadMessages(sessionID, { before: m.cursor, purpose: "prepend" })
+      await loadMessages(sessionID, {
+        before: m.cursor,
+        purpose: "prepend",
+        directory: targetDirectory,
+      })
     },
-    [touch, getMetaFor, loadMessages],
+    [directory, touch, getMetaFor, loadMessages],
   )
 
   const loadChildren = useCallback(
@@ -630,24 +637,26 @@ export function useSync() {
   )
 
   const hasMore = useCallback(
-    (sessionID: string) => {
-      const m = getMetaFor(sessionID)
+    (sessionID: string, options?: { directory?: string }) => {
+      const m = getMetaFor(sessionID, options?.directory ?? directory)
       return !m.complete && !!m.cursor
     },
-    [getMetaFor],
+    [directory, getMetaFor],
   )
 
   const isLoading = useCallback(
-    (sessionID: string) => getMetaFor(sessionID).loading,
-    [getMetaFor],
+    (sessionID: string, options?: { directory?: string }) =>
+      getMetaFor(sessionID, options?.directory ?? directory).loading,
+    [directory, getMetaFor],
   )
 
   // True only when a fetch has positively confirmed the history is fully
   // loaded (no next cursor). Distinct from !hasMore(), which is also true for
   // sessions whose meta simply hasn't been populated yet.
   const isComplete = useCallback(
-    (sessionID: string) => getMetaFor(sessionID).complete,
-    [getMetaFor],
+    (sessionID: string, options?: { directory?: string }) =>
+      getMetaFor(sessionID, options?.directory ?? directory).complete,
+    [directory, getMetaFor],
   )
 
   // Optimistic add (for prompt submission)

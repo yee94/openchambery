@@ -263,7 +263,7 @@ describe('Assistant UI product contract', () => {
     expect(conversation).toContain('fetchPrevious: fetchPreviousHistory');
     expect(conversation).toContain('historyQuery.isLoading || historyQuery.isFetchingNextPage');
     expect(conversation).toContain('historyQuery.isError || (historyQuery.isSuccess && !historyQuery.hasNextPage)');
-    expect(chatContainer).toContain('await sync.loadMore(sessionId)');
+    expect(chatContainer).toContain('await sync.loadMore(sessionId, sessionDir)');
     expect(chatContainer).toContain('await assistantHistory.fetchPrevious()');
     expect(chatContainer).toContain('// Only page assistant-owned archives after live pagination is authoritative-complete.');
     expect(chatContainer).toContain('historyPrefix.length === 0');

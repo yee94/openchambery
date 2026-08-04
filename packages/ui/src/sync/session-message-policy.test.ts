@@ -8,20 +8,20 @@ import {
 } from "./session-message-policy"
 
 describe("product limit is turns — link tiered", () => {
-  test("local / LAN: larger first paint; loadMore is 2 turns", () => {
+  test("local / LAN: larger first paint; loadMore is 4 turns", () => {
     expect(getInitialSessionTurnLimit("local")).toBe(6)
-    expect(getHistorySessionTurnLimit("local")).toBe(2)
+    expect(getHistorySessionTurnLimit("local")).toBe(4)
     expect(resolveSessionMessageTurnLimit("initial", "local")).toBe(6)
     expect(resolveSessionMessageTurnLimit("materialize", "local")).toBe(6)
     expect(resolveSessionMessageTurnLimit("recovery", "local")).toBe(6)
-    expect(resolveSessionMessageTurnLimit("prepend", "local")).toBe(2)
+    expect(resolveSessionMessageTurnLimit("prepend", "local")).toBe(4)
   })
 
-  test("relay: fixed 2 turns for first paint and prepend", () => {
+  test("relay: first paint 2 turns; prepend/loadMore 4 turns", () => {
     expect(getInitialSessionTurnLimit("relay")).toBe(2)
-    expect(getHistorySessionTurnLimit("relay")).toBe(2)
+    expect(getHistorySessionTurnLimit("relay")).toBe(4)
     expect(resolveSessionMessageTurnLimit("initial", "relay")).toBe(2)
-    expect(resolveSessionMessageTurnLimit("prepend", "relay")).toBe(2)
+    expect(resolveSessionMessageTurnLimit("prepend", "relay")).toBe(4)
   })
 
   test("local first paint is higher than relay; loadMore matches relay", () => {

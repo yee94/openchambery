@@ -91,6 +91,9 @@ const MOBILE_TURN_MODEL_CACHE_MAX = 4
 const MOBILE_TURN_MODEL_CACHE_MAX_MESSAGES = 30
 const HISTORY_RENDER_WAIT_TIMEOUT_MS = 250
 const HISTORY_INTERACTION_GUARD_MS = 2000
+/** Wait for an in-flight sync page (historyLoading) before user-initiated load-more gives up. */
+const HISTORY_LOADING_WAIT_MS = 4_000
+const HISTORY_LOADING_POLL_MS = 40
 // Long smooth scrolls across a big session can take a couple of seconds;
 // the pin releases early as soon as the spy reports the target turn.
 const SCROLL_PIN_TIMEOUT_MS = 2500
@@ -749,42 +752,42 @@ export const useChatTimelineController = ({
 
     const revealBufferedTurns = useEvent(async (): Promise<boolean> => false);
 
+    const waitWhileHistoryLoading = useEvent(async (targetSessionId: string): Promise<boolean> => {
+        const deadline = Date.now() + HISTORY_LOADING_WAIT_MS;
+        while (historySignalsRef.current.historyLoading) {
+            if (sessionIdRef.current !== targetSessionId) return false;
+            if (Date.now() >= deadline) return false;
+            await new Promise<void>((resolve) => {
+                if (typeof window === 'undefined') {
+                    resolve();
+                    return;
+                }
+                window.setTimeout(resolve, HISTORY_LOADING_POLL_MS);
+            });
+        }
+        return sessionIdRef.current === targetSessionId;
+    });
+
     const fetchOlderHistory = useEvent(async (input: {
         preserveViewport: boolean;
+        /** When true, wait out a concurrent sync page instead of silent no-op. */
+        userInitiated?: boolean;
     }): Promise<boolean> => {
         if (!sessionIdRef.current || isLoadingOlderRef.current) {
-            return false;
-        }
-        if (historySignalsRef.current.historyLoading) {
             return false;
         }
         if (!historySignalsRef.current.hasMoreAboveTurns) {
             return false;
         }
 
-        const container = scrollRef.current;
-        const beforeMessages = messagesRef.current;
-        const beforeMessageCount = beforeMessages.length;
-        const beforeOldestMessageId = beforeMessages[0]?.info?.id ?? null;
-        const beforeLimit = historyMetaRef.current?.limit ?? getMemoryLimits().HISTORICAL_MESSAGES;
+        // Arm the re-entry guard synchronously so a burst of wheel events /
+        // double-taps cannot start concurrent pagination chains.
+        isLoadingOlderRef.current = true;
+        beginHistoryInteraction();
+        setIsLoadingOlder(true);
 
-        // Store scroll snapshot BEFORE the fetch so useLayoutEffect can
-        // compensate synchronously when React commits the new messages.
+        const targetSessionId = sessionIdRef.current;
         let armedSnapshot: PrePrependSnapshot | null = null;
-        if (input.preserveViewport && container) {
-            armedSnapshot = {
-                sessionId: sessionIdRef.current,
-                height: container.scrollHeight,
-                top: container.scrollTop,
-                anchor: captureViewportAnchor(),
-                oldestId: beforeOldestMessageId,
-                newestId: beforeMessages[beforeMessages.length - 1]?.info?.id ?? null,
-            };
-            prePrependScrollRef.current = armedSnapshot;
-        }
-
-        // Cancel the multi-frame hold only while this interaction still owns
-        // the armed snapshot. A superseded owner must not cancel another hold.
         const releaseSnapshot = () => {
             if (!(armedSnapshot && prePrependScrollRef.current === armedSnapshot)) {
                 return;
@@ -793,17 +796,42 @@ export const useChatTimelineController = ({
             messageListRef.current?.cancelViewportAnchorHold();
         };
 
-        // Arm the re-entry guard synchronously so a burst of wheel events
-        // cannot start concurrent pagination chains before React state flips.
-        isLoadingOlderRef.current = true;
-        beginHistoryInteraction();
-        setIsLoadingOlder(true);
-
         try {
-            const targetSessionId = sessionIdRef.current;
-            if (!targetSessionId) {
-                releaseSnapshot();
+            // Background materialize/tail pulls flip historyLoading without
+            // disabling the mobile button. User taps must wait for that flight
+            // instead of returning false with no feedback (intermittent no-op).
+            if (historySignalsRef.current.historyLoading) {
+                if (!input.userInitiated) {
+                    return false;
+                }
+                const cleared = await waitWhileHistoryLoading(targetSessionId);
+                if (!cleared || !historySignalsRef.current.hasMoreAboveTurns) {
+                    return false;
+                }
+            }
+
+            if (!sessionIdRef.current || sessionIdRef.current !== targetSessionId) {
                 return false;
+            }
+
+            const container = scrollRef.current;
+            const beforeMessages = messagesRef.current;
+            const beforeMessageCount = beforeMessages.length;
+            const beforeOldestMessageId = beforeMessages[0]?.info?.id ?? null;
+            const beforeLimit = historyMetaRef.current?.limit ?? getMemoryLimits().HISTORICAL_MESSAGES;
+
+            // Store scroll snapshot BEFORE the fetch so useLayoutEffect can
+            // compensate synchronously when React commits the new messages.
+            if (input.preserveViewport && container) {
+                armedSnapshot = {
+                    sessionId: sessionIdRef.current,
+                    height: container.scrollHeight,
+                    top: container.scrollTop,
+                    anchor: captureViewportAnchor(),
+                    oldestId: beforeOldestMessageId,
+                    newestId: beforeMessages[beforeMessages.length - 1]?.info?.id ?? null,
+                };
+                prePrependScrollRef.current = armedSnapshot;
             }
 
             let loadedMessageCount = beforeMessageCount;
@@ -815,8 +843,16 @@ export const useChatTimelineController = ({
                 // Do not start another Host turn-page while sync still marks
                 // history loading (in-flight prepend / meta.loading).
                 if (historySignalsRef.current.historyLoading) {
-                    releaseSnapshot();
-                    return false;
+                    if (input.userInitiated) {
+                        const cleared = await waitWhileHistoryLoading(targetSessionId);
+                        if (!cleared) {
+                            releaseSnapshot();
+                            return false;
+                        }
+                    } else {
+                        releaseSnapshot();
+                        return false;
+                    }
                 }
 
                 // Capture height before each page so collapsed turns that
@@ -888,7 +924,10 @@ export const useChatTimelineController = ({
         }
 
         try {
-            void (await fetchOlderHistory({ preserveViewport: true }));
+            void (await fetchOlderHistory({
+                preserveViewport: true,
+                userInitiated: Boolean(options?.userInitiated),
+            }));
         } finally {
             settleHistoryInteraction();
         }

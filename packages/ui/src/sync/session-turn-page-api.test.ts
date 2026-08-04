@@ -87,8 +87,8 @@ describe("fetchSessionTurnPage", () => {
     )
     expect(call.url.searchParams.get("directory")).toBe("/repo a")
     expect(call.url.searchParams.get("before")).toBe("msg_cursor")
-    // Default turns = history link tier (local/relay both 2 for loadMore); test env is local.
-    expect(call.url.searchParams.get("turns")).toBe("2")
+    // Default turns = history link tier (local/relay both 4 for loadMore); test env is local.
+    expect(call.url.searchParams.get("turns")).toBe("4")
     // Host owns `_inner_scanLimit`; default client path must not send scanLimit.
     expect(call.url.searchParams.has("scanLimit")).toBe(false)
     expect(call.signal).toBe(signal)
@@ -114,8 +114,8 @@ describe("fetchSessionTurnPage", () => {
     expect(call.url.pathname).toBe("/api/openchamber/sessions/ses_1/messages")
     expect(call.url.searchParams.get("directory")).toBe("/repo")
     expect(call.url.searchParams.has("before")).toBe(false)
-    // Bare fetchSessionTurnPage defaults to history/loadMore turn limit (2).
-    expect(call.url.searchParams.get("turns")).toBe("2")
+    // Bare fetchSessionTurnPage defaults to history/loadMore turn limit (4).
+    expect(call.url.searchParams.get("turns")).toBe("4")
     expect(call.url.searchParams.has("scanLimit")).toBe(false)
   })
 
