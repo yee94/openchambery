@@ -4,6 +4,13 @@ All notable changes to this project will be documented in this file.
 
 ## [Unreleased]
 
+## [1.16.116] - 2026-08-04
+
+- **Git sync:** keep the toolbar controls aligned while sync details appear instantly in a hover tip; pending incoming or outgoing changes receive a compact status badge.
+- **Chat stability:** eliminate activity-tool flicker during streaming, preserve cached timeline layout, and keep session synchronization responsive while live updates arrive.
+- **Composer and references:** improve dropped-file references, inline visual layout, and model-control interaction handling.
+- **Scheduled tasks:** extend the runtime allowance for task dialogs and simplify progressive tool-row rendering.
+
 ## [1.16.115] - 2026-08-04
 
 - **Chat timeline (turn pages):** load and paginate conversations by turn pages instead of raw message slices, with shared Web / VS Code bridge + server `session-turn-pages` APIs so cold open, history scroll-up, and recovery share one cursor-aware contract.
