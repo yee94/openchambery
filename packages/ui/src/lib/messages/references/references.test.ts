@@ -45,6 +45,36 @@ describe('detectMessageReferences', () => {
         ]);
     });
 
+    test('detects reserved-slot slash chips for skills and commands after copy/paste', () => {
+        const skillSpans = detectMessageReferences('run /\u2003review please', {
+            skillNames: new Set(['review']),
+        });
+        expect(skillSpans).toEqual([
+            {
+                start: 4,
+                end: 12,
+                kind: 'skill',
+                raw: '/\u2003review',
+                label: '/review',
+                payload: { kind: 'skill', skillName: 'review' },
+            },
+        ]);
+
+        const commandSpans = detectMessageReferences('/\u2003release  包含当前所有 changes', {
+            commandNames: new Set(['release']),
+        });
+        expect(commandSpans).toEqual([
+            {
+                start: 0,
+                end: 9,
+                kind: 'command',
+                raw: '/\u2003release',
+                label: '/release',
+                payload: { kind: 'command', commandName: 'release' },
+            },
+        ]);
+    });
+
     test('decorates image citations and skips markdown links', () => {
         const spans = detectMessageReferences('see [shot.png] and [docs](https://example.com)', {
             citationIcons: new Map([['shot.png', 'image']]),

@@ -44,6 +44,7 @@ import { useUIStore } from '@/stores/useUIStore';
 import { useModelLists } from '@/hooks/useModelLists';
 import { useIsTextTruncated } from '@/hooks/useIsTextTruncated';
 import { formatEffortLabel, getCycledPrimaryAgentName, isPrimaryMode, resolveAgentModelSelection, type ControlledModelSelection, type MobileControlsPanel } from './mobileControlsUtils';
+import { shouldCancelSearchableSelectorHoverDismiss } from './searchableSelectorDismiss';
 import { getCurrentIntlLocale, useI18n } from '@/lib/i18n';
 import { useOpenCodeReadiness } from '@/hooks/useOpenCodeReadiness';
 import { eventMatchesShortcut, getEffectiveShortcutCombo, normalizeCombo } from '@/lib/shortcuts';
@@ -1977,7 +1978,14 @@ export const ModelControls: React.FC<ModelControlsProps> = ({
             handleCycleAgentFromModelPicker(cycleAgentDirection);
         };
 
-        const handleModelMenuOpenChange = (nextOpen: boolean) => {
+        const handleModelMenuOpenChange = (
+            nextOpen: boolean,
+            eventDetails?: { reason?: string; cancel?: () => void },
+        ) => {
+            if (shouldCancelSearchableSelectorHoverDismiss(nextOpen, eventDetails?.reason)) {
+                eventDetails?.cancel?.();
+                return;
+            }
             setModelTooltipOpen(false);
             if (!nextOpen) {
                 suppressModelTooltipUntilRef.current = performance.now() + 200;
@@ -2507,7 +2515,13 @@ export const ModelControls: React.FC<ModelControlsProps> = ({
                     <Tooltip delayDuration={600}>
                         <DropdownMenu
                             open={isAgentControlReady && isAgentSelectorOpen}
-                            onOpenChange={isAgentControlReady ? (open) => setAgentSelectorOpen(open) : undefined}
+                            onOpenChange={isAgentControlReady ? (open, eventDetails) => {
+                                if (shouldCancelSearchableSelectorHoverDismiss(open, eventDetails?.reason)) {
+                                    eventDetails?.cancel?.();
+                                    return;
+                                }
+                                setAgentSelectorOpen(open);
+                            } : undefined}
                             onOpenChangeComplete={(open) => {
                                 if (!open) handleSelectorCloseComplete('agent');
                             }}

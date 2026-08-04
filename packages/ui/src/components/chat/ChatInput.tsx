@@ -190,6 +190,7 @@ import {
     composerTriggerIconDisplay,
     composerTriggerIconVisual,
     stripComposerTriggerIconSlot,
+    stripComposerTriggerIconSlotsForPlainText,
 } from '@/composer/inline-visual';
 import { buildAssistantQueueDeliveryParts, buildAssistantQueueSyntheticSidecar, buildSyntheticDeliveryParts, compileChatComposerDelivery, legacyTextToAuthoredPlan } from './chatComposerDelivery';
 import { queueModeAllowsMutations, shouldRemoveQueueItemAfterEditCommit } from './queuedMessageChipsState';
@@ -5019,6 +5020,63 @@ const ChatInputRuntime: React.FC<ChatInputProps> = ({ onOpenSettings, scrollToBo
         }
     }, [surfaceResources, addDroppedPathsAsMentions, attachedFiles, adjustTextareaHeight, currentSessionId, getDocument, inputMode, insertReference, markFileMentionPasteSuppression, message, newSessionDraftOpen, insertTextAtSelection, t, updateAutocompleteState, commitBrowserTextChange, applyProgrammaticEdit]);
 
+    /**
+     * Copy/cut emit semantic plain text (no reserved icon em-spaces) so pasting
+     * a chip into another input does not leave a visible gap or break `\s` slash
+     * parsers. ChatInput re-promotes known slash tokens on the next edit.
+     */
+    const writeComposerSelectionToClipboard = React.useCallback((
+        event: React.ClipboardEvent<HTMLTextAreaElement>,
+        mode: 'copy' | 'cut',
+    ) => {
+        const textarea = event.currentTarget;
+        const selectionStart = textarea.selectionStart ?? 0;
+        const selectionEnd = textarea.selectionEnd ?? selectionStart;
+        if (selectionEnd <= selectionStart) return;
+
+        const atomicSelection = resolveAtomicReferenceSelection(
+            selectionStart,
+            selectionEnd,
+            [
+                ...findAttachmentCitationRanges(
+                    message,
+                    attachedFiles.filter(isInlineAttachmentCitation).map((file) => file.filename),
+                ),
+                ...findSkillMentionRanges(message, availableSkillNames.keys()),
+                ...getDocument().references,
+            ],
+        );
+        const rangeStart = atomicSelection?.start ?? selectionStart;
+        const rangeEnd = atomicSelection?.end ?? selectionEnd;
+        const selected = message.slice(rangeStart, rangeEnd);
+        const plain = stripComposerTriggerIconSlotsForPlainText(selected);
+        if (plain === selected && !atomicSelection) return;
+
+        event.preventDefault();
+        event.clipboardData.setData('text/plain', plain);
+        if (mode === 'cut') {
+            const next = `${message.slice(0, rangeStart)}${message.slice(rangeEnd)}`;
+            commitBrowserTextChange(next, rangeStart, rangeStart);
+            requestAnimationFrame(() => {
+                textareaRef.current?.setSelectionRange(rangeStart, rangeStart);
+                adjustTextareaHeight();
+            });
+        } else if (atomicSelection && (atomicSelection.start !== selectionStart || atomicSelection.end !== selectionEnd)) {
+            // Keep selection aligned with the chip the user intended to copy.
+            requestAnimationFrame(() => {
+                textareaRef.current?.setSelectionRange(rangeStart, rangeEnd);
+            });
+        }
+    }, [adjustTextareaHeight, attachedFiles, availableSkillNames, commitBrowserTextChange, getDocument, message]);
+
+    const handleCopy = React.useCallback((event: React.ClipboardEvent<HTMLTextAreaElement>) => {
+        writeComposerSelectionToClipboard(event, 'copy');
+    }, [writeComposerSelectionToClipboard]);
+
+    const handleCut = React.useCallback((event: React.ClipboardEvent<HTMLTextAreaElement>) => {
+        writeComposerSelectionToClipboard(event, 'cut');
+    }, [writeComposerSelectionToClipboard]);
+
     const handleFileSelect = (file: { name: string; path: string; relativePath?: string; isDirectory?: boolean }) => {
 
         const textarea = textareaRef.current;
@@ -7164,6 +7222,8 @@ const ChatInputRuntime: React.FC<ChatInputProps> = ({ onOpenSettings, scrollToBo
                         },
                         onBeforeInput: handleBeforeInput,
                         onKeyDown: handleKeyDown,
+                        onCopy: handleCopy,
+                        onCut: handleCut,
                         onPaste: handlePaste,
                         onDragEnter: handleDragEnter,
                         onDragOver: handleDragOver,

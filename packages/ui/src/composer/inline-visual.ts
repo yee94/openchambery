@@ -54,6 +54,50 @@ export const stripComposerTriggerIconSlot = (value: string): string => (
     value.startsWith(COMPOSER_TRIGGER_ICON_SLOT) ? value.slice(COMPOSER_TRIGGER_ICON_SLOT.length) : value
 );
 
+/**
+ * Strip reserved trigger-icon em-spaces from plain text for clipboard and non-composer
+ * consumers. ChatInput re-promotes known slash chips on paste/edit.
+ *
+ * Without this, copying `/\u2003release …` into another field leaves a visible gap
+ * (and `\s` parsers treat the slot as the first argument separator).
+ */
+export const stripComposerTriggerIconSlotsForPlainText = (text: string): string => (
+    text
+        .replaceAll(`/${COMPOSER_TRIGGER_ICON_SLOT}`, '/')
+        .replaceAll(`@${COMPOSER_TRIGGER_ICON_SLOT}`, '@')
+        .replaceAll(`[${COMPOSER_TRIGGER_ICON_SLOT}`, '[')
+);
+
+export type SlashCommandInvocation = {
+    /** Command / skill name without the leading `/` or icon slot. */
+    commandName: string;
+    /** Trailing draft after the head token (trimmed). */
+    argumentsText: string;
+};
+
+/**
+ * Parse a leading slash invocation from composer or send text.
+ * The reserved icon em-space after `/` is part of the chip head, not whitespace.
+ */
+export const parseSlashCommandInvocation = (text: string): SlashCommandInvocation | null => {
+    const trimmedStart = text.match(/^\s*/)?.[0].length ?? 0;
+    const body = text.slice(trimmedStart);
+    if (!body.startsWith('/')) return null;
+    let nameStart = 1;
+    if (body.startsWith(COMPOSER_TRIGGER_ICON_SLOT, nameStart)) {
+        nameStart += COMPOSER_TRIGGER_ICON_SLOT.length;
+    }
+    const rest = body.slice(nameStart);
+    if (!rest) return null;
+    const separatorIndex = rest.search(/\s/u);
+    const commandName = separatorIndex === -1 ? rest : rest.slice(0, separatorIndex);
+    if (!commandName) return null;
+    return {
+        commandName,
+        argumentsText: separatorIndex === -1 ? '' : rest.slice(separatorIndex).trim(),
+    };
+};
+
 /** Bracket citation display with a reserved em-space icon well: `[␠filename]`. */
 export const attachmentCitationDisplay = (filename: string): string => (
     composerTriggerIconDisplay({

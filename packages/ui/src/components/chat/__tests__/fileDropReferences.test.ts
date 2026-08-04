@@ -52,6 +52,32 @@ describe('file drop references', () => {
         expect(collectFileDropReferences(pathTransfer)).toEqual(['/tmp/one.txt']);
     });
 
+    test('does not treat slash-command chips as absolute file paths on text/plain paste', () => {
+        const slashTransfer = {
+            getData: (type: string) => type === 'text/plain' ? '/release' : '',
+        } as Pick<DataTransfer, 'getData'>;
+        const reservedSlotTransfer = {
+            getData: (type: string) => type === 'text/plain' ? '/\u2003release' : '',
+        } as Pick<DataTransfer, 'getData'>;
+        const slashWithArgsTransfer = {
+            getData: (type: string) => (
+                type === 'text/plain'
+                    ? '/\u2003release  包含当前所有 changes 来一个提交发布 g'
+                    : ''
+            ),
+        } as Pick<DataTransfer, 'getData'>;
+
+        // These used to become `@/release` file mentions via handlePaste.
+        expect(collectFileDropReferences(slashTransfer)).toEqual([]);
+        expect(collectFileDropReferences(reservedSlotTransfer)).toEqual([]);
+        expect(collectFileDropReferences(slashWithArgsTransfer)).toEqual([]);
+
+        // Multi-segment absolute paths still paste as file mentions.
+        expect(collectFileDropReferences({
+            getData: (type: string) => type === 'text/plain' ? '/Users/example/project/src/index.ts' : '',
+        } as Pick<DataTransfer, 'getData'>)).toEqual(['/Users/example/project/src/index.ts']);
+    });
+
     test('reads structured VS Code payloads without parsing plain JSON text', () => {
         const payload = JSON.stringify({ resources: ['file:///Users/example/project', '/tmp/notes.md'] });
         const transfer = {

@@ -181,7 +181,7 @@ export const GitHeader: React.FC<GitHeaderProps> = ({
                     <Button
                       variant="ghost"
                       size="xs"
-                      className="size-6 px-0 text-muted-foreground hover:text-foreground"
+                      className="h-6 w-fit shrink-0 px-1 text-muted-foreground hover:text-foreground"
                       aria-label={t('gitView.header.repositoryViews')}
                     >
                       <Icon name="git-repository" className="size-3.5" />

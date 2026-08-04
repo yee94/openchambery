@@ -87,6 +87,7 @@ import { setSessionOpener } from "./session-opener"
 import { getRuntimeKey, getRuntimeTransportIdentity } from "@/lib/runtime-switch"
 import { rememberRuntimeLiveStatus } from "./runtime-live-memory"
 import { beginSessionSwitchMeasure } from "@/lib/sessionSwitchPerf"
+import { parseSlashCommandInvocation } from "@/composer/inline-visual"
 import { announceSessionSwitchIntent } from "@/lib/sessionSwitchIntent"
 
 export type { AttachedFile }
@@ -243,12 +244,13 @@ export async function routeMessage(params: {
     })
   }
 
-  // Slash commands — fire and forget, SSE delivers messages and status
-  if (params.content.startsWith("/")) {
-    const separatorIndex = params.content.search(/\s/u)
-    const head = separatorIndex === -1 ? params.content : params.content.slice(0, separatorIndex)
-    const argumentsText = separatorIndex === -1 ? "" : params.content.slice(separatorIndex).trim()
-    const cmdName = head.slice(1)
+  // Slash commands — fire and forget, SSE delivers messages and status.
+  // Reserved-slot chips (`/\u2003name`) must not treat the icon em-space as the
+  // first argument separator; that path is common after chip copy/paste.
+  const slashInvocation = parseSlashCommandInvocation(params.content)
+  if (slashInvocation) {
+    const cmdName = slashInvocation.commandName
+    const argumentsText = slashInvocation.argumentsText
 
     // OpenCode also exposes skills through its command catalog. Resolve the
     // installed skill catalog first so slash-invoked skills stay on the prompt

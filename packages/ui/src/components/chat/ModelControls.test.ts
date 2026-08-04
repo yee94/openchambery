@@ -1,5 +1,6 @@
 import { describe, expect, test } from 'bun:test';
 import { resolveChatInputSelectionVariantOptions, resolveModelVariantKeys, type ChatInputSelection } from './chatInputSurface';
+import { shouldCancelSearchableSelectorHoverDismiss } from './searchableSelectorDismiss';
 
 const selection: ChatInputSelection['value'] = { providerID: 'workspace', modelID: 'model-a', agent: 'build', variant: 'high' };
 const catalog: NonNullable<ChatInputSelection['catalog']> = {
@@ -9,6 +10,17 @@ const catalog: NonNullable<ChatInputSelection['catalog']> = {
         variantsReady: true,
         ready: true,
     };
+
+describe('shouldCancelSearchableSelectorHoverDismiss', () => {
+    test('cancels only hover-driven closes on searchable model/agent menus', () => {
+        expect(shouldCancelSearchableSelectorHoverDismiss(false, 'trigger-hover')).toBe(true);
+        expect(shouldCancelSearchableSelectorHoverDismiss(false, 'outside-press')).toBe(false);
+        expect(shouldCancelSearchableSelectorHoverDismiss(false, 'escape-key')).toBe(false);
+        expect(shouldCancelSearchableSelectorHoverDismiss(false, 'focus-out')).toBe(false);
+        expect(shouldCancelSearchableSelectorHoverDismiss(true, 'trigger-hover')).toBe(false);
+        expect(shouldCancelSearchableSelectorHoverDismiss(false, undefined)).toBe(false);
+    });
+});
 
 describe('ModelControls selection adapter variants', () => {
     test('reads variants only for the adapter selection', () => {

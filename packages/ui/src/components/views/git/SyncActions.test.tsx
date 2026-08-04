@@ -29,33 +29,28 @@ function renderSyncActions(aheadCount: number, behindCount: number) {
 }
 
 describe('SyncActions', () => {
-  test('shows directional ahead and behind counts with fixed-size icons', () => {
+  test('keeps directional counts in the sync tooltip', () => {
     const markup = renderSyncActions(2, 3);
 
-    expect(markup).toContain('data-sync-direction="behind"');
-    expect(markup).toContain('data-sync-direction="ahead"');
-    expect(markup).toContain('>3</span>');
-    expect(markup).toContain('>2</span>');
-    expect(markup).toContain('oc-arrow-down');
-    expect(markup).toContain('oc-arrow-up');
+    expect(markup).toContain('aria-label="Sync Changes (3 down, 2 up)"');
     expect(markup).toContain('size-3.5 shrink-0');
-    expect(markup).not.toMatch(/<span[^>]*aria-hidden="true"[^>]*>5<\/span>/);
+    expect(markup).toContain('w-fit');
+    expect(markup).toContain('bg-[var(--status-error)]');
+    expect(markup).not.toContain('data-sync-direction=');
   });
 
-  test('shows only the behind chip when the branch is only behind', () => {
+  test('includes only the behind count in the tooltip when the branch is only behind', () => {
     const markup = renderSyncActions(0, 1);
 
-    expect(markup).toContain('data-sync-direction="behind"');
-    expect(markup).toContain('>1</span>');
-    expect(markup).not.toContain('data-sync-direction="ahead"');
+    expect(markup).toContain('aria-label="Sync Changes (1 down, 0 up)"');
+    expect(markup).not.toContain('data-sync-direction=');
   });
 
-  test('shows only the ahead chip when the branch is only ahead', () => {
+  test('includes only the ahead count in the tooltip when the branch is only ahead', () => {
     const markup = renderSyncActions(4, 0);
 
-    expect(markup).toContain('data-sync-direction="ahead"');
-    expect(markup).toContain('>4</span>');
-    expect(markup).not.toContain('data-sync-direction="behind"');
+    expect(markup).toContain('aria-label="Sync Changes (0 down, 4 up)"');
+    expect(markup).not.toContain('data-sync-direction=');
   });
 
   test('keeps the icon-only layout when the branch is synchronized', () => {
@@ -63,5 +58,6 @@ describe('SyncActions', () => {
 
     expect(markup).not.toContain('data-sync-direction=');
     expect(markup).toContain('oc-refresh');
+    expect(markup).not.toContain('bg-[var(--status-error)]');
   });
 });

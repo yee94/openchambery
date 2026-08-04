@@ -17,9 +17,6 @@ interface SyncActionsProps {
   hasUncommittedChanges?: boolean;
 }
 
-const COUNT_CHIP_CLASS =
-  'inline-flex h-3.5 shrink-0 items-center gap-0.5 typography-micro font-medium leading-none tabular-nums';
-
 export const SyncActions: React.FC<SyncActionsProps> = ({
   syncAction,
   remotes = [],
@@ -51,39 +48,35 @@ export const SyncActions: React.FC<SyncActionsProps> = ({
   };
 
   return (
-    <Tooltip>
+    <Tooltip delayDuration={hasKnownSyncWork ? 0 : undefined}>
       <TooltipTrigger asChild>
         <button
           type="button"
           onClick={handleSync}
           disabled={isPrimaryDisabled}
-          className="inline-flex h-6 shrink-0 items-center justify-center gap-1 rounded px-1 text-muted-foreground hover:text-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[var(--interactive-focus-ring)] disabled:cursor-not-allowed disabled:opacity-50"
+          className="inline-flex h-6 w-fit shrink-0 items-center justify-center gap-1 rounded px-1 text-muted-foreground hover:text-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[var(--interactive-focus-ring)] disabled:cursor-not-allowed disabled:opacity-50"
           aria-label={
             hasKnownSyncWork
               ? t('gitView.sync.syncChangesTooltip', { ahead: aheadCount, behind: behindCount })
               : t('gitView.sync.syncChanges')
           }
         >
-          {syncAction === 'sync' ? (
-            <Icon name="loader-4" className="size-3.5 shrink-0 animate-spin" />
-          ) : (
-            <Icon name="refresh" className="size-3.5 shrink-0" />
-          )}
-          {behindCount > 0 ? (
-            <span aria-hidden="true" className={COUNT_CHIP_CLASS} data-sync-direction="behind">
-              <Icon name="arrow-down" className="size-3 shrink-0" />
-              <span>{behindCount}</span>
-            </span>
-          ) : null}
-          {aheadCount > 0 ? (
-            <span aria-hidden="true" className={COUNT_CHIP_CLASS} data-sync-direction="ahead">
-              <Icon name="arrow-up" className="size-3 shrink-0" />
-              <span>{aheadCount}</span>
-            </span>
-          ) : null}
+          <span className="relative flex size-3.5 shrink-0">
+            {syncAction === 'sync' ? (
+              <Icon name="loader-4" className="size-3.5 animate-spin" />
+            ) : (
+              <Icon name="refresh" className="size-3.5" />
+            )}
+            {hasKnownSyncWork ? (
+              <span
+                aria-hidden="true"
+                className="absolute -right-0.5 top-0 size-1 rounded-full bg-[var(--status-error)] ring-1 ring-[var(--surface-background)]"
+              />
+            ) : null}
+          </span>
         </button>
       </TooltipTrigger>
-      <TooltipContent sideOffset={8}>{tooltipLabel}</TooltipContent>
+      <TooltipContent side="bottom" sideOffset={8}>{tooltipLabel}</TooltipContent>
     </Tooltip>
   );
 };

@@ -10,7 +10,8 @@ import type {
 export const MESSAGE_REFERENCE_CLASS = 'text-[var(--primary)]';
 
 const IMAGE_FILENAME_PATTERN = /\.(?:png|jpe?g|gif|webp|svg|avif|bmp|heic|heif|tiff?)$/i;
-const SLASH_TOKEN_PATTERN = /(^|\s)\/([A-Za-z0-9][A-Za-z0-9_-]*)/g;
+/** Optional reserved icon em-space between `/` and the name (composer chip source). */
+const SLASH_TOKEN_PATTERN = /(^|\s)\/(\u2003)?([A-Za-z0-9][A-Za-z0-9_-]*)/g;
 const CANONICAL_SKILL_PATTERN = /\[skill:([A-Za-z0-9][A-Za-z0-9_-]*)\]/g;
 const CANONICAL_COMMAND_PATTERN = /\[command:([^\]\r\n]+)\]/g;
 const SESSION_TOKEN_PATTERN = /(^|[\s([{])(@session:([A-Za-z0-9_-]+))(?=$|[\s)\]},.!?;:])/g;
@@ -69,11 +70,12 @@ export const skillReferenceStrategy: MessageReferenceStrategy = {
         const knownLower = new Map(Array.from(known, (name) => [name.toLowerCase(), name]));
         SLASH_TOKEN_PATTERN.lastIndex = 0;
         while ((match = SLASH_TOKEN_PATTERN.exec(text)) !== null) {
-            const token = match[2];
+            const slot = match[2] ?? '';
+            const token = match[3] || '';
             const skillName = knownLower.get(token.toLowerCase());
             if (!skillName) continue;
             const start = match.index + match[1].length;
-            const end = start + token.length + 1;
+            const end = start + 1 + slot.length + token.length;
             // Prefer canonical `[skill:…]` when both forms somehow overlap.
             if (spans.some((span) => span.start < end && span.end > start)) continue;
             pushSpan(spans, {
@@ -129,11 +131,12 @@ export const commandReferenceStrategy: MessageReferenceStrategy = {
         const knownLower = new Map(Array.from(known, (name) => [name.toLowerCase(), name]));
         SLASH_TOKEN_PATTERN.lastIndex = 0;
         while ((match = SLASH_TOKEN_PATTERN.exec(text)) !== null) {
-            const token = match[2];
+            const slot = match[2] ?? '';
+            const token = match[3] || '';
             const commandName = knownLower.get(token.toLowerCase());
             if (!commandName) continue;
             const start = match.index + match[1].length;
-            const end = start + token.length + 1;
+            const end = start + 1 + slot.length + token.length;
             if (spans.some((span) => span.start < end && span.end > start)) continue;
             pushSpan(spans, {
                 start,

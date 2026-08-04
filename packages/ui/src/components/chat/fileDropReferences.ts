@@ -14,13 +14,51 @@ const isLikelyAbsolutePath = (value: string): boolean => (
     || /^[A-Za-z]:[\\/]/.test(value)
 );
 
-const toLikelyFileDropReference = (value: string): string | null => {
+/**
+ * Plain-text paste is shared by real filesystem paths and Composer slash chips
+ * (`/release`, `/\u2003release args`). A naive "starts with /" check turns those
+ * chips into `@/release` file mentions. Require multi-segment path shape and
+ * reject unescaped whitespace for text/plain only; drag/drop MIME types keep the
+ * broader absolute-path check.
+ */
+const isLikelyPlainTextFilesystemPath = (value: string): boolean => {
+    if (!isLikelyAbsolutePath(value)) return false;
+    // Slash-command invocations commonly carry arguments after the head token.
+    if (/\s/.test(value)) return false;
+
+    if (value.startsWith('//') || value.startsWith('\\\\')) {
+        // UNC: //server/share or \\server\share — need a share segment.
+        const body = value.replace(/^[\\/]+/, '');
+        return /[\\/]/.test(body);
+    }
+
+    if (/^[A-Za-z]:[\\/]/.test(value)) {
+        // Windows: require another separator or a filename with extension so
+        // bare `C:\release`-shaped tokens are not hijacked from slash paste.
+        const rest = value.slice(3);
+        return rest.includes('\\') || rest.includes('/') || rest.includes('.');
+    }
+
+    // POSIX absolute: reject single-segment `/release` (slash commands) while
+    // keeping multi-segment paths such as `/tmp/one.txt`.
+    const withoutRoot = value.replace(/^\/+/, '');
+    return withoutRoot.includes('/');
+};
+
+const toLikelyFileDropReference = (
+    value: string,
+    { fromPlainText = false }: { fromPlainText?: boolean } = {},
+): string | null => {
     const trimmed = value.trim().replace(/^['"]+|['"]+$/g, '');
     if (!trimmed || trimmed === '/>' || /[\r\n]/.test(trimmed)) {
         return null;
     }
 
-    if (trimmed.toLowerCase().startsWith('file://') || isLikelyAbsolutePath(trimmed)) {
+    if (trimmed.toLowerCase().startsWith('file://')) {
+        return trimmed;
+    }
+
+    if (fromPlainText ? isLikelyPlainTextFilesystemPath(trimmed) : isLikelyAbsolutePath(trimmed)) {
         return trimmed;
     }
 
@@ -56,16 +94,22 @@ const collectStringLeaves = (input: unknown, output: Set<string>, depth = 0): vo
 type FileDropReferenceParseOptions = {
     allowMultipleLines?: boolean;
     allowStructuredPayload?: boolean;
+    /** text/plain paste — stricter so slash chips are not treated as absolute paths. */
+    fromPlainText?: boolean;
 };
 
 export const parseFileDropReferences = (
     rawPayload: string,
-    { allowMultipleLines = true, allowStructuredPayload = true }: FileDropReferenceParseOptions = {},
+    {
+        allowMultipleLines = true,
+        allowStructuredPayload = true,
+        fromPlainText = false,
+    }: FileDropReferenceParseOptions = {},
 ): string[] => {
     const extracted = new Set<string>();
 
     const addCandidatesFromText = (value: string): void => {
-        const direct = toLikelyFileDropReference(value);
+        const direct = toLikelyFileDropReference(value, { fromPlainText });
         if (direct) {
             extracted.add(direct);
             return;
@@ -73,7 +117,7 @@ export const parseFileDropReferences = (
 
         if (allowMultipleLines) {
             for (const line of value.split(/\r?\n/)) {
-                const candidate = toLikelyFileDropReference(line);
+                const candidate = toLikelyFileDropReference(line, { fromPlainText });
                 if (candidate) {
                     extracted.add(candidate);
                 }
@@ -114,7 +158,7 @@ export const collectFileDropReferences = (dataTransfer: Pick<DataTransfer, 'getD
         }
 
         const parseOptions = dataType === 'text/plain'
-            ? { allowMultipleLines: false, allowStructuredPayload: false }
+            ? { allowMultipleLines: false, allowStructuredPayload: false, fromPlainText: true }
             : dataType === 'text/uri-list'
                 ? { allowStructuredPayload: false }
                 : undefined;
