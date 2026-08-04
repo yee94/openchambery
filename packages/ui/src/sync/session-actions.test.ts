@@ -34,6 +34,27 @@ mock.module("@/lib/desktop", () => ({
   isVSCodeRuntime: () => vscodeRuntime,
 }))
 
+const hostTurnPageCalls: Array<Record<string, unknown>> = []
+mock.module("./session-turn-page-api", () => ({
+  fetchHostSessionTurnPageForPurpose: mock(async (input: Record<string, unknown>) => {
+    hostTurnPageCalls.push(input)
+    replyCalls.push({ method: "host.session.turnPage", params: input })
+    const records = Array.isArray(sessionMessagesResult.data) ? sessionMessagesResult.data : []
+    return {
+      records,
+      cursor: null,
+      complete: true,
+      turnCount: 0,
+    }
+  }),
+  fetchSessionTurnPage: mock(async () => ({
+    records: [],
+    cursor: null,
+    complete: true,
+    turnCount: 0,
+  })),
+}))
+
 const mockScopedClient = {
   permission: {
     reply: mock((params: Record<string, unknown>) => {
@@ -398,26 +419,30 @@ describe("fetchMessagesForSession startup race", () => {
     sessionStatusResult = {}
     configStoreState.isConnected = true
     configStoreState.hasEverConnected = true
+    hostTurnPageCalls.length = 0
   })
 
   test("replays a selection fetch queued before sync action refs initialize", async () => {
     replyCalls.length = 0
+    hostTurnPageCalls.length = 0
     sessionMessagesResult = { data: [] }
     const store = createStore({}, { session: [{ id: "startup-session", time: { created: 1 } } as Session] })
     const childStores = createChildStores([["/test/project", store]])
     const { fetchMessagesForSession, setActionRefs } = await import("./session-actions")
 
     await fetchMessagesForSession("startup-session", "/test/project")
-    expect(replyCalls.filter((call) => call.method === "session.messages")).toHaveLength(0)
+    expect(replyCalls.filter((call) => call.method === "host.session.turnPage")).toHaveLength(0)
 
     setActionRefs(mockSdk as unknown as OpencodeClient, childStores, () => "/test/project")
     await new Promise((resolve) => setTimeout(resolve, 0))
 
-    expect(replyCalls.filter((call) => call.method === "session.messages")).toHaveLength(1)
+    expect(replyCalls.filter((call) => call.method === "host.session.turnPage")).toHaveLength(1)
+    expect(hostTurnPageCalls[0]?.purpose).toBe("initial")
   })
 
-  test("uses one small initial request for concurrent session selection loads", async () => {
+  test("uses one Host turn-page request for concurrent session selection loads", async () => {
     replyCalls.length = 0
+    hostTurnPageCalls.length = 0
     sessionMessagesResult = { data: [] }
     const store = createStore({}, { session: [{ id: "session-a", time: { created: 1 } } as Session] })
     const childStores = createChildStores([["/test/project", store]])
@@ -429,24 +454,32 @@ describe("fetchMessagesForSession startup race", () => {
       fetchMessagesForSession("session-a", "/test/project"),
     ])
 
-    const messageCalls = replyCalls.filter((call) => call.method === "session.messages")
-    expect(messageCalls).toHaveLength(1)
-    expect(messageCalls[0]?.params.limit).toBe(30)
+    const turnCalls = replyCalls.filter((call) => call.method === "host.session.turnPage")
+    expect(turnCalls).toHaveLength(1)
+    expect(turnCalls[0]?.params.purpose).toBe("initial")
   })
 
-  test("uses the runtime-aware initial page size", async () => {
-    const store = createStore({}, { session: [{ id: "session-a", time: { created: 1 } } as Session] })
+  test("selection materialize uses Host initial turn purpose on every surface", async () => {
+    const store = createStore({}, {
+      session: [
+        { id: "session-mobile", time: { created: 1 } } as Session,
+        { id: "session-web", time: { created: 1 } } as Session,
+        { id: "session-vscode", time: { created: 1 } } as Session,
+      ],
+    })
     const childStores = createChildStores([["/test/project", store]])
     const { fetchMessagesForSession, setActionRefs } = await import("./session-actions")
     setActionRefs(mockSdk as unknown as OpencodeClient, childStores, () => "/test/project")
 
     for (const runtime of ["mobile", "web", "vscode"] as const) {
       replyCalls.length = 0
+      hostTurnPageCalls.length = 0
       mobileSurfaceRuntime = runtime === "mobile"
       vscodeRuntime = runtime === "vscode"
-      await fetchMessagesForSession("session-a", "/test/project")
+      await fetchMessagesForSession(`session-${runtime}`, "/test/project")
 
-      expect(replyCalls.filter((call) => call.method === "session.messages")[0]?.params.limit).toBe(30)
+      expect(replyCalls.filter((call) => call.method === "host.session.turnPage")).toHaveLength(1)
+      expect(hostTurnPageCalls[0]?.purpose).toBe("initial")
     }
   })
 
@@ -505,7 +538,7 @@ describe("fetchMessagesForSession startup race", () => {
       useSessionUIStore.getState = previousGetState
     }
 
-    expect(replyCalls.filter((call) => call.method === "session.messages")).toHaveLength(1)
+    expect(replyCalls.filter((call) => call.method === "host.session.turnPage")).toHaveLength(1)
     expect(store.getState().message["session-busy"]?.map((message) => message.id)).toEqual([
       "msg_1",
       "msg_2",
@@ -571,7 +604,7 @@ describe("fetchMessagesForSession startup race", () => {
       useSessionUIStore.getState = previousGetState
     }
 
-    expect(replyCalls.filter((call) => call.method === "session.messages")).toHaveLength(1)
+    expect(replyCalls.filter((call) => call.method === "host.session.turnPage")).toHaveLength(1)
     expect(replyCalls.filter((call) => call.method === "session.status")).toHaveLength(1)
     expect(store.getState().session_status["session-status-reconcile"]).toEqual({ type: "idle" })
     expect(typeof store.getState().session_status_observed_at["session-status-reconcile"]).toBe("number")
@@ -716,7 +749,7 @@ describe("fetchMessagesForSession startup race", () => {
       useSessionUIStore.getState = previousGetState
     }
 
-    expect(replyCalls.filter((call) => call.method === "session.messages")).toHaveLength(1)
+    expect(replyCalls.filter((call) => call.method === "host.session.turnPage")).toHaveLength(1)
     const stored = store.getState().part.msg_dr_assistant?.[0] as { text?: string; time?: { end?: number } }
     expect(stored?.text).toBe("thinking half complete answer")
     expect(stored?.time?.end).toBe(99)

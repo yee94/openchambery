@@ -47,6 +47,12 @@ const {
     createTanstackTimelineSnapshotCache,
     resolveMessageListKeys,
     resolveDefaultActivityExpanded,
+    resolveMarkdownPreloadEntries,
+    resolveMarkdownPreloadReleaseWhileScrolling,
+    resolveMarkdownVisibleReleaseLimit,
+    resolveTanstackEstimatedEntrySize,
+    resolveTanstackEstimateMinSamples,
+    resolveTimelineVirtualizerCacheKey,
     resolveToggledActivityExpanded,
     shouldAdjustHistoryScrollForSizeChange,
     shouldShowCompactionStatus,
@@ -77,6 +83,7 @@ describe('shouldShowCompactionStatus', () => {
         chatRenderMode: 'sorted' as const,
         activityPresentationKind: 'compaction' as const,
         hasVisibleActivitySegments: false,
+        hasAssistantMessages: false,
         completionDisposition: 'active' as const,
         isLastTurn: true,
         sessionIsWorking: true,
@@ -92,7 +99,7 @@ describe('shouldShowCompactionStatus', () => {
         expect(shouldShowCompactionStatus({ ...base, isLastTurn: false, sessionIsWorking: false })).toBe(false);
     });
 
-    test('normal/abnormal settled => true even when not last or idle', () => {
+    test('normal/abnormal settled without assistants => true even when not last or idle', () => {
         expect(shouldShowCompactionStatus({
             ...base,
             completionDisposition: 'normal',
@@ -105,6 +112,18 @@ describe('shouldShowCompactionStatus', () => {
             isLastTurn: false,
             sessionIsWorking: false,
         })).toBe(true);
+    });
+
+    test('assistant messages own the disclosure header instead of the pre-assistant status', () => {
+        expect(shouldShowCompactionStatus({
+            ...base,
+            hasAssistantMessages: true,
+        })).toBe(false);
+        expect(shouldShowCompactionStatus({
+            ...base,
+            completionDisposition: 'normal',
+            hasAssistantMessages: true,
+        })).toBe(false);
     });
 
     test('live/default/has segments => false', () => {
@@ -172,6 +191,61 @@ describe('TanStack timeline snapshot cache', () => {
             sessionKey: 'ses_1',
             virtualizerKey: 'panel:ses_1',
         });
+    });
+
+    test('scopes timeline measurement snapshots by activity density', () => {
+        const cache = createTanstackTimelineSnapshotCache<string>(16);
+        const keys = ['turn:1', 'turn:2'];
+        const base = 'runtime-a|/repo|ses_1';
+        const collapsedKey = resolveTimelineVirtualizerCacheKey(base, 'collapsed');
+        const summaryKey = resolveTimelineVirtualizerCacheKey(base, 'summary');
+
+        cache.write(collapsedKey, keys, ['collapsed-geometry']);
+        cache.write(summaryKey, keys, ['summary-geometry']);
+
+        expect(collapsedKey).not.toBe(summaryKey);
+        expect(cache.read(collapsedKey, keys)).toEqual(['collapsed-geometry']);
+        expect(cache.read(summaryKey, keys)).toEqual(['summary-geometry']);
+        // Cross-mode read must miss so a collapsed mount never seeds from summary heights.
+        expect(cache.read(collapsedKey, keys)).not.toEqual(cache.read(summaryKey, keys));
+    });
+});
+
+describe('collapsed-mode virtualizer estimate and markdown preload', () => {
+    test('uses a shorter cold estimate in collapsed mode than summary mode', () => {
+        const collapsed = resolveTanstackEstimatedEntrySize('collapsed');
+        const summary = resolveTanstackEstimatedEntrySize('summary');
+        expect(collapsed).toBeLessThan(summary);
+        expect(collapsed).toBeGreaterThanOrEqual(120);
+        expect(summary).toBe(320);
+    });
+
+    test('converges the adaptive estimate with fewer samples while collapsed', () => {
+        expect(resolveTanstackEstimateMinSamples('collapsed')).toBeLessThan(
+            resolveTanstackEstimateMinSamples('summary'),
+        );
+        expect(resolveTanstackEstimateMinSamples('collapsed')).toBe(2);
+        expect(resolveTanstackEstimateMinSamples('summary')).toBe(5);
+    });
+
+    test('widens markdown preload when collapsed or when the visible range is dense', () => {
+        expect(resolveMarkdownPreloadEntries('summary', 4)).toBe(6);
+        expect(resolveMarkdownPreloadEntries('collapsed', 4)).toBe(12);
+        // Visible range larger than the base window must widen preload so
+        // upward travel does not paint skeletons for on-screen rows.
+        expect(resolveMarkdownPreloadEntries('collapsed', 18)).toBe(18);
+        expect(resolveMarkdownPreloadEntries('summary', 18)).toBe(18);
+    });
+
+    test('meters scroll-time preload and idle visible release more tightly when collapsed', () => {
+        expect(resolveMarkdownPreloadReleaseWhileScrolling('collapsed')).toBeGreaterThan(
+            resolveMarkdownPreloadReleaseWhileScrolling('summary'),
+        );
+        expect(resolveMarkdownVisibleReleaseLimit('collapsed')).toBeLessThan(
+            resolveMarkdownVisibleReleaseLimit('summary'),
+        );
+        expect(resolveMarkdownVisibleReleaseLimit('collapsed')).toBe(4);
+        expect(resolveMarkdownVisibleReleaseLimit('summary')).toBe(6);
     });
 });
 

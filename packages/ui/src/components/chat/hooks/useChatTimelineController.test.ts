@@ -4,6 +4,7 @@ import { dirname, join } from 'node:path';
 import { fileURLToPath } from 'node:url';
 
 import {
+    chatTimelineAutoFillQueryKey,
     isOlderHistoryPrependCommit,
     resolveHistoryPageDecision,
     resolveHistoryPrependCompensation,
@@ -277,17 +278,16 @@ const baseAutoFillInput = {
     historyLoading: false,
     canLoadEarlier: true,
     isPinned: true,
-    alreadyAttempted: false,
+    fillBlocked: false,
     scrollHeight: 400,
     clientHeight: 400,
     pendingRevealWork: false,
     isLoadingOlder: false,
     hasMessages: true,
-    messageCount: 30,
 } as const;
 
 describe('shouldAutoFillEarlierHistory', () => {
-    test('desktop + ready + not loading + canLoad + pinned + not attempted + scrollHeight within clientHeight+48 + no pending/loadingOlder => true', () => {
+    test('desktop + ready + not loading + canLoad + pinned + not blocked + scrollHeight within clientHeight+48 + no pending/loadingOlder => true', () => {
         expect(shouldAutoFillEarlierHistory({
             ...baseAutoFillInput,
         })).toBe(true);
@@ -348,10 +348,10 @@ describe('shouldAutoFillEarlierHistory', () => {
         })).toBe(false);
     });
 
-    test('already attempted => false', () => {
+    test('fill blocked after no-growth/failure => false', () => {
         expect(shouldAutoFillEarlierHistory({
             ...baseAutoFillInput,
-            alreadyAttempted: true,
+            fillBlocked: true,
         })).toBe(false);
     });
 
@@ -380,15 +380,67 @@ describe('shouldAutoFillEarlierHistory', () => {
         })).toBe(false);
     });
 
-    test('first paint messageCount > 38 => false (avoids trim reverse load)', () => {
+    test('short collapsed transcript keeps auto-fill without a message-count ceiling', () => {
+        // Collapsed activity can stack many messages without overflow; count must
+        // not freeze fill (that forced expand-before-load-more).
         expect(shouldAutoFillEarlierHistory({
             ...baseAutoFillInput,
-            messageCount: 39,
-        })).toBe(false);
-        expect(shouldAutoFillEarlierHistory({
-            ...baseAutoFillInput,
-            messageCount: 38,
+            scrollHeight: 400,
+            clientHeight: 400,
         })).toBe(true);
+    });
+
+    test('unmeasured viewport (clientHeight 0) does not auto-fill', () => {
+        expect(shouldAutoFillEarlierHistory({
+            ...baseAutoFillInput,
+            scrollHeight: 0,
+            clientHeight: 0,
+        })).toBe(false);
+    });
+});
+
+describe('chatTimelineAutoFillQueryKey', () => {
+    test('includes runtime, session, edge id, count, and canLoadEarlier', () => {
+        expect(chatTimelineAutoFillQueryKey({
+            runtimeKey: 'rt_1',
+            sessionId: 'ses_1',
+            oldestMessageId: 'msg_old',
+            messageCount: 12,
+            canLoadEarlier: true,
+        })).toEqual([
+            'chat-timeline-auto-fill',
+            'rt_1',
+            'ses_1',
+            'msg_old',
+            12,
+            true,
+        ]);
+    });
+});
+
+describe('useChatTimelineController source contracts', () => {
+    const source = readFileSync(join(here, 'useChatTimelineController.ts'), 'utf8');
+
+    test('auto-fill is Query-driven (no useEffect fill path)', () => {
+        expect(source).toContain('useQuery');
+        expect(source).toContain('chatTimelineAutoFillQueryKey');
+        // Imperative auto-fill effect must stay gone.
+        expect(source).not.toMatch(/React\.useEffect\s*\(\s*\(\)\s*=>\s*\{[\s\S]*?fetchOlderHistory/);
+        expect(source).not.toMatch(/useEffect\s*\(\s*\(\)\s*=>\s*\{[\s\S]*?shouldAutoFillEarlierHistory/);
+    });
+
+    test('handlers use useEvent; no React.useCallback', () => {
+        expect(source).toContain("from '@reactuses/core'");
+        expect(source).toContain('useEvent');
+        expect(source).not.toContain('React.useCallback');
+        expect(source).not.toMatch(/\buseCallback\s*\(/);
+    });
+
+    test('DOM sync uses isomorphic layout effects, unmount via useUnmount', () => {
+        expect(source).toContain('useIsomorphicLayoutEffect');
+        expect(source).toContain('useUnmount');
+        expect(source).not.toContain('React.useLayoutEffect');
+        expect(source).not.toContain('React.useEffect');
     });
 });
 

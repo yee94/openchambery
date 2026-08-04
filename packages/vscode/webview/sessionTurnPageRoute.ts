@@ -2,10 +2,11 @@
  * Webview local route for GET `/api/openchamber/sessions/:id/messages`.
  *
  * Identify this OpenChamber-owned path ahead of the generic OpenCode proxy,
- * parse query (directory, before, turns, scanLimit), dispatch
+ * parse query (directory, before, turns, optional scanLimit), dispatch
  * `api:session-turn-page` bridge, and return unified turn-page JSON.
  *
- * Non-GET → 405; illegal query → 400 (bridge not called).
+ * `scanLimit` is optional client override only; when omitted the Extension Host
+ * applies `_inner_scanLimit`. Non-GET → 405; illegal query → 400.
  */
 
 const TURNS_MIN = 1;
@@ -13,7 +14,6 @@ const TURNS_MAX = 10;
 const TURNS_DEFAULT = 3;
 const SCAN_LIMIT_MIN = 10;
 const SCAN_LIMIT_MAX = 200;
-const SCAN_LIMIT_DEFAULT = 100;
 
 /** Safe client-facing error strings — no paths, tokens, or upstream bodies. */
 const SAFE_ERRORS = {
@@ -105,14 +105,19 @@ export const parseSessionTurnPageQuery = (
     return { ok: false, error: SAFE_ERRORS.invalid_turns };
   }
 
+  // Optional override only — omit from bridge payload when client did not send it.
+  let scanLimit: number | undefined;
   const scanLimitRaw = searchParams.get('scanLimit');
-  const scanLimitResult = parseBoundedInt(scanLimitRaw, {
-    min: SCAN_LIMIT_MIN,
-    max: SCAN_LIMIT_MAX,
-    fallback: SCAN_LIMIT_DEFAULT,
-  });
-  if (!scanLimitResult.ok) {
-    return { ok: false, error: SAFE_ERRORS.invalid_scan_limit };
+  if (scanLimitRaw !== null) {
+    const scanLimitResult = parseBoundedInt(scanLimitRaw, {
+      min: SCAN_LIMIT_MIN,
+      max: SCAN_LIMIT_MAX,
+      fallback: SCAN_LIMIT_MIN,
+    });
+    if (!scanLimitResult.ok) {
+      return { ok: false, error: SAFE_ERRORS.invalid_scan_limit };
+    }
+    scanLimit = scanLimitResult.value;
   }
 
   const beforeRaw = searchParams.get('before');
@@ -129,9 +134,7 @@ export const parseSessionTurnPageQuery = (
     directory,
     before,
     turns: turnsResult.value,
-    // Always include resolved scanLimit so callers / tests see a concrete value
-    // when present in query; default is still within 10..200.
-    scanLimit: scanLimitResult.value,
+    ...(scanLimit !== undefined ? { scanLimit } : {}),
   };
 };
 

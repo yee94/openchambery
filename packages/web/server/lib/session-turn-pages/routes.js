@@ -6,9 +6,32 @@ const TURNS_MAX = 10;
 const TURNS_DEFAULT = 3;
 const SCAN_LIMIT_MIN = 10;
 const SCAN_LIMIT_MAX = 200;
+/** Fallback when env is unset / invalid — Host→OpenCode local page size only. */
 const SCAN_LIMIT_DEFAULT = 100;
 
+/**
+ * Server-owned upstream OpenCode scan chunk (messages per page).
+ * Host always calls OpenCode locally; this is not a client-network concern.
+ * Override via env `OPENCHAMBER_SESSION_TURN_SCAN_LIMIT` (10..200).
+ * Clients may still pass `scanLimit` as an optional override; when omitted,
+ * this inner default is used.
+ */
+const _inner_scanLimit = (() => {
+  const raw = process.env.OPENCHAMBER_SESSION_TURN_SCAN_LIMIT;
+  if (raw === undefined || raw === null || raw === '') {
+    return SCAN_LIMIT_DEFAULT;
+  }
+  const parsed = Number(String(raw).trim());
+  if (!Number.isInteger(parsed) || parsed < SCAN_LIMIT_MIN || parsed > SCAN_LIMIT_MAX) {
+    return SCAN_LIMIT_DEFAULT;
+  }
+  return parsed;
+})();
+
 const PAGE_TIMEOUT_MS = 45_000;
+
+/** Test/inspect helper — resolved host-local scan chunk. */
+export const getInnerSessionTurnScanLimit = () => _inner_scanLimit;
 
 /** Safe client-facing error strings — no paths, tokens, or upstream bodies. */
 const SAFE_ERRORS = {
@@ -222,15 +245,19 @@ export const registerSessionTurnPageRoutes = (app, dependencies = {}) => {
       return res.status(400).json({ error: SAFE_ERRORS.invalid_turns });
     }
 
-    const scanLimitResult = parseBoundedInt(req.query?.scanLimit, {
+    // Optional client override. Omitted → host-local `_inner_scanLimit` (env/default).
+    // Invalid explicit value → 400; empty string is invalid (not "missing").
+    const scanLimitRaw = req.query?.scanLimit;
+    const scanLimitResult = parseBoundedInt(scanLimitRaw, {
       min: SCAN_LIMIT_MIN,
       max: SCAN_LIMIT_MAX,
-      fallback: SCAN_LIMIT_DEFAULT,
-      whenMissing: SCAN_LIMIT_DEFAULT,
+      fallback: _inner_scanLimit,
+      whenMissing: _inner_scanLimit,
     });
     if (!scanLimitResult.ok) {
       return res.status(400).json({ error: SAFE_ERRORS.invalid_scan_limit });
     }
+    const _inner_scanLimit_resolved = scanLimitResult.value;
 
     const before = typeof req.query?.before === 'string' && req.query.before.length > 0
       ? req.query.before
@@ -246,7 +273,7 @@ export const registerSessionTurnPageRoutes = (app, dependencies = {}) => {
       const result = await service.loadPage({
         sessionID,
         turns: turnsResult.value,
-        scanLimit: scanLimitResult.value,
+        scanLimit: _inner_scanLimit_resolved,
         before,
         directory,
         signal: timed.signal,

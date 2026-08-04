@@ -16,10 +16,7 @@ import {
   setSessionPrefetch,
 } from "./session-prefetch-cache"
 import {
-  getInitialSessionMessageLimit,
-  getSessionHistoryMessageLimit,
-  getSessionMaterializationMessageLimit,
-  getSessionRecoveryMessageLimit,
+  resolveSessionMessageTurnLimit,
 } from "./session-message-policy"
 import {
   reduceSessionMessagePage,
@@ -162,10 +159,15 @@ export type SessionMessageQueryPage = {
   records: SessionMessageQueryRecord[]
   cursor?: string
   complete: boolean
+  /** Authored-user turns in this page (Host turnCount). */
+  turnCount?: number
 }
 
 export type LoadSessionMessagePageDeps = {
-  /** HTTP page fetch (limit / before already resolved). */
+  /**
+   * HTTP page fetch. `limit` is the product **turn** budget for this request
+   * (not a message count). Host turn-page uses it as `turns=`.
+   */
   queryPage: (input: { limit: number; before?: string }) => Promise<SessionMessageQueryPage>
   /** Exact message fetch for assistant-only tail parent recovery. */
   queryMessage?: (input: { messageID: string }) => Promise<SessionMessageQueryRecord>
@@ -207,18 +209,11 @@ export type LoadSessionMessagePageResult = {
   reduced?: ReduceSessionMessagePageResult
 }
 
+/**
+ * Product turn limit for a load purpose (authored-user turns, not messages).
+ */
 export function resolveSessionMessagePageLimit(purpose: SessionMessagePagePurpose): number {
-  switch (purpose) {
-    case "prepend":
-      return getSessionHistoryMessageLimit()
-    case "recovery":
-      return getSessionRecoveryMessageLimit()
-    case "materialize":
-      return getSessionMaterializationMessageLimit()
-    case "initial":
-    default:
-      return getInitialSessionMessageLimit()
-  }
+  return resolveSessionMessageTurnLimit(purpose)
 }
 
 function formatLoadError(error: unknown): string {
@@ -269,19 +264,33 @@ async function loadSessionMessagePageApp(
   const dropWhenStale = shouldDropStalePage(purpose)
   const lostRaceToLiveState = () => dropWhenStale && Boolean(deps.isStale?.())
 
-  const skipStalePage = (page: {
-    recordCount: number
+  const loadGeneration = beginSessionMessageLoad(directory, sessionID, limit, runtimeKey)
+  deps.onLoading?.()
+
+  // Prefetch `limit` stores product **turn** budget (not message count).
+  const settlePrefetch = (page: {
+    turnLimit: number
     cursor?: string
     complete: boolean
-  }): LoadSessionMessagePageResult => {
+  }) => {
     setSessionPrefetch({
       directory,
       sessionID,
       runtimeKey,
-      limit: page.recordCount,
+      limit: page.turnLimit,
       cursor: page.cursor,
       complete: page.complete,
+      loadGeneration,
     })
+  }
+
+  const skipStalePage = (page: {
+    recordCount: number
+    turnLimit: number
+    cursor?: string
+    complete: boolean
+  }): LoadSessionMessagePageResult => {
+    settlePrefetch({ turnLimit: page.turnLimit, cursor: page.cursor, complete: page.complete })
     return {
       status: "skipped",
       applied: false,
@@ -291,9 +300,6 @@ async function loadSessionMessagePageApp(
       meta: deps.getStoreState().meta,
     }
   }
-
-  beginSessionMessageLoad(directory, sessionID, limit, runtimeKey)
-  deps.onLoading?.()
 
   let capturedRevision: number | undefined
   try {
@@ -308,9 +314,12 @@ async function loadSessionMessagePageApp(
       request: () => deps.queryPage({ limit, before }),
     })
 
+    const pageTurnCount = typeof page.turnCount === "number" ? page.turnCount : limit
+
     if (lostRaceToLiveState()) {
       return skipStalePage({
         recordCount: page.records.length,
+        turnLimit: pageTurnCount,
         cursor: page.cursor,
         complete: page.complete,
       })
@@ -347,6 +356,7 @@ async function loadSessionMessagePageApp(
     if (lostRaceToLiveState()) {
       return skipStalePage({
         recordCount: records.length,
+        turnLimit: pageTurnCount,
         cursor: page.cursor,
         complete: page.complete,
       })
@@ -362,6 +372,8 @@ async function loadSessionMessagePageApp(
         records,
         cursor: page.cursor,
         complete: page.complete,
+        turnCount: pageTurnCount,
+        requestedTurnLimit: limit,
       },
       {
         purpose,
@@ -374,11 +386,8 @@ async function loadSessionMessagePageApp(
 
     if (!reduced.applied) {
       // Live revision won or reducer declined apply — preserve transcript.
-      setSessionPrefetch({
-        directory,
-        sessionID,
-        runtimeKey,
-        limit: state.meta?.limit ?? records.length,
+      settlePrefetch({
+        turnLimit: state.meta?.limit ?? pageTurnCount,
         cursor: state.meta?.cursor ?? page.cursor,
         complete: state.meta?.complete ?? page.complete,
       })
@@ -396,11 +405,8 @@ async function loadSessionMessagePageApp(
     deps.commitStore(reduced)
 
     const meta = reduced.meta
-    setSessionPrefetch({
-      directory,
-      sessionID,
-      runtimeKey,
-      limit: meta?.limit ?? reduced.messages.length,
+    settlePrefetch({
+      turnLimit: meta?.limit ?? pageTurnCount,
       cursor: meta?.cursor,
       complete: meta?.complete ?? page.complete,
     })
@@ -417,7 +423,7 @@ async function loadSessionMessagePageApp(
     }
   } catch (error) {
     const message = formatLoadError(error)
-    failSessionMessageLoad(directory, sessionID, message, runtimeKey)
+    failSessionMessageLoad(directory, sessionID, message, runtimeKey, loadGeneration)
     deps.onError?.(message)
     return {
       status: "error",

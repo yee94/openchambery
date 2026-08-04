@@ -68,7 +68,7 @@ describe("fetchSessionTurnPage", () => {
     mock.restore()
   })
 
-  test("GET /api/openchamber/sessions/:encodedSessionID/messages with directory,before,turns=3,scanLimit=100", async () => {
+  test("GET /api/openchamber/sessions/:encodedSessionID/messages with directory,before,turns — omits scanLimit by default", async () => {
     const { fetchSessionTurnPage } = await import("./session-turn-page-api")
     const signal = new AbortController().signal
 
@@ -87,8 +87,10 @@ describe("fetchSessionTurnPage", () => {
     )
     expect(call.url.searchParams.get("directory")).toBe("/repo a")
     expect(call.url.searchParams.get("before")).toBe("msg_cursor")
-    expect(call.url.searchParams.get("turns")).toBe("3")
-    expect(call.url.searchParams.get("scanLimit")).toBe("100")
+    // Default turns = history link tier (local 6 / relay 2); test env is local.
+    expect(call.url.searchParams.get("turns")).toBe("6")
+    // Host owns `_inner_scanLimit`; default client path must not send scanLimit.
+    expect(call.url.searchParams.has("scanLimit")).toBe(false)
     expect(call.signal).toBe(signal)
 
     expect(page).toEqual({
@@ -99,7 +101,7 @@ describe("fetchSessionTurnPage", () => {
     })
   })
 
-  test("omits before when not provided (still sends turns + scanLimit)", async () => {
+  test("omits before when not provided; still omits scanLimit by default", async () => {
     const { fetchSessionTurnPage } = await import("./session-turn-page-api")
 
     await fetchSessionTurnPage({
@@ -112,8 +114,21 @@ describe("fetchSessionTurnPage", () => {
     expect(call.url.pathname).toBe("/api/openchamber/sessions/ses_1/messages")
     expect(call.url.searchParams.get("directory")).toBe("/repo")
     expect(call.url.searchParams.has("before")).toBe(false)
-    expect(call.url.searchParams.get("turns")).toBe("3")
-    expect(call.url.searchParams.get("scanLimit")).toBe("100")
+    expect(call.url.searchParams.get("turns")).toBe("6")
+    expect(call.url.searchParams.has("scanLimit")).toBe(false)
+  })
+
+  test("sends scanLimit only when explicitly overridden", async () => {
+    const { fetchSessionTurnPage } = await import("./session-turn-page-api")
+
+    await fetchSessionTurnPage({
+      sessionID: "ses_1",
+      directory: "/repo",
+      scanLimit: 50,
+    })
+
+    expect(calls).toHaveLength(1)
+    expect(calls[0]!.url.searchParams.get("scanLimit")).toBe("50")
   })
 
   test("throws on HTTP non-2xx", async () => {

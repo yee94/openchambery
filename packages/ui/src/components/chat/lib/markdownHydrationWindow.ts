@@ -22,6 +22,14 @@ export type MarkdownHydrationReleaseInput = MarkdownHydrationCandidatesInput & {
      */
     allowVisibleRelease: boolean;
     preloadReleaseLimit: number;
+    /**
+     * Cap on how many still-deferred *visible* rows may hydrate in one commit.
+     * Unlimited (`undefined` / non-positive ignored as unlimited) matches the
+     * historical "whole viewport in one batch" settle. Dense collapsed
+     * transcripts must meter this: dumping 12+ ChatMessage trees at scroll-end
+     * shows up as a multi-hundred-ms React commit in Chrome traces.
+     */
+    visibleReleaseLimit?: number;
 };
 
 export const createInitialMarkdownHydratedKeys = (entryKeys: readonly string[]): Set<string> => {
@@ -118,12 +126,12 @@ const planMarkdownHydration = ({
 /**
  * Keys to release in the next commit.
  *
- * Visible rows go out as one batch rather than one per commit: releasing them
- * individually makes the virtualizer remeasure and re-anchor once per row, so
- * entering a session walks through one visible reflow per turn before it
- * settles. Off-screen preload rows are metered instead, because they are pure
- * background work and a whole window of them in a single commit is exactly the
- * burst that shows up as one large layout shift.
+ * Visible rows prefer a single batch rather than one per commit: releasing them
+ * individually makes the virtualizer remeasure and re-anchor once per row.
+ * Off-screen preload is always metered. When the visible window is dense
+ * (collapsed activity), `visibleReleaseLimit` caps the visible half of the
+ * batch so scroll-end does not mount an entire screen of rich Markdown in one
+ * React commit — remaining visible rows continue on subsequent idle frames.
  */
 export const getMarkdownHydrationBatch = (
     input: MarkdownHydrationReleaseInput,
@@ -133,7 +141,11 @@ export const getMarkdownHydrationBatch = (
     if (!input.allowVisibleRelease) {
         return metered;
     }
-    return visible.length > 0 ? [...visible, ...metered] : metered;
+    const rawLimit = input.visibleReleaseLimit;
+    const visibleBatch = typeof rawLimit === 'number' && rawLimit > 0
+        ? visible.slice(0, Math.floor(rawLimit))
+        : visible;
+    return visibleBatch.length > 0 ? [...visibleBatch, ...metered] : metered;
 };
 
 export const pruneMarkdownHydratedKeys = (

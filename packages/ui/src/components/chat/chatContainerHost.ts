@@ -76,6 +76,67 @@ export const pendingUserMessagesImplyWorking = (
   return false;
 };
 
+/**
+ * Live + assistant archive history gates for the chat timeline.
+ *
+ * Default sync meta is `{ complete: false, cursor: undefined }` → hasMore false.
+ * The old UI treated `!hasMore` as complete and froze load-more/auto-fill on
+ * incomplete sessions. Conversely, treating every `!complete` as loadable would
+ * auto-fill before a cursor exists (no-op → permanent block).
+ *
+ * - `canLoadEarlier`: real cursor (sync/prefetch) or assistant archive after live complete
+ * - `complete`: positively exhausted live history and assistant archive (if any)
+ */
+export const resolveChatHistoryLoadState = (input: {
+  syncComplete: boolean
+  syncHasMore: boolean
+  prefetchHasMore: boolean
+  /** When no assistant archive is present, treat as complete. */
+  assistantComplete: boolean
+}): { complete: boolean; canLoadEarlier: boolean } => {
+  // Prefetch may extend has-more only until live pagination is authoritative.
+  const hasMoreLive = input.syncHasMore
+    || (!input.syncComplete && input.prefetchHasMore)
+  const canLoadAssistantArchive = input.syncComplete && !input.assistantComplete
+  const canLoadEarlier = hasMoreLive || canLoadAssistantArchive
+  const complete = input.syncComplete && input.assistantComplete
+  return { complete, canLoadEarlier }
+}
+
+/**
+ * Cold-session transcript gate for ChatContainer.
+ *
+ * Session switch starts imperative + reactive message pulls. A transient or
+ * stale `prefetch.status === 'error'` must not flash the "Unable to load"
+ * wall while a load is in flight or before the first paint has a shell.
+ *
+ * - `hydrating`: stable skeleton — loading, or cold with no settled failure
+ * - `load-error`: settled failure only (error + not loading + no shell)
+ * - `pass`: enough UI shell (user/pending/history) or ready empty snapshot
+ */
+export type ChatSessionTranscriptGate = 'pass' | 'hydrating' | 'load-error'
+
+export const resolveChatSessionTranscriptGate = (input: {
+  /** User boundary, retained pending rows, or hosted history prefix. */
+  hasTranscriptShell: boolean
+  hasRenderableSessionSnapshot: boolean
+  prefetchStatus?: 'loading' | 'ready' | 'error'
+  syncLoading: boolean
+}): ChatSessionTranscriptGate => {
+  if (input.hasTranscriptShell) return 'pass'
+
+  const loading = input.prefetchStatus === 'loading' || input.syncLoading
+  if (loading) return 'hydrating'
+
+  // Settled cold failure — only after the load epoch finished as error.
+  if (input.prefetchStatus === 'error') return 'load-error'
+
+  // Cold / not yet materialised: keep skeleton, never invent an empty success.
+  if (!input.hasRenderableSessionSnapshot) return 'hydrating'
+
+  return 'pass'
+}
+
 export type ChatContainerHostFeatures = {
   /** Primary-only new-session draft welcome. Hosted surfaces default this off. */
   newSessionDraft?: boolean;

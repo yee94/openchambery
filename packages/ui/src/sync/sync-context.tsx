@@ -52,6 +52,7 @@ import * as sessionActions from "./session-actions"
 import { getSessionMaterializationStatus } from "./materialization"
 import { loadSessionMessagePage } from "./session-message-loader"
 import type { ReduceSessionMessagePageResult } from "./session-message-reducer"
+import { fetchHostSessionTurnPageForPurpose } from "./session-turn-page-api"
 import { openSessionFromToast } from "./session-opener"
 import { getPermissionToastKey, showPermissionNeededToast } from "./permission-toast"
 import { getRuntimeLiveStatusSeed, LIVE_STATUS_TTL_MS } from "./runtime-live-memory"
@@ -385,12 +386,30 @@ export async function materializeSessionFromServer(
     directory,
     sessionID,
     deps: {
-      queryPage: async ({ limit, before }) => {
+      queryPage: async ({ before }) => {
+        // Tail materialize: Host 2-turn window (surface scanLimit), not limit=30 SDK.
+        if (!before) {
+          const page = await retry(async () =>
+            fetchHostSessionTurnPageForPurpose({
+              sessionID,
+              directory,
+              purpose: "materialize",
+            }),
+          )
+          return {
+            records: page.records.map((record) => ({
+              info: stripMessageDiffSnapshots(record.info),
+              parts: record.parts ?? [],
+            })),
+            cursor: page.cursor ?? undefined,
+            complete: page.complete,
+          }
+        }
         const response = await retry(async () => {
           const result = await scopedClient.session.messages({
             sessionID,
             directory,
-            limit,
+            limit: 40,
             before,
           })
           assertSdkSuccess(result, "session.messages")
@@ -1412,12 +1431,30 @@ export async function resyncDirectoryAfterReconnect(
         directory,
         sessionID: sessionId,
         deps: {
-          queryPage: async ({ limit, before }) => {
+          queryPage: async ({ before }) => {
+            // Tail recovery: Host 2-turn window, not fixed message-count SDK page.
+            if (!before) {
+              const page = await retry(async () =>
+                fetchHostSessionTurnPageForPurpose({
+                  sessionID: sessionId,
+                  directory,
+                  purpose: "recovery",
+                }),
+              )
+              return {
+                records: page.records.map((record) => ({
+                  info: stripMessageDiffSnapshots(record.info),
+                  parts: record.parts ?? [],
+                })),
+                cursor: page.cursor ?? undefined,
+                complete: page.complete,
+              }
+            }
             const response = await retry(async () => {
               const result = await scopedClient.session.messages({
                 sessionID: sessionId,
                 directory,
-                limit,
+                limit: 40,
                 before,
               })
               assertSdkSuccess(result, "session.messages")

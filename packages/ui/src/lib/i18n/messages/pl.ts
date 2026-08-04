@@ -716,7 +716,7 @@ export const dict: Record<I18nKey, string> = {
   'chat.activity.completed': 'Przetworzono w {duration}',
   'chat.activity.completedStatus': 'Przetworzono',
   'chat.activity.agentsWorking': '{count} agentów pracuje',
-  'chat.activity.agentsInvolved': '{count} agentów uczestniczyło',
+  'chat.activity.agentsInvolved': '{count} agentów brało udział',
   'chat.emptyState.opencodeUnreachable': 'OpenCode jest nieosiągalny',
   'chat.emptyState.startNewChat': 'Rozpocznij nowy czat',
   'chat.emptyState.draftTitle': 'What are we working on?',

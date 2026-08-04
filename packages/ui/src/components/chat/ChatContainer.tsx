@@ -8,6 +8,8 @@ import { ChatInput } from './ChatInput';
 import type { ChatInputSurface } from './chatInputSurface';
 import {
     resolveChatContainerHostFeatures,
+    resolveChatHistoryLoadState,
+    resolveChatSessionTranscriptGate,
     mergePendingUserMessagePresentations,
     pendingUserMessagesImplyWorking,
     type ChatContainerHost,
@@ -852,21 +854,30 @@ const ChatContainerContent: React.FC<ChatContainerContentProps> = ({
     // History metadata — use sync's hasMore/isLoading
     const historyMeta = React.useMemo(() => {
         if (!currentSessionId) return null;
-        // Sync's meta is authoritative once a fetch has confirmed the history
-        // is fully loaded — a stale prefetch-cache entry (cursor recorded at
-        // the initial page) must not keep the "load older" affordance alive
-        // after the user has already reached the top.
+        // Sync isComplete is the only positive live "exhausted" signal. Missing
+        // cursor must neither look complete nor enable load-more. Prefetch may
+        // extend has-more only while live is not yet complete.
         const syncComplete = sync.isComplete(currentSessionId);
         const prefetchHasMore = !syncComplete
             && Boolean(sessionPrefetchInfo?.cursor)
             && sessionPrefetchInfo?.complete !== true;
-        const liveComplete = syncComplete || !(sync.hasMore(currentSessionId) || prefetchHasMore);
+        const loadState = resolveChatHistoryLoadState({
+            syncComplete,
+            syncHasMore: sync.hasMore(currentSessionId),
+            prefetchHasMore,
+            assistantComplete: assistantHistory?.complete ?? true,
+        });
+        // Product limit is cumulative turns (prefetch/sync meta), not message count.
+        const turnLimit = typeof sessionPrefetchInfo?.limit === 'number' && sessionPrefetchInfo.limit > 0
+            ? sessionPrefetchInfo.limit
+            : 0;
         return {
-            limit: sessionMessages.length,
-            complete: liveComplete && (assistantHistory?.complete ?? true),
+            limit: turnLimit,
+            complete: loadState.complete,
+            canLoadEarlier: loadState.canLoadEarlier,
             loading: sync.isLoading(currentSessionId) || Boolean(assistantHistory?.loading),
         };
-    }, [assistantHistory?.complete, assistantHistory?.loading, currentSessionId, sessionMessages.length, sessionPrefetchInfo, sync]);
+    }, [assistantHistory?.complete, assistantHistory?.loading, currentSessionId, sessionPrefetchInfo, sync]);
 
     const isMobile = useUIStore((state) => state.isMobile);
     const isDedicatedMobileApp = useMobileAppActions() !== null;
@@ -1231,22 +1242,23 @@ const ChatContainerContent: React.FC<ChatContainerContentProps> = ({
 
     const lastScrolledSessionRef = React.useRef<string | null>(null);
 
-    const isSessionHydrating =
-        Boolean(currentSessionId)
-        && !hasUserBoundary
-        && pendingUserMessages.length === 0
-        && historyPrefix.length === 0
-        && (
-            !hasRenderableSessionSnapshot
-            || sessionPrefetchInfo?.status === 'loading'
-        );
+    // Cold transcript gate: prefer a stable skeleton over flashing the
+    // "Unable to load this conversation" wall while imperative + reactive
+    // pulls race on session switch (stale error or concurrent fail).
+    const sessionTranscriptGate = resolveChatSessionTranscriptGate({
+        hasTranscriptShell:
+            hasUserBoundary
+            || pendingUserMessages.length > 0
+            || historyPrefix.length > 0,
+        hasRenderableSessionSnapshot,
+        prefetchStatus: sessionPrefetchInfo?.status,
+        syncLoading: Boolean(currentSessionId && sync.isLoading(currentSessionId)),
+    });
+    const isSessionHydrating = Boolean(currentSessionId) && sessionTranscriptGate === 'hydrating';
     // Assistant-owned history is authoritative for prior bindings. Do not replace
     // a restorable transcript with the live-session load-failure wall.
     const hasSessionHistoryLoadError =
-        sessionPrefetchInfo?.status === 'error'
-        && !hasUserBoundary
-        && pendingUserMessages.length === 0
-        && historyPrefix.length === 0;
+        Boolean(currentSessionId) && sessionTranscriptGate === 'load-error';
 
     React.useEffect(() => {
         if (!active || !currentSessionId) return;

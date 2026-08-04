@@ -22,7 +22,13 @@ import {
  * execute returned `commands` (e.g. clear optimistic shadow entries).
  */
 
+/**
+ * Pagination meta for a session transcript.
+ * `limit` is the cumulative **authored-user turn** budget loaded so far
+ * (product limit), not a message count.
+ */
 export type SessionMessagePageMeta = {
+  /** Cumulative authored-user turns loaded (initial + prepends). */
   limit: number
   cursor: string | undefined
   complete: boolean
@@ -37,6 +43,13 @@ export type SessionMessagePageSuccess = {
   records: MaterializedMessageRecord[]
   cursor?: string
   complete: boolean
+  /**
+   * Authored-user turns in this page (Host turnCount). When omitted (legacy SDK
+   * fallback pages), meta.limit falls back to the request turn budget.
+   */
+  turnCount?: number
+  /** Requested product turn limit for this page (for meta accumulation). */
+  requestedTurnLimit?: number
 }
 
 export type SessionMessagePageError = {
@@ -83,12 +96,32 @@ function isLiveRevisionStale(
   return liveRevision > capturedRevision
 }
 
+/**
+ * Build pagination meta. Product `limit` is turn-based:
+ * - tail/initial: page turnCount (or requestedTurnLimit)
+ * - prepend: previous cumulative turns + this page's turns
+ */
 function metaFromPage(
-  messages: Message[],
+  previous: SessionMessagePageMeta | undefined,
   page: SessionMessagePageSuccess,
+  purpose: SessionMessagePagePurpose,
 ): SessionMessagePageMeta {
+  let pageTurns = 0
+  if (typeof page.turnCount === "number" && Number.isFinite(page.turnCount)) {
+    pageTurns = Math.max(0, Math.floor(page.turnCount))
+  } else if (typeof page.requestedTurnLimit === "number" && Number.isFinite(page.requestedTurnLimit)) {
+    pageTurns = Math.max(0, Math.floor(page.requestedTurnLimit))
+  } else if (page.records.length > 0) {
+    // Legacy / SDK fallback pages without Host turnCount: one turn window.
+    pageTurns = 1
+  }
+  const previousTurns = previous?.limit ?? 0
+  const limit = purpose === "prepend"
+    ? previousTurns + pageTurns
+    : pageTurns
+
   return {
-    limit: messages.length,
+    limit,
     cursor: page.cursor,
     complete: page.complete,
   }
@@ -179,12 +212,14 @@ export function reduceSessionMessagePage(
     },
   )
 
-  const nextMeta = metaFromPage(materialized.messages, {
+  const nextMeta = metaFromPage(state.meta, {
     ok: true,
     records: page.records,
     cursor: merged.cursor,
     complete: merged.complete,
-  })
+    turnCount: page.turnCount,
+    requestedTurnLimit: page.requestedTurnLimit,
+  }, options.purpose)
   const metaChanged = !metaUnchanged(state.meta, nextMeta)
   const messagesChanged = materialized.messagesChanged
   const partsChanged = materialized.partsChanged

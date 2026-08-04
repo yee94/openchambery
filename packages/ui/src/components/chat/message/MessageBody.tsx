@@ -88,13 +88,42 @@ const getDisplayFileName = (file: string): string => {
     return segments.at(-1) ?? file;
 };
 
-const TURN_CHANGES_ROW_CLASS = 'h-7 w-full min-w-0 justify-start gap-1.5 rounded-[var(--radius-md)] bg-transparent px-1 hover:!bg-interactive-hover focus-visible:!bg-interactive-hover active:!bg-interactive-active supports-[corner-shape:squircle]:rounded-[var(--radius-md)]';
+// Desktop rows stay h-7 / meta; mobile matches ProgressiveGroup + message-footer density.
+const TURN_CHANGES_ROW_CLASS =
+    'w-full min-w-0 justify-start rounded-[var(--radius-md)] bg-transparent px-1 hover:!bg-interactive-hover focus-visible:!bg-interactive-hover active:!bg-interactive-active supports-[corner-shape:squircle]:rounded-[var(--radius-md)]';
+const TURN_CHANGES_ROW_DESKTOP_CLASS = 'h-7 gap-1.5';
+const TURN_CHANGES_ROW_MOBILE_CLASS = 'h-6 gap-1';
+/** Header/footer chrome — same 11px density as MESSAGE_FOOTER_META_CLASS. */
+const TURN_CHANGES_CHROME_TEXT_MOBILE_CLASS = 'text-[11px] leading-none';
+const TURN_CHANGES_ICON_DESKTOP_CLASS = 'size-3.5';
+const TURN_CHANGES_ICON_MOBILE_CLASS = 'size-3';
 
-const TurnChangedFileRowContent = React.memo(({ file }: { file: TurnChangedFile }) => (
-    <span className="flex min-w-0 flex-1 items-center gap-1.5 text-xs leading-none text-muted-foreground">
-        <FileTypeIcon filePath={file.file} className="h-3.5 w-3.5 flex-shrink-0" />
-        <span className="min-w-0 flex-1 truncate text-left text-foreground/80" title={file.file}>{getDisplayFileName(file.file)}</span>
-        <span className="typography-meta inline-flex flex-shrink-0 items-center gap-0 leading-none">
+const TurnChangedFileRowContent = React.memo(({
+    file,
+    isMobile,
+}: {
+    file: TurnChangedFile;
+    isMobile: boolean;
+}) => (
+    <span
+        className={cn(
+            'flex min-w-0 flex-1 items-center leading-none text-muted-foreground',
+            isMobile ? 'gap-1 text-[11px]' : 'gap-1.5 text-xs',
+        )}
+    >
+        <FileTypeIcon
+            filePath={file.file}
+            className={cn('flex-shrink-0', isMobile ? 'h-3 w-3' : 'h-3.5 w-3.5')}
+        />
+        <span className="min-w-0 flex-1 truncate text-left text-foreground/80" title={file.file}>
+            {getDisplayFileName(file.file)}
+        </span>
+        <span
+            className={cn(
+                'inline-flex flex-shrink-0 items-center gap-0 leading-none tabular-nums',
+                isMobile ? 'text-[11px]' : 'typography-meta',
+            )}
+        >
             <span style={{ color: 'var(--status-success)' }}>+{file.additions}</span>
             <span className="text-muted-foreground/70">/</span>
             <span style={{ color: 'var(--status-error)' }}>-{file.deletions}</span>
@@ -105,10 +134,12 @@ const TurnChangedFileRowContent = React.memo(({ file }: { file: TurnChangedFile 
 const TurnChangedFilePreviewButton = React.memo(({
     file,
     canOpen,
+    isMobile,
     onOpen,
 }: {
     file: TurnChangedFile;
     canOpen: boolean;
+    isMobile: boolean;
     onOpen: (file: string) => void;
 }) => {
     const { t } = useI18n();
@@ -123,12 +154,15 @@ const TurnChangedFilePreviewButton = React.memo(({
             size="xs"
             disabled={!canOpen}
             data-turn-change-file="true"
-            className={TURN_CHANGES_ROW_CLASS}
+            className={cn(
+                TURN_CHANGES_ROW_CLASS,
+                isMobile ? TURN_CHANGES_ROW_MOBILE_CLASS : TURN_CHANGES_ROW_DESKTOP_CLASS,
+            )}
             aria-label={t('chat.changedFiles.actions.openFileTitle', { path: file.file })}
             title={file.file}
             onClick={handleOpen}
         >
-            <TurnChangedFileRowContent file={file} />
+            <TurnChangedFileRowContent file={file} isMobile={isMobile} />
         </Button>
     );
 });
@@ -158,6 +192,21 @@ const TurnChangesPreview = React.memo(({
     const hiddenCountLabel = hiddenCount === 1
         ? t('chat.pendingChanges.fileCountSingle', { count: hiddenCount })
         : t('chat.pendingChanges.fileCountPlural', { count: hiddenCount });
+    const rowClass = cn(
+        TURN_CHANGES_ROW_CLASS,
+        isMobile ? TURN_CHANGES_ROW_MOBILE_CLASS : TURN_CHANGES_ROW_DESKTOP_CLASS,
+    );
+    const iconClass = isMobile ? TURN_CHANGES_ICON_MOBILE_CLASS : TURN_CHANGES_ICON_DESKTOP_CLASS;
+    // Title/footer: message-footer density on mobile; meta emphasis on desktop.
+    const titleClass = isMobile
+        ? cn(TURN_CHANGES_CHROME_TEXT_MOBILE_CLASS, 'font-semibold text-foreground/85')
+        : 'typography-meta font-semibold text-foreground/85';
+    const metaClass = isMobile
+        ? cn(TURN_CHANGES_CHROME_TEXT_MOBILE_CLASS, 'text-muted-foreground')
+        : 'typography-meta text-muted-foreground';
+    const footerClass = isMobile
+        ? cn(TURN_CHANGES_CHROME_TEXT_MOBILE_CLASS, 'font-medium')
+        : 'typography-meta font-medium';
 
     const openTurnDiff = useEvent((file: string) => {
         if (mobileActions) {
@@ -184,7 +233,14 @@ const TurnChangesPreview = React.memo(({
 
     return (
         <section
-            className="mt-4 flex min-w-0 flex-col gap-0.5 rounded-[var(--radius-lg)] border border-border/70 bg-muted/20 p-1.5"
+            className={cn(
+                // Mobile remaps --border to ~3% foreground; /50 would double-dilute to
+                // near-invisible. Use a direct foreground mix there instead.
+                'mt-4 flex min-w-0 flex-col rounded-[var(--radius-lg)] border bg-muted/20',
+                isMobile
+                    ? 'gap-0 border-foreground/15 p-1'
+                    : 'gap-0.5 border-border/50 p-1.5',
+            )}
             data-turn-changes-preview="true"
             data-message-action-group="true"
             aria-labelledby={`turn-changes-${turnId}`}
@@ -195,23 +251,24 @@ const TurnChangesPreview = React.memo(({
                 size="xs"
                 disabled={!canOpen}
                 onClick={openCompleteTurnDiff}
-                className={cn(TURN_CHANGES_ROW_CLASS, 'max-w-full text-muted-foreground hover:text-foreground')}
+                className={cn(rowClass, 'max-w-full text-muted-foreground hover:text-foreground')}
                 aria-label={t('diffView.actions.reviewAria')}
                 title={t('diffView.actions.reviewAria')}
             >
-                <Icon name="file-edit" className="size-3.5" />
-                <span id={`turn-changes-${turnId}`} className="typography-meta font-semibold text-foreground/85">
+                <Icon name="file-edit" className={iconClass} />
+                <span id={`turn-changes-${turnId}`} className={titleClass}>
                     {t('chat.changedFiles.title')}
                 </span>
-                <span className="typography-meta text-muted-foreground">{fileCountLabel}</span>
-                <Icon name="arrow-right-s" className="size-3.5 opacity-60" />
+                <span className={metaClass}>{fileCountLabel}</span>
+                <Icon name="arrow-right-s" className={cn(iconClass, 'opacity-60')} />
             </Button>
-            <div className="flex min-w-0 flex-col gap-0.5">
+            <div className={cn('flex min-w-0 flex-col', isMobile ? 'gap-0' : 'gap-0.5')}>
                 {visibleFiles.map((file) => (
                     <TurnChangedFilePreviewButton
                         key={file.file}
                         file={file}
                         canOpen={canOpen}
+                        isMobile={isMobile}
                         onOpen={openTurnDiff}
                     />
                 ))}
@@ -221,14 +278,14 @@ const TurnChangesPreview = React.memo(({
                         variant="ghost"
                         size="xs"
                         disabled={!canOpen}
-                        className={cn(TURN_CHANGES_ROW_CLASS, 'text-muted-foreground hover:text-foreground')}
+                        className={cn(rowClass, 'text-muted-foreground hover:text-foreground')}
                         onClick={openCompleteTurnDiff}
                         aria-label={t('diffView.actions.reviewAria')}
                         title={t('diffView.actions.reviewAria')}
                     >
-                        <span aria-hidden="true" className="size-3.5 flex-shrink-0" />
-                        <span className="typography-meta font-medium">+{hiddenCountLabel}</span>
-                        <Icon name="arrow-right-s" className="size-3.5" />
+                        <span aria-hidden="true" className={cn(iconClass, 'flex-shrink-0')} />
+                        <span className={footerClass}>+{hiddenCountLabel}</span>
+                        <Icon name="arrow-right-s" className={iconClass} />
                     </Button>
                 ) : null}
             </div>
@@ -1723,14 +1780,21 @@ const AssistantMessageBody = React.memo(({
     }, [activityPartsForTurn]);
 
     const toggleActivityGroup = turnGroupingContext?.toggleGroup;
+    const isCompactionTurn = turnGroupingContext?.activityPresentationKind === 'compaction';
+    const isActivityExpanded = turnGroupingContext?.isGroupExpanded === true;
+    // Collapsed compaction folds the summary body under the Activity disclosure.
+    const hideCompactionBody = isSortedRenderMode && isCompactionTurn && !isActivityExpanded;
     const isActivityOwnerMessage = !isSortedRenderMode
         || !turnGroupingContext?.activityOwnerMessageId
         || turnGroupingContext.activityOwnerMessageId === messageId
         || hasAnchoredActivitySegments;
 
+    // Compaction turns always own a disclosure header on the activity-owner
+    // message, even when there are no tool/reasoning segments yet — the
+    // summary body folds under that header in collapsed mode.
     const shouldRenderActivityGroup = isSortedRenderMode
         && isActivityOwnerMessage
-        && hasAnchoredActivitySegments
+        && (hasAnchoredActivitySegments || isCompactionTurn)
         && Boolean(toggleActivityGroup);
 
     const shouldDeferSortedInlineText = isSortedRenderMode && !hasStopFinish;
@@ -1741,11 +1805,13 @@ const AssistantMessageBody = React.memo(({
     // when text is empty, so duration + TPS still show after user abort.
     const shouldShowTurnFooter = isLastAssistantInTurn
         && isTurnSettled
+        && !hideCompactionBody
         && (hasTextContent || Boolean(errorMessage) || isMessageCompleted);
     const hasAuthoritativeChangedFiles = Array.isArray(turnGroupingContext?.changedFiles);
     const shouldShowChangesPreview = !isMiniChatSurface
         && isLastAssistantInTurn
         && hasStopFinish
+        && !hideCompactionBody
         && Boolean(turnGroupingContext?.changedFiles?.length);
     const shouldRenderActionsInActivity = isSortedRenderMode;
     const shouldShowStandaloneMessageActions = showSplitAssistantMessageActions && shouldShowMessageActions && !shouldShowTurnFooter && !shouldRenderActionsInActivity;
@@ -1815,18 +1881,19 @@ const AssistantMessageBody = React.memo(({
     const renderedParts = React.useMemo(() => {
         const rendered: React.ReactNode[] = [];
 
-        if (shouldRenderActivityGroup && toggleActivityGroup) {
-            activityGroupSegmentsForMessage.forEach((segment) => {
-                const visibleSegmentParts = showReasoningTraces
-                    ? segment.parts
-                    : segment.parts.filter((activity) => activity.kind !== 'reasoning');
-                const isCompactionStatusOnly = turnGroupingContext.activityPresentationKind === 'compaction'
-                    && visibleSegmentParts.length === 0;
-                if (visibleSegmentParts.length === 0 && !isCompactionStatusOnly) {
-                    return;
-                }
+        if (shouldRenderActivityGroup && toggleActivityGroup && turnGroupingContext) {
+            const pushActivityHeader = (
+                segmentId: string,
+                visibleSegmentParts: typeof activityGroupSegmentsForMessage[number]['parts'],
+            ) => {
+                // Non-disclosure only when compaction has nothing foldable yet
+                // (no activity rows and no summary body). Body or rows use the
+                // ordinary turn disclosure so collapsed mode can hide them.
+                const statusOnly = turnGroupingContext.activityPresentationKind === 'compaction'
+                    && visibleSegmentParts.length === 0
+                    && !hasTextContent;
                 rendered.push(
-                    <div key={`progressive-group-${segment.id}`}>
+                    <div key={`progressive-group-${segmentId}`}>
                         <TurnActivity
                             parts={visibleSegmentParts}
                             isExpanded={turnGroupingContext.isGroupExpanded === true}
@@ -1843,7 +1910,7 @@ const AssistantMessageBody = React.memo(({
                             onContentChange={onContentChange}
                             streamPhase={effectiveStreamPhase}
                             showHeader={true}
-                            statusOnly={isCompactionStatusOnly}
+                            statusOnly={statusOnly}
                             animateRows={animateActivityRows}
                             animatedToolIds={animatedToolIdsLookup}
                             diffStats={turnGroupingContext.diffStats}
@@ -1851,7 +1918,22 @@ const AssistantMessageBody = React.memo(({
                         />
                     </div>
                 );
-            });
+            };
+
+            if (activityGroupSegmentsForMessage.length > 0) {
+                activityGroupSegmentsForMessage.forEach((segment) => {
+                    const visibleSegmentParts = showReasoningTraces
+                        ? segment.parts
+                        : segment.parts.filter((activity) => activity.kind !== 'reasoning');
+                    if (visibleSegmentParts.length === 0
+                        && turnGroupingContext.activityPresentationKind !== 'compaction') {
+                        return;
+                    }
+                    pushActivityHeader(segment.id, visibleSegmentParts);
+                });
+            } else if (isCompactionTurn) {
+                pushActivityHeader(`${messageId}:compaction-status`, []);
+            }
         }
 
         // Flat rendering: iterate parts in natural order.
@@ -1865,6 +1947,10 @@ const AssistantMessageBody = React.memo(({
             if (part.type === 'text') {
                 const activity = activityByPart.get(part);
                 if (shouldDeferSortedInlineText) {
+                    i += 1;
+                    continue;
+                }
+                if (hideCompactionBody) {
                     i += 1;
                     continue;
                 }
@@ -2026,6 +2112,9 @@ const AssistantMessageBody = React.memo(({
         collapsibleThinkingBlocks,
         collapsedPreviewCount,
         expandedTools,
+        hasTextContent,
+        hideCompactionBody,
+        isCompactionTurn,
         isMobile,
         isActivityOwnerMessage,
         isSortedRenderMode,

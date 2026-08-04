@@ -29,15 +29,39 @@ function renderSyncActions(aheadCount: number, behindCount: number) {
 }
 
 describe('SyncActions', () => {
-  test('shows the total number of commits that need syncing', () => {
+  test('shows directional ahead and behind counts with fixed-size icons', () => {
     const markup = renderSyncActions(2, 3);
 
-    expect(/<span[^>]*aria-hidden="true"[^>]*>5<\/span>/.test(markup)).toBe(true);
+    expect(markup).toContain('data-sync-direction="behind"');
+    expect(markup).toContain('data-sync-direction="ahead"');
+    expect(markup).toContain('>3</span>');
+    expect(markup).toContain('>2</span>');
+    expect(markup).toContain('oc-arrow-down');
+    expect(markup).toContain('oc-arrow-up');
+    expect(markup).toContain('size-3.5 shrink-0');
+    expect(markup).not.toMatch(/<span[^>]*aria-hidden="true"[^>]*>5<\/span>/);
+  });
+
+  test('shows only the behind chip when the branch is only behind', () => {
+    const markup = renderSyncActions(0, 1);
+
+    expect(markup).toContain('data-sync-direction="behind"');
+    expect(markup).toContain('>1</span>');
+    expect(markup).not.toContain('data-sync-direction="ahead"');
+  });
+
+  test('shows only the ahead chip when the branch is only ahead', () => {
+    const markup = renderSyncActions(4, 0);
+
+    expect(markup).toContain('data-sync-direction="ahead"');
+    expect(markup).toContain('>4</span>');
+    expect(markup).not.toContain('data-sync-direction="behind"');
   });
 
   test('keeps the icon-only layout when the branch is synchronized', () => {
     const markup = renderSyncActions(0, 0);
 
-    expect(/<span[^>]*aria-hidden="true"[^>]*>\d+<\/span>/.test(markup)).toBe(false);
+    expect(markup).not.toContain('data-sync-direction=');
+    expect(markup).toContain('oc-refresh');
   });
 });

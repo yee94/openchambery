@@ -24,12 +24,14 @@ Official OpenCode pagination is message-count based and uses **opaque** cursors 
 
 | Param | Default | Range | Notes |
 |---|---|---|---|
-| `turns` | `3` | `1..10` | Authored user turn budget |
-| `scanLimit` | `100` | `10..200` | Per-page upstream `limit` for `session.messages` |
+| `turns` | `3` | `1..10` | Authored user turn budget (product limit) |
+| `scanLimit` | **omitted** | `10..200` when present | Optional override only. Host→OpenCode local page size; default is server `_inner_scanLimit` (`OPENCHAMBER_SESSION_TURN_SCAN_LIMIT` or `100`). Clients should omit this. |
 | `before` | omitted | opaque string ≤ 8192 chars | Resume older history: host cursor (`oc1.…`) or raw OpenCode SDK cursor on first page |
 | `directory` | omitted | path string | Forwarded to directory-scoped OpenCode client |
 
-Invalid `turns`, `scanLimit`, or `before` (malformed/stale host token, oversize) → HTTP 400 (service not called or `invalid_cursor`).
+Invalid `turns`, explicit invalid `scanLimit`, or `before` (malformed/stale host token, oversize) → HTTP 400.
+
+**`_inner_scanLimit`**: resolved once at process start from env (clamped 10..200). Host always calls OpenCode on loopback; scan chunk is not a client-network concern. Final response size is still turn-trimmed via `selectTurnRecords`.
 
 ## Response contract
 

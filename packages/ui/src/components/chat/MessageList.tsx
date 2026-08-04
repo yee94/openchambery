@@ -70,7 +70,14 @@ const sameKeys = (a: readonly string[] | undefined, b: readonly string[] | undef
 type TanstackVirtualizerInstance = ReactVirtualizer<HTMLDivElement, HTMLDivElement>;
 type HistoryEngine = 'none' | 'tanstack';
 
-const TANSTACK_ESTIMATED_ENTRY_SIZE = 320;
+// Summary mode keeps activity rows open — turns are tall. Collapsed mode shows
+// only the disclosure chrome (+ user prompt / final text), so the cold estimate
+// must start much lower: an overestimate on every newly mounted row triggers
+// first-measurement scroll corrections that re-enter the scroll handler and
+// read as upward-scroll flicker (Chrome traces: Virtualizer.resizeItem →
+// applyScrollAdjustment → scroll EventDispatch).
+const TANSTACK_ESTIMATED_ENTRY_SIZE_SUMMARY = 320;
+const TANSTACK_ESTIMATED_ENTRY_SIZE_COLLAPSED = 168;
 const TANSTACK_OVERSCAN = 8;
 // Touch flings cover more distance between paints than desktop wheels; a
 // larger window keeps fast mobile scrolling over mounted rows.
@@ -80,8 +87,19 @@ const TANSTACK_MOBILE_OVERSCAN = 16;
 // can afford a wider burst, while a scrolling list stays near one row per
 // commit so no single frame swaps a screenful of placeholders at once.
 const MARKDOWN_PRELOAD_ENTRIES = 6;
+// Collapsed packs more turns into the viewport; a fixed 6-row preload window
+// trails the fold during fast upward travel and paints Markdown skeletons.
+const MARKDOWN_PRELOAD_ENTRIES_COLLAPSED = 12;
 const MARKDOWN_PRELOAD_RELEASE_IDLE = 4;
 const MARKDOWN_PRELOAD_RELEASE_SCROLLING = 1;
+// Collapsed upward travel needs a thicker off-screen pipeline so scroll-end
+// has less deferred work left in the viewport.
+const MARKDOWN_PRELOAD_RELEASE_SCROLLING_COLLAPSED = 2;
+// Visible settle budget per idle commit. Summary viewports are usually ≤ this;
+// collapsed denser ranges meter across frames (trace2: unmetered settle was
+// a ~480ms React commit of ChatMessage trees right after GestureScrollEnd).
+const MARKDOWN_VISIBLE_RELEASE_IDLE = 6;
+const MARKDOWN_VISIBLE_RELEASE_IDLE_COLLAPSED = 4;
 const resolveTanstackOverscan = (): number => (
     isMobileSurfaceRuntime() ? TANSTACK_MOBILE_OVERSCAN : TANSTACK_OVERSCAN
 );
@@ -92,8 +110,11 @@ const resolveTanstackOverscan = (): number => (
 const ANCHOR_HOLD_STABLE_FRAMES = 30;
 const ANCHOR_HOLD_MAX_FRAMES = 180;
 // Adaptive estimate bounds: only trust the session average once a few rows
-// are measured, and keep it inside sane turn-height bounds.
+// are measured, and keep it inside sane turn-height bounds. Collapsed mode
+// converges with fewer samples so the first upward fling does not keep
+// correcting against the cold default.
 const TANSTACK_ESTIMATE_MIN_SAMPLES = 5;
+const TANSTACK_ESTIMATE_MIN_SAMPLES_COLLAPSED = 2;
 const TANSTACK_ESTIMATE_MIN = 120;
 const TANSTACK_ESTIMATE_MAX = 1200;
 // "At bottom" tolerance for resize-adjustment decisions.
@@ -172,6 +193,69 @@ export const resolveMessageListKeys = (sessionKey: string, virtualizerKey?: stri
     virtualizerKey: virtualizerKey ?? sessionKey,
 });
 
+/** Cold row-height estimate for unmeasured virtualizer entries. */
+// eslint-disable-next-line react-refresh/only-export-components
+export const resolveTanstackEstimatedEntrySize = (
+    activityRenderMode: 'collapsed' | 'summary',
+): number => (
+    activityRenderMode === 'collapsed'
+        ? TANSTACK_ESTIMATED_ENTRY_SIZE_COLLAPSED
+        : TANSTACK_ESTIMATED_ENTRY_SIZE_SUMMARY
+);
+
+/**
+ * Timeline measurement snapshots are geometry for one activity density. Sharing
+ * a summary-mode cache with collapsed mounts seeds every row ~2× too tall and
+ * causes a cascade of first-measurement scroll corrections on the next open.
+ */
+// eslint-disable-next-line react-refresh/only-export-components
+export const resolveTimelineVirtualizerCacheKey = (
+    virtualizerKey: string,
+    activityRenderMode: 'collapsed' | 'summary',
+): string => `${virtualizerKey}::activity:${activityRenderMode}`;
+
+/** How many rows past each fold edge may start Markdown hydration. */
+// eslint-disable-next-line react-refresh/only-export-components
+export const resolveMarkdownPreloadEntries = (
+    activityRenderMode: 'collapsed' | 'summary',
+    visibleCount: number = 0,
+): number => {
+    const base = activityRenderMode === 'collapsed'
+        ? MARKDOWN_PRELOAD_ENTRIES_COLLAPSED
+        : MARKDOWN_PRELOAD_ENTRIES;
+    // Never let the preload window trail a denser visible range (collapsed).
+    return Math.max(base, Math.max(0, Math.floor(visibleCount)));
+};
+
+/** Off-screen preload releases allowed while the list is actively scrolling. */
+// eslint-disable-next-line react-refresh/only-export-components
+export const resolveMarkdownPreloadReleaseWhileScrolling = (
+    activityRenderMode: 'collapsed' | 'summary',
+): number => (
+    activityRenderMode === 'collapsed'
+        ? MARKDOWN_PRELOAD_RELEASE_SCROLLING_COLLAPSED
+        : MARKDOWN_PRELOAD_RELEASE_SCROLLING
+);
+
+/** Visible-row hydration budget once scrolling has settled. */
+// eslint-disable-next-line react-refresh/only-export-components
+export const resolveMarkdownVisibleReleaseLimit = (
+    activityRenderMode: 'collapsed' | 'summary',
+): number => (
+    activityRenderMode === 'collapsed'
+        ? MARKDOWN_VISIBLE_RELEASE_IDLE_COLLAPSED
+        : MARKDOWN_VISIBLE_RELEASE_IDLE
+);
+
+// eslint-disable-next-line react-refresh/only-export-components
+export const resolveTanstackEstimateMinSamples = (
+    activityRenderMode: 'collapsed' | 'summary',
+): number => (
+    activityRenderMode === 'collapsed'
+        ? TANSTACK_ESTIMATE_MIN_SAMPLES_COLLAPSED
+        : TANSTACK_ESTIMATE_MIN_SAMPLES
+);
+
 // eslint-disable-next-line react-refresh/only-export-components
 export const syncCurrentHistoryVirtualization = (
     state: { current: boolean },
@@ -195,17 +279,17 @@ export const shouldAdjustHistoryScrollForSizeChange = (input: {
     return input.itemEnd <= input.scrollOffset;
 };
 
-const readTanstackTimelineCache = (sessionKey: string, keys: readonly string[]): VirtualItem[] | undefined => {
-    return tanstackTimelineCache.read(sessionKey, keys);
+const readTanstackTimelineCache = (cacheKey: string, keys: readonly string[]): VirtualItem[] | undefined => {
+    return tanstackTimelineCache.read(cacheKey, keys);
 };
 
 const writeTanstackTimelineCache = (
-    sessionKey: string,
+    cacheKey: string,
     keys: readonly string[],
     virtualizer: TanstackVirtualizerInstance | null | undefined,
 ): void => {
     if (!virtualizer || keys.length === 0) return;
-    tanstackTimelineCache.write(sessionKey, keys, virtualizer.takeSnapshot());
+    tanstackTimelineCache.write(cacheKey, keys, virtualizer.takeSnapshot());
 };
 
 const resolveMessageRole = (message: ChatMessageEntry): string | null => {
@@ -465,8 +549,10 @@ export const resolveDefaultActivityExpanded = (
 export const resolveToggledActivityExpanded = (currentExpanded: boolean): boolean => !currentExpanded;
 
 /**
- * Status-only compaction header when sorted, compaction-kind, and no visible
- * activity segments. Settled (`normal`/`abnormal`) always qualifies.
+ * Pre-assistant status-only compaction header when sorted, compaction-kind,
+ * and no visible activity segments yet. Once assistant messages exist, the
+ * MessageBody Activity disclosure owns the header and foldable body.
+ * Settled (`normal`/`abnormal`) without assistants still qualifies.
  * `active` requires the last turn and an authoritative live working signal so
  * history pagination / partial loads cannot paint stale "compacting".
  */
@@ -475,6 +561,7 @@ export const shouldShowCompactionStatus = (input: {
     chatRenderMode: 'sorted' | 'live';
     activityPresentationKind: TurnRecord['activityPresentationKind'];
     hasVisibleActivitySegments: boolean;
+    hasAssistantMessages: boolean;
     completionDisposition: TurnRecord['completionDisposition'];
     isLastTurn: boolean;
     sessionIsWorking: boolean;
@@ -486,6 +573,10 @@ export const shouldShowCompactionStatus = (input: {
         return false;
     }
     if (input.hasVisibleActivitySegments) {
+        return false;
+    }
+    // Assistant rows own the disclosure header + foldable summary body.
+    if (input.hasAssistantMessages) {
         return false;
     }
     if (input.completionDisposition === 'normal' || input.completionDisposition === 'abnormal') {
@@ -907,6 +998,7 @@ const TurnBlock = React.memo(({
                 chatRenderMode,
                 activityPresentationKind: turn.activityPresentationKind,
                 hasVisibleActivitySegments: visibleActivitySegments.length > 0,
+                hasAssistantMessages: turn.assistantMessages.length > 0,
                 completionDisposition: turn.completionDisposition,
                 isLastTurn,
                 sessionIsWorking,
@@ -1184,11 +1276,16 @@ const StaticHistoryList = React.memo(({ entries, engine, contentRef, scrollRef, 
             });
         });
     }, [historyOverscan, isTanstack, targetOverscan]);
+    // Measurement cache is mode-scoped: collapsed vs summary geometry must not
+    // cross-seed each other (see resolveTimelineVirtualizerCacheKey).
+    const timelineCacheKey = resolveTimelineVirtualizerCacheKey(virtualizerKey, activityRenderMode);
     // Initial-only read: measurement cache restore is a mount-time concern;
-    // afterwards the live virtualizer owns measurements.
+    // afterwards the live virtualizer owns measurements. Mode is fixed for the
+    // list instance identity via the cache key; a mode switch remounts through
+    // a new cache namespace rather than reusing the wrong heights.
     const [initialMeasurements] = React.useState(() => (
         isTanstack
-            ? readTanstackTimelineCache(virtualizerKey, entries.map((entry) => entry.key))
+            ? readTanstackTimelineCache(timelineCacheKey, entries.map((entry) => entry.key))
             : undefined
     ));
 
@@ -1198,7 +1295,13 @@ const StaticHistoryList = React.memo(({ entries, engine, contentRef, scrollRef, 
     // Smaller estimate error → smaller anchor corrections when prepended rows
     // measure in → less visible drift. The ref keeps estimateSize's identity
     // stable so updating the average never triggers a global remeasure.
-    const estimatedEntrySizeRef = React.useRef(TANSTACK_ESTIMATED_ENTRY_SIZE);
+    const defaultEstimatedEntrySize = resolveTanstackEstimatedEntrySize(activityRenderMode);
+    const estimatedEntrySizeRef = React.useRef(defaultEstimatedEntrySize);
+    const estimateModeRef = React.useRef(activityRenderMode);
+    if (estimateModeRef.current !== activityRenderMode) {
+        estimateModeRef.current = activityRenderMode;
+        estimatedEntrySizeRef.current = defaultEstimatedEntrySize;
+    }
     // Core re-reads `initialOffset` every time it acquires a scroll element,
     // which includes the moment `enabled` flips on because the history grew
     // past MESSAGE_LIST_VIRTUALIZE_THRESHOLD. Only a list that mounted already
@@ -1310,18 +1413,24 @@ const StaticHistoryList = React.memo(({ entries, engine, contentRef, scrollRef, 
     // entry is hydrated up front (see `ensureNewestMarkdownKeyHydrated`), so a
     // live turn never waits on this.
     const isScrolling = tanstackVirtualizer.isScrolling;
+    const visibleMarkdownCount = Math.max(0, visibleRangeEnd - visibleRangeStart + 1);
     const markdownHydrationBatch = getMarkdownHydrationBatch({
         entryKeys,
         mountedIndexes,
         visibleStartIndex: visibleRangeStart,
         visibleEndIndex: visibleRangeEnd,
         scrollDirection: lastScrollDirectionRef.current,
-        preloadEntries: MARKDOWN_PRELOAD_ENTRIES,
+        preloadEntries: resolveMarkdownPreloadEntries(activityRenderMode, visibleMarkdownCount),
         hydratedKeys: activeHydratedMarkdownEntryKeys,
         allowVisibleRelease: !isScrolling,
         preloadReleaseLimit: isScrolling
-            ? MARKDOWN_PRELOAD_RELEASE_SCROLLING
+            ? resolveMarkdownPreloadReleaseWhileScrolling(activityRenderMode)
             : MARKDOWN_PRELOAD_RELEASE_IDLE,
+        // While scrolling, visible is withheld entirely. Once idle, cap the
+        // visible half so a dense collapsed viewport cannot freeze one frame.
+        visibleReleaseLimit: isScrolling
+            ? 0
+            : resolveMarkdownVisibleReleaseLimit(activityRenderMode),
     });
     // The batch identity, not its array identity, is what the release effect
     // reacts to. The ref lets the after-paint task release the batch the list
@@ -1357,7 +1466,8 @@ const StaticHistoryList = React.memo(({ entries, engine, contentRef, scrollRef, 
     React.useEffect(() => {
         if (!isTanstack) return;
         const sizes = tanstackVirtualizer.itemSizeCache;
-        if (sizes.size >= TANSTACK_ESTIMATE_MIN_SAMPLES) {
+        const minSamples = resolveTanstackEstimateMinSamples(activityRenderMode);
+        if (sizes.size >= minSamples) {
             let total = 0;
             for (const size of sizes.values()) total += size;
             estimatedEntrySizeRef.current = Math.min(
@@ -1372,7 +1482,7 @@ const StaticHistoryList = React.memo(({ entries, engine, contentRef, scrollRef, 
         registerTanstackVirtualizer?.(tanstackVirtualizer);
         return () => {
             writeTanstackTimelineCache(
-                virtualizerKey,
+                timelineCacheKey,
                 entriesRef.current.map((entry) => entry.key),
                 tanstackVirtualizer,
             );
@@ -1380,7 +1490,7 @@ const StaticHistoryList = React.memo(({ entries, engine, contentRef, scrollRef, 
         };
         // registerTanstackVirtualizer is useEvent (stable identity); semantic deps only.
         // eslint-disable-next-line react-hooks/exhaustive-deps -- registerTanstackVirtualizer is useEvent
-    }, [isTanstack, tanstackVirtualizer, virtualizerKey]);
+    }, [isTanstack, tanstackVirtualizer, timelineCacheKey]);
 
     const renderEntry = useRenderPhaseCallback((entry: RenderEntry, hydrateMarkdown: boolean = true) => {
         return (

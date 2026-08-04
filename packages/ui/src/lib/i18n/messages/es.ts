@@ -1835,7 +1835,7 @@ export const dict: Record<I18nKey, string> = {
   "chat.activity.completed": "Procesado en {duration}",
   "chat.activity.completedStatus": "Procesado",
   "chat.activity.agentsWorking": "{count} agentes trabajando",
-  "chat.activity.agentsInvolved": "{count} agentes participaron",
+  "chat.activity.agentsInvolved": "{count} agentes involucrados",
   "chat.emptyState.opencodeUnreachable": "OpenCode no es accesible",
   "chat.emptyState.startNewChat": "Iniciar una nueva conversación",
   "chat.emptyState.draftTitle": "What are we working on?",

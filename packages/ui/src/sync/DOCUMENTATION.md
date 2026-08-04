@@ -268,7 +268,9 @@ HTTP pull (initial / prepend / recovery / materialize)
                                 orchestrates policy → query → tail recovery →
                                 reducer → store commit (single-flight)
   session-message-reducer.ts    reduceSessionMessagePage — pure page → state
-  session-prefetch-cache.ts     loading / ready / error + TTL meta
+  session-prefetch-cache.ts     loading / ready / error + TTL meta;
+                                loadGeneration gates concurrent fail/success
+                                so a slower pull cannot flash cold load-error
   ../queries/sessionStatusQueries.ts
                                 TanStack Query: directory status snapshots +
                                 request-start authority boundary
@@ -464,47 +466,47 @@ Rules that keep this single-sourced:
   runtime, directory, and session ids match an old in-flight request; transport
   single-flight can still share the HTTP response, but the new store must not
   reuse a promise that only commits into a detached store.
-- Initial history is a shared 30-message tail page on every surface (Web,
-  Electron, VS Code, direct mobile, and private Relay tunnels). All message page
-  limits live in `session-message-policy.ts` (initial, history, recovery,
-  materialization, refetch, send-confirmation). Every caller — the imperative
-  selection path, the reactive sync path, reconnect recovery, and orphan/ensure
-  materialization — resolves its page size directly from that policy, so they
-  share the same transport flight and never diverge into per-callsite hardcoded
-  numbers. Recovery and materialization use the same limit as initial. A failed
-  first load retains its requested page size; retries never degrade into an
-  unbounded `limit=0` history read. An incomplete tail page fetches up to eight
-  missing parent user messages by exact message ID when any assistant row's
-  `parentID` is absent from the page — including mixed tails that already contain
-  a newer user turn — then commits the merged records; it never expands to a
-  100/150-message page while searching for a turn boundary. Authoritative
-  complete pages skip parent recovery. Loading failures are subscribable and
-  preserve the prior ready records for retry.
+- Product **`limit` means authored-user turns**, never message count. Budgets are
+  **link-tiered** via `isRelayModeActive()`: **local/LAN** first paint **6** turns
+  and prepend **6** turns; **Relay** first paint and prepend **2** turns. Meta and
+  prefetch `limit` accumulate turn budgets across pages. Host→OpenCode message
+  scan chunk is **server-owned** (`_inner_scanLimit` /
+  env `OPENCHAMBER_SESSION_TURN_SCAN_LIMIT`, default 100); the shared client
+  omits `scanLimit` on the wire. Optional client `scanLimit` remains an
+  explicit override only. Initial / recovery / materialize / selection call
+  `fetchHostSessionTurnPageForPurpose` →
+  `GET /api/openchamber/sessions/:id/messages?turns=…` (no scanLimit by default).
+  Policy lives in `session-message-policy.ts`. Incomplete Host pages may recover
+  missing parent user messages by exact ID (up to eight). Authoritative complete
+  pages skip parent recovery. Loading failures are subscribable and preserve
+  prior ready records.
 - Message loading status is runtime-scoped. Reactive request de-duplication is
   local to the owning directory-store lifecycle, so a remounted provider still
   commits a shared transport response into its own store.
-- Older history is user-driven pagination (`loadMore`) only. Prepend / loadMore
-  uses one Host 3-turn request (`GET /api/openchamber/sessions/:id/messages`
-  with `directory`, optional `before`, `turns=3`, `scanLimit=100`) via
-  `fetchSessionTurnPage` and a single store commit — only when
-  `purpose === "prepend"` and `before` is set. The client asserts a strict page
+- Older history is user-driven pagination (`loadMore`) only. Prepend uses one
+  Host turn-page request (`turns=3` desktop / `turns=2` mobile, surface
+  surface turn limit) via `fetchHostSessionTurnPageForPurpose` when
+  `purpose === "prepend"` and `before` is set. Bare `before` without purpose
+  prepend stays on the official SDK path. The client asserts a strict page
   contract: each record is an object with non-empty `info.id` and optional
-  `parts` array; `turnCount` is an integer in `0..requestedTurns` (server-
-  declared, no client predicate recompute); `complete=true` requires
-  `cursor=null`, `complete=false` requires a non-empty cursor string; empty
-  cursor strings and `partial:true` are rejected. `use-sync` adopts
-  `page.complete` strictly (never `|| !cursor`). `scanLimit=100` is the Host
-  upstream scan chunk only — not a client message return size. Initial /
-  recovery / materialize stay on the official OpenCode SDK `session.messages`
-  path at 30 (refetch 100 and send-confirmation 30 are unchanged). The chat
+  `parts` array; `turnCount` is an integer in `0..requestedTurns`;
+  `complete=true` requires `cursor=null`, `complete=false` requires a non-empty
+  cursor string; empty cursor strings and `partial:true` are rejected.
+  `use-sync` adopts `page.complete` strictly (never `|| !cursor`).
+  Host `scanLimit` is not sent by default. Refetch 100 and send-confirmation 30
+  are unchanged. The chat
   timeline controller issues at most one Host turn-page request per user
   interaction (desktop near-top scroll or explicit upward intent; mobile top
   button). Concurrent wheel bursts share one in-flight chain via a synchronous
   loading guard; fetches check `historyLoading` and cancel viewport-anchor hold
   only while still owning the armed snapshot. Active desktop transcripts may
-  auto-fill earlier history once after a short first paint (`messageCount ≤ 38`
-  and `scrollHeight ≤ clientHeight + 48`) while still pinned; that path does not
-  release auto-follow and must not re-arm after trim reverse-loading.
+  auto-fill earlier history while the first paint stays short
+  (`scrollHeight ≤ clientHeight + 48`) and `canLoadEarlier` is cursor-backed;
+  height-only geometry so collapsed stacks keep filling without expand-first;
+  owned by TanStack Query (`chatTimelineAutoFillQueryKey`) rather than a
+  `useEffect` chain; no-growth/failure blocks further auto-fill for the session;
+  successful short pages re-arm via query-key edge movement. That path does not
+  release auto-follow. Timeline handlers use `@reactuses/core` `useEvent`.
 - Composer session mention search filters every loaded global active-session
   summary across projects, while the empty menu keeps three recent suggestions.
   Opening the mention menu performs no referenced-session fetch. Selecting a

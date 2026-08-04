@@ -1,4 +1,6 @@
 import React from 'react';
+import { useQuery } from '@tanstack/react-query';
+import { useEvent, useIsomorphicLayoutEffect, useUnmount } from '@reactuses/core';
 
 import type { ChatMessageEntry } from '../lib/turns/types';
 import type { MessageListHandle } from '../MessageList';
@@ -11,6 +13,7 @@ import type { TurnHistorySignals } from '../lib/turns/historySignals';
 import { getMemoryLimits, type SessionHistoryMeta } from '@/stores/types/sessionTypes';
 import { isVSCodeRuntime } from '@/lib/desktop';
 import { isMobileSurfaceRuntime } from '@/lib/runtimeSurface';
+import { getRuntimeKey } from '@/lib/runtime-switch';
 
 type ViewportAnchor = { messageId: string; offsetTop: number };
 
@@ -210,12 +213,16 @@ export const resolveHistoryPageDecision = (input: {
 const HISTORY_INTERACTION_MAX_PAGES = 1;
 
 /**
- * Auto-fill only on a short first paint: message count must stay at or below
- * this bound so a later trim / reverse load cannot re-trigger fill.
+ * Short first paint / collapsed transcript that does not fill the viewport:
+ * keep loading earlier Host turn pages while still pinned at bottom.
+ *
+ * Height is the only geometry gate. Collapsed activity can leave many messages
+ * on screen without overflow; a message-count ceiling would stop fill early and
+ * force users to expand a turn before scroll/load-more can run.
+ *
+ * `fillBlocked` is set only after a no-growth or failed page so a single failed
+ * attempt cannot storm retries, while a successful short page can re-arm.
  */
-const AUTO_FILL_MAX_FIRST_PAINT_MESSAGES = 38;
-
-/** Short first paint: auto-fill earlier history once while still pinned at bottom. */
 export const shouldAutoFillEarlierHistory = (input: {
     enabled: boolean;
     isMobile: boolean;
@@ -224,14 +231,13 @@ export const shouldAutoFillEarlierHistory = (input: {
     historyLoading: boolean;
     canLoadEarlier: boolean;
     isPinned: boolean;
-    alreadyAttempted: boolean;
+    /** True after a no-growth/failed fill for this session; cleared on session change. */
+    fillBlocked: boolean;
     scrollHeight: number;
     clientHeight: number;
     pendingRevealWork: boolean;
     isLoadingOlder: boolean;
     hasMessages: boolean;
-    /** First-paint message count; auto-fill only when <= 38. */
-    messageCount: number;
 }): boolean => {
     if (!input.enabled) return false;
     if (input.isMobile) return false;
@@ -239,15 +245,30 @@ export const shouldAutoFillEarlierHistory = (input: {
     if (input.historyLoading) return false;
     if (!input.canLoadEarlier) return false;
     if (!input.isPinned) return false;
-    if (input.alreadyAttempted) return false;
+    if (input.fillBlocked) return false;
     if (input.pendingRevealWork || input.isLoadingOlder) return false;
     if (!input.hasMessages) return false;
-    // Avoid auto-fill after the first paint has already grown past the short
-    // window (e.g. after trim reverse-loading would otherwise re-arm fill).
-    if (input.messageCount > AUTO_FILL_MAX_FIRST_PAINT_MESSAGES) return false;
+    // Container not measured yet — do not fire a fill against 0×0 geometry.
+    if (input.clientHeight <= 0) return false;
     if (input.scrollHeight > input.clientHeight + 48) return false;
     return true;
 };
+
+/** Query key for short-viewport auto-fill; changes when the timeline edge moves. */
+export const chatTimelineAutoFillQueryKey = (input: {
+    runtimeKey: string;
+    sessionId: string;
+    oldestMessageId: string | null;
+    messageCount: number;
+    canLoadEarlier: boolean;
+}) => [
+    'chat-timeline-auto-fill',
+    input.runtimeKey,
+    input.sessionId,
+    input.oldestMessageId,
+    input.messageCount,
+    input.canLoadEarlier,
+] as const;
 
 /** Multi-frame anchor hold only when virtualized geometry actually grew. */
 export const shouldHoldHistoryViewportAnchor = (input: {
@@ -363,6 +384,10 @@ export const useChatTimelineController = ({
     const [isLoadingOlder, setIsLoadingOlder] = React.useState(false);
     const [pendingRevealWork, setPendingRevealWork] = React.useState(false);
     const [activeTurnId, setActiveTurnId] = React.useState<string | null>(null);
+    // Per-session short-viewport auto-fill block after no-growth / hard failure.
+    const [autoFillBlocked, setAutoFillBlocked] = React.useState(false);
+    // Layout metrics for auto-fill enablement (updated after commit, not guessed).
+    const [viewportMetrics, setViewportMetrics] = React.useState({ scrollHeight: 0, clientHeight: 0 });
 
     const turnModelRef = React.useRef(turnWindowModel);
     const isPinnedRef = React.useRef(isPinned);
@@ -371,21 +396,41 @@ export const useChatTimelineController = ({
     const sessionIdRef = React.useRef<string | null>(sessionId);
     const messagesRef = React.useRef(messages);
     const historyMetaRef = React.useRef<SessionHistoryMeta | null>(historyMeta);
-    const initializedSessionRef = React.useRef<string | null>(null);
     const pendingRenderResolversRef = React.useRef<Array<() => void>>([]);
     const pendingScrollRequestRef = React.useRef<PendingScrollRequest | null>(null);
     const scrollPinRef = React.useRef<{ turnId: string; expiresAt: number } | null>(null);
     const historyInteractionRef = React.useRef(false);
     const historyInteractionTimerRef = React.useRef<number | null>(null);
-    // One auto-fill attempt per session: written before the fetch so a failed
-    // page does not storm retries (sync failure state remains authoritative).
-    const autoFillAttemptedSessionsRef = React.useRef<Set<string>>(new Set());
+
+    // Session switch: adjust state during render (React-supported prop-driven reset)
+    // so we never race a layout effect against the first paint of the new session.
+    const [trackedSessionId, setTrackedSessionId] = React.useState(sessionId);
+    if (trackedSessionId !== sessionId) {
+        setTrackedSessionId(sessionId);
+        if (historyInteractionTimerRef.current !== null && typeof window !== 'undefined') {
+            window.clearTimeout(historyInteractionTimerRef.current);
+            historyInteractionTimerRef.current = null;
+        }
+        historyInteractionRef.current = false;
+        isLoadingOlderRef.current = false;
+        scrollPinRef.current = null;
+        setIsLoadingOlder(false);
+        setPendingRevealWork(false);
+        setActiveTurnId(null);
+        setAutoFillBlocked(false);
+        setViewportMetrics({ scrollHeight: 0, clientHeight: 0 });
+    }
 
     const historySignals = React.useMemo(() => {
         const defaultLimit = getMemoryLimits().HISTORICAL_MESSAGES;
         const hasBufferedTurns = false;
+        // Prefer explicit canLoadEarlier (cursor-backed). Fall back to !complete
+        // only for legacy meta without the field; never invent has-more from
+        // message count alone when meta says complete.
         const hasMoreAboveTurns = historyMeta
-            ? !historyMeta.complete
+            ? (typeof historyMeta.canLoadEarlier === 'boolean'
+                ? historyMeta.canLoadEarlier
+                : !historyMeta.complete)
             : messages.length >= defaultLimit;
         const historyLoading = Boolean(historyMeta?.loading);
         return {
@@ -408,15 +453,15 @@ export const useChatTimelineController = ({
     messagesRef.current = messages;
     historyMetaRef.current = historyMeta;
 
-    const beginHistoryInteraction = React.useCallback(() => {
+    const beginHistoryInteraction = useEvent(() => {
         historyInteractionRef.current = true;
         if (historyInteractionTimerRef.current !== null && typeof window !== 'undefined') {
             window.clearTimeout(historyInteractionTimerRef.current);
             historyInteractionTimerRef.current = null;
         }
-    }, []);
+    });
 
-    const settleHistoryInteraction = React.useCallback(() => {
+    const settleHistoryInteraction = useEvent(() => {
         if (typeof window === 'undefined') {
             historyInteractionRef.current = false;
             return;
@@ -429,35 +474,18 @@ export const useChatTimelineController = ({
             historyInteractionTimerRef.current = null;
             historyInteractionRef.current = false;
         }, HISTORY_INTERACTION_GUARD_MS);
-    }, []);
+    });
 
-    React.useLayoutEffect(() => {
-        if (initializedSessionRef.current === sessionId) {
-            return;
-        }
-        if (historyInteractionTimerRef.current !== null && typeof window !== 'undefined') {
-            window.clearTimeout(historyInteractionTimerRef.current);
-            historyInteractionTimerRef.current = null;
-        }
-        historyInteractionRef.current = false;
-        initializedSessionRef.current = sessionId;
-        isLoadingOlderRef.current = false;
-        setIsLoadingOlder(false);
-        setPendingRevealWork(false);
-        scrollPinRef.current = null;
-        setActiveTurnId(null);
-    }, [sessionId]);
-
-    const resolvePendingRenderWaiters = React.useCallback(() => {
+    const resolvePendingRenderWaiters = useEvent(() => {
         const resolvers = pendingRenderResolversRef.current;
         if (resolvers.length === 0) {
             return;
         }
         pendingRenderResolversRef.current = [];
         resolvers.forEach((resolve) => resolve());
-    }, []);
+    });
 
-    const waitForNextRenderCommitOrTimeout = React.useCallback((): Promise<void> => {
+    const waitForNextRenderCommitOrTimeout = useEvent((): Promise<void> => {
         return new Promise<void>((resolve) => {
             if (typeof window === 'undefined') {
                 resolve();
@@ -474,18 +502,18 @@ export const useChatTimelineController = ({
             pendingRenderResolversRef.current.push(finish);
             const timer = window.setTimeout(finish, HISTORY_RENDER_WAIT_TIMEOUT_MS);
         });
-    }, []);
+    });
 
-    const resolvePendingScrollRequest = React.useCallback((value: boolean) => {
+    const resolvePendingScrollRequest = useEvent((value: boolean) => {
         const pending = pendingScrollRequestRef.current;
         if (!pending) {
             return;
         }
         pendingScrollRequestRef.current = null;
         pending.resolve(value);
-    }, []);
+    });
 
-    const attemptPendingScrollRequest = React.useCallback(() => {
+    const attemptPendingScrollRequest = useEvent(() => {
         const pending = pendingScrollRequestRef.current;
         if (!pending) {
             return;
@@ -522,43 +550,55 @@ export const useChatTimelineController = ({
         if (typeof targetIndex === 'number') {
             resolvePendingScrollRequest(false);
         }
-    }, [messageListRef, resolvePendingScrollRequest]);
+    });
 
-    React.useEffect(() => {
-        return () => {
-            if (historyInteractionTimerRef.current !== null && typeof window !== 'undefined') {
-                window.clearTimeout(historyInteractionTimerRef.current);
-                historyInteractionTimerRef.current = null;
-            }
-            resolvePendingRenderWaiters();
-            resolvePendingScrollRequest(false);
-        };
-    }, [resolvePendingRenderWaiters, resolvePendingScrollRequest]);
+    useUnmount(() => {
+        if (historyInteractionTimerRef.current !== null && typeof window !== 'undefined') {
+            window.clearTimeout(historyInteractionTimerRef.current);
+            historyInteractionTimerRef.current = null;
+        }
+        resolvePendingRenderWaiters();
+        resolvePendingScrollRequest(false);
+    });
 
     const renderedMessages = messages;
 
-    React.useLayoutEffect(() => {
+    useIsomorphicLayoutEffect(() => {
         resolvePendingRenderWaiters();
         attemptPendingScrollRequest();
-    }, [attemptPendingScrollRequest, renderedMessages, resolvePendingRenderWaiters]);
+    }, [renderedMessages]);
+
+    // Publish scroll geometry after commit for Query-driven auto-fill enablement.
+    useIsomorphicLayoutEffect(() => {
+        const el = scrollRef.current;
+        if (!el) {
+            setViewportMetrics({ scrollHeight: 0, clientHeight: 0 });
+            return;
+        }
+        setViewportMetrics({
+            scrollHeight: el.scrollHeight,
+            clientHeight: el.clientHeight,
+        });
+    }, [messages, sessionId, isLoadingOlder, scrollRef]);
 
     // --- Synchronous scroll compensation for load-more / reveal ---
     // fetchOlderHistory stores a snapshot here before triggering the fetch and
-    // keeps it armed for the whole load. useLayoutEffect re-asserts it after
+    // keeps it armed for the whole load. Layout effect re-asserts it after
     // every commit React makes in between — before the browser paints.
+    // (DOM geometry sync is intentionally layout-phase, not Query/useEffect.)
     const prePrependScrollRef = React.useRef<PrePrependSnapshot | null>(null);
     // The snapshot whose anchor already has a post-commit hold running, so a
     // settling virtualized list gets one hold per page instead of one per
     // render.
     const heldAnchorMessagesRef = React.useRef<ChatMessageEntry[] | null>(null);
 
-    const captureViewportAnchor = React.useCallback((): ViewportAnchor | null => {
+    const captureViewportAnchor = useEvent((): ViewportAnchor | null => {
         return messageListRef.current?.captureViewportAnchor() ?? null;
-    }, [messageListRef]);
+    });
 
-    const restoreViewportAnchor = React.useCallback((anchor: ViewportAnchor): boolean => {
+    const restoreViewportAnchor = useEvent((anchor: ViewportAnchor): boolean => {
         return messageListRef.current?.restoreViewportAnchor(anchor) ?? false;
-    }, [messageListRef]);
+    });
 
     // Tracks the timeline edges + height of the previous commit so a prepend
     // that did NOT go through fetchOlderHistory (e.g. the background history
@@ -572,14 +612,14 @@ export const useChatTimelineController = ({
         scrollHeight: number;
     } | null>(null);
 
-    React.useLayoutEffect(() => {
+    useIsomorphicLayoutEffect(() => {
         prePrependScrollRef.current = null;
         prependTrackingRef.current = null;
         heldAnchorMessagesRef.current = null;
         messageListRef.current?.cancelViewportAnchorHold();
-    }, [messageListRef, sessionId]);
+    }, [sessionId]);
 
-    React.useLayoutEffect(() => {
+    useIsomorphicLayoutEffect(() => {
         const container = scrollRef.current;
         if (!container) return;
 
@@ -723,11 +763,11 @@ export const useChatTimelineController = ({
         }
 
         updateTracking();
-    }, [messageListRef, renderedMessages, scrollRef, restoreViewportAnchor, goToBottom]);
+    }, [renderedMessages, goToBottom]);
 
-    const revealBufferedTurns = React.useCallback(async (): Promise<boolean> => false, []);
+    const revealBufferedTurns = useEvent(async (): Promise<boolean> => false);
 
-        const fetchOlderHistory = React.useCallback(async (input: {
+    const fetchOlderHistory = useEvent(async (input: {
         preserveViewport: boolean;
     }): Promise<boolean> => {
         if (!sessionIdRef.current || isLoadingOlderRef.current) {
@@ -857,9 +897,9 @@ export const useChatTimelineController = ({
             // (streaming, live events) free of a stale read position.
             void waitForNextRenderCommitOrTimeout().then(releaseSnapshot);
         }
-    }, [beginHistoryInteraction, captureViewportAnchor, loadMoreMessages, messageListRef, scrollRef, settleHistoryInteraction, waitForNextRenderCommitOrTimeout]);
+    });
 
-    const loadEarlier = React.useCallback(async (options?: { userInitiated?: boolean }) => {
+    const loadEarlier = useEvent(async (options?: { userInitiated?: boolean }) => {
         beginHistoryInteraction();
         if (options?.userInitiated) {
             releaseAutoFollow();
@@ -870,56 +910,94 @@ export const useChatTimelineController = ({
         } finally {
             settleHistoryInteraction();
         }
-    }, [beginHistoryInteraction, fetchOlderHistory, releaseAutoFollow, settleHistoryInteraction]);
+    });
 
-    // Short first paint (collapsed history shorter than the viewport): fill
-    // earlier pages once while auto-follow stays pinned. Paint-after effect so
-    // layout has settled; never userInitiated/release so pin is preserved.
-    React.useEffect(() => {
-        const targetSessionId = sessionId;
-        if (!targetSessionId) return;
-
-        const container = scrollRef.current;
-        const alreadyAttempted = autoFillAttemptedSessionsRef.current.has(targetSessionId);
-        if (!shouldAutoFillEarlierHistory({
-            enabled: autoFillEnabled,
-            isMobile: isMobileSurfaceRuntime(),
-            sessionReady: Boolean(targetSessionId),
-            messageReady: messages.length > 0 || Boolean(historyMeta),
-            historyLoading: historySignals.historyLoading,
-            canLoadEarlier: historySignals.canLoadEarlier,
-            isPinned,
-            alreadyAttempted,
-            scrollHeight: container?.scrollHeight ?? 0,
-            clientHeight: container?.clientHeight ?? 0,
-            pendingRevealWork,
-            isLoadingOlder,
-            hasMessages: messages.length > 0,
-            messageCount: messages.length,
-        })) {
-            return;
-        }
-
-        // Guard before the fetch so a failed page cannot storm retries.
-        autoFillAttemptedSessionsRef.current.add(targetSessionId);
-        void fetchOlderHistory({ preserveViewport: true }).catch(() => {
-            // Sync failure state already owns the error; only prevent unhandled rejection.
-        });
-    }, [
-        autoFillEnabled,
-        fetchOlderHistory,
-        historyMeta,
-        historySignals.canLoadEarlier,
-        historySignals.historyLoading,
-        isLoadingOlder,
+    // Short / collapsed transcript: TanStack Query owns the auto-fill flight.
+    // queryKey moves with the timeline edge so a successful short page re-arms
+    // without a useEffect dependency race. Geometry is layout-published and
+    // re-checked live in queryFn. Do not put isLoadingOlder in `enabled` —
+    // flipping it mid-flight would cancel the Query and strand the load.
+    const oldestMessageId = messages[0]?.info?.id ?? null;
+    const autoFillGate = shouldAutoFillEarlierHistory({
+        enabled: autoFillEnabled,
+        isMobile: isMobileSurfaceRuntime(),
+        sessionReady: Boolean(sessionId),
+        messageReady: messages.length > 0 || Boolean(historyMeta),
+        historyLoading: historySignals.historyLoading,
+        canLoadEarlier: historySignals.canLoadEarlier,
         isPinned,
-        messages.length,
+        fillBlocked: autoFillBlocked,
+        scrollHeight: viewportMetrics.scrollHeight,
+        clientHeight: viewportMetrics.clientHeight,
         pendingRevealWork,
-        scrollRef,
-        sessionId,
-    ]);
+        // Busy/loading checked inside queryFn / fetchOlderHistory, not enabled.
+        isLoadingOlder: false,
+        hasMessages: messages.length > 0,
+    });
 
-    const decideAndLoadEarlier = React.useCallback((source: HistoryLoadSource) => {
+    useQuery({
+        queryKey: chatTimelineAutoFillQueryKey({
+            runtimeKey: getRuntimeKey(),
+            sessionId: sessionId ?? '',
+            oldestMessageId,
+            messageCount: messages.length,
+            canLoadEarlier: historySignals.canLoadEarlier,
+        }),
+        enabled: Boolean(sessionId) && autoFillGate,
+        staleTime: Number.POSITIVE_INFINITY,
+        gcTime: 0,
+        // Transient busy (sync historyLoading / in-flight older load) must retry
+        // without cancelling via enabled flips or permanent fillBlocked.
+        retry: (failureCount, error) => {
+            if ((error as { code?: string } | null)?.code === 'auto-fill-busy') {
+                return failureCount < 40;
+            }
+            return false;
+        },
+        retryDelay: 50,
+        refetchOnMount: false,
+        refetchOnWindowFocus: false,
+        refetchOnReconnect: false,
+        queryFn: async (): Promise<{ status: 'grew' | 'blocked' | 'skip' | 'tall' }> => {
+            const targetSessionId = sessionIdRef.current;
+            if (!targetSessionId) return { status: 'skip' };
+
+            if (historySignalsRef.current.historyLoading || isLoadingOlderRef.current) {
+                const busy = new Error('auto-fill-busy') as Error & { code: string };
+                busy.code = 'auto-fill-busy';
+                throw busy;
+            }
+            if (!historySignalsRef.current.canLoadEarlier) {
+                return { status: 'skip' };
+            }
+
+            const container = scrollRef.current;
+            if (!container || container.clientHeight <= 0) {
+                return { status: 'skip' };
+            }
+            if (container.scrollHeight > container.clientHeight + 48) {
+                return { status: 'tall' };
+            }
+
+            try {
+                const grew = await fetchOlderHistory({ preserveViewport: true });
+                if (!grew) {
+                    // No-growth or hard stop while still short — block further auto-fill.
+                    setAutoFillBlocked(true);
+                    return { status: 'blocked' };
+                }
+                return { status: 'grew' };
+            } catch (error) {
+                if ((error as { code?: string } | null)?.code === 'auto-fill-busy') {
+                    throw error;
+                }
+                setAutoFillBlocked(true);
+                throw error instanceof Error ? error : new Error('chat timeline auto-fill failed');
+            }
+        },
+    });
+
+    const decideAndLoadEarlier = useEvent((source: HistoryLoadSource) => {
         // Mobile never loads history from scroll/gesture position: any prepend
         // racing an active touch gesture can be hijacked by the native scroll
         // animation. The user scrolls to the natural top and taps an explicit
@@ -941,20 +1019,20 @@ export const useChatTimelineController = ({
         }
 
         void loadEarlier({ userInitiated: true });
-    }, [loadEarlier, scrollRef]);
+    });
 
-    const handleHistoryScroll = React.useCallback(() => {
+    const handleHistoryScroll = useEvent(() => {
         decideAndLoadEarlier('scroll');
-    }, [decideAndLoadEarlier]);
+    });
 
     // Explicit upward intent (wheel/touch/key) can fire when scrollTop is already
     // 0, so no scroll event would run. Same decision helper; only the pin gate
     // differs from ordinary scroll.
-    const handleHistoryUpwardIntent = React.useCallback(() => {
+    const handleHistoryUpwardIntent = useEvent(() => {
         decideAndLoadEarlier('upward-intent');
-    }, [decideAndLoadEarlier]);
+    });
 
-    const scrollToTurn = React.useCallback(async (
+    const scrollToTurn = useEvent(async (
         turnId: string,
         options?: { behavior?: ScrollBehavior },
     ): Promise<boolean> => {
@@ -995,9 +1073,9 @@ export const useChatTimelineController = ({
         } finally {
             setPendingRevealWork(false);
         }
-    }, [attemptPendingScrollRequest, releaseAutoFollow, sessionId]);
+    });
 
-    const scrollToMessage = React.useCallback(async (
+    const scrollToMessage = useEvent(async (
         messageId: string,
         options?: { behavior?: ScrollBehavior },
     ): Promise<boolean> => {
@@ -1040,23 +1118,23 @@ export const useChatTimelineController = ({
         } finally {
             setPendingRevealWork(false);
         }
-    }, [attemptPendingScrollRequest, releaseAutoFollow, sessionId]);
+    });
 
-    const resumeToBottom = React.useCallback(async () => {
+    const resumeToBottom = useEvent(async () => {
         setPendingRevealWork(false);
         isLoadingOlderRef.current = false;
         setIsLoadingOlder(false);
         goToBottom('smooth');
-    }, [goToBottom]);
+    });
 
-    const resumeToBottomInstant = React.useCallback(async () => {
+    const resumeToBottomInstant = useEvent(async () => {
         setPendingRevealWork(false);
         isLoadingOlderRef.current = false;
         setIsLoadingOlder(false);
         goToBottom('instant');
-    }, [goToBottom]);
+    });
 
-    const handleActiveTurnChange = React.useCallback((turnId: string | null) => {
+    const handleActiveTurnChange = useEvent((turnId: string | null) => {
         const pin = scrollPinRef.current;
         if (pin) {
             if (turnId !== pin.turnId && Date.now() < pin.expiresAt) {
@@ -1065,7 +1143,7 @@ export const useChatTimelineController = ({
             scrollPinRef.current = null;
         }
         setActiveTurnId(turnId);
-    }, []);
+    });
 
     return {
         turnIds: turnWindowModel.turnIds,

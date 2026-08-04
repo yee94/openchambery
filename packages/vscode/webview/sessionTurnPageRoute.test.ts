@@ -75,7 +75,7 @@ describe('parseSessionTurnPageQuery', () => {
     }
   });
 
-  test('defaults turns and scanLimit within valid ranges when omitted', async () => {
+  test('defaults turns when omitted and leaves scanLimit unset for host _inner_scanLimit', async () => {
     const { parseSessionTurnPageQuery } = await loadRoute();
     const parsed = parseSessionTurnPageQuery(
       '/api/openchamber/sessions/ses_1/messages',
@@ -85,10 +85,8 @@ describe('parseSessionTurnPageQuery', () => {
     if (parsed.ok) {
       expect(parsed.turns).toBeGreaterThanOrEqual(1);
       expect(parsed.turns).toBeLessThanOrEqual(10);
-      if (parsed.scanLimit != null) {
-        expect(parsed.scanLimit).toBeGreaterThanOrEqual(10);
-        expect(parsed.scanLimit).toBeLessThanOrEqual(200);
-      }
+      // Omitted on the wire so Extension Host applies `_inner_scanLimit`.
+      expect(parsed.scanLimit).toBeUndefined();
     }
   });
 

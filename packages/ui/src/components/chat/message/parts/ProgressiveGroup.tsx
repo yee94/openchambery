@@ -1063,6 +1063,7 @@ const ProgressiveGroup: React.FC<ProgressiveGroupProps> = ({
         : null;
     const isCompleted = completionDisposition === 'normal' || completionDisposition === 'abnormal';
     const isCompaction = activityPresentationKind === 'compaction';
+    const activityIconName = isCompaction ? 'fold-vertical' : 'stack';
     const activityStatusLabel = completionDisposition === undefined
         ? t('chat.activity.title')
         : isActive
@@ -1073,7 +1074,8 @@ const ProgressiveGroup: React.FC<ProgressiveGroupProps> = ({
     const activityDuration = isActive ? activeDuration : completedDuration;
     const taskAgentNames = React.useMemo(() => getTaskAgentNames(parts), [parts]);
     const displayedTaskAgentNames = isActive ? taskAgentNames.active : taskAgentNames.all;
-    const visibleTaskAgentNames = displayedTaskAgentNames.slice(0, 3);
+    // Cap avatars so the collapsed header stays one line (text is already short).
+    const visibleTaskAgentNames = displayedTaskAgentNames.slice(0, isMobile ? 2 : 3);
     const handleToggle = useEvent(() => {
         const header = activityHeaderRef.current ?? statusHeaderRef.current;
         pendingToggleAnchorRef.current = header
@@ -1150,7 +1152,9 @@ const ProgressiveGroup: React.FC<ProgressiveGroupProps> = ({
         return rows.slice(-previewCount);
     }, [isExpanded, previewCount, rows]);
 
-    if (shouldRenderRows && rows.length === 0 && !statusOnly) {
+    // Header-only turns (e.g. completed compaction with foldable body text outside
+    // activity rows) must still paint the disclosure chrome when showHeader is set.
+    if (!showHeader && rows.length === 0) {
         return null;
     }
 
@@ -1239,7 +1243,9 @@ const ProgressiveGroup: React.FC<ProgressiveGroupProps> = ({
     })
         : null;
 
-    const shouldShowRowsContainer = isExpanded || visibleRows.length > 0;
+    // Empty expanded disclosures (e.g. compaction with only foldable body text
+    // outside activity rows) keep the header and skip the empty rail.
+    const shouldShowRowsContainer = visibleRows.length > 0;
     if (!showHeader) {
         return (
             <FadeInOnReveal>
@@ -1262,7 +1268,7 @@ const ProgressiveGroup: React.FC<ProgressiveGroupProps> = ({
                         aria-live={isActive ? 'polite' : undefined}
                     >
                         <span className="inline-flex h-5 flex-shrink-0 items-center" style={{ color: 'var(--tools-icon)' }}>
-                            <Icon name="stack" className="size-3.5" />
+                            <Icon name={activityIconName} className="size-3.5" />
                         </span>
                         <span className={cn(
                             'typography-ui-label inline-flex h-5 flex-shrink-0 items-center font-semibold',
@@ -1281,54 +1287,89 @@ const ProgressiveGroup: React.FC<ProgressiveGroupProps> = ({
                         ref={activityHeaderRef}
                         type="button"
                         className={cn(
-                            'group/tool flex w-full min-w-0 flex-wrap items-center gap-x-2 gap-y-0.5 text-left',
+                            // Full-width row: left grows (flex-1), right trailer stays at the trailing edge.
+                            'group/tool flex w-full min-w-0 flex-nowrap items-center text-left',
+                            isMobile ? 'gap-x-1' : 'gap-x-2',
                             TOOL_ROW_INTERACTIVE_CHROME_CLASS,
+                            // Mobile only: drop chip pr so the chevron has no dead trailing slot.
+                            // Desktop keeps px-2 so hover wash padding matches left (symmetric rounded chip).
+                            isMobile && 'pr-0',
                         )}
                         data-mobile-press-feedback="soft"
                         onClick={handleToggle}
                         aria-expanded={isExpanded}
                         aria-label={isExpanded ? t('chat.activity.collapseAria') : t('chat.activity.expandAria')}
                     >
-                    <span className="inline-flex h-5 flex-shrink-0 items-center" style={{ color: 'var(--tools-icon)' }}>
-                        <Icon name="stack" className="size-3.5" />
-                    </span>
                     <span className={cn(
-                        'typography-ui-label inline-flex h-5 flex-shrink-0 items-center font-semibold',
-                        isActive
-                            ? 'animate-text-shimmer text-[var(--status-info)] [--oc-text-shimmer-base:var(--status-info)]'
-                            : 'text-foreground/85',
+                        // flex-1 absorbs free space so the trailer is pushed to the row end.
+                        'inline-flex min-w-0 flex-1 items-center overflow-hidden',
+                        isMobile ? 'gap-x-1' : 'gap-x-1.5',
                     )}>
-                        {activityStatusLabel}
-                    </span>
-                    {activityDuration ? (
-                        <span className="typography-meta tabular-nums text-muted-foreground">{activityDuration}</span>
-                    ) : null}
-                    {displayedTaskAgentNames.length > 0 ? (
-                        <span className="ml-auto inline-flex min-w-0 items-center gap-1.5 text-muted-foreground">
-                            <span className="inline-flex items-center gap-0.5" aria-hidden="true">
-                                {visibleTaskAgentNames.map((name, index) => (
-                                    <AgentAvatar
-                                        key={`${name}-${index}`}
-                                        name={name}
-                                        size={14}
-                                        className="size-3.5 min-h-3.5 min-w-3.5 max-h-3.5 max-w-3.5 flex-none"
-                                    />
-                                ))}
-                            </span>
-                            <span className="typography-meta min-w-0 truncate">
-                                {isActive
-                                    ? t('chat.activity.agentsWorking', { count: displayedTaskAgentNames.length })
-                                    : t('chat.activity.agentsInvolved', { count: displayedTaskAgentNames.length })}
-                            </span>
+                        <span
+                            className={cn(
+                                'inline-flex flex-shrink-0 items-center',
+                                isMobile ? 'h-4' : 'h-5',
+                            )}
+                            style={{ color: 'var(--tools-icon)' }}
+                        >
+                            <Icon name={activityIconName} className={isMobile ? 'size-3' : 'size-3.5'} />
                         </span>
-                    ) : null}
-                    <Icon
-                        name={isExpanded ? 'arrow-down-s' : 'arrow-right-s'}
-                        className={cn(
-                            'size-3.5 flex-shrink-0 text-muted-foreground opacity-70',
-                            displayedTaskAgentNames.length === 0 && 'ml-auto',
-                        )}
-                    />
+                        <span className={cn(
+                            'inline-flex flex-shrink-0 items-center',
+                            // Mobile matches tool-row body (meta); desktop keeps label emphasis.
+                            isMobile ? 'typography-meta h-4' : 'typography-ui-label h-5 font-semibold',
+                            isActive
+                                ? 'animate-text-shimmer text-[var(--status-info)] [--oc-text-shimmer-base:var(--status-info)]'
+                                : 'text-foreground/85',
+                        )}>
+                            {activityStatusLabel}
+                        </span>
+                        {activityDuration ? (
+                            <span className="typography-meta shrink-0 tabular-nums text-muted-foreground">{activityDuration}</span>
+                        ) : null}
+                    </span>
+                    {/* Trailer: agents (optional) + chevron — always the rightmost content. */}
+                    <span className={cn(
+                        'ml-auto inline-flex max-w-[min(14rem,55%)] shrink-0 items-center justify-end',
+                        isMobile ? 'gap-0.5' : 'gap-1',
+                    )}>
+                        {displayedTaskAgentNames.length > 0 ? (
+                            <span className={cn(
+                                'inline-flex min-w-0 items-center text-muted-foreground',
+                                isMobile ? 'gap-1' : 'gap-1.5',
+                            )}>
+                                <span className="inline-flex shrink-0 items-center gap-0.5" aria-hidden="true">
+                                    {visibleTaskAgentNames.map((name, index) => (
+                                        <AgentAvatar
+                                            key={`${name}-${index}`}
+                                            name={name}
+                                            size={isMobile ? 12 : 14}
+                                            className={cn(
+                                                'flex-none',
+                                                isMobile
+                                                    ? 'size-3 min-h-3 min-w-3 max-h-3 max-w-3'
+                                                    : 'size-3.5 min-h-3.5 min-w-3.5 max-h-3.5 max-w-3.5',
+                                            )}
+                                        />
+                                    ))}
+                                </span>
+                                <span className="typography-meta min-w-0 truncate">
+                                    {isActive
+                                        ? t('chat.activity.agentsWorking', { count: displayedTaskAgentNames.length })
+                                        : t('chat.activity.agentsInvolved', { count: displayedTaskAgentNames.length })}
+                                </span>
+                            </span>
+                        ) : null}
+                        <Icon
+                            name={isExpanded ? 'arrow-down-s' : 'arrow-right-s'}
+                            className={cn(
+                                'flex-shrink-0 text-muted-foreground opacity-70',
+                                // Mobile optical pull after pr-0; desktop keeps chip padding intact for hover wash.
+                                isMobile && '-mr-0.5',
+                                isMobile ? 'size-3' : 'size-3.5',
+                            )}
+                        />
+                    </span>
                     </button>
                 )}
                 {!statusOnly && shouldShowRowsContainer ? (

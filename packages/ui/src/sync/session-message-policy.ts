@@ -1,58 +1,158 @@
 /**
- * Session message page-size policy.
+ * Session history window policy — **limit means authored-user turns**.
  *
- * Every surface (web, desktop/Electron, VS Code, Capacitor/hosted mobile,
- * and private Relay tunnels) shares one initial/recovery/materialize page size
- * so bootstrap never diverges by transport.
+ * Link tier (product turn budgets):
+ * - **local** — 本机 / 局域网 direct 连接，网络好，turn 窗口更大
+ * - **relay** — 经 private Relay 隧道，首屏与 prepend 固定 **2 轮**
  *
- * Prepend / loadMore uses the Host turn-page API (`turns=3`); the history
- * value below is the Host-side upstream `scanLimit` chunk only — not a client
- * message return count.
+ * Surface (only used for optional legacy helpers; product turns are link-tiered):
+ * - desktop / mobile — no longer shrinks turn budgets when on local LAN
+ *
+ * OpenCode still pages by message count on the wire. Host→OpenCode `scanLimit`
+ * is server-owned (`_inner_scanLimit`); clients omit it by default.
  */
 
-/** Initial / recovery / materialize page size for every runtime and transport. */
-const SESSION_MESSAGE_INITIAL_LIMIT = 30
-/**
- * Host turn-page upstream scan chunk (`scanLimit`). Not a client "return 100
- * messages" page size — Host returns turn-bounded records for `turns=3`.
- */
-const SESSION_MESSAGE_HISTORY_LIMIT = 100
-/** Full-ish refetch after mutations that need more than one initial page. */
-const MESSAGE_REFETCH_LIMIT = 100
-/** Bounded refetch after send to confirm the optimistic user message. */
-const SEND_CONFIRMATION_REFETCH_LIMIT = 30
+import { isRelayModeActive } from "@/lib/relay/runtime-tunnel"
+import { isMobileSurfaceRuntime } from "@/lib/runtimeSurface"
+
+/** Load surface (legacy helpers / optional tooling). */
+export type SessionMessageLoadSurface = "desktop" | "mobile"
 
 /**
- * Initial session message page size for bootstrap / first paint.
+ * Transport link tier for product turn limits.
+ * local = direct 本机/局域网; relay = active E2EE tunnel.
  */
-export function getInitialSessionMessageLimit(): number {
-  return SESSION_MESSAGE_INITIAL_LIMIT
+export type SessionMessageLinkTier = "local" | "relay"
+
+/** First paint turns on 本机 / 局域网. */
+const INITIAL_TURN_LIMIT_LOCAL = 6
+/** First paint turns over Relay. */
+const INITIAL_TURN_LIMIT_RELAY = 2
+/** History prepend turns on 本机 / 局域网. */
+const HISTORY_TURN_LIMIT_LOCAL = 6
+/** History prepend turns over Relay. */
+const HISTORY_TURN_LIMIT_RELAY = 2
+
+/** SDK message refetch after edits (not a product history limit). */
+const MESSAGE_REFETCH_MESSAGE_LIMIT = 100
+/** SDK message window for post-send confirmation (not product history). */
+const SEND_CONFIRMATION_MESSAGE_LIMIT = 30
+
+/**
+ * Resolve UI surface (desktop vs mobile). Turn budgets no longer depend on this
+ * when the link is local; kept for callers that still pass surface.
+ */
+export function resolveSessionMessageLoadSurface(): SessionMessageLoadSurface {
+  return isMobileSurfaceRuntime() ? "mobile" : "desktop"
+}
+
+/** Active transport: relay tunnel vs direct local/LAN. */
+export function resolveSessionMessageLinkTier(): SessionMessageLinkTier {
+  return isRelayModeActive() ? "relay" : "local"
 }
 
 /**
- * Host scan chunk for turn-page upstream reads (`scanLimit=100`).
- * Client prepend commits turn-bounded Host records, not a fixed 100-message page.
+ * Product `limit` for initial / recovery / materialize: authored-user turns.
+ * Local/LAN higher; Relay fixed at 2.
  */
-export function getSessionHistoryMessageLimit(): number {
-  return SESSION_MESSAGE_HISTORY_LIMIT
+export function getInitialSessionTurnLimit(
+  link: SessionMessageLinkTier = resolveSessionMessageLinkTier(),
+): number {
+  return link === "relay" ? INITIAL_TURN_LIMIT_RELAY : INITIAL_TURN_LIMIT_LOCAL
 }
 
-/** Reconnect / recovery fetch limit — same as initial for the active runtime. */
-export function getSessionRecoveryMessageLimit(): number {
-  return getInitialSessionMessageLimit()
+/** @deprecated Use getInitialSessionTurnLimit — limit means turns. */
+export function getInitialSessionTurnBudget(
+  linkOrSurface?: SessionMessageLinkTier | SessionMessageLoadSurface,
+): number {
+  const link = resolveLinkArg(linkOrSurface)
+  return getInitialSessionTurnLimit(link)
 }
 
-/** Lazy session materialization fetch limit — same as initial for the active runtime. */
-export function getSessionMaterializationMessageLimit(): number {
-  return getInitialSessionMessageLimit()
+/**
+ * Product `limit` for prepend / loadMore: authored-user turns for one Host page.
+ * Local/LAN higher; Relay fixed at 2.
+ */
+export function getHistorySessionTurnLimit(
+  link: SessionMessageLinkTier = resolveSessionMessageLinkTier(),
+): number {
+  return link === "relay" ? HISTORY_TURN_LIMIT_RELAY : HISTORY_TURN_LIMIT_LOCAL
 }
 
-/** Broad message refetch after edits / queue reconciliation. */
+/** @deprecated Use getHistorySessionTurnLimit — limit means turns. */
+export function getHistorySessionTurnBudget(
+  linkOrSurface?: SessionMessageLinkTier | SessionMessageLoadSurface,
+): number {
+  return getHistorySessionTurnLimit(resolveLinkArg(linkOrSurface))
+}
+
+/**
+ * Purpose → product turn limit (not message count).
+ */
+export function resolveSessionMessageTurnLimit(
+  purpose: "initial" | "prepend" | "recovery" | "materialize",
+  link: SessionMessageLinkTier = resolveSessionMessageLinkTier(),
+): number {
+  if (purpose === "prepend") return getHistorySessionTurnLimit(link)
+  return getInitialSessionTurnLimit(link)
+}
+
+/**
+ * @deprecated Host scan is server-owned (`_inner_scanLimit`). Kept only for rare
+ * explicit client overrides; default path does not send scanLimit.
+ */
+export function getSessionTurnPageScanLimit(
+  _surface: SessionMessageLoadSurface = resolveSessionMessageLoadSurface(),
+): number {
+  return 100
+}
+
+/**
+ * @deprecated Product limit is turns — use getInitialSessionTurnLimit.
+ */
+export function getInitialSessionMessageLimit(
+  linkOrSurface?: SessionMessageLinkTier | SessionMessageLoadSurface,
+): number {
+  return getInitialSessionTurnLimit(resolveLinkArg(linkOrSurface))
+}
+
+/**
+ * @deprecated Host scan is server-owned; do not use as product limit.
+ */
+export function getSessionHistoryMessageLimit(
+  _surface: SessionMessageLoadSurface = resolveSessionMessageLoadSurface(),
+): number {
+  return getSessionTurnPageScanLimit()
+}
+
+/** Recovery product limit (turns) — same as initial for the active link. */
+export function getSessionRecoveryMessageLimit(
+  link: SessionMessageLinkTier = resolveSessionMessageLinkTier(),
+): number {
+  return getInitialSessionTurnLimit(link)
+}
+
+/** Materialize product limit (turns) — same as initial for the active link. */
+export function getSessionMaterializationMessageLimit(
+  link: SessionMessageLinkTier = resolveSessionMessageLinkTier(),
+): number {
+  return getInitialSessionTurnLimit(link)
+}
+
+/** SDK message refetch window after edits (message count, not product limit). */
 export function getMessageRefetchLimit(): number {
-  return MESSAGE_REFETCH_LIMIT
+  return MESSAGE_REFETCH_MESSAGE_LIMIT
 }
 
-/** Post-send confirmation refetch window. */
+/** SDK post-send confirmation window (message count, not product limit). */
 export function getSendConfirmationRefetchLimit(): number {
-  return SEND_CONFIRMATION_REFETCH_LIMIT
+  return SEND_CONFIRMATION_MESSAGE_LIMIT
+}
+
+function resolveLinkArg(
+  linkOrSurface?: SessionMessageLinkTier | SessionMessageLoadSurface,
+): SessionMessageLinkTier {
+  if (linkOrSurface === "relay" || linkOrSurface === "local") return linkOrSurface
+  // Legacy surface args ("desktop" | "mobile") ignored for turn budgets — use live link.
+  return resolveSessionMessageLinkTier()
 }

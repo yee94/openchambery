@@ -3,6 +3,8 @@ import {
     mergePendingUserMessagePresentations,
     pendingUserMessagesImplyWorking,
     resolveChatContainerHostFeatures,
+    resolveChatHistoryLoadState,
+    resolveChatSessionTranscriptGate,
     type ChatContainerHost,
 } from './chatContainerHost';
 import type { PendingUserMessagePresentation } from '@/sync/session-ui-store';
@@ -128,5 +130,111 @@ describe('chatContainerHost', () => {
       resolvedSessionStatus: null,
       sessionStatusObservedAt: undefined,
     })).toBe(false);
+  });
+});
+
+describe('resolveChatHistoryLoadState', () => {
+  test('default meta (incomplete, no cursor) cannot load and is not complete', () => {
+    expect(resolveChatHistoryLoadState({
+      syncComplete: false,
+      syncHasMore: false,
+      prefetchHasMore: false,
+      assistantComplete: true,
+    })).toEqual({ complete: false, canLoadEarlier: false });
+  });
+
+  test('live cursor enables load-more without marking complete', () => {
+    expect(resolveChatHistoryLoadState({
+      syncComplete: false,
+      syncHasMore: true,
+      prefetchHasMore: false,
+      assistantComplete: true,
+    })).toEqual({ complete: false, canLoadEarlier: true });
+  });
+
+  test('prefetch cursor enables load-more while live is not complete', () => {
+    expect(resolveChatHistoryLoadState({
+      syncComplete: false,
+      syncHasMore: false,
+      prefetchHasMore: true,
+      assistantComplete: true,
+    })).toEqual({ complete: false, canLoadEarlier: true });
+  });
+
+  test('authoritative live complete with no assistant archive is fully complete', () => {
+    expect(resolveChatHistoryLoadState({
+      syncComplete: true,
+      syncHasMore: false,
+      prefetchHasMore: false,
+      assistantComplete: true,
+    })).toEqual({ complete: true, canLoadEarlier: false });
+  });
+
+  test('live complete with incomplete assistant archive can still load archive pages', () => {
+    expect(resolveChatHistoryLoadState({
+      syncComplete: true,
+      syncHasMore: false,
+      prefetchHasMore: false,
+      assistantComplete: false,
+    })).toEqual({ complete: false, canLoadEarlier: true });
+  });
+
+  test('stale prefetch does not keep load-more after live is complete', () => {
+    expect(resolveChatHistoryLoadState({
+      syncComplete: true,
+      syncHasMore: false,
+      prefetchHasMore: true,
+      assistantComplete: true,
+    })).toEqual({ complete: true, canLoadEarlier: false });
+  });
+});
+
+describe('resolveChatSessionTranscriptGate', () => {
+  test('keeps a stable skeleton while cold or loading — never invents load-error', () => {
+    expect(resolveChatSessionTranscriptGate({
+      hasTranscriptShell: false,
+      hasRenderableSessionSnapshot: false,
+      prefetchStatus: undefined,
+      syncLoading: false,
+    })).toBe('hydrating');
+
+    expect(resolveChatSessionTranscriptGate({
+      hasTranscriptShell: false,
+      hasRenderableSessionSnapshot: false,
+      prefetchStatus: 'loading',
+      syncLoading: false,
+    })).toBe('hydrating');
+
+    expect(resolveChatSessionTranscriptGate({
+      hasTranscriptShell: false,
+      hasRenderableSessionSnapshot: true,
+      prefetchStatus: 'error',
+      syncLoading: true,
+    })).toBe('hydrating');
+  });
+
+  test('only surfaces load-error for a settled cold failure', () => {
+    expect(resolveChatSessionTranscriptGate({
+      hasTranscriptShell: false,
+      hasRenderableSessionSnapshot: false,
+      prefetchStatus: 'error',
+      syncLoading: false,
+    })).toBe('load-error');
+  });
+
+  test('passes through when a transcript shell or ready empty snapshot exists', () => {
+    expect(resolveChatSessionTranscriptGate({
+      hasTranscriptShell: true,
+      hasRenderableSessionSnapshot: false,
+      prefetchStatus: 'error',
+      syncLoading: false,
+    })).toBe('pass');
+
+    expect(resolveChatSessionTranscriptGate({
+      hasTranscriptShell: false,
+      hasRenderableSessionSnapshot: true,
+      prefetchStatus: 'ready',
+      syncLoading: false,
+    })).toBe('pass');
   });
 });

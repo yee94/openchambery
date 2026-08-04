@@ -42,12 +42,23 @@ Keep `bridge.ts` as a thin orchestration layer that delegates message handling t
 
 - `session-turn-page-runtime.ts`
   - Pure turn-window aggregation over official OpenCode `session.messages` pages.
-  - Exports `isUserAuthoredTurnBoundary`, `selectTurnRecords`, and
+  - Exports `isUserAuthoredTurnBoundary`, `selectTurnRecords`,
+    `encodeHostCursor` / `decodeHostCursor`, and
     `createSessionTurnPageService({ fetchPage, maxScanPages?, maxScanMessages? })`.
   - OpenCode pages are chronological (oldest → newest); older pages are prepended
     with info.id dedupe (no reverse). Missing `info.id` → explicit `upstream` error.
+  - Client-facing `cursor` is an opaque Host token (`oc1.` + base64url JSON) with
+    `{ before, boundaryID }`: `before` is the upstream request cursor of the page
+    that held the earliest selected authored user boundary; `boundaryID` is that
+    message id. Raw OpenCode cursors on the first request pass through unchanged.
+  - Resuming with a Host token re-fetches the origin page with the decoded raw
+    `before`, keeps only records strictly older than `boundaryID`
+    (`slice(0, index)`), then continues with raw `nextCursor` until the turn
+    budget is met. Malformed token, missing boundary, or `before` over 4096 chars
+    → `invalid_cursor` (no partial records).
   - `complete` is true only when upstream is exhausted and
-    `selected.length === accumulated.length` (no overscan trim).
+    `selected.length === accumulated.length` (no overscan trim). When incomplete,
+    cursor encodes the earliest selected authored user origin.
   - Authored user turn boundary excludes fully synthetic, subtask, compaction, and
     hosted session dividers; empty user parts still count.
   - Hard scan caps: 50 pages / 5000 messages; no partial success on stall or cap.
@@ -55,10 +66,15 @@ Keep `bridge.ts` as a thin orchestration layer that delegates message handling t
 - `bridge-session-turn-page-runtime.ts`
   - Bridge handler for `api:session-turn-page`.
   - Reads OpenCode base URL + auth from the manager, requests official
-    `/session/:id/message?limit=&before=&directory=`, reads `x-next-cursor`, and
-    returns unified `{ records, cursor, complete, turnCount }`.
+    `/session/:id/message?limit=&before=&directory=` with **raw** OpenCode cursors
+    only (Host tokens are decoded in the aggregator; never forwarded upstream),
+    reads `x-next-cursor`, and returns unified
+    `{ records, cursor, complete, turnCount }` where `cursor` is an opaque Host
+    token when history remains.
+  - Maps `invalid_cursor` to a safe client error string; never logs message
+    contents, tokens, or secrets.
   - Whole aggregation uses a 45s AbortController timeout (signal forwarded; cleared
-    in `finally`). Never logs message contents, tokens, or secrets.
+    in `finally`).
   - Delegated from `bridge.ts` before the generic proxy handler.
 
 - `bridge-config-runtime.ts`
@@ -105,7 +121,8 @@ OpenChamber-owned webview route (`webview/sessionTurnPageRoute.ts`). It is
 matched ahead of the generic OpenCode proxy, validates `turns` (1..10) and
 `scanLimit` (10..200), dispatches `api:session-turn-page` to the Extension Host,
 and returns the same unified JSON contract as the web host module
-(`packages/web/server/lib/session-turn-pages/`). Non-GET → 405; illegal query → 400.
+(`packages/web/server/lib/session-turn-pages/`), including opaque Host cursors
+(`oc1.` tokens). Non-GET → 405; illegal query → 400.
 
 The exact `GET /api/config/settings/bootstrap` webview route dispatches to
 `api:config/settings:bootstrap` before the generic settings route. The legacy

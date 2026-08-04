@@ -1,17 +1,25 @@
 /**
- * OpenChamber Host turn-page API for older-history prepend / loadMore.
+ * OpenChamber Host turn-page API for session message windows.
  *
- * One Host request returns up to `turns` authored user boundaries (default 3)
- * with a Host-side upstream `scanLimit` chunk. Initial / recovery / materialize
- * still use the official OpenCode SDK `session.messages` path.
+ * Used for initial/recovery/materialize tails (no `before`) and for
+ * prepend/loadMore (`before` + purpose prepend). One Host request returns up
+ * to `turns` authored user boundaries.
+ *
+ * Upstream OpenCode message `scanLimit` is a **Host-local** concern (server
+ * calls OpenCode on loopback). Clients omit it by default; the Host applies
+ * `_inner_scanLimit` (env `OPENCHAMBER_SESSION_TURN_SCAN_LIMIT` or 100).
+ * Optional `scanLimit` remains an explicit client override only.
  */
 
 import type { Message, Part } from "@opencode-ai/sdk/v2/client"
 
 import { runtimeFetch } from "../lib/runtime-fetch"
-import { getSessionHistoryMessageLimit } from "./session-message-policy"
+import {
+  getHistorySessionTurnLimit,
+  getInitialSessionTurnLimit,
+} from "./session-message-policy"
 
-/** Host turn budget per prepend request (single request, single commit). */
+/** Default Host turn budget for prepend (desktop history window). */
 export const SESSION_TURN_PAGE_TURNS = 3
 
 export type SessionTurnPageRecord = {
@@ -32,6 +40,10 @@ export type FetchSessionTurnPageInput = {
   before?: string
   signal?: AbortSignal
   turns?: number
+  /**
+   * Optional override for Host→OpenCode message page size.
+   * Default path must omit this so the server uses `_inner_scanLimit`.
+   */
   scanLimit?: number
 }
 
@@ -114,21 +126,24 @@ function assertSessionTurnPage(payload: unknown, requestedTurns: number): Sessio
 
 /**
  * GET `/api/openchamber/sessions/:sessionID/messages`
- * query: directory, before?, turns=3, scanLimit=100
+ * query: directory, turns, before?, scanLimit? (optional override only)
  */
 export async function fetchSessionTurnPage(
   input: FetchSessionTurnPageInput,
 ): Promise<SessionTurnPage> {
-  const turns = input.turns ?? SESSION_TURN_PAGE_TURNS
-  const scanLimit = input.scanLimit ?? getSessionHistoryMessageLimit()
+  const turns = input.turns ?? getHistorySessionTurnLimit()
   const path = `/api/openchamber/sessions/${encodeURIComponent(input.sessionID)}/messages`
   const query: Record<string, string> = {
     directory: input.directory,
     turns: String(turns),
-    scanLimit: String(scanLimit),
   }
   if (input.before) {
     query.before = input.before
+  }
+  // Host-local OpenCode scan chunk: omit by default (server `_inner_scanLimit`).
+  // Only send when the caller explicitly overrides.
+  if (typeof input.scanLimit === "number" && Number.isFinite(input.scanLimit)) {
+    query.scanLimit = String(Math.floor(input.scanLimit))
   }
 
   const response = await runtimeFetch(path, {
@@ -157,4 +172,28 @@ export async function fetchSessionTurnPage(
   }
 
   return assertSessionTurnPage(payload, turns)
+}
+
+/**
+ * Purpose-aware Host turn window for tail (initial/recovery/materialize) and
+ * prepend history. Callers map records into the sync store; this function only
+ * owns the HTTP contract.
+ */
+export async function fetchHostSessionTurnPageForPurpose(input: {
+  sessionID: string
+  directory: string
+  purpose: "initial" | "prepend" | "recovery" | "materialize"
+  before?: string
+  signal?: AbortSignal
+}): Promise<SessionTurnPage> {
+  const isHistory = input.purpose === "prepend" && Boolean(input.before)
+  const turns = isHistory ? getHistorySessionTurnLimit() : getInitialSessionTurnLimit()
+  // Never pass scanLimit here — Host owns `_inner_scanLimit` for local OpenCode.
+  return fetchSessionTurnPage({
+    sessionID: input.sessionID,
+    directory: input.directory,
+    turns,
+    ...(input.before ? { before: input.before } : {}),
+    signal: input.signal,
+  })
 }

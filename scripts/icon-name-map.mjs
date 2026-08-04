@@ -141,6 +141,7 @@ export const ICON_NAME_MAP = {
   "computer": { lucide: "monitor", fill: false },
   "contract-up-down": { lucide: "chevrons-down-up", fill: false },
   "corner-down-left": { lucide: "corner-down-left", fill: false },
+  "fold-vertical": { lucide: "fold-vertical", fill: false },
   "cursor": { lucide: "mouse-pointer", fill: false },
   "database-2": { lucide: "database", fill: false },
   "delete-bin": { lucide: "trash-2", fill: false },

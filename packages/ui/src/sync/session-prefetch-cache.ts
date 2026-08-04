@@ -4,6 +4,12 @@
  *
  * Tracks: last fetch time, pagination cursor, completeness.
  * Version counter invalidates stale inflight requests after eviction.
+ *
+ * Load generation: each `beginSessionMessageLoad` bumps a per-entry epoch.
+ * Failures and successes must pass that epoch so a slower concurrent load
+ * cannot paint `error` (or overwrite ready) while a newer load is in flight —
+ * the session-switch path starts imperative + reactive pulls that otherwise
+ * flash `chat.history.loadFailedTitle` mid-retry.
  */
 
 import { getRuntimeKey } from "@/lib/runtime-switch"
@@ -11,12 +17,18 @@ import { getRuntimeKey } from "@/lib/runtime-switch"
 const SESSION_PREFETCH_TTL = 15_000
 
 export type SessionPrefetchMeta = {
+  /**
+   * Cumulative product **turn** limit loaded (authored-user turns), not messages.
+   * Compared to request turn budgets in shouldSkipSessionPrefetch.
+   */
   limit: number
   cursor?: string
   complete: boolean
   at: number
   status: "loading" | "ready" | "error"
   error?: string
+  /** Monotonic load epoch; stale fail/success ignore when mismatched. */
+  loadGeneration: number
 }
 
 const compositeKey = (directory: string, sessionID: string, runtimeKey = getRuntimeKey()) =>
@@ -67,22 +79,44 @@ export function getSessionPrefetch(directory: string, sessionID: string, runtime
   return cache.get(compositeKey(directory, sessionID, runtimeKey))
 }
 
-export function beginSessionMessageLoad(directory: string, sessionID: string, requestedLimit: number, runtimeKey = getRuntimeKey()) {
+/**
+ * Mark an in-flight message page load. Returns the generation token that
+ * `failSessionMessageLoad` / `setSessionPrefetch` must pass so only the latest
+ * load can settle the entry.
+ */
+export function beginSessionMessageLoad(directory: string, sessionID: string, requestedLimit: number, runtimeKey = getRuntimeKey()): number {
   const id = compositeKey(directory, sessionID, runtimeKey)
   const current = cache.get(id)
+  const loadGeneration = (current?.loadGeneration ?? 0) + 1
   cache.set(id, {
     limit: Math.max(current?.limit ?? 0, requestedLimit),
     cursor: current?.cursor,
     complete: current?.complete ?? false,
     at: current?.at ?? Date.now(),
     status: "loading",
+    loadGeneration,
   })
   notify(id)
+  return loadGeneration
 }
 
-export function failSessionMessageLoad(directory: string, sessionID: string, error: string, runtimeKey = getRuntimeKey()) {
+export function failSessionMessageLoad(
+  directory: string,
+  sessionID: string,
+  error: string,
+  runtimeKey = getRuntimeKey(),
+  loadGeneration?: number,
+) {
   const id = compositeKey(directory, sessionID, runtimeKey)
   const current = cache.get(id)
+  if (
+    loadGeneration !== undefined
+    && current
+    && current.loadGeneration !== loadGeneration
+  ) {
+    return
+  }
+  const generation = loadGeneration ?? current?.loadGeneration ?? 0
   cache.set(id, {
     limit: current?.limit ?? 0,
     cursor: current?.cursor,
@@ -90,6 +124,7 @@ export function failSessionMessageLoad(directory: string, sessionID: string, err
     at: current?.at ?? Date.now(),
     status: "error",
     error,
+    loadGeneration: generation,
   })
   notify(id)
 }
@@ -117,14 +152,30 @@ export function setSessionPrefetch(input: {
   cursor?: string
   complete: boolean
   at?: number
+  /**
+   * When set, only apply if this matches the entry's current load generation
+   * (or the entry is missing). Omitting applies unconditionally — used for
+   * non-load writers (dirty materialize, eviction recovery).
+   */
+  loadGeneration?: number
 }) {
   const id = compositeKey(input.directory, input.sessionID, input.runtimeKey)
+  const current = cache.get(id)
+  if (
+    input.loadGeneration !== undefined
+    && current
+    && current.loadGeneration !== input.loadGeneration
+  ) {
+    return
+  }
+  const loadGeneration = input.loadGeneration ?? current?.loadGeneration ?? 0
   cache.set(id, {
     limit: input.limit,
     cursor: input.cursor,
     complete: input.complete,
     at: input.at ?? Date.now(),
     status: "ready",
+    loadGeneration,
   })
   notify(id)
 }

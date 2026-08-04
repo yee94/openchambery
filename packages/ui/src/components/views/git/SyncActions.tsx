@@ -17,6 +17,9 @@ interface SyncActionsProps {
   hasUncommittedChanges?: boolean;
 }
 
+const COUNT_CHIP_CLASS =
+  'inline-flex h-3.5 shrink-0 items-center gap-0.5 typography-micro font-medium leading-none tabular-nums';
+
 export const SyncActions: React.FC<SyncActionsProps> = ({
   syncAction,
   remotes = [],
@@ -32,7 +35,6 @@ export const SyncActions: React.FC<SyncActionsProps> = ({
   const blocksRebaseSync = behindCount > 0 && hasUncommittedChanges;
   const isPrimaryDisabled = disabled || syncAction !== null || !trackingRemote || blocksRebaseSync;
   const hasKnownSyncWork = aheadCount > 0 || behindCount > 0;
-  const syncWorkCount = aheadCount + behindCount;
   const tooltipLabel = blocksRebaseSync
     ? t('gitView.sync.commitOrStashTooltip')
     : trackingRemote
@@ -55,17 +57,28 @@ export const SyncActions: React.FC<SyncActionsProps> = ({
           type="button"
           onClick={handleSync}
           disabled={isPrimaryDisabled}
-          className="flex h-6 min-w-6 items-center justify-center gap-0.5 rounded px-1 text-muted-foreground hover:text-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[var(--interactive-focus-ring)] disabled:cursor-not-allowed disabled:opacity-50"
-          aria-label={t('gitView.sync.syncChanges')}
+          className="inline-flex h-6 shrink-0 items-center justify-center gap-1 rounded px-1 text-muted-foreground hover:text-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[var(--interactive-focus-ring)] disabled:cursor-not-allowed disabled:opacity-50"
+          aria-label={
+            hasKnownSyncWork
+              ? t('gitView.sync.syncChangesTooltip', { ahead: aheadCount, behind: behindCount })
+              : t('gitView.sync.syncChanges')
+          }
         >
           {syncAction === 'sync' ? (
-            <Icon name="loader-4" className="size-3.5 animate-spin" />
+            <Icon name="loader-4" className="size-3.5 shrink-0 animate-spin" />
           ) : (
-            <Icon name="refresh" className="size-3.5" />
+            <Icon name="refresh" className="size-3.5 shrink-0" />
           )}
-          {hasKnownSyncWork ? (
-            <span aria-hidden="true" className="typography-micro font-medium leading-none tabular-nums">
-              {syncWorkCount}
+          {behindCount > 0 ? (
+            <span aria-hidden="true" className={COUNT_CHIP_CLASS} data-sync-direction="behind">
+              <Icon name="arrow-down" className="size-3 shrink-0" />
+              <span>{behindCount}</span>
+            </span>
+          ) : null}
+          {aheadCount > 0 ? (
+            <span aria-hidden="true" className={COUNT_CHIP_CLASS} data-sync-direction="ahead">
+              <Icon name="arrow-up" className="size-3 shrink-0" />
+              <span>{aheadCount}</span>
             </span>
           ) : null}
         </button>

@@ -25,7 +25,7 @@ function emptyState(): SessionMessageReducerState {
 
 function page(
   records: Array<{ info: Message; parts?: Part[] }>,
-  options: { cursor?: string; complete?: boolean } = {},
+  options: { cursor?: string; complete?: boolean; turnCount?: number } = {},
 ) {
   return {
     ok: true as const,
@@ -35,6 +35,7 @@ function page(
     })),
     cursor: options.cursor,
     complete: options.complete ?? !options.cursor,
+    ...(typeof options.turnCount === "number" ? { turnCount: options.turnCount } : {}),
   }
 }
 
@@ -44,7 +45,7 @@ describe("reduceSessionMessagePage — initial", () => {
     const result = reduceSessionMessagePage(state, "ses_1", page([
       { info: userMessage("msg_1"), parts: [part("prt_1", "msg_1")] },
       { info: message("msg_2"), parts: [part("prt_2", "msg_2")] },
-    ], { complete: true }), { purpose: "initial", skipPartTypes: SKIP_PARTS })
+    ], { complete: true, turnCount: 1 }), { purpose: "initial", skipPartTypes: SKIP_PARTS })
 
     expect(result.applied).toBe(true)
     expect(result.changed).toBe(true)
@@ -53,8 +54,9 @@ describe("reduceSessionMessagePage — initial", () => {
     expect(result.message.ses_1?.map((item) => item.id)).toEqual(["msg_1", "msg_2"])
     expect(result.part.msg_1?.map((item) => item.id)).toEqual(["prt_1"])
     expect(result.part.msg_2?.map((item) => item.id)).toEqual(["prt_2"])
+    // Product meta.limit is turn count (1 user turn), not message count (2).
     expect(result.meta).toEqual({
-      limit: 2,
+      limit: 1,
       cursor: undefined,
       complete: true,
     })
@@ -82,6 +84,7 @@ describe("reduceSessionMessagePage — initial", () => {
       page([{ info: message("msg_10"), parts: [part("prt_10", "msg_10")] }], {
         cursor: "msg_10",
         complete: false,
+        turnCount: 1,
       }),
       { purpose: "initial", skipPartTypes: SKIP_PARTS },
     )
@@ -114,7 +117,7 @@ describe("reduceSessionMessagePage — prepend", () => {
           { info: older, parts: [olderPart] },
           { info: newer, parts: [newerPart] },
         ],
-        { cursor: "msg_1", complete: false },
+        { cursor: "msg_1", complete: false, turnCount: 1 },
       ),
       { purpose: "prepend", skipPartTypes: SKIP_PARTS },
     )
@@ -123,6 +126,7 @@ describe("reduceSessionMessagePage — prepend", () => {
     expect(result.message.ses_1?.[1]).toBe(newer)
     expect(result.part.msg_2).toBe(newerPart ? state.part.msg_2 : undefined)
     expect(result.part.msg_1?.map((item) => item.id)).toEqual(["prt_1"])
+    // previous turns (1) + page turnCount (1)
     expect(result.meta).toEqual({
       limit: 2,
       cursor: "msg_1",
@@ -197,7 +201,7 @@ describe("reduceSessionMessagePage — recovery", () => {
     const result = reduceSessionMessagePage(
       state,
       "ses_1",
-      page([{ info: { ...existing }, parts: [{ ...existingPart }] }], { complete: true }),
+      page([{ info: { ...existing }, parts: [{ ...existingPart }] }], { complete: true, turnCount: 1 }),
       { purpose: "recovery", skipPartTypes: SKIP_PARTS },
     )
 
@@ -470,7 +474,7 @@ describe("reduceSessionMessagePage — race and error semantics", () => {
     const result = reduceSessionMessagePage(
       state,
       "ses_1",
-      page([{ info: existingMessage, parts: [existingPart] }], { complete: true }),
+      page([{ info: existingMessage, parts: [existingPart] }], { complete: true, turnCount: 1 }),
       { purpose: "initial", skipPartTypes: SKIP_PARTS },
     )
 

@@ -333,8 +333,11 @@ describe('createSessionTurnPageService (VS Code parity with web)', () => {
     ]);
   });
 
-  it('keeps complete=false with a cursor when exhausted history was overscan-trimmed', async () => {
-    const { createSessionTurnPageService } = await loadRuntime();
+  it('keeps complete=false with opaque Host cursor when exhausted history was overscan-trimmed', async () => {
+    const {
+      createSessionTurnPageService,
+      decodeHostCursor,
+    } = await loadRuntime();
     // 4 authored turns; turns=2 trims older overscan even though upstream exhausted.
     const all = [
       user('msg_u1'),
@@ -364,14 +367,19 @@ describe('createSessionTurnPageService (VS Code parity with web)', () => {
     expect(result).toMatchObject({
       ok: true,
       complete: false,
-      cursor: 'msg_u3',
       turnCount: 2,
+    });
+    expect(typeof result.cursor).toBe('string');
+    expect(result.cursor.startsWith('oc1.')).toBe(true);
+    expect(decodeHostCursor(result.cursor)).toMatchObject({
+      ok: true,
+      payload: { before: null, boundaryID: 'msg_u3' },
     });
     expect(result.records.map((entry) => entry.info.id)).toEqual([
       'msg_u3', 'msg_a3', 'msg_u4', 'msg_a4',
     ]);
 
-    // Client can still page older history with before=cursor
+    // Client can still page older history with before=Host token
     const older = await service.loadPage({
       sessionID: 'ses_1',
       turns: 2,
@@ -466,5 +474,174 @@ describe('createSessionTurnPageService (VS Code parity with web)', () => {
     expect(result.ok).toBe(false);
     expect(String(result.error)).toMatch(/message|scan|limit|too.?large/i);
     expect(result.records).toBeUndefined();
+  });
+
+  it('passes raw OpenCode cursor through on first request', async () => {
+    const { createSessionTurnPageService } = await loadRuntime();
+    // Full chronological: u1 a1 u2 a2 u3 a3 u4 a4
+    // Resume with raw before=msg_u3 returns older half.
+    const all = [
+      user('msg_u1'), assistant('msg_a1'),
+      user('msg_u2'), assistant('msg_a2'),
+      user('msg_u3'), assistant('msg_a3'),
+      user('msg_u4'), assistant('msg_a4'),
+    ];
+    const fetchPage = mock(async ({ before, limit = 4 }) => {
+      let end = all.length;
+      if (before) {
+        const index = all.findIndex((entry) => entry.info.id === before);
+        end = index >= 0 ? index : 0;
+      }
+      const start = Math.max(0, end - limit);
+      const slice = all.slice(start, end);
+      const nextCursor = start > 0 ? slice[0]?.info.id ?? null : null;
+      return pageResult(slice, nextCursor);
+    });
+    const service = createSessionTurnPageService({ fetchPage });
+
+    // Resume with raw OpenCode cursor (not Host token) — pass-through.
+    const result = await service.loadPage({
+      sessionID: 'ses_1',
+      turns: 2,
+      before: 'msg_u3',
+      scanLimit: 4,
+    });
+    expect(result.ok).toBe(true);
+    expect(fetchPage).toHaveBeenCalledWith(expect.objectContaining({ before: 'msg_u3' }));
+    expect(result.records.map((entry) => entry.info.id)).toEqual([
+      'msg_u1', 'msg_a1', 'msg_u2', 'msg_a2',
+    ]);
+    // Exhausted with exactly 2 turns → complete
+    expect(result.complete).toBe(true);
+    expect(result.cursor).toBeNull();
+  });
+
+  it('decodes Host token to origin before, slices at boundary, and continues with raw nextCursor', async () => {
+    const {
+      createSessionTurnPageService,
+      decodeHostCursor,
+    } = await loadRuntime();
+    // Pages of size 3 so boundary can sit mid-page and overscan needs more pages.
+    // Chronological: u1 a1 | u2 a2 | u3 a3 | u4 a4 | u5 a5 | u6 a6
+    const all = [
+      user('msg_u1'), assistant('msg_a1'),
+      user('msg_u2'), assistant('msg_a2'),
+      user('msg_u3'), assistant('msg_a3'),
+      user('msg_u4'), assistant('msg_a4'),
+      user('msg_u5'), assistant('msg_a5'),
+      user('msg_u6'), assistant('msg_a6'),
+    ];
+    const fetchPage = mock(async ({ before, limit = 3 }) => {
+      let end = all.length;
+      if (before) {
+        const index = all.findIndex((entry) => entry.info.id === before);
+        end = index >= 0 ? index : 0;
+      }
+      const start = Math.max(0, end - limit);
+      const slice = all.slice(start, end);
+      const nextCursor = start > 0 ? slice[0]?.info.id ?? null : null;
+      return pageResult(slice, nextCursor);
+    });
+    const service = createSessionTurnPageService({ fetchPage, maxScanPages: 20 });
+
+    // scanLimit=3 → keeps paging until 3 authored turns (u4..u6 window).
+    const first = await service.loadPage({
+      sessionID: 'ses_1',
+      turns: 3,
+      scanLimit: 3,
+    });
+    expect(first.ok).toBe(true);
+    expect(first.turnCount).toBe(3);
+    expect(first.complete).toBe(false);
+    expect(first.cursor.startsWith('oc1.')).toBe(true);
+    const decoded = decodeHostCursor(first.cursor);
+    expect(decoded.ok).toBe(true);
+    expect(decoded.payload.boundaryID).toBe('msg_u4');
+    // boundary origin is the request-before of the page that held msg_u4
+    expect(typeof decoded.payload.before === 'string' || decoded.payload.before === null).toBe(true);
+
+    // Host token resume must re-fetch origin page with raw before and slice before boundary.
+    fetchPage.mockClear();
+    const second = await service.loadPage({
+      sessionID: 'ses_1',
+      turns: 3,
+      scanLimit: 3,
+      before: first.cursor,
+    });
+    expect(second.ok).toBe(true);
+    // Upstream fetch uses decoded origin before (raw OpenCode cursor), never Host token.
+    for (const call of fetchPage.mock.calls) {
+      const arg = call[0];
+      if (arg.before != null) {
+        expect(String(arg.before).startsWith('oc1.')).toBe(false);
+      }
+    }
+    const secondIds = second.records.map((entry) => entry.info.id);
+    const firstIds = new Set(first.records.map((entry) => entry.info.id));
+    expect(secondIds.some((id) => firstIds.has(id))).toBe(false);
+    const combined = [...second.records, ...first.records].map((entry) => entry.info.id);
+    expect(new Set(combined).size).toBe(combined.length);
+  });
+
+  it('returns invalid_cursor for malformed Host token', async () => {
+    const { createSessionTurnPageService } = await loadRuntime();
+    const fetchPage = mock(async () => pageResult([user('msg_u1')], null));
+    const service = createSessionTurnPageService({ fetchPage });
+
+    for (const before of [
+      'oc1.',
+      'oc1.not-valid-base64!!!',
+      'oc1.' + Buffer.from('{"boundaryID":""}', 'utf8').toString('base64url'),
+      'oc1.' + Buffer.from('{"before":null}', 'utf8').toString('base64url'),
+      'oc1.' + Buffer.from('not-json', 'utf8').toString('base64url'),
+    ]) {
+      const result = await service.loadPage({
+        sessionID: 'ses_1',
+        turns: 3,
+        before,
+      });
+      expect(result.ok).toBe(false);
+      expect(result.error).toBe('invalid_cursor');
+      expect(result.records).toBeUndefined();
+    }
+    expect(fetchPage).not.toHaveBeenCalled();
+  });
+
+  it('returns invalid_cursor when Host token boundary is missing from origin page (stale)', async () => {
+    const {
+      createSessionTurnPageService,
+      encodeHostCursor,
+    } = await loadRuntime();
+    const fetchPage = mock(async () => pageResult([
+      user('msg_u1'),
+      assistant('msg_a1'),
+    ], null));
+    const service = createSessionTurnPageService({ fetchPage });
+
+    const result = await service.loadPage({
+      sessionID: 'ses_1',
+      turns: 3,
+      before: encodeHostCursor({ before: null, boundaryID: 'msg_gone' }),
+    });
+
+    expect(result.ok).toBe(false);
+    expect(result.error).toBe('invalid_cursor');
+    expect(result.records).toBeUndefined();
+  });
+
+  it('returns invalid_cursor when before exceeds length cap', async () => {
+    const { createSessionTurnPageService } = await loadRuntime();
+    const fetchPage = mock(async () => pageResult([user('msg_u1')], null));
+    const service = createSessionTurnPageService({ fetchPage });
+
+    const result = await service.loadPage({
+      sessionID: 'ses_1',
+      turns: 3,
+      before: 'x'.repeat(4097),
+    });
+
+    expect(result.ok).toBe(false);
+    expect(result.error).toBe('invalid_cursor');
+    expect(fetchPage).not.toHaveBeenCalled();
   });
 });

@@ -27,12 +27,13 @@ import { getSessionMaterializationStatus, materializeSessionSnapshots } from "./
 import { retry } from "./retry"
 import { getRuntimeGeneration, getRuntimeKey, getRuntimeTransportIdentity } from "@/lib/runtime-switch"
 import { runSessionHistoryMutation } from "./session-history-mutation-coordinator"
-import { loadSessionMessage, loadSessionMessagePage, recoverAssistantTailBoundary } from "./session-message-loader"
+import { loadSessionMessage, recoverAssistantTailBoundary } from "./session-message-loader"
 import {
   getInitialSessionMessageLimit,
   getMessageRefetchLimit,
   getSendConfirmationRefetchLimit,
 } from "./session-message-policy"
+import { fetchHostSessionTurnPageForPurpose } from "./session-turn-page-api"
 import { resolveSessionMergeStrategy, SEND_GAP_FILL_SESSION_MERGE_STRATEGY } from "./session-merge-strategy"
 import {
   beginSessionMessageLoad,
@@ -2747,6 +2748,7 @@ async function fetchMessagesForSessionInternal(
   runtimeKey: string,
   limit: number,
 ): Promise<void> {
+  let loadGeneration: number | undefined
   try {
     const s = sdk()
     const store = dirStoreForDirectory(resolvedDir)
@@ -2790,33 +2792,23 @@ async function fetchMessagesForSessionInternal(
       return
     }
 
-    beginSessionMessageLoad(resolvedDir, sessionID, limit, runtimeKey)
+    loadGeneration = beginSessionMessageLoad(resolvedDir, sessionID, limit, runtimeKey)
 
-    const result = await loadSessionMessagePage({
-      runtimeKey,
-      directory: resolvedDir,
-      sessionID,
-      limit,
-      request: () => retry(async () => {
-        const response = await s.session.messages({
-          sessionID,
-          directory: resolvedDir,
-          limit,
-        })
-        assertSdkSuccess(response, "session.messages")
-        return response
+    // Selection materialize: Host 2-turn tail (surface scanLimit), not SDK limit=30.
+    const turnPage = await retry(async () =>
+      fetchHostSessionTurnPageForPurpose({
+        sessionID,
+        directory: resolvedDir,
+        purpose: "initial",
       }),
-    })
-
-    const records = (assertSdkSuccess(result, "session.messages") ?? [])
-      .filter((record: { info?: { id?: string } }) => !!record?.info?.id)
-    const cursor = result.response?.headers?.get?.("x-next-cursor") ?? undefined
+    )
+    const cursor = turnPage.cursor ?? undefined
     const recovered = await recoverAssistantTailBoundary({
-      records: records.map((record: { info: Message; parts?: Part[] }) => ({
+      records: turnPage.records.map((record) => ({
         info: stripMessageDiffSnapshots(record.info),
         parts: record.parts ?? [],
       })),
-      complete: !cursor,
+      complete: turnPage.complete,
       requestMessage: async (messageID) => {
         const response = await loadSessionMessage({
           runtimeKey,
@@ -2840,7 +2832,15 @@ async function fetchMessagesForSessionInternal(
     // session while the fetch was in flight. Skip the write so a slow fetch
     // can't repopulate (and un-evict) a session already navigated away from.
     if (useSessionUIStore.getState().currentSessionId !== sessionID) {
-      setSessionPrefetch({ directory: resolvedDir, sessionID, runtimeKey, limit: completeRecords.length, cursor, complete: !cursor })
+      setSessionPrefetch({
+        directory: resolvedDir,
+        sessionID,
+        runtimeKey,
+        limit: completeRecords.length,
+        cursor,
+        complete: turnPage.complete,
+        loadGeneration,
+      })
       return
     }
 
@@ -2864,7 +2864,8 @@ async function fetchMessagesForSessionInternal(
       runtimeKey,
       limit: completeRecords.length,
       cursor,
-      complete: !cursor,
+      complete: turnPage.complete,
+      loadGeneration,
     })
     await reconcileActiveSessionStatusAfterMessagePull({
       directory: resolvedDir,
@@ -2875,7 +2876,14 @@ async function fetchMessagesForSessionInternal(
       hasMessages: completeRecords.length > 0,
     })
   } catch (error) {
-    // Transient failure — the reactive path in ChatContainer will retry
-    failSessionMessageLoad(resolvedDir, sessionID, formatSdkError(error), runtimeKey)
+    // Transient failure — the reactive path in ChatContainer will retry.
+    // Generation-gated so a later in-flight load is not overwritten as error.
+    failSessionMessageLoad(
+      resolvedDir,
+      sessionID,
+      formatSdkError(error),
+      runtimeKey,
+      loadGeneration,
+    )
   }
 }

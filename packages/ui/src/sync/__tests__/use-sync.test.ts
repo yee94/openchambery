@@ -20,70 +20,58 @@ describe("hasSessionMessageBoundary", () => {
 })
 
 describe("getReactiveSessionMessageRequestLimit", () => {
-  test("keeps reactive tail retries above zero and covers rendered messages", () => {
+  test("product limit is turns — floor is link-tier initial (local 6 when not on relay)", () => {
+    // Default test env has no active relay → local tier.
     expect(getReactiveSessionMessageRequestLimit({
       recordedLimit: 0,
-      renderedMessageCount: 0,
-    })).toBeGreaterThan(0)
+    })).toBe(6)
     expect(getReactiveSessionMessageRequestLimit({
-      recordedLimit: 16,
-      renderedMessageCount: 40,
-    })).toBe(40)
+      recordedLimit: 8,
+      renderedMessageCount: 999,
+    })).toBe(8)
   })
 
-  test("initial (no before) still uses initial SDK page sizing, not scanLimit 100 as return count", () => {
+  test("prepend uses history turn limit (local 6 when not on relay)", () => {
     expect(getReactiveSessionMessageRequestLimit({
+      before: "cursor",
       recordedLimit: 0,
-      renderedMessageCount: 0,
-    })).toBe(30)
+    })).toBe(6)
   })
 })
 
 /**
  * loadMessages is a React hook callback; full injection of queryPage is hard
- * without mounting useSync. These source-contract tests pin the intended split:
- * - initial / tail → official SDK session.messages
- * - prepend / loadMore (before set) → fetchSessionTurnPage (turn-page API)
- *
- * Limitation: this does not execute the hook; it fails if the production wiring
- * drifts before a deeper seam exists.
+ * without mounting useSync. Source contracts pin:
+ * - tail (no before): Host turn-page with initial turn budget (2)
+ * - prepend + before: Host turn-page with history turn budget
+ * - bare before without purpose prepend: official SDK session.messages only
  */
-describe("loadMessages transport split source contract (turn-page for prepend)", () => {
+describe("loadMessages transport split source contract (Host turn-page for tail + prepend)", () => {
   const useSyncSource = readFileSync(join(here, "../use-sync.ts"), "utf8")
 
-  test("imports fetchSessionTurnPage from session-turn-page-api", () => {
+  test("imports Host turn-page purpose helper", () => {
     expect(
       useSyncSource.includes('from "./session-turn-page-api"')
       || useSyncSource.includes("from './session-turn-page-api'"),
     ).toBe(true)
-    expect(useSyncSource.includes("fetchSessionTurnPage")).toBe(true)
+    expect(useSyncSource.includes("fetchHostSessionTurnPageForPurpose")).toBe(true)
   })
 
-  test("prepend/loadMore path uses turn-page API", () => {
-    expect(useSyncSource.includes("fetchSessionTurnPage")).toBe(true)
-    expect(/fetchSessionTurnPage\s*\(/.test(useSyncSource)).toBe(true)
-  })
-
-  test("turn-page gate requires purpose === 'prepend' && before (not bare before)", () => {
-    // Malformed callers with only `before` must not hit Host turn-page.
-    expect(
-      /purpose\s*===\s*['"]prepend['"]\s*&&\s*before|options\?\.purpose\s*===\s*['"]prepend['"]\s*&&\s*before/.test(
-        useSyncSource,
-      )
-      || /options\?\.purpose\s*===\s*['"]prepend['"][\s\S]{0,80}before/.test(useSyncSource),
-    ).toBe(true)
-    // Must not gate solely on `if (before)` for the turn-page branch.
+  test("Host turn-page is used for tail and prepend, not bare before alone", () => {
+    expect(useSyncSource.includes("useHostTurnPage")).toBe(true)
+    expect(useSyncSource.includes("fetchHostSessionTurnPageForPurpose")).toBe(true)
+    // Bare `before` alone must not be the sole gate into Host turn-page.
+    expect(/if\s*\(\s*before\s*\)\s*\{[\s\S]*?fetchHostSessionTurnPageForPurpose/.test(useSyncSource)).toBe(false)
     expect(/if\s*\(\s*before\s*\)\s*\{[\s\S]*?fetchSessionTurnPage/.test(useSyncSource)).toBe(false)
   })
 
   test("turn-page complete uses strict page.complete (no || !cursor mask)", () => {
     expect(useSyncSource.includes("page.complete || !cursor")).toBe(false)
     expect(useSyncSource.includes("page.complete ||!cursor")).toBe(false)
-    // Positive: complete field is taken from the strict page payload.
     expect(/complete:\s*page\.complete\b/.test(useSyncSource)).toBe(true)
   })
 
-  test("initial path still references official SDK session.messages", () => {
+  test("SDK session.messages remains as bare-before fallback only", () => {
     expect(useSyncSource.includes("scopedClient.session.messages(")).toBe(true)
   })
 })

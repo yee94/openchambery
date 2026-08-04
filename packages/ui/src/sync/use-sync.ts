@@ -24,8 +24,12 @@ import { sessionSyncCoordinator } from "./session-sync-coordinator"
 import { loadSessionChildrenOnDemand, mergeSessionChildren } from "./session-children"
 import { opencodeClient } from "@/lib/opencode/client"
 import { waitForSessionStartupBarrier } from "@/lib/session-startup-barrier"
-import { getInitialSessionMessageLimit, getSessionHistoryMessageLimit } from "./session-message-policy"
-import { fetchSessionTurnPage } from "./session-turn-page-api"
+import {
+  getHistorySessionTurnLimit,
+  getInitialSessionTurnLimit,
+  getMessageRefetchLimit,
+} from "./session-message-policy"
+import { fetchHostSessionTurnPageForPurpose } from "./session-turn-page-api"
 import { reconcileActiveSessionStatusAfterMessagePull } from "./session-status-reconciliation"
 
 const SKIP_PARTS = new Set(["patch", "step-start", "step-finish"])
@@ -45,6 +49,7 @@ const cmp = (a: string, b: string) => (a < b ? -1 : a > b ? 1 : 0)
 // session recency, not whichever component happened to call sync first.
 const seenByDirectory = new Map<string, Set<string>>()
 
+/** Pagination meta; `limit` is cumulative authored-user **turns**, not messages. */
 type SyncMeta = {
   limit: number
   cursor: string | undefined
@@ -87,7 +92,12 @@ const getEffectiveSessionCacheLimit = () => {
   if (isMobileSurfaceRuntime()) return MOBILE_SESSION_CACHE_LIMIT
   return SESSION_CACHE_LIMIT
 }
-const getDefaultMeta = (): SyncMeta => ({ limit: getInitialSessionMessageLimit(), cursor: undefined, complete: false, loading: false })
+const getDefaultMeta = (): SyncMeta => ({
+  limit: getInitialSessionTurnLimit(),
+  cursor: undefined,
+  complete: false,
+  loading: false,
+})
 
 function getPrefetchMeta(directory: string, sessionID: string): SyncMeta | undefined {
   const info = getSessionPrefetch(directory, sessionID)
@@ -107,7 +117,8 @@ function sortParts(parts: Part[]) {
 function isHeavyConstrainedSessionCache(state: Pick<State, "message" | "part">, sessionID: string): boolean {
   const messages = state.message[sessionID]
   if (!messages || messages.length === 0) return false
-  return messages.length > getInitialSessionMessageLimit()
+  // Message-count heaviness for cache eviction — not product turn limit.
+  return messages.length > getMessageRefetchLimit()
 }
 
 function isUserMessage(message: Message): boolean {
@@ -132,13 +143,18 @@ export function shouldFetchSessionForRenderableSync(input: {
   return Boolean(input.force) || !input.hasSession || input.shouldLoadMessages
 }
 
+/**
+ * Product turn budget for a reactive pull.
+ * `recordedLimit` is cumulative turns already loaded; message counts are ignored.
+ */
 export function getReactiveSessionMessageRequestLimit(input: {
   before?: string
   recordedLimit: number
-  renderedMessageCount: number
+  /** @deprecated Ignored — product limit is turns, not messages. */
+  renderedMessageCount?: number
 }): number {
-  if (input.before) return getSessionHistoryMessageLimit()
-  return Math.max(getInitialSessionMessageLimit(), input.recordedLimit, input.renderedMessageCount)
+  if (input.before) return getHistorySessionTurnLimit()
+  return Math.max(getInitialSessionTurnLimit(), input.recordedLimit)
 }
 
 export function getConstrainedCacheStateAfterPrefetchEviction<T>(input: {
@@ -386,15 +402,23 @@ export function useSync() {
         before: options?.before,
         deps: {
           queryPage: async ({ limit: pageLimit, before }) => {
-            // Prepend / loadMore: Host 3-turn single request (scanLimit=history).
-            // Gate on purpose+before so bare `before` never hits turn-page.
-            // Initial / recovery / materialize stay on the official SDK path.
-            if (options?.purpose === "prepend" && before) {
+            // Host turn-page for:
+            // - tail (no before): initial / recovery / materialize — 2 complete turns
+            // - prepend + before: loadMore — surface turn budget + scanLimit
+            // Bare `before` without purpose prepend stays on the official SDK path
+            // so malformed callers never hit Host aggregation.
+            const purpose = options?.purpose ?? "initial"
+            const useHostTurnPage =
+              !before
+              || (purpose === "prepend" && Boolean(before))
+
+            if (useHostTurnPage) {
               const page = await retry(async () =>
-                fetchSessionTurnPage({
+                fetchHostSessionTurnPageForPurpose({
                   sessionID,
                   directory: targetDirectory,
-                  before,
+                  purpose: purpose === "prepend" ? "prepend" : purpose,
+                  ...(before ? { before } : {}),
                 }),
               )
               // Strict Host contract: records already validated; complete is authoritative.
@@ -406,14 +430,17 @@ export function useSync() {
                 })),
                 cursor,
                 complete: page.complete,
+                turnCount: page.turnCount,
               }
             }
 
+            // Bare-before SDK fallback only: pageLimit is still a turn budget
+            // for meta; upstream message scan uses a fixed message window.
             const response = await retry(async () => {
               const page = await scopedClient.session.messages({
                 sessionID,
                 directory: targetDirectory,
-                limit: pageLimit,
+                limit: getMessageRefetchLimit(),
                 before,
               })
               assertSdkSuccess(page, "session.messages")
@@ -428,6 +455,7 @@ export function useSync() {
               })),
               cursor,
               complete: !cursor,
+              turnCount: pageLimit,
             }
           },
           queryMessage: async ({ messageID }) => {

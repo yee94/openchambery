@@ -22,6 +22,20 @@ const TURNS_MIN = 1;
 const TURNS_MAX = 10;
 const SCAN_LIMIT_MIN = 10;
 const SCAN_LIMIT_MAX = 200;
+/**
+ * Host-local OpenCode scan chunk (Extension Host → OpenCode is local).
+ * Optional client `scanLimit` may override; when omitted use this inner default.
+ * Env: OPENCHAMBER_SESSION_TURN_SCAN_LIMIT (10..200).
+ */
+const _inner_scanLimit = (() => {
+  const raw = typeof process !== 'undefined' ? process.env?.OPENCHAMBER_SESSION_TURN_SCAN_LIMIT : undefined;
+  if (raw === undefined || raw === null || raw === '') return DEFAULT_SCAN_LIMIT;
+  const parsed = Number(String(raw).trim());
+  if (!Number.isInteger(parsed) || parsed < SCAN_LIMIT_MIN || parsed > SCAN_LIMIT_MAX) {
+    return DEFAULT_SCAN_LIMIT;
+  }
+  return parsed;
+})();
 /** Whole aggregation timeout — matches web host PAGE_TIMEOUT_MS. */
 const PAGE_TIMEOUT_MS = 45_000;
 
@@ -30,6 +44,7 @@ const SAFE_ERRORS: Record<string, string> = {
   invalid_session: 'sessionID is required',
   invalid_turns: 'turns must be an integer between 1 and 10',
   invalid_scan_limit: 'scanLimit must be an integer between 10 and 200',
+  invalid_cursor: 'invalid cursor',
   unavailable: 'OpenCode manager is unavailable',
   upstream: 'upstream',
   aborted: 'aborted',
@@ -178,6 +193,9 @@ const mapServiceError = (error: string): string => {
   if (error === 'duplicate_cursor' || error === 'empty_page_with_cursor') {
     return SAFE_ERRORS[error] ?? SAFE_ERRORS.upstream;
   }
+  if (error === 'invalid_cursor') {
+    return SAFE_ERRORS.invalid_cursor;
+  }
   if (error === 'invalid_session') {
     return SAFE_ERRORS.invalid_session;
   }
@@ -230,10 +248,11 @@ export async function handleSessionTurnPageBridgeMessage(
     };
   }
 
+  // Optional client override; omit → `_inner_scanLimit` (env/default).
   const scanLimitResult = parseBoundedInt(body.scanLimit, {
     min: SCAN_LIMIT_MIN,
     max: SCAN_LIMIT_MAX,
-    fallback: DEFAULT_SCAN_LIMIT,
+    fallback: _inner_scanLimit,
   });
   if (!scanLimitResult.ok) {
     return {
@@ -243,6 +262,7 @@ export async function handleSessionTurnPageBridgeMessage(
       error: SAFE_ERRORS.invalid_scan_limit,
     };
   }
+  const _inner_scanLimit_resolved = scanLimitResult.value;
 
   const before =
     typeof body.before === 'string' && body.before.length > 0 ? body.before : undefined;
@@ -270,7 +290,7 @@ export async function handleSessionTurnPageBridgeMessage(
     const result = await service.loadPage({
       sessionID,
       turns: turnsResult.value,
-      scanLimit: scanLimitResult.value,
+      scanLimit: _inner_scanLimit_resolved,
       before,
       directory,
       signal: timed.signal,

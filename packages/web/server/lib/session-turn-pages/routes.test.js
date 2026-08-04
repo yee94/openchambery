@@ -113,12 +113,10 @@ describe('registerSessionTurnPageRoutes', () => {
       directory: '/repo/project',
     }));
     expect(res.statusCode).toBe(200);
-    expect(res.body).toMatchObject({
-      records: expect.any(Array),
-      turnCount: 1,
-      cursor: 'msg_u1',
-      complete: false,
-    });
+    expect(res.body.turnCount).toBe(1);
+    expect(res.body.cursor).toBe('msg_u1');
+    expect(res.body.complete).toBe(false);
+    expect(Array.isArray(res.body.records)).toBe(true);
     expect(res.body.records).toHaveLength(2);
   });
 
@@ -216,7 +214,7 @@ describe('registerSessionTurnPageRoutes', () => {
     expect(res.statusCode).toBe(200);
   });
 
-  it('defaults turns=3 and scanLimit=100 when omitted (client contract)', async () => {
+  it('defaults turns=3 and uses host _inner_scanLimit when scanLimit is omitted', async () => {
     const loadPage = vi.fn(async () => ({
       ok: true,
       records: [],
@@ -235,6 +233,7 @@ describe('registerSessionTurnPageRoutes', () => {
     }, res);
 
     expect(res.statusCode).toBe(200);
+    // Client omits scanLimit → server `_inner_scanLimit` (default 100 without env).
     expect(loadPage).toHaveBeenCalledWith(expect.objectContaining({
       sessionID: 'ses_1',
       turns: 3,

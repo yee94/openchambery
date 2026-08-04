@@ -8,11 +8,11 @@
  * only when upstream is exhausted and selectTurnRecords did not trim overscan
  * (selected.length === accumulated.length).
  *
- * Client-facing `cursor` is an opaque Host token (`oc1.` + base64url JSON)
- * carrying the upstream request `before` of the page that held the boundary
- * plus `boundaryID`. Raw OpenCode cursors on the first request are passed
- * through. Resuming with a Host token re-fetches that origin page and keeps
- * only records strictly older than the boundary (slice(0, index)).
+ * Host response `cursor` is a versioned opaque token (`oc1.` + base64url JSON)
+ * encoding only { before: string|null, boundaryID: string } — the upstream
+ * request-before of the page that held the earliest returned authored user,
+ * and that user's message id. Clients pass it as `before=` on the next request.
+ * Raw OpenCode SDK cursors may still be passed through as the first `before`.
  */
 
 const ASSISTANT_SESSION_DIVIDER_PREFIX = 'oc_asst_session_divider:';
@@ -21,10 +21,11 @@ const DEFAULT_MAX_SCAN_PAGES = 50;
 const DEFAULT_MAX_SCAN_MESSAGES = 5000;
 const DEFAULT_SCAN_LIMIT = 100;
 
-/** Client `before` / Host token length cap (raw or encoded). */
-const MAX_BEFORE_LENGTH = 4096;
+/** Host-owned cursor version prefix. */
+export const HOST_CURSOR_PREFIX = 'oc1.';
 
-const HOST_CURSOR_PREFIX = 'oc1.';
+/** Reject absurdly long before tokens (host or raw). */
+export const MAX_BEFORE_LENGTH = 8192;
 
 const isSyntheticPart = (part: unknown): boolean => {
   if (!part || typeof part !== 'object') return false;
@@ -99,9 +100,9 @@ const recordInfoId = (record: unknown): string | null => {
 const countAuthoredBoundaries = (records: unknown[]): number =>
   records.reduce<number>((count, entry) => (isUserAuthoredTurnBoundary(entry) ? count + 1 : count), 0);
 
-const earliestAuthoredUserId = (records: unknown[]): string | null => {
+const earliestAuthoredUser = (records: unknown[]): unknown | null => {
   for (const entry of records) {
-    if (isUserAuthoredTurnBoundary(entry)) return recordInfoId(entry);
+    if (isUserAuthoredTurnBoundary(entry)) return entry;
   }
   return null;
 };
@@ -116,62 +117,66 @@ export type HostCursorPayload = {
 };
 
 /**
- * Encode a versioned opaque Host cursor (`oc1.` + base64url JSON).
- * Exported for bridge/tests that need to assert token shape.
+ * Encode host-owned opaque cursor. Payload is only boundary location metadata —
+ * never message content.
  */
-export const encodeHostCursor = (payload: HostCursorPayload): string => {
-  const body = JSON.stringify({
-    before: payload.before ?? null,
-    boundaryID: payload.boundaryID,
-  });
-  return `${HOST_CURSOR_PREFIX}${Buffer.from(body, 'utf8').toString('base64url')}`;
+export const encodeHostCursor = ({ before, boundaryID }: HostCursorPayload): string => {
+  const body = {
+    v: 1,
+    before: before == null ? null : String(before),
+    boundaryID: String(boundaryID),
+  };
+  return HOST_CURSOR_PREFIX + Buffer.from(JSON.stringify(body), 'utf8').toString('base64url');
 };
 
 /**
- * Decode `oc1.` Host token. Returns null when the token is not a Host cursor
- * (caller should treat as raw OpenCode cursor). Returns `{ ok: false }` for
- * malformed Host tokens.
+ * Decode host-owned cursor. Returns { ok:false } for non-host tokens or bad shape.
  */
 export const decodeHostCursor = (
   token: string,
-): { ok: true; payload: HostCursorPayload } | { ok: false; error: 'invalid_cursor' } | null => {
+): { ok: true; value: HostCursorPayload } | { ok: false; error: string } => {
   if (typeof token !== 'string' || !token.startsWith(HOST_CURSOR_PREFIX)) {
-    return null;
-  }
-  const encoded = token.slice(HOST_CURSOR_PREFIX.length);
-  if (encoded.length === 0) {
     return { ok: false, error: 'invalid_cursor' };
   }
+  const encoded = token.slice(HOST_CURSOR_PREFIX.length);
+  if (encoded.length === 0 || token.length > MAX_BEFORE_LENGTH) {
+    return { ok: false, error: 'invalid_cursor' };
+  }
+  let parsed: unknown;
   try {
     const json = Buffer.from(encoded, 'base64url').toString('utf8');
-    if (!json || json.length === 0) {
-      return { ok: false, error: 'invalid_cursor' };
-    }
-    const parsed = JSON.parse(json) as unknown;
-    if (!parsed || typeof parsed !== 'object' || Array.isArray(parsed)) {
-      return { ok: false, error: 'invalid_cursor' };
-    }
-    const body = parsed as Record<string, unknown>;
-    if (typeof body.boundaryID !== 'string' || body.boundaryID.length === 0) {
-      return { ok: false, error: 'invalid_cursor' };
-    }
-    if (body.before !== null && typeof body.before !== 'string') {
-      return { ok: false, error: 'invalid_cursor' };
-    }
-    if (typeof body.before === 'string' && body.before.length === 0) {
-      return { ok: false, error: 'invalid_cursor' };
-    }
-    return {
-      ok: true,
-      payload: {
-        before: body.before === null ? null : body.before,
-        boundaryID: body.boundaryID,
-      },
-    };
+    parsed = JSON.parse(json);
   } catch {
     return { ok: false, error: 'invalid_cursor' };
   }
+  if (!parsed || typeof parsed !== 'object' || Array.isArray(parsed)) {
+    return { ok: false, error: 'invalid_cursor' };
+  }
+  const body = parsed as Record<string, unknown>;
+  if (body.v !== 1) {
+    return { ok: false, error: 'invalid_cursor' };
+  }
+  const { before, boundaryID } = body;
+  if (typeof boundaryID !== 'string' || boundaryID.length === 0) {
+    return { ok: false, error: 'invalid_cursor' };
+  }
+  if (before !== null && typeof before !== 'string') {
+    return { ok: false, error: 'invalid_cursor' };
+  }
+  if (typeof before === 'string' && before.length === 0) {
+    return { ok: false, error: 'invalid_cursor' };
+  }
+  // Reject unexpected keys that could smuggle content later — only allow known fields.
+  for (const key of Object.keys(body)) {
+    if (key !== 'v' && key !== 'before' && key !== 'boundaryID') {
+      return { ok: false, error: 'invalid_cursor' };
+    }
+  }
+  return { ok: true, value: { before: (before as string | null) ?? null, boundaryID } };
 };
+
+const isHostCursorToken = (token: unknown): token is string =>
+  typeof token === 'string' && token.startsWith(HOST_CURSOR_PREFIX);
 
 export type SessionTurnPageFetchInput = {
   sessionID: string;
@@ -246,40 +251,47 @@ export const createSessionTurnPageService = ({
     const pageCap = Number.isFinite(maxScanPages) ? Math.floor(maxScanPages) : DEFAULT_MAX_SCAN_PAGES;
     const messageCap = Number.isFinite(maxScanMessages) ? Math.floor(maxScanMessages) : DEFAULT_MAX_SCAN_MESSAGES;
 
-    /** chronological oldest → newest */
-    const accumulated: unknown[] = [];
-    const seen = new Set<string>();
-    /** Per-record origin: the upstream request `before` used when the record was fetched. */
-    const origins = new Map<string, string | null>();
+    if (typeof initialBefore === 'string' && initialBefore.length > MAX_BEFORE_LENGTH) {
+      return fail('invalid_cursor');
+    }
 
-    /** Host-token resume: re-fetch origin page and slice strictly older than boundary. */
-    let hostResume: HostCursorPayload | null = null;
+    /** Host resume: first fetch uses token.raw before; keep only records before boundaryID. */
+    let resumeBoundaryID: string | null = null;
+    /** upstream request-before for the next fetch */
     let before: string | undefined;
-
     if (typeof initialBefore === 'string' && initialBefore.length > 0) {
-      if (initialBefore.length > MAX_BEFORE_LENGTH) {
-        return fail('invalid_cursor');
-      }
-      const decoded = decodeHostCursor(initialBefore);
-      if (decoded && !decoded.ok) {
-        return fail('invalid_cursor');
-      }
-      if (decoded?.ok) {
-        hostResume = decoded.payload;
-        before = decoded.payload.before ?? undefined;
+      if (isHostCursorToken(initialBefore)) {
+        const decoded = decodeHostCursor(initialBefore);
+        if (!decoded.ok) return fail('invalid_cursor');
+        resumeBoundaryID = decoded.value.boundaryID;
+        before = typeof decoded.value.before === 'string' && decoded.value.before.length > 0
+          ? decoded.value.before
+          : undefined;
       } else {
-        // Raw OpenCode cursor — pass through on the first upstream request.
+        // Raw OpenCode SDK cursor — pass through for the first request.
         before = initialBefore;
       }
     }
 
+    /** chronological oldest → newest */
+    const accumulated: unknown[] = [];
+    /** Parallel origin: request-before used when each accumulated record was fetched. */
+    const accumulatedOrigins: (string | null)[] = [];
+    const seen = new Set<string>();
     let pagesFetched = 0;
     let messagesScanned = 0;
     let upstreamComplete = false;
     /** cursors already requested — detect stalls */
     const requestedCursors = new Set<string>();
+    // Track requested before keys; host tokens are not re-used as fetch before.
     if (before) requestedCursors.add(before);
-    let applyHostResume = hostResume != null;
+    // Also mark host token itself so a buggy nextCursor equal to it stalls cleanly.
+    if (typeof initialBefore === 'string' && initialBefore.length > 0) {
+      requestedCursors.add(initialBefore);
+    }
+
+    /** Whether the next fetch is the boundary-locate page (resume first round). */
+    let pendingBoundarySlice = resumeBoundaryID != null;
 
     try {
       while (true) {
@@ -287,7 +299,8 @@ export const createSessionTurnPageService = ({
           return fail('max_scan_pages');
         }
 
-        const requestBefore = before ?? null;
+        /** Origin for this page = the request-before used to fetch it (null = latest). */
+        const pageOrigin = before ?? null;
 
         const page = await fetchPage({
           sessionID,
@@ -302,8 +315,8 @@ export const createSessionTurnPageService = ({
           return fail('upstream');
         }
 
-        const rawRecords = Array.isArray(page.records) ? page.records : null;
-        if (!rawRecords) {
+        const records = Array.isArray(page.records) ? page.records : null;
+        if (!records) {
           return fail('upstream');
         }
 
@@ -311,12 +324,23 @@ export const createSessionTurnPageService = ({
         const nextCursor = typeof rawNext === 'string' && rawNext.length > 0 ? rawNext : null;
         const pageComplete = page.complete === true || nextCursor == null;
 
-        if (rawRecords.length === 0) {
+        if (records.length === 0) {
           if (nextCursor) {
             return fail('empty_page_with_cursor');
           }
+          // Empty exhausted page while still hunting a resume boundary → stale cursor.
+          if (pendingBoundarySlice) {
+            return fail('invalid_cursor');
+          }
           upstreamComplete = true;
           break;
+        }
+
+        // Every upstream record must carry a non-empty info.id — no partial success.
+        for (const entry of records) {
+          if (!recordInfoId(entry)) {
+            return fail('upstream');
+          }
         }
 
         // No-progress: next cursor equals the request cursor, or re-offers a cursor we already requested.
@@ -328,68 +352,49 @@ export const createSessionTurnPageService = ({
           return fail('duplicate_cursor');
         }
 
-        // Validate every raw upstream record has a non-empty info.id.
-        for (const entry of rawRecords) {
-          if (!recordInfoId(entry)) {
-            return fail('upstream');
-          }
-        }
-
-        // Host resume: keep only records strictly older than the boundary on this origin page.
-        let records = rawRecords;
-        if (applyHostResume && hostResume) {
-          const boundaryIndex = rawRecords.findIndex(
-            (entry) => recordInfoId(entry) === hostResume!.boundaryID,
-          );
+        let pageRecords: unknown[] = records;
+        if (pendingBoundarySlice) {
+          const boundaryIndex = records.findIndex((entry) => recordInfoId(entry) === resumeBoundaryID);
           if (boundaryIndex < 0) {
             return fail('invalid_cursor');
           }
-          records = rawRecords.slice(0, boundaryIndex);
-          applyHostResume = false;
-        }
-
-        // Empty after boundary slice is fine when more upstream history remains.
-        if (records.length === 0) {
-          messagesScanned += rawRecords.length;
-          if (messagesScanned > messageCap) {
-            return fail('max_scan_messages');
-          }
-          if (pageComplete) {
-            upstreamComplete = true;
-            break;
-          }
-          before = nextCursor ?? undefined;
-          if (before) requestedCursors.add(before);
-          continue;
+          // Keep only records strictly older than the boundary (old→new: slice(0, index)).
+          // Boundary and everything newer are excluded (already returned to the client).
+          pageRecords = records.slice(0, boundaryIndex);
+          pendingBoundarySlice = false;
         }
 
         // OpenCode page is already chronological (oldest → newest). Prepend into
         // the global timeline after dedupe by info.id.
         let added = 0;
         const prepend: unknown[] = [];
-        for (const entry of records) {
+        const prependOrigins: (string | null)[] = [];
+        for (const entry of pageRecords) {
           const id = recordInfoId(entry);
           if (!id) {
             return fail('upstream');
           }
           if (seen.has(id)) continue;
           seen.add(id);
-          origins.set(id, requestBefore);
           prepend.push(entry);
+          prependOrigins.push(pageOrigin);
           added += 1;
         }
 
-        if (added === 0 && nextCursor) {
-          // Overlap-only page that still claims more history is a stalled cursor.
+        // Overlap-only page that still claims more history is a stalled cursor.
+        // Exception: after boundary slice the page may intentionally add 0 (boundary
+        // was first on page) while nextCursor points at older history — continue.
+        if (added === 0 && nextCursor && pageRecords.length === records.length) {
           return fail('duplicate_cursor');
         }
 
-        messagesScanned += rawRecords.length;
+        messagesScanned += records.length;
         if (messagesScanned > messageCap) {
           return fail('max_scan_messages');
         }
 
         accumulated.unshift(...prepend);
+        accumulatedOrigins.unshift(...prependOrigins);
 
         if (pageComplete) {
           upstreamComplete = true;
@@ -401,7 +406,7 @@ export const createSessionTurnPageService = ({
           break;
         }
 
-        // Advance cursor via raw upstream nextCursor (not Host token).
+        // Advance cursor to walk older history (nextCursor from upstream raw page).
         before = nextCursor ?? undefined;
         if (before) requestedCursors.add(before);
       }
@@ -412,18 +417,33 @@ export const createSessionTurnPageService = ({
       return fail('upstream');
     }
 
+    // Resume path still pending means we never successfully sliced the boundary page.
+    if (pendingBoundarySlice) {
+      return fail('invalid_cursor');
+    }
+
     const selected = selectTurnRecords(accumulated, turnBudget);
     const turnCount = countAuthoredBoundaries(selected);
     // complete when upstream is exhausted and selectTurnRecords kept the full
     // accumulated window (no overscan trim). Overscan trim leaves older history
-    // addressable via cursor even if the last upstream page reported complete.
+    // addressable via host cursor even if the last upstream page reported complete.
     const complete = upstreamComplete && selected.length === accumulated.length;
+
     let cursor: string | null = null;
     if (!complete) {
-      const boundaryID = earliestAuthoredUserId(selected);
-      if (boundaryID) {
-        const origin = origins.has(boundaryID) ? origins.get(boundaryID)! : null;
-        cursor = encodeHostCursor({ before: origin, boundaryID });
+      const earliest = earliestAuthoredUser(selected);
+      if (earliest) {
+        const earliestId = recordInfoId(earliest);
+        // Find origin of the earliest selected authored user in accumulated.
+        const accIndex = accumulated.findIndex((entry) => entry === earliest
+          || recordInfoId(entry) === earliestId);
+        const origin = accIndex >= 0 ? accumulatedOrigins[accIndex] : null;
+        if (earliestId) {
+          cursor = encodeHostCursor({
+            before: origin ?? null,
+            boundaryID: earliestId,
+          });
+        }
       }
     }
 

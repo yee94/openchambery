@@ -14,7 +14,7 @@ describe("shouldSkipSessionPrefetch", () => {
     expect(shouldSkipSessionPrefetch({
       hasSession: true,
       hasMessages: false,
-      info: { limit: 200, complete: true, at: 1_000, status: "ready" },
+      info: { limit: 200, complete: true, at: 1_000, status: "ready", loadGeneration: 0 },
       pageSize: 200,
       now: 1_001,
     })).toBe(false)
@@ -24,7 +24,7 @@ describe("shouldSkipSessionPrefetch", () => {
     expect(shouldSkipSessionPrefetch({
       hasSession: true,
       hasMessages: true,
-      info: { limit: 50, complete: false, at: 1_000, status: "ready" },
+      info: { limit: 50, complete: false, at: 1_000, status: "ready", loadGeneration: 0 },
       pageSize: 200,
       now: 1_001,
     })).toBe(false)
@@ -34,7 +34,7 @@ describe("shouldSkipSessionPrefetch", () => {
     expect(shouldSkipSessionPrefetch({
       hasSession: true,
       hasMessages: true,
-      info: { limit: 200, complete: false, at: 1_000, status: "ready" },
+      info: { limit: 200, complete: false, at: 1_000, status: "ready", loadGeneration: 0 },
       pageSize: 200,
       now: 1_001,
     })).toBe(true)
@@ -44,7 +44,7 @@ describe("shouldSkipSessionPrefetch", () => {
     expect(shouldSkipSessionPrefetch({
       hasSession: false,
       hasMessages: true,
-      info: { limit: 200, complete: false, at: 1_000, status: "ready" },
+      info: { limit: 200, complete: false, at: 1_000, status: "ready", loadGeneration: 0 },
       pageSize: 200,
       now: 1_001,
     })).toBe(false)
@@ -55,11 +55,65 @@ describe("shouldSkipSessionPrefetch", () => {
     const sessionID = "session-state"
     setSessionPrefetch({ directory, sessionID, limit: 30, cursor: "cursor", complete: false, at: 1_000 })
 
-    beginSessionMessageLoad(directory, sessionID, 30)
-    expect(getSessionPrefetch(directory, sessionID)).toEqual({ limit: 30, cursor: "cursor", complete: false, at: 1_000, status: "loading" })
+    const generation = beginSessionMessageLoad(directory, sessionID, 30)
+    expect(getSessionPrefetch(directory, sessionID)).toEqual({
+      limit: 30,
+      cursor: "cursor",
+      complete: false,
+      at: 1_000,
+      status: "loading",
+      loadGeneration: generation,
+    })
 
-    failSessionMessageLoad(directory, sessionID, "network unavailable")
-    expect(getSessionPrefetch(directory, sessionID)).toEqual({ limit: 30, cursor: "cursor", complete: false, at: 1_000, status: "error", error: "network unavailable" })
+    failSessionMessageLoad(directory, sessionID, "network unavailable", undefined, generation)
+    expect(getSessionPrefetch(directory, sessionID)).toEqual({
+      limit: 30,
+      cursor: "cursor",
+      complete: false,
+      at: 1_000,
+      status: "error",
+      error: "network unavailable",
+      loadGeneration: generation,
+    })
+  })
+
+  test("ignores a stale fail after a newer load began", () => {
+    const directory = "/stale-fail"
+    const sessionID = "session-stale-fail"
+    const first = beginSessionMessageLoad(directory, sessionID, 30)
+    const second = beginSessionMessageLoad(directory, sessionID, 30)
+    expect(second).toBeGreaterThan(first)
+    expect(getSessionPrefetch(directory, sessionID)?.status).toBe("loading")
+
+    failSessionMessageLoad(directory, sessionID, "first load failed", undefined, first)
+    expect(getSessionPrefetch(directory, sessionID)?.status).toBe("loading")
+    expect(getSessionPrefetch(directory, sessionID)?.loadGeneration).toBe(second)
+
+    setSessionPrefetch({
+      directory,
+      sessionID,
+      limit: 30,
+      complete: true,
+      loadGeneration: second,
+    })
+    expect(getSessionPrefetch(directory, sessionID)?.status).toBe("ready")
+  })
+
+  test("ignores a stale success after a newer load began", () => {
+    const directory = "/stale-ready"
+    const sessionID = "session-stale-ready"
+    const first = beginSessionMessageLoad(directory, sessionID, 30)
+    const second = beginSessionMessageLoad(directory, sessionID, 30)
+
+    setSessionPrefetch({
+      directory,
+      sessionID,
+      limit: 10,
+      complete: true,
+      loadGeneration: first,
+    })
+    expect(getSessionPrefetch(directory, sessionID)?.status).toBe("loading")
+    expect(getSessionPrefetch(directory, sessionID)?.loadGeneration).toBe(second)
   })
 
   test("isolates loading state by runtime", () => {

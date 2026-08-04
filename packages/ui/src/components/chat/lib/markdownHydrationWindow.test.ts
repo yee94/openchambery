@@ -64,7 +64,7 @@ describe('markdown hydration window', () => {
         ]);
     });
 
-    test('entering a populated viewport settles in a single release', () => {
+    test('entering a populated viewport settles in a single release when under the visible budget', () => {
         const entryKeys = keys(100);
         const hydrated = createInitialMarkdownHydratedKeys(entryKeys);
         const read = () => getMarkdownHydrationBatch(settled({
@@ -73,6 +73,8 @@ describe('markdown hydration window', () => {
             visibleStartIndex: 94,
             visibleEndIndex: 99,
             hydratedKeys: hydrated,
+            // 6 visible incl. newest already hydrated → 5 pending; budget 6 settles once.
+            visibleReleaseLimit: 6,
         }));
 
         for (const key of read()) hydrated.add(key);
@@ -81,6 +83,32 @@ describe('markdown hydration window', () => {
             'turn-94', 'turn-95', 'turn-96', 'turn-97', 'turn-98', 'turn-99',
         ]);
         expect(read()).toEqual([]);
+    });
+
+    test('meters a dense visible window across idle commits instead of one freeze frame', () => {
+        const entryKeys = keys(100);
+        const hydrated = new Set(['turn-99']);
+        const read = () => getMarkdownHydrationBatch(settled({
+            entryKeys,
+            mountedIndexes: Array.from({ length: 16 }, (_, i) => 84 + i),
+            visibleStartIndex: 84,
+            visibleEndIndex: 99,
+            hydratedKeys: hydrated,
+            preloadReleaseLimit: 0,
+            visibleReleaseLimit: 4,
+        }));
+
+        const first = read();
+        expect(first).toEqual(['turn-98', 'turn-97', 'turn-96', 'turn-95']);
+        for (const key of first) hydrated.add(key);
+
+        const second = read();
+        expect(second).toEqual(['turn-94', 'turn-93', 'turn-92', 'turn-91']);
+        for (const key of second) hydrated.add(key);
+
+        // Remaining visible rows stay deferred for later idle frames.
+        expect(hydrated.has('turn-84')).toBe(false);
+        expect(hydrated.has('turn-90')).toBe(false);
     });
 
     test('a scrolling list withholds visible rows and lets only preload through', () => {

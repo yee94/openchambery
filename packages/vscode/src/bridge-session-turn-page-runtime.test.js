@@ -364,4 +364,127 @@ describe('bridge session turn-page runtime', () => {
     expect(result.success).toBe(false);
     expect(fetchCalls).toHaveLength(0);
   });
+
+  it('returns opaque Host cursor (oc1.) on incomplete pages', async () => {
+    const { handleSessionTurnPageBridgeMessage } = await loadRuntime();
+    // One exhausted page with 4 authored turns; turns=2 → overscan trim → Host token.
+    responseImpl = async () =>
+      new Response(
+        JSON.stringify([
+          { info: { id: 'msg_u1', role: 'user', time: { created: 1 } }, parts: [{ type: 'text', text: '1' }] },
+          { info: { id: 'msg_a1', role: 'assistant', time: { created: 2 } }, parts: [{ type: 'text', text: 'ok' }] },
+          { info: { id: 'msg_u2', role: 'user', time: { created: 3 } }, parts: [{ type: 'text', text: '2' }] },
+          { info: { id: 'msg_a2', role: 'assistant', time: { created: 4 } }, parts: [{ type: 'text', text: 'ok' }] },
+          { info: { id: 'msg_u3', role: 'user', time: { created: 5 } }, parts: [{ type: 'text', text: '3' }] },
+          { info: { id: 'msg_a3', role: 'assistant', time: { created: 6 } }, parts: [{ type: 'text', text: 'ok' }] },
+          { info: { id: 'msg_u4', role: 'user', time: { created: 7 } }, parts: [{ type: 'text', text: '4' }] },
+          { info: { id: 'msg_a4', role: 'assistant', time: { created: 8 } }, parts: [{ type: 'text', text: 'ok' }] },
+        ]),
+        { status: 200, headers: { 'content-type': 'application/json' } },
+      );
+
+    const result = await handleSessionTurnPageBridgeMessage(
+      {
+        id: 'req_tp_host_cursor',
+        type: 'api:session-turn-page',
+        payload: { sessionID: 'ses_1', directory: '/repo', turns: 2 },
+      },
+      defaultCtx,
+    );
+
+    expect(result.success).toBe(true);
+    expect(result.data.complete).toBe(false);
+    expect(typeof result.data.cursor).toBe('string');
+    expect(result.data.cursor.startsWith('oc1.')).toBe(true);
+    expect(result.data.records.map((entry) => entry.info.id)).toEqual([
+      'msg_u3', 'msg_a3', 'msg_u4', 'msg_a4',
+    ]);
+  });
+
+  it('passes Host token through bridge: decode to raw upstream before, never send oc1. upstream', async () => {
+    const { handleSessionTurnPageBridgeMessage } = await loadRuntime();
+    const { encodeHostCursor } = await import('./session-turn-page-runtime');
+
+    // Full timeline; Host token points at boundary msg_u3 on the first page (before=null).
+    const all = [
+      { info: { id: 'msg_u1', role: 'user', time: { created: 1 } }, parts: [{ type: 'text', text: '1' }] },
+      { info: { id: 'msg_a1', role: 'assistant', time: { created: 2 } }, parts: [{ type: 'text', text: 'ok' }] },
+      { info: { id: 'msg_u2', role: 'user', time: { created: 3 } }, parts: [{ type: 'text', text: '2' }] },
+      { info: { id: 'msg_a2', role: 'assistant', time: { created: 4 } }, parts: [{ type: 'text', text: 'ok' }] },
+      { info: { id: 'msg_u3', role: 'user', time: { created: 5 } }, parts: [{ type: 'text', text: '3' }] },
+      { info: { id: 'msg_a3', role: 'assistant', time: { created: 6 } }, parts: [{ type: 'text', text: 'ok' }] },
+      { info: { id: 'msg_u4', role: 'user', time: { created: 7 } }, parts: [{ type: 'text', text: '4' }] },
+      { info: { id: 'msg_a4', role: 'assistant', time: { created: 8 } }, parts: [{ type: 'text', text: 'ok' }] },
+    ];
+
+    responseImpl = async (call) => {
+      const before = call.url.searchParams.get('before');
+      let end = all.length;
+      if (before) {
+        const index = all.findIndex((entry) => entry.info.id === before);
+        end = index >= 0 ? index : 0;
+      }
+      const limit = Number(call.url.searchParams.get('limit') || 50);
+      const start = Math.max(0, end - limit);
+      const slice = all.slice(start, end);
+      const headers = { 'content-type': 'application/json' };
+      if (start > 0) {
+        headers['x-next-cursor'] = slice[0]?.info.id ?? '';
+      }
+      return new Response(JSON.stringify(slice), { status: 200, headers });
+    };
+
+    const hostToken = encodeHostCursor({ before: null, boundaryID: 'msg_u3' });
+    const result = await handleSessionTurnPageBridgeMessage(
+      {
+        id: 'req_tp_host_pass',
+        type: 'api:session-turn-page',
+        payload: {
+          sessionID: 'ses_1',
+          directory: '/repo',
+          turns: 2,
+          before: hostToken,
+        },
+      },
+      defaultCtx,
+    );
+
+    expect(result.success).toBe(true);
+    expect(result.data.records.map((entry) => entry.info.id)).toEqual([
+      'msg_u1', 'msg_a1', 'msg_u2', 'msg_a2',
+    ]);
+    // Upstream must never see the Host token prefix.
+    for (const call of fetchCalls) {
+      const before = call.url.searchParams.get('before');
+      if (before != null) {
+        expect(before.startsWith('oc1.')).toBe(false);
+      }
+    }
+    // First fetch re-opens origin page (before omitted when origin was null).
+    expect(fetchCalls[0].url.searchParams.has('before')).toBe(false);
+  });
+
+  it('maps invalid_cursor safely without partial records', async () => {
+    const { handleSessionTurnPageBridgeMessage } = await loadRuntime();
+    const result = await handleSessionTurnPageBridgeMessage(
+      {
+        id: 'req_tp_bad_cursor',
+        type: 'api:session-turn-page',
+        payload: {
+          sessionID: 'ses_1',
+          directory: '/repo',
+          turns: 3,
+          before: 'oc1.not-valid',
+        },
+      },
+      defaultCtx,
+    );
+
+    expect(result.success).toBe(false);
+    expect(String(result.error)).toMatch(/invalid.?cursor/i);
+    expect(fetchCalls).toHaveLength(0);
+    if (result.data && typeof result.data === 'object' && 'records' in result.data) {
+      expect(result.data.records).toBeUndefined();
+    }
+  });
 });

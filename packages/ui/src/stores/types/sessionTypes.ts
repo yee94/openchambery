@@ -28,8 +28,19 @@ export type EditPermissionMode = 'allow' | 'ask' | 'deny' | 'full';
 export type MessageStreamPhase = 'streaming' | 'cooldown' | 'completed';
 
 export interface SessionHistoryMeta {
+    /**
+     * Cumulative authored-user **turns** loaded for this session (product limit).
+     * Not a message count — Host turn-page windows are the unit of pagination.
+     */
     limit: number;
+    /** Authoritative: live history exhausted and assistant archive (if any) done. */
     complete: boolean;
+    /**
+     * Whether older pages can be requested now.
+     * Requires a live/prefetch cursor or an incomplete assistant archive after
+     * live complete — never true merely because meta is still default.
+     */
+    canLoadEarlier: boolean;
     loading: boolean;
 }
 
