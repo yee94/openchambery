@@ -4,19 +4,13 @@ All notable changes to this project will be documented in this file.
 
 ## [Unreleased]
 
-## [1.16.117-beta.3] - 2026-08-04
-
-- **Native Relay images:** stream host-backed images through an opaque virtual asset protocol on desktop and mobile (Electron `openchamber-asset` scheme + Capacitor bridge), so progressive tunnel images load without exposing host paths or credentials.
-- **Chat tool activity:** render each static tool call on its own row, keep pre-assistant compaction disclosure expandable, and seed task avatars by task id.
-- **Queued message chips:** improve chip state handling for pending composer messages.
-
-## [1.16.117-beta.2] - 2026-08-04
-
-- **Chat history:** preserve current-session transcript content while older history pages load, with transport-aware turn windows and safer hosted Assistant transcript reconciliation.
-
-## [1.16.117-beta.1] - 2026-08-04
+## [1.16.117] - 2026-08-04
 
 - **Relay Markdown images:** load local image references through the encrypted binary tunnel on first paint, so screenshots and other agent-produced image artifacts render directly on paired clients.
+- **Native Relay images:** stream host-backed images through an opaque virtual asset protocol on desktop and mobile (Electron `openchamber-asset` scheme + Capacitor bridge), so progressive tunnel images load without exposing host paths or credentials.
+- **Chat history:** preserve current-session transcript content while older history pages load, with transport-aware turn windows and safer hosted Assistant transcript reconciliation.
+- **Chat tool activity:** render each static tool call on its own row, keep pre-assistant compaction disclosure expandable, and seed task avatars by task id.
+- **Queued message chips:** improve chip state handling for pending composer messages.
 - **Scheduled task history:** refine failed-run details in dark mode with theme-aware text and a quiet status icon treatment.
 
 ## [1.16.116] - 2026-08-04
