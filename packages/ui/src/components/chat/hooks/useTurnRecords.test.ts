@@ -95,4 +95,50 @@ describe('resolveLiveTailStart', () => {
             previousStart: 7,
         })).toBe(1);
     });
+
+    test('keeps the claim through an empty projection frame', () => {
+        expect(resolveLiveTailStart({
+            turnCount: 0,
+            hasLiveTail: true,
+            liveTailActive: true,
+            previousStart: 3,
+        })).toBe(3);
+    });
+
+    test('an empty frame does not re-arm the tail at the newest turn', () => {
+        // Trace-20260804T171706: a materialize/merge frame emptied the projection
+        // mid-turn. Clearing the claim here handed the tail to the newest turn on
+        // the next frame, evicting everything it owned into history and remounting
+        // those subtrees — the user message and reasoning blinked out and back.
+        const claimed = resolveLiveTailStart({
+            turnCount: 4,
+            hasLiveTail: true,
+            liveTailActive: true,
+            previousStart: null,
+        });
+        expect(claimed).toBe(3);
+
+        const throughEmptyFrame = resolveLiveTailStart({
+            turnCount: 0,
+            hasLiveTail: true,
+            liveTailActive: true,
+            previousStart: claimed,
+        });
+
+        expect(resolveLiveTailStart({
+            turnCount: 5,
+            hasLiveTail: true,
+            liveTailActive: true,
+            previousStart: throughEmptyFrame,
+        })).toBe(3);
+    });
+
+    test('still releases the tail when it is unclaimed and the projection is empty', () => {
+        expect(resolveLiveTailStart({
+            turnCount: 0,
+            hasLiveTail: false,
+            liveTailActive: false,
+            previousStart: 2,
+        })).toBeNull();
+    });
 });

@@ -141,3 +141,14 @@ export const normalizeUserDisplayParts = (parts: Part[], options?: { planModeEna
             return part;
         });
 };
+
+/**
+ * Whether parts would paint a user bubble.
+ * `ChatMessage` hides user rows when display parts are empty. Synthetic-only
+ * shells (e.g. `<system-reminder>`) count as present for `parts.length` but
+ * still render as null — treat them as not yet materialized.
+ */
+export const hasUserDisplayableParts = (parts: readonly Part[] | undefined): boolean => {
+    if (!parts?.length) return false;
+    return normalizeUserDisplayParts(parts as Part[]).length > 0;
+};

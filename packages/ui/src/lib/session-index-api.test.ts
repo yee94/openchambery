@@ -120,6 +120,30 @@ describe('session index background transport', () => {
     expect(await pending).toBe('timeout');
   });
 
+  test('waits indefinitely when the hang-break is disabled, then resolves on a tip', async () => {
+    // A long-lived idle observer re-enters this wait after every resolution, so
+    // an armed hang-break becomes a fixed-interval snapshot poll (Trace-20260804T171706:
+    // GET /session-index every 1.5s, each followed by a ~120ms sidebar re-render).
+    let settled: string | null = null;
+    const pending = waitForSessionIndexInvalidation(1, new AbortController().signal, {
+      safetyTimeoutMs: null,
+    }).then((reason) => (settled = reason));
+
+    await new Promise((resolve) => setTimeout(resolve, 60));
+    expect(settled).toBeNull();
+
+    emitTip({ type: 'session-index-changed', revision: 2, occurredAt: 1 });
+    await pending;
+    expect(settled).toBe('tip');
+  });
+
+  test('a disabled hang-break still honours abort', async () => {
+    const controller = new AbortController();
+    const pending = waitForSessionIndexInvalidation(1, controller.signal, { safetyTimeoutMs: null });
+    controller.abort();
+    expect(await pending).toBe('aborted');
+  });
+
   test('prefers a tip over the safety timeout when the tip arrives first', async () => {
     const pending = waitForSessionIndexInvalidation(1, new AbortController().signal, {
       safetyTimeoutMs: 200,

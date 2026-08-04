@@ -47,6 +47,21 @@ import {
     getShellBridgeAssistantDetails,
     type ShellBridgeDetails,
 } from './lib/shellBridge';
+import { isAssistantMessageCompleted, resolveVisibleSortedAssistants } from './lib/visibleSortedAssistants';
+import {
+    resolveActivityExpansionDisposition,
+    resolveDefaultActivityExpanded,
+    resolveToggledActivityExpanded,
+    resolveTurnActivityPresentation,
+} from './lib/activityExpansion';
+
+// Re-export pure expansion helpers for existing MessageList.* tests.
+export {
+    resolveActivityExpansionDisposition,
+    resolveDefaultActivityExpanded,
+    resolveToggledActivityExpanded,
+    resolveTurnActivityPresentation,
+};
 
 const MESSAGE_LIST_VIRTUALIZE_THRESHOLD = 5;
 const EMPTY_STATIC_ENTRY_MESSAGES: ChatMessageEntry[] = [];
@@ -328,19 +343,6 @@ const normalizeCompactionSummaryMessage = (
     };
 };
 
-const isAssistantMessageCompleted = (message: ChatMessageEntry): boolean => {
-    const info = message.info as { time?: { completed?: unknown }; status?: unknown };
-    const completed = info.time?.completed;
-    const status = info.status;
-    if (typeof completed !== 'number' || completed <= 0) {
-        return false;
-    }
-    if (typeof status === 'string') {
-        return status === 'completed';
-    }
-    return true;
-};
-
 const isUserSubtaskMessage = (message: ChatMessageEntry | undefined): boolean => {
     if (!message) return false;
     if (resolveMessageRole(message) !== 'user') return false;
@@ -525,26 +527,6 @@ type RenderEntry =
 type TurnUiState = { isExpanded: boolean };
 
 /**
- * Default activity expansion when the user has not toggled this turn.
- * Live processing (`active` after presentation resolution) always starts
- * expanded so the latest in-progress turn is watchable regardless of the
- * activity setting. Settled turns follow the configured render mode.
- */
-// eslint-disable-next-line react-refresh/only-export-components
-export const resolveDefaultActivityExpanded = (
-    completionDisposition: TurnRecord['completionDisposition'] | undefined,
-    activityRenderMode: 'collapsed' | 'summary',
-): boolean => {
-    if (completionDisposition === 'active') {
-        return true;
-    }
-    return activityRenderMode === 'summary';
-};
-
-// eslint-disable-next-line react-refresh/only-export-components
-export const resolveToggledActivityExpanded = (currentExpanded: boolean): boolean => !currentExpanded;
-
-/**
  * Pre-assistant status-only compaction header when sorted, compaction-kind,
  * and no visible activity segments yet. Once assistant messages exist, the
  * MessageBody Activity disclosure owns the header and foldable body.
@@ -583,43 +565,6 @@ export const shouldShowCompactionStatus = (input: {
     }
     return false;
 };
-
-/**
- * Live Working text + duration ticker only while the turn is still
- * authoritatively in progress. Message-level `active` without live working
- * (abnormal exit before `time.completed`, idle reconnect, older incomplete
- * turns) settles to abnormal so collapsed headers stop ticking and show
- * Processed instead of Working.
- */
-// eslint-disable-next-line react-refresh/only-export-components
-export const resolveTurnActivityPresentation = (input: {
-    completionDisposition: TurnRecord['completionDisposition'];
-    isLastTurn: boolean;
-    sessionIsWorking: boolean;
-    durationMs?: number;
-}): {
-    completionDisposition: TurnRecord['completionDisposition'];
-    durationMs?: number;
-} => {
-    if (input.completionDisposition !== 'active') {
-        return {
-            completionDisposition: input.completionDisposition,
-            durationMs: input.durationMs,
-        };
-    }
-    if (input.isLastTurn && input.sessionIsWorking) {
-        return {
-            completionDisposition: 'active',
-            durationMs: input.durationMs,
-        };
-    }
-    return {
-        completionDisposition: 'abnormal',
-        durationMs: input.durationMs,
-    };
-};
-
-
 
 interface MessageRowProps {
     message: ChatMessageEntry;
@@ -762,14 +707,25 @@ const TurnBlock = React.memo(({
     const storedTurnUiState = turnUiStates.get(turn.turnId);
     // Gate raw message-active through presentation so only the live last turn
     // while the session is working defaults open; idle/historical actives settle.
+    // Header chrome (Working vs Processed) uses this demotion.
     const activityPresentationForDefault = resolveTurnActivityPresentation({
         completionDisposition: turn.completionDisposition,
         isLastTurn,
         sessionIsWorking,
         durationMs: turn.durationMs,
     });
+    // Expansion must NOT follow sessionIsWorking demotion. Between tool steps
+    // session_status often flaps busy→idle while the last assistant is still
+    // open (completionDisposition active); demoting to abnormal collapses the
+    // disclosure and blanks tool rows mid-turn (user-visible flicker).
+    // Keep expanded while the turn itself is still open on the last row.
+    const expansionDisposition = resolveActivityExpansionDisposition({
+        isLastTurn,
+        turnCompletionDisposition: turn.completionDisposition,
+        headerPresentationDisposition: activityPresentationForDefault.completionDisposition,
+    });
     const defaultExpandedForTurn = resolveDefaultActivityExpanded(
-        activityPresentationForDefault.completionDisposition,
+        expansionDisposition,
         activityRenderMode,
     );
     // Explicit per-turn toggle wins; otherwise live-active forces open and
@@ -809,33 +765,8 @@ const TurnBlock = React.memo(({
         if (chatRenderMode === 'live') {
             return turn.assistantMessages;
         }
-
-        const completed = turn.assistantMessages.filter(isAssistantMessageCompleted);
-        if (completed.length === turn.assistantMessages.length) {
-            return turn.assistantMessages;
-        }
-
-        if (streamingAssistantMessageId) {
-            const completedIds = new Set(completed.map((assistant) => assistant.info.id));
-            return turn.assistantMessages.filter((assistant) => (
-                completedIds.has(assistant.info.id)
-                || assistant.info.id === streamingAssistantMessageId
-            ));
-        }
-
-        if (completed.length > 0) {
-            return completed;
-        }
-        const firstAssistant = turn.assistantMessages[0];
-        return firstAssistant ? [firstAssistant] : [];
+        return resolveVisibleSortedAssistants(turn.assistantMessages, streamingAssistantMessageId);
     }, [chatRenderMode, streamingAssistantMessageId, turn.assistantMessages]);
-
-    const completedAssistantMessages = React.useMemo(() => {
-        if (chatRenderMode !== 'sorted') {
-            return turn.assistantMessages;
-        }
-        return turn.assistantMessages.filter(isAssistantMessageCompleted);
-    }, [chatRenderMode, turn.assistantMessages]);
 
     const visibleAssistantIds = React.useMemo(() => {
         const ids = new Map<string, number>();
@@ -845,28 +776,20 @@ const TurnBlock = React.memo(({
         return ids;
     }, [visibleAssistantMessages]);
 
-    const completedAssistantIdSet = React.useMemo(() => {
-        return new Set(completedAssistantMessages.map((assistant) => assistant.info.id));
-    }, [completedAssistantMessages]);
-
+    // Activity rows follow the same assistant set as the turn viewport so
+    // earlier incomplete steps keep their tools while a later sibling streams.
     const visibleActivityMessageIdSet = React.useMemo(() => {
-        const ids = new Set(completedAssistantIdSet);
-        if (streamingAssistantMessageId) {
-            ids.add(streamingAssistantMessageId);
-        }
-        return ids;
-    }, [completedAssistantIdSet, streamingAssistantMessageId]);
+        return new Set(visibleAssistantMessages.map((assistant) => assistant.info.id));
+    }, [visibleAssistantMessages]);
 
-    const turnIsInActiveStream = React.useMemo(() => {
-        return turnContainsMessageId(turn, streamingAssistantMessageId);
-    }, [turn, streamingAssistantMessageId]);
-
+    // Stable Activity mount point: always the first visible assistant.
+    // Jumping the owner to the streaming tail remounts the disclosure across
+    // messages when the turn settles (last → first), which blanks tool rows for
+    // a frame and can double-mount Activity while multi-step turns stream
+    // (anchor on first + owner on last). Keep one durable host for the turn.
     const activityOwnerMessageId = React.useMemo(() => {
-        if (turnIsInActiveStream && streamingAssistantMessageId) {
-            return streamingAssistantMessageId;
-        }
         return visibleAssistantMessages[0]?.info.id;
-    }, [streamingAssistantMessageId, turnIsInActiveStream, visibleAssistantMessages]);
+    }, [visibleAssistantMessages]);
 
     const visibleActivityParts = React.useMemo(() => {
         if (chatRenderMode !== 'sorted') {
@@ -1134,18 +1057,6 @@ interface MessageListEntryProps {
     activeStreamingPhase?: StreamPhase | null;
     reviewTransferDirection?: ReviewTransferDirection | null;
 }
-
-const turnContainsMessageId = (turn: TurnRecord, messageId: string | null | undefined): boolean => {
-    if (!messageId) {
-        return false;
-    }
-
-    if (turn.userMessage.info.id === messageId) {
-        return true;
-    }
-
-    return turn.assistantMessages.some((assistant) => assistant.info.id === messageId);
-};
 
 const MessageListEntry = React.memo(({
     entry,
@@ -1678,12 +1589,18 @@ const StreamingTailContent: React.FC<{
 }) => {
     const newestIndex = entries.length - 1;
     const liveParts = useSessionParts(activeStreamingMessageId ?? '', directory);
-    const liveEntry = React.useMemo(() => buildLiveStreamingEntry(entries[newestIndex], {
-        activeStreamingMessageId,
-        liveParts,
-        showTextJustificationActivity: chatRenderMode === 'sorted',
-        showTurnChangedFiles,
-    }), [activeStreamingMessageId, chatRenderMode, entries, newestIndex, liveParts, showTurnChangedFiles]);
+    // The tail stays mounted through empty frames (see the mount note at the
+    // call site), so the newest entry can be absent for a render.
+    const liveEntry = React.useMemo(() => {
+        const newest = entries[newestIndex];
+        if (!newest) return undefined;
+        return buildLiveStreamingEntry(newest, {
+            activeStreamingMessageId,
+            liveParts,
+            showTextJustificationActivity: chatRenderMode === 'sorted',
+            showTurnChangedFiles,
+        });
+    }, [activeStreamingMessageId, chatRenderMode, entries, newestIndex, liveParts, showTurnChangedFiles]);
 
     return (
         <>
@@ -1692,7 +1609,7 @@ const StreamingTailContent: React.FC<{
                 return (
                     <TailEntry
                         key={entry.key}
-                        entry={isNewest ? liveEntry : entry}
+                        entry={isNewest ? liveEntry ?? entry : entry}
                         onMessageContentChange={onMessageContentChange}
                         getAnimationHandlers={getAnimationHandlers}
                         scrollToBottom={scrollToBottom}
@@ -2343,27 +2260,32 @@ const MessageList = React.forwardRef<MessageListHandle, MessageListProps>(({
                                 />
                             </DeferredToolHydrationProvider>
                         </FadeInDisabledProvider>
-                        {hasTrailingStreamingEntries ? (
-                            <StreamingTailContent
-                                entries={trailingStreamingEntries}
-                                directory={directory}
-                                onMessageContentChange={stableTailContentChange}
-                                getAnimationHandlers={stableGetAnimationHandlers}
-                                scrollToBottom={stableScrollToBottom}
-                                stickyUserHeader={stickyUserHeader}
-                                sessionIsWorking={sessionIsWorking}
-                                activityRenderMode={activityRenderMode}
-                                turnUiStates={turnUiStates}
-                                onToggleTurnGroup={toggleTurnGroup}
-                                chatRenderMode={chatRenderMode}
-                                showTurnChangedFiles={showTurnChangedFiles}
-                                shouldAnimateUserMessage={shouldAnimateUserMessage}
-                                onUserAnimationConsumed={onUserAnimationConsumed}
-                                activeStreamingMessageId={activeStreamingMessageId}
-                                activeStreamingPhase={activeStreamingPhase}
-                                reviewTransferDirection={reviewTransferDirection}
-                            />
-                        ) : null}
+                        {/* Mounted unconditionally. Gating on a non-empty tail
+                            destroyed the whole streaming subtree whenever the
+                            projection was momentarily empty (materialize/merge
+                            frames), and the next frame rebuilt it from scratch:
+                            the user message and its reasoning blinked out and
+                            back mid-turn. An empty tail now renders nothing
+                            while keeping its fiber, subscription and DOM. */}
+                        <StreamingTailContent
+                            entries={trailingStreamingEntries}
+                            directory={directory}
+                            onMessageContentChange={stableTailContentChange}
+                            getAnimationHandlers={stableGetAnimationHandlers}
+                            scrollToBottom={stableScrollToBottom}
+                            stickyUserHeader={stickyUserHeader}
+                            sessionIsWorking={sessionIsWorking}
+                            activityRenderMode={activityRenderMode}
+                            turnUiStates={turnUiStates}
+                            onToggleTurnGroup={toggleTurnGroup}
+                            chatRenderMode={chatRenderMode}
+                            showTurnChangedFiles={showTurnChangedFiles}
+                            shouldAnimateUserMessage={shouldAnimateUserMessage}
+                            onUserAnimationConsumed={onUserAnimationConsumed}
+                            activeStreamingMessageId={activeStreamingMessageId}
+                            activeStreamingPhase={activeStreamingPhase}
+                            reviewTransferDirection={reviewTransferDirection}
+                        />
                     </div>
                 </FadeInDisabledProvider>
 

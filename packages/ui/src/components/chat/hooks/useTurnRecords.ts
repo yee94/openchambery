@@ -51,8 +51,17 @@ export const resolveLiveTailStart = (input: {
     liveTailActive: boolean;
     previousStart: number | null;
 }): number | null => {
-    if (!input.hasLiveTail || input.turnCount === 0) {
+    if (!input.hasLiveTail) {
         return null;
+    }
+
+    // An empty projection is a transient materialization/merge frame, not a
+    // release of the tail. Dropping the latch here re-arms it at the newest
+    // turn once messages come back, which evicts every turn the tail already
+    // owns into history and rebuilds their subtrees from an empty node — the
+    // exact flash this latch exists to prevent.
+    if (input.turnCount === 0) {
+        return input.previousStart;
     }
 
     const claimed = input.previousStart ?? input.turnCount - 1;
@@ -111,12 +120,10 @@ export const useTurnRecords = (
         liveTailStartRef.current = null;
     }
 
-    React.useEffect(() => {
-        previousProjectionRef.current = null;
-        staticTurnsRef.current = [];
-        streamingTurnsRef.current = EMPTY_TURNS;
-        liveTailStartRef.current = null;
-    }, [options.sessionKey, options.showTextJustificationActivity, options.showTurnChangedFiles]);
+    // The reset above runs during render, before `liveTailStart` is derived, so
+    // it is the only one that can be correct. An effect repeating it would land
+    // one commit late and clear the latch after mount — the next render then
+    // re-arms the tail at the newest turn and evicts everything it owned.
 
     const projection = React.useMemo(() => {
         const sessionKey = options.sessionKey ?? '';

@@ -2884,18 +2884,40 @@ const isSuspendExemptShellBridge = (state: State, info: Message, parts: Part[] |
   })
 }
 
+/**
+ * Whether a suspended snapshot must still take live parts.
+ * Freezing is only for high-frequency text/reasoning growth on an identical
+ * part-id set. New tools, removed parts, type changes, and any tool part
+ * identity change must paint immediately — otherwise Activity tool rows stay
+ * blank or stale until the stream ends.
+ */
+function shouldRefreshSuspendedParts(previousParts: Part[], liveParts: Part[]): boolean {
+  if (previousParts.length !== liveParts.length) return true
+  for (let index = 0; index < liveParts.length; index += 1) {
+    const previous = previousParts[index]
+    const live = liveParts[index]
+    if (!previous || !live) return true
+    if (previous.id !== live.id || previous.type !== live.type) return true
+    if (live.type === "tool" && previous !== live) return true
+  }
+  return false
+}
+
 const snapshotPartsMatchState = (snapshot: SessionMessageRecordsSnapshot, state: State): boolean => {
   for (const record of snapshot.list) {
+    const liveParts = state.part[record.info.id] ?? EMPTY_PARTS
     if (snapshot.suspendPartUpdates) {
       const suspendedID = snapshot.suspendedPartUpdatesMessageID
       if (
         (!suspendedID || record.info.id === suspendedID)
-        && !isSuspendExemptShellBridge(state, record.info, state.part[record.info.id])
+        && !isSuspendExemptShellBridge(state, record.info, liveParts)
+        && !shouldRefreshSuspendedParts(record.parts, liveParts)
       ) {
+        // Pure text/reasoning growth on the same part ids — keep frozen.
         continue
       }
     }
-    if ((state.part[record.info.id] ?? EMPTY_PARTS) !== record.parts) {
+    if (liveParts !== record.parts) {
       return false
     }
   }
@@ -2966,13 +2988,15 @@ export function buildSessionMessageRecordsSnapshot(
   const nextById = new Map<string, SessionMessageRecord>()
   const nextList = visibleMessages.map((message) => {
     const previousRecord = previous?.byId.get(message.id)
+    const liveParts = state.part[message.id] ?? EMPTY_PARTS
     const shouldSuspendParts = suspendPartUpdates
       && previousRecord
       && (!suspendedPartUpdatesMessageID || message.id === suspendedPartUpdatesMessageID)
-      && !isSuspendExemptShellBridge(state, message, state.part[message.id])
+      && !isSuspendExemptShellBridge(state, message, liveParts)
+      && !shouldRefreshSuspendedParts(previousRecord.parts, liveParts)
     const parts = shouldSuspendParts
       ? previousRecord.parts
-      : (state.part[message.id] ?? EMPTY_PARTS)
+      : liveParts
 
     const nextRecord = previousRecord && previousRecord.info === message && previousRecord.parts === parts
       ? previousRecord

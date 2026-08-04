@@ -46,6 +46,7 @@ const {
     buildMeasurementSeedFromSizes,
     createTanstackTimelineSnapshotCache,
     resolveMessageListKeys,
+    resolveActivityExpansionDisposition,
     resolveDefaultActivityExpanded,
     resolveMarkdownPreloadEntries,
     resolveMarkdownPreloadReleaseWhileScrolling,
@@ -97,6 +98,25 @@ describe('turn activity expansion state', () => {
         });
         expect(live.completionDisposition).toBe('active');
         expect(resolveDefaultActivityExpanded(live.completionDisposition, 'collapsed')).toBe(true);
+    });
+
+    test('last open turn stays expanded even when sessionIsWorking flaps idle between tools', () => {
+        // Header presentation demotes active→abnormal when status is idle, but
+        // expansion uses resolveActivityExpansionDisposition on the raw turn.
+        const demoted = resolveTurnActivityPresentation({
+            completionDisposition: 'active',
+            isLastTurn: true,
+            sessionIsWorking: false,
+        });
+        expect(demoted.completionDisposition).toBe('abnormal');
+        const expansion = resolveActivityExpansionDisposition({
+            isLastTurn: true,
+            turnCompletionDisposition: 'active',
+            headerPresentationDisposition: demoted.completionDisposition,
+        });
+        expect(expansion).toBe('active');
+        expect(resolveDefaultActivityExpanded(expansion, 'collapsed')).toBe(true);
+        expect(resolveDefaultActivityExpanded(demoted.completionDisposition, 'collapsed')).toBe(false);
     });
 
     test('a toggle flips the current expansion state in both directions', () => {

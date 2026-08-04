@@ -9,6 +9,15 @@ import {
 const cmp = (a: string, b: string) => (a < b ? -1 : a > b ? 1 : 0)
 const STREAMING_PART_FIELDS = ["text", "output"] as const
 
+/** Tool status rank: higher means further along the lifecycle. */
+const TOOL_STATUS_RANK: Record<string, number> = {
+  pending: 1,
+  started: 2,
+  running: 3,
+  completed: 4,
+  error: 4,
+}
+
 export type MaterializedMessageRecord = {
   info: Message
   parts: Part[]
@@ -86,6 +95,64 @@ function hasLiveStreamingField(part: Part): boolean {
   })
 }
 
+/**
+ * Snapshot message still mid-turn: completion metadata is absent. Laggy HTTP
+ * pages for open assistant turns commonly omit tools the live SSE stream
+ * already admitted; those local parts must be retained until the turn settles.
+ */
+function isMessageSnapshotOpen(info: Message): boolean {
+  const completed = (info as { time?: { completed?: unknown } }).time?.completed
+  if (typeof completed === "number") return false
+  const finish = (info as { finish?: unknown }).finish
+  if (typeof finish === "string" && finish.length > 0) return false
+  return true
+}
+
+function getPartState(part: Part): Record<string, unknown> | undefined {
+  const state = (part as { state?: unknown }).state
+  if (!state || typeof state !== "object") return undefined
+  return state as Record<string, unknown>
+}
+
+function getToolStatus(part: Part): string | undefined {
+  const status = getPartState(part)?.status
+  return typeof status === "string" ? status : undefined
+}
+
+function toolStatusRank(status: string | undefined): number {
+  if (!status) return 0
+  return TOOL_STATUS_RANK[status] ?? 0
+}
+
+/**
+ * Whether a local part omitted by the HTTP snapshot must be kept.
+ *
+ * Text/output streaming fields are always kept (existing contract). Tool and
+ * other parts lack those top-level fields: an open (no end time) part is kept
+ * whenever preserve-streaming is on, and settled tools are kept while the
+ * snapshot message is still open so mid-turn lag cannot blank the Activity
+ * timeline.
+ */
+function shouldPreserveMissingPart(part: Part, messageStillOpen: boolean): boolean {
+  if (hasLiveStreamingField(part)) return true
+  if (getPartEndTime(part) === undefined) {
+    // In-flight tool/reasoning/etc. (no end). Completed tools usually carry
+    // end; if status says settled without end, fall through to message-open.
+    if (part.type === "tool") {
+      const status = getToolStatus(part)
+      if (status === "completed" || status === "error") {
+        return messageStillOpen
+      }
+      return true
+    }
+    return true
+  }
+  // Settled local parts (completed tools, closed reasoning): keep them only
+  // while the snapshot message is still open — a lagging mid-turn page must
+  // not erase earlier tools; a completed message snapshot is authoritative.
+  return messageStillOpen
+}
+
 function getPartStateTime(part: Part): { start?: number; end?: number } | undefined {
   const stateTime = (part as { state?: { time?: { start?: unknown; end?: unknown } } }).state?.time
   if (!stateTime || typeof stateTime !== "object") return undefined
@@ -93,6 +160,64 @@ function getPartStateTime(part: Part): { start?: number; end?: number } | undefi
   const end = typeof stateTime.end === "number" ? stateTime.end : undefined
   if (start === undefined && end === undefined) return undefined
   return { start, end }
+}
+
+function isNonEmptyObject(value: unknown): value is Record<string, unknown> {
+  return !!value && typeof value === "object" && !Array.isArray(value) && Object.keys(value as object).length > 0
+}
+
+function mergeOpenToolState(existing: Part, next: Part, base: Part): Part {
+  if (existing.type !== "tool" || next.type !== "tool") return base
+
+  const existingState = getPartState(existing)
+  if (!existingState) return base
+
+  // Start from `base` (already may include preserved state.time) rather than
+  // raw `next`, so status/input upgrades do not drop earlier merges.
+  const baseState = getPartState(base) ?? {}
+  const nextState = getPartState(next) ?? {}
+  let state = { ...baseState }
+  let changed = false
+
+  const existingStatus = getToolStatus(existing)
+  const nextStatus = getToolStatus(next)
+  if (toolStatusRank(existingStatus) > toolStatusRank(nextStatus) && existingStatus) {
+    state = { ...state, status: existingStatus }
+    changed = true
+  }
+
+  const existingInput = existingState.input
+  const nextInput = nextState.input
+  if (isNonEmptyObject(existingInput) && !isNonEmptyObject(nextInput)) {
+    state = { ...state, input: existingInput }
+    changed = true
+  }
+
+  const existingOutput = existingState.output
+  const nextOutput = nextState.output
+  if (typeof existingOutput === "string" && existingOutput.length > 0) {
+    if (typeof nextOutput !== "string" || nextOutput.length < existingOutput.length) {
+      if (typeof nextOutput !== "string" || nextOutput.length === 0 || existingOutput.startsWith(nextOutput)) {
+        state = { ...state, output: existingOutput }
+        changed = true
+      }
+    }
+  } else if (existingOutput !== undefined && nextOutput === undefined) {
+    state = { ...state, output: existingOutput }
+    changed = true
+  }
+
+  const existingMeta = existingState.metadata
+  if (isNonEmptyObject(existingMeta) && !isNonEmptyObject(nextState.metadata)) {
+    state = { ...state, metadata: existingMeta }
+    changed = true
+  }
+
+  if (!changed) return base
+  if (base === next) {
+    return { ...next, state } as Part
+  }
+  return { ...base, state } as Part
 }
 
 function mergeMaterializedPart(existing: Part | undefined, next: Part): Part {
@@ -120,11 +245,15 @@ function mergeMaterializedPart(existing: Part | undefined, next: Part): Part {
     if (preservedStart !== nextTime?.start || preservedEnd !== nextTime?.end) {
       if (merged === next) merged = { ...next }
       const mergedRecord = merged as Record<string, unknown>
-      const nextState = (next as Record<string, unknown>).state as Record<string, unknown> | undefined
+      const nextState = (merged as Record<string, unknown>).state as Record<string, unknown> | undefined
       const newState = { ...(nextState ?? {}), time: { start: preservedStart, end: preservedEnd } }
       mergedRecord.state = newState
     }
   }
+
+  // Laggy snapshots can re-admit a tool as pending/shell without input while
+  // SSE already advanced status/input/output. Keep the richer live state.
+  merged = mergeOpenToolState(existing, next, merged)
 
   return merged
 }
@@ -134,6 +263,7 @@ function mergeMaterializedParts(
   nextParts: Part[],
   skipPartTypes: ReadonlySet<string>,
   preserveLiveStreamingParts: boolean,
+  messageStillOpen: boolean,
 ): Part[] {
   if (!existing || existing.length === 0) return nextParts
   if (!preserveLiveStreamingParts) return nextParts
@@ -153,7 +283,11 @@ function mergeMaterializedParts(
 
   const snapshotIDs = new Set(nextParts.map((part) => part.id))
   const missingLiveParts = existing.filter(
-    (part) => !!part?.id && !snapshotIDs.has(part.id) && !skipPartTypes.has(part.type) && hasLiveStreamingField(part),
+    (part) =>
+      !!part?.id
+      && !snapshotIDs.has(part.id)
+      && !skipPartTypes.has(part.type)
+      && shouldPreserveMissingPart(part, messageStillOpen),
   )
   if (missingLiveParts.length === 0) return mergedParts
 
@@ -218,24 +352,32 @@ export function materializeSessionSnapshots(
       sortParts(record.parts ?? [], skipPartTypes),
       skipPartTypes,
       shouldPreserveStreamingParts(merge, record.info.role),
+      isMessageSnapshotOpen(record.info),
     )
-    // For non-assistant messages an empty snapshot keeps the old "absent"
-    // representation; only assistant messages need the explicit [] marker
-    // (getSessionMaterializationStatus checks only assistant messages).
+    // User/system rows: an empty HTTP snapshot is not proof the server cleared
+    // parts. Idle/materialize/initial turn pages can lag SSE and return a shell
+    // with [] (or id-filtered-empty). Deleting here wipes the bubble —
+    // ChatMessage hides user rows when displayParts is empty. Keep local parts
+    // until a non-empty snapshot arrives. First paint with no local parts still
+    // leaves the key absent (not an explicit []).
+    //
+    // Assistant rows still store fetched-empty as [] so
+    // getSessionMaterializationStatus treats aborted turns as renderable.
     const equivalent = existing
       ? haveEquivalentPartSnapshots(existing, nextParts)
       : nextParts.length === 0 && !isAssistant
     if (equivalent) continue
 
     if (nextParts.length === 0 && !isAssistant) {
-      delete nextPartState[messageID]
-    } else {
-      // Store fetched-empty as an explicit [] (not absence): an assistant
-      // message the server returned with zero parts (e.g. aborted before any
-      // output) is authoritatively empty and must count as renderable, or
-      // the ensure-renderable effects retry syncSession forever.
-      nextPartState[messageID] = nextParts
+      // Keep non-empty local parts; leave absence as absence. Never invent [].
+      continue
     }
+
+    // Store fetched-empty as an explicit [] (not absence): an assistant
+    // message the server returned with zero parts (e.g. aborted before any
+    // output) is authoritatively empty and must count as renderable, or
+    // the ensure-renderable effects retry syncSession forever.
+    nextPartState[messageID] = nextParts
     partsChanged = true
   }
 
@@ -248,6 +390,14 @@ export function materializeSessionSnapshots(
   }
 }
 
+function isOpenAssistantMessage(message: Message): boolean {
+  const completed = (message as { time?: { completed?: unknown } }).time?.completed
+  if (typeof completed === "number") return false
+  const finish = (message as { finish?: unknown }).finish
+  if (typeof finish === "string" && finish.length > 0) return false
+  return true
+}
+
 export function getSessionMaterializationStatus(
   state: MaterializedState,
   sessionID: string,
@@ -257,6 +407,7 @@ export function getSessionMaterializationStatus(
     return { hasMessages: false, renderable: false, missingPartMessageIDs: [] }
   }
 
+  const trailingID = messages.length > 0 ? messages[messages.length - 1]?.id : undefined
   const missingPartMessageIDs: string[] = []
   for (const message of messages) {
     if (message.role !== "assistant") continue
@@ -265,9 +416,17 @@ export function getSessionMaterializationStatus(
     // as renderable — otherwise sessions containing such a message can never
     // reach renderable state and ensure-renderable callers loop forever.
     const parts = state.part[message.id]
-    if (!parts) {
-      missingPartMessageIDs.push(message.id)
+    if (parts) continue
+
+    // Live multi-step turns emit message.updated for a new trailing assistant
+    // before the first part.updated. Counting that gap as "missing parts"
+    // flips hasRenderableSessionSnapshot false and re-fires
+    // ensureSessionRenderable → thrashing GET /messages mid-turn (trace:
+    // 5+ messages pulls within ~4s of one prompt), which blanks Activity tools.
+    if (message.id === trailingID && isOpenAssistantMessage(message)) {
+      continue
     }
+    missingPartMessageIDs.push(message.id)
   }
 
   return {

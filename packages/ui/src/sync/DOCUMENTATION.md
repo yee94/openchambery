@@ -246,6 +246,16 @@ callers, and `waitForSessionIndexInvalidation` debounces dense revision tips
 Successful non-null POST/GET snapshots write back through the Query helper so
 memory and the runtimeKey persistent seed stay aligned.
 
+The startup observer in `startSessionIndexStartup` never exits — it keeps
+watching for later tips — so it disables the wait hang-break
+(`safetyTimeoutMs: null`) whenever server sync is idle. An armed hang-break
+inside a re-entering wait is a fixed-interval poll, not a rescue:
+Trace-20260804T171706 shows `GET /session-index` every 1.5s for the life of the
+app, each one re-rendering the entire sidebar (~120ms of main thread). The
+hang-break stays armed only while `sync.active` is true, which is the one window
+where a tip can be published between POST `/sync` returning and the subscription
+attaching. Idle waits resolve on a tip, a stream-ready edge, or abort.
+
 Password-gated runtimes force a fresh settings hydration after authentication
 and keep the app tree behind the auth gate until persisted project paths have
 been applied. This prevents a pre-authenticated `401` settings request from
@@ -327,11 +337,13 @@ Rules that keep this single-sourced:
   `materializeSessionSnapshots` through the `merge` option. Materialization
   reads message/part merge modes and streaming preservation from the strategy
   (`shouldPreserveStreamingParts(merge, role)`); it does not re-derive them from
-  purpose. (A separate local `role === "assistant"` check in materialization
-  still decides whether an empty snapshot stores an explicit `[]` renderability
-  marker or deletes the key — that is coupled only to
-  `getSessionMaterializationStatus` inspecting assistant messages, and is not
-  part of the merge strategy.) The reducer also performs optimistic merge,
+  purpose. (A separate local role check in materialization still decides empty
+  snapshots: assistant rows store an explicit `[]` renderability marker so
+  `getSessionMaterializationStatus` can settle aborted turns; user/system rows
+  keep non-empty local parts when the snapshot is empty — idle/materialize
+  turn pages must not wipe a bubble that SSE already delivered — and leave the
+  key absent when both sides are empty. That empty-key policy is not part of
+  the merge strategy.) The reducer also performs optimistic merge,
   returns reference-stable state when unchanged, and emits commands such as
   `clear-optimistic`. Callers own store writes and side effects; the reducer
   never touches SDK/Query/store. Fetch errors (`ok: false`) preserve prior
@@ -344,7 +356,7 @@ Rules that keep this single-sourced:
   | `onStale` | `drop` \| `backfill` | discard the page, or still apply it as hole-filling |
   | `messages` | `upsert` \| `insert-only` | replace existing message objects, or only add absent IDs |
   | `parts` | `replace` \| `skip-existing` | fetched parts are authoritative, or leave messages that already have parts |
-  | `preserveStreaming` | `assistant` \| `all` \| `none` | which roles keep in-flight streaming text the snapshot omits |
+  | `preserveStreaming` | `assistant` \| `all` \| `none` | which roles keep live parts the snapshot omits or truncates (streaming text/output, in-flight tools, and mid-turn completed tools) |
 
   Resolution (`id` is a debug label, not a behavioral input):
 
@@ -583,8 +595,20 @@ Rules that keep this single-sourced:
   Stale recovery is insert-only: it backfills missing messages only and leaves
   newer live message objects untouched. Local messages outside the bounded tail
   remain intact in both cases. Part merging uses `parts: replace` with
-  `preserveStreaming: assistant`, so live streaming fields on assistant parts
-  retain precedence until an authoritative completed part arrives.
+  `preserveStreaming: assistant`, so live assistant parts retain precedence
+  until an authoritative completed snapshot arrives: streaming text/output is
+  never truncated by a lagging page; in-flight tool/reasoning parts omitted by
+  the page are kept; while the snapshot message is still open, earlier completed
+  tools omitted by a partial mid-turn page are also kept (so Activity tool rows
+  do not flicker away during inference); same-id hollow tool snapshots cannot
+  regress richer live status/input/output. A settled message snapshot remains
+  authoritative for the part set.
+- `getSessionMaterializationStatus` does **not** treat a trailing *open*
+  assistant (no `time.completed` / `finish`) with missing parts as unrenderable.
+  Live multi-step turns emit `message.updated` before the first `part.updated`;
+  counting that gap as missing flipped `hasRenderableSessionSnapshot` false and
+  re-fired `ensureSessionRenderable` → thrashing `GET .../messages` mid-turn
+  (Performance traces showed 5+ messages pulls within ~4s of one prompt).
 - A WebSocket-to-SSE fallback enters connecting or reconnecting state. Connected
   state publishes after the fallback SSE stream reports its real connection.
 - A successful directory status snapshot records its conservative request-start

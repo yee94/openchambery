@@ -56,6 +56,12 @@ const applyBinding = (assistantID: string, binding: SessionBinding, transport: s
     return { ...assistant, sessionID: binding.sessionID, sessionGeneration: binding.sessionGeneration, effectiveWorkspacePath: binding.directory };
   }) }));
   void queryClient.invalidateQueries({ queryKey: key.snapshot(transport) });
+  // Admission writes SQLite immediately; history infinite queries stay stale
+  // until invalidated. Without a refetch, mergeHostedCurrentSessionHistory has
+  // no admission parts for the new message when live SSE is incomplete.
+  void queryClient.invalidateQueries({
+    queryKey: [transport, getRuntimeGeneration(), 'assistants', 'history', assistantID],
+  });
 };
 const applyAssistant = (assistant: AssistantDTO, transport: string) => {
   queryClient.setQueryData<AssistantSnapshot>(key.snapshot(transport), (snapshot) => snapshot && ({ ...snapshot, assistants: snapshot.assistants.some((item) => item.id === assistant.id) ? snapshot.assistants.map((item) => item.id === assistant.id ? assistant : item) : [...snapshot.assistants, assistant] }));

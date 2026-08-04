@@ -7,7 +7,9 @@ import {
     resolveChatSessionTranscriptGate,
     type ChatContainerHost,
 } from './chatContainerHost';
+import { hasUserDisplayableParts } from './message/normalizeUserDisplayParts';
 import type { PendingUserMessagePresentation } from '@/sync/session-ui-store';
+import type { Part } from '@opencode-ai/sdk/v2';
 
 const sampleHost = (features?: ChatContainerHost['features']): ChatContainerHost => ({
   sessionId: 'ses_test',
@@ -65,6 +67,27 @@ describe('chatContainerHost', () => {
 
     const reconciled = mergePendingUserMessagePresentations(partless, [pending]);
 
+    expect(reconciled).toHaveLength(1);
+    expect(reconciled[0]).toBe(pending);
+  });
+
+  test('substitutes synthetic-only system-reminder shells with pending text', () => {
+    const pending = {
+      info: { id: 'msg_pending', role: 'user' },
+      parts: [{ type: 'text', text: '123123' }],
+    } as PendingUserMessagePresentation;
+    const systemOnly = [{
+      info: { ...pending.info, sessionID: 'ses_real' },
+      parts: [{
+        id: 'prt_sys',
+        type: 'text',
+        text: '<system-reminder>\nKeep replies short.',
+        synthetic: true,
+      } as Part],
+    }] as PendingUserMessagePresentation[];
+
+    expect(hasUserDisplayableParts(systemOnly[0]!.parts)).toBe(false);
+    const reconciled = mergePendingUserMessagePresentations(systemOnly, [pending]);
     expect(reconciled).toHaveLength(1);
     expect(reconciled[0]).toBe(pending);
   });

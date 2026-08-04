@@ -179,6 +179,9 @@ describe('progressive activity presentation', () => {
         expect(messageBodySource).toContain('if (hideCompactionBody)');
         expect(messageBodySource).toContain('&& !hideCompactionBody');
         expect(messageBodySource).toContain('pushActivityHeader(`${messageId}:compaction-status`, [])');
+        // Empty filtered segment parts still push the Activity chrome (no early
+        // return) so mid-reconcile cannot unmount the live disclosure.
+        expect(messageBodySource).toContain('pushActivityHeader(segment.id, visibleSegmentParts)');
         expect(messageBodySource).toContain('&& visibleSegmentParts.length === 0');
         expect(messageBodySource).toContain('&& !hasTextContent');
         expect(progressiveGroupSource).toContain('// Header-only turns (e.g. completed compaction with foldable body text outside');

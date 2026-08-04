@@ -1184,7 +1184,15 @@ export const useGlobalSessionsStore = create<GlobalSessionsState>((set, get) => 
         }));
         if (!current.sync.active) settleRootSync();
         const waitRuntime = captureSessionIndexRuntime();
-        const reason = await waitForSessionIndexInvalidation(current.revision, controller.signal);
+        // This observer never exits — it keeps watching for later tips. The
+        // hang-break only rescues the POST /sync → subscribe race, so it stays
+        // armed while the server is still indexing. Once sync is idle no tip is
+        // in flight to be missed, and leaving it armed re-GETs the unchanged
+        // snapshot every 1.5s for the life of the app, re-rendering the whole
+        // sidebar each time. Idle waits are tip/stream-ready/abort driven.
+        const reason = await waitForSessionIndexInvalidation(current.revision, controller.signal, {
+          safetyTimeoutMs: current.sync.active ? undefined : null,
+        });
         if (!isCurrentSessionIndexRuntime(runtime) || !isCurrentSessionIndexRuntime(waitRuntime)) break;
         if (reason === 'aborted') break;
         // Tip/ready/timeout already coalesced dense tips; one sequential GET path

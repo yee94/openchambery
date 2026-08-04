@@ -113,19 +113,28 @@ export const startSessionIndexBackgroundSync = async (
  * publishes tips between POST /sync returning and this subscription attaching.
  * Consumers treat `'timeout'` like a tip: GET the authoritative snapshot and
  * continue. Tips still win when they arrive first.
+ *
+ * Pass `safetyTimeoutMs: null` to disable the hang-break and wait purely on
+ * tips, stream-ready edges, or abort. A long-lived observer that re-enters this
+ * wait after every resolution turns the hang-break into a fixed-interval poll,
+ * so callers that keep watching an idle index must opt out — there is no
+ * pending tip to rescue, and each timeout costs a full snapshot GET plus the
+ * sidebar re-render it triggers.
  */
 export const waitForSessionIndexInvalidation = (
   afterRevision: number,
   signal: AbortSignal,
-  options?: { safetyTimeoutMs?: number },
+  options?: { safetyTimeoutMs?: number | null },
 ): Promise<'tip' | 'ready' | 'aborted' | 'timeout'> => new Promise((resolve) => {
   if (signal.aborted) {
     resolve('aborted');
     return;
   }
-  const safetyTimeoutMs = typeof options?.safetyTimeoutMs === 'number' && options.safetyTimeoutMs > 0
-    ? options.safetyTimeoutMs
-    : SESSION_INDEX_SAFETY_TIMEOUT_MS;
+  const safetyTimeoutMs = options?.safetyTimeoutMs === null
+    ? null
+    : typeof options?.safetyTimeoutMs === 'number' && options.safetyTimeoutMs > 0
+      ? options.safetyTimeoutMs
+      : SESSION_INDEX_SAFETY_TIMEOUT_MS;
   let debounceTimer: ReturnType<typeof setTimeout> | undefined;
   let pendingReason: 'tip' | 'ready' | undefined;
   const finish = (reason: 'tip' | 'ready' | 'aborted' | 'timeout') => {
@@ -144,7 +153,9 @@ export const waitForSessionIndexInvalidation = (
     }, SESSION_INDEX_TIP_DEBOUNCE_MS);
   };
   const onAbort = () => finish('aborted');
-  const safetyTimer = setTimeout(() => finish('timeout'), safetyTimeoutMs);
+  const safetyTimer = safetyTimeoutMs === null
+    ? undefined
+    : setTimeout(() => finish('timeout'), safetyTimeoutMs);
   const unsubscribe = subscribeOpenchamberEvents((event) => {
     if (event.type === 'event-stream-ready') {
       // Reconnect repair: coalesce with any in-flight tip burst, otherwise wait

@@ -154,4 +154,58 @@ describe('hostedSessionHistory', () => {
     expect(merged).toHaveLength(1);
     expect(merged[0]).toBe(liveWithParts);
   });
+
+  test('unions assistant history tools with lagging live reasoning-only snapshots', () => {
+    const toolPart = {
+      id: 'prt_tool',
+      type: 'tool',
+      tool: 'read',
+      state: { status: 'completed', time: { start: 1, end: 2 } },
+    } as never;
+    const historyReasoning = { id: 'prt_reason', type: 'reasoning', text: 'old' } as never;
+    const liveReasoning = { id: 'prt_reason', type: 'reasoning', text: 'streaming…' } as never;
+    const persisted: AssistantHistoryEntry = {
+      sessionID: 'ses_live',
+      directory: '/workspace',
+      info: { id: 'msg_asst', role: 'assistant', sessionID: 'ses_live', time: { created: 20 } } as Message,
+      parts: [historyReasoning, toolPart],
+    };
+    const livePartial = {
+      info: { id: 'msg_asst', role: 'assistant', sessionID: 'ses_live', time: { created: 20 } } as Message,
+      parts: [liveReasoning],
+    };
+
+    const merged = mergeHostedCurrentSessionHistory([persisted], 'ses_live', [livePartial]);
+
+    expect(merged).toHaveLength(1);
+    expect(merged[0]?.parts.map((part) => (part as { id?: string }).id)).toEqual([
+      'prt_reason',
+      'prt_tool',
+    ]);
+    expect((merged[0]?.parts[0] as { text?: string })?.text).toBe('streaming…');
+  });
+
+  test('does not let synthetic-only live shells wipe SQLite admission text', () => {
+    const admissionParts = [{ type: 'text', text: '123123' } as never];
+    const persisted: AssistantHistoryEntry = {
+      sessionID: 'ses_live',
+      directory: '/workspace',
+      info: { ...bare('msg_user'), sessionID: 'ses_live', time: { created: 20 } },
+      parts: admissionParts,
+    };
+    const liveSystemOnly = {
+      info: { ...bare('msg_user'), sessionID: 'ses_live', time: { created: 20 }, agent: 'build' },
+      parts: [{
+        type: 'text',
+        text: '<system-reminder>\nKeep replies short.',
+        synthetic: true,
+      } as never],
+    };
+
+    const merged = mergeHostedCurrentSessionHistory([persisted], 'ses_live', [liveSystemOnly]);
+
+    expect(merged).toHaveLength(1);
+    expect(merged[0]?.info).toBe(liveSystemOnly.info);
+    expect(merged[0]?.parts).toEqual(admissionParts);
+  });
 });

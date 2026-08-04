@@ -1,5 +1,6 @@
 import type { ChatInputSurface } from '@/components/chat/chatInputSurface';
 import type { SessionSurfaceContextValue } from '@/components/chat/SessionSurfaceContext';
+import { hasUserDisplayableParts } from '@/components/chat/message/normalizeUserDisplayParts';
 import type { AssistantHistoryEntry } from '@/queries/assistantQueries';
 import type { PendingUserMessagePresentation } from '@/sync/session-ui-store';
 import type { Message, Part } from '@opencode-ai/sdk/v2';
@@ -9,9 +10,10 @@ type SessionMessageRecord = { info: Message; parts: Part[] };
 /**
  * Fold retained pending rows into an authoritative transcript.
  * Rows the transcript does not have yet are appended. A row it has but whose
- * parts never landed is substituted by its pending counterpart in place, so a
- * part-less record cannot turn a sent message into an empty bubble; substituting
- * rather than appending keeps one row per message ID.
+ * parts never landed (or landed as non-displayable synthetics only) is
+ * substituted by its pending counterpart in place, so a hollow record cannot
+ * turn a sent message into an empty bubble; substituting rather than appending
+ * keeps one row per message ID.
  */
 export const mergePendingUserMessagePresentations = (
   messages: readonly SessionMessageRecord[],
@@ -21,7 +23,7 @@ export const mergePendingUserMessagePresentations = (
   const pendingByID = new Map(pending.map((message) => [message.info.id, message]));
   let substituted = false;
   const reconciled = messages.map((message) => {
-    if (message.parts.length > 0) return message;
+    if (hasUserDisplayableParts(message.parts)) return message;
     const standIn = pendingByID.get(message.info.id);
     if (!standIn) return message;
     substituted = true;

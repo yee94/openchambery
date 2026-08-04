@@ -109,6 +109,156 @@ describe("materializeSessionSnapshots", () => {
     expect(result.part.msg_1[0]).toBe(livePart)
   })
 
+  test("preserves in-flight tool parts omitted by a lagging mid-turn snapshot", () => {
+    const liveTool = {
+      id: "prt_tool",
+      messageID: "msg_1",
+      sessionID: "ses_1",
+      type: "tool",
+      tool: "read",
+      state: { status: "running", input: { path: "a.ts" }, time: { start: 1000 } },
+    } as unknown as Part
+    const liveReasoning = {
+      id: "prt_reason",
+      messageID: "msg_1",
+      sessionID: "ses_1",
+      type: "reasoning",
+      text: "thinking...",
+    } as unknown as Part
+    const state = {
+      message: { ses_1: [message("msg_1")] },
+      part: { msg_1: [liveReasoning, liveTool] },
+    }
+
+    const result = materializeSessionSnapshots(
+      state,
+      "ses_1",
+      // Lagging GET: reasoning only — tools already admitted via SSE must stay.
+      [{ info: message("msg_1"), parts: [liveReasoning] }],
+    )
+
+    expect(result.part.msg_1.map((item) => item.id).sort()).toEqual(["prt_reason", "prt_tool"])
+    expect(result.part.msg_1.find((item) => item.id === "prt_tool")).toBe(liveTool)
+  })
+
+  test("preserves earlier completed tools while the assistant message is still open", () => {
+    const completedTool = {
+      id: "prt_done",
+      messageID: "msg_1",
+      sessionID: "ses_1",
+      type: "tool",
+      tool: "read",
+      state: {
+        status: "completed",
+        input: { path: "a.ts" },
+        output: "ok",
+        time: { start: 1, end: 2 },
+      },
+    } as unknown as Part
+    const runningTool = {
+      id: "prt_run",
+      messageID: "msg_1",
+      sessionID: "ses_1",
+      type: "tool",
+      tool: "bash",
+      state: { status: "running", input: { command: "ls" }, time: { start: 3 } },
+    } as unknown as Part
+    const reasoning = {
+      id: "prt_reason",
+      messageID: "msg_1",
+      sessionID: "ses_1",
+      type: "reasoning",
+      text: "next step",
+    } as unknown as Part
+    const state = {
+      message: { ses_1: [message("msg_1")] },
+      part: { msg_1: [completedTool, runningTool, reasoning] },
+    }
+
+    const result = materializeSessionSnapshots(
+      state,
+      "ses_1",
+      [{ info: message("msg_1"), parts: [reasoning] }],
+    )
+
+    expect(result.part.msg_1.map((item) => item.id).sort()).toEqual([
+      "prt_done",
+      "prt_reason",
+      "prt_run",
+    ])
+  })
+
+  test("drops omitted tools once the snapshot message is settled", () => {
+    const completedTool = {
+      id: "prt_done",
+      messageID: "msg_1",
+      sessionID: "ses_1",
+      type: "tool",
+      tool: "read",
+      state: {
+        status: "completed",
+        input: { path: "a.ts" },
+        output: "ok",
+        time: { start: 1, end: 2 },
+      },
+    } as unknown as Part
+    const settled = {
+      ...message("msg_1"),
+      finish: "stop",
+      time: { created: 1, completed: 99 },
+    } as Message
+    const state = {
+      message: { ses_1: [message("msg_1")] },
+      part: { msg_1: [completedTool] },
+    }
+
+    const result = materializeSessionSnapshots(
+      state,
+      "ses_1",
+      [{ info: settled, parts: [] }],
+      { merge: RECOVERY_MERGE },
+    )
+
+    // Authoritative completed empty parts (e.g. aborted/cleared) win.
+    expect(result.part.msg_1).toEqual([])
+  })
+
+  test("does not regress live tool status/input when a hollow snapshot re-admits the same id", () => {
+    const liveTool = {
+      id: "prt_tool",
+      messageID: "msg_1",
+      sessionID: "ses_1",
+      type: "tool",
+      tool: "bash",
+      state: { status: "running", input: { command: "ls -la" }, time: { start: 1000 } },
+    } as unknown as Part
+    const hollowTool = {
+      id: "prt_tool",
+      messageID: "msg_1",
+      sessionID: "ses_1",
+      type: "tool",
+      tool: "bash",
+      state: { status: "pending" },
+    } as unknown as Part
+    const state = {
+      message: { ses_1: [message("msg_1")] },
+      part: { msg_1: [liveTool] },
+    }
+
+    const result = materializeSessionSnapshots(
+      state,
+      "ses_1",
+      [{ info: message("msg_1"), parts: [hollowTool] }],
+    )
+
+    const merged = result.part.msg_1[0] as {
+      state?: { status?: string; input?: { command?: string }; time?: { start?: number } }
+    }
+    expect(merged.state?.status).toBe("running")
+    expect(merged.state?.input?.command).toBe("ls -la")
+    expect(merged.state?.time?.start).toBe(1000)
+  })
+
   test("does not preserve omitted optimistic user text parts beside server snapshot parts", () => {
     const optimisticPart = { id: "prt_optimistic", messageID: "msg_1", type: "text", text: "Hello" } as Part
     const serverPart = part("prt_server", "msg_1", "text", "Hello")
@@ -124,6 +274,43 @@ describe("materializeSessionSnapshots", () => {
     )
 
     expect(result.part.msg_1).toEqual([serverPart])
+  })
+
+  test("does not wipe local user parts when idle/materialize/initial snapshots are empty", () => {
+    const userPart = part("prt_user", "msg_user", "text", "typed hello")
+    const state = {
+      message: { ses_1: [userMessage("msg_user")] },
+      part: { msg_user: [userPart] },
+    }
+    const emptyUserSnapshot = [{ info: userMessage("msg_user"), parts: [] as Part[] }]
+
+    for (const purpose of ["initial", "materialize", "recovery"] as const) {
+      const result = materializeSessionSnapshots(state, "ses_1", emptyUserSnapshot, {
+        merge: resolveSessionMergeStrategy({ purpose }),
+      })
+      expect(result.part.msg_user).toEqual([userPart])
+      expect(result.partsChanged).toBe(false)
+      expect(result.part.msg_user[0]).toBe(userPart)
+    }
+  })
+
+  test("still accepts a non-empty authoritative user part snapshot after local parts exist", () => {
+    const localPart = part("prt_local", "msg_user", "text", "pending")
+    const serverPart = part("prt_server", "msg_user", "text", "typed hello")
+    const state = {
+      message: { ses_1: [userMessage("msg_user")] },
+      part: { msg_user: [localPart] },
+    }
+
+    const result = materializeSessionSnapshots(
+      state,
+      "ses_1",
+      [{ info: userMessage("msg_user"), parts: [serverPart] }],
+      { merge: resolveSessionMergeStrategy({ purpose: "materialize" }) },
+    )
+
+    expect(result.part.msg_user).toEqual([serverPart])
+    expect(result.partsChanged).toBe(true)
   })
 
   test("preserves state.time from existing part when snapshot drops it", () => {
@@ -191,9 +378,14 @@ describe("materializeSessionSnapshots", () => {
 })
 
 describe("getSessionMaterializationStatus", () => {
-  test("requires assistant parts for renderable cached state", () => {
+  test("requires assistant parts for renderable cached state when the assistant is settled", () => {
+    const settled = {
+      ...message("msg_1"),
+      finish: "stop",
+      time: { created: 1, completed: 2 },
+    } as Message
     const state = {
-      message: { ses_1: [message("msg_1")] },
+      message: { ses_1: [settled] },
       part: {},
     }
 
@@ -201,6 +393,37 @@ describe("getSessionMaterializationStatus", () => {
       hasMessages: true,
       renderable: false,
       missingPartMessageIDs: ["msg_1"],
+    })
+  })
+
+  test("does not treat a trailing open assistant without parts as unrenderable", () => {
+    // Live multi-step: message.updated arrives before first part.updated.
+    // Must stay renderable or ensureSessionRenderable thrash-GET /messages.
+    const open = message("msg_open")
+    const state = {
+      message: { ses_1: [userMessage("msg_user"), open] },
+      part: { msg_user: [part("prt_u", "msg_user")] },
+    }
+
+    expect(getSessionMaterializationStatus(state, "ses_1")).toEqual({
+      hasMessages: true,
+      renderable: true,
+      missingPartMessageIDs: [],
+    })
+  })
+
+  test("still requires parts for non-trailing assistants missing part arrays", () => {
+    const older = message("msg_old")
+    const open = message("msg_open")
+    const state = {
+      message: { ses_1: [older, open] },
+      part: {},
+    }
+
+    expect(getSessionMaterializationStatus(state, "ses_1")).toEqual({
+      hasMessages: true,
+      renderable: false,
+      missingPartMessageIDs: ["msg_old"],
     })
   })
 

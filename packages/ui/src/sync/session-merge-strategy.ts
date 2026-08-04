@@ -33,8 +33,9 @@ export type MessageMergeMode = "upsert" | "insert-only"
 export type PartMergeMode = "replace" | "skip-existing"
 
 /**
- * Which existing parts may keep in-flight streaming text/output that the
- * snapshot omits or truncates.
+ * Which existing parts may keep live state that the snapshot omits or
+ * truncates: streaming text/output, in-flight tools, and mid-turn completed
+ * tools while the snapshot message is still open.
  */
 export type StreamingPreservation = "assistant" | "all" | "none"
 

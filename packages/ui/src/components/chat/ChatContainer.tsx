@@ -1,5 +1,12 @@
 import React from 'react';
-import { useEvent } from '@reactuses/core';
+import {
+    useEvent,
+    useEventListener,
+    useIsomorphicLayoutEffect,
+    useMount,
+    useResizeObserver,
+    useUnmount,
+} from '@reactuses/core';
 import type { Message, Part } from '@opencode-ai/sdk/v2';
 import type { PermissionRequest } from '@/types/permission';
 import type { QuestionRequest } from '@/types/question';
@@ -15,6 +22,7 @@ import {
     type ChatContainerHost,
     type ChatContainerHostFeatures,
 } from './chatContainerHost';
+import { hasUserDisplayableParts } from './message/normalizeUserDisplayParts';
 import {
     createExplicitSessionSurface,
     SessionSurfaceContext,
@@ -66,6 +74,7 @@ import {
     useParentSessionTarget,
     useSession,
     useCurrentSessionEntity,
+    setActiveSession,
 } from '@/sync/sync-context';
 import { useSync } from '@/sync/use-sync';
 import { getSessionPrefetch, subscribeSessionPrefetch } from '@/sync/session-prefetch-cache';
@@ -103,6 +112,9 @@ const EMPTY_MESSAGES: Array<{ info: Message; parts: Part[] }> = [];
 const EMPTY_PENDING_USER_MESSAGES: readonly PendingUserMessagePresentation[] = [];
 const IDLE_SESSION_STATUS = { type: 'idle' as const };
 const CHAT_FORCE_SCROLL_BOTTOM_EVENT = 'openchamber:chat-force-scroll-bottom';
+/** useEventListener attaches to window when target is null — pass a no-op getter instead. */
+const NO_EVENT_TARGET = () => undefined;
+const EMPTY_PREFETCH_SERVER_SNAPSHOT = () => undefined;
 const DEFAULT_RETRY_MESSAGE = 'Quota limit reached. Retrying automatically.';
 const MEBIBYTE = 1024 * 1024;
 const DEFAULT_SESSION_VIEW_ESTIMATED_BYTES = MEBIBYTE;
@@ -350,7 +362,7 @@ const ChatViewport = React.memo(({
         }
         return null;
     }, [activeTurnId, promptPreviewsByTurnId, turnIds]);
-    const focusScrollContainer = React.useCallback((event: React.MouseEvent<HTMLElement>) => {
+    const focusScrollContainer = useEvent((event: React.MouseEvent<HTMLElement>) => {
         if (event.defaultPrevented || shouldIgnoreChatNavigationTarget(event.target)) {
             return;
         }
@@ -360,7 +372,7 @@ const ChatViewport = React.memo(({
         }
 
         scrollRef.current?.focus({ preventScroll: true });
-    }, [scrollRef]);
+    });
 
     return (
         <div
@@ -596,7 +608,7 @@ const ChatContainerContent: React.FC<ChatContainerContentProps> = ({
 }) => {
     const hostFeatures = hostedFeatures ?? resolveChatContainerHostFeatures(undefined);
     const { t } = useI18n();
-    React.useLayoutEffect(() => {
+    useIsomorphicLayoutEffect(() => {
         markSessionSwitchContentCommitted();
     }, []);
     // Session UI state
@@ -614,9 +626,16 @@ const ChatContainerContent: React.FC<ChatContainerContentProps> = ({
     const sync = useSync();
     const syncDirectory = useSyncDirectory();
     const effectiveSessionDirectory = currentSessionDirectory ?? syncDirectory;
-    const ensureSessionRenderable = React.useCallback(
+    // Hosted surfaces (Assistant) never call setCurrentSession, so without this
+    // orphaned SSE part events fall back to the primary chat directory and the
+    // assistant store never receives user text parts. Layout-phase so routing is
+    // ready before paint/event delivery (same contract as timeline DOM sync).
+    useIsomorphicLayoutEffect(() => {
+        if (!active || !currentSessionId || !effectiveSessionDirectory) return;
+        setActiveSession(effectiveSessionDirectory, currentSessionId);
+    }, [active, currentSessionId, effectiveSessionDirectory]);
+    const ensureSessionRenderable = useEvent(
         (sessionId: string) => sync.ensureSessionRenderable(sessionId, { directory: effectiveSessionDirectory }),
-        [effectiveSessionDirectory, sync],
     );
 
     // UI store
@@ -627,21 +646,15 @@ const ChatContainerContent: React.FC<ChatContainerContentProps> = ({
     const isTimelineDialogOpen = useUIStore((s) => s.isTimelineDialogOpen);
     const setTimelineDialogOpen = useUIStore((s) => s.setTimelineDialogOpen);
 
-    // Streaming state
+    // Streaming state — ordinary selectors (never useCallback; store compares selected values).
     const streamingMessageId = useStreamingStore(
-        React.useCallback(
-            (s) => (active && currentSessionId ? s.streamingMessageIds.get(currentSessionId) ?? null : null),
-            [active, currentSessionId],
-        ),
+        (s) => (active && currentSessionId ? s.streamingMessageIds.get(currentSessionId) ?? null : null),
     );
     const activeStreamingPhase = useStreamingStore(
-        React.useCallback(
-            (s) => {
-                if (!streamingMessageId) return null;
-                return s.messageStreamStates.get(streamingMessageId)?.phase ?? null;
-            },
-            [streamingMessageId],
-        ),
+        (s) => {
+            if (!streamingMessageId) return null;
+            return s.messageStreamStates.get(streamingMessageId)?.phase ?? null;
+        },
     );
     const sessionMessageCount = useSessionMessageCount(currentSessionId ?? '', effectiveSessionDirectory);
     const sessionViewEstimatedBytes = estimateSessionViewBytes(sessionMessageCount);
@@ -652,10 +665,7 @@ const ChatContainerContent: React.FC<ChatContainerContentProps> = ({
         onSessionViewEstimateChange(sessionViewKey, sessionViewEstimatedBytes);
     }, [onSessionViewEstimateChange, sessionViewEstimatedBytes, sessionViewKey]);
     const hasRenderableSessionSnapshot = useDirectorySync(
-        React.useCallback(
-            (state) => (currentSessionId ? getSessionMaterializationStatus(state, currentSessionId).renderable : false),
-            [currentSessionId],
-        ),
+        (state) => (currentSessionId ? getSessionMaterializationStatus(state, currentSessionId).renderable : false),
         effectiveSessionDirectory,
     );
     const directorySessionEntity = useSession(currentSessionId, effectiveSessionDirectory);
@@ -722,18 +732,25 @@ const ChatContainerContent: React.FC<ChatContainerContentProps> = ({
         )),
         [sessionMessages],
     );
-    const sessionPrefetchInfo = React.useSyncExternalStore(
-        React.useCallback(
-            (notify) => currentSessionId
+    // useMemo callback factories for useSyncExternalStore (stable identity; never useCallback).
+    const subscribeSessionPrefetchInfo = React.useMemo(
+        () => (notify: () => void) => (
+            currentSessionId
                 ? subscribeSessionPrefetch(effectiveSessionDirectory, currentSessionId, notify)
-                : () => undefined,
-            [currentSessionId, effectiveSessionDirectory],
+                : () => undefined
         ),
-        React.useCallback(
-            () => currentSessionId ? getSessionPrefetch(effectiveSessionDirectory, currentSessionId) : undefined,
-            [currentSessionId, effectiveSessionDirectory],
+        [currentSessionId, effectiveSessionDirectory],
+    );
+    const getSessionPrefetchInfo = React.useMemo(
+        () => () => (
+            currentSessionId ? getSessionPrefetch(effectiveSessionDirectory, currentSessionId) : undefined
         ),
-        React.useCallback(() => undefined, []),
+        [currentSessionId, effectiveSessionDirectory],
+    );
+    const sessionPrefetchInfo = React.useSyncExternalStore(
+        subscribeSessionPrefetchInfo,
+        getSessionPrefetchInfo,
+        EMPTY_PREFETCH_SERVER_SNAPSHOT,
     );
     const loadMoreMessages = useEvent(async (sessionId: string) => {
         const syncComplete = sync.isComplete(sessionId);
@@ -916,10 +933,10 @@ const ChatContainerContent: React.FC<ChatContainerContentProps> = ({
     const hideReturnToParent =
         embeddedPanelAnchorSessionId !== null && currentSessionId === embeddedPanelAnchorSessionId;
 
-    const handleReturnToParentSession = React.useCallback(() => {
+    const handleReturnToParentSession = useEvent(() => {
         if (!parentSessionTarget) return;
         setCurrentSession(parentSessionTarget.id, parentSessionTarget.directory);
-    }, [parentSessionTarget, setCurrentSession]);
+    });
 
     const parentSessionTitle = parentSessionTarget?.session?.title;
     const returnToParentButton = hostFeatures.returnToParent && parentSessionTarget && !hideReturnToParent ? (
@@ -952,38 +969,47 @@ const ChatContainerContent: React.FC<ChatContainerContentProps> = ({
             modelName={sessionExecutionModelName}
         />
     ) : <ReadOnlyPromptBanner />;
-    React.useEffect(() => {
-        if (typeof window === 'undefined' || window.parent === window) {
+    const applyEmbeddedChatSettingsSync = useEvent((payload: { allowPromptingSubagentSessions: boolean }) => {
+        useUIStore.getState().setAllowPromptingSubagentSessions(payload.allowPromptingSubagentSessions);
+    });
+    const handleEmbeddedChatSettingsMessage = useEvent((event: MessageEvent) => {
+        if (typeof window === 'undefined' || event.source !== window.parent || event.origin !== window.location.origin) {
             return;
         }
-
-        const applySetting = (value: boolean) => {
-            useUIStore.getState().setAllowPromptingSubagentSessions(value);
-        };
+        const data = event.data as { type?: unknown; payload?: { allowPromptingSubagentSessions?: unknown } };
+        if (data?.type !== 'openchamber:chat-settings-sync'
+            || typeof data.payload?.allowPromptingSubagentSessions !== 'boolean') {
+            return;
+        }
+        applyEmbeddedChatSettingsSync({
+            allowPromptingSubagentSessions: data.payload.allowPromptingSubagentSessions,
+        });
+    });
+    // Embedded iframe only: parent posts settings, and the window bridge is for
+    // same-origin callers that cannot rely on postMessage ordering.
+    const isEmbeddedChatFrame = typeof window !== 'undefined' && window.parent !== window;
+    useEventListener(
+        'message',
+        handleEmbeddedChatSettingsMessage,
+        isEmbeddedChatFrame ? window : NO_EVENT_TARGET,
+    );
+    useMount(() => {
+        if (!isEmbeddedChatFrame) return;
         const scopedWindow = window as typeof window & {
             __openchamberApplyChatSettingsSync?: (payload: { allowPromptingSubagentSessions: boolean }) => void;
         };
-        const applySync = (payload: { allowPromptingSubagentSessions: boolean }) => {
-            applySetting(payload.allowPromptingSubagentSessions);
-        };
-        const handleMessage = (event: MessageEvent) => {
-            if (event.source !== window.parent || event.origin !== window.location.origin) return;
-            const data = event.data as { type?: unknown; payload?: { allowPromptingSubagentSessions?: unknown } };
-            if (data?.type !== 'openchamber:chat-settings-sync'
-                || typeof data.payload?.allowPromptingSubagentSessions !== 'boolean') return;
-            applySetting(data.payload.allowPromptingSubagentSessions);
-        };
-
-        scopedWindow.__openchamberApplyChatSettingsSync = applySync;
-        window.addEventListener('message', handleMessage);
+        scopedWindow.__openchamberApplyChatSettingsSync = applyEmbeddedChatSettingsSync;
         window.parent.postMessage({ type: 'openchamber:chat-settings-request' }, window.location.origin);
-        return () => {
-            window.removeEventListener('message', handleMessage);
-            if (scopedWindow.__openchamberApplyChatSettingsSync === applySync) {
-                delete scopedWindow.__openchamberApplyChatSettingsSync;
-            }
+    });
+    useUnmount(() => {
+        if (typeof window === 'undefined') return;
+        const scopedWindow = window as typeof window & {
+            __openchamberApplyChatSettingsSync?: (payload: { allowPromptingSubagentSessions: boolean }) => void;
         };
-    }, []);
+        if (scopedWindow.__openchamberApplyChatSettingsSync === applyEmbeddedChatSettingsSync) {
+            delete scopedWindow.__openchamberApplyChatSettingsSync;
+        }
+    });
 
     React.useEffect(() => {
         if (hostFeatures.newSessionDraft && autoOpenDraft && !currentSessionId && !draftOpen) {
@@ -992,15 +1018,15 @@ const ChatContainerContent: React.FC<ChatContainerContentProps> = ({
     }, [autoOpenDraft, currentSessionId, draftOpen, hostFeatures.newSessionDraft, openNewSessionDraft]);
 
     const activeTurnChangeRef = React.useRef<(turnId: string | null) => void>(() => {});
-    const handleActiveTurnChange = React.useCallback((turnId: string | null) => {
+    const handleActiveTurnChange = useEvent((turnId: string | null) => {
         activeTurnChangeRef.current(turnId);
-    }, []);
+    });
     // Bridge auto-follow upward intent → timeline handler without creating a
     // hook order cycle (auto-follow is created before the timeline controller).
     const historyUpwardIntentRef = React.useRef<() => void>(() => {});
-    const handleHistoryUpwardIntentBridge = React.useCallback(() => {
+    const handleHistoryUpwardIntentBridge = useEvent(() => {
         historyUpwardIntentRef.current();
-    }, []);
+    });
 
     const {
         scrollRef,
@@ -1065,11 +1091,11 @@ const ChatContainerContent: React.FC<ChatContainerContentProps> = ({
     }, [currentSessionId, currentSessionMessages, historyPrefix, pendingUserMessages]);
     const materializedPendingMessageIDs = React.useMemo(() => {
         if (pendingUserMessages.length === 0) return [];
-        // A row counts as materialized only once its parts are there too —
-        // handing over to a part-less record would paint an empty bubble.
+        // A row counts as materialized only once it can paint a user bubble —
+        // part-less or synthetic-only shells still render as null.
         const authoritativeIDs = new Set(
             [...historyPrefix, ...currentSessionMessages]
-                .filter((message) => message.parts.length > 0)
+                .filter((message) => hasUserDisplayableParts(message.parts))
                 .map((message) => message.info.id),
         );
         return pendingUserMessages.map((message) => message.info.id).filter((id) => authoritativeIDs.has(id));
@@ -1097,25 +1123,22 @@ const ChatContainerContent: React.FC<ChatContainerContentProps> = ({
         // expanded-input and mobile keep explicit load paths only.
         autoFillEnabled: active && !isDesktopExpandedInput,
     });
-    const resumeToLatestInstant = React.useCallback(() => {
+    const resumeToLatestInstant = useEvent(() => {
         goToBottom('instant');
-    }, [goToBottom]);
+    });
     // Mobile loads older history via an explicit top button instead of a
     // scroll-position trigger (see handleHistoryScroll in the controller).
     const showLoadOlderButton = isMobileSurfaceRuntime()
         && timelineController.historySignals.canLoadEarlier;
     const timelineLoadEarlier = timelineController.loadEarlier;
-    const handleLoadOlderClick = React.useCallback(() => {
+    const handleLoadOlderClick = useEvent(() => {
         void timelineLoadEarlier({ userInitiated: true });
-    }, [timelineLoadEarlier]);
+    });
 
-    React.useEffect(() => {
-        activeTurnChangeRef.current = timelineController.handleActiveTurnChange;
-    }, [timelineController.handleActiveTurnChange]);
-
-    React.useEffect(() => {
-        historyUpwardIntentRef.current = timelineController.handleHistoryUpwardIntent;
-    }, [timelineController.handleHistoryUpwardIntent]);
+    // Render-phase ref bridge: timeline is created after auto-follow, so handlers
+    // publish into stable useEvent entry points without effect rebinding.
+    activeTurnChangeRef.current = timelineController.handleActiveTurnChange;
+    historyUpwardIntentRef.current = timelineController.handleHistoryUpwardIntent;
 
     React.useEffect(() => {
         if (sessionPermissions.length === 0 && sessionQuestions.length === 0) {
@@ -1132,9 +1155,9 @@ const ChatContainerContent: React.FC<ChatContainerContentProps> = ({
         scrollToMessage: timelineController.scrollToMessage,
         resumeToBottom: timelineController.resumeToBottomInstant,
     });
-    const handlePromptNavigatorSelect = React.useCallback((turnId: string) => {
+    const handlePromptNavigatorSelect = useEvent((turnId: string) => {
         void navigation.scrollToTurnId(turnId, { behavior: 'smooth' });
-    }, [navigation]);
+    });
     const canLoadEarlierPrompts = timelineController.historySignals.canLoadEarlier;
     const showPromptNavigator = hostFeatures.promptNavigator
         && !isMobile
@@ -1149,100 +1172,93 @@ const ChatContainerContent: React.FC<ChatContainerContentProps> = ({
         }
     }, [showPromptNavigator]);
 
-    React.useEffect(() => {
-        if (typeof window === 'undefined' || !active || !currentSessionId) return;
+    const handleForceScrollBottom = useEvent((event: Event) => {
+        if (!active || !currentSessionId) return;
+        const customEvent = event as CustomEvent<{ sessionId?: string }>;
+        if (customEvent.detail?.sessionId && customEvent.detail.sessionId !== currentSessionId) return;
+        goToBottom('instant');
+    });
+    useEventListener(
+        CHAT_FORCE_SCROLL_BOTTOM_EVENT,
+        handleForceScrollBottom,
+        active && currentSessionId && typeof window !== 'undefined' ? window : NO_EVENT_TARGET,
+    );
 
-        const handleForceScrollBottom = (event: Event) => {
-            const customEvent = event as CustomEvent<{ sessionId?: string }>;
-            if (customEvent.detail?.sessionId && customEvent.detail.sessionId !== currentSessionId) return;
-            goToBottom('instant');
-        };
-
-        window.addEventListener(CHAT_FORCE_SCROLL_BOTTOM_EVENT, handleForceScrollBottom as EventListener);
-        return () => {
-            window.removeEventListener(CHAT_FORCE_SCROLL_BOTTOM_EVENT, handleForceScrollBottom as EventListener);
-        };
-    }, [active, currentSessionId, goToBottom]);
-
-    React.useEffect(() => {
-        if (typeof window === 'undefined' || !active || !currentSessionId || isDesktopExpandedInput) {
+    const handleChatTurnKeyDown = useEvent((event: KeyboardEvent) => {
+        if (!active || !currentSessionId || isDesktopExpandedInput) return;
+        if (event.defaultPrevented || event.isComposing) {
             return;
         }
 
-        const handleChatTurnKeyDown = (event: KeyboardEvent) => {
-            if (event.defaultPrevented || event.isComposing) {
-                return;
-            }
-
-            if (event.key !== 'ArrowUp' && event.key !== 'ArrowDown') {
-                return;
-            }
-
-            if (event.altKey || event.ctrlKey || event.metaKey || event.shiftKey) {
-                return;
-            }
-
-            const { activeMainTab } = useUIStore.getState();
-            if (activeMainTab !== 'chat' || hasBlockingChatOverlay()) {
-                return;
-            }
-
-            const scrollContainer = scrollRef.current;
-            if (shouldIgnoreChatNavigationForFocus(document.activeElement, scrollContainer)) {
-                return;
-            }
-
-            if (shouldIgnoreChatNavigationTarget(event.target)) {
-                return;
-            }
-
-            event.preventDefault();
-            const offset = event.key === 'ArrowUp' ? -1 : 1;
-            void navigation.scrollByTurnOffset(offset, { resumePastEnd: false });
-        };
-
-        window.addEventListener('keydown', handleChatTurnKeyDown);
-        return () => {
-            window.removeEventListener('keydown', handleChatTurnKeyDown);
-        };
-    }, [active, currentSessionId, isDesktopExpandedInput, navigation, scrollRef]);
-
-    React.useLayoutEffect(() => {
-        if (!active) return;
-        const container = scrollRef.current;
-        if (!container) return;
-
-        const updateChatScrollHeight = () => {
-            container.style.setProperty('--chat-scroll-height', `${container.clientHeight}px`);
-        };
-
-        updateChatScrollHeight();
-
-        let rafId = 0;
-        const scheduleUpdate = () => {
-            if (rafId) return;
-            rafId = requestAnimationFrame(() => {
-                rafId = 0;
-                updateChatScrollHeight();
-            });
-        };
-
-        if (typeof ResizeObserver === 'undefined') {
-            window.addEventListener('resize', scheduleUpdate);
-            return () => {
-                if (rafId) cancelAnimationFrame(rafId);
-                window.removeEventListener('resize', scheduleUpdate);
-            };
+        if (event.key !== 'ArrowUp' && event.key !== 'ArrowDown') {
+            return;
         }
 
-        const resizeObserver = new ResizeObserver(scheduleUpdate);
-        resizeObserver.observe(container);
+        if (event.altKey || event.ctrlKey || event.metaKey || event.shiftKey) {
+            return;
+        }
 
-        return () => {
-            if (rafId) cancelAnimationFrame(rafId);
-            resizeObserver.disconnect();
-        };
-    }, [active, currentSessionId, isDesktopExpandedInput, scrollRef]);
+        const { activeMainTab } = useUIStore.getState();
+        if (activeMainTab !== 'chat' || hasBlockingChatOverlay()) {
+            return;
+        }
+
+        const scrollContainer = scrollRef.current;
+        if (shouldIgnoreChatNavigationForFocus(document.activeElement, scrollContainer)) {
+            return;
+        }
+
+        if (shouldIgnoreChatNavigationTarget(event.target)) {
+            return;
+        }
+
+        event.preventDefault();
+        const offset = event.key === 'ArrowUp' ? -1 : 1;
+        void navigation.scrollByTurnOffset(offset, { resumePastEnd: false });
+    });
+    useEventListener(
+        'keydown',
+        handleChatTurnKeyDown,
+        active && currentSessionId && !isDesktopExpandedInput && typeof window !== 'undefined'
+            ? window
+            : NO_EVENT_TARGET,
+    );
+
+    // --chat-scroll-height tracks the scroller viewport for sticky headers.
+    // useResizeObserver owns observe/disconnect; useEvent handlers stay latest.
+    const chatScrollHeightRafRef = React.useRef(0);
+    const updateChatScrollHeight = useEvent(() => {
+        const container = scrollRef.current;
+        if (!container) return;
+        container.style.setProperty('--chat-scroll-height', `${container.clientHeight}px`);
+    });
+    const scheduleChatScrollHeightUpdate = useEvent(() => {
+        if (chatScrollHeightRafRef.current) return;
+        chatScrollHeightRafRef.current = requestAnimationFrame(() => {
+            chatScrollHeightRafRef.current = 0;
+            updateChatScrollHeight();
+        });
+    });
+    useIsomorphicLayoutEffect(() => {
+        if (!active) return;
+        updateChatScrollHeight();
+    }, [active, currentSessionId, isDesktopExpandedInput, updateChatScrollHeight]);
+    const canObserveChatScrollResize = typeof ResizeObserver !== 'undefined';
+    useResizeObserver(
+        active && canObserveChatScrollResize ? scrollRef : null,
+        scheduleChatScrollHeightUpdate,
+    );
+    useEventListener(
+        'resize',
+        scheduleChatScrollHeightUpdate,
+        active && !canObserveChatScrollResize && typeof window !== 'undefined' ? window : NO_EVENT_TARGET,
+    );
+    useUnmount(() => {
+        if (chatScrollHeightRafRef.current) {
+            cancelAnimationFrame(chatScrollHeightRafRef.current);
+            chatScrollHeightRafRef.current = 0;
+        }
+    });
 
     const lastScrolledSessionRef = React.useRef<string | null>(null);
     // Tracks message count at the last pin so a cold open that pinned while the
@@ -1820,7 +1836,7 @@ const RuntimeScopedChatContainer: React.FC<ChatContainerProps & { runtimeKey: st
     const activeSessionViewKey = resolveActiveSessionViewKey(renderedSessionViews, selectionKey);
     const isMaterializingSessionView = Boolean(selectionKey && !activeSessionViewKey);
 
-    React.useLayoutEffect(() => {
+    useIsomorphicLayoutEffect(() => {
         committedSelectionIntentRef.current = selectionIntent;
         committedSelectionKeyRef.current = selectionKey;
         setSessionViewRenderState((current) => applySessionViewSelectionIntent(
@@ -1831,7 +1847,7 @@ const RuntimeScopedChatContainer: React.FC<ChatContainerProps & { runtimeKey: st
     }, [cacheLimits, cacheNeedsTrim, selectionIntent, selectionKey]);
 
     const pendingSessionViewIntent = pendingSessionView?.intent ?? null;
-    React.useLayoutEffect(() => {
+    useIsomorphicLayoutEffect(() => {
         if (!pendingSessionViewIntent) {
             return;
         }
@@ -1869,7 +1885,7 @@ const RuntimeScopedChatContainer: React.FC<ChatContainerProps & { runtimeKey: st
         }, { priority: 'user-blocking' });
     }, [activeSessionViewKey, cacheLimits, selectionIntent, selectionKey]);
 
-    const handleSessionViewEstimateChange = React.useCallback((key: string, estimatedBytes: number) => {
+    const handleSessionViewEstimateChange = useEvent((key: string, estimatedBytes: number) => {
         const scheduledIntent = committedSelectionIntentRef.current;
         const scheduledSelectionKey = committedSelectionKeyRef.current;
         setSessionViewRenderState((current) => {
@@ -1890,7 +1906,7 @@ const RuntimeScopedChatContainer: React.FC<ChatContainerProps & { runtimeKey: st
                 ? current
                 : { ...current, cacheNeedsTrim: true, cachedSessionViews: cachedViews };
         });
-    }, []);
+    });
 
     return (
         <div className="h-full bg-background" aria-busy={isMaterializingSessionView || undefined}>

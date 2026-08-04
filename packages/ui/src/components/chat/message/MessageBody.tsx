@@ -1827,10 +1827,11 @@ const AssistantMessageBody = React.memo(({
                     const visibleSegmentParts = showReasoningTraces
                         ? segment.parts
                         : segment.parts.filter((activity) => activity.kind !== 'reasoning');
-                    if (visibleSegmentParts.length === 0
-                        && turnGroupingContext.activityPresentationKind !== 'compaction') {
-                        return;
-                    }
+                    // Always keep the Activity chrome once a segment exists.
+                    // Dropping the header when filtered parts are briefly empty
+                    // (reasoning-only mid-reconcile, lagging tool materialize)
+                    // unmounts the whole disclosure and makes tool rows flash
+                    // away — including the live last turn vanishing for a beat.
                     pushActivityHeader(segment.id, visibleSegmentParts);
                 });
             } else if (isCompactionTurn) {

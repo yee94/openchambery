@@ -1,4 +1,5 @@
 import type { Message, Part } from '@opencode-ai/sdk/v2';
+import { hasUserDisplayableParts } from '@/components/chat/message/normalizeUserDisplayParts';
 import type { ChatMessageEntry } from '@/components/chat/lib/turns/types';
 import type { AssistantHistoryEntry, AssistantHistoryPage } from '@/queries/assistantQueries';
 
@@ -65,18 +66,89 @@ export const stitchHostedSessionHistory = (
 };
 
 /**
- * Prefer live directory-sync identity, but never let a part-less live row wipe
- * Assistant SQLite provisional parts. Stateless admits land in SQLite before
- * OpenCode SSE parts arrive; `ChatMessage` renders user rows with empty parts
- * as `null`, so an overwrite here eats the bubble until a full refresh.
+ * Prefer live directory-sync identity, but never let a hollow or lagging live
+ * row wipe Assistant SQLite provisional / admission parts.
+ *
+ * Hollow live means: no parts, or only non-displayable synthetics such as
+ * `<system-reminder>` (parts.length > 0 but ChatMessage still renders null).
+ * Stateless admits land in SQLite before OpenCode SSE text arrives; overwriting
+ * with a hollow live shell eats the bubble until a full refresh.
+ *
+ * For assistant rows, live may already have reasoning/text while a lagging
+ * snapshot still omits tools that history (or a previous live) already holds.
+ * Taking live wholesale then blanks Activity tool rows — union by part id,
+ * preferring live for the same id.
  */
+const mergePartsByIdPreferLive = (
+  liveParts: readonly Part[],
+  existingParts: readonly Part[],
+): Part[] => {
+  if (existingParts.length === 0) return liveParts as Part[];
+  if (liveParts.length === 0) return existingParts as Part[];
+  const byID = new Map<string, Part>();
+  for (const part of existingParts) {
+    if (part?.id) byID.set(part.id, part);
+  }
+  for (const part of liveParts) {
+    if (part?.id) byID.set(part.id, part);
+  }
+  // Stable order: existing order first, then live-only appendages by live order.
+  const seen = new Set<string>();
+  const merged: Part[] = [];
+  for (const part of existingParts) {
+    if (!part?.id || seen.has(part.id)) continue;
+    const next = byID.get(part.id);
+    if (next) {
+      merged.push(next);
+      seen.add(part.id);
+    }
+  }
+  for (const part of liveParts) {
+    if (!part?.id || seen.has(part.id)) continue;
+    merged.push(part);
+    seen.add(part.id);
+  }
+  if (
+    merged.length === liveParts.length
+    && merged.every((part, index) => part === liveParts[index])
+  ) {
+    return liveParts as Part[];
+  }
+  return merged;
+};
+
 const mergeLiveOverHistoryEntry = (
   live: ChatMessageEntry,
   existing: ChatMessageEntry | undefined,
 ): ChatMessageEntry => {
   if (!existing) return live;
+
+  const liveRole = (live.info as { role?: string }).role;
+  if (liveRole === 'assistant' && existing.parts.length > 0) {
+    const parts = mergePartsByIdPreferLive(live.parts, existing.parts);
+    if (parts === live.parts && live.info === existing.info) return live;
+    if (parts === existing.parts && live.info === existing.info && live.parts === existing.parts) {
+      return existing;
+    }
+    return {
+      ...live,
+      parts,
+      ...(existing.sourceParts && !live.sourceParts ? { sourceParts: existing.sourceParts } : {}),
+    };
+  }
+
+  if (hasUserDisplayableParts(live.parts)) return live;
+  if (hasUserDisplayableParts(existing.parts)) {
+    if (live.info === existing.info && live.parts === existing.parts) return existing;
+    return {
+      ...live,
+      parts: existing.parts,
+      ...(existing.sourceParts && !live.sourceParts ? { sourceParts: existing.sourceParts } : {}),
+    };
+  }
+  // Neither side is displayable — keep previous empty-part policy (live wins if
+  // it has any raw parts; otherwise preserve history shell).
   if (live.parts.length > 0 || existing.parts.length === 0) return live;
-  // Live info can be newer (status / timestamps) while parts still lag SSE.
   if (live.info === existing.info && live.parts === existing.parts) return existing;
   return {
     ...live,
@@ -87,9 +159,9 @@ const mergeLiveOverHistoryEntry = (
 
 /**
  * Assistant SQLite includes the current binding as a durable fallback. Live
- * directory sync wins per message ID once it carries parts; part-less live rows
- * keep SQLite parts so admitted user bubbles stay visible. A not-yet-materialized
- * admitted user row also remains visible via pending presentations.
+ * directory sync wins per message ID once it carries displayable parts;
+ * hollow live rows keep SQLite parts so admitted user bubbles stay visible.
+ * A not-yet-materialized admitted user row also remains visible via pending.
  */
 export const mergeHostedCurrentSessionHistory = (
   entries: readonly AssistantHistoryEntry[],
