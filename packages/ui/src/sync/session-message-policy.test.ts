@@ -8,13 +8,13 @@ import {
 } from "./session-message-policy"
 
 describe("product limit is turns — link tiered", () => {
-  test("local / LAN: higher initial and history turn windows", () => {
+  test("local / LAN: larger first paint; loadMore is 2 turns", () => {
     expect(getInitialSessionTurnLimit("local")).toBe(6)
-    expect(getHistorySessionTurnLimit("local")).toBe(6)
+    expect(getHistorySessionTurnLimit("local")).toBe(2)
     expect(resolveSessionMessageTurnLimit("initial", "local")).toBe(6)
     expect(resolveSessionMessageTurnLimit("materialize", "local")).toBe(6)
     expect(resolveSessionMessageTurnLimit("recovery", "local")).toBe(6)
-    expect(resolveSessionMessageTurnLimit("prepend", "local")).toBe(6)
+    expect(resolveSessionMessageTurnLimit("prepend", "local")).toBe(2)
   })
 
   test("relay: fixed 2 turns for first paint and prepend", () => {
@@ -24,9 +24,9 @@ describe("product limit is turns — link tiered", () => {
     expect(resolveSessionMessageTurnLimit("prepend", "relay")).toBe(2)
   })
 
-  test("local budgets are strictly higher than relay", () => {
+  test("local first paint is higher than relay; loadMore matches relay", () => {
     expect(getInitialSessionTurnLimit("local")).toBeGreaterThan(getInitialSessionTurnLimit("relay"))
-    expect(getHistorySessionTurnLimit("local")).toBeGreaterThan(getHistorySessionTurnLimit("relay"))
+    expect(getHistorySessionTurnLimit("local")).toBe(getHistorySessionTurnLimit("relay"))
   })
 })
 

@@ -468,7 +468,7 @@ Rules that keep this single-sourced:
   reuse a promise that only commits into a detached store.
 - Product **`limit` means authored-user turns**, never message count. Budgets are
   **link-tiered** via `isRelayModeActive()`: **local/LAN** first paint **6** turns
-  and prepend **6** turns; **Relay** first paint and prepend **2** turns. Meta and
+  and prepend/loadMore **2** turns; **Relay** first paint and prepend **2** turns. Meta and
   prefetch `limit` accumulate turn budgets across pages. Host→OpenCode message
   scan chunk is **server-owned** (`_inner_scanLimit` /
   env `OPENCHAMBER_SESSION_TURN_SCAN_LIMIT`, default 100); the shared client
@@ -484,8 +484,8 @@ Rules that keep this single-sourced:
   local to the owning directory-store lifecycle, so a remounted provider still
   commits a shared transport response into its own store.
 - Older history is user-driven pagination (`loadMore`) only. Prepend uses one
-  Host turn-page request (`turns=3` desktop / `turns=2` mobile, surface
-  surface turn limit) via `fetchHostSessionTurnPageForPurpose` when
+  Host turn-page request (`turns=2` local/LAN and Relay) via
+  `fetchHostSessionTurnPageForPurpose` when
   `purpose === "prepend"` and `before` is set. Bare `before` without purpose
   prepend stays on the official SDK path. The client asserts a strict page
   contract: each record is an object with non-empty `info.id` and optional

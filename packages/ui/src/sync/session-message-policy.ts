@@ -2,7 +2,7 @@
  * Session history window policy — **limit means authored-user turns**.
  *
  * Link tier (product turn budgets):
- * - **local** — 本机 / 局域网 direct 连接，网络好，turn 窗口更大
+ * - **local** — 本机 / 局域网 direct：首屏更大，loadMore 与 Relay 同为 **2 轮**
  * - **relay** — 经 private Relay 隧道，首屏与 prepend 固定 **2 轮**
  *
  * Surface (only used for optional legacy helpers; product turns are link-tiered):
@@ -28,8 +28,8 @@ export type SessionMessageLinkTier = "local" | "relay"
 const INITIAL_TURN_LIMIT_LOCAL = 6
 /** First paint turns over Relay. */
 const INITIAL_TURN_LIMIT_RELAY = 2
-/** History prepend turns on 本机 / 局域网. */
-const HISTORY_TURN_LIMIT_LOCAL = 6
+/** History prepend / loadMore turns on 本机 / 局域网 (same page size as Relay). */
+const HISTORY_TURN_LIMIT_LOCAL = 2
 /** History prepend turns over Relay. */
 const HISTORY_TURN_LIMIT_RELAY = 2
 
@@ -71,7 +71,7 @@ export function getInitialSessionTurnBudget(
 
 /**
  * Product `limit` for prepend / loadMore: authored-user turns for one Host page.
- * Local/LAN higher; Relay fixed at 2.
+ * Local/LAN and Relay both use 2 turns per page.
  */
 export function getHistorySessionTurnLimit(
   link: SessionMessageLinkTier = resolveSessionMessageLinkTier(),

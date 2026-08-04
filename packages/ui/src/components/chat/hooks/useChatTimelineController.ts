@@ -270,20 +270,23 @@ export const chatTimelineAutoFillQueryKey = (input: {
     input.canLoadEarlier,
 ] as const;
 
-/** Multi-frame anchor hold only when virtualized geometry actually grew. */
-export const shouldHoldHistoryViewportAnchor = (input: {
+/**
+ * Multi-frame viewport hold after history restore.
+ *
+ * Always false: virtualized history leaves scroll to TanStack end-anchor
+ * (`anchorTo: 'end'` + measure/resize compensation). A post-commit hold that
+ * also writes `scrollTop` while `resizeItem` → `applyScrollAdjustment` runs
+ * was a second writer and produced large load-more jumps (trace CLS ~0.5+ /
+ * multi-thousand-px swaps with no user input). Non-virtual lists never needed
+ * the hold (one-shot heightDelta / anchor restore is enough).
+ */
+export const shouldHoldHistoryViewportAnchor = (_input: {
     historyVirtualized: boolean;
     anchorRestored: boolean;
     heightDelta: number;
     messages: readonly unknown[];
     heldForMessages: readonly unknown[] | null;
-}): boolean => {
-    if (!input.historyVirtualized) return false;
-    if (!input.anchorRestored) return false;
-    if (input.heightDelta <= 1) return false;
-    if (input.heldForMessages === input.messages) return false;
-    return true;
-};
+}): boolean => false;
 
 // iOS WKWebView ignores programmatic scrollTop writes while a touch drag or
 // momentum (fling) scroll is active: the native scroll animation keeps running
@@ -587,10 +590,6 @@ export const useChatTimelineController = ({
     // every commit React makes in between — before the browser paints.
     // (DOM geometry sync is intentionally layout-phase, not Query/useEffect.)
     const prePrependScrollRef = React.useRef<PrePrependSnapshot | null>(null);
-    // The snapshot whose anchor already has a post-commit hold running, so a
-    // settling virtualized list gets one hold per page instead of one per
-    // render.
-    const heldAnchorMessagesRef = React.useRef<ChatMessageEntry[] | null>(null);
 
     const captureViewportAnchor = useEvent((): ViewportAnchor | null => {
         return messageListRef.current?.captureViewportAnchor() ?? null;
@@ -615,7 +614,6 @@ export const useChatTimelineController = ({
     useIsomorphicLayoutEffect(() => {
         prePrependScrollRef.current = null;
         prependTrackingRef.current = null;
-        heldAnchorMessagesRef.current = null;
         messageListRef.current?.cancelViewportAnchorHold();
     }, [sessionId]);
 
@@ -686,27 +684,27 @@ export const useChatTimelineController = ({
         }
 
         const historyVirtualized = messageListRef.current?.isHistoryVirtualized() ?? false;
+        const prependCompensation = resolveHistoryPrependCompensation(historyVirtualized);
 
-        // A history load owns the read position for its whole duration, so the
-        // armed snapshot is re-asserted on EVERY commit it produces: the
-        // loading row, the page itself, and any virtualizer remeasure after it.
-        // Restoration is absolute — it measures where the anchor message sits
-        // now and corrects the residual — so repeating it cannot
-        // double-compensate, and it stays exact even when the virtualizer
-        // already moved the offset itself.
-        //
-        // Edge-id heuristics are blind to most of these commits. A multi-step
-        // assistant turn spans pages, so an older page routinely carries only
-        // more rows for the turn that is already on screen: they land BELOW the
-        // current first message and leave both timeline edges untouched. That
-        // is content added above the viewport all the same, and TanStack cannot
-        // see it either (neither the item count nor the first/last item key
-        // changes, so its key anchoring never runs).
+        // Armed snapshot from loadEarlier / auto-fill. Virtualized lists must
+        // not re-assert scroll here: TanStack `anchorTo: 'end'` already
+        // preserves the keyed viewport on prepend and compensates first
+        // measure / remeasure. A second writer (heightDelta, restoreViewportAnchor,
+        // multi-frame hold) raced applyScrollAdjustment and pulled the user
+        // off their read position after load-more.
         if (snap) {
+            if (prependCompensation.owner === 'tanstack-core') {
+                // Drop any hold that an older code path may have left running.
+                messageListRef.current?.cancelViewportAnchorHold();
+                updateTracking();
+                return;
+            }
+
             const heightDelta = container.scrollHeight - snap.height;
 
             // iOS overwrites plain scrollTop writes while a fling runs, so
             // mobile keeps the momentum-defeating writer and its height delta.
+            // Non-virtual only (virtual branch returned above).
             if (isMobileSurfaceRuntime()) {
                 if (heightDelta > 0) {
                     setScrollTopDefeatingMomentum(container, snap.top + heightDelta);
@@ -715,29 +713,13 @@ export const useChatTimelineController = ({
                 return;
             }
 
+            // Non-virtual desktop: one-shot absolute restore (or height delta
+            // when the anchor node is not mounted yet). No multi-frame hold —
+            // see shouldHoldHistoryViewportAnchor.
             const anchor = snap.anchor;
             const restoredAnchor = Boolean(anchor && restoreViewportAnchor(anchor));
-            if (!restoredAnchor) {
-                if (heightDelta > 0) {
-                    container.scrollTop = snap.top + heightDelta;
-                }
-            } else if (
-                anchor
-                && shouldHoldHistoryViewportAnchor({
-                    historyVirtualized,
-                    anchorRestored: restoredAnchor,
-                    heightDelta,
-                    messages: renderedMessages,
-                    heldForMessages: heldAnchorMessagesRef.current,
-                })
-            ) {
-                // Virtualized rows measure in over the frames that follow the
-                // commit, each one moving geometry above the viewport. Hold the
-                // anchor until that settles; the hold releases itself on the
-                // user's next gesture. Collapsed pages that restore without
-                // real height growth skip the hold.
-                heldAnchorMessagesRef.current = renderedMessages;
-                messageListRef.current?.holdViewportAnchor(anchor);
+            if (!restoredAnchor && heightDelta > 0) {
+                container.scrollTop = snap.top + heightDelta;
             }
             updateTracking();
             return;
@@ -747,7 +729,7 @@ export const useChatTimelineController = ({
         // than from loadEarlier) arrive without a snapshot. TanStack core owns
         // those when virtualized: stable keys preserve the visible item and
         // core batches iOS momentum writes with later measurements.
-        if (isPrepend && prev && resolveHistoryPrependCompensation(historyVirtualized).owner === 'controller') {
+        if (isPrepend && prev && prependCompensation.owner === 'controller') {
             // Released viewport: preserve the read position by compensating for the
             // exact height the non-virtualized prepend added above, with no
             // intermediate frame for auto-follow to fight.

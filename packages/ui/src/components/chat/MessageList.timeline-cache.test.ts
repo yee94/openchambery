@@ -54,22 +54,49 @@ const {
     resolveTanstackEstimateMinSamples,
     resolveTimelineVirtualizerCacheKey,
     resolveToggledActivityExpanded,
-    shouldAdjustHistoryScrollForSizeChange,
+    resolveTurnActivityPresentation,
     shouldShowCompactionStatus,
     syncCurrentHistoryVirtualization,
 } = await import('./MessageList');
 
 describe('turn activity expansion state', () => {
-    test('collapsed mode defaults every completion disposition to collapsed', () => {
-        for (const disposition of ['normal', 'abnormal', 'active'] as const) {
-            expect(resolveDefaultActivityExpanded(disposition, 'collapsed')).toBe(false);
-        }
+    test('live active always defaults expanded regardless of activity render mode', () => {
+        expect(resolveDefaultActivityExpanded('active', 'collapsed')).toBe(true);
+        expect(resolveDefaultActivityExpanded('active', 'summary')).toBe(true);
     });
 
-    test('summary mode defaults every completion disposition to expanded', () => {
-        for (const disposition of ['normal', 'abnormal', 'active'] as const) {
+    test('collapsed mode defaults settled dispositions to collapsed', () => {
+        for (const disposition of ['normal', 'abnormal'] as const) {
+            expect(resolveDefaultActivityExpanded(disposition, 'collapsed')).toBe(false);
+        }
+        expect(resolveDefaultActivityExpanded(undefined, 'collapsed')).toBe(false);
+    });
+
+    test('summary mode defaults settled dispositions to expanded', () => {
+        for (const disposition of ['normal', 'abnormal'] as const) {
             expect(resolveDefaultActivityExpanded(disposition, 'summary')).toBe(true);
         }
+        expect(resolveDefaultActivityExpanded(undefined, 'summary')).toBe(true);
+    });
+
+    test('settled presentation of idle/historical actives follows the render mode', () => {
+        // Presentation settles non-live actives to abnormal before default resolution.
+        const settled = resolveTurnActivityPresentation({
+            completionDisposition: 'active',
+            isLastTurn: false,
+            sessionIsWorking: false,
+        });
+        expect(settled.completionDisposition).toBe('abnormal');
+        expect(resolveDefaultActivityExpanded(settled.completionDisposition, 'collapsed')).toBe(false);
+        expect(resolveDefaultActivityExpanded(settled.completionDisposition, 'summary')).toBe(true);
+
+        const live = resolveTurnActivityPresentation({
+            completionDisposition: 'active',
+            isLastTurn: true,
+            sessionIsWorking: true,
+        });
+        expect(live.completionDisposition).toBe('active');
+        expect(resolveDefaultActivityExpanded(live.completionDisposition, 'collapsed')).toBe(true);
     });
 
     test('a toggle flips the current expansion state in both directions', () => {
@@ -135,6 +162,62 @@ describe('shouldShowCompactionStatus', () => {
             completionDisposition: 'normal',
             hasVisibleActivitySegments: true,
         })).toBe(false);
+    });
+});
+
+describe('resolveTurnActivityPresentation', () => {
+    test('keeps live active only for the last turn while the session is working', () => {
+        expect(resolveTurnActivityPresentation({
+            completionDisposition: 'active',
+            isLastTurn: true,
+            sessionIsWorking: true,
+            durationMs: undefined,
+        })).toEqual({
+            completionDisposition: 'active',
+            durationMs: undefined,
+        });
+    });
+
+    test('settles orphaned active turns when the session is idle or the turn is historical', () => {
+        expect(resolveTurnActivityPresentation({
+            completionDisposition: 'active',
+            isLastTurn: true,
+            sessionIsWorking: false,
+            durationMs: 12_000,
+        })).toEqual({
+            completionDisposition: 'abnormal',
+            durationMs: 12_000,
+        });
+        expect(resolveTurnActivityPresentation({
+            completionDisposition: 'active',
+            isLastTurn: false,
+            sessionIsWorking: true,
+            durationMs: 5_000,
+        })).toEqual({
+            completionDisposition: 'abnormal',
+            durationMs: 5_000,
+        });
+    });
+
+    test('preserves normal and abnormal dispositions and duration', () => {
+        expect(resolveTurnActivityPresentation({
+            completionDisposition: 'normal',
+            isLastTurn: true,
+            sessionIsWorking: false,
+            durationMs: 4_000,
+        })).toEqual({
+            completionDisposition: 'normal',
+            durationMs: 4_000,
+        });
+        expect(resolveTurnActivityPresentation({
+            completionDisposition: 'abnormal',
+            isLastTurn: true,
+            sessionIsWorking: true,
+            durationMs: 8_000,
+        })).toEqual({
+            completionDisposition: 'abnormal',
+            durationMs: 8_000,
+        });
     });
 });
 
@@ -260,56 +343,3 @@ describe('MessageList history virtualization handle state', () => {
     });
 });
 
-describe('history row size-change scroll adjustment', () => {
-    const base = {
-        atEnd: false,
-        firstMeasurement: false,
-        itemStart: 600,
-        itemEnd: 1_200,
-        scrollOffset: 1_000,
-        scrollDirection: 'forward' as const,
-    };
-
-    const cases: Array<{
-        name: string;
-        input: Parameters<typeof shouldAdjustHistoryScrollForSizeChange>[0];
-        expected: boolean;
-    }> = [
-        {
-            name: 'adjusts the full delta when a first measurement crosses the fold',
-            input: { ...base, firstMeasurement: true },
-            expected: true,
-        },
-        {
-            name: 'lets a crossing row grow downward on remeasure',
-            input: base,
-            expected: false,
-        },
-        {
-            name: 'adjusts a remeasured row fully above the viewport',
-            input: { ...base, itemEnd: 900 },
-            expected: true,
-        },
-        {
-            name: 'adjusts a first measurement crossing the fold under backward scrolling',
-            input: { ...base, firstMeasurement: true, scrollDirection: 'backward' as const },
-            expected: true,
-        },
-        {
-            name: 'leaves a remeasured row fully above the viewport under backward scrolling',
-            input: { ...base, itemEnd: 900, scrollDirection: 'backward' as const },
-            expected: false,
-        },
-        {
-            name: 'leaves bottom pinning to auto-follow',
-            input: { ...base, firstMeasurement: true, atEnd: true },
-            expected: false,
-        },
-    ];
-
-    for (const { name, input, expected } of cases) {
-        test(name, () => {
-            expect(shouldAdjustHistoryScrollForSizeChange(input)).toBe(expected);
-        });
-    }
-});

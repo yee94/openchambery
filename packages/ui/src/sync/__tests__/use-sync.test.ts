@@ -31,11 +31,11 @@ describe("getReactiveSessionMessageRequestLimit", () => {
     })).toBe(8)
   })
 
-  test("prepend uses history turn limit (local 6 when not on relay)", () => {
+  test("prepend uses history turn limit (local 2 when not on relay)", () => {
     expect(getReactiveSessionMessageRequestLimit({
       before: "cursor",
       recordedLimit: 0,
-    })).toBe(6)
+    })).toBe(2)
   })
 })
 

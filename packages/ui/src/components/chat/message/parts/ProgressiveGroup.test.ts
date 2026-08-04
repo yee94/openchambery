@@ -75,6 +75,9 @@ describe('progressive activity presentation', () => {
 
     test('uses turn-owned expansion and duration for the turn activity', () => {
         expect(messageListSource).toContain('durationMs: turn.durationMs');
+        expect(messageListSource).toContain('resolveTurnActivityPresentation({');
+        expect(messageListSource).toContain('completionDisposition: activityPresentation.completionDisposition');
+        expect(messageListSource).toContain('durationMs: activityPresentation.durationMs');
         expect(messageListSource).toContain('isGroupExpanded: activityExpanded,');
         expect(messageListSource).not.toContain('(isLastTurn && sessionIsWorking) || isGroupExpanded');
         expect(messageBodySource).toContain('durationMs={turnGroupingContext.durationMs}');

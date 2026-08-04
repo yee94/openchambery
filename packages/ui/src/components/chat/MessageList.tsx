@@ -62,11 +62,15 @@ const sameKeys = (a: readonly string[] | undefined, b: readonly string[] | undef
 };
 
 // --- History virtualization (@tanstack/react-virtual) ----------------------
-// The history list virtualizes with @tanstack/react-virtual on all surfaces:
-// its core has bottom anchoring (anchorTo: 'end'), key-stable prepend
-// preservation, and native iOS touch/momentum deferral for scroll
-// adjustments — the failure modes that historically forced virtua off on
-// mobile and required manual prepend compensation on desktop.
+// The history list virtualizes with @tanstack/react-virtual on all surfaces.
+// Chat contract lives in the core (virtual-core ≥ 3.16 / react-virtual ≥ 3.14):
+//   - anchorTo: 'end' — key-stable prepend preservation + end-pin on last-item growth
+//   - followOnAppend — follow new rows only when already within scrollEndThreshold
+//   - scrollToEnd / isAtEnd / getDistanceFromEnd — jump-to-latest + pin helpers
+//   - default shouldAdjustScrollPositionOnItemSizeChange (3.17.6+) — first measure
+//     any above-fold delta; remeasure only fully-above rows; skip while scrolling
+//     backward; wasAtEnd path pins total-size growth without app-level compensation
+// iOS touch/momentum deferral for scroll adjustments also lives in core.
 type TanstackVirtualizerInstance = ReactVirtualizer<HTMLDivElement, HTMLDivElement>;
 type HistoryEngine = 'none' | 'tanstack';
 
@@ -262,21 +266,6 @@ export const syncCurrentHistoryVirtualization = (
     historyVirtualized: boolean,
 ): void => {
     state.current = historyVirtualized;
-};
-
-// eslint-disable-next-line react-refresh/only-export-components
-export const shouldAdjustHistoryScrollForSizeChange = (input: {
-    atEnd: boolean;
-    firstMeasurement: boolean;
-    itemStart: number;
-    itemEnd: number;
-    scrollOffset: number;
-    scrollDirection: 'forward' | 'backward' | null;
-}): boolean => {
-    if (input.atEnd) return false;
-    if (input.firstMeasurement) return input.itemStart < input.scrollOffset;
-    if (input.scrollDirection === 'backward') return false;
-    return input.itemEnd <= input.scrollOffset;
 };
 
 const readTanstackTimelineCache = (cacheKey: string, keys: readonly string[]): VirtualItem[] | undefined => {
@@ -537,13 +526,20 @@ type TurnUiState = { isExpanded: boolean };
 
 /**
  * Default activity expansion when the user has not toggled this turn.
- * Every completion disposition follows the configured activity render mode.
+ * Live processing (`active` after presentation resolution) always starts
+ * expanded so the latest in-progress turn is watchable regardless of the
+ * activity setting. Settled turns follow the configured render mode.
  */
 // eslint-disable-next-line react-refresh/only-export-components
 export const resolveDefaultActivityExpanded = (
-    _completionDisposition: TurnRecord['completionDisposition'] | undefined,
+    completionDisposition: TurnRecord['completionDisposition'] | undefined,
     activityRenderMode: 'collapsed' | 'summary',
-): boolean => activityRenderMode === 'summary';
+): boolean => {
+    if (completionDisposition === 'active') {
+        return true;
+    }
+    return activityRenderMode === 'summary';
+};
 
 // eslint-disable-next-line react-refresh/only-export-components
 export const resolveToggledActivityExpanded = (currentExpanded: boolean): boolean => !currentExpanded;
@@ -586,6 +582,41 @@ export const shouldShowCompactionStatus = (input: {
         return input.isLastTurn && input.sessionIsWorking;
     }
     return false;
+};
+
+/**
+ * Live Working text + duration ticker only while the turn is still
+ * authoritatively in progress. Message-level `active` without live working
+ * (abnormal exit before `time.completed`, idle reconnect, older incomplete
+ * turns) settles to abnormal so collapsed headers stop ticking and show
+ * Processed instead of Working.
+ */
+// eslint-disable-next-line react-refresh/only-export-components
+export const resolveTurnActivityPresentation = (input: {
+    completionDisposition: TurnRecord['completionDisposition'];
+    isLastTurn: boolean;
+    sessionIsWorking: boolean;
+    durationMs?: number;
+}): {
+    completionDisposition: TurnRecord['completionDisposition'];
+    durationMs?: number;
+} => {
+    if (input.completionDisposition !== 'active') {
+        return {
+            completionDisposition: input.completionDisposition,
+            durationMs: input.durationMs,
+        };
+    }
+    if (input.isLastTurn && input.sessionIsWorking) {
+        return {
+            completionDisposition: 'active',
+            durationMs: input.durationMs,
+        };
+    }
+    return {
+        completionDisposition: 'abnormal',
+        durationMs: input.durationMs,
+    };
 };
 
 
@@ -729,11 +760,20 @@ const TurnBlock = React.memo(({
     reviewTransferDirection,
 }: TurnBlockProps) => {
     const storedTurnUiState = turnUiStates.get(turn.turnId);
+    // Gate raw message-active through presentation so only the live last turn
+    // while the session is working defaults open; idle/historical actives settle.
+    const activityPresentationForDefault = resolveTurnActivityPresentation({
+        completionDisposition: turn.completionDisposition,
+        isLastTurn,
+        sessionIsWorking,
+        durationMs: turn.durationMs,
+    });
     const defaultExpandedForTurn = resolveDefaultActivityExpanded(
-        turn.completionDisposition,
+        activityPresentationForDefault.completionDisposition,
         activityRenderMode,
     );
-    // Explicit per-turn toggle wins; otherwise disposition + activityRenderMode.
+    // Explicit per-turn toggle wins; otherwise live-active forces open and
+    // settled turns follow activityRenderMode (auto-collapses when processing ends).
     const isGroupExpandedByDefault = storedTurnUiState
         ? storedTurnUiState.isExpanded
         : defaultExpandedForTurn;
@@ -929,6 +969,12 @@ const TurnBlock = React.memo(({
                     : undefined));
         const nextMessage = undefined;
 
+        const activityPresentation = resolveTurnActivityPresentation({
+            completionDisposition: turn.completionDisposition,
+            isLastTurn,
+            sessionIsWorking,
+            durationMs: turn.durationMs,
+        });
         const turnGroupingContext = isAssistantMessage
             ? {
                 turnId: turn.turnId,
@@ -943,9 +989,9 @@ const TurnBlock = React.memo(({
                 ),
                 hasTools: turn.hasTools,
                 hasReasoning: turn.hasReasoning,
-                completionDisposition: turn.completionDisposition,
+                completionDisposition: activityPresentation.completionDisposition,
                 activityPresentationKind: turn.activityPresentationKind,
-                durationMs: turn.durationMs,
+                durationMs: activityPresentation.durationMs,
                 ...(shouldAttachFullTurnContext ? {
                     summaryBody: turnGroupingContextBase.summaryBody,
                     activityParts: turnGroupingContextBase.activityParts,
@@ -1353,32 +1399,25 @@ const StaticHistoryList = React.memo(({ entries, engine, contentRef, scrollRef, 
             elementScroll(offset, options, instance);
         },
         getItemKey: (index) => entriesRef.current[index]?.key ?? `index:${index}`,
-        // Bottom-anchored chat semantics: prepending older entries above the
-        // viewport must not move what the user is reading, and iOS-specific
-        // touch/momentum deferral for those adjustments lives in the core.
+        // Bottom-anchored chat contract (see package comment above). Prepends
+        // keep the keyed viewport stable; appends follow only while pinned;
+        // streaming growth of the last row stays end-pinned via wasAtEnd.
+        // App-level useChatAutoFollow still owns composer/content observers
+        // outside the virtualizer's count/measure path.
         anchorTo: 'end',
+        followOnAppend: true,
+        scrollEndThreshold: TANSTACK_AT_END_THRESHOLD_PX,
         initialOffset: () => {
             if (mountedVirtualizedRef.current) return Number.MAX_SAFE_INTEGER;
             return scrollRef?.current?.scrollTop ?? 0;
         },
         initialMeasurementsCache: measurementSeedRef.current,
     });
-    // A newly measured history row that starts above the effective scroll
-    // offset owns its full estimate-to-actual delta, including rows crossing
-    // the fold. Later remeasures compensate only rows fully above the viewport
-    // so visible tool/thinking expansion grows downward. Backward scrolling
-    // leaves geometry under the user's gesture, while app-level auto-follow
-    // owns bottom pinning. (This is an instance field, not a constructor option.)
-    tanstackVirtualizer.shouldAdjustScrollPositionOnItemSizeChange = (item, _delta, instance) => {
-        return shouldAdjustHistoryScrollForSizeChange({
-            atEnd: instance.isAtEnd(TANSTACK_AT_END_THRESHOLD_PX),
-            firstMeasurement: !instance.itemSizeCache.has(item.key),
-            itemStart: item.start,
-            itemEnd: item.end,
-            scrollOffset: instance.scrollOffset ?? 0,
-            scrollDirection: instance.scrollDirection,
-        });
-    };
+    // Size-change scroll adjustment uses virtual-core's default (3.17.6+):
+    // first measure compensates any above-fold row; remeasure only fully-above
+    // rows and never while scrolling backward; wasAtEnd pins total-size growth.
+    // Do not reassign shouldAdjustScrollPositionOnItemSizeChange unless product
+    // policy diverges from that chat default.
     const virtualItems = tanstackVirtualizer.getVirtualItems();
     const mountedIndexes = virtualItems.map((item) => item.index);
     const [hydratedMarkdownEntryKeys, setHydratedMarkdownEntryKeys] = React.useState(() => (

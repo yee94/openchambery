@@ -34,6 +34,15 @@ const getMessageCompletedAt = (message: ChatMessageEntry): number | undefined =>
     return typeof completed === 'number' ? completed : undefined;
 };
 
+const getPartEndTime = (part: unknown): number | undefined => {
+    const stateEnd = (part as { state?: { time?: { end?: unknown } } }).state?.time?.end;
+    if (typeof stateEnd === 'number') {
+        return stateEnd;
+    }
+    const timeEnd = (part as { time?: { end?: unknown } }).time?.end;
+    return typeof timeEnd === 'number' ? timeEnd : undefined;
+};
+
 const getUserSummaryBody = (message: ChatMessageEntry): string | undefined => {
     const summaryBody = (message.info as { summary?: { body?: unknown } | null | undefined })?.summary?.body;
     if (typeof summaryBody !== 'string') {
@@ -58,6 +67,7 @@ const createTurnMessageRecord = (message: ChatMessageEntry, order: number): Turn
 const buildTurnStreamState = (userMessage: ChatMessageEntry, assistantMessages: ChatMessageEntry[]): TurnStreamState => {
     const startedAt = getMessageCreatedAt(userMessage);
     let completedAt: number | undefined;
+    let maxPartEndedAt: number | undefined;
     let isStreaming = false;
 
     assistantMessages.forEach((message) => {
@@ -67,10 +77,19 @@ const buildTurnStreamState = (userMessage: ChatMessageEntry, assistantMessages: 
         } else {
             isStreaming = true;
         }
+        message.parts.forEach((part) => {
+            const endedAt = getPartEndTime(part);
+            if (typeof endedAt === 'number') {
+                maxPartEndedAt = Math.max(maxPartEndedAt ?? 0, endedAt);
+            }
+        });
     });
 
-    const durationMs = typeof startedAt === 'number' && typeof completedAt === 'number' && completedAt >= startedAt
-        ? completedAt - startedAt
+    // Prefer message completion; fall back to latest part end so abnormal-exit
+    // turns still freeze a duration instead of live-ticking forever.
+    const durationEnd = completedAt ?? maxPartEndedAt;
+    const durationMs = typeof startedAt === 'number' && typeof durationEnd === 'number' && durationEnd >= startedAt
+        ? durationEnd - startedAt
         : undefined;
 
     return {
@@ -252,6 +271,54 @@ const hydrateStableTurnRecords = (
     return nextTurns;
 };
 
+/**
+ * A later user message proves the previous turn is no longer live. Incomplete
+ * message metadata (abnormal exit without time.completed) must not keep older
+ * turns as `active` with a live duration ticker.
+ */
+const settleHistoricalActiveTurns = (turns: TurnRecord[]): TurnRecord[] => {
+    if (turns.length <= 1) {
+        return turns;
+    }
+
+    let changed = false;
+    const nextTurns = turns.map((turn, index) => {
+        const isLastTurn = index === turns.length - 1;
+        if (isLastTurn || turn.completionDisposition !== 'active') {
+            return turn;
+        }
+
+        changed = true;
+        const nextStartedAt = turns[index + 1]?.startedAt;
+        let durationMs = turn.durationMs;
+        let completedAt = turn.completedAt;
+        if (
+            typeof durationMs !== 'number'
+            && typeof turn.startedAt === 'number'
+            && typeof nextStartedAt === 'number'
+            && nextStartedAt >= turn.startedAt
+        ) {
+            completedAt = nextStartedAt;
+            durationMs = nextStartedAt - turn.startedAt;
+        }
+
+        return {
+            ...turn,
+            completionDisposition: 'abnormal' as const,
+            completedAt,
+            durationMs,
+            stream: {
+                ...turn.stream,
+                isStreaming: false,
+                completedAt: completedAt ?? turn.stream.completedAt,
+                durationMs,
+            },
+        };
+    });
+
+    return changed ? nextTurns : turns;
+};
+
 export const projectTurnRecords = (
     messages: ChatMessageEntry[],
     options?: Partial<ProjectTurnRecordsOptions>,
@@ -321,7 +388,9 @@ export const projectTurnRecords = (
         groupedMessageIds.add(message.info.id);
     });
 
-    const stableTurns = hydrateStableTurnRecords(turns, effectiveOptions);
+    const stableTurns = settleHistoricalActiveTurns(
+        hydrateStableTurnRecords(turns, effectiveOptions),
+    );
     const projection = projectTurnIndexes(stableTurns);
     const ungroupedMessageIds = new Set<string>();
     messages.forEach((message) => {

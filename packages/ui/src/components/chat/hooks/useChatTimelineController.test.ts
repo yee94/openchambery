@@ -453,47 +453,32 @@ const baseHoldAnchorInput = {
 } as const;
 
 describe('shouldHoldHistoryViewportAnchor', () => {
-    test('virtualized + anchor restored + heightDelta > 1 + messages not yet held => true', () => {
+    test('never holds: virtualized scroll is TanStack-only (no dual scrollTop writer)', () => {
+        // Former policy started a multi-frame hold after virtualized restore;
+        // that raced applyScrollAdjustment and yanked the viewport after load-more.
         expect(shouldHoldHistoryViewportAnchor({
             ...baseHoldAnchorInput,
-        })).toBe(true);
-        expect(shouldHoldHistoryViewportAnchor({
-            ...baseHoldAnchorInput,
-            heldForMessages: ['msg_other'],
-        })).toBe(true);
-    });
-
-    test('heightDelta <= 1 => false', () => {
-        expect(shouldHoldHistoryViewportAnchor({
-            ...baseHoldAnchorInput,
-            heightDelta: 1,
         })).toBe(false);
-        expect(shouldHoldHistoryViewportAnchor({
-            ...baseHoldAnchorInput,
-            heightDelta: 0,
-        })).toBe(false);
-    });
-
-    test('not virtualized => false', () => {
         expect(shouldHoldHistoryViewportAnchor({
             ...baseHoldAnchorInput,
             historyVirtualized: false,
+            heightDelta: 100,
+            anchorRestored: true,
         })).toBe(false);
     });
+});
 
-    test('anchor not restored => false', () => {
-        expect(shouldHoldHistoryViewportAnchor({
-            ...baseHoldAnchorInput,
-            anchorRestored: false,
-        })).toBe(false);
-    });
-
-    test('same messages already held => false', () => {
-        const messages = ['msg_1', 'msg_2'] as const;
-        expect(shouldHoldHistoryViewportAnchor({
-            ...baseHoldAnchorInput,
-            messages,
-            heldForMessages: messages,
-        })).toBe(false);
+describe('virtualized armed-snapshot compensation ownership', () => {
+    test('load-more snapshot path must defer to tanstack-core when virtualized', () => {
+        const source = readFileSync(join(here, 'useChatTimelineController.ts'), 'utf8');
+        const snapBlockStart = source.indexOf('// Armed snapshot from loadEarlier');
+        const snapBlockEnd = source.indexOf('// Background prepends', snapBlockStart);
+        expect(snapBlockStart).toBeGreaterThan(-1);
+        expect(snapBlockEnd).toBeGreaterThan(snapBlockStart);
+        const snapBlock = source.slice(snapBlockStart, snapBlockEnd);
+        expect(snapBlock).toContain("prependCompensation.owner === 'tanstack-core'");
+        expect(snapBlock).toContain('cancelViewportAnchorHold');
+        // Must not re-enter restore/hold on the virtualized branch.
+        expect(snapBlock).not.toContain('holdViewportAnchor(anchor)');
     });
 });

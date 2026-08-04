@@ -1,8 +1,21 @@
-diff --git a/dist/cjs/index.cjs b/dist/cjs/index.cjs
-index 52ae6ca12f8d1c650ee7f1bd55573ee7d4f8b65f..bcee09df7377c37ffb220606b741c9ff434b3470 100644
---- a/dist/cjs/index.cjs
-+++ b/dist/cjs/index.cjs
-@@ -723,10 +723,12 @@ class Virtualizer {
+# OpenChamber patch: @tanstack/virtual-core@3.17.7
+#
+# What: clamp calculateRange scrollOffset to [0, totalSize - viewport] so
+# transient end-anchor adjustments cannot produce an out-of-bounds render range.
+#
+# Applied by: bun package.json "patchedDependencies" (install-time, not postinstall).
+#
+# TODO(remove): drop this file + the patchedDependencies entry when upstream
+# virtual-core clamps range scrollOffset the same way (or an official API makes
+# the clamp unnecessary). Verify:
+#   1) open packages/ui chat history virtualized, scroll up + load more
+#   2) no blank range / jump from unclamped scrollOffset during measure
+#   3) bun install without this patch; chat MessageList + timeline tests still pass
+# Re-check on each @tanstack/react-virtual / virtual-core bump past 3.17.7.
+#
+--- a/dist/esm/index.js
++++ b/dist/esm/index.js
+@@ -725,10 +725,12 @@
            this.range = null;
            return null;
          }
@@ -16,11 +29,9 @@ index 52ae6ca12f8d1c650ee7f1bd55573ee7d4f8b65f..bcee09df7377c37ffb220606b741c9ff
            lanes,
            // Pass the typed array so binary search + forward-walk can read
            // start/end directly from Float64Array, skipping the Proxy traps.
-diff --git a/dist/esm/index.js b/dist/esm/index.js
-index 3032c0ca457582be3f47923cba1f7d92c848745c..90b574881a073aabac99c075f7eab0a8f363fff6 100644
---- a/dist/esm/index.js
-+++ b/dist/esm/index.js
-@@ -721,10 +721,12 @@ class Virtualizer {
+--- a/dist/cjs/index.cjs
++++ b/dist/cjs/index.cjs
+@@ -727,10 +727,12 @@
            this.range = null;
            return null;
          }

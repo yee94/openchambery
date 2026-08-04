@@ -1,7 +1,25 @@
-diff --git a/node_modules/ghostty-web/dist/ghostty-web.js b/node_modules/ghostty-web/dist/ghostty-web.js
+# OpenChamber patch: ghostty-web@0.4.0
+#
+# What:
+#   - reject invalid / surrogate code points before String.fromCodePoint (avoids
+#     RangeError on bad terminal streams)
+#   - optional lineHeight for canvas cell metrics
+#
+# Applied by: bun package.json "patchedDependencies" (install-time).
+# (Formerly patch-package patches/ghostty-web+0.4.0.patch; migrated so Docker
+# `bun install --ignore-scripts` still applies it.)
+#
+# TODO(remove): drop this file + the patchedDependencies entry when ghostty-web
+# ships both fixes (or a version we can pin that includes them). Verify:
+#   1) terminal render with lineHeight option still matches UI theme spacing
+#   2) invalid codepoint streams no longer throw in canvas text path
+#   3) packages/ui terminal surfaces build without this patch
+# Re-check on each ghostty-web bump past 0.4.0.
+#
+diff --git a/dist/ghostty-web.js b/dist/ghostty-web.js
 index 0000000000000000000000000000000000000000..1111111111111111111111111111111111111111 100644
---- a/node_modules/ghostty-web/dist/ghostty-web.js
-+++ b/node_modules/ghostty-web/dist/ghostty-web.js
+--- a/dist/ghostty-web.js
++++ b/dist/ghostty-web.js
 @@ -1299,1 +1299,1 @@
 -      C === 0 || C < 32 ? B.push(" ") : B.push(String.fromCodePoint(C));
 +      C === 0 || C < 32 || C > 1114111 || C >= 55296 && C <= 57343 ? B.push(" ") : B.push(String.fromCodePoint(C));

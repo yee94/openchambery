@@ -220,6 +220,62 @@ describe('projectTurnRecords', () => {
         expect(projection.turns[0]?.completionDisposition).toBe('active');
     });
 
+    test('historical incomplete turns settle to abnormal when a later user turn exists', () => {
+        const user1 = createMessageEntry({ id: 'u1', role: 'user', createdAt: 1_000 });
+        const assistant1 = createMessageEntry({
+            id: 'a1',
+            role: 'assistant',
+            parentID: 'u1',
+            createdAt: 1_100,
+            parts: [
+                {
+                    id: 'tool_1',
+                    type: 'tool',
+                    tool: 'bash',
+                    state: { status: 'completed', time: { end: 1_500 } },
+                } as Part,
+            ],
+        });
+        const user2 = createMessageEntry({ id: 'u2', role: 'user', createdAt: 2_000 });
+        const assistant2 = createMessageEntry({
+            id: 'a2',
+            role: 'assistant',
+            parentID: 'u2',
+            createdAt: 2_100,
+            completedAt: 2_500,
+            finish: 'stop',
+            parts: [{ id: 't2', type: 'text', text: 'done' } as Part],
+        });
+
+        const projection = projectTurnRecords([user1, assistant1, user2, assistant2]);
+        const historical = projection.turns[0];
+        const latest = projection.turns[1];
+
+        // Abnormal exit left no time.completed; a later user message proves the turn settled.
+        expect(historical?.completionDisposition).toBe('abnormal');
+        expect(historical?.durationMs).toBe(500);
+        expect(historical?.stream.isStreaming).toBe(false);
+        expect(latest?.completionDisposition).toBe('normal');
+    });
+
+    test('historical incomplete turns freeze duration to the next turn start when part ends are absent', () => {
+        const user1 = createMessageEntry({ id: 'u1', role: 'user', createdAt: 1_000 });
+        const assistant1 = createMessageEntry({
+            id: 'a1',
+            role: 'assistant',
+            parentID: 'u1',
+            createdAt: 1_100,
+            parts: [{ id: 't1', type: 'text', text: 'partial' } as Part],
+        });
+        const user2 = createMessageEntry({ id: 'u2', role: 'user', createdAt: 3_000 });
+
+        const projection = projectTurnRecords([user1, assistant1, user2]);
+
+        expect(projection.turns[0]?.completionDisposition).toBe('abnormal');
+        expect(projection.turns[0]?.durationMs).toBe(2_000);
+        expect(projection.turns[0]?.completedAt).toBe(3_000);
+    });
+
     test('normal turn with multiple text keeps only last stop text as summary; others become justification activity', () => {
         const user = createMessageEntry({ id: 'u1', role: 'user', createdAt: 1 });
         const assistant = createMessageEntry({

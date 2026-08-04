@@ -5,10 +5,13 @@ WORKDIR /app
 FROM base AS deps
 WORKDIR /app
 COPY package.json bun.lock ./
+COPY patches ./patches
 COPY packages/ui/package.json ./packages/ui/
 COPY packages/web/package.json ./packages/web/
 COPY packages/electron/package.json ./packages/electron/
 COPY packages/vscode/package.json ./packages/vscode/
+# patchedDependencies apply at install-time (need patches/ present).
+# --ignore-scripts skips postinstall only; bun still applies package patches.
 RUN bun install --frozen-lockfile --ignore-scripts
 
 FROM deps AS builder

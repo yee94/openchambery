@@ -43,7 +43,7 @@
     "test:ui": "bun run --cwd packages/ui test",
     "clean": "bun run --filter '*' clean",
     "changelog-card": "node scripts/changelog-card/generate.mjs",
-    "postinstall": "node ./fix-deprecation.js && patch-package",
+    "postinstall": "node ./fix-deprecation.js",
     "dev:web": "bun run --cwd packages/web build:watch",
     "dev:web:server": "bun run --cwd packages/web dev:server:watch",
     "dev:web:full": "node ./scripts/dev-web-full.mjs",
@@ -174,7 +174,6 @@
     "lucide-static": "^1.24.0",
     "node-addon-api": "7.1.1",
     "nodemon": "^3.1.7",
-    "patch-package": "^8.0.0",
     "sharp": "^0.35.0",
     "tailwindcss": "^4.0.0",
     "tsx": "^4.20.6",
@@ -184,6 +183,7 @@
     "vite": "^8.2.0"
   },
   "patchedDependencies": {
-    "@tanstack/virtual-core@3.17.3": "patches/@tanstack%2Fvirtual-core@3.17.3.patch"
+    "@tanstack/virtual-core@3.17.7": "patches/@tanstack%2Fvirtual-core@3.17.7.patch",
+    "ghostty-web@0.4.0": "patches/ghostty-web@0.4.0.patch"
   }
 }
