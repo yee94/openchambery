@@ -12,6 +12,12 @@ const messageDictionaryDirectory = join(__dirname, '../../../../lib/i18n/message
 const messageDictionaryFiles = ['en.ts', 'es.ts', 'fr.ts', 'ja.ts', 'ko.ts', 'pl.ts', 'pt-BR.ts', 'uk.ts', 'zh-CN.ts', 'zh-TW.ts'];
 
 describe('progressive activity presentation', () => {
+    test('tool rows render without entrance or tail animation', () => {
+        expect(progressiveGroupSource).not.toContain('ToolRevealOnMount');
+        expect(progressiveGroupSource).not.toContain('FadeInOnReveal');
+        expect(progressiveGroupSource).toContain('animateTailText={false}');
+    });
+
     test('groups only adjacent static calls with the same normalized tool name', () => {
         expect(progressiveGroupSource).toContain('const activities = [activity];');
         expect(progressiveGroupSource).toContain("if (nextActivity.kind !== 'tool')");

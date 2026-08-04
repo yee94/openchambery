@@ -29,8 +29,6 @@ interface TurnActivityProps {
     streamPhase: StreamPhase;
     showHeader: boolean;
     statusOnly?: boolean;
-    animateRows?: boolean;
-    animatedToolIds?: Set<string>;
     diffStats?: DiffStats;
     renderJustificationActions?: (activity: TurnActivityRecord) => React.ReactNode;
 }

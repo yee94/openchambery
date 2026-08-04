@@ -1991,10 +1991,8 @@ const MessageList = React.forwardRef<MessageListHandle, MessageListProps>(({
     }, [messages]);
 
     // Detect new user messages SYNCHRONOUSLY during render.
-    // Must happen during render (not in useEffect) so that ToolRevealOnMount
-    // receives animate=true on the FIRST render of the new message,
-    // starting it hidden (opacity 0). An effect-based approach causes
-    // the message to flash visible before the animation starts.
+    // This keeps the first render of a new message in the same animation state
+    // as its append lifecycle.
     {
         const anim = userAnimationRef.current;
 

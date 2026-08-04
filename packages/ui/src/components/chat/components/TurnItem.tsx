@@ -62,7 +62,6 @@ const TurnItem: React.FC<TurnItemProps> = ({ turn, activityExpanded, showCompact
                             streamPhase={turn.completionDisposition === 'active' ? 'streaming' : 'completed'}
                             showHeader={true}
                             statusOnly={true}
-                            animateRows={false}
                         />
                     </div>
                 </div>

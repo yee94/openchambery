@@ -166,7 +166,7 @@ Every actual run (timer or manual):
 1. Allocate a unique `runID` and persist `status=running` in the history store.
 2. Persist task state `lastStatus=running`.
 3. Create a per-run `AbortController` and race `runTaskWithWatchdog` against
-   `maxRunDurationMs` (default 30 minutes). Only this watchdog timeout aborts
+   `maxRunDurationMs` (default 2 hours). Only this watchdog timeout aborts
    the controller; manual `runNow` cancellation and runtime `stop()` (timers/
    queue only) must not fire it.
 4. Create an OpenCode session with:

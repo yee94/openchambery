@@ -6,7 +6,7 @@ import { expandSnippets } from '../opencode/snippets.js';
 
 const DEFAULT_GLOBAL_CONCURRENCY = 4;
 const DEFAULT_PROJECT_CONCURRENCY = 2;
-const DEFAULT_MAX_RUN_MS = 30 * 60 * 1000;
+const DEFAULT_MAX_RUN_MS = 2 * 60 * 60 * 1000;
 const JITTER_MAX_MS = 2_000;
 const TASK_TITLE_MAX_LENGTH = 120;
 const SCHEDULED_TITLE_PREFIX = '[Scheduled] ';

@@ -1054,17 +1054,22 @@ export function ScheduledTasksWorkspace({
                             ) : null}
                           </div>
                           {run.error ? (
-                            <p
+                            <div
                               className={cn(
-                                'break-words typography-micro text-[var(--status-error-foreground)]',
+                                'flex min-w-0 items-start gap-1.5 break-words typography-micro text-muted-foreground',
                                 isMobilePanel
-                                  ? 'mt-2 line-clamp-2 rounded-lg bg-[var(--status-error-background)] px-2.5 py-2'
+                                  ? 'mt-2 line-clamp-2 rounded-lg bg-[var(--surface-muted)] px-2.5 py-2'
                                   : 'mt-1.5 line-clamp-1',
                               )}
                               title={run.error.slice(0, 300)}
                             >
-                              {run.error.slice(0, 300)}
-                            </p>
+                              <Icon
+                                name="error-warning"
+                                className="mt-px size-3.5 shrink-0 text-muted-foreground"
+                                aria-hidden="true"
+                              />
+                              <span className="min-w-0">{run.error.slice(0, 300)}</span>
+                            </div>
                           ) : null}
                         </div>
                       </div>

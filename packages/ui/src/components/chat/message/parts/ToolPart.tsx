@@ -42,7 +42,6 @@ import { JsonSummaryView } from './JsonSummaryView';
 import { Icon } from "@/components/icon/Icon";
 import { AgentAvatar } from '@/components/chat/AgentAvatar';
 import { type DiffViewMode } from '../DiffViewToggle';
-import { ToolRevealOnMount } from './ToolRevealOnMount';
 import { getToolIcon } from './toolPresentation';
 import { useDurationTickerNow } from './useDurationTicker';
 import {
@@ -1148,8 +1147,7 @@ const TaskSummaryEntryRow = React.memo(({
     const displayName = getToolMetadata(toolName).displayName;
 
     return (
-        <ToolRevealOnMount animate={animateTailText} wipe>
-            <div className={cn('flex gap-1.5 min-w-0 w-full py-px', isMobile ? 'items-start' : 'items-center')}>
+        <div className={cn('flex gap-1.5 min-w-0 w-full py-px', isMobile ? 'items-start' : 'items-center')}>
                 <span className="flex-shrink-0 scale-90 text-foreground/80">{getToolIcon(toolName)}</span>
                 <span
                     className={cn(TASK_SUMMARY_TEXT_CLASS, 'text-foreground/80 flex-shrink-0')}
@@ -1186,8 +1184,7 @@ const TaskSummaryEntryRow = React.memo(({
                         )
                     )
                 ) : null}
-            </div>
-        </ToolRevealOnMount>
+        </div>
     );
 }, (prev, next) => {
     return prev.isMobile === next.isMobile

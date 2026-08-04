@@ -7,11 +7,9 @@ import type { StreamPhase } from '../types';
 import type { ContentChangeReason } from '@/hooks/useChatAutoFollow';
 import type { ToolPopupContent } from '../types';
 import ToolPart from './ToolPart';
-import { ToolRevealOnMount } from './ToolRevealOnMount';
 import { FileTypeIcon } from '@/components/icons/FileTypeIcon';
 import { Text } from '@/components/ui/text';
 import { Icon } from "@/components/icon/Icon";
-import { FadeInOnReveal } from '../FadeInOnReveal';
 import { getToolIcon } from './toolPresentation';
 import { getToolMetadata } from '@/lib/toolHelpers';
 import { isExpandableTool, isStandaloneTool, isStaticTool } from './toolRenderUtils';
@@ -53,8 +51,6 @@ interface ProgressiveGroupProps {
     streamPhase: StreamPhase;
     showHeader: boolean;
     statusOnly?: boolean;
-    animateRows?: boolean;
-    animatedToolIds?: Set<string>;
     renderJustificationActions?: (activity: TurnActivityPart) => React.ReactNode;
 }
 
@@ -411,8 +407,6 @@ interface ExpandableToolRowProps {
     onToggleTool: (toolId: string) => void;
     onShowPopup: (content: ToolPopupContent) => void;
     onContentChange?: (reason?: ContentChangeReason) => void;
-    animateTailText: boolean;
-    animateRows: boolean;
 }
 
 const ExpandableToolRow: React.FC<ExpandableToolRowProps> = ({
@@ -422,14 +416,12 @@ const ExpandableToolRow: React.FC<ExpandableToolRowProps> = ({
     onToggleTool,
     onShowPopup,
     onContentChange,
-    animateTailText,
-    animateRows,
 }) => {
     const handleToggle = useEvent(() => {
         onToggleTool(activity.id);
     });
 
-    const content = (
+    return (
         <div className={getToolRowBlockClass(isMobile)}>
             <ToolPart
                 part={activity.part as ToolPartType}
@@ -439,22 +431,10 @@ const ExpandableToolRow: React.FC<ExpandableToolRowProps> = ({
                 isMobile={isMobile}
                 onContentChange={onContentChange}
                 onShowPopup={onShowPopup}
-                animateTailText={animateTailText}
+                animateTailText={false}
             />
         </div>
     );
-
-    const maybeWrapped = animateTailText ? (
-        <ToolRevealOnMount animate={true} wipe>
-            {content}
-        </ToolRevealOnMount>
-    ) : content;
-
-    if (!animateRows) {
-        return maybeWrapped;
-    }
-
-    return <FadeInOnReveal>{maybeWrapped}</FadeInOnReveal>;
 };
 
 const MemoExpandableToolRow = React.memo(ExpandableToolRow, (prev, next) => {
@@ -463,8 +443,6 @@ const MemoExpandableToolRow = React.memo(ExpandableToolRow, (prev, next) => {
         && prev.onToggleTool === next.onToggleTool
         && prev.onShowPopup === next.onShowPopup
         && prev.onContentChange === next.onContentChange
-        && prev.animateTailText === next.animateTailText
-        && prev.animateRows === next.animateRows
         && prev.activity.id === next.activity.id
         && prev.activity.messageId === next.activity.messageId
         && prev.activity.kind === next.activity.kind
@@ -476,45 +454,27 @@ interface StaticGroupedToolRowProps {
     toolName: string;
     activities: TurnActivityPart[];
     isMobile: boolean;
-    animateTailText: boolean;
-    animateRows: boolean;
 }
 
 const StaticGroupedToolRow: React.FC<StaticGroupedToolRowProps> = ({
     toolName,
     activities,
     isMobile,
-    animateTailText,
-    animateRows,
 }) => {
-    const content = (
+    return (
         <div className={getToolRowBlockClass(isMobile)}>
             <StaticToolRow
                 toolName={toolName}
                 activities={activities}
-                animateTailText={animateTailText}
+                animateTailText={false}
             />
         </div>
     );
-
-    const maybeWrapped = animateTailText ? (
-        <ToolRevealOnMount animate={true} wipe>
-            {content}
-        </ToolRevealOnMount>
-    ) : content;
-
-    if (!animateRows) {
-        return maybeWrapped;
-    }
-
-    return <FadeInOnReveal>{maybeWrapped}</FadeInOnReveal>;
 };
 
 const MemoStaticGroupedToolRow = React.memo(StaticGroupedToolRow, (prev, next) => {
     return prev.toolName === next.toolName
         && prev.isMobile === next.isMobile
-        && prev.animateTailText === next.animateTailText
-        && prev.animateRows === next.animateRows
         && areActivityListsEqual(prev.activities, next.activities);
 });
 
@@ -1035,8 +995,6 @@ const ProgressiveGroup: React.FC<ProgressiveGroupProps> = ({
     streamPhase,
     showHeader,
     statusOnly = false,
-    animateRows = true,
-    animatedToolIds,
     renderJustificationActions,
 }) => {
     const { t } = useI18n();
@@ -1160,10 +1118,7 @@ const ProgressiveGroup: React.FC<ProgressiveGroupProps> = ({
 
     const wrapRow = (key: string, content: React.ReactNode) => {
         const row = <div className={getToolRowBlockClass(isMobile)}>{content}</div>;
-        if (!animateRows) {
-            return <React.Fragment key={key}>{row}</React.Fragment>;
-        }
-        return <FadeInOnReveal key={key}>{row}</FadeInOnReveal>;
+        return <React.Fragment key={key}>{row}</React.Fragment>;
     };
 
     const renderedRows = shouldRenderRows
@@ -1205,8 +1160,6 @@ const ProgressiveGroup: React.FC<ProgressiveGroupProps> = ({
                         onToggleTool={onToggleTool}
                         onShowPopup={onShowPopup}
                         onContentChange={onContentChange}
-                        animateTailText={Boolean(animatedToolIds?.has(row.activity.id))}
-                        animateRows={animateRows}
                     />
                 );
 
@@ -1217,8 +1170,6 @@ const ProgressiveGroup: React.FC<ProgressiveGroupProps> = ({
                         toolName={row.toolName}
                         activities={row.activities}
                         isMobile={isMobile}
-                        animateTailText={row.activities.some((activity) => animatedToolIds?.has(activity.id))}
-                        animateRows={animateRows}
                     />
                 );
 
@@ -1232,8 +1183,6 @@ const ProgressiveGroup: React.FC<ProgressiveGroupProps> = ({
                         onToggleTool={onToggleTool}
                         onShowPopup={onShowPopup}
                         onContentChange={onContentChange}
-                        animateTailText={Boolean(animatedToolIds?.has(row.activity.id))}
-                        animateRows={animateRows}
                     />
                 );
 
@@ -1248,15 +1197,12 @@ const ProgressiveGroup: React.FC<ProgressiveGroupProps> = ({
     const shouldShowRowsContainer = visibleRows.length > 0;
     if (!showHeader) {
         return (
-            <FadeInOnReveal>
-                <div className={getToolRowBlockClass(isMobile)}>{renderedRows}</div>
-            </FadeInOnReveal>
+            <div className={getToolRowBlockClass(isMobile)}>{renderedRows}</div>
         );
     }
 
     return (
-        <FadeInOnReveal>
-            <div className={getToolRowBlockClass(isMobile)}>
+        <div className={getToolRowBlockClass(isMobile)}>
                 {statusOnly ? (
                     <div
                         ref={statusHeaderRef}
@@ -1391,8 +1337,7 @@ const ProgressiveGroup: React.FC<ProgressiveGroupProps> = ({
                         <div className="flow-root">{renderedRows}</div>
                     </div>
                 ) : null}
-            </div>
-        </FadeInOnReveal>
+        </div>
     );
 };
 
