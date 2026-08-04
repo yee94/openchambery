@@ -2596,8 +2596,8 @@ const ToolPartContent: React.FC<ToolPartProps> = ({
                         >
                             {isTaskTool ? (
                                 <AgentAvatar
-                                    // 子 Agent（如 Explorer）不一定出现在主 Agent 选择器里；identicon 只吃名字种子
-                                    name={taskAgentName ?? 'subagent'}
+                                    // 同一 agent 可并发多个 task；identicon/颜色按 task id 区分，label 仍用 agent 展示名
+                                    name={part.id || taskAgentName || 'subagent'}
                                     size={14}
                                     label={taskTitle}
                                 />

@@ -446,6 +446,56 @@ describe('QueuedMessageChips preview decoration', () => {
         ]);
     });
 
+    test('decorates skill slash tokens from composer document sidecars', () => {
+        const skillName = 'improve-codebase-architecture';
+        const text = `使用 /${DRAFT_COMPOSER_TRIGGER_ICON_SLOT}${skillName} 再次审查`;
+        const parts = buildQueuedMessagePreviewParts(text, {
+            composerDocument: {
+                text,
+                references: [{
+                    kind: 'skill',
+                    skillName,
+                    display: `/${DRAFT_COMPOSER_TRIGGER_ICON_SLOT}${skillName}`,
+                }],
+            },
+        });
+        expect(parts?.[0]?.type).toBe('text');
+        expect(parts?.[0]).toEqual({ type: 'text', text: '使用 ' });
+        expect(parts?.[1]?.type).toBe('reference');
+        if (parts?.[1]?.type !== 'reference') throw new Error('expected skill reference');
+        expect([parts[1].decoration.kind, parts[1].decoration.label, parts[1].decoration.icon, parts[1].decoration.skillName]).toEqual([
+            'skill',
+            `/${skillName}`,
+            'book-open',
+            skillName,
+        ]);
+        expect(parts?.[2]).toEqual({ type: 'text', text: ' 再次审查' });
+    });
+
+    test('decorates command slash tokens from composer document sidecars', () => {
+        const commandName = 'release';
+        const text = `run /${DRAFT_COMPOSER_TRIGGER_ICON_SLOT}${commandName} now`;
+        const parts = buildQueuedMessagePreviewParts(text, {
+            composerDocument: {
+                text,
+                references: [{
+                    kind: 'command',
+                    commandName,
+                    display: `/${DRAFT_COMPOSER_TRIGGER_ICON_SLOT}${commandName}`,
+                }],
+            },
+        });
+        expect(parts?.[0]).toEqual({ type: 'text', text: 'run ' });
+        expect(parts?.[1]?.type).toBe('reference');
+        if (parts?.[1]?.type !== 'reference') throw new Error('expected command reference');
+        expect([parts[1].decoration.kind, parts[1].decoration.label, parts[1].decoration.icon]).toEqual([
+            'command',
+            `/${commandName}`,
+            'command',
+        ]);
+        expect(parts?.[2]).toEqual({ type: 'text', text: ' now' });
+    });
+
     test('keeps a single-line preview marker for multiline content', () => {
         expect(queuedMessagePreviewLine('first\nsecond')).toBe('first...');
         expect(queuedMessagePreviewLine('only')).toBe('only');

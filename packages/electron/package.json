@@ -1,6 +1,6 @@
 {
   "name": "@openchamber/electron",
-  "version": "1.16.117-beta.2",
+  "version": "1.16.117-beta.3",
   "private": true,
   "description": "Electron desktop runtime for OpenChamber",
   "author": "OpenChamber",
@@ -39,12 +39,13 @@
     "test:architecture": "node --test ./scripts/target-architecture.test.mjs ./scripts/desktop-profile.test.mjs ./scripts/verify-linux-appimage.test.mjs ./scripts/verify-update-manifest.test.mjs",
     "test:input-draft-indexeddb": "bun ./scripts/test-input-draft-indexeddb.mjs",
     "test:updater": "node --test ./ipc-command-gate.test.mjs ./updater-capability.test.mjs ./updater-check.test.mjs ./updater-download-status.test.mjs ./updater-idle-download.test.mjs ./updater-feed.test.mjs ./scripts/updater-e2e-fixture.test.mjs",
+    "test:virtual-asset": "node --test ./virtual-asset-protocol.test.mjs",
     "updater:e2e:fixture": "node ./scripts/updater-e2e-fixture.mjs",
     "verify:update-manifest": "node ./scripts/verify-update-manifest.mjs",
     "package": "bun run build:web-assets && bun run prepare:opencode-cli && bun run bundle:main && bun run rebuild:native && node ./scripts/package.mjs",
     "package:preview": "OPENCHAMBER_DESKTOP_PROFILE=preview bun run package",
     "finalize:latest-yml": "node ./scripts/finalize-latest-yml.mjs",
-    "type-check": "node --check ./main.mjs && node --check ./preload.mjs",
+    "type-check": "node --check ./main.mjs && node --check ./preload.mjs && node --check ./virtual-asset-protocol.mjs",
     "lint": "node -e \"process.exit(0)\""
   },
   "build": {

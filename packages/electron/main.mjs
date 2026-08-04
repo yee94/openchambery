@@ -29,6 +29,11 @@ import {
   sameUrlIdentity,
   urlIdentityKey,
 } from './url-identity.mjs';
+import {
+  ASSET_PROTOCOL,
+  ASSET_SCHEME_PRIVILEGES,
+  createVirtualAssetRegistry,
+} from './virtual-asset-protocol.mjs';
 
 const execFileAsync = promisify(execFile);
 
@@ -189,6 +194,10 @@ protocol.registerSchemesAsPrivileged([
       supportFetchAPI: true,
       corsEnabled: true,
     },
+  },
+  {
+    scheme: ASSET_PROTOCOL,
+    privileges: { ...ASSET_SCHEME_PRIVILEGES },
   },
 ]);
 
@@ -1219,6 +1228,15 @@ const registerPackagedUiProtocol = () => {
     const body = injectRuntimeConfigIntoHtml(html);
     return new Response(body, { headers: { 'Content-Type': 'text/html; charset=utf-8' } });
   });
+};
+
+// Virtual image assets: renderer pushes opaque binary chunks; protocol.handle
+// returns a ReadableStream. Separate scheme from openchamber-ui so the static
+// UI handler is untouched. Local-page IPC only (see isLocalSender gates below).
+const virtualAssetRegistry = createVirtualAssetRegistry();
+
+const registerVirtualAssetProtocol = () => {
+  protocol.handle(ASSET_PROTOCOL, (request) => virtualAssetRegistry.handleRequest(request));
 };
 
 const normalizeNotificationInput = (raw) => {
@@ -5098,6 +5116,40 @@ ipcMain.handle('openchamber:file:grant-existing', async (event, filePath) => {
   };
 });
 
+// Virtual asset stream bridge — local UI only. Remote renderers must never
+// mint or feed asset streams (no host path / credential surface either way).
+const requireLocalAssetSender = (event, label) => {
+  if (!isLocalSender(event.sender)) {
+    log.warn(`[ipc] rejected ${label} from non-local origin: ${event.sender?.getURL?.() || '(unknown)'}`);
+    throw new Error('IPC not available for this origin');
+  }
+};
+
+ipcMain.handle('openchamber:asset:create', async (event, payload) => {
+  requireLocalAssetSender(event, 'asset:create');
+  return virtualAssetRegistry.create({
+    mimeType: payload?.mimeType,
+  });
+});
+
+ipcMain.handle('openchamber:asset:push', async (event, payload) => {
+  requireLocalAssetSender(event, 'asset:push');
+  const assetId = typeof payload?.assetId === 'string' ? payload.assetId : '';
+  return virtualAssetRegistry.push(assetId, payload?.chunk);
+});
+
+ipcMain.handle('openchamber:asset:finish', async (event, payload) => {
+  requireLocalAssetSender(event, 'asset:finish');
+  const assetId = typeof payload?.assetId === 'string' ? payload.assetId : '';
+  return virtualAssetRegistry.finish(assetId);
+});
+
+ipcMain.handle('openchamber:asset:cancel', async (event, payload) => {
+  requireLocalAssetSender(event, 'asset:cancel');
+  const assetId = typeof payload?.assetId === 'string' ? payload.assetId : '';
+  return virtualAssetRegistry.cancel(assetId);
+});
+
 // --- Native tray / menu bar ---------------------------------------------------
 // Tray lives on macOS and Windows; the renderer streams a compact state snapshot via
 // the `desktop_tray_update` IPC command (see the command switch). Tray clicks
@@ -5381,6 +5433,7 @@ app.whenReady().then(async () => {
   });
   nativeTheme.themeSource = readThemeSource();
   registerPackagedUiProtocol();
+  registerVirtualAssetProtocol();
   setupAutoUpdater();
 
   if (process.platform === 'darwin') {

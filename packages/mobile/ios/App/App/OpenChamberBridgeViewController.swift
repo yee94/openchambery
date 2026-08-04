@@ -1,5 +1,6 @@
 import Capacitor
 import UIKit
+import WebKit
 
 @objc(OpenChamberNavigationPlugin)
 class OpenChamberNavigationPlugin: CAPPlugin, CAPBridgedPlugin, UIGestureRecognizerDelegate {
@@ -135,10 +136,21 @@ class OpenChamberBridgeViewController: CAPBridgeViewController {
     // Keep a strong ref so share-extension deep links can emit without looking the
     // plugin up via CAPBridgeProtocol (Capacitor 8 no longer exposes getPlugin(_:)).
     private var sharePlugin: OpenChamberSharePlugin?
+    /// Retained so the WKWebView configuration keeps a live scheme handler.
+    private let virtualAssetHandler = OpenChamberVirtualAssetHandler()
+
+    override func webViewConfiguration(for instanceConfiguration: InstanceConfiguration) -> WKWebViewConfiguration {
+        let configuration = super.webViewConfiguration(for: instanceConfiguration)
+        // Opaque progressive image URLs: openchamber-asset://v/{assetId}
+        // Must not collide with Capacitor's local scheme (capacitor / ionic / https).
+        configuration.setURLSchemeHandler(virtualAssetHandler, forURLScheme: OpenChamberVirtualAssetStore.scheme)
+        return configuration
+    }
 
     override func capacitorDidLoad() {
         bridge?.registerPluginInstance(OpenChamberHapticsPlugin())
         bridge?.registerPluginInstance(OpenChamberNavigationPlugin())
+        bridge?.registerPluginInstance(OpenChamberVirtualAssetPlugin())
         let sharePlugin = OpenChamberSharePlugin()
         self.sharePlugin = sharePlugin
         bridge?.registerPluginInstance(sharePlugin)

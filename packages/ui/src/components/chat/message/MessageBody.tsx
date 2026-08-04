@@ -1790,12 +1790,6 @@ const AssistantMessageBody = React.memo(({
                 segmentId: string,
                 visibleSegmentParts: typeof activityGroupSegmentsForMessage[number]['parts'],
             ) => {
-                // Non-disclosure only when compaction has nothing foldable yet
-                // (no activity rows and no summary body). Body or rows use the
-                // ordinary turn disclosure so collapsed mode can hide them.
-                const statusOnly = turnGroupingContext.activityPresentationKind === 'compaction'
-                    && visibleSegmentParts.length === 0
-                    && !hasTextContent;
                 rendered.push(
                     <div key={`progressive-group-${segmentId}`}>
                         <TurnActivity
@@ -1814,7 +1808,6 @@ const AssistantMessageBody = React.memo(({
                             onContentChange={onContentChange}
                             streamPhase={effectiveStreamPhase}
                             showHeader={true}
-                            statusOnly={statusOnly}
                             diffStats={turnGroupingContext.diffStats}
                             renderJustificationActions={renderJustificationActions}
                         />
@@ -1840,7 +1833,7 @@ const AssistantMessageBody = React.memo(({
         }
 
         // Flat rendering: iterate parts in natural order.
-        // Group consecutive static tools (read, grep, glob, etc.) into compact rows.
+        // Static tools (read, grep, glob, etc.) get one row per call.
         // Expandable tools (bash, edit, task) get individual rows.
         // Text renders inline at its natural position.
         let i = 0;
@@ -2005,7 +1998,6 @@ const AssistantMessageBody = React.memo(({
         collapsibleThinkingBlocks,
         collapsedPreviewCount,
         expandedTools,
-        hasTextContent,
         hideCompactionBody,
         isCompactionTurn,
         isMobile,

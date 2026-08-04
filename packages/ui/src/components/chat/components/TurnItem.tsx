@@ -6,7 +6,6 @@ import TurnActivity from './TurnActivity';
 import TurnAssistantBlock from './TurnAssistantBlock';
 
 const EMPTY_EXPANDED_TOOLS = new Set<string>();
-const ignoreCompactionStatusToggle = () => {};
 const ignoreCompactionToolToggle = () => {};
 const ignoreCompactionPopup = () => {};
 
@@ -14,11 +13,12 @@ interface TurnItemProps {
     turn: TurnRecord;
     activityExpanded: boolean;
     showCompactionStatus: boolean;
+    onToggleActivity: () => void;
     stickyUserHeader?: boolean;
     renderMessage: (message: ChatMessageEntry, activityExpanded: boolean) => React.ReactNode;
 }
 
-const TurnItem: React.FC<TurnItemProps> = ({ turn, activityExpanded, showCompactionStatus, stickyUserHeader = true, renderMessage }) => {
+const TurnItem: React.FC<TurnItemProps> = ({ turn, activityExpanded, showCompactionStatus, onToggleActivity, stickyUserHeader = true, renderMessage }) => {
     const isMobile = useUIStore((state) => state.isMobile);
     const userMessageCreatedAt = (turn.userMessage.info.time as { created?: number } | undefined)?.created;
 
@@ -54,14 +54,13 @@ const TurnItem: React.FC<TurnItemProps> = ({ turn, activityExpanded, showCompact
                             activityPresentationKind="compaction"
                             durationMs={turn.durationMs}
                             startedAt={typeof userMessageCreatedAt === 'number' ? userMessageCreatedAt : undefined}
-                            onToggle={ignoreCompactionStatusToggle}
+                            onToggle={onToggleActivity}
                             isMobile={isMobile}
                             expandedTools={EMPTY_EXPANDED_TOOLS}
                             onToggleTool={ignoreCompactionToolToggle}
                             onShowPopup={ignoreCompactionPopup}
                             streamPhase={turn.completionDisposition === 'active' ? 'streaming' : 'completed'}
                             showHeader={true}
-                            statusOnly={true}
                         />
                     </div>
                 </div>

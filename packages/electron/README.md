@@ -22,6 +22,7 @@ Electron owns the in-process server handle. Normal quit, relaunch, vibrancy rela
 |------|---------|
 | `main.mjs` | Electron main process, app lifecycle, windows, menus, deep links, native IPC handlers, updates, local server startup |
 | `preload.mjs` | Safe bridge from the rendered UI to Electron IPC |
+| `virtual-asset-protocol.mjs` | Opaque virtual image asset registry + `openchamber-asset` streaming protocol helpers |
 | `ssh-manager.mjs` | SSH host import, connection lifecycle, tunnel/port forwarding helpers |
 | `scripts/electron-dev.mjs` | Desktop dev launcher with Vite HMR support |
 | `scripts/build-web-assets.mjs` | Builds `packages/web` and stages UI assets into `resources/web-dist` |
@@ -215,6 +216,61 @@ Add new native capabilities in this order:
 2. Add the real command handling in `main.mjs` under `openchamber:invoke`.
 3. Gate privileged commands in main process logic so remote pages cannot access local filesystem or shell capabilities.
 4. Keep shared UI runtime contracts in `packages/ui` and server/runtime APIs in `packages/web` when the behavior is not inherently native.
+
+## Virtual Image Asset Protocol
+
+Relay/host-backed images need a browser-consumable URL that Chromium can load as `<img src>` / CSS without giving main-process code tunnel credentials or host filesystem paths. Desktop uses a dedicated secure custom scheme and a local-only push bridge:
+
+| Piece | Role |
+|-------|------|
+| Scheme | `openchamber-asset` (privileged: `standard`, `secure`, `supportFetchAPI`, `corsEnabled`, **`stream`**) |
+| URL form | `openchamber-asset://stream/<assetId>` — opaque id in the path only; no userinfo, query, fragment, or host paths |
+| Registry | `virtual-asset-protocol.mjs` maps `assetId` → `protocol.handle` `ReadableStream` |
+| Static UI | Unchanged: packaged pages stay on `openchamber-ui://` |
+
+### Renderer bridge (local page only)
+
+Exposed only when the page is the packaged UI (`openchamber-ui://app`) or the exact local loopback origin. Remote host pages do **not** get `virtualAsset`. Main re-checks `isLocalSender` on every channel.
+
+```ts
+// window.__OPENCHAMBER_DESKTOP__.virtualAsset
+
+type VirtualAssetCreateResult = {
+  assetId: string;
+  url: string;       // openchamber-asset://stream/<assetId>
+  mimeType: string;  // normalized image/* 
+};
+
+virtualAsset.create({ mimeType: string }): Promise<VirtualAssetCreateResult>
+virtualAsset.push(assetId: string, chunk: ArrayBuffer | Uint8Array): Promise<{
+  ok: true;
+  queuedBytes: number;
+  totalBytes: number;
+}>
+virtualAsset.finish(assetId: string): Promise<{ ok: true }>
+virtualAsset.cancel(assetId: string): Promise<{ ok: true }>
+```
+
+IPC channels (not via `openchamber:invoke`):
+
+- `openchamber:asset:create` — `{ mimeType }`
+- `openchamber:asset:push` — `{ assetId, chunk }`
+- `openchamber:asset:finish` / `openchamber:asset:cancel` — `{ assetId }`
+
+### Lifecycle and limits
+
+1. Local UI creates an asset with an image MIME (`image/png`, `image/jpeg`, …).
+2. UI pulls bytes from the relay tunnel (or any renderer-owned source) and `push`es bounded chunks.
+3. UI or layout assigns `url` to an image element; Chromium requests the scheme; main returns a streaming `Response`.
+4. UI calls `finish` when the body is complete, or `cancel` on error/unmount. Protocol abort / stream cancel also destroy the asset.
+
+Default bounds (see `DEFAULT_VIRTUAL_ASSET_LIMITS`): max concurrent assets, max queued bytes (backpressure), max chunk size, max total bytes, and TTL for idle assets. One consumer per `assetId` (second request → 409). `push` never buffers past `maxQueuedBytes`; when the queue is full it waits for the protocol consumer to drain (or for cancel / finish / dispose / TTL). A missing consumer therefore cannot hang the renderer pump forever or grow memory without bound.
+
+Security invariants:
+
+- Main never sees host paths, bearer tokens, or relay keys — only opaque ids + binary chunks + image MIME.
+- Remote renderer pages cannot create or feed assets.
+- Does not share the `openchamber-ui` protocol handler.
 
 ## Logs And Data
 

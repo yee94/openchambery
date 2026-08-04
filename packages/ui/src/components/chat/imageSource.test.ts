@@ -85,14 +85,19 @@ describe('isRelayTransport', () => {
 
 describe('image source contracts', () => {
   test('loads local images through relay-aware runtimeFetch and cleans object URLs', () => {
-    expect(helperSource).toContain("runtimeFetch('/api/fs/raw'");
-    expect(helperSource).toContain('query: { path }');
-    expect(helperSource).toContain('signal,');
+    expect(helperSource).toContain("from '@/lib/relay/relay-image-stream'");
+    expect(helperSource).toContain('streamRelayImageDisplayUrl');
+    expect(helperSource).toContain('releaseRelayImageDisplayUrl');
+    expect(helperSource).toContain('return await streamRelayImageDisplayUrl(path, signal)');
+    expect(helperSource).toContain('IMAGE_RELAY_RETRY_DELAYS_MS');
+    expect(helperSource).toContain('for (const delayMs of IMAGE_RELAY_RETRY_DELAYS_MS)');
+    expect(helperSource).toContain("signal.addEventListener('abort'");
     expect(helperSource).toContain('subscribeRuntimeEndpointChanged');
     expect(helperSource).toContain('getRuntimeTransportIdentity');
     expect(helperSource).toContain("isRelayTransport(transportIdentity) && resolved.kind === 'runtime-file'");
     expect(helperSource).toContain('controller.abort()');
-    expect(helperSource).toContain('URL.revokeObjectURL(objectUrl)');
+    expect(helperSource).toContain('releaseRuntimeImageObjectUrl(objectUrl)');
+    expect(helperSource).toContain('releaseRuntimeImageObjectUrl(nextObjectUrl)');
   });
 
   test('keeps direct Markdown images on the browser path and auto-loads relay-local placeholders on first paint', () => {
@@ -156,7 +161,8 @@ describe('image source contracts', () => {
     expect(rendererSource).toContain("event.key !== 'Enter' && event.key !== ' '");
     expect(rendererSource).toContain("metadata: { tool: 'image-preview', filename }");
     expect(rendererSource).toContain('image: { url: selectedSource');
-    expect(rendererSource).toContain('URL.revokeObjectURL(state.objectUrl)');
+    expect(rendererSource).toContain('releaseRuntimeImageObjectUrl(state.objectUrl)');
+    expect(rendererSource).toContain('releaseRuntimeImageObjectUrl(objectUrl)');
     expect(rendererSource).toContain('state.controller?.abort()');
   });
 

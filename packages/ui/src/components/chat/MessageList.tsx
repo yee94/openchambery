@@ -527,8 +527,8 @@ type RenderEntry =
 type TurnUiState = { isExpanded: boolean };
 
 /**
- * Pre-assistant status-only compaction header when sorted, compaction-kind,
- * and no visible activity segments yet. Once assistant messages exist, the
+ * Pre-assistant compaction disclosure when sorted, compaction-kind, and no
+ * visible activity segments yet. Once assistant messages exist, the
  * MessageBody Activity disclosure owns the header and foldable body.
  * Settled (`normal`/`abnormal`) without assistants still qualifies.
  * `active` requires the last turn and an authoritative live working signal so
@@ -963,6 +963,7 @@ const TurnBlock = React.memo(({
         <TurnItem
             turn={renderableTurn}
             activityExpanded={isGroupExpandedByDefault}
+            onToggleActivity={handleToggleTurnGroup}
             showCompactionStatus={shouldShowCompactionStatus({
                 chatRenderMode,
                 activityPresentationKind: turn.activityPresentationKind,

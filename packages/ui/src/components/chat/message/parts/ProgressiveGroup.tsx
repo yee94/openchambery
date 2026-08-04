@@ -23,7 +23,7 @@ import JustificationBlock from './JustificationBlock';
 import { areRenderRelevantPartsEqual } from '../renderCompare';
 import { getExternalFaviconUrl } from '@/lib/url';
 import { getDirectoryForFilePath, getRelativeFilePath, isFilePathWithinDirectory, normalizeFilePath, toAbsoluteFilePath } from '@/lib/path-utils';
-import { getToolRowBlockClass, TOOL_ROW_CHIP_GEOMETRY_CLASS, TOOL_ROW_INTERACTIVE_CHROME_CLASS } from './toolRowChrome';
+import { getToolRowBlockClass, TOOL_ROW_INTERACTIVE_CHROME_CLASS } from './toolRowChrome';
 import { useSessionSurface } from '../../SessionSurfaceContext';
 import { useMobileAppActions } from '@/apps/mobileAppContext';
 import { useI18n } from '@/lib/i18n';
@@ -50,7 +50,6 @@ interface ProgressiveGroupProps {
     onContentChange?: (reason?: ContentChangeReason) => void;
     streamPhase: StreamPhase;
     showHeader: boolean;
-    statusOnly?: boolean;
     renderJustificationActions?: (activity: TurnActivityPart) => React.ReactNode;
 }
 
@@ -372,7 +371,8 @@ type AggregatedRow =
     | { type: 'justification'; activity: TurnActivityPart }
     | { type: 'tool-fallback'; activity: TurnActivityPart };
 
-const getTaskAgentNames = (parts: TurnActivityPart[]): { active: string[]; all: string[] } => {
+/** Collect task-tool part ids for header avatars (seed by task id, not agent name). */
+const getTaskAvatarSeeds = (parts: TurnActivityPart[]): { active: string[]; all: string[] } => {
     const active: string[] = [];
     const all: string[] = [];
 
@@ -381,19 +381,16 @@ const getTaskAgentNames = (parts: TurnActivityPart[]): { active: string[]; all: 
         const part = activity.part as ToolPartType;
         if (part.tool?.trim().toLowerCase() !== 'task') continue;
 
+        const taskId = typeof part.id === 'string' ? part.id.trim() : '';
+        if (!taskId) continue;
+
         const state = part.state as unknown;
         if (!state || typeof state !== 'object') continue;
         const stateRecord = state as Record<string, unknown>;
-        const input = stateRecord.input;
-        if (!input || typeof input !== 'object') continue;
-        const subagentType = (input as Record<string, unknown>).subagent_type;
-        if (typeof subagentType !== 'string') continue;
-        const name = subagentType.trim();
-        if (!name) continue;
 
-        all.push(name);
+        all.push(taskId);
         if (stateRecord.status === 'pending' || stateRecord.status === 'running') {
-            active.push(name);
+            active.push(taskId);
         }
     }
 
@@ -480,7 +477,7 @@ const MemoStaticGroupedToolRow = React.memo(StaticGroupedToolRow, (prev, next) =
 
 /**
  * Aggregate sorted activity parts into display rows.
- * Consecutive static tools with the same name share one row.
+ * Static tools render one row per call (no consecutive merge).
  * Reasoning/justification become inline text.
  * Expandable tools (edit, bash, write, question) stay as individual rows.
  * Unknown tools stay as individual expandable rows (fallback).
@@ -521,22 +518,9 @@ const aggregateRows = (parts: TurnActivityPart[]): AggregatedRow[] => {
         }
 
         if (isStaticTool(toolName)) {
-            const activities = [activity];
-            let nextIndex = i + 1;
-            while (nextIndex < parts.length) {
-                const nextActivity = parts[nextIndex];
-                if (nextActivity.kind !== 'tool') {
-                    break;
-                }
-                const nextToolName = (nextActivity.part as ToolPartType).tool?.toLowerCase() ?? '';
-                if (nextToolName !== toolName || !isStaticTool(nextToolName)) {
-                    break;
-                }
-                activities.push(nextActivity);
-                nextIndex += 1;
-            }
-            rows.push({ type: 'tool-static-group', toolName, activities });
-            i = nextIndex;
+            // One static call per row — flat list, no multi-target chip merge.
+            rows.push({ type: 'tool-static-group', toolName, activities: [activity] });
+            i++;
             continue;
         }
 
@@ -549,8 +533,8 @@ const aggregateRows = (parts: TurnActivityPart[]): AggregatedRow[] => {
 };
 
 /**
- * Render a static aggregated tool row.
- * Shows: [icon] DisplayName file1.tsx file2.tsx ...
+ * Render a static tool row (one call).
+ * Shows: [icon] DisplayName target
  */
 const areActivityListsEqual = (left: TurnActivityPart[], right: TurnActivityPart[]): boolean => {
     if (left === right) {
@@ -601,62 +585,39 @@ const StaticToolRowInner: React.FC<{
     const skills = React.useMemo(() => skillsQuery.data ?? [], [skillsQuery.data]);
     const skillByName = React.useMemo(() => new Map(skills.map((skill) => [skill.name, skill])), [skills]);
 
-    const descriptions = React.useMemo(() => {
-        const descs: string[] = [];
-        for (const activity of activities) {
-            const desc = getToolShortDescription(activity);
-            if (desc && !descs.includes(desc)) {
-                descs.push(desc);
-            }
-        }
-        return descs;
-    }, [activities]);
+    // Rows are one call each; still accept a list so callers can pass a single activity.
+    const primaryActivity = activities[0] ?? null;
+    const description = primaryActivity ? getToolShortDescription(primaryActivity) : null;
 
-    const visibleDescriptions = descriptions.slice(0, 3);
-    const hiddenDescriptionCount = Math.max(0, descriptions.length - visibleDescriptions.length);
-    const hiddenDescriptionTitle = descriptions.slice(visibleDescriptions.length).join('\n');
-
-    const skillEntries = React.useMemo(() => {
-        if (toolName.toLowerCase() !== 'skill') return [] as Array<{ name: string; path: string }>;
-
-        const entries: Array<{ name: string; path: string }> = [];
-        for (const activity of activities) {
-            const name = getToolShortDescription(activity);
-            if (!name) continue;
-
-            const skill = skillByName.get(name);
-            const rawPath = skill?.path || getToolSkillDirectory(activity);
-            // Built-in skills are not backed by a real file path.
-            if (!rawPath || rawPath === '<built-in>') continue;
-            const path = resolveSkillFilePath(rawPath);
-            if (!path || entries.some((entry) => entry.name === name && entry.path === path)) continue;
-            entries.push({ name, path });
+    const skillEntry = React.useMemo(() => {
+        if (toolName.toLowerCase() !== 'skill' || !primaryActivity || !description) {
+            return null as { name: string; path: string } | null;
         }
 
-        return entries;
-    }, [activities, skillByName, toolName]);
-    const visibleSkillEntries = skillEntries.slice(0, 3);
-    const hiddenSkillCount = Math.max(0, skillEntries.length - visibleSkillEntries.length);
-    const hiddenSkillTitle = skillEntries.slice(visibleSkillEntries.length).map((entry) => entry.name).join('\n');
+        const skill = skillByName.get(description);
+        const rawPath = skill?.path || getToolSkillDirectory(primaryActivity);
+        // Built-in skills are not backed by a real file path.
+        if (!rawPath || rawPath === '<built-in>') return null;
+        const path = resolveSkillFilePath(rawPath);
+        if (!path) return null;
+        return { name: description, path };
+    }, [description, primaryActivity, skillByName, toolName]);
 
-    const readFileEntries = React.useMemo(() => {
-        if (!isReadGroup) return [] as Array<{ path: string; displayPath: string; offset?: number }>;
-
-        const entries: Array<{ path: string; displayPath: string; offset?: number }> = [];
-        for (const activity of activities) {
-            const filePath = getToolFilePath(activity);
-            const offset = getToolReadOffset(activity);
-            if (!filePath) continue;
-            if (entries.some((entry) => entry.path === filePath)) continue;
-            const displayPath = getRelativeFilePath(filePath, currentDirectory);
-            if (!displayPath) continue;
-            entries.push({ path: filePath, displayPath, offset });
+    const readFileEntry = React.useMemo(() => {
+        if (!isReadGroup || !primaryActivity) {
+            return null as { path: string; displayPath: string; offset?: number } | null;
         }
-        return entries;
-    }, [activities, currentDirectory, isReadGroup]);
-    const visibleReadFileEntries = readFileEntries.slice(0, 3);
-    const hiddenReadFileCount = Math.max(0, readFileEntries.length - visibleReadFileEntries.length);
-    const hiddenReadFileTitle = readFileEntries.slice(visibleReadFileEntries.length).map((entry) => entry.displayPath).join('\n');
+
+        const filePath = getToolFilePath(primaryActivity);
+        if (!filePath) return null;
+        const displayPath = getRelativeFilePath(filePath, currentDirectory);
+        if (!displayPath) return null;
+        return {
+            path: filePath,
+            displayPath,
+            offset: getToolReadOffset(primaryActivity),
+        };
+    }, [currentDirectory, isReadGroup, primaryActivity]);
 
     const handleReadFileClick = useEvent((filePath: string, offset?: number) => {
         if (!currentDirectory) {
@@ -737,26 +698,23 @@ const StaticToolRowInner: React.FC<{
         || normalizedToolName === 'glob';
     const isFetchGroup = normalizedToolName === 'webfetch' || normalizedToolName === 'fetch' || normalizedToolName === 'curl' || normalizedToolName === 'wget';
     const isSkillGroup = normalizedToolName === 'skill';
-    // Read/Skill 与 Edit/Write 一致：整行导航热区（多文件时点路径仍可精确打开）
-    const primaryReadEntry = isReadGroup && readFileEntries.length > 0 ? readFileEntries[0] : null;
-    const primarySkillEntry = isSkillGroup && skillEntries.length > 0 ? skillEntries[0] : null;
-    const isWholeRowNav = Boolean(primaryReadEntry || primarySkillEntry);
+    // Read/Skill 与 Edit/Write 一致：整行导航热区
+    const isWholeRowNav = Boolean(readFileEntry || skillEntry);
     const canActivateWholeRowNav = Boolean(
-        (primaryReadEntry && currentDirectory)
-        || primarySkillEntry
+        (readFileEntry && currentDirectory)
+        || skillEntry
     );
 
     const handleWholeRowNavClick = useEvent(() => {
         if (!isWholeRowNav || !canActivateWholeRowNav) {
             return;
         }
-        // 多路径子按钮已 stopPropagation；整行只负责主目标
-        if (primaryReadEntry) {
-            handleReadFileClick(primaryReadEntry.path, primaryReadEntry.offset);
+        if (readFileEntry) {
+            handleReadFileClick(readFileEntry.path, readFileEntry.offset);
             return;
         }
-        if (primarySkillEntry) {
-            handleSkillClick(primarySkillEntry.path);
+        if (skillEntry) {
+            handleSkillClick(skillEntry.path);
         }
     });
 
@@ -794,138 +752,73 @@ const StaticToolRowInner: React.FC<{
             >
                 {displayName}
             </span>
-            {isReadGroup && visibleReadFileEntries.length > 0
-                ? visibleReadFileEntries.map((entry) => (
-                    readFileEntries.length === 1 ? (
-                        <span
-                            key={entry.path}
-                            className={cn('inline-flex !min-h-0 items-center justify-start gap-1 min-w-0 flex-1 text-left', TOOL_ROW_DESCRIPTION_CLASS)}
-                            style={{ color: 'var(--tools-description)' }}
-                            title={entry.offset ? `${entry.displayPath}:${entry.offset}` : entry.displayPath}
-                        >
-                            {showToolFileIcons ? <FileTypeIcon filePath={entry.path} className="h-3.5 w-3.5" /> : null}
-                            {renderReadFilePath(entry.displayPath, animateTailText)}
-                        </span>
-                    ) : (
-                        <button
-                            key={entry.path}
-                            type="button"
-                            disabled={!currentDirectory}
-                            onClick={(event) => {
-                                event.preventDefault();
-                                event.stopPropagation();
-                                handleReadFileClick(entry.path, entry.offset);
-                            }}
-                            className={cn('inline-flex !min-h-0 min-w-0 max-w-48 flex-[0_1_12rem] items-center justify-start gap-1 text-left hover:opacity-90', TOOL_ROW_DESCRIPTION_CLASS)}
-                            style={{ color: 'var(--tools-description)' }}
-                            title={entry.offset ? `${entry.displayPath}:${entry.offset}` : entry.displayPath}
-                        >
-                            {showToolFileIcons ? <FileTypeIcon filePath={entry.path} className="h-3.5 w-3.5" /> : null}
-                            {renderReadFilePath(entry.displayPath, animateTailText)}
-                        </button>
-                    )
-                ))
-                : null}
-            {hiddenReadFileCount > 0 ? (
+            {isReadGroup && readFileEntry ? (
                 <span
-                    className={cn('flex-shrink-0 rounded-md bg-muted/45 px-1.5 py-0.5 text-muted-foreground', TOOL_ROW_DESCRIPTION_CLASS)}
-                    title={hiddenReadFileTitle}
-                    aria-label={`+${hiddenReadFileCount}: ${hiddenReadFileTitle}`}
+                    className={cn('inline-flex !min-h-0 items-center justify-start gap-1 min-w-0 flex-1 text-left', TOOL_ROW_DESCRIPTION_CLASS)}
+                    style={{ color: 'var(--tools-description)' }}
+                    title={readFileEntry.offset ? `${readFileEntry.displayPath}:${readFileEntry.offset}` : readFileEntry.displayPath}
                 >
-                    +{hiddenReadFileCount}
+                    {showToolFileIcons ? <FileTypeIcon filePath={readFileEntry.path} className="h-3.5 w-3.5" /> : null}
+                    {renderReadFilePath(readFileEntry.displayPath, animateTailText)}
                 </span>
             ) : null}
-            {isSearchGroup && descriptions.length > 0
-                ? visibleDescriptions.map((desc, index) => (
-                    <span key={`${desc}-${index}`} className="inline-flex min-w-0 max-w-56 flex-[0_1_14rem]">
-                        <Text
-                            variant={animateTailText ? 'generate-effect' : 'static'}
-                            className={cn('min-w-0 flex-1 truncate whitespace-nowrap', TOOL_ROW_DESCRIPTION_CLASS)}
-                            style={{ color: 'var(--tools-description)' }}
-                            title={desc}
-                        >
-                            "{desc}"
-                        </Text>
-                    </span>
-                ))
-                : null}
-            {isFetchGroup && descriptions.length > 0
-                ? visibleDescriptions.map((url, index) => (
-                    <a
-                        key={`${url}-${index}`}
-                        href={url}
-                        target="_blank"
-                        rel="noopener noreferrer"
-                        onClick={(event) => {
-                            // 避免被整行导航（若未来扩展）吞掉外链
-                            event.stopPropagation();
-                        }}
-                        className={cn(
-                            'min-w-0 max-w-64 flex-[0_1_16rem] inline-flex items-center gap-1.5 underline decoration-[color:var(--status-info)] underline-offset-2 hover:opacity-90',
-                            'truncate whitespace-nowrap', TOOL_ROW_DESCRIPTION_CLASS
-                        )}
-                        style={{ color: 'var(--status-info)' }}
-                        title={url}
+            {isSearchGroup && description ? (
+                <span className="inline-flex min-w-0 flex-1">
+                    <Text
+                        variant={animateTailText ? 'generate-effect' : 'static'}
+                        className={cn('min-w-0 flex-1 truncate whitespace-nowrap', TOOL_ROW_DESCRIPTION_CLASS)}
+                        style={{ color: 'var(--tools-description)' }}
+                        title={description}
                     >
-                        <ExternalLinkFavicon href={url} />
-                        <span className="min-w-0 truncate">{url}</span>
-                    </a>
-                ))
-                : null}
-            {(isSearchGroup || isFetchGroup) && hiddenDescriptionCount > 0 ? (
-                <span
-                    className={cn('flex-shrink-0 rounded-md bg-muted/45 px-1.5 py-0.5 text-muted-foreground', TOOL_ROW_DESCRIPTION_CLASS)}
-                    title={hiddenDescriptionTitle}
-                    aria-label={`+${hiddenDescriptionCount}: ${hiddenDescriptionTitle}`}
-                >
-                    +{hiddenDescriptionCount}
+                        "{description}"
+                    </Text>
                 </span>
             ) : null}
-            {isSkillGroup && skillEntries.length > 0
-                ? visibleSkillEntries.map((entry, index) => (
-                    skillEntries.length === 1 ? (
-                        <span
-                            key={`${entry.name}-${entry.path}-${index}`}
-                            className={cn('!min-h-0 min-w-0 flex-1 truncate whitespace-nowrap text-left', TOOL_ROW_DESCRIPTION_CLASS)}
-                            style={{ color: 'var(--tools-description)' }}
-                            title={entry.path}
-                        >
-                            {entry.name}
-                        </span>
-                    ) : (
-                        <button
-                            key={`${entry.name}-${entry.path}-${index}`}
-                            type="button"
-                            onClick={(event) => {
-                                event.preventDefault();
-                                event.stopPropagation();
-                                handleSkillClick(entry.path);
-                            }}
-                            className={cn('!min-h-0 min-w-0 max-w-48 flex-[0_1_12rem] truncate whitespace-nowrap text-left hover:opacity-90', TOOL_ROW_DESCRIPTION_CLASS)}
-                            style={{ color: 'var(--tools-description)' }}
-                            title={entry.path}
-                        >
-                            {entry.name}
-                        </button>
-                    )
-                ))
-                : null}
-            {isSkillGroup && hiddenSkillCount > 0 ? (
-                <span
-                    className={cn('flex-shrink-0 rounded-md bg-muted/45 px-1.5 py-0.5 text-muted-foreground', TOOL_ROW_DESCRIPTION_CLASS)}
-                    title={hiddenSkillTitle}
-                    aria-label={`+${hiddenSkillCount}: ${hiddenSkillTitle}`}
+            {isFetchGroup && description ? (
+                <a
+                    href={description}
+                    target="_blank"
+                    rel="noopener noreferrer"
+                    onClick={(event) => {
+                        // 避免被整行导航（若未来扩展）吞掉外链
+                        event.stopPropagation();
+                    }}
+                    className={cn(
+                        'min-w-0 flex-1 inline-flex items-center gap-1.5 underline decoration-[color:var(--status-info)] underline-offset-2 hover:opacity-90',
+                        'truncate whitespace-nowrap', TOOL_ROW_DESCRIPTION_CLASS
+                    )}
+                    style={{ color: 'var(--status-info)' }}
+                    title={description}
                 >
-                    +{hiddenSkillCount}
+                    <ExternalLinkFavicon href={description} />
+                    <span className="min-w-0 truncate">{description}</span>
+                </a>
+            ) : null}
+            {isSkillGroup && skillEntry ? (
+                <span
+                    className={cn('!min-h-0 min-w-0 flex-1 truncate whitespace-nowrap text-left', TOOL_ROW_DESCRIPTION_CLASS)}
+                    style={{ color: 'var(--tools-description)' }}
+                    title={skillEntry.path}
+                >
+                    {skillEntry.name}
                 </span>
             ) : null}
-            {!isReadGroup && !isSearchGroup && !isFetchGroup && !isSkillGroup && descriptions.length > 0 ? (
+            {isSkillGroup && !skillEntry && description ? (
+                <span
+                    className={cn('!min-h-0 min-w-0 flex-1 truncate whitespace-nowrap text-left', TOOL_ROW_DESCRIPTION_CLASS)}
+                    style={{ color: 'var(--tools-description)' }}
+                    title={description}
+                >
+                    {description}
+                </span>
+            ) : null}
+            {!isReadGroup && !isSearchGroup && !isFetchGroup && !isSkillGroup && description ? (
                 <Text
                     variant={animateTailText ? 'generate-effect' : 'static'}
                     className={cn('min-w-0 flex-1 truncate whitespace-nowrap', TOOL_ROW_DESCRIPTION_CLASS)}
                     style={{ color: 'var(--tools-description)' }}
                 >
-                    {descriptions.join(' ')}
+                    {description}
                 </Text>
             ) : null}
         </div>
@@ -994,12 +887,10 @@ const ProgressiveGroup: React.FC<ProgressiveGroupProps> = ({
     onContentChange,
     streamPhase,
     showHeader,
-    statusOnly = false,
     renderJustificationActions,
 }) => {
     const { t } = useI18n();
     const activityHeaderRef = React.useRef<HTMLButtonElement | null>(null);
-    const statusHeaderRef = React.useRef<HTMLDivElement | null>(null);
     const pendingToggleAnchorRef = React.useRef<{
         top: number;
         scrollContainer: HTMLElement | null;
@@ -1030,12 +921,12 @@ const ProgressiveGroup: React.FC<ProgressiveGroupProps> = ({
                 ? t(isCompaction ? 'chat.activity.compactionCompleted' : 'chat.activity.completedStatus')
                 : t('chat.activity.title');
     const activityDuration = isActive ? activeDuration : completedDuration;
-    const taskAgentNames = React.useMemo(() => getTaskAgentNames(parts), [parts]);
-    const displayedTaskAgentNames = isActive ? taskAgentNames.active : taskAgentNames.all;
+    const taskAvatarSeeds = React.useMemo(() => getTaskAvatarSeeds(parts), [parts]);
+    const displayedTaskAvatarSeeds = isActive ? taskAvatarSeeds.active : taskAvatarSeeds.all;
     // Cap avatars so the collapsed header stays one line (text is already short).
-    const visibleTaskAgentNames = displayedTaskAgentNames.slice(0, isMobile ? 2 : 3);
+    const visibleTaskAvatarSeeds = displayedTaskAvatarSeeds.slice(0, isMobile ? 2 : 3);
     const handleToggle = useEvent(() => {
-        const header = activityHeaderRef.current ?? statusHeaderRef.current;
+        const header = activityHeaderRef.current;
         pendingToggleAnchorRef.current = header
             ? {
                 top: header.getBoundingClientRect().top,
@@ -1046,7 +937,7 @@ const ProgressiveGroup: React.FC<ProgressiveGroupProps> = ({
     });
     React.useLayoutEffect(() => {
         const anchor = pendingToggleAnchorRef.current;
-        const header = activityHeaderRef.current ?? statusHeaderRef.current;
+        const header = activityHeaderRef.current;
         if (!anchor || !header) {
             return;
         }
@@ -1166,7 +1057,7 @@ const ProgressiveGroup: React.FC<ProgressiveGroupProps> = ({
             case 'tool-static-group':
                 return (
                     <MemoStaticGroupedToolRow
-                        key={`static-${row.toolName}-${row.activities[0]?.id ?? index}`}
+                        key={row.activities[0]?.id ?? `static-${row.toolName}-${index}`}
                         toolName={row.toolName}
                         activities={row.activities}
                         isMobile={isMobile}
@@ -1203,32 +1094,6 @@ const ProgressiveGroup: React.FC<ProgressiveGroupProps> = ({
 
     return (
         <div className={getToolRowBlockClass(isMobile)}>
-                {statusOnly ? (
-                    <div
-                        ref={statusHeaderRef}
-                        className={cn(
-                            'group/tool -mx-2 flex w-full min-w-0 flex-wrap items-center gap-x-2 gap-y-0.5 text-left',
-                            TOOL_ROW_CHIP_GEOMETRY_CLASS,
-                        )}
-                        role="status"
-                        aria-live={isActive ? 'polite' : undefined}
-                    >
-                        <span className="inline-flex h-5 flex-shrink-0 items-center" style={{ color: 'var(--tools-icon)' }}>
-                            <Icon name={activityIconName} className="size-3.5" />
-                        </span>
-                        <span className={cn(
-                            'typography-ui-label inline-flex h-5 flex-shrink-0 items-center font-semibold',
-                            isActive
-                                ? 'animate-text-shimmer text-[var(--status-info)] [--oc-text-shimmer-base:var(--status-info)]'
-                                : 'text-foreground/85',
-                        )}>
-                            {activityStatusLabel}
-                        </span>
-                        {activityDuration ? (
-                            <span aria-hidden="true" className="typography-meta tabular-nums text-muted-foreground">{activityDuration}</span>
-                        ) : null}
-                    </div>
-                ) : (
                     <button
                         ref={activityHeaderRef}
                         type="button"
@@ -1279,16 +1144,16 @@ const ProgressiveGroup: React.FC<ProgressiveGroupProps> = ({
                         'ml-auto inline-flex max-w-[min(14rem,55%)] shrink-0 items-center justify-end',
                         isMobile ? 'gap-0.5' : 'gap-1',
                     )}>
-                        {displayedTaskAgentNames.length > 0 ? (
+                        {displayedTaskAvatarSeeds.length > 0 ? (
                             <span className={cn(
                                 'inline-flex min-w-0 items-center text-muted-foreground',
                                 isMobile ? 'gap-1' : 'gap-1.5',
                             )}>
                                 <span className="inline-flex shrink-0 items-center gap-0.5" aria-hidden="true">
-                                    {visibleTaskAgentNames.map((name, index) => (
+                                    {visibleTaskAvatarSeeds.map((seed, index) => (
                                         <AgentAvatar
-                                            key={`${name}-${index}`}
-                                            name={name}
+                                            key={`${seed}-${index}`}
+                                            name={seed}
                                             size={isMobile ? 12 : 14}
                                             className={cn(
                                                 'flex-none',
@@ -1301,8 +1166,8 @@ const ProgressiveGroup: React.FC<ProgressiveGroupProps> = ({
                                 </span>
                                 <span className="typography-meta min-w-0 truncate">
                                     {isActive
-                                        ? t('chat.activity.agentsWorking', { count: displayedTaskAgentNames.length })
-                                        : t('chat.activity.agentsInvolved', { count: displayedTaskAgentNames.length })}
+                                        ? t('chat.activity.agentsWorking', { count: displayedTaskAvatarSeeds.length })
+                                        : t('chat.activity.agentsInvolved', { count: displayedTaskAvatarSeeds.length })}
                                 </span>
                             </span>
                         ) : null}
@@ -1317,8 +1182,7 @@ const ProgressiveGroup: React.FC<ProgressiveGroupProps> = ({
                         />
                     </span>
                     </button>
-                )}
-                {!statusOnly && shouldShowRowsContainer ? (
+                {shouldShowRowsContainer ? (
                     <div className="relative ml-2 pl-3">
                         <span
                             aria-hidden="true"

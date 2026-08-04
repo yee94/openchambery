@@ -28,7 +28,6 @@ interface TurnActivityProps {
     onContentChange?: (reason?: ContentChangeReason) => void;
     streamPhase: StreamPhase;
     showHeader: boolean;
-    statusOnly?: boolean;
     diffStats?: DiffStats;
     renderJustificationActions?: (activity: TurnActivityRecord) => React.ReactNode;
 }

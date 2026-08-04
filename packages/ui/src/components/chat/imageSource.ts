@@ -1,7 +1,12 @@
 import React from 'react';
-import { runtimeFetch } from '@/lib/runtime-fetch';
 import { getRuntimeTransportIdentity, subscribeRuntimeEndpointChanged } from '@/lib/runtime-switch';
 import { isAbsoluteFilePath, normalizeFilePath, toAbsoluteFilePath } from '@/lib/path-utils';
+import {
+  releaseRelayImageDisplayUrl,
+  streamRelayImageDisplayUrl,
+} from '@/lib/relay/relay-image-stream';
+
+const IMAGE_RELAY_RETRY_DELAYS_MS = [0, 250, 750] as const;
 
 const decodeFileUrlPart = (value: string): string => {
   try {
@@ -55,20 +60,43 @@ export const resolveImageSource = (source: string, effectiveDirectory: string) =
   return { kind: 'runtime-file', source: trimmed, path };
 };
 
+/**
+ * Load a runtime file path into a display URL for img.src.
+ * Web: Blob object URL. Native bridge present: virtual URL via opaque asset stream.
+ * Retries through transient tunnel reconnects.
+ */
 export const fetchRuntimeImageObjectUrl = async (
   path: string,
   signal: AbortSignal,
 ): Promise<string> => {
-  const response = await runtimeFetch('/api/fs/raw', {
-    method: 'GET',
-    cache: 'no-store',
-    query: { path },
-    signal,
-  });
-  if (!response.ok) {
-    throw new Error(`Image source request failed with status ${response.status}`);
+  let lastError: unknown;
+  for (const delayMs of IMAGE_RELAY_RETRY_DELAYS_MS) {
+    if (delayMs > 0) {
+      await new Promise<void>((resolve, reject) => {
+        const timer = window.setTimeout(resolve, delayMs);
+        signal.addEventListener('abort', () => {
+          window.clearTimeout(timer);
+          reject(signal.reason);
+        }, { once: true });
+      });
+    }
+
+    try {
+      return await streamRelayImageDisplayUrl(path, signal);
+    } catch (error) {
+      if (signal.aborted) {
+        throw error;
+      }
+      lastError = error;
+    }
   }
-  return URL.createObjectURL(await response.blob());
+
+  throw lastError instanceof Error ? lastError : new Error('Image source request failed');
+};
+
+/** Release a URL from fetchRuntimeImageObjectUrl (blob or native virtual URL). */
+export const releaseRuntimeImageObjectUrl = (url: string): void => {
+  releaseRelayImageDisplayUrl(url);
 };
 
 export const isRelayTransport = (transportIdentity: string): boolean => transportIdentity.startsWith('relay:');
@@ -111,7 +139,7 @@ export const useResolvedImageSource = (source: string, effectiveDirectory: strin
     void fetchRuntimeImageObjectUrl(resolved.path, controller.signal)
       .then((nextObjectUrl) => {
         if (controller.signal.aborted || getRuntimeTransportIdentity() !== transportIdentity) {
-          URL.revokeObjectURL(nextObjectUrl);
+          releaseRuntimeImageObjectUrl(nextObjectUrl);
           return;
         }
         objectUrl = nextObjectUrl;
@@ -122,7 +150,7 @@ export const useResolvedImageSource = (source: string, effectiveDirectory: strin
     return () => {
       controller.abort();
       if (objectUrl) {
-        URL.revokeObjectURL(objectUrl);
+        releaseRuntimeImageObjectUrl(objectUrl);
       }
     };
   }, [resolutionKey, resolved, transportIdentity, usesRelayFileSource]);

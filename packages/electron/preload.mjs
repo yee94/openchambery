@@ -192,6 +192,17 @@ ipcRenderer.on('openchamber:emit', (_evt, payload) => {
   dispatchNativeEvent(event, payload.detail);
 });
 
+// Virtual image asset bridge — local packaged/HMR UI only. Main still re-checks
+// isLocalSender; remote pages must not see these methods.
+const virtualAssetApi = isLocalPage
+  ? {
+      create: (options) => ipcRenderer.invoke('openchamber:asset:create', options || {}),
+      push: (assetId, chunk) => ipcRenderer.invoke('openchamber:asset:push', { assetId, chunk }),
+      finish: (assetId) => ipcRenderer.invoke('openchamber:asset:finish', { assetId }),
+      cancel: (assetId) => ipcRenderer.invoke('openchamber:asset:cancel', { assetId }),
+    }
+  : undefined;
+
 // The desktop bridge is exposed on all pages; the main-process gate in
 // ipcMain.handle('openchamber:invoke') decides per-command what is safe
 // for non-local callers (window/host-switcher ops yes, file/shell ops
@@ -209,4 +220,7 @@ contextBridge.exposeInMainWorld('__OPENCHAMBER_DESKTOP__', {
   } : undefined,
   openExternal: (url) => ipcRenderer.invoke('openchamber:invoke', 'desktop_open_external_url', { url }),
   listen: async (event, handler) => addListener(event, handler),
+  // Opaque virtual image stream for relay/host-backed images. URL scheme is
+  // openchamber-asset://stream/<assetId> — never host paths or credentials.
+  virtualAsset: virtualAssetApi,
 });

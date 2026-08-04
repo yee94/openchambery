@@ -29,6 +29,9 @@
 		D0B2000000000000000000B5 /* OpenChamberNotificationService.appex in Embed App Extensions */ = {isa = PBXBuildFile; fileRef = D0B1000000000000000000A7 /* OpenChamberNotificationService.appex */; settings = {ATTRIBUTES = (RemoveHeadersOnCopy, ); }; };
 		D0D2000000000000000000B1 /* OpenChamberShareStore.swift in Sources */ = {isa = PBXBuildFile; fileRef = D0D1000000000000000000A1 /* OpenChamberShareStore.swift */; };
 		D0D2000000000000000000B2 /* OpenChamberSharePlugin.swift in Sources */ = {isa = PBXBuildFile; fileRef = D0D1000000000000000000A2 /* OpenChamberSharePlugin.swift */; };
+		D0F2000000000000000000B1 /* OpenChamberVirtualAssetStore.swift in Sources */ = {isa = PBXBuildFile; fileRef = D0F1000000000000000000A1 /* OpenChamberVirtualAssetStore.swift */; };
+		D0F2000000000000000000B2 /* OpenChamberVirtualAssetHandler.swift in Sources */ = {isa = PBXBuildFile; fileRef = D0F1000000000000000000A2 /* OpenChamberVirtualAssetHandler.swift */; };
+		D0F2000000000000000000B3 /* OpenChamberVirtualAssetPlugin.swift in Sources */ = {isa = PBXBuildFile; fileRef = D0F1000000000000000000A3 /* OpenChamberVirtualAssetPlugin.swift */; };
 		D0E2000000000000000000B1 /* ShareViewController.swift in Sources */ = {isa = PBXBuildFile; fileRef = D0E1000000000000000000A1 /* ShareViewController.swift */; };
 		D0E2000000000000000000B2 /* OpenChamberShareStore.swift in Sources */ = {isa = PBXBuildFile; fileRef = D0D1000000000000000000A1 /* OpenChamberShareStore.swift */; };
 		D0E2000000000000000000B3 /* OpenChamberShareExtension.appex in Embed App Extensions */ = {isa = PBXBuildFile; fileRef = D0E1000000000000000000A4 /* OpenChamberShareExtension.appex */; settings = {ATTRIBUTES = (RemoveHeadersOnCopy, ); }; };
@@ -66,6 +69,9 @@
 		D0B1000000000000000000A7 /* OpenChamberNotificationService.appex */ = {isa = PBXFileReference; explicitFileType = "wrapper.app-extension"; includeInIndex = 0; path = OpenChamberNotificationService.appex; sourceTree = BUILT_PRODUCTS_DIR; };
 		D0D1000000000000000000A1 /* OpenChamberShareStore.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = OpenChamberShareStore.swift; sourceTree = "<group>"; };
 		D0D1000000000000000000A2 /* OpenChamberSharePlugin.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = OpenChamberSharePlugin.swift; sourceTree = "<group>"; };
+		D0F1000000000000000000A1 /* OpenChamberVirtualAssetStore.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = OpenChamberVirtualAssetStore.swift; sourceTree = "<group>"; };
+		D0F1000000000000000000A2 /* OpenChamberVirtualAssetHandler.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = OpenChamberVirtualAssetHandler.swift; sourceTree = "<group>"; };
+		D0F1000000000000000000A3 /* OpenChamberVirtualAssetPlugin.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = OpenChamberVirtualAssetPlugin.swift; sourceTree = "<group>"; };
 		D0E1000000000000000000A1 /* ShareViewController.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ShareViewController.swift; sourceTree = "<group>"; };
 		D0E1000000000000000000A2 /* Info.plist */ = {isa = PBXFileReference; lastKnownFileType = text.plist.xml; path = Info.plist; sourceTree = "<group>"; };
 		D0E1000000000000000000A3 /* OpenChamberShareExtension.entitlements */ = {isa = PBXFileReference; lastKnownFileType = text.plist.entitlements; path = OpenChamberShareExtension.entitlements; sourceTree = "<group>"; };
@@ -202,6 +208,9 @@
 				D0C1000000000000000000A3 /* OpenChamberBridgeViewController.swift */,
 				D0D1000000000000000000A1 /* OpenChamberShareStore.swift */,
 				D0D1000000000000000000A2 /* OpenChamberSharePlugin.swift */,
+				D0F1000000000000000000A1 /* OpenChamberVirtualAssetStore.swift */,
+				D0F1000000000000000000A2 /* OpenChamberVirtualAssetHandler.swift */,
+				D0F1000000000000000000A3 /* OpenChamberVirtualAssetPlugin.swift */,
 				504EC30B1FED79650016851F /* Main.storyboard */,
 				504EC30E1FED79650016851F /* Assets.xcassets */,
 				D0C1000000000000000000A1 /* PrivacyInfo.xcprivacy */,
@@ -414,6 +423,9 @@
 				D0C2000000000000000000B3 /* OpenChamberBridgeViewController.swift in Sources */,
 				D0D2000000000000000000B1 /* OpenChamberShareStore.swift in Sources */,
 				D0D2000000000000000000B2 /* OpenChamberSharePlugin.swift in Sources */,
+				D0F2000000000000000000B1 /* OpenChamberVirtualAssetStore.swift in Sources */,
+				D0F2000000000000000000B2 /* OpenChamberVirtualAssetHandler.swift in Sources */,
+				D0F2000000000000000000B3 /* OpenChamberVirtualAssetPlugin.swift in Sources */,
 				D0A2000000000000000000B6 /* OpenChamberControl.swift in Sources */,
 			);
 			runOnlyForDeploymentPostprocessing = 0;

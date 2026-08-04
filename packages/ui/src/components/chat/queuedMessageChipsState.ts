@@ -286,6 +286,8 @@ type QueuePreviewAttachment = {
 type QueuePreviewComposerReference = {
     kind?: unknown;
     sessionId?: unknown;
+    skillName?: unknown;
+    commandName?: unknown;
     display?: unknown;
 };
 
@@ -344,6 +346,27 @@ export const buildQueuedMessagePreviewSessionMentions = (
     return mentions;
 };
 
+/** Known slash names from composer sidecars so queue preview can decorate skills/commands without a live catalog. */
+export const buildQueuedMessagePreviewSlashNames = (
+    composerDocument: QueuePreviewComposerDocument | null | undefined,
+): Pick<MessageReferenceDetectContext, 'skillNames' | 'commandNames'> => {
+    const skillNames = new Set<string>();
+    const commandNames = new Set<string>();
+    for (const reference of composerDocument?.references ?? []) {
+        if (reference.kind === 'skill' && typeof reference.skillName === 'string' && reference.skillName) {
+            skillNames.add(reference.skillName);
+            continue;
+        }
+        if (reference.kind === 'command' && typeof reference.commandName === 'string' && reference.commandName) {
+            commandNames.add(reference.commandName);
+        }
+    }
+    return {
+        skillNames: skillNames.size > 0 ? skillNames : undefined,
+        commandNames: commandNames.size > 0 ? commandNames : undefined,
+    };
+};
+
 /** First visual line for the queue chip; CSS truncation owns overflow. */
 export const queuedMessagePreviewLine = (text: string): string => {
     const first = text.split('\n')[0] ?? '';
@@ -363,9 +386,12 @@ export const buildQueuedMessagePreviewParts = (
 ): MessageTextPart[] | null => {
     const line = queuedMessagePreviewLine(text);
     if (!line) return null;
+    const slashNames = buildQueuedMessagePreviewSlashNames(options.composerDocument);
     return buildMessageReferenceParts(line, {
         citationIcons: buildCitationIconsFromQueueAttachments(options.attachments),
         sessionMentions: buildQueuedMessagePreviewSessionMentions(options.composerDocument),
+        skillNames: slashNames.skillNames,
+        commandNames: slashNames.commandNames,
         allowPathHeuristics: true,
     });
 };

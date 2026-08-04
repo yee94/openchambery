@@ -43,7 +43,7 @@ import { createMermaidViewerRegistry, MERMAID_BLOCK_SELECTOR, shouldRefreshMerma
 import { scheduleAfterPaintTask } from '@/lib/afterPaintTaskQueue';
 import { DualLimitLru } from '@/lib/dualLimitLru';
 import { resolveStreamingRenderCadence } from './streamingRenderCadence';
-import { fetchRuntimeImageObjectUrl, isRelayTransport, resolveImageSource } from './imageSource';
+import { fetchRuntimeImageObjectUrl, isRelayTransport, releaseRuntimeImageObjectUrl, resolveImageSource } from './imageSource';
 import { getRuntimeTransportIdentity } from '@/lib/runtime-switch';
 import {
   BLOCK_PATH_TOKEN_RE,
@@ -211,7 +211,7 @@ const useMarkdownImageInteractions = ({
       if (!state) return;
       state.controller?.abort();
       if (state.objectUrl) {
-        URL.revokeObjectURL(state.objectUrl);
+        releaseRuntimeImageObjectUrl(state.objectUrl);
       }
       images.delete(image);
     };
@@ -268,7 +268,7 @@ const useMarkdownImageInteractions = ({
             || latest.controller !== controller
             || controller.signal.aborted
           ) {
-            URL.revokeObjectURL(objectUrl);
+            releaseRuntimeImageObjectUrl(objectUrl);
             return;
           }
           latest.controller = undefined;

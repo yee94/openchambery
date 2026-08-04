@@ -17,6 +17,20 @@ The mobile package reuses the web build, then rewrites `mobile.html` to `index.h
 - iOS and Android register the `openchamber://` URL scheme. Opening a validated `openchamber://connect?v=2&p=...` link invokes the same one-time pairing redemption used by the QR scanner, including on cold launch; pairing secrets remain transient and are never logged or persisted.
 - Pairing v2 Relay candidates carry their own `relayUrl`. Native and hosted mobile persist that endpoint with the connection metadata and use it for later reconnects, so official and self-hosted Relay connections can coexist on one client.
 
+## Native Virtual Image Asset Bridge
+
+- `OpenChamberVirtualAsset` is a Capacitor 8 plugin that turns renderer-owned progressive image bytes into a browser-consumable virtual URL. Web / hosted H5 keeps object-URL behavior and does not register this plugin.
+- **UI bridge API** (`packages/mobile/src/openchamber-virtual-asset.ts`):
+  - `create({ assetId, mime }) → { assetId, url }` — opaque one-use id (`[A-Za-z0-9_-]{8,80}`) and MIME; returns `openchamber-asset://v/{assetId}` (no host path, credentials, or filesystem location).
+  - `append({ assetId, chunk })` — Base64 raw bytes (standard or URL-safe); may wait under queue backpressure.
+  - `finish({ assetId })` — end of body; scheme handlers complete after draining the queue.
+  - `cancel({ assetId })` — abort and cleanup; readers stop and queues are dropped.
+  - `normalizeVirtualAssetMime(mime)` — optional TS pre-check aligned with native create (image-only).
+- **MIME (aligned with Electron):** `image/*` only — lowercase strict subtype form (type/subtype, optional `+suffix`, no parameters), max 128 chars, rejects CR/LF/NUL. Non-image types are rejected at create.
+- **iOS:** `OpenChamberBridgeViewController` registers a `WKURLSchemeHandler` for `openchamber-asset` and the plugin instance. The handler sends response headers immediately (including `X-Content-Type-Options: nosniff`), then incrementally `didReceive` queued chunks. One reader per asset; a second `beginRead` is rejected.
+- **Android:** `MainActivity` registers the plugin; on load it installs a `BridgeWebViewClient` subclass that intercepts `openchamber-asset://` and returns a streaming `WebResourceResponse` backed by a thread-safe blocking `InputStream` (responses include `X-Content-Type-Options: nosniff`). One reader per asset; a second `openStream` is rejected.
+- **Limits (both platforms):** 120s idle TTL, 16 concurrent assets, 32 MiB per asset, 4 MiB unread queue backpressure (append waits up to 15s), cancel/finish/close and expiry free all queues. Native code never receives host paths, relay credentials, or tunnel keys — only opaque ids and bytes.
+
 ## Native Haptics Hot Path
 
 - The `OpenChamberHaptics` Capacitor 8 plugin provides fire-and-forget impact feedback at three strengths: `impactLight`, `impactMedium`, and `impactHeavy`.
