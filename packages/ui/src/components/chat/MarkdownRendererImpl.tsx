@@ -147,7 +147,9 @@ const useMarkdownImageInteractions = ({
     [],
   );
 
-  React.useEffect(() => {
+  // useLayoutEffect so reconcile is armed before Morphdom's first-paint layout
+  // commit decorates placeholders and immediately auto-loads them.
+  React.useLayoutEffect(() => {
     reconcileRef.current = () => {};
     if (!imagePreviewEnabled) {
       return;
@@ -289,6 +291,12 @@ const useMarkdownImageInteractions = ({
       for (const [image, state] of images) {
         if (!root.contains(image) || getImageKey(image) !== state.key) {
           clearImage(image);
+        }
+      }
+      for (const image of Array.from(root.querySelectorAll<HTMLImageElement>(MARKDOWN_IMAGE_SELECTOR))) {
+        const state = ensureImageState(image);
+        if (state && !state.objectUrl) {
+          loadImage(image, state);
         }
       }
     };

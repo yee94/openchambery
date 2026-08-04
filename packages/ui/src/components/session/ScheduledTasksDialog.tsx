@@ -1056,16 +1056,16 @@ export function ScheduledTasksWorkspace({
                           {run.error ? (
                             <div
                               className={cn(
-                                'flex min-w-0 items-start gap-1.5 break-words typography-micro text-muted-foreground',
+                                'flex min-w-0 items-start gap-1.5 break-words typography-micro text-[var(--surface-muted-foreground)]',
                                 isMobilePanel
-                                  ? 'mt-2 line-clamp-2 rounded-lg bg-[var(--surface-muted)] px-2.5 py-2'
+                                  ? 'mt-2 line-clamp-2'
                                   : 'mt-1.5 line-clamp-1',
                               )}
                               title={run.error.slice(0, 300)}
                             >
                               <Icon
                                 name="error-warning"
-                                className="mt-px size-3.5 shrink-0 text-muted-foreground"
+                                className="mt-px size-3.5 shrink-0 text-[var(--status-error)]"
                                 aria-hidden="true"
                               />
                               <span className="min-w-0">{run.error.slice(0, 300)}</span>

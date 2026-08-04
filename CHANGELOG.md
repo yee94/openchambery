@@ -4,6 +4,11 @@ All notable changes to this project will be documented in this file.
 
 ## [Unreleased]
 
+## [1.16.117-beta.1] - 2026-08-04
+
+- **Relay Markdown images:** load local image references through the encrypted binary tunnel on first paint, so screenshots and other agent-produced image artifacts render directly on paired clients.
+- **Scheduled task history:** refine failed-run details in dark mode with theme-aware text and a quiet status icon treatment.
+
 ## [1.16.116] - 2026-08-04
 
 - **Git sync:** keep the toolbar controls aligned while sync details appear instantly in a hover tip; pending incoming or outgoing changes receive a compact status badge.

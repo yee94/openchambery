@@ -88,12 +88,12 @@ describe('ScheduledTasksDialog queries', () => {
     // Text-only ghost button (keeps hover); no external-link glyph.
     expect(content).not.toContain('<Icon name="external-link" className="size-4" />');
     expect(content).toContain("divide-y divide-border/50 overflow-hidden rounded-xl border border-border/60");
-    // Run error detail: muted gray (readable in dark) with leading icon — not
-    // status-error-foreground (often near-black and unreadable without a bg).
+    // Run error detail uses the active theme's muted foreground and a status icon.
     expect(content).toContain('{run.error ? (');
-    expect(content).toContain('flex min-w-0 items-start gap-1.5 break-words typography-micro text-muted-foreground');
+    expect(content).toContain('flex min-w-0 items-start gap-1.5 break-words typography-micro text-[var(--surface-muted-foreground)]');
+    expect(content).toContain("? 'mt-2 line-clamp-2'");
     expect(content).toContain('name="error-warning"');
-    expect(content).not.toContain("text-[var(--status-error-foreground)]',\n                                isMobilePanel");
+    expect(content).toContain('text-[var(--status-error)]');
   });
 
   test('opens linked run sessions through phone navigation or the desktop chat path and omits incomplete identities', async () => {

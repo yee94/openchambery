@@ -95,17 +95,19 @@ describe('image source contracts', () => {
     expect(helperSource).toContain('URL.revokeObjectURL(objectUrl)');
   });
 
-  test('keeps direct Markdown images on the browser path and loads relay-local placeholders on activation', () => {
+  test('keeps direct Markdown images on the browser path and auto-loads relay-local placeholders on first paint', () => {
     expect(decorateSource).toContain("data-md-link-favicon");
     expect(decorateSource).not.toContain('decorateMessageImages');
     expect(rendererSource).toContain('img:not([data-md-link-favicon="true"])');
     expect(rendererSource).toContain('if (!isRelayTransport(transportIdentity))');
     expect(rendererSource).not.toContain('IntersectionObserver');
+    expect(rendererSource).toContain('React.useLayoutEffect(() => {');
     expect(rendererSource).toContain('const activateImage = (image: HTMLImageElement)');
     expect(rendererSource).toContain('if (state && !state.objectUrl)');
     expect(rendererSource).toContain('loadImage(image, state);');
     expect(rendererSource).toContain('openImage(image);');
-    expect(rendererSource.match(/loadImage\(image, state\);/g)).toHaveLength(1);
+    // Auto-load from reconcile on first paint/commit, plus click/keyboard retry path.
+    expect(rendererSource.match(/loadImage\(image, state\);/g)).toHaveLength(2);
     expect(rendererSource).toContain('state.controller || state.objectUrl');
     expect(rendererSource).toContain('decorateMarkdownImages(block, ctx)');
     expect(decorateSource).toContain("image.setAttribute('data-md-image-source', source)");
@@ -140,7 +142,10 @@ describe('image source contracts', () => {
     const imageReconcileEnd = imageHook.indexOf('const activateImage', imageReconcileStart);
     const imageReconcile = imageHook.slice(imageReconcileStart, imageReconcileEnd);
     expect(imageReconcile).toContain('for (const [image, state] of images)');
-    expect(imageReconcile).not.toContain('querySelectorAll');
+    expect(imageReconcile).toContain('root.querySelectorAll<HTMLImageElement>(MARKDOWN_IMAGE_SELECTOR)');
+    expect(imageReconcile).toContain('const state = ensureImageState(image)');
+    expect(imageReconcile).toContain('loadImage(image, state)');
+    expect(imageReconcile).toContain('if (state && !state.objectUrl)');
     expect(rendererSource.match(/reconcileMarkdownImageResources\(target\);/g)).toHaveLength(3);
     const directBranchStart = rendererSource.indexOf('if (!isRelayTransport(transportIdentity))');
     const relayRegistryStart = rendererSource.indexOf('const images = new Map<HTMLImageElement, RelayImageState>()', directBranchStart);
