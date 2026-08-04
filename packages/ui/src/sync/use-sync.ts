@@ -558,7 +558,7 @@ export function useSync() {
             hasSession,
             hasMessages: cachedReady,
             info: prefetchInfo,
-            pageSize: getInitialSessionMessageLimit(),
+            pageSize: getInitialSessionTurnLimit(),
           })) return
 
           // After skip declined: dirty ready + hasSession still loads messages;

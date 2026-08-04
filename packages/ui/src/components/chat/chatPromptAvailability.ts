@@ -6,15 +6,35 @@ type ChatPromptAvailability = {
 };
 
 /**
- * Primary chat waits for the directory session list entity. Hosted secondary
+ * Primary chat waits for session identity before send. Hosted secondary
  * surfaces (Assistant) already own an authoritative binding on the host — a
  * missing list row must not block the composer.
+ *
+ * A directory list row is the preferred proof, but a renderable message
+ * snapshot is enough once materialization succeeded: list/index lag must not
+ * permanently disable Send after messages for that session already paint.
  */
 export const resolveSessionIdentityPending = (input: {
     sessionId: string | null | undefined;
     hasSessionEntity: boolean;
+    /** True when sync already holds a renderable message/part snapshot for this session. */
+    hasRenderableSessionSnapshot?: boolean;
     composerSurfaceKind?: 'primary' | 'secondary' | null;
-}): boolean => Boolean(input.sessionId && !input.hasSessionEntity && input.composerSurfaceKind !== 'secondary');
+}): boolean => {
+    if (!input.sessionId) {
+        return false;
+    }
+    if (input.composerSurfaceKind === 'secondary') {
+        return false;
+    }
+    if (input.hasSessionEntity) {
+        return false;
+    }
+    if (input.hasRenderableSessionSnapshot) {
+        return false;
+    }
+    return true;
+};
 
 export const resolveChatPromptAvailability = (input: {
     readOnly: boolean;

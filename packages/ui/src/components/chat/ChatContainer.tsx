@@ -65,6 +65,7 @@ import {
     useScopedBlockingQuestions,
     useParentSessionTarget,
     useSession,
+    useCurrentSessionEntity,
 } from '@/sync/sync-context';
 import { useSync } from '@/sync/use-sync';
 import { getSessionPrefetch, subscribeSessionPrefetch } from '@/sync/session-prefetch-cache';
@@ -657,16 +658,19 @@ const ChatContainerContent: React.FC<ChatContainerContentProps> = ({
         ),
         effectiveSessionDirectory,
     );
-    const currentSessionEntity = useSession(currentSessionId, effectiveSessionDirectory);
-    // Primary chat blocks send until the session appears in the directory list
-    // (identity may lag messages). Hosted secondary surfaces (Assistant) already
-    // carry an authoritative binding on the host; their managed workspaces often
-    // never appear in the selected-directory session index the same way, so a
-    // missing list entry must not permanently disable the composer — especially
-    // after mobile share creates/rebinds a fresh session.
+    const directorySessionEntity = useSession(currentSessionId, effectiveSessionDirectory);
+    // Global/live fallback covers sessions whose directory list row is lagging
+    // or lives under another selected workspace while messages already load.
+    const liveSessionEntity = useCurrentSessionEntity(currentSessionId);
+    const currentSessionEntity = directorySessionEntity ?? liveSessionEntity;
+    // Primary chat blocks send only while identity is still unproven. A missing
+    // directory list row must not permanently disable the composer once the
+    // session is materializable (or known via live/global entity). Hosted
+    // secondary surfaces never use this gate.
     const sessionIdentityPending = resolveSessionIdentityPending({
         sessionId: currentSessionId,
         hasSessionEntity: Boolean(currentSessionEntity),
+        hasRenderableSessionSnapshot,
         composerSurfaceKind: composerSurface?.kind,
     });
     const sessionIdentityEnsureKey = currentSessionId
@@ -1241,6 +1245,10 @@ const ChatContainerContent: React.FC<ChatContainerContentProps> = ({
     }, [active, currentSessionId, isDesktopExpandedInput, scrollRef]);
 
     const lastScrolledSessionRef = React.useRef<string | null>(null);
+    // Tracks message count at the last pin so a cold open that pinned while the
+    // transcript was still empty can re-pin once records land (deep link /
+    // session switch). Later growth (stream, load-older) must not re-pin.
+    const lastPinnedMessageCountRef = React.useRef(0);
 
     // Cold transcript gate: prefer a stable skeleton over flashing the
     // "Unable to load this conversation" wall while imperative + reactive
@@ -1262,10 +1270,27 @@ const ChatContainerContent: React.FC<ChatContainerContentProps> = ({
 
     React.useEffect(() => {
         if (!active || !currentSessionId) return;
-        if (lastScrolledSessionRef.current === currentSessionId) return;
+        // Skeleton has no ChatViewport/scrollRef. Pinning here only records
+        // lastScrolled and fires restore against a null container — then the
+        // real transcript commits later without a session-level re-pin
+        // (trace: one programmatic ScrollLayer before ChatMessage paint → blank).
+        if (isSessionHydrating) return;
+
+        const messageCount = viewportMessages.length;
+        const sessionChanged = lastScrolledSessionRef.current !== currentSessionId;
+        const firstContentLanded = !sessionChanged
+            && lastPinnedMessageCountRef.current === 0
+            && messageCount > 0;
+        if (!sessionChanged && !firstContentLanded) {
+            if (lastScrolledSessionRef.current === currentSessionId) {
+                lastPinnedMessageCountRef.current = messageCount;
+            }
+            return;
+        }
 
         const hasHashTarget = typeof window !== 'undefined' && window.location.hash.length > 0;
         lastScrolledSessionRef.current = currentSessionId;
+        lastPinnedMessageCountRef.current = messageCount;
         if (hasHashTarget) {
             // Hash navigation handler will scroll to target; we just release auto-follow.
             releaseAutoFollow();
@@ -1280,7 +1305,14 @@ const ChatContainerContent: React.FC<ChatContainerContentProps> = ({
         } else {
             window.requestAnimationFrame(run);
         }
-    }, [active, currentSessionId, releaseAutoFollow, restoreSnapshot]);
+    }, [
+        active,
+        currentSessionId,
+        isSessionHydrating,
+        releaseAutoFollow,
+        restoreSnapshot,
+        viewportMessages.length,
+    ]);
 
     React.useEffect(() => {
         setSessionIdentityEnsureRetry((current) => (

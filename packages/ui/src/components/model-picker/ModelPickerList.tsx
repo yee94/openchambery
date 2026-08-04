@@ -11,6 +11,7 @@ import {
 import { SortableContext, arrayMove, useSortable, verticalListSortingStrategy } from '@dnd-kit/sortable';
 import { CSS as DndCSS } from '@dnd-kit/utilities';
 import { Icon } from '@/components/icon/Icon';
+import type { IconName } from '@/components/icon/icons';
 import { Input } from '@/components/ui/input';
 import { ModelLogo } from '@/components/ui/ModelLogo';
 import { ProviderLogo } from '@/components/ui/ProviderLogo';
@@ -23,6 +24,59 @@ import { matchesModelSearch } from '@/lib/search/modelSearch';
 import { cn } from '@/lib/utils';
 import { useModelPickerSectionsStore } from '@/stores/useModelPickerSectionsStore';
 import type { ModelMetadata } from '@/types';
+
+type CapabilityIcon = {
+  key: string;
+  icon: IconName;
+  label: string;
+};
+
+/** Multimodal capabilities shown under 能力 — text/PDF are omitted as baseline/non-multimodal. */
+const MULTIMODAL_ICON_MAP: Record<string, { icon: IconName; labelKey: 'modalityImage' | 'modalityVideo' | 'modalityAudio' }> = {
+  image: { icon: 'file-image', labelKey: 'modalityImage' },
+  video: { icon: 'file-video', labelKey: 'modalityVideo' },
+  audio: { icon: 'file-music', labelKey: 'modalityAudio' },
+};
+
+const normalizeModality = (value: string) => value.trim().toLowerCase();
+
+const CapabilityIconBadge: React.FC<{ iconName: IconName; label: string }> = ({ iconName, label }) => (
+  <span
+    className="flex size-4 flex-shrink-0 items-center justify-center text-muted-foreground"
+    title={label}
+    aria-label={label}
+    role="img"
+  >
+    <Icon name={iconName} className="size-3.5" />
+  </span>
+);
+
+const getCapabilityIcons = (
+  metadata: ModelMetadata | undefined,
+  labels: ModelPickerListProps['labels'],
+): CapabilityIcon[] => {
+  const icons: CapabilityIcon[] = [];
+  if (metadata?.tool_call && labels.capabilityToolCalling) {
+    icons.push({ key: 'tool_call', icon: 'tools', label: labels.capabilityToolCalling });
+  }
+  if (metadata?.reasoning && labels.capabilityReasoning) {
+    icons.push({ key: 'reasoning', icon: 'brain-ai-3', label: labels.capabilityReasoning });
+  }
+
+  const modalityValues = [
+    ...(metadata?.modalities?.input ?? []),
+    ...(metadata?.modalities?.output ?? []),
+  ];
+  const uniqueModalities = Array.from(new Set(modalityValues.map(normalizeModality).filter(Boolean)));
+  for (const modality of uniqueModalities) {
+    const definition = MULTIMODAL_ICON_MAP[modality];
+    if (!definition) continue;
+    const label = labels[definition.labelKey];
+    if (!label) continue;
+    icons.push({ key: `modality-${modality}`, icon: definition.icon, label });
+  }
+  return icons;
+};
 
 type ProviderModel = Record<string, unknown> & { id?: string; name?: string };
 
@@ -79,7 +133,8 @@ const formatCost = (value?: number | null) => {
   return formatUsdCurrency(value);
 };
 
-const hasTooltipMetadata = (metadata?: ModelMetadata) => {
+const hasTooltipMetadata = (metadata?: ModelMetadata, providerName?: string) => {
+  if (providerName) return true;
   if (!metadata) return false;
   return Boolean(
     metadata.tool_call ||
@@ -93,10 +148,11 @@ const hasTooltipMetadata = (metadata?: ModelMetadata) => {
 
 const ModelPickerRowTooltip: React.FC<{
   metadata?: ModelMetadata;
+  providerName?: string;
   active: boolean;
   labels: ModelPickerListProps['labels'];
   children: React.ReactElement;
-}> = ({ metadata, active, labels, children }) => {
+}> = ({ metadata, providerName, active, labels, children }) => {
   const [delayedActive, setDelayedActive] = React.useState(false);
 
   React.useEffect(() => {
@@ -108,43 +164,48 @@ const ModelPickerRowTooltip: React.FC<{
     return () => window.clearTimeout(timeout);
   }, [active]);
 
-  if (!hasTooltipMetadata(metadata)) return children;
+  if (!hasTooltipMetadata(metadata, providerName)) return children;
 
-  const inputModalities = metadata?.modalities?.input ?? [];
-  const outputModalities = metadata?.modalities?.output ?? [];
-  const capabilities = [
-    metadata?.tool_call ? labels.capabilityToolCalling : null,
-    metadata?.reasoning ? labels.capabilityReasoning : null,
-  ].filter(Boolean);
+  const capabilityIcons = getCapabilityIcons(metadata, labels);
+  const hasCost = metadata?.cost?.input !== undefined || metadata?.cost?.output !== undefined;
 
   return (
     <Tooltip delayDuration={0} open={active && delayedActive} onOpenChange={() => {}}>
       <TooltipTrigger asChild>{children}</TooltipTrigger>
       {active && delayedActive ? (
-        <TooltipContent side="right" sideOffset={8} className="max-w-xs text-left transition-none data-[starting-style]:opacity-100 data-[starting-style]:scale-100 data-[ending-style]:opacity-100 data-[ending-style]:scale-100">
+        <TooltipContent side="right" sideOffset={8} className="min-w-52 max-w-xs text-left transition-none data-[starting-style]:opacity-100 data-[starting-style]:scale-100 data-[ending-style]:opacity-100 data-[ending-style]:scale-100">
           <div className="flex flex-col gap-2 text-left text-xs">
-            {capabilities.length > 0 ? (
+            {providerName && labels.provider ? (
               <div className="flex items-center justify-between gap-3 text-muted-foreground">
-                <span className="typography-meta font-medium">{labels.capabilities}</span>
-                <span className="typography-meta text-foreground">{capabilities.join(', ')}</span>
+                <span className="typography-meta font-medium">{labels.provider}</span>
+                <span className="typography-meta text-foreground">{providerName}</span>
               </div>
             ) : null}
-            {inputModalities.length > 0 ? (
+            {capabilityIcons.length > 0 ? (
               <div className="flex items-center justify-between gap-3 text-muted-foreground">
-                <span className="typography-meta font-medium">{labels.input}</span>
-                <span className="typography-meta text-foreground">{inputModalities.join(', ')}</span>
+                <span className="typography-meta font-medium shrink-0">{labels.capabilities}</span>
+                <div className="flex flex-wrap items-center justify-end gap-1">
+                  {capabilityIcons.map(({ key, icon, label }) => (
+                    <CapabilityIconBadge key={key} iconName={icon} label={label} />
+                  ))}
+                </div>
               </div>
             ) : null}
-            {outputModalities.length > 0 ? (
-              <div className="flex items-center justify-between gap-3 text-muted-foreground">
-                <span className="typography-meta font-medium">{labels.output}</span>
-                <span className="typography-meta text-foreground">{outputModalities.join(', ')}</span>
-              </div>
-            ) : null}
-            {(metadata?.cost?.input !== undefined || metadata?.cost?.output !== undefined) ? (
-              <div className="flex items-center justify-between gap-3 text-muted-foreground">
-                <span className="typography-meta font-medium">{labels.costPerMillion}</span>
-                <span className="typography-meta text-foreground">In {formatCost(metadata?.cost?.input)} · Out {formatCost(metadata?.cost?.output)}</span>
+            {hasCost ? (
+              <div className="flex items-start justify-between gap-3 text-muted-foreground">
+                {labels.costPerMillion ? (
+                  <span className="typography-meta font-medium shrink-0">{labels.costPerMillion}</span>
+                ) : null}
+                <div className="flex flex-col items-end gap-0.5 min-w-0">
+                  <div className="flex items-center justify-end gap-1.5 min-w-0">
+                    {labels.costInput ? <span className="typography-meta shrink-0">{labels.costInput}</span> : null}
+                    <span className="typography-meta text-foreground tabular-nums">{formatCost(metadata?.cost?.input)}</span>
+                  </div>
+                  <div className="flex items-center justify-end gap-1.5 min-w-0">
+                    {labels.costOutput ? <span className="typography-meta shrink-0">{labels.costOutput}</span> : null}
+                    <span className="typography-meta text-foreground tabular-nums">{formatCost(metadata?.cost?.output)}</span>
+                  </div>
+                </div>
               </div>
             ) : null}
           </div>
@@ -331,12 +392,16 @@ interface ModelPickerListProps {
     notSelected?: string;
     favorite?: string;
     unfavorite?: string;
+    provider?: string;
     capabilities?: string;
     capabilityToolCalling?: string;
     capabilityReasoning?: string;
-    input?: string;
-    output?: string;
+    modalityImage?: string;
+    modalityVideo?: string;
+    modalityAudio?: string;
     costPerMillion?: string;
+    costInput?: string;
+    costOutput?: string;
   };
   selectedModel?: { providerID: string; modelID: string } | null;
   hiddenModels?: HiddenModel[];
@@ -595,6 +660,7 @@ export const ModelPickerList: React.FC<ModelPickerListProps> = ({
 
   const renderRow = (entry: ModelPickerEntry, keyPrefix: string, showProviderLogo: boolean, rowIndex: number, dragHandleProps?: SortableFavoriteHandleProps | null) => {
     const metadata = mergeModelMetadataWithLiveModel(entry.providerID, entry.model, getMetadata?.(entry.providerID, entry.modelID));
+    const providerName = providerById.get(entry.providerID)?.name || entry.providerID;
     const contextTokens = formatModelContextTokens(metadata?.limit?.context);
     const count = selectionCount?.(entry) ?? 0;
     const isSelected = selectedModel?.providerID === entry.providerID && selectedModel.modelID === entry.modelID;
@@ -660,7 +726,7 @@ export const ModelPickerList: React.FC<ModelPickerListProps> = ({
             </div>
           );
 
-          return <ModelPickerRowTooltip metadata={metadata} active={tooltipsEnabled && isHighlighted} labels={labels}>{rowElement}</ModelPickerRowTooltip>;
+          return <ModelPickerRowTooltip metadata={metadata} providerName={providerName} active={tooltipsEnabled && isHighlighted} labels={labels}>{rowElement}</ModelPickerRowTooltip>;
         }}
       </ModelPickerRowHighlight>
     );

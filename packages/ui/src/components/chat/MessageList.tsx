@@ -26,10 +26,6 @@ import type { ReviewTransferDirection } from '@/lib/reviewFlow';
 import { scheduleAfterPaintTask } from '@/lib/afterPaintTaskQueue';
 import { useRenderPhaseCallback } from '@/hooks/useRenderPhaseCallback';
 import { getInitialHistoryOverscan, getNextHistoryOverscan } from './lib/historyOverscan';
-import {
-    createCoalesceVirtualizerScrollToState,
-    scheduleCoalescedVirtualizerScrollTo,
-} from './lib/scroll/coalesceVirtualizerScrollTo';
 import { DeferredToolHydrationProvider } from './message/parts/DeferredToolHydrationProvider';
 import {
     applyAuthoritativeTaskSessionIdToSubtaskParts,
@@ -1320,11 +1316,10 @@ const StaticHistoryList = React.memo(({ entries, engine, contentRef, scrollRef, 
         if (!isTanstack || historyOverscan >= targetOverscan) {
             return;
         }
-        // One after-paint jump to the product overscan (no multi-step ramp, no
-        // startTransition). Staging 2→4→6→8 interleaved with Markdown hydration
-        // produced repeated measure/scroll corrections during conversation load.
         return scheduleAfterPaintTask(() => {
-            setHistoryOverscan((current) => getNextHistoryOverscan(current, targetOverscan));
+            React.startTransition(() => {
+                setHistoryOverscan((current) => getNextHistoryOverscan(current, targetOverscan));
+            });
         });
     }, [historyOverscan, isTanstack, targetOverscan]);
     // Measurement cache is mode-scoped: collapsed vs summary geometry must not
@@ -1389,11 +1384,6 @@ const StaticHistoryList = React.memo(({ entries, engine, contentRef, scrollRef, 
             estimatedEntrySizeRef.current,
         );
     }
-    // virtual-core calls scrollToFn once per resizeItem while wasAtEnd. A cold
-    // open measures every mounted row in one commit → N height + scrollTop
-    // writes → Layout + ScrollLayer thrash (load-time jitter). Coalesce to one
-    // microtask flush per measure wave.
-    const coalesceScrollToRef = React.useRef(createCoalesceVirtualizerScrollToState());
     const tanstackVirtualizer = useTanstackVirtualizer<HTMLDivElement, HTMLDivElement>({
         count: renderEntries.length,
         enabled: isTanstack,
@@ -1401,21 +1391,12 @@ const StaticHistoryList = React.memo(({ entries, engine, contentRef, scrollRef, 
         estimateSize: () => estimatedEntrySizeRef.current,
         overscan: historyOverscan,
         scrollToFn: (offset, options, instance) => {
-            scheduleCoalescedVirtualizerScrollTo(coalesceScrollToRef.current, {
-                offset,
-                options,
-                instance,
-                sizeElement: sizeContainerRef.current,
-                writeNow: (nextOffset, nextOptions, nextInstance) => {
-                    // Smooth path still needs the height exposed before the write
-                    // so the browser does not clamp against a stale total size.
-                    const sizeElement = sizeContainerRef.current;
-                    if (sizeElement) {
-                        sizeElement.style.height = `${nextInstance.getTotalSize()}px`;
-                    }
-                    elementScroll(nextOffset, nextOptions, nextInstance as Parameters<typeof elementScroll>[2]);
-                },
-            });
+            // Expose the new total height before core writes an anchor
+            // correction so the browser does not clamp the offset to the old
+            // height.
+            const sizeElement = sizeContainerRef.current;
+            if (sizeElement) sizeElement.style.height = `${instance.getTotalSize()}px`;
+            elementScroll(offset, options, instance);
         },
         getItemKey: (index) => entriesRef.current[index]?.key ?? `index:${index}`,
         // Bottom-anchored chat contract (see package comment above). Prepends
@@ -1435,7 +1416,8 @@ const StaticHistoryList = React.memo(({ entries, engine, contentRef, scrollRef, 
     // Size-change scroll adjustment uses virtual-core's default (3.17.6+):
     // first measure compensates any above-fold row; remeasure only fully-above
     // rows and never while scrolling backward; wasAtEnd pins total-size growth.
-    // Per-item scroll writes are coalesced in scrollToFn (see above).
+    // Do not reassign shouldAdjustScrollPositionOnItemSizeChange unless product
+    // policy diverges from that chat default.
     const virtualItems = tanstackVirtualizer.getVirtualItems();
     const mountedIndexes = virtualItems.map((item) => item.index);
     const [hydratedMarkdownEntryKeys, setHydratedMarkdownEntryKeys] = React.useState(() => (
@@ -1471,18 +1453,6 @@ const StaticHistoryList = React.memo(({ entries, engine, contentRef, scrollRef, 
     // live turn never waits on this.
     const isScrolling = tanstackVirtualizer.isScrolling;
     const visibleMarkdownCount = Math.max(0, visibleRangeEnd - visibleRangeStart + 1);
-    // First idle settle after this list instance mounts (or after a bulk history
-    // land): release the whole visible window in one batch so end-anchor does
-    // not remeasure/scroll-correct once per metered row (trace: Layout +
-    // ScrollLayer every ~50–100ms for ~1s). Later idle frames keep the dense
-    // viewport cap so collapsed screens cannot freeze a 480ms ChatMessage dump.
-    const coldMarkdownSettleRef = React.useRef(true);
-    const prevEntryCountForMarkdownSettleRef = React.useRef(entryKeys.length);
-    if (entryKeys.length - prevEntryCountForMarkdownSettleRef.current >= 3) {
-        coldMarkdownSettleRef.current = true;
-    }
-    prevEntryCountForMarkdownSettleRef.current = entryKeys.length;
-    const coldMarkdownSettle = coldMarkdownSettleRef.current && !isScrolling;
     const markdownHydrationBatch = getMarkdownHydrationBatch({
         entryKeys,
         mountedIndexes,
@@ -1494,16 +1464,12 @@ const StaticHistoryList = React.memo(({ entries, engine, contentRef, scrollRef, 
         allowVisibleRelease: !isScrolling,
         preloadReleaseLimit: isScrolling
             ? resolveMarkdownPreloadReleaseWhileScrolling(activityRenderMode)
-            : coldMarkdownSettle
-                ? Math.max(MARKDOWN_PRELOAD_RELEASE_IDLE, visibleMarkdownCount)
-                : MARKDOWN_PRELOAD_RELEASE_IDLE,
-        // While scrolling, visible is withheld entirely. Cold settle takes the
-        // full visible count; later idle frames meter dense collapsed ranges.
+            : MARKDOWN_PRELOAD_RELEASE_IDLE,
+        // While scrolling, visible is withheld entirely. Once idle, cap the
+        // visible half so a dense collapsed viewport cannot freeze one frame.
         visibleReleaseLimit: isScrolling
             ? 0
-            : coldMarkdownSettle
-                ? Math.max(resolveMarkdownVisibleReleaseLimit(activityRenderMode), visibleMarkdownCount)
-                : resolveMarkdownVisibleReleaseLimit(activityRenderMode),
+            : resolveMarkdownVisibleReleaseLimit(activityRenderMode),
     });
     // The batch identity, not its array identity, is what the release effect
     // reacts to. The ref lets the after-paint task release the batch the list
@@ -1516,11 +1482,10 @@ const StaticHistoryList = React.memo(({ entries, engine, contentRef, scrollRef, 
             return;
         }
         return scheduleAfterPaintTask(() => {
-            const batch = markdownHydrationBatchRef.current;
-            const applyHydration = () => {
+            React.startTransition(() => {
                 setHydratedMarkdownEntryKeys((current) => {
                     let next: Set<string> | null = null;
-                    for (const key of batch) {
+                    for (const key of markdownHydrationBatchRef.current) {
                         if (current.has(key)) {
                             continue;
                         }
@@ -1529,17 +1494,7 @@ const StaticHistoryList = React.memo(({ entries, engine, contentRef, scrollRef, 
                     }
                     return next ?? current;
                 });
-            };
-            // Cold settle: one synchronous commit so measure/anchor runs once.
-            // Later releases stay in startTransition so they do not block input.
-            if (coldMarkdownSettleRef.current) {
-                applyHydration();
-                if (batch.length > 0) {
-                    coldMarkdownSettleRef.current = false;
-                }
-                return;
-            }
-            React.startTransition(applyHydration);
+            });
         });
     }, [isTanstack, markdownHydrationBatchKey]);
 

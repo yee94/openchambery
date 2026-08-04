@@ -6,16 +6,36 @@ import { resolveChatPromptAvailability, resolveComposerActionAvailability, resol
 const idlePhase = composerSendPhase(null, false);
 
 describe('resolveSessionIdentityPending', () => {
-    test('blocks primary chat while the directory session entity is missing', () => {
+    test('blocks primary chat while identity is still unproven', () => {
         expect(resolveSessionIdentityPending({
             sessionId: 'ses_1',
             hasSessionEntity: false,
+            hasRenderableSessionSnapshot: false,
             composerSurfaceKind: 'primary',
         })).toBe(true);
         expect(resolveSessionIdentityPending({
             sessionId: 'ses_1',
             hasSessionEntity: false,
         })).toBe(true);
+    });
+
+    test('unblocks once the directory session entity exists', () => {
+        expect(resolveSessionIdentityPending({
+            sessionId: 'ses_1',
+            hasSessionEntity: true,
+            hasRenderableSessionSnapshot: false,
+            composerSurfaceKind: 'primary',
+        })).toBe(false);
+    });
+
+    test('unblocks once a renderable message snapshot proves the session', () => {
+        // List/index lag must not permanently disable Send after messages paint.
+        expect(resolveSessionIdentityPending({
+            sessionId: 'ses_1',
+            hasSessionEntity: false,
+            hasRenderableSessionSnapshot: true,
+            composerSurfaceKind: 'primary',
+        })).toBe(false);
     });
 
     test('does not block hosted Assistant secondary surfaces on a missing list entity', () => {

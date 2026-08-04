@@ -3,6 +3,7 @@ import {
   applyPrimaryComposerSelectionChange,
   applyPrimaryComposerSessionRestore,
   capturePrimaryComposerSendConfig,
+  resolvePrimaryComposerSendConfig,
   resolvePrimaryComposerSessionSelection,
 } from './primaryComposerSelection';
 
@@ -380,5 +381,51 @@ describe('capturePrimaryComposerSendConfig', () => {
       agent: undefined,
       variant: undefined,
     });
+  });
+});
+
+describe('resolvePrimaryComposerSendConfig', () => {
+  test('prefers a successful live capture', () => {
+    expect(resolvePrimaryComposerSendConfig({
+      captured: {
+        providerID: 'openai',
+        modelID: 'gpt-5.5',
+        agent: 'build',
+      },
+      surfaceSelection: {
+        providerID: 'anthropic',
+        modelID: 'claude-sonnet',
+      },
+    })).toEqual({
+      providerID: 'openai',
+      modelID: 'gpt-5.5',
+      agent: 'build',
+    });
+  });
+
+  test('falls back to the composer UI selection when capture is empty', () => {
+    // Worktree→project lag can make capture refuse a scope mismatch even though
+    // ModelControls already show a complete selection the user expects to send.
+    expect(resolvePrimaryComposerSendConfig({
+      captured: undefined,
+      surfaceSelection: {
+        providerID: 'anthropic',
+        modelID: 'claude-sonnet',
+        agent: 'plan',
+        variant: 'high',
+      },
+    })).toEqual({
+      providerID: 'anthropic',
+      modelID: 'claude-sonnet',
+      agent: 'plan',
+      variant: 'high',
+    });
+  });
+
+  test('returns undefined when neither capture nor surface has a model', () => {
+    expect(resolvePrimaryComposerSendConfig({
+      captured: undefined,
+      surfaceSelection: { agent: 'build' },
+    })).toBeUndefined();
   });
 });

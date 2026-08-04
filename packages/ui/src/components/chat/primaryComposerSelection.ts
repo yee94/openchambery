@@ -358,6 +358,13 @@ export const applyPrimaryComposerSessionRestore = (
   );
 };
 
+export type PrimaryComposerSendConfig = {
+  providerID: string;
+  modelID: string;
+  agent?: string;
+  variant?: string;
+};
+
 /** Capture send config from a live primary config-store snapshot (post-flush). */
 export const capturePrimaryComposerSendConfig = (
   config: {
@@ -371,7 +378,7 @@ export const capturePrimaryComposerSendConfig = (
     expectedConfigKey?: string;
     activeDirectoryKey?: string;
   },
-): { providerID: string; modelID: string; agent?: string; variant?: string } | undefined => {
+): PrimaryComposerSendConfig | undefined => {
   // Refuse another Project's live catalog when the session scope is known.
   if (
     options?.expectedConfigKey !== undefined
@@ -387,6 +394,38 @@ export const capturePrimaryComposerSendConfig = (
     modelID: config.currentModelId,
     agent: config.currentAgentName,
     variant: config.currentVariant,
+  };
+};
+
+/**
+ * Resolve the provider/model used for a primary send after selection.flush.
+ *
+ * Prefer a scope-matched live config capture. When worktree→project resolution
+ * lags, capture can fail (expected key GLOBAL vs active project) even though
+ * the composer UI already shows a valid selection — fall back to that surface
+ * selection so Send does not silently restore the draft with no network call.
+ */
+export const resolvePrimaryComposerSendConfig = (input: {
+  captured?: PrimaryComposerSendConfig | null;
+  surfaceSelection?: {
+    providerID?: string;
+    modelID?: string;
+    agent?: string;
+    variant?: string;
+  } | null;
+}): PrimaryComposerSendConfig | undefined => {
+  if (input.captured?.providerID && input.captured?.modelID) {
+    return input.captured;
+  }
+  const surface = input.surfaceSelection;
+  if (!surface?.providerID || !surface?.modelID) {
+    return undefined;
+  }
+  return {
+    providerID: surface.providerID,
+    modelID: surface.modelID,
+    ...(surface.agent ? { agent: surface.agent } : {}),
+    ...(surface.variant ? { variant: surface.variant } : {}),
   };
 };
 

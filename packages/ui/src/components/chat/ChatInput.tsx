@@ -176,6 +176,7 @@ import {
     applyPrimaryComposerSessionRestore,
     capturePrimaryComposerSendConfig,
     parseLatestUserChoiceFromMessages,
+    resolvePrimaryComposerSendConfig,
     resolvePrimaryComposerSessionSelection,
 } from './primaryComposerSelection';
 import { canCompactPastedText, createPastedTextReference, getNextPastedTextReferenceIndex } from './pastedTextReferences';
@@ -3013,23 +3014,65 @@ const ChatInputRuntime: React.FC<ChatInputProps> = ({ onOpenSettings, scrollToBo
         // React closure over surface.selection.value. Queued captured sendConfig
         // stays authoritative (no live re-resolve). New-session draft (null id)
         // keeps draft active config without a session Project scope key.
-        const sendConfig = capturedSendConfig
+        // Primary capture prefers the post-flush live config for the session
+        // Project. Worktree→project lag can make expectedConfigKey GLOBAL while
+        // activeDirectoryKey is still the parent project — capture returns
+        // undefined even when the composer UI already has a model. Surface
+        // selection is the user-visible truth and unblocks that silent path.
+        let sendConfig = capturedSendConfig
             ? { ...capturedSendConfig }
             : surface.kind === 'primary'
                 ? (() => {
                     const configState = useConfigStore.getState();
                     if (!primarySubmitSessionIdAtStart) {
-                        return capturePrimaryComposerSendConfig(configState);
+                        return resolvePrimaryComposerSendConfig({
+                            captured: capturePrimaryComposerSendConfig(configState),
+                            surfaceSelection: surface.selection.value,
+                        });
                     }
-                    const sessionDirectory = useSessionUIStore.getState().getDirectoryForSession(primarySubmitSessionIdAtStart) ?? null;
-                    return capturePrimaryComposerSendConfig(configState, {
-                        expectedConfigKey: getConfigDirectoryKey(sessionDirectory),
-                        activeDirectoryKey: configState.activeDirectoryKey,
+                    const sessionDirectory = useSessionUIStore.getState().getDirectoryForSession(primarySubmitSessionIdAtStart)
+                        ?? currentDirectory
+                        ?? null;
+                    return resolvePrimaryComposerSendConfig({
+                        captured: capturePrimaryComposerSendConfig(configState, {
+                            expectedConfigKey: getConfigDirectoryKey(sessionDirectory),
+                            activeDirectoryKey: configState.activeDirectoryKey,
+                        }),
+                        surfaceSelection: surface.selection.value,
                     });
                 })()
                 : (surface.selection.value.providerID && surface.selection.value.modelID
                     ? { ...surface.selection.value, providerID: surface.selection.value.providerID, modelID: surface.selection.value.modelID }
                     : undefined);
+
+        // One more activate+recapture when still incomplete — flush may have
+        // no-op'd activateDirectory for an unresolved worktree path.
+        if (
+            surface.kind === 'primary'
+            && primarySubmitSessionIdAtStart
+            && (!sendConfig?.providerID || !sendConfig?.modelID)
+        ) {
+            const sessionDirectory = useSessionUIStore.getState().getDirectoryForSession(primarySubmitSessionIdAtStart)
+                ?? currentDirectory
+                ?? null;
+            const expectedConfigKey = getConfigDirectoryKey(sessionDirectory);
+            if (useConfigStore.getState().activeDirectoryKey !== expectedConfigKey) {
+                await useConfigStore.getState().activateDirectory(sessionDirectory);
+            }
+            if (
+                useSessionUIStore.getState().currentSessionId === primarySubmitSessionIdAtStart
+            ) {
+                const configState = useConfigStore.getState();
+                sendConfig = resolvePrimaryComposerSendConfig({
+                    captured: capturePrimaryComposerSendConfig(configState, {
+                        expectedConfigKey: getConfigDirectoryKey(sessionDirectory),
+                        activeDirectoryKey: configState.activeDirectoryKey,
+                    }),
+                    surfaceSelection: surface.selection.value,
+                });
+            }
+        }
+
         const providerIdToSend = sendConfig?.providerID;
         const modelIdToSend = sendConfig?.modelID;
         const agentNameToSend = sendConfig?.agent;
@@ -3037,6 +3080,9 @@ const ChatInputRuntime: React.FC<ChatInputProps> = ({ onOpenSettings, scrollToBo
 
         if (!providerIdToSend || !modelIdToSend) {
             console.warn('Cannot send message: provider or model not selected');
+            // Previously only console.warn'd after clearing the composer — draft
+            // recovered in finally with no toast, so Send appeared broken.
+            toast.error(t('chat.chatInput.toast.messageSendFailed'));
             return;
         }
 

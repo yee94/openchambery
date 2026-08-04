@@ -2020,12 +2020,16 @@ export const ModelControls: React.FC<ModelControlsProps> = ({
             keyboardHint: t('chat.modelControls.keyboardHintNavigate'),
             favorite: t('chat.modelControls.favoriteAria'),
             unfavorite: t('chat.modelControls.unfavoriteAria'),
+            provider: t('chat.modelControls.provider'),
             capabilities: t('chat.modelControls.capabilities'),
             capabilityToolCalling: t('chat.modelControls.capability.toolCalling'),
             capabilityReasoning: t('chat.modelControls.capability.reasoning'),
-            input: t('chat.modelControls.input'),
-            output: t('chat.modelControls.output'),
+            modalityImage: t('chat.modelControls.modality.image'),
+            modalityVideo: t('chat.modelControls.modality.video'),
+            modalityAudio: t('chat.modelControls.modality.audio'),
             costPerMillion: t('chat.modelControls.costPerMillion'),
+            costInput: t('chat.modelControls.costInput'),
+            costOutput: t('chat.modelControls.costOutput'),
         };
 
         const renderThinkingSlot = (entry: ModelPickerEntry, { isSelected }: { isHighlighted: boolean; isSelected: boolean }) => {
