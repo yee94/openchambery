@@ -2,6 +2,7 @@ import { create } from 'zustand';
 import { devtools, persist } from 'zustand/middleware';
 import type { SidebarSection } from '@/constants/sidebar';
 import { createDeferredSafeJSONStorage } from './utils/safeStorage';
+import { migrateCompactChatDefaultsForPersistVersion } from './uiStoreMigration';
 import {
   SEMANTIC_TYPOGRAPHY,
   getSemanticTypographyBase,
@@ -1068,8 +1069,8 @@ export const useUIStore = create<UIStore>()(
         sessionGoalDefaultBudgetEnabled: false,
         sessionGoalDefaultBudget: 200_000,
         collapsibleThinkingBlocks: true,
-        chatRenderMode: 'live',
-        activityRenderMode: 'summary',
+        chatRenderMode: 'sorted',
+        activityRenderMode: 'collapsed',
         showDeletionDialog: true,
         autoDeleteEnabled: false,
         autoDeleteAfterDays: 30,
@@ -1130,7 +1131,7 @@ export const useUIStore = create<UIStore>()(
         wideChatLayoutEnabled: false,
         codeBlockLineWrap: true,
         showToolFileIcons: true,
-        showTurnChangedFiles: false,
+        showTurnChangedFiles: true,
         showExpandedBashTools: false,
         // 默认紧凑：不展开子 Agent 竖线详情，点击行打开子会话
         showSubagentTaskDetails: false,
@@ -2640,12 +2641,15 @@ export const useUIStore = create<UIStore>()(
       {
         name: 'ui-store',
         storage: createDeferredSafeJSONStorage(),
-        version: 11,
+        version: 12,
         migrate: (persistedState, version) => {
           if (!persistedState || typeof persistedState !== 'object') {
             return persistedState;
           }
           const state = persistedState as Record<string, unknown>;
+
+          // v11 -> v12: one-shot upgrade of legacy compact-chat defaults.
+          migrateCompactChatDefaultsForPersistVersion(state, version);
 
           // v10 -> v11: move the previous default sidebar width to the tighter default.
           if (version < 11 && state.sidebarWidth === 280) {

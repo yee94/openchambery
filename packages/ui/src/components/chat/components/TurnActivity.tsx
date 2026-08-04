@@ -1,7 +1,7 @@
 import React from 'react';
 
 import ProgressiveGroup from '../message/parts/ProgressiveGroup';
-import type { TurnActivityRecord } from '../lib/turns/types';
+import type { TurnActivityPresentationKind, TurnActivityRecord, TurnCompletionDisposition } from '../lib/turns/types';
 import type { ToolPopupContent } from '../message/types';
 import type { StreamPhase } from '../message/types';
 import type { ContentChangeReason } from '@/hooks/useChatAutoFollow';
@@ -16,6 +16,10 @@ interface TurnActivityProps {
     parts: TurnActivityRecord[];
     isExpanded: boolean;
     collapsedPreviewCount?: number;
+    completionDisposition?: TurnCompletionDisposition;
+    activityPresentationKind?: TurnActivityPresentationKind;
+    durationMs?: number;
+    startedAt?: number;
     onToggle: () => void;
     isMobile: boolean;
     expandedTools: Set<string>;
@@ -24,6 +28,7 @@ interface TurnActivityProps {
     onContentChange?: (reason?: ContentChangeReason) => void;
     streamPhase: StreamPhase;
     showHeader: boolean;
+    statusOnly?: boolean;
     animateRows?: boolean;
     animatedToolIds?: Set<string>;
     diffStats?: DiffStats;

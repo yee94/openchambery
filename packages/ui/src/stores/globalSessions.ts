@@ -12,8 +12,36 @@ export type GlobalSessionRecord = Session & {
 
 const HIDDEN_SESSION_TITLES = new Set(['smartfetch-secondary']);
 
-export const isVisibleGlobalSession = (session: Pick<Session, 'title'>): boolean =>
-    !HIDDEN_SESSION_TITLES.has(session.title);
+const nonEmptySystemID = (value: unknown): value is string =>
+    typeof value === 'string' && value.length > 0;
+
+/**
+ * System sessions are isolated by authoritative OpenChamber metadata only.
+ * Title prefixes are human-facing labels and never participate in this check.
+ */
+export const isSystemOwnedSession = (
+    session: { metadata?: Session['metadata'] | Record<string, unknown> | null },
+): boolean => {
+    const metadata = session.metadata;
+    if (!metadata || typeof metadata !== 'object') return false;
+    const openchamber = (metadata as { openchamber?: unknown }).openchamber;
+    if (!openchamber || typeof openchamber !== 'object') return false;
+    const record = openchamber as {
+        assistant?: { assistantID?: unknown };
+        scheduledTask?: { taskID?: unknown };
+    };
+    if (nonEmptySystemID(record.assistant?.assistantID)) return true;
+    if (nonEmptySystemID(record.scheduledTask?.taskID)) return true;
+    return false;
+};
+
+export const isVisibleGlobalSession = (
+    session: Pick<Session, 'title'> & { metadata?: Session['metadata'] | Record<string, unknown> | null },
+): boolean => {
+    if (HIDDEN_SESSION_TITLES.has(session.title)) return false;
+    if (isSystemOwnedSession(session)) return false;
+    return true;
+};
 
 const toNumber = (value: string | null): number | null => {
     if (!value) {

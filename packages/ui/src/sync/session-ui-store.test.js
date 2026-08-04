@@ -18,7 +18,8 @@ import { commandQueryOptions } from '@/queries/commandQueries';
 import { installedSkillsQueryOptions } from '@/queries/installedSkillsQueries';
 import { useConfigStore } from '@/stores/useConfigStore';
 import { useInputStore } from './input-store';
-import { newSessionDraftKey, sessionDraftKey } from './input-draft-types';
+import { deriveNewSessionDraftID, newSessionDraftKey, sessionDraftKey } from './input-draft-types';
+import { getRuntimeTransportIdentity } from '@/lib/runtime-switch';
 import { queueScopeKey } from '@/stores/messageQueueStore';
 
 /**
@@ -467,25 +468,216 @@ describe('new-session draft identity', () => {
     useDirectoryStore.setState({ currentDirectory: null });
   });
 
-  test('creates a UUID on first open, retains it while idle, rotates it while submitting, and clears it on close', () => {
-    const store = useSessionUIStore.getState();
-    store.openNewSessionDraft();
-    const first = useSessionUIStore.getState().newSessionDraft;
-    expect(first.draftID).toMatch(/^[0-9a-f-]{36}$/i);
+  test('derives stable project-scoped draftIDs, keeps body across close/reopen, and does not rotate while submitting', () => {
+    const projectA = { id: 'proj-draft-a', path: '/projects/draft-a', label: 'Draft A' };
+    const projectB = { id: 'proj-draft-b', path: '/projects/draft-b', label: 'Draft B' };
+    useProjectsStore.setState({ projects: [projectA, projectB], activeProjectId: projectA.id });
 
-    store.openNewSessionDraft();
+    const store = useSessionUIStore.getState();
+    store.openNewSessionDraft({ selectedProjectId: projectA.id });
+    const first = useSessionUIStore.getState().newSessionDraft;
+    expect(first.draftID).toBe(deriveNewSessionDraftID({ projectId: projectA.id, directory: projectA.path }));
+    expect(first.draftID).toBe('new-session:project:proj-draft-a');
+
+    const draftKey = newSessionDraftKey({ transportIdentity: getRuntimeTransportIdentity() }, first.draftID);
+    useInputStore.getState().setDraftComposerState(draftKey, {
+      document: { text: 'keep this draft body', references: [] },
+      mentions: [],
+    });
+    expect(useInputStore.getState().getDraft(draftKey)?.text).toBe('keep this draft body');
+
+    store.openNewSessionDraft({ selectedProjectId: projectA.id });
     const idle = useSessionUIStore.getState().newSessionDraft;
     expect(idle.draftID).toBe(first.draftID);
     expect(idle.submissionToken).toBe(first.submissionToken);
 
-    useSessionUIStore.setState({ newSessionDraft: { ...idle, draftSubmitting: true, submissionToken: 4 } });
-    store.openNewSessionDraft();
-    const replaced = useSessionUIStore.getState().newSessionDraft;
-    expect(replaced.draftID).not.toBe(first.draftID);
-    expect(replaced.submissionToken).toBe(0);
-
     store.closeNewSessionDraft();
     expect(useSessionUIStore.getState().newSessionDraft.draftID).toBeNull();
+
+    store.openNewSessionDraft({ selectedProjectId: projectA.id });
+    const reopened = useSessionUIStore.getState().newSessionDraft;
+    expect(reopened.draftID).toBe(first.draftID);
+    expect(useInputStore.getState().getDraft(draftKey)?.text).toBe('keep this draft body');
+
+    store.openNewSessionDraft({ selectedProjectId: projectB.id });
+    const otherProject = useSessionUIStore.getState().newSessionDraft;
+    expect(otherProject.draftID).toBe(deriveNewSessionDraftID({ projectId: projectB.id, directory: projectB.path }));
+    expect(otherProject.draftID).not.toBe(first.draftID);
+
+    useSessionUIStore.setState({ newSessionDraft: { ...otherProject, draftSubmitting: true, submissionToken: 4 } });
+    store.openNewSessionDraft({ selectedProjectId: projectA.id });
+    const whileSubmitting = useSessionUIStore.getState().newSessionDraft;
+    expect(whileSubmitting.draftID).toBe(otherProject.draftID);
+    expect(whileSubmitting.draftSubmitting).toBe(true);
+    expect(whileSubmitting.submissionToken).toBe(4);
+  });
+
+  test('restores complete project-scoped durable draft sidecars across A→B→A reopen', () => {
+    const projectA = { id: 'proj-chip-a', path: '/projects/chip-a', label: 'Chip A' };
+    const projectB = { id: 'proj-chip-b', path: '/projects/chip-b', label: 'Chip B' };
+    useProjectsStore.setState({ projects: [projectA, projectB], activeProjectId: projectA.id });
+    const store = useSessionUIStore.getState();
+    const transport = getRuntimeTransportIdentity();
+
+    store.openNewSessionDraft({ selectedProjectId: projectA.id });
+    const draftA = useSessionUIStore.getState().newSessionDraft;
+    expect(draftA.draftID).toBe(deriveNewSessionDraftID({ projectId: projectA.id, directory: projectA.path }));
+    const keyA = newSessionDraftKey({ transportIdentity: transport }, draftA.draftID);
+
+    // Exact UTF-16 ranges for a full Composer document + file/directory/agent mentions.
+    // text: "@Session [Paste 1] /review /run @src/a.ts @src/dir @build"
+    const textA = '@Session [Paste 1] /review /run @src/a.ts @src/dir @build';
+    const sessionRef = { id: 'session-a', kind: 'session', sessionId: 'ses_chip_a', start: 0, end: 8, display: '@Session' };
+    const pasteRef = { id: 'paste-a', kind: 'paste', text: 'pasted body A', characterCount: 13, index: 1, start: 9, end: 18, display: '[Paste 1]' };
+    const skillRef = { id: 'skill-a', kind: 'skill', skillName: 'review', start: 19, end: 26, display: '/review' };
+    const commandRef = { id: 'command-a', kind: 'command', commandName: 'run', reference: 'task-a', start: 27, end: 31, display: '/run' };
+    const fileMention = { kind: 'file', value: 'src/a.ts', path: 'src/a.ts', label: 'src/a.ts', range: { start: 32, end: 41 } };
+    const directoryMention = { kind: 'directory', value: 'src/dir', path: 'src/dir', label: 'src/dir', range: { start: 42, end: 50 } };
+    const agentMention = { kind: 'agent', value: 'build', path: 'build', label: 'build', range: { start: 51, end: 57 } };
+    const syntheticPartsA = [{ partID: 'part-a', text: 'synthetic context A', attachments: [], synthetic: true }];
+
+    useInputStore.getState().setDraftComposerState(keyA, {
+      document: { text: textA, references: [sessionRef, pasteRef, skillRef, commandRef] },
+      mentions: [fileMention, directoryMention, agentMention],
+    });
+    useInputStore.getState().setDraftSyntheticParts(keyA, syntheticPartsA);
+    const serverAttachment = useInputStore.getState().addDraftDurableAttachment(keyA, {
+      filename: 'notes.txt',
+      mimeType: 'text/plain',
+      size: 12,
+      source: 'server',
+      serverPath: '/projects/chip-a/notes.txt',
+      url: 'https://example.test/chip-a/notes.txt',
+    });
+    const imageAttachment = useInputStore.getState().addDraftDurableAttachment(keyA, {
+      filename: 'shot.png',
+      mimeType: 'image/png',
+      size: 64,
+      source: 'server',
+      serverPath: '/projects/chip-a/shot.png',
+      url: 'https://example.test/chip-a/shot.png',
+    });
+    const selectionAttachment = useInputStore.getState().addDraftDurableAttachment(keyA, {
+      filename: 'selection.ts',
+      mimeType: 'text/typescript',
+      size: 24,
+      source: 'vscode',
+      vscodePath: '/projects/chip-a/src/selection.ts',
+      vscodeSource: 'selection',
+      url: 'file:///projects/chip-a/src/selection.ts',
+    });
+    expect(serverAttachment).toBeTruthy();
+    expect(imageAttachment).toBeTruthy();
+    expect(selectionAttachment).toBeTruthy();
+
+    const snapshotA = useInputStore.getState().getDraft(keyA);
+    expect(snapshotA?.text).toBe(textA);
+    expect(snapshotA?.composerReferences).toEqual([sessionRef, pasteRef, skillRef, commandRef]);
+    expect(snapshotA?.mentions).toEqual([fileMention, directoryMention, agentMention]);
+    expect(snapshotA?.syntheticParts).toEqual(syntheticPartsA);
+    expect(snapshotA?.attachments.map((item) => item.filename)).toEqual(['notes.txt', 'shot.png', 'selection.ts']);
+    expect(snapshotA?.attachments.find((item) => item.filename === 'selection.ts')).toMatchObject({
+      source: 'vscode',
+      vscodeSource: 'selection',
+      vscodePath: '/projects/chip-a/src/selection.ts',
+    });
+    const revisionA = snapshotA?.revision;
+    expect(typeof revisionA).toBe('number');
+
+    // Project B writes a different durable draft; must not touch A.
+    store.openNewSessionDraft({ selectedProjectId: projectB.id });
+    const draftB = useSessionUIStore.getState().newSessionDraft;
+    expect(draftB.draftID).toBe(deriveNewSessionDraftID({ projectId: projectB.id, directory: projectB.path }));
+    expect(draftB.draftID).not.toBe(draftA.draftID);
+    const keyB = newSessionDraftKey({ transportIdentity: transport }, draftB.draftID);
+    const textB = '@Other [Paste 2] /other /cmd @src/b.ts @src/other @plan';
+    useInputStore.getState().setDraftComposerState(keyB, {
+      document: {
+        text: textB,
+        references: [
+          { id: 'session-b', kind: 'session', sessionId: 'ses_chip_b', start: 0, end: 6, display: '@Other' },
+          { id: 'paste-b', kind: 'paste', text: 'pasted body B', characterCount: 13, index: 2, start: 7, end: 16, display: '[Paste 2]' },
+          { id: 'skill-b', kind: 'skill', skillName: 'other', start: 17, end: 23, display: '/other' },
+          { id: 'command-b', kind: 'command', commandName: 'cmd', reference: 'task-b', start: 24, end: 28, display: '/cmd' },
+        ],
+      },
+      mentions: [
+        { kind: 'file', value: 'src/b.ts', path: 'src/b.ts', label: 'src/b.ts', range: { start: 29, end: 38 } },
+        { kind: 'directory', value: 'src/other', path: 'src/other', label: 'src/other', range: { start: 39, end: 49 } },
+        { kind: 'agent', value: 'plan', path: 'plan', label: 'plan', range: { start: 50, end: 55 } },
+      ],
+    });
+    useInputStore.getState().setDraftSyntheticParts(keyB, [{ partID: 'part-b', text: 'synthetic context B', attachments: [] }]);
+    useInputStore.getState().addDraftDurableAttachment(keyB, {
+      filename: 'b-only.txt',
+      mimeType: 'text/plain',
+      size: 4,
+      source: 'server',
+      serverPath: '/projects/chip-b/b-only.txt',
+      url: 'https://example.test/chip-b/b-only.txt',
+    });
+
+    expect(useInputStore.getState().getDraft(keyA)?.text).toBe(textA);
+    expect(useInputStore.getState().getDraft(keyA)?.composerReferences).toEqual([sessionRef, pasteRef, skillRef, commandRef]);
+    expect(useInputStore.getState().getDraft(keyA)?.mentions).toEqual([fileMention, directoryMention, agentMention]);
+    expect(useInputStore.getState().getDraft(keyA)?.attachments.map((item) => item.filename)).toEqual(['notes.txt', 'shot.png', 'selection.ts']);
+    expect(useInputStore.getState().getDraft(keyB)?.text).toBe(textB);
+    expect(useInputStore.getState().getDraft(keyB)?.attachments.map((item) => item.filename)).toEqual(['b-only.txt']);
+
+    // Plus on project A reopens the same draftID and keeps full sidecars + attachments.
+    store.openNewSessionDraft({ selectedProjectId: projectA.id });
+    const reopened = useSessionUIStore.getState().newSessionDraft;
+    expect(reopened.draftID).toBe(draftA.draftID);
+    expect(reopened.draftID).toBe(keyA.owner.ownerID);
+
+    const restored = useInputStore.getState().getDraft(keyA);
+    expect(restored?.key).toEqual(keyA);
+    expect(restored?.text).toBe(textA);
+    expect(restored?.composerReferences).toEqual([sessionRef, pasteRef, skillRef, commandRef]);
+    expect(restored?.mentions).toEqual([fileMention, directoryMention, agentMention]);
+    expect(restored?.mentions.find((item) => item.kind === 'agent')).toEqual(agentMention);
+    expect(restored?.syntheticParts).toEqual(syntheticPartsA);
+    expect(restored?.attachments.map((item) => ({
+      filename: item.filename,
+      source: item.source,
+      vscodeSource: item.vscodeSource,
+      vscodePath: item.vscodePath,
+      serverPath: item.serverPath,
+      locator: item.locator,
+    }))).toEqual([
+      {
+        filename: 'notes.txt',
+        source: 'server',
+        vscodeSource: undefined,
+        vscodePath: undefined,
+        serverPath: '/projects/chip-a/notes.txt',
+        locator: { kind: 'url', url: 'https://example.test/chip-a/notes.txt' },
+      },
+      {
+        filename: 'shot.png',
+        source: 'server',
+        vscodeSource: undefined,
+        vscodePath: undefined,
+        serverPath: '/projects/chip-a/shot.png',
+        locator: { kind: 'url', url: 'https://example.test/chip-a/shot.png' },
+      },
+      {
+        filename: 'selection.ts',
+        source: 'vscode',
+        vscodeSource: 'selection',
+        vscodePath: '/projects/chip-a/src/selection.ts',
+        serverPath: undefined,
+        locator: { kind: 'url', url: 'file:///projects/chip-a/src/selection.ts' },
+      },
+    ]);
+    // openNewSessionDraft must not clear A's attachments when the durable record already exists.
+    expect(restored?.attachments).toHaveLength(3);
+    expect(restored?.revision).toBe(revisionA);
+
+    const isolatedB = useInputStore.getState().getDraft(keyB);
+    expect(isolatedB?.text).toBe(textB);
+    expect(isolatedB?.attachments.map((item) => item.filename)).toEqual(['b-only.txt']);
+    expect(isolatedB?.mentions.map((item) => item.value)).toEqual(['src/b.ts', 'src/other', 'plan']);
   });
 });
 
@@ -966,6 +1158,31 @@ describe('materializeOpenDraftSession atomic lifecycle', () => {
       // After success, draft should be closed (setCurrentSession → closeNewSessionDraft)
       expect(useSessionUIStore.getState().newSessionDraft.open).toBe(false);
       expect(useSessionUIStore.getState().newSessionDraft.draftSubmitting).toBe(false);
+    });
+  });
+
+  test('a plus click during an in-flight submit leaves the staged edit armed', () => {
+    let resolveCreate;
+    createSessionDeferred = {
+      promise: new Promise((resolve) => { resolveCreate = resolve; }),
+    };
+
+    useSessionUIStore.getState().openNewSessionDraft();
+    const materializePromise = materializeOpenDraftSession({ providerID: 'p', modelID: 'm' });
+    expect(useSessionUIStore.getState().newSessionDraft.draftSubmitting).toBe(true);
+
+    useSessionUIStore.setState({
+      stagedMessageEdit: { sessionId: 'ses-other', messageId: 'msg-1', text: 'half typed' },
+    });
+
+    // The open is refused while the flight owns the draft, so it must not run
+    // the session-switch disarm on the way out.
+    useSessionUIStore.getState().openNewSessionDraft();
+    expect(useSessionUIStore.getState().stagedMessageEdit?.messageId).toBe('msg-1');
+
+    resolveCreate({ id: 'ses-mocked-001' });
+    return materializePromise.then(() => {
+      useSessionUIStore.setState({ stagedMessageEdit: null });
     });
   });
 

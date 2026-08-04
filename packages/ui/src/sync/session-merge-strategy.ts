@@ -100,6 +100,21 @@ const STALE_RECOVERY = strategy({
 })
 
 /**
+ * Send-confirmation gap fill. The transcript already owns everything it holds,
+ * so this page may only add messages it is missing and may never rewrite parts
+ * that exist. Reactive send remediation runs while live SSE owns the tail, and
+ * an `upsert`/`replace` page there replays an older snapshot over live rows —
+ * silently dropping already-finished tool and reasoning parts.
+ */
+export const SEND_GAP_FILL_SESSION_MERGE_STRATEGY = strategy({
+  id: "send-gap-fill",
+  onStale: "backfill",
+  messages: "insert-only",
+  parts: "skip-existing",
+  preserveStreaming: "assistant",
+})
+
+/**
  * Default for callers that materialize records outside the page pipeline
  * (post-mutation refetches, orphan repair). Matches `initial`.
  */

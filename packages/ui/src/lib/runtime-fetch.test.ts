@@ -72,11 +72,47 @@ describe('runtime request priority', () => {
       setRuntimeInteractiveSessionRequestId('ses_1');
       expect(getRuntimeRequestPriority('GET', 'http://127.0.0.1:57123/api/session/ses_1?directory=%2Frepo')).toBe('high');
       expect(getRuntimeRequestPriority('GET', 'http://127.0.0.1:57123/api/session/ses_1/message?limit=30')).toBe('high');
+      // OpenChamber turn-page (prepend/loadMore) for the selected session is high.
+      expect(
+        getRuntimeRequestPriority(
+          'GET',
+          'http://127.0.0.1:57123/api/openchamber/sessions/ses_1/messages?directory=%2Frepo&before=msg_1&turns=3&scanLimit=100',
+        ),
+      ).toBe('high');
+      expect(
+        getRuntimeRequestPriority(
+          'GET',
+          'http://127.0.0.1:57123/api/openchamber/sessions/ses%2Fa%20b/messages?directory=%2Frepo&turns=3&scanLimit=100',
+        ),
+      ).toBe(undefined); // not the interactive session id
 
       expect(getRuntimeRequestPriority('GET', 'http://127.0.0.1:57123/api/session/status?directory=%2Frepo')).toBe('low');
       expect(getRuntimeRequestPriority('GET', 'http://127.0.0.1:57123/api/session/ses_1/children?directory=%2Frepo')).toBe('high');
       expect(getRuntimeRequestPriority('GET', 'http://127.0.0.1:57123/api/session/ses_background/message?limit=30')).toBe(undefined);
       expect(getRuntimeRequestPriority('GET', 'http://127.0.0.1:57123/api/experimental/session?limit=20')).toBe('low');
+    } finally {
+      setRuntimeInteractiveSessionRequestId(null);
+      setRuntimeUrlResolver(previous);
+    }
+  });
+
+  test('turn-page path for selected session is high (encoded session id)', () => {
+    const previous = getRuntimeUrlResolver();
+    try {
+      configureRuntimeUrlResolver({ apiBaseUrl: 'http://127.0.0.1:57123' });
+      setRuntimeInteractiveSessionRequestId('ses/a b');
+      expect(
+        getRuntimeRequestPriority(
+          'GET',
+          `http://127.0.0.1:57123/api/openchamber/sessions/${encodeURIComponent('ses/a b')}/messages?directory=%2Frepo&turns=3&scanLimit=100`,
+        ),
+      ).toBe('high');
+      expect(
+        getRuntimeRequestPriority(
+          'GET',
+          'http://127.0.0.1:57123/api/openchamber/sessions/ses_other/messages?directory=%2Frepo&turns=3&scanLimit=100',
+        ),
+      ).toBe(undefined);
     } finally {
       setRuntimeInteractiveSessionRequestId(null);
       setRuntimeUrlResolver(previous);

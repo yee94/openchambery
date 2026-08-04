@@ -32,20 +32,47 @@ export const withReferenceInsertionBoundaries = (content: string, before: string
     return `${leadingSpace}${insertion}${trailingSpace}`;
 };
 
+export type TokenInsertWithBoundaries = {
+    text: string;
+    caret: number;
+    /** Inclusive start of the inserted token itself (excludes automatic boundary spaces). */
+    start: number;
+    /** Exclusive end of the inserted token itself (excludes automatic boundary spaces). */
+    end: number;
+};
+
 /** Replace [start, end) with a display token, applying reference-style space padding. */
 export const insertTokenWithReferenceBoundaries = (
     text: string,
     start: number,
     end: number,
     token: string,
-): { text: string; caret: number } => {
+): TokenInsertWithBoundaries => {
     const before = text.slice(0, start);
     const after = text.slice(end);
     const insertion = withReferenceInsertionBoundaries(token, before, after);
+    const tokenOffset = Math.max(0, insertion.indexOf(token));
+    const tokenStart = before.length + tokenOffset;
     return {
         text: `${before}${insertion}${after}`,
         caret: before.length + insertion.length,
+        start: tokenStart,
+        end: tokenStart + token.length,
     };
+};
+
+/**
+ * Append a durable mention when kind/value/range is not already present.
+ * Matches ChatInput file/directory mention dedupe (kind:value:start:end).
+ */
+export const appendUniqueDraftMention = <T extends {
+    kind: string;
+    value: string;
+    range: { start: number; end: number };
+}>(mentions: readonly T[], addition: T): T[] => {
+    const keyOf = (mention: T) => `${mention.kind}:${mention.value}:${mention.range.start}:${mention.range.end}`;
+    const seen = new Set(mentions.map(keyOf));
+    return seen.has(keyOf(addition)) ? [...mentions] : [...mentions, addition];
 };
 
 /** Move caret past an ordinary trailing boundary space left after a chip insert. */

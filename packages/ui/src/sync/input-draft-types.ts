@@ -31,6 +31,23 @@ export const newSessionDraftKey = ({ transportIdentity }: Pick<DraftKey, "transp
   owner: { kind: "draft", ownerID: requiredIdentity(draftID, "draftID") },
 })
 
+/**
+ * Stable new-session draft ownerID for durable input-store records.
+ * Prefer project id, then already-normalized directory, else a default bucket.
+ * Runtime isolation stays on DraftKey.transportIdentity — this id is only the
+ * owner partition so close + same-project reopen reuses the same body.
+ */
+export const deriveNewSessionDraftID = (input: {
+  projectId?: string | null
+  directory?: string | null
+}): string => {
+  const projectId = typeof input.projectId === "string" ? input.projectId.trim() : ""
+  if (projectId) return `new-session:project:${projectId}`
+  const directory = typeof input.directory === "string" ? input.directory.trim() : ""
+  if (directory) return `new-session:directory:${directory}`
+  return "new-session:default"
+}
+
 /** A non-primary chat surface owns a stable, transport-scoped draft partition. */
 export const surfaceDraftKey = ({ transportIdentity }: Pick<DraftKey, "transportIdentity">, surfaceID: string): DraftKey => ({
   transportIdentity: requiredIdentity(transportIdentity, "transportIdentity"),

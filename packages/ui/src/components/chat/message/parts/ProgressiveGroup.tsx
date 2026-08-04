@@ -1,7 +1,7 @@
 import React from 'react';
 import { useEvent } from '@reactuses/core';
 import { cn } from '@/lib/utils';
-import type { TurnActivityRecord as TurnActivityPart } from '../../lib/turns/types';
+import type { TurnActivityPresentationKind, TurnActivityRecord as TurnActivityPart, TurnCompletionDisposition } from '../../lib/turns/types';
 import type { ToolPart as ToolPartType } from '@opencode-ai/sdk/v2';
 import type { StreamPhase } from '../types';
 import type { ContentChangeReason } from '@/hooks/useChatAutoFollow';
@@ -25,9 +25,12 @@ import JustificationBlock from './JustificationBlock';
 import { areRenderRelevantPartsEqual } from '../renderCompare';
 import { getExternalFaviconUrl } from '@/lib/url';
 import { getDirectoryForFilePath, getRelativeFilePath, isFilePathWithinDirectory, normalizeFilePath, toAbsoluteFilePath } from '@/lib/path-utils';
-import { getToolRowBlockClass, TOOL_ROW_INTERACTIVE_CHROME_CLASS } from './toolRowChrome';
+import { getToolRowBlockClass, TOOL_ROW_CHIP_GEOMETRY_CLASS, TOOL_ROW_INTERACTIVE_CHROME_CLASS } from './toolRowChrome';
 import { useSessionSurface } from '../../SessionSurfaceContext';
 import { useMobileAppActions } from '@/apps/mobileAppContext';
+import { useI18n } from '@/lib/i18n';
+import { AgentAvatar } from '../../AgentAvatar';
+import { useDurationTickerNow } from './useDurationTicker';
 
 const TOOL_ROW_TEXT_CLASS = '!text-[length:var(--text-meta)] !leading-5 sm:!leading-6 tracking-normal';
 const TOOL_ROW_TITLE_CLASS = cn('typography-meta font-medium', TOOL_ROW_TEXT_CLASS);
@@ -37,6 +40,10 @@ interface ProgressiveGroupProps {
     parts: TurnActivityPart[];
     isExpanded: boolean;
     collapsedPreviewCount?: number;
+    completionDisposition?: TurnCompletionDisposition;
+    activityPresentationKind?: TurnActivityPresentationKind;
+    durationMs?: number;
+    startedAt?: number;
     onToggle: () => void;
     isMobile: boolean;
     expandedTools: Set<string>;
@@ -45,6 +52,7 @@ interface ProgressiveGroupProps {
     onContentChange?: (reason?: ContentChangeReason) => void;
     streamPhase: StreamPhase;
     showHeader: boolean;
+    statusOnly?: boolean;
     animateRows?: boolean;
     animatedToolIds?: Set<string>;
     renderJustificationActions?: (activity: TurnActivityPart) => React.ReactNode;
@@ -81,6 +89,16 @@ const ExternalLinkFavicon: React.FC<{ href: string }> = ({ href }) => {
  * tools), pushing text after tools within the same message.
  */
 const sortPartsByTime = (parts: TurnActivityPart[]): TurnActivityPart[] => parts;
+
+const formatActivityDuration = (durationMs: number): string => {
+    const totalSeconds = Math.max(0, Math.round(durationMs / 1000));
+    if (totalSeconds < 60) {
+        return `${totalSeconds}s`;
+    }
+    const minutes = Math.floor(totalSeconds / 60);
+    const seconds = totalSeconds % 60;
+    return `${minutes}m ${seconds}s`;
+};
 
 /**
  * Extract a short filename from a tool part's input (for aggregation display).
@@ -358,6 +376,34 @@ type AggregatedRow =
     | { type: 'justification'; activity: TurnActivityPart }
     | { type: 'tool-fallback'; activity: TurnActivityPart };
 
+const getTaskAgentNames = (parts: TurnActivityPart[]): { active: string[]; all: string[] } => {
+    const active: string[] = [];
+    const all: string[] = [];
+
+    for (const activity of parts) {
+        if (activity.kind !== 'tool') continue;
+        const part = activity.part as ToolPartType;
+        if (part.tool?.trim().toLowerCase() !== 'task') continue;
+
+        const state = part.state as unknown;
+        if (!state || typeof state !== 'object') continue;
+        const stateRecord = state as Record<string, unknown>;
+        const input = stateRecord.input;
+        if (!input || typeof input !== 'object') continue;
+        const subagentType = (input as Record<string, unknown>).subagent_type;
+        if (typeof subagentType !== 'string') continue;
+        const name = subagentType.trim();
+        if (!name) continue;
+
+        all.push(name);
+        if (stateRecord.status === 'pending' || stateRecord.status === 'running') {
+            active.push(name);
+        }
+    }
+
+    return { active, all };
+};
+
 interface ExpandableToolRowProps {
     activity: TurnActivityPart;
     isExpanded: boolean;
@@ -474,7 +520,7 @@ const MemoStaticGroupedToolRow = React.memo(StaticGroupedToolRow, (prev, next) =
 
 /**
  * Aggregate sorted activity parts into display rows.
- * Static tools are rendered as one row per call.
+ * Consecutive static tools with the same name share one row.
  * Reasoning/justification become inline text.
  * Expandable tools (edit, bash, write, question) stay as individual rows.
  * Unknown tools stay as individual expandable rows (fallback).
@@ -503,7 +549,7 @@ const aggregateRows = (parts: TurnActivityPart[]): AggregatedRow[] => {
         const toolName = toolPart.tool?.toLowerCase() ?? '';
 
         if (isStandaloneTool(toolName)) {
-            // Standalone tools are rendered separately, skip
+            rows.push({ type: 'tool-expandable', activity });
             i++;
             continue;
         }
@@ -515,8 +561,22 @@ const aggregateRows = (parts: TurnActivityPart[]): AggregatedRow[] => {
         }
 
         if (isStaticTool(toolName)) {
-            rows.push({ type: 'tool-static-group', toolName, activities: [activity] });
-            i++;
+            const activities = [activity];
+            let nextIndex = i + 1;
+            while (nextIndex < parts.length) {
+                const nextActivity = parts[nextIndex];
+                if (nextActivity.kind !== 'tool') {
+                    break;
+                }
+                const nextToolName = (nextActivity.part as ToolPartType).tool?.toLowerCase() ?? '';
+                if (nextToolName !== toolName || !isStaticTool(nextToolName)) {
+                    break;
+                }
+                activities.push(nextActivity);
+                nextIndex += 1;
+            }
+            rows.push({ type: 'tool-static-group', toolName, activities });
+            i = nextIndex;
             continue;
         }
 
@@ -592,6 +652,10 @@ const StaticToolRowInner: React.FC<{
         return descs;
     }, [activities]);
 
+    const visibleDescriptions = descriptions.slice(0, 3);
+    const hiddenDescriptionCount = Math.max(0, descriptions.length - visibleDescriptions.length);
+    const hiddenDescriptionTitle = descriptions.slice(visibleDescriptions.length).join('\n');
+
     const skillEntries = React.useMemo(() => {
         if (toolName.toLowerCase() !== 'skill') return [] as Array<{ name: string; path: string }>;
 
@@ -611,6 +675,9 @@ const StaticToolRowInner: React.FC<{
 
         return entries;
     }, [activities, skillByName, toolName]);
+    const visibleSkillEntries = skillEntries.slice(0, 3);
+    const hiddenSkillCount = Math.max(0, skillEntries.length - visibleSkillEntries.length);
+    const hiddenSkillTitle = skillEntries.slice(visibleSkillEntries.length).map((entry) => entry.name).join('\n');
 
     const readFileEntries = React.useMemo(() => {
         if (!isReadGroup) return [] as Array<{ path: string; displayPath: string; offset?: number }>;
@@ -627,6 +694,9 @@ const StaticToolRowInner: React.FC<{
         }
         return entries;
     }, [activities, currentDirectory, isReadGroup]);
+    const visibleReadFileEntries = readFileEntries.slice(0, 3);
+    const hiddenReadFileCount = Math.max(0, readFileEntries.length - visibleReadFileEntries.length);
+    const hiddenReadFileTitle = readFileEntries.slice(visibleReadFileEntries.length).map((entry) => entry.displayPath).join('\n');
 
     const handleReadFileClick = useEvent((filePath: string, offset?: number) => {
         if (!currentDirectory) {
@@ -764,8 +834,8 @@ const StaticToolRowInner: React.FC<{
             >
                 {displayName}
             </span>
-            {isReadGroup && readFileEntries.length > 0
-                ? readFileEntries.map((entry) => (
+            {isReadGroup && visibleReadFileEntries.length > 0
+                ? visibleReadFileEntries.map((entry) => (
                     readFileEntries.length === 1 ? (
                         <span
                             key={entry.path}
@@ -786,7 +856,7 @@ const StaticToolRowInner: React.FC<{
                                 event.stopPropagation();
                                 handleReadFileClick(entry.path, entry.offset);
                             }}
-                            className={cn('inline-flex !min-h-0 items-center justify-start gap-1 min-w-0 flex-1 text-left hover:opacity-90', TOOL_ROW_DESCRIPTION_CLASS)}
+                            className={cn('inline-flex !min-h-0 min-w-0 max-w-48 flex-[0_1_12rem] items-center justify-start gap-1 text-left hover:opacity-90', TOOL_ROW_DESCRIPTION_CLASS)}
                             style={{ color: 'var(--tools-description)' }}
                             title={entry.offset ? `${entry.displayPath}:${entry.offset}` : entry.displayPath}
                         >
@@ -796,9 +866,18 @@ const StaticToolRowInner: React.FC<{
                     )
                 ))
                 : null}
+            {hiddenReadFileCount > 0 ? (
+                <span
+                    className={cn('flex-shrink-0 rounded-md bg-muted/45 px-1.5 py-0.5 text-muted-foreground', TOOL_ROW_DESCRIPTION_CLASS)}
+                    title={hiddenReadFileTitle}
+                    aria-label={`+${hiddenReadFileCount}: ${hiddenReadFileTitle}`}
+                >
+                    +{hiddenReadFileCount}
+                </span>
+            ) : null}
             {isSearchGroup && descriptions.length > 0
-                ? descriptions.map((desc, index) => (
-                    <span key={`${desc}-${index}`} className="inline-flex min-w-0 flex-1">
+                ? visibleDescriptions.map((desc, index) => (
+                    <span key={`${desc}-${index}`} className="inline-flex min-w-0 max-w-56 flex-[0_1_14rem]">
                         <Text
                             variant={animateTailText ? 'generate-effect' : 'static'}
                             className={cn('min-w-0 flex-1 truncate whitespace-nowrap', TOOL_ROW_DESCRIPTION_CLASS)}
@@ -811,7 +890,7 @@ const StaticToolRowInner: React.FC<{
                 ))
                 : null}
             {isFetchGroup && descriptions.length > 0
-                ? descriptions.map((url, index) => (
+                ? visibleDescriptions.map((url, index) => (
                     <a
                         key={`${url}-${index}`}
                         href={url}
@@ -822,7 +901,7 @@ const StaticToolRowInner: React.FC<{
                             event.stopPropagation();
                         }}
                         className={cn(
-                            'min-w-0 flex-1 inline-flex items-center gap-1.5 underline decoration-[color:var(--status-info)] underline-offset-2 hover:opacity-90',
+                            'min-w-0 max-w-64 flex-[0_1_16rem] inline-flex items-center gap-1.5 underline decoration-[color:var(--status-info)] underline-offset-2 hover:opacity-90',
                             'truncate whitespace-nowrap', TOOL_ROW_DESCRIPTION_CLASS
                         )}
                         style={{ color: 'var(--status-info)' }}
@@ -833,8 +912,17 @@ const StaticToolRowInner: React.FC<{
                     </a>
                 ))
                 : null}
+            {(isSearchGroup || isFetchGroup) && hiddenDescriptionCount > 0 ? (
+                <span
+                    className={cn('flex-shrink-0 rounded-md bg-muted/45 px-1.5 py-0.5 text-muted-foreground', TOOL_ROW_DESCRIPTION_CLASS)}
+                    title={hiddenDescriptionTitle}
+                    aria-label={`+${hiddenDescriptionCount}: ${hiddenDescriptionTitle}`}
+                >
+                    +{hiddenDescriptionCount}
+                </span>
+            ) : null}
             {isSkillGroup && skillEntries.length > 0
-                ? skillEntries.map((entry, index) => (
+                ? visibleSkillEntries.map((entry, index) => (
                     skillEntries.length === 1 ? (
                         <span
                             key={`${entry.name}-${entry.path}-${index}`}
@@ -853,7 +941,7 @@ const StaticToolRowInner: React.FC<{
                                 event.stopPropagation();
                                 handleSkillClick(entry.path);
                             }}
-                            className={cn('!min-h-0 min-w-0 flex-1 truncate whitespace-nowrap text-left hover:opacity-90', TOOL_ROW_DESCRIPTION_CLASS)}
+                            className={cn('!min-h-0 min-w-0 max-w-48 flex-[0_1_12rem] truncate whitespace-nowrap text-left hover:opacity-90', TOOL_ROW_DESCRIPTION_CLASS)}
                             style={{ color: 'var(--tools-description)' }}
                             title={entry.path}
                         >
@@ -862,6 +950,15 @@ const StaticToolRowInner: React.FC<{
                     )
                 ))
                 : null}
+            {isSkillGroup && hiddenSkillCount > 0 ? (
+                <span
+                    className={cn('flex-shrink-0 rounded-md bg-muted/45 px-1.5 py-0.5 text-muted-foreground', TOOL_ROW_DESCRIPTION_CLASS)}
+                    title={hiddenSkillTitle}
+                    aria-label={`+${hiddenSkillCount}: ${hiddenSkillTitle}`}
+                >
+                    +{hiddenSkillCount}
+                </span>
+            ) : null}
             {!isReadGroup && !isSearchGroup && !isFetchGroup && !isSkillGroup && descriptions.length > 0 ? (
                 <Text
                     variant={animateTailText ? 'generate-effect' : 'static'}
@@ -902,9 +999,10 @@ const InlineReasoningBlock = React.memo(({ activity, onContentChange, streamPhas
 /**
  * Inline justification text block — rendered as normal assistant text between tools.
  */
-const InlineJustificationBlock = React.memo(({ activity, onContentChange, actions, streamPhase }: {
+const InlineJustificationBlock = React.memo(({ activity, onContentChange, onShowPopup, actions, streamPhase }: {
     activity: TurnActivityPart;
     onContentChange?: (reason?: ContentChangeReason) => void;
+    onShowPopup?: (content: ToolPopupContent) => void;
     actions?: React.ReactNode;
     streamPhase: StreamPhase;
 }) => {
@@ -913,6 +1011,7 @@ const InlineJustificationBlock = React.memo(({ activity, onContentChange, action
             part={activity.part}
             messageId={activity.messageId}
             onContentChange={onContentChange}
+            onShowPopup={onShowPopup}
             actions={actions}
             streamPhase={streamPhase}
         />
@@ -923,6 +1022,10 @@ const ProgressiveGroup: React.FC<ProgressiveGroupProps> = ({
     parts,
     isExpanded,
     collapsedPreviewCount = 0,
+    completionDisposition,
+    activityPresentationKind = 'default',
+    durationMs,
+    startedAt,
     onToggle,
     isMobile,
     expandedTools,
@@ -931,10 +1034,89 @@ const ProgressiveGroup: React.FC<ProgressiveGroupProps> = ({
     onContentChange,
     streamPhase,
     showHeader,
+    statusOnly = false,
     animateRows = true,
     animatedToolIds,
     renderJustificationActions,
 }) => {
+    const { t } = useI18n();
+    const activityHeaderRef = React.useRef<HTMLButtonElement | null>(null);
+    const statusHeaderRef = React.useRef<HTMLDivElement | null>(null);
+    const pendingToggleAnchorRef = React.useRef<{
+        top: number;
+        scrollContainer: HTMLElement | null;
+    } | null>(null);
+    const isActive = completionDisposition === 'active';
+    const tickerNow = useDurationTickerNow(isActive, 250);
+    const activeDuration = isActive
+        && typeof startedAt === 'number'
+        && Number.isFinite(startedAt)
+        && startedAt > 0
+        ? formatActivityDuration(Math.max(0, tickerNow - startedAt))
+        : null;
+    const completedDuration = !isActive
+        && (completionDisposition === 'normal' || completionDisposition === 'abnormal')
+        && typeof durationMs === 'number'
+        && Number.isFinite(durationMs)
+        && durationMs >= 0
+        ? formatActivityDuration(durationMs)
+        : null;
+    const isCompleted = completionDisposition === 'normal' || completionDisposition === 'abnormal';
+    const isCompaction = activityPresentationKind === 'compaction';
+    const activityStatusLabel = completionDisposition === undefined
+        ? t('chat.activity.title')
+        : isActive
+            ? t(isCompaction ? 'chat.activity.compacting' : 'chat.activity.active')
+            : isCompleted
+                ? t(isCompaction ? 'chat.activity.compactionCompleted' : 'chat.activity.completedStatus')
+                : t('chat.activity.title');
+    const activityDuration = isActive ? activeDuration : completedDuration;
+    const taskAgentNames = React.useMemo(() => getTaskAgentNames(parts), [parts]);
+    const displayedTaskAgentNames = isActive ? taskAgentNames.active : taskAgentNames.all;
+    const visibleTaskAgentNames = displayedTaskAgentNames.slice(0, 3);
+    const handleToggle = useEvent(() => {
+        const header = activityHeaderRef.current ?? statusHeaderRef.current;
+        pendingToggleAnchorRef.current = header
+            ? {
+                top: header.getBoundingClientRect().top,
+                scrollContainer: header.closest<HTMLElement>('[data-scrollbar="chat"]'),
+            }
+            : null;
+        onToggle();
+    });
+    React.useLayoutEffect(() => {
+        const anchor = pendingToggleAnchorRef.current;
+        const header = activityHeaderRef.current ?? statusHeaderRef.current;
+        if (!anchor || !header) {
+            return;
+        }
+
+        const restoreHeaderPosition = () => {
+            if (!header.isConnected) {
+                return;
+            }
+            const delta = header.getBoundingClientRect().top - anchor.top;
+            if (Math.abs(delta) < 0.5) {
+                return;
+            }
+            if (anchor.scrollContainer?.isConnected) {
+                anchor.scrollContainer.scrollTop += delta;
+                return;
+            }
+            window.scrollBy(0, delta);
+        };
+
+        restoreHeaderPosition();
+        if (typeof window === 'undefined' || typeof window.requestAnimationFrame !== 'function') {
+            pendingToggleAnchorRef.current = null;
+            return;
+        }
+        const frame = window.requestAnimationFrame(() => {
+            restoreHeaderPosition();
+            pendingToggleAnchorRef.current = null;
+        });
+        return () => window.cancelAnimationFrame(frame);
+    }, [isExpanded]);
     const previewCount = showHeader && !isExpanded
         ? Math.max(0, Math.floor(collapsedPreviewCount))
         : 0;
@@ -968,7 +1150,7 @@ const ProgressiveGroup: React.FC<ProgressiveGroupProps> = ({
         return rows.slice(-previewCount);
     }, [isExpanded, previewCount, rows]);
 
-    if (shouldRenderRows && rows.length === 0) {
+    if (shouldRenderRows && rows.length === 0 && !statusOnly) {
         return null;
     }
 
@@ -1002,6 +1184,7 @@ const ProgressiveGroup: React.FC<ProgressiveGroupProps> = ({
                         <InlineJustificationBlock
                             activity={row.activity}
                             onContentChange={onContentChange}
+                            onShowPopup={onShowPopup}
                             actions={renderJustificationActions?.(row.activity)}
                             streamPhase={streamPhase}
                         />
@@ -1057,7 +1240,6 @@ const ProgressiveGroup: React.FC<ProgressiveGroupProps> = ({
         : null;
 
     const shouldShowRowsContainer = isExpanded || visibleRows.length > 0;
-
     if (!showHeader) {
         return (
             <FadeInOnReveal>
@@ -1069,29 +1251,87 @@ const ProgressiveGroup: React.FC<ProgressiveGroupProps> = ({
     return (
         <FadeInOnReveal>
             <div className={getToolRowBlockClass(isMobile)}>
-                <button
-                    type="button"
-                    className={cn(
-                        'group/tool flex w-full flex-wrap items-center gap-x-2 gap-y-0.5 text-left',
-                        TOOL_ROW_INTERACTIVE_CHROME_CLASS,
-                    )}
-                    onClick={onToggle}
-                >
-                    <span className="inline-flex h-5 items-center flex-shrink-0" style={{ color: 'var(--tools-icon)' }}>
-                        <Icon name="stack" className="h-3.5 w-3.5" />
-                    </span>
-                    <span
-                        className="leading-5 font-semibold inline-flex h-5 items-center flex-shrink-0"
-                        style={{
-                            color: 'var(--tools-title)',
-                            fontSize: '0.9rem',
-                            letterSpacing: '0.005em',
-                        }}
+                {statusOnly ? (
+                    <div
+                        ref={statusHeaderRef}
+                        className={cn(
+                            'group/tool -mx-2 flex w-full min-w-0 flex-wrap items-center gap-x-2 gap-y-0.5 text-left',
+                            TOOL_ROW_CHIP_GEOMETRY_CLASS,
+                        )}
+                        role="status"
+                        aria-live={isActive ? 'polite' : undefined}
                     >
-                        Activity
+                        <span className="inline-flex h-5 flex-shrink-0 items-center" style={{ color: 'var(--tools-icon)' }}>
+                            <Icon name="stack" className="size-3.5" />
+                        </span>
+                        <span className={cn(
+                            'typography-ui-label inline-flex h-5 flex-shrink-0 items-center font-semibold',
+                            isActive
+                                ? 'animate-text-shimmer text-[var(--status-info)] [--oc-text-shimmer-base:var(--status-info)]'
+                                : 'text-foreground/85',
+                        )}>
+                            {activityStatusLabel}
+                        </span>
+                        {activityDuration ? (
+                            <span aria-hidden="true" className="typography-meta tabular-nums text-muted-foreground">{activityDuration}</span>
+                        ) : null}
+                    </div>
+                ) : (
+                    <button
+                        ref={activityHeaderRef}
+                        type="button"
+                        className={cn(
+                            'group/tool flex w-full min-w-0 flex-wrap items-center gap-x-2 gap-y-0.5 text-left',
+                            TOOL_ROW_INTERACTIVE_CHROME_CLASS,
+                        )}
+                        data-mobile-press-feedback="soft"
+                        onClick={handleToggle}
+                        aria-expanded={isExpanded}
+                        aria-label={isExpanded ? t('chat.activity.collapseAria') : t('chat.activity.expandAria')}
+                    >
+                    <span className="inline-flex h-5 flex-shrink-0 items-center" style={{ color: 'var(--tools-icon)' }}>
+                        <Icon name="stack" className="size-3.5" />
                     </span>
-                </button>
-                {shouldShowRowsContainer ? (
+                    <span className={cn(
+                        'typography-ui-label inline-flex h-5 flex-shrink-0 items-center font-semibold',
+                        isActive
+                            ? 'animate-text-shimmer text-[var(--status-info)] [--oc-text-shimmer-base:var(--status-info)]'
+                            : 'text-foreground/85',
+                    )}>
+                        {activityStatusLabel}
+                    </span>
+                    {activityDuration ? (
+                        <span className="typography-meta tabular-nums text-muted-foreground">{activityDuration}</span>
+                    ) : null}
+                    {displayedTaskAgentNames.length > 0 ? (
+                        <span className="ml-auto inline-flex min-w-0 items-center gap-1.5 text-muted-foreground">
+                            <span className="inline-flex items-center gap-0.5" aria-hidden="true">
+                                {visibleTaskAgentNames.map((name, index) => (
+                                    <AgentAvatar
+                                        key={`${name}-${index}`}
+                                        name={name}
+                                        size={14}
+                                        className="size-3.5 min-h-3.5 min-w-3.5 max-h-3.5 max-w-3.5 flex-none"
+                                    />
+                                ))}
+                            </span>
+                            <span className="typography-meta min-w-0 truncate">
+                                {isActive
+                                    ? t('chat.activity.agentsWorking', { count: displayedTaskAgentNames.length })
+                                    : t('chat.activity.agentsInvolved', { count: displayedTaskAgentNames.length })}
+                            </span>
+                        </span>
+                    ) : null}
+                    <Icon
+                        name={isExpanded ? 'arrow-down-s' : 'arrow-right-s'}
+                        className={cn(
+                            'size-3.5 flex-shrink-0 text-muted-foreground opacity-70',
+                            displayedTaskAgentNames.length === 0 && 'ml-auto',
+                        )}
+                    />
+                    </button>
+                )}
+                {!statusOnly && shouldShowRowsContainer ? (
                     <div className="relative ml-2 pl-3">
                         <span
                             aria-hidden="true"
@@ -1101,7 +1341,7 @@ const ProgressiveGroup: React.FC<ProgressiveGroupProps> = ({
                         {previewHiddenCount > 0 ? (
                             <button
                                 type="button"
-                                onClick={onToggle}
+                                onClick={handleToggle}
                                 className="typography-meta leading-4 px-2 py-1 text-muted-foreground/45 hover:text-muted-foreground/65 text-left"
                             >
                                 +{previewHiddenCount} more...

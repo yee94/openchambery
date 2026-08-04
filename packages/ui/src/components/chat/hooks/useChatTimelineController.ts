@@ -43,6 +43,8 @@ interface UseChatTimelineControllerOptions {
     releaseAutoFollow: () => void;
     isPinned: boolean;
     showScrollButton: boolean;
+    /** Active desktop transcript only (not expanded-input). Mobile stays false. */
+    autoFillEnabled?: boolean;
 }
 
 export interface UseChatTimelineControllerResult {
@@ -62,6 +64,7 @@ export interface UseChatTimelineControllerResult {
     scrollToTurn: (turnId: string, options?: { behavior?: ScrollBehavior }) => Promise<boolean>;
     scrollToMessage: (messageId: string, options?: { behavior?: ScrollBehavior }) => Promise<boolean>;
     handleHistoryScroll: () => void;
+    handleHistoryUpwardIntent: () => void;
     captureViewportAnchor: () => ViewportAnchor | null;
     restoreViewportAnchor: (anchor: ViewportAnchor) => boolean;
     handleActiveTurnChange: (turnId: string | null) => void;
@@ -137,6 +140,130 @@ export const resolveHistoryPrependCompensation = (
     ? { owner: 'tanstack-core' }
     : { owner: 'controller' };
 
+export type HistoryLoadSource = 'scroll' | 'upward-intent';
+
+export const shouldLoadEarlierHistory = (input: {
+    source: HistoryLoadSource;
+    isMobile: boolean;
+    isPinned: boolean;
+    scrollTop: number;
+    clientHeight: number;
+    canLoadEarlier: boolean;
+    isLoadingOlder: boolean;
+    pendingRevealWork: boolean;
+}): boolean => {
+    if (input.isMobile) return false;
+    if (input.isLoadingOlder || input.pendingRevealWork) return false;
+    if (!input.canLoadEarlier) return false;
+    // Ordinary scroll must not fight auto-follow while pinned. Explicit
+    // upward-intent (wheel/touch/key) may bypass a stale pin so history can
+    // load even when scrollTop is already 0 and no scroll event fires.
+    if (input.source === 'scroll' && input.isPinned) return false;
+    if (input.scrollTop >= resolveHistoryScrollThreshold(input.clientHeight)) return false;
+    return true;
+};
+
+export type HistoryPageDecision =
+    | 'continue'
+    | 'stop-visible'
+    | 'stop-no-growth'
+    | 'stop-exhausted'
+    | 'stop-bounded';
+
+// Collapsed turns can absorb a full page without growing scrollHeight. Keep
+// paging while message/oldest/limit grew but visible height did not, until
+// height grows, history is complete, the page is empty, or the interaction
+// hits its page bound.
+export const resolveHistoryPageDecision = (input: {
+    scrollHeightBefore: number;
+    scrollHeightAfter: number;
+    messageCountBefore: number;
+    messageCountAfter: number;
+    oldestIdBefore: string | null;
+    oldestIdAfter: string | null;
+    limitBefore: number;
+    limitAfter: number;
+    hasMoreAbove: boolean;
+    pagesLoaded: number;
+    maxPages: number;
+}): HistoryPageDecision => {
+    if (input.pagesLoaded >= input.maxPages) return 'stop-bounded';
+    if (!input.hasMoreAbove) return 'stop-exhausted';
+
+    const heightGrowth = input.scrollHeightAfter - input.scrollHeightBefore;
+    if (heightGrowth > 1) return 'stop-visible';
+
+    const dataGrowth =
+        input.messageCountAfter > input.messageCountBefore
+        || (
+            typeof input.oldestIdBefore === 'string'
+            && typeof input.oldestIdAfter === 'string'
+            && input.oldestIdBefore !== input.oldestIdAfter
+        )
+        || input.limitAfter > input.limitBefore;
+
+    if (!dataGrowth) return 'stop-no-growth';
+    return 'continue';
+};
+
+// One Host 3-turn page per user interaction (single server turn-page request).
+const HISTORY_INTERACTION_MAX_PAGES = 1;
+
+/**
+ * Auto-fill only on a short first paint: message count must stay at or below
+ * this bound so a later trim / reverse load cannot re-trigger fill.
+ */
+const AUTO_FILL_MAX_FIRST_PAINT_MESSAGES = 38;
+
+/** Short first paint: auto-fill earlier history once while still pinned at bottom. */
+export const shouldAutoFillEarlierHistory = (input: {
+    enabled: boolean;
+    isMobile: boolean;
+    sessionReady: boolean;
+    messageReady: boolean;
+    historyLoading: boolean;
+    canLoadEarlier: boolean;
+    isPinned: boolean;
+    alreadyAttempted: boolean;
+    scrollHeight: number;
+    clientHeight: number;
+    pendingRevealWork: boolean;
+    isLoadingOlder: boolean;
+    hasMessages: boolean;
+    /** First-paint message count; auto-fill only when <= 38. */
+    messageCount: number;
+}): boolean => {
+    if (!input.enabled) return false;
+    if (input.isMobile) return false;
+    if (!input.sessionReady || !input.messageReady) return false;
+    if (input.historyLoading) return false;
+    if (!input.canLoadEarlier) return false;
+    if (!input.isPinned) return false;
+    if (input.alreadyAttempted) return false;
+    if (input.pendingRevealWork || input.isLoadingOlder) return false;
+    if (!input.hasMessages) return false;
+    // Avoid auto-fill after the first paint has already grown past the short
+    // window (e.g. after trim reverse-loading would otherwise re-arm fill).
+    if (input.messageCount > AUTO_FILL_MAX_FIRST_PAINT_MESSAGES) return false;
+    if (input.scrollHeight > input.clientHeight + 48) return false;
+    return true;
+};
+
+/** Multi-frame anchor hold only when virtualized geometry actually grew. */
+export const shouldHoldHistoryViewportAnchor = (input: {
+    historyVirtualized: boolean;
+    anchorRestored: boolean;
+    heightDelta: number;
+    messages: readonly unknown[];
+    heldForMessages: readonly unknown[] | null;
+}): boolean => {
+    if (!input.historyVirtualized) return false;
+    if (!input.anchorRestored) return false;
+    if (input.heightDelta <= 1) return false;
+    if (input.heldForMessages === input.messages) return false;
+    return true;
+};
+
 // iOS WKWebView ignores programmatic scrollTop writes while a touch drag or
 // momentum (fling) scroll is active: the native scroll animation keeps running
 // and overwrites the value on the next frame. The mobile history threshold is
@@ -203,6 +330,7 @@ export const useChatTimelineController = ({
     releaseAutoFollow,
     isPinned,
     showScrollButton,
+    autoFillEnabled = false,
 }: UseChatTimelineControllerOptions): UseChatTimelineControllerResult => {
     const previousTurnWindowModelRef = React.useRef<TurnWindowModel | null>(null);
     const previousMessagesRef = React.useRef<ChatMessageEntry[] | null>(null);
@@ -249,6 +377,9 @@ export const useChatTimelineController = ({
     const scrollPinRef = React.useRef<{ turnId: string; expiresAt: number } | null>(null);
     const historyInteractionRef = React.useRef(false);
     const historyInteractionTimerRef = React.useRef<number | null>(null);
+    // One auto-fill attempt per session: written before the fetch so a failed
+    // page does not storm retries (sync failure state remains authoritative).
+    const autoFillAttemptedSessionsRef = React.useRef<Set<string>>(new Set());
 
     const historySignals = React.useMemo(() => {
         const defaultLimit = getMemoryLimits().HISTORICAL_MESSAGES;
@@ -269,7 +400,8 @@ export const useChatTimelineController = ({
 
     turnModelRef.current = turnWindowModel;
     isPinnedRef.current = isPinned;
-    isLoadingOlderRef.current = isLoadingOlder;
+    // isLoadingOlderRef is armed/cleared synchronously inside fetchOlderHistory
+    // (and session reset) so concurrent gestures cannot race React state.
     pendingRevealWorkRef.current = pendingRevealWork;
     historySignalsRef.current = historySignals;
     sessionIdRef.current = sessionId;
@@ -309,6 +441,7 @@ export const useChatTimelineController = ({
         }
         historyInteractionRef.current = false;
         initializedSessionRef.current = sessionId;
+        isLoadingOlderRef.current = false;
         setIsLoadingOlder(false);
         setPendingRevealWork(false);
         scrollPinRef.current = null;
@@ -443,7 +576,8 @@ export const useChatTimelineController = ({
         prePrependScrollRef.current = null;
         prependTrackingRef.current = null;
         heldAnchorMessagesRef.current = null;
-    }, [sessionId]);
+        messageListRef.current?.cancelViewportAnchorHold();
+    }, [messageListRef, sessionId]);
 
     React.useLayoutEffect(() => {
         const container = scrollRef.current;
@@ -547,11 +681,21 @@ export const useChatTimelineController = ({
                 if (heightDelta > 0) {
                     container.scrollTop = snap.top + heightDelta;
                 }
-            } else if (anchor && historyVirtualized && heldAnchorMessagesRef.current !== renderedMessages) {
+            } else if (
+                anchor
+                && shouldHoldHistoryViewportAnchor({
+                    historyVirtualized,
+                    anchorRestored: restoredAnchor,
+                    heightDelta,
+                    messages: renderedMessages,
+                    heldForMessages: heldAnchorMessagesRef.current,
+                })
+            ) {
                 // Virtualized rows measure in over the frames that follow the
                 // commit, each one moving geometry above the viewport. Hold the
                 // anchor until that settles; the hold releases itself on the
-                // user's next gesture.
+                // user's next gesture. Collapsed pages that restore without
+                // real height growth skip the hold.
                 heldAnchorMessagesRef.current = renderedMessages;
                 messageListRef.current?.holdViewportAnchor(anchor);
             }
@@ -583,10 +727,13 @@ export const useChatTimelineController = ({
 
     const revealBufferedTurns = React.useCallback(async (): Promise<boolean> => false, []);
 
-    const fetchOlderHistory = React.useCallback(async (input: {
+        const fetchOlderHistory = React.useCallback(async (input: {
         preserveViewport: boolean;
     }): Promise<boolean> => {
         if (!sessionIdRef.current || isLoadingOlderRef.current) {
+            return false;
+        }
+        if (historySignalsRef.current.historyLoading) {
             return false;
         }
         if (!historySignalsRef.current.hasMoreAboveTurns) {
@@ -614,12 +761,19 @@ export const useChatTimelineController = ({
             prePrependScrollRef.current = armedSnapshot;
         }
 
+        // Cancel the multi-frame hold only while this interaction still owns
+        // the armed snapshot. A superseded owner must not cancel another hold.
         const releaseSnapshot = () => {
-            if (armedSnapshot && prePrependScrollRef.current === armedSnapshot) {
-                prePrependScrollRef.current = null;
+            if (!(armedSnapshot && prePrependScrollRef.current === armedSnapshot)) {
+                return;
             }
+            prePrependScrollRef.current = null;
+            messageListRef.current?.cancelViewportAnchorHold();
         };
 
+        // Arm the re-entry guard synchronously so a burst of wheel events
+        // cannot start concurrent pagination chains before React state flips.
+        isLoadingOlderRef.current = true;
         beginHistoryInteraction();
         setIsLoadingOlder(true);
 
@@ -633,10 +787,25 @@ export const useChatTimelineController = ({
             let loadedMessageCount = beforeMessageCount;
             let loadedOldestMessageId = beforeOldestMessageId;
             let loadedLimit = beforeLimit;
-            const beforeRenderedCount = turnModelRef.current.messageToTurnIndex.size;
+            let pagesLoaded = 0;
 
             while (true) {
+                // Do not start another Host turn-page while sync still marks
+                // history loading (in-flight prepend / meta.loading).
+                if (historySignalsRef.current.historyLoading) {
+                    releaseSnapshot();
+                    return false;
+                }
+
+                // Capture height before each page so collapsed turns that
+                // absorb rows without growing the document can keep paging.
+                const scrollHeightBefore = scrollRef.current?.scrollHeight ?? 0;
+                const messageCountBefore = loadedMessageCount;
+                const oldestIdBefore = loadedOldestMessageId;
+                const limitBefore = loadedLimit;
+
                 await loadMoreMessages(targetSessionId, 'up');
+                pagesLoaded += 1;
                 if (sessionIdRef.current !== targetSessionId) {
                     releaseSnapshot();
                     return false;
@@ -648,41 +817,38 @@ export const useChatTimelineController = ({
                 const afterMessageCount = afterMessages.length;
                 const afterOldestMessageId = afterMessages[0]?.info?.id ?? null;
                 const afterLimit = historyMetaRef.current?.limit ?? loadedLimit;
-                const messageGrowth =
-                    afterMessageCount > loadedMessageCount
-                    || (typeof loadedOldestMessageId === 'string'
-                        && typeof afterOldestMessageId === 'string'
-                        && loadedOldestMessageId !== afterOldestMessageId)
-                    || afterLimit > loadedLimit;
-                // Turn COUNT is the wrong stop signal. A multi-step assistant
-                // turn spans several pages, so a page routinely adds dozens of
-                // visible rows to a turn that already exists without creating a
-                // new one — looping past that pulls three or four pages per
-                // gesture and multiplies the geometry the viewport
-                // compensation has to absorb. Stop as soon as the page
-                // contributed anything the user can actually see; keep paging
-                // only while every row is still an orphan the timeline drops.
-                const renderedGrowth = turnModelRef.current.messageToTurnIndex.size - beforeRenderedCount;
+                const scrollHeightAfter = scrollRef.current?.scrollHeight ?? scrollHeightBefore;
+                const decision = resolveHistoryPageDecision({
+                    scrollHeightBefore,
+                    scrollHeightAfter,
+                    messageCountBefore,
+                    messageCountAfter: afterMessageCount,
+                    oldestIdBefore,
+                    oldestIdAfter: afterOldestMessageId,
+                    limitBefore,
+                    limitAfter: afterLimit,
+                    hasMoreAbove: historySignalsRef.current.hasMoreAboveTurns,
+                    pagesLoaded,
+                    maxPages: HISTORY_INTERACTION_MAX_PAGES,
+                });
 
-                if (renderedGrowth > 0) {
-                    return true;
+                if (decision === 'continue') {
+                    loadedMessageCount = afterMessageCount;
+                    loadedOldestMessageId = afterOldestMessageId;
+                    loadedLimit = afterLimit;
+                    continue;
                 }
-                if (!messageGrowth) {
+                if (decision === 'stop-no-growth') {
                     releaseSnapshot();
                     return false;
                 }
-                if (!historySignalsRef.current.hasMoreAboveTurns) {
-                    return true;
-                }
-
-                loadedMessageCount = afterMessageCount;
-                loadedOldestMessageId = afterOldestMessageId;
-                loadedLimit = afterLimit;
+                return true;
             }
         } catch (error) {
             releaseSnapshot();
             throw error;
         } finally {
+            isLoadingOlderRef.current = false;
             setIsLoadingOlder(false);
             settleHistoryInteraction();
             // Removing the loading row is itself a geometry change above the
@@ -691,7 +857,7 @@ export const useChatTimelineController = ({
             // (streaming, live events) free of a stale read position.
             void waitForNextRenderCommitOrTimeout().then(releaseSnapshot);
         }
-    }, [beginHistoryInteraction, captureViewportAnchor, loadMoreMessages, scrollRef, settleHistoryInteraction, waitForNextRenderCommitOrTimeout]);
+    }, [beginHistoryInteraction, captureViewportAnchor, loadMoreMessages, messageListRef, scrollRef, settleHistoryInteraction, waitForNextRenderCommitOrTimeout]);
 
     const loadEarlier = React.useCallback(async (options?: { userInitiated?: boolean }) => {
         beginHistoryInteraction();
@@ -706,22 +872,87 @@ export const useChatTimelineController = ({
         }
     }, [beginHistoryInteraction, fetchOlderHistory, releaseAutoFollow, settleHistoryInteraction]);
 
-    const handleHistoryScroll = React.useCallback(() => {
-        // Mobile never loads history from scroll position: any prepend racing
-        // an active touch gesture can be hijacked by the native scroll
+    // Short first paint (collapsed history shorter than the viewport): fill
+    // earlier pages once while auto-follow stays pinned. Paint-after effect so
+    // layout has settled; never userInitiated/release so pin is preserved.
+    React.useEffect(() => {
+        const targetSessionId = sessionId;
+        if (!targetSessionId) return;
+
+        const container = scrollRef.current;
+        const alreadyAttempted = autoFillAttemptedSessionsRef.current.has(targetSessionId);
+        if (!shouldAutoFillEarlierHistory({
+            enabled: autoFillEnabled,
+            isMobile: isMobileSurfaceRuntime(),
+            sessionReady: Boolean(targetSessionId),
+            messageReady: messages.length > 0 || Boolean(historyMeta),
+            historyLoading: historySignals.historyLoading,
+            canLoadEarlier: historySignals.canLoadEarlier,
+            isPinned,
+            alreadyAttempted,
+            scrollHeight: container?.scrollHeight ?? 0,
+            clientHeight: container?.clientHeight ?? 0,
+            pendingRevealWork,
+            isLoadingOlder,
+            hasMessages: messages.length > 0,
+            messageCount: messages.length,
+        })) {
+            return;
+        }
+
+        // Guard before the fetch so a failed page cannot storm retries.
+        autoFillAttemptedSessionsRef.current.add(targetSessionId);
+        void fetchOlderHistory({ preserveViewport: true }).catch(() => {
+            // Sync failure state already owns the error; only prevent unhandled rejection.
+        });
+    }, [
+        autoFillEnabled,
+        fetchOlderHistory,
+        historyMeta,
+        historySignals.canLoadEarlier,
+        historySignals.historyLoading,
+        isLoadingOlder,
+        isPinned,
+        messages.length,
+        pendingRevealWork,
+        scrollRef,
+        sessionId,
+    ]);
+
+    const decideAndLoadEarlier = React.useCallback((source: HistoryLoadSource) => {
+        // Mobile never loads history from scroll/gesture position: any prepend
+        // racing an active touch gesture can be hijacked by the native scroll
         // animation. The user scrolls to the natural top and taps an explicit
         // "load older" button instead — the insert then happens from a resting
         // state, which is fully deterministic.
-        if (isMobileSurfaceRuntime()) return;
         const container = scrollRef.current;
         if (!container) return;
-        if (isPinnedRef.current) return;
-        if (container.scrollTop >= resolveHistoryScrollThreshold(container.clientHeight)) return;
-        if (!historySignalsRef.current.canLoadEarlier) return;
-        if (isLoadingOlderRef.current || pendingRevealWorkRef.current) return;
+        if (!shouldLoadEarlierHistory({
+            source,
+            isMobile: isMobileSurfaceRuntime(),
+            isPinned: isPinnedRef.current,
+            scrollTop: container.scrollTop,
+            clientHeight: container.clientHeight,
+            canLoadEarlier: historySignalsRef.current.canLoadEarlier,
+            isLoadingOlder: isLoadingOlderRef.current,
+            pendingRevealWork: pendingRevealWorkRef.current,
+        })) {
+            return;
+        }
 
         void loadEarlier({ userInitiated: true });
     }, [loadEarlier, scrollRef]);
+
+    const handleHistoryScroll = React.useCallback(() => {
+        decideAndLoadEarlier('scroll');
+    }, [decideAndLoadEarlier]);
+
+    // Explicit upward intent (wheel/touch/key) can fire when scrollTop is already
+    // 0, so no scroll event would run. Same decision helper; only the pin gate
+    // differs from ordinary scroll.
+    const handleHistoryUpwardIntent = React.useCallback(() => {
+        decideAndLoadEarlier('upward-intent');
+    }, [decideAndLoadEarlier]);
 
     const scrollToTurn = React.useCallback(async (
         turnId: string,
@@ -813,12 +1044,14 @@ export const useChatTimelineController = ({
 
     const resumeToBottom = React.useCallback(async () => {
         setPendingRevealWork(false);
+        isLoadingOlderRef.current = false;
         setIsLoadingOlder(false);
         goToBottom('smooth');
     }, [goToBottom]);
 
     const resumeToBottomInstant = React.useCallback(async () => {
         setPendingRevealWork(false);
+        isLoadingOlderRef.current = false;
         setIsLoadingOlder(false);
         goToBottom('instant');
     }, [goToBottom]);
@@ -851,6 +1084,7 @@ export const useChatTimelineController = ({
         scrollToTurn,
         scrollToMessage,
         handleHistoryScroll,
+        handleHistoryUpwardIntent,
         captureViewportAnchor,
         restoreViewportAnchor,
         handleActiveTurnChange,

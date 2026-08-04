@@ -8,20 +8,33 @@ function createMessageEntry({
     role,
     parentID,
     createdAt,
+    completedAt,
+    finish,
+    error,
+    parts,
 }: {
     id: string;
     role: 'user' | 'assistant' | 'system';
     parentID?: string;
     createdAt: number;
+    completedAt?: number;
+    finish?: string;
+    error?: unknown;
+    parts?: Part[];
 }): ChatMessageEntry {
     return {
         info: {
             id,
             role,
             ...(parentID ? { parentID } : {}),
-            time: { created: createdAt },
+            ...(finish !== undefined ? { finish } : {}),
+            ...(error !== undefined ? { error } : {}),
+            time: {
+                created: createdAt,
+                ...(typeof completedAt === 'number' ? { completed: completedAt } : {}),
+            },
         } as Message,
-        parts: [] as Part[],
+        parts: parts ?? ([] as Part[]),
     };
 }
 
@@ -138,5 +151,407 @@ describe('projectTurnRecords', () => {
 
         expect(next.turns).toBe(initial.turns);
         expect(next.turns[0]).toBe(initial.turns[0]);
+    });
+
+    test('completionDisposition is normal when last assistant finish is stop', () => {
+        const user = createMessageEntry({ id: 'u1', role: 'user', createdAt: 1 });
+        const assistant = createMessageEntry({
+            id: 'a1',
+            role: 'assistant',
+            parentID: 'u1',
+            createdAt: 2,
+            completedAt: 3,
+            finish: 'stop',
+            parts: [{ id: 't1', type: 'text', text: 'done' } as Part],
+        });
+
+        const projection = projectTurnRecords([user, assistant]);
+
+        expect(projection.turns[0]?.completionDisposition).toBe('normal');
+    });
+
+    test('completionDisposition is abnormal when settled without stop (user interrupt)', () => {
+        const user = createMessageEntry({ id: 'u1', role: 'user', createdAt: 1 });
+        const assistant = createMessageEntry({
+            id: 'a1',
+            role: 'assistant',
+            parentID: 'u1',
+            createdAt: 2,
+            completedAt: 3,
+            error: { message: 'aborted' },
+            parts: [{ id: 't1', type: 'text', text: 'partial' } as Part],
+        });
+
+        const projection = projectTurnRecords([user, assistant]);
+
+        // MessageBody: user interrupt often sets time.completed + error without finish === 'stop'
+        expect(projection.turns[0]?.completionDisposition).toBe('abnormal');
+    });
+
+    test('completionDisposition is abnormal when completed without finish stop', () => {
+        const user = createMessageEntry({ id: 'u1', role: 'user', createdAt: 1 });
+        const assistant = createMessageEntry({
+            id: 'a1',
+            role: 'assistant',
+            parentID: 'u1',
+            createdAt: 2,
+            completedAt: 3,
+            finish: 'error',
+            parts: [{ id: 't1', type: 'text', text: 'failed' } as Part],
+        });
+
+        const projection = projectTurnRecords([user, assistant]);
+
+        expect(projection.turns[0]?.completionDisposition).toBe('abnormal');
+    });
+
+    test('completionDisposition is active while last assistant is streaming', () => {
+        const user = createMessageEntry({ id: 'u1', role: 'user', createdAt: 1 });
+        const assistant = createMessageEntry({
+            id: 'a1',
+            role: 'assistant',
+            parentID: 'u1',
+            createdAt: 2,
+            parts: [{ id: 't1', type: 'text', text: 'streaming…' } as Part],
+        });
+
+        const projection = projectTurnRecords([user, assistant]);
+
+        expect(projection.turns[0]?.completionDisposition).toBe('active');
+    });
+
+    test('normal turn with multiple text keeps only last stop text as summary; others become justification activity', () => {
+        const user = createMessageEntry({ id: 'u1', role: 'user', createdAt: 1 });
+        const assistant = createMessageEntry({
+            id: 'a1',
+            role: 'assistant',
+            parentID: 'u1',
+            createdAt: 2,
+            completedAt: 5,
+            finish: 'stop',
+            parts: [
+                { id: 'tool_1', type: 'tool', tool: 'bash', state: { status: 'completed' } } as Part,
+                { id: 'text_mid', type: 'text', text: 'working on it' } as Part,
+                { id: 'text_final', type: 'text', text: 'all done' } as Part,
+            ],
+        });
+
+        const projection = projectTurnRecords([user, assistant], {
+            showTextJustificationActivity: true,
+        });
+
+        const turn = projection.turns[0];
+        expect(turn?.completionDisposition).toBe('normal');
+        expect(turn?.summary.text).toBe('all done');
+        expect(turn?.summary.sourcePartId).toBe('text_final');
+
+        const justificationTexts = turn?.activityParts
+            .filter((part) => part.kind === 'justification')
+            .map((part) => (part.part as { text?: string }).text);
+        expect(justificationTexts).toContain('working on it');
+        expect(justificationTexts).not.toContain('all done');
+    });
+
+    test('normal turn without tools still folds non-summary text into justification when canonical stop summary exists', () => {
+        const user = createMessageEntry({ id: 'u1', role: 'user', createdAt: 1 });
+        const assistant = createMessageEntry({
+            id: 'a1',
+            role: 'assistant',
+            parentID: 'u1',
+            createdAt: 2,
+            completedAt: 5,
+            finish: 'stop',
+            parts: [
+                { id: 'text_mid', type: 'text', text: 'thinking aloud' } as Part,
+                { id: 'text_final', type: 'text', text: 'final answer' } as Part,
+            ],
+        });
+
+        const projection = projectTurnRecords([user, assistant], {
+            showTextJustificationActivity: true,
+        });
+
+        const turn = projection.turns[0];
+        expect(turn?.completionDisposition).toBe('normal');
+        expect(turn?.summary.text).toBe('final answer');
+        const justificationTexts = turn?.activityParts
+            .filter((part) => part.kind === 'justification')
+            .map((part) => (part.part as { text?: string }).text) ?? [];
+        expect(justificationTexts).toContain('thinking aloud');
+        expect(justificationTexts).not.toContain('final answer');
+    });
+
+    test('abnormal interrupt text is not treated as normal stop summary for justification folding', () => {
+        const user = createMessageEntry({ id: 'u1', role: 'user', createdAt: 1 });
+        const assistant = createMessageEntry({
+            id: 'a1',
+            role: 'assistant',
+            parentID: 'u1',
+            createdAt: 2,
+            completedAt: 4,
+            error: { message: 'user aborted' },
+            parts: [
+                { id: 'tool_1', type: 'tool', tool: 'bash', state: { status: 'completed' } } as Part,
+                { id: 'text_a', type: 'text', text: 'mid progress' } as Part,
+                { id: 'text_b', type: 'text', text: 'interrupted fallback' } as Part,
+            ],
+        });
+
+        const projection = projectTurnRecords([user, assistant], {
+            showTextJustificationActivity: true,
+        });
+
+        const turn = projection.turns[0];
+        expect(turn?.completionDisposition).toBe('abnormal');
+        // Fallback text may still be projected as summary source for display, but without finish=stop
+        // it must not fold other text solely as "normal summary" path — both texts stay as activity
+        // when message has tools (existing non-collapse abnormal semantics).
+        const justificationTexts = turn?.activityParts
+            .filter((part) => part.kind === 'justification')
+            .map((part) => (part.part as { text?: string }).text) ?? [];
+        expect(justificationTexts).toContain('mid progress');
+        expect(justificationTexts).toContain('interrupted fallback');
+    });
+
+    test('activityParts keep natural order across task; single segment equals full activityParts', () => {
+        const user = createMessageEntry({ id: 'u1', role: 'user', createdAt: 1 });
+        const assistant = createMessageEntry({
+            id: 'a1',
+            role: 'assistant',
+            parentID: 'u1',
+            createdAt: 2,
+            completedAt: 10,
+            finish: 'stop',
+            parts: [
+                { id: 'r1', type: 'reasoning', text: 'plan before task' } as Part,
+                { id: 'tool_bash', type: 'tool', tool: 'bash', state: { status: 'completed' } } as Part,
+                { id: 'j1', type: 'text', text: 'justify before task' } as Part,
+                { id: 'task_1', type: 'tool', tool: 'task', state: { status: 'completed' } } as Part,
+                { id: 'r2', type: 'reasoning', text: 'plan after task' } as Part,
+                { id: 'tool_read', type: 'tool', tool: 'read', state: { status: 'completed' } } as Part,
+                { id: 'j2', type: 'text', text: 'justify after task' } as Part,
+                { id: 'summary', type: 'text', text: 'final answer' } as Part,
+            ],
+        });
+
+        const projection = projectTurnRecords([user, assistant], {
+            showTextJustificationActivity: true,
+        });
+
+        const turn = projection.turns[0];
+        expect(turn?.activityParts.map((part) => part.id)).toEqual([
+            'r1',
+            'tool_bash',
+            'j1',
+            'task_1',
+            'r2',
+            'tool_read',
+            'j2',
+        ]);
+        expect(turn?.activityParts.map((part) => part.kind)).toEqual([
+            'reasoning',
+            'tool',
+            'justification',
+            'tool',
+            'reasoning',
+            'tool',
+            'justification',
+        ]);
+        expect(turn?.activitySegments).toHaveLength(1);
+        expect(turn?.activitySegments[0]?.afterToolPartId).toBeNull();
+        expect(turn?.activitySegments[0]?.anchorMessageId).toBe('a1');
+        expect(turn?.activitySegments[0]?.parts).toBe(turn?.activityParts);
+        expect(turn?.activitySegments[0]?.parts.map((part) => part.id)).toEqual([
+            'r1',
+            'tool_bash',
+            'j1',
+            'task_1',
+            'r2',
+            'tool_read',
+            'j2',
+        ]);
+        expect(turn?.summary.text).toBe('final answer');
+    });
+
+    test('activitySegments is empty when turn has no activity parts', () => {
+        const user = createMessageEntry({ id: 'u1', role: 'user', createdAt: 1 });
+        const assistant = createMessageEntry({
+            id: 'a1',
+            role: 'assistant',
+            parentID: 'u1',
+            createdAt: 2,
+            completedAt: 3,
+            finish: 'stop',
+            parts: [{ id: 't1', type: 'text', text: 'only summary' } as Part],
+        });
+
+        const projection = projectTurnRecords([user, assistant], {
+            showTextJustificationActivity: true,
+        });
+
+        const turn = projection.turns[0];
+        expect(turn?.activityParts).toHaveLength(0);
+        expect(turn?.activitySegments).toHaveLength(0);
+        expect(turn?.summary.text).toBe('only summary');
+    });
+
+    test('single activity segment anchors to the earliest assistant message with activity', () => {
+        const user = createMessageEntry({ id: 'u1', role: 'user', createdAt: 1 });
+        const assistant1 = createMessageEntry({
+            id: 'a1',
+            role: 'assistant',
+            parentID: 'u1',
+            createdAt: 2,
+            completedAt: 3,
+            finish: 'tool-calls',
+            parts: [
+                { id: 'r1', type: 'reasoning', text: 'first reasoning' } as Part,
+                { id: 'task_1', type: 'tool', tool: 'task', state: { status: 'completed' } } as Part,
+            ],
+        });
+        const assistant2 = createMessageEntry({
+            id: 'a2',
+            role: 'assistant',
+            parentID: 'u1',
+            createdAt: 4,
+            completedAt: 5,
+            finish: 'stop',
+            parts: [
+                { id: 'tool_bash', type: 'tool', tool: 'bash', state: { status: 'completed' } } as Part,
+                { id: 'summary', type: 'text', text: 'done' } as Part,
+            ],
+        });
+
+        const projection = projectTurnRecords([user, assistant1, assistant2], {
+            showTextJustificationActivity: true,
+        });
+
+        const turn = projection.turns[0];
+        expect(turn?.activityParts.map((part) => part.id)).toEqual(['r1', 'task_1', 'tool_bash']);
+        expect(turn?.activitySegments).toHaveLength(1);
+        expect(turn?.activitySegments[0]?.anchorMessageId).toBe('a1');
+        expect(turn?.activitySegments[0]?.afterToolPartId).toBeNull();
+        expect(turn?.activitySegments[0]?.parts).toBe(turn?.activityParts);
+    });
+
+    test('marks turn as compaction when user message has raw compaction part', () => {
+        const user = createMessageEntry({
+            id: 'u1',
+            role: 'user',
+            createdAt: 10,
+            parts: [{ id: 'c1', type: 'compaction' } as Part],
+        });
+        const assistant = createMessageEntry({
+            id: 'a1',
+            role: 'assistant',
+            parentID: 'u1',
+            createdAt: 11,
+            parts: [{ id: 't1', type: 'text', text: 'compacting…' } as Part],
+        });
+
+        const projection = projectTurnRecords([user, assistant]);
+        const turn = projection.turns[0];
+
+        expect(turn?.activityPresentationKind).toBe('compaction');
+        expect(turn?.completionDisposition).toBe('active');
+        expect(turn?.startedAt).toBe(10);
+        expect(turn?.durationMs).toBeUndefined();
+    });
+
+    test('marks turn as compaction when display-normalized text is exactly /compact', () => {
+        const user = createMessageEntry({
+            id: 'u1',
+            role: 'user',
+            createdAt: 10,
+            parts: [{ id: 't1', type: 'text', text: '/compact' } as Part],
+        });
+        const assistant = createMessageEntry({
+            id: 'a1',
+            role: 'assistant',
+            parentID: 'u1',
+            createdAt: 11,
+            completedAt: 25,
+            finish: 'stop',
+            parts: [{ id: 't2', type: 'text', text: 'done' } as Part],
+        });
+
+        const projection = projectTurnRecords([user, assistant]);
+        const turn = projection.turns[0];
+
+        expect(turn?.activityPresentationKind).toBe('compaction');
+        expect(turn?.completionDisposition).toBe('normal');
+        expect(turn?.startedAt).toBe(10);
+        expect(turn?.completedAt).toBe(25);
+        expect(turn?.durationMs).toBe(15);
+    });
+
+    test('marks ordinary user text turns as default activity presentation', () => {
+        const user = createMessageEntry({
+            id: 'u1',
+            role: 'user',
+            createdAt: 1,
+            parts: [{ id: 't1', type: 'text', text: 'hello world' } as Part],
+        });
+        const assistant = createMessageEntry({
+            id: 'a1',
+            role: 'assistant',
+            parentID: 'u1',
+            createdAt: 2,
+            completedAt: 5,
+            finish: 'stop',
+            parts: [{ id: 't2', type: 'text', text: 'hi' } as Part],
+        });
+
+        const projection = projectTurnRecords([user, assistant]);
+        const turn = projection.turns[0];
+
+        expect(turn?.activityPresentationKind).toBe('default');
+        expect(turn?.completionDisposition).toBe('normal');
+        expect(turn?.durationMs).toBe(4);
+    });
+
+    test('detects compaction from sourceParts when display parts are already normalized', () => {
+        const user: ChatMessageEntry = {
+            ...createMessageEntry({
+                id: 'u1',
+                role: 'user',
+                createdAt: 10,
+                parts: [{ id: 't1', type: 'text', text: '/compact' } as Part],
+            }),
+            sourceParts: [{ id: 'c1', type: 'compaction' } as Part],
+        };
+
+        const projection = projectTurnRecords([user]);
+        expect(projection.turns[0]?.activityPresentationKind).toBe('compaction');
+    });
+
+    test('reuses previous projection including activityPresentationKind', () => {
+        const user = createMessageEntry({
+            id: 'u1',
+            role: 'user',
+            createdAt: 10,
+            parts: [{ id: 'c1', type: 'compaction' } as Part],
+        });
+        const assistant = createMessageEntry({
+            id: 'a1',
+            role: 'assistant',
+            parentID: 'u1',
+            createdAt: 11,
+            completedAt: 20,
+            finish: 'stop',
+            parts: [{ id: 't1', type: 'text', text: 'done' } as Part],
+        });
+        const initial = projectTurnRecords([user, assistant]);
+        expect(initial.turns[0]?.activityPresentationKind).toBe('compaction');
+
+        const next = projectTurnRecords([user, assistant], {
+            previousProjection: initial,
+        });
+
+        expect(next.turns).toBe(initial.turns);
+        expect(next.turns[0]).toBe(initial.turns[0]);
+        expect(next.turns[0]?.activityPresentationKind).toBe('compaction');
+        expect(next.turns[0]?.completionDisposition).toBe('normal');
+        expect(next.turns[0]?.durationMs).toBe(10);
     });
 });

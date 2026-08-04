@@ -9,12 +9,34 @@ const asNonEmptyString = (value) => {
 const parseProjectID = (req) => asNonEmptyString(req?.params?.projectId);
 const parseTaskID = (req) => asNonEmptyString(req?.params?.taskId);
 
+const parsePositiveLimit = (value) => {
+  if (value == null || value === '') {
+    return undefined;
+  }
+  const parsed = typeof value === 'number' ? value : Number(value);
+  if (!Number.isInteger(parsed) || parsed < 1) {
+    return null;
+  }
+  return parsed;
+};
+
+const isAuthoritativeRunHistoryPage = (page) => (
+  page != null
+  && typeof page === 'object'
+  && Array.isArray(page.runs)
+  && (page.nextCursor === null || typeof page.nextCursor === 'string')
+  && typeof page.complete === 'boolean'
+  && page.complete === (page.nextCursor === null)
+  && (page.nextCursor === null || page.nextCursor.length > 0)
+);
+
 export const registerScheduledTaskRoutes = (app, dependencies) => {
   const {
     readSettingsFromDiskMigrated,
     sanitizeProjects,
     projectConfigRuntime,
     scheduledTasksRuntime,
+    runHistoryStore = null,
     getOpenChamberEventClients,
     writeSseEvent,
     scheduleSyncRetry = (retry) => {
@@ -82,6 +104,45 @@ export const registerScheduledTaskRoutes = (app, dependencies) => {
     }
 
     return res.json({ tasks, failedProjectIds });
+  });
+
+  app.get('/api/openchamber/scheduled-task-runs', async (req, res) => {
+    if (!runHistoryStore || typeof runHistoryStore.listRuns !== 'function') {
+      return res.status(500).json({ error: 'Run history store is unavailable' });
+    }
+
+    const before = typeof req?.query?.before === 'string' ? req.query.before : undefined;
+    const limit = parsePositiveLimit(req?.query?.limit);
+    if (req?.query?.limit != null && req.query.limit !== '' && limit === null) {
+      return res.status(400).json({ error: 'Invalid limit' });
+    }
+    const projectId = asNonEmptyString(req?.query?.projectId);
+    const taskId = asNonEmptyString(req?.query?.taskId);
+
+    try {
+      const page = runHistoryStore.listRuns({
+        ...(before !== undefined ? { before } : {}),
+        ...(limit !== undefined ? { limit } : {}),
+        ...(projectId ? { projectID: projectId } : {}),
+        ...(taskId ? { taskID: taskId } : {}),
+      });
+      if (!isAuthoritativeRunHistoryPage(page)) {
+        console.error('[ScheduledTasks] run history store returned a malformed page');
+        return res.status(500).json({ error: 'Failed to load run history' });
+      }
+      return res.json({
+        runs: page.runs,
+        nextCursor: page.nextCursor,
+        complete: page.complete,
+      });
+    } catch (error) {
+      const message = error instanceof Error ? error.message : 'Failed to load run history';
+      if (/cursor/i.test(message) || /limit/i.test(message)) {
+        return res.status(400).json({ error: message });
+      }
+      console.error('[ScheduledTasks] failed to load run history:', error);
+      return res.status(500).json({ error: 'Failed to load run history' });
+    }
   });
 
   app.get('/api/projects/:projectId/scheduled-tasks', async (req, res) => {

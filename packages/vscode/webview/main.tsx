@@ -3,6 +3,10 @@ import { onCommand, onThemeChange, proxyApiRequest, proxySessionMessageRequest, 
 import { vscodeStreamPerfCount, vscodeStreamPerfMeasure, vscodeStreamPerfObserve } from './api/streamPerf';
 import { extractBodyBase64, extractBodyText, extractJsonBody, hasInitBody } from './requestBodyTransport';
 import { isMessageQueueRoute } from './messageQueueRoute';
+import {
+  handleSessionTurnPageRoute,
+  isSessionTurnPageRoute,
+} from './sessionTurnPageRoute';
 import { getSettingsBridgeMessageType, isSettingsBootstrapRequest } from '../src/settings-bootstrap-runtime';
 import type { RuntimeAPIs } from '@openchamber/ui/lib/api/types';
 import { opencodeClient } from '@openchamber/ui/lib/opencode/client';
@@ -397,6 +401,17 @@ const handleLocalApiRequest = async (input: RequestInfo | URL, url: URL, init: R
 
   if (isMessageQueueRoute(normalizedPathname)) {
     return jsonResponse({ code: 'unavailable' }, 501);
+  }
+
+  // OpenChamber-owned turn-page route — must run before the generic OpenCode
+  // proxy fallthrough (api:proxy). Matches web host registration order.
+  if (isSessionTurnPageRoute(normalizedPathname) || isSessionTurnPageRoute(pathname)) {
+    return handleSessionTurnPageRoute({
+      method,
+      pathname: isSessionTurnPageRoute(normalizedPathname) ? normalizedPathname : pathname,
+      searchParams: url.searchParams,
+      sendBridgeMessage,
+    });
   }
 
   if (/^\/api\/projects\/[^/]+\/scheduled-tasks(?:\/[^/]+)?$/.test(normalizedPathname)) {

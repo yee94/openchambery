@@ -54,6 +54,8 @@ interface UseChatAutoFollowOptions {
     sessionIsWorking: boolean;
     isMobile: boolean;
     onActiveTurnChange?: (turnId: string | null) => void;
+    /** Desktop history: fired after release on explicit upward wheel/touch/key intent. Not used for scrollbar pointer. */
+    onUpwardUserIntent?: () => void;
 }
 
 export interface UseChatAutoFollowResult {
@@ -192,17 +194,24 @@ const isReleaseKey = (event: KeyboardEvent): boolean => {
     }
 };
 
-const nestedScrollableTarget = (root: HTMLElement, target: EventTarget | null): HTMLElement | null => {
-    if (!(target instanceof Element)) return null;
-    const nested = target.closest('[data-scrollable]');
-    if (!nested || nested === root || !(nested instanceof HTMLElement)) return null;
-    return nested;
-};
-
+// Wheel/touch upward intent must not fire while a nested scroller inside the
+// chat root can still consume the gesture. Walk ancestors from event.target to
+// (but not including) root; geometry alone — no selectors, no getComputedStyle.
 const nestedScrollableCanConsumeUp = (root: HTMLElement, target: EventTarget | null): boolean => {
-    const nested = nestedScrollableTarget(root, target);
-    if (!nested) return false;
-    return nested.scrollTop > 0;
+    let node: Element | null = target instanceof Element
+        ? target
+        : target instanceof Node
+            ? target.parentElement
+            : null;
+    while (node && node !== root) {
+        if (node instanceof HTMLElement) {
+            if (node.scrollTop > 0 && node.scrollHeight > node.clientHeight + 1) {
+                return true;
+            }
+        }
+        node = node.parentElement;
+    }
+    return false;
 };
 
 export const useChatAutoFollow = ({
@@ -213,6 +222,7 @@ export const useChatAutoFollow = ({
     sessionIsWorking,
     isMobile,
     onActiveTurnChange,
+    onUpwardUserIntent,
 }: UseChatAutoFollowOptions): UseChatAutoFollowResult => {
     const scrollRef = React.useRef<HTMLDivElement | null>(null);
     const [containerEl, setContainerEl] = React.useState<HTMLDivElement | null>(null);
@@ -522,12 +532,22 @@ export const useChatAutoFollow = ({
         updateOverflowAndButton();
     });
 
+    const onUpwardUserIntentRef = React.useRef(onUpwardUserIntent);
+    onUpwardUserIntentRef.current = onUpwardUserIntent;
+
     const releaseFromUserIntent = useEvent(() => {
         // A genuine user gesture (wheel/touch/key/scrollbar) cancels the entry
         // window immediately so we never fight the user's read position.
         cancelForcedBottom();
         endEntryStick();
         stop();
+    });
+
+    // After release, notify desktop history loading. Scrollbar pointer uses
+    // releaseFromUserIntent only — it must not fire this callback.
+    const notifyUpwardUserIntent = useEvent(() => {
+        releaseFromUserIntent();
+        onUpwardUserIntentRef.current?.();
     });
 
     // ── per-session snapshot persistence (kept; restore still goes to bottom) ─
@@ -728,7 +748,7 @@ export const useChatAutoFollow = ({
         if (!container) return;
         if (event.deltaY >= 0) return;
         if (nestedScrollableCanConsumeUp(container, event.target)) return;
-        releaseFromUserIntent();
+        notifyUpwardUserIntent();
     });
 
     const handleTouchStart = useEvent((event: TouchEvent) => {
@@ -750,7 +770,7 @@ export const useChatAutoFollow = ({
         if (fingerDelta <= TOUCH_FINGER_DOWN_THRESHOLD) return;
         if (!container) return;
         if (nestedScrollableCanConsumeUp(container, event.target)) return;
-        releaseFromUserIntent();
+        notifyUpwardUserIntent();
     });
 
     const handleTouchEnd = useEvent(() => {
@@ -759,13 +779,14 @@ export const useChatAutoFollow = ({
 
     const handleKeyDown = useEvent((event: KeyboardEvent) => {
         if (!isReleaseKey(event)) return;
-        releaseFromUserIntent();
+        notifyUpwardUserIntent();
     });
 
     const handlePointerDownIntent = useEvent((event: PointerEvent) => {
         const target = event.target;
         if (!(target instanceof Element)) return;
         if (!target.closest('[data-overlay-scrollbar-thumb]')) return;
+        // Scrollbar drag releases follow but is not an upward-intent load signal.
         releaseFromUserIntent();
     });
 

@@ -1,5 +1,5 @@
 import { describe, expect, test } from "bun:test"
-import { cloneDraftRecord, DRAFT_COMPOSER_REFERENCE_LIMITS, draftAttachmentRefID, draftKeyString, draftRootAttachmentOccurrenceRefID, draftSyntheticPartAttachmentOccurrenceRefID, isDraftRecordPersistable, newSessionDraftKey, parseDraftMentions, parseDraftRecord, sessionDraftKey, type DraftRecord } from "./input-draft-types"
+import { cloneDraftRecord, deriveNewSessionDraftID, DRAFT_COMPOSER_REFERENCE_LIMITS, draftAttachmentRefID, draftKeyString, draftRootAttachmentOccurrenceRefID, draftSyntheticPartAttachmentOccurrenceRefID, isDraftRecordPersistable, newSessionDraftKey, parseDraftMentions, parseDraftRecord, sessionDraftKey, type DraftRecord } from "./input-draft-types"
 
 const record = (): DraftRecord => ({
   version: 1,
@@ -41,6 +41,17 @@ describe("input draft types", () => {
     expect(newSessionDraftKey({ transportIdentity: "runtime-a" }, "draft-a")).toEqual({ transportIdentity: "runtime-a", owner: { kind: "draft", ownerID: "draft-a" } })
     expect(() => sessionDraftKey({ transportIdentity: "" }, "session-a")).toThrow("transportIdentity")
     expect(() => newSessionDraftKey({ transportIdentity: "runtime-a" }, "")).toThrow("draftID")
+  })
+
+  test("deriveNewSessionDraftID prefers project, then directory, then default", () => {
+    expect(deriveNewSessionDraftID({ projectId: "proj-a", directory: "/projects/a" })).toBe("new-session:project:proj-a")
+    expect(deriveNewSessionDraftID({ projectId: "  ", directory: "/projects/a" })).toBe("new-session:directory:/projects/a")
+    expect(deriveNewSessionDraftID({ projectId: null, directory: null })).toBe("new-session:default")
+    expect(deriveNewSessionDraftID({ projectId: "proj-a" })).not.toBe(deriveNewSessionDraftID({ projectId: "proj-b" }))
+    const keyA = newSessionDraftKey({ transportIdentity: "runtime-a" }, deriveNewSessionDraftID({ projectId: "proj-a" }))
+    const keyB = newSessionDraftKey({ transportIdentity: "runtime-b" }, deriveNewSessionDraftID({ projectId: "proj-a" }))
+    expect(keyA.owner.ownerID).toBe(keyB.owner.ownerID)
+    expect(keyA.transportIdentity).not.toBe(keyB.transportIdentity)
   })
 
   test("parses and clones the complete frozen DTO", () => {

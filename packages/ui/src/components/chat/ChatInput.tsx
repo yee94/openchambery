@@ -159,11 +159,12 @@ import { runQueueMessageFireAndForget } from './queueMessageFireAndForget';
 import { admitServerQueueMessageAndConsumeResources, assistantQueueAdmissionAvailable, attachedFilesToQueueCandidates, beginQueueAdmissionOptimisticClear, createServerQueueAdmissionCapture, createServerQueueAdmissionIdentity, isCompleteQueueSendConfig, isQueueAdmissionRuntimeCurrent } from './queueAdmission';
 import { shouldShowPermissionAutoAcceptControl, togglePermissionAutoAccept } from './permissionAutoAccept';
 import { getSlashTokenRange } from './commandSelection';
-import {
-    advancePastTrailingBoundarySpace,
-    insertTokenWithReferenceBoundaries,
-    withReferenceInsertionBoundaries,
-} from './insertionBoundaries';
+    import {
+        advancePastTrailingBoundarySpace,
+        appendUniqueDraftMention,
+        insertTokenWithReferenceBoundaries,
+        withReferenceInsertionBoundaries,
+    } from './insertionBoundaries';
 import { isCommandAllowedForSubmission } from './commandSelection';
 import { clearActiveChatInputSurface, setActiveChatInputSurface } from './activeChatInputSurface';
 import { resolveComposerVisibleAgents } from './chatComposerCatalog';
@@ -5019,7 +5020,13 @@ const ChatInputRuntime: React.FC<ChatInputProps> = ({ onOpenSettings, scrollToBo
         const lastAtSymbol = textBeforeCursor.lastIndexOf('@');
         const startIndex = lastAtSymbol !== -1 ? lastAtSymbol : cursorPosition;
         const inserted = insertTokenWithReferenceBoundaries(message, startIndex, cursorPosition, `@${agentName}`);
-        applyProgrammaticEdit(inserted.text);
+        applyProgrammaticEdit(inserted.text, (mentions) => appendUniqueDraftMention(mentions, {
+            kind: 'agent',
+            value: agentName,
+            path: agentName,
+            label: agentName,
+            range: { start: inserted.start, end: inserted.end },
+        }));
 
         requestAnimationFrame(() => {
             if (textareaRef.current) {

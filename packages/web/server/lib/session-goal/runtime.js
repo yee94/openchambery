@@ -55,11 +55,6 @@ const MAX_AUTO_TURNS = 20;
 // Auditor must call the same blocker this many consecutive ticks before the
 // goal settles as blocked — a one-off snag must not end the goal.
 const BLOCKED_STREAK_LIMIT = 3;
-// Consecutive audit failures tolerated before the goal stops: one transient
-// hiccup allows a single unaudited continuation; a dead small model must not
-// drive the loop blind all the way to the turn cap.
-const AUDIT_FAIL_LIMIT = 2;
-
 const GOAL_STATUSES = ['active', 'paused', 'blocked', 'budgetLimited', 'complete'];
 
 const clampText = (value, limit) => String(value ?? '').trim().slice(0, limit);
@@ -228,18 +223,55 @@ const messagePartsToText = (message) => {
     .slice(0, TRANSCRIPT_PART_CHAR_LIMIT);
 };
 
-// OpenCode reports tokens per message, and each turn's cache.read carries
-// everything that was already paid for in earlier turns (past inputs and
-// outputs fold into the cache of the next turn). So the accumulated cost of
-// a whole run is simply the LATEST message's input + cache.read + output —
-// a snapshot, not a sum across messages.
-const messageTokenTotal = (info) => {
+// Per-turn spend for goal accounting. Sum these across turns completed after
+// the goal was created. Do NOT include cache.read — it re-reads prior context
+// and would double-count history. Compaction summary turns report 0 and add
+// nothing (known undercount of the summarization call itself).
+export const messageTokenSpend = (info) => {
   const tokens = info?.tokens;
   if (!tokens || typeof tokens !== 'object') return 0;
   const input = Number.isFinite(tokens.input) ? Math.max(0, tokens.input) : 0;
   const output = Number.isFinite(tokens.output) ? Math.max(0, tokens.output) : 0;
-  const cachedRead = Number.isFinite(tokens.cache?.read) ? Math.max(0, tokens.cache.read) : 0;
-  return input + cachedRead + output;
+  const reasoning = Number.isFinite(tokens.reasoning) ? Math.max(0, tokens.reasoning) : 0;
+  const cacheWrite = Number.isFinite(tokens.cache?.write) ? Math.max(0, tokens.cache.write) : 0;
+  return input + output + reasoning + cacheWrite;
+};
+
+/**
+ * Sum goal-relative token spend from completed assistant messages.
+ * @param {object} args
+ * @param {Array} args.messages OpenCode message list
+ * @param {{ tokensUsed?: number, lastAccountedMessageID?: string, createdAt?: number }} args.goal
+ * @returns {{ tokensUsed: number, lastAccountedMessageID: string }}
+ */
+export const accountGoalTokenSpend = ({ messages, goal }) => {
+  let tokensUsed = Number.isFinite(goal?.tokensUsed) && goal.tokensUsed > 0 ? Math.floor(goal.tokensUsed) : 0;
+  let lastAccountedMessageID = typeof goal?.lastAccountedMessageID === 'string' ? goal.lastAccountedMessageID : '';
+  const createdAt = Number.isFinite(goal?.createdAt) ? goal.createdAt : 0;
+  let addedSpend = 0;
+  for (const message of messages || []) {
+    const info = message?.info;
+    if (info?.role !== 'assistant' || typeof info.id !== 'string') continue;
+    if (!(info.time?.completed > 0)) continue;
+    // First tick with an empty cursor: only charge turns that finished after
+    // the goal was created so mid-session goals skip prior history.
+    if (!lastAccountedMessageID && createdAt > 0 && info.time.completed <= createdAt) {
+      continue;
+    }
+    if (lastAccountedMessageID && info.id <= lastAccountedMessageID) continue;
+    // Summary turns report 0 tokens from OpenCode — skip without advancing
+    // the counter, but still move the cursor so we do not re-scan them.
+    if (info.summary !== true) {
+      addedSpend += messageTokenSpend(info);
+    }
+    if (!lastAccountedMessageID || info.id > lastAccountedMessageID) {
+      lastAccountedMessageID = info.id;
+    }
+  }
+  if (addedSpend > 0) {
+    tokensUsed += addedSpend;
+  }
+  return { tokensUsed, lastAccountedMessageID };
 };
 
 export const createSessionGoalRuntime = ({
@@ -366,20 +398,11 @@ export const createSessionGoalRuntime = ({
     } catch {
       return null;
     }
-    try {
-      const generated = await service.generateSmallModelText({
-        // Background feature: conversation content must never leave the
-        // session's own provider unless the user explicitly picked a small
-        // model (settings override / opencode config).
-        restrictToPreferredProvider: true,
-        // Instruct the language by example, not by description — account-side
-        // personalization otherwise leaks a different language into the note.
-        prompt: `The goal objective:\n\n<objective>\n${goal.objective}\n</objective>\n\nThe agent's latest turn:\n\n${assistantText}\n\nReturn the verdict JSON. Write the note in the SAME language as this sample from the objective: "${goal.objective.slice(0, 200).replace(/\s+/g, ' ').trim()}"`,
-        system: buildAuditSystemPrompt(),
-        directory,
-        preferredProviderID: typeof lastAssistantInfo?.providerID === 'string' ? lastAssistantInfo.providerID : undefined,
-        preferredModelID: typeof lastAssistantInfo?.modelID === 'string' ? lastAssistantInfo.modelID : undefined,
-      });
+    const preferredProviderID = typeof lastAssistantInfo?.providerID === 'string' ? lastAssistantInfo.providerID : undefined;
+    const preferredModelID = typeof lastAssistantInfo?.modelID === 'string' ? lastAssistantInfo.modelID : undefined;
+    const prompt = `The goal objective:\n\n<objective>\n${goal.objective}\n</objective>\n\nThe agent's latest turn:\n\n${assistantText}\n\nReturn the verdict JSON. Write the note in the SAME language as this sample from the objective: "${goal.objective.slice(0, 200).replace(/\s+/g, ' ').trim()}"`;
+    const system = buildAuditSystemPrompt();
+    const parseAudit = (generated) => {
       const structured = extractJsonObject(generated?.text);
       const verdict = typeof structured?.verdict === 'string' ? structured.verdict.trim().toLowerCase() : '';
       if (!['continue', 'complete', 'blocked'].includes(verdict)) return null;
@@ -389,9 +412,37 @@ export const createSessionGoalRuntime = ({
         note = '';
       }
       return { verdict, note };
+    };
+    try {
+      // Prefer staying on the session provider. If that provider has no
+      // suitable small model (404), fall back to any authenticated small
+      // model so simple goals can still settle instead of stranding as
+      // "evaluating" then "blocked".
+      try {
+        const generated = await service.generateSmallModelText({
+          restrictToPreferredProvider: true,
+          prompt,
+          system,
+          directory,
+          preferredProviderID,
+          preferredModelID,
+        });
+        return parseAudit(generated);
+      } catch (restrictedError) {
+        if (Number(restrictedError?.statusCode) !== 404) throw restrictedError;
+        const generated = await service.generateSmallModelText({
+          restrictToPreferredProvider: false,
+          prompt,
+          system,
+          directory,
+          preferredProviderID,
+          preferredModelID,
+        });
+        return parseAudit(generated);
+      }
     } catch (error) {
       // No authenticated small model (404) or a transient failure — the loop
-      // still terminates via markers, budget, and the turn cap.
+      // still terminates via budget and the turn cap.
       if (Number(error?.statusCode) !== 404) {
         console.warn('[session-goal] audit failed:', error?.message || error);
       }
@@ -416,7 +467,9 @@ export const createSessionGoalRuntime = ({
         model: { providerID, modelID },
         ...(agent ? { agent } : {}),
         ...(variant ? { variant } : {}),
-        parts: [{ type: 'text', text: buildContinuationPrompt(goal) }],
+        // synthetic: hide the auto-continuation from the user transcript (same
+        // convention as goal-intro / scheduled-task system parts).
+        parts: [{ type: 'text', text: buildContinuationPrompt(goal), synthetic: true }],
       },
     });
   };
@@ -506,68 +559,17 @@ export const createSessionGoalRuntime = ({
     // exchange completes (the idle transition re-arms us).
     if (!lastAssistantInfo?.id) return;
 
-    // --- Token accounting: snapshot of the latest completed assistant turn
-    // (input + cache.read + output), goal-relative via a baseline captured on
-    // the first tick. For a mid-session goal the baseline is the same
-    // snapshot of the newest turn that completed BEFORE the goal was created,
-    // so pre-goal history is not charged to the goal.
-    //
-    // Compaction breaks the snapshot chain: it inserts an assistant message
-    // with `summary: true` and rebuilds the context, so the next snapshots
-    // start small again. Accounting is therefore segmented — a summary
-    // message closes the current segment (its value moves into
-    // tokensCommitted; the summary turn itself read the whole context, so
-    // its own snapshot prices the compaction), and the next segment starts
-    // with a zero baseline.
-    let tokensBaseline = goal.tokensBaseline;
-    if (!goal.lastAccountedMessageID && !(tokensBaseline > 0)) {
-      tokensBaseline = 0;
-      for (const message of messages) {
-        const info = message?.info;
-        if (info?.role !== 'assistant') continue;
-        if (!(info.time?.completed > 0) || info.time.completed > goal.createdAt) continue;
-        tokensBaseline = Math.max(tokensBaseline, messageTokenTotal(info));
-      }
-    }
-    let tokensCommitted = goal.tokensCommitted;
-    let tokensUsed = goal.tokensUsed;
-    let lastAccountedMessageID = goal.lastAccountedMessageID;
-    let segmentSnapshot = null;
-    let sawNewMessages = false;
-    for (const message of messages) {
-      const info = message?.info;
-      if (info?.role !== 'assistant' || typeof info.id !== 'string') continue;
-      if (lastAccountedMessageID && info.id <= lastAccountedMessageID) continue;
-      if (!(info.time?.completed > 0)) continue;
-      sawNewMessages = true;
-      const total = messageTokenTotal(info);
-      if (info.summary === true) {
-        // The summary message's own tokens are ZEROED by opencode — never
-        // feed them into the closing value. Close the segment from what is
-        // already known, with the previously displayed total as a continuity
-        // floor (the latest pre-summary snapshot was already folded into
-        // tokensUsed on earlier ticks); otherwise the counter freezes at the
-        // pre-compaction value until the new context outgrows it. Known
-        // undercount: the summarization call itself is reported as 0 tokens.
-        tokensCommitted = Math.max(
-          goal.tokensUsed,
-          tokensCommitted + Math.max(0, (segmentSnapshot ?? 0) - tokensBaseline),
-        );
-        tokensBaseline = 0;
-        segmentSnapshot = null;
-      } else {
-        segmentSnapshot = total;
-      }
-      if (!lastAccountedMessageID || info.id > lastAccountedMessageID) {
-        lastAccountedMessageID = info.id;
-      }
-    }
-    if (sawNewMessages) {
-      const segmentCurrent = segmentSnapshot !== null ? Math.max(0, segmentSnapshot - tokensBaseline) : 0;
-      // Monotonic: unflagged context shrinks (reverts, provider quirks) must
-      // never move the budget backwards.
-      tokensUsed = Math.max(goal.tokensUsed, tokensCommitted + segmentCurrent);
-    }
+    // --- Token accounting: sum per-turn spend since the goal started.
+    // Each completed assistant turn after goal.createdAt (or after the last
+    // accounted message on later ticks) adds its own input+output+reasoning+
+    // cache.write. Pre-goal history is never charged.
+    const accounted = accountGoalTokenSpend({ messages, goal });
+    let tokensUsed = accounted.tokensUsed;
+    let lastAccountedMessageID = accounted.lastAccountedMessageID;
+    // Keep legacy fields at zero so older metadata writers do not resurrect
+    // the snapshot/baseline model on read-back.
+    const tokensBaseline = 0;
+    const tokensCommitted = 0;
 
     const assistantText = messagePartsToText(lastAssistant);
 
@@ -635,18 +637,13 @@ export const createSessionGoalRuntime = ({
     } else {
       audit = await runAudit({ goal: { ...goal, objective: effectiveObjective }, assistantText, directory, lastAssistantInfo: executionInfo ?? lastAssistantInfo });
 
-      // Audit unavailable: tolerate one consecutive failure (transient
-      // hiccup), then stop the goal instead of continuing blind. Blocked is
-      // resumable — Resume retries the audit on the next tick.
+      // Audit unavailable: keep going under the hard turn/budget caps rather
+      // than flipping to "blocked" after a couple of 404s — that left simple
+      // completed goals stranded as evaluating→blocked when no small model
+      // was available on the session provider. Resume still re-audits.
       if (!audit) {
         auditFailStreak += 1;
-        if (auditFailStreak >= AUDIT_FAIL_LIMIT) {
-          await settleGoal({
-            sessionId, directory, goal, status: 'blocked', statusReason: 'progress audit unavailable', tokensUsed, tokensBaseline, tokensCommitted, lastAccountedMessageID,
-          });
-          return;
-        }
-        console.warn(`[session-goal] ${sessionId} audit unavailable, continuing unaudited (${auditFailStreak}/${AUDIT_FAIL_LIMIT})`);
+        console.warn(`[session-goal] ${sessionId} audit unavailable, continuing under hard caps (${auditFailStreak} consecutive)`);
       } else {
         auditFailStreak = 0;
       }

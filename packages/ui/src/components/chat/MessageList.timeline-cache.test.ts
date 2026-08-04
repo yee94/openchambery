@@ -46,9 +46,78 @@ const {
     buildMeasurementSeedFromSizes,
     createTanstackTimelineSnapshotCache,
     resolveMessageListKeys,
+    resolveDefaultActivityExpanded,
+    resolveToggledActivityExpanded,
     shouldAdjustHistoryScrollForSizeChange,
+    shouldShowCompactionStatus,
     syncCurrentHistoryVirtualization,
 } = await import('./MessageList');
+
+describe('turn activity expansion state', () => {
+    test('collapsed mode defaults every completion disposition to collapsed', () => {
+        for (const disposition of ['normal', 'abnormal', 'active'] as const) {
+            expect(resolveDefaultActivityExpanded(disposition, 'collapsed')).toBe(false);
+        }
+    });
+
+    test('summary mode defaults every completion disposition to expanded', () => {
+        for (const disposition of ['normal', 'abnormal', 'active'] as const) {
+            expect(resolveDefaultActivityExpanded(disposition, 'summary')).toBe(true);
+        }
+    });
+
+    test('a toggle flips the current expansion state in both directions', () => {
+        expect(resolveToggledActivityExpanded(false)).toBe(true);
+        expect(resolveToggledActivityExpanded(true)).toBe(false);
+    });
+});
+
+describe('shouldShowCompactionStatus', () => {
+    const base = {
+        chatRenderMode: 'sorted' as const,
+        activityPresentationKind: 'compaction' as const,
+        hasVisibleActivitySegments: false,
+        completionDisposition: 'active' as const,
+        isLastTurn: true,
+        sessionIsWorking: true,
+    };
+
+    test('sorted compaction no segments + active + last + working => true', () => {
+        expect(shouldShowCompactionStatus(base)).toBe(true);
+    });
+
+    test('active but older turn or idle => false', () => {
+        expect(shouldShowCompactionStatus({ ...base, isLastTurn: false })).toBe(false);
+        expect(shouldShowCompactionStatus({ ...base, sessionIsWorking: false })).toBe(false);
+        expect(shouldShowCompactionStatus({ ...base, isLastTurn: false, sessionIsWorking: false })).toBe(false);
+    });
+
+    test('normal/abnormal settled => true even when not last or idle', () => {
+        expect(shouldShowCompactionStatus({
+            ...base,
+            completionDisposition: 'normal',
+            isLastTurn: false,
+            sessionIsWorking: false,
+        })).toBe(true);
+        expect(shouldShowCompactionStatus({
+            ...base,
+            completionDisposition: 'abnormal',
+            isLastTurn: false,
+            sessionIsWorking: false,
+        })).toBe(true);
+    });
+
+    test('live/default/has segments => false', () => {
+        expect(shouldShowCompactionStatus({ ...base, chatRenderMode: 'live' })).toBe(false);
+        expect(shouldShowCompactionStatus({ ...base, activityPresentationKind: 'default' })).toBe(false);
+        expect(shouldShowCompactionStatus({ ...base, hasVisibleActivitySegments: true })).toBe(false);
+        expect(shouldShowCompactionStatus({
+            ...base,
+            completionDisposition: 'normal',
+            hasVisibleActivitySegments: true,
+        })).toBe(false);
+    });
+});
 
 describe('buildMeasurementSeedFromSizes', () => {
     test('lays out measured rows end to end so the virtualizer inherits the real height', () => {

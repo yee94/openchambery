@@ -1,14 +1,10 @@
-import { ACTIVITY_STANDALONE_TOOL_NAMES } from './constants';
 import type {
     ChatMessageEntry,
     TurnActivityGroup,
     TurnActivityRecord,
+    TurnCompletionDisposition,
     TurnPartRecord,
 } from './types';
-
-const isStandaloneTool = (toolName: unknown): boolean => {
-    return typeof toolName === 'string' && ACTIVITY_STANDALONE_TOOL_NAMES.has(toolName.toLowerCase());
-};
 
 const getPartEndTime = (part: unknown): number | undefined => {
     const stateEnd = (part as { state?: { time?: { end?: unknown } } }).state?.time?.end;
@@ -57,6 +53,7 @@ interface ProjectActivityInput {
     assistantMessages: ChatMessageEntry[];
     summarySourceMessageId?: string;
     summarySourcePartId?: string;
+    completionDisposition?: TurnCompletionDisposition;
     showTextJustificationActivity: boolean;
 }
 
@@ -85,10 +82,15 @@ export const projectTurnActivity = (input: ProjectActivityInput): ProjectActivit
         });
     });
 
-    const taskMessageById = new Map<string, string>();
-    const taskOrder: string[] = [];
-    const partsByAfterTool = new Map<string | null, TurnActivityRecord[]>();
-    let currentAfterToolPartId: string | null = null;
+    // Canonical stop summary: only when disposition is normal and summary source is a stop text.
+    // Avoid treating interrupt/fallback text as a normal summary that would fold other text away.
+    const hasCanonicalStopSummary = input.completionDisposition === 'normal'
+        && Boolean(input.summarySourceMessageId)
+        && Boolean(input.summarySourcePartId)
+        && input.assistantMessages.some((message) => (
+            message.info.id === input.summarySourceMessageId
+            && getMessageFinish(message) === 'stop'
+        ));
 
     input.assistantMessages.forEach((message) => {
         const finish = getMessageFinish(message);
@@ -101,19 +103,6 @@ export const projectTurnActivity = (input: ProjectActivityInput): ProjectActivit
                 ? getPartText(part)
                 : undefined;
             const partId = part.id ?? `${message.info.id}-part-${partIndex}-${part.type}`;
-
-            const toolName = isTool
-                ? (part as { tool?: unknown }).tool
-                : undefined;
-            const standaloneTool = isTool && isStandaloneTool(toolName);
-            if (standaloneTool) {
-                const toolPartId = partId;
-                if (!taskMessageById.has(toolPartId)) {
-                    taskMessageById.set(toolPartId, message.info.id);
-                    taskOrder.push(toolPartId);
-                }
-                currentAfterToolPartId = toolPartId;
-            }
 
             const isConfirmedSummaryText = part.type === 'text'
                 && typeof text === 'string'
@@ -133,7 +122,11 @@ export const projectTurnActivity = (input: ProjectActivityInput): ProjectActivit
                 && part.type === 'text'
                 && text
                 && !isConfirmedSummaryText
-                && (messageHasTool || (typeof finish === 'string' && finish !== 'stop'))
+                && (
+                    hasCanonicalStopSummary
+                    || messageHasTool
+                    || (typeof finish === 'string' && finish !== 'stop')
+                )
             ) {
                 kind = 'justification';
             }
@@ -142,67 +135,34 @@ export const projectTurnActivity = (input: ProjectActivityInput): ProjectActivit
                 return;
             }
 
-            const activity: TurnActivityRecord = {
+            activityParts.push({
                 ...buildTurnPartRecord(input.turnId, message.info.id, part, partIndex),
                 kind,
-            };
-            activityParts.push(activity);
-
-            if (kind === 'tool' && standaloneTool) {
-                return;
-            }
-
-            const list = partsByAfterTool.get(currentAfterToolPartId) ?? [];
-            list.push(activity);
-            partsByAfterTool.set(currentAfterToolPartId, list);
+            });
         });
     });
 
     const activitySegments: TurnActivityGroup[] = [];
 
-    const pickStartAnchor = (segmentParts: TurnActivityRecord[]): string | undefined => {
-        if (segmentParts.length === 0) {
-            return undefined;
-        }
-
-        const countByMessage = new Map<string, number>();
-        segmentParts.forEach((activity) => {
-            countByMessage.set(activity.messageId, (countByMessage.get(activity.messageId) ?? 0) + 1);
-        });
-
-        let firstWithAny: string | undefined;
+    if (activityParts.length > 0) {
+        const messageIdsWithActivity = new Set(activityParts.map((activity) => activity.messageId));
+        let anchorMessageId: string | undefined;
         for (const message of input.assistantMessages) {
-            const count = countByMessage.get(message.info.id) ?? 0;
-            if (count > 0 && !firstWithAny) {
-                firstWithAny = message.info.id;
+            if (messageIdsWithActivity.has(message.info.id)) {
+                anchorMessageId = message.info.id;
+                break;
             }
         }
 
-        return firstWithAny;
-    };
-
-    const orderedKeys: Array<string | null> = [null, ...taskOrder];
-    orderedKeys.forEach((afterToolPartId) => {
-        const segmentParts = partsByAfterTool.get(afterToolPartId) ?? [];
-        if (segmentParts.length === 0) {
-            return;
+        if (anchorMessageId) {
+            activitySegments.push({
+                id: `${input.turnId}:${anchorMessageId}:start`,
+                anchorMessageId,
+                afterToolPartId: null,
+                parts: activityParts,
+            });
         }
-
-        const anchorMessageId = afterToolPartId === null
-            ? pickStartAnchor(segmentParts)
-            : taskMessageById.get(afterToolPartId);
-
-        if (!anchorMessageId) {
-            return;
-        }
-
-        activitySegments.push({
-            id: `${input.turnId}:${anchorMessageId}:${afterToolPartId ?? 'start'}`,
-            anchorMessageId,
-            afterToolPartId,
-            parts: segmentParts,
-        });
-    });
+    }
 
     return {
         activityParts,

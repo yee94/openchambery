@@ -12,6 +12,7 @@ import { toast } from '@/components/ui';
 import { Checkbox } from '@/components/ui/checkbox';
 import { useGoalObjectiveContent, useSessionGoal } from '@/hooks/useSessionGoal';
 import {
+  formatGoalDuration,
   formatGoalTokens,
   SESSION_GOAL_OBJECTIVE_CHAR_LIMIT,
 } from '@/lib/sessionGoalMetadata';
@@ -99,14 +100,19 @@ export function SessionGoalDialog({ open, onOpenChange, sessionId, directory }: 
                 <span className="h-2 w-2 rounded-full flex-shrink-0" style={{ backgroundColor: sessionGoalStatusColor[goal.status] }} aria-hidden="true" />
                 <span className="typography-ui-label text-foreground">{t(sessionGoalStatusLabelKey[goal.status] as never)}</span>
                 <span className="typography-meta text-muted-foreground tabular-nums">
-                  {goal.tokenBudget
-                    ? t('chat.goal.usage.tokensWithBudget', {
-                        used: formatGoalTokens(goal.tokensUsed),
-                        budget: formatGoalTokens(goal.tokenBudget),
-                      })
-                    : t('chat.goal.usage.tokens', { used: formatGoalTokens(goal.tokensUsed) })}
-                  {' · '}
-                  {t('chat.goal.usage.turns', { turns: goal.turnsUsed })}
+                  {formatGoalDuration(Math.max(0, (
+                    goal.status === 'complete' || goal.status === 'blocked' || goal.status === 'budgetLimited'
+                      ? goal.updatedAt
+                      : Date.now()
+                  ) - (goal.createdAt || Date.now())))}
+                  {goal.tokensUsed > 0 || goal.tokenBudget
+                    ? ` · ${goal.tokenBudget
+                      ? t('chat.goal.usage.tokensWithBudget', {
+                          used: formatGoalTokens(goal.tokensUsed),
+                          budget: formatGoalTokens(goal.tokenBudget),
+                        })
+                      : t('chat.goal.usage.tokens', { used: formatGoalTokens(goal.tokensUsed) })}`
+                    : ''}
                 </span>
               </div>
               {goal.note ? (

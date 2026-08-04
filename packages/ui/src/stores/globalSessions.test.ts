@@ -1,7 +1,7 @@
 import { describe, expect, test } from 'bun:test'
 import type { OpencodeClient } from '@opencode-ai/sdk/v2'
 
-import { listGlobalSessionPages } from './globalSessions'
+import { isVisibleGlobalSession, listGlobalSessionPages } from './globalSessions'
 
 describe('listGlobalSessionPages', () => {
   test('retries resolved transient SDK errors before returning data', async () => {
@@ -121,6 +121,26 @@ describe('listGlobalSessionPages', () => {
     expect(session.permission).toBe(undefined)
     expect(session.revert).toEqual({ messageID: 'msg_1' })
     expect(session.summary).toEqual({ additions: 5, deletions: 3, files: 2 })
+  })
+
+  test('hides system sessions by metadata and keeps ordinary sessions visible', () => {
+    expect(isVisibleGlobalSession({
+      title: '[Assistant] Ops',
+      metadata: { openchamber: { assistant: { assistantID: 'assistant_1', name: 'Ops' } } },
+    } as never)).toBe(false)
+    expect(isVisibleGlobalSession({
+      title: 'Nightly build',
+      metadata: { openchamber: { scheduledTask: { taskID: 'task_1' } } },
+    } as never)).toBe(false)
+    expect(isVisibleGlobalSession({
+      title: '[Assistant] Looks system',
+      metadata: { openchamber: { assistant: { name: 'no-id' } } },
+    } as never)).toBe(true)
+    expect(isVisibleGlobalSession({
+      title: 'Ordinary chat',
+      metadata: { openchamber: { kind: 'review' } },
+    } as never)).toBe(true)
+    expect(isVisibleGlobalSession({ title: 'smartfetch-secondary' } as never)).toBe(false)
   })
 
   test('excludes SmartFetch secondary sessions while continuing pagination', async () => {

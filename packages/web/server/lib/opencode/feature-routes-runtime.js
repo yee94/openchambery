@@ -13,6 +13,7 @@ import { registerProjectIconRoutes } from './project-icon-routes.js';
 import { registerScheduledTaskRoutes } from '../scheduled-tasks/routes.js';
 import { registerScheduledTaskToolRoute } from '../scheduled-tasks/managed-tool-route.js';
 import { registerConversationRoutes } from '../conversations/routes.js';
+import { registerSessionTurnPageRoutes } from '../session-turn-pages/routes.js';
 import { registerAssistantRoutes } from '../assistants/routes.js';
 import { registerMessageQueueRoutes } from '../message-queue/routes.js';
 import { registerSkillRoutes } from './skill-routes.js';
@@ -114,6 +115,7 @@ export const createFeatureRoutesRuntime = (dependencies) => {
       buildAugmentedPath,
       projectConfigRuntime,
       scheduledTasksRuntime,
+      runHistoryStore,
       markUserMessageSent,
       waitForOpenCodeReady,
       getOpenChamberEventClients,
@@ -171,6 +173,7 @@ export const createFeatureRoutesRuntime = (dependencies) => {
       sanitizeProjects,
       projectConfigRuntime,
       scheduledTasksRuntime,
+      runHistoryStore,
       getOpenChamberEventClients,
       writeSseEvent,
     });
@@ -192,6 +195,12 @@ export const createFeatureRoutesRuntime = (dependencies) => {
       getOpenCodeAuthHeaders,
       markUserMessageSent,
       waitForOpenCodeReady,
+    });
+
+    // OpenChamber-owned turn-window messages API — must register before generic proxy.
+    registerSessionTurnPageRoutes(app, {
+      buildOpenCodeUrl,
+      getOpenCodeAuthHeaders,
     });
 
     const assistantAllowedRoots = [];

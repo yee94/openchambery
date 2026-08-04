@@ -85,6 +85,7 @@ import { resolveMessageQueueDbPath } from './lib/message-queue/resolve-db-path.j
 import { createOpenChamberEventBroadcaster } from './lib/opencode/feature-routes-runtime.js';
 import { createSessionGoalRuntime } from './lib/session-goal/runtime.js';
 import { createScheduledTasksRuntime } from './lib/scheduled-tasks/runtime.js';
+import { createScheduledTaskRunHistoryStore } from './lib/scheduled-tasks/run-history-store.js';
 import { createServerStartupRuntime } from './lib/opencode/server-startup-runtime.js';
 import { createTunnelWiringRuntime } from './lib/opencode/tunnel-wiring-runtime.js';
 import { createStartupPipelineRuntime } from './lib/opencode/startup-pipeline-runtime.js';
@@ -1112,6 +1113,9 @@ const waitForAgentPresence = (...args) => openCodeLifecycleRuntime.waitForAgentP
 const refreshOpenCodeAfterConfigChange = (...args) => openCodeLifecycleRuntime.refreshOpenCodeAfterConfigChange(...args);
 const startHealthMonitoring = () => openCodeLifecycleRuntime.startHealthMonitoring(HEALTH_CHECK_INTERVAL);
 const triggerHealthCheck = () => openCodeLifecycleRuntime.triggerHealthCheck();
+const scheduledTaskRunHistoryStore = createScheduledTaskRunHistoryStore({
+  dbPath: path.join(OPENCHAMBER_DATA_DIR, 'scheduled-task-runs.sqlite'),
+});
 const scheduledTasksRuntime = createScheduledTasksRuntime({
   projectConfigRuntime,
   listProjects: async () => {
@@ -1122,6 +1126,7 @@ const scheduledTasksRuntime = createScheduledTasksRuntime({
   getOpenCodeAuthHeaders,
   getSmallModelService,
   waitForOpenCodeReady,
+  runHistoryStore: scheduledTaskRunHistoryStore,
   emitTaskRunEvent: (event) => {
     for (const client of uiOpenChamberEventClients) {
       try {
@@ -1672,6 +1677,7 @@ async function main(options = {}) {
     buildAugmentedPath,
     projectConfigRuntime,
     scheduledTasksRuntime,
+    runHistoryStore: scheduledTaskRunHistoryStore,
     markUserMessageSent: (sessionID) => sessionRuntime.markUserMessageSent(sessionID),
     waitForOpenCodeReady,
     getOpenChamberEventClients: () => uiOpenChamberEventClients,

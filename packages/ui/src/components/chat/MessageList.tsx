@@ -434,6 +434,7 @@ export interface MessageListHandle {
     captureViewportAnchor: () => { messageId: string; offsetTop: number } | null;
     restoreViewportAnchor: (anchor: { messageId: string; offsetTop: number }) => boolean;
     holdViewportAnchor: (anchor: { messageId: string; offsetTop: number }) => void;
+    cancelViewportAnchorHold: () => void;
     isHistoryVirtualized: () => boolean;
     scrollToBottom: () => void;
 }
@@ -449,6 +450,52 @@ type RenderEntry =
     | { kind: 'turn'; key: string; turn: TurnRecord; isLastTurn: boolean };
 
 type TurnUiState = { isExpanded: boolean };
+
+/**
+ * Default activity expansion when the user has not toggled this turn.
+ * Every completion disposition follows the configured activity render mode.
+ */
+// eslint-disable-next-line react-refresh/only-export-components
+export const resolveDefaultActivityExpanded = (
+    _completionDisposition: TurnRecord['completionDisposition'] | undefined,
+    activityRenderMode: 'collapsed' | 'summary',
+): boolean => activityRenderMode === 'summary';
+
+// eslint-disable-next-line react-refresh/only-export-components
+export const resolveToggledActivityExpanded = (currentExpanded: boolean): boolean => !currentExpanded;
+
+/**
+ * Status-only compaction header when sorted, compaction-kind, and no visible
+ * activity segments. Settled (`normal`/`abnormal`) always qualifies.
+ * `active` requires the last turn and an authoritative live working signal so
+ * history pagination / partial loads cannot paint stale "compacting".
+ */
+// eslint-disable-next-line react-refresh/only-export-components
+export const shouldShowCompactionStatus = (input: {
+    chatRenderMode: 'sorted' | 'live';
+    activityPresentationKind: TurnRecord['activityPresentationKind'];
+    hasVisibleActivitySegments: boolean;
+    completionDisposition: TurnRecord['completionDisposition'];
+    isLastTurn: boolean;
+    sessionIsWorking: boolean;
+}): boolean => {
+    if (input.chatRenderMode !== 'sorted') {
+        return false;
+    }
+    if (input.activityPresentationKind !== 'compaction') {
+        return false;
+    }
+    if (input.hasVisibleActivitySegments) {
+        return false;
+    }
+    if (input.completionDisposition === 'normal' || input.completionDisposition === 'abnormal') {
+        return true;
+    }
+    if (input.completionDisposition === 'active') {
+        return input.isLastTurn && input.sessionIsWorking;
+    }
+    return false;
+};
 
 
 
@@ -557,9 +604,9 @@ interface TurnBlockProps {
     turn: TurnRecord;
     isLastTurn: boolean;
     sessionIsWorking: boolean;
-    defaultActivityExpanded: boolean;
+    activityRenderMode: 'collapsed' | 'summary';
     turnUiStates: Map<string, TurnUiState>;
-    onToggleTurnGroup: (turnId: string) => void;
+    onToggleTurnGroup: (turnId: string, defaultExpanded: boolean) => void;
     chatRenderMode: 'sorted' | 'live';
     onMessageContentChange: (reason?: ContentChangeReason) => void;
     getAnimationHandlers: (messageId: string) => AnimationHandlers;
@@ -576,7 +623,7 @@ const TurnBlock = React.memo(({
     turn,
     isLastTurn,
     sessionIsWorking,
-    defaultActivityExpanded,
+    activityRenderMode,
     turnUiStates,
     onToggleTurnGroup,
     chatRenderMode,
@@ -590,9 +637,17 @@ const TurnBlock = React.memo(({
     activeStreamingPhase,
     reviewTransferDirection,
 }: TurnBlockProps) => {
-    const turnUiState = turnUiStates.get(turn.turnId) ?? { isExpanded: defaultActivityExpanded };
+    const storedTurnUiState = turnUiStates.get(turn.turnId);
+    const defaultExpandedForTurn = resolveDefaultActivityExpanded(
+        turn.completionDisposition,
+        activityRenderMode,
+    );
+    // Explicit per-turn toggle wins; otherwise disposition + activityRenderMode.
+    const isGroupExpandedByDefault = storedTurnUiState
+        ? storedTurnUiState.isExpanded
+        : defaultExpandedForTurn;
     const handleToggleTurnGroup = useEvent(() => {
-        onToggleTurnGroup(turn.turnId);
+        onToggleTurnGroup(turn.turnId, defaultExpandedForTurn);
     });
 
     const messageOrder = React.useMemo(() => {
@@ -737,12 +792,13 @@ const TurnBlock = React.memo(({
             headerMessageId: turn.headerMessageId,
             hasTools: turn.hasTools,
             hasReasoning: turn.hasReasoning,
+            activityPresentationKind: turn.activityPresentationKind,
             diffStats: turn.diffStats,
             changedFiles: turn.changedFiles,
             userMessageCreatedAt: typeof userCreatedAt === 'number' ? userCreatedAt : undefined,
             userMessageVariant,
         };
-    }, [turn.changedFiles, turn.diffStats, turn.hasReasoning, turn.hasTools, turn.headerMessageId, turn.summaryText, turn.turnId, turn.userMessage.info, visibleActivityParts, visibleActivitySegments]);
+    }, [turn.activityPresentationKind, turn.changedFiles, turn.diffStats, turn.hasReasoning, turn.hasTools, turn.headerMessageId, turn.summaryText, turn.turnId, turn.userMessage.info, visibleActivityParts, visibleActivitySegments]);
 
     // Called by `TurnAssistantBlock` during its render, so it must see this
     // render's values. Through `useEvent` it saw the previous render's, and a
@@ -751,7 +807,12 @@ const TurnBlock = React.memo(({
     // and the message rendered as a standalone assistant — its own model header,
     // no turn grouping, and the between-turns `pb-8` gap. `TurnItem` is memoized
     // on the turn, so once that render committed nothing brought it back.
-    const renderMessage = useRenderPhaseCallback((message: ChatMessageEntry) => {
+    // `activityExpanded` is an explicit render-prop argument (not only a wrapper
+    // data attribute). React Compiler can reuse `assistantMessages.map(...)`
+    // when `renderMessage` identity is stable and the only changed input is a
+    // sibling prop; passing expansion here makes it a cache dependency so
+    // `isGroupExpanded` inside the produced MessageRow updates on toggle.
+    const renderMessage = useRenderPhaseCallback((message: ChatMessageEntry, activityExpanded: boolean) => {
         const messageRole = resolveMessageRole(message);
         const isUserMessage = messageRole === 'user';
         const messageIndex = messageOrder.lookup.get(message.info.id);
@@ -791,6 +852,9 @@ const TurnBlock = React.memo(({
                 ),
                 hasTools: turn.hasTools,
                 hasReasoning: turn.hasReasoning,
+                completionDisposition: turn.completionDisposition,
+                activityPresentationKind: turn.activityPresentationKind,
+                durationMs: turn.durationMs,
                 ...(shouldAttachFullTurnContext ? {
                     summaryBody: turnGroupingContextBase.summaryBody,
                     activityParts: turnGroupingContextBase.activityParts,
@@ -800,12 +864,11 @@ const TurnBlock = React.memo(({
                     changedFiles: turnGroupingContextBase.changedFiles,
                     userMessageCreatedAt: turnGroupingContextBase.userMessageCreatedAt,
                     userMessageVariant: turnGroupingContextBase.userMessageVariant,
-                    isGroupExpanded: turnUiState.isExpanded || (isLastTurn && sessionIsWorking),
+                    isGroupExpanded: activityExpanded,
                     toggleGroup: handleToggleTurnGroup,
                 } : {}),
             } satisfies TurnGroupingContext
             : undefined;
-
         return (
             <MessageRow
                 key={message.info.id}
@@ -837,7 +900,20 @@ const TurnBlock = React.memo(({
     }, [turn, visibleAssistantMessages]);
 
     return (
-        <TurnItem turn={renderableTurn} stickyUserHeader={stickyUserHeader} renderMessage={renderMessage} />
+        <TurnItem
+            turn={renderableTurn}
+            activityExpanded={isGroupExpandedByDefault}
+            showCompactionStatus={shouldShowCompactionStatus({
+                chatRenderMode,
+                activityPresentationKind: turn.activityPresentationKind,
+                hasVisibleActivitySegments: visibleActivitySegments.length > 0,
+                completionDisposition: turn.completionDisposition,
+                isLastTurn,
+                sessionIsWorking,
+            })}
+            stickyUserHeader={stickyUserHeader}
+            renderMessage={renderMessage}
+        />
     );
 });
 
@@ -910,9 +986,9 @@ interface MessageListEntryProps {
     scrollToBottom?: () => void;
     stickyUserHeader?: boolean;
     sessionIsWorking: boolean;
-    defaultActivityExpanded: boolean;
+    activityRenderMode: 'collapsed' | 'summary';
     turnUiStates: Map<string, TurnUiState>;
-    onToggleTurnGroup: (turnId: string) => void;
+    onToggleTurnGroup: (turnId: string, defaultExpanded: boolean) => void;
     chatRenderMode: 'sorted' | 'live';
     shouldAnimateUserMessage: (message: ChatMessageEntry) => boolean;
     onUserAnimationConsumed: (messageId: string) => void;
@@ -940,7 +1016,7 @@ const MessageListEntry = React.memo(({
     scrollToBottom,
     stickyUserHeader,
     sessionIsWorking,
-    defaultActivityExpanded,
+    activityRenderMode,
     turnUiStates,
     onToggleTurnGroup,
     chatRenderMode,
@@ -973,7 +1049,7 @@ const MessageListEntry = React.memo(({
             turn={entry.turn}
             isLastTurn={entry.isLastTurn}
             sessionIsWorking={sessionIsWorking}
-            defaultActivityExpanded={defaultActivityExpanded}
+            activityRenderMode={activityRenderMode}
             turnUiStates={turnUiStates}
             onToggleTurnGroup={onToggleTurnGroup}
             chatRenderMode={chatRenderMode}
@@ -1004,16 +1080,16 @@ type StaticHistoryListProps = {
     getAnimationHandlers: (messageId: string) => AnimationHandlers;
     scrollToBottom?: () => void;
     stickyUserHeader: boolean;
-    defaultActivityExpanded: boolean;
+    activityRenderMode: 'collapsed' | 'summary';
     turnUiStates: Map<string, TurnUiState>;
-    onToggleTurnGroup: (turnId: string) => void;
+    onToggleTurnGroup: (turnId: string, defaultExpanded: boolean) => void;
     chatRenderMode: 'sorted' | 'live';
     shouldAnimateUserMessage: (message: ChatMessageEntry) => boolean;
     onUserAnimationConsumed: (messageId: string) => void;
     reviewTransferDirection?: ReviewTransferDirection | null;
 };
 
-const StaticHistoryList = React.memo(({ entries, engine, contentRef, scrollRef, registerTanstackVirtualizer, virtualizerKey, onMessageContentChange, getAnimationHandlers, scrollToBottom, stickyUserHeader, defaultActivityExpanded, turnUiStates, onToggleTurnGroup, chatRenderMode, shouldAnimateUserMessage, onUserAnimationConsumed, reviewTransferDirection }: StaticHistoryListProps) => {
+const StaticHistoryList = React.memo(({ entries, engine, contentRef, scrollRef, registerTanstackVirtualizer, virtualizerKey, onMessageContentChange, getAnimationHandlers, scrollToBottom, stickyUserHeader, activityRenderMode, turnUiStates, onToggleTurnGroup, chatRenderMode, shouldAnimateUserMessage, onUserAnimationConsumed, reviewTransferDirection }: StaticHistoryListProps) => {
     const isTanstack = engine === 'tanstack';
 
     // --- Quiet-window prepend (mobile) --------------------------------------
@@ -1317,14 +1393,12 @@ const StaticHistoryList = React.memo(({ entries, engine, contentRef, scrollRef, 
                     scrollToBottom={scrollToBottom}
                     stickyUserHeader={stickyUserHeader}
                     sessionIsWorking={false}
-                    defaultActivityExpanded={defaultActivityExpanded}
+                    activityRenderMode={activityRenderMode}
                     turnUiStates={turnUiStates}
                     onToggleTurnGroup={onToggleTurnGroup}
                     chatRenderMode={chatRenderMode}
                     shouldAnimateUserMessage={shouldAnimateUserMessage}
                     onUserAnimationConsumed={onUserAnimationConsumed}
-                    activeStreamingMessageId={null}
-                    activeStreamingPhase={null}
                     reviewTransferDirection={reviewTransferDirection}
                 />
             </MarkdownHydrationProvider>
@@ -1403,9 +1477,9 @@ const TailEntry = React.memo<{
     scrollToBottom?: () => void;
     stickyUserHeader: boolean;
     sessionIsWorking: boolean;
-    defaultActivityExpanded: boolean;
+    activityRenderMode: 'collapsed' | 'summary';
     turnUiStates: Map<string, TurnUiState>;
-    onToggleTurnGroup: (turnId: string) => void;
+    onToggleTurnGroup: (turnId: string, defaultExpanded: boolean) => void;
     chatRenderMode: 'sorted' | 'live';
     shouldAnimateUserMessage: (message: ChatMessageEntry) => boolean;
     onUserAnimationConsumed: (messageId: string) => void;
@@ -1424,9 +1498,9 @@ const StreamingTailContent: React.FC<{
     scrollToBottom?: () => void;
     stickyUserHeader: boolean;
     sessionIsWorking: boolean;
-    defaultActivityExpanded: boolean;
+    activityRenderMode: 'collapsed' | 'summary';
     turnUiStates: Map<string, TurnUiState>;
-    onToggleTurnGroup: (turnId: string) => void;
+    onToggleTurnGroup: (turnId: string, defaultExpanded: boolean) => void;
     chatRenderMode: 'sorted' | 'live';
     showTurnChangedFiles: boolean;
     shouldAnimateUserMessage: (message: ChatMessageEntry) => boolean;
@@ -1442,7 +1516,7 @@ const StreamingTailContent: React.FC<{
     scrollToBottom,
     stickyUserHeader,
     sessionIsWorking,
-    defaultActivityExpanded,
+    activityRenderMode,
     turnUiStates,
     onToggleTurnGroup,
     chatRenderMode,
@@ -1475,7 +1549,7 @@ const StreamingTailContent: React.FC<{
                         scrollToBottom={scrollToBottom}
                         stickyUserHeader={stickyUserHeader}
                         sessionIsWorking={isNewest ? sessionIsWorking : false}
-                        defaultActivityExpanded={defaultActivityExpanded}
+                        activityRenderMode={activityRenderMode}
                         turnUiStates={turnUiStates}
                         onToggleTurnGroup={onToggleTurnGroup}
                         chatRenderMode={chatRenderMode}
@@ -1513,7 +1587,6 @@ const MessageList = React.forwardRef<MessageListHandle, MessageListProps>(({
     const chatRenderMode = useUIStore((state) => state.chatRenderMode);
     const activityRenderMode = useUIStore((state) => state.activityRenderMode);
     const showTurnChangedFiles = useUIStore((state) => state.showTurnChangedFiles);
-    const defaultActivityExpanded = activityRenderMode === 'summary';
     const reviewTransferDirection = useGlobalSessionsStore((state) => {
         return state.reviewTransferBySessionId.get(domainSessionKey) ?? null;
     });
@@ -1528,15 +1601,11 @@ const MessageList = React.forwardRef<MessageListHandle, MessageListProps>(({
         scrollToBottom?.();
     });
 
-    React.useEffect(() => {
-        setTurnUiStates(new Map());
-    }, [activityRenderMode]);
-
-    const toggleTurnGroup = useEvent((turnId: string) => {
+    const toggleTurnGroup = useEvent((turnId: string, defaultExpanded: boolean) => {
         setTurnUiStates((previous) => {
             const next = new Map(previous);
-            const current = next.get(turnId) ?? { isExpanded: defaultActivityExpanded };
-            next.set(turnId, { isExpanded: !current.isExpanded });
+            const currentExpanded = previous.get(turnId)?.isExpanded ?? defaultExpanded;
+            next.set(turnId, { isExpanded: resolveToggledActivityExpanded(currentExpanded) });
             return next;
         });
     });
@@ -1600,6 +1669,20 @@ const MessageList = React.forwardRef<MessageListHandle, MessageListProps>(({
     }), [messages]);
 
     const historyContentRef = React.useRef<HTMLDivElement | null>(null);
+    // Single active multi-frame anchor hold. A new hold cancels the previous
+    // one so concurrent writers never fight over scrollTop.
+    const activeAnchorHoldRef = React.useRef<{
+        cancel: () => void;
+    } | null>(null);
+    const cancelViewportAnchorHold = React.useCallback(() => {
+        const active = activeAnchorHoldRef.current;
+        if (!active) return;
+        activeAnchorHoldRef.current = null;
+        active.cancel();
+    }, []);
+    React.useEffect(() => () => {
+        cancelViewportAnchorHold();
+    }, [cancelViewportAnchorHold]);
     const resolveScrollContainer = useEvent((): HTMLDivElement | null => {
         if (scrollRef?.current) {
             return scrollRef.current;
@@ -1922,16 +2005,39 @@ const MessageList = React.forwardRef<MessageListHandle, MessageListProps>(({
                     return;
                 }
 
+                // Only one hold at a time: cancel any previous rAF + listeners.
+                cancelViewportAnchorHold();
+
                 let frames = 0;
                 let stable = 0;
                 let cancelled = false;
-                const cancelOnUserInput = () => {
-                    cancelled = true;
+                let rafId: number | null = null;
+                const removeListeners = () => {
                     container.removeEventListener('touchstart', cancelOnUserInput);
                     container.removeEventListener('wheel', cancelOnUserInput);
+                    container.removeEventListener('keydown', cancelOnUserInput);
+                    container.removeEventListener('pointerdown', cancelOnUserInput);
                 };
+                const cancelHold = () => {
+                    if (cancelled) return;
+                    cancelled = true;
+                    if (rafId !== null) {
+                        window.cancelAnimationFrame(rafId);
+                        rafId = null;
+                    }
+                    removeListeners();
+                    if (activeAnchorHoldRef.current?.cancel === cancelHold) {
+                        activeAnchorHoldRef.current = null;
+                    }
+                };
+                const cancelOnUserInput = () => {
+                    cancelHold();
+                };
+                activeAnchorHoldRef.current = { cancel: cancelHold };
                 container.addEventListener('touchstart', cancelOnUserInput, { passive: true });
                 container.addEventListener('wheel', cancelOnUserInput, { passive: true });
+                container.addEventListener('keydown', cancelOnUserInput);
+                container.addEventListener('pointerdown', cancelOnUserInput, { passive: true });
                 const step = () => {
                     if (cancelled) return;
                     const element = findMessageElement(anchor.messageId);
@@ -1948,14 +2054,15 @@ const MessageList = React.forwardRef<MessageListHandle, MessageListProps>(({
                     }
                     frames += 1;
                     if (stable >= ANCHOR_HOLD_STABLE_FRAMES || frames >= ANCHOR_HOLD_MAX_FRAMES) {
-                        container.removeEventListener('touchstart', cancelOnUserInput);
-                        container.removeEventListener('wheel', cancelOnUserInput);
+                        cancelHold();
                         return;
                     }
-                    window.requestAnimationFrame(step);
+                    rafId = window.requestAnimationFrame(step);
                 };
-                window.requestAnimationFrame(step);
+                rafId = window.requestAnimationFrame(step);
             },
+
+            cancelViewportAnchorHold,
 
             isHistoryVirtualized: () => currentHistoryVirtualizationRef.current,
 
@@ -2053,7 +2160,7 @@ const MessageList = React.forwardRef<MessageListHandle, MessageListProps>(({
         };
         // useEvent callbacks are identity-stable; semantic inputs below drive handle re-publish.
         // eslint-disable-next-line react-hooks/exhaustive-deps -- resolveScrollContainer/findMessageElement/scroll* are useEvent
-    }, [historyEntries.length, messageIndexMap, shouldVirtualizeHistory, hasTrailingStreamingEntries, turnIndexMap, ref]);
+    }, [cancelViewportAnchorHold, historyEntries.length, messageIndexMap, shouldVirtualizeHistory, hasTrailingStreamingEntries, turnIndexMap, ref]);
 
     const disableFadeIn = false;
 
@@ -2079,7 +2186,7 @@ const MessageList = React.forwardRef<MessageListHandle, MessageListProps>(({
                                     getAnimationHandlers={stableGetAnimationHandlers}
                                     scrollToBottom={stableScrollToBottom}
                                     stickyUserHeader={stickyUserHeader}
-                                    defaultActivityExpanded={defaultActivityExpanded}
+                                    activityRenderMode={activityRenderMode}
                                     turnUiStates={turnUiStates}
                                     onToggleTurnGroup={toggleTurnGroup}
                                     chatRenderMode={chatRenderMode}
@@ -2098,7 +2205,7 @@ const MessageList = React.forwardRef<MessageListHandle, MessageListProps>(({
                                 scrollToBottom={stableScrollToBottom}
                                 stickyUserHeader={stickyUserHeader}
                                 sessionIsWorking={sessionIsWorking}
-                                defaultActivityExpanded={defaultActivityExpanded}
+                                activityRenderMode={activityRenderMode}
                                 turnUiStates={turnUiStates}
                                 onToggleTurnGroup={toggleTurnGroup}
                                 chatRenderMode={chatRenderMode}

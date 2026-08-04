@@ -10,7 +10,12 @@ import { afterEach, beforeEach, describe, expect, test } from 'bun:test'
 import { opencodeClient } from '@/lib/opencode/client'
 import { registerRuntimeAPIs } from '@/contexts/runtimeAPIRegistry'
 import { routeMessage, useSessionUIStore } from './session-ui-store'
-import { setActionRefs, setOptimisticRefs } from './session-actions'
+import {
+  setActionRefs,
+  setOptimisticRefs,
+  combinedSendConfirmationOptions,
+  resetCombinedSendConfirmationOptions,
+} from './session-actions'
 import { useConfigStore } from '@/stores/useConfigStore'
 import { useInputStore } from './input-store'
 import { newSessionDraftKey, sessionDraftKey } from './input-draft-types'
@@ -112,7 +117,7 @@ async function flushNotifications() {
 }
 
 function resetAll() {
-  useSessionUIStore.setState({ currentSessionId: null, currentSessionDirectory: null, newSessionDraft: { open: false, draftID: null, directoryOverride: null, parentID: null, draftSubmitting: false }, availableWorktreesByProject: new Map(), webUICreatedSessions: new Set<string>() })
+  useSessionUIStore.setState({ currentSessionId: null, currentSessionDirectory: null, newSessionDraft: { open: false, draftID: null, directoryOverride: null, parentID: null, draftSubmitting: false }, availableWorktreesByProject: new Map(), webUICreatedSessions: new Set<string>(), retainedPendingUserMessages: new Map() })
   useInputStore.setState({ pendingInputText: null, pendingInputMode: 'replace', attachedFiles: [] })
   useConfigStore.setState({ isConnected: true, currentAgentName: undefined, currentProviderId: 'openai', currentModelId: 'gpt-4o', agents: [] } as any)
   useProjectsStore.setState({ projects: [PROJECT], activeProjectId: PROJECT.id })
@@ -122,25 +127,98 @@ function resetAll() {
   registerRuntimeAPIs(null)
 }
 
-function setupChildStores(dir = PROJECT.path) {
+function createChildStore() {
   const sessionList: any[] = []
   const messageMap: Record<string, any[]> = {}
   const statusMap: Record<string, any> = {}
+  const statusObservedAtMap: Record<string, number> = {}
   const partMap: Record<string, any[]> = {}
-  const childStore = {
-    getState: () => ({ session: sessionList, message: messageMap, session_status: statusMap, part: partMap }),
+  const snapshot = () => ({
+    session: sessionList,
+    message: messageMap,
+    session_status: statusMap,
+    session_status_observed_at: statusObservedAtMap,
+    part: partMap,
+  })
+  const apply = (next: any) => {
+    if (!next || next === snapshot()) return
+    if (next.session_status && next.session_status !== statusMap) {
+      for (const key of Object.keys(statusMap)) delete statusMap[key]
+      Object.assign(statusMap, next.session_status)
+    }
+    if (next.session_status_observed_at && next.session_status_observed_at !== statusObservedAtMap) {
+      for (const key of Object.keys(statusObservedAtMap)) delete statusObservedAtMap[key]
+      Object.assign(statusObservedAtMap, next.session_status_observed_at)
+    }
+    if (next.message && next.message !== messageMap) {
+      for (const key of Object.keys(messageMap)) delete messageMap[key]
+      Object.assign(messageMap, next.message)
+    }
+    if (next.part && next.part !== partMap) {
+      for (const key of Object.keys(partMap)) delete partMap[key]
+      Object.assign(partMap, next.part)
+    }
+  }
+  const listeners = new Set<() => void>()
+  const notify = () => { for (const listener of [...listeners]) listener() }
+  return {
+    getState: snapshot,
+    // Presence waiting subscribes like a real child store, so the double must notify.
+    subscribe: (listener: () => void) => {
+      listeners.add(listener)
+      return () => { listeners.delete(listener) }
+    },
     setState: (patch: any) => {
+      if (typeof patch === 'function') {
+        apply(patch(snapshot()))
+        notify()
+        return
+      }
       if (patch.session_status) Object.assign(statusMap, patch.session_status)
+      if (patch.session_status_observed_at) Object.assign(statusObservedAtMap, patch.session_status_observed_at)
       if (patch.message) Object.assign(messageMap, patch.message)
       if (patch.part) Object.assign(partMap, patch.part)
+      notify()
     },
   }
+}
+
+/**
+ * session.messages handler used by fetchRecentSendConfirmationRecords / fetchMessagesForSession
+ * via setActionRefs. Default rejects so an ordinary selection fetch does not materialize an
+ * authoritative empty page that would wipe optimistic fallback rows.
+ */
+let sessionMessagesHandler: (params: any) => Promise<any> | any = async () => {
+  throw new Error('session.messages not mocked')
+}
+
+function makeActionSdk() {
+  return {
+    ...opencodeClient,
+    session: {
+      ...((opencodeClient as any).session ?? {}),
+      messages: async (params: any) => sessionMessagesHandler(params),
+    },
+  }
+}
+
+function setupChildStores(dir = PROJECT.path, options?: {
+  trackEnsureOrder?: string[]
+  trackEnsureOptions?: Array<{ directory: string; options?: { bootstrap?: boolean } }>
+}) {
+  const childStore = createChildStore()
   const childStores = {
     children: new Map<string, typeof childStore>(),
-    ensureChild: (d: string) => { if (!childStores.children.has(d)) childStores.children.set(d, childStore); return childStores.children.get(d)! },
+    ensureChild: (d: string, ensureOptions?: { bootstrap?: boolean }) => {
+      options?.trackEnsureOrder?.push(`ensure:${d}`)
+      options?.trackEnsureOptions?.push({ directory: d, options: ensureOptions })
+      if (!childStores.children.has(d)) childStores.children.set(d, childStore)
+      return childStores.children.get(d)!
+    },
     getChild: (d: string) => childStores.children.get(d) ?? childStore,
   }
-  setActionRefs(opencodeClient as any, childStores as any, () => dir)
+  // actionSdk wraps opencodeClient and overrides session.messages for confirmation pulls.
+  setActionRefs(makeActionSdk() as any, childStores as any, () => dir)
   setOptimisticRefs(
     (input: any) => {
       const store = childStores.ensureChild(input.directory ?? dir)
@@ -151,7 +229,24 @@ function setupChildStores(dir = PROJECT.path) {
     },
     () => {},
   )
-  return childStore
+  return { childStore, childStores }
+}
+
+/**
+ * Drain the reactive presence wait plus its recovery pull. Sized off the test
+ * grace override, not production timings.
+ */
+async function waitForPresenceRemediation() {
+  const grace = combinedSendConfirmationOptions.presenceGraceMs
+  await new Promise((resolve) => setTimeout(resolve, grace + 30))
+}
+
+function installSessionMessagesMock(fn: (params: any) => Promise<any> | any) {
+  const previous = sessionMessagesHandler
+  sessionMessagesHandler = fn
+  return () => {
+    sessionMessagesHandler = previous
+  }
 }
 
 beforeEach(() => {
@@ -190,11 +285,18 @@ beforeEach(() => {
   opencodeClient.createSession = (async (_params: any, _dir?: string | null) => ({ id: SESSION_ID, slug: 't', projectID: 'proj-comb', directory: _dir ?? PROJECT.path, title: 'Test', time: { created: Date.now(), updated: Date.now() }, version: '1' })) as any
 
   resetAll()
+  sessionMessagesHandler = async () => {
+    throw new Error('session.messages not mocked')
+  }
   setupChildStores()
+  // Keep the presence grace and recovery retries short in tests; production
+  // defaults restored in afterEach.
+  combinedSendConfirmationOptions.presenceGraceMs = 10
+  combinedSendConfirmationOptions.recovery = { attempts: 1, retryDelayMs: 0 }
   queryClient.clear()
 })
 
-afterEach(() => {
+  afterEach(async () => {
   opencodeClient.buildMessageParts = originalBuildMessageParts
   opencodeClient.getDirectory = originalGetDirectory
   opencodeClient.createSession = originalCreateSession
@@ -211,6 +313,12 @@ afterEach(() => {
   registerRuntimeAPIs(null)
   setActionRefs(null as any, null as any, () => '')
   setOptimisticRefs(null as any, null as any)
+  resetCombinedSendConfirmationOptions()
+  sessionMessagesHandler = async () => {
+    throw new Error('session.messages not mocked')
+  }
+  // Drain any fire-and-forget confirmation retries scheduled by the prior test.
+  await new Promise((resolve) => setTimeout(resolve, 0))
   queryClient.clear()
 })
 
@@ -240,47 +348,257 @@ describe('handleCombinedDraftSend', () => {
     expect(calls).toBe(1)
   })
 
-  test('2) success — full session global upsert, marked created, current selection, one optimistic user message', async () => {
+  test('2) success — full session global upsert, marked created, current selection', async () => {
     let capturedInput: ConversationCreateWithPromptInput | null = null
-    registerRuntimeAPIs(makeCombinedAPI(async (input) => { capturedInput = { ...input, parts: [...input.parts] }; return successResult() }))
+    const order: string[] = []
+    const ensureOptions: Array<{ directory: string; options?: { bootstrap?: boolean } }> = []
+    const knownMessageID = 'msg_combined_auth_0000000000001'
+    const { childStore } = setupChildStores(PROJECT.path, { trackEnsureOrder: order, trackEnsureOptions: ensureOptions })
+    setOptimisticRefs(null as any, null as any)
+    let messagesCalls = 0
+    const restoreMessages = installSessionMessagesMock(async (params: any) => {
+      messagesCalls += 1
+      order.push(`messages:${params.sessionID}`)
+      // First confirmation/selection pull empty (catches optimistic-only regressions);
+      // subsequent pulls return authoritative user+assistant for the known messageID.
+      if (messagesCalls === 1) return { data: [] }
+      return {
+        data: [
+          {
+            info: { id: knownMessageID, role: 'user', sessionID: SESSION_ID, time: { created: 1 } },
+            parts: [{ id: 'prt_u', type: 'text', text: 'hello', messageID: knownMessageID, sessionID: SESSION_ID }],
+          },
+          {
+            info: { id: 'msg_assistant_auth', role: 'assistant', sessionID: SESSION_ID, time: { created: 2 } },
+            parts: [{ id: 'prt_a', type: 'text', text: 'reply', messageID: 'msg_assistant_auth', sessionID: SESSION_ID }],
+          },
+        ],
+      }
+    })
+    registerRuntimeAPIs(makeCombinedAPI(async (input) => {
+      order.push('createWithPrompt')
+      capturedInput = { ...input, parts: [...input.parts] }
+      return successResult(input.messageID)
+    }))
 
-    useSessionUIStore.getState().openNewSessionDraft()
-    await useSessionUIStore.getState().sendMessage('hello', 'openai', 'gpt-4o')
+    try {
+      useSessionUIStore.getState().openNewSessionDraft()
+      await useSessionUIStore.getState().sendMessage('hello', 'openai', 'gpt-4o', undefined, [], undefined, undefined, undefined, 'normal', {
+        messageID: knownMessageID,
+      })
 
-    expect(capturedInput).not.toBeNull()
-    expect(capturedInput!.messageID.startsWith('msg_')).toBe(true)
-    expect(capturedInput!.model).toEqual({ providerID: 'openai', modelID: 'gpt-4o' })
-    expect(capturedInput!.parts.some((p: any) => p.type === 'text')).toBe(true)
-    await flushNotifications()
-    expect(notificationRequests).toHaveLength(1)
-    expect(new Headers(notificationRequests[0].init?.headers).get('Content-Type')).toBe('application/json')
-    expect(notificationRequests[0].init?.body).toBe(JSON.stringify({ messageID: capturedInput!.messageID }))
+      expect(capturedInput).not.toBeNull()
+      expect(capturedInput!.messageID).toBe(knownMessageID)
+      expect(capturedInput!.model).toEqual({ providerID: 'openai', modelID: 'gpt-4o' })
+      expect(capturedInput!.parts.some((p: any) => p.type === 'text')).toBe(true)
+      // Child store ensure happens before createWithPrompt with bootstrap:false
+      const ensureIdx = order.findIndex((e) => e.startsWith('ensure:'))
+      const createIdx = order.indexOf('createWithPrompt')
+      expect(ensureIdx).toBeGreaterThanOrEqual(0)
+      expect(ensureIdx).toBeLessThan(createIdx)
+      expect(ensureOptions.some((entry) =>
+        entry.directory === PROJECT.path && entry.options?.bootstrap === false,
+      )).toBe(true)
+      await flushNotifications()
+      expect(notificationRequests).toHaveLength(1)
+      expect(new Headers(notificationRequests[0].init?.headers).get('Content-Type')).toBe('application/json')
+      expect(notificationRequests[0].init?.body).toBe(JSON.stringify({ messageID: knownMessageID }))
 
-    const allSessions = [...useGlobalSessionsStore.getState().activeSessions, ...useGlobalSessionsStore.getState().archivedSessions]
-    expect(allSessions.some((s: any) => s.id === SESSION_ID)).toBe(true)
-    expect(useSessionUIStore.getState().isOpenChamberCreatedSession(SESSION_ID)).toBe(true)
-    expect(useSessionUIStore.getState().currentSessionId).toBe(SESSION_ID)
-    expect(useSessionUIStore.getState().newSessionDraft.open).toBe(false)
+      const allSessions = [...useGlobalSessionsStore.getState().activeSessions, ...useGlobalSessionsStore.getState().archivedSessions]
+      expect(allSessions.some((s: any) => s.id === SESSION_ID)).toBe(true)
+      expect(useSessionUIStore.getState().isOpenChamberCreatedSession(SESSION_ID)).toBe(true)
+      expect(useSessionUIStore.getState().currentSessionId).toBe(SESSION_ID)
+      expect(useSessionUIStore.getState().newSessionDraft.open).toBe(false)
+
+      // Authoritative materialization — one user + one assistant, no optimistic
+      // markers. It arrives through reactive remediation, not through the send.
+      await waitForPresenceRemediation()
+      const messages = childStore.getState().message[SESSION_ID] ?? []
+      expect(messages.filter((m: any) => m.role === 'user')).toHaveLength(1)
+      expect(messages.filter((m: any) => m.role === 'assistant')).toHaveLength(1)
+      expect(messages.some((m: any) => m.id === knownMessageID)).toBe(true)
+      const allParts = Object.values(childStore.getState().part).flat() as any[]
+      expect(allParts.every((p) => !p.__openchamberOptimistic)).toBe(true)
+      expect(messagesCalls).toBeGreaterThanOrEqual(2)
+    } finally {
+      restoreMessages()
+    }
   })
 
-  test('combined success keeps every built part on the real-session optimistic row', async () => {
-    const childStore = setupChildStores()
+  test('combined success materializes authoritative records after a presence miss', async () => {
+    const { childStore } = setupChildStores()
+    setOptimisticRefs(null as any, null as any)
+    const messageID = 'msg_auth_only'
+    let messagesCalls = 0
+    // Empty until the ordinary selection fetch has had its turn, so only the
+    // reactive remediation pull can be the one that materializes the records.
+    let recordsAvailable = false
+    const restoreMessages = installSessionMessagesMock(async () => {
+      messagesCalls += 1
+      if (!recordsAvailable) return { data: [] }
+      return {
+        data: [
+          {
+            info: { id: messageID, role: 'user', sessionID: SESSION_ID, time: { created: 1 } },
+            parts: [{ id: 'prt_u', type: 'text', text: 'direct paint', messageID, sessionID: SESSION_ID }],
+          },
+          {
+            info: { id: 'msg_auth_assistant', role: 'assistant', sessionID: SESSION_ID, time: { created: 2 } },
+            parts: [{ id: 'prt_a', type: 'text', text: 'ok', messageID: 'msg_auth_assistant', sessionID: SESSION_ID }],
+          },
+        ],
+      }
+    })
     registerRuntimeAPIs(makeCombinedAPI(async (input) => successResult(input.messageID)))
-    useSessionUIStore.setState((state) => ({ ...state, newSessionDraft: { open: true, draftID: crypto.randomUUID(), directoryOverride: null, parentID: null, draftSubmitting: false, syntheticParts: [{ text: 'draft synthetic', synthetic: true }] } }))
-    const primaryAttachment = { id: 'primary-file', filename: 'primary.txt', mimeType: 'text/plain', dataUrl: 'data:text/plain;base64,QQ==', size: 1 } as any
-    const partAttachment = { id: 'part-file', filename: 'part.txt', mimeType: 'text/plain', dataUrl: 'data:text/plain;base64,Qg==', size: 1 } as any
+    try {
+      useSessionUIStore.getState().openNewSessionDraft()
+      await useSessionUIStore.getState().sendMessage('direct paint', 'openai', 'gpt-4o', undefined, [], undefined, undefined, undefined, 'normal', { messageID })
+      const beforeRemediation = messagesCalls
+      expect(childStore.getState().message[SESSION_ID] ?? []).toHaveLength(0)
+      recordsAvailable = true
+      await waitForPresenceRemediation()
+      expect(messagesCalls).toBeGreaterThan(beforeRemediation)
+      const messages = childStore.getState().message[SESSION_ID] ?? []
+      expect(messages.filter((m: any) => m.role === 'user')).toHaveLength(1)
+      expect(messages.filter((m: any) => m.role === 'assistant')).toHaveLength(1)
+      expect(messages.some((m: any) => m.id === messageID)).toBe(true)
+      const parts = childStore.getState().part[messageID] as any[]
+      expect(parts?.every((p) => !p.__openchamberOptimistic)).toBe(true)
+    } finally {
+      restoreMessages()
+    }
+  })
 
-    await useSessionUIStore.getState().sendMessage('main', 'openai', 'gpt-4o', 'build', [primaryAttachment], '@reviewer', [{ text: 'extra', attachments: [partAttachment], synthetic: true }], undefined, 'normal', { messageID: 'msg_complete_parts' })
+  test('happy path retains the sent row and issues no confirmation request', async () => {
+    const { childStore } = setupChildStores()
+    setOptimisticRefs(null as any, null as any)
+    const messageID = 'msg_no_request'
+    let messagesCalls = 0
+    const restoreMessages = installSessionMessagesMock(async () => {
+      messagesCalls += 1
+      return { data: [] }
+    })
+    // SSE delivers the real row while create+prompt is still resolving.
+    registerRuntimeAPIs(makeCombinedAPI(async (input) => {
+      const current = childStore.getState()
+      childStore.setState({
+        message: {
+          ...current.message,
+          [SESSION_ID]: [{ id: input.messageID, role: 'user', sessionID: SESSION_ID, time: { created: 1 } }],
+        },
+        part: {
+          ...current.part,
+          [input.messageID!]: [{ id: 'prt_sse', type: 'text', text: 'no request', messageID: input.messageID, sessionID: SESSION_ID }],
+        },
+      })
+      return successResult(input.messageID)
+    }))
+    try {
+      useSessionUIStore.getState().openNewSessionDraft()
+      await useSessionUIStore.getState().sendMessage('no request', 'openai', 'gpt-4o', undefined, [], undefined, undefined, undefined, 'normal', { messageID })
+      // The retained presentation covers the handover without touching the store.
+      const retained = useSessionUIStore.getState().retainedPendingUserMessages.get(SESSION_ID) ?? []
+      expect(retained.map((message) => message.info.id)).toEqual([messageID])
+      expect(retained[0]?.info.sessionID).toBe(SESSION_ID)
+      expect(retained[0]?.parts.every((part: any) => part.messageID === messageID && part.sessionID === SESSION_ID)).toBe(true)
+      // Presence is already satisfied, so remediation adds no request of its own.
+      const beforeRemediation = messagesCalls
+      await waitForPresenceRemediation()
+      expect(messagesCalls).toBe(beforeRemediation)
+      useSessionUIStore.getState().clearRetainedPendingUserMessages(SESSION_ID, [messageID])
+      expect(useSessionUIStore.getState().retainedPendingUserMessages.has(SESSION_ID)).toBe(false)
+    } finally {
+      restoreMessages()
+    }
+  })
 
-    const optimisticParts = childStore.getState().part.msg_complete_parts
-    expect(optimisticParts.map((part: any) => part.type)).toEqual(['text', 'file', 'text', 'file', 'text', 'agent'])
-    expect(optimisticParts.some((part: any) => part.text === 'draft synthetic' && part.synthetic === true)).toBe(true)
-    expect(optimisticParts.some((part: any) => part.type === 'agent' && part.name === '@reviewer')).toBe(true)
-    expect(optimisticParts.every((part: any) => part.messageID === 'msg_complete_parts' && part.sessionID === SESSION_ID)).toBe(true)
+  test('marks the new session busy without fabricating a row, and never over a served status', async () => {
+    const { childStore } = setupChildStores()
+    setOptimisticRefs(null as any, null as any)
+    const messageID = 'msg_busy_status'
+    const restoreMessages = installSessionMessagesMock(async () => ({ data: [] }))
+    registerRuntimeAPIs(makeCombinedAPI(async (input) => successResult(input.messageID)))
+    try {
+      useSessionUIStore.getState().openNewSessionDraft()
+      await useSessionUIStore.getState().sendMessage('busy status', 'openai', 'gpt-4o', undefined, [], undefined, undefined, undefined, 'normal', { messageID })
+      // Sidebar activity and queue gating read session_status, not the retained row.
+      expect(childStore.getState().session_status[SESSION_ID]?.type).toBe('busy')
+      expect(typeof childStore.getState().session_status_observed_at?.[SESSION_ID]).toBe('number')
+      // The status is the only write: no user row was invented for it.
+      expect(childStore.getState().message[SESSION_ID] ?? []).toHaveLength(0)
+    } finally {
+      restoreMessages()
+    }
+
+    // A status already served for the session outranks the inference.
+    const second = setupChildStores()
+    setOptimisticRefs(null as any, null as any)
+    const secondMessageID = 'msg_busy_status_served'
+    const restoreSecond = installSessionMessagesMock(async () => ({ data: [] }))
+    registerRuntimeAPIs(makeCombinedAPI(async (input) => {
+      second.childStore.setState({ session_status: { [SESSION_ID]: { type: 'idle' } } })
+      return successResult(input.messageID)
+    }))
+    try {
+      useSessionUIStore.getState().openNewSessionDraft()
+      await useSessionUIStore.getState().sendMessage('served status', 'openai', 'gpt-4o', undefined, [], undefined, undefined, undefined, 'normal', { messageID: secondMessageID })
+      expect(second.childStore.getState().session_status[SESSION_ID]?.type).toBe('idle')
+    } finally {
+      restoreSecond()
+    }
+  })
+
+  test('presence recovery is insert-only — a newer live assistant row survives', async () => {
+    const { childStore } = setupChildStores()
+    setOptimisticRefs(null as any, null as any)
+    const messageID = 'msg_insert_only'
+    const assistantID = 'msg_insert_only_assistant'
+    // SSE already committed a completed assistant row plus a finished part.
+    childStore.setState({
+      message: {
+        [SESSION_ID]: [
+          { id: assistantID, role: 'assistant', sessionID: SESSION_ID, finish: 'stop', time: { created: 2, completed: 9 } },
+        ],
+      },
+      part: {
+        [assistantID]: [
+          { id: 'prt_live_tool', type: 'tool', tool: 'read', messageID: assistantID, sessionID: SESSION_ID, state: { status: 'completed', time: { start: 3, end: 4 } } },
+        ],
+      },
+    })
+    // The recovery page is an older snapshot: assistant not finished, tool absent.
+    const restoreMessages = installSessionMessagesMock(async () => ({
+      data: [
+        {
+          info: { id: messageID, role: 'user', sessionID: SESSION_ID, time: { created: 1 } },
+          parts: [{ id: 'prt_user', type: 'text', text: 'insert only', messageID, sessionID: SESSION_ID }],
+        },
+        {
+          info: { id: assistantID, role: 'assistant', sessionID: SESSION_ID, time: { created: 2 } },
+          parts: [],
+        },
+      ],
+    }))
+    registerRuntimeAPIs(makeCombinedAPI(async (input) => successResult(input.messageID)))
+    try {
+      useSessionUIStore.getState().openNewSessionDraft()
+      await useSessionUIStore.getState().sendMessage('insert only', 'openai', 'gpt-4o', undefined, [], undefined, undefined, undefined, 'normal', { messageID })
+      await waitForPresenceRemediation()
+      const messages = childStore.getState().message[SESSION_ID] ?? []
+      // The missing user row is filled in...
+      expect(messages.some((m: any) => m.id === messageID)).toBe(true)
+      // ...while the live assistant object and its finished part are untouched.
+      const assistant = messages.find((m: any) => m.id === assistantID) as any
+      expect(assistant?.finish).toBe('stop')
+      expect(assistant?.time?.completed).toBe(9)
+      expect(childStore.getState().part[assistantID]?.some((part: any) => part.id === 'prt_live_tool')).toBe(true)
+    } finally {
+      restoreMessages()
+    }
   })
 
   test('fallback draft materializes its complete pending row before prompt dispatch', async () => {
-    const childStore = setupChildStores()
+    const { childStore } = setupChildStores()
     registerRuntimeAPIs(null)
     let dispatched = false
     opencodeClient.sendMessage = (async () => { dispatched = true }) as any
@@ -313,21 +631,172 @@ describe('handleCombinedDraftSend', () => {
     }])
   })
 
-  test('3) SSE-first — pre-place message in child store, response must not duplicate', async () => {
-    const childStore = setupChildStores()
-    registerRuntimeAPIs(makeCombinedAPI(async (input) => {
-      const current = childStore.getState()
-      childStore.setState({
-        message: { ...current.message, [SESSION_ID]: [{ id: input.messageID, role: 'user', sessionID: SESSION_ID }] },
-        session_status: { ...current.session_status, [SESSION_ID]: { type: 'idle' } },
+  test('3) SSE-first — pre-placed IDs satisfy presence with no request and no duplicate', async () => {
+    const { childStore } = setupChildStores()
+    setOptimisticRefs(null as any, null as any)
+    const messageID = 'msg_sse_first'
+    let messagesCalls = 0
+    // Simulate SSE already writing the same IDs before create returns
+    childStore.setState({
+      message: {
+        [SESSION_ID]: [
+          { id: messageID, role: 'user', sessionID: SESSION_ID, time: { created: 1 } },
+          { id: 'msg_sse_assistant', role: 'assistant', sessionID: SESSION_ID, time: { created: 2 } },
+        ],
+      },
+      part: {
+        [messageID]: [{ id: 'prt_sse_u', type: 'text', text: 'sse test', messageID, sessionID: SESSION_ID }],
+        msg_sse_assistant: [{ id: 'prt_sse_a', type: 'text', text: 'from sse', messageID: 'msg_sse_assistant', sessionID: SESSION_ID }],
+      },
+    })
+    const restoreMessages = installSessionMessagesMock(async () => {
+      messagesCalls += 1
+      return {
+        data: [
+          {
+            info: { id: messageID, role: 'user', sessionID: SESSION_ID, time: { created: 1 } },
+            parts: [{ id: 'prt_auth_u', type: 'text', text: 'sse test', messageID, sessionID: SESSION_ID }],
+          },
+          {
+            info: { id: 'msg_sse_assistant', role: 'assistant', sessionID: SESSION_ID, time: { created: 2 } },
+            parts: [{ id: 'prt_auth_a', type: 'text', text: 'from auth', messageID: 'msg_sse_assistant', sessionID: SESSION_ID }],
+          },
+        ],
+      }
+    })
+    registerRuntimeAPIs(makeCombinedAPI(async (input) => successResult(input.messageID)))
+    try {
+      useSessionUIStore.getState().openNewSessionDraft()
+      await useSessionUIStore.getState().sendMessage('sse test', 'openai', 'gpt-4o', undefined, [], undefined, undefined, undefined, 'normal', { messageID })
+      const beforeRemediation = messagesCalls
+      await waitForPresenceRemediation()
+      expect(useSessionUIStore.getState().currentSessionId).toBe(SESSION_ID)
+      // Presence was already satisfied, so remediation pulled nothing and the
+      // SSE parts were never rewritten by an authoritative page.
+      expect(messagesCalls).toBe(beforeRemediation)
+      const messages = childStore.getState().message[SESSION_ID] ?? []
+      expect(messages.filter((m: any) => m.id === messageID)).toHaveLength(1)
+      expect(messages.filter((m: any) => m.id === 'msg_sse_assistant')).toHaveLength(1)
+      expect(messages).toHaveLength(2)
+    } finally {
+      restoreMessages()
+    }
+  })
+
+  test('recovery miss does not clear existing store messages', async () => {
+    const { childStore } = setupChildStores()
+    setOptimisticRefs(null as any, null as any)
+    const prior = { id: 'msg_prior', role: 'user', sessionID: SESSION_ID, time: { created: 0 } }
+    childStore.setState({
+      message: { [SESSION_ID]: [prior] },
+      part: { msg_prior: [{ id: 'prt_prior', type: 'text', text: 'keep me', messageID: 'msg_prior', sessionID: SESSION_ID }] },
+    })
+    // Always return empty so confirmation never finds the new messageID
+    const restoreMessages = installSessionMessagesMock(async () => ({ data: [] }))
+    registerRuntimeAPIs(makeCombinedAPI(async (input) => successResult(input.messageID)))
+    try {
+      useSessionUIStore.getState().openNewSessionDraft()
+      await useSessionUIStore.getState().sendMessage('miss', 'openai', 'gpt-4o', undefined, [], undefined, undefined, undefined, 'normal', {
+        messageID: 'msg_will_miss',
       })
+      // Empty recovery pages never materialize; the prior row must remain.
+      await waitForPresenceRemediation()
+      const messages = childStore.getState().message[SESSION_ID] ?? []
+      expect(messages.some((m: any) => m.id === 'msg_prior')).toBe(true)
+      expect(messages.some((m: any) => m.id === 'msg_will_miss')).toBe(false)
+      expect(childStore.getState().part.msg_prior?.[0]?.text).toBe('keep me')
+      // The sent text stays on screen after a bounded presence miss.
+      const retained = useSessionUIStore.getState().retainedPendingUserMessages.get(SESSION_ID) ?? []
+      expect(retained.map((message) => message.info.id)).toEqual(['msg_will_miss'])
+    } finally {
+      restoreMessages()
+    }
+  })
+
+  test('pre-create ensureChild receives bootstrap:false', async () => {
+    const ensureOptions: Array<{ directory: string; options?: { bootstrap?: boolean } }> = []
+    const order: string[] = []
+    setupChildStores(PROJECT.path, { trackEnsureOrder: order, trackEnsureOptions: ensureOptions })
+    setOptimisticRefs(null as any, null as any)
+    const restoreMessages = installSessionMessagesMock(async () => ({ data: [] }))
+    registerRuntimeAPIs(makeCombinedAPI(async (input) => {
+      order.push('createWithPrompt')
       return successResult(input.messageID)
     }))
-    useSessionUIStore.getState().openNewSessionDraft()
-    await useSessionUIStore.getState().sendMessage('sse test', 'openai', 'gpt-4o')
-    expect(useSessionUIStore.getState().currentSessionId).toBe(SESSION_ID)
-    expect(childStore.getState().message[SESSION_ID]).toHaveLength(1)
-    expect(childStore.getState().session_status[SESSION_ID]).toEqual({ type: 'busy' })
+    try {
+      useSessionUIStore.getState().openNewSessionDraft()
+      await useSessionUIStore.getState().sendMessage('bootstrap gate', 'openai', 'gpt-4o')
+      const createIdx = order.indexOf('createWithPrompt')
+      const ensureBeforeCreate = ensureOptions.filter((_, i) => {
+        // trackEnsureOrder and trackEnsureOptions push in the same ensureChild call
+        return order[i]?.startsWith('ensure:') && i < createIdx
+      })
+      // At least one ensure before createWithPrompt must pass bootstrap:false
+      // (combined must not start full directory bootstrap past the new-draft gate).
+      expect(ensureBeforeCreate.some((entry) => entry.options?.bootstrap === false)).toBe(true)
+      expect(ensureOptions.some((entry) =>
+        entry.directory === PROJECT.path && entry.options?.bootstrap === false,
+      )).toBe(true)
+    } finally {
+      restoreMessages()
+    }
+  })
+
+  test('runtime switch after a presence miss does not materialize later records', async () => {
+    const { childStore } = setupChildStores()
+    setOptimisticRefs(null as any, null as any)
+    combinedSendConfirmationOptions.recovery = { attempts: 2, retryDelayMs: 0 }
+    const messageID = 'msg_runtime_stale_materialize'
+    let captureGeneration = 1
+    useInputStore.setState({
+      captureDraftRuntime: () => ({ transportIdentity: 't-combined', generation: captureGeneration }),
+    })
+    let messagesCalls = 0
+    let resolveHang!: (value: any) => void
+    const hang = new Promise<any>((resolve) => { resolveHang = resolve })
+    // Recovery: first attempt empty; second hangs until after the runtime flips,
+    // so isCurrent is already false when the records finally land.
+    const restoreMessages = installSessionMessagesMock(async () => {
+      messagesCalls += 1
+      if (messagesCalls === 1) return { data: [] }
+      return hang
+    })
+    registerRuntimeAPIs(makeCombinedAPI(async (input) => successResult(input.messageID)))
+    try {
+      useSessionUIStore.getState().openNewSessionDraft()
+      const sendPromise = useSessionUIStore.getState().sendMessage(
+        'stale runtime',
+        'openai',
+        'gpt-4o',
+        undefined,
+        [],
+        undefined,
+        undefined,
+        undefined,
+        'normal',
+        { messageID },
+      )
+      // Let the presence grace lapse and the first recovery attempt miss, then
+      // flip claim runtime currentness.
+      await waitForPresenceRemediation()
+      captureGeneration = 2
+      // Unblock pending confirmation with authoritative records that must not materialize.
+      resolveHang({
+        data: [
+          {
+            info: { id: messageID, role: 'user', sessionID: SESSION_ID, time: { created: 1 } },
+            parts: [{ id: 'prt_stale', type: 'text', text: 'must not land', messageID, sessionID: SESSION_ID }],
+          },
+        ],
+      })
+      await sendPromise
+      await new Promise((r) => setTimeout(r, 20))
+      const messages = childStore.getState().message[SESSION_ID] ?? []
+      expect(messages.some((m: any) => m.id === messageID)).toBe(false)
+    } finally {
+      resolveHang?.({ data: [] })
+      restoreMessages()
+    }
   })
 
   test('4) transport throws twice then succeeds — three attempts same messageID', async () => {

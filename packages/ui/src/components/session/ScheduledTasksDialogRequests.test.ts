@@ -54,6 +54,32 @@ describe('ScheduledTasksDialog queries', () => {
     expect(content).toContain('setSelectedTaskIdentity({ projectId: projectID, taskId: nextSelectedTask.id })');
   });
 
+  test('loads run history incrementally and invalidates its exact query on run events', async () => {
+    const content = await readFile(join(dirname(fileURLToPath(import.meta.url)), 'ScheduledTasksDialog.tsx'), 'utf8');
+    expect(content).toContain('useInfiniteQuery({');
+    expect(content).toContain("const globalScheduledTaskRunsQueryKey = queryKeys.scoped('scheduled-task-runs')");
+    expect(content).toContain("enabled: open && workspaceView === 'history'");
+    expect(content).toContain('initialPageParam: undefined as string | undefined');
+    expect(content).toContain('getNextPageParam: (lastPage) => lastPage.complete ? undefined : lastPage.nextCursor ?? undefined');
+    expect(content).toContain('await runsQuery.fetchNextPage()');
+    expect(content).toContain('new Set<string>()');
+    expect(content).toContain('invalidateQueries({ queryKey: globalScheduledTaskRunsQueryKey, exact: true })');
+  });
+
+  test('opens linked run sessions through phone navigation or the desktop chat path and omits incomplete identities', async () => {
+    const content = await readFile(join(dirname(fileURLToPath(import.meta.url)), 'ScheduledTasksDialog.tsx'), 'utf8');
+    const handler = content.slice(content.indexOf('const handleOpenRunSession'), content.indexOf('const handleRetryRuns'));
+    expect(handler).toContain("if (presentation === 'mobile-panel') onOpenChange?.(false)");
+    expect(handler).toContain("if (isCapacitorApp() && !isIPadApp()) {");
+    expect(handler).toContain('useMobileNavigationStore.getState().openSession({ sessionId: run.sessionId, directory: run.directory })');
+    expect(handler).toContain('return;');
+    expect(handler).toContain("useUIStore.getState().setActiveMainTab('chat')");
+    expect(handler).toContain('openSessionFromToast(run.sessionId, run.directory)');
+    expect(content).toContain('const canOpenSession = Boolean(run.sessionId && run.directory)');
+    expect(content).toContain("t('sessions.scheduledTasks.history.openSession')");
+    expect(content).toContain('{canOpenSession ? (');
+  });
+
   test('shares short enabled-state action labels between task dropdown and context menus', async () => {
     const content = await readFile(join(dirname(fileURLToPath(import.meta.url)), 'ScheduledTasksDialog.tsx'), 'utf8');
     expect(content).toContain('const renderMenuItems = (Item: React.ElementType) =>');

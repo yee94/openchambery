@@ -109,7 +109,27 @@ export const createAssistantsService = ({ dbPath, dataDir, buildOpenCodeUrl, get
   const binding = (row) => ({ sessionID: row.current_session_id, directory: effectiveWorkspace(row), sessionGeneration: row.session_generation });
   const client = () => clientFactory ? clientFactory() : createOpencodeClient({ baseUrl: buildOpenCodeUrl('/', '').replace(/\/$/, ''), headers: getOpenCodeAuthHeaders() });
   const metadata = (row) => ({ openchamber: { assistant: { assistantID: row.assistant_id, name: row.name } } });
-  const createSession = async (row) => { const directory = effectiveWorkspace(row); const result = await client().session.create({ directory, title: row.name, metadata: metadata(row) }); if (result.error || !result.data?.id) fail('upstream_error'); return { sessionID: result.data.id, directory }; };
+  const ARCHIVE_RETRY_MS = 25;
+  const archiveCreatedSession = async (sessionID, directory) => {
+    const archiveAt = now();
+    const update = () => client().session.update({ sessionID, directory, time: { archived: archiveAt } });
+    let result = await update();
+    if (isMissing(result)) {
+      await sleep(ARCHIVE_RETRY_MS);
+      result = await update();
+    }
+    if (result?.error || isMissing(result)) fail('upstream_error');
+  };
+  const createSession = async (row) => {
+    const directory = effectiveWorkspace(row);
+    const result = await client().session.create({ directory, title: `[Assistant] ${row.name}`, metadata: metadata(row) });
+    if (result.error || !result.data?.id) fail('upstream_error');
+    const sessionID = result.data.id;
+    // Archive before binding so ordinary session lists never flash system sessions.
+    // Metadata still isolates the session if archive fails after create.
+    await archiveCreatedSession(sessionID, directory);
+    return { sessionID, directory };
+  };
   const sessionExists = async (row) => { if (!row.current_session_id) return false; const result = await client().session.get({ sessionID: row.current_session_id, directory: effectiveWorkspace(row) }); if (isMissing(result)) return false; if (result.error) fail('upstream_error'); return Boolean(result.data); };
   const replaceBinding = (row, created) => { if (row.current_session_id && row.current_session_id !== created.sessionID) archiveSession(row.assistant_id, row.current_session_id, effectiveWorkspace(row)); const result = db.prepare('UPDATE assistant_v2 SET current_session_id=?,session_generation=session_generation+1,updated_at=? WHERE assistant_id=? AND session_generation=? AND tombstone_at IS NULL').run(created.sessionID, now(), row.assistant_id, row.session_generation); if (result.changes) bump(); return result.changes ? assistant(row.assistant_id) : null; };
   const statelessLanes = new Map();

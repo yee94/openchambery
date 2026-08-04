@@ -11,7 +11,7 @@ const root = () => fs.mkdtempSync(path.join(os.tmpdir(), 'assistants-'));
 // Behavioral tests enable the global switch after boot; pass enabled:false to assert the fresh-install default.
 const setup = (directory = root(), client = {}, options = {}) => {
   const { enabled = true, ...serviceOptions } = options;
-  const service = createAssistantsService({ dbPath: path.join(directory, 'assistants.sqlite'), dataDir: directory, getAllowedRoots: () => [directory], buildOpenCodeUrl: () => 'http://127.0.0.1:1', getOpenCodeAuthHeaders: () => ({}), clientFactory: () => ({ session: { create: async () => ({ data: { id: crypto.randomUUID() } }), get: async () => ({ data: { id: 'present' } }), promptAsync: async () => ({ data: { info: { id: 'msg_1' } } }), summarize: async () => ({ data: true }), ...client } }), ...serviceOptions });
+  const service = createAssistantsService({ dbPath: path.join(directory, 'assistants.sqlite'), dataDir: directory, getAllowedRoots: () => [directory], buildOpenCodeUrl: () => 'http://127.0.0.1:1', getOpenCodeAuthHeaders: () => ({}), clientFactory: () => ({ session: { create: async () => ({ data: { id: crypto.randomUUID() } }), get: async () => ({ data: { id: 'present' } }), update: async () => ({ data: { id: 'archived' } }), promptAsync: async () => ({ data: { info: { id: 'msg_1' } } }), summarize: async () => ({ data: true }), ...client } }), ...serviceOptions });
   if (enabled) {
     const snapshot = service.snapshot();
     if (!snapshot.enabled) service.setEnabled({ enabled: true, expectedRevision: snapshot.revision });
@@ -97,7 +97,68 @@ describe('assistants service', () => {
 
   it('applies the complete workspace patch and creates metadata with the final name', async () => {
     const directory = root(); const other = path.join(directory, 'other'); fs.mkdirSync(other); let created; const service = setup(directory, { create: async (input) => { created = input; return { data: { id: 'ses_workspace' } }; } }); const assistant = service.createAssistant(assistantInput);
-    const updated = await service.updateAssistant(assistant.id, { expectedRevision: 1, workspacePath: other, name: 'Renamed', defaultPrompt: 'P', providerID: 'provider-2', modelID: 'model-2', agent: 'agent-2', enabled: false }); expect(updated).toMatchObject({ name: 'Renamed', defaultPrompt: 'P', providerID: 'provider-2', modelID: 'model-2', agent: 'agent-2', enabled: false, sessionID: 'ses_workspace' }); expect(updated).not.toHaveProperty('skillRoots'); expect(created).toMatchObject({ title: 'Renamed', metadata: { openchamber: { assistant: { name: 'Renamed' } } } }); service.close();
+    const updated = await service.updateAssistant(assistant.id, { expectedRevision: 1, workspacePath: other, name: 'Renamed', defaultPrompt: 'P', providerID: 'provider-2', modelID: 'model-2', agent: 'agent-2', enabled: false }); expect(updated).toMatchObject({ name: 'Renamed', defaultPrompt: 'P', providerID: 'provider-2', modelID: 'model-2', agent: 'agent-2', enabled: false, sessionID: 'ses_workspace' }); expect(updated).not.toHaveProperty('skillRoots'); expect(created).toMatchObject({ title: '[Assistant] Renamed', metadata: { openchamber: { assistant: { name: 'Renamed' } } } }); service.close();
+  });
+
+  it('creates Assistant sessions with a fixed title prefix, ownership metadata, and archive-before-bind', async () => {
+    const directory = root();
+    const order = [];
+    let created;
+    let archived;
+    const service = setup(directory, {
+      create: async (input) => {
+        order.push('create');
+        created = input;
+        return { data: { id: 'ses_assistant_new' } };
+      },
+      update: async (input) => {
+        order.push('update');
+        archived = input;
+        return { data: { id: input.sessionID } };
+      },
+    });
+    const assistant = service.createAssistant({ ...assistantInput, name: 'Ops Bot' });
+    const binding = await service.ensure(assistant.id);
+    expect(binding).toEqual({ sessionID: 'ses_assistant_new', directory: expect.any(String), sessionGeneration: 1 });
+    expect(created).toMatchObject({
+      title: '[Assistant] Ops Bot',
+      metadata: { openchamber: { assistant: { assistantID: assistant.id, name: 'Ops Bot' } } },
+    });
+    expect(archived).toMatchObject({ sessionID: 'ses_assistant_new', time: { archived: expect.any(Number) } });
+    expect(order).toEqual(['create', 'update']);
+    service.close();
+  });
+
+  it('does not bind or prompt when archive fails after create', async () => {
+    let creates = 0;
+    let prompts = 0;
+    const service = setup(root(), {
+      create: async () => ({ data: { id: `ses_${++creates}` } }),
+      update: async () => ({ error: { status: 500 } }),
+      promptAsync: async () => { prompts += 1; return { response: { status: 204 } }; },
+    });
+    const assistant = service.createAssistant(assistantInput);
+    await expect(service.ensure(assistant.id)).rejects.toMatchObject({ code: 'upstream_error' });
+    expect(service.snapshot().assistants[0].sessionID).toBeNull();
+    expect(creates).toBe(1);
+    expect(prompts).toBe(0);
+    service.close();
+  });
+
+  it('retries archive once on 404 then binds after success', async () => {
+    let updates = 0;
+    const service = setup(root(), {
+      create: async () => ({ data: { id: 'ses_retry_archive' } }),
+      update: async () => {
+        updates += 1;
+        if (updates === 1) return { error: { status: 404 } };
+        return { data: { id: 'ses_retry_archive' } };
+      },
+    });
+    const assistant = service.createAssistant(assistantInput);
+    await expect(service.ensure(assistant.id)).resolves.toMatchObject({ sessionID: 'ses_retry_archive', sessionGeneration: 1 });
+    expect(updates).toBe(2);
+    service.close();
   });
 
   it('persists nullable variants and sends the captured OpenCode variant for messages and shares', async () => {

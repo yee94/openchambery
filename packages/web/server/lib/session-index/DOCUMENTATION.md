@@ -13,7 +13,14 @@ newest 20 root-session summaries per runtime and directory. It never stores
 messages, attachments, permissions, provider data, or model metadata.
 Sessions titled `smartfetch-secondary` are temporary SmartFetch model calls;
 the index excludes them from every snapshot and clears prior summaries when a
-matching session update arrives.
+matching session update arrives. System-owned sessions are excluded by
+authoritative metadata only: a non-empty
+`metadata.openchamber.assistant.assistantID` or
+`metadata.openchamber.scheduledTask.taskID`. Title prefixes are human labels and
+never participate in this filter. Metadata is the ownership/isolation signal;
+`time.archived` is archive state; titles are for recognition. The index does
+not cache system sessions, so cold-start and live upserts stay aligned with
+ordinary sidebar lists.
 
 The server-side global OpenCode event subscriber writes session summary events
 directly into this index. User `message.updated` events and `session.idle`

@@ -99,10 +99,27 @@ const shouldAttachRuntimeAuth = (input: string | URL | Request): boolean => {
 };
 
 const INTERACTIVE_SESSION_READ_PATH = /^\/api\/session\/(?!status$)([^/]+)(?:\/(?:message|children|todo|diff))?$/;
+/** OpenChamber Host turn-page for selected-session prepend / loadMore. */
+const INTERACTIVE_OPENCHAMBER_SESSION_MESSAGES_PATH =
+  /^\/api\/openchamber\/sessions\/([^/]+)\/messages\/?$/;
 let interactiveSessionRequestId: string | null = null;
 
 export const setRuntimeInteractiveSessionRequestId = (sessionId: string | null): void => {
   interactiveSessionRequestId = sessionId;
+};
+
+const decodePathSegment = (value: string): string => {
+  try {
+    return decodeURIComponent(value);
+  } catch {
+    return value;
+  }
+};
+
+const isInteractiveSessionId = (pathSessionId: string): boolean => {
+  if (!interactiveSessionRequestId) return false;
+  if (pathSessionId === interactiveSessionRequestId) return true;
+  return decodePathSegment(pathSessionId) === interactiveSessionRequestId;
 };
 const BACKGROUND_READ_EXACT_PATHS = new Set([
   '/health',
@@ -172,7 +189,13 @@ export const getRuntimeRequestPriority = (
   const pathname = runtimeRequestPathname(rawUrl);
   if (!pathname) return undefined;
   const interactiveSessionMatch = pathname.match(INTERACTIVE_SESSION_READ_PATH);
-  if (interactiveSessionMatch?.[1] === interactiveSessionRequestId) return 'high';
+  if (interactiveSessionMatch?.[1] && isInteractiveSessionId(interactiveSessionMatch[1])) {
+    return 'high';
+  }
+  const turnPageMatch = pathname.match(INTERACTIVE_OPENCHAMBER_SESSION_MESSAGES_PATH);
+  if (turnPageMatch?.[1] && isInteractiveSessionId(turnPageMatch[1])) {
+    return 'high';
+  }
   if (isBackgroundReadPath(pathname)) return 'low';
   return undefined;
 };

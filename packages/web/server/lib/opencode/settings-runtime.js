@@ -799,6 +799,40 @@ export const createSettingsRuntime = (deps) => {
     return { settings: next, changed: true };
   };
 
+  // One-shot compact-chat default upgrade. Marker stays on disk (internal);
+  // settings response allowlist continues to hide it from clients.
+  // Marker missing: rewrite legacy defaults / absent fields to sorted /
+  // collapsed / true, then write marker=1. Marker already 1: preserve user values.
+  const COMPACT_CHAT_DEFAULTS_MIGRATION_MARKER = 'compactChatDefaultsMigrationVersion';
+  const COMPACT_CHAT_DEFAULTS_MIGRATION_VERSION = 1;
+
+  const migrateSettingsCompactChatDefaults = (current) => {
+    const settings = current && typeof current === 'object' ? current : {};
+    if (settings[COMPACT_CHAT_DEFAULTS_MIGRATION_MARKER] === COMPACT_CHAT_DEFAULTS_MIGRATION_VERSION) {
+      return { settings, changed: false };
+    }
+
+    const next = { ...settings };
+    let changed = false;
+
+    // Legacy default was 'live'; also upgrade missing so first-write paths get new defaults.
+    if (next.chatRenderMode === 'live' || typeof next.chatRenderMode !== 'string') {
+      next.chatRenderMode = 'sorted';
+      changed = true;
+    }
+    if (next.activityRenderMode === 'summary' || typeof next.activityRenderMode !== 'string') {
+      next.activityRenderMode = 'collapsed';
+      changed = true;
+    }
+    if (next.showTurnChangedFiles === false || typeof next.showTurnChangedFiles !== 'boolean') {
+      next.showTurnChangedFiles = true;
+      changed = true;
+    }
+
+    next[COMPACT_CHAT_DEFAULTS_MIGRATION_MARKER] = COMPACT_CHAT_DEFAULTS_MIGRATION_VERSION;
+    return { settings: next, changed: true };
+  };
+
   const readSettingsFromDiskMigrated = async () => {
     const current = await readSettingsFromDisk();
     const migration1 = await migrateSettingsFromLegacyLastDirectory(current);
@@ -809,10 +843,11 @@ export const createSettingsRuntime = (deps) => {
     const migration6 = normalizeSettingsPaths(migration5.settings);
     const migration7 = await migrateSettingsToDeterministicProjectIds(migration6.settings);
     const migration8 = migrateSettingsRemoveApprovedDirectories(migration7.settings);
-    if (migration1.changed || migration2.changed || migration3.changed || migration4.changed || migration5.changed || migration6.changed || migration7.changed || migration8.changed) {
-      await writeSettingsToDisk(migration8.settings);
+    const migration9 = migrateSettingsCompactChatDefaults(migration8.settings);
+    if (migration1.changed || migration2.changed || migration3.changed || migration4.changed || migration5.changed || migration6.changed || migration7.changed || migration8.changed || migration9.changed) {
+      await writeSettingsToDisk(migration9.settings);
     }
-    return migration8.settings;
+    return migration9.settings;
   };
 
   const persistSettings = async (changes) => {
@@ -837,6 +872,12 @@ export const createSettingsRuntime = (deps) => {
       const approvedDirectoriesMigration = migrateSettingsRemoveApprovedDirectories(next);
       if (approvedDirectoriesMigration.changed) {
         next = approvedDirectoriesMigration.settings;
+      }
+
+      // Ensure marker + new defaults exist before the first settings write lands.
+      const compactChatDefaultsMigration = migrateSettingsCompactChatDefaults(next);
+      if (compactChatDefaultsMigration.changed) {
+        next = compactChatDefaultsMigration.settings;
       }
 
       // Validating project paths hits the filesystem for every entry, so only

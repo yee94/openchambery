@@ -7,7 +7,23 @@ const SCHEMA_VERSION = 6;
 const MAX_ROOT_SESSIONS = 20;
 const HIDDEN_SESSION_TITLES = new Set(['smartfetch-secondary']);
 
-const isVisibleSession = (session) => !HIDDEN_SESSION_TITLES.has(session?.title);
+const nonEmptySystemID = (value) => typeof value === 'string' && value.length > 0;
+
+/** System sessions are isolated by authoritative metadata only — never by title prefix. */
+const isSystemSession = (session) => {
+  const openchamber = session?.metadata?.openchamber;
+  if (!openchamber || typeof openchamber !== 'object') return false;
+  if (nonEmptySystemID(openchamber.assistant?.assistantID)) return true;
+  if (nonEmptySystemID(openchamber.scheduledTask?.taskID)) return true;
+  return false;
+};
+
+const isVisibleSession = (session) => {
+  if (!session) return false;
+  if (HIDDEN_SESSION_TITLES.has(session.title)) return false;
+  if (isSystemSession(session)) return false;
+  return true;
+};
 
 const normalizeDirectory = (value) => {
   if (typeof value !== 'string') return null;

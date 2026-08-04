@@ -70,6 +70,21 @@ export interface TurnStreamState {
     durationMs?: number;
 }
 
+/**
+ * How the turn finished, derived only from the last assistant message.
+ * - normal: finish === 'stop'
+ * - abnormal: settled without stop (time.completed or error; includes user interrupt)
+ * - active: still in progress
+ */
+export type TurnCompletionDisposition = 'active' | 'normal' | 'abnormal';
+
+/**
+ * Activity presentation semantics for a turn, derived only from the user message.
+ * - default: ordinary user turn
+ * - compaction: user message is a /compact (raw compaction part or normalized text)
+ */
+export type TurnActivityPresentationKind = 'default' | 'compaction';
+
 export interface TurnRecord {
     turnId: string;
     userMessageId: string;
@@ -87,6 +102,8 @@ export interface TurnRecord {
     diffStats?: TurnDiffStats;
     changedFiles?: TurnChangedFile[];
     stream: TurnStreamState;
+    completionDisposition: TurnCompletionDisposition;
+    activityPresentationKind: TurnActivityPresentationKind;
     startedAt?: number;
     completedAt?: number;
     durationMs?: number;
@@ -131,10 +148,13 @@ export interface TurnGroupingContext {
     headerMessageId?: string;
     hasTools: boolean;
     hasReasoning: boolean;
+    completionDisposition?: TurnCompletionDisposition;
+    activityPresentationKind?: TurnActivityPresentationKind;
     diffStats?: TurnDiffStats;
     changedFiles?: TurnChangedFile[];
     userMessageCreatedAt?: number;
     userMessageVariant?: string;
+    durationMs?: number;
     isWorking: boolean;
     isGroupExpanded?: boolean;
     toggleGroup?: () => void;

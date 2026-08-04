@@ -67,11 +67,12 @@ import {
   fetchMessagesForSession,
   fetchRecentSendConfirmationRecords,
   materializeConfirmedSendRecords,
+  ensureSentUserMessagePresence,
   dirStoreForDirectory,
   type OptimisticSendTicket,
 } from "./session-actions"
 import { useInputStore, type InputDraftRuntimeCapture, type DraftOwnershipCommitResult, type SyntheticContextPart } from "./input-store"
-import { newSessionDraftKey, sessionDraftKey, type DraftKey } from "./input-draft-types"
+import { deriveNewSessionDraftID, newSessionDraftKey, sessionDraftKey, type DraftKey } from "./input-draft-types"
 import { useComposerSendStore } from "./composer-send-manager"
 import { useSessionGoalArmStore } from "@/stores/useSessionGoalArmStore"
 import { setSessionGoal } from "@/lib/sessionGoalActions"
@@ -162,6 +163,44 @@ export function createPendingUserMessagePresentation(input: {
     } as unknown as Message,
     parts,
   }
+}
+
+/**
+ * Rebind a draft-scoped presentation ("draft:pending") to the real session id.
+ * The transcript keys rows by session, so the retained row must carry the same
+ * identity as the authoritative record it stands in for.
+ */
+function rebindPendingUserMessagePresentation(
+  presentation: PendingUserMessagePresentation,
+  sessionID: string,
+): PendingUserMessagePresentation {
+  return {
+    info: { ...presentation.info, sessionID } as Message,
+    parts: presentation.parts.map((part) => ({
+      ...part,
+      sessionID,
+      messageID: presentation.info.id,
+    } as Part)),
+  }
+}
+
+/**
+ * Retain a sent row as presentation for a real session until its authoritative
+ * record lands. Replaces any earlier retention for the same message ID.
+ */
+function retainPendingUserMessageForSession(
+  sessionID: string,
+  presentation: PendingUserMessagePresentation,
+): void {
+  if (!sessionID) return
+  const rebound = rebindPendingUserMessagePresentation(presentation, sessionID)
+  useSessionUIStore.setState((state) => {
+    const existing = state.retainedPendingUserMessages.get(sessionID) ?? []
+    const next = [...existing.filter((message) => message.info.id !== rebound.info.id), rebound]
+    const nextMap = new Map(state.retainedPendingUserMessages)
+    nextMap.set(sessionID, next)
+    return { retainedPendingUserMessages: nextMap }
+  })
 }
 
 // ---------------------------------------------------------------------------
@@ -444,6 +483,14 @@ export type SessionUIState = {
   currentSessionId: string | null
   currentSessionDirectory: string | null
   newSessionDraft: NewSessionDraftState
+  /**
+   * Sent user rows kept as presentation only, per session, until the same
+   * message ID materializes authoritatively. This is what covers the window
+   * between selecting a freshly created session and the arrival of its first
+   * records — nothing here is ever written into the sync store.
+   */
+  retainedPendingUserMessages: Map<string, PendingUserMessagePresentation[]>
+  clearRetainedPendingUserMessages: (sessionId: string, messageIDs: readonly string[]) => void
   forkTransition: ForkTransitionState | null
   abortPromptSessionId: string | null
   abortPromptExpiresAt: number | null
@@ -1018,8 +1065,10 @@ async function handleCombinedDraftSend(params: {
   content: string; providerID: string; modelID: string; agent?: string; agentMentionName?: string; variant?: string
   attachments?: AttachedFile[]; additionalParts?: Array<{ text: string; attachments?: AttachedFile[]; synthetic?: boolean }>
   messageID?: string
+  /** Apply an armed session goal after the draft materializes into a real session. */
+  onSessionReady?: (sessionId: string, directory: string | null) => void
 }): Promise<void> {
-  const { content, providerID, modelID, agent, agentMentionName, variant, attachments, additionalParts } = params
+  const { content, providerID, modelID, agent, agentMentionName, variant, attachments, additionalParts, onSessionReady } = params
   const draftSnapshot = useSessionUIStore.getState().newSessionDraft
   const trimmedAgent = typeof agent === "string" && agent.trim().length > 0 ? agent.trim() : undefined
   const configState = useConfigStore.getState()
@@ -1050,6 +1099,14 @@ async function handleCombinedDraftSend(params: {
     const api = getRegisteredRuntimeAPIs()?.conversations
     if (!api?.createWithPrompt) { throw await localizedSendError("chat.chatInput.toast.messageSendFailed") }
     const resolvedDir = directory ?? opencodeClient.getDirectory() ?? ""
+    // Ensure the directory child store exists before createWithPrompt so any
+    // message SSE that races the HTTP response can route into a live store.
+    // bootstrap:false — only need the event target; do not start a full
+    // directory bootstrap that would bypass the new-draft bootstrap gate.
+    // Keep the store reference for post-success authoritative materialization.
+    const preCreateStore = dirStoreForDirectory(resolvedDir, { bootstrap: false })
+    const claimRuntimeCurrent = () =>
+      sameRuntimeCapture(useInputStore.getState().captureDraftRuntime(), claimed.runtime)
     let result: ConversationCreateWithPromptResult | undefined
     for (let attempt = 0; attempt <= COMBINED_RETRY_MAX; attempt++) {
       if (attempt > 0) await new Promise<void>((resolve) => setTimeout(resolve, COMBINED_RETRY_DELAY_MS))
@@ -1065,14 +1122,70 @@ async function handleCombinedDraftSend(params: {
     }
     if (!result) { restoreDraftSubmission(claimed); useInputStore.getState().setPendingInputText(content, "replace"); throw await localizedSendError("chat.chatInput.toast.messageSendFailed") }
     if (result.ok) {
-      const session = result.session as Session; const sessionDir = directory ?? (session as { directory?: string }).directory ?? null
-      const dirState = getDirectoryState(sessionDir ?? resolvedDir); const existingMessages = dirState?.message?.[session.id]
-      const inserted = optimisticInsertUserMessage({ sessionId: session.id, messageID, content, providerID, modelID, agent: effectiveAgent, directory: sessionDir, files, parts: parts as Part[] })
-      if (!inserted && !existingMessages?.length) console.warn("[combined] optimistic insert skipped (refs not mounted), session:", session.id)
+      const session = result.session as Session
+      const sessionDir = directory ?? (session as { directory?: string }).directory ?? null
+      const materializeDir = sessionDir ?? resolvedDir
+      // Routing first so session-directory lookups and later SSE bind correctly.
+      recordCreatedSession(session, sessionDir)
+      const store = materializeDir === resolvedDir
+        ? preCreateStore
+        : dirStoreForDirectory(materializeDir, { bootstrap: false })
+      // No client-fabricated user/assistant rows and no confirmation request on
+      // the happy path: the retained pending presentation covers the window
+      // until SSE (or the ordinary selection page fetch) delivers the real row.
+      retainPendingUserMessageForSession(session.id, pendingMessage)
+      // Finalize/select first so the ordinary selection page fetch starts before
+      // any local busy inference; then fill-void busy for sidebar/queue gating
+      // only when session_status still has no key for this session.
       const finalized = await finalizeDraftSession(session, { providerID, modelID, agent: effectiveAgent, variant }, { directory: sessionDir, agent: effectiveAgent, draftProjectId: draft.selectedProjectId, targetFolderId: draft.targetFolderId, draftSyntheticParts: draft.syntheticParts }, claimed)
+      {
+        const statusState = store.getState()
+        if (!Object.prototype.hasOwnProperty.call(statusState.session_status ?? {}, session.id)) {
+          store.setState({
+            session_status: {
+              ...statusState.session_status,
+              [session.id]: { type: "busy" as const },
+            },
+            session_status_observed_at: {
+              ...statusState.session_status_observed_at,
+              [session.id]: Date.now(),
+            },
+          })
+        }
+      }
       await finalizeClaimedDraftOwnership(claimed, session.id, "consume")
       notifyConfirmedMessageSent(session.id, messageID)
       if (finalized.selected) markPendingUserSendAnimation(session.id)
+      // Remediation is reactive: only a real presence miss inside the grace
+      // window pulls authoritative records, and it still forges nothing.
+      // Runtime-scoped: stop and never write the captured store after a switch.
+      void ensureSentUserMessagePresence({
+        store,
+        sessionId: session.id,
+        messageID,
+        directory: materializeDir,
+        isCurrent: claimRuntimeCurrent,
+      }).then((outcome) => {
+        if (outcome !== "missing") return
+        // One structured warning on bounded miss (no user body text).
+        // Retained presentation stays on screen until the same ID materializes.
+        console.warn("[combined] sent user message never materialized", {
+          sessionId: session.id,
+          messageID,
+          directory: materializeDir,
+        })
+      }).catch((error) => {
+        // One structured warning on exception (no user body text).
+        console.warn("[combined] sent user message presence check failed", {
+          sessionId: session.id,
+          messageID,
+          directory: materializeDir,
+          error: error instanceof Error ? error.message : String(error),
+        })
+      })
+      // Armed goals were consumed before createWithPrompt; attach them now that
+      // the real session id exists (legacy draft path does the same after routeMessage).
+      onSessionReady?.(session.id, sessionDir)
       return
     }
     if (!result.ok) {
@@ -1086,13 +1199,19 @@ async function handleCombinedDraftSend(params: {
         const session = promptResult.session as Session; const sessionDir = directory ?? (session as { directory?: string }).directory ?? null
         const finalized = await finalizeDraftSession(session, { providerID, modelID, agent: effectiveAgent, variant }, { directory: sessionDir, agent: effectiveAgent, draftProjectId: draft.selectedProjectId, targetFolderId: draft.targetFolderId, draftSyntheticParts: draft.syntheticParts }, claimed)
         if (promptResult.ambiguous) {
-          const records = await fetchRecentSendConfirmationRecords(session.id, messageID, sessionDir)
-          if (records) {
+          const records = await fetchRecentSendConfirmationRecords(session.id, messageID, sessionDir, {
+            isCurrent: claimRuntimeCurrent,
+          })
+          if (records && claimRuntimeCurrent()) {
             await finalizeClaimedDraftOwnership(claimed, session.id, "consume")
             notifyConfirmedMessageSent(session.id, messageID)
             if (finalized.selected) markPendingUserSendAnimation(session.id)
-            const store = dirStoreForDirectory(sessionDir ?? opencodeClient.getDirectory() ?? "")
-            materializeConfirmedSendRecords(store, session.id, messageID, records)
+            const store = dirStoreForDirectory(sessionDir ?? resolvedDir, { bootstrap: false })
+            // Gap fill only: SSE may already own rows on this page for the
+            // session the prompt did reach, and those live objects are newer.
+            materializeConfirmedSendRecords(store, session.id, messageID, records, { gapFillOnly: true })
+            // Session exists and the prompt likely landed — still attach the armed goal.
+            onSessionReady?.(session.id, sessionDir)
             return
           }
           await finalizeClaimedDraftOwnership(claimed, session.id, "preserve")
@@ -1155,6 +1274,7 @@ export const useSessionUIStore = create<SessionUIState>()((set, get) => ({
   currentSessionId: null,
   currentSessionDirectory: null,
   newSessionDraft: { ...DEFAULT_DRAFT },
+  retainedPendingUserMessages: new Map(),
   forkTransition: null,
   abortPromptSessionId: null,
   abortPromptExpiresAt: null,
@@ -1173,6 +1293,28 @@ export const useSessionUIStore = create<SessionUIState>()((set, get) => ({
   stagedMessageEdit: null,
   messageEditCommitting: null,
   pendingSendMessageIDs: new Map(),
+
+  // ---------------------------------------------------------------------------
+  // clearRetainedPendingUserMessages
+  //
+  // Called by the transcript once the same message IDs exist authoritatively.
+  // Presentation-only bookkeeping: a retained row that never materializes stays
+  // visible on purpose, so a sent message is never silently lost from the body.
+  // ---------------------------------------------------------------------------
+  clearRetainedPendingUserMessages: (sessionId, messageIDs) => {
+    if (!sessionId || messageIDs.length === 0) return
+    set((state) => {
+      const retained = state.retainedPendingUserMessages.get(sessionId)
+      if (!retained?.length) return state
+      const removed = new Set(messageIDs)
+      const next = retained.filter((message) => !removed.has(message.info.id))
+      if (next.length === retained.length) return state
+      const nextMap = new Map(state.retainedPendingUserMessages)
+      if (next.length === 0) nextMap.delete(sessionId)
+      else nextMap.set(sessionId, next)
+      return { retainedPendingUserMessages: nextMap }
+    })
+  },
 
   clearStagedMessageEdit: (sessionId) => {
     set((state) => {
@@ -1351,6 +1493,9 @@ export const useSessionUIStore = create<SessionUIState>()((set, get) => ({
       sessionAbortFlags: new Map(),
       queueAbortBlocks: new Map(),
       pendingChangesBarDismissed: new Map(),
+      // Retained rows belong to the runtime that sent them; the new runtime
+      // reads its own transcript from the store.
+      retainedPendingUserMessages: new Map(),
       stagedMessageEdit: null,
       messageEditCommitting: null,
       pendingSendMessageIDs: new Map(),
@@ -1375,13 +1520,18 @@ export const useSessionUIStore = create<SessionUIState>()((set, get) => ({
   openNewSessionDraft: (options) => {
     // Establishing create+prompt owns the draft identity. Rotating here would
     // clear draftSubmitting/draftEstablishing and allow a second createSession.
-    // Draft rotation during a plain claimed submission stays supported.
     if (useComposerSendStore.getState().shouldBlockNewSessionDraftOpen()) {
+      return
+    }
+    const existingDraft = get().newSessionDraft
+    // While a claim/create flight holds the draft, keep that identity — do not
+    // rotate to a derived key for another project/plus click mid-submit.
+    // Bail before any disarm: nothing is being switched away from here.
+    if (existingDraft.draftSubmitting || existingDraft.draftEstablishing) {
       return
     }
     // Same disarm as a session switch — this path does not go through setCurrentSession.
     get().clearStagedMessageEdit()
-    const existingDraft = get().newSessionDraft
     let projectsState = useProjectsStore.getState()
     const projects = projectsState.projects
     const availableWorktreesByProject = get().availableWorktreesByProject
@@ -1452,11 +1602,19 @@ export const useSessionUIStore = create<SessionUIState>()((set, get) => ({
       projectsState.setActiveProjectIdOnly(selectedProject.id)
     }
 
+    // Stable ownerID from project (preferred) or normalized directory so close +
+    // same-project reopen reuses the durable input-store body. Runtime isolation
+    // remains on DraftKey.transportIdentity.
+    const draftID = deriveNewSessionDraftID({
+      projectId: selectedProject?.id ?? null,
+      directory,
+    })
+    const draftKey = newSessionDraftKey({ transportIdentity: getRuntimeTransportIdentity() }, draftID)
+    const existingDurableDraft = useInputStore.getState().getDraft(draftKey)
+
     const nextDraft: NewSessionDraftState = {
       open: true,
-      draftID: existingDraft.open && !existingDraft.draftSubmitting && !existingDraft.draftEstablishing
-        ? existingDraft.draftID ?? createUuid()
-        : createUuid(),
+      draftID,
       selectedProjectId: selectedProject?.id ?? null,
       directoryOverride: directory,
       permissionAutoAcceptEnabled: options?.permissionAutoAcceptEnabled === true,
@@ -1468,7 +1626,7 @@ export const useSessionUIStore = create<SessionUIState>()((set, get) => ({
       initialPrompt: options?.initialPrompt,
       syntheticParts: options?.syntheticParts,
       targetFolderId: options?.targetFolderId,
-      submissionToken: existingDraft.open && !existingDraft.draftSubmitting && !existingDraft.draftEstablishing
+      submissionToken: existingDraft.open && existingDraft.draftID === draftID
         ? existingDraft.submissionToken
         : 0,
       draftSubmitting: false,
@@ -1503,13 +1661,12 @@ export const useSessionUIStore = create<SessionUIState>()((set, get) => ({
     }
 
     writeRuntimeSessionMemory(runtimeMemoryKey(), { sessionId: null, directory, draft: nextDraft })
-    useInputStore.getState().setActiveAttachmentDraft(
-      newSessionDraftKey({ transportIdentity: getRuntimeTransportIdentity() }, nextDraft.draftID!),
-    )
-    // Clear composer attachments when opening a new session draft.
-    // Attachments from the previous session (e.g. restored by revert) must
-    // not bleed into the new session's input.
-    useInputStore.getState().clearAttachedFiles()
+    useInputStore.getState().setActiveAttachmentDraft(draftKey)
+    // Reopening a durable project/directory draft must keep body + attachments.
+    // Only clear attachments when this is a fresh key (e.g. different project).
+    if (!existingDurableDraft) {
+      useInputStore.getState().clearAttachedFiles()
+    }
 
     if (options?.initialPrompt) {
       useInputStore.getState().setPendingInputText(options.initialPrompt)
@@ -1523,14 +1680,14 @@ export const useSessionUIStore = create<SessionUIState>()((set, get) => ({
     // (a fresh draft must start from defaults, not inherit the previous session's selection).
     const configDirectory = normalizePath(selectedProject?.path ?? null) ?? directory
     const normalizedConfigDirectory = selectedProject ? normalizePath(configDirectory) : null
-    const draftID = nextDraft.draftID
+    const openedDraftID = nextDraft.draftID
     const transportIdentity = getRuntimeTransportIdentity()
     void activateConfigForDirectory(configDirectory, { refreshProviders: true, source: 'newSessionDraft' }).then(() => {
       const currentDraft = get().newSessionDraft
       const activeConfigDirectory = normalizePath(useConfigStore.getState().activeDirectoryKey)
       if (
         !currentDraft.open
-        || currentDraft.draftID !== draftID
+        || currentDraft.draftID !== openedDraftID
         || getRuntimeTransportIdentity() !== transportIdentity
         || !normalizedConfigDirectory
         || activeConfigDirectory !== normalizedConfigDirectory
@@ -1891,6 +2048,7 @@ export const useSessionUIStore = create<SessionUIState>()((set, get) => ({
           attachments,
           additionalParts,
           messageID: options?.messageID,
+          onSessionReady: applyArmedGoal,
         })
         return
       }

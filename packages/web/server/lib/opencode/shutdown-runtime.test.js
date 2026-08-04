@@ -2,7 +2,7 @@ import { afterEach, describe, expect, it, vi } from 'vitest';
 
 import { createGracefulShutdownRuntime } from './shutdown-runtime.js';
 
-const createRuntime = (server, shutdownTimeoutMs = 1000) => createGracefulShutdownRuntime({
+const createRuntime = (server, shutdownTimeoutMs = 1000, overrides = {}) => createGracefulShutdownRuntime({
   process: { exit: vi.fn() },
   shutdownTimeoutMs,
   getExitOnShutdown: () => false,
@@ -30,6 +30,7 @@ const createRuntime = (server, shutdownTimeoutMs = 1000) => createGracefulShutdo
   getActiveTunnelController: () => null,
   setActiveTunnelController: vi.fn(),
   tunnelAuthController: { clearActiveTunnel: vi.fn() },
+  ...overrides,
 });
 
 describe('graceful shutdown runtime', () => {
@@ -77,5 +78,24 @@ describe('graceful shutdown runtime', () => {
     expect(server.closeAllConnections).toHaveBeenCalledOnce();
     expect(server.close.mock.invocationCallOrder[0]).toBeLessThan(server.closeAllConnections.mock.invocationCallOrder[0]);
     expect(vi.getTimerCount()).toBe(0);
+  });
+
+  it('stops scheduled tasks runtime without closing the process-lifetime run history store', async () => {
+    const scheduledTasksRuntime = { stop: vi.fn() };
+    const runHistoryStore = { close: vi.fn() };
+    const server = {
+      close: vi.fn((callback) => {
+        callback();
+      }),
+    };
+
+    const runtime = createRuntime(server, 1000, {
+      scheduledTasksRuntime,
+      runHistoryStore,
+    });
+    await runtime.gracefulShutdown({ exitProcess: false });
+
+    expect(scheduledTasksRuntime.stop).toHaveBeenCalledOnce();
+    expect(runHistoryStore.close).not.toHaveBeenCalled();
   });
 });

@@ -10,11 +10,23 @@ describe('feature routes runtime composition', () => {
     expect(source).toMatch(/registerScheduledTaskToolRoute\(app, \{[\s\S]*express,[\s\S]*validateDirectoryPath,[\s\S]*scheduledTasksRuntime,/);
   });
 
+  it('injects the scheduled-task run history store into scheduled task routes', async () => {
+    const source = await fs.readFile(new URL('./feature-routes-runtime.js', import.meta.url), 'utf8');
+    expect(source).toMatch(/const \{[\s\S]*runHistoryStore,[\s\S]*\} = routeDependencies;/);
+    expect(source).toMatch(/registerScheduledTaskRoutes\(app, \{[\s\S]*runHistoryStore,/);
+  });
+
   it('registers message queue routes with the injected service before proxy composition', async () => {
     const source = await fs.readFile(new URL('./feature-routes-runtime.js', import.meta.url), 'utf8');
     expect(source).toContain("import { registerMessageQueueRoutes } from '../message-queue/routes.js';");
     expect(source).toMatch(/const \{[\s\S]*messageQueueService,[\s\S]*\} = routeDependencies;/);
     expect(source).toContain('registerMessageQueueRoutes(app, { messageQueueService, messageQueueRuntime });');
+  });
+
+  it('registers session turn-page routes before proxy composition with OpenCode URL/auth deps', async () => {
+    const source = await fs.readFile(new URL('./feature-routes-runtime.js', import.meta.url), 'utf8');
+    expect(source).toContain("import { registerSessionTurnPageRoutes } from '../session-turn-pages/routes.js';");
+    expect(source).toMatch(/registerSessionTurnPageRoutes\(app, \{[\s\S]*buildOpenCodeUrl,[\s\S]*getOpenCodeAuthHeaders,/);
   });
 
   it('removes broken SSE clients while continuing worktree topology broadcasts', () => {

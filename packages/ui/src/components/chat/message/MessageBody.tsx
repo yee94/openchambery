@@ -1,4 +1,5 @@
 import React from 'react';
+import { useEvent } from '@reactuses/core';
 import type { Part } from '@opencode-ai/sdk/v2';
 
 import UserTextPart from './parts/UserTextPart';
@@ -39,7 +40,7 @@ import { computeAssistantTps, formatAssistantTps } from './assistantTps';
 import { ToolRevealOnMount } from './parts/ToolRevealOnMount';
 import { StaticToolRow } from './parts/ProgressiveGroup';
 import { getToolRowBlockClass, TOOL_ROW_CHIP_GEOMETRY_CLASS } from './parts/toolRowChrome';
-import { isExpandableTool, isStandaloneTool } from './parts/toolRenderUtils';
+import { isExpandableTool } from './parts/toolRenderUtils';
 import TurnActivity from '../components/TurnActivity';
 import { useEffectiveDirectory } from '@/hooks/useEffectiveDirectory';
 import { useI18n } from '@/lib/i18n';
@@ -54,6 +55,7 @@ import {
 import { isEmbeddedSessionChat } from '@/components/layout/contextPanelEmbeddedChat';
 import { getSessionSurfaceActionAvailability, navigateNestedSession, useSessionSurface } from '../SessionSurfaceContext';
 import { pushPhoneNestedSession } from '@/mobile/useMobileNavigationStore';
+import { useMobileAppActions } from '@/apps/mobileAppContext';
 
 
 const CONTAIN_LAYOUT_STYLE = { contain: 'layout' as const };
@@ -86,16 +88,13 @@ const getDisplayFileName = (file: string): string => {
     return segments.at(-1) ?? file;
 };
 
-const TurnChangedFileChipContent = React.memo(({ file, interactive = false }: { file: TurnChangedFile; interactive?: boolean }) => (
-    <span
-        className={cn(
-            'inline-flex max-w-full items-center gap-1.5 rounded-lg border border-border/30 bg-muted/30 px-2 py-1 text-xs leading-[1.35] text-muted-foreground',
-            interactive && 'transition-colors hover:border-border/60 hover:bg-interactive-hover'
-        )}
-    >
+const TURN_CHANGES_ROW_CLASS = 'h-7 w-full min-w-0 justify-start gap-1.5 rounded-[var(--radius-md)] bg-transparent px-1 hover:!bg-interactive-hover focus-visible:!bg-interactive-hover active:!bg-interactive-active supports-[corner-shape:squircle]:rounded-[var(--radius-md)]';
+
+const TurnChangedFileRowContent = React.memo(({ file }: { file: TurnChangedFile }) => (
+    <span className="flex min-w-0 flex-1 items-center gap-1.5 text-xs leading-none text-muted-foreground">
         <FileTypeIcon filePath={file.file} className="h-3.5 w-3.5 flex-shrink-0" />
-        <span className="max-w-52 truncate text-foreground/80" title={file.file}>{getDisplayFileName(file.file)}</span>
-        <span className="flex-shrink-0 inline-flex items-center gap-0 typography-meta" style={{ fontSize: '0.8rem', lineHeight: '1' }}>
+        <span className="min-w-0 flex-1 truncate text-left text-foreground/80" title={file.file}>{getDisplayFileName(file.file)}</span>
+        <span className="typography-meta inline-flex flex-shrink-0 items-center gap-0 leading-none">
             <span style={{ color: 'var(--status-success)' }}>+{file.additions}</span>
             <span className="text-muted-foreground/70">/</span>
             <span style={{ color: 'var(--status-error)' }}>-{file.deletions}</span>
@@ -103,69 +102,138 @@ const TurnChangedFileChipContent = React.memo(({ file, interactive = false }: { 
     </span>
 ));
 
-const TurnChangedFilePillButton = React.memo(({
+const TurnChangedFilePreviewButton = React.memo(({
     file,
+    canOpen,
     onOpen,
 }: {
     file: TurnChangedFile;
+    canOpen: boolean;
     onOpen: (file: string) => void;
 }) => {
     const { t } = useI18n();
+    const handleOpen = useEvent(() => {
+        onOpen(file.file);
+    });
+
     return (
-        <button
+        <Button
             type="button"
-            className="inline-flex h-8 max-w-full cursor-pointer items-center rounded-lg outline-none focus-visible:ring-2 focus-visible:ring-[var(--interactive-focus-ring)]"
+            variant="ghost"
+            size="xs"
+            disabled={!canOpen}
+            data-turn-change-file="true"
+            className={TURN_CHANGES_ROW_CLASS}
             aria-label={t('chat.changedFiles.actions.openFileTitle', { path: file.file })}
             title={file.file}
-            onClick={(event) => {
-                event.preventDefault();
-                event.stopPropagation();
-                onOpen(file.file);
-            }}
+            onClick={handleOpen}
         >
-            <TurnChangedFileChipContent file={file} interactive />
-        </button>
+            <TurnChangedFileRowContent file={file} />
+        </Button>
     );
 });
 
-const StaticTurnChangedFilePills = React.memo(({ files }: { files: TurnChangedFile[] }) => (
-    <>
-        {files.map((file) => (
-            <span key={file.file} className="inline-flex h-8 max-w-full items-center" title={file.file}>
-                <TurnChangedFileChipContent file={file} />
-            </span>
-        ))}
-    </>
-));
-
-const InteractiveTurnChangedFilePills = React.memo(({ files }: { files: TurnChangedFile[] }) => {
+const TurnChangesPreview = React.memo(({
+    files,
+    turnId,
+    isLatestTurn,
+    isMobile,
+}: {
+    files: TurnChangedFile[];
+    turnId: string;
+    isLatestTurn: boolean;
+    isMobile: boolean;
+}) => {
+    const { t } = useI18n();
     const effectiveDirectory = useEffectiveDirectory();
-    const isMobile = useUIStore((state) => state.isMobile);
     const navigateToDiff = useUIStore((state) => state.navigateToDiff);
     const openContextDiff = useUIStore((state) => state.openContextDiff);
+    const mobileActions = useMobileAppActions();
+    const visibleFiles = files.slice(0, 5);
+    const hiddenCount = Math.max(0, files.length - visibleFiles.length);
+    const canOpen = Boolean(mobileActions || (!isMobile && effectiveDirectory) || (isMobile && isLatestTurn));
+    const fileCountLabel = files.length === 1
+        ? t('chat.pendingChanges.fileCountSingle', { count: files.length })
+        : t('chat.pendingChanges.fileCountPlural', { count: files.length });
+    const hiddenCountLabel = hiddenCount === 1
+        ? t('chat.pendingChanges.fileCountSingle', { count: hiddenCount })
+        : t('chat.pendingChanges.fileCountPlural', { count: hiddenCount });
 
-    const openLastTurnDiff = React.useCallback((file: string) => {
-        if (!isMobile && effectiveDirectory) {
-            openContextDiff(effectiveDirectory, file, false, 'turn');
+    const openTurnDiff = useEvent((file: string) => {
+        if (mobileActions) {
+            mobileActions.openTurnDiff(turnId);
             return;
         }
 
-        navigateToDiff(file, false, 'turn');
-    }, [effectiveDirectory, isMobile, navigateToDiff, openContextDiff]);
+        if (!isMobile && effectiveDirectory) {
+            openContextDiff(effectiveDirectory, file, false, 'turn', undefined, turnId);
+            return;
+        }
+
+        if (isMobile && isLatestTurn) {
+            navigateToDiff(file, false, 'turn');
+        }
+    });
+
+    const openCompleteTurnDiff = useEvent(() => {
+        const firstFile = files[0]?.file;
+        if (firstFile) {
+            openTurnDiff(firstFile);
+        }
+    });
 
     return (
-        <>
-            {files.map((file) => (
-                <TurnChangedFilePillButton key={file.file} file={file} onOpen={openLastTurnDiff} />
-            ))}
-        </>
+        <section
+            className="mt-4 flex min-w-0 flex-col gap-0.5 rounded-[var(--radius-lg)] border border-border/70 bg-muted/20 p-1.5"
+            data-turn-changes-preview="true"
+            data-message-action-group="true"
+            aria-labelledby={`turn-changes-${turnId}`}
+        >
+            <Button
+                type="button"
+                variant="ghost"
+                size="xs"
+                disabled={!canOpen}
+                onClick={openCompleteTurnDiff}
+                className={cn(TURN_CHANGES_ROW_CLASS, 'max-w-full text-muted-foreground hover:text-foreground')}
+                aria-label={t('diffView.actions.reviewAria')}
+                title={t('diffView.actions.reviewAria')}
+            >
+                <Icon name="file-edit" className="size-3.5" />
+                <span id={`turn-changes-${turnId}`} className="typography-meta font-semibold text-foreground/85">
+                    {t('chat.changedFiles.title')}
+                </span>
+                <span className="typography-meta text-muted-foreground">{fileCountLabel}</span>
+                <Icon name="arrow-right-s" className="size-3.5 opacity-60" />
+            </Button>
+            <div className="flex min-w-0 flex-col gap-0.5">
+                {visibleFiles.map((file) => (
+                    <TurnChangedFilePreviewButton
+                        key={file.file}
+                        file={file}
+                        canOpen={canOpen}
+                        onOpen={openTurnDiff}
+                    />
+                ))}
+                {hiddenCount > 0 ? (
+                    <Button
+                        type="button"
+                        variant="ghost"
+                        size="xs"
+                        disabled={!canOpen}
+                        className={cn(TURN_CHANGES_ROW_CLASS, 'text-muted-foreground hover:text-foreground')}
+                        onClick={openCompleteTurnDiff}
+                        aria-label={t('diffView.actions.reviewAria')}
+                        title={t('diffView.actions.reviewAria')}
+                    >
+                        <span aria-hidden="true" className="size-3.5 flex-shrink-0" />
+                        <span className="typography-meta font-medium">+{hiddenCountLabel}</span>
+                        <Icon name="arrow-right-s" className="size-3.5" />
+                    </Button>
+                ) : null}
+            </div>
+        </section>
     );
-});
-
-const TurnChangedFilePills = React.memo(({ files, isInteractive }: { files?: TurnChangedFile[]; isInteractive: boolean }) => {
-    if (!files || files.length === 0) return null;
-
-    return isInteractive ? <InteractiveTurnChangedFilePills files={files} /> : <StaticTurnChangedFilePills files={files} />;
 });
 
 type SubtaskPartLike = Part & {
@@ -1425,7 +1493,7 @@ const AssistantMessageBody = React.memo(({
     const showAssistantTps = useUIStore((state) => state.showAssistantTps);
     const timeFormatPreference = useUIStore((state) => state.timeFormatPreference);
     const isSortedRenderMode = chatRenderMode === 'sorted';
-    const collapsedPreviewCount = 7;
+    const collapsedPreviewCount = 0;
     const isLastAssistantInTurn = turnGroupingContext?.isLastAssistantInTurn ?? false;
     const hasStopFinish = messageFinish === 'stop';
     // User interrupt often sets time.completed + error without finish === 'stop'.
@@ -1674,6 +1742,11 @@ const AssistantMessageBody = React.memo(({
     const shouldShowTurnFooter = isLastAssistantInTurn
         && isTurnSettled
         && (hasTextContent || Boolean(errorMessage) || isMessageCompleted);
+    const hasAuthoritativeChangedFiles = Array.isArray(turnGroupingContext?.changedFiles);
+    const shouldShowChangesPreview = !isMiniChatSurface
+        && isLastAssistantInTurn
+        && hasStopFinish
+        && Boolean(turnGroupingContext?.changedFiles?.length);
     const shouldRenderActionsInActivity = isSortedRenderMode;
     const shouldShowStandaloneMessageActions = showSplitAssistantMessageActions && shouldShowMessageActions && !shouldShowTurnFooter && !shouldRenderActionsInActivity;
 
@@ -1747,7 +1820,9 @@ const AssistantMessageBody = React.memo(({
                 const visibleSegmentParts = showReasoningTraces
                     ? segment.parts
                     : segment.parts.filter((activity) => activity.kind !== 'reasoning');
-                if (visibleSegmentParts.length === 0) {
+                const isCompactionStatusOnly = turnGroupingContext.activityPresentationKind === 'compaction'
+                    && visibleSegmentParts.length === 0;
+                if (visibleSegmentParts.length === 0 && !isCompactionStatusOnly) {
                     return;
                 }
                 rendered.push(
@@ -1756,6 +1831,10 @@ const AssistantMessageBody = React.memo(({
                             parts={visibleSegmentParts}
                             isExpanded={turnGroupingContext.isGroupExpanded === true}
                             collapsedPreviewCount={collapsedPreviewCount}
+                            completionDisposition={turnGroupingContext.completionDisposition}
+                            activityPresentationKind={turnGroupingContext.activityPresentationKind}
+                            durationMs={turnGroupingContext.durationMs}
+                            startedAt={turnGroupingContext.userMessageCreatedAt}
                             onToggle={toggleActivityGroup}
                             isMobile={isMobile}
                             expandedTools={expandedTools}
@@ -1764,6 +1843,7 @@ const AssistantMessageBody = React.memo(({
                             onContentChange={onContentChange}
                             streamPhase={effectiveStreamPhase}
                             showHeader={true}
+                            statusOnly={isCompactionStatusOnly}
                             animateRows={animateActivityRows}
                             animatedToolIds={animatedToolIdsLookup}
                             diffStats={turnGroupingContext.diffStats}
@@ -1869,7 +1949,7 @@ const AssistantMessageBody = React.memo(({
                 }
 
                 const activity = activityByPart.get(part);
-                if (activity?.kind === 'tool' && !isStandaloneTool(toolName)) {
+                if (activity?.kind === 'tool') {
                     i += 1;
                     continue;
                 }
@@ -1971,11 +2051,10 @@ const AssistantMessageBody = React.memo(({
 
     const turnDurationText = React.useMemo(() => {
         if (!isLastAssistantInTurn || !isTurnSettled) return undefined;
-        const userCreatedAt = turnGroupingContext?.userMessageCreatedAt;
-        if (typeof userCreatedAt !== 'number' || typeof messageCompletedAt !== 'number') return undefined;
-        if (messageCompletedAt <= userCreatedAt) return undefined;
-        return formatTurnDuration(messageCompletedAt - userCreatedAt);
-    }, [isLastAssistantInTurn, isTurnSettled, turnGroupingContext?.userMessageCreatedAt, messageCompletedAt]);
+        const durationMs = turnGroupingContext?.durationMs;
+        if (typeof durationMs !== 'number' || durationMs <= 0) return undefined;
+        return formatTurnDuration(durationMs);
+    }, [isLastAssistantInTurn, isTurnSettled, turnGroupingContext?.durationMs]);
 
     const footerTimestamp = React.useMemo(() => {
         void locale;
@@ -2155,6 +2234,14 @@ const AssistantMessageBody = React.memo(({
                         </FadeInOnReveal>
                     )}
                 </div>
+                {shouldShowChangesPreview && turnGroupingContext?.changedFiles ? (
+                    <TurnChangesPreview
+                        files={turnGroupingContext.changedFiles}
+                        turnId={turnGroupingContext.turnId}
+                        isLatestTurn={turnGroupingContext.isLatestTurn}
+                        isMobile={isMobile}
+                    />
+                ) : null}
                 <MessageFilesDisplay files={parts} onShowPopup={onShowPopup} />
                 {shouldRenderStandaloneActionsAfterContent && (
                     <div className={cn(isMobile ? INLINE_MESSAGE_ACTIONS_MOBILE_CLASS_NAME : INLINE_MESSAGE_ACTIONS_CLASS_NAME)} data-message-actions="true">
@@ -2216,14 +2303,8 @@ const AssistantMessageBody = React.memo(({
                                 ) : null}
                             </div>
                         ) : null}
-                        {!isMiniChatSurface && isLastAssistantInTurn && hasStopFinish ? (
+                        {!isMiniChatSurface && isLastAssistantInTurn && hasStopFinish && !hasAuthoritativeChangedFiles ? (
                             <TurnChangedFilesDropdown activityParts={turnGroupingContext?.activityParts} />
-                        ) : null}
-                        {!isMiniChatSurface && isLastAssistantInTurn && hasStopFinish ? (
-                            <TurnChangedFilePills
-                                files={turnGroupingContext?.changedFiles}
-                                isInteractive={turnGroupingContext?.isLatestTurn === true}
-                            />
                         ) : null}
                     </div>
                 )}

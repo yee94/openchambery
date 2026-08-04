@@ -3,6 +3,8 @@ import { projectTurnIndexes } from './projectTurnIndexes';
 import { projectTurnChangedFiles, projectTurnDiffStats, projectTurnSummary } from './projectTurnSummary';
 import type {
     ChatMessageEntry,
+    TurnActivityPresentationKind,
+    TurnCompletionDisposition,
     TurnMessageRecord,
     TurnProjectionResult,
     TurnRecord,
@@ -80,6 +82,74 @@ const buildTurnStreamState = (userMessage: ChatMessageEntry, assistantMessages: 
     };
 };
 
+/**
+ * Disposition from the last assistant only.
+ * Matches MessageBody settled contract: user interrupt often sets time.completed + error
+ * without finish === 'stop', so that path is abnormal (not normal).
+ */
+const resolveTurnCompletionDisposition = (
+    assistantMessages: ChatMessageEntry[],
+): TurnCompletionDisposition => {
+    if (assistantMessages.length === 0) {
+        return 'active';
+    }
+
+    const lastAssistant = assistantMessages[assistantMessages.length - 1];
+    if (!lastAssistant) {
+        return 'active';
+    }
+
+    const finish = (lastAssistant.info as { finish?: unknown }).finish;
+    if (finish === 'stop') {
+        return 'normal';
+    }
+
+    const completedAt = getMessageCompletedAt(lastAssistant);
+    const error = (lastAssistant.info as { error?: unknown }).error;
+    if (typeof completedAt === 'number' || Boolean(error)) {
+        return 'abnormal';
+    }
+
+    return 'active';
+};
+
+const getPartText = (part: unknown): string => {
+    const record = part as { text?: unknown; content?: unknown };
+    if (typeof record.text === 'string') {
+        return record.text;
+    }
+    if (typeof record.content === 'string') {
+        return record.content;
+    }
+    return '';
+};
+
+/**
+ * Compaction activity semantics from the user message only.
+ * Matches display normalization: raw type=compaction, or normalized text exactly `/compact`.
+ */
+const resolveTurnActivityPresentationKind = (
+    userMessage: ChatMessageEntry,
+): TurnActivityPresentationKind => {
+    const rawParts = userMessage.sourceParts ?? userMessage.parts;
+    for (const part of rawParts) {
+        if ((part as { type?: unknown }).type === 'compaction') {
+            return 'compaction';
+        }
+    }
+
+    for (const part of userMessage.parts) {
+        if ((part as { type?: unknown }).type === 'compaction') {
+            return 'compaction';
+        }
+        if ((part as { type?: unknown }).type === 'text' && getPartText(part).trim() === '/compact') {
+            return 'compaction';
+        }
+    }
+
+    return 'default';
+};
+
 interface ProjectTurnRecordsOptions {
     previousProjection?: TurnProjectionResult | null;
     showTextJustificationActivity: boolean;
@@ -126,11 +196,15 @@ const hydrateTurnRecord = (
         ? projectTurnChangedFiles(turn.userMessage)
         : undefined;
 
+    turn.completionDisposition = resolveTurnCompletionDisposition(turn.assistantMessages);
+    turn.activityPresentationKind = resolveTurnActivityPresentationKind(turn.userMessage);
+
     const activity = projectTurnActivity({
         turnId: turn.turnId,
         assistantMessages: turn.assistantMessages,
         summarySourceMessageId: turn.summary.sourceMessageId,
         summarySourcePartId: turn.summary.sourcePartId,
+        completionDisposition: turn.completionDisposition,
         showTextJustificationActivity: effectiveOptions.showTextJustificationActivity,
     });
     turn.activityParts = activity.activityParts;
@@ -218,6 +292,8 @@ export const projectTurnRecords = (
                 isStreaming: false,
                 isRetrying: false,
             },
+            completionDisposition: 'active',
+            activityPresentationKind: 'default',
         };
         turns.push(turn);
         turnByUserId.set(turn.userMessageId, turn);

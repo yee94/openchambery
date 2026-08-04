@@ -40,6 +40,27 @@ Keep `bridge.ts` as a thin orchestration layer that delegates message handling t
 - `bridge-proxy-runtime.ts`
   - Proxy route handlers (`api:proxy`, `api:session:message`) with injected helper dependencies.
 
+- `session-turn-page-runtime.ts`
+  - Pure turn-window aggregation over official OpenCode `session.messages` pages.
+  - Exports `isUserAuthoredTurnBoundary`, `selectTurnRecords`, and
+    `createSessionTurnPageService({ fetchPage, maxScanPages?, maxScanMessages? })`.
+  - OpenCode pages are chronological (oldest → newest); older pages are prepended
+    with info.id dedupe (no reverse). Missing `info.id` → explicit `upstream` error.
+  - `complete` is true only when upstream is exhausted and
+    `selected.length === accumulated.length` (no overscan trim).
+  - Authored user turn boundary excludes fully synthetic, subtask, compaction, and
+    hosted session dividers; empty user parts still count.
+  - Hard scan caps: 50 pages / 5000 messages; no partial success on stall or cap.
+
+- `bridge-session-turn-page-runtime.ts`
+  - Bridge handler for `api:session-turn-page`.
+  - Reads OpenCode base URL + auth from the manager, requests official
+    `/session/:id/message?limit=&before=&directory=`, reads `x-next-cursor`, and
+    returns unified `{ records, cursor, complete, turnCount }`.
+  - Whole aggregation uses a 45s AbortController timeout (signal forwarded; cleared
+    in `finally`). Never logs message contents, tokens, or secrets.
+  - Delegated from `bridge.ts` before the generic proxy handler.
+
 - `bridge-config-runtime.ts`
   - Config and skills message handlers (`api:config/*`).
   - Includes OpenCode resolution diagnostics parity handler used by shared UI (`/api/config/opencode-resolution`).
@@ -78,6 +99,13 @@ Keep `bridge.ts` as a thin orchestration layer that delegates message handling t
 The VS Code webview returns `501 { code: 'unavailable' }` for the message-queue
 server route family. This explicit response precedes the generic OpenCode proxy,
 so shared UI worktree-order synchronization exits cleanly in this runtime.
+
+Session turn-page (`GET /api/openchamber/sessions/:sessionID/messages`) is an
+OpenChamber-owned webview route (`webview/sessionTurnPageRoute.ts`). It is
+matched ahead of the generic OpenCode proxy, validates `turns` (1..10) and
+`scanLimit` (10..200), dispatches `api:session-turn-page` to the Extension Host,
+and returns the same unified JSON contract as the web host module
+(`packages/web/server/lib/session-turn-pages/`). Non-GET → 405; illegal query → 400.
 
 The exact `GET /api/config/settings/bootstrap` webview route dispatches to
 `api:config/settings:bootstrap` before the generic settings route. The legacy

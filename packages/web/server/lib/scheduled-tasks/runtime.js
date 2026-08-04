@@ -1,3 +1,4 @@
+import crypto from 'node:crypto';
 import { createOpencodeClient } from '@opencode-ai/sdk/v2';
 import { DateTime } from 'luxon';
 import parser from 'cron-parser';
@@ -8,10 +9,12 @@ const DEFAULT_PROJECT_CONCURRENCY = 2;
 const DEFAULT_MAX_RUN_MS = 30 * 60 * 1000;
 const JITTER_MAX_MS = 2_000;
 const TASK_TITLE_MAX_LENGTH = 120;
+const SCHEDULED_TITLE_PREFIX = '[Scheduled] ';
 const TASK_DUE_SLACK_MS = 5_000;
 const MAX_TIMER_DELAY_MS = 2_147_483_647;
 const PROJECT_SYNC_RETRY_DELAY_MS = 1_000;
 const MAX_PROJECT_SYNC_RETRIES = 3;
+const ARCHIVE_404_RETRY_DELAY_MS = 250;
 
 const buildTaskKey = (projectID, taskID) => `${projectID}:${taskID}`;
 
@@ -212,12 +215,51 @@ export const formatScheduledSessionTitle = (task, nowMs = Date.now()) => {
     ? task.name.trim()
     : 'Schedule';
   const suffix = ` ${stamp}`;
-  const maxTaskNameLength = Math.max(1, TASK_TITLE_MAX_LENGTH - suffix.length);
+  const maxTaskNameLength = Math.max(
+    1,
+    TASK_TITLE_MAX_LENGTH - SCHEDULED_TITLE_PREFIX.length - suffix.length,
+  );
   const trimmedName = taskName.length > maxTaskNameLength
     ? taskName.slice(0, maxTaskNameLength)
     : taskName;
-  return `${trimmedName}${suffix}`;
+  return `${SCHEDULED_TITLE_PREFIX}${trimmedName}${suffix}`;
 };
+
+const buildScheduledTaskMetadata = ({ projectID, taskID, runID, name }) => ({
+  openchamber: {
+    scheduledTask: {
+      projectID,
+      taskID,
+      runID,
+      name,
+    },
+  },
+});
+
+const isMissingSessionError = (result) => {
+  const status = result?.error?.status ?? result?.error?.statusCode ?? result?.status;
+  return status === 404 || result?.error?.code === 'not_found';
+};
+
+const sleep = (ms, signal) => new Promise((resolve, reject) => {
+  if (signal?.aborted) {
+    reject(signal.reason ?? new DOMException('Aborted', 'AbortError'));
+    return;
+  }
+  const timer = setTimeout(() => {
+    if (signal) {
+      signal.removeEventListener('abort', onAbort);
+    }
+    resolve();
+  }, ms);
+  const onAbort = () => {
+    clearTimeout(timer);
+    reject(signal.reason ?? new DOMException('Aborted', 'AbortError'));
+  };
+  if (signal) {
+    signal.addEventListener('abort', onAbort, { once: true });
+  }
+});
 
 export const createScheduledTasksRuntime = (deps) => {
   const {
@@ -228,6 +270,7 @@ export const createScheduledTasksRuntime = (deps) => {
     getSmallModelService,
     waitForOpenCodeReady,
     emitTaskRunEvent,
+    runHistoryStore = null,
     logger = console,
     maxGlobalConcurrency = DEFAULT_GLOBAL_CONCURRENCY,
     maxProjectConcurrency = DEFAULT_PROJECT_CONCURRENCY,
@@ -490,7 +533,16 @@ export const createScheduledTasksRuntime = (deps) => {
   // Scheduled goal runs: stamp the goal onto the fresh session's metadata
   // before the prompt goes out; the session-goal runtime picks the loop up
   // from session events like any other goal.
-  const createTaskGoal = async ({ baseUrl, authHeaders, sessionID, projectPath, task }) => {
+  const createTaskGoal = async ({
+    baseUrl,
+    authHeaders,
+    sessionID,
+    projectPath,
+    task,
+    scheduledTaskMarker,
+    signal,
+  }) => {
+    signal?.throwIfAborted?.();
     const now = Date.now();
     // File-backed objective keyed by session id: metadata stays light, the
     // full expanded prompt lives under the OpenChamber data dir. If the file
@@ -502,9 +554,11 @@ export const createScheduledTasksRuntime = (deps) => {
     if (objectiveText.length > 5000) {
       let distilled = null;
       try {
+        signal?.throwIfAborted?.();
         const service = typeof getSmallModelService === 'function'
           ? await getSmallModelService()
           : null;
+        signal?.throwIfAborted?.();
         if (!service?.generateSmallModelText) {
           throw new Error('Small model service is not configured');
         }
@@ -523,8 +577,12 @@ export const createScheduledTasksRuntime = (deps) => {
           preferredProviderID: task.execution.providerID,
           preferredModelID: task.execution.modelID,
         });
+        signal?.throwIfAborted?.();
         distilled = typeof generated?.text === 'string' ? generated.text.trim() : null;
       } catch (error) {
+        if (signal?.aborted) {
+          throw error;
+        }
         console.warn('[scheduled-tasks] goal objective distillation failed:', error?.message || error);
       }
       if (distilled) {
@@ -535,14 +593,20 @@ export const createScheduledTasksRuntime = (deps) => {
         objectiveText = `${objectiveText.slice(0, half)}${marker}${objectiveText.slice(-half)}`;
       }
     }
+    signal?.throwIfAborted?.();
     let objectiveFile = false;
     try {
       const { writeObjective } = await import('../session-goal/objectives.js');
       await writeObjective(sessionID, objectiveText);
+      signal?.throwIfAborted?.();
       objectiveFile = true;
     } catch (error) {
+      if (signal?.aborted) {
+        throw error;
+      }
       console.warn('[scheduled-tasks] goal objective file write failed, falling back to inline:', error?.message || error);
     }
+    signal?.throwIfAborted?.();
     const goal = {
       id: `${now.toString(36)}${Math.random().toString(36).slice(2, 8)}`,
       objective: objectiveFile ? '' : objectiveText.slice(0, 5000),
@@ -560,6 +624,8 @@ export const createScheduledTasksRuntime = (deps) => {
     };
     const url = new URL(`${baseUrl}/session/${encodeURIComponent(sessionID)}`);
     url.searchParams.set('directory', projectPath);
+    // Preserve the scheduledTask marker when goal metadata is patched; a full
+    // openchamber replace would otherwise drop ownership for history/UI.
     const response = await fetch(url.toString(), {
       method: 'PATCH',
       headers: {
@@ -567,14 +633,43 @@ export const createScheduledTasksRuntime = (deps) => {
         'content-type': 'application/json',
         accept: 'application/json',
       },
-      body: JSON.stringify({ metadata: { openchamber: { goal } } }),
+      body: JSON.stringify({
+        metadata: {
+          openchamber: {
+            ...(scheduledTaskMarker ? { scheduledTask: scheduledTaskMarker } : {}),
+            goal,
+          },
+        },
+      }),
+      ...(signal ? { signal } : {}),
     });
     if (!response.ok) {
       throw new Error(`goal metadata patch failed (${response.status})`);
     }
   };
 
-  const runPromptAsync = async ({ baseUrl, authHeaders, sessionID, projectPath, task }) => {
+  const archiveSessionBeforePrompt = async ({ client, sessionID, projectPath, signal }) => {
+    const archivePayload = {
+      sessionID,
+      directory: projectPath,
+      time: { archived: Date.now() },
+    };
+    const requestOptions = signal ? { signal } : undefined;
+    let result = await client.session.update(archivePayload, requestOptions);
+    if (isMissingSessionError(result)) {
+      await sleep(ARCHIVE_404_RETRY_DELAY_MS, signal);
+      signal?.throwIfAborted?.();
+      result = await client.session.update(archivePayload, requestOptions);
+    }
+    if (result?.error || (result?.data == null && result?.response?.ok === false)) {
+      const status = result?.error?.status ?? result?.error?.statusCode ?? result?.status;
+      const message = result?.error?.message || result?.error?.data?.message || 'session archive failed';
+      throw new Error(`session archive failed${status ? ` (${status})` : ''}: ${message}`);
+    }
+  };
+
+  const runPromptAsync = async ({ baseUrl, authHeaders, sessionID, projectPath, task, signal }) => {
+    signal?.throwIfAborted?.();
     const promptUrl = new URL(`${baseUrl}/session/${encodeURIComponent(sessionID)}/prompt_async`);
     promptUrl.searchParams.set('directory', projectPath);
     const response = await fetch(promptUrl.toString(), {
@@ -585,6 +680,7 @@ export const createScheduledTasksRuntime = (deps) => {
         accept: 'application/json',
       },
       body: JSON.stringify(buildPromptAsyncPayload(task, projectPath)),
+      ...(signal ? { signal } : {}),
     });
 
     if (!response.ok) {
@@ -593,20 +689,26 @@ export const createScheduledTasksRuntime = (deps) => {
     }
   };
 
-  const runScheduledCommandIfApplicable = async ({ client, projectPath, sessionID, task }) => {
+  const runScheduledCommandIfApplicable = async ({ client, projectPath, sessionID, task, signal }) => {
+    signal?.throwIfAborted?.();
     const parsed = parseScheduledCommandPrompt(task?.execution?.prompt);
     if (!parsed) {
       return false;
     }
 
+    const requestOptions = signal ? { signal } : undefined;
     let commands = [];
     try {
-      const response = await client.command.list({ directory: projectPath });
+      const response = await client.command.list({ directory: projectPath }, requestOptions);
       commands = Array.isArray(response?.data) ? response.data : [];
-    } catch {
+    } catch (error) {
+      if (signal?.aborted) {
+        throw error;
+      }
       return false;
     }
 
+    signal?.throwIfAborted?.();
     const hasMatchingCommand = commands.some((command) => command?.name === parsed.command);
     if (!hasMatchingCommand) {
       return false;
@@ -620,12 +722,26 @@ export const createScheduledTasksRuntime = (deps) => {
       ...(task.execution.agent ? { agent: task.execution.agent } : {}),
       model: `${task.execution.providerID}/${task.execution.modelID}`,
       ...(task.execution.variant ? { variant: task.execution.variant } : {}),
-    });
+    }, requestOptions);
 
     return true;
   };
 
-  const runTaskWithWatchdog = async (projectID, task, reason) => {
+  const abortCreatedSessionBestEffort = async ({ client, sessionID, projectPath }) => {
+    if (!sessionID || !client?.session?.abort) {
+      return;
+    }
+    try {
+      await client.session.abort({
+        sessionID,
+        directory: projectPath,
+      });
+    } catch {
+      // Never let upstream abort failure replace the watchdog timeout error.
+    }
+  };
+
+  const runTaskWithWatchdog = async (projectID, task, reason, runID, signal) => {
     const startedAt = Date.now();
     const title = formatScheduledSessionTitle(task, startedAt);
     const projectPath = projectPathByID.get(projectID);
@@ -633,8 +749,11 @@ export const createScheduledTasksRuntime = (deps) => {
       throw new Error('project path is unavailable');
     }
 
+    signal?.throwIfAborted?.();
+
     if (typeof waitForOpenCodeReady === 'function') {
       await waitForOpenCodeReady(10_000, 250);
+      signal?.throwIfAborted?.();
     }
 
     const baseUrl = buildOpenCodeUrl('/', '').replace(/\/$/, '');
@@ -643,55 +762,158 @@ export const createScheduledTasksRuntime = (deps) => {
       baseUrl,
       headers: authHeaders,
     });
+    const requestOptions = signal ? { signal } : undefined;
 
-    const sessionResponse = await client.session.create({
-      directory: projectPath,
-      title,
-    });
-    const sessionID = sessionResponse?.data?.id;
-    if (!sessionID) {
-      throw new Error('failed to create session');
-    }
+    const taskName = typeof task?.name === 'string' && task.name.trim().length > 0
+      ? task.name.trim()
+      : 'Schedule';
+    const scheduledTaskMarker = {
+      projectID,
+      taskID: task.id,
+      runID,
+      name: taskName,
+    };
+
+    let sessionID;
+    // Watchdog abort must fire session.abort even while awaiting non-cancellable
+    // work (small-model distill / writeObjective). Register once after create;
+    // never on ordinary non-timeout failures or success.
+    let sessionAbortStarted = false;
+    let onWatchdogAbort = null;
+    const triggerSessionAbortOnce = () => {
+      if (sessionAbortStarted || !sessionID) {
+        return;
+      }
+      sessionAbortStarted = true;
+      void abortCreatedSessionBestEffort({ client, sessionID, projectPath });
+    };
+    const clearWatchdogAbortListener = () => {
+      if (onWatchdogAbort && signal) {
+        signal.removeEventListener('abort', onWatchdogAbort);
+        onWatchdogAbort = null;
+      }
+    };
 
     try {
-      emitTaskRunEvent?.({
-        projectID,
-        taskID: task.id,
-        ranAt: startedAt,
-        status: 'running',
-        sessionID,
-      });
-    } catch {
-    }
+      const sessionResponse = await client.session.create({
+        directory: projectPath,
+        title,
+        metadata: buildScheduledTaskMetadata(scheduledTaskMarker),
+      }, requestOptions);
+      sessionID = sessionResponse?.data?.id;
+      if (!sessionID) {
+        throw new Error('failed to create session');
+      }
 
-    if (task.execution.goalEnabled) {
-      await createTaskGoal({ baseUrl, authHeaders, sessionID, projectPath, task });
-    }
+      if (signal) {
+        if (signal.aborted) {
+          // Timeout raced create: session exists — abort immediately.
+          triggerSessionAbortOnce();
+        } else {
+          onWatchdogAbort = () => {
+            triggerSessionAbortOnce();
+          };
+          signal.addEventListener('abort', onWatchdogAbort, { once: true });
+        }
+      }
 
-    const executedAsCommand = await runScheduledCommandIfApplicable({
-      client,
-      projectPath,
-      sessionID,
-      task,
-    });
-    if (!executedAsCommand) {
-      await runPromptAsync({
-        baseUrl,
-        authHeaders,
-        sessionID,
+      let attachFailed = null;
+      if (runHistoryStore && typeof runHistoryStore.attachSession === 'function') {
+        try {
+          runHistoryStore.attachSession(runID, sessionID);
+        } catch (error) {
+          attachFailed = error;
+        }
+      }
+
+      try {
+        // Archive must succeed before any goal/prompt/command work. A 404 gets
+        // one short bounded retry; any other failure aborts without prompting.
+        await archiveSessionBeforePrompt({ client, sessionID, projectPath, signal });
+      } catch (archiveError) {
+        if (attachFailed) {
+          throw new Error(
+            `attachSession failed (${safeErrorMessage(attachFailed)}); archive also failed: ${safeErrorMessage(archiveError)}`,
+          );
+        }
+        throw archiveError;
+      }
+
+      if (attachFailed) {
+        throw new Error(`attachSession failed: ${safeErrorMessage(attachFailed)}`);
+      }
+
+      signal?.throwIfAborted?.();
+
+      try {
+        emitTaskRunEvent?.({
+          projectID,
+          taskID: task.id,
+          ranAt: startedAt,
+          status: 'running',
+          sessionID,
+        });
+      } catch {
+      }
+
+      if (task.execution.goalEnabled) {
+        await createTaskGoal({
+          baseUrl,
+          authHeaders,
+          sessionID,
+          projectPath,
+          task,
+          scheduledTaskMarker,
+          signal,
+        });
+      }
+
+      signal?.throwIfAborted?.();
+
+      const executedAsCommand = await runScheduledCommandIfApplicable({
+        client,
         projectPath,
+        sessionID,
         task,
+        signal,
       });
-    }
+      if (!executedAsCommand) {
+        await runPromptAsync({
+          baseUrl,
+          authHeaders,
+          sessionID,
+          projectPath,
+          task,
+          signal,
+        });
+      }
 
-    const finishedAt = Date.now();
-    return {
-      sessionID,
-      durationMs: Math.max(0, finishedAt - startedAt),
-      reason,
-      startedAt,
-      finishedAt,
-    };
+      const finishedAt = Date.now();
+      return {
+        sessionID,
+        durationMs: Math.max(0, finishedAt - startedAt),
+        reason,
+        startedAt,
+        finishedAt,
+      };
+    } finally {
+      clearWatchdogAbortListener();
+    }
+  };
+
+  const finalizeRunHistory = (runID, payload) => {
+    if (!runID || !runHistoryStore || typeof runHistoryStore.finishRun !== 'function') {
+      return null;
+    }
+    try {
+      return runHistoryStore.finishRun(runID, payload);
+    } catch (error) {
+      logger.warn?.('[ScheduledTasks] failed to finalize run history', {
+        runID,
+        error: safeErrorMessage(error),
+      });
+      return { error };
+    }
   };
 
   const runTask = async (projectID, taskID, reason) => {
@@ -716,50 +938,126 @@ export const createScheduledTasksRuntime = (deps) => {
     let durationMs = 0;
     let errorMessage;
     let stateResult = { task: null };
+    let runID = null;
 
     try {
-      try {
-        const runningState = await projectConfigRuntime.updateScheduledTaskState(projectID, taskID, {
-          lastRunAt: runStartedAt,
-          lastStatus: 'running',
-          lastError: undefined,
-          updatedAt: runStartedAt,
-        });
-        if (runningState.task) {
-          updateInMemoryTask(projectID, runningState.task);
+      const projectPath = projectPathByID.get(projectID) || null;
+      const taskName = typeof task?.name === 'string' && task.name.trim().length > 0
+        ? task.name.trim()
+        : 'Schedule';
+
+      if (runHistoryStore && typeof runHistoryStore.startRun === 'function') {
+        try {
+          runID = crypto.randomUUID();
+          runHistoryStore.startRun({
+            id: runID,
+            projectId: projectID,
+            taskId: taskID,
+            taskName,
+            trigger: reason === 'manual' ? 'manual' : 'scheduled',
+            directory: projectPath,
+            startedAt: runStartedAt,
+          });
+        } catch (error) {
+          errorMessage = safeErrorMessage(error);
+          runID = null;
+          logger.warn?.('[ScheduledTasks] failed to start run history', {
+            projectID,
+            taskID,
+            error: errorMessage,
+          });
         }
-      } catch (error) {
-        errorMessage = safeErrorMessage(error);
-        logger.warn?.('[ScheduledTasks] failed to persist running state', {
-          projectID,
-          taskID,
-          error: errorMessage,
-        });
+      } else {
+        runID = crypto.randomUUID();
       }
+
       if (!errorMessage) {
         try {
-          const runPromise = runTaskWithWatchdog(projectID, task, reason);
-          let timeoutID;
-          const timeoutPromise = new Promise((_, reject) => {
+          const runningState = await projectConfigRuntime.updateScheduledTaskState(projectID, taskID, {
+            lastRunAt: runStartedAt,
+            lastStatus: 'running',
+            lastError: undefined,
+            updatedAt: runStartedAt,
+          });
+          if (runningState.task) {
+            updateInMemoryTask(projectID, runningState.task);
+          }
+        } catch (error) {
+          errorMessage = safeErrorMessage(error);
+          logger.warn?.('[ScheduledTasks] failed to persist running state', {
+            projectID,
+            taskID,
+            error: errorMessage,
+          });
+        }
+      }
+
+      if (!errorMessage) {
+        // Per-run abort: only the watchdog timeout aborts in-flight SDK/HTTP
+        // work. Manual stop/service stop must not trigger this controller.
+        const runAbort = new AbortController();
+        const timeoutError = new Error('schedule run timed out');
+        let timeoutID;
+        try {
+          const runPromise = runTaskWithWatchdog(
+            projectID,
+            task,
+            reason,
+            runID,
+            runAbort.signal,
+          );
+          // Absorb both settle paths so a late rejection after timeout never
+          // becomes an unhandledRejection (timeout must not await the run).
+          const runSettled = runPromise.then(
+            (result) => ({ ok: true, result }),
+            (error) => ({ ok: false, error }),
+          );
+          const timeoutPromise = new Promise((resolve) => {
             timeoutID = setTimeout(() => {
-              reject(new Error('schedule run timed out'));
+              try {
+                runAbort.abort(timeoutError);
+              } catch {
+              }
+              resolve({ timedOut: true });
             }, maxRunDurationMs);
           });
 
-          const result = await Promise.race([runPromise, timeoutPromise]).finally(() => {
-            if (timeoutID) {
-              clearTimeout(timeoutID);
-            }
-          });
+          const raced = await Promise.race([
+            runSettled.then((settled) => ({ timedOut: false, settled })),
+            timeoutPromise,
+          ]);
+
+          if (raced.timedOut) {
+            // Bound: do not await uncancellable steps (distill / writeObjective).
+            // session.abort is started by the signal listener on create; later
+            // throwIfAborted gates stop goal PATCH / command / prompt.
+            throw timeoutError;
+          }
+
+          if (!raced.settled.ok) {
+            throw raced.settled.error;
+          }
+
+          const result = raced.settled.result;
           sessionID = result.sessionID;
           durationMs = result.durationMs;
           status = 'success';
           logger.info?.(
             '[ScheduledTasks] run completed',
-            { projectID, taskID, status, reason, sessionID, durationMs }
+            { projectID, taskID, status, reason, sessionID, durationMs, runID }
           );
         } catch (error) {
           errorMessage = safeErrorMessage(error);
+          // Prefer the canonical timeout message when the watchdog fired,
+          // even if a racing abort surfaces as AbortError first.
+          if (runAbort.signal.aborted) {
+            const abortReason = runAbort.signal.reason;
+            if (abortReason instanceof Error && abortReason.message === 'schedule run timed out') {
+              errorMessage = abortReason.message;
+            } else if (errorMessage === 'Aborted' || /abort/i.test(errorMessage)) {
+              errorMessage = 'schedule run timed out';
+            }
+          }
           logger.warn?.('[ScheduledTasks] run failed', {
             projectID,
             taskID,
@@ -767,6 +1065,10 @@ export const createScheduledTasksRuntime = (deps) => {
             status,
             error: errorMessage,
           });
+        } finally {
+          if (timeoutID) {
+            clearTimeout(timeoutID);
+          }
         }
       }
 
@@ -819,6 +1121,21 @@ export const createScheduledTasksRuntime = (deps) => {
         });
       }
 
+      // History final status reflects the ultimate run outcome, including
+      // state-persistence failures. A failed finalize leaves the row running
+      // so the next store open can converge it to error.
+      const historyFinalize = finalizeRunHistory(runID, {
+        status,
+        finishedAt,
+        durationMs,
+        ...(sessionID ? { sessionId: sessionID } : {}),
+        ...(status === 'error' ? { error: errorMessage || 'Unknown error' } : {}),
+      });
+      if (historyFinalize?.error) {
+        status = 'error';
+        errorMessage = errorMessage || safeErrorMessage(historyFinalize.error);
+      }
+
       try {
         emitTaskRunEvent?.({
           projectID,
@@ -836,6 +1153,7 @@ export const createScheduledTasksRuntime = (deps) => {
         sessionID,
         task: stateResult.task || null,
         error: errorMessage,
+        runID,
       };
     } finally {
       runningTaskKeys.delete(taskKey);

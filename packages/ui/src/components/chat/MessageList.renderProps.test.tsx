@@ -17,6 +17,7 @@ const turnAssistantBlockSource = readFileSync(
     join(sourceDirectory, 'components', 'TurnAssistantBlock.tsx'),
     'utf-8',
 );
+const turnItemSource = readFileSync(join(sourceDirectory, 'components', 'TurnItem.tsx'), 'utf-8');
 
 type RenderProp = () => number;
 
@@ -92,7 +93,9 @@ describe('MessageList render props', () => {
     test('the assistant block still calls the render prop during its own render', () => {
         // If this ever moves into an effect or a memo the hook choice above
         // stops mattering, and the reasoning recorded here goes stale.
-        expect(turnAssistantBlockSource).toContain('assistantMessages.map((message) => renderMessage(message))');
+        expect(turnAssistantBlockSource).toContain(
+            'assistantMessages.map((message) => renderMessage(message, activityExpanded))',
+        );
     });
 
     test('turn grouping is what decides assistant spacing, so it must never be dropped', () => {
@@ -100,5 +103,37 @@ describe('MessageList render props', () => {
         // degrades the row rather than throwing.
         expect(messageListSource).toContain('const assistantIndex = visibleAssistantIds.get(message.info.id) ?? -1;');
         expect(messageListSource).toContain('const isAssistantMessage = assistantIndex >= 0;');
+    });
+
+    test('passes turn activity expansion as an explicit memo presentation prop', () => {
+        expect(messageListSource).toContain('activityExpanded={isGroupExpandedByDefault}');
+        expect(turnItemSource).toContain('activityExpanded: boolean;');
+        expect(turnItemSource).toContain('data-turn-activity-expanded={activityExpanded}');
+        expect(turnItemSource).toContain('activityExpanded={activityExpanded}');
+        expect(turnAssistantBlockSource).toContain('activityExpanded: boolean;');
+        expect(turnAssistantBlockSource).toContain('data-turn-assistant-activity-expanded={activityExpanded}');
+        expect(turnAssistantBlockSource).toContain('export default React.memo(TurnAssistantBlock)');
+    });
+
+    test('threads activityExpanded into renderMessage so React Compiler cannot cache stale isGroupExpanded', () => {
+        // Root cause: toggle updated wrapper data-* attrs, but Compiler reused
+        // `map(message => renderMessage(message))` because renderMessage identity
+        // was stable and expansion lived only in a closure / sibling prop.
+        // Explicit second arg makes expansion a map-call dependency.
+        expect(turnItemSource).toContain(
+            'renderMessage: (message: ChatMessageEntry, activityExpanded: boolean) => React.ReactNode',
+        );
+        expect(turnAssistantBlockSource).toContain(
+            'renderMessage: (message: ChatMessageEntry, activityExpanded: boolean) => React.ReactNode',
+        );
+        expect(turnItemSource).toContain('renderMessage(turn.userMessage, activityExpanded)');
+        expect(turnAssistantBlockSource).toContain(
+            'assistantMessages.map((message) => renderMessage(message, activityExpanded))',
+        );
+        expect(messageListSource).toContain(
+            'const renderMessage = useRenderPhaseCallback((message: ChatMessageEntry, activityExpanded: boolean) => {',
+        );
+        expect(messageListSource).toContain('isGroupExpanded: activityExpanded,');
+        expect(messageListSource).not.toContain('isGroupExpanded: isGroupExpandedByDefault,');
     });
 });

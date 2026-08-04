@@ -158,10 +158,20 @@ const extractSessionStatus = (payload) => {
   return { sessionId, type, directory };
 };
 
+/** System sessions keep fixed titles; metadata is the only ownership signal. */
+export const isSystemOwnedSession = (sessionOrInfo) => {
+  const openchamber = sessionOrInfo?.metadata?.openchamber;
+  if (!openchamber || typeof openchamber !== 'object') return false;
+  if (typeof openchamber.assistant?.assistantID === 'string' && openchamber.assistant.assistantID) return true;
+  if (typeof openchamber.scheduledTask?.taskID === 'string' && openchamber.scheduledTask.taskID) return true;
+  return false;
+};
+
 const extractTitleRefreshRequest = (payload) => {
   if (!payload || payload.type !== 'session.updated') return null;
   const properties = payload.properties && typeof payload.properties === 'object' ? payload.properties : {};
   const info = properties.info && typeof properties.info === 'object' ? properties.info : {};
+  if (isSystemOwnedSession(info)) return null;
   const sessionId = typeof info.id === 'string' ? info.id.trim() : '';
   const titleRefresh = info.metadata?.openchamber?.titleRefresh;
   const requestedAt = titleRefresh?.requestedAt;
@@ -179,6 +189,7 @@ const extractCreatedSession = (payload) => {
   const info = properties.info && typeof properties.info === 'object' ? properties.info : {};
   const sessionId = typeof info.id === 'string' ? info.id.trim() : '';
   if (!sessionId || (typeof info.parentID === 'string' && info.parentID)) return null;
+  if (isSystemOwnedSession(info)) return null;
   const directory = typeof properties.directory === 'string' && properties.directory
     ? properties.directory
     : (typeof info.directory === 'string' ? info.directory : '');
@@ -509,6 +520,8 @@ export const createSessionTitleRuntime = ({
     if (!session || typeof session !== 'object') return;
     // Sub-agent/task sessions never surface as top-level sidebar rows.
     if (typeof session.parentID === 'string' && session.parentID) return;
+    // Assistant / scheduled-task system sessions keep fixed ownership titles.
+    if (isSystemOwnedSession(session)) return;
 
     const currentTitle = typeof session.title === 'string' ? session.title : '';
     if (looksLikeMultiRunSessionTitle(currentTitle)) return;

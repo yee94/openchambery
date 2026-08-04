@@ -54,6 +54,8 @@ const turnEntry = (assistant: ChatMessageEntry): StreamingTailEntry => {
             hasTools: false,
             hasReasoning: false,
             stream: { isStreaming: true, isRetrying: false },
+            completionDisposition: 'active',
+            activityPresentationKind: 'default',
         } satisfies TurnRecord,
     };
 };

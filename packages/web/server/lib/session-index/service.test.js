@@ -68,18 +68,30 @@ describe('Electron session index', () => {
     service.close();
   });
 
-  it('keeps Assistant-tagged OpenCode sessions in ordinary sidebar summaries', () => {
+  it('excludes Assistant and Scheduled system sessions from ordinary sidebar summaries', () => {
     const runtimeRef = { value: 'http://runtime-a.test' };
     const service = createService(runtimeRef);
     const assistantSession = {
       ...session('ses_assistant', 100),
       metadata: { openchamber: { assistant: { assistantID: 'assistant_1', name: 'A' } } },
     };
+    const scheduledSession = {
+      ...session('ses_scheduled', 99),
+      metadata: { openchamber: { scheduledTask: { taskID: 'task_1' } } },
+    };
+    const ordinary = session('ses_ordinary', 98);
 
-    service.replaceDirectory({ directory: '/repo', sessions: [assistantSession], cursor: null, hasMore: false });
-    expect(service.snapshot().directories[0].sessions).toEqual(expect.arrayContaining([
-      expect.objectContaining({ id: 'ses_assistant' }),
-    ]));
+    service.replaceDirectory({
+      directory: '/repo',
+      sessions: [assistantSession, scheduledSession, ordinary],
+      cursor: null,
+      hasMore: false,
+    });
+    expect(service.snapshot().directories[0].sessions.map((item) => item.id)).toEqual(['ses_ordinary']);
+
+    service.upsert(assistantSession);
+    service.upsert(scheduledSession);
+    expect(service.snapshot().directories[0].sessions.map((item) => item.id)).toEqual(['ses_ordinary']);
     service.close();
   });
 

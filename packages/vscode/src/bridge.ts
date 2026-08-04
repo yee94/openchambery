@@ -7,6 +7,7 @@ import { handleFsBridgeMessage } from './bridge-fs-runtime';
 import { handleConfigBridgeMessage } from './bridge-config-runtime';
 import { handleSystemBridgeMessage } from './bridge-system-runtime';
 import { handleProxyBridgeMessage } from './bridge-proxy-runtime';
+import { handleSessionTurnPageBridgeMessage } from './bridge-session-turn-page-runtime';
 import {
   fetchOpenCodeSkillsFromApi,
   fetchOpenCodeCommandsFromApi,
@@ -132,6 +133,16 @@ export async function handleBridgeMessage(message: BridgeRequest, ctx?: BridgeCo
     );
     if (systemResponse) {
       return systemResponse;
+    }
+    // OpenChamber-owned turn-page aggregation must run before the generic
+    // OpenCode proxy so `/api/openchamber/sessions/:id/messages` is not
+    // forwarded as a raw upstream path.
+    const sessionTurnPageResponse = await handleSessionTurnPageBridgeMessage(
+      { id, type, payload },
+      ctx,
+    );
+    if (sessionTurnPageResponse) {
+      return sessionTurnPageResponse;
     }
     const proxyResponse = await handleProxyBridgeMessage(
       { id, type, payload },

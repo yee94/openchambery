@@ -15,18 +15,32 @@ describe("getInitialSessionMessageLimit", () => {
 })
 
 describe("getSessionHistoryMessageLimit", () => {
-  test("history page size matches the shared initial page size", () => {
-    expect(getSessionHistoryMessageLimit()).toBe(30)
-    expect(getSessionHistoryMessageLimit()).toBe(getInitialSessionMessageLimit())
+  test("history value 100 is Host upstream scan chunk only — not a client message return size", () => {
+    // initial remains the client bootstrap page size.
+    expect(getInitialSessionMessageLimit()).toBe(30)
+    // 100 is the Host-side scanLimit for turn-page upstream chunking.
+    // It must not be interpreted as "return 100 client messages per history page".
+    expect(getSessionHistoryMessageLimit()).toBe(100)
+    expect(getSessionHistoryMessageLimit()).not.toBe(getInitialSessionMessageLimit())
+  })
+
+  test("documents scanLimit contract vs initial client page", () => {
+    // Client first paint / SDK initial page.
+    expect(getInitialSessionMessageLimit()).toBe(30)
+    // Host scan chunk bound used by turn-page (turns=3, scanLimit=history).
+    // Prepend/loadMore returns turn-bounded records, not a fixed 100-message page.
+    expect(getSessionHistoryMessageLimit()).toBe(100)
   })
 })
 
 describe("recovery and materialize limits track initial", () => {
-  test("recovery limit equals initial", () => {
+  test("recovery limit equals initial (30)", () => {
+    expect(getSessionRecoveryMessageLimit()).toBe(30)
     expect(getSessionRecoveryMessageLimit()).toBe(getInitialSessionMessageLimit())
   })
 
-  test("materialize limit equals initial", () => {
+  test("materialize limit equals initial (30)", () => {
+    expect(getSessionMaterializationMessageLimit()).toBe(30)
     expect(getSessionMaterializationMessageLimit()).toBe(getInitialSessionMessageLimit())
   })
 })

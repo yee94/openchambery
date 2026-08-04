@@ -369,21 +369,21 @@ describe("assistant-tail helpers", () => {
 })
 
 describe("resolveSessionMessagePageLimit (policy integration)", () => {
-  test("initial / recovery / materialize / prepend share the 30-message page size", () => {
+  test("prepend uses 100; initial / recovery / materialize stay at 30", () => {
     expect(resolveSessionMessagePageLimit("initial")).toBe(30)
     expect(resolveSessionMessagePageLimit("recovery")).toBe(30)
     expect(resolveSessionMessagePageLimit("materialize")).toBe(30)
-    expect(resolveSessionMessagePageLimit("prepend")).toBe(30)
+    expect(resolveSessionMessagePageLimit("prepend")).toBe(100)
 
     mobileSurfaceRuntime = true
     expect(resolveSessionMessagePageLimit("initial")).toBe(30)
     expect(resolveSessionMessagePageLimit("recovery")).toBe(30)
     expect(resolveSessionMessagePageLimit("materialize")).toBe(30)
-    expect(resolveSessionMessagePageLimit("prepend")).toBe(30)
+    expect(resolveSessionMessagePageLimit("prepend")).toBe(100)
 
     relayModeActive = true
     expect(resolveSessionMessagePageLimit("initial")).toBe(30)
-    expect(resolveSessionMessagePageLimit("prepend")).toBe(30)
+    expect(resolveSessionMessagePageLimit("prepend")).toBe(100)
     expect(resolveSessionMessagePageLimit("recovery")).toBe(30)
   })
 })

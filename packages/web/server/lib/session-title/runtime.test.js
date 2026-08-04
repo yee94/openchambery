@@ -5,6 +5,7 @@ import {
   createSessionTitleRuntime,
   isDefaultSessionTitle,
   isForkedSessionTitle,
+  isSystemOwnedSession,
   looksLikeMultiRunSessionTitle,
   remainingTitleThrottleMs,
   TITLE_THROTTLE_MS,
@@ -222,6 +223,102 @@ describe('session-title helpers', () => {
     const result = buildLatestTitleTranscript(messages, { maxChars: 10_000 });
     expect(result.transcript.length).toBeLessThanOrEqual(10_000);
     expect(result.transcript).toContain('tail');
+  });
+
+  it('detects system-owned sessions from metadata only', () => {
+    expect(isSystemOwnedSession({
+      metadata: { openchamber: { assistant: { assistantID: 'assistant_1', name: 'A' } } },
+    })).toBe(true);
+    expect(isSystemOwnedSession({
+      metadata: { openchamber: { scheduledTask: { taskID: 'task_1' } } },
+    })).toBe(true);
+    expect(isSystemOwnedSession({
+      title: '[Assistant] Looks system',
+      metadata: { openchamber: { assistant: { name: 'no-id' } } },
+    })).toBe(false);
+    expect(isSystemOwnedSession({ title: 'Ordinary' })).toBe(false);
+  });
+
+  it('skips title generation and patch for system-owned sessions', async () => {
+    const originalFetch = globalThis.fetch;
+    let generationCalls = 0;
+    let patchCalls = 0;
+    const systemSession = {
+      id: 'ses-assistant',
+      title: '[Assistant] Ops Bot',
+      metadata: { openchamber: { assistant: { assistantID: 'assistant_1', name: 'Ops Bot' } } },
+    };
+
+    globalThis.fetch = async (input, init = {}) => {
+      if (init.method === 'PATCH') {
+        patchCalls += 1;
+        return new Response(JSON.stringify(systemSession), { status: 200 });
+      }
+      if (String(input).includes('/message')) {
+        return new Response(JSON.stringify([
+          { info: { id: 'u1', role: 'user' }, parts: [{ type: 'text', text: 'hello' }] },
+          { info: { id: 'a1', role: 'assistant' }, parts: [{ type: 'text', text: 'world' }] },
+        ]), { status: 200 });
+      }
+      return new Response(JSON.stringify(systemSession), { status: 200 });
+    };
+
+    try {
+      const runtime = createSessionTitleRuntime({
+        buildOpenCodeUrl: (pathname) => `http://opencode${pathname}`,
+        getOpenCodeAuthHeaders: () => ({}),
+        getSmallModelService: async () => ({
+          generateSmallModelText: async () => {
+            generationCalls += 1;
+            return { text: 'Should not run', providerID: 'test', modelID: 'test' };
+          },
+        }),
+        now: () => 1_000,
+        isTitleRefreshEnabled: () => true,
+      });
+
+      runtime.processPayload({
+        type: 'session.created',
+        properties: {
+          directory: '/repo',
+          info: {
+            id: 'ses-assistant',
+            title: systemSession.title,
+            metadata: systemSession.metadata,
+            time: { created: 100 },
+          },
+        },
+      });
+      runtime.processPayload({
+        type: 'session.status',
+        properties: { sessionID: 'ses-assistant', directory: '/repo', status: { type: 'idle' } },
+      });
+      await new Promise((resolve) => setTimeout(resolve, 25));
+      expect(generationCalls).toBe(0);
+      expect(patchCalls).toBe(0);
+
+      runtime.processPayload({
+        type: 'session.updated',
+        properties: {
+          directory: '/repo',
+          info: {
+            id: 'ses-assistant',
+            metadata: {
+              openchamber: {
+                assistant: { assistantID: 'assistant_1', name: 'Ops Bot' },
+                titleRefresh: { requestedAt: 1_000 },
+              },
+            },
+          },
+        },
+      });
+      await new Promise((resolve) => setTimeout(resolve, 25));
+      expect(generationCalls).toBe(0);
+      expect(patchCalls).toBe(0);
+      runtime.stop();
+    } finally {
+      globalThis.fetch = originalFetch;
+    }
   });
 
   it('refreshes a fork title after its first newly-sent reply completes', async () => {

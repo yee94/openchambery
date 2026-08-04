@@ -33,6 +33,7 @@ import {
   getMessageRefetchLimit,
   getSendConfirmationRefetchLimit,
 } from "./session-message-policy"
+import { resolveSessionMergeStrategy, SEND_GAP_FILL_SESSION_MERGE_STRATEGY } from "./session-merge-strategy"
 import {
   beginSessionMessageLoad,
   failSessionMessageLoad,
@@ -292,10 +293,13 @@ function dirStore() {
   return _childStores.ensureChild(d)
 }
 
-export function dirStoreForDirectory(directory: string) {
+export function dirStoreForDirectory(
+  directory: string,
+  options?: { bootstrap?: boolean },
+) {
   if (!_childStores) throw new Error("Child stores not initialized")
   if (!directory) throw new Error("No directory")
-  return _childStores.ensureChild(directory)
+  return _childStores.ensureChild(directory, options)
 }
 
 function dirStoreForSession(sessionId: string, directoryOverride?: string): { store: DirectoryStoreApi; directory?: string } {
@@ -1460,12 +1464,12 @@ export async function optimisticSend(input: {
 /**
  * Pure optimistic insertion helper — inserts a user message into the child
  * store and shadow Map without waiting for connection or calling send.
- * Used by the combined createWithPrompt flow where the server has already
- * accepted the message before this materialization point.
+ * Used by the non-combined (fallback) send path and optimisticSend.
  *
  * Respects the shadow Map protocol: registers with real sessionID + provided
  * messageID so mergeOptimisticPage can deduplicate. If SSE has already
  * delivered the message (found in child store), skips insertion.
+ * Returns false when the optimistic shadow ref is not mounted.
  */
 export function optimisticInsertUserMessage(input: {
   sessionId: string
@@ -1553,21 +1557,52 @@ export function optimisticInsertUserMessage(input: {
   return true
 }
 
+export type FetchRecentSendConfirmationOptions = {
+  signal?: AbortSignal
+  timeoutMs?: number
+  /** Override default attempt count (default SEND_CONFIRMATION_REFETCH_ATTEMPTS). */
+  attempts?: number
+  /** Delay between attempts in ms (default SEND_CONFIRMATION_REFETCH_RETRY_MS). */
+  retryDelayMs?: number
+  /**
+   * Runtime/currentness gate. Checked before each network attempt, after each
+   * inter-attempt wait, and before materialization. When false, stop without
+   * writing the captured store.
+   */
+  isCurrent?: () => boolean
+}
+
+function isConfirmationCurrent(isCurrent?: () => boolean): boolean {
+  if (!isCurrent) return true
+  try {
+    return isCurrent() === true
+  } catch {
+    return false
+  }
+}
+
 export async function fetchRecentSendConfirmationRecords(
   sessionId: string,
   messageID: string,
   directory?: string | null,
-  options?: { signal?: AbortSignal; timeoutMs?: number },
+  options?: FetchRecentSendConfirmationOptions,
 ): Promise<Array<{ info: Message; parts?: Part[] }> | null> {
   const controller = options?.signal || options?.timeoutMs !== undefined ? new AbortController() : null
   const abortFromSignal = () => controller?.abort()
   options?.signal?.addEventListener("abort", abortFromSignal, { once: true })
   if (options?.signal?.aborted) controller?.abort()
   const timeout = options?.timeoutMs === undefined ? undefined : setTimeout(() => controller?.abort(), Math.max(0, options.timeoutMs))
+  const attempts = options?.attempts ?? SEND_CONFIRMATION_REFETCH_ATTEMPTS
+  const retryDelayMs = options?.retryDelayMs ?? SEND_CONFIRMATION_REFETCH_RETRY_MS
   try {
-    for (let attempt = 0; attempt < SEND_CONFIRMATION_REFETCH_ATTEMPTS; attempt += 1) {
+    for (let attempt = 0; attempt < attempts; attempt += 1) {
       if (controller?.signal.aborted) return null
-      if (attempt > 0) await wait(SEND_CONFIRMATION_REFETCH_RETRY_MS)
+      if (!isConfirmationCurrent(options?.isCurrent)) return null
+      if (attempt > 0) {
+        await wait(retryDelayMs)
+        if (controller?.signal.aborted) return null
+        if (!isConfirmationCurrent(options?.isCurrent)) return null
+      }
       try {
         const result = await sdk().session.messages({
           sessionID: sessionId,
@@ -1575,6 +1610,7 @@ export async function fetchRecentSendConfirmationRecords(
           limit: getSendConfirmationRefetchLimit(),
           ...(controller ? { signal: controller.signal } : {}),
         } as Parameters<ReturnType<typeof sdk>["session"]["messages"]>[0] & { signal?: AbortSignal })
+        if (!isConfirmationCurrent(options?.isCurrent)) return null
         const records = (assertSdkSuccess(result, "session.messages") ?? [])
           .filter((record: { info?: { id?: string } }) => !!record?.info?.id) as Array<{ info: Message; parts?: Part[] }>
         if (records.some((record) => record.info.id === messageID)) {
@@ -1591,33 +1627,169 @@ export async function fetchRecentSendConfirmationRecords(
   }
 }
 
+/**
+ * Materialize authoritative send-confirmation records by message ID.
+ * - Upserts every returned record by ID (recovery strategy) so optimistic
+ *   shells are replaced and SSE-first rows are not duplicated.
+ * - Other store messages outside the record set are preserved.
+ * - Callers must not invoke this on fetch failure (null) — failure retains
+ *   existing store content and never clears the transcript.
+ *
+ * `gapFillOnly` switches to `SEND_GAP_FILL_SESSION_MERGE_STRATEGY`: absent
+ * messages are added and existing parts are left alone. Any caller that pulls
+ * while live SSE may already own rows on the same page must set it, or an older
+ * snapshot replays over live state.
+ */
 export function materializeConfirmedSendRecords(
   store: DirectoryStoreApi,
   sessionId: string,
   messageID: string,
   records: Array<{ info: Message; parts?: Part[] }>,
+  options?: { gapFillOnly?: boolean },
 ): void {
+  if (!records.length) return
+  // messageID is the confirmation key used by callers; records must include it
+  // (fetchRecentSendConfirmationRecords already gates on that).
+  void messageID
   store.setState((state) => {
-    const currentMessages = state.message[sessionId]
-    const message = { ...state.message }
-    const part = { ...state.part }
-    if (currentMessages) {
-      const nextMessages = currentMessages.filter((message) => message.id !== messageID)
-      message[sessionId] = nextMessages
-    }
-    delete part[messageID]
-
     const materialized = materializeSessionSnapshots(
-      { ...state, message, part },
+      state,
       sessionId,
       records.map((record) => ({
         info: stripMessageDiffSnapshots(record.info),
         parts: record.parts ?? [],
       })),
-      { skipPartTypes: MESSAGE_REFETCH_SKIP_PARTS },
+      {
+        skipPartTypes: MESSAGE_REFETCH_SKIP_PARTS,
+        // Default upserts so an optimistic/SSE shell for the same ID is replaced
+        // by the authoritative snapshot without wiping sibling rows.
+        merge: options?.gapFillOnly === true
+          ? SEND_GAP_FILL_SESSION_MERGE_STRATEGY
+          : resolveSessionMergeStrategy({ purpose: "recovery" }),
+      },
     )
+    if (!materialized.messagesChanged && !materialized.partsChanged) return state
     return { message: materialized.message, part: materialized.part }
   })
+}
+
+/**
+ * How long a confirmed send may stay absent from the store before it counts as
+ * an anomaly. Purely local: SSE or the ordinary selection page fetch normally
+ * lands well inside it, and the pending presentation covers the wait, so the
+ * baseline send path issues no confirmation request at all.
+ */
+export const COMBINED_SEND_PRESENCE_GRACE_MS = 2_000
+
+/** Anomaly-only recovery pull, entered solely after a real presence miss. */
+export const COMBINED_SEND_CONFIRMATION_RECOVERY = {
+  attempts: 12,
+  retryDelayMs: 500,
+} as const
+
+/** Mutable options for combined send recovery (tests may shorten). */
+export const combinedSendConfirmationOptions: {
+  presenceGraceMs: number
+  recovery: { attempts: number; retryDelayMs: number }
+} = {
+  presenceGraceMs: COMBINED_SEND_PRESENCE_GRACE_MS,
+  recovery: { ...COMBINED_SEND_CONFIRMATION_RECOVERY },
+}
+
+/** Reset combined recovery options to production defaults (tests). */
+export function resetCombinedSendConfirmationOptions(): void {
+  combinedSendConfirmationOptions.presenceGraceMs = COMBINED_SEND_PRESENCE_GRACE_MS
+  combinedSendConfirmationOptions.recovery = { ...COMBINED_SEND_CONFIRMATION_RECOVERY }
+}
+
+/**
+ * Whether the captured store holds a renderable `messageID` for the session.
+ * Parts must be there too: a row whose parts never landed paints an empty
+ * bubble, which is the same defect as the row being absent.
+ */
+function hasStoredSessionMessage(store: DirectoryStoreApi, sessionId: string, messageID: string): boolean {
+  const state = store.getState()
+  if (!(state.message?.[sessionId] ?? []).some((message) => message?.id === messageID)) return false
+  return (state.part?.[messageID] ?? []).length > 0
+}
+
+/**
+ * Local, request-free wait for a sent message to appear in the captured store.
+ * Resolves as soon as SSE or the ordinary selection page fetch delivers it, and
+ * resolves false on timeout or once the caller's runtime is no longer current.
+ */
+function waitForStoredMessagePresence(
+  store: DirectoryStoreApi,
+  sessionId: string,
+  messageID: string,
+  options?: { timeoutMs?: number; isCurrent?: () => boolean },
+): Promise<boolean> {
+  if (hasStoredSessionMessage(store, sessionId, messageID)) return Promise.resolve(true)
+  if (!isConfirmationCurrent(options?.isCurrent)) return Promise.resolve(false)
+  const timeoutMs = options?.timeoutMs ?? COMBINED_SEND_PRESENCE_GRACE_MS
+  return new Promise<boolean>((resolve) => {
+    let settled = false
+    let unsubscribe: (() => void) | undefined
+    const settle = (value: boolean) => {
+      if (settled) return
+      settled = true
+      clearTimeout(timer)
+      unsubscribe?.()
+      resolve(value)
+    }
+    const timer = setTimeout(() => settle(false), timeoutMs)
+    unsubscribe = store.subscribe(() => {
+      if (!isConfirmationCurrent(options?.isCurrent)) {
+        settle(false)
+        return
+      }
+      if (hasStoredSessionMessage(store, sessionId, messageID)) settle(true)
+    })
+    // subscribe() cannot observe a write that landed between the guard above and
+    // the subscription itself, so re-check once the listener is installed.
+    if (hasStoredSessionMessage(store, sessionId, messageID)) settle(true)
+  })
+}
+
+export type SentMessagePresenceOutcome = "present" | "recovered" | "missing" | "cancelled"
+
+/**
+ * Reactive send remediation: wait locally for the confirmed message to show up
+ * and pull authoritative records ONLY when it never does. The happy path stays
+ * exactly as request-free as before this remediation existed; a real presence
+ * miss is the single trigger for one bounded recovery pull.
+ *
+ * The pull is gap-fill only: by then live SSE may own newer objects for sibling
+ * rows on the same page, so it may add what is missing and nothing else.
+ * Fetch → currentness recheck → gap-fill materialize is inlined here so a
+ * runtime switch cannot write into a captured old store.
+ */
+export async function ensureSentUserMessagePresence(input: {
+  store: DirectoryStoreApi
+  sessionId: string
+  messageID: string
+  directory?: string | null
+  isCurrent?: () => boolean
+  graceMs?: number
+}): Promise<SentMessagePresenceOutcome> {
+  const { store, sessionId, messageID, directory, isCurrent } = input
+  const present = await waitForStoredMessagePresence(store, sessionId, messageID, {
+    timeoutMs: input.graceMs ?? combinedSendConfirmationOptions.presenceGraceMs,
+    isCurrent,
+  })
+  if (present) return "present"
+  if (!isConfirmationCurrent(isCurrent)) return "cancelled"
+  const records = await fetchRecentSendConfirmationRecords(sessionId, messageID, directory, {
+    ...combinedSendConfirmationOptions.recovery,
+    isCurrent,
+  })
+  if (!records) {
+    return isConfirmationCurrent(isCurrent) ? "missing" : "cancelled"
+  }
+  // Second currentness gate: records may have arrived after a runtime switch.
+  if (!isConfirmationCurrent(isCurrent)) return "cancelled"
+  materializeConfirmedSendRecords(store, sessionId, messageID, records, { gapFillOnly: true })
+  return "recovered"
 }
 
 // ---------------------------------------------------------------------------
@@ -2540,7 +2712,10 @@ export async function forkSession(sessionId: string, operationId: number, messag
 
 const FETCH_MESSAGES_LOADING = new Map<string, Promise<void>>()
 
-export async function fetchMessagesForSession(sessionID: string, directory?: string | null): Promise<void> {
+export async function fetchMessagesForSession(
+  sessionID: string,
+  directory?: string | null,
+): Promise<void> {
   const resolvedDir = directory ?? dir()
   if (!resolvedDir) return
 
@@ -2551,20 +2726,27 @@ export async function fetchMessagesForSession(sessionID: string, directory?: str
     PENDING_MESSAGE_FETCHES.set(loadingKey, { sessionID, directory: resolvedDir })
     return
   }
+
+  // Single-flight ordinary loads for the same scope.
   const existingRequest = FETCH_MESSAGES_LOADING.get(loadingKey)
-  if (existingRequest) {
-    return existingRequest
-  }
+  if (existingRequest) return existingRequest
 
   const request = fetchMessagesForSessionInternal(sessionID, resolvedDir, runtimeKey, limit)
   const trackedRequest = request.finally(() => {
-    FETCH_MESSAGES_LOADING.delete(loadingKey)
+    if (FETCH_MESSAGES_LOADING.get(loadingKey) === trackedRequest) {
+      FETCH_MESSAGES_LOADING.delete(loadingKey)
+    }
   })
   FETCH_MESSAGES_LOADING.set(loadingKey, trackedRequest)
   return trackedRequest
 }
 
-async function fetchMessagesForSessionInternal(sessionID: string, resolvedDir: string, runtimeKey: string, limit: number): Promise<void> {
+async function fetchMessagesForSessionInternal(
+  sessionID: string,
+  resolvedDir: string,
+  runtimeKey: string,
+  limit: number,
+): Promise<void> {
   try {
     const s = sdk()
     const store = dirStoreForDirectory(resolvedDir)
@@ -2581,9 +2763,9 @@ async function fetchMessagesForSessionInternal(sessionID: string, resolvedDir: s
     // Narrow cache bypass for the long-idle send race: status can be busy while
     // the list is still the pre-send snapshot (no trailing user row). Do NOT
     // force-refetch every busy session — that would add needless network on
-    // ordinary switches and is unnecessary once optimistic insert already
-    // painted the user bubble. Only bypass when live work and the local tail
-    // does not already look like a send in progress.
+    // ordinary switches and is unnecessary once the send is already accounted
+    // for. Only bypass when live work and the local tail does not already look
+    // like a send in progress.
     const liveStatus = cachedState.session_status?.[sessionID]?.type
     const sessionIsLive = liveStatus === "busy" || liveStatus === "retry"
     const lastMessage = cachedMessages?.[cachedMessages.length - 1]

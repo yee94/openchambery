@@ -30,14 +30,22 @@ export const AgentAvatar: React.FC<AgentAvatarProps> = ({
   return (
     <span
       className={cn(
-        'inline-flex shrink-0 overflow-hidden rounded-sm',
+        'inline-flex aspect-square shrink-0 overflow-hidden rounded-sm',
         emoji && 'items-center justify-center select-none',
         color.class,
         className,
       )}
       // currentColor is the reliable SVG paint path; presentation-attribute
       // fill="var(--agent-color)" often resolves transparent in Chromium.
-      style={{ width: size, height: size, color: `var(${color.var})` }}
+      style={{
+        width: size,
+        minWidth: size,
+        maxWidth: size,
+        height: size,
+        minHeight: size,
+        maxHeight: size,
+        color: `var(${color.var})`,
+      }}
       role={label ? 'img' : undefined}
       aria-label={label}
       aria-hidden={label ? undefined : true}

@@ -1,5 +1,10 @@
 import { describe, expect, test } from 'bun:test';
-import { mergePendingUserMessagePresentations, resolveChatContainerHostFeatures, type ChatContainerHost } from './chatContainerHost';
+import {
+    mergePendingUserMessagePresentations,
+    pendingUserMessagesImplyWorking,
+    resolveChatContainerHostFeatures,
+    type ChatContainerHost,
+} from './chatContainerHost';
 import type { PendingUserMessagePresentation } from '@/sync/session-ui-store';
 
 const sampleHost = (features?: ChatContainerHost['features']): ChatContainerHost => ({
@@ -44,6 +49,24 @@ describe('chatContainerHost', () => {
     expect(reconciled[0]?.parts[0]).toEqual({ type: 'text', text: 'hello from server' });
   });
 
+  test('substitutes a part-less authoritative row with its pending counterpart', () => {
+    const pending = {
+      info: { id: 'msg_pending', role: 'user' },
+      parts: [{ type: 'text', text: 'hello' }],
+    } as PendingUserMessagePresentation;
+    // The row exists but its parts never landed — handing over now would paint
+    // an empty bubble, so the pending row stands in without duplicating the ID.
+    const partless = [{
+      info: { ...pending.info, sessionID: 'ses_real' },
+      parts: [],
+    }] as PendingUserMessagePresentation[];
+
+    const reconciled = mergePendingUserMessagePresentations(partless, [pending]);
+
+    expect(reconciled).toHaveLength(1);
+    expect(reconciled[0]).toBe(pending);
+  });
+
   test('keeps primary-only features on when no host is provided', () => {
     expect(resolveChatContainerHostFeatures(undefined)).toEqual({
       newSessionDraft: true,
@@ -66,5 +89,44 @@ describe('chatContainerHost', () => {
       promptNavigator: true,
       returnToParent: false,
     });
+  });
+
+  test('stale idle (observedAt before pending created) still implies working', () => {
+    const pending = [{ info: { time: { created: 2000 } } }];
+
+    expect(pendingUserMessagesImplyWorking(pending, {
+      resolvedSessionStatus: { type: 'idle' },
+      sessionStatusObservedAt: 1000,
+    })).toBe(true);
+  });
+
+  test('fresh idle (observedAt at/after pending created) stops implying working', () => {
+    const pending = [{ info: { time: { created: 1000 } } }];
+
+    expect(pendingUserMessagesImplyWorking(pending, {
+      resolvedSessionStatus: { type: 'idle' },
+      sessionStatusObservedAt: 1000,
+    })).toBe(false);
+    expect(pendingUserMessagesImplyWorking(pending, {
+      resolvedSessionStatus: { type: 'idle' },
+      sessionStatusObservedAt: 1500,
+    })).toBe(false);
+  });
+
+  test('pending implies working without resolved status or observedAt', () => {
+    const pending = [{ info: { time: { created: 1000 } } }];
+
+    expect(pendingUserMessagesImplyWorking(pending, {
+      resolvedSessionStatus: null,
+      sessionStatusObservedAt: 2000,
+    })).toBe(true);
+    expect(pendingUserMessagesImplyWorking(pending, {
+      resolvedSessionStatus: { type: 'idle' },
+      sessionStatusObservedAt: undefined,
+    })).toBe(true);
+    expect(pendingUserMessagesImplyWorking([], {
+      resolvedSessionStatus: null,
+      sessionStatusObservedAt: undefined,
+    })).toBe(false);
   });
 });

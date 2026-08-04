@@ -1,9 +1,18 @@
 import { describe, expect, test } from 'bun:test';
+import { readFileSync } from 'node:fs';
+import { dirname, join } from 'node:path';
+import { fileURLToPath } from 'node:url';
 
 import {
     isOlderHistoryPrependCommit,
+    resolveHistoryPageDecision,
     resolveHistoryPrependCompensation,
+    shouldAutoFillEarlierHistory,
+    shouldHoldHistoryViewportAnchor,
+    shouldLoadEarlierHistory,
 } from './useChatTimelineController';
+
+const here = dirname(fileURLToPath(import.meta.url));
 
 describe('isOlderHistoryPrependCommit', () => {
     test('detects older messages inserted above the existing timeline', () => {
@@ -42,5 +51,397 @@ describe('resolveHistoryPrependCompensation', () => {
         expect(resolveHistoryPrependCompensation(false)).toEqual({
             owner: 'controller',
         });
+    });
+});
+
+// Near-top uses max(1200, clientHeight * 1.5). clientHeight 800 => threshold 1200.
+const NEAR_TOP = {
+    scrollTop: 100,
+    clientHeight: 800,
+} as const;
+const FAR_FROM_TOP = {
+    scrollTop: 2000,
+    clientHeight: 800,
+} as const;
+
+const baseLoadEarlierInput = {
+    source: 'scroll' as const,
+    isMobile: false,
+    isPinned: false,
+    ...NEAR_TOP,
+    canLoadEarlier: true,
+    isLoadingOlder: false,
+    pendingRevealWork: false,
+};
+
+describe('shouldLoadEarlierHistory', () => {
+    test('desktop + upward-intent + pinned + near-top => true', () => {
+        expect(shouldLoadEarlierHistory({
+            ...baseLoadEarlierInput,
+            source: 'upward-intent',
+            isPinned: true,
+            ...NEAR_TOP,
+        })).toBe(true);
+    });
+
+    test('ordinary scroll + pinned => false', () => {
+        expect(shouldLoadEarlierHistory({
+            ...baseLoadEarlierInput,
+            source: 'scroll',
+            isPinned: true,
+            ...NEAR_TOP,
+        })).toBe(false);
+    });
+
+    test('far from top => false', () => {
+        expect(shouldLoadEarlierHistory({
+            ...baseLoadEarlierInput,
+            source: 'upward-intent',
+            isPinned: true,
+            ...FAR_FROM_TOP,
+        })).toBe(false);
+        expect(shouldLoadEarlierHistory({
+            ...baseLoadEarlierInput,
+            source: 'scroll',
+            isPinned: false,
+            ...FAR_FROM_TOP,
+        })).toBe(false);
+    });
+
+    test('mobile => false', () => {
+        expect(shouldLoadEarlierHistory({
+            ...baseLoadEarlierInput,
+            source: 'upward-intent',
+            isMobile: true,
+            isPinned: true,
+            ...NEAR_TOP,
+        })).toBe(false);
+        expect(shouldLoadEarlierHistory({
+            ...baseLoadEarlierInput,
+            source: 'scroll',
+            isMobile: true,
+            isPinned: false,
+            ...NEAR_TOP,
+        })).toBe(false);
+    });
+
+    test('loading older => false', () => {
+        expect(shouldLoadEarlierHistory({
+            ...baseLoadEarlierInput,
+            source: 'upward-intent',
+            isPinned: true,
+            isLoadingOlder: true,
+            ...NEAR_TOP,
+        })).toBe(false);
+    });
+
+    test('pending reveal work => false', () => {
+        expect(shouldLoadEarlierHistory({
+            ...baseLoadEarlierInput,
+            source: 'upward-intent',
+            isPinned: true,
+            pendingRevealWork: true,
+            ...NEAR_TOP,
+        })).toBe(false);
+    });
+
+    test('no more history => false', () => {
+        expect(shouldLoadEarlierHistory({
+            ...baseLoadEarlierInput,
+            source: 'upward-intent',
+            isPinned: true,
+            canLoadEarlier: false,
+            ...NEAR_TOP,
+        })).toBe(false);
+    });
+});
+
+const basePageDecisionInput = {
+    scrollHeightBefore: 5000,
+    scrollHeightAfter: 5000,
+    messageCountBefore: 40,
+    messageCountAfter: 50,
+    oldestIdBefore: 'msg_10',
+    oldestIdAfter: 'msg_1',
+    limitBefore: 40,
+    limitAfter: 50,
+    hasMoreAbove: true,
+    pagesLoaded: 1,
+    maxPages: 10,
+};
+
+describe('resolveHistoryPageDecision', () => {
+    test('message/oldest growth without scrollHeight growth, hasMore, under max => continue', () => {
+        expect(resolveHistoryPageDecision({
+            ...basePageDecisionInput,
+            scrollHeightBefore: 5000,
+            scrollHeightAfter: 5000,
+            messageCountBefore: 40,
+            messageCountAfter: 50,
+            oldestIdBefore: 'msg_10',
+            oldestIdAfter: 'msg_1',
+            hasMoreAbove: true,
+            pagesLoaded: 1,
+            maxPages: 10,
+        })).toBe('continue');
+    });
+
+    test('scrollHeight growth >1px => stop-visible', () => {
+        expect(resolveHistoryPageDecision({
+            ...basePageDecisionInput,
+            scrollHeightBefore: 5000,
+            scrollHeightAfter: 5002,
+        })).toBe('stop-visible');
+    });
+
+    test('no data growth => stop-no-growth', () => {
+        expect(resolveHistoryPageDecision({
+            ...basePageDecisionInput,
+            scrollHeightBefore: 5000,
+            scrollHeightAfter: 5000,
+            messageCountBefore: 40,
+            messageCountAfter: 40,
+            oldestIdBefore: 'msg_10',
+            oldestIdAfter: 'msg_10',
+            limitBefore: 40,
+            limitAfter: 40,
+            hasMoreAbove: true,
+        })).toBe('stop-no-growth');
+    });
+
+    test('hasMore false => stop-exhausted', () => {
+        expect(resolveHistoryPageDecision({
+            ...basePageDecisionInput,
+            scrollHeightBefore: 5000,
+            scrollHeightAfter: 5000,
+            messageCountBefore: 40,
+            messageCountAfter: 50,
+            oldestIdBefore: 'msg_10',
+            oldestIdAfter: 'msg_1',
+            hasMoreAbove: false,
+        })).toBe('stop-exhausted');
+    });
+
+    test('pagesLoaded reaches maxPages => stop-bounded', () => {
+        expect(resolveHistoryPageDecision({
+            ...basePageDecisionInput,
+            scrollHeightBefore: 5000,
+            scrollHeightAfter: 5000,
+            messageCountBefore: 40,
+            messageCountAfter: 50,
+            oldestIdBefore: 'msg_10',
+            oldestIdAfter: 'msg_1',
+            hasMoreAbove: true,
+            pagesLoaded: 10,
+            maxPages: 10,
+        })).toBe('stop-bounded');
+    });
+
+    test('interaction page ceiling=1: first server turn page already stops further paging', () => {
+        // One client interaction is allowed a single server turn-page request.
+        // After that page lands, pagesLoaded=1 with maxPages=1 => stop-bounded
+        // even when collapsed content would otherwise continue.
+        expect(resolveHistoryPageDecision({
+            ...basePageDecisionInput,
+            scrollHeightBefore: 5000,
+            scrollHeightAfter: 5000,
+            messageCountBefore: 40,
+            messageCountAfter: 50,
+            oldestIdBefore: 'msg_10',
+            oldestIdAfter: 'msg_1',
+            hasMoreAbove: true,
+            pagesLoaded: 1,
+            maxPages: 1,
+        })).toBe('stop-bounded');
+    });
+});
+
+describe('HISTORY_INTERACTION_MAX_PAGES source contract', () => {
+    test('controller interaction page ceiling is 1 (single server turn page)', () => {
+        const source = readFileSync(
+            join(here, 'useChatTimelineController.ts'),
+            'utf8',
+        );
+        const match = source.match(/HISTORY_INTERACTION_MAX_PAGES\s*=\s*(\d+)/);
+        expect(match?.[1]).toBe('1');
+        // Guard against reintroducing multi-page while loops (3-page ceiling).
+        expect(/HISTORY_INTERACTION_MAX_PAGES\s*=\s*3\b/.test(source)).toBe(false);
+    });
+});
+
+const baseAutoFillInput = {
+    enabled: true,
+    isMobile: false,
+    sessionReady: true,
+    messageReady: true,
+    historyLoading: false,
+    canLoadEarlier: true,
+    isPinned: true,
+    alreadyAttempted: false,
+    scrollHeight: 400,
+    clientHeight: 400,
+    pendingRevealWork: false,
+    isLoadingOlder: false,
+    hasMessages: true,
+    messageCount: 30,
+} as const;
+
+describe('shouldAutoFillEarlierHistory', () => {
+    test('desktop + ready + not loading + canLoad + pinned + not attempted + scrollHeight within clientHeight+48 + no pending/loadingOlder => true', () => {
+        expect(shouldAutoFillEarlierHistory({
+            ...baseAutoFillInput,
+        })).toBe(true);
+        expect(shouldAutoFillEarlierHistory({
+            ...baseAutoFillInput,
+            scrollHeight: 448,
+            clientHeight: 400,
+        })).toBe(true);
+    });
+
+    test('scrollHeight exceeds clientHeight+48 => false', () => {
+        expect(shouldAutoFillEarlierHistory({
+            ...baseAutoFillInput,
+            scrollHeight: 449,
+            clientHeight: 400,
+        })).toBe(false);
+    });
+
+    test('mobile => false', () => {
+        expect(shouldAutoFillEarlierHistory({
+            ...baseAutoFillInput,
+            isMobile: true,
+        })).toBe(false);
+    });
+
+    test('enabled false (inactive or expanded-input) => false', () => {
+        expect(shouldAutoFillEarlierHistory({
+            ...baseAutoFillInput,
+            enabled: false,
+        })).toBe(false);
+    });
+
+    test('no messages => false', () => {
+        expect(shouldAutoFillEarlierHistory({
+            ...baseAutoFillInput,
+            hasMessages: false,
+        })).toBe(false);
+    });
+
+    test('history loading => false', () => {
+        expect(shouldAutoFillEarlierHistory({
+            ...baseAutoFillInput,
+            historyLoading: true,
+        })).toBe(false);
+    });
+
+    test('no more history => false', () => {
+        expect(shouldAutoFillEarlierHistory({
+            ...baseAutoFillInput,
+            canLoadEarlier: false,
+        })).toBe(false);
+    });
+
+    test('released (not pinned) => false', () => {
+        expect(shouldAutoFillEarlierHistory({
+            ...baseAutoFillInput,
+            isPinned: false,
+        })).toBe(false);
+    });
+
+    test('already attempted => false', () => {
+        expect(shouldAutoFillEarlierHistory({
+            ...baseAutoFillInput,
+            alreadyAttempted: true,
+        })).toBe(false);
+    });
+
+    test('pending reveal work => false', () => {
+        expect(shouldAutoFillEarlierHistory({
+            ...baseAutoFillInput,
+            pendingRevealWork: true,
+        })).toBe(false);
+    });
+
+    test('loading older => false', () => {
+        expect(shouldAutoFillEarlierHistory({
+            ...baseAutoFillInput,
+            isLoadingOlder: true,
+        })).toBe(false);
+    });
+
+    test('session or message not ready => false', () => {
+        expect(shouldAutoFillEarlierHistory({
+            ...baseAutoFillInput,
+            sessionReady: false,
+        })).toBe(false);
+        expect(shouldAutoFillEarlierHistory({
+            ...baseAutoFillInput,
+            messageReady: false,
+        })).toBe(false);
+    });
+
+    test('first paint messageCount > 38 => false (avoids trim reverse load)', () => {
+        expect(shouldAutoFillEarlierHistory({
+            ...baseAutoFillInput,
+            messageCount: 39,
+        })).toBe(false);
+        expect(shouldAutoFillEarlierHistory({
+            ...baseAutoFillInput,
+            messageCount: 38,
+        })).toBe(true);
+    });
+});
+
+const baseHoldAnchorInput = {
+    historyVirtualized: true,
+    anchorRestored: true,
+    heightDelta: 2,
+    messages: ['msg_1', 'msg_2'] as readonly string[],
+    heldForMessages: null as readonly string[] | null,
+} as const;
+
+describe('shouldHoldHistoryViewportAnchor', () => {
+    test('virtualized + anchor restored + heightDelta > 1 + messages not yet held => true', () => {
+        expect(shouldHoldHistoryViewportAnchor({
+            ...baseHoldAnchorInput,
+        })).toBe(true);
+        expect(shouldHoldHistoryViewportAnchor({
+            ...baseHoldAnchorInput,
+            heldForMessages: ['msg_other'],
+        })).toBe(true);
+    });
+
+    test('heightDelta <= 1 => false', () => {
+        expect(shouldHoldHistoryViewportAnchor({
+            ...baseHoldAnchorInput,
+            heightDelta: 1,
+        })).toBe(false);
+        expect(shouldHoldHistoryViewportAnchor({
+            ...baseHoldAnchorInput,
+            heightDelta: 0,
+        })).toBe(false);
+    });
+
+    test('not virtualized => false', () => {
+        expect(shouldHoldHistoryViewportAnchor({
+            ...baseHoldAnchorInput,
+            historyVirtualized: false,
+        })).toBe(false);
+    });
+
+    test('anchor not restored => false', () => {
+        expect(shouldHoldHistoryViewportAnchor({
+            ...baseHoldAnchorInput,
+            anchorRestored: false,
+        })).toBe(false);
+    });
+
+    test('same messages already held => false', () => {
+        const messages = ['msg_1', 'msg_2'] as const;
+        expect(shouldHoldHistoryViewportAnchor({
+            ...baseHoldAnchorInput,
+            messages,
+            heldForMessages: messages,
+        })).toBe(false);
     });
 });

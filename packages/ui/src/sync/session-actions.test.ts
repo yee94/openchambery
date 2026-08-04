@@ -373,10 +373,16 @@ function createStore(
   }))
 }
 
-function createChildStores(entries: Array<[string, StoreApi<DirectoryStore>]>) {
+function createChildStores(
+  entries: Array<[string, StoreApi<DirectoryStore>]>,
+  options?: {
+    trackEnsure?: Array<{ directory: string; options?: { bootstrap?: boolean } }>
+  },
+) {
   return {
     children: new Map(entries),
-    ensureChild: (dir: string) => {
+    ensureChild: (dir: string, ensureOptions?: { bootstrap?: boolean }) => {
+      options?.trackEnsure?.push({ directory: dir, options: ensureOptions })
       const store = new Map(entries).get(dir)
       if (!store) throw new Error(`No store for ${dir}`)
       return store
@@ -714,6 +720,31 @@ describe("fetchMessagesForSession startup race", () => {
     const stored = store.getState().part.msg_dr_assistant?.[0] as { text?: string; time?: { end?: number } }
     expect(stored?.text).toBe("thinking half complete answer")
     expect(stored?.time?.end).toBe(99)
+  })
+
+  test("optimisticInsertUserMessage returns false when optimistic ref is not mounted", async () => {
+    const sessionID = "session-no-opt-ref"
+    const store = createStore({}, {
+      session: [{ id: sessionID, time: { created: 1 } } as Session],
+      message: {},
+      part: {},
+    })
+    const childStores = createChildStores([["/test/project", store]])
+    const { optimisticInsertUserMessage, setActionRefs, setOptimisticRefs } = await import("./session-actions")
+    setActionRefs(mockSdk as unknown as OpencodeClient, childStores, () => "/test/project")
+    setOptimisticRefs(null as unknown as (input: OptimisticAddCall) => void, () => {})
+
+    const inserted = optimisticInsertUserMessage({
+      sessionId: sessionID,
+      messageID: "msg_direct_user",
+      content: "should not paint without shadow",
+      providerID: "openai",
+      modelID: "gpt-4o",
+      directory: "/test/project",
+    })
+
+    expect(inserted).toBe(false)
+    expect(store.getState().message[sessionID]).toBeUndefined()
   })
 })
 
@@ -2858,6 +2889,169 @@ function buildQuestion(id: string, sessionId: string): QuestionRequest {
     ],
   }
 }
+
+describe("dirStoreForDirectory bootstrap option", () => {
+  test("forwards optional bootstrap flag to ensureChild and defaults when omitted", async () => {
+    const store = createStore({})
+    const trackEnsure: Array<{ directory: string; options?: { bootstrap?: boolean } }> = []
+    const childStores = createChildStores([["/test/project", store]], { trackEnsure })
+    const { setActionRefs, dirStoreForDirectory } = await import("./session-actions")
+    setActionRefs(mockSdk as unknown as OpencodeClient, childStores, () => "/test/project")
+
+    dirStoreForDirectory("/test/project")
+    dirStoreForDirectory("/test/project", { bootstrap: false })
+    dirStoreForDirectory("/test/project", { bootstrap: true })
+
+    expect(trackEnsure).toEqual([
+      { directory: "/test/project", options: undefined },
+      { directory: "/test/project", options: { bootstrap: false } },
+      { directory: "/test/project", options: { bootstrap: true } },
+    ])
+  })
+})
+
+describe("ensureSentUserMessagePresence", () => {
+  const userRecord = (messageID: string) => ({
+    info: { id: messageID, role: "user", sessionID: "session-a", time: { created: 1 } },
+    parts: [{ id: "prt", type: "text", text: "hi", messageID, sessionID: "session-a" }],
+  })
+
+  test("issues no request when the store already holds the row with parts", async () => {
+    const messageID = "msg_present"
+    const store = createStore({}, {
+      message: { "session-a": [{ id: messageID, role: "user", sessionID: "session-a" } as unknown as Message] },
+      part: { [messageID]: [{ id: "prt_live", type: "text", text: "hi" } as unknown as Part] },
+    })
+    const childStores = createChildStores([["/test/project", store]])
+    let calls = 0
+    const messagesMock = mock(() => {
+      calls += 1
+      return Promise.resolve({ data: [userRecord(messageID)] })
+    })
+    const sdk = { ...mockSdk, session: { ...mockSdk.session, messages: messagesMock } }
+    const { setActionRefs, ensureSentUserMessagePresence } = await import("./session-actions")
+    setActionRefs(sdk as unknown as OpencodeClient, childStores, () => "/test/project")
+
+    const outcome = await ensureSentUserMessagePresence({
+      store,
+      sessionId: "session-a",
+      messageID,
+      directory: "/test/project",
+      graceMs: 50,
+    })
+
+    expect(outcome).toBe("present")
+    expect(calls).toBe(0)
+  })
+
+  test("resolves without a request when the row lands during the grace window", async () => {
+    const messageID = "msg_late_sse"
+    const store = createStore({})
+    const childStores = createChildStores([["/test/project", store]])
+    let calls = 0
+    const messagesMock = mock(() => {
+      calls += 1
+      return Promise.resolve({ data: [userRecord(messageID)] })
+    })
+    const sdk = { ...mockSdk, session: { ...mockSdk.session, messages: messagesMock } }
+    const { setActionRefs, ensureSentUserMessagePresence } = await import("./session-actions")
+    setActionRefs(sdk as unknown as OpencodeClient, childStores, () => "/test/project")
+
+    const work = ensureSentUserMessagePresence({
+      store,
+      sessionId: "session-a",
+      messageID,
+      directory: "/test/project",
+      graceMs: 200,
+    })
+    // Stand in for SSE delivering the row while the local wait is still open.
+    setTimeout(() => {
+      store.setState({
+        message: { "session-a": [{ id: messageID, role: "user", sessionID: "session-a" } as unknown as Message] },
+        part: { [messageID]: [{ id: "prt_sse", type: "text", text: "hi" } as unknown as Part] },
+      })
+    }, 10)
+
+    expect(await work).toBe("present")
+    expect(calls).toBe(0)
+  })
+
+  test("treats a part-less row as absent and recovers it", async () => {
+    const messageID = "msg_partless"
+    const store = createStore({}, {
+      message: { "session-a": [{ id: messageID, role: "user", sessionID: "session-a" } as unknown as Message] },
+    })
+    const childStores = createChildStores([["/test/project", store]])
+    sessionMessagesResult = { data: [userRecord(messageID)] }
+    const { setActionRefs, ensureSentUserMessagePresence, combinedSendConfirmationOptions } = await import("./session-actions")
+    setActionRefs(mockSdk as unknown as OpencodeClient, childStores, () => "/test/project")
+    combinedSendConfirmationOptions.recovery = { attempts: 1, retryDelayMs: 0 }
+
+    const outcome = await ensureSentUserMessagePresence({
+      store,
+      sessionId: "session-a",
+      messageID,
+      directory: "/test/project",
+      graceMs: 5,
+    })
+
+    expect(outcome).toBe("recovered")
+    expect(store.getState().part[messageID]?.some((part) => part.id === "prt")).toBe(true)
+  })
+
+  test("reports a bounded miss without clearing existing messages", async () => {
+    const messageID = "msg_never"
+    const prior = { id: "msg_prior", role: "user", sessionID: "session-a" } as unknown as Message
+    const store = createStore({}, {
+      message: { "session-a": [prior] },
+      part: { msg_prior: [{ id: "prt_prior", type: "text", text: "keep me" } as unknown as Part] },
+    })
+    const childStores = createChildStores([["/test/project", store]])
+    sessionMessagesResult = { data: [] }
+    const { setActionRefs, ensureSentUserMessagePresence, combinedSendConfirmationOptions } = await import("./session-actions")
+    setActionRefs(mockSdk as unknown as OpencodeClient, childStores, () => "/test/project")
+    combinedSendConfirmationOptions.recovery = { attempts: 1, retryDelayMs: 0 }
+
+    const outcome = await ensureSentUserMessagePresence({
+      store,
+      sessionId: "session-a",
+      messageID,
+      directory: "/test/project",
+      graceMs: 5,
+    })
+
+    expect(outcome).toBe("missing")
+    expect(store.getState().message["session-a"]?.map((m) => m.id)).toEqual(["msg_prior"])
+    expect(store.getState().part.msg_prior?.[0]?.id).toBe("prt_prior")
+  })
+
+  test("stops at the grace window when the runtime is no longer current", async () => {
+    const messageID = "msg_switched"
+    const store = createStore({})
+    const childStores = createChildStores([["/test/project", store]])
+    let calls = 0
+    const messagesMock = mock(() => {
+      calls += 1
+      return Promise.resolve({ data: [userRecord(messageID)] })
+    })
+    const sdk = { ...mockSdk, session: { ...mockSdk.session, messages: messagesMock } }
+    const { setActionRefs, ensureSentUserMessagePresence } = await import("./session-actions")
+    setActionRefs(sdk as unknown as OpencodeClient, childStores, () => "/test/project")
+
+    const outcome = await ensureSentUserMessagePresence({
+      store,
+      sessionId: "session-a",
+      messageID,
+      directory: "/test/project",
+      graceMs: 5,
+      isCurrent: () => false,
+    })
+
+    expect(outcome).toBe("cancelled")
+    expect(calls).toBe(0)
+    expect(store.getState().message["session-a"] ?? []).toEqual([])
+  })
+})
 
 describe("dismissOpenQuestionsForSession", () => {
   beforeEach(() => {

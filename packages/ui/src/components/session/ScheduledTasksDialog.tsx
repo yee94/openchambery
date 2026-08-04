@@ -16,26 +16,31 @@ import { useUIStore, type MainTab } from '@/stores/useUIStore';
 import { useProjectsStore } from '@/stores/useProjectsStore';
 import { subscribeOpenchamberEvents } from '@/lib/openchamberEvents';
 import { cn, formatDirectoryName } from '@/lib/utils';
-import { useI18n } from '@/lib/i18n';
+import { getCurrentIntlLocale, useI18n } from '@/lib/i18n';
 import type { ProjectEntry } from '@/lib/api/types';
 import { PROJECT_COLOR_MAP, PROJECT_ICON_MAP, ProjectIconImage } from '@/lib/projectMeta';
 import {
   deleteScheduledTask,
   fetchGlobalScheduledTasks,
+  fetchScheduledTaskRuns,
   type GlobalScheduledTask,
   type GlobalScheduledTasksResponse,
   runScheduledTaskNow,
   upsertScheduledTask,
   type ScheduledTask,
+  type ScheduledTaskRun,
   type ScheduledTaskStatus,
 } from '@/lib/scheduledTasksApi';
 import { ScheduledTaskEditorDialog } from './ScheduledTaskEditorDialog';
-import { useMutation, useQuery } from '@tanstack/react-query';
+import { useInfiniteQuery, useMutation, useQuery } from '@tanstack/react-query';
 import { useEvent } from '@reactuses/core';
 import { AnimatePresence, motion, useReducedMotion } from 'motion/react';
 import { queryClient, queryKeys } from '@/lib/queryRuntime';
 import { useMobileBackRoute } from '@/mobile/mobileBackNavigation';
 import { MobileTabPageHeader } from '@/mobile/MobileTabPageHeader';
+import { useMobileNavigationStore } from '@/mobile/useMobileNavigationStore';
+import { openSessionFromToast } from '@/sync/session-opener';
+import { isCapacitorApp, isIPadApp } from '@/lib/platform';
 
 const scheduleTimes = (task: ScheduledTask): string[] => {
   const raw = Array.isArray(task.schedule.times)
@@ -143,6 +148,23 @@ const formatRelativeTime = (value: number | undefined, t: ReturnType<typeof useI
     : t('sessions.scheduledTasks.dialog.relativeTime.durationAgo', { duration: body });
 };
 
+const formatRunDateTime = (value: number): string => new Intl.DateTimeFormat(getCurrentIntlLocale(), {
+  dateStyle: 'medium',
+  timeStyle: 'short',
+}).format(new Date(value));
+
+const formatRunDuration = (durationMs: number | null, t: ReturnType<typeof useI18n>['t']): string => {
+  if (durationMs === null) return t('sessions.scheduledTasks.history.duration.pending');
+  if (durationMs < 1_000) return t('sessions.scheduledTasks.history.duration.milliseconds', { count: Math.max(0, Math.round(durationMs)) });
+  const seconds = Math.round(durationMs / 1_000);
+  if (seconds < 60) return t('sessions.scheduledTasks.history.duration.seconds', { count: seconds });
+  const minutes = Math.floor(seconds / 60);
+  const remainingSeconds = seconds % 60;
+  return remainingSeconds > 0
+    ? t('sessions.scheduledTasks.history.duration.minutesSeconds', { minutes, seconds: remainingSeconds })
+    : t('sessions.scheduledTasks.history.duration.minutes', { count: minutes });
+};
+
 type StatusTone = 'success' | 'error' | 'warning' | 'muted';
 
 const STATUS_META: Record<
@@ -174,6 +196,7 @@ type TaskIdentity = { projectId: string; taskId: string };
 
 const taskIdentityKey = ({ projectId, taskId }: TaskIdentity) => `${projectId}:${taskId}`;
 const globalScheduledTasksQueryKey = queryKeys.scoped('scheduled-tasks');
+const globalScheduledTaskRunsQueryKey = queryKeys.scoped('scheduled-task-runs');
 
 let mobileCloseRequest: (() => boolean) | null = null;
 
@@ -219,6 +242,7 @@ export function ScheduledTasksDialog() {
 
 type WorkspaceFilter = 'all' | 'active' | 'paused';
 type WorkspaceEditorMode = 'closed' | 'create' | 'edit';
+type WorkspaceView = 'tasks' | 'history';
 
 export function ScheduledTasksWorkspace({
   presentation = 'workspace',
@@ -250,6 +274,7 @@ export function ScheduledTasksWorkspace({
   const [selectedTaskIdentity, setSelectedTaskIdentity] = React.useState<TaskIdentity | null>(null);
   const [editorMode, setEditorMode] = React.useState<WorkspaceEditorMode>('closed');
   const [filter, setFilter] = React.useState<WorkspaceFilter>('all');
+  const [workspaceView, setWorkspaceView] = React.useState<WorkspaceView>('tasks');
   const [search, setSearch] = React.useState('');
   const [draftDirty, setDraftDirty] = React.useState(false);
   const [mutatingTaskIdentity, setMutatingTaskIdentity] = React.useState<string | null>(null);
@@ -298,6 +323,27 @@ export function ScheduledTasksWorkspace({
     [selectedTaskIdentity, tasks],
   );
   const selectedTask = selectedTaskEntry?.task ?? null;
+  const runsQuery = useInfiniteQuery({
+    queryKey: globalScheduledTaskRunsQueryKey,
+    enabled: open && workspaceView === 'history',
+    initialPageParam: undefined as string | undefined,
+    queryFn: ({ pageParam, signal }) => fetchScheduledTaskRuns({ before: pageParam, limit: 20 }, signal),
+    getNextPageParam: (lastPage) => lastPage.complete ? undefined : lastPage.nextCursor ?? undefined,
+    refetchOnMount: 'always',
+  });
+  const runs = React.useMemo(() => {
+    const seen = new Set<string>();
+    const result: ScheduledTaskRun[] = [];
+    for (const page of runsQuery.data?.pages ?? []) {
+      for (const run of page.runs) {
+        if (seen.has(run.id)) continue;
+        seen.add(run.id);
+        result.push(run);
+      }
+    }
+    return result;
+  }, [runsQuery.data]);
+  const projectById = React.useMemo(() => new Map(projects.map((project) => [project.id, project])), [projects]);
 
   React.useEffect(() => {
     if (tasksQuery.error) {
@@ -315,7 +361,8 @@ export function ScheduledTasksWorkspace({
         clearTimeout(timeoutID);
       }
       timeoutID = setTimeout(() => {
-        void queryClient.invalidateQueries({ queryKey: globalScheduledTasksQueryKey });
+        void queryClient.invalidateQueries({ queryKey: globalScheduledTasksQueryKey, exact: true });
+        void queryClient.invalidateQueries({ queryKey: globalScheduledTaskRunsQueryKey, exact: true });
       }, 400);
     });
     return () => {
@@ -348,7 +395,8 @@ export function ScheduledTasksWorkspace({
   const runTaskMutation = useMutation({
     mutationFn: ({ projectID, taskID }: { projectID: string; taskID: string }) => runScheduledTaskNow(projectID, taskID),
     onSuccess: () => {
-      void queryClient.invalidateQueries({ queryKey: globalScheduledTasksQueryKey });
+      void queryClient.invalidateQueries({ queryKey: globalScheduledTasksQueryKey, exact: true });
+      void queryClient.invalidateQueries({ queryKey: globalScheduledTaskRunsQueryKey, exact: true });
     },
   });
   const toggleTaskMutation = useMutation({
@@ -411,6 +459,34 @@ export function ScheduledTasksWorkspace({
     setSelectedTaskIdentity(null);
     setEditorMode('create');
     setDraftDirty(false);
+  });
+
+  const handleWorkspaceViewChange = useEvent((nextView: WorkspaceView) => {
+    if (workspaceView === nextView) return;
+    if (editorMode !== 'closed' && !confirmDraftChange()) return;
+    setSelectedTaskIdentity(null);
+    setEditorMode('closed');
+    setDraftDirty(false);
+    setWorkspaceView(nextView);
+  });
+
+  const handleOpenRunSession = useEvent((run: ScheduledTaskRun) => {
+    if (!run.sessionId || !run.directory) return;
+    if (presentation === 'mobile-panel') onOpenChange?.(false);
+    if (isCapacitorApp() && !isIPadApp()) {
+      useMobileNavigationStore.getState().openSession({ sessionId: run.sessionId, directory: run.directory });
+      return;
+    }
+    useUIStore.getState().setActiveMainTab('chat');
+    openSessionFromToast(run.sessionId, run.directory);
+  });
+
+  const handleRetryRuns = useEvent(async () => {
+    if (runsQuery.data && runsQuery.hasNextPage) {
+      await runsQuery.fetchNextPage();
+      return;
+    }
+    await runsQuery.refetch();
   });
 
   const handleCancelEditor = useEvent((nextOpen: boolean) => {
@@ -667,6 +743,36 @@ export function ScheduledTasksWorkspace({
           isMobileTab ? 'pb-0 pt-0' : isMobilePanel ? 'px-3 pb-3 pt-3' : 'px-4 pb-5 pt-4 sm:px-6',
         )}>
           <div className={cn('mx-auto w-full', isMobileTab ? 'max-w-[26rem]' : 'max-w-4xl')}>
+          <div
+            className={cn(
+              'mb-3 grid grid-cols-2 gap-1 rounded-xl bg-[var(--surface-muted)] p-1',
+              isMobileTab && 'oc-mobile-floating-surface',
+            )}
+            role="tablist"
+            aria-label={t('sessions.scheduledTasks.workspace.views.aria')}
+          >
+            {(['tasks', 'history'] as const).map((view) => (
+              <Button
+                key={view}
+                type="button"
+                variant="ghost"
+                size="sm"
+                role="tab"
+                aria-selected={workspaceView === view}
+                className={cn(
+                  'min-h-9 rounded-lg text-muted-foreground transition-[background-color,color,box-shadow] motion-reduce:transition-none',
+                  isMobilePanel && 'min-h-11',
+                  workspaceView === view && 'bg-[var(--surface-elevated)] text-foreground shadow-sm hover:bg-[var(--surface-elevated)]',
+                )}
+                onClick={() => handleWorkspaceViewChange(view)}
+              >
+                <Icon name={view === 'tasks' ? 'calendar-schedule' : 'history'} className="size-4" />
+                {t(`sessions.scheduledTasks.workspace.views.${view}`)}
+              </Button>
+            ))}
+          </div>
+          {workspaceView === 'tasks' ? (
+          <>
           <div className={cn(
             'flex items-center justify-between',
             isMobilePanel ? 'gap-2' : 'gap-3',
@@ -736,6 +842,8 @@ export function ScheduledTasksWorkspace({
               />
             </div>
           ) : null}
+          </>
+          ) : null}
           </div>
         </header>
 
@@ -752,6 +860,123 @@ export function ScheduledTasksWorkspace({
             'mx-auto w-full',
             isMobileTab ? 'max-w-[26rem]' : 'max-w-4xl border-t border-border/40 pt-4',
           )}>
+          {workspaceView === 'history' ? (
+            <div className="space-y-3">
+              {runsQuery.isLoading ? (
+                <div className="flex items-center gap-2 px-4 py-3 typography-meta text-muted-foreground">
+                  <Icon name="loader-4" className="size-4 animate-spin motion-reduce:animate-none" />
+                  {t('sessions.scheduledTasks.history.loading')}
+                </div>
+              ) : runsQuery.error && runs.length === 0 ? (
+                <div className="rounded-xl border border-dashed border-border p-4">
+                  <div className="flex items-start gap-3">
+                    <Icon name="error-warning" className="mt-0.5 size-4 shrink-0 text-[var(--status-error)]" />
+                    <div className="min-w-0 flex-1">
+                      <p className="typography-ui-label font-medium text-foreground">{t('sessions.scheduledTasks.history.error.title')}</p>
+                      <p className="mt-1 break-words typography-meta text-muted-foreground">
+                        {runsQuery.error instanceof Error ? runsQuery.error.message : t('sessions.scheduledTasks.history.error.description')}
+                      </p>
+                    </div>
+                    <Button variant="outline" size="sm" onClick={() => void handleRetryRuns()}>
+                      {t('sessions.scheduledTasks.history.retry')}
+                    </Button>
+                  </div>
+                </div>
+              ) : runs.length === 0 ? (
+                <div className="rounded-xl border border-dashed border-border p-6 text-center">
+                  <Icon name="history" className="mx-auto size-5 text-muted-foreground" />
+                  <p className="mt-2 typography-ui-label font-medium text-foreground">{t('sessions.scheduledTasks.history.empty.title')}</p>
+                  <p className="mt-1 typography-meta text-muted-foreground">{t('sessions.scheduledTasks.history.empty.description')}</p>
+                </div>
+              ) : (
+                <div className="space-y-2">
+                  {runs.map((run) => {
+                    const project = projectById.get(run.projectId);
+                    const projectLabel = project ? formatDirectoryName(project.path) : run.projectId;
+                    const directoryLabel = run.directory ? formatDirectoryName(run.directory) : null;
+                    const statusMeta = STATUS_META[run.status];
+                    const canOpenSession = Boolean(run.sessionId && run.directory);
+                    return (
+                      <article
+                        key={run.id}
+                        className={cn(
+                          'rounded-xl border border-border/60 bg-[var(--surface-elevated)] p-4 shadow-sm dark:shadow-none',
+                          isMobileTab && 'oc-mobile-floating-surface',
+                        )}
+                      >
+                        <div className="flex min-w-0 items-start gap-3">
+                          <span
+                            className="mt-0.5 flex size-8 shrink-0 items-center justify-center rounded-full border"
+                            style={toneStyle(statusMeta.tone)}
+                          >
+                            <Icon name={statusMeta.Icon} className={cn('size-4', statusMeta.spin && 'animate-spin motion-reduce:animate-none')} />
+                          </span>
+                          <div className="min-w-0 flex-1">
+                            <div className="flex min-w-0 flex-wrap items-center gap-x-2 gap-y-1">
+                              <h3 className="min-w-0 flex-1 truncate typography-ui-label font-semibold text-foreground">{run.taskName}</h3>
+                              <span className="shrink-0 typography-micro font-medium" style={statusMeta.tone === 'muted' ? undefined : { color: `var(--status-${statusMeta.tone})` }}>
+                                {t(`sessions.scheduledTasks.dialog.status.${run.status}`)}
+                              </span>
+                            </div>
+                            <p className="mt-1 truncate typography-meta text-muted-foreground" title={run.directory ?? projectLabel}>
+                              {directoryLabel && directoryLabel !== projectLabel ? `${projectLabel} · ${directoryLabel}` : projectLabel}
+                            </p>
+                            <div className="mt-2 flex flex-wrap items-center gap-x-3 gap-y-1 typography-micro text-muted-foreground">
+                              <span className="inline-flex items-center gap-1.5">
+                                <Icon name="time" className="size-3.5" />
+                                {formatRunDateTime(run.startedAt)}
+                              </span>
+                              <span>{t(`sessions.scheduledTasks.history.trigger.${run.trigger}`)}</span>
+                              <span>{formatRunDuration(run.durationMs, t)}</span>
+                            </div>
+                            {run.error ? (
+                              <p className="mt-2 line-clamp-2 break-words rounded-lg bg-[var(--status-error-background)] px-2.5 py-2 typography-micro text-[var(--status-error-foreground)]" title={run.error.slice(0, 300)}>
+                                {run.error.slice(0, 300)}
+                              </p>
+                            ) : null}
+                          </div>
+                        </div>
+                        {canOpenSession ? (
+                          <div className="mt-3 flex justify-end border-t border-border/40 pt-3">
+                            <Button
+                              variant="ghost"
+                              size="sm"
+                              className={cn('text-foreground', isMobilePanel && 'min-h-11')}
+                              onClick={() => handleOpenRunSession(run)}
+                            >
+                              {t('sessions.scheduledTasks.history.openSession')}
+                              <Icon name="external-link" className="size-4" />
+                            </Button>
+                          </div>
+                        ) : null}
+                      </article>
+                    );
+                  })}
+                  {runsQuery.error ? (
+                    <div className="flex flex-wrap items-center justify-between gap-2 rounded-xl border border-[var(--status-error-border)] bg-[var(--status-error-background)] p-3 typography-meta text-[var(--status-error-foreground)]">
+                      <span>{t('sessions.scheduledTasks.history.error.more')}</span>
+                      <Button variant="outline" size="sm" onClick={() => void handleRetryRuns()}>{t('sessions.scheduledTasks.history.retry')}</Button>
+                    </div>
+                  ) : null}
+                  {runsQuery.hasNextPage ? (
+                    <div className="flex justify-center pt-2">
+                      <Button
+                        variant="outline"
+                        size="sm"
+                        className={cn(isMobilePanel && 'min-h-11')}
+                        disabled={runsQuery.isFetchingNextPage}
+                        onClick={() => void runsQuery.fetchNextPage()}
+                      >
+                        {runsQuery.isFetchingNextPage ? <Icon name="loader-4" className="size-4 animate-spin motion-reduce:animate-none" /> : <Icon name="history" className="size-4" />}
+                        {runsQuery.isFetchingNextPage ? t('sessions.scheduledTasks.history.loadingMore') : t('sessions.scheduledTasks.history.loadMore')}
+                      </Button>
+                    </div>
+                  ) : null}
+                </div>
+              )}
+            </div>
+          ) : (
+          <>
           {failedProjectIds.length > 0 ? (
             <div className="mb-3 rounded-xl border p-3 typography-meta" style={toneStyle('warning')}>
               {t('sessions.scheduledTasks.workspace.partialLoadWarning')}
@@ -979,6 +1204,8 @@ export function ScheduledTasksWorkspace({
                 </motion.div>
               )}
             </AnimatePresence>
+          )}
+          </>
           )}
           </div>
         </div>

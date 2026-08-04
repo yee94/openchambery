@@ -128,7 +128,13 @@ Sessions titled `smartfetch-secondary` are temporary SmartFetch model calls. The
 directory event reducer never inserts them into live child-store session lists,
 and `aggregateLiveSessions` excludes them so sidebar/mobile merges cannot flash
 them before `session.deleted` arrives. The same title blacklist is shared with
-`useGlobalSessionsStore` and the server session index.
+`useGlobalSessionsStore` and the server session index. System sessions are also
+hidden from ordinary active/archived lists by authoritative metadata only: a
+non-empty `metadata.openchamber.assistant.assistantID` or
+`metadata.openchamber.scheduledTask.taskID`. Title prefixes never participate in
+this check. Metadata is ownership/isolation; `time.archived` is archive state;
+titles are human labels. Direct open by sessionID+directory is unaffected.
+Assistant history and scheduled-task source surfaces remain the entry points.
 
 `useCurrentSessionEntity(sessionID)` owns current-session entity resolution for the desktop Header and mobile Header. It prioritizes the matching cross-directory live session, then the matching global active session. A resolved entity remains available for two seconds during a brief source gap; clearing or changing the session ID immediately clears that fallback.
 
@@ -477,8 +483,28 @@ Rules that keep this single-sourced:
 - Message loading status is runtime-scoped. Reactive request de-duplication is
   local to the owning directory-store lifecycle, so a remounted provider still
   commits a shared transport response into its own store.
-- Older history is user-driven pagination (`loadMore`) only. Each request loads
-  30 messages on every surface.
+- Older history is user-driven pagination (`loadMore`) only. Prepend / loadMore
+  uses one Host 3-turn request (`GET /api/openchamber/sessions/:id/messages`
+  with `directory`, optional `before`, `turns=3`, `scanLimit=100`) via
+  `fetchSessionTurnPage` and a single store commit — only when
+  `purpose === "prepend"` and `before` is set. The client asserts a strict page
+  contract: each record is an object with non-empty `info.id` and optional
+  `parts` array; `turnCount` is an integer in `0..requestedTurns` (server-
+  declared, no client predicate recompute); `complete=true` requires
+  `cursor=null`, `complete=false` requires a non-empty cursor string; empty
+  cursor strings and `partial:true` are rejected. `use-sync` adopts
+  `page.complete` strictly (never `|| !cursor`). `scanLimit=100` is the Host
+  upstream scan chunk only — not a client message return size. Initial /
+  recovery / materialize stay on the official OpenCode SDK `session.messages`
+  path at 30 (refetch 100 and send-confirmation 30 are unchanged). The chat
+  timeline controller issues at most one Host turn-page request per user
+  interaction (desktop near-top scroll or explicit upward intent; mobile top
+  button). Concurrent wheel bursts share one in-flight chain via a synchronous
+  loading guard; fetches check `historyLoading` and cancel viewport-anchor hold
+  only while still owning the armed snapshot. Active desktop transcripts may
+  auto-fill earlier history once after a short first paint (`messageCount ≤ 38`
+  and `scrollHeight ≤ clientHeight + 48`) while still pinned; that path does not
+  release auto-follow and must not re-arm after trim reverse-loading.
 - Composer session mention search filters every loaded global active-session
   summary across projects, while the empty menu keeps three recent suggestions.
   Opening the mention menu performs no referenced-session fetch. Selecting a
@@ -746,7 +772,7 @@ Rules:
 8. Sidebar previous/next navigation is scope-aware. `SessionSidebar` publishes the Recent order plus logically visible project rows to `session-navigation.ts`; keyboard and native-menu actions share that registry and update the explicit session Focus before committing current-session authority. Project-origin navigation is restricted to the current expanded project and never falls through to hidden rows or another project.
 9. Global Mod+1…9 navigation is session-row based, not project based. `SessionSidebar` combines the currently revealed Recent rows with logically visible project rows, caps the visual order at nine, and publishes it through `sidebar-numbered-navigation.ts`. The numbered activation preserves the selected row's exact Recent/Project Focus identity.
 10. `optimisticSend()` inserts the optimistic user message and local `busy` status **before** the connection grace wait (`waitForConnectionOrThrow`). Long-idle reconnect must not leave the composer cleared / status busy while the chat list still shows the pre-send snapshot. Connection failure remains a pre-dispatch rollback of that optimistic row.
-11. `fetchMessagesForSession()` may early-return on a renderable cache only when `shouldSkipSessionPrefetch` also allows reuse (clean ready/complete or in-TTL, no dirty mark). It always bypasses that cache for a live `busy`/`retry` session whose local tail is **not** already a user message (pre-send snapshot while status is busy). Ordinary busy sessions with an optimistic/confirmed trailing user row keep the early-return when the prefetch meta is clean, so session switches do not force a refetch or loading flash.
+  11. `fetchMessagesForSession()` may early-return on a renderable cache only when `shouldSkipSessionPrefetch` also allows reuse (clean ready/complete or in-TTL, no dirty mark). It always bypasses that cache for a live `busy`/`retry` session whose local tail is **not** already a user message (pre-send snapshot while status is busy). Ordinary busy sessions with an optimistic/confirmed trailing user row keep the early-return when the prefetch meta is clean, so session switches do not force a refetch or loading flash. Single-flight applies per runtime/directory/session/limit; concurrent callers share the in-flight promise.
 
 Examples of global-store updates performed in `session-actions.ts`:
 
@@ -802,11 +828,11 @@ the stable-ID pending user-message presentation while it sets `draftEstablishing
 before response-style and snippet preprocessing. The row contains the captured
 visible text, primary and per-part attachments, synthetic parts, and agent mention.
 `claimDraftSubmission` reuses that message identity and promotes the draft to
-`draftSubmitting`. The shared MessageList renders the row while create+prompt
-remains in flight, with the existing establishing status below it. A successful
-response inserts the same complete part set into the new session before selection;
-SSE/HTTP materialization wins by ID. Definitive failure clears the pending row
-and restores the claimed draft input.
+`draftSubmitting`. The shared MessageList renders the pending presentation while
+create+prompt remains in flight, with the establishing status below it. On
+success that same presentation is retained against the new session id until its
+authoritative record lands, so the row never blinks out during the handover.
+Definitive failure clears the pending row and restores the claimed draft input.
 
 Send-path prep must not compete for Chromium's per-origin HTTP/1.1 sockets:
 `fetchResponseStyleInstruction` reads an in-memory cache warmed by settings
@@ -819,13 +845,74 @@ Cold-start project lists use `GET /api/git/discover` (via
 check/primary-root caches; on 501/network failure the client falls back to
 the existing single-request path.
 
-After success, commit the real session to directory routing, global session
-state, selection state, and the optimistic shadow map. If SSE delivered the
-message first, preserve that authoritative object, avoid a duplicate insertion,
-and publish the local `busy` status until authoritative session activity arrives.
-Create-phase failures restore the draft and input. Prompt-phase failures keep
-the created session; ambiguous delivery is confirmed by message ID and is never
-automatically re-submitted.
+Before `createWithPrompt`, the client synchronously ensures the resolved
+directory child store exists via `dirStoreForDirectory(dir, { bootstrap: false })`
+so any message SSE that races the HTTP response can route into a live store
+without bypassing the new-draft bootstrap gate (no full directory bootstrap).
+After a successful response, commit session-directory routing
+(`recordCreatedSession`), retain the sent row as presentation for the real
+session id, then finalize / select (which starts the ordinary selection page
+fetch) / fill-void busy / consume / notify. Combined success never fabricates
+client user/assistant domain rows, never stamps `__openchamberOptimistic`, and
+— this is the load-bearing part — **issues no confirmation request of its own**.
+The send path costs exactly what it cost before this remediation existed.
+
+Busy is a fill-void write on the captured directory store **after** finalize /
+select: if `session_status` still has no key for the new session, write
+`busy` + `observed_at`. The retained presentation is chat-view only, while
+sidebar activity, queue gating and abort all read `session_status`, so without
+this write the new session would read idle until its first status event. Any
+status already observed came from the server after creation and outranks the
+inference. `fetchMessagesForSession` judges an in-flight send only from the
+last user row in the store (not UI retained state); the presence watch covers
+the combined miss path.
+
+Remediation is reactive, never speculative. `ensureSentUserMessagePresence`
+waits locally (a child-store subscription, no network) for `messageID` to
+appear with parts; SSE or the ordinary selection
+page fetch normally delivers it well inside
+`COMBINED_SEND_PRESENCE_GRACE_MS` (2s), and that path issues zero requests.
+Only a real presence miss enters one bounded recovery pull
+(`fetchRecentSendConfirmationRecords` + gap-fill materialize, about 12 attempts
+at 500ms, inlined in `ensureSentUserMessagePresence`). Presence requires parts,
+not just the row: a part-less record paints an empty bubble, which is the same
+defect as an absent row.
+
+The recovery pull is gap-fill only
+(`SEND_GAP_FILL_SESSION_MERGE_STRATEGY`: insert-only messages, `skip-existing`
+parts). By the time it runs, live SSE may own the tail, and an
+upsert/replace page would replay an older snapshot over it — silently dropping
+already-finished tool and reasoning parts and reverting `finish` / `time.completed`
+on a streaming assistant row. Presence waiting and the pull are both
+runtime-scoped to the draft claim (`isCurrent` / `claim.runtime`): a runtime
+switch stops further network attempts and never materializes into the captured
+old store (currentness is rechecked after fetch and before materialize). A
+bounded miss or a single exception logs one structured warning
+(sessionId / messageID / directory only; no user body); the retained row stays
+visible. Fetch failure never clears existing store messages; reconnect recovery
+remains the last-resort gap filler.
+
+The retained presentation is what actually closes the original gap: the draft's
+`pendingUserMessage` used to vanish with the draft at `setCurrentSession` while
+the store could still be empty. `retainedPendingUserMessages` (session-keyed,
+presentation only, never written into the sync store) keeps that row on screen
+across the handover, and the transcript drops it through
+`clearRetainedPendingUserMessages` once the same ID exists **with parts**. A row
+that never materializes stays visible on purpose — a sent message is never
+silently lost from the body. Non-empty pending/retained rows keep the composer
+in working only until session status has clearly finished that send; a fresh
+authoritative idle (`sessionStatusObservedAt` at/after newest pending
+`time.created`) clears working while the retained presentation may still paint
+until the same ID materializes with parts. Runtime switch clears the map; the
+new runtime reads its own transcript from the store.
+
+Prompt-phase ambiguous confirmed materialize keeps its existing
+confirmation-record path (also gap-fill only). Create-phase failures restore the
+draft and input. Prompt-phase failures keep the created session; ambiguous
+delivery is confirmed by message ID and is never automatically re-submitted.
+Direct-send and the durable queue remain on `promptAsync` until OpenCode exposes
+a matching immutable admission contract (see P2 promptAsync admission gate
+above).
 
 While that first create+prompt flight is held, later composer submits for the
 same draft do not open another session. `composer-send-manager.ts` records the
@@ -847,16 +934,29 @@ Composer surfaces read one derived `ComposerSendPhase` (`flightKind`, `inFlight`
 submit entry point (button, Enter, form, preset, dictation) checks the same
 manager claim before the flight gate. Event handlers read flight state from the
 store at call time rather than from a render snapshot. Draft-open blocking is
-owned solely by the manager; `openNewSessionDraft()` keeps its existing rotation
-behavior for a plain claimed submission with no establishing send.
+owned solely by the manager; `openNewSessionDraft()` does not rotate identity
+while `draftSubmitting` / `draftEstablishing` (or manager establishing) is active.
 
 
 ### New-session draft ownership (Phase 1 Lane 3b)
 
-An open new-session draft carries a stable `draftID`. Opening from closed state
-creates a UUID, an idle repeated open retains that UUID and submission token,
-and opening during submission creates a fresh UUID with a reset token sequence.
-Close clears the ID. Runtime session memory preserves the complete draft state,
+An open new-session draft carries a stable `draftID` derived by
+`deriveNewSessionDraftID` after project/directory resolution: project id first,
+then normalized directory, else a default bucket (`new-session:project:…` /
+`new-session:directory:…` / `new-session:default`). Same project close + reopen
+reuses that id so the durable input-store body and attachments survive; different
+projects get different ids. Runtime isolation remains on
+`DraftKey.transportIdentity`. Opening while `draftSubmitting` or
+`draftEstablishing` is a no-op that keeps the in-flight identity. Close may clear
+the UI `draftID` because reopen re-derives the same ownerID. When setting the
+active draft key, if input-store already has that durable record, body and
+attachments are preserved (no `clearAttachedFiles`); a fresh key still clears
+attachments. That restored record includes the full Composer document sidecars
+(`composerReferences` for session/paste/skill/command), file/directory/agent
+mentions, synthetic parts, and durable attachment metadata (server file, image
+URL, VS Code selection, etc.). Agent chip selection in ChatInput commits a
+`kind: 'agent'` mention with a range that matches only `@agentName` (boundary
+spaces excluded). Runtime session memory preserves the complete draft state,
 including its identity, per runtime.
 
 Submission claims capture the draft ID, token, UI draft snapshot, input runtime

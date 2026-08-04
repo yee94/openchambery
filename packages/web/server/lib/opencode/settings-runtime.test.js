@@ -83,6 +83,118 @@ describe('settings runtime', () => {
     }
   });
 
+  it('upgrades legacy compact-chat defaults once and writes the migration marker', async () => {
+    const { runtime, settingsFilePath, cleanup } = await createRuntime();
+    try {
+      await fsPromises.writeFile(
+        settingsFilePath,
+        JSON.stringify({
+          chatRenderMode: 'live',
+          activityRenderMode: 'summary',
+          showTurnChangedFiles: false,
+          theme: 'dark',
+        }, null, 2),
+        'utf8',
+      );
+
+      const first = await runtime.readSettingsFromDiskMigrated();
+      expect(first.chatRenderMode).toBe('sorted');
+      expect(first.activityRenderMode).toBe('collapsed');
+      expect(first.showTurnChangedFiles).toBe(true);
+      expect(first.compactChatDefaultsMigrationVersion).toBe(1);
+      expect(first.theme).toBe('dark');
+
+      const onDisk = JSON.parse(await fsPromises.readFile(settingsFilePath, 'utf8'));
+      expect(onDisk.chatRenderMode).toBe('sorted');
+      expect(onDisk.activityRenderMode).toBe('collapsed');
+      expect(onDisk.showTurnChangedFiles).toBe(true);
+      expect(onDisk.compactChatDefaultsMigrationVersion).toBe(1);
+
+      // Second read is idempotent — no re-upgrade of user-chosen legacy values after marker.
+      await fsPromises.writeFile(
+        settingsFilePath,
+        JSON.stringify({
+          chatRenderMode: 'live',
+          activityRenderMode: 'summary',
+          showTurnChangedFiles: false,
+          compactChatDefaultsMigrationVersion: 1,
+        }, null, 2),
+        'utf8',
+      );
+      const second = await runtime.readSettingsFromDiskMigrated();
+      expect(second.chatRenderMode).toBe('live');
+      expect(second.activityRenderMode).toBe('summary');
+      expect(second.showTurnChangedFiles).toBe(false);
+      expect(second.compactChatDefaultsMigrationVersion).toBe(1);
+    } finally {
+      await cleanup();
+    }
+  });
+
+  it('upgrades absent compact-chat fields when marker is missing', async () => {
+    const { runtime, settingsFilePath, cleanup } = await createRuntime();
+    try {
+      await fsPromises.writeFile(
+        settingsFilePath,
+        JSON.stringify({ theme: 'light' }, null, 2),
+        'utf8',
+      );
+
+      const settings = await runtime.readSettingsFromDiskMigrated();
+      expect(settings.chatRenderMode).toBe('sorted');
+      expect(settings.activityRenderMode).toBe('collapsed');
+      expect(settings.showTurnChangedFiles).toBe(true);
+      expect(settings.compactChatDefaultsMigrationVersion).toBe(1);
+
+      const onDisk = JSON.parse(await fsPromises.readFile(settingsFilePath, 'utf8'));
+      expect(onDisk.chatRenderMode).toBe('sorted');
+      expect(onDisk.activityRenderMode).toBe('collapsed');
+      expect(onDisk.showTurnChangedFiles).toBe(true);
+      expect(onDisk.compactChatDefaultsMigrationVersion).toBe(1);
+    } finally {
+      await cleanup();
+    }
+  });
+
+  it('runs compact-chat defaults migration on persistSettings before first write', async () => {
+    const { runtime, settingsFilePath, cleanup } = await createRuntime();
+    try {
+      // No settings file yet — first persist must still establish marker + defaults.
+      const response = await runtime.persistSettings({ theme: 'dark' });
+      expect(response.theme).toBe('dark');
+      expect(response.chatRenderMode).toBe('sorted');
+      expect(response.activityRenderMode).toBe('collapsed');
+      expect(response.showTurnChangedFiles).toBe(true);
+      expect(response.compactChatDefaultsMigrationVersion).toBe(1);
+
+      const onDisk = JSON.parse(await fsPromises.readFile(settingsFilePath, 'utf8'));
+      expect(onDisk.chatRenderMode).toBe('sorted');
+      expect(onDisk.activityRenderMode).toBe('collapsed');
+      expect(onDisk.showTurnChangedFiles).toBe(true);
+      expect(onDisk.compactChatDefaultsMigrationVersion).toBe(1);
+
+      // After marker, user may set live / summary / false and values are retained.
+      const afterUserChoice = await runtime.persistSettings({
+        chatRenderMode: 'live',
+        activityRenderMode: 'summary',
+        showTurnChangedFiles: false,
+        compactChatDefaultsMigrationVersion: 1,
+      });
+      expect(afterUserChoice.chatRenderMode).toBe('live');
+      expect(afterUserChoice.activityRenderMode).toBe('summary');
+      expect(afterUserChoice.showTurnChangedFiles).toBe(false);
+      expect(afterUserChoice.compactChatDefaultsMigrationVersion).toBe(1);
+
+      const onDiskAfter = JSON.parse(await fsPromises.readFile(settingsFilePath, 'utf8'));
+      expect(onDiskAfter.chatRenderMode).toBe('live');
+      expect(onDiskAfter.activityRenderMode).toBe('summary');
+      expect(onDiskAfter.showTurnChangedFiles).toBe(false);
+      expect(onDiskAfter.compactChatDefaultsMigrationVersion).toBe(1);
+    } finally {
+      await cleanup();
+    }
+  });
+
   it.skipIf(process.platform !== 'win32')('falls back when Windows blocks atomic settings replacement', async () => {
     const tempRoot = await fsPromises.mkdtemp(path.join(os.tmpdir(), 'oc-settings-runtime-'));
     const settingsFilePath = path.join(tempRoot, 'settings.json');

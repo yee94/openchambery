@@ -28,6 +28,7 @@ This module provides OpenCode server integration utilities for the web server ru
 - `packages/web/server/lib/opencode/static-routes-runtime.js`: static asset/SPA fallback route registration and manifest route wiring.
 - `packages/web/server/lib/opencode/feature-routes-runtime.js`: feature route composition runtime for dynamic import-backed config/skill/provider route registration.
 - `packages/web/server/lib/conversations/`: combined create-session-and-prompt orchestration (OpenChamber-owned, registered before generic proxy).
+- `packages/web/server/lib/session-turn-pages/`: turn-window session message pagination (`GET /api/openchamber/sessions/:sessionID/messages`); loops official OpenCode `session.messages` until N authored user turns are collected; registered before generic proxy. See `session-turn-pages/DOCUMENTATION.md`.
 - `packages/web/server/lib/opencode/opencode-resolution-runtime.js`: OpenCode binary resolution snapshot runtime for settings routes and diagnostics.
 - `packages/web/server/lib/opencode/tunnel-wiring-runtime.js`: tunnel service/routes composition runtime and active-port wiring for main server startup.
 - `packages/web/server/lib/opencode/startup-pipeline-runtime.js`: server startup tail orchestration runtime for terminal/proxy/static/start-listen flow.
@@ -188,6 +189,7 @@ This module provides OpenCode server integration utilities for the web server ru
   - `writeSettingsToDisk(settings)`
   - `persistSettings(changes)`
   - Persistent permission auto-accept policy is stored under `permissionAutoAccept`; execution ownership lives in `lib/permission-auto-accept/`.
+  - One-shot compact-chat defaults migration: when disk marker `compactChatDefaultsMigrationVersion` is missing, rewrite legacy/absent `chatRenderMode`/`activityRenderMode`/`showTurnChangedFiles` to `sorted`/`collapsed`/`true` and persist marker `1` (marker stays on disk; response allowlist still hides it). Marker already `1` preserves user values; `persistSettings` runs the same migration before the first write.
 
 ## Public exports (settings-helpers.js)
 - `createSettingsHelpers(dependencies)`: creates settings helper runtime for settings request/response shaping.

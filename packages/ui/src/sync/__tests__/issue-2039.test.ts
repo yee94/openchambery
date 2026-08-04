@@ -257,6 +257,7 @@ mock.module("../session-actions", () => ({
   fetchMessagesForSession: mock(async () => undefined),
   fetchRecentSendConfirmationRecords: mock(async () => []),
   materializeConfirmedSendRecords: mock(async () => undefined),
+  ensureSentUserMessagePresence: mock(async () => "present"),
   dirStoreForDirectory: mock(() => undefined),
   getSessionLastAssistantModel: mock(() => null),
   abortCurrentOperation: mock(async () => undefined),

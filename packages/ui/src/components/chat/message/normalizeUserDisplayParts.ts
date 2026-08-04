@@ -89,10 +89,22 @@ const shouldKeepSyntheticUserText = (text: string, planModeEnabled: boolean): bo
     return false;
 };
 
+/** Server goal auto-continuation (session-goal runtime). Never show as a user bubble. */
+const isSessionGoalContinuationText = (text: string): boolean => {
+    const trimmed = text.trimStart();
+    return trimmed.startsWith('Continue working toward the active session goal.');
+};
+
 export const normalizeUserDisplayParts = (parts: Part[], options?: { planModeEnabled?: boolean }): Part[] => {
     const planModeEnabled = options?.planModeEnabled === true;
     return parts
         .filter((part) => {
+            if (part.type === 'text') {
+                const text = (part as { text?: unknown }).text;
+                if (typeof text === 'string' && isSessionGoalContinuationText(text)) {
+                    return false;
+                }
+            }
             const synthetic = (part as { synthetic?: boolean }).synthetic === true;
             if (!synthetic) return true;
             if (part.type !== 'text') return false;

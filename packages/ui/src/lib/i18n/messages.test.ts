@@ -39,4 +39,10 @@ describe('i18n dictionaries', () => {
       expect(dictionary['common.language.japanese']).toBeTruthy();
     }
   });
+
+  test('uses the organized display label in Chinese settings', () => {
+    const key = 'settings.openchamber.visual.option.chatRenderMode.sorted.label';
+    expect(zhCnDict[key]).toBe('整理后显示');
+    expect(zhTwDict[key]).toBe('整理後顯示');
+  });
 });

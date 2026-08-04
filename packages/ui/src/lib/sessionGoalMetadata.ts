@@ -71,8 +71,33 @@ export function getSessionGoal(session: Session | null | undefined): SessionGoal
 }
 
 export function formatGoalTokens(count: number): string {
-  if (count >= 1_000_000) return `${(count / 1_000_000).toFixed(1)}M`;
-  if (count >= 10_000) return `${Math.round(count / 1000)}K`;
-  if (count >= 1_000) return `${(count / 1000).toFixed(1)}K`;
-  return String(count);
+  if (!Number.isFinite(count) || count <= 0) return '0';
+  if (count >= 1_000_000_000) {
+    const value = count / 1_000_000_000;
+    return `${value >= 10 ? Math.round(value) : value.toFixed(1).replace(/\.0$/, '')}B`;
+  }
+  if (count >= 1_000_000) {
+    const value = count / 1_000_000;
+    return `${value >= 10 ? Math.round(value) : value.toFixed(1).replace(/\.0$/, '')}M`;
+  }
+  if (count >= 1_000) {
+    const value = count / 1_000;
+    return `${value >= 10 ? Math.round(value) : value.toFixed(1).replace(/\.0$/, '')}K`;
+  }
+  return String(Math.floor(count));
+}
+
+/** Compact wall-clock duration for the goal strip (e.g. 12s, 3m, 1h12m). */
+export function formatGoalDuration(ms: number): string {
+  if (!Number.isFinite(ms) || ms < 0) return '0s';
+  const totalSeconds = Math.floor(ms / 1000);
+  if (totalSeconds < 60) return `${totalSeconds}s`;
+  const totalMinutes = Math.floor(totalSeconds / 60);
+  if (totalMinutes < 60) {
+    const seconds = totalSeconds % 60;
+    return seconds > 0 ? `${totalMinutes}m${seconds}s` : `${totalMinutes}m`;
+  }
+  const hours = Math.floor(totalMinutes / 60);
+  const minutes = totalMinutes % 60;
+  return minutes > 0 ? `${hours}h${minutes}m` : `${hours}h`;
 }

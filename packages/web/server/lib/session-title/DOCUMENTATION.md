@@ -24,11 +24,16 @@ minutes per session.
    or a fresh user `message.updated` clears it.
    A sidebar smart-title request sets `titleRefresh.requestedAt`; its
    `session.updated` event arms the same flow immediately.
-3. On fire:
-   - Skip when Settings → Chat → session title refresh is off.
-   - Skip sub-agent sessions (`parentID`), multi-run/fusion structural titles,
-     and titles the user manually renamed (current title ≠ last auto title
-     we wrote, and not still the OpenCode default placeholder).
+  3. On fire:
+    - Skip when Settings → Chat → session title refresh is off.
+    - Skip system-owned sessions whose metadata carries a non-empty
+      `openchamber.assistant.assistantID` or `openchamber.scheduledTask.taskID`
+      (fixed Assistant / scheduled titles must not be rewritten). Early
+      `session.created` and smart-title request extraction skip the same
+      metadata when present so timers are not armed.
+    - Skip sub-agent sessions (`parentID`), multi-run/fusion structural titles,
+      and titles the user manually renamed (current title ≠ last auto title
+      we wrote, and not still the OpenCode default placeholder).
    - Enforce the 5-minute throttle (`TITLE_THROTTLE_MS`). If still inside the
      window, re-arm for the remaining time instead of dropping the refresh.
    - Require 2+ real user turns (unless the title is still the default

@@ -203,7 +203,11 @@ session data.
 
 `useGlobalSessionsStore.ts` distinguishes bounded display snapshots from the full
 retention catalog. Sidebar active/archived loads are directory-keyed, capped, and
-deduplicated. `fullCatalogSessionIds` and `fullCatalogGeneration` update only after
+deduplicated. `isVisibleGlobalSession` (shared with live aggregate and event
+reducers) excludes SmartFetch temporary titles and system-owned sessions whose
+metadata carries a non-empty `openchamber.assistant.assistantID` or
+`openchamber.scheduledTask.taskID`; title prefixes are not ownership signals.
+`fullCatalogSessionIds` and `fullCatalogGeneration` update only after
 one complete active+archived catalog result; retention cleanup consumes that snapshot.
 Directory refreshes preserve it, failed catalog loads preserve the prior snapshot,
 and runtime switches clear it. Initial loading and background refreshing are separate

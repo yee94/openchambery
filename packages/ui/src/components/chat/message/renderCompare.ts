@@ -289,6 +289,8 @@ export const areRelevantTurnGroupingContextsEqual = (
     return true;
   }
 
+  if (left.isGroupExpanded !== right.isGroupExpanded) return false;
+
   if (left.turnId !== right.turnId) return false;
   if (left.isFirstAssistantInTurn !== right.isFirstAssistantInTurn) return false;
   if (left.isLastAssistantInTurn !== right.isLastAssistantInTurn) return false;
@@ -319,10 +321,6 @@ export const areRelevantTurnGroupingContextsEqual = (
 
   const segmentsRelevant = hasRelevantActivitySegments(left.activityGroupSegments, messageId)
     || hasRelevantActivitySegments(right.activityGroupSegments, messageId);
-
-  if ((ownerRelevant || segmentsRelevant) && left.isGroupExpanded !== right.isGroupExpanded) {
-    return false;
-  }
 
   if ((ownerRelevant || segmentsRelevant) && left.toggleGroup !== right.toggleGroup) {
     return false;

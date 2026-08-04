@@ -9,6 +9,7 @@ import type { ChatInputSurface } from './chatInputSurface';
 import {
     resolveChatContainerHostFeatures,
     mergePendingUserMessagePresentations,
+    pendingUserMessagesImplyWorking,
     type ChatContainerHost,
     type ChatContainerHostFeatures,
 } from './chatContainerHost';
@@ -96,6 +97,7 @@ import { resolveChatPromptAvailability, resolveSessionIdentityPending } from './
 import { shouldEnsureChatSessionRenderable } from './chatSessionMaterialization';
 
 const EMPTY_MESSAGES: Array<{ info: Message; parts: Part[] }> = [];
+const EMPTY_PENDING_USER_MESSAGES: readonly PendingUserMessagePresentation[] = [];
 const IDLE_SESSION_STATUS = { type: 'idle' as const };
 const CHAT_FORCE_SCROLL_BOTTOM_EVENT = 'openchamber:chat-force-scroll-bottom';
 const DEFAULT_RETRY_MESSAGE = 'Quota limit reached. Retrying automatically.';
@@ -586,7 +588,7 @@ const ChatContainerContent: React.FC<ChatContainerContentProps> = ({
     assistantHistory,
     onRevertMessage,
     warning = null,
-    pendingUserMessages = [],
+    pendingUserMessages: hostPendingUserMessages = EMPTY_PENDING_USER_MESSAGES,
     onPendingUserMessagesMaterialized,
 }) => {
     const hostFeatures = hostedFeatures ?? resolveChatContainerHostFeatures(undefined);
@@ -680,6 +682,22 @@ const ChatContainerContent: React.FC<ChatContainerContentProps> = ({
     });
     const sessionMessages = currentSessionId ? sessionMessageRecords : EMPTY_MESSAGES;
     const draftPendingMessage = newSessionDraft.pendingUserMessage;
+    // Rows the send path retained for this session until their authoritative
+    // records land. This is what keeps a just-sent message on screen across the
+    // draft → real session handover without any confirmation request.
+    const retainedPendingUserMessages = useSessionUIStore(
+        (state) => (currentSessionId ? state.retainedPendingUserMessages.get(currentSessionId) : undefined),
+    ) ?? EMPTY_PENDING_USER_MESSAGES;
+    const clearRetainedPendingUserMessages = useSessionUIStore((state) => state.clearRetainedPendingUserMessages);
+    const pendingUserMessages = React.useMemo(() => {
+        if (retainedPendingUserMessages.length === 0) return hostPendingUserMessages;
+        if (hostPendingUserMessages.length === 0) return retainedPendingUserMessages;
+        const hosted = new Set(hostPendingUserMessages.map((message) => message.info.id));
+        return [
+            ...hostPendingUserMessages,
+            ...retainedPendingUserMessages.filter((message) => !hosted.has(message.info.id)),
+        ];
+    }, [hostPendingUserMessages, retainedPendingUserMessages]);
     const sessionExecution = React.useMemo(
         () => resolveContextPanelSessionExecution(sessionMessages),
         [sessionMessages],
@@ -750,12 +768,18 @@ const ChatContainerContent: React.FC<ChatContainerContentProps> = ({
             return false;
         }
 
-        if (pendingUserMessages.length > 0) {
+        const statusType = sessionStatusForCurrent.type ?? 'idle';
+        if (statusType === 'busy' || statusType === 'retry') {
             return true;
         }
 
-        const statusType = sessionStatusForCurrent.type ?? 'idle';
-        if (statusType === 'busy' || statusType === 'retry') {
+        // Host + retained pending rows imply work only until status has clearly
+        // finished this send (fresh idle at/after newest pending created). A
+        // retained presentation may still paint after working clears.
+        if (pendingUserMessagesImplyWorking(pendingUserMessages, {
+            resolvedSessionStatus,
+            sessionStatusObservedAt,
+        })) {
             return true;
         }
 
@@ -782,7 +806,7 @@ const ChatContainerContent: React.FC<ChatContainerContentProps> = ({
             && lastMessage.role === 'assistant'
             && typeof (lastMessage as { time?: { completed?: number } }).time?.completed !== 'number',
         );
-    }, [currentSessionId, pendingUserMessages.length, resolvedSessionStatus, sessionMessages, sessionPermissions.length, sessionQuestions.length, sessionStatusForCurrent.type, sessionStatusObservedAt, sessionStatusSnapshotAt]);
+    }, [currentSessionId, pendingUserMessages, resolvedSessionStatus, sessionMessages, sessionPermissions.length, sessionQuestions.length, sessionStatusForCurrent.type, sessionStatusObservedAt, sessionStatusSnapshotAt]);
     const activeRetryStatus = React.useMemo(() => {
         if (!currentSessionId || sessionStatusForCurrent.type !== 'retry') {
             return null;
@@ -956,6 +980,12 @@ const ChatContainerContent: React.FC<ChatContainerContentProps> = ({
     const handleActiveTurnChange = React.useCallback((turnId: string | null) => {
         activeTurnChangeRef.current(turnId);
     }, []);
+    // Bridge auto-follow upward intent → timeline handler without creating a
+    // hook order cycle (auto-follow is created before the timeline controller).
+    const historyUpwardIntentRef = React.useRef<() => void>(() => {});
+    const handleHistoryUpwardIntentBridge = React.useCallback(() => {
+        historyUpwardIntentRef.current();
+    }, []);
 
     const {
         scrollRef,
@@ -976,6 +1006,7 @@ const ChatContainerContent: React.FC<ChatContainerContentProps> = ({
         sessionIsWorking,
         isMobile,
         onActiveTurnChange: handleActiveTurnChange,
+        onUpwardUserIntent: handleHistoryUpwardIntentBridge,
     });
     const promptSurface = promptAvailability.showReadOnlyBanner
         ? readOnlyPromptBanner
@@ -1018,15 +1049,23 @@ const ChatContainerContent: React.FC<ChatContainerContentProps> = ({
         return mergePendingUserMessagePresentations(authoritativeMessages, pendingUserMessages);
     }, [currentSessionId, currentSessionMessages, historyPrefix, pendingUserMessages]);
     const materializedPendingMessageIDs = React.useMemo(() => {
-        if (!onPendingUserMessagesMaterialized || pendingUserMessages.length === 0) return [];
-        const authoritativeIDs = new Set([...historyPrefix, ...currentSessionMessages].map((message) => message.info.id));
+        if (pendingUserMessages.length === 0) return [];
+        // A row counts as materialized only once its parts are there too —
+        // handing over to a part-less record would paint an empty bubble.
+        const authoritativeIDs = new Set(
+            [...historyPrefix, ...currentSessionMessages]
+                .filter((message) => message.parts.length > 0)
+                .map((message) => message.info.id),
+        );
         return pendingUserMessages.map((message) => message.info.id).filter((id) => authoritativeIDs.has(id));
-    }, [currentSessionMessages, historyPrefix, onPendingUserMessagesMaterialized, pendingUserMessages]);
+    }, [currentSessionMessages, historyPrefix, pendingUserMessages]);
     React.useEffect(() => {
-        if (materializedPendingMessageIDs.length > 0) {
-            onPendingUserMessagesMaterialized?.(materializedPendingMessageIDs);
+        if (materializedPendingMessageIDs.length === 0) return;
+        onPendingUserMessagesMaterialized?.(materializedPendingMessageIDs);
+        if (currentSessionId) {
+            clearRetainedPendingUserMessages(currentSessionId, materializedPendingMessageIDs);
         }
-    }, [materializedPendingMessageIDs, onPendingUserMessagesMaterialized]);
+    }, [clearRetainedPendingUserMessages, currentSessionId, materializedPendingMessageIDs, onPendingUserMessagesMaterialized]);
 
     const timelineController = useChatTimelineController({
         sessionId: currentSessionId,
@@ -1039,6 +1078,9 @@ const ChatContainerContent: React.FC<ChatContainerContentProps> = ({
         releaseAutoFollow,
         isPinned,
         showScrollButton,
+        // Only the active desktop transcript auto-fills short first paint;
+        // expanded-input and mobile keep explicit load paths only.
+        autoFillEnabled: active && !isDesktopExpandedInput,
     });
     const resumeToLatestInstant = React.useCallback(() => {
         goToBottom('instant');
@@ -1055,6 +1097,10 @@ const ChatContainerContent: React.FC<ChatContainerContentProps> = ({
     React.useEffect(() => {
         activeTurnChangeRef.current = timelineController.handleActiveTurnChange;
     }, [timelineController.handleActiveTurnChange]);
+
+    React.useEffect(() => {
+        historyUpwardIntentRef.current = timelineController.handleHistoryUpwardIntent;
+    }, [timelineController.handleHistoryUpwardIntent]);
 
     React.useEffect(() => {
         if (sessionPermissions.length === 0 && sessionQuestions.length === 0) {

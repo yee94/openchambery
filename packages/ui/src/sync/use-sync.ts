@@ -25,6 +25,7 @@ import { loadSessionChildrenOnDemand, mergeSessionChildren } from "./session-chi
 import { opencodeClient } from "@/lib/opencode/client"
 import { waitForSessionStartupBarrier } from "@/lib/session-startup-barrier"
 import { getInitialSessionMessageLimit, getSessionHistoryMessageLimit } from "./session-message-policy"
+import { fetchSessionTurnPage } from "./session-turn-page-api"
 import { reconcileActiveSessionStatusAfterMessagePull } from "./session-status-reconciliation"
 
 const SKIP_PARTS = new Set(["patch", "step-start", "step-finish"])
@@ -385,6 +386,29 @@ export function useSync() {
         before: options?.before,
         deps: {
           queryPage: async ({ limit: pageLimit, before }) => {
+            // Prepend / loadMore: Host 3-turn single request (scanLimit=history).
+            // Gate on purpose+before so bare `before` never hits turn-page.
+            // Initial / recovery / materialize stay on the official SDK path.
+            if (options?.purpose === "prepend" && before) {
+              const page = await retry(async () =>
+                fetchSessionTurnPage({
+                  sessionID,
+                  directory: targetDirectory,
+                  before,
+                }),
+              )
+              // Strict Host contract: records already validated; complete is authoritative.
+              const cursor = page.cursor ?? undefined
+              return {
+                records: page.records.map((item) => ({
+                  info: stripMessageDiffSnapshots(item.info),
+                  parts: sortParts(item.parts ?? []),
+                })),
+                cursor,
+                complete: page.complete,
+              }
+            }
+
             const response = await retry(async () => {
               const page = await scopedClient.session.messages({
                 sessionID,
