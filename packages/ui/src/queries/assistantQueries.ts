@@ -25,14 +25,14 @@ const key = {
  * those must cold-start so one conversation cannot paint under another.
  */
 export const retainAssistantHistoryPlaceholder = (
-  previousData: InfiniteData<AssistantHistoryPage> | undefined,
+  previousData: InfiniteData<AssistantHistoryPage, string | null> | undefined,
   previousQuery: { queryKey: QueryKey } | undefined,
   next: {
     assistantID: string;
     transport: string;
     runtimeGeneration: number;
   },
-): InfiniteData<AssistantHistoryPage> | undefined => {
+): InfiniteData<AssistantHistoryPage, string | null> | undefined => {
   if (!previousData || !previousQuery) return undefined;
   const previousKey = previousQuery.queryKey;
   if (
@@ -111,7 +111,7 @@ export const assistantHistoryInfiniteQueryOptions = (
   // placeholder the transcript blanks until the new key resolves, which also
   // drops SQLite admission rows the live binding has not mirrored yet.
   placeholderData: (
-    previousData: InfiniteData<AssistantHistoryPage> | undefined,
+    previousData: InfiniteData<AssistantHistoryPage, string | null> | undefined,
     previousQuery: { queryKey: QueryKey } | undefined,
   ) => retainAssistantHistoryPlaceholder(previousData, previousQuery, {
     assistantID,
@@ -125,7 +125,13 @@ export const useAssistantHistoryInfiniteQuery = (
   assistantID: string,
   binding: Pick<SessionBinding, 'sessionID' | 'sessionGeneration'>,
   enabled = true,
-) => useInfiniteQuery({
+) => useInfiniteQuery<
+  AssistantHistoryPage,
+  Error,
+  InfiniteData<AssistantHistoryPage, string | null>,
+  ReturnType<typeof key.history>,
+  string | null
+>({
   ...assistantHistoryInfiniteQueryOptions(assistantID, binding.sessionID ?? '', binding.sessionGeneration),
   enabled: enabled && Boolean(assistantID && binding.sessionID),
 });

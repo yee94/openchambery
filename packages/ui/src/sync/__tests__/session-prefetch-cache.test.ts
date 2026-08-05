@@ -151,7 +151,7 @@ describe("shouldSkipSessionPrefetch", () => {
 })
 
 describe("markSessionPrefetchDirty", () => {
-  test("pierces the complete cache so the next fetch is not skipped", () => {
+  test("preserves a complete history boundary while forcing the next tail refresh", () => {
     const directory = "/dirty-complete"
     const sessionID = "dirty-complete-session"
     // A session that previously fetched to completion would be treated as
@@ -169,7 +169,7 @@ describe("markSessionPrefetchDirty", () => {
     markSessionPrefetchDirty(directory, [sessionID])
 
     const info = getSessionPrefetch(directory, sessionID)
-    expect(info?.complete).toBe(false)
+    expect(info?.complete).toBe(true)
     expect(shouldSkipSessionPrefetch({
       hasSession: true,
       hasMessages: true,
@@ -212,6 +212,7 @@ describe("markSessionPrefetchDirty", () => {
     const info = getSessionPrefetch(directory, sessionID)
     expect(info?.limit).toBe(30)
     expect(info?.cursor).toBe("cursor-abc")
+    expect(info?.complete).toBe(false)
     expect(info?.status).toBe("ready")
   })
 
@@ -233,7 +234,7 @@ describe("markSessionPrefetchDirty", () => {
 
     markSessionPrefetchDirty(directory, [sessionID], "runtime-a")
 
-    expect(getSessionPrefetch(directory, sessionID, "runtime-a")?.complete).toBe(false)
+    expect(getSessionPrefetch(directory, sessionID, "runtime-a")?.complete).toBe(true)
     expect(getSessionPrefetch(directory, sessionID, "runtime-b")?.complete).toBe(true)
   })
 

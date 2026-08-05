@@ -18,6 +18,7 @@ export const getMobileSessionShowMoreIncrement = (): number => 7;
  * {@link getMobileSessionShowMoreIncrement}. Kept as the default visible count
  * so older call sites that treated "page size" as the initial slice stay correct.
  */
+// eslint-disable-next-line @typescript-eslint/no-unused-vars -- legacy signature kept for older call sites
 export const getMobileSessionPageSize = (_hasWorktrees = false): number =>
   getMobileSessionDefaultVisibleCount();
 

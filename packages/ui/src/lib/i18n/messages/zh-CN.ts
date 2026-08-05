@@ -1362,7 +1362,6 @@ export const dict: Record<I18nKey, string> = {
   'diffView.reviewDialog.toast.noSessionDirectory': 'Session directory is unavailable',
   'diffView.reviewDialog.toast.startFailed': 'Failed to start review flow',
   'chat.history.loadOlder': '加载更早的消息',
-  'chat.history.checkingOlder': '正在检查是否有更早的消息…',
   'chat.history.loadOlderFailed': '无法加载更早的消息，请重试。',
   'chat.history.loadFailedTitle': '无法加载此对话',
   'chat.history.loadFailedDescription': '此对话仍然可用，请尝试重新加载。',

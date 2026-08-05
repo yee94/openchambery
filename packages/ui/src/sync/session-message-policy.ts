@@ -102,6 +102,7 @@ export function resolveSessionMessageTurnLimit(
  * explicit client overrides; default path does not send scanLimit.
  */
 export function getSessionTurnPageScanLimit(
+  // eslint-disable-next-line @typescript-eslint/no-unused-vars -- surface kept for deprecated API signature
   _surface: SessionMessageLoadSurface = resolveSessionMessageLoadSurface(),
 ): number {
   return 100
@@ -120,6 +121,7 @@ export function getInitialSessionMessageLimit(
  * @deprecated Host scan is server-owned; do not use as product limit.
  */
 export function getSessionHistoryMessageLimit(
+  // eslint-disable-next-line @typescript-eslint/no-unused-vars -- surface kept for deprecated API signature
   _surface: SessionMessageLoadSurface = resolveSessionMessageLoadSurface(),
 ): number {
   return getSessionTurnPageScanLimit()

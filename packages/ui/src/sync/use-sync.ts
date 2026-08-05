@@ -55,6 +55,8 @@ type SyncMeta = {
   cursor: string | undefined
   complete: boolean
   loading: boolean
+  /** Latest cache load generation that established the cursor/complete pair. */
+  loadGeneration?: number
 }
 
 export type SessionHistoryLoadPlan =
@@ -103,18 +105,17 @@ const getDefaultMeta = (): SyncMeta => ({
   cursor: undefined,
   complete: false,
   loading: false,
+  loadGeneration: 0,
 })
 
 /**
  * Merge hook-local pagination meta with prefetch.
  *
  * - Local owns `loading` (in-flight pull in this hook).
- * - Cursor: prefer local when set, else prefetch — a loading patch that never
- *   wrote cursor must not mask a still-valid prefetch cursor.
- * - Complete: **incomplete wins**. Prefetch is dirtied to `complete:false`
- *   (`markSessionPrefetchDirty`) while local may still hold a prior
- *   `complete:true`; OR-ing complete hid canLoadEarlier and silent-no-op'd
- *   loadMore. Both sources must agree complete before we clear the cursor.
+ * - The newest cache load generation owns cursor and completion. This keeps a
+ *   successful page response authoritative after local state from an older pull.
+ * - A same-generation loading patch may borrow a still-valid cursor from the
+ *   companion source until its response settles.
  */
 export function resolveMergedSessionSyncMeta(
   local: SyncMeta | undefined,
@@ -123,7 +124,20 @@ export function resolveMergedSessionSyncMeta(
   if (!local && !prefetch) return getDefaultMeta()
   if (!local) return prefetch ?? getDefaultMeta()
   if (!prefetch) return local
-  // Incomplete wins: dirty/live incompleteness must surface load-more.
+  const localGeneration = local.loadGeneration ?? 0
+  const prefetchGeneration = prefetch.loadGeneration ?? 0
+  if (localGeneration !== prefetchGeneration) {
+    const latest = localGeneration > prefetchGeneration ? local : prefetch
+    const previous = latest === local ? prefetch : local
+    return {
+      limit: Math.max(local.limit, prefetch.limit),
+      cursor: latest.complete ? undefined : (latest.cursor ?? previous.cursor),
+      complete: latest.complete,
+      loading: local.loading,
+      loadGeneration: latest.loadGeneration,
+    }
+  }
+  // Same-generation partial metadata keeps a cursor-bearing history available.
   const complete = local.complete && prefetch.complete
   const cursor = complete ? undefined : (local.cursor ?? prefetch.cursor)
   return {
@@ -131,6 +145,7 @@ export function resolveMergedSessionSyncMeta(
     cursor,
     complete,
     loading: local.loading,
+    loadGeneration: local.loadGeneration,
   }
 }
 
@@ -158,6 +173,7 @@ function getPrefetchMeta(directory: string, sessionID: string): SyncMeta | undef
     cursor: info.cursor,
     complete: info.complete,
     loading: false,
+    loadGeneration: info.loadGeneration,
   }
 }
 
@@ -271,7 +287,7 @@ export function useSync() {
   )
 
   const setMetaFor = useCallback(
-    (sessionID: string, patch: Partial<{ limit: number; cursor: string | undefined; complete: boolean; loading: boolean }>, targetDirectory = directory) => {
+    (sessionID: string, patch: Partial<{ limit: number; cursor: string | undefined; complete: boolean; loading: boolean; loadGeneration: number }>, targetDirectory = directory) => {
       const key = keyFor(sessionID, targetDirectory)
       // Base on merged getMetaFor so loading:true patches keep the live cursor
       // from prefetch when the local map never received a full page settle.
@@ -285,6 +301,7 @@ export function useSync() {
         || previous.cursor !== next.cursor
         || previous.complete !== next.complete
         || previous.loading !== next.loading
+        || previous.loadGeneration !== next.loadGeneration
       ) {
         setMetaRevision((revision) => revision + 1)
       }
@@ -584,11 +601,16 @@ export function useSync() {
         return
       }
 
+      // The loader settles prefetch with a generation-gated response before it
+      // returns. Read that canonical result so an older local request cannot
+      // overwrite a newer page's cursor or complete boundary.
+      const settledPrefetchMeta = getPrefetchMeta(targetDirectory, sessionID)
       setMetaFor(sessionID, {
-        limit: result.meta?.limit ?? result.messages.length,
-        cursor: result.meta?.cursor,
-        complete: result.meta?.complete ?? false,
+        limit: settledPrefetchMeta?.limit ?? result.meta?.limit ?? result.messages.length,
+        cursor: settledPrefetchMeta?.cursor ?? result.meta?.cursor,
+        complete: settledPrefetchMeta?.complete ?? result.meta?.complete ?? false,
         loading: false,
+        loadGeneration: settledPrefetchMeta?.loadGeneration,
       }, targetDirectory)
       await reconcileActiveSessionStatusAfterMessagePull({
         directory: targetDirectory,

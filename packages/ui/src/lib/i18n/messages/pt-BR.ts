@@ -1374,7 +1374,6 @@ export const dict: Record<I18nKey, string> = {
   'chat.dictation.retry': 'Tentar transcrever novamente',
   'chat.dictation.discard': 'Descartar gravação',
   'chat.history.loadOlder': 'Carregar mensagens anteriores',
-  'chat.history.checkingOlder': 'Verificando mensagens anteriores…',
   'chat.history.loadOlderFailed': 'Não foi possível carregar as mensagens anteriores. Tente novamente.',
   'chat.history.loadFailedTitle': 'Não foi possível carregar esta conversa',
   'chat.history.loadFailedDescription': 'A conversa continua disponível. Tente carregá-la novamente.',

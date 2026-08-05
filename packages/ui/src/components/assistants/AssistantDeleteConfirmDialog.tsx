@@ -21,6 +21,7 @@ import { useAssistantUIStore } from '@/stores/useAssistantUIStore';
 
 import { getAssistantPresentation } from './assistantPresentation';
 
+// eslint-disable-next-line react-refresh/only-export-components -- Deletion orchestrator is asserted directly by AssistantUI tests.
 export async function deleteAssistantEntry(assistant: AssistantDTO): Promise<void> {
   await deleteAssistant(assistant);
   const defaultShare = useAssistantUIStore.getState().defaultShareAssistant;

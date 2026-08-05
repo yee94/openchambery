@@ -466,6 +466,7 @@ type ActiveEditorFileSuggestionProps = {
 }
 
 /** Pure helpers for ActiveEditorFileSuggestion attach-state (testable without React). */
+// eslint-disable-next-line react-refresh/only-export-components -- Pure helper is tested directly.
 export const isActiveEditorFileAttached = (
   attachedFiles: readonly AttachedFile[],
   filePath: string,
@@ -473,6 +474,7 @@ export const isActiveEditorFileAttached = (
   (f) => f.source === 'vscode' && f.vscodeSource === 'file' && (f.vscodePath || '') === filePath,
 )
 
+// eslint-disable-next-line react-refresh/only-export-components -- Pure helper is tested directly.
 export const isActiveEditorSelectionAttached = (
   attachedFiles: readonly AttachedFile[],
   filePath: string,
@@ -481,6 +483,7 @@ export const isActiveEditorSelectionAttached = (
   (f) => f.source === 'vscode' && f.vscodeSource === 'selection' && f.filename === selectionLabel && f.vscodePath === filePath,
 )
 
+// eslint-disable-next-line react-refresh/only-export-components -- Pure helper is tested directly.
 export const activeEditorSelectionLabel = (
   relativePath: string,
   selection: { startLine: number; endLine: number } | null | undefined,

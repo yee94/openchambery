@@ -52,6 +52,7 @@ src/main/resources/webview/
 *.iml
 *.ipr
 *.iws
+packages/mobile/android/.settings/
 
 # Local env
 .env

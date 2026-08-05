@@ -1,5 +1,4 @@
 import { afterEach, beforeEach, describe, expect, test } from 'bun:test'
-import type { AttachedFile } from '@/stores/types/sessionTypes'
 import {
   createDraftAttachmentResourceAdapter,
   isRootAttachmentReplaceCommitted,

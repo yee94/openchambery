@@ -503,13 +503,13 @@ Rules that keep this single-sourced:
   workspace `directory` into `loadMore` / `hasMore` / `isLoading` / `isComplete`
   — meta and prefetch cursor are directory-keyed; using the primary sync
   directory for a cross-project session yields a silent no-op (button visible
-  via directory-scoped prefetch, click does nothing).   `getMetaFor` merges
+  via directory-scoped prefetch, click does nothing). `getMetaFor` merges
   hook-local meta with prefetch so a local entry that lost its cursor (loading
-  patch / partial settle) cannot mask a still-valid prefetch cursor — that
-  mismatch showed canLoadEarlier while loadMore silent-no-op'd. **Incomplete
-  wins on complete:** dirty prefetch (`complete:false` from
-  `markSessionPrefetchDirty`) must beat a stale local `complete:true`, or the
-  mobile load-older button disappears and loadMore quiet-returns. Explicit
+  patch / partial settle) retains a still-valid prefetch cursor. The newest page
+  load generation owns the cursor and complete boundary.
+  `markSessionPrefetchDirty` preserves that response metadata and sets `at=0`,
+  which schedules one bounded tail refresh while retaining known history
+  availability. Explicit
   `loadMore` refreshes the authoritative tail once when history is incomplete
   but cursor-less, then prepends from the recovered cursor; persistent cursor
   absence and prefetch `status=error` surface to user-initiated load-earlier
@@ -584,8 +584,8 @@ Rules that keep this single-sourced:
 - Snapshot-revision SSE events (not every live `session.*` / `message.*` payload)
   are authoritative change signals for the session message prefetch cache.
   `handleEvent` calls `markSessionPrefetchDirty(directory, [sessionID])` for any
-  snapshot-revision event before the reducer runs, encoding dirty as
-  `complete=false` and `at=0` while preserving pagination cursor/limit.
+  snapshot-revision event before the reducer runs, encoding dirty as `at=0`
+  while preserving the response-owned cursor, complete boundary, and limit.
   `shouldSkipSessionPrefetch` checks dirty (`at === 0`) before complete/limit/TTL
   so a previously large complete page still refetches. The next
   `fetchMessagesForSession` / `syncSession` then performs one bounded tail-page

@@ -1401,7 +1401,6 @@ export const dict: Record<I18nKey, string> = {
   'diffView.hunk.unavailable': 'このハンクはもう利用できません。差分を更新してからもう一度お試しください。',
   'diffView.hunk.unsupported': '個別のハンクのステージングはこのランタイムではサポートされていません。',
   'chat.history.loadOlder': '以前のメッセージを読み込む',
-  'chat.history.checkingOlder': '以前のメッセージを確認中…',
   'chat.history.loadOlderFailed': '以前のメッセージを読み込めませんでした。もう一度お試しください。',
   'chat.history.loadFailedTitle': 'この会話を読み込めません',
   'chat.history.loadFailedDescription': '会話は引き続き利用できます。もう一度読み込んでください。',

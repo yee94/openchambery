@@ -33,7 +33,7 @@ import {
 } from './lib/activityExpansion';
 import { resolveVisibleSortedAssistants } from './lib/visibleSortedAssistants';
 import type { ChatMessageEntry } from './lib/turns/types';
-import { getSessionMaterializationStatus, materializeSessionSnapshots } from '@/sync/materialization';
+import { getSessionMaterializationStatus, materializeSessionSnapshots, type MaterializedState } from '@/sync/materialization';
 
 const sessionID = 'ses_03431f1c4ffeq7mFAADhDYG5Lc';
 
@@ -134,7 +134,7 @@ describe('activity tool flicker regression (Trace-20260804T171706)', () => {
 
   test('2. multi-step timeline: open trailing never flips renderable false between tools', () => {
     // Simulate the live store across one multi-tool turn (trace: tools A→D).
-    let state = {
+    let state: MaterializedState = {
       message: {
         [sessionID]: [user('msg_user'), openAssistant('msg_asst')],
       },

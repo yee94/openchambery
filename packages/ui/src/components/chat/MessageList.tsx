@@ -56,12 +56,14 @@ import {
 } from './lib/activityExpansion';
 
 // Re-export pure expansion helpers for existing MessageList.* tests.
+/* eslint-disable react-refresh/only-export-components -- pure helpers re-exported for MessageList.* tests */
 export {
     resolveActivityExpansionDisposition,
     resolveDefaultActivityExpanded,
     resolveToggledActivityExpanded,
     resolveTurnActivityPresentation,
 };
+/* eslint-enable react-refresh/only-export-components */
 
 const MESSAGE_LIST_VIRTUALIZE_THRESHOLD = 5;
 const EMPTY_STATIC_ENTRY_MESSAGES: ChatMessageEntry[] = [];

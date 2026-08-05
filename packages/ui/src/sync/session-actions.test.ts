@@ -282,6 +282,7 @@ const inputState = {
     // Keep mock transport aligned with real getRuntimeTransportIdentity() used by sessionDraftKey.
     try {
       // Lazy require avoids circular import at mock setup time.
+      // eslint-disable-next-line @typescript-eslint/no-require-imports -- intentional lazy load for mock setup
       const { getRuntimeTransportIdentity } = require("../lib/runtime-switch") as typeof import("../lib/runtime-switch")
       return { transportIdentity: getRuntimeTransportIdentity(), generation: 1 }
     } catch {
@@ -2646,7 +2647,7 @@ describe("session history mutation serial coordinator", () => {
     }
     const realRevert = client.revertSession
     let callCount = 0
-    client.revertSession = (async (sessionId: string, messageId: string, partId?: string, directory?: string | null) => {
+    client.revertSession = (async (sessionId: string, messageId: string) => {
       callCount += 1
       if (callCount === 1) {
         throw new Error("session.revert failed (500): rejected")

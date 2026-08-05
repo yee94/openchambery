@@ -136,8 +136,8 @@ const findExactMentionToken = (text: string, token: string, occupied: ReadonlySe
     const key = `${start}:${end}`
     const before = start > 0 ? text[start - 1] : ''
     const after = text[end] ?? ''
-    const startsAtBoundary = !before || /[\s([{\"'`,.;:!?]/.test(before)
-    const endsAtBoundary = !after || /[\s)\]}\"'`,.;:!?]/.test(after)
+    const startsAtBoundary = !before || /[\s([{"'`,.;:!?]/.test(before)
+    const endsAtBoundary = !after || /[\s)\]}"'`,.;:!?]/.test(after)
     if (!occupied.has(key) && startsAtBoundary && endsAtBoundary) return { start, end }
     from = start + 1
   }

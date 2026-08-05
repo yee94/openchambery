@@ -174,10 +174,6 @@ const canScrollGeometry = (geometry: ScrollGeometry): boolean => {
     return geometry.scrollHeight - geometry.clientHeight > 1;
 };
 
-const canScroll = (el: HTMLElement): boolean => {
-    return canScrollGeometry(readScrollGeometry(el));
-};
-
 const isNearBottomOf = (geometry: ScrollGeometry, isMobile: boolean): boolean => {
     return distanceFromBottomOf(geometry) <= computeBottomZoneThresholdFor(isMobile, geometry.clientHeight);
 };

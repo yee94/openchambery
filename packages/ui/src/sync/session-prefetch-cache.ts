@@ -2,7 +2,7 @@
  * Session prefetch TTL cache — prevents redundant session fetches
  * within a short window. Port of OpenCode's session-prefetch.ts.
  *
- * Tracks: last fetch time, pagination cursor, completeness.
+ * Tracks: last fetch time, response-owned pagination cursor, completeness.
  * Version counter invalidates stale inflight requests after eviction.
  *
  * Load generation: each `beginSessionMessageLoad` bumps a per-entry epoch.
@@ -65,8 +65,8 @@ export function shouldSkipSessionPrefetch(input: {
 
   const info = input.info
   if (!info) return true
-  // Dirty encoding: complete=false + at=0. Must pierce complete/limit/TTL so a
-  // previously large complete page still refetches after markSessionPrefetchDirty.
+  // Dirty encoding: at=0. It pierces complete/limit/TTL so a previously large
+  // complete page still refreshes after markSessionPrefetchDirty.
   if (info.at === 0) return false
   if (info.status !== "ready") return false
   if (info.complete) return true
@@ -194,10 +194,10 @@ export function clearSessionPrefetch(directory: string, sessionIDs: Iterable<str
 
 /**
  * Mark a session's prefetch entry as dirty after an authoritative live event.
- * Keeps the entry (so we still remember pagination state) but forces the next
- * TTL / completeness check to fail so the next fetchMessagesForSession /
- * syncSession performs one bounded tail-page pull instead of reusing a stale
- * snapshot. No-op when the session was never prefetched.
+ * `at=0` forces the next cache check to refresh the tail while the most recent
+ * page response retains its cursor and complete boundary. That keeps history
+ * pagination immediately usable through live tail updates. No-op when the
+ * session was never prefetched.
  */
 export function markSessionPrefetchDirty(directory: string, sessionIDs: Iterable<string>, runtimeKey = getRuntimeKey()) {
   for (const sessionID of sessionIDs) {
@@ -207,7 +207,6 @@ export function markSessionPrefetchDirty(directory: string, sessionIDs: Iterable
     if (!current) continue
     cache.set(id, {
       ...current,
-      complete: false,
       at: 0,
     })
     notify(id)

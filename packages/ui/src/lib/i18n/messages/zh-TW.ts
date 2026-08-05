@@ -1372,7 +1372,6 @@ export const dict: Record<I18nKey, string> = {
   'diffView.reviewDialog.toast.noSessionDirectory': 'Session directory is unavailable',
   'diffView.reviewDialog.toast.startFailed': 'Failed to start review flow',
   'chat.history.loadOlder': '載入更早的訊息',
-  'chat.history.checkingOlder': '正在檢查是否有更早的訊息…',
   'chat.history.loadOlderFailed': '無法載入更早的訊息，請再試一次。',
   'chat.history.loadFailedTitle': '無法載入此對話',
   'chat.history.loadFailedDescription': '此對話仍可使用，請嘗試重新載入。',

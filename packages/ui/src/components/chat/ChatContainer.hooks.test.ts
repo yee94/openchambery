@@ -46,13 +46,15 @@ describe('ChatContainer source contracts', () => {
         expect(source).not.toContain('const showLoadOlderButton = isMobileSurfaceRuntime()');
     });
 
-    test('mobile renders a disabled history affordance while its first cursor resolves', () => {
-        expect(source).toContain('const isLoadingHistoryAvailability = Boolean(');
-        expect(source).toContain("sessionPrefetchInfo?.status !== 'error'");
-        expect(source).toContain('isHistoryAvailabilityLoading={isLoadingHistoryAvailability}');
-        expect(source).toContain('const loadOlderBusy = isLoadingOlder || isHistoryAvailabilityLoading;');
+    test('mobile exposes history pagination from the page response cursor', () => {
+        expect(source).toContain(`const showLoadOlderButton = isMobile
+        && (
+            timelineController.historySignals.canLoadEarlier
+            || timelineController.isLoadingOlder
+        );`);
+        expect(source).toContain('const loadOlderBusy = isLoadingOlder;');
         expect(source).toContain('aria-busy={loadOlderBusy}');
-        expect(source).toContain("isHistoryAvailabilityLoading ? t('chat.history.checkingOlder')");
+        expect(source).toContain("{t('chat.history.loadOlder')}");
     });
 
     test('explicit history navigation releases the initial entry-stick pin', () => {

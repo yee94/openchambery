@@ -12,6 +12,7 @@ declare module "bun:test" {
     toBeNull(): void;
     toThrow(expected?: string | RegExp | (new (...args: never[]) => unknown)): void;
     toContain(expected: unknown): void;
+    toMatch(expected: string | RegExp): void;
     toBeDefined(): void;
     toBeUndefined(): void;
     rejects: {
@@ -28,6 +29,7 @@ declare module "bun:test" {
       toBe(expected: unknown): void;
       toContain(expected: unknown): void;
       toBeNull(): void;
+      toMatch(expected: string | RegExp): void;
     };
   };
   export function beforeEach(fn: () => void | Promise<void>): void;

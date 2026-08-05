@@ -1730,16 +1730,17 @@ function waitForStoredMessagePresence(
   const timeoutMs = options?.timeoutMs ?? COMBINED_SEND_PRESENCE_GRACE_MS
   return new Promise<boolean>((resolve) => {
     let settled = false
-    let unsubscribe: (() => void) | undefined
+    // Object holder keeps teardown sync-safe if subscribe fires before assignment completes.
+    const subscription: { unsubscribe?: () => void } = {}
     const settle = (value: boolean) => {
       if (settled) return
       settled = true
       clearTimeout(timer)
-      unsubscribe?.()
+      subscription.unsubscribe?.()
       resolve(value)
     }
     const timer = setTimeout(() => settle(false), timeoutMs)
-    unsubscribe = store.subscribe(() => {
+    subscription.unsubscribe = store.subscribe(() => {
       if (!isConfirmationCurrent(options?.isCurrent)) {
         settle(false)
         return

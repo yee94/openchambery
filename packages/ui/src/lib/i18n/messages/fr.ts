@@ -1199,7 +1199,6 @@ export const dict = {
   'diffView.reviewDialog.toast.noSessionDirectory': 'Le dossier de session est indisponible',
   'diffView.reviewDialog.toast.startFailed': 'Impossible de démarrer le flux de revue',
   'chat.history.loadOlder': 'Charger les messages précédents',
-  'chat.history.checkingOlder': 'Recherche de messages antérieurs…',
   'chat.history.loadOlderFailed': 'Impossible de charger les messages précédents. Réessayez.',
   'chat.history.loadFailedTitle': 'Impossible de charger cette conversation',
   'chat.history.loadFailedDescription': 'La conversation est toujours disponible. Essayez de la charger à nouveau.',

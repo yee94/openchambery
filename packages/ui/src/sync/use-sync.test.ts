@@ -23,10 +23,9 @@ describe('resolveMergedSessionSyncMeta', () => {
     expect(merged.complete).toBe(false)
   })
 
-  test('dirty prefetch incomplete beats stale local complete (button + loadMore)', () => {
-    // markSessionPrefetchDirty sets prefetch.complete=false while local meta
-    // may still hold a prior complete:true. Incomplete must win or canLoadEarlier
-    // stays false and the mobile load-older button disappears.
+  test('a cursor-bearing prefetch page exposes older history over a prior local complete page', () => {
+    // A later page response can reveal a cursor after this hook recorded a
+    // complete tail. The cursor-bearing response is usable pagination truth.
     const merged = resolveMergedSessionSyncMeta(
       { limit: 4, cursor: undefined, complete: true, loading: false },
       { limit: 2, cursor: 'msg_still_has_more', complete: false, loading: false },
@@ -52,6 +51,28 @@ describe('resolveMergedSessionSyncMeta', () => {
     expect(merged.cursor).toBe('msg_local')
     expect(merged.limit).toBe(4)
   })
+
+  test('the newest response generation owns a complete history boundary', () => {
+    const merged = resolveMergedSessionSyncMeta(
+      { limit: 4, cursor: 'msg_local', complete: false, loading: false, loadGeneration: 4 },
+      { limit: 4, cursor: undefined, complete: true, loading: false, loadGeneration: 5 },
+    )
+
+    expect(merged.complete).toBe(true)
+    expect(merged.cursor).toBeUndefined()
+    expect(merged.loadGeneration).toBe(5)
+  })
+
+  test('the newest response generation owns a cursor-bearing history boundary', () => {
+    const merged = resolveMergedSessionSyncMeta(
+      { limit: 4, cursor: undefined, complete: true, loading: false, loadGeneration: 4 },
+      { limit: 8, cursor: 'msg_prefetch', complete: false, loading: false, loadGeneration: 5 },
+    )
+
+    expect(merged.complete).toBe(false)
+    expect(merged.cursor).toBe('msg_prefetch')
+    expect(merged.loadGeneration).toBe(5)
+  })
 })
 
 describe('resolveSessionHistoryLoadPlan', () => {
@@ -60,7 +81,6 @@ describe('resolveSessionHistoryLoadPlan', () => {
     // while local pagination meta is incomplete with no cursor. A direct
     // prepend would no-op/throw; refresh the authoritative tail first.
     expect(resolveSessionHistoryLoadPlan({
-      limit: 2,
       cursor: undefined,
       complete: false,
       loading: false,
@@ -69,7 +89,6 @@ describe('resolveSessionHistoryLoadPlan', () => {
 
   test('starts prepend when the incomplete history meta has a cursor', () => {
     expect(resolveSessionHistoryLoadPlan({
-      limit: 2,
       cursor: 'msg_before',
       complete: false,
       loading: false,

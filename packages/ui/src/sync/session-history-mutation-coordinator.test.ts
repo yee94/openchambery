@@ -13,8 +13,8 @@ describe("session-history-mutation-coordinator", () => {
   }
 
   test("same-session ops serialize; later marker waits for the first", async () => {
-    let transport = "runtime-a"
-    let generation = 1
+    const transport = "runtime-a"
+    const generation = 1
     let releaseFirst!: () => void
     const firstGate = new Promise<void>((resolve) => { releaseFirst = resolve })
     const order: string[] = []
@@ -53,8 +53,8 @@ describe("session-history-mutation-coordinator", () => {
   })
 
   test("first failure does not block the next same-session op", async () => {
-    let transport = "runtime-a"
-    let generation = 2
+    const transport = "runtime-a"
+    const generation = 2
     const first = runSessionHistoryMutation(
       "session-a",
       "/dir",
@@ -74,8 +74,8 @@ describe("session-history-mutation-coordinator", () => {
   })
 
   test("different sessions run in parallel", async () => {
-    let transport = "runtime-a"
-    let generation = 3
+    const transport = "runtime-a"
+    const generation = 3
     let active = 0
     let maxActive = 0
     const gates: Array<() => void> = []
@@ -103,7 +103,7 @@ describe("session-history-mutation-coordinator", () => {
   })
 
   test("runtime switch aborts a queued op before it runs", async () => {
-    let transport = "runtime-a"
+    const transport = "runtime-a"
     let generation = 4
     let releaseFirst!: () => void
     const firstGate = new Promise<void>((resolve) => { releaseFirst = resolve })
