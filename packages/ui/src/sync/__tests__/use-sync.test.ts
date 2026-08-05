@@ -86,4 +86,16 @@ describe("loadMessages transport split source contract (Host turn-page for tail 
     expect(useSyncSource.includes('prefetch?.status === "error"')).toBe(true)
     expect(useSyncSource.includes("session turn page failed")).toBe(true)
   })
+
+  test("cursor-less incomplete history refreshes the tail before prepend", () => {
+    expect(useSyncSource.includes("resolveSessionHistoryLoadPlan")).toBe(true)
+    expect(useSyncSource.includes('plan.kind === "recover-cursor"')).toBe(true)
+    expect(useSyncSource.includes('purpose: "initial"')).toBe(true)
+    expect(useSyncSource.includes("session history cursor unavailable after refresh")).toBe(true)
+  })
+
+  test("local pagination meta publishes a revision for immediate affordance updates", () => {
+    expect(useSyncSource.includes("setMetaRevision")).toBe(true)
+    expect(useSyncSource.includes("metaRevision")).toBe(true)
+  })
 })

@@ -1,6 +1,6 @@
 import React from 'react';
 import { useMutation, useQuery } from '@tanstack/react-query';
-import { useEvent, useIsomorphicLayoutEffect, useUnmount } from '@reactuses/core';
+import { useEvent, useIsomorphicLayoutEffect, useResizeObserver, useUnmount } from '@reactuses/core';
 
 import type { ChatMessageEntry } from '../lib/turns/types';
 import type { MessageListHandle } from '../MessageList';
@@ -46,6 +46,8 @@ interface UseChatTimelineControllerOptions {
     loadMoreMessages: (sessionId: string, direction: 'up' | 'down') => Promise<void>;
     goToBottom: (mode?: 'instant' | 'smooth') => void;
     releaseAutoFollow: () => void;
+    beginHistoryViewportPreservation: () => void;
+    endHistoryViewportPreservation: () => void;
     isPinned: boolean;
     showScrollButton: boolean;
     /** Active desktop transcript only (not expanded-input). Mobile stays false. */
@@ -358,6 +360,31 @@ const hasInsertedBeforeKnownOldest = (
     return messages.some((message) => message.info.id === previousOldestId);
 };
 
+export type ChatViewportMetrics = {
+    scrollHeight: number;
+    clientHeight: number;
+};
+
+/**
+ * Publish chat scroller metrics for auto-fill only when the box actually
+ * changed. Streaming part commits used to call `setState({ ... })` with a fresh
+ * object on every messages identity change even when height was stable, which
+ * forced a second ChatContainer render (and a layout read) in the same shell-
+ * tool / stream window — the double-paint path behind the full-viewport flash.
+ */
+export const resolvePublishedViewportMetrics = (
+    previous: ChatViewportMetrics,
+    next: ChatViewportMetrics,
+): ChatViewportMetrics => {
+    if (
+        previous.scrollHeight === next.scrollHeight
+        && previous.clientHeight === next.clientHeight
+    ) {
+        return previous;
+    }
+    return next;
+};
+
 export const useChatTimelineController = ({
     sessionId,
     messages,
@@ -367,6 +394,8 @@ export const useChatTimelineController = ({
     loadMoreMessages,
     goToBottom,
     releaseAutoFollow,
+    beginHistoryViewportPreservation,
+    endHistoryViewportPreservation,
     isPinned,
     showScrollButton,
     autoFillEnabled = false,
@@ -404,8 +433,13 @@ export const useChatTimelineController = ({
     const [activeTurnId, setActiveTurnId] = React.useState<string | null>(null);
     // Per-session short-viewport auto-fill block after no-growth / hard failure.
     const [autoFillBlocked, setAutoFillBlocked] = React.useState(false);
-    // Layout metrics for auto-fill enablement (updated after commit, not guessed).
-    const [viewportMetrics, setViewportMetrics] = React.useState({ scrollHeight: 0, clientHeight: 0 });
+    // Layout metrics for auto-fill enablement. Owned by ResizeObserver so
+    // streaming text/tool growth updates geometry without a messages-keyed
+    // layout effect that re-renders ChatContainer on every part commit.
+    const [viewportMetrics, setViewportMetrics] = React.useState<ChatViewportMetrics>({
+        scrollHeight: 0,
+        clientHeight: 0,
+    });
 
     const turnModelRef = React.useRef(turnWindowModel);
     const isPinnedRef = React.useRef(isPinned);
@@ -586,18 +620,36 @@ export const useChatTimelineController = ({
         attemptPendingScrollRequest();
     }, [renderedMessages]);
 
-    // Publish scroll geometry after commit for Query-driven auto-fill enablement.
-    useIsomorphicLayoutEffect(() => {
+    // Publish scroll geometry for Query-driven auto-fill. ResizeObserver fires
+    // after layout when the scroller or its content actually changes size —
+    // not on every streaming part identity change that leaves height alone.
+    const publishViewportMetrics = useEvent(() => {
         const el = scrollRef.current;
         if (!el) {
-            setViewportMetrics({ scrollHeight: 0, clientHeight: 0 });
+            setViewportMetrics((previous) => resolvePublishedViewportMetrics(previous, {
+                scrollHeight: 0,
+                clientHeight: 0,
+            }));
             return;
         }
-        setViewportMetrics({
+        setViewportMetrics((previous) => resolvePublishedViewportMetrics(previous, {
             scrollHeight: el.scrollHeight,
             clientHeight: el.clientHeight,
-        });
-    }, [messages, sessionId, isLoadingOlder, scrollRef]);
+        }));
+    });
+    const canObserveViewportMetrics = typeof ResizeObserver !== 'undefined';
+    // Pass the ref object (not `.current`) so attach/detach tracks the scroller
+    // mount the same way ChatContainer's --chat-scroll-height observer does.
+    useResizeObserver(
+        canObserveViewportMetrics ? scrollRef : null,
+        publishViewportMetrics,
+    );
+    // Session / load-older edges still need a layout-phase seed so auto-fill
+    // does not wait for an unrelated size event after the first paint.
+    useIsomorphicLayoutEffect(() => {
+        publishViewportMetrics();
+        // eslint-disable-next-line react-hooks/exhaustive-deps -- session/load edges only; publishViewportMetrics is useEvent-stable.
+    }, [sessionId, isLoadingOlder]);
 
     // --- Synchronous scroll compensation for load-more / reveal ---
     // fetchOlderHistory stores a snapshot here before triggering the fetch and
@@ -676,7 +728,10 @@ export const useChatTimelineController = ({
             };
         };
 
-        if (isPinnedRef.current) {
+        // An armed explicit-load snapshot owns its prepend even while the
+        // auto-follow prop is still catching up from releaseAutoFollow().
+        // Re-pinning that snapshot would overwrite its preserved read position.
+        if (isPinnedRef.current && !snap) {
             // Bottom-pinned. Only content inserted ABOVE (a prepend / history load)
             // needs an explicit re-pin: with overflow-anchor:none the browser leaves
             // scrollTop unchanged, so the viewport would visibly jump. Route that
@@ -701,16 +756,20 @@ export const useChatTimelineController = ({
         const historyVirtualized = messageListRef.current?.isHistoryVirtualized() ?? false;
         const prependCompensation = resolveHistoryPrependCompensation(historyVirtualized);
 
-        // Armed snapshot from loadEarlier / auto-fill. Virtualized lists must
-        // not re-assert scroll here: TanStack `anchorTo: 'end'` already
-        // preserves the keyed viewport on prepend and compensates first
-        // measure / remeasure. A second writer (heightDelta, restoreViewportAnchor,
-        // multi-frame hold) raced applyScrollAdjustment and pulled the user
-        // off their read position after load-more.
+        // Armed snapshot from loadEarlier / auto-fill. TanStack `anchorTo: 'end'`
+        // performs the normal keyed prepend adjustment. Android can still leave
+        // its scroll element at y=0 after a top-button prepend, so one layout
+        // phase keyed-anchor correction verifies the final DOM position. A
+        // multi-frame hold or height-delta writer would race later TanStack
+        // measurements and is intentionally excluded.
         if (snap) {
             if (prependCompensation.owner === 'tanstack-core') {
                 // Drop any hold that an older code path may have left running.
                 messageListRef.current?.cancelViewportAnchorHold();
+                const anchor = snap.anchor;
+                if (anchor) {
+                    restoreViewportAnchor(anchor);
+                }
                 updateTracking();
                 return;
             }
@@ -800,12 +859,19 @@ export const useChatTimelineController = ({
 
         const targetSessionId = sessionIdRef.current;
         let armedSnapshot: PrePrependSnapshot | null = null;
+        let historyViewportPreservationActive = Boolean(input.userInitiated);
+        if (historyViewportPreservationActive) {
+            beginHistoryViewportPreservation();
+        }
         const releaseSnapshot = () => {
-            if (!(armedSnapshot && prePrependScrollRef.current === armedSnapshot)) {
-                return;
+            if (armedSnapshot && prePrependScrollRef.current === armedSnapshot) {
+                prePrependScrollRef.current = null;
+                messageListRef.current?.cancelViewportAnchorHold();
             }
-            prePrependScrollRef.current = null;
-            messageListRef.current?.cancelViewportAnchorHold();
+            if (historyViewportPreservationActive) {
+                historyViewportPreservationActive = false;
+                endHistoryViewportPreservation();
+            }
         };
 
         try {

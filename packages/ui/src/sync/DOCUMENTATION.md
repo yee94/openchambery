@@ -510,10 +510,12 @@ Rules that keep this single-sourced:
   wins on complete:** dirty prefetch (`complete:false` from
   `markSessionPrefetchDirty`) must beat a stale local `complete:true`, or the
   mobile load-older button disappears and loadMore quiet-returns. Explicit
-  `loadMore` throws when incomplete and cursor is missing, and rethrows when
-  prefetch settles `status=error`, so user-initiated load-earlier can toast
-  (`chat.history.loadOlderFailed`) instead of flashing the spinner with no
-  feedback. Bare `before` without purpose
+  `loadMore` refreshes the authoritative tail once when history is incomplete
+  but cursor-less, then prepends from the recovered cursor; persistent cursor
+  absence and prefetch `status=error` surface to user-initiated load-earlier
+  as `chat.history.loadOlderFailed`. Hook-local pagination meta increments a
+  local revision so the ChatContainer affordance rerenders immediately rather
+  than waiting for an unrelated scroll render. Bare `before` without purpose
   prepend stays on the official SDK path. The client asserts a strict page
   contract: each record is an object with non-empty `info.id` and optional
   `parts` array; `turnCount` is an integer in `0..requestedTurns`;

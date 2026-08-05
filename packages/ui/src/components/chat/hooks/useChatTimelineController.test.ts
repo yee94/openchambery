@@ -8,6 +8,7 @@ import {
     isOlderHistoryPrependCommit,
     resolveHistoryPageDecision,
     resolveHistoryPrependCompensation,
+    resolvePublishedViewportMetrics,
     shouldAutoFillEarlierHistory,
     shouldHoldHistoryViewportAnchor,
     shouldLoadEarlierHistory,
@@ -52,6 +53,28 @@ describe('resolveHistoryPrependCompensation', () => {
         expect(resolveHistoryPrependCompensation(false)).toEqual({
             owner: 'controller',
         });
+    });
+});
+
+describe('resolvePublishedViewportMetrics', () => {
+    test('reuses the previous object when scroll geometry is unchanged', () => {
+        const previous = { scrollHeight: 4000, clientHeight: 900 };
+        expect(resolvePublishedViewportMetrics(previous, {
+            scrollHeight: 4000,
+            clientHeight: 900,
+        })).toBe(previous);
+    });
+
+    test('publishes a new object when height or viewport size changes', () => {
+        const previous = { scrollHeight: 4000, clientHeight: 900 };
+        expect(resolvePublishedViewportMetrics(previous, {
+            scrollHeight: 4120,
+            clientHeight: 900,
+        })).toEqual({ scrollHeight: 4120, clientHeight: 900 });
+        expect(resolvePublishedViewportMetrics(previous, {
+            scrollHeight: 4000,
+            clientHeight: 800,
+        })).toEqual({ scrollHeight: 4000, clientHeight: 800 });
     });
 });
 
@@ -487,16 +510,29 @@ describe('shouldHoldHistoryViewportAnchor', () => {
 });
 
 describe('virtualized armed-snapshot compensation ownership', () => {
-    test('load-more snapshot path must defer to tanstack-core when virtualized', () => {
+    test('virtualized load-more uses a one-shot keyed-anchor correction after TanStack', () => {
         const source = readFileSync(join(here, 'useChatTimelineController.ts'), 'utf8');
         const snapBlockStart = source.indexOf('// Armed snapshot from loadEarlier');
         const snapBlockEnd = source.indexOf('// Background prepends', snapBlockStart);
         expect(snapBlockStart).toBeGreaterThan(-1);
         expect(snapBlockEnd).toBeGreaterThan(snapBlockStart);
         const snapBlock = source.slice(snapBlockStart, snapBlockEnd);
-        expect(snapBlock).toContain("prependCompensation.owner === 'tanstack-core'");
-        expect(snapBlock).toContain('cancelViewportAnchorHold');
-        // Must not re-enter restore/hold on the virtualized branch.
-        expect(snapBlock).not.toContain('holdViewportAnchor(anchor)');
+        const virtualBranchStart = snapBlock.indexOf("if (prependCompensation.owner === 'tanstack-core')");
+        const virtualBranchEnd = snapBlock.indexOf('const heightDelta', virtualBranchStart);
+        expect(virtualBranchStart).toBeGreaterThan(-1);
+        expect(virtualBranchEnd).toBeGreaterThan(virtualBranchStart);
+        const virtualBranch = snapBlock.slice(virtualBranchStart, virtualBranchEnd);
+        expect(virtualBranch).toContain('cancelViewportAnchorHold');
+        // TanStack performs the normal adjustment. This correction is a single
+        // keyed write only when its final DOM position still drifted (Android
+        // observed y=0 after prepend), so the prior reading position wins.
+        expect(virtualBranch).toContain('restoreViewportAnchor(anchor)');
+        // A multi-frame hold would fight TanStack measurements.
+        expect(virtualBranch).not.toContain('holdViewportAnchor(anchor)');
+    });
+
+    test('armed explicit-load snapshots bypass a stale pinned re-pin', () => {
+        const source = readFileSync(join(here, 'useChatTimelineController.ts'), 'utf8');
+        expect(source).toContain('if (isPinnedRef.current && !snap)');
     });
 });

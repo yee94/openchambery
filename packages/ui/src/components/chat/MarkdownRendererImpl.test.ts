@@ -205,6 +205,21 @@ describe('forced layout while scrolling', () => {
         expect(/\b(canScroll|isNearBottom|distanceFromBottom)\(el\b/.test(handler)).toBe(false);
     });
 
+    test('content ResizeObserver reads the scroll box once and skips a no-op pin', () => {
+        // Trace-20260805 shell-tool window: triple geometry reads + redundant
+        // scrollTop writes next to ScrollLayer painted as a full-viewport flash.
+        const handlerStart = autoFollowSource.indexOf('const handleContentResize = useEvent(');
+        const handlerEnd = autoFollowSource.indexOf('const canObserveResize', handlerStart);
+        const handler = autoFollowSource.slice(handlerStart, handlerEnd);
+
+        expect(handlerStart).toBeGreaterThan(-1);
+        expect(handler).toContain('const geometry = readScrollGeometry(el);');
+        expect(handler).toContain('distanceFromBottomOf(geometry) <= AUTO_MATCH_TOLERANCE_PX');
+        expect(handler).toContain('markAuto(el)');
+        expect(/\bcanScroll\(el\b/.test(handler)).toBe(false);
+        expect(/\bupdateOverflowAndButton\(\)/.test(handler)).toBe(false);
+    });
+
     test('revealing rendered Markdown does not measure the container', () => {
         const revealStart = markdownRendererSource.indexOf('const useRichMarkdownReveal =');
         const revealEnd = markdownRendererSource.indexOf('const MarkdownRendererImpl', revealStart);

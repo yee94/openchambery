@@ -1,4 +1,4 @@
-import { useCallback, useRef, useMemo } from "react"
+import { useCallback, useRef, useMemo, useState } from "react"
 import type { Message, Part } from "@opencode-ai/sdk/v2/client"
 import { Binary } from "./binary"
 import { retry } from "./retry"
@@ -56,6 +56,12 @@ type SyncMeta = {
   complete: boolean
   loading: boolean
 }
+
+export type SessionHistoryLoadPlan =
+  | { kind: "busy" }
+  | { kind: "exhausted" }
+  | { kind: "recover-cursor" }
+  | { kind: "prepend"; before: string }
 
 type SdkResult<T> = {
   data?: T
@@ -126,6 +132,22 @@ export function resolveMergedSessionSyncMeta(
     complete,
     loading: local.loading,
   }
+}
+
+/**
+ * Plan explicit history pagination from the latest merged meta.
+ *
+ * Incomplete history without a cursor is recoverable: refresh the authoritative
+ * tail once, then prepend from its cursor. The prior direct return/throw made
+ * the mobile button look broken whenever a stale local meta entry lost cursor.
+ */
+export function resolveSessionHistoryLoadPlan(
+  meta: Pick<SyncMeta, "cursor" | "complete" | "loading">,
+): SessionHistoryLoadPlan {
+  if (meta.loading) return { kind: "busy" }
+  if (meta.complete) return { kind: "exhausted" }
+  if (!meta.cursor) return { kind: "recover-cursor" }
+  return { kind: "prepend", before: meta.cursor }
 }
 
 function getPrefetchMeta(directory: string, sessionID: string): SyncMeta | undefined {
@@ -220,9 +242,13 @@ export function useSync() {
   const store = useDirectoryStore()
   const childStores = useChildStoreManager()
 
-  // Refs for mutable tracking (no re-renders)
+  // Refs for mutable tracking. Pagination meta also bumps this hook-local
+  // revision: ChatContainer derives the mobile load-older affordance through
+  // this useSync instance, and a ref-only meta update previously waited for an
+  // unrelated scroll render before the button appeared.
   const optimistic = useRef(new Map<string, Map<string, OptimisticItem>>())
   const meta = useRef(new Map<string, SyncMeta>())
+  const [metaRevision, setMetaRevision] = useState(0)
 
   const keyFor = useCallback(
     (sessionID: string, targetDirectory = directory) => `${targetDirectory}\n${sessionID}`,
@@ -250,7 +276,18 @@ export function useSync() {
       // Base on merged getMetaFor so loading:true patches keep the live cursor
       // from prefetch when the local map never received a full page settle.
       const current = getMetaFor(sessionID, targetDirectory)
-      meta.current.set(key, { ...current, ...patch })
+      const next = { ...current, ...patch }
+      const previous = meta.current.get(key)
+      meta.current.set(key, next)
+      if (
+        !previous
+        || previous.limit !== next.limit
+        || previous.cursor !== next.cursor
+        || previous.complete !== next.complete
+        || previous.loading !== next.loading
+      ) {
+        setMetaRevision((revision) => revision + 1)
+      }
     },
     [directory, keyFor, getMetaFor],
   )
@@ -640,20 +677,31 @@ export function useSync() {
     async (sessionID: string, options?: { directory?: string }) => {
       const targetDirectory = options?.directory ?? directory
       touch(sessionID, targetDirectory)
-      const m = getMetaFor(sessionID, targetDirectory)
-      // Concurrent pull — caller (timeline) may wait on historyLoading; do not
-      // throw so a second tap while busy is a no-op rather than a failure toast.
-      if (m.loading) return
-      // Exhausted history: quiet success (button should already be hidden).
-      if (m.complete) return
-      // Incomplete but no cursor is a contract failure (UI may still show
-      // canLoadEarlier from a partial signal). Throw so user-initiated load
-      // toasts instead of flash-then-stop.
-      if (!m.cursor) {
-        throw new Error("session history cursor missing")
+      let plan = resolveSessionHistoryLoadPlan(getMetaFor(sessionID, targetDirectory))
+      // Concurrent pull — caller (timeline) may wait on historyLoading; a
+      // second tap while busy remains a quiet no-op.
+      if (plan.kind === "busy" || plan.kind === "exhausted") return
+      if (plan.kind === "recover-cursor") {
+        // Local meta can outlive/lose the cursor while history remains
+        // incomplete. Re-materialize the newest turn window; it carries the
+        // authoritative cursor for the following prepend request.
+        await loadMessages(sessionID, {
+          purpose: "initial",
+          directory: targetDirectory,
+        })
+        const recoveredPrefetch = getSessionPrefetch(targetDirectory, sessionID)
+        if (recoveredPrefetch?.status === "error") {
+          throw new Error(recoveredPrefetch.error || "session history refresh failed")
+        }
+        plan = resolveSessionHistoryLoadPlan(getMetaFor(sessionID, targetDirectory))
+        if (plan.kind === "busy" || plan.kind === "exhausted") return
+        if (plan.kind === "recover-cursor") {
+          throw new Error("session history cursor unavailable after refresh")
+        }
       }
+      if (plan.kind !== "prepend") return
       await loadMessages(sessionID, {
-        before: m.cursor,
+        before: plan.before,
         purpose: "prepend",
         directory: targetDirectory,
       })
@@ -811,6 +859,6 @@ export function useSync() {
         confirm: optimisticConfirm,
       },
     }),
-    [syncSession, loadChildren, loadMore, hasMore, isLoading, isComplete, refreshSessionTranscript, optimisticAdd, optimisticRemove, optimisticConfirm],
+    [syncSession, loadChildren, loadMore, hasMore, isLoading, isComplete, refreshSessionTranscript, optimisticAdd, optimisticRemove, optimisticConfirm, metaRevision],
   )
 }

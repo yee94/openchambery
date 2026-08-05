@@ -239,6 +239,7 @@ type ChatViewportProps = {
     sessionPermissions: PermissionRequest[];
     isProgrammaticFollowActive: boolean;
     showLoadOlderButton: boolean;
+    isHistoryAvailabilityLoading: boolean;
     onLoadOlder: () => void;
     turnIds: string[];
     activeTurnId: string | null;
@@ -273,6 +274,7 @@ const ChatViewport = React.memo(({
     sessionPermissions,
     isProgrammaticFollowActive,
     showLoadOlderButton,
+    isHistoryAvailabilityLoading,
     onLoadOlder,
     turnIds,
     activeTurnId,
@@ -283,6 +285,7 @@ const ChatViewport = React.memo(({
     onLoadEarlierPrompts,
 }: ChatViewportProps) => {
     const { t } = useI18n();
+    const loadOlderBusy = isLoadingOlder || isHistoryAvailabilityLoading;
     const promptPreviewsByTurnIdRef = React.useRef<Map<string, Part[]>>(new Map());
     // Cache normalized parts per source array so unchanged messages keep the
     // same reference and the memo below can bail out to the previous map.
@@ -407,12 +410,13 @@ const ChatViewport = React.memo(({
                                     variant="secondary"
                                     size="sm"
                                     onClick={onLoadOlder}
-                                    disabled={isLoadingOlder}
+                                    disabled={loadOlderBusy}
+                                    aria-busy={loadOlderBusy}
                                 >
-                                    {isLoadingOlder && (
+                                    {loadOlderBusy && (
                                         <Icon name="loader-4" className="size-4 animate-spin" />
                                     )}
-                                    {t('chat.history.loadOlder')}
+                                    {isHistoryAvailabilityLoading ? t('chat.history.checkingOlder') : t('chat.history.loadOlder')}
                                 </Button>
                             </div>
                         )}
@@ -492,6 +496,7 @@ const ChatViewport = React.memo(({
         && prev.sessionPermissions === next.sessionPermissions
         && prev.isProgrammaticFollowActive === next.isProgrammaticFollowActive
         && prev.showLoadOlderButton === next.showLoadOlderButton
+        && prev.isHistoryAvailabilityLoading === next.isHistoryAvailabilityLoading
         && prev.onLoadOlder === next.onLoadOlder
         && prev.turnIds === next.turnIds
         && prev.activeTurnId === next.activeTurnId
@@ -1046,6 +1051,8 @@ const ChatContainerContent: React.FC<ChatContainerContentProps> = ({
         goToBottom,
         scrollToBottomOnSend,
         releaseAutoFollow,
+        beginHistoryViewportPreservation,
+        endHistoryViewportPreservation,
         restoreSnapshot,
         isPinned,
         isFollowingProgrammatically,
@@ -1128,6 +1135,8 @@ const ChatContainerContent: React.FC<ChatContainerContentProps> = ({
         loadMoreMessages,
         goToBottom,
         releaseAutoFollow,
+        beginHistoryViewportPreservation,
+        endHistoryViewportPreservation,
         isPinned,
         showScrollButton,
         // Only the active desktop transcript auto-fills short first paint;
@@ -1141,8 +1150,27 @@ const ChatContainerContent: React.FC<ChatContainerContentProps> = ({
     // scroll-position trigger (see handleHistoryScroll in the controller).
     // Busy state is mutation-owned (timeline loadEarlierMutation.isPending) —
     // never background historyLoading/prefetch, which can stick true on Relay.
-    const showLoadOlderButton = isMobileSurfaceRuntime()
-        && timelineController.historySignals.canLoadEarlier;
+    // The Capacitor mobile entrypoint sets isMobile before first render. Do not
+    // use width/pointer surface inference here: native WebView viewport changes
+    // can temporarily classify as desktop and hide this explicit mobile-only
+    // affordance until an unrelated scroll causes another render.
+    // Before the first cursor or complete signal settles, keep the mobile
+    // affordance visible and disabled so entering an older session has immediate
+    // feedback. A settled prefetch error releases this pending state; cursor-backed
+    // button busy remains exclusively mutation-owned below.
+    const isLoadingHistoryAvailability = Boolean(
+        currentSessionId
+        && historyMeta
+        && !historyMeta.complete
+        && !timelineController.historySignals.canLoadEarlier
+        && sessionPrefetchInfo?.status !== 'error',
+    );
+    const showLoadOlderButton = isMobile
+        && (
+            timelineController.historySignals.canLoadEarlier
+            || timelineController.isLoadingOlder
+            || isLoadingHistoryAvailability
+        );
     const isLoadOlderBusy = timelineController.isLoadingOlder;
     const timelineLoadEarlier = timelineController.loadEarlier;
     const handleLoadOlderClick = useEvent(() => {
@@ -1718,6 +1746,7 @@ const ChatContainerContent: React.FC<ChatContainerContentProps> = ({
                 sessionPermissions={sessionPermissions}
                 isProgrammaticFollowActive={isFollowingProgrammatically}
                 showLoadOlderButton={showLoadOlderButton}
+                isHistoryAvailabilityLoading={isLoadingHistoryAvailability}
                 onLoadOlder={handleLoadOlderClick}
                 turnIds={timelineController.turnIds}
                 activeTurnId={timelineController.activeTurnId}

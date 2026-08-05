@@ -7,6 +7,7 @@ import {
   shouldFetchSessionForRenderableSync,
   hasUserMessage,
   resolveMergedSessionSyncMeta,
+  resolveSessionHistoryLoadPlan,
 } from './use-sync'
 import { mergeOptimisticPage } from './optimistic'
 import { materializeSessionSnapshots } from './materialization'
@@ -50,6 +51,29 @@ describe('resolveMergedSessionSyncMeta', () => {
     )
     expect(merged.cursor).toBe('msg_local')
     expect(merged.limit).toBe(4)
+  })
+})
+
+describe('resolveSessionHistoryLoadPlan', () => {
+  test('recovers the tail cursor before prepend when history is incomplete but cursor is absent', () => {
+    // Exact mobile failure: the UI can still have a stale load-more affordance,
+    // while local pagination meta is incomplete with no cursor. A direct
+    // prepend would no-op/throw; refresh the authoritative tail first.
+    expect(resolveSessionHistoryLoadPlan({
+      limit: 2,
+      cursor: undefined,
+      complete: false,
+      loading: false,
+    })).toEqual({ kind: 'recover-cursor' })
+  })
+
+  test('starts prepend when the incomplete history meta has a cursor', () => {
+    expect(resolveSessionHistoryLoadPlan({
+      limit: 2,
+      cursor: 'msg_before',
+      complete: false,
+      loading: false,
+    })).toEqual({ kind: 'prepend', before: 'msg_before' })
   })
 })
 

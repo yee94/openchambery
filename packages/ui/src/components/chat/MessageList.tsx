@@ -1,5 +1,5 @@
 import React from 'react';
-import { useEvent, useInterval } from '@reactuses/core';
+import { useEvent, useInterval, useIsomorphicLayoutEffect } from '@reactuses/core';
 import type { Part } from '@opencode-ai/sdk/v2';
 import { elementScroll, useVirtualizer as useTanstackVirtualizer, type ReactVirtualizer, type VirtualItem } from '@tanstack/react-virtual';
 import { isAssistantSessionDivider } from './hostedSessionHistory';
@@ -373,6 +373,66 @@ const isInsideStuckSticky = (node: HTMLElement, container: HTMLElement, containe
     }
 
     return false;
+};
+
+type ViewportMessageAnchor = {
+    messageId: string;
+    offsetTop: number;
+};
+
+type VirtualizationTransitionAnchor = ViewportMessageAnchor & {
+    entryKey: string;
+    attempts: number;
+};
+
+const findMessageElement = (scope: ParentNode, messageId: string): HTMLElement | null => {
+    return Array.from(scope.querySelectorAll<HTMLElement>('[data-message-id]')).find(
+        (node) => node.dataset.messageId === messageId,
+    ) ?? null;
+};
+
+const captureViewportMessageAnchor = (
+    container: HTMLElement,
+    scope: ParentNode = container,
+): ViewportMessageAnchor | null => {
+    const containerRect = container.getBoundingClientRect();
+    const nodes = Array.from(scope.querySelectorAll<HTMLElement>('[data-message-id]'));
+    const firstVisible = nodes.find((node) => {
+        const rect = node.getBoundingClientRect();
+        return rect.bottom > containerRect.top + 1
+            && !isInsideStuckSticky(node, container, containerRect.top);
+    }) ?? nodes.find((node) => node.getBoundingClientRect().bottom > containerRect.top + 1);
+    const messageId = firstVisible?.dataset.messageId;
+    if (!firstVisible || !messageId) {
+        return null;
+    }
+
+    return {
+        messageId,
+        offsetTop: firstVisible.getBoundingClientRect().top - containerRect.top,
+    };
+};
+
+const captureVirtualizationTransitionAnchor = (
+    content: HTMLElement,
+    container: HTMLElement,
+): VirtualizationTransitionAnchor | null => {
+    const messageAnchor = captureViewportMessageAnchor(container, content);
+    if (!messageAnchor) {
+        return null;
+    }
+
+    const message = findMessageElement(content, messageAnchor.messageId);
+    const entryKey = message?.closest<HTMLElement>('[data-turn-entry]')?.dataset.turnEntry;
+    if (!entryKey) {
+        return null;
+    }
+
+    return {
+        ...messageAnchor,
+        entryKey,
+        attempts: 0,
+    };
 };
 
 
@@ -1141,6 +1201,28 @@ type StaticHistoryListProps = {
 
 const StaticHistoryList = React.memo(({ entries, engine, contentRef, scrollRef, registerTanstackVirtualizer, virtualizerKey, onMessageContentChange, getAnimationHandlers, scrollToBottom, stickyUserHeader, activityRenderMode, turnUiStates, onToggleTurnGroup, chatRenderMode, shouldAnimateUserMessage, onUserAnimationConsumed, reviewTransferDirection }: StaticHistoryListProps) => {
     const isTanstack = engine === 'tanstack';
+    // A prepend can move this list across the tiny-history virtualization
+    // threshold. Capture from the old normal-flow DOM during render, then let
+    // the new virtualizer mount that same keyed entry before restoring its exact
+    // message offset in a layout effect.
+    const committedEngineRef = React.useRef<HistoryEngine>(engine);
+    const virtualizationTransitionAnchorRef = React.useRef<VirtualizationTransitionAnchor | null>(null);
+    const [virtualizationTransitionTick, retryVirtualizationTransitionAnchor] = React.useReducer(
+        (value: number) => value + 1,
+        0,
+    );
+    if (engine === 'none') {
+        virtualizationTransitionAnchorRef.current = null;
+    } else if (
+        committedEngineRef.current === 'none' && isTanstack
+        && virtualizationTransitionAnchorRef.current === null
+    ) {
+        const content = contentRef.current;
+        const container = scrollRef?.current;
+        if (content && container) {
+            virtualizationTransitionAnchorRef.current = captureVirtualizationTransitionAnchor(content, container);
+        }
+    }
 
     // --- Quiet-window prepend (mobile) --------------------------------------
     // Gesture tracking for the deferred-prepend decision. Refs only: reading
@@ -1325,6 +1407,41 @@ const StaticHistoryList = React.memo(({ entries, engine, contentRef, scrollRef, 
         },
         initialMeasurementsCache: measurementSeedRef.current,
     });
+    useIsomorphicLayoutEffect(() => {
+        committedEngineRef.current = engine;
+        if (!isTanstack) {
+            virtualizationTransitionAnchorRef.current = null;
+            return;
+        }
+
+        const anchor = virtualizationTransitionAnchorRef.current;
+        const container = scrollRef?.current;
+        if (!anchor || !container) {
+            return;
+        }
+
+        const message = findMessageElement(container, anchor.messageId);
+        if (message) {
+            const delta = message.getBoundingClientRect().top
+                - container.getBoundingClientRect().top
+                - anchor.offsetTop;
+            if (Math.abs(delta) > 0.5) {
+                container.scrollTop += delta;
+            }
+            virtualizationTransitionAnchorRef.current = null;
+            return;
+        }
+
+        const index = entryKeys.indexOf(anchor.entryKey);
+        if (index < 0 || anchor.attempts >= 1) {
+            virtualizationTransitionAnchorRef.current = null;
+            return;
+        }
+
+        anchor.attempts += 1;
+        tanstackVirtualizer.scrollToIndex(index, { align: 'start' });
+        retryVirtualizationTransitionAnchor();
+    }, [engine, entryKeys, isTanstack, tanstackVirtualizer, virtualizationTransitionTick]);
     // Size-change scroll adjustment uses virtual-core's default (3.17.6+):
     // first measure compensates any above-fold row; remeasure only fully-above
     // rows and never while scrolling backward; wasAtEnd pins total-size growth.

@@ -37,4 +37,50 @@ describe('ChatContainer source contracts', () => {
             /React\.useEffect\s*\(\s*\(\)\s*=>\s*\{\s*historyUpwardIntentRef\.current\s*=/,
         );
     });
+
+    test('native mobile load-older visibility uses the mounted mobile surface state', () => {
+        // Capacitor launches MobileApp directly and does not set the hosted-page
+        // __OPENCHAMBER_SURFACE__ global. Width/pointer probing can vary while
+        // the WebView viewport changes, whereas isMobile is set before mount.
+        expect(source).toContain('const showLoadOlderButton = isMobile');
+        expect(source).not.toContain('const showLoadOlderButton = isMobileSurfaceRuntime()');
+    });
+
+    test('mobile renders a disabled history affordance while its first cursor resolves', () => {
+        expect(source).toContain('const isLoadingHistoryAvailability = Boolean(');
+        expect(source).toContain("sessionPrefetchInfo?.status !== 'error'");
+        expect(source).toContain('isHistoryAvailabilityLoading={isLoadingHistoryAvailability}');
+        expect(source).toContain('const loadOlderBusy = isLoadingOlder || isHistoryAvailabilityLoading;');
+        expect(source).toContain('aria-busy={loadOlderBusy}');
+        expect(source).toContain("isHistoryAvailabilityLoading ? t('chat.history.checkingOlder')");
+    });
+
+    test('explicit history navigation releases the initial entry-stick pin', () => {
+        const autoFollowSource = readFileSync(join(here, '../../hooks/useChatAutoFollow.ts'), 'utf8');
+        const releaseStart = autoFollowSource.indexOf('const releaseAutoFollow = useEvent');
+        const releaseEnd = autoFollowSource.indexOf('const onUpwardUserIntentRef', releaseStart);
+
+        expect(releaseStart).toBeGreaterThan(-1);
+        expect(releaseEnd).toBeGreaterThan(releaseStart);
+        expect(autoFollowSource.slice(releaseStart, releaseEnd)).toContain('endEntryStick();');
+    });
+
+    test('explicit history pagination holds auto-follow released through viewport restoration', () => {
+        const autoFollowSource = readFileSync(join(here, '../../hooks/useChatAutoFollow.ts'), 'utf8');
+        const timelineSource = readFileSync(join(here, 'hooks/useChatTimelineController.ts'), 'utf8');
+
+        expect(autoFollowSource).toContain('historyViewportPreservationRef');
+        expect(autoFollowSource).toContain('if (historyViewportPreservationRef.current) {');
+        expect(timelineSource).toContain('beginHistoryViewportPreservation();');
+        expect(timelineSource).toContain('endHistoryViewportPreservation();');
+    });
+
+    test('timeline viewport metrics are ResizeObserver-owned and identity-stable on no-op', () => {
+        // Trace-20260805: messages-keyed layout effect + fresh setState object
+        // forced a second ChatContainer render on every shell-tool part commit.
+        const timelineSource = readFileSync(join(here, 'hooks/useChatTimelineController.ts'), 'utf8');
+        expect(timelineSource).toContain('resolvePublishedViewportMetrics');
+        expect(timelineSource).toContain('useResizeObserver(');
+        expect(timelineSource).not.toContain('[messages, sessionId, isLoadingOlder, scrollRef]');
+    });
 });

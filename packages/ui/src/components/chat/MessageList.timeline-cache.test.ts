@@ -1,4 +1,9 @@
 import { describe, expect, mock, test } from 'bun:test';
+import { readFileSync } from 'node:fs';
+import { dirname, join } from 'node:path';
+import { fileURLToPath } from 'node:url';
+
+const here = dirname(fileURLToPath(import.meta.url));
 
 import { createSessionViewKey } from './sessionViewCache';
 
@@ -59,6 +64,18 @@ const {
     shouldShowCompactionStatus,
     syncCurrentHistoryVirtualization,
 } = await import('./MessageList');
+
+describe('history virtualization transition anchor source contract', () => {
+    test('captures the visible message before none-to-TanStack transition and restores it before paint', () => {
+        const source = readFileSync(join(here, 'MessageList.tsx'), 'utf8');
+
+        expect(source).toContain('captureVirtualizationTransitionAnchor');
+        expect(source).toContain("committedEngineRef.current === 'none' && isTanstack");
+        expect(source).toContain('tanstackVirtualizer.scrollToIndex(index, { align: \'start\' });');
+        expect(source).toContain('container.scrollTop += delta;');
+        expect(source).toContain('useIsomorphicLayoutEffect(() => {');
+    });
+});
 
 describe('turn activity expansion state', () => {
     test('live active always defaults expanded regardless of activity render mode', () => {
@@ -362,4 +379,3 @@ describe('MessageList history virtualization handle state', () => {
         expect(existingHandleReader()).toBe(true);
     });
 });
-

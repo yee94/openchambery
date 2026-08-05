@@ -70,6 +70,8 @@ export interface UseChatAutoFollowResult {
     goToBottom: (mode?: 'instant' | 'smooth') => void;
     scrollToBottomOnSend: () => void;
     releaseAutoFollow: () => void;
+    beginHistoryViewportPreservation: () => void;
+    endHistoryViewportPreservation: () => void;
     saveSnapshotNow: () => void;
     restoreSnapshot: () => Promise<boolean>;
 }
@@ -93,9 +95,9 @@ export interface UseChatAutoFollowResult {
 //     a scroll event that lands at our just-written bottom never trips a false
 //     release.
 //
-// The public interface below is unchanged from the old implementation so every
-// consumer (ChatContainer, message parts, the timeline controller) keeps
-// working without edits.
+// Explicit history pagination holds auto-follow released until its keyed viewport
+// restoration completes, so virtualizer measurement scroll events cannot claim
+// bottom ownership during that transaction.
 // ──────────────────────────────────────────────────────────────────────────
 
 const BOTTOM_SPACER_DESKTOP_VH = 0.10;
@@ -280,6 +282,7 @@ export const useChatAutoFollow = ({
     const entryStickQuietTimerRef = React.useRef<ReturnType<typeof setTimeout> | null>(null);
     const entryStickCapTimerRef = React.useRef<ReturnType<typeof setTimeout> | null>(null);
     const entryStickLastHeightRef = React.useRef(0);
+    const historyViewportPreservationRef = React.useRef(false);
 
     const saveTimerRef = React.useRef<ReturnType<typeof setTimeout> | null>(null);
     const pendingSaveRef = React.useRef<ViewportSnapshotSave | null>(null);
@@ -508,6 +511,7 @@ export const useChatAutoFollow = ({
 
     // ── public scroll API (mapped onto the primitives) ───────────────────────
     const goToBottom = useEvent((mode: 'instant' | 'smooth' = 'instant') => {
+        historyViewportPreservationRef.current = false;
         setStateValue('following');
         endEntryStick();
         if (mode === 'instant') {
@@ -520,6 +524,7 @@ export const useChatAutoFollow = ({
     });
 
     const scrollToBottomOnSend = useEvent(() => {
+        historyViewportPreservationRef.current = false;
         // Single movement to the just-sent message. Force re-pins to the bottom
         // whether we were following or scrolled up; the content ResizeObserver
         // keeps us pinned as the optimistic message and its reply stream in.
@@ -528,8 +533,18 @@ export const useChatAutoFollow = ({
 
     const releaseAutoFollow = useEvent(() => {
         cancelForcedBottom();
+        endEntryStick();
         setStateValue('released');
         updateOverflowAndButton();
+    });
+
+    const beginHistoryViewportPreservation = useEvent(() => {
+        historyViewportPreservationRef.current = true;
+        releaseAutoFollow();
+    });
+
+    const endHistoryViewportPreservation = useEvent(() => {
+        historyViewportPreservationRef.current = false;
     });
 
     const onUpwardUserIntentRef = React.useRef(onUpwardUserIntent);
@@ -601,6 +616,7 @@ export const useChatAutoFollow = ({
 
     const restoreSnapshot = useEvent(async (identity = currentViewportIdentityRef.current): Promise<boolean> => {
         if (!identity.sessionId) return false;
+        historyViewportPreservationRef.current = false;
         const snapshot = getViewportSessionMemory(identity.sessionId, identity.viewportKey);
 
         const container = scrollRef.current;
@@ -640,6 +656,7 @@ export const useChatAutoFollow = ({
         autoRef.current = null;
         lastScrollTopRef.current = 0;
         endEntryStick();
+        historyViewportPreservationRef.current = false;
         setStateValue('following');
         pendingInitialRestoreRef.current = null;
         if (currentSessionId && currentSessionId !== previousIdentity?.sessionId) {
@@ -651,7 +668,11 @@ export const useChatAutoFollow = ({
     // When work begins and we are still following, pin to the bottom so the
     // first streaming frame does not paint mid-history.
     React.useEffect(() => {
-        if (sessionIsWorking && stateRef.current === 'following') {
+        if (
+            sessionIsWorking
+            && !historyViewportPreservationRef.current
+            && stateRef.current === 'following'
+        ) {
             scrollToBottom(true);
         }
         // eslint-disable-next-line react-hooks/exhaustive-deps -- sessionIsWorking is the real input; scrollToBottom is useEvent-stable.
@@ -692,6 +713,11 @@ export const useChatAutoFollow = ({
         const scrollTopUnchanged = Math.abs(geometry.scrollTop - previousTop) < 0.5;
 
         updateOverflowAndButton(geometry);
+
+        if (historyViewportPreservationRef.current) {
+            queueSave();
+            return;
+        }
 
         if (!canScrollGeometry(geometry)) {
             setStateValue('following');
@@ -820,26 +846,48 @@ export const useChatAutoFollow = ({
         // Keyboard open / animating / composer expand: viewport and composer
         // height changes must not re-pin the message list. Keeping scrollTop
         // leaves the main chat stable while the keyboard and input ride up.
-        if (keyboardGeometryFreezeRef.current) {
-            updateOverflowAndButton();
-            return;
-        }
+        //
+        // Read geometry once. Streaming shell/tool growth used to hit
+        // canScroll → updateOverflowAndButton → distanceFromBottom as three
+        // separate layout reads in the same ResizeObserver callback, which
+        // showed up as full-document Layout (dirty hundreds) right next to
+        // programmatic ScrollLayer in Performance traces.
         const el = scrollRef.current;
-        if (el && !canScroll(el)) {
-            setStateValue('following');
-            updateOverflowAndButton();
+        if (keyboardGeometryFreezeRef.current) {
+            updateOverflowAndButton(el ? readScrollGeometry(el) : undefined);
             return;
         }
-        updateOverflowAndButton();
+        if (historyViewportPreservationRef.current) {
+            updateOverflowAndButton(el ? readScrollGeometry(el) : undefined);
+            return;
+        }
+        if (!el) {
+            updateOverflowAndButton(undefined);
+            return;
+        }
+        const geometry = readScrollGeometry(el);
+        if (!canScrollGeometry(geometry)) {
+            setStateValue('following');
+            updateOverflowAndButton(geometry);
+            return;
+        }
+        updateOverflowAndButton(geometry);
         // Entry-stick window: on first session open, FORCE the bottom on
         // every growth so late async data (task/subagent child rows, code
         // highlight, mermaid) can't strand the viewport mid-history. Force
-        // overrides any false `released` from the growth itself; only a real
-        // user gesture clears the window (releaseFromUserIntent).
-        if (entryStickRef.current && el) {
-            const grew = el.scrollHeight > entryStickLastHeightRef.current + 1;
-            entryStickLastHeightRef.current = el.scrollHeight;
-            scrollToBottom(true);
+        // overrides any false `released` from the growth itself; a real user
+        // gesture or explicit navigation release clears the window.
+        if (entryStickRef.current) {
+            const grew = geometry.scrollHeight > entryStickLastHeightRef.current + 1;
+            entryStickLastHeightRef.current = geometry.scrollHeight;
+            // Already at bottom within tolerance — only refresh the auto marker.
+            // A second scrollTop write here races virtualizer measurement and
+            // paints as a full-viewport flash (Trace-20260805 shell tool window).
+            if (distanceFromBottomOf(geometry) <= AUTO_MATCH_TOLERANCE_PX) {
+                markAuto(el);
+            } else {
+                scrollToBottom(true);
+            }
             if (grew) armEntryStickQuiet();
             return;
         }
@@ -847,6 +895,10 @@ export const useChatAutoFollow = ({
         // cold history / async measure cannot leave the viewport mid-list.
         // Released users are left alone — their gesture already opted out.
         if (stateRef.current !== 'following') return;
+        if (distanceFromBottomOf(geometry) <= AUTO_MATCH_TOLERANCE_PX) {
+            markAuto(el);
+            return;
+        }
         scrollToBottom(false);
     });
 
@@ -1132,6 +1184,8 @@ export const useChatAutoFollow = ({
         goToBottom,
         scrollToBottomOnSend,
         releaseAutoFollow,
+        beginHistoryViewportPreservation,
+        endHistoryViewportPreservation,
         saveSnapshotNow,
         restoreSnapshot,
     };

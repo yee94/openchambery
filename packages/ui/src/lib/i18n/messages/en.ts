@@ -1397,6 +1397,7 @@ export const dict = {
   'diffView.reviewDialog.toast.noSessionDirectory': 'Session directory is unavailable',
   'diffView.reviewDialog.toast.startFailed': 'Failed to start review flow',
   'chat.history.loadOlder': 'Load older messages',
+  'chat.history.checkingOlder': 'Checking for earlier messages…',
   'chat.history.loadOlderFailed': 'Could not load older messages. Try again.',
   'chat.history.loadFailedTitle': 'Unable to load this conversation',
   'chat.history.loadFailedDescription': 'The conversation is still available. Try loading it again.',

@@ -1399,6 +1399,7 @@ export const dict: Record<I18nKey, string> = {
   'diffView.reviewDialog.toast.noSessionDirectory': '세션 디렉터리를 사용할 수 없습니다',
   'diffView.reviewDialog.toast.startFailed': '리뷰 흐름을 시작하지 못했습니다',
   'chat.history.loadOlder': '이전 메시지 불러오기',
+  'chat.history.checkingOlder': '이전 메시지 확인 중…',
   'chat.history.loadOlderFailed': '이전 메시지를 불러오지 못했습니다. 다시 시도하세요.',
   'chat.history.loadFailedTitle': '이 대화를 불러올 수 없습니다',
   'chat.history.loadFailedDescription': '대화는 계속 이용할 수 있습니다. 다시 불러오세요.',
