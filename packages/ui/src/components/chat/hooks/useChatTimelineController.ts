@@ -970,10 +970,21 @@ export const useChatTimelineController = ({
             return;
         }
         try {
-            await loadEarlierMutation.mutateAsync({
+            const grew = await loadEarlierMutation.mutateAsync({
                 sessionId: targetSessionId,
                 userInitiated: Boolean(options?.userInitiated),
             });
+            // Silent no-op paths (missing cursor, stuck historyLoading timeout,
+            // stop-no-growth) return false without throwing — still toast when
+            // the user asked and history still claims more so it does not look
+            // like a dead button.
+            if (
+                options?.userInitiated
+                && grew === false
+                && historySignalsRef.current.canLoadEarlier
+            ) {
+                toast.error(t('chat.history.loadOlderFailed'));
+            }
         } catch {
             // Transport failures (Host turn-page timeout / network) used to clear
             // the spinner with no feedback — mobile looked like a no-op. Toast

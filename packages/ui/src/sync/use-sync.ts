@@ -100,9 +100,15 @@ const getDefaultMeta = (): SyncMeta => ({
 })
 
 /**
- * Merge hook-local pagination meta with prefetch so a local entry that never
- * wrote (or cleared) `cursor` cannot mask a still-valid prefetch cursor.
- * Local owns `loading`; complete is true if either source is complete.
+ * Merge hook-local pagination meta with prefetch.
+ *
+ * - Local owns `loading` (in-flight pull in this hook).
+ * - Cursor: prefer local when set, else prefetch — a loading patch that never
+ *   wrote cursor must not mask a still-valid prefetch cursor.
+ * - Complete: **incomplete wins**. Prefetch is dirtied to `complete:false`
+ *   (`markSessionPrefetchDirty`) while local may still hold a prior
+ *   `complete:true`; OR-ing complete hid canLoadEarlier and silent-no-op'd
+ *   loadMore. Both sources must agree complete before we clear the cursor.
  */
 export function resolveMergedSessionSyncMeta(
   local: SyncMeta | undefined,
@@ -111,7 +117,8 @@ export function resolveMergedSessionSyncMeta(
   if (!local && !prefetch) return getDefaultMeta()
   if (!local) return prefetch ?? getDefaultMeta()
   if (!prefetch) return local
-  const complete = local.complete || prefetch.complete
+  // Incomplete wins: dirty/live incompleteness must surface load-more.
+  const complete = local.complete && prefetch.complete
   const cursor = complete ? undefined : (local.cursor ?? prefetch.cursor)
   return {
     limit: Math.max(local.limit, prefetch.limit),
@@ -634,7 +641,17 @@ export function useSync() {
       const targetDirectory = options?.directory ?? directory
       touch(sessionID, targetDirectory)
       const m = getMetaFor(sessionID, targetDirectory)
-      if (m.loading || m.complete || !m.cursor) return
+      // Concurrent pull — caller (timeline) may wait on historyLoading; do not
+      // throw so a second tap while busy is a no-op rather than a failure toast.
+      if (m.loading) return
+      // Exhausted history: quiet success (button should already be hidden).
+      if (m.complete) return
+      // Incomplete but no cursor is a contract failure (UI may still show
+      // canLoadEarlier from a partial signal). Throw so user-initiated load
+      // toasts instead of flash-then-stop.
+      if (!m.cursor) {
+        throw new Error("session history cursor missing")
+      }
       await loadMessages(sessionID, {
         before: m.cursor,
         purpose: "prepend",

@@ -503,13 +503,17 @@ Rules that keep this single-sourced:
   workspace `directory` into `loadMore` / `hasMore` / `isLoading` / `isComplete`
   — meta and prefetch cursor are directory-keyed; using the primary sync
   directory for a cross-project session yields a silent no-op (button visible
-  via directory-scoped prefetch, click does nothing). `getMetaFor` merges
+  via directory-scoped prefetch, click does nothing).   `getMetaFor` merges
   hook-local meta with prefetch so a local entry that lost its cursor (loading
   patch / partial settle) cannot mask a still-valid prefetch cursor — that
-  mismatch showed canLoadEarlier while loadMore silent-no-op'd. Explicit
-  `loadMore` rethrows when prefetch settles `status=error` so user-initiated
-  load-earlier can toast (`chat.history.loadOlderFailed`) instead of flashing
-  the spinner with no feedback. Bare `before` without purpose
+  mismatch showed canLoadEarlier while loadMore silent-no-op'd. **Incomplete
+  wins on complete:** dirty prefetch (`complete:false` from
+  `markSessionPrefetchDirty`) must beat a stale local `complete:true`, or the
+  mobile load-older button disappears and loadMore quiet-returns. Explicit
+  `loadMore` throws when incomplete and cursor is missing, and rethrows when
+  prefetch settles `status=error`, so user-initiated load-earlier can toast
+  (`chat.history.loadOlderFailed`) instead of flashing the spinner with no
+  feedback. Bare `before` without purpose
   prepend stays on the official SDK path. The client asserts a strict page
   contract: each record is an object with non-empty `info.id` and optional
   `parts` array; `turnCount` is an integer in `0..requestedTurns`;

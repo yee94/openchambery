@@ -2831,12 +2831,17 @@ async function fetchMessagesForSessionInternal(
     // Staleness guard: a rapid session switch may have moved the user off this
     // session while the fetch was in flight. Skip the write so a slow fetch
     // can't repopulate (and un-evict) a session already navigated away from.
+    // Product prefetch.limit is cumulative authored-user turns, not message count.
+    const turnLimit = typeof turnPage.turnCount === 'number' && Number.isFinite(turnPage.turnCount)
+      ? Math.max(0, Math.floor(turnPage.turnCount))
+      : completeRecords.length
+
     if (useSessionUIStore.getState().currentSessionId !== sessionID) {
       setSessionPrefetch({
         directory: resolvedDir,
         sessionID,
         runtimeKey,
-        limit: completeRecords.length,
+        limit: turnLimit,
         cursor,
         complete: turnPage.complete,
         loadGeneration,
@@ -2862,7 +2867,7 @@ async function fetchMessagesForSessionInternal(
       directory: resolvedDir,
       sessionID,
       runtimeKey,
-      limit: completeRecords.length,
+      limit: turnLimit,
       cursor,
       complete: turnPage.complete,
       loadGeneration,

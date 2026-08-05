@@ -442,6 +442,9 @@ describe('useChatTimelineController source contracts', () => {
         expect(source).toContain("chat.history.loadOlderFailed");
         expect(source).toContain('toast.error');
         expect(source).toContain('userInitiated');
+        // Also toast when grew===false but canLoadEarlier still true (silent no-op).
+        expect(source).toContain('grew === false');
+        expect(source).toContain('canLoadEarlier');
     });
 
     test('handlers use useEvent; no React.useCallback', () => {

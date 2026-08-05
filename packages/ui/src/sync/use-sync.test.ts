@@ -22,10 +22,22 @@ describe('resolveMergedSessionSyncMeta', () => {
     expect(merged.complete).toBe(false)
   })
 
-  test('local complete wins over prefetch incomplete', () => {
+  test('dirty prefetch incomplete beats stale local complete (button + loadMore)', () => {
+    // markSessionPrefetchDirty sets prefetch.complete=false while local meta
+    // may still hold a prior complete:true. Incomplete must win or canLoadEarlier
+    // stays false and the mobile load-older button disappears.
     const merged = resolveMergedSessionSyncMeta(
       { limit: 4, cursor: undefined, complete: true, loading: false },
-      { limit: 2, cursor: 'msg_stale', complete: false, loading: false },
+      { limit: 2, cursor: 'msg_still_has_more', complete: false, loading: false },
+    )
+    expect(merged.complete).toBe(false)
+    expect(merged.cursor).toBe('msg_still_has_more')
+  })
+
+  test('both complete clears cursor', () => {
+    const merged = resolveMergedSessionSyncMeta(
+      { limit: 4, cursor: undefined, complete: true, loading: false },
+      { limit: 4, cursor: undefined, complete: true, loading: false },
     )
     expect(merged.complete).toBe(true)
     expect(merged.cursor).toBeUndefined()
