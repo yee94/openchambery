@@ -8,6 +8,7 @@ const sourceDirectory = dirname(fileURLToPath(import.meta.url));
 const helperSource = readFileSync(join(sourceDirectory, 'imageSource.ts'), 'utf8');
 const rendererSource = readFileSync(join(sourceDirectory, 'MarkdownRendererImpl.tsx'), 'utf8');
 const decorateSource = readFileSync(join(sourceDirectory, 'markdown/decorate.ts'), 'utf8');
+const markdownCoreSource = readFileSync(join(sourceDirectory, 'markdown/markdownCore.ts'), 'utf8');
 const stylesSource = readFileSync(join(sourceDirectory, '../../index.css'), 'utf8');
 const attachmentSource = readFileSync(join(sourceDirectory, 'FileAttachment.tsx'), 'utf8');
 const dialogSource = readFileSync(join(sourceDirectory, 'message/ToolOutputDialog.tsx'), 'utf8');
@@ -102,6 +103,9 @@ describe('image source contracts', () => {
 
   test('keeps direct Markdown images on the browser path and auto-loads relay-local placeholders on first paint', () => {
     expect(decorateSource).toContain("data-md-link-favicon");
+    expect(markdownCoreSource).toContain("DOMPurify.addHook('uponSanitizeAttribute'");
+    expect(markdownCoreSource).toContain("node.setAttribute('data-md-image-source', source)");
+    expect(markdownCoreSource).toContain('data.keepAttr = false');
     expect(decorateSource).not.toContain('decorateMessageImages');
     expect(rendererSource).toContain('img:not([data-md-link-favicon="true"])');
     expect(rendererSource).toContain('if (!isRelayTransport(transportIdentity))');

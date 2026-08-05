@@ -345,6 +345,16 @@ const ensureSanitizeHook = (): void => {
   if (sanitizeHookInstalled) return;
   if (typeof window === 'undefined' || !DOMPurify.isSupported) return;
   sanitizeHookInstalled = true;
+  DOMPurify.addHook('uponSanitizeAttribute', (node, data) => {
+    if (!(node instanceof HTMLImageElement) || data.attrName !== 'src') return;
+    const source = typeof data.attrValue === 'string' ? data.attrValue : '';
+    // DOMPurify strips file: URLs before Relay decoration can resolve them.
+    // Keep the original locator in a safe data attribute; the decorator replaces
+    // the browser-owned source with an opaque native virtual URL before display.
+    if (!/^file:/i.test(source)) return;
+    node.setAttribute('data-md-image-source', source);
+    data.keepAttr = false;
+  });
   DOMPurify.addHook('afterSanitizeAttributes', (node) => {
     if (!(node instanceof HTMLAnchorElement)) return;
     if (node.target !== '_blank') return;

@@ -46,13 +46,16 @@ describe('ChatContainer source contracts', () => {
         expect(source).not.toContain('const showLoadOlderButton = isMobileSurfaceRuntime()');
     });
 
-    test('mobile exposes history pagination from the page response cursor', () => {
+    test('mobile reserves load-older space while the history boundary resolves', () => {
+        expect(source).toContain('const isHistoryAvailabilityPending = Boolean(');
+        expect(source).toContain("sessionPrefetchInfo?.status !== 'error'");
         expect(source).toContain(`const showLoadOlderButton = isMobile
         && (
             timelineController.historySignals.canLoadEarlier
             || timelineController.isLoadingOlder
+            || isHistoryAvailabilityPending
         );`);
-        expect(source).toContain('const loadOlderBusy = isLoadingOlder;');
+        expect(source).toContain('const loadOlderBusy = isLoadingOlder || isHistoryAvailabilityPending;');
         expect(source).toContain('aria-busy={loadOlderBusy}');
         expect(source).toContain("{t('chat.history.loadOlder')}");
     });

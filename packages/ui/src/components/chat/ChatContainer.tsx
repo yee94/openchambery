@@ -239,6 +239,7 @@ type ChatViewportProps = {
     sessionPermissions: PermissionRequest[];
     isProgrammaticFollowActive: boolean;
     showLoadOlderButton: boolean;
+    isHistoryAvailabilityPending: boolean;
     onLoadOlder: () => void;
     turnIds: string[];
     activeTurnId: string | null;
@@ -273,6 +274,7 @@ const ChatViewport = React.memo(({
     sessionPermissions,
     isProgrammaticFollowActive,
     showLoadOlderButton,
+    isHistoryAvailabilityPending,
     onLoadOlder,
     turnIds,
     activeTurnId,
@@ -283,7 +285,7 @@ const ChatViewport = React.memo(({
     onLoadEarlierPrompts,
 }: ChatViewportProps) => {
     const { t } = useI18n();
-    const loadOlderBusy = isLoadingOlder;
+    const loadOlderBusy = isLoadingOlder || isHistoryAvailabilityPending;
     const promptPreviewsByTurnIdRef = React.useRef<Map<string, Part[]>>(new Map());
     // Cache normalized parts per source array so unchanged messages keep the
     // same reference and the memo below can bail out to the previous map.
@@ -494,6 +496,7 @@ const ChatViewport = React.memo(({
         && prev.sessionPermissions === next.sessionPermissions
         && prev.isProgrammaticFollowActive === next.isProgrammaticFollowActive
         && prev.showLoadOlderButton === next.showLoadOlderButton
+        && prev.isHistoryAvailabilityPending === next.isHistoryAvailabilityPending
         && prev.onLoadOlder === next.onLoadOlder
         && prev.turnIds === next.turnIds
         && prev.activeTurnId === next.activeTurnId
@@ -1151,10 +1154,21 @@ const ChatContainerContent: React.FC<ChatContainerContentProps> = ({
     // use width/pointer surface inference here: native WebView viewport changes
     // can temporarily classify as desktop and hide this explicit mobile-only
     // affordance until an unrelated scroll causes another render.
+    // A session's first page already returns the pagination cursor or complete
+    // boundary. Reserve the control while that page resolves so every mobile
+    // entry path has a stable history affordance from its first render.
+    const isHistoryAvailabilityPending = Boolean(
+        currentSessionId
+        && historyMeta
+        && !historyMeta.complete
+        && !timelineController.historySignals.canLoadEarlier
+        && sessionPrefetchInfo?.status !== 'error',
+    );
     const showLoadOlderButton = isMobile
         && (
             timelineController.historySignals.canLoadEarlier
             || timelineController.isLoadingOlder
+            || isHistoryAvailabilityPending
         );
     const isLoadOlderBusy = timelineController.isLoadingOlder;
     const timelineLoadEarlier = timelineController.loadEarlier;
@@ -1731,6 +1745,7 @@ const ChatContainerContent: React.FC<ChatContainerContentProps> = ({
                 sessionPermissions={sessionPermissions}
                 isProgrammaticFollowActive={isFollowingProgrammatically}
                 showLoadOlderButton={showLoadOlderButton}
+                isHistoryAvailabilityPending={isHistoryAvailabilityPending}
                 onLoadOlder={handleLoadOlderClick}
                 turnIds={timelineController.turnIds}
                 activeTurnId={timelineController.activeTurnId}
