@@ -6,9 +6,40 @@ import {
   getConstrainedCacheStateAfterPrefetchEviction,
   shouldFetchSessionForRenderableSync,
   hasUserMessage,
+  resolveMergedSessionSyncMeta,
 } from './use-sync'
 import { mergeOptimisticPage } from './optimistic'
 import { materializeSessionSnapshots } from './materialization'
+
+describe('resolveMergedSessionSyncMeta', () => {
+  test('local without cursor keeps prefetch cursor so loadMore does not silent-no-op', () => {
+    const merged = resolveMergedSessionSyncMeta(
+      { limit: 2, cursor: undefined, complete: false, loading: true },
+      { limit: 2, cursor: 'msg_older', complete: false, loading: false },
+    )
+    expect(merged.cursor).toBe('msg_older')
+    expect(merged.loading).toBe(true)
+    expect(merged.complete).toBe(false)
+  })
+
+  test('local complete wins over prefetch incomplete', () => {
+    const merged = resolveMergedSessionSyncMeta(
+      { limit: 4, cursor: undefined, complete: true, loading: false },
+      { limit: 2, cursor: 'msg_stale', complete: false, loading: false },
+    )
+    expect(merged.complete).toBe(true)
+    expect(merged.cursor).toBeUndefined()
+  })
+
+  test('local cursor preferred when both present', () => {
+    const merged = resolveMergedSessionSyncMeta(
+      { limit: 4, cursor: 'msg_local', complete: false, loading: false },
+      { limit: 2, cursor: 'msg_prefetch', complete: false, loading: false },
+    )
+    expect(merged.cursor).toBe('msg_local')
+    expect(merged.limit).toBe(4)
+  })
+})
 
 describe('shouldFetchSessionForRenderableSync', () => {
   test('fetches full session detail when a lightweight list session is opened', () => {

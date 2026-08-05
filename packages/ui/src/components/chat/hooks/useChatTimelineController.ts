@@ -14,6 +14,8 @@ import { getMemoryLimits, type SessionHistoryMeta } from '@/stores/types/session
 import { isVSCodeRuntime } from '@/lib/desktop';
 import { isMobileSurfaceRuntime } from '@/lib/runtimeSurface';
 import { getRuntimeKey } from '@/lib/runtime-switch';
+import { toast } from '@/components/ui';
+import { useI18n } from '@/lib/i18n';
 
 type ViewportAnchor = { messageId: string; offsetTop: number };
 
@@ -931,6 +933,7 @@ export const useChatTimelineController = ({
     // mutation-owned. Button spinner tracks mutation.isPending only — never
     // background materialize/prefetch historyLoading, which can stick true on
     // Relay and painted a permanent spinner with no real load-more flight.
+    const { t } = useI18n();
     const loadEarlierMutation = useMutation({
         mutationKey: chatTimelineLoadEarlierMutationKey({
             runtimeKey: getRuntimeKey(),
@@ -972,8 +975,12 @@ export const useChatTimelineController = ({
                 userInitiated: Boolean(options?.userInitiated),
             });
         } catch {
-            // fetchOlderHistory rethrows transport failures; surface is optional.
-            // Pending clears via mutation state either way.
+            // Transport failures (Host turn-page timeout / network) used to clear
+            // the spinner with no feedback — mobile looked like a no-op. Toast
+            // only on user-initiated paths so auto-fill stays quiet.
+            if (options?.userInitiated) {
+                toast.error(t('chat.history.loadOlderFailed'));
+            }
         }
     });
 

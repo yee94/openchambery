@@ -438,6 +438,12 @@ describe('useChatTimelineController source contracts', () => {
         expect(source).toContain('isLoadingOlderUi');
     });
 
+    test('user-initiated load-earlier toasts on transport failure (no silent flash)', () => {
+        expect(source).toContain("chat.history.loadOlderFailed");
+        expect(source).toContain('toast.error');
+        expect(source).toContain('userInitiated');
+    });
+
     test('handlers use useEvent; no React.useCallback', () => {
         expect(source).toContain("from '@reactuses/core'");
         expect(source).toContain('useEvent');

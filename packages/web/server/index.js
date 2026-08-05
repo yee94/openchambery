@@ -1768,15 +1768,15 @@ async function main(options = {}) {
     console.warn('[ScheduledTasks] Failed to start runtime:', error?.message || error);
   }
 
-  // Only opens a relay control socket when the user opted in (config enabled).
-  // Reconcile the relay lifecycle from demand on startup: run it if any relay
-  // device/session exists, stop it (and clear a stale enabled flag) otherwise.
+  // Only Electron (OPENCHAMBER_RUNTIME=desktop) opens a relay host-control
+  // socket. Other runtimes no-op reconcile. When allowed, demand-driven: run if
+  // any relay device/session exists, stop (and clear a stale enabled flag)
+  // otherwise.
   void relayService.reconcile();
 
-  // Relay demand can change outside our routes: `openchamber connect-url
-  // --relay` writes a pending relay session straight to the on-disk store, and
-  // pending sessions expire without any request hitting us. Poll reconcile so a
-  // headless instance picks the relay up (or drops it) within a minute.
+  // Relay demand can change outside our routes: pending sessions expire, or a
+  // paired device is revoked, without hitting our management routes. Poll so
+  // the desktop host picks demand up (or drops it) within a minute.
   const relayReconcileTimer = setInterval(() => {
     void relayService.reconcile();
   }, 60_000);

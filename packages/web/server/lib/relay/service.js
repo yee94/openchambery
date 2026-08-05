@@ -6,10 +6,11 @@
 // Routes are registered with the other OpenChamber feature routes, before the
 // generic OpenCode proxy, and are covered by the same global UI auth gate.
 //
-// Cross-runtime parity note: relay host mode intentionally targets the web
-// server runtime only in v1 (Electron shares this server in-process). The VS
-// Code runtime does not host a relay; shared UI must treat these routes as
-// web-runtime capabilities.
+// Host gate: only the Electron desktop runtime may run a relay host
+// (OPENCHAMBER_RUNTIME=desktop, set before the in-process web server starts).
+// Plain `node server`, `dev:web:hmr`, VS Code, CLI, and browser clients must
+// never open the host-control socket or advertise a host pairing candidate.
+// They may still be relay *clients* when connecting to another host.
 
 import express from 'express';
 
@@ -17,6 +18,13 @@ import { createRelayIdentityRuntime } from './identity.js';
 import { startRelayHost } from './host-client.js';
 
 export const DEFAULT_RELAY_URL = 'wss://relay.openchamber.dev/ws';
+
+export const RELAY_HOST_DESKTOP_ONLY_MESSAGE =
+  'Relay host is only available in the OpenChamber desktop app';
+
+// Electron main sets this before importing the in-process web server.
+export const isDesktopRelayHostRuntime = (env = process.env) =>
+  env?.OPENCHAMBER_RUNTIME === 'desktop';
 
 // Canonical form: ws(s)://host[:port]/path only. Reject credentials (userinfo)
 // so settings and pairing candidates never store secrets in the endpoint URL.
@@ -61,6 +69,7 @@ const envRelayUrlOverride = () => {
  *   writeSettingsToDisk: (settings: object) => Promise<void>,
  *   getLocalPort: () => number,
  *   logger?: Pick<Console, 'warn'>,
+ *   canHostRelay?: () => boolean,
  * }} deps
  */
 export const createRelayService = ({
@@ -79,6 +88,8 @@ export const createRelayService = ({
   // evict each other at the relay worker ("Control replaced") and devices land
   // on a random instance. Optional: without it, behavior is pre-lock.
   hostLock = null,
+  // Host gate: false for non-Electron runtimes (dev server, CLI, VS Code, …).
+  canHostRelay = () => isDesktopRelayHostRuntime(),
   logger = console,
 }) => {
   const identityRuntime = createRelayIdentityRuntime({ crypto, readSettingsFromDiskMigrated, writeSettingsToDisk, readSettingsStrict });
@@ -89,6 +100,23 @@ export const createRelayService = ({
   // claimant dies; a running host stands down when another process claims.
   let claimWatchTimer = null;
   const CLAIM_WATCH_INTERVAL_MS = 30_000;
+
+  const hostAllowed = () => canHostRelay() === true;
+
+  const refuseHost = () => {
+    status = {
+      state: 'unavailable',
+      lastError: RELAY_HOST_DESKTOP_ONLY_MESSAGE,
+      connectedClients: 0,
+    };
+  };
+
+  const assertHostAllowed = () => {
+    if (hostAllowed()) return;
+    const error = new Error(RELAY_HOST_DESKTOP_ONLY_MESSAGE);
+    error.statusCode = 403;
+    throw error;
+  };
 
   const readConfig = async () => {
     const settings = await readSettingsFromDiskMigrated();
@@ -161,6 +189,10 @@ export const createRelayService = ({
   };
 
   const start = async (relayUrl, { claim = 'try' } = {}) => {
+    if (!hostAllowed()) {
+      refuseHost();
+      return;
+    }
     if (hostClient) return;
     if (hostLock) {
       const claimed = claim === 'force' ? hostLock.forceClaim() : hostLock.tryClaim();
@@ -205,7 +237,13 @@ export const createRelayService = ({
   // Drive the relay lifecycle from demand: run it when a device or pending
   // session uses the relay, stop it when none remain. Called on startup and after
   // pairing/device changes, so the operator never toggles it manually.
+  // Non-desktop runtimes never host: skip entirely so a shared data dir with
+  // Electron is not rewritten or claim-contested by dev/CLI servers.
   const reconcile = async () => {
+    if (!hostAllowed()) {
+      refuseHost();
+      return;
+    }
     try {
       const demand = await hasRelayDemand();
       const config = await readConfig();
@@ -236,9 +274,22 @@ export const createRelayService = ({
   const getStatus = async () => {
     const config = await readConfig();
     const identity = await identityRuntime.getRelayIdentity();
+    if (!hostAllowed()) {
+      return {
+        enabled: false,
+        hostAllowed: false,
+        state: 'unavailable',
+        serverId: identity.serverId,
+        connectedClients: 0,
+        relayUrl: config.relayUrl,
+        relayUrlLocked: config.relayUrlLocked,
+        lastError: RELAY_HOST_DESKTOP_ONLY_MESSAGE,
+      };
+    }
     const live = hostClient ? hostClient.getStatus() : status;
     return {
       enabled: config.enabled,
+      hostAllowed: true,
       // Without a host client the service is either off or standing by while
       // another local process owns the machine's relay host claim.
       state: hostClient ? live.state : (status.state === 'standby' ? 'standby' : 'disabled'),
@@ -269,6 +320,7 @@ export const createRelayService = ({
   };
 
   const getPairingCandidate = async () => {
+    if (!hostAllowed()) return null;
     const config = await readConfig();
     if (!config.enabled) return null;
     return buildPairingCandidate();
@@ -279,6 +331,7 @@ export const createRelayService = ({
   // rather than requiring a separate manual toggle. Idempotent: a no-op when the
   // relay is already enabled and running.
   const ensureEnabledForPairing = async (requestedRelayUrl) => {
+    assertHostAllowed();
     const config = await readConfig();
     let relayUrl = config.relayUrl;
     if (!config.relayUrlLocked && requestedRelayUrl !== undefined) {
@@ -324,6 +377,9 @@ export const createRelayService = ({
 
     app.post('/api/openchamber/relay/enable', express.json({ limit: '16kb' }), async (req, res) => {
       try {
+        if (!hostAllowed()) {
+          return res.status(403).json({ error: RELAY_HOST_DESKTOP_ONLY_MESSAGE });
+        }
         const current = await readConfig();
         let relayUrl = current.relayUrl;
         if (typeof req.body?.relayUrl === 'string') {
@@ -341,7 +397,8 @@ export const createRelayService = ({
         await start(relayUrl, { claim: 'force' });
         res.json(await getStatus());
       } catch (error) {
-        res.status(500).json({ error: error?.message ?? 'Failed to enable relay' });
+        const statusCode = Number.isInteger(error?.statusCode) ? error.statusCode : 500;
+        res.status(statusCode).json({ error: error?.message ?? 'Failed to enable relay' });
       }
     });
 

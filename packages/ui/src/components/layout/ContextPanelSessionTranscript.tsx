@@ -9,6 +9,7 @@ import { SessionSurfaceContext, STRICT_READ_ONLY_SESSION_SURFACE_CAPABILITIES } 
 import { Icon } from '@/components/icon/Icon';
 import { Button } from '@/components/ui/button';
 import { ScrollShadow } from '@/components/ui/ScrollShadow';
+import { toast } from '@/components/ui';
 import { useChatAutoFollow } from '@/hooks/useChatAutoFollow';
 import { useI18n } from '@/lib/i18n';
 import { getProviderModelDisplayName } from '@/lib/modelDisplay';
@@ -200,9 +201,15 @@ const ContextPanelSessionTranscriptContent: React.FC<ContextPanelSessionTranscri
             scrollTop: element.scrollTop,
         }) : null;
         prependAnchorRef.current = anchor ? { token, viewportKey, anchor } : null;
-        void loadOlderMutation.mutateAsync().finally(() => {
-            setCompletedPrependToken(token);
-        });
+        void loadOlderMutation.mutateAsync().then(
+            () => {
+                setCompletedPrependToken(token);
+            },
+            () => {
+                setCompletedPrependToken(token);
+                toast.error(t('chat.history.loadOlderFailed'));
+            },
+        );
     });
     const transcriptState = resolveContextPanelTranscriptState({
         directoryMatches: true,

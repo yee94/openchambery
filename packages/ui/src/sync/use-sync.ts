@@ -99,6 +99,28 @@ const getDefaultMeta = (): SyncMeta => ({
   loading: false,
 })
 
+/**
+ * Merge hook-local pagination meta with prefetch so a local entry that never
+ * wrote (or cleared) `cursor` cannot mask a still-valid prefetch cursor.
+ * Local owns `loading`; complete is true if either source is complete.
+ */
+export function resolveMergedSessionSyncMeta(
+  local: SyncMeta | undefined,
+  prefetch: SyncMeta | undefined,
+): SyncMeta {
+  if (!local && !prefetch) return getDefaultMeta()
+  if (!local) return prefetch ?? getDefaultMeta()
+  if (!prefetch) return local
+  const complete = local.complete || prefetch.complete
+  const cursor = complete ? undefined : (local.cursor ?? prefetch.cursor)
+  return {
+    limit: Math.max(local.limit, prefetch.limit),
+    cursor,
+    complete,
+    loading: local.loading,
+  }
+}
+
 function getPrefetchMeta(directory: string, sessionID: string): SyncMeta | undefined {
   const info = getSessionPrefetch(directory, sessionID)
   if (!info) return undefined
@@ -203,7 +225,14 @@ export function useSync() {
   const getMetaFor = useCallback(
     (sessionID: string, targetDirectory = directory) => {
       const key = keyFor(sessionID, targetDirectory)
-      return meta.current.get(key) ?? getPrefetchMeta(targetDirectory, sessionID) ?? getDefaultMeta()
+      // Prefer hook-local meta for loading ownership, but never let a local
+      // entry that lost its cursor mask a still-valid prefetch cursor.
+      // That mismatch shows canLoadEarlier (UI reads prefetch) while loadMore
+      // silent-no-ops on `!m.cursor` — the mobile "load older" flash-then-stop.
+      return resolveMergedSessionSyncMeta(
+        meta.current.get(key),
+        getPrefetchMeta(targetDirectory, sessionID),
+      )
     },
     [directory, keyFor],
   )
@@ -211,10 +240,12 @@ export function useSync() {
   const setMetaFor = useCallback(
     (sessionID: string, patch: Partial<{ limit: number; cursor: string | undefined; complete: boolean; loading: boolean }>, targetDirectory = directory) => {
       const key = keyFor(sessionID, targetDirectory)
-      const current = meta.current.get(key) ?? getPrefetchMeta(targetDirectory, sessionID) ?? getDefaultMeta()
+      // Base on merged getMetaFor so loading:true patches keep the live cursor
+      // from prefetch when the local map never received a full page settle.
+      const current = getMetaFor(sessionID, targetDirectory)
       meta.current.set(key, { ...current, ...patch })
     },
-    [directory, keyFor],
+    [directory, keyFor, getMetaFor],
   )
 
   // Session cache eviction — two levels of LRU:
@@ -596,6 +627,8 @@ export function useSync() {
   // Load more (pagination). Directory must match the session's workspace —
   // meta/prefetch cursor is keyed by directory, and a missing directory falls
   // through to default meta (no cursor) which would silent-no-op.
+  // Cursor resolution uses getMetaFor (local ∪ prefetch) so a local loading
+  // patch that never wrote cursor still finds the prefetch page cursor.
   const loadMore = useCallback(
     async (sessionID: string, options?: { directory?: string }) => {
       const targetDirectory = options?.directory ?? directory
@@ -607,6 +640,13 @@ export function useSync() {
         purpose: "prepend",
         directory: targetDirectory,
       })
+      // loadMessages swallows transport failures into prefetch status=error so
+      // syncSession does not tear down. Re-surface them here so explicit
+      // load-earlier (mobile button / scroll) can toast instead of silent stop.
+      const prefetch = getSessionPrefetch(targetDirectory, sessionID)
+      if (prefetch?.status === "error") {
+        throw new Error(prefetch.error || "session turn page failed")
+      }
     },
     [directory, touch, getMetaFor, loadMessages],
   )

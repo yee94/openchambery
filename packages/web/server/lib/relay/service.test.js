@@ -27,7 +27,11 @@ vi.mock('./host-client.js', () => ({
   },
 }));
 
-import { createRelayService, DEFAULT_RELAY_URL } from './service.js';
+import {
+  createRelayService,
+  DEFAULT_RELAY_URL,
+  RELAY_HOST_DESKTOP_ONLY_MESSAGE,
+} from './service.js';
 
 const createSettingsHarness = () => {
   let settings = {};
@@ -38,6 +42,19 @@ const createSettingsHarness = () => {
   };
 };
 
+const createTestRelayService = ({ canHostRelay = true, ...overrides } = {}) => {
+  const settings = createSettingsHarness();
+  const service = createRelayService({
+    crypto: {},
+    readSettingsFromDiskMigrated: settings.read,
+    writeSettingsToDisk: settings.write,
+    getLocalPort: () => 3000,
+    canHostRelay: () => canHostRelay,
+    ...overrides,
+  });
+  return { service, settings };
+};
+
 describe('relay service pairing endpoint', () => {
   afterEach(() => {
     relayMocks.starts.length = 0;
@@ -46,13 +63,7 @@ describe('relay service pairing endpoint', () => {
   });
 
   it('switches the Host, persists the endpoint, and embeds it in the pairing candidate', async () => {
-    const settings = createSettingsHarness();
-    const service = createRelayService({
-      crypto: {},
-      readSettingsFromDiskMigrated: settings.read,
-      writeSettingsToDisk: settings.write,
-      getLocalPort: () => 3000,
-    });
+    const { service, settings } = createTestRelayService();
 
     const initial = await service.ensureEnabledForPairing();
     expect(initial.relayUrl).toBe(DEFAULT_RELAY_URL);
@@ -67,13 +78,7 @@ describe('relay service pairing endpoint', () => {
   });
 
   it('strips query and fragment before persisting a custom endpoint', async () => {
-    const settings = createSettingsHarness();
-    const service = createRelayService({
-      crypto: {},
-      readSettingsFromDiskMigrated: settings.read,
-      writeSettingsToDisk: settings.write,
-      getLocalPort: () => 3000,
-    });
+    const { service, settings } = createTestRelayService();
 
     const candidate = await service.ensureEnabledForPairing('wss://relay.example/custom?token=secret#frag');
     expect(candidate.relayUrl).toBe('wss://relay.example/custom');
@@ -83,13 +88,7 @@ describe('relay service pairing endpoint', () => {
   });
 
   it('rejects userinfo in a custom endpoint without falling back to the default', async () => {
-    const settings = createSettingsHarness();
-    const service = createRelayService({
-      crypto: {},
-      readSettingsFromDiskMigrated: settings.read,
-      writeSettingsToDisk: settings.write,
-      getLocalPort: () => 3000,
-    });
+    const { service, settings } = createTestRelayService();
 
     await expect(service.ensureEnabledForPairing('wss://user:pass@relay.example/ws')).rejects.toMatchObject({
       message: 'Relay URL must use ws:// or wss://',
@@ -101,13 +100,7 @@ describe('relay service pairing endpoint', () => {
 
   it('keeps an environment-pinned endpoint authoritative', async () => {
     process.env.OPENCHAMBER_RELAY_URL = 'wss://pinned.example/ws';
-    const settings = createSettingsHarness();
-    const service = createRelayService({
-      crypto: {},
-      readSettingsFromDiskMigrated: settings.read,
-      writeSettingsToDisk: settings.write,
-      getLocalPort: () => 3000,
-    });
+    const { service } = createTestRelayService();
 
     const candidate = await service.ensureEnabledForPairing('wss://ignored.example/ws');
     expect(candidate.relayUrl).toBe('wss://pinned.example/ws');
@@ -115,13 +108,7 @@ describe('relay service pairing endpoint', () => {
   });
 
   it('returns 400 from enable when the endpoint embeds userinfo instead of falling back', async () => {
-    const settings = createSettingsHarness();
-    const service = createRelayService({
-      crypto: {},
-      readSettingsFromDiskMigrated: settings.read,
-      writeSettingsToDisk: settings.write,
-      getLocalPort: () => 3000,
-    });
+    const { service, settings } = createTestRelayService();
     const app = express();
     service.registerRoutes(app);
 
@@ -135,13 +122,7 @@ describe('relay service pairing endpoint', () => {
   });
 
   it('persists a canonical enable endpoint without query or fragment', async () => {
-    const settings = createSettingsHarness();
-    const service = createRelayService({
-      crypto: {},
-      readSettingsFromDiskMigrated: settings.read,
-      writeSettingsToDisk: settings.write,
-      getLocalPort: () => 3000,
-    });
+    const { service, settings } = createTestRelayService();
     const app = express();
     service.registerRoutes(app);
 
@@ -154,5 +135,93 @@ describe('relay service pairing endpoint', () => {
       privateRelay: { enabled: true, relayUrl: 'wss://relay.example/custom' },
     });
     expect(relayMocks.starts).toEqual(['wss://relay.example/custom']);
+  });
+});
+
+describe('relay host desktop-only gate', () => {
+  afterEach(() => {
+    relayMocks.starts.length = 0;
+    relayMocks.stops.length = 0;
+  });
+
+  it('does not start a host, claim, or rewrite settings when reconcile runs off desktop', async () => {
+    const write = vi.fn(async (next) => next);
+    const { service, settings } = createTestRelayService({
+      canHostRelay: false,
+      writeSettingsToDisk: write,
+      hasRelayDemand: async () => true,
+    });
+
+    await service.reconcile();
+
+    expect(relayMocks.starts).toEqual([]);
+    expect(write).not.toHaveBeenCalled();
+    expect(settings.current()).toEqual({});
+    await expect(service.getStatus()).resolves.toMatchObject({
+      enabled: false,
+      hostAllowed: false,
+      state: 'unavailable',
+      lastError: RELAY_HOST_DESKTOP_ONLY_MESSAGE,
+    });
+  });
+
+  it('refuses relay pairing and enable off desktop', async () => {
+    const { service, settings } = createTestRelayService({ canHostRelay: false });
+    const app = express();
+    service.registerRoutes(app);
+
+    await expect(service.ensureEnabledForPairing()).rejects.toMatchObject({
+      message: RELAY_HOST_DESKTOP_ONLY_MESSAGE,
+      statusCode: 403,
+    });
+    await expect(service.getPairingCandidate()).resolves.toBeNull();
+
+    await request(app)
+      .post('/api/openchamber/relay/enable')
+      .send({})
+      .expect(403, { error: RELAY_HOST_DESKTOP_ONLY_MESSAGE });
+
+    expect(relayMocks.starts).toEqual([]);
+    expect(settings.current()).toEqual({});
+  });
+
+  it('defaults canHostRelay from OPENCHAMBER_RUNTIME=desktop', async () => {
+    const previous = process.env.OPENCHAMBER_RUNTIME;
+    process.env.OPENCHAMBER_RUNTIME = 'desktop';
+    try {
+      const settings = createSettingsHarness();
+      const service = createRelayService({
+        crypto: {},
+        readSettingsFromDiskMigrated: settings.read,
+        writeSettingsToDisk: settings.write,
+        getLocalPort: () => 3000,
+      });
+      await service.ensureEnabledForPairing();
+      expect(relayMocks.starts).toEqual([DEFAULT_RELAY_URL]);
+    } finally {
+      if (previous === undefined) delete process.env.OPENCHAMBER_RUNTIME;
+      else process.env.OPENCHAMBER_RUNTIME = previous;
+    }
+  });
+
+  it('defaults canHostRelay to false when OPENCHAMBER_RUNTIME is not desktop', async () => {
+    const previous = process.env.OPENCHAMBER_RUNTIME;
+    delete process.env.OPENCHAMBER_RUNTIME;
+    try {
+      const settings = createSettingsHarness();
+      const service = createRelayService({
+        crypto: {},
+        readSettingsFromDiskMigrated: settings.read,
+        writeSettingsToDisk: settings.write,
+        getLocalPort: () => 3000,
+      });
+      await expect(service.ensureEnabledForPairing()).rejects.toMatchObject({
+        statusCode: 403,
+      });
+      expect(relayMocks.starts).toEqual([]);
+    } finally {
+      if (previous === undefined) delete process.env.OPENCHAMBER_RUNTIME;
+      else process.env.OPENCHAMBER_RUNTIME = previous;
+    }
   });
 });

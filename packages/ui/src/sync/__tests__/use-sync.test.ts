@@ -31,11 +31,11 @@ describe("getReactiveSessionMessageRequestLimit", () => {
     })).toBe(8)
   })
 
-  test("prepend uses history turn limit (local 2 when not on relay)", () => {
+  test("prepend uses history turn limit (local 4 when not on relay)", () => {
     expect(getReactiveSessionMessageRequestLimit({
       before: "cursor",
       recordedLimit: 0,
-    })).toBe(2)
+    })).toBe(4)
   })
 })
 
@@ -73,5 +73,17 @@ describe("loadMessages transport split source contract (Host turn-page for tail 
 
   test("SDK session.messages remains as bare-before fallback only", () => {
     expect(useSyncSource.includes("scopedClient.session.messages(")).toBe(true)
+  })
+
+  test("getMetaFor merges local and prefetch via resolveMergedSessionSyncMeta", () => {
+    // Local meta that lost cursor (loading patch / partial settle) must still
+    // resolve cursor from prefetch — otherwise canLoadEarlier is true in UI but
+    // loadMore silent-no-ops on !m.cursor.
+    expect(useSyncSource.includes("resolveMergedSessionSyncMeta")).toBe(true)
+  })
+
+  test("loadMore rethrows settled prefetch errors for explicit load-earlier UX", () => {
+    expect(useSyncSource.includes('prefetch?.status === "error"')).toBe(true)
+    expect(useSyncSource.includes("session turn page failed")).toBe(true)
   })
 })

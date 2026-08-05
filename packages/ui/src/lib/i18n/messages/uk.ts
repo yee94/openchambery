@@ -1374,6 +1374,7 @@ export const dict: Record<I18nKey, string> = {
   'chat.dictation.retry': 'Повторити розшифровку',
   'chat.dictation.discard': 'Відхилити запис',
   'chat.history.loadOlder': 'Завантажити ще',
+  'chat.history.loadOlderFailed': 'Не вдалося завантажити старіші повідомлення. Спробуйте ще раз.',
   'chat.history.loadFailedTitle': 'Не вдалося завантажити цю розмову',
   'chat.history.loadFailedDescription': 'Розмова все ще доступна. Спробуйте завантажити її ще раз.',
   'chat.history.retry': 'Спробувати ще раз',
