@@ -71,17 +71,22 @@ export const toComposerHighlightRanges = (
                         span.raw,
                     ),
                 };
-            case 'command':
+            case 'command': {
+                // Same contract as skills / MessageReferenceChip: label is the
+                // bare name. Leading `/` would fail reserved-slot detection and
+                // paint the icon into a narrow compact trigger that covers glyphs.
+                const commandLabel = decoration.label.replace(/^\//, '')
                 return {
                     start: span.start,
                     end: span.end,
                     style: 'mentionCommand' as const,
                     priority: PRIORITY_BY_KIND.command,
                     visual: composerTriggerIconVisual(
-                        { trigger: '/', icon: 'command', label: decoration.label },
+                        { trigger: '/', icon: 'command', label: commandLabel },
                         span.raw,
                     ),
-                };
+                }
+            }
             case 'image':
             case 'attachment':
                 return {

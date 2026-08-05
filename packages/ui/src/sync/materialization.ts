@@ -1,4 +1,5 @@
 import type { Message, Part } from "@opencode-ai/sdk/v2/client"
+import { isMessageSnapshotOpen } from "./displayParts"
 import { mergeMessages } from "./optimistic"
 import {
   DEFAULT_SESSION_MERGE_STRATEGY,
@@ -93,19 +94,6 @@ function hasLiveStreamingField(part: Part): boolean {
     const value = getStringField(part, field)
     return typeof value === "string" && value.length > 0
   })
-}
-
-/**
- * Snapshot message still mid-turn: completion metadata is absent. Laggy HTTP
- * pages for open assistant turns commonly omit tools the live SSE stream
- * already admitted; those local parts must be retained until the turn settles.
- */
-function isMessageSnapshotOpen(info: Message): boolean {
-  const completed = (info as { time?: { completed?: unknown } }).time?.completed
-  if (typeof completed === "number") return false
-  const finish = (info as { finish?: unknown }).finish
-  if (typeof finish === "string" && finish.length > 0) return false
-  return true
 }
 
 function getPartState(part: Part): Record<string, unknown> | undefined {

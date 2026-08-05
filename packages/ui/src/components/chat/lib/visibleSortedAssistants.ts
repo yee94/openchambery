@@ -18,13 +18,16 @@ export const isAssistantMessageCompleted = (message: ChatMessageEntry): boolean 
  *
  * Multi-step agent turns create several assistant messages. Only the last is
  * "streaming"; earlier siblings often still lack `time.completed` for a while.
- * Filtering to completed+streaming only blanks those earlier tools/reasoning
- * from the Activity timeline until completion metadata lands — visible flicker.
  *
  * While a stream id is known, keep the turn **prefix** through that assistant
  * so every earlier step stays on screen. When the turn is fully settled, show
- * every assistant. Otherwise fall back to completed assistants (or the first
- * shell when none are complete yet).
+ * every assistant.
+ *
+ * When the stream id is briefly unknown (common between shell steps while
+ * session_status flaps idle), do **not** fall back to completed-only or
+ * first-only filters: that drops incomplete assistants and their Activity
+ * tools for a frame, then remounts them (fold flash). The turn already scopes
+ * the assistant set — paint the whole set unless a live stream id narrows it.
  */
 export const resolveVisibleSortedAssistants = (
   assistants: readonly ChatMessageEntry[],
@@ -46,10 +49,6 @@ export const resolveVisibleSortedAssistants = (
     }
   }
 
-  if (completed.length > 0) {
-    return completed;
-  }
-
-  const first = assistants[0];
-  return first ? [first] : [];
+  // Stream id missing mid-turn: keep every assistant already in the turn.
+  return assistants as ChatMessageEntry[];
 };

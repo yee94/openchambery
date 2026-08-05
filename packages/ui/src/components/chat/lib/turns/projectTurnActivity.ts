@@ -2,9 +2,9 @@ import type {
     ChatMessageEntry,
     TurnActivityGroup,
     TurnActivityRecord,
-    TurnCompletionDisposition,
     TurnPartRecord,
 } from './types';
+import { resolveActivityPartId } from './resolveActivityPartId';
 
 const getPartEndTime = (part: unknown): number | undefined => {
     const stateEnd = (part as { state?: { time?: { end?: unknown } } }).state?.time?.end;
@@ -39,7 +39,7 @@ const buildTurnPartRecord = (
     partIndex: number,
 ): TurnPartRecord => {
     return {
-        id: part.id ?? `${messageId}-part-${partIndex}-${part.type}`,
+        id: resolveActivityPartId(messageId, part, partIndex),
         turnId,
         messageId,
         part,
@@ -53,7 +53,6 @@ interface ProjectActivityInput {
     assistantMessages: ChatMessageEntry[];
     summarySourceMessageId?: string;
     summarySourcePartId?: string;
-    completionDisposition?: TurnCompletionDisposition;
     showTextJustificationActivity: boolean;
 }
 
@@ -84,8 +83,14 @@ export const projectTurnActivity = (input: ProjectActivityInput): ProjectActivit
 
     // Canonical stop summary: only when disposition is normal and summary source is a stop text.
     // Avoid treating interrupt/fallback text as a normal summary that would fold other text away.
-    const hasCanonicalStopSummary = input.completionDisposition === 'normal'
-        && Boolean(input.summarySourceMessageId)
+    //
+    // The `finish === 'stop'` check is made on the summary source message itself
+    // rather than on the turn's disposition. Turn disposition is derived from the
+    // *last* assistant, so a multi-step step gap flipped it to normal and back and
+    // took Activity row membership with it — a text part moved between an Activity
+    // justification row and the message body, unmounting the fold. Row membership
+    // must depend only on facts local to the message that owns the part.
+    const hasCanonicalStopSummary = Boolean(input.summarySourceMessageId)
         && Boolean(input.summarySourcePartId)
         && input.assistantMessages.some((message) => (
             message.info.id === input.summarySourceMessageId
@@ -102,7 +107,7 @@ export const projectTurnActivity = (input: ProjectActivityInput): ProjectActivit
             const text = part.type === 'reasoning' || part.type === 'text'
                 ? getPartText(part)
                 : undefined;
-            const partId = part.id ?? `${message.info.id}-part-${partIndex}-${part.type}`;
+            const partId = resolveActivityPartId(message.info.id, part, partIndex);
 
             const isConfirmedSummaryText = part.type === 'text'
                 && typeof text === 'string'
@@ -145,18 +150,17 @@ export const projectTurnActivity = (input: ProjectActivityInput): ProjectActivit
     const activitySegments: TurnActivityGroup[] = [];
 
     if (activityParts.length > 0) {
-        const messageIdsWithActivity = new Set(activityParts.map((activity) => activity.messageId));
-        let anchorMessageId: string | undefined;
-        for (const message of input.assistantMessages) {
-            if (messageIdsWithActivity.has(message.info.id)) {
-                anchorMessageId = message.info.id;
-                break;
-            }
-        }
+        // Host the disclosure on the turn's first assistant, and identify the
+        // segment by the turn alone. Deriving either from "first message that
+        // currently has activity" made the host migrate mid-turn: one empty-parts
+        // frame moved the anchor to the next assistant, which changed the segment
+        // key *and* the owning ChatMessage, so the whole nested fold unmounted and
+        // remounted. Turn identity is the only stable host identity.
+        const anchorMessageId = input.assistantMessages[0]?.info.id;
 
         if (anchorMessageId) {
             activitySegments.push({
-                id: `${input.turnId}:${anchorMessageId}:start`,
+                id: `${input.turnId}:activity`,
                 anchorMessageId,
                 afterToolPartId: null,
                 parts: activityParts,

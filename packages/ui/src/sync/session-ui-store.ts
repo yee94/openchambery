@@ -249,7 +249,10 @@ export async function routeMessage(params: {
   // first argument separator; that path is common after chip copy/paste.
   const slashInvocation = parseSlashCommandInvocation(params.content)
   if (slashInvocation) {
-    const cmdName = slashInvocation.commandName
+    // Match composer/autocomplete: catalog names are case-insensitive. Keep the
+    // catalog's canonical `command.name` for sendCommand / [command:…] rewrite so
+    // hand-typed `/LOOP` takes the same path as `/loop` and chip display works.
+    const cmdNameLower = slashInvocation.commandName.toLowerCase()
     const argumentsText = slashInvocation.argumentsText
 
     // OpenCode also exposes skills through its command catalog. Resolve the
@@ -276,8 +279,10 @@ export async function routeMessage(params: {
       throw new Error("Runtime changed while resolving slash command")
     }
 
-    const isSkill = installedSkills.some((skill) => skill.name === cmdName)
-    const command = isSkill ? undefined : commands.find((candidate) => candidate.name === cmdName)
+    const isSkill = installedSkills.some((skill) => skill.name.toLowerCase() === cmdNameLower)
+    const command = isSkill
+      ? undefined
+      : commands.find((candidate) => candidate.name.toLowerCase() === cmdNameLower)
 
     if (command?.isBuiltIn === false) {
       content = `[command:${command.reference ?? command.name}]${argumentsText ? ` ${argumentsText}` : ""}`
@@ -298,7 +303,7 @@ export async function routeMessage(params: {
           id: params.sessionId,
           providerID: params.providerID,
           modelID: params.modelID,
-          command: cmdName,
+          command: command.name,
           arguments: argumentsText,
           agent: params.agent,
           variant: params.variant,

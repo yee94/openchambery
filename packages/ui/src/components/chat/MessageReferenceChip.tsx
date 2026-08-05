@@ -25,9 +25,11 @@ export type MessageReferenceChipProps = {
  * queue previews.
  *
  * Keep the label as normal inline text so it shares the alphabetic baseline with
- * neighboring glyphs (`hey`). The icon paints into a reserved 1em well — same
- * metric model as `ComposerTriggerIconMark` — instead of wrapping icon+label in
- * `inline-flex` (flex boxes lose the text baseline and drift vertically).
+ * neighboring glyphs (`hey`). The icon paints into the same reserved trigger run
+ * as `ComposerTriggerIconMark` (trigger + em-space, equal left/right inset) —
+ * not a bare 1em well with a full-size icon. A narrow well lets the command ⌘
+ * glyph bleed into the first label letter (`loop` → reads as "Hoop").
+ * Do not add `overflow-hidden` on the well — it breaks that shared baseline.
  */
 export const MessageReferenceChip: React.FC<MessageReferenceChipProps> = ({
     decoration,
@@ -37,6 +39,11 @@ export const MessageReferenceChip: React.FC<MessageReferenceChipProps> = ({
     const triggerIconSpec = messageReferenceTriggerIconSpec(decoration);
     const iconName = (triggerIconSpec?.icon ?? decoration.icon) as IconName | undefined;
     const label = triggerIconSpec?.label ?? decoration.label;
+    // Match composer reserved-slot metrics: transparent trigger + em-space run.
+    // Fallback to the slot alone when a decoration only carries an icon name.
+    const triggerRun = triggerIconSpec
+        ? `${triggerIconSpec.trigger}${COMPOSER_TRIGGER_ICON_SLOT}`
+        : COMPOSER_TRIGGER_ICON_SLOT;
 
     const content = (
         <span
@@ -45,13 +52,16 @@ export const MessageReferenceChip: React.FC<MessageReferenceChipProps> = ({
         >
             {iconName ? (
                 <span
+                    // No overflow-hidden: it rewrites the inline-block baseline and
+                    // lifts the icon above the label (same contract as ComposerTriggerIconMark).
                     className="relative inline-block shrink-0 align-baseline leading-none"
-                    style={{ marginRight: COMPOSER_TRIGGER_ICON_LABEL_GAP }}
                     aria-hidden="true"
                 >
-                    {/* Em-space reserves the same 1em×1em well Composer uses. */}
-                    <span className="text-transparent">{COMPOSER_TRIGGER_ICON_SLOT}</span>
-                    <span className="pointer-events-none absolute inset-0 inline-flex items-center justify-center">
+                    <span className="text-transparent">{triggerRun}</span>
+                    <span
+                        className="pointer-events-none absolute inset-y-0 inline-flex items-center justify-center"
+                        style={{ left: COMPOSER_TRIGGER_ICON_LABEL_GAP, right: COMPOSER_TRIGGER_ICON_LABEL_GAP }}
+                    >
                         <Icon
                             name={iconName}
                             className={cn(COMPOSER_TRIGGER_ICON_SIZE_CLASS, 'shrink-0')}

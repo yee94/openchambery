@@ -315,6 +315,38 @@ Rules that keep this single-sourced:
 - `session-message-reducer.ts` holds no SDK/Query/store side effects; it is a
   pure function so all four purposes stay unit-testable.
 - UI transcript selectors read the directory child store, never TanStack Query.
+- `displayParts.ts` is the only place that decides when the parts a view already
+  painted may shrink. See below.
+
+### Display part monotonicity
+
+Both channels above write `state.part[messageID]`, so a single commit can hand the
+UI fewer parts than the previous commit: a `materialize` page for a still-open
+assistant omits tools SSE already admitted, and a part map is briefly empty between
+commits. Painting those frames removed rows the user was watching and put them back
+on the next frame.
+
+`displayParts.ts` owns the invariant, and `buildSessionMessageRecordsSnapshot` in
+`sync-context.tsx` is where it is applied — the snapshot is the stable model every
+view consumes:
+
+- `allowsAuthoritativeShrink(info)` — a settled assistant (`finish` or
+  `time.completed`) and every non-assistant row follow the store exactly. User rows
+  must, or optimistic part replacement would paint twice.
+- `mergePartsForDisplay(previous, incoming, info)` — while an assistant turn is
+  open, parts the snapshot already published are unioned back in by part id, at
+  their previous relative position. An unchanged lagging frame resolves to the
+  previous array reference, so the snapshot and the turn projection behind it are
+  not rebuilt.
+- Explicit trade-off: a genuine `message.part.removed` on a still-open assistant is
+  held until the message settles. Aborts stamp `finish`/`error`, which releases the
+  hold on the next commit.
+
+Views must not re-derive this. A render-phase hold cannot distinguish a lagging page
+from a real removal, and feeding its own output back as the baseline turns a
+one-frame regression into permanently stale UI. `streamingTailEntry.ts` subscribes to
+the raw part store for streaming text and calls the same `mergePartsForDisplay`, so
+both readers agree on when a frame may shrink.
 
 ### Context panel session transcripts
 

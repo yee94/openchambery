@@ -721,11 +721,17 @@ export const useChatTimelineController = ({
             : false;
         const didPrepend = isPrepend || isSnapshotPrepend;
 
-        const updateTracking = () => {
+        // Avoid reading scrollHeight on every append: that forces a full-document
+        // Layout during React layout effects (trace: updateTracking next to
+        // removeChild + ScrollLayer). Only measure when prepend compensation
+        // needs the previous height; otherwise reuse the last tracked value.
+        const updateTracking = (scrollHeight?: number) => {
             prependTrackingRef.current = {
                 oldestId: currentOldestId,
                 newestId: currentNewestId,
-                scrollHeight: container.scrollHeight,
+                scrollHeight: scrollHeight
+                    ?? prependTrackingRef.current?.scrollHeight
+                    ?? 0,
             };
         };
 
@@ -749,8 +755,10 @@ export const useChatTimelineController = ({
             if (didPrepend) {
                 prePrependScrollRef.current = null;
                 goToBottom('instant');
+                updateTracking(container.scrollHeight);
+            } else {
+                updateTracking();
             }
-            updateTracking();
             return;
         }
 
@@ -775,7 +783,8 @@ export const useChatTimelineController = ({
                 return;
             }
 
-            const heightDelta = container.scrollHeight - snap.height;
+            const measuredHeight = container.scrollHeight;
+            const heightDelta = measuredHeight - snap.height;
 
             // iOS overwrites plain scrollTop writes while a fling runs, so
             // mobile keeps the momentum-defeating writer and its height delta.
@@ -784,7 +793,7 @@ export const useChatTimelineController = ({
                 if (heightDelta > 0) {
                     setScrollTopDefeatingMomentum(container, snap.top + heightDelta);
                 }
-                updateTracking();
+                updateTracking(measuredHeight);
                 return;
             }
 
@@ -796,7 +805,7 @@ export const useChatTimelineController = ({
             if (!restoredAnchor && heightDelta > 0) {
                 container.scrollTop = snap.top + heightDelta;
             }
-            updateTracking();
+            updateTracking(measuredHeight);
             return;
         }
 
@@ -808,7 +817,8 @@ export const useChatTimelineController = ({
             // Released viewport: preserve the read position by compensating for the
             // exact height the non-virtualized prepend added above, with no
             // intermediate frame for auto-follow to fight.
-            const delta = container.scrollHeight - prev.scrollHeight;
+            const measuredHeight = container.scrollHeight;
+            const delta = measuredHeight - prev.scrollHeight;
             if (delta > 0) {
                 const target = container.scrollTop + delta;
                 if (isMobileSurfaceRuntime()) {
@@ -817,6 +827,8 @@ export const useChatTimelineController = ({
                     container.scrollTop = target;
                 }
             }
+            updateTracking(measuredHeight);
+            return;
         }
 
         updateTracking();

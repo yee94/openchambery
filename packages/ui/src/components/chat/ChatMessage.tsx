@@ -477,36 +477,31 @@ const ChatMessage: React.FC<ChatMessageProps> = ({
         return filtered;
     }, [isUser, visibleParts]);
 
-    const turnActivityToolParts = React.useMemo(() => {
-        if (isUser) {
-            return [] as Part[];
-        }
-        const records = turnGroupingContext?.activityParts ?? [];
-        return records
-            .filter((record) => record.kind === 'tool')
-            .map((record) => record.part)
-            .filter((part): part is Part => part.type === 'tool');
-    }, [isUser, turnGroupingContext?.activityParts]);
-
     const defaultOpenToolIds = React.useMemo(() => {
         if (!showExpandedBashTools) {
             return new Set<string>();
         }
 
         const next = new Set<string>();
-        for (const part of [...toolParts, ...turnActivityToolParts]) {
+        // Flat message parts keyed by part.id; Activity rows keyed by the
+        // projected activity id. Both resolve to the same string for tools, so
+        // defaultOpen and expandedTools stay in one namespace either way.
+        for (const part of toolParts) {
             const toolId = typeof part?.id === 'string' ? part.id : '';
             if (!toolId) continue;
             const toolName = normalizeToolName((part as { tool?: string }).tool);
-            if (!toolName) continue;
-
-            if (BASH_TOOL_NAMES.has(toolName)) {
-                next.add(toolId);
-            }
+            if (!toolName || !BASH_TOOL_NAMES.has(toolName)) continue;
+            next.add(toolId);
+        }
+        for (const record of turnGroupingContext?.activityParts ?? []) {
+            if (record.kind !== 'tool') continue;
+            const toolName = normalizeToolName((record.part as { tool?: string }).tool);
+            if (!toolName || !BASH_TOOL_NAMES.has(toolName)) continue;
+            next.add(record.id);
         }
 
         return next;
-    }, [showExpandedBashTools, toolParts, turnActivityToolParts]);
+    }, [showExpandedBashTools, toolParts, turnGroupingContext?.activityParts]);
 
     const effectiveExpandedTools = React.useMemo(() => {
         if (defaultOpenToolIds.size === 0 && collapsedTools.size === 0) {
@@ -835,7 +830,7 @@ const ChatMessage: React.FC<ChatMessageProps> = ({
         }
     }, [sessionId, message.info.id, forkFromMessage]);
 
-    const handleToggleTool = React.useCallback((toolId: string) => {
+    const handleToggleTool = useEvent((toolId: string) => {
         const isDefaultOpen = defaultOpenToolIds.has(toolId);
         const isCurrentlyExpanded = effectiveExpandedTools.has(toolId);
 
@@ -882,7 +877,7 @@ const ChatMessage: React.FC<ChatMessageProps> = ({
             writeCollapsedToolsCache(message.info.id, next);
             return next;
         });
-    }, [defaultOpenToolIds, effectiveExpandedTools, message.info.id]);
+    });
 
     const resolvedAnimationHandlers = animationHandlers ?? null;
     const hasAnnouncedAuxiliaryScrollRef = React.useRef(false);

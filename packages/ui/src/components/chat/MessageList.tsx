@@ -53,6 +53,7 @@ import {
     resolveDefaultActivityExpanded,
     resolveToggledActivityExpanded,
     resolveTurnActivityPresentation,
+    resolveTurnSettledForPresentation,
 } from './lib/activityExpansion';
 
 // Re-export pure expansion helpers for existing MessageList.* tests.
@@ -62,6 +63,7 @@ export {
     resolveDefaultActivityExpanded,
     resolveToggledActivityExpanded,
     resolveTurnActivityPresentation,
+    resolveTurnSettledForPresentation,
 };
 /* eslint-enable react-refresh/only-export-components */
 
@@ -789,6 +791,7 @@ const TurnBlock = React.memo(({
     const defaultExpandedForTurn = resolveDefaultActivityExpanded(
         expansionDisposition,
         activityRenderMode,
+        { isLastTurn },
     );
     // Explicit per-turn toggle wins; otherwise live-active forces open and
     // settled turns follow activityRenderMode (auto-collapses when processing ends).
@@ -972,6 +975,12 @@ const TurnBlock = React.memo(({
                         ? hasAnchoredActivitySegment
                         : message.info.id === streamingAssistantMessageId
                 ),
+                // Turn-completion chrome asks the turn, not the row.
+                isTurnSettled: resolveTurnSettledForPresentation({
+                    completionDisposition: turn.completionDisposition,
+                    isLastTurn,
+                    sessionIsWorking,
+                }),
                 hasTools: turn.hasTools,
                 hasReasoning: turn.hasReasoning,
                 completionDisposition: activityPresentation.completionDisposition,
@@ -1981,7 +1990,9 @@ const MessageList = React.forwardRef<MessageListHandle, MessageListProps>(({
             kind: 'ungrouped',
             key: `msg:${lastMessage.info.id}`,
             message: lastMessage,
-            previousMessage: displayMessages.length > 1 ? displayMessages[displayMessages.length - 2] : undefined,
+            previousMessage: displayMessages.length > 1
+                ? displayMessages[displayMessages.length - 2]
+                : undefined,
             nextMessage: undefined,
         } satisfies RenderEntry];
     }, [displayMessages, projection.lastTurnId, projection.ungroupedMessageIds, streamingTurns]);

@@ -13,7 +13,8 @@
  * 2. Lagging HTTP materialize must not drop SSE tools on an open message
  * 3. Multi-step prefix assistants stay visible while a later sibling streams
  * 4. Last open turn stays expanded across sessionIsWorking busy/idle flaps
- * 5. Settled turn may collapse under activityRenderMode=collapsed
+ * 5. Settled turn may collapse under activityRenderMode=collapsed (history only)
+ * 5b. Turn-completion chrome (footer) needs both the projection and session status
  * 6. Live-tail claim survives an empty projection frame (no turn eviction)
  * 7. The streaming tail is mounted unconditionally (no subtree destroy on empty)
  */
@@ -30,7 +31,9 @@ import {
   resolveActivityExpansionDisposition,
   resolveDefaultActivityExpanded,
   resolveTurnActivityPresentation,
+  resolveTurnSettledForPresentation,
 } from './lib/activityExpansion';
+import { projectTurnActivity } from './lib/turns/projectTurnActivity';
 import { resolveVisibleSortedAssistants } from './lib/visibleSortedAssistants';
 import type { ChatMessageEntry } from './lib/turns/types';
 import { getSessionMaterializationStatus, materializeSessionSnapshots, type MaterializedState } from '@/sync/materialization';
@@ -222,6 +225,66 @@ describe('activity tool flicker regression (Trace-20260804T171706)', () => {
     }
   });
 
+  test('4b. the last turn never auto-collapses, whatever disposition it reports', () => {
+    // A multi-step turn reads settled for the gap between one step's finish and
+    // the next assistant message. Auto-collapsing in that gap unmounted the
+    // nested tool rows and re-expanded them a frame later, so the newest turn
+    // opts out of auto-collapse entirely rather than consulting a flapping input.
+    for (const disposition of ['active', 'normal', 'abnormal'] as const) {
+      expect(
+        resolveDefaultActivityExpanded(disposition, 'collapsed', { isLastTurn: true }),
+      ).toBe(true);
+    }
+  });
+
+  test('4d. the completed-turn footer stays hidden through a multi-step step gap', () => {
+    // Trace-20260805T182806: the turn footer (duration, TPS, actions) appeared for
+    // a few frames mid-loop and withdrew. The footer used to ask the last assistant
+    // message whether it was done, and a multi-step agent stamps finish/completed
+    // when one shell step ends — while that message is still the turn's last
+    // assistant. Turn-completion chrome must ask the turn, and must not believe the
+    // projection alone during the gap, because the projection settles there too.
+    const settled = { completionDisposition: 'normal' as const, isLastTurn: true };
+
+    // Step gap on the live turn: the projection reads settled, the session does not.
+    expect(resolveTurnSettledForPresentation({ ...settled, sessionIsWorking: true })).toBe(false);
+    // Still streaming this step.
+    expect(
+      resolveTurnSettledForPresentation({
+        completionDisposition: 'active',
+        isLastTurn: true,
+        sessionIsWorking: false,
+      }),
+    ).toBe(false);
+    // The loop really ended.
+    expect(resolveTurnSettledForPresentation({ ...settled, sessionIsWorking: false })).toBe(true);
+    // History is never suppressed by a later turn's work.
+    expect(
+      resolveTurnSettledForPresentation({
+        completionDisposition: 'abnormal',
+        isLastTurn: false,
+        sessionIsWorking: true,
+      }),
+    ).toBe(true);
+  });
+
+  test('4c. multi-step: completed-only assistant filter must not drop the open sibling', () => {
+    // User observation: a mid-turn "finished" filter blanks nested fold content.
+    // resolveVisibleSortedAssistants previously returned completed-only when the
+    // stream id was missing between shells.
+    const open = {
+      info: { id: 'a_open', role: 'assistant', sessionID: 's', time: { created: 2 } },
+      parts: [],
+    };
+    const done = {
+      info: { id: 'a_done', role: 'assistant', sessionID: 's', time: { created: 1, completed: 10 } },
+      parts: [],
+    };
+    expect(
+      resolveVisibleSortedAssistants([done as never, open as never], null).map((e) => e.info.id),
+    ).toEqual(['a_done', 'a_open']);
+  });
+
   test('5. after the turn settles, collapsed mode may auto-fold (not a mid-turn flicker)', () => {
     const header = resolveTurnActivityPresentation({
       completionDisposition: 'normal',
@@ -236,8 +299,13 @@ describe('activity tool flicker regression (Trace-20260804T171706)', () => {
       headerPresentationDisposition: header.completionDisposition,
     });
     expect(expansionDisposition).toBe('normal');
+    // Auto-collapse applies once the turn is history. The newest turn stays open
+    // until the next message pushes it down (see 4b).
     expect(resolveDefaultActivityExpanded(expansionDisposition, 'collapsed')).toBe(false);
     expect(resolveDefaultActivityExpanded(expansionDisposition, 'summary')).toBe(true);
+    expect(
+      resolveDefaultActivityExpanded(expansionDisposition, 'collapsed', { isLastTurn: true }),
+    ).toBe(true);
   });
 
   test('6. full ensure-gate sequence matching ChatContainer effect inputs', () => {
@@ -282,6 +350,37 @@ describe('activity tool flicker regression (Trace-20260804T171706)', () => {
         hasCurrentSessionEntity: true,
       }),
     ).toBe(true);
+  });
+
+  test('7b. the Activity host and segment id never move while a multi-step turn runs', () => {
+    // User observation: the fold's content disappeared and came back. The segment
+    // id used to embed "first assistant that currently has activity", so a single
+    // empty-parts frame moved the anchor to the next assistant — changing both the
+    // React key and the owning ChatMessage, which unmounts the whole nested fold.
+    const step = (id: string, parts: Part[]): ChatMessageEntry => ({
+      info: { id, role: 'assistant', sessionID, parentID: 'u1', time: { created: 2 } } as Message,
+      parts,
+    });
+
+    const project = (assistantMessages: ChatMessageEntry[]) =>
+      projectTurnActivity({
+        turnId: 'u1',
+        assistantMessages,
+        showTextJustificationActivity: true,
+      }).activitySegments[0];
+
+    // Frame 1: only the second step has landed a tool.
+    const frameOne = project([step('a1', []), step('a2', [toolPart('t1', 'a2', 'bash', 'running')])]);
+    // Frame 2: the first step's reasoning arrives, which used to steal the anchor.
+    const frameTwo = project([
+      step('a1', [textPart('p1', 'a1', 'thinking')]),
+      step('a2', [toolPart('t1', 'a2', 'bash', 'completed')]),
+    ]);
+
+    expect(frameOne?.id).toBe('u1:activity');
+    expect(frameTwo?.id).toBe(frameOne?.id);
+    expect(frameTwo?.anchorMessageId).toBe(frameOne?.anchorMessageId);
+    expect(frameOne?.anchorMessageId).toBe('a1');
   });
 
   test('7. an empty projection frame does not evict turns out of the live tail', () => {

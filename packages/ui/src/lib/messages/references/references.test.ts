@@ -185,6 +185,20 @@ describe('toComposerHighlightRanges', () => {
             ['mentionFile', 'shot.png', 'file-image'],
         ]);
     });
+
+    test('projects command spans with a bare label so reserved slots stay metric-safe', () => {
+        const spans = detectMessageReferences('/\u2003loop', {
+            commandNames: new Set(['loop']),
+        });
+        const ranges = toComposerHighlightRanges(spans);
+        expect(ranges).toHaveLength(1);
+        expect(ranges[0]?.visual).toMatchObject({
+            trigger: '/\u2003',
+            label: 'loop',
+            icon: 'command',
+            slot: 'reserved',
+        });
+    });
 });
 
 describe('messageReferenceTriggerIconSpec', () => {

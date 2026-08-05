@@ -1,4 +1,5 @@
 import type { ChatMessageEntry, TurnChangedFile, TurnDiffStats, TurnSummaryRecord } from './types';
+import { resolveActivityPartId } from './resolveActivityPartId';
 
 interface SummaryDiff {
     file?: string | null;
@@ -41,7 +42,7 @@ export const projectTurnSummary = (assistantMessages: ChatMessageEntry[]): TurnS
             return {
                 text,
                 sourceMessageId: assistantMessage.info.id,
-                sourcePartId: part.id ?? `${assistantMessage.info.id}-part-${partIndex}-text`,
+                sourcePartId: resolveActivityPartId(assistantMessage.info.id, part, partIndex),
             };
         }
     }
@@ -60,7 +61,7 @@ export const projectTurnSummary = (assistantMessages: ChatMessageEntry[]): TurnS
             return {
                 text,
                 sourceMessageId: assistantMessage.info.id,
-                sourcePartId: part.id ?? `${assistantMessage.info.id}-part-${partIndex}-text`,
+                sourcePartId: resolveActivityPartId(assistantMessage.info.id, part, partIndex),
             };
         }
     }

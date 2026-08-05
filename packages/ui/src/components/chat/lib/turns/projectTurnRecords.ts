@@ -101,10 +101,36 @@ const buildTurnStreamState = (userMessage: ChatMessageEntry, assistantMessages: 
     };
 };
 
+const assistantHasOpenTool = (message: ChatMessageEntry): boolean => {
+    for (const part of message.parts) {
+        if (part.type !== 'tool') continue;
+        const status = (part as { state?: { status?: unknown } }).state?.status;
+        if (status === 'pending' || status === 'running' || status === 'started') {
+            return true;
+        }
+    }
+    return false;
+};
+
 /**
- * Disposition from the last assistant only.
- * Matches MessageBody settled contract: user interrupt often sets time.completed + error
- * without finish === 'stop', so that path is abnormal (not normal).
+ * Disposition from the last assistant, with multi-step safety.
+ *
+ * - `finish === 'stop'` → normal
+ * - error or non-stop finish → abnormal
+ * - Any assistant without `time.completed` → still active (next step not done)
+ * - Open/running tools on the last assistant → active even if completed is stamped
+ * - `time.completed` alone is **not** enough to settle: multi-step agents often
+ *   stamp completed when a shell step ends, before the next assistant arrives.
+ *   Treating that as abnormal collapses Activity and blanks nested tools for a
+ *   frame (user-visible fold flash). Require a terminal finish/error, or a
+ *   completed last message with no open tools and no open siblings.
+ *
+ * The open-tool rule above applies to the `finish === 'stop'` path too. SSE
+ * delivers `message.updated` (carrying finish) and `message.part.updated`
+ * (carrying tool state) as separate events, and an HTTP page can materialize
+ * finish while local tool state still reads running — settling in that window
+ * was the same fold flash from the other direction. An aborted turn still
+ * settles: `error` is authoritative even with a dangling tool.
  */
 const resolveTurnCompletionDisposition = (
     assistantMessages: ChatMessageEntry[],
@@ -119,16 +145,40 @@ const resolveTurnCompletionDisposition = (
     }
 
     const finish = (lastAssistant.info as { finish?: unknown }).finish;
+    const error = (lastAssistant.info as { error?: unknown }).error;
     if (finish === 'stop') {
-        return 'normal';
+        if (Boolean(error) || !assistantHasOpenTool(lastAssistant)) {
+            return 'normal';
+        }
+        return 'active';
     }
 
-    const completedAt = getMessageCompletedAt(lastAssistant);
-    const error = (lastAssistant.info as { error?: unknown }).error;
-    if (typeof completedAt === 'number' || Boolean(error)) {
+    if (Boolean(error)) {
         return 'abnormal';
     }
 
+    if (typeof finish === 'string' && finish.length > 0) {
+        // Non-stop terminal finish (error, canceled, ...).
+        return 'abnormal';
+    }
+
+    // Any sibling still open → multi-step turn is live.
+    for (const message of assistantMessages) {
+        if (typeof getMessageCompletedAt(message) !== 'number') {
+            return 'active';
+        }
+    }
+
+    // Last message still running tools → completed timestamp is premature.
+    if (assistantHasOpenTool(lastAssistant)) {
+        return 'active';
+    }
+
+    // `time.completed` alone is not a terminal settle. Multi-step agents stamp
+    // it when a shell step ends, before the next assistant is appended; treating
+    // that as abnormal collapses Activity and blanks nested tools. Real
+    // abandons settle via error/finish, or settleHistoricalActiveTurns when a
+    // later user message proves the turn is over.
     return 'active';
 };
 
@@ -223,7 +273,6 @@ const hydrateTurnRecord = (
         assistantMessages: turn.assistantMessages,
         summarySourceMessageId: turn.summary.sourceMessageId,
         summarySourcePartId: turn.summary.sourcePartId,
-        completionDisposition: turn.completionDisposition,
         showTextJustificationActivity: effectiveOptions.showTextJustificationActivity,
     });
     turn.activityParts = activity.activityParts;
@@ -275,6 +324,13 @@ const hydrateStableTurnRecords = (
  * A later user message proves the previous turn is no longer live. Incomplete
  * message metadata (abnormal exit without time.completed) must not keep older
  * turns as `active` with a live duration ticker.
+ *
+ * "Later user message" means one the server has begun answering. A queued or
+ * optimistic user row merged into the viewport while the previous turn is still
+ * streaming is not proof of anything: settling on it collapsed the running
+ * turn's Activity the moment the user typed ahead. Wait for an assistant
+ * response on the following turn. A turn abandoned mid-stream therefore keeps
+ * ticking until the next turn is answered, which is the narrower failure.
  */
 const settleHistoricalActiveTurns = (turns: TurnRecord[]): TurnRecord[] => {
     if (turns.length <= 1) {
@@ -285,6 +341,9 @@ const settleHistoricalActiveTurns = (turns: TurnRecord[]): TurnRecord[] => {
     const nextTurns = turns.map((turn, index) => {
         const isLastTurn = index === turns.length - 1;
         if (isLastTurn || turn.completionDisposition !== 'active') {
+            return turn;
+        }
+        if ((turns[index + 1]?.assistantMessages.length ?? 0) === 0) {
             return turn;
         }
 

@@ -14,6 +14,9 @@ import {
  * (`COMPOSER_TRIGGER_ICON_LABEL_GAP`). That keeps icon→label air and lead-in air
  * balanced for every reserved chip (`[`/`@`/`/` + em-space), instead of pinning
  * flush to one edge and leaving the opposite side empty or cramped.
+ *
+ * Do not set `overflow-hidden` on the trigger span — it changes the inline-block
+ * baseline and lifts the icon above the label glyphs.
  */
 export function ComposerTriggerIconMark({
     visual,

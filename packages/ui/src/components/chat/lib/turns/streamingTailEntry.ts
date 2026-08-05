@@ -1,5 +1,7 @@
 import type { Part } from '@opencode-ai/sdk/v2';
 
+import { mergePartsForDisplay } from '@/sync/displayParts';
+
 import { getNormalizedMessageForDisplay } from '../messageDisplayNormalization';
 import { projectTurnRecords } from './projectTurnRecords';
 import type { ChatMessageEntry, TurnRecord } from './types';
@@ -21,6 +23,13 @@ type BuildLiveStreamingEntryOptions = {
     showTurnChangedFiles: boolean;
 };
 
+/**
+ * Overlay live part-store rows onto the streaming assistant for display.
+ *
+ * The tail subscribes to the raw part store so streaming text is not held back
+ * by snapshot suspension. It applies the same `mergePartsForDisplay` contract the
+ * snapshot uses, so both readers of `state.part` agree on when a frame may shrink.
+ */
 const withLiveParts = (
     message: ChatMessageEntry,
     activeStreamingMessageId: string,
@@ -30,9 +39,17 @@ const withLiveParts = (
         return message;
     }
 
+    const mergedParts = mergePartsForDisplay(message.parts, liveParts, message.info);
+    if (
+        mergedParts.length === message.parts.length
+        && mergedParts.every((part, index) => part === message.parts[index])
+    ) {
+        return message;
+    }
+
     return getNormalizedMessageForDisplay({
         ...message,
-        parts: liveParts,
+        parts: mergedParts,
     });
 };
 

@@ -34,6 +34,8 @@ const TOOL_ROW_TEXT_CLASS = '!text-[length:var(--text-meta)] !leading-5 sm:!lead
 const TOOL_ROW_TITLE_CLASS = cn('typography-meta font-medium', TOOL_ROW_TEXT_CLASS);
 const TOOL_ROW_DESCRIPTION_CLASS = cn('typography-meta', TOOL_ROW_TEXT_CLASS);
 
+const EMPTY_ACTIVITY_PARTS: TurnActivityPart[] = [];
+
 interface ProgressiveGroupProps {
     parts: TurnActivityPart[];
     isExpanded: boolean;
@@ -975,7 +977,7 @@ const ProgressiveGroup: React.FC<ProgressiveGroupProps> = ({
 
     const sortedParts = React.useMemo(() => {
         if (!shouldRenderRows) {
-            return [] as TurnActivityPart[];
+            return EMPTY_ACTIVITY_PARTS;
         }
         return sortPartsByTime(parts);
     }, [parts, shouldRenderRows]);

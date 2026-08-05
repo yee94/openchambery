@@ -30,19 +30,23 @@ describe('resolveVisibleSortedAssistants', () => {
     ]);
   });
 
-  test('falls back to completed-only when stream id is unknown and turn is partial', () => {
+  test('keeps incomplete assistants when stream id is unknown mid-turn', () => {
+    // Between shell steps stream id / session_status often clear for a frame.
+    // completed-only filtering dropped a2 and its Activity tools → fold flash.
     const a1 = assistant('a1', 10);
     const a2 = assistant('a2');
     expect(resolveVisibleSortedAssistants([a1, a2], null).map((entry) => entry.info.id)).toEqual([
       'a1',
+      'a2',
     ]);
   });
 
-  test('shows first shell when nothing is completed yet and no stream id', () => {
+  test('keeps the full turn when nothing is completed yet and no stream id', () => {
     const a1 = assistant('a1');
     const a2 = assistant('a2');
     expect(resolveVisibleSortedAssistants([a1, a2], null).map((entry) => entry.info.id)).toEqual([
       'a1',
+      'a2',
     ]);
   });
 });

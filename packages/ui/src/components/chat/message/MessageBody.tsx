@@ -1459,7 +1459,14 @@ const AssistantMessageBody = React.memo(({
     const hasStopFinish = messageFinish === 'stop';
     // User interrupt often sets time.completed + error without finish === 'stop'.
     // Duration/TPS should still render for any settled assistant turn.
-    const isTurnSettled = hasStopFinish || isMessageCompleted || Boolean(errorMessage);
+    const isMessageSettled = hasStopFinish || isMessageCompleted || Boolean(errorMessage);
+    // A settled message is not a settled turn. Multi-step agents stamp finish and
+    // time.completed when a shell step ends, and until the next assistant arrives
+    // that message is still the turn's last assistant — so message-level completion
+    // alone published the completed-turn footer (duration, TPS, actions) in the
+    // middle of a running loop, then withdrew it. Grouped rows defer to the turn;
+    // a standalone assistant row has no turn to ask.
+    const isTurnSettled = isMessageSettled && (turnGroupingContext?.isTurnSettled ?? true);
     const effectiveStreamPhase: StreamPhase = hasStopFinish ? 'completed' : streamPhase;
 
     const hasTools = toolParts.length > 0;
@@ -1701,7 +1708,15 @@ const AssistantMessageBody = React.memo(({
         && (hasAnchoredActivitySegments || isCompactionTurn)
         && Boolean(toggleActivityGroup);
 
-    const shouldDeferSortedInlineText = isSortedRenderMode && !hasStopFinish;
+    // Sorted mode defers non-stop inline text so mid-turn stream text does not
+    // paint outside Activity (justification owns intermediate text). Compaction
+    // is different: the streaming summary *is* the foldable body under
+    // Compacting / 正在压缩. Visibility is owned only by hideCompactionBody, so
+    // do not defer when the disclosure is expanded — otherwise active compact
+    // streams stay invisible until finish=stop.
+    const shouldDeferSortedInlineText = isSortedRenderMode
+        && !hasStopFinish
+        && !(isCompactionTurn && isActivityExpanded);
     const showErrorMessage = Boolean(errorMessage);
     const errorIconName = errorVariant === 'info' ? 'information' : 'error-warning';
     const shouldShowMessageActions = hasCopyableText;
@@ -1715,6 +1730,7 @@ const AssistantMessageBody = React.memo(({
     const shouldShowChangesPreview = !isMiniChatSurface
         && isLastAssistantInTurn
         && hasStopFinish
+        && isTurnSettled
         && !hideCompactionBody
         && Boolean(turnGroupingContext?.changedFiles?.length);
     const shouldRenderActionsInActivity = isSortedRenderMode;
@@ -1972,7 +1988,7 @@ const AssistantMessageBody = React.memo(({
                                     id: toolPart.id,
                                     turnId: '',
                                     messageId,
-                                    partIndex: 0,
+                                    partIndex: i,
                                     part: toolPart,
                                     kind: 'tool' as const,
                                 },

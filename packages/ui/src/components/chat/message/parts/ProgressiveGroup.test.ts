@@ -34,6 +34,16 @@ describe('progressive activity presentation', () => {
         expect(messageBodySource).not.toContain('collapsedPreviewCount = completionDisposition');
     });
 
+    test('row mounting depends only on the disclosure, never on turn disposition', () => {
+        // Deriving mount state from disposition or streamPhase leaked live behavior
+        // into settled turns (an aborted turn never left the live branch) and made a
+        // one-frame disposition flap unmount every nested row. Structural stability
+        // is owned by the data layer instead: see sync/displayParts.ts.
+        expect(progressiveGroupSource).toContain('const shouldRenderRows = !showHeader || isExpanded || previewCount > 0;');
+        expect(progressiveGroupSource).not.toContain('isLiveActivity');
+        expect(progressiveGroupSource).not.toContain('stickyOpenPartsRef');
+    });
+
     test('localizes every activity state and exposes its expanded state', () => {
         expect(progressiveGroupSource).toContain("'chat.activity.active'");
         expect(progressiveGroupSource).toContain("'chat.activity.completedStatus'");
@@ -181,6 +191,16 @@ describe('progressive activity presentation', () => {
         expect(progressiveGroupSource).toContain('// Header-only turns (e.g. completed compaction with foldable body text outside');
         expect(progressiveGroupSource).toContain('if (!showHeader && rows.length === 0)');
         expect(progressiveGroupSource).not.toContain('statusOnly');
+    });
+
+    test('shows expanded compaction summary body while still streaming (before stop)', () => {
+        // Ordinary sorted turns defer non-stop inline text into Activity; compaction
+        // must paint the streaming summary under the open disclosure instead.
+        expect(messageBodySource).toContain('&& !(isCompactionTurn && isActivityExpanded)');
+        expect(messageBodySource).toContain('const shouldDeferSortedInlineText = isSortedRenderMode');
+        expect(messageBodySource).not.toContain(
+            'const shouldDeferSortedInlineText = isSortedRenderMode && !hasStopFinish;',
+        );
     });
 
     test('keeps the pre-assistant compaction header expandable while details arrive', () => {

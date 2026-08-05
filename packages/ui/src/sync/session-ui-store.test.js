@@ -850,6 +850,49 @@ describe('routeMessage skill invocation', () => {
     expect(sendMessageCalls[0].text).toBe('[command:json-command]');
   });
 
+  test('matches custom commands case-insensitively so /LOOP rewrites like /loop', async () => {
+    queryClient.setQueryData(commandQueryOptions('/skills/project').queryKey, [{
+      name: 'loop',
+      isBuiltIn: false,
+      reference: '/skills/project/.opencode/commands/loop.md',
+    }]);
+
+    await routeMessage({
+      sessionId: 'session-command',
+      directory: '/skills/project',
+      content: '/\u2003LOOP gg',
+      providerID: 'provider-a',
+      modelID: 'model-a',
+      messageID: 'msg-loop-upper',
+    });
+
+    const content = '[command:/skills/project/.opencode/commands/loop.md] gg';
+    expect(sendCommandCalls).toHaveLength(0);
+    expect(sendMessageCalls).toHaveLength(1);
+    expect(sendMessageCalls[0]).toMatchObject({
+      text: content,
+      messageId: 'msg-loop-upper',
+    });
+    expect(optimisticAdds).toHaveLength(1);
+    expect(optimisticAdds[0].parts[0].text).toBe(content);
+  });
+
+  test('uses catalog command names for built-in sendCommand when typed in different case', async () => {
+    queryClient.setQueryData(commandQueryOptions('/skills/project').queryKey, [{ name: 'built-in-command', isBuiltIn: true }]);
+
+    await routeMessage({
+      sessionId: 'session-command',
+      directory: '/skills/project',
+      content: '/Built-In-Command argument',
+      providerID: 'provider-a',
+      modelID: 'model-a',
+    });
+
+    expect(sendCommandCalls).toHaveLength(1);
+    expect(sendCommandCalls[0]).toMatchObject({ command: 'built-in-command', arguments: 'argument' });
+    expect(sendMessageCalls).toHaveLength(0);
+  });
+
   test('sends built-in commands through session.command', async () => {
     queryClient.setQueryData(commandQueryOptions('/skills/project').queryKey, [{ name: 'built-in-command', isBuiltIn: true }]);
 

@@ -12,6 +12,7 @@ const createContext = (overrides: Partial<TurnGroupingContext> = {}): TurnGroupi
   hasTools: true,
   hasReasoning: true,
   isWorking: false,
+  isTurnSettled: false,
   isGroupExpanded: false,
   toggleGroup,
   ...overrides,

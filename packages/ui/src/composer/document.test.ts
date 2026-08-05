@@ -225,6 +225,26 @@ describe('composerReferences', () => {
         }).document.text).toBe(`before ${slashTriggerDisplay('review')} `);
     });
 
+    test('can skip leading edge pad for slash chips while keeping a trailing edge space', () => {
+        const reference = skill('skill', 0, 'review');
+        expect(insertComposerReference({ text: '', references: [] }, 0, 0, reference, {
+            inlineBoundaries: true,
+            padDocumentEdges: true,
+            padLeadingDocumentEdge: false,
+        }).document.text).toBe(`${slashTriggerDisplay('review')} `);
+        expect(insertComposerReference({ text: 'after', references: [] }, 0, 0, reference, {
+            inlineBoundaries: true,
+            padDocumentEdges: true,
+            padLeadingDocumentEdge: false,
+        }).document.text).toBe(`${slashTriggerDisplay('review')} after`);
+        // Mid-line neighbor still gets a leading boundary space from inlineBoundaries.
+        expect(insertComposerReference({ text: 'before', references: [] }, 6, 6, reference, {
+            inlineBoundaries: true,
+            padDocumentEdges: true,
+            padLeadingDocumentEdge: false,
+        }).document.text).toBe(`before ${slashTriggerDisplay('review')} `);
+    });
+
     test('round-trips adjacent session and paste references with ordinary spacing', () => {
         const sessionThenPaste = insertComposerReference({ text: '@A', references: [session('s', 0, '@A')] }, 2, 2, paste('p', 0), { inlineBoundaries: true }).document;
         const pasteThenSession = insertComposerReference({ text: '[Paste 1]', references: [paste('p', 0)] }, 9, 9, session('s', 0, '@A'), { inlineBoundaries: true }).document;

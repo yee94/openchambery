@@ -129,6 +129,13 @@ export interface ComposerReferenceInsertionOptions {
     inlineBoundaries?: boolean;
     /** Also insert ordinary spaces when the chip sits at the document start/end. */
     padDocumentEdges?: boolean;
+    /**
+     * When `padDocumentEdges` is set, still skip a leading space at document start.
+     * Slash/skill/command chips must not lead with a space — it sits outside chip
+     * metrics and reads as a broken layout (users undo it as “the auto space”).
+     * Citations still want a leading edge pad. Default true.
+     */
+    padLeadingDocumentEdge?: boolean;
 }
 
 export function insertComposerReference(document: ComposerDocument, selectionStart: number, selectionEnd: number, reference: NewComposerReference, options: ComposerReferenceInsertionOptions = {}): { document: ComposerDocument; caret: number; edit: ComposerEdit } {
@@ -139,11 +146,13 @@ export function insertComposerReference(document: ComposerDocument, selectionSta
     const range = expandedEditRange(current.references, selectedStart, selectedEnd);
     const before = current.text.slice(0, range.start);
     const after = current.text.slice(range.end);
+    const padLeadingEdge = Boolean(options.padDocumentEdges) && options.padLeadingDocumentEdge !== false;
+    const padTrailingEdge = Boolean(options.padDocumentEdges);
     const leadingSpace = options.inlineBoundaries
-        && (before.length > 0 || options.padDocumentEdges)
+        && (before.length > 0 || padLeadingEdge)
         && !/\s$/.test(before) ? ' ' : '';
     const trailingSpace = options.inlineBoundaries
-        && (after.length > 0 || options.padDocumentEdges)
+        && (after.length > 0 || padTrailingEdge)
         && !/^\s/.test(after) ? ' ' : '';
     const text = `${before}${leadingSpace}${reference.display}${trailingSpace}${after}`;
     const inserted = { ...reference, start: range.start + leadingSpace.length, end: range.start + leadingSpace.length + reference.display.length } as ComposerReference;

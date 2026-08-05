@@ -1,6 +1,6 @@
 # Chat Message Parts: Rendering Architecture
 
-Sorted compaction Activity uses localized Compacting / Compaction complete labels, a dedicated `fold-vertical` icon, and the same geometry, typography, info-token shimmer, and duration formatter as ordinary Activity. Before any assistant message arrives, `TurnItem` renders the standard Activity disclosure (`shouldShowCompactionStatus`): settled without assistants still shows; active Compacting only when the turn is last and the session is authoritatively working. The toggle stays available before foldable content arrives and preserves the user's state for the incoming summary body. Once assistants exist, `MessageBody` always mounts the Activity disclosure on the owner message (even with zero tool/reasoning segments). Summary body text is hidden while the turn is collapsed and restored when expanded. Header-only disclosures with empty activity rows still paint the chrome so the toggle stays available. Live mode keeps its current rendering.
+Sorted compaction Activity uses localized Compacting / Compaction complete labels, a dedicated `fold-vertical` icon, and the same geometry, typography, info-token shimmer, and duration formatter as ordinary Activity. Before any assistant message arrives, `TurnItem` renders the standard Activity disclosure (`shouldShowCompactionStatus`): settled without assistants still shows; active Compacting only when the turn is last and the session is authoritatively working. The toggle stays available before foldable content arrives and preserves the user's state for the incoming summary body. Once assistants exist, `MessageBody` always mounts the Activity disclosure on the owner message (even with zero tool/reasoning segments). Summary body text is hidden while the turn is collapsed and restored when expanded — including while the summary is still streaming (`finish` not yet `stop`). Ordinary sorted turns still defer non-stop inline text so intermediate stream text does not paint outside Activity; expanded compaction is the exception because that stream *is* the foldable body. Reasoning projected into Activity continues to follow the disclosure expansion and `showReasoningTraces`. Header-only disclosures with empty activity rows still paint the chrome so the toggle stays available. Live mode keeps its current rendering.
 
 This folder contains renderers for chat message parts (text, tools, reasoning, placeholders) and shared tool presentation helpers.
 
@@ -20,7 +20,23 @@ Use this doc when you ask an agent to change tool/header/description behavior.
   - Renders grouped Activity rows and grouped static tools.
   - Contains `StaticToolRow`.
   - Contains static tool short description logic (`getToolShortDescription`).
+  - Nested row React keys and expand-state ids are the projected activity id
+    (`resolveActivityPartId`, i.e. `part.id` for anything the server sent).
+  - Row mounting depends **only** on the disclosure (`!showHeader || isExpanded ||
+    previewCount > 0`). It must not consult `completionDisposition` or `streamPhase`:
+    a settled-turn branch keyed on "was live" never released for aborted turns, and a
+    one-frame disposition flap unmounted every nested row. Structural stability against
+    regressing store frames belongs to `@/sync/displayParts`, not to this component.
   - If you want to change how `read/grep/perplexity/webfetch/...` look in compact/grouped mode, edit here.
+
+- `../../lib/turns/resolveActivityPartId.ts`
+  - Stable activity / tool row identity for keys and bash default-open expand state.
+
+- `../../lib/turns/streamingTailEntry.ts`
+  - The live tail subscribes to the raw part store so streaming text is not held back by
+    snapshot suspension, and applies `mergePartsForDisplay` from `@/sync/displayParts` —
+    the same contract the snapshot uses. Both readers of `state.part` therefore agree on
+    when a frame may shrink. Views hold nothing of their own across renders.
 
 - `ToolPart.tsx`
   - Renders expandable tool rows (bash/edit/write/question/task + fallback).

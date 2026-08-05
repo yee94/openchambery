@@ -49,6 +49,7 @@ import type { SessionStatus } from "@opencode-ai/sdk/v2/client"
 import type { PermissionRequest } from "@/types/permission"
 import type { QuestionRequest } from "@/types/question"
 import * as sessionActions from "./session-actions"
+import { mergePartsForDisplay } from "./displayParts"
 import { getSessionMaterializationStatus } from "./materialization"
 import { loadSessionMessagePage } from "./session-message-loader"
 import type { ReduceSessionMessagePageResult } from "./session-message-reducer"
@@ -2917,7 +2918,10 @@ const snapshotPartsMatchState = (snapshot: SessionMessageRecordsSnapshot, state:
         continue
       }
     }
-    if (liveParts !== record.parts) {
+    // Mirror the merge buildSessionMessageRecordsSnapshot would apply. A frame
+    // that only regresses an open assistant resolves back to the same array, so
+    // the cached snapshot stays reusable instead of rebuilding every commit.
+    if (mergePartsForDisplay(record.parts, liveParts, record.info) !== record.parts) {
       return false
     }
   }
@@ -2994,9 +2998,13 @@ export function buildSessionMessageRecordsSnapshot(
       && (!suspendedPartUpdatesMessageID || message.id === suspendedPartUpdatesMessageID)
       && !isSuspendExemptShellBridge(state, message, liveParts)
       && !shouldRefreshSuspendedParts(previousRecord.parts, liveParts)
+    // Suspension is only a text-growth optimization. Structural stability is
+    // owned by mergePartsForDisplay: while an assistant turn is open, a store
+    // frame that drops rows the UI already painted is unioned back, and the
+    // hold releases as soon as the message settles.
     const parts = shouldSuspendParts
       ? previousRecord.parts
-      : liveParts
+      : mergePartsForDisplay(previousRecord?.parts, liveParts, message)
 
     const nextRecord = previousRecord && previousRecord.info === message && previousRecord.parts === parts
       ? previousRecord

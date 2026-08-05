@@ -188,7 +188,7 @@ describe('projectTurnRecords', () => {
         expect(projection.turns[0]?.completionDisposition).toBe('abnormal');
     });
 
-    test('completionDisposition is abnormal when completed without finish stop', () => {
+    test('completionDisposition is abnormal when finish is a non-stop terminal', () => {
         const user = createMessageEntry({ id: 'u1', role: 'user', createdAt: 1 });
         const assistant = createMessageEntry({
             id: 'a1',
@@ -203,6 +203,48 @@ describe('projectTurnRecords', () => {
         const projection = projectTurnRecords([user, assistant]);
 
         expect(projection.turns[0]?.completionDisposition).toBe('abnormal');
+    });
+
+    test('completionDisposition stays active when only time.completed is stamped (multi-step gap)', () => {
+        // Shell step ends → OpenCode may set time.completed before the next
+        // assistant arrives. That must not collapse Activity mid-turn.
+        const user = createMessageEntry({ id: 'u1', role: 'user', createdAt: 1 });
+        const assistant = createMessageEntry({
+            id: 'a1',
+            role: 'assistant',
+            parentID: 'u1',
+            createdAt: 2,
+            completedAt: 3,
+            parts: [{
+                id: 'tool_1',
+                type: 'tool',
+                tool: 'bash',
+                state: { status: 'completed', output: 'ok', time: { start: 1, end: 2 } },
+            } as Part],
+        });
+
+        const projection = projectTurnRecords([user, assistant]);
+
+        expect(projection.turns[0]?.completionDisposition).toBe('active');
+    });
+
+    test('completionDisposition is active while last assistant has a running tool', () => {
+        const user = createMessageEntry({ id: 'u1', role: 'user', createdAt: 1 });
+        const assistant = createMessageEntry({
+            id: 'a1',
+            role: 'assistant',
+            parentID: 'u1',
+            createdAt: 2,
+            completedAt: 3,
+            parts: [{
+                id: 'tool_1',
+                type: 'tool',
+                tool: 'bash',
+                state: { status: 'running', input: { command: 'ls' }, time: { start: 1 } },
+            } as unknown as Part],
+        });
+
+        expect(projectTurnRecords([user, assistant]).turns[0]?.completionDisposition).toBe('active');
     });
 
     test('completionDisposition is active while last assistant is streaming', () => {
@@ -268,8 +310,19 @@ describe('projectTurnRecords', () => {
             parts: [{ id: 't1', type: 'text', text: 'partial' } as Part],
         });
         const user2 = createMessageEntry({ id: 'u2', role: 'user', createdAt: 3_000 });
+        const assistant2 = createMessageEntry({
+            id: 'a2',
+            role: 'assistant',
+            parentID: 'u2',
+            createdAt: 3_100,
+        });
 
-        const projection = projectTurnRecords([user1, assistant1, user2]);
+        // A user row alone is not proof: it may be queued while this turn still
+        // streams. The next turn must have an assistant response.
+        const queued = projectTurnRecords([user1, assistant1, user2]);
+        expect(queued.turns[0]?.completionDisposition).toBe('active');
+
+        const projection = projectTurnRecords([user1, assistant1, user2, assistant2]);
 
         expect(projection.turns[0]?.completionDisposition).toBe('abnormal');
         expect(projection.turns[0]?.durationMs).toBe(2_000);

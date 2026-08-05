@@ -5206,7 +5206,13 @@ const ChatInputRuntime: React.FC<ChatInputProps> = ({ onOpenSettings, scrollToBo
         const range = getSlashTokenRange(document.text, cursorPosition);
         if (!range) return false;
 
-        const inserted = insertReference(range.start, range.end, reference, { inlineBoundaries: true, padDocumentEdges: true });
+        // Trailing edge space keeps room for args; no leading edge space before `/`
+        // (that auto space sits outside chip metrics and is what users undo to “fix” /loop).
+        const inserted = insertReference(range.start, range.end, reference, {
+            inlineBoundaries: true,
+            padDocumentEdges: true,
+            padLeadingDocumentEdge: false,
+        });
         const insertedReference = inserted.document.references.some((candidate) => candidate.id === reference.id);
         const caret = advancePastTrailingBoundarySpace(inserted.document.text, inserted.caret);
         requestAnimationFrame(() => {
@@ -5271,18 +5277,32 @@ const ChatInputRuntime: React.FC<ChatInputProps> = ({ onOpenSettings, scrollToBo
             return;
         }
 
-        if (!submit && command.source === 'opencode' && command.isBuiltIn === false) {
+        // Same durable reserved-slot chip path for every non-built-in OpenCode
+        // command (including when `isBuiltIn` is omitted). A missing flag used
+        // to fall through to plain `/name ` and paint a compact trigger.
+        if (!submit && command.source === 'opencode' && !command.isSkill && command.isBuiltIn !== true) {
             if (insertSlashReference({
                 id: `command:${command.name}:${createUuid()}`,
                 kind: 'command',
                 commandName: command.name,
                 reference: command.reference ?? command.name,
                 display: composerTriggerIconDisplay({ trigger: '/', icon: 'command', label: command.name }),
-            })) setCommandQuery('');
-            return;
+            })) {
+                setCommandQuery('');
+                return;
+            }
+            // No slash token at the caret — fall through to reserved plain insert.
         }
 
-        replacePlainDocument(command.isSkill ? `   ${commandText} ` : `${commandText} `);
+        // Plain inserts still reserve the icon em-space so overlay metrics match
+        // the durable chip path above (OpenChamber draft commands, failed insert).
+        const plainInsert = command.isSkill ? `   ${commandText} ` : `${commandText} `;
+        const promotedInsert = promoteTypedSlashChipSlots(
+            plainInsert,
+            new Set([...knownSlashNames, command.name.toLowerCase()]),
+            plainInsert.length,
+        );
+        replacePlainDocument(promotedInsert?.text ?? plainInsert);
 
         const textareaElement = textareaRef.current as HTMLTextAreaElement & { _commandMetadata?: typeof command };
         if (textareaElement) {

@@ -156,6 +156,15 @@ export interface TurnGroupingContext {
     userMessageVariant?: string;
     durationMs?: number;
     isWorking: boolean;
+    /**
+     * The whole turn is finished, not merely the message rendering this row.
+     * Turn-completion chrome (footer, duration, TPS, changed-files preview) must
+     * read this instead of the last assistant's own `finish`/`time.completed`:
+     * a multi-step agent stamps those when one step ends, while that message is
+     * still the turn's last assistant, so message-level completion published a
+     * completed-turn footer in the middle of a running loop.
+     */
+    isTurnSettled: boolean;
     isGroupExpanded?: boolean;
     toggleGroup?: () => void;
 }

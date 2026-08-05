@@ -247,82 +247,6 @@ const LiveDuration: React.FC<{ start: number; end?: number; active: boolean }> =
     return <>{formatDuration(start, end, now)}</>;
 };
 
-const deferredToolBodyMounts: Array<{ active: boolean; fn: () => void }> = [];
-let deferredToolBodyFrame: number | undefined;
-
-const flushDeferredToolBodyMounts = () => {
-    while (deferredToolBodyMounts.length > 0) {
-        const item = deferredToolBodyMounts.pop();
-        if (!item) {
-            break;
-        }
-        if (item.active) {
-            item.fn();
-            deferredToolBodyFrame = deferredToolBodyMounts.length > 0
-                ? window.requestAnimationFrame(flushDeferredToolBodyMounts)
-                : undefined;
-            return;
-        }
-    }
-
-    deferredToolBodyFrame = undefined;
-};
-
-const scheduleDeferredToolBodyMount = (fn: () => void) => {
-    if (typeof window === 'undefined') {
-        fn();
-        return () => undefined;
-    }
-
-    const item = { active: true, fn };
-    deferredToolBodyMounts.push(item);
-
-    if (deferredToolBodyFrame === undefined) {
-        deferredToolBodyFrame = window.requestAnimationFrame(() => {
-            deferredToolBodyFrame = window.requestAnimationFrame(flushDeferredToolBodyMounts);
-        });
-    }
-
-    return () => {
-        item.active = false;
-    };
-};
-
-const useDeferredExpandedContent = (isExpanded: boolean) => {
-    // If the tool is expanded when the row first mounts (e.g. "show tools open
-    // by default", or scrolling a default-open tool back into a virtualized
-    // view), render the body SYNCHRONOUSLY so the virtualizer measures the real
-    // height immediately. Deferring it would let the row mount short and grow a
-    // frame later, which makes the virtualizer compensate scroll and lurch the
-    // viewport past several messages on slow scroll. Only defer LATER
-    // user-initiated expansions, where instant single-item feedback isn't worth
-    // blocking the click on a heavy body render.
-    const [shouldRender, setShouldRender] = React.useState(isExpanded);
-    const mountedRef = React.useRef(false);
-
-    React.useEffect(() => {
-        if (!isExpanded) {
-            mountedRef.current = true;
-            setShouldRender(false);
-            return;
-        }
-
-        if (!mountedRef.current) {
-            mountedRef.current = true;
-            setShouldRender(true);
-            return;
-        }
-
-        return scheduleDeferredToolBodyMount(() => {
-            React.startTransition(() => {
-                setShouldRender(true);
-            });
-        });
-    }, [isExpanded]);
-
-    return shouldRender;
-};
-
 const parseDiffStats = (metadata?: Record<string, unknown>): { added: number; removed: number } | null => {
     const diffText = getPatchText((metadata as { patch?: unknown } | undefined)?.patch)
         ?? getPatchText(metadata?.diff);
@@ -2523,12 +2447,14 @@ const ToolPartContent: React.FC<ToolPartProps> = ({
     const iconStyle = !isTaskTool && isError ? TOOL_ERROR_ICON_STYLE : TOOL_NORMAL_ICON_STYLE;
     const titleStyle = !isTaskTool && isError ? TOOL_ERROR_TITLE_STYLE : TOOL_NORMAL_TITLE_STYLE;
     const taskBusy = Boolean(isTaskTool && effectiveActive && !isError);
-    const shouldRenderTaskSummary = useDeferredExpandedContent(
-        isTaskTool
+    // Expanded bodies render synchronously with `isExpanded`. A deferred mount
+    // (double rAF + startTransition) painted an empty fold for a frame whenever
+    // `isExpanded` dipped false, and default-open rows must report their real
+    // height to the virtualizer on the first paint, not a frame later.
+    const shouldRenderTaskSummary = isTaskTool
         && showSubagentTaskDetails
-        && (taskSummaryEntries.length > 0 || effectiveActive || shouldTreatAsFinalized || !!taskSessionId)
-    );
-    const shouldRenderExpandedContent = useDeferredExpandedContent(!isTaskTool && !isFileNavTool && isExpanded);
+        && (taskSummaryEntries.length > 0 || effectiveActive || shouldTreatAsFinalized || !!taskSessionId);
+    const shouldRenderExpandedContent = !isTaskTool && !isFileNavTool && isExpanded;
 
     if (!shouldTreatAsFinalized && !isActive && !isTaskTool) {
         return null;
