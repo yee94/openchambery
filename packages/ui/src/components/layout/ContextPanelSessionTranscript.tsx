@@ -1,4 +1,6 @@
 import React from 'react';
+import { useMutation } from '@tanstack/react-query';
+import { useEvent } from '@reactuses/core';
 
 import MessageList, { type MessageListHandle } from '@/components/chat/MessageList';
 import { ReadOnlyPromptBanner } from '@/components/chat/ReadOnlyPromptBanner';
@@ -93,14 +95,15 @@ const ContextPanelSessionTranscriptContent: React.FC<ContextPanelSessionTranscri
             : execution.modelId;
     }, [execution.modelId, execution.providerId, providers, t]);
     const sessionStatus = useSessionStatus(sessionId, syncDirectory);
-    const isRenderable = useDirectorySync(React.useCallback(
+    // Ordinary selectors — store compares selected values (never React.useCallback).
+    const isRenderable = useDirectorySync(
         (state) => getSessionMaterializationStatus(state, sessionId).renderable,
-        [sessionId],
-    ), syncDirectory);
-    const hasConfirmedParent = useDirectorySync(React.useCallback(
+        syncDirectory,
+    );
+    const hasConfirmedParent = useDirectorySync(
         (state) => Boolean(state.session.find((session) => session.id === sessionId)?.parentID),
-        [sessionId],
-    ), syncDirectory);
+        syncDirectory,
+    );
     const [confirmedParentViewKey, setConfirmedParentViewKey] = React.useState<string | null>(null);
     React.useLayoutEffect(() => {
         setConfirmedParentViewKey((previousViewKey) => (
@@ -108,16 +111,27 @@ const ContextPanelSessionTranscriptContent: React.FC<ContextPanelSessionTranscri
         ));
     }, [hasConfirmedParent, viewportKey]);
     const showReadOnlyPromptBanner = hasConfirmedParent || confirmedParentViewKey === viewportKey;
-    const prefetch = React.useSyncExternalStore(
-        React.useCallback((notify) => subscribeSessionPrefetch(syncDirectory, sessionId, notify, runtimeKey), [runtimeKey, sessionId, syncDirectory]),
-        React.useCallback(() => getSessionPrefetch(syncDirectory, sessionId, runtimeKey), [runtimeKey, sessionId, syncDirectory]),
-        React.useCallback(() => undefined, []),
+    // useMemo callback factories for useSyncExternalStore (stable identity).
+    const subscribePrefetch = React.useMemo(
+        () => (notify: () => void) => subscribeSessionPrefetch(syncDirectory, sessionId, notify, runtimeKey),
+        [runtimeKey, sessionId, syncDirectory],
     );
-    const streamingMessageId = useStreamingStore(React.useCallback((state) => state.streamingMessageIds.get(sessionId) ?? null, [sessionId]));
-    const activeStreamingPhase = useStreamingStore(React.useCallback(
+    const getPrefetchSnapshot = React.useMemo(
+        () => () => getSessionPrefetch(syncDirectory, sessionId, runtimeKey),
+        [runtimeKey, sessionId, syncDirectory],
+    );
+    const getPrefetchServerSnapshot = React.useMemo(() => () => undefined, []);
+    const prefetch = React.useSyncExternalStore(
+        subscribePrefetch,
+        getPrefetchSnapshot,
+        getPrefetchServerSnapshot,
+    );
+    const streamingMessageId = useStreamingStore(
+        (state) => state.streamingMessageIds.get(sessionId) ?? null,
+    );
+    const activeStreamingPhase = useStreamingStore(
         (state) => streamingMessageId ? state.messageStreamStates.get(streamingMessageId)?.phase ?? null : null,
-        [streamingMessageId],
-    ));
+    );
     const sessionIsWorking = sessionStatus?.type === 'busy' || sessionStatus?.type === 'retry';
     const { scrollRef, notifyContentChange, getAnimationHandlers, goToBottom, restoreSnapshot, showScrollButton } = useChatAutoFollow({
         currentSessionId: sessionId,
@@ -126,9 +140,9 @@ const ContextPanelSessionTranscriptContent: React.FC<ContextPanelSessionTranscri
         sessionIsWorking,
         isMobile: false,
     });
-    const ensureSession = React.useCallback((reason: 'active' | 'retry') => {
+    const ensureSession = useEvent((reason: 'active' | 'retry') => {
         void sync.ensureSessionRenderable(sessionId, resolveContextPanelEnsureForce(reason));
-    }, [sessionId, sync]);
+    });
 
     React.useEffect(() => {
         if (active) ensureSession('active');
@@ -160,24 +174,36 @@ const ContextPanelSessionTranscriptContent: React.FC<ContextPanelSessionTranscri
 
     const sessionDir = React.useMemo(() => ({ directory: normalizedDirectory }), [normalizedDirectory]);
     const hasMore = sync.hasMore(sessionId, sessionDir);
-    const isLoading = prefetch?.status === 'loading' || sync.isLoading(sessionId, sessionDir);
-    const loadOlder = React.useCallback(() => {
-        if (!shouldRequestContextPanelLoadOlder(hasMore, isLoading)) return;
+    // Background materialize/prefetch loading — gate concurrent load-more only.
+    // Button spinner tracks the mutation below, never stuck prefetch status.
+    const backgroundLoading = prefetch?.status === 'loading' || sync.isLoading(sessionId, sessionDir);
+    const loadOlderMutation = useMutation({
+        mutationKey: ['context-panel-load-older', runtimeKey, normalizedDirectory, sessionId],
+        mutationFn: async () => {
+            await sync.loadMore(sessionId, sessionDir);
+        },
+    });
+    const isLoadingOlder = loadOlderMutation.isPending;
+    // Event-time click handler — shared UI never uses React.useCallback; useEvent
+    // keeps stable identity and always reads latest hasMore/sessionDir.
+    const loadOlder = useEvent(() => {
+        if (!shouldRequestContextPanelLoadOlder(hasMore, isLoadingOlder || backgroundLoading)) return;
+        if (loadOlderMutation.isPending) return;
         const token = prependRequestRef.current + 1;
         prependRequestRef.current = token;
         const element = scrollRef.current;
         const anchor = element ? resolveContextPanelPrependAnchor({
             hasMore,
-            isLoading,
+            isLoading: isLoadingOlder,
             historyVirtualized: Boolean(messageListRef.current?.isHistoryVirtualized()),
             scrollHeight: element.scrollHeight,
             scrollTop: element.scrollTop,
         }) : null;
         prependAnchorRef.current = anchor ? { token, viewportKey, anchor } : null;
-        void sync.loadMore(sessionId, sessionDir).finally(() => {
+        void loadOlderMutation.mutateAsync().finally(() => {
             setCompletedPrependToken(token);
         });
-    }, [hasMore, isLoading, scrollRef, sessionDir, sessionId, sync, viewportKey]);
+    });
     const transcriptState = resolveContextPanelTranscriptState({
         directoryMatches: true,
         requested: active,
@@ -195,13 +221,13 @@ const ContextPanelSessionTranscriptContent: React.FC<ContextPanelSessionTranscri
         capabilities: STRICT_READ_ONLY_SESSION_SURFACE_CAPABILITIES,
         navigateSession: onNavigateSession,
     }), [active, normalizedDirectory, onNavigateSession, sessionId, surfaceId]);
-    const retryPartialError = React.useCallback(() => {
+    const retryPartialError = useEvent(() => {
         if (resolveContextPanelPartialErrorRetry(hasMore) === 'load-more') {
             loadOlder();
             return;
         }
         ensureSession('retry');
-    }, [ensureSession, hasMore, loadOlder]);
+    });
 
     return (
         <SessionSurfaceContext.Provider value={surface}>
@@ -213,8 +239,8 @@ const ContextPanelSessionTranscriptContent: React.FC<ContextPanelSessionTranscri
                             <ScrollShadow ref={scrollRef} className="absolute inset-0 overflow-y-auto overflow-x-hidden chat-scroll overlay-scrollbar-target" observeMutations={false} data-scroll-shadow="true" data-scrollbar="chat">
                                 <div className="relative min-h-full">
                                     {transcriptState === 'partial-error' ? <div className="flex items-center justify-center gap-2 px-3 py-2 text-sm text-[var(--status-error-foreground)]"><span className="truncate">{prefetch?.error}</span><Button type="button" variant="secondary" size="xs" onClick={retryPartialError}>{t('chat.history.retry')}</Button></div> : null}
-                                    {shouldShowContextPanelLoadOlder(hasMore) ? <div className="flex justify-center pt-3 pb-1"><Button type="button" variant="secondary" size="sm" onClick={loadOlder} disabled={isLoading}>{isLoading ? <Icon name="loader-4" className="size-4 animate-spin" /> : null}{t('chat.history.loadOlder')}</Button></div> : null}
-                                    <MessageList ref={messageListRef} sessionKey={sessionId} virtualizerKey={viewportKey} messages={sessionMessages} sessionIsWorking={sessionIsWorking} activeStreamingMessageId={streamingMessageId} activeStreamingPhase={activeStreamingPhase} onMessageContentChange={notifyContentChange} getAnimationHandlers={getAnimationHandlers} isLoadingOlder={isLoading} scrollToBottom={() => goToBottom('instant')} scrollRef={scrollRef} directory={syncDirectory} />
+                                    {shouldShowContextPanelLoadOlder(hasMore) ? <div className="flex justify-center pt-3 pb-1"><Button type="button" variant="secondary" size="sm" onClick={loadOlder} disabled={isLoadingOlder}>{isLoadingOlder ? <Icon name="loader-4" className="size-4 animate-spin" /> : null}{t('chat.history.loadOlder')}</Button></div> : null}
+                                    <MessageList ref={messageListRef} sessionKey={sessionId} virtualizerKey={viewportKey} messages={sessionMessages} sessionIsWorking={sessionIsWorking} activeStreamingMessageId={streamingMessageId} activeStreamingPhase={activeStreamingPhase} onMessageContentChange={notifyContentChange} getAnimationHandlers={getAnimationHandlers} isLoadingOlder={isLoadingOlder} scrollToBottom={() => goToBottom('instant')} scrollRef={scrollRef} directory={syncDirectory} />
                                     <div className="h-12" aria-hidden="true" />
                                 </div>
                             </ScrollShadow>

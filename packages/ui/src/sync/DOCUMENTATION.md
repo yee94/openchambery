@@ -514,16 +514,20 @@ Rules that keep this single-sourced:
   are unchanged. The chat
   timeline controller issues at most one Host turn-page request per user
   interaction (desktop near-top scroll or explicit upward intent; mobile top
-  button). Concurrent wheel bursts share one in-flight chain via a synchronous
-  loading guard; fetches check `historyLoading` and cancel viewport-anchor hold
-  only while still owning the armed snapshot. Active desktop transcripts may
-  auto-fill earlier history while the first paint stays short
-  (`scrollHeight ≤ clientHeight + 48`) and `canLoadEarlier` is cursor-backed;
-  height-only geometry so collapsed stacks keep filling without expand-first;
-  owned by TanStack Query (`chatTimelineAutoFillQueryKey`) rather than a
-  `useEffect` chain; no-growth/failure blocks further auto-fill for the session;
-  successful short pages re-arm via query-key edge movement. That path does not
-  release auto-follow. Timeline handlers use `@reactuses/core` `useEvent`.
+  button). Explicit load-earlier is TanStack `useMutation`-owned
+  (`chatTimelineLoadEarlierMutationKey`); UI busy is `mutation.isPending` for
+  the active session (plus local auto-fill state), never background
+  `historyLoading`/prefetch loading which can stick on Relay. Concurrent wheel
+  bursts share one in-flight chain via a synchronous loading guard; fetches
+  check `historyLoading` and cancel viewport-anchor hold only while still owning
+  the armed snapshot. Active desktop transcripts may auto-fill earlier history
+  while the first paint stays short (`scrollHeight ≤ clientHeight + 48`) and
+  `canLoadEarlier` is cursor-backed; height-only geometry so collapsed stacks
+  keep filling without expand-first; owned by TanStack Query
+  (`chatTimelineAutoFillQueryKey`) rather than a `useEffect` chain;
+  no-growth/failure blocks further auto-fill for the session; successful short
+  pages re-arm via query-key edge movement. That path does not release
+  auto-follow. Timeline handlers use `@reactuses/core` `useEvent`.
 - Composer session mention search filters every loaded global active-session
   summary across projects, while the empty menu keeps three recent suggestions.
   Opening the mention menu performs no referenced-session fetch. Selecting a

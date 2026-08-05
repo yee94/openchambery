@@ -429,6 +429,15 @@ describe('useChatTimelineController source contracts', () => {
         expect(source).not.toMatch(/useEffect\s*\(\s*\(\)\s*=>\s*\{[\s\S]*?shouldAutoFillEarlierHistory/);
     });
 
+    test('explicit load-earlier is mutation-owned (button busy ≠ historyLoading)', () => {
+        expect(source).toContain('useMutation');
+        expect(source).toContain('chatTimelineLoadEarlierMutationKey');
+        expect(source).toContain('loadEarlierMutation');
+        // Button busy must not OR background historyLoading (Relay stuck spinner).
+        expect(source).toContain('Never OR historyLoading');
+        expect(source).toContain('isLoadingOlderUi');
+    });
+
     test('handlers use useEvent; no React.useCallback', () => {
         expect(source).toContain("from '@reactuses/core'");
         expect(source).toContain('useEvent');

@@ -901,10 +901,10 @@ const ChatContainerContent: React.FC<ChatContainerContentProps> = ({
             limit: turnLimit,
             complete: loadState.complete,
             canLoadEarlier: loadState.canLoadEarlier,
-            // Prefetch status is the reactive loading signal (meta.loading is a
-            // ref and only updates when something else re-renders). Without
-            // status==='loading', concurrent materialize/tail pulls leave the
-            // mobile button enabled while fetchOlderHistory silent-returns.
+            // Background materialize/tail loading only — never drives the mobile
+            // load-older button spinner (that is mutation-owned in the timeline
+            // controller). Prefetch status can stick at loading on Relay; OR-ing
+            // it into button busy painted a permanent spinner with no real load.
             loading: sync.isLoading(currentSessionId, sessionDir)
                 || sessionPrefetchInfo?.status === 'loading'
                 || Boolean(assistantHistory?.loading),
@@ -1139,13 +1139,11 @@ const ChatContainerContent: React.FC<ChatContainerContentProps> = ({
     });
     // Mobile loads older history via an explicit top button instead of a
     // scroll-position trigger (see handleHistoryScroll in the controller).
-    // Disable while sync is mid-flight (historyLoading) too — otherwise a
-    // concurrent materialize/tail pull makes the button look live but the
-    // click is a silent no-op until that flight settles.
+    // Busy state is mutation-owned (timeline loadEarlierMutation.isPending) —
+    // never background historyLoading/prefetch, which can stick true on Relay.
     const showLoadOlderButton = isMobileSurfaceRuntime()
         && timelineController.historySignals.canLoadEarlier;
-    const isLoadOlderBusy = timelineController.isLoadingOlder
-        || timelineController.historySignals.historyLoading;
+    const isLoadOlderBusy = timelineController.isLoadingOlder;
     const timelineLoadEarlier = timelineController.loadEarlier;
     const handleLoadOlderClick = useEvent(() => {
         void timelineLoadEarlier({ userInitiated: true });

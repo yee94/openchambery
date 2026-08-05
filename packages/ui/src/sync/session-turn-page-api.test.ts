@@ -91,7 +91,8 @@ describe("fetchSessionTurnPage", () => {
     expect(call.url.searchParams.get("turns")).toBe("4")
     // Host owns `_inner_scanLimit`; default client path must not send scanLimit.
     expect(call.url.searchParams.has("scanLimit")).toBe(false)
-    expect(call.signal).toBe(signal)
+    // Caller signal is combined with a bounded flight timeout (relay stuck-flight guard).
+    expect(call.signal?.aborted).toBe(false)
 
     expect(page).toEqual({
       records: [{ info: { id: "msg_1", role: "user" }, parts: [] }],

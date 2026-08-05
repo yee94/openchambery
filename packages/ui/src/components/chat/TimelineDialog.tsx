@@ -1,4 +1,5 @@
 import React from 'react';
+import { useEvent } from '@reactuses/core';
 import {
     Dialog,
     DialogContent,
@@ -66,20 +67,21 @@ export const TimelineDialog: React.FC<TimelineDialogProps> = ({
     const preservingLoadPositionRef = React.useRef(false);
     const wasOpenRef = React.useRef(open);
 
-    const formatDateGroup = React.useCallback((timestamp: number): string => {
+    // Pure render helpers — no React.useCallback (shared UI convention).
+    const formatDateGroup = (timestamp: number): string => {
         return new Date(timestamp).toLocaleDateString(getCurrentIntlLocale(), {
             year: 'numeric',
             month: 'short',
             day: 'numeric',
         });
-    }, []);
+    };
 
-    const formatMessageTime = React.useCallback((timestamp: number): string => {
+    const formatMessageTime = (timestamp: number): string => {
         return new Date(timestamp).toLocaleTimeString(getCurrentIntlLocale(), {
             hour: 'numeric',
             minute: '2-digit',
         });
-    }, []);
+    };
 
     // Timeline actions are only valid for user messages.
     const userMessages = React.useMemo(() => {
@@ -163,7 +165,7 @@ export const TimelineDialog: React.FC<TimelineDialogProps> = ({
         container.scrollTop += nextTop - anchor.top;
     }, [filteredMessages.length, isLoadingEarlier]);
 
-    const handleLoadEarlier = React.useCallback(() => {
+    const handleLoadEarlier = useEvent(() => {
         const container = listRef.current;
         if (container) {
             const containerTop = container.getBoundingClientRect().top;
@@ -182,17 +184,17 @@ export const TimelineDialog: React.FC<TimelineDialogProps> = ({
 
         preservingLoadPositionRef.current = true;
         onLoadEarlier?.();
-    }, [onLoadEarlier]);
+    });
 
-    const navigateToMessage = React.useCallback(async (messageId: string) => {
+    const navigateToMessage = useEvent(async (messageId: string) => {
         const didNavigate = await onScrollToMessage?.(messageId);
         if (didNavigate === false) {
             return;
         }
         onOpenChange(false);
-    }, [onOpenChange, onScrollToMessage]);
+    });
 
-    const handleSearchKeyDown = React.useCallback((event: React.KeyboardEvent<HTMLInputElement>) => {
+    const handleSearchKeyDown = useEvent((event: React.KeyboardEvent<HTMLInputElement>) => {
         const total = filteredMessages.length;
         if (total === 0) {
             return;
@@ -218,9 +220,9 @@ export const TimelineDialog: React.FC<TimelineDialogProps> = ({
                 void navigateToMessage(selected.message.info.id);
             }
         }
-    }, [filteredMessages, navigateToMessage, selectedIndex]);
+    });
 
-    const handleMessageAction = async (type: 'revert' | 'fork', messageId: string) => {
+    const handleMessageAction = useEvent(async (type: 'revert' | 'fork', messageId: string) => {
         if (!currentSessionId || pendingActionRef.current) return;
         pendingActionRef.current = true;
         setPendingAction({ type, messageId });
@@ -236,7 +238,7 @@ export const TimelineDialog: React.FC<TimelineDialogProps> = ({
             pendingActionRef.current = false;
             setPendingAction(null);
         }
-    };
+    });
 
     if (!currentSessionId) return null;
 

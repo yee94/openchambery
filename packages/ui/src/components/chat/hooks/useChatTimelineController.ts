@@ -1,5 +1,5 @@
 import React from 'react';
-import { useQuery } from '@tanstack/react-query';
+import { useMutation, useQuery } from '@tanstack/react-query';
 import { useEvent, useIsomorphicLayoutEffect, useUnmount } from '@reactuses/core';
 
 import type { ChatMessageEntry } from '../lib/turns/types';
@@ -271,6 +271,16 @@ export const chatTimelineAutoFillQueryKey = (input: {
     input.oldestMessageId,
     input.messageCount,
     input.canLoadEarlier,
+] as const;
+
+/** Mutation key for explicit load-earlier (mobile button / desktop scroll intent). */
+export const chatTimelineLoadEarlierMutationKey = (input: {
+    runtimeKey: string;
+    sessionId: string;
+}) => [
+    'chat-timeline-load-earlier',
+    input.runtimeKey,
+    input.sessionId,
 ] as const;
 
 /**
@@ -917,21 +927,62 @@ export const useChatTimelineController = ({
         }
     });
 
-    const loadEarlier = useEvent(async (options?: { userInitiated?: boolean }) => {
-        beginHistoryInteraction();
-        if (options?.userInitiated) {
-            releaseAutoFollow();
-        }
+    // Explicit load-earlier (mobile button / desktop scroll / timeline dialog) is
+    // mutation-owned. Button spinner tracks mutation.isPending only — never
+    // background materialize/prefetch historyLoading, which can stick true on
+    // Relay and painted a permanent spinner with no real load-more flight.
+    const loadEarlierMutation = useMutation({
+        mutationKey: chatTimelineLoadEarlierMutationKey({
+            runtimeKey: getRuntimeKey(),
+            sessionId: sessionId ?? '',
+        }),
+        mutationFn: async (input: { sessionId: string; userInitiated?: boolean }): Promise<boolean> => {
+            if (sessionIdRef.current !== input.sessionId) {
+                return false;
+            }
+            beginHistoryInteraction();
+            if (input.userInitiated) {
+                releaseAutoFollow();
+            }
+            try {
+                return await fetchOlderHistory({
+                    preserveViewport: true,
+                    userInitiated: Boolean(input.userInitiated),
+                });
+            } finally {
+                settleHistoryInteraction();
+            }
+        },
+    });
 
+    const loadEarlier = useEvent(async (options?: { userInitiated?: boolean }) => {
+        const targetSessionId = sessionIdRef.current;
+        if (!targetSessionId) return;
+        // Scope pending to this session so a prior session's in-flight mutation
+        // cannot leave the new session's button spinning.
+        if (
+            loadEarlierMutation.isPending
+            && loadEarlierMutation.variables?.sessionId === targetSessionId
+        ) {
+            return;
+        }
         try {
-            void (await fetchOlderHistory({
-                preserveViewport: true,
+            await loadEarlierMutation.mutateAsync({
+                sessionId: targetSessionId,
                 userInitiated: Boolean(options?.userInitiated),
-            }));
-        } finally {
-            settleHistoryInteraction();
+            });
+        } catch {
+            // fetchOlderHistory rethrows transport failures; surface is optional.
+            // Pending clears via mutation state either way.
         }
     });
+
+    // UI busy: mutation for user/scroll path + local state for auto-fill path.
+    // Never OR historyLoading — that is a background gate, not button flight.
+    const isLoadingOlderUi = (
+        loadEarlierMutation.isPending
+        && loadEarlierMutation.variables?.sessionId === sessionId
+    ) || isLoadingOlder;
 
     // Short / collapsed transcript: TanStack Query owns the auto-fill flight.
     // queryKey moves with the timeline edge so a successful short page re-arms
@@ -1171,7 +1222,7 @@ export const useChatTimelineController = ({
         turnStart: 0,
         renderedMessages,
         historySignals,
-        isLoadingOlder,
+        isLoadingOlder: isLoadingOlderUi,
         pendingRevealWork,
         activeTurnId,
         showScrollToBottom: showScrollButton && !pendingRevealWork,

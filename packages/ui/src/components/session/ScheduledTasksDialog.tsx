@@ -1029,12 +1029,15 @@ export function ScheduledTasksWorkspace({
                             'mt-1 flex w-full min-w-0 items-center justify-between gap-3',
                             isMobilePanel && 'min-h-11',
                           )}>
-                            <div className="flex min-w-0 flex-1 flex-wrap items-center gap-x-3 gap-y-1 typography-micro text-muted-foreground">
-                              <span className="inline-flex min-w-0 items-center gap-1.5" title={startedLabel}>
+                            <div className={cn(
+                              'flex min-w-0 flex-1 flex-wrap items-center gap-x-3 gap-y-1 typography-micro text-muted-foreground',
+                              isMobilePanel && 'flex-nowrap gap-2',
+                            )}>
+                              <span className={cn('inline-flex min-w-0 items-center gap-1.5', isMobilePanel && 'flex-1')} title={startedLabel}>
                                 <Icon name="time" className="size-3.5 shrink-0" aria-hidden="true" />
                                 <span className="truncate tabular-nums">{startedLabel}</span>
                               </span>
-                              <span className="inline-flex min-w-0 items-center gap-1.5" title={triggerLabel}>
+                              <span className={cn('inline-flex min-w-0 items-center gap-1.5', isMobilePanel && 'flex-1')} title={triggerLabel}>
                                 <Icon name={triggerIcon} className="size-3.5 shrink-0" aria-hidden="true" />
                                 <span className="truncate">{triggerLabel}</span>
                               </span>

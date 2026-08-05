@@ -85,6 +85,8 @@ describe('ScheduledTasksDialog queries', () => {
     expect(content).toContain('className="flex w-full min-w-0 items-start gap-3"');
     expect(content).toContain("t('sessions.scheduledTasks.history.openSession')");
     expect(content).toContain("isMobilePanel ? 'h-11 min-h-11' : 'h-7'");
+    expect(content).toContain("isMobilePanel && 'flex-nowrap gap-2'");
+    expect(content).toContain("isMobilePanel && 'flex-1'");
     // Text-only ghost button (keeps hover); no external-link glyph.
     expect(content).not.toContain('<Icon name="external-link" className="size-4" />');
     expect(content).toContain("divide-y divide-border/50 overflow-hidden rounded-xl border border-border/60");

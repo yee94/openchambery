@@ -22,6 +22,24 @@ import {
 /** Default Host turn budget for prepend (desktop history window). */
 export const SESSION_TURN_PAGE_TURNS = 3
 
+/**
+ * Bound a single Host turn-page HTTP flight. Over the Relay tunnel a stuck
+ * upstream `session.messages` scan otherwise leaves the request pending
+ * forever: prefetch status stays `loading`, the mobile "load older" button
+ * spins, and the page never settles. Timeout is retryable (transient), and a
+ * final failure settles prefetch as `error` so the UI can recover.
+ */
+const SESSION_TURN_PAGE_TIMEOUT_MS = 30_000
+
+const withTimeoutSignal = (signal: AbortSignal | undefined, timeoutMs: number): AbortSignal => {
+  if (!signal) return AbortSignal.timeout(timeoutMs)
+  // Caller signal wins for cancellation; timeout only bounds the flight.
+  if (typeof AbortSignal.any === 'function') {
+    return AbortSignal.any([signal, AbortSignal.timeout(timeoutMs)])
+  }
+  return signal
+}
+
 export type SessionTurnPageRecord = {
   info: Message
   parts?: Part[]
@@ -149,7 +167,7 @@ export async function fetchSessionTurnPage(
   const response = await runtimeFetch(path, {
     method: "GET",
     query,
-    signal: input.signal,
+    signal: withTimeoutSignal(input.signal, SESSION_TURN_PAGE_TIMEOUT_MS),
   })
 
   if (!response.ok) {
