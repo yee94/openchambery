@@ -151,6 +151,7 @@ class OpenChamberBridgeViewController: CAPBridgeViewController {
         bridge?.registerPluginInstance(OpenChamberHapticsPlugin())
         bridge?.registerPluginInstance(OpenChamberNavigationPlugin())
         bridge?.registerPluginInstance(OpenChamberVirtualAssetPlugin())
+        bridge?.registerPluginInstance(OpenChamberMediaPlugin())
         let sharePlugin = OpenChamberSharePlugin()
         self.sharePlugin = sharePlugin
         bridge?.registerPluginInstance(sharePlugin)

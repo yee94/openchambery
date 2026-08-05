@@ -26,6 +26,10 @@ export type BuildSessionTreeOptions = {
  * Pinned filtering happens after attachment. Project callers omit pinned roots
  * from the visible forest; children of those roots stay hidden only while the
  * parent is pinned (flat pin rows). Unpinning rebuilds the normal parent/child tree.
+ *
+ * Sessions with a parentID are never promoted to roots. If the parent is missing
+ * from this list, archived differently, or pinned-and-omitted, the child stays
+ * out of the forest entirely (subagents load only on expand).
  */
 export const buildSessionTree = (
   sessions: Session[],
@@ -46,6 +50,10 @@ export const buildSessionTree = (
     if (!parentID) return;
     const parentSession = sessionMap.get(parentID);
     if (!parentSession || isArchivedSession(parentSession) !== isArchivedSession(session)) {
+      return;
+    }
+    // Pinned parents render as flat rows; never nest children under them.
+    if (omitPinnedSessions && pinnedSessionIds.has(parentID)) {
       return;
     }
     const collection = childrenMap.get(parentID) ?? [];
@@ -70,15 +78,10 @@ export const buildSessionTree = (
       return false;
     }
     const parentID = getParentID(session);
-    if (!parentID) return true;
-    const parentSession = sessionMap.get(parentID);
-    if (!parentSession) return true;
-    // Parent is pinned and omitted from the project forest; pinned rows stay flat
-    // and do not render nested subagents. Keep those children hidden entirely.
-    if (omitPinnedSessions && pinnedSessionIds.has(parentID)) {
-      return false;
-    }
-    return isArchivedSession(parentSession) !== isArchivedSession(session);
+    // True roots only. Never promote an orphan subagent to the project list —
+    // missing/hidden/archived parents used to leak scheduled-task children here.
+    if (parentID) return false;
+    return true;
   });
 
   return roots.map((session) => buildNode(session));

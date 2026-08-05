@@ -68,6 +68,14 @@ export class MobileBackNavigationCoordinator {
   private history: MobileBackHistory | null;
   private removeHistoryListener: (() => void) | null = null;
   private programmaticHistoryBackToken: number | null = null;
+  /**
+   * Deferred history pops keyed by route id. React Strict Mode (and other
+   * remounts) run cleanup → re-register for the same id in one turn. Dropping
+   * history synchronously in cleanup then pushing again races the async
+   * history.back() and can dispatch the underlay route. Defer the pop and
+   * cancel it when the same id reclaims the entry.
+   */
+  private readonly pendingHistoryRemovals = new Map<string, number>();
   private animatedBackDriver: ((route: RegisteredMobileBackRoute) => boolean) | null = null;
   private presentationCancelDriver: (() => void) | null = null;
 
@@ -83,10 +91,27 @@ export class MobileBackNavigationCoordinator {
   getTopRoute = (): RegisteredMobileBackRoute | null => this.routes.at(-1) ?? null;
 
   register = (route: MobileBackRoute): (() => void) => {
-    const registered: RegisteredMobileBackRoute = { ...route, token: this.nextToken++ };
+    const pendingToken = this.pendingHistoryRemovals.get(route.id);
+    this.pendingHistoryRemovals.delete(route.id);
+
+    // Strict Mode remount: the prior cleanup deferred a history.back for this
+    // id and the browser is still on that entry — reclaim it instead of
+    // pushState + racing back (which used to pop the chat underlay).
+    const canReuseHistoryEntry = Boolean(
+      this.history
+      && pendingToken !== undefined
+      && historyToken(this.history.currentState()) === pendingToken,
+    );
+
+    const registered: RegisteredMobileBackRoute = {
+      ...route,
+      token: canReuseHistoryEntry && pendingToken !== undefined
+        ? pendingToken
+        : this.nextToken++,
+    };
     this.routes.push(registered);
     this.ensureHistoryListener();
-    if (this.history) {
+    if (this.history && !canReuseHistoryEntry) {
       this.history.pushState({
         ...(this.history.currentState() ?? {}),
         [MOBILE_BACK_HISTORY_KEY]: registered.token,
@@ -102,10 +127,27 @@ export class MobileBackNavigationCoordinator {
       if (index < 0) return;
       this.routes.splice(index, 1);
       if (this.history && historyToken(this.history.currentState()) === registered.token) {
-        this.programmaticHistoryBackToken = registered.token;
-        this.history.back();
+        this.pendingHistoryRemovals.set(registered.id, registered.token);
+        // Defer so a same-id re-register in this turn can cancel the pop.
+        queueMicrotask(() => {
+          const pending = this.pendingHistoryRemovals.get(registered.id);
+          if (pending !== registered.token) return;
+          this.pendingHistoryRemovals.delete(registered.id);
+          if (!this.history || historyToken(this.history.currentState()) !== registered.token) {
+            if (this.routes.length === 0 && this.pendingHistoryRemovals.size === 0) {
+              this.disposeHistoryListener();
+            }
+            return;
+          }
+          this.programmaticHistoryBackToken = registered.token;
+          this.history.back();
+          if (this.routes.length === 0 && this.pendingHistoryRemovals.size === 0) {
+            this.disposeHistoryListener();
+          }
+        });
+      } else if (this.routes.length === 0 && this.pendingHistoryRemovals.size === 0) {
+        this.disposeHistoryListener();
       }
-      if (this.routes.length === 0) this.disposeHistoryListener();
       this.notify();
     };
   };
@@ -156,12 +198,18 @@ export class MobileBackNavigationCoordinator {
   private ensureHistoryListener(): void {
     if (!this.history || this.removeHistoryListener) return;
     this.removeHistoryListener = this.history.subscribe((state) => {
-      const top = this.getTopRoute();
-      if (!top) return;
-      if (this.programmaticHistoryBackToken === top.token) {
+      // Unregister always splices the route out before calling history.back().
+      // The pending programmatic token is therefore never equal to the *new*
+      // top route — comparing only against top.token falsely treated that
+      // synthetic pop as a user back and dispatched the underlay (e.g. chat
+      // secondary page) when a short-lived overlay like image-preview cleaned
+      // up (React Strict Mode remount, open flicker). Clear and ignore once.
+      if (this.programmaticHistoryBackToken !== null) {
         this.programmaticHistoryBackToken = null;
         return;
       }
+      const top = this.getTopRoute();
+      if (!top) return;
       // A nested owner (for example Settings' split-detail history) may use
       // its own entry while retaining our token. Only pop when our marker was
       // actually removed, otherwise both owners would navigate at once.
@@ -180,6 +228,7 @@ export class MobileBackNavigationCoordinator {
     this.removeHistoryListener?.();
     this.removeHistoryListener = null;
     this.programmaticHistoryBackToken = null;
+    this.pendingHistoryRemovals.clear();
   }
 
   private notify(): void {

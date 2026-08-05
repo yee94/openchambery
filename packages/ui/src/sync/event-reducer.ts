@@ -211,6 +211,44 @@ export function applyGlobalProject(state: GlobalState, project: Project): Global
 // Caller MUST pass a mutable copy of State (e.g. structuredClone or spread).
 // ---------------------------------------------------------------------------
 
+function cleanupSessionCaches(
+  draft: State,
+  sessionID: string,
+  setSessionTodo?: (sessionID: string, todos: Todo[] | undefined) => void,
+) {
+  if (!sessionID) return
+  setSessionTodo?.(sessionID, undefined)
+  dropSessionCaches(draft, [sessionID])
+}
+
+/** Temporary SmartFetch model calls — safe to wipe when they leave the live list. */
+const shouldWipeCachesWhenHiddenFromList = (session: Session): boolean =>
+  session.title === "smartfetch-secondary"
+
+/**
+ * Remove a session from the live directory list without destroying its message
+ * stream unless it is a temporary SmartFetch secondary. Viewers of archived /
+ * system / subagent sessions keep SSE deltas after HTTP hydrate.
+ */
+function removeFromLiveDirectoryList(
+  draft: State,
+  info: Session,
+  result: { found: boolean; index: number },
+  setSessionTodo?: (sessionID: string, todos: Todo[] | undefined) => void,
+): boolean {
+  // Never entered the live list — no list mutation. Message caches stay
+  // (viewers may already be streaming into them via open-by-id).
+  if (!result.found) return false
+  draft.session.splice(result.index, 1)
+  // Temporary SmartFetch secondaries must not leave message/part residue after
+  // a flash insert; system/subagent/archived keep their stream caches.
+  if (shouldWipeCachesWhenHiddenFromList(info)) {
+    cleanupSessionCaches(draft, info.id, setSessionTodo)
+  }
+  if (!info.parentID) draft.sessionTotal = Math.max(0, draft.sessionTotal - 1)
+  return true
+}
+
 export function applyDirectoryEvent(
   draft: State,
   event: Event,
@@ -231,15 +269,11 @@ export function applyDirectoryEvent(
       const info = stripSessionDiffSnapshots((event.properties as { info: Session }).info)
       const sessions = draft.session
       const result = Binary.search(sessions, info.id, (s) => s.id)
-      // Temporary SmartFetch secondary sessions must never enter the live
-      // directory list; otherwise the sidebar merges them in for a flash
-      // before session.deleted arrives.
+      // Catalog hide ≠ message-cache lifetime. System/subagent/archived sessions
+      // stay off the live directory list but keep streaming caches while open.
+      // Only temporary SmartFetch secondaries wipe caches when they leave the list.
       if (!isVisibleGlobalSession(info)) {
-        if (!result.found) return false
-        sessions.splice(result.index, 1)
-        cleanupSessionCaches(draft, info.id, callbacks?.onSetSessionTodo)
-        if (!info.parentID) draft.sessionTotal = Math.max(0, draft.sessionTotal - 1)
-        return true
+        return removeFromLiveDirectoryList(draft, info, result, callbacks?.onSetSessionTodo)
       }
       if (result.found && shouldSkipStaleSessionEvent(sessions[result.index], info)) {
         return false
@@ -266,21 +300,12 @@ export function applyDirectoryEvent(
         return false
       }
 
-      // Same title blacklist as the global sessions store: never surface
-      // temporary SmartFetch secondary sessions in the live directory list.
-      if (!isVisibleGlobalSession(info)) {
-        if (!result.found) return false
-        sessions.splice(result.index, 1)
-        cleanupSessionCaches(draft, info.id, callbacks?.onSetSessionTodo)
-        if (!info.parentID) draft.sessionTotal = Math.max(0, draft.sessionTotal - 1)
-        return true
-      }
-
-      if (info.time.archived) {
-        if (result.found) sessions.splice(result.index, 1)
-        cleanupSessionCaches(draft, info.id, callbacks?.onSetSessionTodo)
-        if (!info.parentID) draft.sessionTotal = Math.max(0, draft.sessionTotal - 1)
-        return true
+      // Sidebar/live-list hide only. Do not drop message/part/status for
+      // system-owned, subagent, or archived sessions — scheduled tasks and
+      // assistants archive before/while prompting, and wiping caches is what
+      // made in-progress viewing look nothing like a normal live session.
+      if (!isVisibleGlobalSession(info) || info.time.archived) {
+        return removeFromLiveDirectoryList(draft, info, result, callbacks?.onSetSessionTodo)
       }
 
       if (result.found) {
@@ -600,14 +625,4 @@ function trimSessions(draft: State) {
     if (hasPermission.has(candidate.id)) break
     draft.session.shift()
   }
-}
-
-function cleanupSessionCaches(
-  draft: State,
-  sessionID: string,
-  setSessionTodo?: (sessionID: string, todos: Todo[] | undefined) => void,
-) {
-  if (!sessionID) return
-  setSessionTodo?.(sessionID, undefined)
-  dropSessionCaches(draft, [sessionID])
 }

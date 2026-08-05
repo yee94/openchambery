@@ -73,7 +73,10 @@
   update those rows, while config/path/session bootstrap remains owned by the
   active chat instead of fanning out across every visible sidebar directory.
   Selecting a session never fetches its children; child sessions are loaded only
-  when the user expands the parent tree control.
+  when the user expands the parent tree control. Sessions with a `parentID` are
+  never promoted to project roots — if the parent is missing, archived
+  differently, system-owned (e.g. scheduled-task), or pinned-and-omitted, the
+  child stays hidden instead of leaking into the main list.
 - Tray status is event-first. Its startup/reconnect compensation waits for an
   established OpenCode connection, coalesces overlapping refreshes, and queries
   at most two directories concurrently; the 30-second poll is only a missed-event

@@ -35,10 +35,25 @@ export const isSystemOwnedSession = (
     return false;
 };
 
+const getSessionParentID = (
+    session: { parentID?: string | null },
+): string | null => {
+    const parentID = session.parentID;
+    return typeof parentID === 'string' && parentID.trim() ? parentID : null;
+};
+
 export const isVisibleGlobalSession = (
-    session: Pick<Session, 'title'> & { metadata?: Session['metadata'] | Record<string, unknown> | null },
+    session: Pick<Session, 'title'> & {
+        parentID?: string | null;
+        metadata?: Session['metadata'] | Record<string, unknown> | null;
+    },
 ): boolean => {
     if (HIDDEN_SESSION_TITLES.has(session.title)) return false;
+    // Subagent/child sessions never belong in the sidebar root catalog. They
+    // load only when the user expands a parent tree node; promoting orphans
+    // (parent archived, system-owned, or simply missing from this list) is how
+    // scheduled-task subagents used to leak into the project list.
+    if (getSessionParentID(session)) return false;
     if (isSystemOwnedSession(session)) return false;
     return true;
 };

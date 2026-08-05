@@ -207,6 +207,12 @@ describe("applyDirectoryEvent", () => {
     const draft = state({
       session: [buildSession("visible", { created: 1, updated: 10 })],
       sessionTotal: 1,
+      message: {
+        ses_1: [{ id: "msg_1", sessionID: "ses_1", role: "assistant", time: { created: 1 } } as Message],
+      },
+      part: {
+        msg_1: [{ id: "prt_1", messageID: "msg_1", sessionID: "ses_1", type: "text", text: "x" } as Part],
+      },
     })
 
     expect(applyDirectoryEvent(draft, {
@@ -217,6 +223,85 @@ describe("applyDirectoryEvent", () => {
     } as Event)).toBe(true)
     expect(draft.session).toEqual([])
     expect(draft.sessionTotal).toBe(0)
+    // SmartFetch secondaries still wipe caches so they cannot flash content.
+    expect(draft.message.ses_1).toBe(undefined)
+    expect(draft.part.msg_1).toBe(undefined)
+  })
+
+  test("keeps streaming caches when a session is archived mid-run", () => {
+    const user = { id: "msg_user", sessionID: "ses_1", role: "user", time: { created: 1 } } as Message
+    const assistant = { id: "msg_assistant", sessionID: "ses_1", role: "assistant", time: { created: 2 } } as Message
+    const parts = [{ id: "prt_1", messageID: assistant.id, sessionID: "ses_1", type: "text", text: "streaming" } as Part]
+    const draft = state({
+      session: [buildSession("Scheduled run", { created: 1, updated: 10 })],
+      sessionTotal: 1,
+      message: { ses_1: [user, assistant] },
+      part: { [assistant.id]: parts },
+      session_status: { ses_1: { type: "busy" } as SessionStatus },
+    })
+
+    expect(applyDirectoryEvent(draft, {
+      type: "session.updated",
+      properties: {
+        info: buildSession("Scheduled run", { created: 1, updated: 20, archived: 20 }),
+      },
+    } as Event)).toBe(true)
+
+    expect(draft.session).toEqual([])
+    expect(draft.sessionTotal).toBe(0)
+    expect(draft.message.ses_1).toEqual([user, assistant])
+    expect(draft.part[assistant.id]).toBe(parts)
+    expect(draft.session_status.ses_1).toEqual({ type: "busy" })
+  })
+
+  test("keeps streaming caches for system-owned scheduled sessions", () => {
+    const assistant = { id: "msg_assistant", sessionID: "ses_1", role: "assistant", time: { created: 2 } } as Message
+    const parts = [{ id: "prt_1", messageID: assistant.id, sessionID: "ses_1", type: "text", text: "working" } as Part]
+    const draft = state({
+      session: [buildSession("Daily report", { created: 1, updated: 10 })],
+      sessionTotal: 1,
+      message: { ses_1: [assistant] },
+      part: { [assistant.id]: parts },
+    })
+
+    const systemSession = {
+      ...buildSession("Daily report", { created: 1, updated: 20, archived: 20 }),
+      metadata: { openchamber: { scheduledTask: { taskID: "task_1" } } },
+    } as Session
+
+    expect(applyDirectoryEvent(draft, {
+      type: "session.updated",
+      properties: { info: systemSession },
+    } as Event)).toBe(true)
+
+    expect(draft.session).toEqual([])
+    expect(draft.message.ses_1).toEqual([assistant])
+    expect(draft.part[assistant.id]).toBe(parts)
+  })
+
+  test("keeps streaming caches for subagent sessions with parentID", () => {
+    const assistant = { id: "msg_child", sessionID: "ses_1", role: "assistant", time: { created: 2 } } as Message
+    const parts = [{ id: "prt_1", messageID: assistant.id, sessionID: "ses_1", type: "text", text: "sub" } as Part]
+    const draft = state({
+      session: [{ ...buildSession("SA-1", { created: 1, updated: 10 }), parentID: "ses_parent" } as Session],
+      sessionTotal: 0,
+      message: { ses_1: [assistant] },
+      part: { [assistant.id]: parts },
+    })
+
+    expect(applyDirectoryEvent(draft, {
+      type: "session.updated",
+      properties: {
+        info: {
+          ...buildSession("SA-1", { created: 1, updated: 20 }),
+          parentID: "ses_parent",
+        } as Session,
+      },
+    } as Event)).toBe(true)
+
+    expect(draft.session).toEqual([])
+    expect(draft.message.ses_1).toEqual([assistant])
+    expect(draft.part[assistant.id]).toBe(parts)
   })
 
   test("applies part update without materialization when owning message exists", () => {

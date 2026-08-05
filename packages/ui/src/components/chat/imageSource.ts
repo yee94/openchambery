@@ -101,6 +101,17 @@ export const releaseRuntimeImageObjectUrl = (url: string): void => {
 
 export const isRelayTransport = (transportIdentity: string): boolean => transportIdentity.startsWith('relay:');
 
+/**
+ * Local file paths and file:// URLs cannot be assigned to img.src under web /
+ * packaged desktop (openchamber-ui://) or Capacitor origins. Always materialize
+ * them through the runtime file stream (blob URL or openchamber-asset://).
+ */
+export const needsRuntimeImageStream = (
+  resolved: ReturnType<typeof resolveImageSource>,
+): resolved is { kind: 'runtime-file'; source: string; path: string } => (
+  resolved.kind === 'runtime-file' && Boolean(resolved.path)
+);
+
 const subscribeTransport = (onStoreChange: () => void): (() => void) => (
   subscribeRuntimeEndpointChanged(() => onStoreChange())
 );
@@ -115,24 +126,21 @@ export const useResolvedImageSource = (source: string, effectiveDirectory: strin
     () => resolveImageSource(source, effectiveDirectory),
     [effectiveDirectory, source],
   );
-  const usesRelayFileSource = isRelayTransport(transportIdentity) && resolved.kind === 'runtime-file';
+  const usesRuntimeFileSource = needsRuntimeImageStream(resolved);
   const resolutionKey = `${transportIdentity}\n${effectiveDirectory}\n${source}`;
-  const immediateSource = usesRelayFileSource ? '' : resolved.source;
+  const immediateSource = usesRuntimeFileSource ? '' : resolved.source;
   const [display, setDisplay] = React.useState({
     key: resolutionKey,
     source: immediateSource,
   });
 
   React.useEffect(() => {
-    if (!usesRelayFileSource || resolved.kind !== 'runtime-file') {
+    if (!usesRuntimeFileSource || !needsRuntimeImageStream(resolved)) {
       setDisplay({ key: resolutionKey, source: resolved.source });
       return;
     }
 
     setDisplay({ key: resolutionKey, source: '' });
-    if (!resolved.path) {
-      return;
-    }
 
     const controller = new AbortController();
     let objectUrl = '';
@@ -153,7 +161,7 @@ export const useResolvedImageSource = (source: string, effectiveDirectory: strin
         releaseRuntimeImageObjectUrl(objectUrl);
       }
     };
-  }, [resolutionKey, resolved, transportIdentity, usesRelayFileSource]);
+  }, [resolutionKey, resolved, transportIdentity, usesRuntimeFileSource]);
 
   return display.key === resolutionKey ? display.source : immediateSource;
 };

@@ -43,7 +43,9 @@ import { createMermaidViewerRegistry, MERMAID_BLOCK_SELECTOR, shouldRefreshMerma
 import { scheduleAfterPaintTask } from '@/lib/afterPaintTaskQueue';
 import { DualLimitLru } from '@/lib/dualLimitLru';
 import { resolveStreamingRenderCadence } from './streamingRenderCadence';
-import { fetchRuntimeImageObjectUrl, isRelayTransport, releaseRuntimeImageObjectUrl, resolveImageSource } from './imageSource';
+import { createMobileLongPressController } from '@/components/ui/mobileLongPress';
+import { openImageSaveActions } from './imageSaveActionsBus';
+import { fetchRuntimeImageObjectUrl, needsRuntimeImageStream, releaseRuntimeImageObjectUrl, resolveImageSource } from './imageSource';
 import { getRuntimeTransportIdentity } from '@/lib/runtime-switch';
 import {
   BLOCK_PATH_TOKEN_RE,
@@ -178,32 +180,9 @@ const useMarkdownImageInteractions = ({
       });
     };
 
-    if (!isRelayTransport(transportIdentity)) {
-      const handleDirectClick = (event: MouseEvent) => {
-        const target = event.target;
-        if (!(target instanceof Element)) return;
-        const image = target.closest<HTMLImageElement>(MARKDOWN_IMAGE_SELECTOR);
-        if (!image) return;
-        event.preventDefault();
-        event.stopPropagation();
-        openImage(image);
-      };
-      const handleDirectKeyDown = (event: KeyboardEvent) => {
-        if (event.key !== 'Enter' && event.key !== ' ') return;
-        const target = event.target;
-        if (!(target instanceof HTMLImageElement) || !target.matches(MARKDOWN_IMAGE_SELECTOR)) return;
-        event.preventDefault();
-        event.stopPropagation();
-        openImage(target);
-      };
-      container.addEventListener('click', handleDirectClick);
-      container.addEventListener('keydown', handleDirectKeyDown);
-      return () => {
-        container.removeEventListener('click', handleDirectClick);
-        container.removeEventListener('keydown', handleDirectKeyDown);
-      };
-    }
-
+    // Runtime-file images (file://, absolute paths) must stream through the
+    // runtime API on every transport — packaged Electron and local web both
+    // block raw file:// img.src. Direct http(s)/data/blob images stay as-is.
     const images = new Map<HTMLImageElement, RelayImageState>();
 
     const clearImage = (image: HTMLImageElement) => {
@@ -219,7 +198,7 @@ const useMarkdownImageInteractions = ({
     const getImageKey = (image: HTMLImageElement): string | undefined => {
       const source = getMarkdownImageSource(image);
       const resolved = resolveImageSource(source, effectiveDirectory);
-      if (resolved.kind !== 'runtime-file' || !resolved.path) {
+      if (!needsRuntimeImageStream(resolved)) {
         return undefined;
       }
       return `${transportIdentity}\n${effectiveDirectory}\n${source}`;
@@ -250,7 +229,7 @@ const useMarkdownImageInteractions = ({
 
       const source = getMarkdownImageSource(image);
       const resolved = resolveImageSource(source, effectiveDirectory);
-      if (resolved.kind !== 'runtime-file' || !resolved.path) {
+      if (!needsRuntimeImageStream(resolved)) {
         clearImage(image);
         return;
       }
@@ -309,11 +288,33 @@ const useMarkdownImageInteractions = ({
       }
       openImage(image);
     };
+
+    const openSaveForImage = (image: HTMLImageElement) => {
+      const source = getMarkdownImageSource(image);
+      if (!source) return;
+      openImageSaveActions({
+        sourceUrl: source,
+        displayUrl: image.currentSrc || image.src || undefined,
+        filename: image.alt || source,
+        effectiveDirectory,
+      });
+    };
+
+    const longPress = createMobileLongPressController();
+    const imagePressKey = (image: HTMLImageElement): string => (
+      getMarkdownImageSource(image) || image.src || 'markdown-image'
+    );
+
     const handleClick = (event: MouseEvent) => {
       const target = event.target;
       if (!(target instanceof Element)) return;
       const image = target.closest<HTMLImageElement>(MARKDOWN_IMAGE_SELECTOR);
       if (!image) return;
+      if (longPress.consumeClick(imagePressKey(image))) {
+        event.preventDefault();
+        event.stopPropagation();
+        return;
+      }
       event.preventDefault();
       event.stopPropagation();
       activateImage(image);
@@ -326,13 +327,57 @@ const useMarkdownImageInteractions = ({
       event.stopPropagation();
       activateImage(target);
     };
+    const handlePointerDown = (event: PointerEvent) => {
+      if (event.pointerType === 'mouse' && event.button !== 0) return;
+      const target = event.target;
+      if (!(target instanceof Element)) return;
+      const image = target.closest<HTMLImageElement>(MARKDOWN_IMAGE_SELECTOR);
+      if (!image) return;
+      longPress.start({
+        pointerId: event.pointerId,
+        key: imagePressKey(image),
+        clientX: event.clientX,
+        clientY: event.clientY,
+        onTrigger: () => openSaveForImage(image),
+      });
+    };
+    const handlePointerMove = (event: PointerEvent) => {
+      longPress.move(event.pointerId, event.clientX, event.clientY);
+    };
+    const handlePointerUp = (event: PointerEvent) => {
+      longPress.end(event.pointerId);
+    };
+    const handlePointerCancel = (event: PointerEvent) => {
+      longPress.cancel(event.pointerId);
+    };
+    const handleContextMenu = (event: MouseEvent) => {
+      const target = event.target;
+      if (!(target instanceof Element)) return;
+      const image = target.closest<HTMLImageElement>(MARKDOWN_IMAGE_SELECTOR);
+      if (!image) return;
+      event.preventDefault();
+      event.stopPropagation();
+      longPress.openFromContextMenu(imagePressKey(image), () => openSaveForImage(image));
+    };
+
     container.addEventListener('click', handleClick);
     container.addEventListener('keydown', handleKeyDown);
+    container.addEventListener('pointerdown', handlePointerDown);
+    container.addEventListener('pointermove', handlePointerMove);
+    container.addEventListener('pointerup', handlePointerUp);
+    container.addEventListener('pointercancel', handlePointerCancel);
+    container.addEventListener('contextmenu', handleContextMenu);
 
     return () => {
       reconcileRef.current = () => {};
+      longPress.reset();
       container.removeEventListener('click', handleClick);
       container.removeEventListener('keydown', handleKeyDown);
+      container.removeEventListener('pointerdown', handlePointerDown);
+      container.removeEventListener('pointermove', handlePointerMove);
+      container.removeEventListener('pointerup', handlePointerUp);
+      container.removeEventListener('pointercancel', handlePointerCancel);
+      container.removeEventListener('contextmenu', handleContextMenu);
       for (const image of Array.from(images.keys())) {
         if (container.contains(image)) {
           setMarkdownImagePlaceholder(image);

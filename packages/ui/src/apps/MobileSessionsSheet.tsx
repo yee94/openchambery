@@ -880,8 +880,9 @@ export const MobileSessionsSheet: React.FC<MobileSessionsSheetProps> = ({ open, 
     const bucketKey = `${node.project.id}::${bucket.key}`;
     const defaultVisible = getMobileSessionDefaultVisibleCount();
 
-    // Group children by parent within this bucket, and treat sessions whose parent
-    // is not in this bucket as top-level so nothing is hidden.
+    // Group children by parent within this bucket. Sessions with a parentID that
+    // is not in this bucket are hidden (not promoted to roots) — orphan subagents
+    // of archived/system parents must never surface as top-level rows.
     const idsInBucket = new Set(bucket.sessions.map((entry) => entry.id));
     const childrenByParent = new Map<string, Session[]>();
     for (const candidate of bucket.sessions) {
@@ -894,7 +895,7 @@ export const MobileSessionsSheet: React.FC<MobileSessionsSheetProps> = ({ open, 
     }
     const roots = bucket.sessions.filter((entry) => {
       const parentId = getParentId(entry);
-      return !parentId || !idsInBucket.has(parentId);
+      return !parentId;
     });
 
     const visibleCount = visibleCountByBucket.get(bucketKey) ?? defaultVisible;

@@ -131,10 +131,22 @@ them before `session.deleted` arrives. The same title blacklist is shared with
 `useGlobalSessionsStore` and the server session index. System sessions are also
 hidden from ordinary active/archived lists by authoritative metadata only: a
 non-empty `metadata.openchamber.assistant.assistantID` or
-`metadata.openchamber.scheduledTask.taskID`. Title prefixes never participate in
-this check. Metadata is ownership/isolation; `time.archived` is archive state;
-titles are human labels. Direct open by sessionID+directory is unaffected.
-Assistant history and scheduled-task source surfaces remain the entry points.
+`metadata.openchamber.scheduledTask.taskID`. Sessions with a non-empty
+`parentID` are also excluded from the root catalog (`isVisibleGlobalSession`
+and `aggregateLiveSessions`); they never promote to sidebar roots when the
+parent is missing, archived, or system-owned. Title prefixes never participate
+in this check. Metadata is ownership/isolation; `time.archived` is archive
+state; titles are human labels. Direct open by sessionID+directory is
+unaffected. Assistant history and scheduled-task source surfaces remain the
+entry points.
+
+Catalog visibility must not destroy live message caches. `session.created` /
+`session.updated` remove system, subagent, and archived sessions from the live
+directory list only; they do **not** call `dropSessionCaches` for those rows.
+Wiping message/part/status on hide is reserved for temporary SmartFetch
+secondaries and for `session.deleted`. Scheduled tasks and assistants archive
+while still streaming — wiping on archive is what made mid-run viewing look
+nothing like a normal live session.
 
 `useCurrentSessionEntity(sessionID)` owns current-session entity resolution for the desktop Header and mobile Header. It prioritizes the matching cross-directory live session, then the matching global active session. A resolved entity remains available for two seconds during a brief source gap; clearing or changing the session ID immediately clears that fallback.
 

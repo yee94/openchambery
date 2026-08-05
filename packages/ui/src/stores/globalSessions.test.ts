@@ -143,6 +143,20 @@ describe('listGlobalSessionPages', () => {
     expect(isVisibleGlobalSession({ title: 'smartfetch-secondary' } as never)).toBe(false)
   })
 
+  test('hides subagent sessions with a parentID from the sidebar catalog', () => {
+    expect(isVisibleGlobalSession({
+      title: 'SA-1 事项总结梳理 (@explorer subagent)',
+      parentID: 'ses_parent_scheduled',
+    } as never)).toBe(false)
+    expect(isVisibleGlobalSession({
+      title: 'Ordinary chat',
+      parentID: '',
+    } as never)).toBe(true)
+    expect(isVisibleGlobalSession({
+      title: 'Ordinary chat',
+    } as never)).toBe(true)
+  })
+
   test('excludes SmartFetch secondary sessions while continuing pagination', async () => {
     const calls: Array<{ cursor?: number }> = []
     const apiClient = {

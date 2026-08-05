@@ -39,6 +39,8 @@
 	<string>OpenChamber uses the camera to scan a server's pairing QR code.</string>
 	<key>NSMicrophoneUsageDescription</key>
 	<string>OpenChamber uses the microphone for voice dictation in the chat composer.</string>
+	<key>NSPhotoLibraryAddUsageDescription</key>
+	<string>OpenChamber saves images from chat into your photo library when you choose Save to Photos.</string>
 	<key>NSUserActivityTypes</key>
 	<array>
 		<string>INSendMessageIntent</string>

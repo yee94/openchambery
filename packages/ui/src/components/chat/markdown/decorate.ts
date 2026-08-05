@@ -3,7 +3,7 @@ import { getExternalFaviconUrl, isExternalHttpUrl, isLoopbackHttpUrl } from '@/l
 import type { IconName } from '@/components/icon/icons';
 import { parseCodeFenceInfo } from './codeFenceInfo';
 import { getMermaidViewerController } from './mermaidViewer';
-import { isRelayTransport, resolveImageSource } from '../imageSource';
+import { needsRuntimeImageStream, resolveImageSource } from '../imageSource';
 
 // ---------------------------------------------------------------------------
 // Shared decoration context
@@ -534,7 +534,7 @@ export const clearMarkdownImagePlaceholder = (image: HTMLImageElement): void => 
 };
 
 export const decorateMarkdownImages = (root: HTMLElement, ctx: DecorateContext): void => {
-  if (!ctx.imagePreviewEnabled || !isRelayTransport(ctx.imageTransportIdentity)) {
+  if (!ctx.imagePreviewEnabled) {
     return;
   }
 
@@ -542,7 +542,9 @@ export const decorateMarkdownImages = (root: HTMLElement, ctx: DecorateContext):
   for (const image of Array.from(images)) {
     const source = image.getAttribute('data-md-image-source') ?? image.getAttribute('src') ?? '';
     const resolved = resolveImageSource(source, ctx.imageEffectiveDirectory);
-    if (resolved.kind !== 'runtime-file') continue;
+    // Only host/runtime file paths need placeholders + streamed display URLs.
+    // Browser-native http(s)/data/blob sources keep the direct img path.
+    if (!needsRuntimeImageStream(resolved)) continue;
 
     image.classList.add(...MARKDOWN_IMAGE_CLASS, ...MARKDOWN_IMAGE_INTERACTIVE_CLASS);
     image.setAttribute('role', 'button');

@@ -154,6 +154,63 @@ describe('MobileBackNavigationCoordinator', () => {
     expect(calls).toBe(0);
     remove();
   });
+
+  test('unregister cleanup history.back does not dispatch the underlay route', async () => {
+    // Overlay routes (image-preview) push H5 history; React Strict Mode or a
+    // remount unregisters them with history.back(). That pop must not call the
+    // chat secondary / underlay onBack (which would exit the whole session).
+    const harness = historyHarness();
+    const calls: string[] = [];
+    const coordinator = new MobileBackNavigationCoordinator(harness.history);
+    const removeRoot = coordinator.register(route('chat', () => {
+      calls.push('chat');
+    }));
+    const removeOverlay = coordinator.register(route('image-preview', () => {
+      calls.push('image-preview');
+    }, 'overlay'));
+
+    expect(harness.entries).toHaveLength(3);
+    removeOverlay();
+    await Promise.resolve();
+    expect(harness.entries).toHaveLength(2);
+    expect(calls).toEqual([]);
+
+    harness.history.back();
+    expect(calls).toEqual(['chat']);
+    removeRoot();
+  });
+
+  test('Strict Mode cleanup+remount of the same id reuses history and never pops the underlay', async () => {
+    const harness = historyHarness();
+    const calls: string[] = [];
+    const coordinator = new MobileBackNavigationCoordinator(harness.history);
+    coordinator.register(route('chat', () => {
+      calls.push('chat');
+    }));
+
+    const first = coordinator.register(route('image-preview', () => {
+      calls.push('image-preview-1');
+    }, 'overlay'));
+    expect(harness.entries).toHaveLength(3);
+
+    // Simulate React Strict Mode: cleanup then re-register same id in one turn.
+    first();
+    const second = coordinator.register(route('image-preview', () => {
+      calls.push('image-preview-2');
+    }, 'overlay'));
+    await Promise.resolve();
+
+    // One history entry for the overlay, underlay never invoked.
+    expect(harness.entries).toHaveLength(3);
+    expect(calls).toEqual([]);
+    expect(coordinator.getTopRoute()?.id).toBe('image-preview');
+
+    // Real browser back still closes the overlay only.
+    harness.history.back();
+    expect(calls).toEqual(['image-preview-2']);
+    second();
+    await Promise.resolve();
+  });
 });
 
 test('settling commits queue and drain one pop at a time', () => {

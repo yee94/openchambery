@@ -2,7 +2,7 @@ import { describe, expect, test } from 'bun:test';
 import { readFileSync } from 'node:fs';
 import { dirname, join } from 'node:path';
 import { fileURLToPath } from 'node:url';
-import { isRelayTransport, resolveImageSource } from './imageSource';
+import { isRelayTransport, needsRuntimeImageStream, resolveImageSource } from './imageSource';
 
 const sourceDirectory = dirname(fileURLToPath(import.meta.url));
 const helperSource = readFileSync(join(sourceDirectory, 'imageSource.ts'), 'utf8');
@@ -78,14 +78,23 @@ describe('resolveImageSource', () => {
 });
 
 describe('isRelayTransport', () => {
-  test('gates runtime file reads to the relay transport', () => {
+  test('identifies relay transport identities', () => {
     expect(isRelayTransport('direct:url:http://127.0.0.1:4096')).toBe(false);
     expect(isRelayTransport('relay:{"serverId":"srv_123"}')).toBe(true);
   });
 });
 
+describe('needsRuntimeImageStream', () => {
+  test('streams every runtime-file source, including local Electron file URLs', () => {
+    expect(needsRuntimeImageStream(resolveImageSource('file:///tmp/photo.png', '/workspace'))).toBe(true);
+    expect(needsRuntimeImageStream(resolveImageSource('/var/tmp/photo.png', '/workspace'))).toBe(true);
+    expect(needsRuntimeImageStream(resolveImageSource('https://example.com/a.png', '/workspace'))).toBe(false);
+    expect(needsRuntimeImageStream(resolveImageSource('data:image/png;base64,AA', '/workspace'))).toBe(false);
+  });
+});
+
 describe('image source contracts', () => {
-  test('loads local images through relay-aware runtimeFetch and cleans object URLs', () => {
+  test('loads local images through runtimeFetch and cleans object URLs on every transport', () => {
     expect(helperSource).toContain("from '@/lib/relay/relay-image-stream'");
     expect(helperSource).toContain('streamRelayImageDisplayUrl');
     expect(helperSource).toContain('releaseRelayImageDisplayUrl');
@@ -95,20 +104,22 @@ describe('image source contracts', () => {
     expect(helperSource).toContain("signal.addEventListener('abort'");
     expect(helperSource).toContain('subscribeRuntimeEndpointChanged');
     expect(helperSource).toContain('getRuntimeTransportIdentity');
-    expect(helperSource).toContain("isRelayTransport(transportIdentity) && resolved.kind === 'runtime-file'");
+    expect(helperSource).toContain('needsRuntimeImageStream(resolved)');
+    expect(helperSource).toContain('const usesRuntimeFileSource = needsRuntimeImageStream(resolved)');
     expect(helperSource).toContain('controller.abort()');
     expect(helperSource).toContain('releaseRuntimeImageObjectUrl(objectUrl)');
     expect(helperSource).toContain('releaseRuntimeImageObjectUrl(nextObjectUrl)');
   });
 
-  test('keeps direct Markdown images on the browser path and auto-loads relay-local placeholders on first paint', () => {
+  test('streams runtime-file Markdown images on every transport and keeps http(s)/data direct', () => {
     expect(decorateSource).toContain("data-md-link-favicon");
     expect(markdownCoreSource).toContain("DOMPurify.addHook('uponSanitizeAttribute'");
     expect(markdownCoreSource).toContain("node.setAttribute('data-md-image-source', source)");
     expect(markdownCoreSource).toContain('data.keepAttr = false');
     expect(decorateSource).not.toContain('decorateMessageImages');
     expect(rendererSource).toContain('img:not([data-md-link-favicon="true"])');
-    expect(rendererSource).toContain('if (!isRelayTransport(transportIdentity))');
+    expect(rendererSource).not.toContain('if (!isRelayTransport(transportIdentity))');
+    expect(rendererSource).toContain('needsRuntimeImageStream(resolved)');
     expect(rendererSource).not.toContain('IntersectionObserver');
     expect(rendererSource).toContain('React.useLayoutEffect(() => {');
     expect(rendererSource).toContain('const activateImage = (image: HTMLImageElement)');
@@ -131,10 +142,12 @@ describe('image source contracts', () => {
     expect(stylesSource).toContain("img[data-md-image-state='loading']");
     expect(stylesSource).toContain("[data-md-image-loading-badge='true']");
     expect(decorateSource).toContain('setMarkdownImagePlaceholder(image)');
-    expect(decorateSource).toContain('if (!ctx.imagePreviewEnabled || !isRelayTransport(ctx.imageTransportIdentity))');
+    expect(decorateSource).toContain('if (!ctx.imagePreviewEnabled)');
+    expect(decorateSource).toContain('if (!needsRuntimeImageStream(resolved)) continue');
+    expect(decorateSource).not.toContain('isRelayTransport(ctx.imageTransportIdentity)');
     const decorateImagesStart = decorateSource.indexOf('export const decorateMarkdownImages');
     const imageScanStart = decorateSource.indexOf('root.querySelectorAll<HTMLImageElement>(MARKDOWN_IMAGE_SELECTOR)', decorateImagesStart);
-    expect(decorateSource.indexOf('if (!ctx.imagePreviewEnabled || !isRelayTransport(ctx.imageTransportIdentity))', decorateImagesStart)).toBeLessThan(imageScanStart);
+    expect(decorateSource.indexOf('if (!ctx.imagePreviewEnabled)', decorateImagesStart)).toBeLessThan(imageScanStart);
     expect(decorateSource).toContain("'focus-visible:outline-[var(--interactive-focus-ring)]'");
     expect(decorateSource).toContain("'rounded-xl'");
     expect(decorateSource).toContain("'border-border/80'");
@@ -147,6 +160,8 @@ describe('image source contracts', () => {
     expect(imageHook).toContain('const ensureImageState = (image: HTMLImageElement)');
     expect(imageHook).toContain('images.set(image, state)');
     expect(imageHook).toContain('reconcileRef.current = (root)');
+    expect(imageHook).toContain('openImageSaveActions');
+    expect(imageHook).toContain('createMobileLongPressController');
     const imageReconcileStart = imageHook.indexOf('reconcileRef.current = (root)');
     const imageReconcileEnd = imageHook.indexOf('const activateImage', imageReconcileStart);
     const imageReconcile = imageHook.slice(imageReconcileStart, imageReconcileEnd);
@@ -156,12 +171,7 @@ describe('image source contracts', () => {
     expect(imageReconcile).toContain('loadImage(image, state)');
     expect(imageReconcile).toContain('if (state && !state.objectUrl)');
     expect(rendererSource.match(/reconcileMarkdownImageResources\(target\);/g)).toHaveLength(3);
-    const directBranchStart = rendererSource.indexOf('if (!isRelayTransport(transportIdentity))');
-    const relayRegistryStart = rendererSource.indexOf('const images = new Map<HTMLImageElement, RelayImageState>()', directBranchStart);
-    const directBranch = rendererSource.slice(directBranchStart, relayRegistryStart);
-    expect(directBranch).not.toContain('MutationObserver');
-    expect(directBranch).not.toContain('fetchRuntimeImageObjectUrl');
-    expect(directBranch).not.toContain('URL.createObjectURL');
+    expect(rendererSource).toContain('const images = new Map<HTMLImageElement, RelayImageState>()');
     expect(rendererSource).toContain("event.key !== 'Enter' && event.key !== ' '");
     expect(rendererSource).toContain("metadata: { tool: 'image-preview', filename }");
     expect(rendererSource).toContain('image: { url: selectedSource');
@@ -227,6 +237,16 @@ describe('image source contracts', () => {
     expect(viewerSource).toContain('onClick={consumeViewerClick}');
     expect(viewerSource).toContain("if (isMobile && gesture.pointerType !== 'mouse')");
     expect(viewerSource).toContain('closeImageViewerAfterMobileTap(point, () => onOpenChange(false))');
-    expect(viewerSource).toContain('closeImageViewerAfterMobileTap(point, () => onOpenChange(false));\n                    return;');
+    expect(viewerSource).toMatch(/closeImageViewerAfterMobileTap\(point, \(\) => onOpenChange\(false\)\);\s*return;/);
+  });
+
+  test('registers mobile back to dismiss fullscreen preview without leaving chat', () => {
+    expect(dialogSource).toContain("import { useMobileBackRoute } from '@/mobile/mobileBackNavigation'");
+    expect(dialogSource).toContain("id: 'image-preview'");
+    expect(dialogSource).toContain('active: popup.open && isMobile');
+    expect(dialogSource).toContain("layer: 'overlay'");
+    expect(dialogSource).toContain('openImageSaveActions');
+    expect(dialogSource).toContain('IMAGE_VIEWER_LONG_PRESS_MS');
+    expect(dialogSource).toContain('onContextMenu={handleContextMenu}');
   });
 });

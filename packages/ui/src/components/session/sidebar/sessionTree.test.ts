@@ -80,4 +80,30 @@ describe('buildSessionTree', () => {
     expect(afterUnpin[0]?.children.map((node) => node.session.id)).toEqual(['child']);
     expect(afterUnpin[0]?.children[0]?.children.map((node) => node.session.id)).toEqual(['grand']);
   });
+
+  test('never promotes orphan children to roots when the parent is missing', () => {
+    const orphan = session('orphan-subagent', { parentID: 'missing-parent', created: 50 });
+    const ordinary = session('ordinary', { created: 10 });
+
+    const forest = buildSessionTree([orphan, ordinary], {
+      pinnedSessionIds: new Set(),
+      omitPinnedSessions: true,
+    });
+
+    expect(forest.map((node) => node.session.id)).toEqual(['ordinary']);
+  });
+
+  test('hides children when the parent is archived differently', () => {
+    const parent = session('parent', { archived: 100, created: 20 });
+    const child = session('child', { parentID: 'parent', created: 30 });
+    const ordinary = session('ordinary', { created: 10 });
+
+    const forest = buildSessionTree([parent, child, ordinary], {
+      pinnedSessionIds: new Set(),
+      omitPinnedSessions: true,
+    });
+
+    expect(forest.map((node) => node.session.id)).toEqual(['parent', 'ordinary']);
+    expect(forest.find((node) => node.session.id === 'parent')?.children).toEqual([]);
+  });
 });

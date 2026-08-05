@@ -32,6 +32,9 @@ import { useI18n, type I18nKey, type I18nParams } from '@/lib/i18n';
 import { runtimeFetch } from '@/lib/runtime-fetch';
 import { MermaidLoadFailure, getMermaidDataUrlSourcePromise, isCurrentMermaidLoadRequest, isMermaidLoadFailure, nextMermaidLoadRequestId } from './toolOutputDialogMermaid';
 import { useEffectiveDirectory } from '@/hooks/useEffectiveDirectory';
+import { useMobileBackRoute } from '@/mobile/mobileBackNavigation';
+import { blobFromImageElement } from '../imageSave';
+import { openImageSaveActions } from '../imageSaveActionsBus';
 import { useResolvedImageSource } from '../imageSource';
 import {
     IMAGE_VIEWER_MAX_SCALE,
@@ -47,6 +50,10 @@ import {
     type ImageViewerTransform,
 } from './imageViewerTransform';
 import { closeImageViewerAfterMobileTap } from './imageViewerTapGuard';
+
+const IMAGE_VIEWER_LONG_PRESS_MS = 500;
+/** Ignore accidental close from the same gesture / history thrash that opened the viewer. */
+const IMAGE_VIEWER_OPEN_CLOSE_GUARD_MS = 400;
 
 interface ToolOutputDialogProps {
     popup: ToolPopupContent;
@@ -376,6 +383,8 @@ const ImagePreviewDialog: React.FC<{
         moved: boolean;
         targetWasCanvas: boolean;
         suppressTap: boolean;
+        longPressTimer: ReturnType<typeof setTimeout> | null;
+        longPressTriggered: boolean;
     } | null>(null);
     const pinchGestureRef = React.useRef<{
         distance: number;
@@ -384,6 +393,40 @@ const ImagePreviewDialog: React.FC<{
     } | null>(null);
     const pendingFrameRef = React.useRef<number | null>(null);
     const pendingTransformRef = React.useRef<{ transform: ImageViewerTransform; animate: boolean } | null>(null);
+
+    const openedAtRef = React.useRef(0);
+    React.useEffect(() => {
+        if (!popup.open) return;
+        openedAtRef.current = typeof performance !== 'undefined' ? performance.now() : Date.now();
+    }, [popup.open]);
+
+    const isWithinOpenCloseGuard = useEvent(() => {
+        const now = typeof performance !== 'undefined' ? performance.now() : Date.now();
+        return now - openedAtRef.current < IMAGE_VIEWER_OPEN_CLOSE_GUARD_MS;
+    });
+
+    const closePreview = useEvent(() => {
+        // Decline so H5 history can re-push the overlay marker instead of
+        // leaving a stuck preview with no stack entry.
+        if (isWithinOpenCloseGuard()) return false;
+        onOpenChange(false);
+        return true;
+    });
+
+    useMobileBackRoute({
+        id: 'image-preview',
+        active: popup.open && isMobile,
+        layer: 'overlay',
+        onBack: closePreview,
+        surfaceRef: viewerRef,
+    });
+
+    const clearLongPressTimer = useEvent(() => {
+        const gesture = singleGestureRef.current;
+        if (!gesture?.longPressTimer) return;
+        clearTimeout(gesture.longPressTimer);
+        gesture.longPressTimer = null;
+    });
 
     React.useEffect(() => {
         if (!popup.open || gallery.length === 0) {
@@ -406,6 +449,36 @@ const ImagePreviewDialog: React.FC<{
     const displayImageSource = useResolvedImageSource(currentImage?.url ?? '', effectiveDirectory);
     const imageAccessibleLabel = currentImage?.filename || popup.title;
     const hasMultipleImages = gallery.length > 1;
+
+    const openCurrentImageActions = useEvent(() => {
+        const sourceUrl = currentImage?.url ?? popup.image?.url ?? '';
+        if (!sourceUrl && !displayImageSource) return;
+        const mimeType = currentImage?.mimeType || popup.image?.mimeType;
+        const filename = currentImage?.filename || popup.image?.filename || popup.title;
+        // Prefer bytes already decoded into the fullscreen <img> so save never
+        // re-hits the runtime file path when the preview is on screen.
+        const imageEl = imageRef.current;
+        if (imageEl && imageEl.naturalWidth > 0) {
+            void blobFromImageElement(imageEl, mimeType || 'image/png').then((prefetchedBlob) => {
+                openImageSaveActions({
+                    sourceUrl: sourceUrl || displayImageSource,
+                    displayUrl: displayImageSource || imageEl.currentSrc || imageEl.src || undefined,
+                    filename,
+                    mimeType,
+                    effectiveDirectory,
+                    prefetchedBlob: prefetchedBlob ?? undefined,
+                });
+            });
+            return;
+        }
+        openImageSaveActions({
+            sourceUrl: sourceUrl || displayImageSource,
+            displayUrl: displayImageSource || undefined,
+            filename,
+            mimeType,
+            effectiveDirectory,
+        });
+    });
 
     const showPrevious = useEvent(() => {
         if (gallery.length <= 1) return;
@@ -614,6 +687,11 @@ const ImagePreviewDialog: React.FC<{
         }
         pendingFrameRef.current = null;
         pendingTransformRef.current = null;
+        const gesture = singleGestureRef.current;
+        if (gesture?.longPressTimer) {
+            clearTimeout(gesture.longPressTimer);
+            gesture.longPressTimer = null;
+        }
     }, []);
 
     const handleWheel = useEvent((event: WheelEvent) => {
@@ -658,11 +736,30 @@ const ImagePreviewDialog: React.FC<{
                 moved: false,
                 targetWasCanvas: event.target === event.currentTarget,
                 suppressTap: false,
+                longPressTimer: null,
+                longPressTriggered: false,
             };
+            // Long-press save: touch/pen always; mouse only when not dragging a zoomed image.
+            if (event.pointerType !== 'mouse' || transformRef.current.scale <= 1.01) {
+                const gesture = singleGestureRef.current;
+                gesture.longPressTimer = setTimeout(() => {
+                    if (!singleGestureRef.current || singleGestureRef.current.pointerId !== event.pointerId) return;
+                    if (singleGestureRef.current.moved) return;
+                    singleGestureRef.current.longPressTriggered = true;
+                    singleGestureRef.current.suppressTap = true;
+                    openCurrentImageActions();
+                }, IMAGE_VIEWER_LONG_PRESS_MS);
+            }
             if (canvasRef.current && transformRef.current.scale > 1) {
                 canvasRef.current.style.cursor = 'grabbing';
             }
             return;
+        }
+
+        clearLongPressTimer();
+        if (singleGestureRef.current) {
+            singleGestureRef.current.suppressTap = true;
+            singleGestureRef.current.longPressTriggered = false;
         }
 
         const points = Array.from(pointersRef.current.values()).slice(0, 2).map((pointer) => pointer.point);
@@ -683,6 +780,7 @@ const ImagePreviewDialog: React.FC<{
         pointersRef.current.set(event.pointerId, { point, pointerType: event.pointerType });
 
         if (pointersRef.current.size >= 2 && pinchGestureRef.current) {
+            clearLongPressTimer();
             const points = Array.from(pointersRef.current.values()).slice(0, 2).map((pointer) => pointer.point);
             const dx = points[1].x - points[0].x;
             const dy = points[1].y - points[0].y;
@@ -703,7 +801,10 @@ const ImagePreviewDialog: React.FC<{
         const gesture = singleGestureRef.current;
         if (!gesture || gesture.pointerId !== event.pointerId) return;
         const delta = { x: point.x - gesture.start.x, y: point.y - gesture.start.y };
-        if (Math.hypot(delta.x, delta.y) > IMAGE_VIEWER_TAP_MOVE_THRESHOLD) gesture.moved = true;
+        if (Math.hypot(delta.x, delta.y) > IMAGE_VIEWER_TAP_MOVE_THRESHOLD) {
+            gesture.moved = true;
+            clearLongPressTimer();
+        }
         if (gesture.transform.scale > 1.01) {
             writeTransform(panImageViewer(gesture.transform, delta, geometryRef.current));
         }
@@ -715,27 +816,31 @@ const ImagePreviewDialog: React.FC<{
         const point = trackedPointer ? { x: event.clientX, y: event.clientY } : undefined;
         pointersRef.current.delete(event.pointerId);
 
-        if (gesture?.pointerId === event.pointerId && point) {
-            const action = resolveImageViewerPointerRelease({
-                isMobile,
-                pointerType: gesture.pointerType,
-                cancelled,
-                moved: gesture.moved || Math.hypot(point.x - gesture.start.x, point.y - gesture.start.y) > IMAGE_VIEWER_TAP_MOVE_THRESHOLD,
-                suppressTap: gesture.suppressTap,
-                targetWasCanvas: gesture.targetWasCanvas,
-                start: gesture.start,
-                end: point,
-                startScale: gesture.transform.scale,
-                hasMultipleImages,
-            });
-            if (action === 'next') showNext();
-            if (action === 'previous') showPrevious();
-            if (action === 'close') {
-                if (isMobile && gesture.pointerType !== 'mouse') {
-                    closeImageViewerAfterMobileTap(point, () => onOpenChange(false));
-                    return;
+        if (gesture?.pointerId === event.pointerId) {
+            clearLongPressTimer();
+            if (point && !gesture.longPressTriggered) {
+                const action = resolveImageViewerPointerRelease({
+                    isMobile,
+                    pointerType: gesture.pointerType,
+                    cancelled,
+                    moved: gesture.moved || Math.hypot(point.x - gesture.start.x, point.y - gesture.start.y) > IMAGE_VIEWER_TAP_MOVE_THRESHOLD,
+                    suppressTap: gesture.suppressTap,
+                    targetWasCanvas: gesture.targetWasCanvas,
+                    start: gesture.start,
+                    end: point,
+                    startScale: gesture.transform.scale,
+                    hasMultipleImages,
+                });
+                if (action === 'next') showNext();
+                if (action === 'previous') showPrevious();
+                if (action === 'close') {
+                    if (isWithinOpenCloseGuard()) return;
+                    if (isMobile && gesture.pointerType !== 'mouse') {
+                        closeImageViewerAfterMobileTap(point, () => onOpenChange(false));
+                        return;
+                    }
+                    onOpenChange(false);
                 }
-                onOpenChange(false);
             }
         }
 
@@ -749,6 +854,8 @@ const ImagePreviewDialog: React.FC<{
                 moved: false,
                 targetWasCanvas: false,
                 suppressTap: true,
+                longPressTimer: null,
+                longPressTriggered: false,
             };
             pinchGestureRef.current = null;
         } else if (pointersRef.current.size === 0) {
@@ -762,6 +869,12 @@ const ImagePreviewDialog: React.FC<{
         if (event.currentTarget.hasPointerCapture(event.pointerId)) {
             event.currentTarget.releasePointerCapture(event.pointerId);
         }
+    });
+
+    const handleContextMenu = useEvent((event: React.MouseEvent<HTMLDivElement>) => {
+        event.preventDefault();
+        event.stopPropagation();
+        openCurrentImageActions();
     });
 
     const handleImageLoad = useEvent((event: React.SyntheticEvent<HTMLImageElement>) => {
@@ -817,6 +930,7 @@ const ImagePreviewDialog: React.FC<{
                 ref={canvasRef}
                 className="absolute inset-0 flex items-center justify-center overflow-hidden touch-none [overscroll-behavior:none]"
                 onDoubleClick={isMobile ? undefined : handleDoubleClick}
+                onContextMenu={handleContextMenu}
                 onPointerDown={handlePointerDown}
                 onPointerMove={handlePointerMove}
                 onPointerUp={(event) => finishPointer(event, false)}

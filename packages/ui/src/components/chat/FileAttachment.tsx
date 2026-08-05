@@ -1,4 +1,5 @@
 import React, { useRef, memo } from 'react';
+import { useEvent } from '@reactuses/core';
 import { useInputStore } from '@/sync/input-store';
 import type { AttachedFile } from '@/sync/session-ui-store';
 import { useUIStore } from '@/stores/useUIStore';
@@ -19,6 +20,8 @@ import {
 } from './attachmentCitations';
 import { attachmentCitationDisplay } from '@/composer/inline-visual';
 import { useEffectiveDirectory } from '@/hooks/useEffectiveDirectory';
+import { createMobileLongPressController } from '@/components/ui/mobileLongPress';
+import { openImageSaveActions } from './imageSaveActionsBus';
 import { useResolvedImageSource } from './imageSource';
 
 import type { ToolPopupContent } from './message/types';
@@ -154,6 +157,8 @@ const ImagePreview = memo(({ file, onRemove, onShowPopup, gallery, index = 0 }: 
   const imageUrl = isLocalImagePreview ? file.dataUrl : (file.serverPath || '');
   const effectiveDirectory = useEffectiveDirectory() ?? '';
   const displayImageUrl = useResolvedImageSource(imageUrl, effectiveDirectory);
+  const longPressKey = `attachment-image:${file.id}`;
+  const longPressRef = React.useRef(createMobileLongPressController());
 
   const extractFilename = (path: string): string => {
     const normalized = path.replace(/\\/g, '/');
@@ -168,7 +173,20 @@ const ImagePreview = memo(({ file, onRemove, onShowPopup, gallery, index = 0 }: 
 
   const displayName = extractFilename(file.filename);
   const extension = getFileExtension(file.filename);
-  const handleOpenPreview = React.useCallback(() => {
+
+  const openSaveActions = useEvent(() => {
+    if (!imageUrl && !displayImageUrl) return;
+    openImageSaveActions({
+      sourceUrl: imageUrl || displayImageUrl,
+      displayUrl: displayImageUrl || undefined,
+      filename: displayName,
+      mimeType: file.mimeType,
+      effectiveDirectory,
+    });
+  });
+
+  const handleOpenPreview = useEvent(() => {
+    if (longPressRef.current.consumeClick(longPressKey)) return;
     if (!onShowPopup || !imageUrl) return;
 
     onShowPopup({
@@ -190,7 +208,7 @@ const ImagePreview = memo(({ file, onRemove, onShowPopup, gallery, index = 0 }: 
         index,
       },
     });
-  }, [displayName, file.mimeType, file.size, gallery, imageUrl, index, onShowPopup]);
+  });
 
   if (!imageUrl) {
     // Fallback to text-only for server images without preview
@@ -229,6 +247,30 @@ const ImagePreview = memo(({ file, onRemove, onShowPopup, gallery, index = 0 }: 
           handleOpenPreview();
         }
       }}
+      onPointerDown={(event) => {
+        if (event.pointerType === 'mouse' && event.button !== 0) return;
+        longPressRef.current.start({
+          pointerId: event.pointerId,
+          key: longPressKey,
+          clientX: event.clientX,
+          clientY: event.clientY,
+          onTrigger: openSaveActions,
+        });
+      }}
+      onPointerMove={(event) => {
+        longPressRef.current.move(event.pointerId, event.clientX, event.clientY);
+      }}
+      onPointerUp={(event) => {
+        longPressRef.current.end(event.pointerId);
+      }}
+      onPointerCancel={(event) => {
+        longPressRef.current.cancel(event.pointerId);
+      }}
+      onContextMenu={(event) => {
+        event.preventDefault();
+        event.stopPropagation();
+        longPressRef.current.openFromContextMenu(longPressKey, openSaveActions);
+      }}
       className="relative h-10 w-10 rounded-lg border border-border/40 bg-muted/10 overflow-hidden flex-shrink-0 group cursor-pointer focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-primary"
       aria-label={displayName}
     >
@@ -237,6 +279,7 @@ const ImagePreview = memo(({ file, onRemove, onShowPopup, gallery, index = 0 }: 
         alt={displayName}
         className="h-full w-full object-cover"
         loading="lazy"
+        draggable={false}
       />
       <button
         onClick={(event) => {

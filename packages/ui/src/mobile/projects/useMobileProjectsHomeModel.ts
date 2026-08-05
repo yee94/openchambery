@@ -295,11 +295,7 @@ export function useMobileProjectsHomeModel(): MobileProjectsHomeModel {
     for (const node of projectNodes) {
       const hasWorktrees = node.project.worktrees.length > 0;
       for (const bucket of node.buckets) {
-        const idsInBucket = new Set(bucket.sessions.map((entry) => entry.id));
-        const rootCount = bucket.sessions.filter((entry) => {
-          const parentId = getParentId(entry);
-          return !parentId || !idsInBucket.has(parentId);
-        }).length;
+        const rootCount = bucket.sessions.filter((entry) => !getParentId(entry)).length;
         map.set(`${node.project.id}::${bucket.key}`, {
           path: bucket.path,
           rootCount,
@@ -326,12 +322,10 @@ export function useMobileProjectsHomeModel(): MobileProjectsHomeModel {
         const visibleCount = visibleCountByBucket.get(expandKey) ?? defaultVisible;
 
         // Mobile home is a flat parent-session list only. Subagents stay off the
-        // catalog (and off search). Archive cascade still walks allSessions.
-        const idsInBucket = new Set(bucket.sessions.map((entry) => entry.id));
-        const rootSessions = bucket.sessions.filter((entry) => {
-          const parentId = getParentId(entry);
-          return !parentId || !idsInBucket.has(parentId);
-        });
+        // catalog (and off search) — never promote orphans when the parent is
+        // missing from this bucket (archived/system parents). Archive cascade
+        // still walks allSessions.
+        const rootSessions = bucket.sessions.filter((entry) => !getParentId(entry));
 
         const toNode = (session: Session): MobileSessionTreeNode => {
           const parentId = getParentId(session);
