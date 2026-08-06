@@ -7,6 +7,17 @@ const response = () => ({ statusCode: 200, body: undefined, status(code) { this.
 
 describe('message queue routes', () => {
   it('uses unavailable code for disabled runtimes', () => { const { app, route } = registry(); registerMessageQueueRoutes(app, { messageQueueService: null }); const res = response(); route('GET', prefix)({}, res); expect(res).toMatchObject({ statusCode: 501, body: { code: 'unavailable' } }); });
+  it('logs an error stack for internal snapshot failures', () => {
+    const { app, route } = registry();
+    const error = new Error('snapshot database failure');
+    const log = vi.spyOn(console, 'error').mockImplementation(() => {});
+    registerMessageQueueRoutes(app, { messageQueueService: { snapshot: () => { throw error; } } });
+    const res = response();
+    route('GET', prefix)({}, res);
+    expect(res).toMatchObject({ statusCode: 500, body: { code: 'internal_error' } });
+    expect(log).toHaveBeenCalledWith('[message-queue] route failed', error);
+    log.mockRestore();
+  });
   it('maps stable errors to code-only responses', () => { const { app, route } = registry(); registerMessageQueueRoutes(app, { messageQueueService: { admit: () => { const error = new Error('private detail'); error.code = 'attachment_total_limit'; throw error; } } }); const res = response(); route('POST', `${prefix}/items`)({ body: {} }, res); expect(res).toMatchObject({ statusCode: 413, body: { code: 'attachment_total_limit' } }); });
   it('maps admission payload limits to 413', () => { const { app, route } = registry(); registerMessageQueueRoutes(app, { messageQueueService: { admit: () => { const error = new Error('private detail'); error.code = 'admission_payload_limit'; throw error; } } }); const res = response(); route('POST', `${prefix}/items`)({ body: {} }, res); expect(res).toMatchObject({ statusCode: 413, body: { code: 'admission_payload_limit' } }); });
   it('wakes the runtime after a successful admit', () => {

@@ -28,8 +28,14 @@ export const SESSION_TURN_PAGE_TURNS = 3
  * forever: prefetch status stays `loading`, the mobile "load older" button
  * spins, and the page never settles. Timeout is retryable (transient), and a
  * final failure settles prefetch as `error` so the UI can recover.
+ *
+ * AbortSignal.timeout alone is insufficient on Capacitor Android: the native
+ * fetch bridge may ignore abort and leave runtimeFetch pending forever. An
+ * independent Promise timer race (see `raceWithSessionTurnPageTimeout`) is the
+ * hard settle bound; the signal remains best-effort cancellation for runtimes
+ * that honor it.
  */
-const SESSION_TURN_PAGE_TIMEOUT_MS = 30_000
+export const SESSION_TURN_PAGE_TIMEOUT_MS = 30_000
 
 const withTimeoutSignal = (signal: AbortSignal | undefined, timeoutMs: number): AbortSignal => {
   if (!signal) return AbortSignal.timeout(timeoutMs)
@@ -38,6 +44,30 @@ const withTimeoutSignal = (signal: AbortSignal | undefined, timeoutMs: number): 
     return AbortSignal.any([signal, AbortSignal.timeout(timeoutMs)])
   }
   return signal
+}
+
+/**
+ * Race an operation against an independent setTimeout.
+ * Clears the timer when the operation settles first.
+ * Used so hang-prone native fetch cannot pin sync.isLoading forever.
+ */
+export async function raceWithSessionTurnPageTimeout<T>(
+  operation: Promise<T>,
+  timeoutMs: number = SESSION_TURN_PAGE_TIMEOUT_MS,
+): Promise<T> {
+  let timer: ReturnType<typeof setTimeout> | undefined
+  try {
+    return await Promise.race([
+      operation,
+      new Promise<never>((_resolve, reject) => {
+        timer = setTimeout(() => {
+          reject(new Error(`session turn page: timed out after ${timeoutMs}ms`))
+        }, timeoutMs)
+      }),
+    ])
+  } finally {
+    if (timer !== undefined) clearTimeout(timer)
+  }
 }
 
 export type SessionTurnPageRecord = {
@@ -63,6 +93,11 @@ export type FetchSessionTurnPageInput = {
    * Default path must omit this so the server uses `_inner_scanLimit`.
    */
   scanLimit?: number
+  /**
+   * Independent timer-race bound (default {@link SESSION_TURN_PAGE_TIMEOUT_MS}).
+   * Injectable for tests; production callers should omit this.
+   */
+  timeoutMs?: number
 }
 
 const isJsonContentType = (value: string | null): boolean => {
@@ -164,32 +199,44 @@ export async function fetchSessionTurnPage(
     query.scanLimit = String(Math.floor(input.scanLimit))
   }
 
-  const response = await runtimeFetch(path, {
-    method: "GET",
-    query,
-    signal: withTimeoutSignal(input.signal, SESSION_TURN_PAGE_TIMEOUT_MS),
-  })
+  const timeoutMs =
+    typeof input.timeoutMs === "number" && Number.isFinite(input.timeoutMs) && input.timeoutMs > 0
+      ? input.timeoutMs
+      : SESSION_TURN_PAGE_TIMEOUT_MS
 
-  if (!response.ok) {
-    throw new Error(`session turn page failed (${response.status})`)
-  }
+  // Always race an independent timer: AbortSignal.timeout is best-effort only
+  // (Capacitor native fetch may never settle on abort).
+  return raceWithSessionTurnPageTimeout(
+    (async (): Promise<SessionTurnPage> => {
+      const response = await runtimeFetch(path, {
+        method: "GET",
+        query,
+        signal: withTimeoutSignal(input.signal, timeoutMs),
+      })
 
-  const contentType = response.headers.get("content-type")
-  if (isHtmlContentType(contentType)) {
-    throw new Error("session turn page: unexpected HTML response")
-  }
-  if (!isJsonContentType(contentType)) {
-    // Still attempt JSON parse; many runtimes omit content-type. Reject HTML above.
-  }
+      if (!response.ok) {
+        throw new Error(`session turn page failed (${response.status})`)
+      }
 
-  let payload: unknown
-  try {
-    payload = await response.json()
-  } catch {
-    throw new Error("session turn page: malformed JSON")
-  }
+      const contentType = response.headers.get("content-type")
+      if (isHtmlContentType(contentType)) {
+        throw new Error("session turn page: unexpected HTML response")
+      }
+      if (!isJsonContentType(contentType)) {
+        // Still attempt JSON parse; many runtimes omit content-type. Reject HTML above.
+      }
 
-  return assertSessionTurnPage(payload, turns)
+      let payload: unknown
+      try {
+        payload = await response.json()
+      } catch {
+        throw new Error("session turn page: malformed JSON")
+      }
+
+      return assertSessionTurnPage(payload, turns)
+    })(),
+    timeoutMs,
+  )
 }
 
 /**

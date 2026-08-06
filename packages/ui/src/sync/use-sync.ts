@@ -235,7 +235,9 @@ export function useSync() {
   // in-flight request lifecycle.
   const optimistic = useRef(new Map<string, Map<string, OptimisticItem>>())
   const loadingRef = useRef(new Set<string>())
-  const [, setLoadingRevision] = useState(0)
+  // Captured (not discarded) so the returned sync object identity moves when
+  // loadingRef flips — ChatContainer memoizes historyMeta.loading on `sync`.
+  const [loadingRevision, setLoadingRevision] = useState(0)
 
   const keyFor = useCallback(
     (sessionID: string, targetDirectory = directory) => `${targetDirectory}\n${sessionID}`,
@@ -464,6 +466,7 @@ export function useSync() {
       })
       setLoadingFor(sessionID, true, targetDirectory)
 
+      try {
       const result = await loadSessionMessagePage({
         purpose: options?.purpose ?? "initial",
         runtimeKey,
@@ -583,11 +586,9 @@ export function useSync() {
       // skipped/failed pulls; the boundary was committed into the child store
       // by commitStore above. Only the hook-local loading flag needs clearing.
       if (result.status !== "ready") {
-        setLoadingFor(sessionID, false, targetDirectory)
         return
       }
 
-      setLoadingFor(sessionID, false, targetDirectory)
       await reconcileActiveSessionStatusAfterMessagePull({
         directory: targetDirectory,
         sessionID,
@@ -598,6 +599,9 @@ export function useSync() {
         isTailPage: !options?.before,
         isStale: options?.isStale,
       })
+      } finally {
+        setLoadingFor(sessionID, false, targetDirectory)
+      }
     },
     [childStores, store, getMetaFor, setLoadingFor, getOptimistic, clearOptimistic, directory],
   )
@@ -861,6 +865,10 @@ export function useSync() {
         confirm: optimisticConfirm,
       },
     }),
-    [syncSession, loadChildren, loadMore, hasMore, isLoading, isComplete, refreshSessionTranscript, optimisticAdd, optimisticRemove, optimisticConfirm],
+    // loadingRevision must participate: isLoading reads a ref, so without this
+    // bump the returned `sync` identity stays stable and ChatContainer's
+    // historyMeta useMemo keeps a stale `loading: true` after the flight ends —
+    // load-older then waits on a phantom historyLoading with nothing in flight.
+    [syncSession, loadChildren, loadMore, hasMore, isLoading, isComplete, refreshSessionTranscript, optimisticAdd, optimisticRemove, optimisticConfirm, loadingRevision],
   )
 }

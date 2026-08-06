@@ -2073,6 +2073,7 @@ const AssistantMessageBody = React.memo(({
         const tps = computeAssistantTps({
             createdAt: messageCreatedAt,
             completedAt: messageCompletedAt,
+            fallbackDurationMs: turnGroupingContext?.durationMs,
             outputTokens: counts.output,
             reasoningTokens: counts.reasoning,
             parts: timingParts,
@@ -2089,6 +2090,7 @@ const AssistantMessageBody = React.memo(({
         messageTokens,
         messageCreatedAt,
         messageCompletedAt,
+        turnGroupingContext?.durationMs,
     ]);
 
     const canOpenMessagePreview = !isMiniChatSurface && !isMobile && !isVSCode;

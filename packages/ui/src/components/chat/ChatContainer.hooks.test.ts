@@ -62,9 +62,10 @@ describe('ChatContainer source contracts', () => {
     test('historyMeta.loading is sync/assistant only — never stuck prefetch loading', () => {
         // Timeline wait gate (historyLoading) must not OR prefetch status.
         // Stuck sessionPrefetch status==='loading' blocked mobile load-more for
-        // 4s with toast and zero fetch; cold transcript gate still uses prefetch.
+        // wait window with toast and zero fetch; cold transcript gate still uses prefetch.
         expect(source).toContain('resolveChatHistoryPaginationLoading');
-        expect(source).toContain('syncLoading:');
+        expect(source).toContain('syncHistoryLoading');
+        expect(source).toContain('syncLoading: syncHistoryLoading');
         expect(source).toContain('assistantLoading:');
         expect(source).not.toContain("sessionPrefetchInfo?.status === 'loading'");
         // Prefetch remains on the cold transcript gate path.
@@ -85,6 +86,10 @@ describe('ChatContainer source contracts', () => {
         expect(source).toContain('const loadOlderBusy = resolveMobileLoadOlderBusy({ isLoadingOlder });');
         expect(source).toContain('aria-busy={loadOlderBusy}');
         expect(source).toContain("{t('chat.history.loadOlder')}");
+        // Desktop scroll/auto-fill needs a restrained status while wait can be long.
+        expect(source).toContain('resolveDesktopLoadOlderStatusVisibility');
+        expect(source).toContain("{t('chat.history.loadingMore')}");
+        expect(source).toContain('showDesktopLoadOlderStatus');
     });
 
     test('explicit history navigation releases the initial entry-stick pin', () => {

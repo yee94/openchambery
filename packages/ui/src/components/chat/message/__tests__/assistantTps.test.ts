@@ -36,10 +36,14 @@ describe('sumToolDurationMs', () => {
 });
 
 describe('computeGenerationDurationMs', () => {
-  test('returns null without completed/created', () => {
+  test('returns null without a completed interval or fallback duration', () => {
     expect(computeGenerationDurationMs(null, 2000, [])).toBeNull();
     expect(computeGenerationDurationMs(1000, null, [])).toBeNull();
     expect(computeGenerationDurationMs(2000, 1000, [])).toBeNull();
+  });
+
+  test('uses a settled turn duration when an interrupted message lacks completion time', () => {
+    expect(computeGenerationDurationMs(1000, null, [], 2500)).toBe(2500);
   });
 
   test('subtracts tool duration from wall clock', () => {
@@ -105,6 +109,19 @@ describe('computeAssistantTps', () => {
         parts: [],
       }),
     ).toBeNull();
+  });
+
+  test('uses settled turn duration for interrupted messages with generated tokens', () => {
+    expect(
+      computeAssistantTps({
+        createdAt: 1_000,
+        completedAt: null,
+        fallbackDurationMs: 2_000,
+        outputTokens: 100,
+        reasoningTokens: 0,
+        parts: [],
+      }),
+    ).toBe(50);
   });
 });
 

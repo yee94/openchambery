@@ -5,7 +5,11 @@ import { fileURLToPath } from 'node:url';
 
 import {
     chatTimelineAutoFillQueryKey,
+    HISTORY_LOADING_TIMEOUT_CODE,
+    HISTORY_LOADING_WAIT_MS,
+    isHistoryLoadingTimeoutError,
     isOlderHistoryPrependCommit,
+    logChatHistoryLoadOlderFailure,
     resolveHasMoreAboveTurns,
     resolveHistoryPageDecision,
     resolveHistoryPrependCompensation,
@@ -14,6 +18,7 @@ import {
     shouldHoldHistoryViewportAnchor,
     shouldLoadEarlierHistory,
 } from './useChatTimelineController';
+import { SESSION_TURN_PAGE_TIMEOUT_MS } from '@/sync/session-turn-page-api';
 
 const here = dirname(fileURLToPath(import.meta.url));
 
@@ -522,11 +527,76 @@ describe('useChatTimelineController source contracts', () => {
 
     test('user-initiated load-earlier toasts on transport failure (no silent flash)', () => {
         expect(source).toContain("chat.history.loadOlderFailed");
+        expect(source).toContain("chat.history.loadOlderTimeout");
         expect(source).toContain('toast.error');
+        expect(source).toContain('logChatHistoryLoadOlderFailure');
+        expect(source).toContain("console.error('[chat-history] load older failed'");
+        expect(source).toContain(
+            "console.error('[chat-history] load older timed out waiting for sync pagination'",
+        );
+        expect(source).toContain(
+            "console.error('[chat-history] load older completed without prepending messages'",
+        );
         expect(source).toContain('userInitiated');
-        // Also toast when grew===false but canLoadEarlier still true (silent no-op).
-        expect(source).toContain('grew === false');
-        expect(source).toContain('canLoadEarlier');
+        // Failure always console.error; toast stays user-initiated-only.
+        expect(source).toContain('grew === false && historySignalsRef.current.canLoadEarlier');
+        expect(source).toContain('Always console.error');
+        // historyLoading wait timeout throws — never silent-defer toast skip.
+        expect(source).toContain('HISTORY_LOADING_TIMEOUT_CODE');
+        expect(source).toContain("throw createHistoryLoadingTimeoutError()");
+        expect(source).not.toContain('load older deferred');
+    });
+
+    test('historyLoading wait covers a full Host turn-page budget', () => {
+        // Regression: 15s wait < 30s Host turn-page timeout false-failed load-more
+        // while a concurrent sync flight was still legitimate.
+        expect(source).toContain('SESSION_TURN_PAGE_TIMEOUT_MS');
+        expect(source).toContain('HISTORY_LOADING_WAIT_MS = SESSION_TURN_PAGE_TIMEOUT_MS + 2_000');
+        expect(HISTORY_LOADING_WAIT_MS).toBe(SESSION_TURN_PAGE_TIMEOUT_MS + 2_000);
+        expect(HISTORY_LOADING_WAIT_MS).toBeGreaterThanOrEqual(SESSION_TURN_PAGE_TIMEOUT_MS);
+        expect(source).toContain("wait === 'timeout'");
+        expect(source).toContain("wait === 'switched'");
+        expect(source).toContain("pagesLoaded -= 1");
+        // Wait diagnostics must print prefetch status so a phantom historyLoading
+        // (nothing in Network) is visible in the console.
+        expect(source).toContain("waiting for sync pagination to clear");
+        expect(source).toContain('likelyStaleLoadingFlag');
+        expect(source).toContain('getSessionPrefetch');
+    });
+
+    test('isHistoryLoadingTimeoutError matches typed wait timeout', () => {
+        const timeout = Object.assign(new Error('chat history pagination wait timed out'), {
+            code: HISTORY_LOADING_TIMEOUT_CODE,
+        });
+        expect(isHistoryLoadingTimeoutError(timeout)).toBe(true);
+        expect(isHistoryLoadingTimeoutError(new Error('network'))).toBe(false);
+        expect(isHistoryLoadingTimeoutError(null)).toBe(false);
+    });
+
+    test('logChatHistoryLoadOlderFailure always writes console.error', () => {
+        const original = console.error;
+        const calls: unknown[][] = [];
+        console.error = (...args: unknown[]) => {
+            calls.push(args);
+        };
+        try {
+            logChatHistoryLoadOlderFailure('no-growth', new Error('no growth'), { sessionId: 'ses_1' });
+            logChatHistoryLoadOlderFailure('timeout', new Error('timeout'), { waitMs: 15_000 });
+            logChatHistoryLoadOlderFailure('failed', new Error('network'), { sessionId: 'ses_1' });
+        } finally {
+            console.error = original;
+        }
+        expect(calls).toHaveLength(3);
+        expect(String(calls[0]?.[0])).toContain('completed without prepending messages');
+        expect(String(calls[1]?.[0])).toContain('timed out waiting for sync pagination');
+        expect(String(calls[2]?.[0])).toContain('load older failed');
+    });
+
+    test('no-growth pagination suppresses the load-earlier affordance without a toast', () => {
+        expect(source).toContain("if (decision === 'stop-no-growth')");
+        expect(source).toContain('setNoGrowthHistoryLimit(exhaustedLimit)');
+        expect(source).toContain('blockedAtCurrentHistoryLimit');
+        expect(source).toContain('hasMoreAboveTurns: false');
     });
 
     test('handlers use useEvent; no React.useCallback', () => {

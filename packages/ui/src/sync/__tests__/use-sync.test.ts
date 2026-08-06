@@ -96,6 +96,10 @@ describe("loadMessages transport split source contract (Host turn-page for tail 
 
   test("local loading flips publish a revision for immediate affordance updates", () => {
     expect(useSyncSource.includes("setLoadingRevision")).toBe(true)
+    expect(useSyncSource.includes("loadingRevision")).toBe(true)
     expect(useSyncSource.includes("loadingRef")).toBe(true)
+    // Returned sync identity must move with loadingRevision so ChatContainer
+    // historyMeta.loading cannot stay stuck true after the flight clears.
+    expect(useSyncSource).toMatch(/loadingRevision\s*\]/)
   })
 })

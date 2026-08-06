@@ -142,6 +142,15 @@ const resolveRuntimeBaseUrl = (): string | null => {
   }
 };
 
+/** V2 SDK endpoints include their own `/api` prefix. */
+const resolveRuntimeV2BaseUrl = (): string | null => {
+  try {
+    return getRuntimeUrlResolver().api('/');
+  } catch {
+    return null;
+  }
+};
+
 type AbortSignalConstructorWithTimeout = typeof AbortSignal & {
   timeout?: (milliseconds: number) => AbortSignal;
 };
@@ -1103,7 +1112,9 @@ class OpencodeService {
    */
   async getSessionActive(signal?: AbortSignal): Promise<SessionActiveResult> {
     try {
-      const result = await this.client.v2.session.active(
+      const baseUrl = ensureAbsoluteBaseUrl(resolveRuntimeV2BaseUrl() || '/');
+      const client = createRuntimeOpencodeClient({ baseUrl });
+      const result = await client.v2.session.active(
         signal ? { signal } : undefined,
       );
       const status = result.response?.status;

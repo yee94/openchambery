@@ -16,6 +16,8 @@ import { isMobileSurfaceRuntime } from '@/lib/runtimeSurface';
 import { getRuntimeKey } from '@/lib/runtime-switch';
 import { toast } from '@/components/ui';
 import { useI18n } from '@/lib/i18n';
+import { SESSION_TURN_PAGE_TIMEOUT_MS } from '@/sync/session-turn-page-api';
+import { getSessionPrefetch } from '@/sync/session-prefetch-cache';
 
 type ViewportAnchor = { messageId: string; offsetTop: number };
 
@@ -39,6 +41,8 @@ type PendingScrollRequest = {
 
 interface UseChatTimelineControllerOptions {
     sessionId: string | null;
+    /** Session workspace directory — diagnostics for concurrent sync waits. */
+    directory?: string | null;
     messages: ChatMessageEntry[];
     historyMeta: SessionHistoryMeta | null;
     scrollRef: React.RefObject<HTMLDivElement | null>;
@@ -95,9 +99,64 @@ const MOBILE_TURN_MODEL_CACHE_MAX = 4
 const MOBILE_TURN_MODEL_CACHE_MAX_MESSAGES = 30
 const HISTORY_RENDER_WAIT_TIMEOUT_MS = 250
 const HISTORY_INTERACTION_GUARD_MS = 2000
-/** Wait for an in-flight sync page (historyLoading) before user-initiated load-more gives up. */
-const HISTORY_LOADING_WAIT_MS = 4_000
+/**
+ * Wait for an in-flight sync page (historyLoading) before user-initiated
+ * load-more gives up.
+ *
+ * Must cover a full Host turn-page flight (`SESSION_TURN_PAGE_TIMEOUT_MS`) plus
+ * a short settle for loader finally / React commit. A shorter wait (e.g. 15s)
+ * false-timeouts while a concurrent initial/materialize/resync turn-page is
+ * still within its legitimate 30s budget — loadMore never starts, and the UI
+ * looks broken even though sync is healthy.
+ */
+export const HISTORY_LOADING_WAIT_MS = SESSION_TURN_PAGE_TIMEOUT_MS + 2_000
 const HISTORY_LOADING_POLL_MS = 40
+/** Thrown when user-initiated load-older waited out historyLoading without clear. */
+export const HISTORY_LOADING_TIMEOUT_CODE = 'history-loading-timeout'
+
+export type HistoryLoadingWaitResult = 'cleared' | 'timeout' | 'switched'
+
+export const isHistoryLoadingTimeoutError = (error: unknown): boolean => (
+    Boolean(
+        error
+        && typeof error === 'object'
+        && (error as { code?: unknown }).code === HISTORY_LOADING_TIMEOUT_CODE
+    )
+)
+
+const createHistoryLoadingTimeoutError = (): Error & { code: string } => {
+    const error = new Error('chat history pagination wait timed out') as Error & { code: string }
+    error.code = HISTORY_LOADING_TIMEOUT_CODE
+    return error
+}
+
+/**
+ * Every load-older failure path must hit the error console — toast/UI gating
+ * is separate and may stay quiet (auto-fill), but diagnostics always print.
+ */
+export const logChatHistoryLoadOlderFailure = (
+    kind: 'no-growth' | 'timeout' | 'failed',
+    error: unknown,
+    diagnostic?: Record<string, unknown>,
+): void => {
+    if (kind === 'no-growth') {
+        console.error(
+            '[chat-history] load older completed without prepending messages',
+            error instanceof Error ? error : new Error('chat history pagination returned no growth'),
+            diagnostic,
+        )
+        return
+    }
+    if (kind === 'timeout') {
+        console.error(
+            '[chat-history] load older timed out waiting for sync pagination',
+            error,
+            diagnostic,
+        )
+        return
+    }
+    console.error('[chat-history] load older failed', error, diagnostic)
+}
 // Long smooth scrolls across a big session can take a couple of seconds;
 // the pin releases early as soon as the spy reports the target turn.
 const SCROLL_PIN_TIMEOUT_MS = 2500
@@ -409,6 +468,7 @@ export const resolvePublishedViewportMetrics = (
 
 export const useChatTimelineController = ({
     sessionId,
+    directory = null,
     messages,
     historyMeta,
     scrollRef,
@@ -455,6 +515,10 @@ export const useChatTimelineController = ({
     const [activeTurnId, setActiveTurnId] = React.useState<string | null>(null);
     // Per-session short-viewport auto-fill block after no-growth / hard failure.
     const [autoFillBlocked, setAutoFillBlocked] = React.useState(false);
+    // A successful prepend that adds no records has reached the current history
+    // boundary. Keep the control hidden until an authoritative boundary update
+    // advances its loaded-turn limit.
+    const [noGrowthHistoryLimit, setNoGrowthHistoryLimit] = React.useState<number | null>(null);
     // Layout metrics for auto-fill enablement. Owned by ResizeObserver so
     // streaming text/tool growth updates geometry without a messages-keyed
     // layout effect that re-renders ChatContainer on every part commit.
@@ -468,8 +532,10 @@ export const useChatTimelineController = ({
     const isLoadingOlderRef = React.useRef(isLoadingOlder);
     const pendingRevealWorkRef = React.useRef(pendingRevealWork);
     const sessionIdRef = React.useRef<string | null>(sessionId);
+    const directoryRef = React.useRef<string | null>(directory ?? null);
     const messagesRef = React.useRef(messages);
     const historyMetaRef = React.useRef<SessionHistoryMeta | null>(historyMeta);
+    const noGrowthHistoryLimitRef = React.useRef<number | null>(noGrowthHistoryLimit);
     const pendingRenderResolversRef = React.useRef<Array<() => void>>([]);
     const pendingScrollRequestRef = React.useRef<PendingScrollRequest | null>(null);
     const scrollPinRef = React.useRef<{ turnId: string; expiresAt: number } | null>(null);
@@ -492,12 +558,16 @@ export const useChatTimelineController = ({
         setPendingRevealWork(false);
         setActiveTurnId(null);
         setAutoFillBlocked(false);
+        noGrowthHistoryLimitRef.current = null;
+        setNoGrowthHistoryLimit(null);
         setViewportMetrics({ scrollHeight: 0, clientHeight: 0 });
     }
 
     const historySignals = React.useMemo(() => {
         const hasBufferedTurns = false;
-        const hasMoreAboveTurns = resolveHasMoreAboveTurns(historyMeta, messages.length);
+        const blockedAtCurrentHistoryLimit = historyMeta?.limit === noGrowthHistoryLimit;
+        const hasMoreAboveTurns = !blockedAtCurrentHistoryLimit
+            && resolveHasMoreAboveTurns(historyMeta, messages.length);
         const historyLoading = Boolean(historyMeta?.loading);
         return {
             hasBufferedTurns,
@@ -516,8 +586,10 @@ export const useChatTimelineController = ({
     pendingRevealWorkRef.current = pendingRevealWork;
     historySignalsRef.current = historySignals;
     sessionIdRef.current = sessionId;
+    directoryRef.current = directory ?? null;
     messagesRef.current = messages;
     historyMetaRef.current = historyMeta;
+    noGrowthHistoryLimitRef.current = noGrowthHistoryLimit;
 
     const beginHistoryInteraction = useEvent(() => {
         historyInteractionRef.current = true;
@@ -849,11 +921,61 @@ export const useChatTimelineController = ({
 
     const revealBufferedTurns = useEvent(async (): Promise<boolean> => false);
 
-    const waitWhileHistoryLoading = useEvent(async (targetSessionId: string): Promise<boolean> => {
-        const deadline = Date.now() + HISTORY_LOADING_WAIT_MS;
+    const waitWhileHistoryLoading = useEvent(async (
+        targetSessionId: string,
+    ): Promise<HistoryLoadingWaitResult> => {
+        const waitStartedAt = Date.now();
+        const deadline = waitStartedAt + HISTORY_LOADING_WAIT_MS;
+        const directoryForLog = directoryRef.current;
+        const prefetchAtStart = directoryForLog
+            ? getSessionPrefetch(directoryForLog, targetSessionId)
+            : undefined;
+        console.info('[chat-history] waiting for sync pagination to clear', {
+            sessionId: targetSessionId,
+            directory: directoryForLog,
+            waitMs: HISTORY_LOADING_WAIT_MS,
+            hostTurnPageTimeoutMs: SESSION_TURN_PAGE_TIMEOUT_MS,
+            historyLoading: historySignalsRef.current.historyLoading,
+            historyMeta: historyMetaRef.current,
+            prefetchStatus: prefetchAtStart?.status ?? null,
+            prefetchError: prefetchAtStart?.error ?? null,
+            prefetchLoadGeneration: prefetchAtStart?.loadGeneration ?? null,
+        });
         while (historySignalsRef.current.historyLoading) {
-            if (sessionIdRef.current !== targetSessionId) return false;
-            if (Date.now() >= deadline) return false;
+            if (sessionIdRef.current !== targetSessionId) {
+                console.info('[chat-history] historyLoading wait aborted — session switched', {
+                    sessionId: targetSessionId,
+                    elapsedMs: Date.now() - waitStartedAt,
+                });
+                return 'switched';
+            }
+            if (Date.now() >= deadline) {
+                const prefetchAtTimeout = directoryForLog
+                    ? getSessionPrefetch(directoryForLog, targetSessionId)
+                    : undefined;
+                console.error(
+                    '[chat-history] historyLoading wait timed out — sync flag still true',
+                    {
+                        sessionId: targetSessionId,
+                        directory: directoryForLog,
+                        elapsedMs: Date.now() - waitStartedAt,
+                        waitMs: HISTORY_LOADING_WAIT_MS,
+                        hostTurnPageTimeoutMs: SESSION_TURN_PAGE_TIMEOUT_MS,
+                        historyLoading: historySignalsRef.current.historyLoading,
+                        historyMeta: historyMetaRef.current,
+                        prefetchStatusAtStart: prefetchAtStart?.status ?? null,
+                        prefetchStatusAtTimeout: prefetchAtTimeout?.status ?? null,
+                        prefetchErrorAtTimeout: prefetchAtTimeout?.error ?? null,
+                        prefetchLoadGenerationAtTimeout: prefetchAtTimeout?.loadGeneration ?? null,
+                        // prefetch ready/error while historyLoading stays true ⇒ stale UI flag
+                        likelyStaleLoadingFlag:
+                            prefetchAtTimeout?.status === 'ready'
+                            || prefetchAtTimeout?.status === 'error'
+                            || prefetchAtTimeout == null,
+                    },
+                );
+                return 'timeout';
+            }
             await new Promise<void>((resolve) => {
                 if (typeof window === 'undefined') {
                     resolve();
@@ -862,7 +984,14 @@ export const useChatTimelineController = ({
                 window.setTimeout(resolve, HISTORY_LOADING_POLL_MS);
             });
         }
-        return sessionIdRef.current === targetSessionId;
+        console.info('[chat-history] historyLoading cleared — resuming load older', {
+            sessionId: targetSessionId,
+            elapsedMs: Date.now() - waitStartedAt,
+            prefetchStatus: directoryForLog
+                ? (getSessionPrefetch(directoryForLog, targetSessionId)?.status ?? null)
+                : null,
+        });
+        return sessionIdRef.current === targetSessionId ? 'cleared' : 'switched';
     });
 
     const fetchOlderHistory = useEvent(async (input: {
@@ -904,12 +1033,16 @@ export const useChatTimelineController = ({
             // Background materialize/tail pulls flip historyLoading without
             // disabling the mobile button. User taps must wait for that flight
             // instead of returning false with no feedback (intermittent no-op).
+            // Timeout throws so loadEarlier can toast a dedicated failure.
             if (historySignalsRef.current.historyLoading) {
                 if (!input.userInitiated) {
                     return false;
                 }
-                const cleared = await waitWhileHistoryLoading(targetSessionId);
-                if (!cleared || !historySignalsRef.current.hasMoreAboveTurns) {
+                const wait = await waitWhileHistoryLoading(targetSessionId);
+                if (wait === 'timeout') {
+                    throw createHistoryLoadingTimeoutError();
+                }
+                if (wait === 'switched' || !historySignalsRef.current.hasMoreAboveTurns) {
                     return false;
                 }
             }
@@ -948,8 +1081,12 @@ export const useChatTimelineController = ({
                 // history loading (in-flight prepend / meta.loading).
                 if (historySignalsRef.current.historyLoading) {
                     if (input.userInitiated) {
-                        const cleared = await waitWhileHistoryLoading(targetSessionId);
-                        if (!cleared) {
+                        const wait = await waitWhileHistoryLoading(targetSessionId);
+                        if (wait === 'timeout') {
+                            releaseSnapshot();
+                            throw createHistoryLoadingTimeoutError();
+                        }
+                        if (wait === 'switched') {
                             releaseSnapshot();
                             return false;
                         }
@@ -1001,6 +1138,34 @@ export const useChatTimelineController = ({
                     continue;
                 }
                 if (decision === 'stop-no-growth') {
+                    // Concurrent sync can hold historyLoading while loadMore
+                    // busy-no-ops. Wait it out and retry the same interaction
+                    // budget; never mark history exhausted from a busy miss.
+                    if (historySignalsRef.current.historyLoading) {
+                        if (input.userInitiated) {
+                            const wait = await waitWhileHistoryLoading(targetSessionId);
+                            if (wait === 'timeout') {
+                                releaseSnapshot();
+                                throw createHistoryLoadingTimeoutError();
+                            }
+                            if (wait === 'switched') {
+                                releaseSnapshot();
+                                return false;
+                            }
+                            pagesLoaded -= 1;
+                            continue;
+                        }
+                        releaseSnapshot();
+                        return false;
+                    }
+                    const exhaustedLimit = historyMetaRef.current?.limit ?? limitBefore;
+                    noGrowthHistoryLimitRef.current = exhaustedLimit;
+                    setNoGrowthHistoryLimit(exhaustedLimit);
+                    historySignalsRef.current = {
+                        ...historySignalsRef.current,
+                        hasMoreAboveTurns: false,
+                        canLoadEarlier: false,
+                    };
                     releaseSnapshot();
                     return false;
                 }
@@ -1066,23 +1231,57 @@ export const useChatTimelineController = ({
                 sessionId: targetSessionId,
                 userInitiated: Boolean(options?.userInitiated),
             });
-            // Silent no-op paths (missing cursor, stuck historyLoading timeout,
-            // stop-no-growth) return false without throwing — still toast when
-            // the user asked and history still claims more so it does not look
-            // like a dead button.
-            if (
-                options?.userInitiated
-                && grew === false
-                && historySignalsRef.current.canLoadEarlier
-            ) {
-                toast.error(t('chat.history.loadOlderFailed'));
+            // Silent no-op paths (missing cursor, stop-no-growth) return false
+            // without throwing. Always log when history still claims more;
+            // toast only on user-initiated so auto-fill stays quiet.
+            if (grew === false && historySignalsRef.current.canLoadEarlier) {
+                const diagnostic = {
+                    sessionId: targetSessionId,
+                    grew,
+                    userInitiated: Boolean(options?.userInitiated),
+                    canLoadEarlier: historySignalsRef.current.canLoadEarlier,
+                    hasMoreAboveTurns: historySignalsRef.current.hasMoreAboveTurns,
+                    historyLoading: historySignalsRef.current.historyLoading,
+                    historyMeta: historyMetaRef.current,
+                    messageCount: messagesRef.current.length,
+                    oldestMessageId: messagesRef.current[0]?.info?.id ?? null,
+                };
+                logChatHistoryLoadOlderFailure(
+                    'no-growth',
+                    new Error('chat history pagination returned no growth'),
+                    diagnostic,
+                );
+                if (options?.userInitiated) {
+                    toast.error(t('chat.history.loadOlderFailed'));
+                }
             }
-        } catch {
-            // Transport failures (Host turn-page timeout / network) used to clear
+        } catch (error) {
+            const diagnostic = {
+                sessionId: targetSessionId,
+                userInitiated: Boolean(options?.userInitiated),
+                waitMs: HISTORY_LOADING_WAIT_MS,
+                hostTurnPageTimeoutMs: SESSION_TURN_PAGE_TIMEOUT_MS,
+                canLoadEarlier: historySignalsRef.current.canLoadEarlier,
+                historyLoading: historySignalsRef.current.historyLoading,
+                historyMeta: historyMetaRef.current,
+                messageCount: messagesRef.current.length,
+                oldestMessageId: messagesRef.current[0]?.info?.id ?? null,
+            };
+            // Always console.error — toast remains user-initiated only.
+            if (isHistoryLoadingTimeoutError(error)) {
+                logChatHistoryLoadOlderFailure('timeout', error, diagnostic);
+            } else {
+                logChatHistoryLoadOlderFailure('failed', error, diagnostic);
+            }
+            // Transport failures / historyLoading wait timeout used to clear
             // the spinner with no feedback — mobile looked like a no-op. Toast
             // only on user-initiated paths so auto-fill stays quiet.
             if (options?.userInitiated) {
-                toast.error(t('chat.history.loadOlderFailed'));
+                toast.error(
+                    isHistoryLoadingTimeoutError(error)
+                        ? t('chat.history.loadOlderTimeout')
+                        : t('chat.history.loadOlderFailed'),
+                );
             }
         }
     });
@@ -1165,6 +1364,23 @@ export const useChatTimelineController = ({
                 const grew = await fetchOlderHistory({ preserveViewport: true });
                 if (!grew) {
                     // No-growth or hard stop while still short — block further auto-fill.
+                    if (historySignalsRef.current.canLoadEarlier) {
+                        logChatHistoryLoadOlderFailure(
+                            'no-growth',
+                            new Error('chat history pagination returned no growth'),
+                            {
+                                sessionId: targetSessionId,
+                                source: 'auto-fill',
+                                grew,
+                                canLoadEarlier: historySignalsRef.current.canLoadEarlier,
+                                hasMoreAboveTurns: historySignalsRef.current.hasMoreAboveTurns,
+                                historyLoading: historySignalsRef.current.historyLoading,
+                                historyMeta: historyMetaRef.current,
+                                messageCount: messagesRef.current.length,
+                                oldestMessageId: messagesRef.current[0]?.info?.id ?? null,
+                            },
+                        );
+                    }
                     setAutoFillBlocked(true);
                     return { status: 'blocked' };
                 }
@@ -1172,6 +1388,21 @@ export const useChatTimelineController = ({
             } catch (error) {
                 if ((error as { code?: string } | null)?.code === 'auto-fill-busy') {
                     throw error;
+                }
+                const diagnostic = {
+                    sessionId: targetSessionId,
+                    source: 'auto-fill',
+                    waitMs: HISTORY_LOADING_WAIT_MS,
+                    canLoadEarlier: historySignalsRef.current.canLoadEarlier,
+                    historyLoading: historySignalsRef.current.historyLoading,
+                    historyMeta: historyMetaRef.current,
+                    messageCount: messagesRef.current.length,
+                    oldestMessageId: messagesRef.current[0]?.info?.id ?? null,
+                };
+                if (isHistoryLoadingTimeoutError(error)) {
+                    logChatHistoryLoadOlderFailure('timeout', error, diagnostic);
+                } else {
+                    logChatHistoryLoadOlderFailure('failed', error, diagnostic);
                 }
                 setAutoFillBlocked(true);
                 throw error instanceof Error ? error : new Error('chat timeline auto-fill failed');

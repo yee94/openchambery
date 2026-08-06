@@ -6,6 +6,7 @@ import {
     resolveChatHistoryLoadState,
     resolveChatHistoryPaginationLoading,
     resolveChatSessionTranscriptGate,
+    resolveDesktopLoadOlderStatusVisibility,
     resolveMobileLoadOlderBusy,
     resolveMobileLoadOlderVisibility,
     type ChatContainerHost,
@@ -221,8 +222,9 @@ describe('resolveChatHistoryPaginationLoading', () => {
 
   test('background sessionPrefetch loading alone never blocks user load-more', () => {
     // Regression (Android WebView): stuck prefetch status==='loading' used to
-    // OR into historyMeta.loading, so mobile "load older" waited 4s then
-    // toasted with zero sync.loadMore. Prefetch stays on the transcript gate.
+    // OR into historyMeta.loading, so mobile "load older" waited out the
+    // historyLoading window then toasted with zero sync.loadMore. Prefetch
+    // stays on the transcript gate.
     const prefetchStatus: 'loading' | 'ready' | 'error' = 'loading';
     const historyLoading = resolveChatHistoryPaginationLoading({
       syncLoading: false,
@@ -231,6 +233,26 @@ describe('resolveChatHistoryPaginationLoading', () => {
     // Prefetch must not participate — only the pure inputs above matter.
     expect(prefetchStatus).toBe('loading');
     expect(historyLoading).toBe(false);
+  });
+});
+
+describe('resolveDesktopLoadOlderStatusVisibility', () => {
+  test('desktop shows restrained status only while loadOlder is in flight', () => {
+    expect(resolveDesktopLoadOlderStatusVisibility({
+      isMobile: false,
+      isLoadingOlder: true,
+    })).toBe(true);
+    expect(resolveDesktopLoadOlderStatusVisibility({
+      isMobile: false,
+      isLoadingOlder: false,
+    })).toBe(false);
+  });
+
+  test('mobile never uses the desktop status line (button owns feedback)', () => {
+    expect(resolveDesktopLoadOlderStatusVisibility({
+      isMobile: true,
+      isLoadingOlder: true,
+    })).toBe(false);
   });
 });
 

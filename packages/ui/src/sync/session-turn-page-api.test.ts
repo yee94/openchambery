@@ -450,4 +450,31 @@ describe("fetchSessionTurnPage", () => {
       fetchSessionTurnPage({ sessionID: "ses_1", directory: "/repo", before: "m1" }),
     ).rejects.toThrow()
   })
+
+  test("rejects hanging fetch via independent timer race (Capacitor AbortSignal gap)", async () => {
+    // Capacitor native fetch may ignore AbortSignal.timeout and stay pending forever.
+    // The independent Promise timer race must still settle the call.
+    responseImpl = () => new Promise(() => {})
+    const { fetchSessionTurnPage, raceWithSessionTurnPageTimeout } = await import(
+      "./session-turn-page-api"
+    )
+
+    const hanging = raceWithSessionTurnPageTimeout(new Promise<never>(() => {}), 30)
+    await expect(hanging).rejects.toThrow(/session turn page: timed out after 30ms/)
+
+    const started = Date.now()
+    await expect(
+      fetchSessionTurnPage({
+        sessionID: "ses_1",
+        directory: "/repo",
+        before: "m1",
+        timeoutMs: 40,
+      }),
+    ).rejects.toThrow(/session turn page: timed out after 40ms/)
+    expect(Date.now() - started).toBeLessThan(2_000)
+    expect(calls).toHaveLength(1)
+    // AbortSignal is still attached for transports that honor cancellation
+    // (may also be aborted by AbortSignal.timeout; the timer race is the hard bound).
+    expect(calls[0]!.signal).toBeDefined()
+  })
 })

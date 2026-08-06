@@ -16,6 +16,7 @@ const agentSdkCalls: unknown[][] = [];
 const sessionStatusSdkCalls: unknown[][] = [];
 const sessionActiveSdkCalls: unknown[][] = [];
 const sessionActiveResults: Array<unknown> = [];
+const sdkClientConfigs: Array<unknown> = [];
 
 const promptAsyncMock = mock(async (...args: unknown[]) => {
   promptAsyncCalls.push(args);
@@ -36,7 +37,9 @@ const sessionActiveMock = mock(async (...args: unknown[]) => {
 });
 
 mock.module('@opencode-ai/sdk/v2', () => ({
-  createOpencodeClient: mock(() => ({
+  createOpencodeClient: mock((config: unknown) => {
+    sdkClientConfigs.push(config);
+    return {
     config: {
       get: mock(() => {
         configCalls += 1;
@@ -63,7 +66,8 @@ mock.module('@opencode-ai/sdk/v2', () => ({
         active: sessionActiveMock,
       },
     },
-  })),
+    };
+  }),
 }));
 
 mock.module('@/contexts/runtimeAPIRegistry', () => ({
@@ -72,7 +76,7 @@ mock.module('@/contexts/runtimeAPIRegistry', () => ({
 
 mock.module('@/lib/runtime-url', () => ({
   getRuntimeUrlResolver: mock(() => ({
-    api: () => runtimeBase,
+    api: (path: string) => path === '/' ? (runtimeBase.replace(/\/api$/, '') || '/') : runtimeBase,
   })),
 }));
 
@@ -109,6 +113,7 @@ beforeEach(() => {
   sessionStatusSdkCalls.length = 0;
   sessionActiveSdkCalls.length = 0;
   sessionActiveResults.length = 0;
+  sdkClientConfigs.length = 0;
   runtimeKey = 'test-runtime';
   runtimeBase = '/api';
 });
@@ -137,6 +142,16 @@ describe('opencodeClient abort signals', () => {
     const activeSignal = new AbortController().signal;
     await opencodeClient.getSessionActive(activeSignal);
     expect(sessionActiveSdkCalls[0]).toEqual([{ signal: activeSignal }]);
+  });
+});
+
+describe('opencodeClient V2 runtime base', () => {
+  test('uses the runtime origin so V2 session.active supplies its own API prefix', async () => {
+    runtimeBase = 'https://runtime.example/api';
+
+    await opencodeClient.getSessionActive();
+
+    expect((sdkClientConfigs.at(-1) as { baseUrl: string }).baseUrl).toBe('https://runtime.example');
   });
 });
 

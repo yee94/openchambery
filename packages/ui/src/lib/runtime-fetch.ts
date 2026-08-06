@@ -487,7 +487,21 @@ export const installRuntimeFetchBridge = (): void => {
       const headers = await mergeHeaders(input.headers, init?.headers);
       const target = buildRuntimeFetchUrl(input.url);
       const request = target === input.url ? input : new Request(target, input);
-      return nativeFetch(new Request(request, { ...init, headers }));
+      const response = await nativeFetch(new Request(request, { ...init, headers }));
+      if (response.status >= 500) {
+        let path = target;
+        try {
+          path = new URL(target).pathname;
+        } catch {
+          // Keep the relative route when URL parsing is unavailable.
+        }
+        console.error(
+          '[runtime-fetch] server request failed',
+          { method: request.method, path, status: response.status, statusText: response.statusText },
+          new Error(`runtime fetch received HTTP ${response.status}`),
+        );
+      }
+      return response;
     }
 
     return nativeFetch(input, init);

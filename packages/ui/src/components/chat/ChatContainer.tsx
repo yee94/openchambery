@@ -19,6 +19,7 @@ import {
     resolveChatHistoryLoadState,
     resolveChatHistoryPaginationLoading,
     resolveChatSessionTranscriptGate,
+    resolveDesktopLoadOlderStatusVisibility,
     resolveMobileLoadOlderBusy,
     resolveMobileLoadOlderVisibility,
     mergePendingUserMessagePresentations,
@@ -291,6 +292,12 @@ const ChatViewport = React.memo(({
     // Spinner/disabled is mutation-owned only (isLoadingOlder); background
     // prefetch/SWR loading never drives the button.
     const loadOlderBusy = resolveMobileLoadOlderBusy({ isLoadingOlder });
+    // Desktop has no load-older button — show a restrained muted status while
+    // scroll/auto-fill pagination is in flight so a long Host wait is not silent.
+    const showDesktopLoadOlderStatus = resolveDesktopLoadOlderStatusVisibility({
+        isMobile,
+        isLoadingOlder: loadOlderBusy,
+    });
     const promptPreviewsByTurnIdRef = React.useRef<Map<string, Part[]>>(new Map());
     // Cache normalized parts per source array so unchanged messages keep the
     // same reference and the memo below can bail out to the previous map.
@@ -423,6 +430,22 @@ const ChatViewport = React.memo(({
                                     )}
                                     {t('chat.history.loadOlder')}
                                 </Button>
+                            </div>
+                        )}
+                        {showDesktopLoadOlderStatus && (
+                            <div
+                                className="flex items-center justify-center gap-1.5 pt-3 pb-1"
+                                role="status"
+                                aria-live="polite"
+                            >
+                                <Icon
+                                    name="loader-4"
+                                    className="size-3.5 animate-spin text-[var(--surface-mutedForeground)]"
+                                    aria-hidden="true"
+                                />
+                                <span className="typography-meta text-[var(--surface-mutedForeground)]">
+                                    {t('chat.history.loadingMore')}
+                                </span>
                             </div>
                         )}
                         <MessageList
@@ -906,9 +929,16 @@ const ChatContainerContent: React.FC<ChatContainerContentProps> = ({
     // History metadata — boundary facts from the directory child store; request
     // lifecycle (loading) stays on sync/assistant page flights but never feeds
     // canLoadEarlier/complete/limit. Prefetch status is cold-transcript only.
+    // Read syncLoading during render (not only inside useMemo) so a loadingRef
+    // flip that rebuilds `sync` always invalidates this memo — a cached
+    // `loading: true` after the flight cleared blocked load-older for the full
+    // wait window with nothing in the network panel.
+    const syncHistoryLoading = Boolean(
+        currentSessionId
+        && sync.isLoading(currentSessionId, { directory: effectiveSessionDirectory }),
+    );
     const historyMeta = React.useMemo(() => {
         if (!currentSessionId) return null;
-        const sessionDir = { directory: effectiveSessionDirectory };
         const loadState = resolveChatHistoryLoadState({
             boundary: historyBoundary,
             assistantComplete: assistantHistory?.complete ?? true,
@@ -921,14 +951,21 @@ const ChatContainerContent: React.FC<ChatContainerContentProps> = ({
             canLoadEarlier: loadState.canLoadEarlier,
             // Concurrent-page wait gate for the timeline only (sync.isLoading /
             // assistant archive). Never OR sessionPrefetch status — it can stick
-            // at loading on Relay and blocked user loadMore for 4s with toast
-            // and zero fetch. Button spinner stays mutation-owned separately.
+            // at loading on Relay and blocked user loadMore for the historyLoading
+            // wait window with toast and zero fetch. Button spinner stays
+            // mutation-owned separately.
             loading: resolveChatHistoryPaginationLoading({
-                syncLoading: sync.isLoading(currentSessionId, sessionDir),
+                syncLoading: syncHistoryLoading,
                 assistantLoading: Boolean(assistantHistory?.loading),
             }),
         };
-    }, [assistantHistory?.complete, assistantHistory?.loading, currentSessionId, effectiveSessionDirectory, historyBoundary, sync]);
+    }, [
+        assistantHistory?.complete,
+        assistantHistory?.loading,
+        currentSessionId,
+        historyBoundary,
+        syncHistoryLoading,
+    ]);
 
     const isMobile = useUIStore((state) => state.isMobile);
     const isDedicatedMobileApp = useMobileAppActions() !== null;
@@ -1142,6 +1179,7 @@ const ChatContainerContent: React.FC<ChatContainerContentProps> = ({
 
     const timelineController = useChatTimelineController({
         sessionId: currentSessionId,
+        directory: effectiveSessionDirectory,
         messages: viewportMessages,
         historyMeta,
         scrollRef,

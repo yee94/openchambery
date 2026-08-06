@@ -2,7 +2,7 @@ const prefix = '/api/openchamber/message-queue';
 const statusFor = (error) => ({ validation_error: 400, not_found: 404, revision_conflict: 409, row_version_conflict: 409, idempotency_conflict: 409, generation_conflict: 409, authority_conflict: 409, scope_locked: 409, reserved: 409, reservation_expired: 409, reservation_generation_conflict: 409, reservation_token_mismatch: 409, attachment_unavailable: 404, attachment_total_limit: 413, admission_payload_limit: 413, attachment_store_not_found: 404, attachment_store_max_bytes: 413, attachment_store_size_mismatch: 400, attachment_store_hash_mismatch: 400, attachment_store_aborted: 499 })[error?.code] ?? 500;
 const publicCode = (error) => statusFor(error) === 500 ? 'internal_error' : error.code;
 const unsupported = (res) => res.status(501).json({ code: 'unavailable' });
-const send = (res, action) => { try { res.json(action()); } catch (error) { res.status(statusFor(error)).json({ code: publicCode(error) }); } };
+const send = (res, action) => { try { res.json(action()); } catch (error) { const status = statusFor(error); if (status === 500) console.error('[message-queue] route failed', error); res.status(status).json({ code: publicCode(error) }); } };
 
 export const registerMessageQueueRoutes = (app, { messageQueueService, messageQueueRuntime }) => {
   const runtime = () => messageQueueRuntime ?? (messageQueueService ? { service: messageQueueService, status: () => ({ capability: true, ...messageQueueService.getAuthority(), worker: { paused: true, active: 0 } }) } : null);

@@ -13,6 +13,11 @@ import type { Part } from '@opencode-ai/sdk/v2';
 export type AssistantTpsInput = {
   createdAt?: number | null;
   completedAt?: number | null;
+  /**
+   * Settled interrupted turns can retain a turn duration while OpenCode omits
+   * the terminal assistant message's completion timestamp.
+   */
+  fallbackDurationMs?: number | null;
   outputTokens?: number | null;
   reasoningTokens?: number | null;
   parts?: Part[] | null;
@@ -64,18 +69,26 @@ export const computeGenerationDurationMs = (
   createdAt: number | null | undefined,
   completedAt: number | null | undefined,
   parts: Part[] | null | undefined,
+  fallbackDurationMs?: number | null,
 ): number | null => {
-  if (typeof createdAt !== 'number' || !Number.isFinite(createdAt) || createdAt <= 0) {
+  const completedDurationMs = typeof createdAt === 'number'
+    && Number.isFinite(createdAt)
+    && createdAt > 0
+    && typeof completedAt === 'number'
+    && Number.isFinite(completedAt)
+    && completedAt > createdAt
+    ? completedAt - createdAt
+    : null;
+  const wallMs = completedDurationMs ?? (
+    typeof fallbackDurationMs === 'number'
+    && Number.isFinite(fallbackDurationMs)
+    && fallbackDurationMs > 0
+      ? fallbackDurationMs
+      : null
+  );
+  if (wallMs === null) {
     return null;
   }
-  if (typeof completedAt !== 'number' || !Number.isFinite(completedAt) || completedAt <= 0) {
-    return null;
-  }
-  if (completedAt <= createdAt) {
-    return null;
-  }
-
-  const wallMs = completedAt - createdAt;
   const toolMs = sumToolDurationMs(parts);
   const generationMs = wallMs - toolMs;
   if (!Number.isFinite(generationMs) || generationMs <= 0) {
@@ -89,7 +102,12 @@ export const computeGenerationDurationMs = (
  * Returns null when TPS cannot be measured.
  */
 export const computeAssistantTps = (input: AssistantTpsInput): number | null => {
-  const generationMs = computeGenerationDurationMs(input.createdAt, input.completedAt, input.parts);
+  const generationMs = computeGenerationDurationMs(
+    input.createdAt,
+    input.completedAt,
+    input.parts,
+    input.fallbackDurationMs,
+  );
   if (generationMs === null) {
     return null;
   }
