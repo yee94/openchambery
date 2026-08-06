@@ -26,7 +26,7 @@ describe("scoped session status", () => {
       { directory: "/b", sessionID: "shared" },
     ], () => { notifications += 1 })
 
-    a.setState({ part: { message: [{ id: "part" } as never] } })
+    a.setState({ todo: { other: [] } })
     a.setState({ session_status: { other: { type: "busy" } } })
     expect(notifications).toBe(0)
 

@@ -1779,7 +1779,7 @@ export const settingsDict = {
   'settings.voice.page.field.ttsInputModeSanitized': 'Sanitized',
   'settings.voice.page.field.ttsInputModeRaw': 'Raw Markdown',
   'settings.voice.page.field.ttsInputModeSummarized': 'Summarized',
-  'settings.openchamber.visual.section.colorMode': 'Color Mode',
+  'settings.openchamber.visual.section.colorMode': 'Theme',
   'settings.openchamber.visual.field.themeMode': 'Switch theme',
   'settings.openchamber.visual.field.display': 'Display',
   'settings.openchamber.visual.section.localization': 'Localization',

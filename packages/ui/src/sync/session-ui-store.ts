@@ -1216,7 +1216,10 @@ async function handleCombinedDraftSend(params: {
             const store = dirStoreForDirectory(sessionDir ?? resolvedDir, { bootstrap: false })
             // Gap fill only: SSE may already own rows on this page for the
             // session the prompt did reach, and those live objects are newer.
-            materializeConfirmedSendRecords(store, session.id, messageID, records, { gapFillOnly: true })
+            materializeConfirmedSendRecords(store, session.id, messageID, records, {
+              gapFillOnly: true,
+              directory: sessionDir ?? resolvedDir,
+            })
             // Session exists and the prompt likely landed — still attach the armed goal.
             onSessionReady?.(session.id, sessionDir)
             return

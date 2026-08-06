@@ -3,7 +3,13 @@ import type { Message, Part, ReasoningPart, TextPart, ToolPart } from '@opencode
 
 import type { MessageStreamPhase } from '@/stores/types/sessionTypes';
 import { useSessionUIStore } from '@/sync/session-ui-store';
-import { useDirectorySync, useSessionPermissions, useSessionQuestions, useSessionStatus } from '@/sync/sync-context';
+import {
+    useSessionMessages,
+    useSessionParts,
+    useSessionPermissions,
+    useSessionQuestions,
+    useSessionStatus,
+} from '@/sync/sync-context';
 import { isFullySyntheticMessage } from '@/lib/messages/synthetic';
 import { useI18n, type I18nKey, type I18nParams } from '@/lib/i18n';
 import { useSessionActivity } from './useSessionActivity';
@@ -269,13 +275,9 @@ export function useAssistantStatus(
         ), [currentSessionId]),
     );
 
-    const rawSessionMessages = useDirectorySync(
-        React.useCallback((state) => {
-            if (!currentSessionId) {
-                return EMPTY_MESSAGES;
-            }
-            return state.message[currentSessionId] ?? EMPTY_MESSAGES;
-        }, [currentSessionId]),
+    // Ticket 02: messages via repository observer (useSessionMessages).
+    const rawSessionMessages = useSessionMessages(
+        currentSessionId ?? '',
         currentSessionDirectory ?? undefined,
     );
 
@@ -288,14 +290,17 @@ export function useAssistantStatus(
         return null;
     }, [rawSessionMessages]);
 
-    const lastAssistantStatusSignature = useDirectorySync(
-        React.useCallback((state) => {
-            const genericKey = `${currentSessionId ?? ''}:${lastAssistantId ?? ''}`;
-            const parts = lastAssistantId ? (state.part[lastAssistantId] ?? EMPTY_PARTS) : EMPTY_PARTS;
-            return encodeParsedStatus(createParsedStatus(parts, genericKey, t));
-        }, [currentSessionId, lastAssistantId, t]),
+    // Ticket 02: parts via repository; session-scoped subscription when known.
+    const lastAssistantParts = useSessionParts(
+        lastAssistantId ?? '',
         currentSessionDirectory ?? undefined,
+        currentSessionId ?? undefined,
     );
+    const lastAssistantStatusSignature = React.useMemo(() => {
+        const genericKey = `${currentSessionId ?? ''}:${lastAssistantId ?? ''}`;
+        const parts = lastAssistantId ? lastAssistantParts : EMPTY_PARTS;
+        return encodeParsedStatus(createParsedStatus(parts, genericKey, t));
+    }, [currentSessionId, lastAssistantId, lastAssistantParts, t]);
 
     const sessionPermissionRequests = useSessionPermissions(currentSessionId ?? '', currentSessionDirectory ?? undefined);
     const sessionQuestionRequests = useSessionQuestions(currentSessionId ?? '', currentSessionDirectory ?? undefined);

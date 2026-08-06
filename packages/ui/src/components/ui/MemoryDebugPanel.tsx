@@ -2,7 +2,7 @@ import React from 'react';
 
 import { useSessionUIStore } from '@/sync/session-ui-store';
 import { useViewportStore } from '@/sync/viewport-store';
-import { useSessions, useDirectorySync } from '@/sync/sync-context';
+import { useSessions, useSyncDirectory } from '@/sync/sync-context';
 import { MEMORY_LIMITS } from '@/stores/types/sessionTypes';
 import { useGitHubPrStatusStore } from '@/stores/useGitHubPrStatusStore';
 import { getBackgroundTrimLimit } from '@/stores/types/sessionTypes';
@@ -13,6 +13,13 @@ import { Tooltip, TooltipTrigger, TooltipContent } from '@/components/ui/tooltip
 import { ScrollableOverlay } from '@/components/ui/ScrollableOverlay';
 import { Icon } from "@/components/icon/Icon";
 import { useI18n } from '@/lib/i18n';
+import {
+  getTranscriptRepository,
+  getTranscriptRepositoryBindingRevision,
+  subscribeTranscriptRepositoryBinding,
+  transcriptScope,
+} from '@/sync/transcript-repository-runtime';
+import type { Message } from '@opencode-ai/sdk/v2/client';
 
 interface DebugPanelProps {
   onClose?: () => void;
@@ -106,7 +113,31 @@ const DebugPanel: React.FC<DebugPanelProps> = ({ onClose }) => {
   const currentSessionId = useSessionUIStore((state) => state.currentSessionId);
   const sessionMemoryState = useViewportStore((state) => state.sessionMemoryState);
   const sessions = useSessions();
-  const messageRecord = useDirectorySync((state) => state.message);
+  const directory = useSyncDirectory();
+  // Ticket 09: inventory from Query repository (not child-store message maps).
+  const [bindingRevision, setBindingRevision] = React.useState(() => getTranscriptRepositoryBindingRevision());
+  React.useEffect(() => subscribeTranscriptRepositoryBinding(() => {
+    setBindingRevision(getTranscriptRepositoryBindingRevision());
+  }), []);
+  const messageRecord = React.useMemo(() => {
+    void bindingRevision;
+    const repository = getTranscriptRepository();
+    const record: Record<string, Message[]> = {};
+    if (!repository) return record;
+    // Prefer sessions list + optional cache budget inventory when available.
+    const budget = (repository as { getCacheBudget?: () => { listCanonical: () => Array<{ scope: { directory: string; sessionID: string } }> } }).getCacheBudget?.();
+    const scopes = budget
+      ? budget.listCanonical().map((entry) => entry.scope)
+      : sessions.map((session) => ({ directory, sessionID: session.id }));
+    for (const scope of scopes) {
+      if (directory && scope.directory !== directory) continue;
+      const data = repository.getTranscript(transcriptScope(scope.directory, scope.sessionID));
+      record[scope.sessionID] = data.messageOrder
+        .map((id) => data.messagesByID[id])
+        .filter((message): message is Message => Boolean(message));
+    }
+    return record;
+  }, [bindingRevision, directory, sessions]);
   const totalGitHubRequests = useGitHubPrStatusStore((state) => state.totalRequestCount);
   const [streamSnapshot, setStreamSnapshot] = React.useState<StreamPerfSnapshot>(() => getStreamPerfSnapshot());
   const [vscodeStreamSnapshot, setVsCodeStreamSnapshot] = React.useState<StreamPerfSnapshot>(() => getVsCodeStreamPerfSnapshot());

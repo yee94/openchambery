@@ -27,6 +27,10 @@ describe('feature routes runtime composition', () => {
     const source = await fs.readFile(new URL('./feature-routes-runtime.js', import.meta.url), 'utf8');
     expect(source).toContain("import { registerSessionTurnPageRoutes } from '../session-turn-pages/routes.js';");
     expect(source).toMatch(/registerSessionTurnPageRoutes\(app, \{[\s\S]*buildOpenCodeUrl,[\s\S]*getOpenCodeAuthHeaders,/);
+    // OpenChamber-owned turn-page/reconcile registration comment + call stay before end of feature composition.
+    expect(source).toContain('// OpenChamber-owned turn-window messages API — must register before generic proxy.');
+    const turnIdx = source.indexOf('registerSessionTurnPageRoutes(app,');
+    expect(turnIdx).toBeGreaterThan(-1);
   });
 
   it('removes broken SSE clients while continuing worktree topology broadcasts', () => {

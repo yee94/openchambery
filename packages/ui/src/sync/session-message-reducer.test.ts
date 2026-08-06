@@ -666,11 +666,20 @@ describe("reduceSessionMessagePage — race and error semantics", () => {
 
     expect(result.applied).toBe(true)
     expect(result.message.ses_1?.map((item) => item.id)).toEqual(["msg_1", "msg_2", "msg_3"])
+    // Insert-only identity: existing message objects are never rewritten.
     expect(result.message.ses_1?.[0]).toBe(previousAssistant)
     expect(result.message.ses_1?.[2]).toBe(liveAssistant)
-    expect((result.part.msg_1?.[0] as { text?: string }).text).toBe("complete reasoning")
-    expect((result.part.msg_1?.[0] as { time?: { end?: number } }).time?.end).toBe(10)
+    // Parts are skip-existing: keep live halfReasoning reference/text, do not
+    // overwrite with completedReasoning from the lagging recovery page.
+    expect(result.part.msg_1?.[0]).toBe(halfReasoning)
+    expect((result.part.msg_1?.[0] as { text?: string }).text).toBe("half")
+    expect((result.part.msg_1?.[0] as { time?: { end?: number } }).time?.end).toBeUndefined()
+    // Existing live msg_3 parts stay as-is.
+    expect(result.part.msg_3?.[0]).toBe(liveReasoning)
     expect((result.part.msg_3?.[0] as { text?: string }).text).toBe("newer reasoning from sse")
+    // Missing msg_2 and its part are backfilled.
+    expect(result.message.ses_1?.[1]).toEqual(missingUser)
+    expect((result.part.msg_2?.[0] as { text?: string }).text).toBe("sent prompt")
   })
 
   test("skips stale initial pages", () => {

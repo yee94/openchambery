@@ -1,50 +1,23 @@
 import React from 'react';
-import { useDirectoryStore, useSession, useSessionStatus } from '@/sync/sync-context';
+import {
+  useDirectoryStore,
+  useSession,
+  useSessionStatus,
+  useSyncDirectory,
+} from '@/sync/sync-context';
+import { useTranscriptLastMessageSnapshot } from '@/sync/transcript-repository-observers';
 import { getSessionAssist, type SessionAssistPayload } from '@/lib/sessionAssistMetadata';
 import { useUIStore } from '@/stores/useUIStore';
 
 // How long the chat must sit untouched before the recap becomes visible.
 export const RECAP_VISIBILITY_DELAY_MS = 60 * 1000;
 
-interface LastMessageSnapshot {
-  id: string;
-  role: string;
-  timestamp: number;
-}
-
-/** Narrow subscription to the last message of a session (id/role/time only). */
-function useLastMessageSnapshot(sessionId: string, directory?: string): LastMessageSnapshot | null {
-  const store = useDirectoryStore(directory);
-  const cacheRef = React.useRef<LastMessageSnapshot | null>(null);
-
-  const getSnapshot = React.useCallback((): LastMessageSnapshot | null => {
-    if (!sessionId) return null;
-    const messages = store.getState().message[sessionId];
-    const last = messages && messages.length > 0 ? messages[messages.length - 1] : null;
-    const info = last as { id?: string; role?: string; time?: { completed?: number; created?: number } } | null;
-    if (!info?.id) {
-      cacheRef.current = null;
-      return null;
-    }
-    const next: LastMessageSnapshot = {
-      id: info.id,
-      role: typeof info.role === 'string' ? info.role : '',
-      timestamp: info.time?.completed ?? info.time?.created ?? 0,
-    };
-    const cached = cacheRef.current;
-    if (cached && cached.id === next.id && cached.role === next.role && cached.timestamp === next.timestamp) {
-      return cached;
-    }
-    cacheRef.current = next;
-    return next;
-  }, [sessionId, store]);
-
-  const subscribe = React.useCallback((notify: () => void) => {
-    if (!sessionId) return () => undefined;
-    return store.subscribe(notify);
-  }, [sessionId, store]);
-
-  return React.useSyncExternalStore(subscribe, getSnapshot, getSnapshot);
+/** Narrow last-message snapshot via TranscriptRepository (Ticket 02 remediation). */
+function useLastMessageSnapshot(sessionId: string, directory?: string) {
+  const syncDirectory = useSyncDirectory();
+  const targetDirectory = directory || syncDirectory;
+  const store = useDirectoryStore(targetDirectory);
+  return useTranscriptLastMessageSnapshot(sessionId, targetDirectory, store);
 }
 
 export interface SessionAssistState {

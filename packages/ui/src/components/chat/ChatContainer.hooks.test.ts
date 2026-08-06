@@ -47,12 +47,14 @@ describe('ChatContainer source contracts', () => {
         expect(source).not.toContain('const showLoadOlderButton = isMobileSurfaceRuntime()');
     });
 
-    test('history pagination facts come only from the child-store boundary', () => {
-        // ChatContainer subscribes the directory child store boundary directly
-        // and never stitches pagination facts from prefetch cursor/complete/limit.
-        expect(source).toContain('state.session_history_boundary?.[');
+    test('history pagination facts come only from the transcript repository projection', () => {
+        // Ticket 02: ChatContainer reads pagination via useSessionTranscriptPagination
+        // (repository getPagination) and never stitches facts from prefetch.
+        expect(source).toContain('useSessionTranscriptPagination');
+        expect(source).toContain('transcriptPagination.boundary');
         expect(source).toContain('boundary: historyBoundary');
         expect(source).toContain('limit: historyBoundary.loadedTurns');
+        expect(source).not.toContain('state.session_history_boundary?.[');
         expect(source).not.toContain('sessionPrefetchInfo?.cursor');
         expect(source).not.toContain('sessionPrefetchInfo?.complete');
         expect(source).not.toContain('sessionPrefetchInfo?.limit');

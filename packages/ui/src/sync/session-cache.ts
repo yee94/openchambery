@@ -1,23 +1,18 @@
 import type {
-  Message,
-  Part,
   PermissionRequest,
   QuestionRequest,
   SessionStatus,
   Todo,
 } from "@opencode-ai/sdk/v2/client"
-import type { FileDiff, SessionHistoryBoundary } from "./types"
+import type { FileDiff } from "./types"
 
 type SessionCache = {
   session_status: Record<string, SessionStatus | undefined>
   session_status_observed_at?: Record<string, number | undefined>
   session_diff: Record<string, FileDiff[] | undefined>
   todo: Record<string, Todo[] | undefined>
-  message: Record<string, Message[] | undefined>
-  part: Record<string, Part[] | undefined>
   permission: Record<string, PermissionRequest[] | undefined>
   question: Record<string, QuestionRequest[] | undefined>
-  session_history_boundary?: Record<string, SessionHistoryBoundary | undefined>
 }
 
 export function getProtectedSessionCacheIds(store: SessionCache): Set<string> {
@@ -41,53 +36,26 @@ export function getProtectedSessionCacheIds(store: SessionCache): Set<string> {
     }
   }
 
-  for (const [sessionID, messages] of Object.entries(store.message ?? {})) {
-    const lastMessage = messages?.[messages.length - 1]
-    if (
-      lastMessage?.role === "assistant"
-      && typeof (lastMessage as { time?: { completed?: number } }).time?.completed !== "number"
-    ) {
-      protectedIds.add(sessionID)
-    }
-  }
-
+  // Ticket 09 batch 2: incomplete-message heuristic removed — transcript is Query-owned.
   return protectedIds
 }
 
+/**
+ * Drop non-transcript session-scoped caches (status/todo/permission/question/diff).
+ * Transcript message/part/boundary live in QueryCache — callers must also
+ * invoke `purgeTranscriptSession` for those domains.
+ */
 export function dropSessionCaches(store: SessionCache, sessionIDs: Iterable<string>) {
   const stale = new Set(Array.from(sessionIDs).filter(Boolean))
   if (stale.size === 0) return
 
-  const staleMessageIDs = new Set<string>()
   for (const sessionID of stale) {
-    for (const message of store.message?.[sessionID] ?? []) {
-      if (message?.id) staleMessageIDs.add(message.id)
-    }
-  }
-
-  for (const messageID of staleMessageIDs) {
-    if (store.part) delete store.part[messageID]
-  }
-
-  for (const key of Object.keys(store.part ?? {})) {
-    const parts = store.part[key]
-    if (!parts?.some((part) => stale.has((part as { sessionID?: string })?.sessionID ?? "")))
-      continue
-    delete store.part[key]
-  }
-
-  for (const sessionID of stale) {
-    delete store.message[sessionID]
     delete store.todo[sessionID]
     delete store.session_diff[sessionID]
     delete store.session_status[sessionID]
     if (store.session_status_observed_at) delete store.session_status_observed_at[sessionID]
     delete store.permission[sessionID]
     delete store.question[sessionID]
-    // The older-history boundary belongs to the session cache: session.deleted,
-    // temporary-session cleanup, and ordinary eviction all delete it here so no
-    // orphan boundary survives its messages. The next visit reads `unknown`.
-    if (store.session_history_boundary) delete store.session_history_boundary[sessionID]
   }
 }
 

@@ -1185,7 +1185,7 @@ export const settingsDict = {
   'settings.openchamber.visual.section.activityDefaultAria': 'Domyślny tryb aktywności',
   'settings.openchamber.visual.section.chatRenderMode': 'Tryb renderowania czatu',
   'settings.openchamber.visual.section.chatRenderModeAria': 'Tryb renderowania czatu',
-  'settings.openchamber.visual.section.colorMode': 'Tryb kolorów',
+  'settings.openchamber.visual.section.colorMode': 'Motyw',
   'settings.openchamber.visual.field.themeMode': 'Przełącz motyw',
   'settings.openchamber.visual.field.display': 'Wyświetlanie',
   'settings.openchamber.visual.section.diffLayout': 'Układ diffa',

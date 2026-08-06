@@ -17,7 +17,10 @@ import { getRuntimeKey } from '@/lib/runtime-switch';
 import { toast } from '@/components/ui';
 import { useI18n } from '@/lib/i18n';
 import { SESSION_TURN_PAGE_TIMEOUT_MS } from '@/sync/session-turn-page-api';
-import { getSessionPrefetch } from '@/sync/session-prefetch-cache';
+import {
+    getTranscriptRepository,
+    transcriptScope,
+} from '@/sync/transcript-repository-runtime';
 
 type ViewportAnchor = { messageId: string; offsetTop: number };
 
@@ -927,8 +930,10 @@ export const useChatTimelineController = ({
         const waitStartedAt = Date.now();
         const deadline = waitStartedAt + HISTORY_LOADING_WAIT_MS;
         const directoryForLog = directoryRef.current;
-        const prefetchAtStart = directoryForLog
-            ? getSessionPrefetch(directoryForLog, targetSessionId)
+        const requestAtStart = directoryForLog
+            ? getTranscriptRepository()?.getRequestState?.(
+                transcriptScope(directoryForLog, targetSessionId),
+            )
             : undefined;
         console.info('[chat-history] waiting for sync pagination to clear', {
             sessionId: targetSessionId,
@@ -937,9 +942,8 @@ export const useChatTimelineController = ({
             hostTurnPageTimeoutMs: SESSION_TURN_PAGE_TIMEOUT_MS,
             historyLoading: historySignalsRef.current.historyLoading,
             historyMeta: historyMetaRef.current,
-            prefetchStatus: prefetchAtStart?.status ?? null,
-            prefetchError: prefetchAtStart?.error ?? null,
-            prefetchLoadGeneration: prefetchAtStart?.loadGeneration ?? null,
+            requestStatus: requestAtStart?.status ?? null,
+            requestError: requestAtStart?.error ?? null,
         });
         while (historySignalsRef.current.historyLoading) {
             if (sessionIdRef.current !== targetSessionId) {
@@ -950,8 +954,10 @@ export const useChatTimelineController = ({
                 return 'switched';
             }
             if (Date.now() >= deadline) {
-                const prefetchAtTimeout = directoryForLog
-                    ? getSessionPrefetch(directoryForLog, targetSessionId)
+                const requestAtTimeout = directoryForLog
+                    ? getTranscriptRepository()?.getRequestState?.(
+                        transcriptScope(directoryForLog, targetSessionId),
+                    )
                     : undefined;
                 console.error(
                     '[chat-history] historyLoading wait timed out — sync flag still true',
@@ -963,15 +969,13 @@ export const useChatTimelineController = ({
                         hostTurnPageTimeoutMs: SESSION_TURN_PAGE_TIMEOUT_MS,
                         historyLoading: historySignalsRef.current.historyLoading,
                         historyMeta: historyMetaRef.current,
-                        prefetchStatusAtStart: prefetchAtStart?.status ?? null,
-                        prefetchStatusAtTimeout: prefetchAtTimeout?.status ?? null,
-                        prefetchErrorAtTimeout: prefetchAtTimeout?.error ?? null,
-                        prefetchLoadGenerationAtTimeout: prefetchAtTimeout?.loadGeneration ?? null,
-                        // prefetch ready/error while historyLoading stays true ⇒ stale UI flag
+                        requestStatusAtStart: requestAtStart?.status ?? null,
+                        requestStatusAtTimeout: requestAtTimeout?.status ?? null,
+                        requestErrorAtTimeout: requestAtTimeout?.error ?? null,
                         likelyStaleLoadingFlag:
-                            prefetchAtTimeout?.status === 'ready'
-                            || prefetchAtTimeout?.status === 'error'
-                            || prefetchAtTimeout == null,
+                            requestAtTimeout?.status === 'ready'
+                            || requestAtTimeout?.status === 'error'
+                            || requestAtTimeout == null,
                     },
                 );
                 return 'timeout';
@@ -987,8 +991,10 @@ export const useChatTimelineController = ({
         console.info('[chat-history] historyLoading cleared — resuming load older', {
             sessionId: targetSessionId,
             elapsedMs: Date.now() - waitStartedAt,
-            prefetchStatus: directoryForLog
-                ? (getSessionPrefetch(directoryForLog, targetSessionId)?.status ?? null)
+            requestStatus: directoryForLog
+                ? (getTranscriptRepository()?.getRequestState?.(
+                    transcriptScope(directoryForLog, targetSessionId),
+                )?.status ?? null)
                 : null,
         });
         return sessionIdRef.current === targetSessionId ? 'cleared' : 'switched';

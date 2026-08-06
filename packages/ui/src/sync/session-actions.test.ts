@@ -40,6 +40,9 @@ let hostTurnPageBehavior: { cursor: string | null; complete: boolean; turnCount?
   complete: true,
 }
 mock.module("./session-turn-page-api", () => ({
+  SESSION_TURN_PAGE_TURNS: 3,
+  SESSION_TURN_PAGE_TIMEOUT_MS: 30_000,
+  raceWithSessionTurnPageTimeout: async <T>(operation: Promise<T>) => operation,
   fetchHostSessionTurnPageForPurpose: mock(async (input: Record<string, unknown>) => {
     hostTurnPageCalls.push(input)
     replyCalls.push({ method: "host.session.turnPage", params: input })
@@ -390,21 +393,33 @@ type SessionWithDirectory = Session & {
   project?: { worktree?: string | null }
 }
 
+/** Test store: DirectoryStore + optional transcript maps for residual fixtures. */
+type TestDirectoryStore = DirectoryStore & {
+  message: Record<string, Message[]>
+  part: Record<string, Part[]>
+  session_history_boundary: Record<string, unknown>
+}
+
 function createStore(
   permissions: Record<string, PermissionRequest[]>,
-  state?: Partial<DirectoryStore>,
-): StoreApi<DirectoryStore> {
-  return create<DirectoryStore>()((set) => ({
+  state?: Partial<TestDirectoryStore>,
+): StoreApi<TestDirectoryStore> {
+  // Ticket 09 batch 2: production State has no message/part; tests keep optional
+  // transcript maps for residual fixtures that still assert host store fields.
+  return create<TestDirectoryStore>()((set) => ({
     ...INITIAL_STATE,
+    message: {},
+    part: {},
+    session_history_boundary: {},
     ...state,
     permission: permissions,
-    patch: (partial) => set(partial),
-    replace: (next) => set(next),
+    patch: (partial) => set(partial as never),
+    replace: (next) => set(next as never),
   }))
 }
 
 function createChildStores(
-  entries: Array<[string, StoreApi<DirectoryStore>]>,
+  entries: Array<[string, StoreApi<TestDirectoryStore>]>,
   options?: {
     trackEnsure?: Array<{ directory: string; options?: { bootstrap?: boolean } }>
   },
@@ -740,9 +755,6 @@ describe("fetchMessagesForSession startup race", () => {
       session_status: { [sessionID]: { type: "idle" } },
     })
     const childStores = createChildStores([["/test/project", store]])
-    const { setSessionPrefetch, markSessionPrefetchDirty } = await import("./session-prefetch-cache")
-    setSessionPrefetch({ directory: "/test/project", sessionID, requestedLimit: 2 })
-    markSessionPrefetchDirty("/test/project", [sessionID])
 
     const { fetchMessagesForSession, setActionRefs } = await import("./session-actions")
     setActionRefs(mockSdk as unknown as OpencodeClient, childStores, () => "/test/project")
@@ -834,9 +846,7 @@ describe("fetchMessagesForSession startup race", () => {
       // No session_history_boundary entry → unknown.
     })
     const childStores = createChildStores([["/test/project", store]])
-    // A clean in-TTL prefetch entry must not rescue the unknown boundary.
-    const { setSessionPrefetch } = await import("./session-prefetch-cache")
-    setSessionPrefetch({ directory: "/test/project", sessionID, requestedLimit: 30 })
+    // Unknown boundary must still force an authoritative tail fetch (no prefetch cache).
     const { fetchMessagesForSession, setActionRefs } = await import("./session-actions")
     setActionRefs(mockSdk as unknown as OpencodeClient, childStores, () => "/test/project")
     uiCurrentSessionId = sessionID
@@ -850,7 +860,7 @@ describe("fetchMessagesForSession startup race", () => {
     })
   })
 
-  test("a known exhausted boundary with a clean prefetch entry reuses the cache", async () => {
+  test("a known exhausted boundary with resolved hasSession reuses the cache", async () => {
     const sessionID = "session-known-boundary"
     const existingUser = {
       id: "msg_kb_user",
@@ -868,8 +878,6 @@ describe("fetchMessagesForSession startup race", () => {
       },
     })
     const childStores = createChildStores([["/test/project", store]])
-    const { setSessionPrefetch } = await import("./session-prefetch-cache")
-    setSessionPrefetch({ directory: "/test/project", sessionID, requestedLimit: 30 })
     const { fetchMessagesForSession, setActionRefs } = await import("./session-actions")
     setActionRefs(mockSdk as unknown as OpencodeClient, childStores, () => "/test/project")
     uiCurrentSessionId = sessionID
@@ -977,7 +985,7 @@ describe("fetchMessagesForSession startup race", () => {
     expect(store.getState().session_history_boundary[sessionID]).toBeUndefined()
   })
 
-  test("a failed pull preserves the last known boundary and records request error", async () => {
+  test("a failed pull preserves the last known boundary without clearing transcript", async () => {
     const sessionID = "session-fail-boundary"
     const existingUser = {
       id: "msg_fb_user",
@@ -985,21 +993,28 @@ describe("fetchMessagesForSession startup race", () => {
       sessionID,
       time: { created: 1 },
     } as Message
+    // Busy + trailing assistant forces a live stale-cache refetch (no cache reuse).
+    const existingAssistant = {
+      id: "msg_fb_assistant",
+      role: "assistant",
+      sessionID,
+      time: { created: 2 },
+    } as Message
     const known = { kind: "has-more", cursor: "msg_fb_user", loadedTurns: 2 } as const
     const store = createStore({}, {
       session: [{ id: sessionID, time: { created: 1 } } as Session],
-      message: { [sessionID]: [existingUser] },
-      part: { msg_fb_user: [{ id: "prt_fb", type: "text", text: "hi" } as Part] },
-      session_status: { [sessionID]: { type: "idle" } },
+      message: { [sessionID]: [existingUser, existingAssistant] },
+      part: {
+        msg_fb_user: [{ id: "prt_fb", type: "text", text: "hi" } as Part],
+        msg_fb_assistant: [{ id: "prt_fb_a", type: "text", text: "reply" } as Part],
+      },
+      session_status: { [sessionID]: { type: "busy" } },
       session_history_boundary: { [sessionID]: known },
     })
     const childStores = createChildStores([["/test/project", store]])
-    // Force the Host page to fail. A dirty prefetch mark ensures the known
-    // boundary still performs one authoritative tail pull.
+    // Force the Host page to fail. Ticket 09: prior boundary/messages stay;
+    // request error is not written to session-prefetch-cache.
     const { fetchMessagesForSession, setActionRefs } = await import("./session-actions")
-    const { setSessionPrefetch, markSessionPrefetchDirty } = await import("./session-prefetch-cache")
-    setSessionPrefetch({ directory: "/test/project", sessionID, requestedLimit: 2 })
-    markSessionPrefetchDirty("/test/project", [sessionID])
     setActionRefs(mockSdk as unknown as OpencodeClient, childStores, () => "/test/project")
     uiCurrentSessionId = sessionID
     hostTurnPageBehavior = { cursor: null, complete: true, error: "host unreachable" }
@@ -1007,9 +1022,11 @@ describe("fetchMessagesForSession startup race", () => {
     await fetchMessagesForSession(sessionID, "/test/project")
 
     expect(store.getState().session_history_boundary[sessionID]).toEqual(known)
-    expect(store.getState().message[sessionID]).toEqual([existingUser])
-    const { getSessionPrefetch } = await import("./session-prefetch-cache")
-    expect(getSessionPrefetch("/test/project", sessionID)?.status).toBe("error")
+    expect(store.getState().message[sessionID]?.map((m) => m.id)).toEqual([
+      "msg_fb_user",
+      "msg_fb_assistant",
+    ])
+    expect(replyCalls.filter((call) => call.method === "host.session.turnPage")).toHaveLength(1)
   })
 })
 

@@ -12,7 +12,19 @@ import { Dialog, DialogContent, DialogDescription, DialogFooter, DialogHeader, D
 import { Icon } from "@/components/icon/Icon";
 import { buildExportFilename, downloadAsMarkdown, formatSessionAsMarkdown, getExportRevealLabelKey, revealExportedMarkdown, saveAsMarkdownDesktop } from '@/lib/exportSession';
 import type { ChildSessionExport } from '@/lib/exportSession';
-import { buildSessionMessageRecordsSnapshot, useDirectoryStore, useGlobalSessionStatus, useSessionPermissions, useSessionQuestions } from '@/sync/sync-context';
+import {
+  buildSessionMessageRecordsSnapshotFromSource,
+  useDirectoryStore,
+  useGlobalSessionStatus,
+  useSessionPermissions,
+  useSessionQuestions,
+} from '@/sync/sync-context';
+import {
+  getTranscriptRepository,
+  resolveTranscriptRepositoryForStore,
+  transcriptScope,
+} from '@/sync/transcript-repository-runtime';
+import { messagesFromTranscriptData } from '@/sync/transcript-repository-observers';
 import { useSync } from '@/sync/use-sync';
 import { useViewportStore, viewportSessionKey } from '@/sync/viewport-store';
 import { DraggableSessionRow } from './sessionFolderDnd';
@@ -512,13 +524,29 @@ function SessionNodeItemComponent(props: Props): React.ReactNode {
 
   const descendantCount = React.useMemo(() => collectNodeDescendantIds(node).length, [node]);
 
+  const readSessionExportRecords = useEvent((sessionID: string) => {
+    const directory = sessionDirectory ?? '';
+    const repository = getTranscriptRepository()
+      ?? resolveTranscriptRepositoryForStore(directory, directoryStore);
+    const data = repository.getTranscript(transcriptScope(directory, sessionID));
+    const state = directoryStore.getState();
+    const sessionEntity = state.session.find((candidate) => candidate.id === sessionID);
+    const revertMessageID = (sessionEntity as { revert?: { messageID?: string } } | undefined)?.revert?.messageID;
+    return buildSessionMessageRecordsSnapshotFromSource({
+      sessionID,
+      messages: messagesFromTranscriptData(data),
+      parts: data.partsByMessageID,
+      revertMessageID,
+    }).list;
+  });
+
   const collectChildExports = useEvent(async (children: SessionNode[]): Promise<{ children: ChildSessionExport[]; skipped: number }> => {
     const results: ChildSessionExport[] = [];
     let skipped = 0;
     for (const child of children) {
       try {
         await sync.ensureSessionRenderable(child.session.id);
-        const childRecords = buildSessionMessageRecordsSnapshot(directoryStore.getState(), child.session.id).list;
+        const childRecords = readSessionExportRecords(child.session.id);
         const childTitle = child.session.title || t('sessions.sidebar.session.export.untitledSubagent');
         const childAgent = (child.session as Session & { agent?: string }).agent;
         const grandChildren = await collectChildExports(child.children);
@@ -551,7 +579,7 @@ function SessionNodeItemComponent(props: Props): React.ReactNode {
 
     await sync.ensureSessionRenderable(session.id);
 
-    const records = buildSessionMessageRecordsSnapshot(directoryStore.getState(), session.id).list;
+    const records = readSessionExportRecords(session.id);
     if (records.length === 0) {
       toast.error(t('sessions.sidebar.session.export.nothingToExport'));
       return;

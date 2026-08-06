@@ -144,6 +144,8 @@ const useMarkdownImageInteractions = ({
   const imagePreviewEnabled = Boolean(onShowPopup);
   const showPopup = useEvent((content: ToolPopupContent) => onShowPopup?.(content));
   const reconcileRef = React.useRef<(root: HTMLElement) => void>(() => {});
+  const imagesRef = React.useRef(new Map<HTMLImageElement, RelayImageState>());
+  const deferredImageCleanupTimerRef = React.useRef<ReturnType<typeof setTimeout> | null>(null);
   const reconcileMarkdownImageResources = React.useMemo(
     () => (root: HTMLElement) => reconcileRef.current(root),
     [],
@@ -152,8 +154,21 @@ const useMarkdownImageInteractions = ({
   // useLayoutEffect so reconcile is armed before Morphdom's first-paint layout
   // commit decorates placeholders and immediately auto-loads them.
   React.useLayoutEffect(() => {
+    const images = imagesRef.current;
+    if (deferredImageCleanupTimerRef.current !== null) {
+      clearTimeout(deferredImageCleanupTimerRef.current);
+      deferredImageCleanupTimerRef.current = null;
+    }
+
     reconcileRef.current = () => {};
     if (!imagePreviewEnabled) {
+      for (const [image, state] of images) {
+        state.controller?.abort();
+        if (state.objectUrl) {
+          releaseRuntimeImageObjectUrl(state.objectUrl);
+        }
+        images.delete(image);
+      }
       return;
     }
 
@@ -183,8 +198,6 @@ const useMarkdownImageInteractions = ({
     // Runtime-file images (file://, absolute paths) must stream through the
     // runtime API on every transport — packaged Electron and local web both
     // block raw file:// img.src. Direct http(s)/data/blob images stay as-is.
-    const images = new Map<HTMLImageElement, RelayImageState>();
-
     const clearImage = (image: HTMLImageElement) => {
       const state = images.get(image);
       if (!state) return;
@@ -279,6 +292,10 @@ const useMarkdownImageInteractions = ({
         }
       }
     };
+    // React StrictMode re-runs layout effects after their cleanup while keeping
+    // this DOM subtree mounted. Reconcile now so the next setup adopts the
+    // existing stream instead of opening a second virtual-asset URL.
+    reconcileRef.current(container);
 
     const activateImage = (image: HTMLImageElement) => {
       const state = ensureImageState(image);
@@ -378,12 +395,19 @@ const useMarkdownImageInteractions = ({
       container.removeEventListener('pointerup', handlePointerUp);
       container.removeEventListener('pointercancel', handlePointerCancel);
       container.removeEventListener('contextmenu', handleContextMenu);
-      for (const image of Array.from(images.keys())) {
-        if (container.contains(image)) {
-          setMarkdownImagePlaceholder(image);
+      // A StrictMode effect replay tears down and restores this effect in the
+      // same task. Keep the virtual URL through that replay so Chromium never
+      // races a just-cancelled openchamber-asset request. A real unmount reaches
+      // this timer without a following setup and releases every resource.
+      deferredImageCleanupTimerRef.current = setTimeout(() => {
+        deferredImageCleanupTimerRef.current = null;
+        for (const image of Array.from(images.keys())) {
+          if (container.contains(image)) {
+            setMarkdownImagePlaceholder(image);
+          }
+          clearImage(image);
         }
-        clearImage(image);
-      }
+      }, 0);
     };
     // eslint-disable-next-line react-hooks/exhaustive-deps -- lifecycle inputs are explicit; useEvent supplies the latest popup callback.
   }, [containerRef, effectiveDirectory, imagePreviewEnabled, transportIdentity]);

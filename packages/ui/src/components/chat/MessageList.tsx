@@ -1682,6 +1682,8 @@ TailEntry.displayName = 'TailEntry';
 const StreamingTailContent: React.FC<{
     entries: RenderEntry[];
     directory?: string;
+    /** Session scope for repository-narrowed parts subscription (Ticket 02). */
+    sessionId?: string | null;
     onMessageContentChange: (reason?: ContentChangeReason) => void;
     getAnimationHandlers: (messageId: string) => AnimationHandlers;
     scrollToBottom?: () => void;
@@ -1700,6 +1702,7 @@ const StreamingTailContent: React.FC<{
 }> = ({
     entries,
     directory,
+    sessionId,
     onMessageContentChange,
     getAnimationHandlers,
     scrollToBottom,
@@ -1717,7 +1720,13 @@ const StreamingTailContent: React.FC<{
     reviewTransferDirection,
 }) => {
     const newestIndex = entries.length - 1;
-    const liveParts = useSessionParts(activeStreamingMessageId ?? '', directory);
+    // Ticket 02 remediation: session-scoped repository parts subscription —
+    // no directory-wide notify fallback when sessionId is provided.
+    const liveParts = useSessionParts(
+        activeStreamingMessageId ?? '',
+        directory,
+        sessionId ?? undefined,
+    );
     // The tail stays mounted through empty frames (see the mount note at the
     // call site), so the newest entry can be absent for a render.
     const liveEntry = React.useMemo(() => {
@@ -2401,6 +2410,7 @@ const MessageList = React.forwardRef<MessageListHandle, MessageListProps>(({
                         <StreamingTailContent
                             entries={trailingStreamingEntries}
                             directory={directory}
+                            sessionId={domainSessionKey}
                             onMessageContentChange={stableTailContentChange}
                             getAnimationHandlers={stableGetAnimationHandlers}
                             scrollToBottom={stableScrollToBottom}

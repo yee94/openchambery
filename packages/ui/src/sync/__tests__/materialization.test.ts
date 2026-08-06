@@ -1,6 +1,10 @@
 import { describe, expect, test } from "bun:test"
 import type { Message, Part } from "@opencode-ai/sdk/v2/client"
-import { getSessionMaterializationStatus, materializeSessionSnapshots } from "../materialization"
+import {
+  getSessionMaterializationStatus,
+  getSessionMaterializationStatusFromProjection,
+  materializeSessionSnapshots,
+} from "../materialization"
 import { resolveSessionMergeStrategy } from "../session-merge-strategy"
 
 const RECOVERY_MERGE = resolveSessionMergeStrategy({ purpose: "recovery" })
@@ -438,5 +442,27 @@ describe("getSessionMaterializationStatus", () => {
       renderable: true,
       missingPartMessageIDs: [],
     })
+  })
+
+  test("projection overload matches MaterializedState form", () => {
+    const settled = {
+      ...message("msg_1"),
+      finish: "stop",
+      time: { created: 1, completed: 2 },
+    } as Message
+    const state = {
+      message: { ses_1: [settled] },
+      part: {},
+    }
+    const fromState = getSessionMaterializationStatus(state, "ses_1")
+    const fromProjection = getSessionMaterializationStatusFromProjection({
+      messages: state.message.ses_1,
+      parts: state.part,
+    })
+    expect(fromProjection).toEqual(fromState)
+    expect(getSessionMaterializationStatus({
+      messages: state.message.ses_1,
+      parts: state.part,
+    })).toEqual(fromState)
   })
 })

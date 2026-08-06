@@ -1746,7 +1746,7 @@ export const settingsDict = {
   'settings.voice.page.field.ttsInputModeSanitized': '清理后文本',
   'settings.voice.page.field.ttsInputModeRaw': '原始 Markdown',
   'settings.voice.page.field.ttsInputModeSummarized': '摘要',
-  'settings.openchamber.visual.section.colorMode': '颜色模式',
+  'settings.openchamber.visual.section.colorMode': '主题',
   'settings.openchamber.visual.field.themeMode': '切换主题',
   'settings.openchamber.visual.field.display': '显示',
   'settings.openchamber.visual.section.localization': '本地化',

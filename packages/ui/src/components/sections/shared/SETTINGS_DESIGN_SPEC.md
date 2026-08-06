@@ -41,9 +41,9 @@ Every ordinary setting uses one of these structures:
   overflow behavior.
 - `SettingsField` owns a standalone setting. It must not repeat the field name
   as a section heading.
-- `SettingsToggleRow` is the required full-row Boolean pattern. It owns the
-  checkbox-first layout plus pointer and keyboard activation without double
-  toggling the nested checkbox.
+- `SettingsToggleRow` is the required Boolean pattern. It owns the label/value
+  layout plus pointer and keyboard activation without double toggling the
+  nested checkbox.
 - Rows must be direct children of the grouped card. A semantic `radiogroup`
   wrapper may contain standard rows when required for accessibility.
 - Pages and nested collections use `oc-settings-page-content` or
@@ -104,8 +104,9 @@ not change the spacing before or after their group.
 
 ## Controls
 
-- Boolean row: shared `SettingsToggleRow`. Use a bare shared `Checkbox` only
-  when it is the right-column control of a true label/value `SettingsRow`.
+- Boolean row: shared `SettingsToggleRow`, with its checkbox in the
+  right-aligned value column. Use a bare shared `Checkbox` only when it is the
+  right-column control of a true label/value `SettingsRow`.
 - Mutually exclusive list: shared `Radio` rows.
 - Short option set: shared `Button variant="chip" size="xs"` with
   `aria-pressed`.

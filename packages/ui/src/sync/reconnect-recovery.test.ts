@@ -1,5 +1,5 @@
 import { describe, expect, test } from "bun:test"
-import type { Message, Part, SessionStatus } from "@opencode-ai/sdk/v2/client"
+import type { SessionStatus } from "@opencode-ai/sdk/v2/client"
 import type { Session } from "@opencode-ai/sdk/v2"
 import {
   getReconnectCandidateSessionIds,
@@ -7,7 +7,6 @@ import {
   getReconnectTranscriptInvalidationSessionIds,
   getStatusWatchdogCandidateSessionIds,
 } from "./reconnect-recovery"
-import type { SessionHistoryBoundary } from "./types"
 
 function createSession(id: string, overrides: Partial<Session> = {}): Session {
   return {
@@ -19,22 +18,8 @@ function createSession(id: string, overrides: Partial<Session> = {}): Session {
   } as Session
 }
 
-function createAssistantMessage(id: string, sessionID: string, completed?: number): Message {
-  return {
-    id,
-    sessionID,
-    role: "assistant",
-    time: completed ? { created: 1, updated: 1, completed } : { created: 1, updated: 1 },
-    parts: [],
-  } as unknown as Message
-}
-
-function createPart(id: string, messageID: string): Part {
-  return { id, messageID, sessionID: "active", type: "text", text: "done" } as Part
-}
-
 describe("getReconnectCandidateSessionIds", () => {
-  test("includes non-idle, incomplete assistant, and parent sessions", () => {
+  test("includes non-idle and parent sessions from catalog/status", () => {
     const busyStatus = { type: "busy" } as SessionStatus
 
     expect(getReconnectCandidateSessionIds({
@@ -42,52 +27,34 @@ describe("getReconnectCandidateSessionIds", () => {
         createSession("busy"),
         createSession("child", { parentID: "parent" }),
         createSession("parent"),
-        createSession("incomplete"),
+        createSession("idle"),
       ],
-      session_status: { busy: busyStatus },
-      message: {
-        incomplete: [createAssistantMessage("m-1", "incomplete")],
-      },
-    }).sort()).toEqual(["busy", "incomplete", "parent"])
+      session_status: { busy: busyStatus, idle: { type: "idle" } as SessionStatus },
+    }).sort()).toEqual(["busy", "parent"])
   })
 
-  test("includes the currently viewed session even when it looks idle and complete", () => {
+  test("includes the currently viewed session even when it looks idle", () => {
     expect(getReconnectCandidateSessionIds({
       session: [createSession("active")],
       session_status: { active: { type: "idle" } as SessionStatus },
-      message: {
-        active: [createAssistantMessage("m-1", "active", 1)],
-      },
-      part: {
-        "m-1": [createPart("p-1", "m-1")],
-      },
     }, {
       directory: "/repo",
       viewedSession: { directory: "/repo", sessionId: "active" },
     }).sort()).toContain("active")
   })
 
-  test("includes completed assistant sessions when the latest assistant parts are missing", () => {
+  test("does not include incomplete-assistant heuristics (Query compensation owns that)", () => {
+    // Batch 2: no message/part incomplete materialization candidates.
     expect(getReconnectCandidateSessionIds({
       session: [createSession("blank")],
       session_status: { blank: { type: "idle" } as SessionStatus },
-      message: {
-        blank: [createAssistantMessage("m-1", "blank", 1)],
-      },
-      part: {},
-    })).toEqual(["blank"])
+    })).toEqual([])
   })
 
   test("does not include a viewed session from another directory", () => {
     expect(getReconnectCandidateSessionIds({
       session: [createSession("active")],
       session_status: { active: { type: "idle" } as SessionStatus },
-      message: {
-        active: [createAssistantMessage("m-1", "active", 1)],
-      },
-      part: {
-        "m-1": [createPart("p-1", "m-1")],
-      },
     }, {
       directory: "/repo-a",
       viewedSession: { directory: "/repo-b", sessionId: "active" },
@@ -126,33 +93,9 @@ describe("getReconnectMaterializationSessionIds", () => {
 })
 
 describe("getReconnectTranscriptInvalidationSessionIds", () => {
-  const hasMore = (cursor: string): SessionHistoryBoundary => ({ kind: "has-more", cursor, loadedTurns: 2 })
-
-  test("unions message keys and boundary keys, deduped", () => {
-    expect(getReconnectTranscriptInvalidationSessionIds({
-      message: {
-        "with-messages": [createAssistantMessage("m-1", "with-messages", 1)],
-        shared: [createAssistantMessage("m-2", "shared", 1)],
-      },
-      session_history_boundary: {
-        "boundary-only": hasMore("m-0"),
-        shared: { kind: "exhausted", loadedTurns: 3 },
-      },
-    }).sort()).toEqual(["boundary-only", "shared", "with-messages"])
-  })
-
-  test("collects sessions that only have a boundary and no messages", () => {
-    expect(getReconnectTranscriptInvalidationSessionIds({
-      message: {},
-      session_history_boundary: { "boundary-only": hasMore("m-0") },
-    })).toEqual(["boundary-only"])
-  })
-
-  test("returns empty when no session has cached transcript state", () => {
-    expect(getReconnectTranscriptInvalidationSessionIds({
-      message: {},
-      session_history_boundary: {},
-    })).toEqual([])
+  test("returns empty — Query reconnect compensation owns transcript invalidation", () => {
+    expect(getReconnectTranscriptInvalidationSessionIds()).toEqual([])
+    expect(getReconnectTranscriptInvalidationSessionIds({})).toEqual([])
   })
 })
 
@@ -163,9 +106,6 @@ describe("getStatusWatchdogCandidateSessionIds", () => {
       session_status: {
         busy: { type: "busy" } as SessionStatus,
         idle: { type: "idle" } as SessionStatus,
-      },
-      message: {
-        "stale-history": [createAssistantMessage("m-1", "stale-history")],
       },
     })).toEqual(["busy"])
   })

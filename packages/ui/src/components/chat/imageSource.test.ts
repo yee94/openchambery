@@ -171,13 +171,26 @@ describe('image source contracts', () => {
     expect(imageReconcile).toContain('loadImage(image, state)');
     expect(imageReconcile).toContain('if (state && !state.objectUrl)');
     expect(rendererSource.match(/reconcileMarkdownImageResources\(target\);/g)).toHaveLength(3);
-    expect(rendererSource).toContain('const images = new Map<HTMLImageElement, RelayImageState>()');
+    expect(rendererSource).toContain('const imagesRef = React.useRef(new Map<HTMLImageElement, RelayImageState>())');
     expect(rendererSource).toContain("event.key !== 'Enter' && event.key !== ' '");
     expect(rendererSource).toContain("metadata: { tool: 'image-preview', filename }");
     expect(rendererSource).toContain('image: { url: selectedSource');
     expect(rendererSource).toContain('releaseRuntimeImageObjectUrl(state.objectUrl)');
     expect(rendererSource).toContain('releaseRuntimeImageObjectUrl(objectUrl)');
     expect(rendererSource).toContain('state.controller?.abort()');
+  });
+
+  test('keeps virtual image streams alive through a StrictMode effect replay', () => {
+    const imageHookStart = rendererSource.indexOf('const useMarkdownImageInteractions');
+    const imageHookEnd = rendererSource.indexOf('const DEFAULT_MERMAID_CONTROLS', imageHookStart);
+    const imageHook = rendererSource.slice(imageHookStart, imageHookEnd);
+
+    expect(imageHook).toContain('const imagesRef = React.useRef(new Map<HTMLImageElement, RelayImageState>())');
+    expect(imageHook).toContain('const deferredImageCleanupTimerRef = React.useRef<ReturnType<typeof setTimeout> | null>(null)');
+    expect(imageHook).toContain('clearTimeout(deferredImageCleanupTimerRef.current)');
+    expect(imageHook).toContain('reconcileRef.current(container);');
+    expect(imageHook).toContain('deferredImageCleanupTimerRef.current = setTimeout(() => {');
+    expect(imageHook).toContain('Keep the virtual URL through that replay');
   });
 
   test('shares resolved display sources while popup payloads retain original URLs', () => {

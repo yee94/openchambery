@@ -90,10 +90,12 @@ export function getHistorySessionTurnBudget(
  * Purpose → product turn limit (not message count).
  */
 export function resolveSessionMessageTurnLimit(
-  purpose: "initial" | "prepend" | "recovery" | "materialize",
+  purpose: "initial" | "prepend" | "recovery" | "materialize" | "reconcile-page",
   link: SessionMessageLinkTier = resolveSessionMessageLinkTier(),
 ): number {
   if (purpose === "prepend") return getHistorySessionTurnLimit(link)
+  // reconcile-page does not pull product turn windows; Host owns page budgets.
+  // Map to the initial budget only if a generic limit helper is consulted.
   return getInitialSessionTurnLimit(link)
 }
 

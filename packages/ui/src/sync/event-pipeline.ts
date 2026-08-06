@@ -18,6 +18,7 @@ import { getRuntimeUrlResolver } from "@/lib/runtime-url"
 import { clearRuntimeUrlAuthToken, refreshRuntimeUrlAuthToken } from "@/lib/runtime-auth"
 import { type RelayTunnelWebSocket } from "@/lib/relay/tunnel-client"
 import { openRuntimeWebSocket } from "@/lib/relay/runtime-socket"
+import { getRuntimeGeneration } from "@/lib/runtime-switch"
 import {
   normalizeOpenCodeEvent,
   toLegacyEventShape,
@@ -43,6 +44,40 @@ const RETRY_BACKOFF_BASE_MS = 250
 const RETRY_BACKOFF_CAP_VISIBLE_MS = 5_000
 const RETRY_BACKOFF_CAP_HIDDEN_OR_OFFLINE_MS = 60_000
 const RETRY_BACKOFF_MAX_EXPONENT = 8
+/**
+ * Recovery context captured on disconnect / visibility hidden / system resume
+ * / online-driven reconnect. Published once per ready barrier as the
+ * compensation trigger so upper layers can start HTTP reconcile with a stable
+ * last-event and runtime generation snapshot.
+ *
+ * `isReconnect` is false on the clean first ready (no recovery context) and
+ * true when a recovery context was captured for a real gap. Ticket 07 can
+ * filter real reconnects while still observing every ready edge.
+ */
+export type EventPipelineCompensationTrigger = {
+  lastEventId: string | null
+  disconnectedAt: number | null
+  runtimeGeneration: number
+  reason: string
+  transport: "ws" | "sse"
+  /** False for first ready; true when a disconnect/visibility/resume gap was captured. */
+  isReconnect: boolean
+}
+
+/**
+ * Snapshot published the first time a recovery gap is fixed for the current
+ * disconnect cycle — before any replay merge. Covers transport errors,
+ * visibility hidden, pageshow (bfcache), system resume, and online-driven
+ * reconnect. Ticket 07 writes Query recovery checkpoints from this edge only
+ * (not from `onDisconnect`, which may not fire for visibility-only captures).
+ */
+export type EventPipelineRecoveryContextCapture = {
+  lastEventId: string | null
+  disconnectedAt: number
+  runtimeGeneration: number
+  reason: string
+}
+
 export type EventPipelineInput = {
   sdk: OpencodeClient
   onEvent: (directory: string, payload: Event) => void
@@ -54,7 +89,22 @@ export type EventPipelineInput = {
   onNormalizedEvent?: (directory: string, normalized: NormalizedOpenCodeEvent) => void
   /** Called after stream reconnects (visibility restore or heartbeat timeout). */
   onReconnect?: () => void
-  /** Called when the stream disconnects (heartbeat timeout, network error, or transport failure). */
+  /**
+   * Called once per ready barrier after any queued replay events flush.
+   * Carries the disconnect-time recovery context when one was captured.
+   */
+  onCompensation?: (trigger: EventPipelineCompensationTrigger) => void
+  /**
+   * Called once when a recovery gap context is first fixed (before replay).
+   * Fires for visibility_hidden / pageshow_persisted / system_resume / online
+   * even when `onDisconnect` does not run. At most once per gap cycle.
+   */
+  onRecoveryContextCaptured?: (context: EventPipelineRecoveryContextCapture) => void
+  /**
+   * Called when the stream disconnects (heartbeat timeout, network error, or
+   * transport failure). Owns connection UI/state only — transcript checkpoints
+   * use `onRecoveryContextCaptured` so visibility-only gaps are not missed.
+   */
   onDisconnect?: (reason: string) => void
   /** Called for every transport frame, including SSE comments and heartbeats. */
   onTransportActivity?: () => void
@@ -69,6 +119,13 @@ export type EventPipelineInput = {
 export type EventPipeline = {
   cleanup: () => void
   reconnect: (reason?: string) => void
+}
+
+type CapturedRecoveryContext = {
+  lastEventId: string | null
+  disconnectedAt: number
+  runtimeGeneration: number
+  reason: string
 }
 
 type MessageStreamWsFrame = {
@@ -287,6 +344,8 @@ export function createEventPipeline(input: EventPipelineInput): EventPipeline {
     onEvent,
     onNormalizedEvent,
     onReconnect,
+    onCompensation,
+    onRecoveryContextCaptured,
     onDisconnect,
     onTransportActivity,
     onTransportSwitch,
@@ -300,6 +359,9 @@ export function createEventPipeline(input: EventPipelineInput): EventPipeline {
   let disconnected = false
   let lastEventId: string | undefined
   let wsFallbackUntil = 0
+  // Earliest gap snapshot for the current disconnect cycle. Cleared when ready
+  // publishes the one-shot compensation trigger for that gap.
+  let recoveryContext: CapturedRecoveryContext | null = null
 
   const directories = new Map<string, DirectoryQueue>()
 
@@ -479,23 +541,69 @@ export function createEventPipeline(input: EventPipelineInput): EventPipeline {
   let consecutiveFailures = 0
   let backpressureUntil = 0
 
+  const captureRecoveryContext = (reason: string) => {
+    // Keep the earliest gap in a multi-reason disconnect cycle so
+    // disconnectedAt reflects when the client first lost liveness.
+    // Publish on first fix only so Ticket 07 can write checkpoints before
+    // any later replay merge (visibility/pageshow may never call onDisconnect).
+    if (recoveryContext) {
+      return
+    }
+    recoveryContext = {
+      lastEventId: lastEventId && lastEventId.length > 0 ? lastEventId : null,
+      disconnectedAt: Date.now(),
+      runtimeGeneration: getRuntimeGeneration(),
+      reason,
+    }
+    onRecoveryContextCaptured?.({
+      lastEventId: recoveryContext.lastEventId,
+      disconnectedAt: recoveryContext.disconnectedAt,
+      runtimeGeneration: recoveryContext.runtimeGeneration,
+      reason: recoveryContext.reason,
+    })
+  }
+
   const notifyDisconnected = (reason: string) => {
     if (disconnected) {
       return
     }
     disconnected = true
+    captureRecoveryContext(reason)
+    // Connection UI/state only — checkpoint capture is onRecoveryContextCaptured.
     onDisconnect?.(reason)
+  }
+
+  const publishCompensationTrigger = () => {
+    const context = recoveryContext
+    recoveryContext = null
+    const isReconnect = context !== null
+    onCompensation?.({
+      lastEventId: context?.lastEventId
+        ?? (lastEventId && lastEventId.length > 0 ? lastEventId : null),
+      disconnectedAt: context?.disconnectedAt ?? null,
+      runtimeGeneration: context?.runtimeGeneration ?? getRuntimeGeneration(),
+      reason: context?.reason ?? "ready",
+      transport: activeTransport,
+      isReconnect,
+    })
   }
 
   const markConnected = () => {
     disconnected = false
     consecutiveFailures = 0
+    // Flush any replay/live events already enqueued so the reducer merges
+    // them before the ready-barrier compensation trigger starts HTTP work.
+    flushAll()
     // Fire onReconnect on every successful connect — including the very
     // first one. Consumer state (isConnected) starts at false and needs
     // to be flipped positively; without this the send button throws
     // "Connection lost" until something else (HTTP health check) happens
     // to race a setState({isConnected: true}) through.
     onReconnect?.()
+    // One compensation trigger per ready barrier (including upstream-ready
+    // edges that keep the browser WS open). Upper layers use this for
+    // transcript HTTP reconcile after replay events have been flushed.
+    publishCompensationTrigger()
   }
 
   const enqueueEvent = (
@@ -942,6 +1050,12 @@ export function createEventPipeline(input: EventPipelineInput): EventPipeline {
 
   const onVisibility = () => {
     if (typeof document === "undefined") return
+    if (document.visibilityState === "hidden") {
+      // Capture recovery context while the last known event id is still
+      // current so a later ready can compensate from the pre-hide tip.
+      captureRecoveryContext("visibility_hidden")
+      return
+    }
     if (document.visibilityState !== "visible") return
     if (Date.now() - lastEventAt < heartbeatTimeoutMs) return
     attempt?.abort()
@@ -949,6 +1063,7 @@ export function createEventPipeline(input: EventPipelineInput): EventPipeline {
 
   const onPageShow = (event: PageTransitionEvent) => {
     if (!event.persisted) return
+    captureRecoveryContext("pageshow_persisted")
     attempt?.abort()
   }
 
@@ -956,6 +1071,7 @@ export function createEventPipeline(input: EventPipelineInput): EventPipeline {
   // is almost certainly dead after sleep — abort immediately so the
   // reconnect loop fires on the next tick with retryDelayMs = 0.
   const onSystemResume = () => {
+    captureRecoveryContext("system_resume")
     if (!attempt) return
     attemptAbortReason = `${activeTransport}_system_resume`
     attempt.abort()
@@ -968,6 +1084,7 @@ export function createEventPipeline(input: EventPipelineInput): EventPipeline {
   // doesn't disrupt a healthy connection.
   const onOnline = () => {
     if (!disconnected) return
+    captureRecoveryContext("online")
     attempt?.abort()
   }
 

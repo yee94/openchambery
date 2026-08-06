@@ -129,6 +129,14 @@
   line-height: var(--oc-settings-row-label-line-height);
 }
 
+/* Legacy boolean rows retain their interactive implementation while matching
+   the shared label/value layout: copy on the left and the checkbox in the
+   right-aligned value position. */
+.oc-settings-group-card > [role="button"]:has([role="checkbox"]) {
+  flex-direction: row-reverse;
+  justify-content: space-between;
+}
+
 .oc-settings-detail-group .oc-settings-group-card > [role="button"]:not(:last-child) {
   border-bottom: 1px solid var(--oc-settings-row-divider);
 }

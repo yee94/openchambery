@@ -1,14 +1,20 @@
 /**
  * Streaming lifecycle tracking.
  *
- * Derives streaming state from the sync child store's session_status and
- * message/part updates. Components read this to know which messages are
- * currently streaming and their lifecycle phase.
+ * Derives streaming state from directory session_status + TranscriptRepository
+ * trailing assistant (Ticket 09 batch 2 — no production State.message).
  */
 
 import { create } from "zustand"
 import type { Message, SessionStatus } from "@opencode-ai/sdk/v2/client"
 import type { State } from "./types"
+import {
+  getTranscriptRepository,
+  transcriptScope,
+} from "./transcript-repository-runtime"
+import { messagesFromTranscriptData } from "./transcript-repository-observers"
+import type { StoreApi } from "zustand"
+import type { DirectoryStore } from "./child-store"
 
 type StreamPhase = "streaming" | "cooldown" | "completed"
 
@@ -38,14 +44,21 @@ export function resetStreamingState() {
   })
 }
 
-/**
- * Called from the SyncBridge/flush handler when child store state changes.
- * Derives streaming state from session_status + messages.
- */
 /** Only update lastUpdateAt every this many ms to avoid 60Hz store churn */
 const STREAMING_HEARTBEAT_MS = 1000
 
-export function updateStreamingState(state: State) {
+export type StreamingStatusState = Pick<State, "session_status">
+
+/**
+ * Derive streaming from status + repository transcript tail for one directory.
+ */
+export function updateStreamingState(
+  state: StreamingStatusState,
+  options?: {
+    directory?: string
+    store?: StoreApi<DirectoryStore>
+  },
+) {
   const now = Date.now()
   const currentStore = useStreamingStore.getState()
   const currentStreamingIds = currentStore.streamingMessageIds
@@ -55,8 +68,6 @@ export function updateStreamingState(state: State) {
   const nextStreamStates = new Map(currentStreamStates)
   let changed = false
 
-  // Fast path: only scan sessions that are actually busy.
-  // Idle sessions are handled by checking against currentStreamingIds below.
   const busySessionIds = new Set<string>()
   for (const [sessionID, status] of Object.entries(state.session_status ?? {})) {
     if ((status as SessionStatus).type === "busy") {
@@ -77,9 +88,20 @@ export function updateStreamingState(state: State) {
     changed = true
   }
 
+  const directory = options?.directory ?? ""
+  // Ticket 09 batch 2: production streaming reads only the bound Query repository.
+  // No resolveTranscriptRepositoryForStore fallback (avoids store-backed production reads).
+  const repository = getTranscriptRepository()
+  void options?.store
+
   for (const sessionID of busySessionIds) {
-    const messages = state.message[sessionID]
-    if (!messages || messages.length === 0) continue
+    let messages: Message[] = []
+    if (repository && directory) {
+      messages = messagesFromTranscriptData(
+        repository.getTranscript(transcriptScope(directory, sessionID)),
+      )
+    }
+    if (messages.length === 0) continue
 
     // Only the trailing assistant turn can be streaming. If a new user turn is
     // last, the next assistant message has not arrived yet.
@@ -115,7 +137,6 @@ export function updateStreamingState(state: State) {
       })
       changed = true
     } else if (now - existing.lastUpdateAt >= STREAMING_HEARTBEAT_MS) {
-      // Throttle lastUpdateAt writes to ~1Hz instead of 60Hz
       nextStreamStates.set(streamingMsg.id, {
         ...existing,
         lastUpdateAt: now,
@@ -124,7 +145,6 @@ export function updateStreamingState(state: State) {
     }
   }
 
-  // Mark completed any previously streaming sessions that are now idle or gone
   for (const [sessionID, msgId] of currentStreamingIds) {
     if (!msgId) continue
     const isStillBusy = busySessionIds.has(sessionID)

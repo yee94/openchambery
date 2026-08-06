@@ -49,6 +49,18 @@ export type SessionMaterializationStatus = {
   missingPartMessageIDs: string[]
 }
 
+/**
+ * Transcript projection for materialization status (Ticket 09 batch 1A).
+ * Prefer repository TranscriptData over child-store message/part maps.
+ * - `messages === undefined` means the session has never been loaded.
+ * - An explicit empty `messages` array is a loaded-empty snapshot.
+ * - Missing `parts[id]` means parts were never fetched; `[]` is fetched-empty.
+ */
+export type SessionMaterializationProjection = {
+  messages: readonly Message[] | undefined
+  parts: Readonly<Record<string, readonly Part[] | undefined>>
+}
+
 function sortParts(parts: Part[], skipPartTypes: ReadonlySet<string>) {
   return parts
     .filter((part) => !!part?.id && !skipPartTypes.has(part.type))
@@ -386,11 +398,13 @@ function isOpenAssistantMessage(message: Message): boolean {
   return true
 }
 
-export function getSessionMaterializationStatus(
-  state: MaterializedState,
-  sessionID: string,
+/**
+ * Compute renderability from a flat transcript projection (repository or store).
+ */
+export function getSessionMaterializationStatusFromProjection(
+  projection: SessionMaterializationProjection,
 ): SessionMaterializationStatus {
-  const messages = state.message[sessionID]
+  const messages = projection.messages
   if (!messages) {
     return { hasMessages: false, renderable: false, missingPartMessageIDs: [] }
   }
@@ -403,7 +417,7 @@ export function getSessionMaterializationStatus(
     // is a fetched-empty snapshot (e.g. aborted assistant turn) and counts
     // as renderable — otherwise sessions containing such a message can never
     // reach renderable state and ensure-renderable callers loop forever.
-    const parts = state.part[message.id]
+    const parts = projection.parts[message.id]
     if (parts) continue
 
     // Live multi-step turns emit message.updated for a new trailing assistant
@@ -422,4 +436,32 @@ export function getSessionMaterializationStatus(
     renderable: missingPartMessageIDs.length === 0,
     missingPartMessageIDs,
   }
+}
+
+/**
+ * Materialization status from either:
+ * - MaterializedState + sessionID (store / materializeSessionSnapshots result)
+ * - SessionMaterializationProjection (repository TranscriptData projection)
+ */
+export function getSessionMaterializationStatus(
+  state: MaterializedState,
+  sessionID: string,
+): SessionMaterializationStatus
+export function getSessionMaterializationStatus(
+  projection: SessionMaterializationProjection,
+): SessionMaterializationStatus
+export function getSessionMaterializationStatus(
+  stateOrProjection: MaterializedState | SessionMaterializationProjection,
+  sessionID?: string,
+): SessionMaterializationStatus {
+  if (typeof sessionID === "string") {
+    const state = stateOrProjection as MaterializedState
+    return getSessionMaterializationStatusFromProjection({
+      messages: state.message[sessionID],
+      parts: state.part,
+    })
+  }
+  return getSessionMaterializationStatusFromProjection(
+    stateOrProjection as SessionMaterializationProjection,
+  )
 }

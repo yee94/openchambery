@@ -28,7 +28,7 @@ type BuildLiveStreamingEntryOptions = {
  *
  * The tail subscribes to the raw part store so streaming text is not held back
  * by snapshot suspension. It applies the same `mergePartsForDisplay` contract the
- * snapshot uses, so both readers of `state.part` agree on when a frame may shrink.
+ * snapshot uses, so both readers of repository parts agree on when a frame may shrink.
  */
 const withLiveParts = (
     message: ChatMessageEntry,

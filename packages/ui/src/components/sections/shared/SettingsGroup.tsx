@@ -162,7 +162,7 @@ export type SettingsToggleRowProps = {
   className?: string;
 };
 
-/** Standard full-row boolean setting with shared pointer and keyboard behavior. */
+/** Standard boolean setting with shared pointer and keyboard behavior. */
 export function SettingsToggleRow({
   checked,
   onChange,
@@ -186,7 +186,7 @@ export function SettingsToggleRow({
     <div
       data-settings-item={itemId}
       className={cn(
-        'oc-settings-group-row group flex items-center gap-2',
+        'oc-settings-group-row oc-settings-split-row group',
         disabled ? 'cursor-not-allowed' : 'cursor-pointer',
         className,
       )}
@@ -205,17 +205,19 @@ export function SettingsToggleRow({
         }
       }}
     >
-      <Checkbox
-        checked={checked}
-        onChange={onChange}
-        disabled={disabled}
-        ariaLabel={ariaLabel}
-      />
-      <div className="flex min-w-0 flex-col">
+      <div className="oc-settings-split-row-copy">
         <span className="typography-ui-label text-foreground">{label}</span>
         {description ? (
           <span className="typography-meta text-muted-foreground">{description}</span>
         ) : null}
+      </div>
+      <div data-settings-value="" className="oc-settings-split-row-control">
+        <Checkbox
+          checked={checked}
+          onChange={onChange}
+          disabled={disabled}
+          ariaLabel={ariaLabel}
+        />
       </div>
     </div>
   );

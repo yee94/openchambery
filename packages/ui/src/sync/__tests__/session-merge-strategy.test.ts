@@ -13,7 +13,7 @@ import {
  * and every purpose must be listed (see the exhaustiveness test below).
  * Adding a union member without updating this fails type-check.
  */
-const PURPOSES = ["initial", "prepend", "recovery", "materialize"] as const satisfies readonly SessionMessagePagePurpose[]
+const PURPOSES = ["initial", "prepend", "recovery", "materialize", "reconcile-page"] as const satisfies readonly SessionMessagePagePurpose[]
 
 /** MissingPurpose is `never` only when PURPOSES covers the full union. */
 type MissingPurpose = Exclude<SessionMessagePagePurpose, (typeof PURPOSES)[number]>
@@ -108,7 +108,29 @@ const RESOLUTION_TABLE: ReadonlyArray<{
       id: "recovery-backfill",
       onStale: "backfill",
       messages: "insert-only",
+      parts: "skip-existing",
+      preserveStreaming: "assistant",
+    },
+  },
+  {
+    purpose: "reconcile-page",
+    stale: false,
+    expected: {
+      id: "reconcile-page",
+      onStale: "backfill",
+      messages: "upsert",
       parts: "replace",
+      preserveStreaming: "assistant",
+    },
+  },
+  {
+    purpose: "reconcile-page",
+    stale: true,
+    expected: {
+      id: "recovery-backfill",
+      onStale: "backfill",
+      messages: "insert-only",
+      parts: "skip-existing",
       preserveStreaming: "assistant",
     },
   },
@@ -128,18 +150,21 @@ describe("resolveSessionMergeStrategy", () => {
     })
   }
 
-  // Staleness must downgrade exactly one dimension (messages: upsert → insert-only)
-  // so a reconnect page fills SSE gaps without overwriting live objects.
-  test("recovery staleness downgrades only messages", () => {
+  // Staleness downgrades messages (upsert → insert-only) and parts (replace →
+  // skip-existing) so a reconnect page fills SSE gaps without overwriting live
+  // transcript — including completed parts that preserveStreaming alone skips.
+  test("recovery staleness downgrades messages and parts", () => {
     const current = resolveSessionMergeStrategy({ purpose: "recovery", stale: false })
     const stale = resolveSessionMergeStrategy({ purpose: "recovery", stale: true })
 
     expect(stale.onStale).toBe(current.onStale)
-    expect(stale.parts).toBe(current.parts)
     expect(stale.preserveStreaming).toBe(current.preserveStreaming)
     expect(current.messages).toBe("upsert")
     expect(stale.messages).toBe("insert-only")
     expect(stale.messages).not.toBe(current.messages)
+    expect(current.parts).toBe("replace")
+    expect(stale.parts).toBe("skip-existing")
+    expect(stale.parts).not.toBe(current.parts)
   })
 
   for (const purpose of PURPOSES) {
@@ -165,11 +190,12 @@ describe("shouldDropStalePage", () => {
     })
   }
 
-  test("drops initial/prepend/materialize; keeps recovery", () => {
+  test("drops initial/prepend/materialize; keeps recovery and reconcile-page", () => {
     expect(shouldDropStalePage("initial")).toBe(true)
     expect(shouldDropStalePage("prepend")).toBe(true)
     expect(shouldDropStalePage("materialize")).toBe(true)
     expect(shouldDropStalePage("recovery")).toBe(false)
+    expect(shouldDropStalePage("reconcile-page")).toBe(false)
   })
 })
 

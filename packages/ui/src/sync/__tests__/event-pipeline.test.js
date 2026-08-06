@@ -987,6 +987,503 @@ describe('createEventPipeline', () => {
       releaseStream();
     }
   });
+
+  it('flushes replay events before the ready compensation trigger and publishes one trigger per ready', async () => {
+    installDomStubs();
+    installFakeWebSocket();
+
+    const order = [];
+    const compensations = [];
+    let cleanup;
+    const recovered = new Promise((resolve) => {
+      const pipeline = createEventPipeline({
+        sdk: {
+          global: {
+            event: async () => {
+              throw new Error('SSE should not be used in ws mode');
+            },
+          },
+        },
+        transport: 'ws',
+        reconnectDelayMs: 0,
+        heartbeatTimeoutMs: 20,
+        wsReadyTimeoutMs: 50,
+        onEvent: (_directory, payload) => {
+          order.push(`event:${payload.type}`);
+        },
+        onCompensation: (trigger) => {
+          compensations.push(trigger);
+          order.push(`compensation:${trigger.reason}`);
+          if (compensations.length === 2) {
+            cleanup();
+            resolve();
+          }
+        },
+      });
+      cleanup = pipeline.cleanup;
+    });
+
+    try {
+      await Promise.resolve();
+      const firstSocket = FakeWebSocket.instances[0];
+      firstSocket.emitOpen();
+      // Server protocol: replay events first, then ready barrier.
+      firstSocket.emitMessage({
+        type: 'event',
+        eventId: 'evt-replay-1',
+        directory: '/tmp/project',
+        payload: {
+          type: 'session.updated',
+          properties: {
+            info: { id: 'session-1', directory: '/tmp/project' },
+          },
+        },
+      });
+      firstSocket.emitMessage({ type: 'ready', scope: 'global' });
+
+      await new Promise((resolve) => setTimeout(resolve, 35));
+
+      const secondSocket = FakeWebSocket.instances[1];
+      expect(secondSocket).toBeDefined();
+      secondSocket.emitOpen();
+      secondSocket.emitMessage({
+        type: 'event',
+        eventId: 'evt-replay-2',
+        directory: '/tmp/project',
+        payload: {
+          type: 'session.updated',
+          properties: {
+            info: { id: 'session-1', directory: '/tmp/project' },
+          },
+        },
+      });
+      secondSocket.emitMessage({ type: 'ready', scope: 'global' });
+
+      await withTimeout(recovered, 500, 'timed out waiting for compensation triggers');
+
+      expect(order[0]).toBe('event:session.updated');
+      expect(order[1]).toBe('compensation:ready');
+      expect(compensations).toHaveLength(2);
+      expect(compensations[0]).toMatchObject({
+        lastEventId: 'evt-replay-1',
+        reason: 'ready',
+        transport: 'ws',
+        isReconnect: false,
+      });
+      expect(typeof compensations[0].runtimeGeneration).toBe('number');
+      // Disconnect-time tip is preserved for the next ready compensation even
+      // when reconnect replay advances the live lastEventId past that tip.
+      expect(compensations[1].lastEventId).toBe('evt-replay-1');
+      expect(compensations[1].reason).toBe('ws_heartbeat_timeout');
+      expect(compensations[1].isReconnect).toBe(true);
+      expect(typeof compensations[1].disconnectedAt).toBe('number');
+    } finally {
+      cleanup?.();
+    }
+  });
+
+  it('marks first ready compensation as isReconnect false and real reconnect as true', async () => {
+    installDomStubs();
+    installFakeWebSocket();
+
+    const compensations = [];
+    let cleanup;
+    const recovered = new Promise((resolve) => {
+      const pipeline = createEventPipeline({
+        sdk: {
+          global: {
+            event: async () => {
+              throw new Error('SSE should not be used in ws mode');
+            },
+          },
+        },
+        transport: 'ws',
+        reconnectDelayMs: 0,
+        heartbeatTimeoutMs: 20,
+        wsReadyTimeoutMs: 50,
+        onEvent: () => {},
+        onCompensation: (trigger) => {
+          compensations.push(trigger);
+          if (compensations.length === 2) {
+            cleanup();
+            resolve();
+          }
+        },
+      });
+      cleanup = pipeline.cleanup;
+    });
+
+    try {
+      await Promise.resolve();
+      const firstSocket = FakeWebSocket.instances[0];
+      firstSocket.emitOpen();
+      firstSocket.emitMessage({ type: 'ready', scope: 'global' });
+
+      await new Promise((resolve) => setTimeout(resolve, 35));
+
+      const secondSocket = FakeWebSocket.instances[1];
+      expect(secondSocket).toBeDefined();
+      secondSocket.emitOpen();
+      secondSocket.emitMessage({ type: 'ready', scope: 'global' });
+
+      await withTimeout(recovered, 500, 'timed out waiting for isReconnect compensation flags');
+
+      expect(compensations).toHaveLength(2);
+      expect(compensations[0]).toMatchObject({
+        isReconnect: false,
+        reason: 'ready',
+        disconnectedAt: null,
+        transport: 'ws',
+      });
+      expect(compensations[1]).toMatchObject({
+        isReconnect: true,
+        reason: 'ws_heartbeat_timeout',
+        transport: 'ws',
+      });
+      expect(typeof compensations[1].disconnectedAt).toBe('number');
+      expect(typeof compensations[1].runtimeGeneration).toBe('number');
+    } finally {
+      cleanup?.();
+    }
+  });
+
+  it('captures recovery context on visibility hidden and reuses it on the next ready compensation', async () => {
+    installDomStubs();
+    installFakeWebSocket();
+
+    const visibilityListeners = new Set();
+    globalThis.document = {
+      visibilityState: 'visible',
+      addEventListener(event, handler) {
+        if (event === 'visibilitychange') visibilityListeners.add(handler);
+      },
+      removeEventListener(event, handler) {
+        if (event === 'visibilitychange') visibilityListeners.delete(handler);
+      },
+    };
+
+    const compensations = [];
+    const recoveryCaptures = [];
+    let cleanup;
+    const secondCompensation = new Promise((resolve) => {
+      const pipeline = createEventPipeline({
+        sdk: {
+          global: {
+            event: async () => {
+              throw new Error('SSE should not be used in ws mode');
+            },
+          },
+        },
+        transport: 'ws',
+        reconnectDelayMs: 0,
+        // Short heartbeat so the post-hide disconnect retries without waiting
+        // the full exponential backoff from a natural WS close path.
+        heartbeatTimeoutMs: 20,
+        wsReadyTimeoutMs: 50,
+        onEvent: () => {},
+        onRecoveryContextCaptured: (context) => {
+          recoveryCaptures.push(context);
+        },
+        onCompensation: (trigger) => {
+          compensations.push(trigger);
+          if (compensations.length === 2) {
+            cleanup();
+            resolve();
+          }
+        },
+      });
+      cleanup = pipeline.cleanup;
+    });
+
+    try {
+      await Promise.resolve();
+      const firstSocket = FakeWebSocket.instances[0];
+      firstSocket.emitOpen();
+      firstSocket.emitMessage({
+        type: 'event',
+        eventId: 'evt-before-hide',
+        directory: '/tmp/project',
+        payload: {
+          type: 'session.updated',
+          properties: {
+            info: { id: 'session-1', directory: '/tmp/project' },
+          },
+        },
+      });
+      firstSocket.emitMessage({ type: 'ready', scope: 'global' });
+
+      await new Promise((resolve) => setTimeout(resolve, 10));
+
+      // Capture the pre-hide tip before liveness is lost.
+      globalThis.document.visibilityState = 'hidden';
+      for (const handler of visibilityListeners) handler();
+
+      // Checkpoint capture must fire immediately on visibility hide — even
+      // though onDisconnect has not run yet.
+      expect(recoveryCaptures).toHaveLength(1);
+      expect(recoveryCaptures[0]).toMatchObject({
+        reason: 'visibility_hidden',
+        lastEventId: 'evt-before-hide',
+      });
+      expect(typeof recoveryCaptures[0].disconnectedAt).toBe('number');
+      expect(typeof recoveryCaptures[0].runtimeGeneration).toBe('number');
+
+      // Heartbeat timeout aborts the attempt (retryDelayMs=0 path) and
+      // reconnects; the earliest recovery context remains visibility_hidden
+      // and must not publish a second capture for the same gap.
+      await new Promise((resolve) => setTimeout(resolve, 35));
+      expect(recoveryCaptures).toHaveLength(1);
+
+      const secondSocket = FakeWebSocket.instances[1];
+      expect(secondSocket).toBeDefined();
+      secondSocket.emitOpen();
+      secondSocket.emitMessage({ type: 'ready', scope: 'global' });
+
+      await withTimeout(secondCompensation, 500, 'timed out waiting for visibility recovery compensation');
+
+      expect(compensations).toHaveLength(2);
+      expect(compensations[0]).toMatchObject({
+        reason: 'ready',
+        isReconnect: false,
+      });
+      expect(compensations[1]).toMatchObject({
+        reason: 'visibility_hidden',
+        lastEventId: 'evt-before-hide',
+        transport: 'ws',
+        isReconnect: true,
+      });
+      expect(typeof compensations[1].disconnectedAt).toBe('number');
+      expect(typeof compensations[1].runtimeGeneration).toBe('number');
+      // Capture still once for the gap after ready consumed the context.
+      expect(recoveryCaptures).toHaveLength(1);
+    } finally {
+      cleanup?.();
+    }
+  });
+
+  it('publishes onRecoveryContextCaptured once per gap for transport error, pageshow, and system resume before ready', async () => {
+    installDomStubs();
+    installFakeWebSocket();
+
+    const pageshowListeners = new Set();
+    const winListeners = {};
+    // Preserve location from installDomStubs; only wrap event registration.
+    const baseWindow = globalThis.window;
+    globalThis.window = {
+      ...baseWindow,
+      location: baseWindow.location ?? {
+        href: 'http://127.0.0.1:3000/',
+        origin: 'http://127.0.0.1:3000',
+      },
+      addEventListener(event, handler) {
+        if (event === 'pageshow') {
+          pageshowListeners.add(handler);
+          return;
+        }
+        if (!winListeners[event]) winListeners[event] = [];
+        winListeners[event].push(handler);
+      },
+      removeEventListener(event, handler) {
+        if (event === 'pageshow') {
+          pageshowListeners.delete(handler);
+          return;
+        }
+        const list = winListeners[event];
+        if (!list) return;
+        const index = list.indexOf(handler);
+        if (index >= 0) list.splice(index, 1);
+      },
+      dispatch(event) {
+        for (const handler of winListeners[event] ?? []) handler();
+      },
+    };
+
+    const recoveryCaptures = [];
+    const compensations = [];
+    const disconnectReasons = [];
+    let cleanup;
+    const secondCompensation = new Promise((resolve) => {
+      const pipeline = createEventPipeline({
+        sdk: {
+          global: {
+            event: async () => {
+              throw new Error('SSE should not be used in ws mode');
+            },
+          },
+        },
+        transport: 'ws',
+        reconnectDelayMs: 0,
+        heartbeatTimeoutMs: 20,
+        wsReadyTimeoutMs: 50,
+        onEvent: () => {},
+        onDisconnect: (reason) => {
+          disconnectReasons.push(reason);
+        },
+        onRecoveryContextCaptured: (context) => {
+          recoveryCaptures.push({
+            ...context,
+            phase: compensations.length === 0 ? 'before-first-ready' : `after-ready-${compensations.length}`,
+          });
+        },
+        onCompensation: (trigger) => {
+          compensations.push(trigger);
+          if (compensations.length === 2) {
+            cleanup();
+            resolve();
+          }
+        },
+      });
+      cleanup = pipeline.cleanup;
+    });
+
+    try {
+      await Promise.resolve();
+      const firstSocket = FakeWebSocket.instances[0];
+      firstSocket.emitOpen();
+      firstSocket.emitMessage({
+        type: 'event',
+        eventId: 'evt-before-error',
+        directory: '/tmp/project',
+        payload: {
+          type: 'session.updated',
+          properties: {
+            info: { id: 'session-1', directory: '/tmp/project' },
+          },
+        },
+      });
+      firstSocket.emitMessage({ type: 'ready', scope: 'global' });
+      await new Promise((resolve) => setTimeout(resolve, 10));
+      expect(compensations).toHaveLength(1);
+      expect(recoveryCaptures).toHaveLength(0);
+
+      // Transport error path: capture fires with disconnect, before next ready.
+      firstSocket.emitClose();
+      // Allow reconnect loop to observe closed socket and schedule a new attempt.
+      await new Promise((resolve) => setTimeout(resolve, 40));
+      expect(recoveryCaptures.length).toBeGreaterThanOrEqual(1);
+      const errorCapture = recoveryCaptures[0];
+      expect(errorCapture.lastEventId).toBe('evt-before-error');
+      expect(errorCapture.phase).toBe('after-ready-1');
+      expect(typeof errorCapture.disconnectedAt).toBe('number');
+      expect(disconnectReasons.length).toBeGreaterThanOrEqual(1);
+
+      // Same gap: pageshow / resume must not double-capture.
+      for (const handler of pageshowListeners) {
+        handler({ persisted: true });
+      }
+      if (typeof globalThis.window.dispatch === 'function') {
+        globalThis.window.dispatch('openchamber:system-resume');
+      }
+      expect(recoveryCaptures).toHaveLength(1);
+
+      // Wait until reconnect opens a second socket (retryDelayMs=0 after abort paths).
+      let secondSocket;
+      for (let i = 0; i < 40; i += 1) {
+        secondSocket = FakeWebSocket.instances[1];
+        if (secondSocket) break;
+        await new Promise((resolve) => setTimeout(resolve, 10));
+      }
+      expect(secondSocket).toBeDefined();
+      secondSocket.emitOpen();
+      secondSocket.emitMessage({ type: 'ready', scope: 'global' });
+      await withTimeout(secondCompensation, 500, 'timed out waiting for error recovery compensation');
+
+      expect(compensations[1].isReconnect).toBe(true);
+      expect(compensations[1].lastEventId).toBe('evt-before-error');
+      // Still one capture for the gap (ready cleared context; no new capture until next gap).
+      expect(recoveryCaptures).toHaveLength(1);
+    } finally {
+      cleanup?.();
+    }
+  });
+
+  it('publishes recovery capture on pageshow_persisted without requiring onDisconnect first', async () => {
+    installDomStubs();
+    installFakeWebSocket();
+
+    const pageshowListeners = new Set();
+    const winListeners = {};
+    const baseWindow = globalThis.window;
+    globalThis.window = {
+      ...baseWindow,
+      location: baseWindow.location ?? {
+        href: 'http://127.0.0.1:3000/',
+        origin: 'http://127.0.0.1:3000',
+      },
+      addEventListener(event, handler) {
+        if (event === 'pageshow') {
+          pageshowListeners.add(handler);
+          return;
+        }
+        if (!winListeners[event]) winListeners[event] = [];
+        winListeners[event].push(handler);
+      },
+      removeEventListener(event, handler) {
+        if (event === 'pageshow') {
+          pageshowListeners.delete(handler);
+          return;
+        }
+        const list = winListeners[event];
+        if (!list) return;
+        const index = list.indexOf(handler);
+        if (index >= 0) list.splice(index, 1);
+      },
+    };
+
+    const recoveryCaptures = [];
+    let cleanup;
+    const pipeline = createEventPipeline({
+      sdk: {
+        global: {
+          event: async () => {
+            throw new Error('SSE should not be used in ws mode');
+          },
+        },
+      },
+      transport: 'ws',
+      reconnectDelayMs: 0,
+      heartbeatTimeoutMs: 60_000,
+      wsReadyTimeoutMs: 50,
+      onEvent: () => {},
+      onDisconnect: () => {},
+      onRecoveryContextCaptured: (context) => {
+        recoveryCaptures.push(context);
+      },
+      onCompensation: () => {},
+    });
+    cleanup = pipeline.cleanup;
+
+    try {
+      await Promise.resolve();
+      const firstSocket = FakeWebSocket.instances[0];
+      firstSocket.emitOpen();
+      firstSocket.emitMessage({
+        type: 'event',
+        eventId: 'evt-bfcache',
+        directory: '/tmp/project',
+        payload: {
+          type: 'session.updated',
+          properties: {
+            info: { id: 'session-1', directory: '/tmp/project' },
+          },
+        },
+      });
+      firstSocket.emitMessage({ type: 'ready', scope: 'global' });
+      await new Promise((resolve) => setTimeout(resolve, 10));
+
+      for (const handler of pageshowListeners) {
+        handler({ persisted: true });
+      }
+
+      expect(recoveryCaptures).toHaveLength(1);
+      expect(recoveryCaptures[0]).toMatchObject({
+        reason: 'pageshow_persisted',
+        lastEventId: 'evt-bfcache',
+      });
+    } finally {
+      cleanup?.();
+    }
+  });
 });
 
 // ---------------------------------------------------------------------------

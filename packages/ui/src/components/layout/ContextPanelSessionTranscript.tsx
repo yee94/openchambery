@@ -15,12 +15,22 @@ import { useI18n } from '@/lib/i18n';
 import { getProviderModelDisplayName } from '@/lib/modelDisplay';
 import { getRuntimeKey } from '@/lib/runtime-switch';
 import { useConfigStore } from '@/stores/useConfigStore';
-import { getSessionMaterializationStatus } from '@/sync/materialization';
-import { getSessionPrefetch, subscribeSessionPrefetch } from '@/sync/session-prefetch-cache';
-import { UNKNOWN_SESSION_HISTORY_BOUNDARY } from '@/sync/types';
 import { useStreamingStore } from '@/sync/streaming';
-import { useDirectorySync, useSessionMessageCount, useSessionMessageRecords, useSessionStatus, useSyncDirectory } from '@/sync/sync-context';
+import {
+    useDirectorySync,
+    useSessionMessageCount,
+    useSessionMessageLoadState,
+    useSessionMessageRecords,
+    useSessionMaterializationStatus,
+    useSessionStatus,
+    useSessionTranscriptPagination,
+    useSyncDirectory,
+} from '@/sync/sync-context';
 import { useSync } from '@/sync/use-sync';
+import {
+    ensureTranscriptInitial,
+    fetchTranscriptPreviousPage,
+} from '@/sync/transcript-repository-runtime';
 import {
     createContextPanelViewportRestoreIdentity,
     createContextPanelSessionViewKey,
@@ -98,11 +108,8 @@ const ContextPanelSessionTranscriptContent: React.FC<ContextPanelSessionTranscri
             : execution.modelId;
     }, [execution.modelId, execution.providerId, providers, t]);
     const sessionStatus = useSessionStatus(sessionId, syncDirectory);
-    // Ordinary selectors — store compares selected values (never React.useCallback).
-    const isRenderable = useDirectorySync(
-        (state) => getSessionMaterializationStatus(state, sessionId).renderable,
-        syncDirectory,
-    );
+    // Ticket 09 batch 1A: materialization from TranscriptRepository projection.
+    const isRenderable = useSessionMaterializationStatus(sessionId, syncDirectory).renderable;
     const hasConfirmedParent = useDirectorySync(
         (state) => Boolean(state.session.find((session) => session.id === sessionId)?.parentID),
         syncDirectory,
@@ -114,21 +121,8 @@ const ContextPanelSessionTranscriptContent: React.FC<ContextPanelSessionTranscri
         ));
     }, [hasConfirmedParent, viewportKey]);
     const showReadOnlyPromptBanner = hasConfirmedParent || confirmedParentViewKey === viewportKey;
-    // useMemo callback factories for useSyncExternalStore (stable identity).
-    const subscribePrefetch = React.useMemo(
-        () => (notify: () => void) => subscribeSessionPrefetch(syncDirectory, sessionId, notify, runtimeKey),
-        [runtimeKey, sessionId, syncDirectory],
-    );
-    const getPrefetchSnapshot = React.useMemo(
-        () => () => getSessionPrefetch(syncDirectory, sessionId, runtimeKey),
-        [runtimeKey, sessionId, syncDirectory],
-    );
-    const getPrefetchServerSnapshot = React.useMemo(() => () => undefined, []);
-    const prefetch = React.useSyncExternalStore(
-        subscribePrefetch,
-        getPrefetchSnapshot,
-        getPrefetchServerSnapshot,
-    );
+    // Ticket 09: request lifecycle from repository (no session-prefetch).
+    const prefetch = useSessionMessageLoadState(sessionId, syncDirectory);
     const streamingMessageId = useStreamingStore(
         (state) => state.streamingMessageIds.get(sessionId) ?? null,
     );
@@ -176,13 +170,9 @@ const ContextPanelSessionTranscriptContent: React.FC<ContextPanelSessionTranscri
     }, [completedPrependToken, scrollRef, sessionMessages, viewportKey]);
 
     const sessionDir = React.useMemo(() => ({ directory: normalizedDirectory }), [normalizedDirectory]);
-    // Directory child-store boundary is the only pagination fact source. A
-    // boundary-only commit must re-render so the load-older entry converges
-    // immediately; the narrow selector keeps unrelated store updates out.
-    const historyBoundary = useDirectorySync(
-        (state) => state.session_history_boundary?.[sessionId] ?? UNKNOWN_SESSION_HISTORY_BOUNDARY,
-        syncDirectory,
-    );
+    // Ticket 02: pagination from TranscriptRepository projection.
+    const transcriptPagination = useSessionTranscriptPagination(sessionId, syncDirectory);
+    const historyBoundary = transcriptPagination.boundary;
     const hasMore = resolveContextPanelHasMore(historyBoundary);
     // Background materialize/prefetch loading — gate concurrent load-more only.
     // Button spinner tracks the mutation below, never stuck prefetch status.
@@ -190,7 +180,11 @@ const ContextPanelSessionTranscriptContent: React.FC<ContextPanelSessionTranscri
     const loadOlderMutation = useMutation({
         mutationKey: ['context-panel-load-older', runtimeKey, normalizedDirectory, sessionId],
         mutationFn: async () => {
-            await sync.loadMore(sessionId, sessionDir);
+            // Ticket 09: Query previous-page (shared flight with Chat).
+            if (historyBoundary.kind === 'unknown') {
+                await ensureTranscriptInitial(syncDirectory, sessionId);
+            }
+            await fetchTranscriptPreviousPage(syncDirectory, sessionId);
         },
     });
     const isLoadingOlder = loadOlderMutation.isPending;

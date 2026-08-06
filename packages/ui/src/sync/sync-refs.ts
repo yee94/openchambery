@@ -7,7 +7,10 @@
 
 import type { Config, OpencodeClient } from "@opencode-ai/sdk/v2/client"
 import type { ChildStoreManager } from "./child-store"
-import { getSessionMaterializationStatus } from "./materialization"
+import {
+  getSessionMaterializationStatusFromProjection,
+  type SessionMaterializationStatus,
+} from "./materialization"
 import type { State } from "./types"
 
 let _childStores: ChildStoreManager | null = null
@@ -117,44 +120,176 @@ export function getAllSyncSessionMap(): ReadonlyMap<string, State["session"][num
   return cachedSessionsById
 }
 
-export type MaterializedSessionDirectorySnapshot = Pick<State, "session" | "message">
+export type MaterializedSessionDirectorySnapshot = {
+  session: State["session"]
+  /**
+   * True when the session transcript is loaded for that directory.
+   * Production uses TranscriptRepository.hasSession / catalog — never State.message.
+   */
+  hasTranscript?: boolean
+}
 
-/** Resolve a loaded session snapshot without creating stores or fetching data. */
+/** Resolve a loaded session directory without creating stores or fetching data. */
 export function resolveMaterializedSessionDirectory(
   sessionID: string,
   preferredDirectory?: string,
   snapshots?: Iterable<readonly [string, MaterializedSessionDirectorySnapshot]>,
 ): string | undefined {
-  const loadedSnapshots = snapshots ?? (_childStores
-    ? Array.from(_childStores.children, ([directory, store]) => [directory, store.getState()] as const)
-    : [])
-  const matches: string[] = []
-
-  for (const [directory, state] of loadedSnapshots) {
-    if (!state.session.some((session) => session.id === sessionID)) continue
-    if (!Object.prototype.hasOwnProperty.call(state.message, sessionID)) continue
-    if (directory === preferredDirectory) return directory
-    matches.push(directory)
+  if (snapshots) {
+    const matches: string[] = []
+    for (const [directory, state] of snapshots) {
+      if (!state.session.some((session) => session.id === sessionID)) continue
+      if (state.hasTranscript !== true) continue
+      if (directory === preferredDirectory) return directory
+      matches.push(directory)
+    }
+    return matches.length === 1 ? matches[0] : undefined
   }
 
-  return matches.length === 1 ? matches[0] : undefined
+  // Production: catalog + repository hasSession (not child-store message maps).
+  const matches: string[] = []
+  try {
+    const {
+      getTranscriptRepository,
+      transcriptScope,
+      resolveTranscriptRepositoryForStore,
+    } = require("./transcript-repository-runtime") as typeof import("./transcript-repository-runtime")
+    const bound = getTranscriptRepository()
+    if (_childStores) {
+      for (const [directory, store] of _childStores.children) {
+        const state = store.getState()
+        if (!state.session.some((session) => session.id === sessionID)) continue
+        const repository = bound ?? resolveTranscriptRepositoryForStore(directory, store)
+        if (!repository.hasSession?.(transcriptScope(directory, sessionID))) continue
+        if (directory === preferredDirectory) return directory
+        matches.push(directory)
+      }
+    }
+    // Query inventory may know scopes before catalog lists them.
+    if (matches.length === 0 && bound) {
+      const inventory = (bound as {
+        getCacheBudget?: () => {
+          listCanonical: (filter?: { directory?: string }) => Array<{ scope: { directory: string; sessionID: string } }>
+        }
+      }).getCacheBudget?.().listCanonical()
+      if (inventory) {
+        for (const entry of inventory) {
+          if (entry.scope.sessionID !== sessionID) continue
+          if (entry.scope.directory === preferredDirectory) return entry.scope.directory
+          matches.push(entry.scope.directory)
+        }
+      }
+    }
+  } catch {
+    // Fall through to empty.
+  }
+
+  const unique = [...new Set(matches)]
+  return unique.length === 1 ? unique[0] : undefined
 }
 
-/** Read messages for a session from current directory's child store */
-export function getSyncMessages(sessionId: string, directory?: string) {
-  return getDirectoryState(directory)?.message[sessionId] ?? []
+/** Read messages for a session via TranscriptRepository when bound. */
+export function getSyncMessages(sessionId: string, directory?: string): import("@opencode-ai/sdk/v2/client").Message[] {
+  if (!sessionId) return []
+  try {
+    // Lazy import avoids circular init with transcript-repository-runtime.
+    const {
+      getTranscriptRepository,
+      transcriptScope,
+      resolveTranscriptRepositoryForStore,
+    } = require("./transcript-repository-runtime") as typeof import("./transcript-repository-runtime")
+    const bound = getTranscriptRepository()
+    const dir = directory ?? _directory
+    if (bound) {
+      const data = bound.getTranscript(transcriptScope(dir, sessionId))
+      return data.messageOrder
+        .map((id) => data.messagesByID[id])
+        .filter((message): message is import("@opencode-ai/sdk/v2/client").Message => Boolean(message))
+    }
+    if (_childStores) {
+      const store = _childStores.getChild(dir)
+      if (store) {
+        const repository = resolveTranscriptRepositoryForStore(dir, store)
+        const data = repository.getTranscript(transcriptScope(dir, sessionId))
+        return data.messageOrder
+          .map((id) => data.messagesByID[id])
+          .filter((message): message is import("@opencode-ai/sdk/v2/client").Message => Boolean(message))
+      }
+    }
+  } catch {
+    // Fall through when runtime is unavailable.
+  }
+  return []
 }
 
-/** Read renderability of a session snapshot from current directory's child store */
-export function getSyncSessionMaterializationStatus(sessionId: string, directory?: string) {
-  const state = getDirectoryState(directory)
-  if (!state) return { hasMessages: false, renderable: false, missingPartMessageIDs: [] }
-  return getSessionMaterializationStatus(state, sessionId)
+/** Read renderability of a session from TranscriptRepository when bound. */
+export function getSyncSessionMaterializationStatus(
+  sessionId: string,
+  directory?: string,
+): SessionMaterializationStatus {
+  if (!sessionId) return { hasMessages: false, renderable: false, missingPartMessageIDs: [] }
+  try {
+    const {
+      getTranscriptRepository,
+      transcriptScope,
+      resolveTranscriptRepositoryForStore,
+    } = require("./transcript-repository-runtime") as typeof import("./transcript-repository-runtime")
+    const {
+      materializationStatusFromTranscriptData,
+    } = require("./transcript-repository-observers") as typeof import("./transcript-repository-observers")
+    const dir = directory ?? _directory
+    const bound = getTranscriptRepository()
+    if (bound) {
+      const scope = transcriptScope(dir, sessionId)
+      const data = bound.getTranscript(scope)
+      const resolved = bound.hasSession?.(scope)
+      return materializationStatusFromTranscriptData(data, {
+        resolved: resolved === true ? true : undefined,
+      })
+    }
+    if (_childStores) {
+      const store = _childStores.getChild(dir)
+      if (store) {
+        const repository = resolveTranscriptRepositoryForStore(dir, store)
+        const scope = transcriptScope(dir, sessionId)
+        const data = repository.getTranscript(scope)
+        const resolved = repository.hasSession?.(scope)
+        return materializationStatusFromTranscriptData(data, {
+          resolved: resolved === true ? true : undefined,
+        })
+      }
+    }
+  } catch {
+    // Fall through when runtime is unavailable.
+  }
+  return { hasMessages: false, renderable: false, missingPartMessageIDs: [] }
 }
 
-/** Read parts for a message from current directory's child store */
-export function getSyncParts(messageId: string, directory?: string) {
-  return getDirectoryState(directory)?.part[messageId] ?? []
+/** Read parts for a message via TranscriptRepository when bound. */
+export function getSyncParts(messageId: string, directory?: string): import("@opencode-ai/sdk/v2/client").Part[] {
+  if (!messageId) return []
+  try {
+    const {
+      getTranscriptRepository,
+      transcriptScope,
+      resolveTranscriptRepositoryForStore,
+    } = require("./transcript-repository-runtime") as typeof import("./transcript-repository-runtime")
+    const bound = getTranscriptRepository()
+    const dir = directory ?? _directory
+    if (bound) {
+      return [...bound.getParts(transcriptScope(dir, messageId), messageId)]
+    }
+    if (_childStores) {
+      const store = _childStores.getChild(dir)
+      if (store) {
+        const repository = resolveTranscriptRepositoryForStore(dir, store)
+        return [...repository.getParts(transcriptScope(dir, messageId), messageId)]
+      }
+    }
+  } catch {
+    // Fall through.
+  }
+  return []
 }
 
 /** Read session status from current directory's child store */

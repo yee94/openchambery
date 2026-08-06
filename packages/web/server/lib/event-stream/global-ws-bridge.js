@@ -49,6 +49,15 @@ export function createGlobalMessageStreamWsBridge({
       return;
     }
 
+    // Replay buffered events first, then emit ready. Clients treat ready as the
+    // recovery barrier that starts HTTP compensation after the reducer has
+    // already merged any Last-Event-ID replay frames.
+    replayEvents(socket, requestedLastEventId);
+    // If replay dropped the client (slow/backpressure), do not mark ready.
+    if (!clients.has(socket) || socket.readyState !== 1) {
+      return;
+    }
+
     const sent = sendMessageStreamWsFrame(socket, {
       type: 'ready',
       scope: 'global',
@@ -60,7 +69,6 @@ export function createGlobalMessageStreamWsBridge({
 
     readyClients.add(socket);
     wsClients.add(socket);
-    replayEvents(socket, requestedLastEventId);
   };
 
   const stopHubIfUnused = () => {

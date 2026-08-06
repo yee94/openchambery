@@ -8,8 +8,21 @@
  * encoded three times with divergent exceptions.
  */
 
-/** Why the page was fetched. Determines both page size and merge behavior. */
-export type SessionMessagePagePurpose = "initial" | "prepend" | "recovery" | "materialize"
+/**
+ * Why the page was fetched. Determines both page size and merge behavior.
+ *
+ * `reconcile-page` (Ticket 07): Host anchor-reconcile records. Message/part
+ * merge matches recovery (current upsert+replace; stale insert-only +
+ * skip-existing), but must never rewrite the canonical history boundary /
+ * cursor / loadedTurns — Host `complete` ends one compensation round only,
+ * not older-history exhaustion.
+ */
+export type SessionMessagePagePurpose =
+  | "initial"
+  | "prepend"
+  | "recovery"
+  | "materialize"
+  | "reconcile-page"
 
 /**
  * Fate of a page that lost the race against live SSE.
@@ -51,9 +64,10 @@ export type SessionMergeStrategy = {
 const strategy = (value: SessionMergeStrategy): SessionMergeStrategy => Object.freeze(value)
 
 /**
- * Strategy for a page that is still current. Only `recovery` reconciles server
- * truth against a transcript the live stream already owns, so it is the only
- * purpose that upserts existing message objects.
+ * Strategy for a page that is still current. Only `recovery` and
+ * `reconcile-page` reconcile server truth against a transcript the live stream
+ * already owns, so they are the only purposes that upsert existing message
+ * objects.
  */
 const CURRENT: Readonly<Record<SessionMessagePagePurpose, SessionMergeStrategy>> = Object.freeze({
   initial: strategy({
@@ -77,6 +91,18 @@ const CURRENT: Readonly<Record<SessionMessagePagePurpose, SessionMergeStrategy>>
     parts: "replace",
     preserveStreaming: "assistant",
   }),
+  /**
+   * Reconcile page: same live-merge rules as recovery so gap records and
+   * overlap-turn assistant finish updates re-enter the transcript. Boundary
+   * preservation is enforced in the reducer / InfiniteData rebuild — not here.
+   */
+  "reconcile-page": strategy({
+    id: "reconcile-page",
+    onStale: "backfill",
+    messages: "upsert",
+    parts: "replace",
+    preserveStreaming: "assistant",
+  }),
   materialize: strategy({
     id: "materialize",
     onStale: "drop",
@@ -89,14 +115,16 @@ const CURRENT: Readonly<Record<SessionMessagePagePurpose, SessionMergeStrategy>>
 /**
  * Recovery that lost the race: still worth applying, because a reconnect page
  * is the only source for messages the SSE gap swallowed. Staleness downgrades
- * exactly one dimension — `upsert` becomes `insert-only` — so the page fills
- * holes without overwriting the newer objects live events just committed.
+ * two dimensions — `messages: upsert → insert-only` and `parts: replace →
+ * skip-existing` — so the page fills missing message/part holes without
+ * overwriting live transcript that SSE already committed (including completed
+ * / non-streaming parts that `preserveStreaming` alone would not protect).
  */
 const STALE_RECOVERY = strategy({
   id: "recovery-backfill",
   onStale: "backfill",
   messages: "insert-only",
-  parts: "replace",
+  parts: "skip-existing",
   preserveStreaming: "assistant",
 })
 

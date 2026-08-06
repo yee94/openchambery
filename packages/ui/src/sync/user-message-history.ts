@@ -13,6 +13,14 @@ export type UserMessageHistorySnapshot = {
   history: string[];
 };
 
+/** Flat transcript + revert for user-message history (Ticket 09 batch 1B). */
+export type UserMessageHistorySource = {
+  sessionID: string;
+  messages: readonly Message[];
+  parts: Readonly<Record<string, readonly Part[] | undefined>>;
+  revertMessageID?: string;
+};
+
 const EMPTY_PARTS: Part[] = [];
 const EMPTY_RECORDS: UserMessageHistoryRecord[] = [];
 const EMPTY_HISTORY: string[] = [];
@@ -30,7 +38,7 @@ const getPartText = (part: Part): string => {
   return typeof text === 'string' ? text : '';
 };
 
-const getFirstTextFromParts = (parts: Part[]): string => {
+const getFirstTextFromParts = (parts: readonly Part[]): string => {
   for (const part of parts) {
     const text = getPartText(part);
     if (text.length > 0) return text;
@@ -49,18 +57,17 @@ const areRecordsEqual = (left: UserMessageHistoryRecord[], right: UserMessageHis
   return true;
 };
 
-export const buildUserMessageHistorySnapshot = (
-  state: Pick<State, 'session' | 'message' | 'part'>,
-  sessionID: string,
+export const buildUserMessageHistorySnapshotFromSource = (
+  source: UserMessageHistorySource,
   previous: UserMessageHistorySnapshot = EMPTY_USER_MESSAGE_HISTORY_SNAPSHOT,
 ): UserMessageHistorySnapshot => {
+  const sessionID = source.sessionID;
   if (!sessionID) {
     return EMPTY_USER_MESSAGE_HISTORY_SNAPSHOT;
   }
 
-  const messages = state.message[sessionID] ?? [];
-  const session = state.session.find((candidate) => candidate.id === sessionID);
-  const revertMessageID = (session as { revert?: { messageID?: string } } | undefined)?.revert?.messageID;
+  const messages = source.messages;
+  const revertMessageID = source.revertMessageID;
   const records: UserMessageHistoryRecord[] = [];
   for (let index = messages.length - 1; index >= 0; index -= 1) {
     const message = messages[index];
@@ -72,7 +79,7 @@ export const buildUserMessageHistorySnapshot = (
     }
     records.push({
       message,
-      parts: state.part[message.id] ?? EMPTY_PARTS,
+      parts: (source.parts[message.id] as Part[] | undefined) ?? EMPTY_PARTS,
     });
   }
 
@@ -95,4 +102,30 @@ export const buildUserMessageHistorySnapshot = (
   }
 
   return { sessionID, revertMessageID, records, history };
+};
+
+/** Store-shaped entry for tests / residual callers. */
+export const buildUserMessageHistorySnapshot = (
+  state: {
+    session: State['session'];
+    message: Record<string, Message[]>;
+    part: Record<string, Part[]>;
+  },
+  sessionID: string,
+  previous: UserMessageHistorySnapshot = EMPTY_USER_MESSAGE_HISTORY_SNAPSHOT,
+): UserMessageHistorySnapshot => {
+  if (!sessionID) {
+    return EMPTY_USER_MESSAGE_HISTORY_SNAPSHOT;
+  }
+  const session = state.session.find((candidate) => candidate.id === sessionID);
+  const revertMessageID = (session as { revert?: { messageID?: string } } | undefined)?.revert?.messageID;
+  return buildUserMessageHistorySnapshotFromSource(
+    {
+      sessionID,
+      messages: state.message[sessionID] ?? [],
+      parts: state.part,
+      revertMessageID,
+    },
+    previous,
+  );
 };

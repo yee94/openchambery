@@ -23,26 +23,26 @@ import {
   rollbackComposerRestoration,
   type ComposerRestorationPayload,
 } from "./message-composer-restoration"
-import { getSessionMaterializationStatus, materializeSessionSnapshots } from "./materialization"
 import { retry } from "./retry"
 import { getRuntimeGeneration, getRuntimeKey, getRuntimeTransportIdentity } from "@/lib/runtime-switch"
+import {
+  applyTranscriptCommand,
+  getTranscriptRepository,
+  requireTranscriptRepository,
+  resolveTranscriptRepositoryForStore,
+  transcriptScope,
+} from "./transcript-repository-runtime"
+import type { TranscriptData, TranscriptRepository } from "./transcript-repository"
+import { messagesFromTranscriptData } from "./transcript-repository-observers"
+import { fetchProductionTranscriptTransportPage } from "./transcript-repository-production"
 import { runSessionHistoryMutation } from "./session-history-mutation-coordinator"
-import { loadSessionMessagePage } from "./session-message-loader"
 import {
   getInitialSessionMessageLimit,
   getMessageRefetchLimit,
   getSendConfirmationRefetchLimit,
 } from "./session-message-policy"
-import { fetchHostSessionTurnPageForPurpose } from "./session-turn-page-api"
 import { resolveSessionMergeStrategy, SEND_GAP_FILL_SESSION_MERGE_STRATEGY } from "./session-merge-strategy"
-import {
-  getSessionPrefetch,
-  shouldSkipSessionPrefetch,
-} from "./session-prefetch-cache"
-import {
-  UNKNOWN_SESSION_HISTORY_BOUNDARY,
-  type SessionHistoryBoundary,
-} from "./types"
+
 import { stripMessageDiffSnapshots, stripSessionDiffSnapshots } from "./sanitize"
 import { sessionEvents } from "@/lib/sessionEvents"
 import {
@@ -312,6 +312,39 @@ function dirStoreForSession(sessionId: string, directoryOverride?: string): { st
   return { store: dirStore(), directory: dir() }
 }
 
+/** Resolve TranscriptRepository for a session scope (bound Query, else store adapter). */
+function transcriptRepositoryForSession(
+  sessionId: string,
+  directoryOverride?: string | null,
+): { repository: TranscriptRepository; directory: string; store: DirectoryStoreApi } {
+  const { store, directory } = dirStoreForSession(sessionId, directoryOverride ?? undefined)
+  const resolvedDirectory = directory ?? dir() ?? ""
+  const repository = getTranscriptRepository()
+    ?? resolveTranscriptRepositoryForStore(resolvedDirectory, store)
+  return { repository, directory: resolvedDirectory, store }
+}
+
+function readSessionTranscript(
+  sessionId: string,
+  directoryOverride?: string | null,
+): { data: TranscriptData; directory: string; repository: TranscriptRepository; store: DirectoryStoreApi } {
+  const { repository, directory, store } = transcriptRepositoryForSession(sessionId, directoryOverride)
+  return {
+    repository,
+    directory,
+    store,
+    data: repository.getTranscript(transcriptScope(directory, sessionId)),
+  }
+}
+
+function readSessionMessages(sessionId: string, directoryOverride?: string | null): Message[] {
+  return messagesFromTranscriptData(readSessionTranscript(sessionId, directoryOverride).data)
+}
+
+function readSessionMessageCount(sessionId: string, directoryOverride?: string | null): number {
+  return readSessionTranscript(sessionId, directoryOverride).data.messageOrder.length
+}
+
 /**
  * Provider/model of the session's last assistant message — the authoritative
  * "session provider" for utility calls (notes distillation etc.), independent
@@ -319,9 +352,7 @@ function dirStoreForSession(sessionId: string, directoryOverride?: string): { st
  */
 export function getSessionLastAssistantModel(sessionId: string): { providerID: string; modelID: string } | null {
   try {
-    const { store } = dirStoreForSession(sessionId)
-    const messages = store.getState().message[sessionId]
-    if (!messages) return null
+    const messages = readSessionMessages(sessionId)
     for (let i = messages.length - 1; i >= 0; i -= 1) {
       const info = messages[i] as { role?: string; providerID?: string; modelID?: string }
       if (info?.role === "assistant" && typeof info.providerID === "string" && info.providerID
@@ -538,17 +569,39 @@ function findSessionDirectoryInChildStores(sessionId: string): string | null {
   const stores = _childStores
   if (!stores || !sessionId) return null
 
+  // Prefer session catalog / status / permission / question ownership.
+  // Do not use child-store message maps (Ticket 09 batch 1B — Query sole transcript authority).
   for (const [directory, store] of stores.children) {
     const state = store.getState()
     if (
       state.session.some((session) => session.id === sessionId)
-      || Object.prototype.hasOwnProperty.call(state.message, sessionId)
       || Object.prototype.hasOwnProperty.call(state.session_status ?? {}, sessionId)
       || Object.prototype.hasOwnProperty.call(state.permission ?? {}, sessionId)
       || Object.prototype.hasOwnProperty.call(state.question ?? {}, sessionId)
     ) {
       return directory
     }
+  }
+
+  // Query canonical scopes when catalog/status has not indexed the session yet.
+  try {
+    const repository = getTranscriptRepository() as
+      | (TranscriptRepository & {
+        getCacheBudget?: () => {
+          listCanonical: (filter?: { directory?: string }) => Array<{ scope: { directory: string; sessionID: string } }>
+        }
+      })
+      | null
+    const inventory = repository?.getCacheBudget?.().listCanonical()
+    if (inventory) {
+      const matches = inventory
+        .filter((entry) => entry.scope.sessionID === sessionId)
+        .map((entry) => entry.scope.directory)
+      const unique = [...new Set(matches)]
+      if (unique.length === 1) return unique[0] ?? null
+    }
+  } catch {
+    // Ignore inventory failures; fall through.
   }
 
   return null
@@ -629,7 +682,6 @@ function resolveDirectoryForBlockingRequest(
     const state = store.getState()
     if (
       state.session.some((session) => session.id === sessionId)
-      || Object.prototype.hasOwnProperty.call(state.message, sessionId)
       || Object.prototype.hasOwnProperty.call(state.session_status ?? {}, sessionId)
       || Object.prototype.hasOwnProperty.call(state.permission ?? {}, sessionId)
       || Object.prototype.hasOwnProperty.call(state.question ?? {}, sessionId)
@@ -1381,7 +1433,9 @@ export async function settleOptimisticSend(input: {
       : null
 
     if (acceptedRecords && isCurrentSendTarget(capture, transport)) {
-      materializeConfirmedSendRecords(capture.store, sessionId, messageID, acceptedRecords)
+      materializeConfirmedSendRecords(capture.store, sessionId, messageID, acceptedRecords, {
+        directory: targetDirectory ?? undefined,
+      })
       _optimisticConfirm?.({
         sessionID: sessionId,
         directory: targetDirectory,
@@ -1488,10 +1542,13 @@ export function optimisticInsertUserMessage(input: {
 
   const targetDirectory = input.directory ?? dir()
   const store = targetDirectory ? dirStoreForDirectory(targetDirectory) : dirStore()
-
-  const state = store.getState()
-  const existingMessages = state.message?.[input.sessionId]
-  if (existingMessages?.some((m) => m.id === input.messageID)) {
+  const resolvedDirectory = targetDirectory ?? dir() ?? ""
+  const repository = getTranscriptRepository()
+    ?? resolveTranscriptRepositoryForStore(resolvedDirectory, store)
+  const scope = transcriptScope(resolvedDirectory, input.sessionId)
+  // Ticket 09 batch 1B: dedupe against Query/repository transcript, not child-store.message.
+  if (repository.getMessage(scope, input.messageID)) {
+    const state = store.getState()
     const now = Date.now()
     store.setState({
       session_status: {
@@ -1647,32 +1704,37 @@ export function materializeConfirmedSendRecords(
   sessionId: string,
   messageID: string,
   records: Array<{ info: Message; parts?: Part[] }>,
-  options?: { gapFillOnly?: boolean },
+  options?: {
+    gapFillOnly?: boolean
+    /** Explicit directory for repository scope; defaults to current sync directory. */
+    directory?: string
+  },
 ): void {
   if (!records.length) return
   // messageID is the confirmation key used by callers; records must include it
   // (fetchRecentSendConfirmationRecords already gates on that).
   void messageID
-  store.setState((state) => {
-    const materialized = materializeSessionSnapshots(
-      state,
-      sessionId,
-      records.map((record) => ({
-        info: stripMessageDiffSnapshots(record.info),
-        parts: record.parts ?? [],
-      })),
-      {
-        skipPartTypes: MESSAGE_REFETCH_SKIP_PARTS,
-        // Default upserts so an optimistic/SSE shell for the same ID is replaced
-        // by the authoritative snapshot without wiping sibling rows.
-        merge: options?.gapFillOnly === true
-          ? SEND_GAP_FILL_SESSION_MERGE_STRATEGY
-          : resolveSessionMergeStrategy({ purpose: "recovery" }),
-      },
-    )
-    if (!materialized.messagesChanged && !materialized.partsChanged) return state
-    return { message: materialized.message, part: materialized.part }
-  })
+  // Ensure the store identity is the live child store for this session so the
+  // repository binding writes into the same map the caller captured.
+  const directory = options?.directory ?? getSessionDirectory(sessionId) ?? _getDirectory()
+  const scope = transcriptScope(directory, sessionId)
+  const command = {
+    type: "materialize-snapshots" as const,
+    records: records.map((record) => ({
+      info: stripMessageDiffSnapshots(record.info),
+      parts: record.parts ?? [],
+    })),
+    skipPartTypes: MESSAGE_REFETCH_SKIP_PARTS,
+    // Default upserts so an optimistic/SSE shell for the same ID is replaced
+    // by the authoritative snapshot without wiping sibling rows.
+    merge: options?.gapFillOnly === true
+      ? SEND_GAP_FILL_SESSION_MERGE_STRATEGY
+      : resolveSessionMergeStrategy({ purpose: "recovery" }),
+  }
+  const applied = applyTranscriptCommand(scope, command)
+  if (!applied) {
+    resolveTranscriptRepositoryForStore(directory, store).apply(scope, command)
+  }
 }
 
 /**
@@ -1705,18 +1767,26 @@ export function resetCombinedSendConfirmationOptions(): void {
 }
 
 /**
- * Whether the captured store holds a renderable `messageID` for the session.
+ * Whether the repository holds a renderable `messageID` for the session.
  * Parts must be there too: a row whose parts never landed paints an empty
  * bubble, which is the same defect as the row being absent.
  */
-function hasStoredSessionMessage(store: DirectoryStoreApi, sessionId: string, messageID: string): boolean {
-  const state = store.getState()
-  if (!(state.message?.[sessionId] ?? []).some((message) => message?.id === messageID)) return false
-  return (state.part?.[messageID] ?? []).length > 0
+function hasStoredSessionMessage(
+  store: DirectoryStoreApi,
+  sessionId: string,
+  messageID: string,
+  directory?: string | null,
+): boolean {
+  const resolvedDirectory = directory ?? getSessionDirectory(sessionId) ?? _getDirectory() ?? ""
+  const repository = getTranscriptRepository()
+    ?? resolveTranscriptRepositoryForStore(resolvedDirectory, store)
+  const scope = transcriptScope(resolvedDirectory, sessionId)
+  if (!repository.getMessage(scope, messageID)) return false
+  return repository.getParts(scope, messageID).length > 0
 }
 
 /**
- * Local, request-free wait for a sent message to appear in the captured store.
+ * Local, request-free wait for a sent message to appear in the repository.
  * Resolves as soon as SSE or the ordinary selection page fetch delivers it, and
  * resolves false on timeout or once the caller's runtime is no longer current.
  */
@@ -1724,9 +1794,10 @@ function waitForStoredMessagePresence(
   store: DirectoryStoreApi,
   sessionId: string,
   messageID: string,
-  options?: { timeoutMs?: number; isCurrent?: () => boolean },
+  options?: { timeoutMs?: number; isCurrent?: () => boolean; directory?: string | null },
 ): Promise<boolean> {
-  if (hasStoredSessionMessage(store, sessionId, messageID)) return Promise.resolve(true)
+  const directory = options?.directory ?? getSessionDirectory(sessionId) ?? _getDirectory() ?? ""
+  if (hasStoredSessionMessage(store, sessionId, messageID, directory)) return Promise.resolve(true)
   if (!isConfirmationCurrent(options?.isCurrent)) return Promise.resolve(false)
   const timeoutMs = options?.timeoutMs ?? COMBINED_SEND_PRESENCE_GRACE_MS
   return new Promise<boolean>((resolve) => {
@@ -1741,16 +1812,19 @@ function waitForStoredMessagePresence(
       resolve(value)
     }
     const timer = setTimeout(() => settle(false), timeoutMs)
-    subscription.unsubscribe = store.subscribe(() => {
+    const repository = getTranscriptRepository()
+      ?? resolveTranscriptRepositoryForStore(directory, store)
+    const scope = transcriptScope(directory, sessionId)
+    subscription.unsubscribe = repository.subscribe(scope, () => {
       if (!isConfirmationCurrent(options?.isCurrent)) {
         settle(false)
         return
       }
-      if (hasStoredSessionMessage(store, sessionId, messageID)) settle(true)
+      if (hasStoredSessionMessage(store, sessionId, messageID, directory)) settle(true)
     })
     // subscribe() cannot observe a write that landed between the guard above and
     // the subscription itself, so re-check once the listener is installed.
-    if (hasStoredSessionMessage(store, sessionId, messageID)) settle(true)
+    if (hasStoredSessionMessage(store, sessionId, messageID, directory)) settle(true)
   })
 }
 
@@ -1779,6 +1853,7 @@ export async function ensureSentUserMessagePresence(input: {
   const present = await waitForStoredMessagePresence(store, sessionId, messageID, {
     timeoutMs: input.graceMs ?? combinedSendConfirmationOptions.presenceGraceMs,
     isCurrent,
+    directory,
   })
   if (present) return "present"
   if (!isConfirmationCurrent(isCurrent)) return "cancelled"
@@ -1791,7 +1866,10 @@ export async function ensureSentUserMessagePresence(input: {
   }
   // Second currentness gate: records may have arrived after a runtime switch.
   if (!isConfirmationCurrent(isCurrent)) return "cancelled"
-  materializeConfirmedSendRecords(store, sessionId, messageID, records, { gapFillOnly: true })
+  materializeConfirmedSendRecords(store, sessionId, messageID, records, {
+    gapFillOnly: true,
+    directory: directory ?? undefined,
+  })
   return "recovered"
 }
 
@@ -2069,16 +2147,21 @@ export async function revertToMessage(
       }
     }
 
-    const messages = state.message[sessionId] ?? []
+    // Ticket 09 batch 1B: target message/parts from TranscriptRepository.
+    const messages = readSessionMessages(sessionId, directory)
     const targetMsg = messages.find((m) => m.id === messageId)
     // Fail before mutating marker/draft/API when the target user message is missing.
-    // Re-read after abort awaits in case another mutation changed the store.
-    const liveMessages = store.getState().message[sessionId] ?? []
+    // Re-read after abort awaits in case another mutation changed the transcript.
+    const liveMessages = readSessionMessages(sessionId, directory)
     const liveTarget = liveMessages.find((m) => m.id === messageId) ?? targetMsg
     if (!liveTarget || liveTarget.role !== "user") {
       throw new Error("The selected user message is unavailable")
     }
-    const targetParts = (store.getState().part[messageId] ?? []) as Array<Record<string, unknown>>
+    const { repository, directory: transcriptDirectory } = transcriptRepositoryForSession(sessionId, directory)
+    const targetParts = [...repository.getParts(
+      transcriptScope(transcriptDirectory, sessionId),
+      messageId,
+    )] as unknown as Array<Record<string, unknown>>
 
     const targetDraftKey = explicitDraftKey === undefined
       ? (shouldRestoreDraft
@@ -2243,25 +2326,24 @@ export async function revertToMessage(
   })
 }
 
-function removeSessionMessageFromStore(store: DirectoryStoreApi, sessionId: string, messageId: string): void {
-  const current = store.getState()
-  const messages = current.message[sessionId]
-  const hasParts = current.part[messageId] !== undefined
-  if (!messages && !hasParts) return
-
-  const message = { ...current.message }
-  if (messages) {
-    const next = [...messages]
-    const result = Binary.search(next, messageId, (item) => item.id)
-    if (result.found) {
-      next.splice(result.index, 1)
-      message[sessionId] = next
-    }
+function removeSessionMessageFromStore(
+  store: DirectoryStoreApi,
+  sessionId: string,
+  messageId: string,
+  directory?: string,
+): void {
+  const resolvedDirectory = directory ?? getSessionDirectory(sessionId) ?? _getDirectory()
+  const scope = transcriptScope(resolvedDirectory, sessionId)
+  const applied = applyTranscriptCommand(scope, {
+    type: "remove-message",
+    messageID: messageId,
+  })
+  if (!applied) {
+    resolveTranscriptRepositoryForStore(resolvedDirectory, store).apply(scope, {
+      type: "remove-message",
+      messageID: messageId,
+    })
   }
-
-  const part = { ...current.part }
-  delete part[messageId]
-  store.setState({ message, part })
 }
 
 export type StageMessageEditOptions = {
@@ -2313,8 +2395,8 @@ export async function stageMessageEdit(
   } else {
     const resolved = dirStoreForSession(sessionId, directoryOverride)
     directory = resolved.directory
-    const state = resolved.store.getState()
-    const messages = state.message[sessionId] ?? []
+    const { data } = readSessionTranscript(sessionId, directory)
+    const messages = messagesFromTranscriptData(data)
     const targetIndex = messages.findIndex((message) => message.id === messageId)
     const storedMessage = targetIndex >= 0 ? messages[targetIndex] : undefined
     if (!storedMessage || storedMessage.role !== "user") {
@@ -2322,8 +2404,9 @@ export async function stageMessageEdit(
     }
     targetMessage = storedMessage
     // Keep missing part-key semantics for user messages (do not coerce to []).
-    targetParts = Object.prototype.hasOwnProperty.call(state.part, messageId)
-      ? state.part[messageId]
+    // Repository partsByMessageID: absent key → undefined; present [] → [].
+    targetParts = Object.prototype.hasOwnProperty.call(data.partsByMessageID, messageId)
+      ? [...(data.partsByMessageID[messageId] ?? [])]
       : undefined
   }
 
@@ -2423,7 +2506,7 @@ export async function commitMessageEdit(
 
   for (const message of [...removedMessages].reverse()) {
     await opencodeClient.deleteSessionMessage(sessionId, message.id, directory)
-    removeSessionMessageFromStore(store, sessionId, message.id)
+    removeSessionMessageFromStore(store, sessionId, message.id, directory)
   }
 }
 
@@ -2444,15 +2527,22 @@ export async function refetchSessionMessages(sessionId: string, directoryOverrid
     parts: record.parts ?? [],
   }))
 
-  store.setState((state) => {
-    const materialized = materializeSessionSnapshots(
-      state,
-      sessionId,
-      snapshots,
-      { skipPartTypes: MESSAGE_REFETCH_SKIP_PARTS },
-    )
-    return { message: materialized.message, part: materialized.part }
+  // Ticket 03/09: edit refetch materializes through TranscriptRepository.
+  void store
+  const scope = transcriptScope(directory ?? _getDirectory(), sessionId)
+  const applied = applyTranscriptCommand(scope, {
+    type: "materialize-snapshots",
+    records: snapshots,
+    skipPartTypes: MESSAGE_REFETCH_SKIP_PARTS,
   })
+  if (!applied) {
+    // Tests without production bind: apply via store-scoped repository.
+    resolveTranscriptRepositoryForStore(directory ?? _getDirectory(), store).apply(scope, {
+      type: "materialize-snapshots",
+      records: snapshots,
+      skipPartTypes: MESSAGE_REFETCH_SKIP_PARTS,
+    })
+  }
 
   return snapshots.map((snapshot: { info: Message }) => snapshot.info)
 }
@@ -2477,7 +2567,7 @@ export async function unrevertSession(sessionId: string, directoryOverride?: str
       throw new Error("Session history mutation aborted because the runtime changed")
     }
     const state = store.getState()
-    const previousMessageCount = state.message[sessionId]?.length ?? 0
+    const previousMessageCount = readSessionMessageCount(sessionId, directory)
 
     // Abort if busy
     const status = state.session_status[sessionId]
@@ -2515,8 +2605,24 @@ export async function unrevertSession(sessionId: string, directoryOverride?: str
       if (!isCurrent()) {
         throw new Error("Session history mutation aborted because the runtime changed")
       }
-      const nextMessageCount = store.getState().message[sessionId]?.length ?? 0
+      const nextMessageCount = readSessionMessageCount(sessionId, directory)
       if (nextMessageCount > previousMessageCount) return
+    }
+
+    // Ticket 09 batch 1B: after unrevert, destructiveReset+ensure when count
+    // did not grow (stale Query pages). Failure propagates so UI can retry.
+    if (readSessionMessageCount(sessionId, directory) <= previousMessageCount) {
+      const resolvedDirectory = directory ?? _getDirectory()
+      const repository = (getTranscriptRepository()
+        ?? resolveTranscriptRepositoryForStore(resolvedDirectory, store)) as TranscriptRepository & {
+        destructiveReset?: (scope: import("./transcript-repository").TranscriptScope) => Promise<unknown>
+      }
+      const scope = transcriptScope(resolvedDirectory, sessionId)
+      if (typeof repository.destructiveReset === "function") {
+        await repository.destructiveReset(scope)
+      } else {
+        await refetchSessionMessages(sessionId, directoryOverride)
+      }
     }
   })
 }
@@ -2538,7 +2644,8 @@ export async function forkSession(sessionId: string, operationId: number, messag
   let state = store.getState()
 
   let sourceStatus = state.session_status[sessionId]
-  let sourceMessages = state.message[sessionId] ?? []
+  // Ticket 09 batch 1B: fork source messages/parts from TranscriptRepository.
+  let sourceMessages = readSessionMessages(sessionId, directory)
   console.info("[session-fork] resolving fork point", {
     operationId,
     sessionId,
@@ -2555,7 +2662,7 @@ export async function forkSession(sessionId: string, operationId: number, messag
     await refetchSessionMessages(sessionId)
     state = store.getState()
     sourceStatus = state.session_status[sessionId]
-    sourceMessages = state.message[sessionId] ?? []
+    sourceMessages = readSessionMessages(sessionId, directory)
     forkMessageId = resolveForkMessageId(undefined, sourceMessages, sourceStatus)
   }
   if (!messageId && state.session_status[sessionId]?.type !== "idle" && !forkMessageId) {
@@ -2563,7 +2670,7 @@ export async function forkSession(sessionId: string, operationId: number, messag
       operationId,
       sessionId,
       statusType: state.session_status[sessionId]?.type ?? "unknown",
-      messageCount: state.message[sessionId]?.length ?? 0,
+      messageCount: readSessionMessageCount(sessionId, directory),
     })
     throw new Error("Fork source user message is unavailable")
   }
@@ -2580,11 +2687,14 @@ export async function forkSession(sessionId: string, operationId: number, messag
   // Only non-synthetic text parts — the server adds file content as synthetic
   // text parts that should not be restored. File parts (images, pasted
   // screenshots) are user-originated and must be restored.
+  const { repository: forkRepo, data: forkData } = readSessionTranscript(sessionId, directory)
   const forkSourceMessage = messageId
-    ? (state.message[sessionId] ?? []).find((message) => message.id === messageId)
+    ? forkData.messagesByID[messageId] ?? sourceMessages.find((message) => message.id === messageId)
     : undefined
   const shouldRestoreComposer = forkSourceMessage?.role === "user"
-  const parts = shouldRestoreComposer && messageId ? state.part[messageId] ?? [] : []
+  const parts = shouldRestoreComposer && messageId
+    ? [...forkRepo.getParts(transcriptScope(directory, sessionId), messageId)]
+    : []
   let messageText = ""
   const textParts = parts.filter((p) => p.type === "text" && !isSyntheticPart(p))
   messageText = textParts
@@ -2646,17 +2756,21 @@ export async function forkSession(sessionId: string, operationId: number, messag
       store.setState({ session: sessions })
     }
 
-    // Fork emits every cloned message and part over SSE. Discard any target data
-    // that raced into the store so selection follows the regular bounded tail load.
-    const beforeSelection = store.getState()
-    const leakedMessages = beforeSelection.message[forkedSession.id] ?? []
-    const nextMessages = { ...beforeSelection.message }
-    const nextParts = { ...beforeSelection.part }
-    delete nextMessages[forkedSession.id]
-    for (const message of leakedMessages) {
-      delete nextParts[message.id]
+    // Fork emits every cloned message and part over SSE. Discard any target
+    // transcript that raced into Query so selection follows the regular
+    // bounded tail load. Prefer Query destructiveReset (purge+ensure); fall
+    // back to narrow reset + fetchMessagesForSession when unbound (tests).
+    const forkTargetScope = transcriptScope(directory, forkedSession.id)
+    const boundRepo = getTranscriptRepository() as
+      | (TranscriptRepository & {
+        destructiveReset?: (scope: import("./transcript-repository").TranscriptScope) => Promise<unknown>
+      })
+      | null
+    if (boundRepo && typeof boundRepo.destructiveReset === "function") {
+      await boundRepo.destructiveReset(forkTargetScope)
+    } else {
+      applyTranscriptCommand(forkTargetScope, { type: "reset" })
     }
-    store.setState({ message: nextMessages, part: nextParts })
 
     // Switch immediately once OpenCode reveals the real ID, then keep the
     // transition visible until the bounded initial page is available.
@@ -2676,8 +2790,19 @@ export async function forkSession(sessionId: string, operationId: number, messag
       forkedSessionId: forkedSession.id,
       followed: shouldFollowFork,
     })
-    await fetchMessagesForSession(forkedSession.id, directory)
-    const loadedMessages = store.getState().message[forkedSession.id] ?? []
+    // When destructiveReset already ensured a tail, skip redundant initial fetch
+    // unless the repository still reports unknown / error.
+    const afterReset = getTranscriptRepository()
+      ?? resolveTranscriptRepositoryForStore(directory, store)
+    const afterScope = transcriptScope(directory, forkedSession.id)
+    const afterRequest = afterReset.getRequestState?.(afterScope)
+    if (
+      !(afterReset.hasSession?.(afterScope) ?? false)
+      || afterRequest?.status === "error"
+    ) {
+      await fetchMessagesForSession(forkedSession.id, directory)
+    }
+    const loadedMessages = readSessionMessages(forkedSession.id, directory)
     const newestLoadedMessageID = loadedMessages.at(-1)?.id
     if (newestLoadedMessageID) {
       forkCopyEventCutoffs.set(`${getRuntimeKey()}:${directory}:${forkedSession.id}`, {
@@ -2756,129 +2881,65 @@ async function fetchMessagesForSessionInternal(
   const cachedState = store.getState()
   const statusBeforePull = cachedState.session_status?.[sessionID]
   const statusObservedAtBeforePull = cachedState.session_status_observed_at?.[sessionID]
-  const cachedMessages = cachedState.message[sessionID]
-  const prefetchMeta = getSessionPrefetch(resolvedDir, sessionID)
-  const boundary: SessionHistoryBoundary =
-    cachedState.session_history_boundary?.[sessionID] ?? UNKNOWN_SESSION_HISTORY_BOUNDARY
+  // Ticket 09: cache reuse from repository (Query when bound; store adapter in tests).
+  const repository = getTranscriptRepository()
+    ?? resolveTranscriptRepositoryForStore(resolvedDir, store)
+  const scope = transcriptScope(resolvedDir, sessionID)
+  const transcript = repository.getTranscript(scope)
+  const pagination = repository.getPagination(scope)
+  const request = repository.getRequestState?.(scope)
   const isUserRole = (message: Message) =>
     message.role === "user" || (message as Message & { clientRole?: string }).clientRole === "user"
-  const hasUserBoundary = cachedMessages?.some(isUserRole)
-  // Narrow cache bypass for the long-idle send race: status can be busy while
-  // the list is still the pre-send snapshot (no trailing user row). Do NOT
-  // force-refetch every busy session — that would add needless network on
-  // ordinary switches and is unnecessary once the send is already accounted
-  // for. Only bypass when live work and the local tail does not already look
-  // like a send in progress.
+  const cachedMessages = transcript.messageOrder
+    .map((id) => transcript.messagesByID[id])
+    .filter((message): message is Message => Boolean(message))
+  const hasUserBoundary = cachedMessages.some(isUserRole)
   const liveStatus = cachedState.session_status?.[sessionID]?.type
   const sessionIsLive = liveStatus === "busy" || liveStatus === "retry"
-  const lastMessage = cachedMessages?.[cachedMessages.length - 1]
+  const lastMessage = cachedMessages[cachedMessages.length - 1]
   const tailLooksLikeInFlightSend = Boolean(lastMessage && isUserRole(lastMessage))
   const mustRefetchLiveStaleCache = sessionIsLive && !tailLooksLikeInFlightSend
-  // Renderable + user-boundary/known-complete is necessary but not sufficient:
-  // a dirty prefetch (live events after a prior complete pull) must still
-  // perform one bounded tail page, and an unknown child-store boundary can
-  // never reuse the cache — cached user messages with no established boundary
-  // trigger one authoritative tail fetch. Only has-more / exhausted
-  // boundaries are reusable.
+  const boundary = pagination.boundary
+  const hasKnownBoundary = boundary.kind === "has-more" || boundary.kind === "exhausted"
   if (
     !mustRefetchLiveStaleCache
-    && getSessionMaterializationStatus(cachedState, sessionID).renderable
+    && (repository.hasSession?.(scope) ?? cachedMessages.length > 0)
     && (hasUserBoundary || boundary.kind === "exhausted")
-    && shouldSkipSessionPrefetch({
-      hasSession: true,
-      hasMessages: true,
-      info: prefetchMeta,
-      boundary,
-      pageSize: limit,
-    })
+    && hasKnownBoundary
+    && request?.status !== "error"
   ) {
     return
   }
 
-  // Selection materialize goes through the shared loader: policy limit,
-  // transport single-flight, assistant-tail parent recovery, pure reducer,
-  // and one atomic store commit of message/part/session_history_boundary.
-  // Staleness guard: a rapid session switch may have moved the user off this
-  // session while the fetch was in flight. The completion then skips the
-  // store commit so a slow fetch cannot repopulate (and un-evict) a session
-  // already navigated away from — the next visit reads the unknown/evicted
-  // boundary and refetches.
+  // Ticket 09: selection materialize — raw Host turn-page → repository http-page.
+  // Bound Query in production; store adapter when tests leave production unbound.
+  // Staleness guard: skip side effects after a session switch mid-flight.
   const isStale = () => useSessionUIStore.getState().currentSessionId !== sessionID
+  void runtimeKey
+  void s
 
-  const loadResult = await loadSessionMessagePage({
-    purpose: "initial",
-    runtimeKey,
-    directory: resolvedDir,
-    sessionID,
-    limit,
-    deps: {
-      queryPage: async () => {
-        // Selection materialize: Host 2-turn tail (surface scanLimit), not SDK limit=30.
-        const turnPage = await retry(async () =>
-          fetchHostSessionTurnPageForPurpose({
-            sessionID,
-            directory: resolvedDir,
-            purpose: "initial",
-          }),
-        )
-        return {
-          records: turnPage.records.map((record) => ({
-            info: stripMessageDiffSnapshots(record.info),
-            parts: record.parts ?? [],
-          })),
-          cursor: turnPage.cursor ?? undefined,
-          complete: turnPage.complete,
-          turnCount: turnPage.turnCount,
-        }
-      },
-      queryMessage: async ({ messageID }) => {
-        const response = await retry(async () => {
-          const result = await s.session.message({ sessionID, messageID, directory: resolvedDir })
-          assertSdkSuccess(result, "session.message")
-          return result
-        })
-        const record = assertSdkSuccess(response, "session.message")
-        if (!record?.info?.id) throw new Error("session.message failed: empty response")
-        return {
-          info: stripMessageDiffSnapshots(record.info),
-          parts: record.parts ?? [],
-        }
-      },
-      getStoreState: () => {
-        const state = store.getState()
-        return {
-          message: state.message,
-          part: state.part,
-          session_history_boundary: state.session_history_boundary,
-        }
-      },
-      commitStore: (reduced) => {
-        // One atomic commit: message/part/boundary move together, and a
-        // boundary-only page (unchanged message references) still commits the
-        // boundary. The loader already gated stale generations; the isStale
-        // selection guard additionally drops switched-away sessions above.
-        store.setState((state) => {
-          const patch: Partial<typeof state> = {}
-          if (reduced.messagesChanged) patch.message = reduced.message
-          if (reduced.partsChanged) patch.part = reduced.part
-          if (reduced.boundary) {
-            patch.session_history_boundary = {
-              ...state.session_history_boundary,
-              [sessionID]: reduced.boundary,
-            }
-          }
-          if (!patch.message && !patch.part && !patch.session_history_boundary) return state
-          return patch
-        })
-      },
-      isStale,
+  let recordCount = 0
+  try {
+    const page = await fetchProductionTranscriptTransportPage({
+      directory: resolvedDir,
+      sessionID,
+      limit,
+      signal: AbortSignal.timeout(30_000),
+      purpose: "initial",
+    })
+    if (isStale()) return
+    repository.apply(scope, {
+      type: "http-page",
+      purpose: "initial",
+      page,
       skipPartTypes: MESSAGE_REFETCH_SKIP_PARTS,
-    },
-  })
-
-  // Error / skipped preserve the transcript and the last known boundary; the
-  // loader already recorded request status through the prefetch cache.
-  if (loadResult.status !== "ready" || !loadResult.applied) return
+    })
+    recordCount = page.records.length
+  } catch {
+    // Preserve prior transcript on failure (Query request state carries error).
+    return
+  }
+  if (isStale()) return
 
   await reconcileActiveSessionStatusAfterMessagePull({
     directory: resolvedDir,
@@ -2886,6 +2947,6 @@ async function fetchMessagesForSessionInternal(
     store,
     statusBeforePull,
     statusObservedAtBeforePull,
-    hasMessages: loadResult.recordCount > 0,
+    hasMessages: recordCount > 0,
   })
 }

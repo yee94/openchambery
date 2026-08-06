@@ -62,14 +62,8 @@ export type State = {
   lsp: LspStatus[]
   vcs: VcsInfo | undefined
   limit: number
-  message: Record<string, Message[]>
-  part: Record<string, Part[]>
-  /**
-   * Per-session older-history boundary. Keyed by session ID; a missing entry
-   * reads as `unknown`. Live append never mutates it; eviction deletes the
-   * entry with the rest of the session cache.
-   */
-  session_history_boundary: Record<string, SessionHistoryBoundary>
+  // Ticket 09 batch 2: message / part / session_history_boundary live only in
+  // QueryCache (production) or pure TranscriptStoreSurface drafts (tests).
 }
 
 /** Global store state */
@@ -91,23 +85,15 @@ type InitError = {
 }
 
 /**
- * Client history boundary for a session transcript, scoped to one directory
- * child store. This is the only client-side read source for older-history
- * availability (`hasMore` / `isComplete` / `loadMore` cursor):
+ * Client history boundary for a session transcript. Production authority is
+ * QueryCache / TranscriptRepository pagination (not DirectoryStore State).
  *
- * - `unknown`   — no successful authoritative page has established the
- *   boundary yet (fresh store, post-eviction, or a failed first load). An
- *   unknown boundary must trigger an authoritative tail refresh; cached
- *   messages alone never prove history availability.
- * - `has-more`  — an authoritative page returned `complete=false` with a
- *   non-empty cursor. `cursor` is required and must be non-empty.
- * - `exhausted` — an authoritative page returned `complete=true`; no cursor
- *   exists by contract.
+ * - `unknown`   — no successful authoritative page has established the boundary
+ * - `has-more`  — complete=false with a non-empty cursor
+ * - `exhausted` — complete=true; no cursor
  *
- * `loadedTurns` is the cumulative authored-user turn budget loaded so far
- * (product limit, never a message count). Request lifecycle
- * (idle/loading/error) is tracked separately in `session-prefetch-cache.ts`
- * and never participates in the boundary.
+ * `loadedTurns` is the cumulative authored-user turn budget loaded so far.
+ * Request lifecycle is repository getRequestState (not session-prefetch-cache).
  */
 export type SessionHistoryBoundary =
   | { kind: "unknown"; loadedTurns: number }
@@ -170,9 +156,6 @@ export const INITIAL_STATE: State = {
   vcs: undefined,
   // Matches DIRECTORY_SESSION_LIMIT / session-index SESSION_LIMIT (one cold-start page).
   limit: 20,
-  message: {},
-  part: {},
-  session_history_boundary: {},
 }
 
 export const INITIAL_GLOBAL_STATE: GlobalState = {

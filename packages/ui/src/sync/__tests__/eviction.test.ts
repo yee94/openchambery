@@ -137,6 +137,7 @@ describe("canDisposeDirectory", () => {
 
 describe("session cache eviction", () => {
   test("protects live and blocking sessions from per-directory cache eviction", () => {
+    // Ticket 09 batch 2: incomplete-message heuristic removed — status/permission/question only.
     const protectedIds = getProtectedSessionCacheIds({
       session_status: {
         ses_busy: { type: "busy" },
@@ -144,10 +145,6 @@ describe("session cache eviction", () => {
       },
       session_diff: {},
       todo: {},
-      message: {
-        ses_streaming: [{ id: "msg_1", role: "assistant", time: { created: 1 } } as Message],
-      },
-      part: {},
       permission: {
         ses_permission: [buildPermission({ sessionID: "ses_permission" })],
       },
@@ -156,9 +153,9 @@ describe("session cache eviction", () => {
       },
     })
 
-    expect(protectedIds).toEqual(new Set(["ses_busy", "ses_streaming", "ses_permission", "ses_question"]))
+    expect(protectedIds).toEqual(new Set(["ses_busy", "ses_permission", "ses_question"]))
 
-    const seen = new Set(["ses_old", "ses_busy", "ses_permission", "ses_question", "ses_streaming", "ses_current"])
+    const seen = new Set(["ses_old", "ses_busy", "ses_permission", "ses_question", "ses_current"])
     const evicted = pickSessionCacheEvictions({
       seen,
       keep: "ses_current",
@@ -170,53 +167,46 @@ describe("session cache eviction", () => {
     expect(seen.has("ses_busy")).toBe(true)
     expect(seen.has("ses_permission")).toBe(true)
     expect(seen.has("ses_question")).toBe(true)
-    expect(seen.has("ses_streaming")).toBe(true)
   })
 
-  test("drops parts for evicted messages without part session ids", () => {
+  test("drops non-transcript session caches only", () => {
     const store = buildState({
-      message: {
-        ses_old: [{ id: "msg_1", role: "user", time: { created: 1 } } as Message],
-      },
-      part: {
-        msg_1: [{ id: "prt_1", messageID: "msg_1" } as Part],
+      todo: { ses_old: [{ id: "todo_1", content: "x", status: "pending", priority: "medium" }] as never },
+      session_status: { ses_old: { type: "idle" } as never },
+      session_diff: { ses_old: [] },
+      permission: { ses_old: [buildPermission({ sessionID: "ses_old" })] },
+      question: { ses_old: [buildQuestion({ sessionID: "ses_old" })] },
+    })
+
+    dropSessionCaches(store, ["ses_old"])
+
+    expect(store.todo.ses_old).toBe(undefined)
+    expect(store.session_status.ses_old).toBe(undefined)
+    expect(store.session_diff.ses_old).toBe(undefined)
+    expect(store.permission.ses_old).toBe(undefined)
+    expect(store.question.ses_old).toBe(undefined)
+  })
+
+  test("transcript purge is Query-owned — dropSessionCaches does not touch message maps", () => {
+    // Production State has no message/boundary; this documents non-transcript-only cleanup.
+    const store = buildState({
+      session_status: {
+        ses_old: { type: "busy" } as never,
+        ses_kept: { type: "idle" } as never,
       },
     })
 
     dropSessionCaches(store, ["ses_old"])
 
-    expect(store.message.ses_old).toBe(undefined)
-    expect(store.part.msg_1).toBe(undefined)
+    expect(store.session_status.ses_old).toBe(undefined)
+    expect(store.session_status.ses_kept).toEqual({ type: "idle" })
   })
 
-  test("ordinary eviction deletes the session history boundary with the cache", () => {
+  test("dropSessionCaches is a no-op for empty session id sets", () => {
     const store = buildState({
-      message: {
-        ses_old: [{ id: "msg_1", role: "user", time: { created: 1 } } as Message],
-        ses_kept: [{ id: "msg_2", role: "user", time: { created: 2 } } as Message],
-      },
-      session_history_boundary: {
-        ses_old: { kind: "has-more", cursor: "msg_1", loadedTurns: 1 },
-        ses_kept: { kind: "exhausted", loadedTurns: 3 },
-      },
+      session_status: { ses_a: { type: "busy" } as never },
     })
-
-    dropSessionCaches(store, ["ses_old"])
-
-    // No orphan boundary survives its messages; untouched sessions keep theirs.
-    expect(store.session_history_boundary.ses_old).toBe(undefined)
-    expect(store.session_history_boundary.ses_kept).toEqual({ kind: "exhausted", loadedTurns: 3 })
-  })
-
-  test("dropSessionCaches tolerates a store without a boundary map", () => {
-    const store = buildState({
-      message: {
-        ses_old: [{ id: "msg_1", role: "user", time: { created: 1 } } as Message],
-      },
-    })
-    delete (store as { session_history_boundary?: unknown }).session_history_boundary
-
-    dropSessionCaches(store, ["ses_old"])
-    expect(store.message.ses_old).toBe(undefined)
+    dropSessionCaches(store, [])
+    expect(store.session_status.ses_a).toEqual({ type: "busy" })
   })
 })

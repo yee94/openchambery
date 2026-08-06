@@ -8,9 +8,10 @@ There are **two distinct session data scopes** in the UI:
 
 1. **Directory-scoped sync stores**
    - Owned by the sync layer child stores created in `sync-context.tsx`
-   - Source for per-directory live session/message/part/permission/question state
-   - Backed by SSE / directory-scoped polling
-   - Read via hooks like `useSessions()`, `useDirectorySync()`, `getSyncSessions()`, `getDirectoryState()`
+   - Source for per-directory live session catalog, status, permission, question, and other non-transcript domain state
+   - Transcript message/part/pagination live only in QueryCache / TranscriptRepository (sole production authority)
+   - Backed by SSE / directory-scoped polling for non-transcript domains
+   - Read via hooks like `useSessions()`, `useDirectorySync()`, `getSyncSessions()`, `getDirectoryState()`; transcript reads use repository facades (`useSessionMessages`, `useSessionTranscriptPagination`, …)
 
 2. **Global sessions cache**
    - Owned by `packages/ui/src/stores/useGlobalSessionsStore.ts`
@@ -33,7 +34,8 @@ The directory-scoped sync stores are **not** a complete global view.
 
 So:
 
-- Use the **directory sync stores** for per-directory live session/message state
+- Use the **directory sync stores** for per-directory live session/status/permission/question state
+- Use **QueryCache / TranscriptRepository** for transcript message/part/pagination (sole production authority)
 - Use the **global sessions store** for cold/global session coverage (especially archived pages and unopened directories)
 - Use **aggregated child-store snapshots** for live session/status truth across already initialized directories
 - Sidebar-only consumers may create and subscribe to a child store with
@@ -56,7 +58,8 @@ So:
 
 | Layer / Store | Owns | Scope |
 |---|---|---|
-| child directory stores in `sync-context.tsx` | `session`, `message`, `part`, `permission`, `question`, `session_history_boundary` (per-session older-history boundary, the only pagination read source), etc. | One directory |
+| child directory stores in `sync-context.tsx` | `session`, `permission`, `question`, `session_status`, etc. — non-transcript domains only | One directory |
+| QueryCache / TranscriptRepository | Production sole authority for transcript message/part/pagination boundary, request lifecycle, optimistic rows, SSE transcript merge, reconnect compensation | Transport + generation + directory + session |
 | `session-ui-store.ts` | Session selection, draft lifecycle, abort prompts, worktree metadata, SDK-facing action entrypoints | App UI state |
 | `useGlobalSessionsStore.ts` | Global active sessions, global archived sessions, `sessionsByDirectory` | All opened project/worktree session lists |
 | `viewport-store.ts` | Scroll anchors, session memory, loading indicators | App UI state |
@@ -101,8 +104,8 @@ Use the directory-scoped sync store when the UI needs the live session list for 
 Examples:
 
 - current chat/session switching
-- per-directory session/message bootstrap
-- session/message/part SSE updates
+- per-directory session catalog bootstrap
+- session/status/permission/question SSE updates (transcript SSE commits to Query via `sse-event`)
 
 ### Global session list
 
@@ -140,21 +143,22 @@ state; titles are human labels. Direct open by sessionID+directory is
 unaffected. Assistant history and scheduled-task source surfaces remain the
 entry points.
 
-Catalog visibility must not destroy live message caches. `session.created` /
+Catalog visibility must not destroy live transcript caches. `session.created` /
 `session.updated` remove system, subagent, and archived sessions from the live
-directory list only; they do **not** call `dropSessionCaches` for those rows.
-Wiping message/part/status on hide is reserved for temporary SmartFetch
-secondaries and for `session.deleted`. Scheduled tasks and assistants archive
-while still streaming — wiping on archive is what made mid-run viewing look
-nothing like a normal live session. When caches are wiped,
-`dropSessionCaches` also deletes the session's `session_history_boundary`
-entry, so a deleted session, a wiped temporary secondary, and an ordinarily
-evicted session all leave the boundary map clean — a later visit reads
+directory list only; they do **not** call `dropSessionCaches` / Query
+`purgeSession` for those rows. Wiping status on hide is reserved for temporary
+SmartFetch secondaries and for `session.deleted`. Scheduled tasks and assistants
+archive while still streaming — wiping on archive is what made mid-run viewing
+look nothing like a normal live session. When caches are wiped,
+`dropSessionCaches` clears non-transcript domains only; Query `purgeSession`
+owns the transcript key families (canonical InfiniteData, transport-page,
+tail/reconcile/checkpoint). A deleted session, a wiped temporary secondary, and
+an ordinarily evicted session all leave pagination clean — a later visit reads
 `unknown` and performs one authoritative tail refresh.
 
 `useCurrentSessionEntity(sessionID)` owns current-session entity resolution for the desktop Header and mobile Header. It prioritizes the matching cross-directory live session, then the matching global active session. A resolved entity remains available for two seconds during a brief source gap; clearing or changing the session ID immediately clears that fallback.
 
-Renderable messages and session identity are independent completeness signals. Missing session identity keeps `session.get` eligible even when the message prefetch TTL is current, blocks prompt submission while preserving the mounted primary Composer and its editable draft, and receives a bounded current-view retry. The subagent read-only prompt banner requires the current directory's confirmed session entity to carry `parentID`; loading, missing, cached cross-directory, root, and generic read-only states never display it. Parent navigation derives its target identity from the authoritative child `parentID`; a cached parent entity enriches its title and directory.
+Renderable messages and session identity are independent completeness signals. Missing session identity keeps `session.get` eligible even when the repository transcript is already resolved, blocks prompt submission while preserving the mounted primary Composer and its editable draft, and receives a bounded current-view retry. The subagent read-only prompt banner requires the current directory's confirmed session entity to carry `parentID`; loading, missing, cached cross-directory, root, and generic read-only states never display it. Parent navigation derives its target identity from the authoritative child `parentID`; a cached parent entity enriches its title and directory.
 
 `scoped-session-status.ts` owns exact `(directory, sessionID)` status reads and subscriptions. A missing child-store snapshot reads as `unknown`; a successful directory status snapshot with no matching entry reads as `idle`. Its registry subscription rebinds when a requested directory store appears, and status listeners ignore parts plus other session IDs.
 
@@ -279,88 +283,248 @@ becoming the cached startup result consumed by the session coordinator.
 
 ## Session message loading
 
+### Transcript repository seam (QueryCache sole production authority)
+
+`TranscriptRepository` is the unified read/command contract for session
+transcript data. **QueryCache / TranscriptRepository is the sole production
+authority** for transcript message, part, and pagination boundary. Child
+directory stores hold only non-transcript domains (session catalog, status,
+permission, question, …).
+
+It covers:
+
+- **Reads**: flat transcript data (`messageOrder`, `messagesByID`,
+  `partsByMessageID`, `boundary`, `liveRevision`), pagination projection
+  (`hasPreviousPage`, `isComplete`, `cursor`, `loadedTurns`, `boundary`),
+  request lifecycle (`getRequestState`), and single-message / parts selectors.
+- **Commands**: `http-page` (purpose =
+  `initial` / `prepend` / `recovery` / `materialize`), `sse-event` (message /
+  part events only), `optimistic-add` / `optimistic-confirm` /
+  `optimistic-remove`, `materialize-snapshots`, `remove-message`, and `reset`
+  (clear or rebuild tail). Production never uses a `commit-reduced` command.
+
+Modules:
+
+| Module | Role |
+|---|---|
+| `transcript-repository.ts` | Contract types, pure pagination/transcript projections, SSE event-type guard, command union (`http-page`, `sse-event`, optimistic, `materialize-snapshots`, `remove-message`, `reset`) |
+| `transcript-repository-query-adapter.ts` | **Production** Query-backed implementation: canonical InfiniteData in QueryCache; active-scope retain on `subscribe`; cache budget enforce; `fetchPreviousPage` / `ensureInitial`; destructive reset / purgeSession / purgeGeneration |
+| `transcript-repository-store-adapter.ts` | **Test-only / pure-merge** child-store-backed adapter: maps commands onto pure reducers for unit tests and residual pure-merge helpers — not production SyncProvider binding |
+| `session-transcript-query-cache.ts` | Key-family shapes (canonical / transport-page / tail·reconcile·checkpoint), active-scope registry, QueryCache LRU enforce, purgeSession, purgeGeneration, destructiveReset |
+| `session-cache-limits.ts` | Shared platform capacity targets (VS Code 4 / mobile 12 / default 40) for QueryCache transcript LRU (and residual non-transcript eviction budgets) |
+| `session-transcript-reconcile-api.ts` | Host anchor-reconcile HTTP client (`fetchSessionTranscriptReconcile`) — runtimeFetch, timeout race, strict contract, classified retry |
+| `session-transcript-recovery-checkpoint.ts` | Stable authored-user turn anchor selection + recovery checkpoint model / QueryCache read-write |
+| `session-transcript-reconnect-compensation.ts` | Query reconnect compensation controller — checkpoint-before-replay, immediate set, directory concurrency, serial continuation, multi-round head chase, destructiveReset |
+| `transcript-reconnect-compensation-runtime.ts` | Registration seam; production `mountProductionTranscriptStack` registers the Query controller so SyncProvider `onRecoveryContextCaptured` / `onCompensation` reach it |
+| `transcript-repository-runtime.ts` | Production binding revision + `bindTranscriptRepositoryInstance` (Query) / test-only store bind; `fetchTranscriptPreviousPage` / `ensureTranscriptInitial` / `purgeTranscriptSession` |
+| `transcript-repository-production.ts` | `mountProductionTranscriptStack` (registry + budget + Query repo + compensation) and Host turn-page production fetcher (`fetchProductionTranscriptTransportPage` → Query `http-page`) |
+| `transcript-parent-recovery.ts` | Production assistant-parent recovery helpers for the Query transport fetcher (no nested store commit) |
+| `transcript-repository.test.ts` | Focused seam tests (reads, all purposes, SSE, optimistic, reset, materialize/remove, subscribe) |
+| `session-transcript-query-cache.test.ts` | Capacity constants, key families, active retain, LRU order, purge families, long growth, destructive reset, generation isolation, adapter integration |
+| `session-transcript-reconcile-api.test.ts` / `session-transcript-reconnect-compensation.test.ts` | Client contract, checkpoint/anchor, first-ready skip, priority set, concurrency, continuation, multi-round, reset, generation cancel |
+
+**Ownership boundary (QueryCache sole production authority):**
+
+- Production transcript **writes and reads** bind a **Query-backed** repository
+  from SyncProvider via `mountProductionTranscriptStack`: one active registry,
+  one cache budget (30s min-residency), one Query repo, one reconnect
+  compensation controller. Binding revision re-subscribes observers after
+  provider-bind. Runtime identity uses `subscribeRuntimeEndpointChanged` (no
+  polling); stack lifecycle is independent of ordinary directory switches.
+- **UI history pagination**: Chat / Context / timeline call
+  `fetchTranscriptPreviousPage` (Query `fetchPreviousPage`,
+  `cancelRefetch:false`). Success / availability read repository pagination +
+  request state via `useSessionTranscriptPagination` and
+  `useSessionMessageLoadState`. There is no production `useSync.loadMore` /
+  `sync.loadMore` facade.
+- Initial / recovery / materialize / selection: production transport fetcher
+  (`fetchProductionTranscriptTransportPage`) enters Query as `http-page`
+  directly, or via `ensureTranscriptInitial` / `ensureInitial`. SSE,
+  optimistic, and recovery reconcile apply through the repository command path.
+  Store adapter / pure reducer paths are **tests or pure merge only**.
+- Production transcript **reads** go through repository observers in
+  `transcript-repository-observers.ts`, exposed as
+  `useSessionMessages` / `useSessionParts` / `useSessionMessageCount` /
+  `useSessionMessagesResolved` / `useSessionTranscriptPagination` /
+  `useSessionMessageRecords` / `useSessionMaterializationStatus` /
+  `useEnsureSessionMessages` / `useUserMessageHistory` facades in
+  `sync-context.tsx`. Chat, Context Panel, timeline, activity, session-assist
+  last-message, queue auto-send completion/turn, and RevertedMessageDock
+  consume repository projections only (session.revert metadata may still come
+  from the directory session list). Message-record snapshots and materialization
+  status are built from repository TranscriptData + catalog `session.revert`;
+  observer subscribe schedules `ensureTranscriptOnObserve` for reconnect-stale
+  inactive scopes. Multi-scope readers use
+  `subscribeTranscriptScopes` + `readTranscriptCompletionSignature` /
+  `readTranscriptMessages`.
+- Production session actions (last-assistant model, optimistic dedupe, send
+  presence wait, revert/unrevert/stage/fork source messages and parts, message
+  counts, selection cache reuse) read via `getTranscriptRepository` /
+  `getTranscript` / `getMessage` / `getParts` / `hasSession`. Directory
+  resolution prefers session catalog / status / permission / question and
+  Query `listCanonical` inventory — never child-store message ownership.
+  Fork target discard uses Query `destructiveReset`; unrevert may
+  destructiveReset when message count does not grow. Imperative
+  `getSyncMessages` / `getSyncParts` / `getSyncSessionMaterializationStatus`
+  / `resolveMaterializedSessionDirectory` also use repository projections.
+- Production `State` / DirectoryStore does **not** define `message` / `part` /
+  history-boundary fields. Transcript SSE is pure
+  `applyTranscriptDirectoryEvent` in `transcript-event-reducer.ts`; production
+  `applyDirectoryEvent` ignores message/part events (Query `sse-event` owns
+  them). Routing index ingest uses catalog + Query inventory. Streaming
+  derives from `session_status` + repository tail. `dropSessionCaches` is
+  non-transcript only; Query `purgeSession` owns transcript purge. Reconnect
+  candidate selection does not scan store transcript. Production transport
+  recovery lives in `transcript-parent-recovery.ts` (Query classifier owns
+  retries; no nested store page-loader commit).
+- Covered writers: `http-page` (initial/prepend/recovery/materialize), SSE
+  `sse-event`, optimistic add/confirm/remove, `materialize-snapshots`,
+  `remove-message`, narrow `reset`, Query compensation `reconcile-page`.
+- Pure internals remain: `reduceSessionMessagePage`, `materializeSessionSnapshots`,
+  `applyDirectoryEvent`, `mergeSessionTranscript` — adapter/model / test only.
+- **Not** owned by the repository: session catalog, status, permission, question,
+  todo, session_diff, and multi-domain eviction (`dropSessionCaches` for
+  session.deleted / non-transcript cache eviction). Those keep their existing writers.
+- QueryCache transcript LRU is production-active:
+  - Capacity reuses `session-cache-limits` (VS Code 4 / mobile 12 / default 40)
+    per transport / generation / directory bucket for **inactive** canonical
+    sessions; min-residency protects freshly ensured/observed scopes.
+  - Active retain = TanStack Query observer count **or** repository listener
+    scopes via an explicit active-scope registry (cache subscribers alone do not
+    increment Query observers).
+  - Active transcripts keep every loaded page; inactive order by canonical
+    `dataUpdatedAt` LRU.
+  - `purgeSession` cancel+removes canonical, transport-page, and reserved
+    tail/reconcile/checkpoint key families.
+  - Destructive reset purges the old cursor/task/checkpoint chain, ensures a
+    fresh tail, and on ensure failure leaves empty/failed state without
+    restoring old authoritative data. Delete/evict only purge.
+  - Runtime switch: `cancelTranscriptReconnectCompensation` then
+    `purgeGeneration` for the previous transport/generation identity.
+- Query reconnect compensation is production-registered. Ready +
+  `isReconnect:true` triggers Query gap compensation after replay flush; first
+  ready (`isReconnect:false`) skips gap compensation. Merge purpose
+  `reconcile-page` upserts records with recovery/liveRevision rules but
+  **never** rewrites the canonical history boundary / cursor / loadedTurns
+  (`complete` ends a compensation round only). Checkpoint is fixed on
+  disconnect / recovery-context capture before replay.
+
+Pagination projection is derived solely from repository `SessionHistoryBoundary`
+(`unknown` / `has-more` / `exhausted`). Request lifecycle is
+`repository.getRequestState` (loading / ready / error). Session catalog, status,
+permission, question, and message queue stay outside this repository. The
+`reset` command is transcript-scoped only: it purges the target session's
+Query transcript families (and optionally rebuilds from a fresh tail). It must
+not call `dropSessionCaches` and must not clear `session_status`, `todo`,
+`permission`, `question`, or `session_diff`.
+
 ### Module map
 
-Session transcript data flows through two independent paths that converge only
-at the directory child store. HTTP pull and SSE push never write through each
-other's channel:
+Session transcript HTTP pull and SSE push converge at the **Query-backed**
+TranscriptRepository (production sole authority):
 
 ```
 HTTP pull (initial / prepend / recovery / materialize)
-  session-message-policy.ts     limit per runtime + purpose (single source)
-  session-merge-strategy.ts     (purpose, stale) → frozen merge strategy
-  session-message-query.ts      TanStack Query: immutable HTTP page cache —
-                                transport input only, never a client fact
-  session-message-loader.ts     loadSessionMessagePage — the ONLY entry that
-                                orchestrates policy → query → tail recovery →
-                                reducer → store commit (single-flight)
-  session-message-reducer.ts    reduceSessionMessagePage — pure page → state
-                                (+ SessionHistoryBoundary proposal)
-  session-prefetch-cache.ts     request lifecycle ONLY: loading / ready /
-                                error + TTL/dirty + requestedLimit (this
-                                request's turn budget) + loadGeneration gate
-                                so a slower pull cannot flash cold load-error.
-                                It holds NO pagination fact (no cursor, no
-                                completeness, no loaded turns).
-  ../queries/sessionStatusQueries.ts
-                                TanStack Query: directory status snapshots +
-                                request-start authority boundary
-  session-status-reconciliation.ts
-                                status snapshot → child-store convergence
+  session-message-policy.ts          limit per runtime + purpose (single source)
+  session-merge-strategy.ts          (purpose, stale) → frozen merge strategy
+  session-message-reducer.ts         pure page → transcript draft (model/test)
+  transcript-repository-production   fetchProductionTranscriptTransportPage
+                                     Host turn-page + parent recovery
+  transcript-repository-query-adapter
+                                     http-page → canonical InfiniteData (QueryCache)
+  transcript-repository-runtime      fetchTranscriptPreviousPage / ensureInitial
                 │
                 ▼
-        directory child store (message / part)
+        QueryCache / TranscriptRepository (message / part / boundary / request)
 
-SSE push (live increments)
-  event-pipeline.ts             WS/SSE transport, coalescing, reconnect
-  event-reducer.ts              applyDirectoryEvent — live event semantics
+SSE push (live transcript increments)
+  event-pipeline.ts                  WS/SSE transport
+  handleEvent → TranscriptRepository.apply(sse-event)
+  transcript-event-reducer.ts        pure applyTranscriptDirectoryEvent
                 │
                 ▼
-        directory child store (message / part)
+        QueryCache / TranscriptRepository
+
+UI history pagination
+  Chat / Context → fetchTranscriptPreviousPage
+                 → useSessionTranscriptPagination + useSessionMessageLoadState
 ```
+
+### Event pipeline recovery barrier
+
+`event-pipeline.ts` owns the browser-side reconnect barrier that pairs with the
+Host global WS `replay events → ready` protocol:
+
+- Global WS reconnects may deliver buffered `event` frames before `{ type:
+  "ready" }`. The pipeline flushes queued events on ready so reducers merge
+  replay before compensation starts.
+- Disconnect, visibility hidden, system resume (`openchamber:system-resume`),
+  pageshow (bfcache), and online-driven reconnect capture a recovery context
+  with `lastEventId`, `disconnectedAt`, and `runtimeGeneration`.
+- Each ready barrier publishes **one** `onCompensation` trigger carrying that
+  context (or current live tip + generation when no gap was captured). The
+  trigger always includes `isReconnect`: `false` on the clean first ready,
+  `true` when a recovery context was captured for a real gap. SSE and WS share
+  the same hook so reconnect, visibility restore, and system resume use one
+  compensation seam.
+- `onReconnect` remains the connection-state hook for non-transcript resync
+  (status, catalog, blocking requests). Production wires
+  **`onRecoveryContextCaptured`** (checkpoint capture with `lastEventId`, once
+  per gap, before any replay merge — covers transport errors, visibility hidden,
+  pageshow, system resume, and online) and `onCompensation` through
+  `transcript-reconnect-compensation-runtime.ts` to the registered Query
+  controller. `onDisconnect` stays connection UI/state only so visibility-only
+  gaps are not missed. Ready + `isReconnect === true` runs Query gap
+  compensation; first ready (`isReconnect:false`) is a lightweight skip.
+  Immediate/capture sets include `activeRegistry.listRetained()` scopes that may
+  lack a canonical query entry.
+- Runtime switch cancels compensation and `purgeGeneration` for the previous
+  transport/generation identity via `subscribeRuntimeEndpointChanged`.
+- Relay stays transparent: sockets still open via `openRuntimeWebSocket` with
+  URL-token auth; SSE still uses bearer headers. This barrier does not change
+  transport authentication.
 
 Rules that keep this single-sourced:
 
-- `session-message-loader.ts` (`loadSessionMessagePage` with `purpose`) is the
-  only place an HTTP message page is committed to a store. No callsite fetches
-  `session.messages` and writes the store directly.
+- Production HTTP transcript pages enter Query only through the production
+  transport fetcher → repository `http-page` (or `ensureInitial` /
+  `fetchPreviousPage`). No production callsite fetches `session.messages` and
+  writes a child-store transcript map.
 - `session-message-policy.ts` is the only place a page-size number appears.
   Purpose (`initial` / `prepend` / `recovery` / `materialize`) determines the
   limit; no `RECONNECT_MESSAGE_LIMIT`-style constants exist elsewhere.
 - `session-merge-strategy.ts` is the only place that resolves how one fetched
-  HTTP page folds into existing store state. `resolveSessionMergeStrategy({
-  purpose, stale })` returns a frozen `SessionMergeStrategy`; the loader's
-  stale gate, the reducer's apply gate, and materialization's message/part
+  HTTP page folds into existing transcript state. `resolveSessionMergeStrategy({
+  purpose, stale })` returns a frozen `SessionMergeStrategy`; the Query
+  adapter, pure reducer's apply gate, and materialization's message/part
   merge only read that value. Layers must not re-derive drop/backfill,
   insert-only/upsert, or streaming preservation from `purpose` or staleness.
 - `session-message-reducer.ts` holds no SDK/Query/store side effects; it is a
-  pure function so all four purposes stay unit-testable.
-- UI transcript selectors read the directory child store, never TanStack Query.
-- Pagination fact ownership is exclusive: the TanStack Query / Host page
-  response is **transport input** on its way to the store; the directory child
-  store's `state.session_history_boundary[sessionID]`
-  (`SessionHistoryBoundary`) is the **only client-side fact** for older-history
-  availability; `session-prefetch-cache.ts` coordinates **request lifecycle**
-  (`requestedLimit`, `at`/TTL/dirty, `status`, `loadGeneration`) and must
-  never be read for cursor/complete/loaded-turns.
+  pure function so all four purposes stay unit-testable (store adapter / tests).
+- UI transcript selectors read Query / TranscriptRepository projections via
+  repository facades — never child-store message/part maps.
+- Pagination fact ownership is exclusive: Host turn-page responses are
+  **transport input** into Query; repository `SessionHistoryBoundary` is the
+  **only client-side fact** for older-history availability; request lifecycle
+  is `getRequestState` and must never be read for cursor/complete/loaded-turns.
 - `displayParts.ts` is the only place that decides when the parts a view already
   painted may shrink. See below.
 
 ### Display part monotonicity
 
-Both channels above write `state.part[messageID]`, so a single commit can hand the
-UI fewer parts than the previous commit: a `materialize` page for a still-open
-assistant omits tools SSE already admitted, and a part map is briefly empty between
-commits. Painting those frames removed rows the user was watching and put them back
-on the next frame.
+HTTP and SSE channels both update repository parts for a message, so a single
+commit can hand the UI fewer parts than the previous commit: a `materialize`
+page for a still-open assistant omits tools SSE already admitted, and a part map
+is briefly empty between commits. Painting those frames removed rows the user
+was watching and put them back on the next frame.
 
 `displayParts.ts` owns the invariant, and `buildSessionMessageRecordsSnapshot` in
 `sync-context.tsx` is where it is applied — the snapshot is the stable model every
 view consumes:
 
 - `allowsAuthoritativeShrink(info)` — a settled assistant (`finish` or
-  `time.completed`) and every non-assistant row follow the store exactly. User rows
-  must, or optimistic part replacement would paint twice.
+  `time.completed`) and every non-assistant row follow authoritative repository
+  parts exactly. User rows must, or optimistic part replacement would paint twice.
 - `mergePartsForDisplay(previous, incoming, info)` — while an assistant turn is
   open, parts the snapshot already published are unioned back in by part id, at
   their previous relative position. An unchanged lagging frame resolves to the
@@ -373,12 +537,12 @@ view consumes:
 Views must not re-derive this. A render-phase hold cannot distinguish a lagging page
 from a real removal, and feeding its own output back as the baseline turns a
 one-frame regression into permanently stale UI. `streamingTailEntry.ts` subscribes to
-the raw part store for streaming text and calls the same `mergePartsForDisplay`, so
+repository parts for streaming text and calls the same `mergePartsForDisplay`, so
 both readers agree on when a frame may shrink.
 
 ### Context panel session transcripts
 
-- Web and Electron ContextPanel chat tabs render an in-realm strict-read-only transcript through the root `SyncProvider`. They read the same directory-scoped live stores as the primary chat and do not create an independent sync lifecycle.
+- Web and Electron ContextPanel chat tabs render an in-realm strict-read-only transcript through the root `SyncProvider`. They read the same Query/TranscriptRepository transcript and directory-scoped non-transcript stores as the primary chat and do not create an independent sync lifecycle.
 - Browser and preview iframe surfaces retain their existing ownership and bridge behavior.
 - The direct `?ocPanel=session-chat` embedded entry remains available for compatibility, while ContextPanel chat rendering always selects the in-realm transcript.
 - A panel transcript's domain identity is the normalized `(directory, sessionId)` target. Its geometry/view identity is `JSON.stringify([runtimeKey, surfaceId, normalizedDirectory, sessionId])`; `surfaceId` is scoped to normalized `(directoryKey, tabId)`. Keep these identities separate when changing viewport restoration or retained-view behavior.
@@ -387,7 +551,7 @@ both readers agree on when a frame may shrink.
 - Context panel transcript capabilities are strict read-only: nested-session navigation is available within the panel directory; composer, session mutation, and primary-selection ownership remain outside the surface. Once a viewed session is authoritatively confirmed as a child session, its fixed read-only execution footer remains mounted through temporary session-identity gaps and resets with the panel view identity.
 - Cover planner, navigation, geometry key, cache touch/estimate/close, render-mode, and viewed-session behavior in `components/layout/contextPanelSessionSurface.test.ts`.
 
-- HTTP page → store message/part conversion is owned by the pure reducer
+- HTTP page → transcript draft conversion is owned by the pure reducer
   `session-message-reducer.ts` (`reduceSessionMessagePage`). Page purpose
   (`initial` first load, `prepend` history pagination, `recovery` reconnect,
   `materialize` orphan/missing-part repair) is an input, not a second merge
@@ -399,7 +563,7 @@ both readers agree on when a frame may shrink.
   (`shouldPreserveStreamingParts(merge, role)`); it does not re-derive them from
   purpose. (A separate local role check in materialization still decides empty
   snapshots: assistant rows store an explicit `[]` renderability marker so
-  `getSessionMaterializationStatus` can settle aborted turns; user/system rows
+  materialization status can settle aborted turns; user/system rows
   keep non-empty local parts when the snapshot is empty — idle/materialize
   turn pages must not wipe a bubble that SSE already delivered — and leave the
   key absent when both sides are empty. That empty-key policy is not part of
@@ -407,8 +571,9 @@ both readers agree on when a frame may shrink.
   returns reference-stable state when unchanged, resolves the session's next
   `SessionHistoryBoundary` (`result.boundary` + `boundaryChanged`; the legacy
   flat `result.meta` is a derived projection), and emits commands such as
-  `clear-optimistic`. Callers own store writes and side effects and must
-  commit `message`/`part`/`session_history_boundary` in one `setState` — a
+  `clear-optimistic`. Production commits the reduced draft into Query
+  InfiniteData via the Query adapter `http-page` path; store-adapter callers
+  (tests) may still commit a pure draft surface in one update. A
   boundary-only page (unchanged message references) still commits the
   boundary. The reducer never touches SDK/Query/store. Fetch errors
   (`ok: false`) preserve prior state and never write empty success.
@@ -429,45 +594,39 @@ both readers agree on when a frame may shrink.
   | `initial` | — | `initial` | drop | insert-only | replace | assistant |
   | `prepend` | — | `history` | drop | insert-only | skip-existing | assistant |
   | `materialize` | — | `materialize` | drop | insert-only | replace | assistant |
-  | `recovery` | no | `recovery` | backfill | upsert | replace | assistant |
-  | `recovery` | yes | `recovery-backfill` | backfill | insert-only | replace | assistant |
+  | `recovery` / `reconcile-page` | no | `recovery` / `reconcile-page` | backfill | upsert | replace | assistant |
+  | `recovery` / `reconcile-page` | yes | `recovery-backfill` | backfill | insert-only | skip-existing | assistant |
 
-  Staleness (`liveRevision > capturedRevision`) therefore downgrades exactly one
-  dimension: recovery's `messages` goes from `upsert` to `insert-only`. A stale
-  reconnect page still supplies messages the SSE gap swallowed (`onStale:
-  backfill`), but never overwrites newer message objects live events already
-  committed. Every other purpose drops the page when stale
-  (`shouldDropStalePage(purpose)`). Only current recovery upserts existing
-  message objects; all other purposes are insert-only. Note the historical
-  helper names: `mergeMessages` is insert-only while `mergeRecoveryMessages` is
-  an upsert — the strategy field names that asymmetry explicitly.
+  Staleness (`liveRevision > capturedRevision`) therefore downgrades two
+  dimensions for recovery and reconcile-page: `messages` goes from `upsert` to
+  `insert-only`, and `parts` goes from `replace` to `skip-existing`. A stale
+  reconnect page still supplies messages/parts the SSE gap swallowed (`onStale:
+  backfill`), but never rewrites existing live messages or their already-held
+  parts. Current recovery/reconcile still upserts messages and replaces parts
+  against server truth. Every other purpose drops the page when stale
+  (`shouldDropStalePage(purpose)`). Note the historical helper names:
+  `mergeMessages` is insert-only while `mergeRecoveryMessages` is an upsert —
+  the strategy field names that asymmetry explicitly.
 
   Known limitation: `initial` resolves to `insert-only`, so a first-screen load
   cannot refresh a message body the server has since changed. Whether to change
   that is a separate decision; the table makes the behavior visible.
-- Application orchestration for message pages is owned by
-  `session-message-loader.ts` (`loadSessionMessagePage` with `purpose`). It
-  resolves limit from `session-message-policy`, gates stale pages with
-  `shouldDropStalePage(purpose)` (rather than hardcoding a recovery exception),
-  single-flights the HTTP query, recovers assistant-only tails via exact parent
-  message IDs, runs the pure reducer, and commits through caller-supplied store
-  deps so a remounted provider always writes into its own store.
-  `LoadSessionMessagePageResult` carries `recordCount`. Loading / ready / error
-  status flows through `session-prefetch-cache`. The legacy transport overload
-  (`request` without `purpose`) remains for gradual migration.
-- HTTP page pulls for TanStack Query are owned by `session-message-query.ts`.
-  Query keys include transport identity, directory, sessionID, limit, and
-  cursor. Cache entries store immutable HTTP page snapshots only; SSE/WS never
-  enter Query. Transport single-flight reuses `session-message-loader.ts` so
-  imperative and Query paths share the same in-flight promise. UI transcript
-  selectors continue to read the directory child store, not Query. Before a
-  commit, callers capture child-store identity plus runtime generation and
-  re-validate; runtime switches discard stale generation results.
-- The imperative session-selection path and the reactive `useSync()` path share
-  one app-wide single-flight request keyed by runtime, directory, session,
-  requested limit, and pagination cursor. They must not issue duplicate tail
-  requests during a React mount or provider remount, and a smaller concurrent
-  request must not satisfy a larger request.
+- Production application orchestration for transcript pages is owned by
+  `transcript-repository-production.ts` + the Query adapter: Host turn-page
+  via `fetchProductionTranscriptTransportPage` (policy limit, parent recovery,
+  abort signal), then repository `http-page` / InfiniteQuery
+  `fetchPreviousPage` / `ensureInitial`. Stale pages gate with
+  `shouldDropStalePage(purpose)`. Loading / ready / error status lives on
+  repository `getRequestState`. Pure `reduceSessionMessagePage` remains the
+  model for merge math (Query adapter and test store adapter).
+- Canonical transcript InfiniteData lives in QueryCache under
+  transport/generation/directory/session keys. SSE/WS enter only through
+  repository `sse-event` (not as raw transport-page cache entries). Runtime
+  switches cancel compensation and `purgeGeneration` for the previous identity;
+  stale generation results never commit.
+- Session selection / ensure / reactive sync share Query single-flight for the
+  same scope so mount/remount must not issue duplicate tail requests, and a
+  smaller concurrent request must not satisfy a larger request.
 - `queries/sessionStatusQueries.ts` owns runtime- and directory-scoped
   `/session/status` pull snapshots for reconciliation. Its Query entry uses
   `staleTime: 0`, forwards the Query abort signal, and shares one in-flight GET
@@ -523,14 +682,14 @@ both readers agree on when a frame may shrink.
   (`session.status.1` → `session.status`); drops durable `sync` replicas so the
   same logical event is not consumed twice; maps current `session.status` into
   the legacy Event reducer contract; and exposes admission / domain-activity
-  hints for `session.next.*` without inventing `message.part.*` events.
+  hints for   `session.next.*` without inventing `message.part.*` events.
   `event-pipeline.ts` keeps `/global/event` WS/SSE + Relay (never
   `client.v2.event.subscribe`). Current `session.next.*` frames emit
   `onNormalizedEvent` only and skip the legacy reducer queue. Canonical
   `session.status` still enters the reducer and coalesces per session.
-  `sync-context.handleNormalizedOpenCodeHints` marks prefetch dirty on
-  admission/activity and issues **one** bounded materialize for the currently
-  viewed session on terminal `session.next.step.ended` / `.failed` only.
+  `sync-context.handleNormalizedOpenCodeHints` issues **one** bounded
+  repository materialize / ensure for the currently viewed session on terminal
+  `session.next.step.ended` / `.failed` only.
 - **P2 promptAsync admission gate (documented, not switched):** OpenCode 1.18
   `v2.session.prompt` does not yet expose a per-item immutable
   provider/model/agent/variant admission contract matching OpenChamber's direct
@@ -544,93 +703,76 @@ both readers agree on when a frame may shrink.
   reuse a promise that only commits into a detached store.
 - Product **`limit` means authored-user turns**, never message count. Budgets are
   **link-tiered** via `isRelayModeActive()`: **local/LAN** first paint **6** turns
-  and prepend/loadMore **4** turns; **Relay** first paint **2** turns and prepend
-  **4** turns. The boundary's `loadedTurns` accumulates turn budgets across pages;
-  the prefetch entry's `requestedLimit` only records what the newest request
-  asked for. Host→OpenCode message
+  and prepend **4** turns; **Relay** first paint **2** turns and prepend
+  **4** turns. Repository pagination `loadedTurns` accumulates turn budgets
+  across pages. Host→OpenCode message
   scan chunk is **server-owned** (`_inner_scanLimit` /
   env `OPENCHAMBER_SESSION_TURN_SCAN_LIMIT`, default 100); the shared client
   omits `scanLimit` on the wire. Optional client `scanLimit` remains an
-  explicit override only. Initial / recovery / materialize / selection call
-  `fetchHostSessionTurnPageForPurpose` →
-  `GET /api/openchamber/sessions/:id/messages?turns=…` (no scanLimit by default).
-  Policy lives in `session-message-policy.ts`. Incomplete Host pages may recover
-  missing parent user messages by exact ID (up to eight). Authoritative complete
-  pages skip parent recovery. Loading failures are subscribable and preserve
-  prior ready records.
-- Message loading status is runtime-scoped. Reactive request de-duplication is
-  local to the owning directory-store lifecycle, so a remounted provider still
-  commits a shared transport response into its own store.
-- Older history is user-driven pagination (`loadMore`) only. Prepend uses one
-  Host turn-page request (`turns=4` local/LAN and Relay) via
-  `fetchHostSessionTurnPageForPurpose` when
-  `purpose === "prepend"` and `before` is set. Callers must pass the session's
-  workspace `directory` into `loadMore` / `hasMore` / `isLoading` / `isComplete`
-  — the history boundary lives in the per-directory child store
-  (`state.session_history_boundary[sessionID]`, a `SessionHistoryBoundary`
-  discriminated union of `unknown` / `has-more(cursor, required non-empty)` /
-  `exhausted(no cursor)` plus cumulative `loadedTurns`); using the primary sync
-  directory for a cross-project session yields a silent no-op. The child-store
-  boundary is the **only** client read source: `useSync` `hasMore` /
-  `isComplete` / `loadMore` derive from it through the thin
-  `syncMetaFromBoundary` adapter, and the hook only tracks request `loading`
-  locally. Every successful initial/prepend/recovery/materialize page commits
-  message/part/boundary in one store `setState` — even when message references
-  are unchanged. Failures keep the last known boundary and only flip request
-  status to error; stale completions are dropped by the loader's
-  load-generation gate (a completion that shares one single-flight transport
-   response stays in the same generation, so a remounted provider still
-   commits). Live append never mutates the older-history boundary. The boundary
-   entry belongs to the session cache: `dropSessionCaches` deletes it, so
-   `session.deleted`, temporary SmartFetch-secondary cleanup, and ordinary
-   eviction all remove the boundary with the messages — no orphan boundary
-   survives its session, and the next visit reads `unknown`.
-  `markSessionPrefetchDirty` sets `at=0` on the request-lifecycle entry,
-  which schedules one bounded tail refresh while the child-store boundary
-  retains known history availability. Explicit
-  `loadMore` refreshes the authoritative tail once when the boundary is
-  `unknown` (no cursor), then prepends from the recovered cursor; persistent
-  cursor absence and prefetch `status=error` surface to user-initiated
-  load-earlier as `chat.history.loadOlderFailed`. Bare `before` without
-  purpose prepend stays on the official SDK path. The client asserts a strict
-  page contract: each record is an object with non-empty `info.id` and
-  optional `parts` array; `turnCount` is an integer in `0..requestedTurns`;
-  `complete=true` requires `cursor=null`, `complete=false` requires a non-empty
-   cursor string; empty cursor strings and `partial:true` are rejected.
-   The reducer additionally enforces the **cursor progress invariant** for
-   incomplete pages: an empty page (`records` empty) makes no progress, and a
-   prepend whose response cursor equals the previous `has-more` cursor would
-   paginate the same window forever — both are page contract errors. A
-   contract error behaves like a failed load: no commit, the previous
-   boundary/messages/loadedTurns are preserved exactly (never widened, never
-   incremented), request status flips to error, and a later retry/SWR pull
-   can still converge. Legal cursor advances keep accumulating `loadedTurns`
-   per prepend, and a final `complete=true` page resolves to `exhausted`.
-   `use-sync` adopts `page.complete` strictly (never `|| !cursor`). The reducer
-   enforces the same contract on commit: `boundaryFromPage` resolves
-   `complete=true` to `exhausted` and requires a non-empty cursor for
-   `complete=false`; an incomplete page with a missing/empty cursor is a page
-   contract error that enters the loader error path (prefetch `status=error`)
-   and preserves the last known boundary — it never widens into a cursor-less
-   `has-more`.
+  explicit override only. Initial / recovery / materialize / selection use the
+  production transport fetcher →
+  `GET /api/openchamber/sessions/:id/messages?turns=…` (no scanLimit by default)
+  and commit via repository `http-page` / `ensureInitial`. Policy lives in
+  `session-message-policy.ts`. Incomplete Host pages may recover missing parent
+  user messages by exact ID (up to eight). Authoritative complete pages skip
+  parent recovery. Loading failures are subscribable via repository request
+  state and preserve prior ready records.
+- Message loading status is runtime-scoped on the Query repository. Reactive
+  ensure/selection share Query single-flight so a remounted provider does not
+  dual-commit a shared transport response into a detached child store.
+- Older history is user-driven pagination only. Prepend uses one Host turn-page
+  request (`turns=4` local/LAN and Relay) via
+  `fetchTranscriptPreviousPage` → Query `fetchPreviousPage`
+  (`cancelRefetch:false`). Callers must pass the session's workspace
+  `directory` into pagination reads and fetch helpers so cross-project sessions
+  resolve the correct Query scope — using only the primary sync directory for a
+  cross-project session yields the wrong scope. Repository
+  `SessionHistoryBoundary` (`unknown` / `has-more(cursor, required non-empty)` /
+  `exhausted` plus cumulative `loadedTurns`) is the **only** client fact for
+  older-history availability. UI reads it through
+  `useSessionTranscriptPagination` (and related request state via
+  `useSessionMessageLoadState`); Chat / Context call
+  `fetchTranscriptPreviousPage` directly (no production `sync.loadMore`).
+  Every successful initial/prepend/recovery/materialize page commits
+  message/part/boundary into Query — even when message references are unchanged.
+  Failures keep the last known boundary and only flip request status to error;
+  stale generation completions never commit. Live append never mutates the
+  older-history boundary. Query `purgeSession` removes transcript families on
+  `session.deleted`, temporary SmartFetch-secondary cleanup, and ordinary
+  eviction — no orphan boundary survives its session, and the next visit reads
+  `unknown`. Explicit load-earlier refreshes the authoritative tail once when
+  the boundary is `unknown` (via `ensureTranscriptInitial`), then prepends from
+  the recovered cursor; persistent cursor absence and request `status=error`
+  surface to user-initiated load-earlier as `chat.history.loadOlderFailed`. The
+  client asserts a strict page contract: each record is an object with non-empty
+  `info.id` and optional `parts` array; `turnCount` is an integer in
+  `0..requestedTurns`; `complete=true` requires `cursor=null`, `complete=false`
+  requires a non-empty cursor string; empty cursor strings and `partial:true`
+  are rejected. The pure reducer additionally enforces the **cursor progress
+  invariant** for incomplete pages: an empty page makes no progress, and a
+  prepend whose response cursor equals the previous `has-more` cursor would
+  paginate the same window forever — both are page contract errors. A contract
+  error behaves like a failed load: no commit, previous
+  boundary/messages/loadedTurns preserved exactly, request status error, later
+  retry can still converge. Legal cursor advances accumulate `loadedTurns` per
+  prepend; a final `complete=true` page resolves to `exhausted`.
   Host `scanLimit` is not sent by default. Refetch 100 and send-confirmation 30
-  are unchanged. The chat
-  timeline controller issues at most one Host turn-page request per user
-  interaction (desktop near-top scroll or explicit upward intent; mobile top
-  button). Explicit load-earlier is TanStack `useMutation`-owned
-  (`chatTimelineLoadEarlierMutationKey`); UI busy is `mutation.isPending` for
-  the active session (plus local auto-fill state), never background
-  `historyLoading`/prefetch loading which can stick on Relay. Concurrent wheel
-  bursts share one in-flight chain via a synchronous loading guard; fetches
-  check `historyLoading` and cancel viewport-anchor hold only while still owning
-  the armed snapshot. Active desktop transcripts may auto-fill earlier history
-  while the first paint stays short (`scrollHeight ≤ clientHeight + 48`) and
-  `canLoadEarlier` is cursor-backed; height-only geometry so collapsed stacks
-  keep filling without expand-first; owned by TanStack Query
-  (`chatTimelineAutoFillQueryKey`) rather than a `useEffect` chain;
-  no-growth/failure blocks further auto-fill for the session; successful short
-  pages re-arm via query-key edge movement. That path does not release
-  auto-follow. Timeline handlers use `@reactuses/core` `useEvent`.
+  are unchanged. The chat timeline controller issues at most one Host turn-page
+  request per user interaction (desktop near-top scroll or explicit upward
+  intent; mobile top button). Explicit load-earlier is TanStack
+  `useMutation`-owned (`chatTimelineLoadEarlierMutationKey`); UI busy is
+  `mutation.isPending` for the active session (plus local auto-fill state),
+  never background `historyLoading` alone which can stick on Relay. Concurrent
+  wheel bursts share one in-flight chain via a synchronous loading guard;
+  fetches check `historyLoading` and cancel viewport-anchor hold only while
+  still owning the armed snapshot. Active desktop transcripts may auto-fill
+  earlier history while the first paint stays short
+  (`scrollHeight ≤ clientHeight + 48`) and `canLoadEarlier` is cursor-backed;
+  height-only geometry so collapsed stacks keep filling without expand-first;
+  owned by TanStack Query (`chatTimelineAutoFillQueryKey`) rather than a
+  `useEffect` chain; no-growth/failure blocks further auto-fill for the session;
+  successful short pages re-arm via query-key edge movement. That path does not
+  release auto-follow. Timeline handlers use `@reactuses/core` `useEvent`.
 - Composer session mention search filters every loaded global active-session
   summary across projects, while the empty menu keeps three recent suggestions.
   Opening the mention menu performs no referenced-session fetch. Selecting a
@@ -645,40 +787,36 @@ both readers agree on when a frame may shrink.
   explicit/reactive attempt can retry; failure must never be cached as an empty
   authoritative history.
 - Reconnect recovery may poll lightweight status for multiple active sessions,
-  but it materializes `session.get` plus one message page only for the currently
-  viewed session. Message pages for reconnect (`purpose: "recovery"`) and
-  orphan/ensure materialization (`purpose: "materialize"`) go through
-  `loadSessionMessagePage` in `session-message-loader.ts` (policy limit,
-  single-flight, assistant-tail recovery, reducer, prefetch meta, stale/live
-  revision). Callers in `sync-context.tsx` supply store commit deps; failure and
-  skipped loads preserve the existing transcript. Viewed-session materialization
-  requires only a matching directory; it must not depend on the session already
-  appearing in the reconnect candidate list or child store. Background
-  busy/incomplete sessions wait until selection and continue receiving live
-  events without fetching their bodies. `statusOnly` reconnect (clean first
+  but it materializes `session.get` plus one transcript ensure/recovery page
+  only for the currently viewed session (status path) while Query reconnect
+  compensation covers gap reconciliation for retained scopes. Message pages for
+  reconnect (`purpose: "recovery"`) and orphan/ensure materialization
+  (`purpose: "materialize"`) go through the production transport fetcher →
+  repository `http-page` / `ensureInitial` (policy limit, single-flight,
+  assistant-tail recovery, pure merge, request state, stale/live revision).
+  Failure and skipped loads preserve the existing transcript. Viewed-session
+  materialization requires only a matching directory; it must not depend on the
+  session already appearing in the reconnect candidate list or child-store
+  catalog. Background busy sessions wait until selection and continue receiving
+  live events without fetching their bodies. `statusOnly` reconnect (clean first
   stream ready only) still runs this bounded viewed-body recovery; it only
   suppresses extra reconnect work such as blocking-request resync, never viewed
-  transcript reconciliation.
+  transcript reconciliation. Ready + `isReconnect:true` triggers Query
+  compensation after replay; first ready skips gap compensation.
 - A real reconnect and every transport switch can gap **every** cached
   transcript in an initialized directory, not just the viewed session.
-  `triggerDirectoryResync` therefore calls
-  `invalidateReconnectTranscriptCache` FIRST — before the bootstrap gate and
-  before the resync-in-flight coalescing gate — dirtying request freshness
-  (`markSessionPrefetchDirty`, `at=0`) for the union of cached message keys
-  and `session_history_boundary` keys (computed by the pure
-  `getReconnectTranscriptInvalidationSessionIds` helper). A closed bootstrap
-  gate or a coalesced second resync may skip the network refresh, but the
-  dirty fact is always recorded, so entering a background session later
-  performs one authoritative tail fetch (`shouldSkipSessionPrefetch` returns
-  false on dirty) instead of reusing a gap-stale cache. The known boundary
-  and cached messages stay as last-known UI facts; no eager body fetch
-  happens on reconnect. `statusOnly` is resolved by
-  `resolveReconnectStatusOnly` and qualifies ONLY for a clean first connect
-  (no disconnect before it) — a disconnect racing the first connect is a real
-  gap regardless of boot recency and takes full reconnect semantics. A failed
-  viewed-session recovery keeps the boundary and its error/dirty freshness,
-  so the next entry still refetches; a successful pull commits new
-  messages+boundary and restores ready.
+  Recovery-context capture writes Query checkpoints before replay; ready +
+  `isReconnect` drives compensation for retained/canonical scopes. Runtime
+  switch explicitly cancels compensation and `purgeGeneration` for the previous
+  transport/generation. Known repository boundary and cached transcript stay as
+  last-known UI facts until compensation or ensure converges; no eager body
+  fetch is required on every background session during resync. `statusOnly` is
+  resolved by `resolveReconnectStatusOnly` and qualifies ONLY for a clean first
+  connect (no disconnect before it) — a disconnect racing the first connect is a
+  real gap regardless of boot recency and takes full reconnect semantics. A
+  failed viewed-session recovery keeps the boundary and request error so the
+  next entry still refetches; a successful pull commits new messages+boundary
+  and restores ready.
 - Reconnect recovery gates session identity and the message body on separate
   live revisions. The identity revision is captured before `session.get`; the
   body revision is captured after it returns. A missing session or live events
@@ -687,33 +825,25 @@ both readers agree on when a frame may shrink.
   every `session.get` round trip loses the race and aborts body recovery.
 - A bounded bootstrap may omit a selected session. `ensureSessionRenderable()`
   accepts an explicit target directory for this exact materialization path. It
-  creates that directory child store with `bootstrap: false`, uses that
-  directory's scoped SDK client for `session.get` and message reads, and commits
-  identity plus materialized messages only into that target store. Message TTL
-  readiness and session identity remain independent: a ready message page with
-  missing identity still performs the exact identity read.
-- Snapshot-revision SSE events (not every live `session.*` / `message.*` payload)
-  are authoritative change signals for the session message prefetch cache.
-  `handleEvent` calls `markSessionPrefetchDirty(directory, [sessionID])` for any
-  snapshot-revision event before the reducer runs, encoding dirty as `at=0` on
-  the request-lifecycle entry; the history boundary itself lives untouched in
-  the child store. `shouldSkipSessionPrefetch` requires a **known** child-store
-  history boundary plus a fresh ready request: an `unknown` boundary (fresh
-  store, post-eviction, failed first load) always fetches; a known boundary
-  without freshness info refreshes in the background while the caller keeps the
-  known UI facts; `exhausted` reuses any fresh ready request; `has-more`
-  compares the boundary's cumulative `loadedTurns` against the requested page
-  size before TTL applies. The next
-  `fetchMessagesForSession` / `syncSession` then performs one bounded tail-page
-  pull through the shared loader; its reducer-driven materialization is
+  creates that directory child store with `bootstrap: false` for non-transcript
+  identity, uses that directory's scoped SDK client for `session.get`, and
+  commits identity into the child store while transcript materialization goes
+  through Query ensure / `http-page`. Message readiness and session identity
+  remain independent: a ready transcript page with missing identity still
+  performs the exact identity read.
+- Snapshot-revision and live transcript SSE commit through repository
+  `sse-event` (and related ensure/materialize). Repository pagination and
+  request state own older-history facts and flight status. An `unknown`
+  boundary always ensures; a known boundary retains UI facts while background
+  ensure/compensation may refresh. The next `syncSession` / selection ensure
+  performs one bounded tail ensure through Query when needed; merge is
   reference-stable when unchanged, so same-size completed parts replace
-  truncated live text. On `session.idle` for
-  the **active** top-level session (`setActiveSession` directory/session identity,
-  not window focus), `handleEvent` enqueues one bounded `session-idle`
-  materialization; background top-level idle stays zero-request; child idle
-  still materializes the parent (`child-session-idle`). Events missed during a
-  suspend with no SSE delivery remain covered by reconnect viewed-session
-  recovery.
+  truncated live text. On `session.idle` for the **active** top-level session
+  (`setActiveSession` directory/session identity, not window focus),
+  `handleEvent` enqueues one bounded `session-idle` materialization; background
+  top-level idle stays zero-request; child idle still materializes the parent
+  (`child-session-idle`). Events missed during a suspend with no SSE delivery
+  remain covered by reconnect compensation + viewed-session recovery.
 - The client stall timer starts before SSE response headers arrive. Transport
   activity includes SSE comments and heartbeats, iterator events, and every
   WebSocket message frame. A transport stale watchdog reconnects after this
@@ -727,19 +857,22 @@ both readers agree on when a frame may shrink.
   its active-session fallback without affecting domain health or recovery
   freshness. Recovery captures a monotonic per-session live revision and skips
   its session/message commit when a newer live event arrives before HTTP settles.
-- Current (non-stale) recovery upserts fetched-tail message metadata with the
-  authoritative server snapshot, including completion, finish, and token fields.
-  Stale recovery is insert-only: it backfills missing messages only and leaves
-  newer live message objects untouched. Local messages outside the bounded tail
-  remain intact in both cases. Part merging uses `parts: replace` with
-  `preserveStreaming: assistant`, so live assistant parts retain precedence
-  until an authoritative completed snapshot arrives: streaming text/output is
-  never truncated by a lagging page; in-flight tool/reasoning parts omitted by
-  the page are kept; while the snapshot message is still open, earlier completed
-  tools omitted by a partial mid-turn page are also kept (so Activity tool rows
-  do not flicker away during inference); same-id hollow tool snapshots cannot
-  regress richer live status/input/output. A settled message snapshot remains
-  authoritative for the part set.
+- Current (non-stale) recovery/reconcile upserts fetched-tail message metadata
+  with the authoritative server snapshot, including completion, finish, and
+  token fields, and uses `parts: replace` with `preserveStreaming: assistant`
+  so live assistant parts retain precedence until an authoritative completed
+  snapshot arrives: streaming text/output is never truncated by a lagging page;
+  in-flight tool/reasoning parts omitted by the page are kept; while the
+  snapshot message is still open, earlier completed tools omitted by a partial
+  mid-turn page are also kept (so Activity tool rows do not flicker away during
+  inference); same-id hollow tool snapshots cannot regress richer live
+  status/input/output. A settled message snapshot remains authoritative for the
+  part set. Stale recovery/reconcile backfill is insert-only for messages and
+  skip-existing for parts: it only adds missing messages and missing part
+  buckets, never rewrites existing live parts (including completed /
+  non-streaming state that `preserveStreaming` alone would not protect against a
+  lagging in-flight HTTP page). Local messages outside the bounded tail remain
+  intact in both cases.
 - `getSessionMaterializationStatus` does **not** treat a trailing *open*
   assistant (no `time.completed` / `finish`) with missing parts as unrenderable.
   Live multi-step turns emit `message.updated` before the first `part.updated`;
@@ -935,7 +1068,7 @@ Rules:
 8. Sidebar previous/next navigation is scope-aware. `SessionSidebar` publishes the Recent order plus logically visible project rows to `session-navigation.ts`; keyboard and native-menu actions share that registry and update the explicit session Focus before committing current-session authority. Project-origin navigation is restricted to the current expanded project and never falls through to hidden rows or another project.
 9. Global Mod+1…9 navigation is session-row based, not project based. `SessionSidebar` combines the currently revealed Recent rows with logically visible project rows, caps the visual order at nine, and publishes it through `sidebar-numbered-navigation.ts`. The numbered activation preserves the selected row's exact Recent/Project Focus identity.
 10. `optimisticSend()` inserts the optimistic user message and local `busy` status **before** the connection grace wait (`waitForConnectionOrThrow`). Long-idle reconnect must not leave the composer cleared / status busy while the chat list still shows the pre-send snapshot. Connection failure remains a pre-dispatch rollback of that optimistic row.
-  11. `fetchMessagesForSession()` may early-return on a renderable cache only when the child-store boundary is known (`has-more`/`exhausted`) **and** `shouldSkipSessionPrefetch` also allows reuse (clean ready/complete or in-TTL, no dirty mark); an `unknown` boundary always performs one authoritative tail fetch even when user messages are already cached. It always bypasses that cache for a live `busy`/`retry` session whose local tail is **not** already a user message (pre-send snapshot while status is busy). Ordinary busy sessions with an optimistic/confirmed trailing user row keep the early-return when the prefetch meta is clean, so session switches do not force a refetch or loading flash. The pull itself goes through `loadSessionMessagePage({ purpose: "initial" })`, so policy limit, transport single-flight, assistant-tail parent recovery, the pure reducer, and one atomic `message`/`part`/`session_history_boundary` commit are shared with every other caller; a switched-away stale completion skips the store commit entirely (no repopulation, next visit reads unknown → refetch) and leaves the prefetch request status untouched. Single-flight applies per runtime/directory/session/limit; concurrent callers share the in-flight promise.
+  11. `fetchMessagesForSession()` may early-return on a renderable repository transcript only when pagination boundary is known (`has-more`/`exhausted`) **and** repository request state allows reuse (clean ready, not error/dirty); an `unknown` boundary always performs one authoritative tail ensure even when user messages are already cached. It always bypasses that cache for a live `busy`/`retry` session whose local tail is **not** already a user message (pre-send snapshot while status is busy). Ordinary busy sessions with an optimistic/confirmed trailing user row keep the early-return when request state is clean, so session switches do not force a refetch or loading flash. The pull itself goes through repository `ensureInitial` / production transport → `http-page`, so policy limit, Query single-flight, assistant-tail parent recovery, pure merge, and one atomic message/part/boundary commit into QueryCache are shared with every other caller; a switched-away stale generation completion never commits (next visit reads unknown → ensure). Concurrent callers share the in-flight Query promise.
 
 Examples of global-store updates performed in `session-actions.ts`:
 
@@ -953,7 +1086,8 @@ Examples of global-store updates performed in `session-actions.ts`:
 
 OpenCode publishes one `message.updated` event per cloned message and one
 `message.part.updated` event per cloned part while `session.fork` runs. The UI
-must not materialize that complete copied history into the directory store.
+must not materialize that complete copied history into the production Query
+transcript (or any residual pure draft surface) as an unscoped full dump.
 
 - Enter the shared fork transition view before dispatching the SDK request.
 - Do not require the source session to already exist in a directory child

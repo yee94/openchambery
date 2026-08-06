@@ -22,7 +22,14 @@ import type { AttachedFile } from '@/stores/types/sessionTypes';
 import * as sessionActions from '@/sync/session-actions';
 import { commitMessageEdit } from '@/sync/session-actions';
 import type { OptimisticSendTicket } from '@/sync/session-actions';
-import { useDirectorySync, useSessionMessages, useUserMessageHistory } from '@/sync/sync-context';
+import {
+    useDirectoryStore as useChildDirectoryStore,
+    useDirectorySync,
+    useSessionMessages,
+    useSyncDirectory,
+    useUserMessageHistory,
+} from '@/sync/sync-context';
+import { useTranscriptData } from '@/sync/transcript-repository-observers';
 import { getAllSyncSessionMap, getSyncMessages, resolveMaterializedSessionDirectory } from '@/sync/sync-refs';
 import { useSync } from '@/sync/use-sync';
 import { useInlineCommentDraftStore, type InlineCommentDraft } from '@/stores/useInlineCommentDraftStore';
@@ -396,14 +403,34 @@ const RevertedMessageDock: React.FC<RevertedMessageDockProps> = React.memo(({ se
     const [forkingId, setForkingId] = React.useState<string | null>(null);
     const [collapsed, setCollapsed] = React.useState(true);
     const revertedStateRef = React.useRef<RevertedMessageDockState>(EMPTY_REVERTED_MESSAGE_DOCK_STATE);
-    const revertedState = useDirectorySync(
-        React.useCallback((state) => {
-            const next = buildRevertedMessageDockState(state, sessionId, revertedStateRef.current);
-            revertedStateRef.current = next;
-            return next;
-        }, [sessionId]),
-        directory,
+    // Ticket 02 remediation: full transcript (messages + parts) from repository;
+    // directory store only for session.revert metadata (outside transcript ownership).
+    const syncDirectory = useSyncDirectory();
+    const targetDirectory = directory || syncDirectory;
+    const childStore = useChildDirectoryStore(targetDirectory);
+    const transcriptData = useTranscriptData(sessionId ?? '', targetDirectory, childStore);
+    // Narrow session list subscription — only re-renders when session array ref changes
+    // (revert metadata lives on the session entity).
+    const sessionList = useDirectorySync(
+        (state) => state.session,
+        targetDirectory,
     );
+    const revertedState = React.useMemo(() => {
+        const messages = transcriptData.messageOrder
+            .map((id) => transcriptData.messagesByID[id])
+            .filter((message): message is NonNullable<typeof message> => Boolean(message));
+        const next = buildRevertedMessageDockState(
+            {
+                session: sessionList,
+                messages,
+                partsByMessageID: transcriptData.partsByMessageID,
+            },
+            sessionId,
+            revertedStateRef.current,
+        );
+        revertedStateRef.current = next;
+        return next;
+    }, [sessionId, sessionList, transcriptData]);
     const revertMessageID = revertedState.revertMessageID;
     const userMessages = React.useMemo(
         () => revertedState.records.map((record) => record.message),

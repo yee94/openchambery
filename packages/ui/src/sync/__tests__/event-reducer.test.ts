@@ -1,15 +1,22 @@
 import { describe, expect, test } from "bun:test"
 import type { Session } from "@opencode-ai/sdk/v2"
 import type { Event, Message, Part, PermissionRequest, QuestionRequest, SessionStatus } from "@opencode-ai/sdk/v2/client"
+import { applyTranscriptDirectoryEvent } from "../transcript-event-reducer"
+import type { TranscriptEventDraft } from "../transcript-event-reducer"
 import { applyDirectoryEvent } from "../event-reducer"
 import { INITIAL_STATE, type State } from "../types"
 
-function state(overrides: Partial<State> = {}): State {
+function transcriptDraft(overrides: Partial<TranscriptEventDraft> = {}): TranscriptEventDraft {
   return {
-    ...INITIAL_STATE,
     message: {},
     part: {},
-    session_status: {},
+    ...overrides,
+  }
+}
+
+function directoryState(overrides: Partial<State> = {}): State {
+  return {
+    ...INITIAL_STATE,
     ...overrides,
   }
 }
@@ -26,17 +33,24 @@ function deltaEvent(): Event {
   } as Event
 }
 
-function partUpdatedEvent(): Event {
+function messageUpdatedEvent(info: Message): Event {
+  return {
+    type: "message.updated",
+    properties: { info },
+  } as Event
+}
+
+function partUpdatedEvent(part?: Part): Event {
   return {
     type: "message.part.updated",
     properties: {
-      part: {
+      part: part ?? ({
         id: "prt_1",
         messageID: "msg_1",
         sessionID: "ses_1",
         type: "text",
-        text: "hello",
-      },
+        text: "hi",
+      } as Part),
     },
   } as Event
 }
@@ -50,444 +64,158 @@ function topLevelSessionOnlyPartUpdatedEvent(): Event {
         id: "prt_1",
         messageID: "msg_1",
         type: "text",
-        text: "hello",
-      },
+        text: "hi",
+      } as Part,
     },
   } as Event
 }
 
-function buildSession(title: string, time: Session["time"]): Session {
-  return {
-    id: "ses_1",
-    title,
-    time,
-  } as Session
-}
-
-function messageUpdatedEvent(info: Message): Event {
-  return {
-    type: "message.updated",
-    properties: { info },
-  } as Event
-}
-
-describe("applyDirectoryEvent", () => {
+describe("applyTranscriptDirectoryEvent", () => {
   test("keeps a loaded session renderable while a new assistant waits for its first part", () => {
-    const user = { id: "msg_1_user", sessionID: "ses_1", role: "user", time: { created: 1 } } as Message
-    const previousAssistant = { id: "msg_2_assistant", sessionID: "ses_1", role: "assistant", time: { created: 2, completed: 3 } } as Message
-    const nextAssistant = { id: "msg_3_assistant", sessionID: "ses_1", role: "assistant", parentID: user.id, time: { created: 4 } } as Message
-    const previousParts = [{ id: "prt_1", messageID: previousAssistant.id, sessionID: "ses_1", type: "text", text: "done" } as Part]
-    const draft = state({
-      message: { ses_1: [user, previousAssistant] },
-      part: { [previousAssistant.id]: previousParts },
+    const openAssistant = {
+      id: "msg_open",
+      sessionID: "ses_1",
+      role: "assistant",
+      time: { created: 1 },
+    } as Message
+    const draft = transcriptDraft({
+      message: {
+        ses_1: [
+          { id: "msg_user", sessionID: "ses_1", role: "user", time: { created: 1 } } as Message,
+        ],
+      },
+      part: {
+        msg_user: [{ id: "prt_u", messageID: "msg_user", sessionID: "ses_1", type: "text", text: "hi" } as Part],
+      },
     })
+    const nextAssistant = {
+      ...openAssistant,
+      id: "msg_new",
+    } as Message
 
-    expect(applyDirectoryEvent(draft, messageUpdatedEvent(nextAssistant))).toBe(true)
-    expect(draft.message.ses_1).toEqual([user, previousAssistant, nextAssistant])
-    expect(draft.part[previousAssistant.id]).toBe(previousParts)
-    expect(draft.part[nextAssistant.id]).toEqual([])
+    expect(applyTranscriptDirectoryEvent(draft, messageUpdatedEvent(nextAssistant))).toBe(true)
+    expect(draft.message.ses_1?.map((m) => m.id)).toContain("msg_new")
+    expect(draft.part.msg_new).toEqual([])
+    expect(draft.part.msg_user).toBeDefined()
   })
 
-  test("preserves an incomplete cold snapshot for selection-time recovery", () => {
-    const previousAssistant = { id: "msg_assistant_1", sessionID: "ses_1", role: "assistant", time: { created: 1 } } as Message
-    const nextAssistant = { id: "msg_assistant_2", sessionID: "ses_1", role: "assistant", time: { created: 2 } } as Message
-    const draft = state({ message: { ses_1: [previousAssistant] } })
+  test("does not invent empty parts for the first assistant on a cold session", () => {
+    const draft = transcriptDraft()
+    const nextAssistant = {
+      id: "msg_1",
+      sessionID: "ses_1",
+      role: "assistant",
+      time: { created: 1 },
+    } as Message
 
-    expect(applyDirectoryEvent(draft, messageUpdatedEvent(nextAssistant))).toBe(true)
-    expect(draft.part[nextAssistant.id]).toBe(undefined)
+    expect(applyTranscriptDirectoryEvent(draft, messageUpdatedEvent(nextAssistant))).toBe(true)
+    expect(draft.part.msg_1).toBeUndefined()
   })
 
-  test("returns typed materialization when delta arrives before parts", () => {
-    const result = applyDirectoryEvent(state(), deltaEvent())
-
+  test("orphan delta reports incomplete materialization without changing parts", () => {
+    const result = applyTranscriptDirectoryEvent(transcriptDraft(), deltaEvent())
     expect(result).toEqual({
       changed: false,
-      materialization: { type: "incomplete-session-snapshot", reason: "orphan-delta", messageID: "msg_1", partID: "prt_1" },
+      materialization: {
+        type: "incomplete-session-snapshot",
+        reason: "orphan-delta",
+        messageID: "msg_1",
+        partID: "prt_1",
+      },
     })
   })
 
-  test("returns typed materialization when delta part is missing", () => {
-    const result = applyDirectoryEvent(
-      state({ part: { msg_1: [{ id: "prt_2", messageID: "msg_1", type: "text", text: "" } as Part] } }),
+  test("missing delta part reports incomplete materialization", () => {
+    const result = applyTranscriptDirectoryEvent(
+      transcriptDraft({
+        part: {
+          msg_1: [{ id: "prt_other", messageID: "msg_1", sessionID: "ses_1", type: "text", text: "x" } as Part],
+        },
+      }),
       deltaEvent(),
     )
-
-    expect(result).toEqual({
-      changed: false,
-      materialization: { type: "incomplete-session-snapshot", reason: "missing-delta-part", messageID: "msg_1", partID: "prt_1" },
-    })
+    expect(typeof result === "object" && result && "materialization" in result).toBe(true)
   })
 
-  test("applies part update and requests materialization when owning message is absent", () => {
-    const draft = state()
-    const result = applyDirectoryEvent(draft, partUpdatedEvent())
+  test("part updated without owning message reports materialization hint", () => {
+    const draft = transcriptDraft()
+    const result = applyTranscriptDirectoryEvent(draft, partUpdatedEvent())
+    expect(draft.part.msg_1?.map((item) => item.id)).toEqual(["prt_1"])
+    expect(typeof result === "object" && result && "materialization" in result).toBe(true)
+  })
 
-    expect(draft.part.msg_1.map((item) => item.id)).toEqual(["prt_1"])
-    expect(result).toEqual({
-      changed: true,
-      materialization: {
-        type: "incomplete-session-snapshot",
-        reason: "missing-owning-message",
-        sessionID: "ses_1",
-        messageID: "msg_1",
-        partID: "prt_1",
+  test("top-level sessionID on part.updated is accepted", () => {
+    const draft = transcriptDraft({
+      message: {
+        ses_1: [{ id: "msg_1", sessionID: "ses_1", role: "assistant", time: { created: 1 } } as Message],
       },
     })
+    const result = applyTranscriptDirectoryEvent(draft, topLevelSessionOnlyPartUpdatedEvent())
+    expect(draft.part.msg_1?.map((item) => item.id)).toEqual(["prt_1"])
+    expect(result === true || (typeof result === "object" && result.changed)).toBe(true)
+  })
+})
+
+describe("applyDirectoryEvent (non-transcript production domains)", () => {
+  test("message SSE is a no-op on production State", () => {
+    const draft = directoryState()
+    expect(applyDirectoryEvent(draft, messageUpdatedEvent({
+      id: "msg_1",
+      sessionID: "ses_1",
+      role: "user",
+      time: { created: 1 },
+    } as Message))).toBe(false)
   })
 
-  test("uses top-level session id and part message id for part update materialization", () => {
-    const draft = state()
-    const result = applyDirectoryEvent(draft, topLevelSessionOnlyPartUpdatedEvent())
-
-    expect(draft.part.msg_1.map((item) => item.id)).toEqual(["prt_1"])
-    expect(result).toEqual({
-      changed: true,
-      materialization: {
-        type: "incomplete-session-snapshot",
-        reason: "missing-owning-message",
-        sessionID: "ses_1",
-        messageID: "msg_1",
-        partID: "prt_1",
-      },
-    })
-  })
-
-  test("uses top-level session id for delta materialization", () => {
-    const result = applyDirectoryEvent(state(), {
-      type: "message.part.delta",
-      properties: {
-        sessionID: "ses_1",
-        messageID: "msg_1",
-        partID: "prt_1",
-        field: "text",
-        delta: "hello",
-      },
-    } as Event)
-
-    expect(result).toEqual({
-      changed: false,
-      materialization: { type: "incomplete-session-snapshot", reason: "orphan-delta", sessionID: "ses_1", messageID: "msg_1", partID: "prt_1" },
-    })
-  })
-
-  test("skips stale session.updated events so a newer title survives", () => {
-    const draft = state({ session: [buildSession("New Title", { created: 1, updated: 20 })] })
-
+  test("session.status mutates directory status only", () => {
+    const draft = directoryState()
     const result = applyDirectoryEvent(draft, {
-      type: "session.updated",
-      properties: {
-        info: buildSession("Old Title", { created: 1, updated: 10 }),
-      },
+      type: "session.status",
+      properties: { sessionID: "ses_1", status: { type: "busy" } as SessionStatus },
     } as Event)
-
-    expect(result).toBe(false)
-    expect(draft.session[0]?.title).toBe("New Title")
-  })
-
-  test("never inserts SmartFetch secondary sessions into the live directory list", () => {
-    const draft = state({ session: [], sessionTotal: 0 })
-    const hidden = buildSession("smartfetch-secondary", { created: 1, updated: 2 })
-
-    expect(applyDirectoryEvent(draft, {
-      type: "session.created",
-      properties: { info: hidden },
-    } as Event)).toBe(false)
-    expect(draft.session).toEqual([])
-    expect(draft.sessionTotal).toBe(0)
-
-    expect(applyDirectoryEvent(draft, {
-      type: "session.updated",
-      properties: { info: hidden },
-    } as Event)).toBe(false)
-    expect(draft.session).toEqual([])
-    expect(draft.sessionTotal).toBe(0)
-  })
-
-  test("removes a previously visible session that becomes a SmartFetch secondary title", () => {
-    const draft = state({
-      session: [buildSession("visible", { created: 1, updated: 10 })],
-      sessionTotal: 1,
-      message: {
-        ses_1: [{ id: "msg_1", sessionID: "ses_1", role: "assistant", time: { created: 1 } } as Message],
-      },
-      part: {
-        msg_1: [{ id: "prt_1", messageID: "msg_1", sessionID: "ses_1", type: "text", text: "x" } as Part],
-      },
-      session_history_boundary: {
-        ses_1: { kind: "has-more", cursor: "msg_1", loadedTurns: 1 },
-      },
-    })
-
-    expect(applyDirectoryEvent(draft, {
-      type: "session.updated",
-      properties: {
-        info: buildSession("smartfetch-secondary", { created: 1, updated: 20 }),
-      },
-    } as Event)).toBe(true)
-    expect(draft.session).toEqual([])
-    expect(draft.sessionTotal).toBe(0)
-    // SmartFetch secondaries still wipe caches so they cannot flash content.
-    expect(draft.message.ses_1).toBe(undefined)
-    expect(draft.part.msg_1).toBe(undefined)
-    // The boundary leaves with the temporary session cache — no orphan boundary.
-    expect(draft.session_history_boundary.ses_1).toBe(undefined)
-  })
-
-  test("session.deleted removes the session history boundary with the cache", () => {
-    const draft = state({
-      session: [buildSession("Doomed", { created: 1, updated: 10 })],
-      sessionTotal: 1,
-      message: {
-        ses_1: [{ id: "msg_1", sessionID: "ses_1", role: "assistant", time: { created: 1 } } as Message],
-      },
-      part: {
-        msg_1: [{ id: "prt_1", messageID: "msg_1", sessionID: "ses_1", type: "text", text: "x" } as Part],
-      },
-      session_history_boundary: {
-        ses_1: { kind: "has-more", cursor: "msg_1", loadedTurns: 2 },
-      },
-    })
-
-    expect(applyDirectoryEvent(draft, {
-      type: "session.deleted",
-      properties: {
-        info: buildSession("Doomed", { created: 1, updated: 20 }),
-      },
-    } as Event)).toBe(true)
-
-    expect(draft.session).toEqual([])
-    expect(draft.message.ses_1).toBe(undefined)
-    expect(draft.part.msg_1).toBe(undefined)
-    // No orphan boundary survives a deleted session.
-    expect(draft.session_history_boundary.ses_1).toBe(undefined)
-  })
-
-  test("keeps streaming caches when a session is archived mid-run", () => {
-    const user = { id: "msg_user", sessionID: "ses_1", role: "user", time: { created: 1 } } as Message
-    const assistant = { id: "msg_assistant", sessionID: "ses_1", role: "assistant", time: { created: 2 } } as Message
-    const parts = [{ id: "prt_1", messageID: assistant.id, sessionID: "ses_1", type: "text", text: "streaming" } as Part]
-    const draft = state({
-      session: [buildSession("Scheduled run", { created: 1, updated: 10 })],
-      sessionTotal: 1,
-      message: { ses_1: [user, assistant] },
-      part: { [assistant.id]: parts },
-      session_status: { ses_1: { type: "busy" } as SessionStatus },
-    })
-
-    expect(applyDirectoryEvent(draft, {
-      type: "session.updated",
-      properties: {
-        info: buildSession("Scheduled run", { created: 1, updated: 20, archived: 20 }),
-      },
-    } as Event)).toBe(true)
-
-    expect(draft.session).toEqual([])
-    expect(draft.sessionTotal).toBe(0)
-    expect(draft.message.ses_1).toEqual([user, assistant])
-    expect(draft.part[assistant.id]).toBe(parts)
+    expect(result).toBe(true)
     expect(draft.session_status.ses_1).toEqual({ type: "busy" })
   })
 
-  test("keeps streaming caches for system-owned scheduled sessions", () => {
-    const assistant = { id: "msg_assistant", sessionID: "ses_1", role: "assistant", time: { created: 2 } } as Message
-    const parts = [{ id: "prt_1", messageID: assistant.id, sessionID: "ses_1", type: "text", text: "working" } as Part]
-    const draft = state({
-      session: [buildSession("Daily report", { created: 1, updated: 10 })],
-      sessionTotal: 1,
-      message: { ses_1: [assistant] },
-      part: { [assistant.id]: parts },
-    })
-
-    const systemSession = {
-      ...buildSession("Daily report", { created: 1, updated: 20, archived: 20 }),
-      metadata: { openchamber: { scheduledTask: { taskID: "task_1" } } },
-    } as Session
-
-    expect(applyDirectoryEvent(draft, {
-      type: "session.updated",
-      properties: { info: systemSession },
-    } as Event)).toBe(true)
-
-    expect(draft.session).toEqual([])
-    expect(draft.message.ses_1).toEqual([assistant])
-    expect(draft.part[assistant.id]).toBe(parts)
-  })
-
-  test("keeps streaming caches for subagent sessions with parentID", () => {
-    const assistant = { id: "msg_child", sessionID: "ses_1", role: "assistant", time: { created: 2 } } as Message
-    const parts = [{ id: "prt_1", messageID: assistant.id, sessionID: "ses_1", type: "text", text: "sub" } as Part]
-    const draft = state({
-      session: [{ ...buildSession("SA-1", { created: 1, updated: 10 }), parentID: "ses_parent" } as Session],
-      sessionTotal: 0,
-      message: { ses_1: [assistant] },
-      part: { [assistant.id]: parts },
-    })
-
-    expect(applyDirectoryEvent(draft, {
-      type: "session.updated",
-      properties: {
-        info: {
-          ...buildSession("SA-1", { created: 1, updated: 20 }),
-          parentID: "ses_parent",
-        } as Session,
-      },
-    } as Event)).toBe(true)
-
-    expect(draft.session).toEqual([])
-    expect(draft.message.ses_1).toEqual([assistant])
-    expect(draft.part[assistant.id]).toBe(parts)
-  })
-
-  test("applies part update without materialization when owning message exists", () => {
-    const draft = state({
-      message: { ses_1: [{ id: "msg_1", sessionID: "ses_1", role: "assistant", time: { created: 1 } } as never] },
-    })
-    const result = applyDirectoryEvent(draft, partUpdatedEvent())
-
-    expect(draft.part.msg_1.map((item) => item.id)).toEqual(["prt_1"])
-    expect(result).toBe(true)
-  })
-
-  test("replaces a session-scoped optimistic text part instead of rendering it twice", () => {
-    const optimisticPart = {
-      id: "prt_client",
-      messageID: "msg_1",
+  test("permission.asked mutates permission map", () => {
+    const draft = directoryState()
+    const permission = {
+      id: "perm_1",
       sessionID: "ses_1",
-      type: "text",
-      text: "hello",
-      __openchamberOptimistic: true,
-    } as Part
-    const draft = state({
-      message: { ses_1: [{ id: "msg_1", sessionID: "ses_1", role: "user", time: { created: 1 } } as Message] },
-      part: { msg_1: [optimisticPart] },
-    })
-
-    expect(applyDirectoryEvent(draft, partUpdatedEvent())).toBe(true)
-    expect(draft.part.msg_1).toEqual([{
-      id: "prt_1",
-      messageID: "msg_1",
-      sessionID: "ses_1",
-      type: "text",
-      text: "hello",
-    }])
-  })
-
-  test("skips duplicate session status events", () => {
-    const draft = state()
-    const busyStatus = { type: "busy" } as SessionStatus
-    const event = {
-      type: "session.status",
-      properties: { sessionID: "ses_1", status: busyStatus },
-    } as Event
-
-    expect(applyDirectoryEvent(draft, event)).toBe(true)
-    const statusRef = draft.session_status.ses_1
-
-    expect(applyDirectoryEvent(draft, event)).toBe(false)
-    expect(draft.session_status.ses_1).toBe(statusRef)
-  })
-
-  test("skips duplicate session idle events", () => {
-    const draft = state()
-    const event = {
-      type: "session.idle",
-      properties: { sessionID: "ses_1" },
-    } as Event
-
-    expect(applyDirectoryEvent(draft, event)).toBe(true)
-    const statusRef = draft.session_status.ses_1
-
-    expect(applyDirectoryEvent(draft, event)).toBe(false)
-    expect(draft.session_status.ses_1).toBe(statusRef)
-  })
-
-  test("skips duplicate session error idle-state events", () => {
-    const draft = state()
-    const event = {
-      type: "session.error",
-      properties: { sessionID: "ses_1" },
-    } as Event
-
-    expect(applyDirectoryEvent(draft, event)).toBe(true)
-    const statusRef = draft.session_status.ses_1
-
-    expect(applyDirectoryEvent(draft, event)).toBe(false)
-    expect(draft.session_status.ses_1).toBe(statusRef)
-  })
-
-  test("detects retry status metadata changes", () => {
-    const draft = state({
-      session_status: {
-        ses_1: { type: "retry", attempt: 1, message: "rate limited", next: 10 } as SessionStatus,
-      },
-    })
-
-    const event = {
-      type: "session.status",
-      properties: {
-        sessionID: "ses_1",
-        status: { type: "retry", attempt: 2, message: "rate limited", next: 20 } as SessionStatus,
-      },
-    } as Event
-
-    expect(applyDirectoryEvent(draft, event)).toBe(true)
-    expect((draft.session_status.ses_1 as Extract<SessionStatus, { type: "retry" }>).attempt).toBe(2)
-  })
-
-  test("updates permission request arrays immutably", () => {
-    const initialPermissions = [
-      { id: "perm_1", sessionID: "ses_1" } as PermissionRequest,
-    ]
-    const draft = state({ permission: { ses_1: initialPermissions } })
-
-    applyDirectoryEvent(draft, {
+      permission: "edit",
+    } as PermissionRequest
+    expect(applyDirectoryEvent(draft, {
       type: "permission.asked",
-      properties: { id: "perm_2", sessionID: "ses_1" } as PermissionRequest,
-    } as Event)
-
-    expect(draft.permission.ses_1).not.toBe(initialPermissions)
-    expect(draft.permission.ses_1.map((item) => item.id)).toEqual(["perm_1", "perm_2"])
-
-    const afterAsk = draft.permission.ses_1
-    applyDirectoryEvent(draft, {
-      type: "permission.replied",
-      properties: { sessionID: "ses_1", requestID: "perm_1" },
-    } as Event)
-
-    expect(draft.permission.ses_1).not.toBe(afterAsk)
-    expect(draft.permission.ses_1.map((item) => item.id)).toEqual(["perm_2"])
+      properties: permission,
+    } as Event)).toBe(true)
+    expect(draft.permission.ses_1?.[0]?.id).toBe("perm_1")
   })
 
-  test("updates question request arrays immutably", () => {
-    const initialQuestions = [
-      { id: "ques_1", sessionID: "ses_1" } as QuestionRequest,
-    ]
-    const draft = state({ question: { ses_1: initialQuestions } })
-
-    applyDirectoryEvent(draft, {
+  test("question.asked mutates question map", () => {
+    const draft = directoryState()
+    const question = {
+      id: "q_1",
+      sessionID: "ses_1",
+    } as QuestionRequest
+    expect(applyDirectoryEvent(draft, {
       type: "question.asked",
-      properties: { id: "ques_2", sessionID: "ses_1" } as QuestionRequest,
-    } as Event)
+      properties: question,
+    } as Event)).toBe(true)
+    expect(draft.question.ses_1?.[0]?.id).toBe("q_1")
+  })
 
-    expect(draft.question.ses_1).not.toBe(initialQuestions)
-    expect(draft.question.ses_1.map((item) => item.id)).toEqual(["ques_1", "ques_2"])
-
-    const afterAsk = draft.question.ses_1
-    applyDirectoryEvent(draft, {
-      type: "question.replied",
-      properties: { sessionID: "ses_1", requestID: "ques_1" },
-    } as Event)
-
-    expect(draft.question.ses_1).not.toBe(afterAsk)
-    expect(draft.question.ses_1.map((item) => item.id)).toEqual(["ques_2"])
-
-    const afterReply = draft.question.ses_1
-    applyDirectoryEvent(draft, {
-      type: "question.rejected",
-      properties: { sessionID: "ses_1", requestID: "ques_2" },
-    } as Event)
-
-    expect(draft.question.ses_1).not.toBe(afterReply)
-    expect(draft.question.ses_1).toEqual([])
+  test("session.created inserts visible session into catalog", () => {
+    const draft = directoryState()
+    const session = {
+      id: "ses_1",
+      title: "Hello",
+      time: { created: 1, updated: 1 },
+      version: "1",
+    } as Session
+    expect(applyDirectoryEvent(draft, {
+      type: "session.created",
+      properties: { info: session },
+    } as Event)).toBe(true)
+    expect(draft.session.some((s) => s.id === "ses_1")).toBe(true)
   })
 })

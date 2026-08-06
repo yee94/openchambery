@@ -11,6 +11,20 @@ export type RevertedMessageDockState = {
     records: RevertedMessageRecord[];
 };
 
+/**
+ * Input for building the reverted-message dock.
+ * Ticket 02: prefer supplying messages/parts from TranscriptRepository so
+ * callers do not couple to child-store field paths. `session` still comes
+ * from the directory store (revert metadata is outside transcript ownership).
+ */
+export type RevertedMessageDockInput = {
+    session: Pick<State, 'session'>['session'];
+    /** Chronological messages (repository messageOrder projection). */
+    messages: readonly Message[];
+    /** Parts by message id (repository parts map or store.part). */
+    partsByMessageID: Readonly<Record<string, readonly Part[] | undefined>>;
+};
+
 const EMPTY_PARTS: Part[] = [];
 const EMPTY_REVERTED_RECORDS: RevertedMessageRecord[] = [];
 
@@ -34,8 +48,15 @@ const areRecordsEqual = (left: RevertedMessageRecord[], right: RevertedMessageRe
     return true;
 };
 
+type LegacyRevertedDockState = {
+    session: State['session'];
+    message: Record<string, Message[]>;
+    part: Record<string, Part[]>;
+};
+
+/** @deprecated Prefer the messages/parts form; kept for store-shaped callers. */
 export const buildRevertedMessageDockState = (
-    state: Pick<State, 'session' | 'message' | 'part'>,
+    state: LegacyRevertedDockState | RevertedMessageDockInput,
     sessionId: string | null,
     previous: RevertedMessageDockState = EMPTY_REVERTED_MESSAGE_DOCK_STATE,
 ): RevertedMessageDockState => {
@@ -43,13 +64,20 @@ export const buildRevertedMessageDockState = (
         return EMPTY_REVERTED_MESSAGE_DOCK_STATE;
     }
 
-    const session = state.session.find((item) => item.id === sessionId);
+    const sessionList = 'session' in state ? state.session : [];
+    const session = sessionList.find((item) => item.id === sessionId);
     const revertMessageID = (session as { revert?: { messageID?: string } } | undefined)?.revert?.messageID;
     if (!revertMessageID) {
         return EMPTY_REVERTED_MESSAGE_DOCK_STATE;
     }
 
-    const messages = state.message[sessionId] ?? [];
+    const messages = 'messages' in state
+        ? state.messages
+        : ((state as LegacyRevertedDockState).message[sessionId] ?? []);
+    const partsByMessageID = 'partsByMessageID' in state
+        ? state.partsByMessageID
+        : (state as LegacyRevertedDockState).part;
+
     const records: RevertedMessageRecord[] = [];
     for (const message of messages) {
         if (!isUserMessage(message) || message.id < revertMessageID) {
@@ -57,7 +85,7 @@ export const buildRevertedMessageDockState = (
         }
         records.push({
             message,
-            parts: state.part[message.id] ?? EMPTY_PARTS,
+            parts: (partsByMessageID[message.id] ?? EMPTY_PARTS) as Part[],
         });
     }
 

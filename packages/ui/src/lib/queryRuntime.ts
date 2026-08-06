@@ -1,7 +1,7 @@
 import { QueryClient } from '@tanstack/react-query';
 import type { ProviderResult, QuotaProviderId } from '@/types';
 import { runtimeFetch } from '@/lib/runtime-fetch';
-import { getRuntimeTransportIdentity, isRuntimeEndpointIdentityChange, subscribeRuntimeEndpointChanged } from './runtime-switch';
+import { getRuntimeGeneration, getRuntimeTransportIdentity, isRuntimeEndpointIdentityChange, subscribeRuntimeEndpointChanged } from './runtime-switch';
 
 export const queryClient = new QueryClient({
   defaultOptions: {
@@ -65,6 +65,97 @@ export const queryKeys = {
       transport: string,
       generation: number,
     ): readonly [string, 'sessionActive', 'snapshot', number] => [transport, 'sessionActive', 'snapshot', generation],
+  },
+  /**
+   * Session transcript Query key families (Tickets 04/07/08).
+   * Canonical + transport page owned by session-message-query.ts.
+   * Tail/reconcile/checkpoint shapes reserved for Ticket 07 recovery tasks;
+   * lifecycle purge owned by session-transcript-query-cache.ts.
+   */
+  sessionTranscript: {
+    infinite: (
+      directory: string,
+      sessionID: string,
+      transport = getRuntimeTransportIdentity(),
+      generation = getRuntimeGeneration(),
+    ): readonly [string, number, 'session-transcript', string, string] => [
+      transport,
+      generation,
+      'session-transcript',
+      normalizeQueryDirectory(directory) ?? '',
+      sessionID,
+    ],
+    page: (
+      directory: string,
+      sessionID: string,
+      limit: number,
+      before: string | undefined,
+      transport = getRuntimeTransportIdentity(),
+      generation = getRuntimeGeneration(),
+    ): readonly [string, number, 'sessionMessages', 'page', string, string, number, string] => [
+      transport,
+      generation,
+      'sessionMessages',
+      'page',
+      normalizeQueryDirectory(directory) ?? '',
+      sessionID,
+      limit,
+      before?.trim() ? before.trim() : 'tail',
+    ],
+    /**
+     * Ticket 07: recovery/materialize tail task.
+     * Prefer `sessionTranscriptTailTaskQueryKey` from session-transcript-query-cache.ts.
+     */
+    tailTask: (
+      directory: string,
+      sessionID: string,
+      purpose: string,
+      transport = getRuntimeTransportIdentity(),
+      generation = getRuntimeGeneration(),
+    ): readonly [string, number, 'session-transcript-task', 'tail', string, string, string] => [
+      transport,
+      generation,
+      'session-transcript-task',
+      'tail',
+      normalizeQueryDirectory(directory) ?? '',
+      sessionID,
+      purpose,
+    ],
+    /**
+     * Ticket 07: multi-page anchor reconcile task.
+     * Prefer `sessionTranscriptReconcileTaskQueryKey` from session-transcript-query-cache.ts.
+     */
+    reconcileTask: (
+      directory: string,
+      sessionID: string,
+      checkpoint: string,
+      transport = getRuntimeTransportIdentity(),
+      generation = getRuntimeGeneration(),
+    ): readonly [string, number, 'session-transcript-task', 'reconcile', string, string, string] => [
+      transport,
+      generation,
+      'session-transcript-task',
+      'reconcile',
+      normalizeQueryDirectory(directory) ?? '',
+      sessionID,
+      checkpoint,
+    ],
+    /**
+     * Ticket 07: disconnect/visibility recovery checkpoint.
+     * Prefer `sessionTranscriptCheckpointQueryKey` from session-transcript-query-cache.ts.
+     */
+    checkpoint: (
+      directory: string,
+      sessionID: string,
+      transport = getRuntimeTransportIdentity(),
+      generation = getRuntimeGeneration(),
+    ): readonly [string, number, 'session-transcript-checkpoint', string, string] => [
+      transport,
+      generation,
+      'session-transcript-checkpoint',
+      normalizeQueryDirectory(directory) ?? '',
+      sessionID,
+    ],
   },
 
   plugins: {

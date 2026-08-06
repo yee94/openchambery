@@ -82,8 +82,10 @@ export const pendingUserMessagesImplyWorking = (
 /**
  * Live + assistant archive history gates for the chat timeline.
  *
- * The directory child store `session_history_boundary[sessionID]` is the only
- * pagination fact source:
+ * Pagination facts come from TranscriptRepository.getPagination (boundary
+ * projection). The store adapter sources that from
+ * repository pagination boundary; a Query adapter sources the same
+ * shape from InfiniteData page metadata:
  *
  * - `unknown`   — no authoritative page yet: not complete, cannot load.
  * - `has-more`  — live history has earlier pages (cursor present).
@@ -113,7 +115,7 @@ export const resolveChatHistoryLoadState = (input: {
  * Only real useSync pagination flights and assistant-archive page loads block
  * `fetchOlderHistory`. Background sessionPrefetch (materialize / tail) can
  * stick at `status === 'loading'` on Relay for a long time and must never
- * OR into this gate — user-initiated load-more still starts `sync.loadMore`.
+ * OR into this gate — user-initiated load-more uses `fetchTranscriptPreviousPage`.
  * Prefetch status remains on the cold transcript gate only.
  */
 export const resolveChatHistoryPaginationLoading = (input: {

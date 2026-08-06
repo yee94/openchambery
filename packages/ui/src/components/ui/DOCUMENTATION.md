@@ -58,11 +58,11 @@ that specification rather than defining feature-local typography or spacing.
 
 Settings detail pages compose the same grammar through `components/sections/shared/SettingsGroup.tsx`. `SettingsGroup` owns an optional section label and one grouped card; `SettingsField` is the required primitive for a standalone setting, keeping its label and short helper text inside that card. Helper text known to wrap uses `descriptionPlacement="outside"` so the standard smaller gray description sits below the card instead of compressing the label/control columns. `SettingsRow` owns the responsive label/value grid, control alignment, long-text containment, and `data-settings-item` anchor. The components and their `styles/settings.css` layout tokens are shared by desktop and narrow/mobile Settings surfaces. Feature pages must not recreate separate desktop and mobile column markup or depend on DOM-shape selectors for new Settings groups.
 
-Full-row Boolean settings use `SettingsToggleRow`. It owns checkbox-first
-alignment, the standard row typography, and pointer/keyboard activation while
-preventing the nested checkbox from toggling twice. A bare `Checkbox` remains
-appropriate when it is only the right-column control of a true label/value
-`SettingsRow`.
+Full-row Boolean settings use `SettingsToggleRow`. It owns the standard
+label/value alignment with the checkbox in the right column, the standard row
+typography, and pointer/keyboard activation while preventing the nested
+checkbox from toggling twice. A bare `Checkbox` remains appropriate when it is
+only the right-column control of a true label/value `SettingsRow`.
 
 `SettingsRow` marks its right column with `data-settings-value`. Editable Settings controls expose semantic `data-slot` values. Select, Input, and NumberInput consume the global `--form-*` design tokens for height, radius, font size, line-height, and helper text inside that value column; they render as right-aligned inline values by default, with a transparent reserved border that becomes visible on hover/focus without moving content. Custom value pickers that do not expose one of those slots add `oc-settings-inline-value` to their trigger. Page code must not assign a separate visual border, alignment, or geometry contract. Rows are direct children of the grouped card so the card can draw one consistent divider after every non-final row, including conditionally rendered rows. Settings page and section stacks use one `--oc-settings-section-stack-gap`; wrappers must not add page-specific top margins, padding gaps, or divider gaps between sibling groups.
 

@@ -68,7 +68,10 @@ import { useSessionUIStore, type PendingUserMessagePresentation } from '@/sync/s
 import { useStreamingStore } from '@/sync/streaming';
 import {
     useSessionMessageCount,
+    useSessionMessageLoadState,
     useSessionMessageRecords,
+    useSessionMaterializationStatus,
+    useSessionTranscriptPagination,
     useSyncDirectory,
     useDirectorySync,
     useSessionStatus,
@@ -82,9 +85,11 @@ import {
     setActiveSession,
 } from '@/sync/sync-context';
 import { useSync } from '@/sync/use-sync';
-import { getSessionPrefetch, subscribeSessionPrefetch } from '@/sync/session-prefetch-cache';
-import { UNKNOWN_SESSION_HISTORY_BOUNDARY, type SessionHistoryBoundary } from '@/sync/types';
-import { getSessionMaterializationStatus } from '@/sync/materialization';
+import {
+    ensureTranscriptInitial,
+    fetchTranscriptPreviousPage,
+} from '@/sync/transcript-repository-runtime';
+
 import { usePlanDetection } from '@/hooks/usePlanDetection';
 import { useI18n } from '@/lib/i18n';
 import { BusyDots } from './message/parts/BusyDots';
@@ -696,10 +701,10 @@ const ChatContainerContent: React.FC<ChatContainerContentProps> = ({
         }
         onSessionViewEstimateChange(sessionViewKey, sessionViewEstimatedBytes);
     }, [onSessionViewEstimateChange, sessionViewEstimatedBytes, sessionViewKey]);
-    const hasRenderableSessionSnapshot = useDirectorySync(
-        (state) => (currentSessionId ? getSessionMaterializationStatus(state, currentSessionId).renderable : false),
+    const hasRenderableSessionSnapshot = useSessionMaterializationStatus(
+        currentSessionId ?? '',
         effectiveSessionDirectory,
-    );
+    ).renderable;
     const directorySessionEntity = useSession(currentSessionId, effectiveSessionDirectory);
     // Global/live fallback covers sessions whose directory list row is lagging
     // or lives under another selected workspace while messages already load.
@@ -765,58 +770,27 @@ const ChatContainerContent: React.FC<ChatContainerContentProps> = ({
         [sessionMessages],
     );
     // useMemo callback factories for useSyncExternalStore (stable identity; never useCallback).
-    const subscribeSessionPrefetchInfo = React.useMemo(
-        () => (notify: () => void) => (
-            currentSessionId
-                ? subscribeSessionPrefetch(effectiveSessionDirectory, currentSessionId, notify)
-                : () => undefined
-        ),
-        [currentSessionId, effectiveSessionDirectory],
-    );
-    const getSessionPrefetchInfo = React.useMemo(
-        () => () => (
-            currentSessionId ? getSessionPrefetch(effectiveSessionDirectory, currentSessionId) : undefined
-        ),
-        [currentSessionId, effectiveSessionDirectory],
-    );
-    const sessionPrefetchInfo = React.useSyncExternalStore(
-        subscribeSessionPrefetchInfo,
-        getSessionPrefetchInfo,
-        EMPTY_PREFETCH_SERVER_SNAPSHOT,
-    );
-    // Directory child-store boundary is the only pagination fact source. A
-    // boundary-only commit (no message/part change) must still re-render this
-    // container so the mobile load-older affordance converges immediately;
-    // the narrow selector keeps unrelated store updates out of this render.
-    // The selector is ref-stable so its identity never forces a resubscribe.
-    const historyBoundarySessionRef = React.useRef<string | null>(null);
-    historyBoundarySessionRef.current = currentSessionId;
-    const historyBoundarySelectorRef = React.useRef<((state: {
-        session_history_boundary: Record<string, SessionHistoryBoundary>;
-    }) => SessionHistoryBoundary) | null>(null);
-    if (!historyBoundarySelectorRef.current) {
-        historyBoundarySelectorRef.current = (state) => {
-            const sessionId = historyBoundarySessionRef.current;
-            return (sessionId ? state.session_history_boundary?.[sessionId] : undefined)
-                ?? UNKNOWN_SESSION_HISTORY_BOUNDARY;
-        };
-    }
-    const historyBoundary = useDirectorySync(
-        historyBoundarySelectorRef.current,
+    // Ticket 09: request lifecycle from repository (no session-prefetch).
+    const sessionPrefetchInfo = useSessionMessageLoadState(
+        currentSessionId ?? '',
         effectiveSessionDirectory,
     );
+    // Ticket 02: pagination from TranscriptRepository.getPagination projection.
+    // Boundary-only commits still re-render via repository subscribe.
+    const transcriptPagination = useSessionTranscriptPagination(
+        currentSessionId ?? '',
+        effectiveSessionDirectory,
+    );
+    const historyBoundary = transcriptPagination.boundary;
     const loadMoreMessages = useEvent(async (sessionId: string) => {
-        // Always scope meta/loadMore to the session workspace — the boundary is
-        // keyed by (directory store, session), and a missing directory falls
-        // through to unknown, which has no load-more entry.
-        const sessionDir = { directory: effectiveSessionDirectory };
+        // Ticket 09: Query fetchPreviousPage is the sole history flight.
         if (historyBoundary.kind === 'has-more') {
-            await sync.loadMore(sessionId, sessionDir);
+            await fetchTranscriptPreviousPage(effectiveSessionDirectory, sessionId);
             return;
         }
         if (historyBoundary.kind === 'unknown') {
-            // Unknown has no user entry: the background initial/SWR pull owns
-            // convergence to a known boundary.
+            // Ensure authoritative tail; background SWR also converges.
+            await ensureTranscriptInitial(effectiveSessionDirectory, sessionId);
             return;
         }
         // Only page assistant-owned archives after live pagination is authoritative-complete.

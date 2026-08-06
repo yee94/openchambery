@@ -96,6 +96,12 @@ describe('SettingsGroup', () => {
     expect(markup).toContain('typography-ui-label');
     expect(markup).toContain('typography-meta');
     expect(markup).toContain('data-settings-item="notifications.delivery"');
+    expect(markup).toContain('data-settings-value=""');
     expect(markup).toContain('aria-pressed="true"');
+
+    const labelIndex = markup.indexOf('Enable notifications');
+    const checkboxIndex = markup.indexOf('role="checkbox"');
+    expect(labelIndex).toBeGreaterThan(-1);
+    expect(checkboxIndex).toBeGreaterThan(labelIndex);
   });
 });

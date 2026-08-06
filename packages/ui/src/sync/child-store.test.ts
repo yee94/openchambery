@@ -37,31 +37,35 @@ describe('ChildStoreManager.subscribeAllSelected', () => {
   });
 });
 
-describe('ChildStoreManager session history boundary', () => {
-  test('a fresh child store has no boundary entries — every session reads unknown', () => {
+describe('ChildStoreManager production State (Ticket 09 batch 2)', () => {
+  test('a fresh child store has catalog/status domains without transcript maps', () => {
     const manager = new ChildStoreManager();
     const child = manager.ensureChild('/workspace', { bootstrap: false });
 
-    expect(child.getState().session_history_boundary).toEqual({});
-    expect(
-      child.getState().session_history_boundary['ses_1'] ?? UNKNOWN_SESSION_HISTORY_BOUNDARY,
-    ).toEqual({ kind: 'unknown', loadedTurns: 0 });
+    const state = child.getState();
+    expect(state.session).toEqual([]);
+    expect(state.session_status).toEqual({});
+    // Production DirectoryStore no longer owns message/part/boundary.
+    expect('message' in state).toBe(false);
+    expect('session_history_boundary' in state).toBe(false);
+    // Unknown boundary is repository-owned when no Query entry exists.
+    expect(UNKNOWN_SESSION_HISTORY_BOUNDARY).toEqual({ kind: 'unknown', loadedTurns: 0 });
 
     manager.disposeAll();
   });
 
-  test('disposing and recreating a directory resets its boundaries to unknown', () => {
+  test('disposing and recreating a directory resets catalog state', () => {
     const manager = new ChildStoreManager();
     const original = manager.ensureChild('/workspace', { bootstrap: false });
     original.setState({
-      session_history_boundary: {
-        ses_1: { kind: 'exhausted', loadedTurns: 4 },
+      session_status: {
+        ses_1: { type: 'busy' },
       },
     });
 
     expect(manager.disposeDirectory('/workspace')).toBe(true);
     const recreated = manager.ensureChild('/workspace', { bootstrap: false });
-    expect(recreated.getState().session_history_boundary).toEqual({});
+    expect(recreated.getState().session_status).toEqual({});
 
     manager.disposeAll();
   });

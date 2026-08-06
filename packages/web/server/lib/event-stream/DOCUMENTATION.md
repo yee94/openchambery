@@ -43,10 +43,11 @@ The following APIs are exported by their owning modules. `event-stream/index.js`
 - OpenChamber still fetches OpenCode upstream event streams over SSE.
 - The web server creates one shared global message-stream hub. OpenCode watcher side effects and global WS clients subscribe to that hub, so there is one upstream `/global/event` SSE reader for both server-side processing and browser fan-out.
 - The global hub keeps a bounded replay buffer keyed by SSE `eventId` so reconnecting browser clients can receive buffered events after their requested `Last-Event-ID`.
+- Global WS reconnect protocol is **replay events → ready barrier**. On initial connect and on each first-ready for a client, the bridge synchronously sends any `replayAfter(lastEventId)` frames first, then emits `{ type: 'ready', scope: 'global' }`. Clients must not start HTTP compensation until they observe ready, so buffered history can merge first.
 - Directory WS clients still attach one upstream `/event?directory=...` SSE reader per connection because directory streams are scoped.
 - If an upstream SSE connection delays response headers or an attached stream stalls, the reader aborts that upstream fetch and reconnects upstream with `Last-Event-ID`, keeping the browser WS alive when recovery is fast.
 - Direct SSE proxy timing uses a 10-second downstream heartbeat, a 20-second upstream idle timeout, a 30-second client reconnect window, and a 40-second transport stale threshold. This order lets upstream recovery end the downstream response before client and transport liveness recovery activate.
-- When the shared global upstream reconnects after it was previously ready, the global WS bridge sends a fresh `ready` frame to already-ready browser clients. The browser treats this as a reconnect edge and can run scoped state repair without requiring the browser WS to close.
+- When the shared global upstream reconnects after it was previously ready, the global WS bridge sends a fresh `ready` frame to already-ready browser clients (no additional replay; live fan-out already covers the gap when possible). The browser treats this as a reconnect edge and can run scoped state repair without requiring the browser WS to close.
 - Health checks are reserved for initial upstream connect failures and explicit upstream-unavailable responses, not for ordinary stall recovery on an already-established stream.
 - Global synthetic events such as `openchamber:session-status`, `openchamber:session-activity`, `openchamber:notification`, and `openchamber:heartbeat` are preserved on the WS path, but heartbeat frames are emitted only while an upstream SSE stream is actively attached.
 - Global UI broadcasts are fan-out capable across both SSE and WS clients.
@@ -59,6 +60,7 @@ The following APIs are exported by their owning modules. `event-stream/index.js`
 - Keep `runtime.js` focused on WebSocket upgrade and endpoint dispatch. Put global browser-client lifecycle in `global-ws-bridge.js`, directory stream lifecycle in `directory-ws-bridge.js`, and upstream stream sharing in `global-hub.js`.
 - Do not change upstream OpenCode transport assumptions here; OpenCode remains SSE-based.
 - Keep global replay bounded; do not turn it into an unbounded event log.
+- Preserve the global reconnect order `replay events → ready`. Reversing it races HTTP compensation against buffered history merge.
 
 ## Testing
 - Run `bun test packages/web/server/lib/event-stream/protocol.test.js`

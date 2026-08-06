@@ -1,4 +1,9 @@
 import { createOpencodeClient } from '@opencode-ai/sdk/v2';
+import {
+  createSessionReconcileService,
+  MAX_ANCHOR_LENGTH,
+  MAX_CONTINUATION_LENGTH,
+} from './reconcile.service.js';
 import { createSessionTurnPageService } from './service.js';
 
 const TURNS_MIN = 1;
@@ -29,6 +34,33 @@ const _inner_scanLimit = (() => {
 })();
 
 const PAGE_TIMEOUT_MS = 45_000;
+const RECONCILE_TIMEOUT_MS = 45_000;
+
+/** Host reconcile page budgets (records / JSON bytes per HTTP response page). */
+const RECONCILE_PAGE_RECORD_LIMIT = (() => {
+  const raw = process.env.OPENCHAMBER_SESSION_RECONCILE_PAGE_RECORDS;
+  const parsed = Number(String(raw ?? '').trim());
+  if (Number.isInteger(parsed) && parsed >= 1 && parsed <= 500) return parsed;
+  return 100;
+})();
+const RECONCILE_PAGE_BYTE_LIMIT = (() => {
+  const raw = process.env.OPENCHAMBER_SESSION_RECONCILE_PAGE_BYTES;
+  const parsed = Number(String(raw ?? '').trim());
+  if (Number.isInteger(parsed) && parsed >= 1024 && parsed <= 4 * 1024 * 1024) return parsed;
+  return 512 * 1024;
+})();
+const RECONCILE_TOTAL_PAGE_LIMIT = (() => {
+  const raw = process.env.OPENCHAMBER_SESSION_RECONCILE_TOTAL_PAGES;
+  const parsed = Number(String(raw ?? '').trim());
+  if (Number.isInteger(parsed) && parsed >= 1 && parsed <= 100) return parsed;
+  return 20;
+})();
+const RECONCILE_TOTAL_BYTE_LIMIT = (() => {
+  const raw = process.env.OPENCHAMBER_SESSION_RECONCILE_TOTAL_BYTES;
+  const parsed = Number(String(raw ?? '').trim());
+  if (Number.isInteger(parsed) && parsed >= 1024 && parsed <= 50 * 1024 * 1024) return parsed;
+  return 5 * 1024 * 1024;
+})();
 
 /** Test/inspect helper — resolved host-local scan chunk. */
 export const getInnerSessionTurnScanLimit = () => _inner_scanLimit;
@@ -39,7 +71,11 @@ const SAFE_ERRORS = {
   invalid_scan_limit: 'scanLimit must be an integer between 10 and 200',
   invalid_session: 'sessionID is required',
   invalid_cursor: 'invalid cursor',
+  invalid_anchor: 'anchor is required and must be a non-empty message id',
+  invalid_continuation: 'invalid continuation',
+  invalid_reconcile_params: 'provide exactly one of anchor or continuation',
   upstream: 'upstream',
+  unavailable: 'upstream unavailable',
   aborted: 'aborted',
   empty_page_with_cursor: 'empty page with cursor',
   duplicate_cursor: 'duplicate cursor',
@@ -47,6 +83,7 @@ const SAFE_ERRORS = {
   max_scan_pages: 'scan page limit exceeded',
   max_scan_messages: 'scan message limit exceeded',
   too_large: 'payload too large',
+  internal: 'internal error',
 };
 
 const parsePositiveInt = (value) => {
@@ -189,6 +226,9 @@ const mapServiceError = (error) => {
   if (code === 'aborted') {
     return { status: 499, body: { error: SAFE_ERRORS.aborted } };
   }
+  if (code === 'unavailable') {
+    return { status: 503, body: { error: SAFE_ERRORS.unavailable } };
+  }
   if (
     code === 'duplicate_cursor'
     || code === 'empty_page_with_cursor'
@@ -205,28 +245,159 @@ const mapServiceError = (error) => {
   if (code === 'invalid_cursor') {
     return { status: 400, body: { error: SAFE_ERRORS.invalid_cursor } };
   }
+  if (code === 'invalid_anchor') {
+    return { status: 400, body: { error: SAFE_ERRORS.invalid_anchor } };
+  }
+  if (code === 'invalid_continuation') {
+    return { status: 400, body: { error: SAFE_ERRORS.invalid_continuation } };
+  }
+  if (code === 'invalid_reconcile_params') {
+    return { status: 400, body: { error: SAFE_ERRORS.invalid_reconcile_params } };
+  }
   return { status: 502, body: { error: SAFE_ERRORS.upstream } };
 };
 
 /**
- * Register GET /api/openchamber/sessions/:sessionID/messages
+ * Safe server-error log: full stack, no auth headers, no message/parts content.
+ */
+const logInternalError = (logger, error, context = {}) => {
+  const stack = typeof error?.stack === 'string'
+    ? error.stack
+    : String(error?.message ?? error ?? 'unknown');
+  const safeContext = {
+    sessionID: typeof context.sessionID === 'string' ? context.sessionID : undefined,
+    hasAnchor: context.hasAnchor === true,
+    hasContinuation: context.hasContinuation === true,
+    hasDirectory: context.hasDirectory === true,
+  };
+  logger?.error?.('[session-turn-pages] reconcile internal error', {
+    ...safeContext,
+    stack,
+  });
+};
+
+/**
+ * Register OpenChamber-owned session message routes:
+ * - GET /api/openchamber/sessions/:sessionID/messages
+ * - GET /api/openchamber/sessions/:sessionID/messages/reconcile
  *
  * Global /api auth is enforced by core-routes requireApiAuth before feature
  * routes. This module does not add redundant auth middleware.
  *
  * Must be registered before the generic OpenCode proxy so the OpenChamber-owned
- * path is not forwarded upstream.
+ * paths are not forwarded upstream. The more-specific reconcile path is
+ * registered first for match-order clarity.
  */
 export const registerSessionTurnPageRoutes = (app, dependencies = {}) => {
   const {
     sessionTurnPageService: injectedService,
+    sessionReconcileService: injectedReconcileService,
     buildOpenCodeUrl,
     getOpenCodeAuthHeaders,
     logger = console,
+    runtimeKey,
   } = dependencies;
 
+  const resolvedRuntimeKey = typeof runtimeKey === 'string' && runtimeKey.length > 0
+    ? runtimeKey
+    : (process.env.OPENCHAMBER_RUNTIME || 'web');
+
+  const needsDefaultFetch = !injectedService || !injectedReconcileService;
+  const defaultFetchPage = needsDefaultFetch
+    ? createSdkFetchPage({ buildOpenCodeUrl, getOpenCodeAuthHeaders, logger })
+    : null;
+
   const service = injectedService ?? createSessionTurnPageService({
-    fetchPage: createSdkFetchPage({ buildOpenCodeUrl, getOpenCodeAuthHeaders, logger }),
+    fetchPage: defaultFetchPage,
+  });
+
+  const reconcileService = injectedReconcileService ?? createSessionReconcileService({
+    fetchPage: defaultFetchPage,
+    runtimeKey: resolvedRuntimeKey,
+    pageRecordLimit: RECONCILE_PAGE_RECORD_LIMIT,
+    pageByteLimit: RECONCILE_PAGE_BYTE_LIMIT,
+    totalPageLimit: RECONCILE_TOTAL_PAGE_LIMIT,
+    totalByteLimit: RECONCILE_TOTAL_BYTE_LIMIT,
+    scanLimit: _inner_scanLimit,
+  });
+
+  // More-specific path first (before generic messages route).
+  app.get('/api/openchamber/sessions/:sessionID/messages/reconcile', async (req, res) => {
+    const sessionID = req.params?.sessionID;
+    if (typeof sessionID !== 'string' || sessionID.length === 0) {
+      return res.status(400).json({ error: SAFE_ERRORS.invalid_session });
+    }
+
+    const anchorRaw = req.query?.anchor;
+    const continuationRaw = req.query?.continuation;
+    const hasAnchor = typeof anchorRaw === 'string' && anchorRaw.length > 0;
+    const hasContinuation = typeof continuationRaw === 'string' && continuationRaw.length > 0;
+
+    if (hasAnchor && hasContinuation) {
+      return res.status(400).json({ error: SAFE_ERRORS.invalid_reconcile_params });
+    }
+    if (!hasAnchor && !hasContinuation) {
+      return res.status(400).json({ error: SAFE_ERRORS.invalid_reconcile_params });
+    }
+    if (hasAnchor && anchorRaw.length > MAX_ANCHOR_LENGTH) {
+      return res.status(400).json({ error: SAFE_ERRORS.invalid_anchor });
+    }
+    if (hasContinuation && continuationRaw.length > MAX_CONTINUATION_LENGTH) {
+      return res.status(400).json({ error: SAFE_ERRORS.invalid_continuation });
+    }
+
+    const directory = typeof req.query?.directory === 'string' && req.query.directory.length > 0
+      ? req.query.directory
+      : undefined;
+
+    const parentSignal = requestSignal(req, res);
+    const timed = timeoutSignal(RECONCILE_TIMEOUT_MS, parentSignal);
+
+    try {
+      const result = await reconcileService.reconcile({
+        sessionID,
+        directory,
+        ...(hasAnchor ? { anchor: anchorRaw } : {}),
+        ...(hasContinuation ? { continuation: continuationRaw } : {}),
+        signal: timed.signal,
+      });
+
+      if (!result?.ok) {
+        const mapped = mapServiceError(result?.error);
+        return res.status(mapped.status).json(mapped.body);
+      }
+
+      return res.status(200).json({
+        records: Array.isArray(result.records) ? result.records : [],
+        anchorFound: result.anchorFound === true,
+        capturedHeadMessageID: result.capturedHeadMessageID ?? null,
+        latestHeadMessageID: result.latestHeadMessageID ?? null,
+        continuation: result.continuation ?? null,
+        complete: result.complete === true,
+        resetRequired: result.resetRequired === true,
+        scannedRecords: Number.isFinite(result.scannedRecords) ? result.scannedRecords : 0,
+        responseBytes: Number.isFinite(result.responseBytes) ? result.responseBytes : 0,
+      });
+    } catch (error) {
+      if (error?.name === 'AbortError') {
+        if (!res.headersSent) {
+          return res.status(499).json({ error: SAFE_ERRORS.aborted });
+        }
+        return undefined;
+      }
+      logInternalError(logger, error, {
+        sessionID,
+        hasAnchor,
+        hasContinuation,
+        hasDirectory: directory != null,
+      });
+      if (!res.headersSent) {
+        return res.status(500).json({ error: SAFE_ERRORS.internal });
+      }
+      return undefined;
+    } finally {
+      timed.clear();
+    }
   });
 
   app.get('/api/openchamber/sessions/:sessionID/messages', async (req, res) => {

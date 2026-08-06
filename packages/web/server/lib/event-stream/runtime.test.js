@@ -241,6 +241,17 @@ describe('message stream websocket runtime', () => {
       directory: '/tmp/project',
     });
 
+    // Replay events must reach the client before the ready barrier so the
+    // reducer can merge buffered history before HTTP compensation starts.
+    const readyIndex = secondSocket.sent.findIndex((frame) => frame.type === 'ready');
+    const replayIndex = secondSocket.sent.findIndex((frame) => (
+      frame.type === 'event'
+      && frame.eventId === 'evt-2'
+    ));
+    expect(readyIndex).toBeGreaterThanOrEqual(0);
+    expect(replayIndex).toBeGreaterThanOrEqual(0);
+    expect(replayIndex).toBeLessThan(readyIndex);
+
     secondSocket.close();
     await runtime.close();
   });

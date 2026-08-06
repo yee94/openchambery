@@ -11,15 +11,18 @@ import {
   type SessionMessagePagePurpose,
 } from "./session-merge-strategy"
 import type { SessionHistoryBoundary } from "./types"
+import { UNKNOWN_SESSION_HISTORY_BOUNDARY } from "./types"
 
 /**
- * Pure reducer: HTTP session-message page → store message/part state.
+ * Pure reducer: HTTP session-message page → message/part materialization state.
  *
  * The reducer does not decide how the page combines with existing state; it
  * resolves one `SessionMergeStrategy` from `(purpose, staleness)` and hands that to
  * materialization. See `session-merge-strategy.ts` for the resolution table.
  *
- * No SDK / Query / store side effects. Callers apply `message`/`part` and
+ * No SDK / Query / store side effects. Production Query path uses
+ * `transcript-merge` / Query adapters; this pure surface remains for the store
+ * test adapter and residual pure callers that apply `message`/`part` and
  * execute returned `commands` (e.g. clear optimistic shadow entries).
  */
 
@@ -28,10 +31,9 @@ import type { SessionHistoryBoundary } from "./types"
  * `limit` is the cumulative **authored-user turn** budget loaded so far
  * (product limit), not a message count.
  *
- * @deprecated Transport-only shape kept for callers that still move page
- * results between layers. The directory child store owns the authoritative
- * boundary via `SessionHistoryBoundary`; new code must read
- * `state.session_history_boundary[sessionID]` instead of this type.
+ * @deprecated Pure reducer compatibility shape for tests and model helpers.
+ * Production pagination reads the Query-backed repository projection through
+ * `useSessionTranscriptPagination` or `TranscriptRepository.getPagination`.
  */
 export type SessionMessagePageMeta = {
   /** Cumulative authored-user turns loaded (initial + prepends). */
@@ -41,7 +43,7 @@ export type SessionMessagePageMeta = {
 }
 
 export type SessionMessageReducerState = MaterializedState & {
-  /** Per-session older-history boundary map from the directory child store. */
+  /** Test/model boundary map consumed by this pure reducer. */
   session_history_boundary?: Record<string, SessionHistoryBoundary>
 }
 
@@ -131,6 +133,12 @@ function boundaryFromPage(
   page: SessionMessagePageSuccess,
   purpose: SessionMessagePagePurpose,
 ): SessionHistoryBoundary {
+  // Reconcile Host pages never own older-history pagination. `complete` ends a
+  // compensation round only — preserve the existing cursor chain as-is.
+  if (purpose === "reconcile-page") {
+    return previous ?? UNKNOWN_SESSION_HISTORY_BOUNDARY
+  }
+
   let pageTurns = 0
   if (typeof page.turnCount === "number" && Number.isFinite(page.turnCount)) {
     pageTurns = Math.max(0, Math.floor(page.turnCount))

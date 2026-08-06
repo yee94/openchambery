@@ -1,7 +1,7 @@
 import { describe, expect, test } from "bun:test"
 import { QueryClient } from "@tanstack/react-query"
 import { create, type StoreApi } from "zustand"
-import type { SessionStatus } from "@opencode-ai/sdk/v2/client"
+import type { Message, SessionStatus } from "@opencode-ai/sdk/v2/client"
 
 import { INITIAL_STATE, type State } from "../types"
 import type { DirectoryStore } from "../child-store"
@@ -22,23 +22,25 @@ import {
 
 type StatusSnapshot = Record<string, { type: "idle" | "busy" | "retry"; attempt?: number; message?: string; next?: number }>
 
-function createDirectoryStore(initial: Partial<State>): StoreApi<DirectoryStore> {
+function createDirectoryStore(initial: Partial<State> & { message?: Record<string, Message[]> }): StoreApi<DirectoryStore> {
   return create<DirectoryStore>()((set) => ({
     ...INITIAL_STATE,
-    ...initial,
+    ...(initial as Partial<DirectoryStore>),
     session: initial.session ?? [],
-    patch: (partial) => set(partial),
-    replace: (next) => set(next),
-  }))
+    // Keep optional message map on the host for residual status tests only.
+    ...(initial.message ? { message: initial.message } as object : {}),
+    patch: (partial: Partial<DirectoryStore>) => set(partial),
+    replace: (next: DirectoryStore) => set(next),
+  } as DirectoryStore))
 }
 
 function streamingMessage() {
   // Trailing assistant message with no `time.completed` → actively streaming.
-  return [{ id: "msg_1", role: "assistant", time: { created: 1 } }] as unknown as State["message"][string]
+  return [{ id: "msg_1", role: "assistant", time: { created: 1 } }] as Message[]
 }
 
 function completedMessage() {
-  return [{ id: "msg_1", role: "assistant", time: { created: 1, completed: 2 } }] as unknown as State["message"][string]
+  return [{ id: "msg_1", role: "assistant", time: { created: 1, completed: 2 } }] as Message[]
 }
 
 const BUSY: SessionStatus = { type: "busy" }

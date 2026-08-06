@@ -17,10 +17,15 @@ const textPart = (id: string, text: string): Part => ({
   text,
 } as Part);
 
-const state = (partial: Partial<State>): Pick<State, 'session' | 'message' | 'part'> => ({
-  session: [],
-  message: {},
-  part: {},
+/** Test-local projection surface (not production State). */
+const state = (partial: {
+  session?: State['session'];
+  message?: Record<string, Message[]>;
+  part?: Record<string, Part[]>;
+}) => ({
+  session: [] as State['session'],
+  message: {} as Record<string, Message[]>,
+  part: {} as Record<string, Part[]>,
   ...partial,
 });
 

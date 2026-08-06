@@ -10,6 +10,12 @@ import { getRuntimeGeneration, getRuntimeKey, getRuntimeTransportIdentity, subsc
 import { fetchRecentSendConfirmationRecords, getSendFailureKind, releaseUnconfirmedQueueSend } from '@/sync/session-actions';
 import { ascendingIdAfter } from '@/sync/message-id';
 import { getSyncMessages } from '@/sync/sync-refs';
+import {
+  readTranscriptCompletionSignature,
+  readTranscriptMessages,
+  subscribeTranscriptScopes,
+  type TranscriptScopeRef,
+} from '@/sync/transcript-repository-observers';
 import { serializeComposerDocument } from '@/composer/document';
 import { buildComposerSemanticParts, dedupeDeliveryAttachments } from '@/composer/delivery';
 import { queryClient } from '@/lib/queryRuntime';
@@ -323,39 +329,43 @@ export function useQueuedMessageAutoSend(enabledOrOptions?: boolean | { enabled?
   const scopeKey = React.useMemo(() => scopes.map((scope) => `${scope.directory}\n${scope.sessionID}`).join('\u0000'), [scopes]);
   const scopesRef = React.useRef(scopes);
   scopesRef.current = scopes;
+  // Ticket 02 remediation: transcript completion + turn state via repository
+  // imperative reads and per-scope repository subscriptions. Queue domain
+  // ownership stays in message-queue store / status scopes.
   const messageCompletionRevision = React.useSyncExternalStore(
-    React.useCallback((notify: () => void) => {
-      if (!scopeKey) return () => undefined;
-      const unsubs: Array<() => void> = [];
-      const seen = new Set<string>();
-      for (const scope of scopesRef.current) {
-        if (seen.has(scope.directory)) continue;
-        seen.add(scope.directory);
-        const store = childStores.getChild(scope.directory);
-        if (!store) continue;
-        unsubs.push(store.subscribe((state, previous) => {
-          for (const entry of scopesRef.current) {
-            if (entry.directory !== scope.directory) continue;
-            if (state.message?.[entry.sessionID] !== previous.message?.[entry.sessionID]) {
-              notify();
-              return;
-            }
-          }
+    React.useMemo(() => {
+      return (notify: () => void) => {
+        if (!scopeKey) return () => undefined;
+        const transcriptScopes: TranscriptScopeRef[] = scopesRef.current.map((scope) => ({
+          directory: scope.directory,
+          sessionID: scope.sessionID,
         }));
-      }
-      const unsubRegistry = childStores.subscribeRegistry(() => notify());
-      return () => {
-        unsubRegistry();
-        for (const unsub of unsubs) unsub();
+        const unsubRepo = subscribeTranscriptScopes(
+          transcriptScopes,
+          notify,
+          (directory) => childStores.getChild(directory),
+        );
+        // Registry changes (directory store appear/disappear) still matter so a
+        // newly ensured directory can attach its repository subscription.
+        const unsubRegistry = childStores.subscribeRegistry(() => notify());
+        return () => {
+          unsubRepo();
+          unsubRegistry();
+        };
       };
     }, [childStores, scopeKey]),
-    React.useCallback(() => {
-      if (!scopeKey) return '';
-      return scopesRef.current.map((scope) => {
-        const messages = childStores.getChild(scope.directory)?.getState().message?.[scope.sessionID] as Array<{ id?: string; role?: string; time?: { completed?: number } }> | undefined;
-        const last = messages?.[messages.length - 1];
-        return `${scope.sessionID}:${last?.id ?? ''}:${last?.role ?? ''}:${last?.time?.completed ?? ''}`;
-      }).join('\u0000');
+    React.useMemo(() => {
+      return () => {
+        if (!scopeKey) return '';
+        const transcriptScopes: TranscriptScopeRef[] = scopesRef.current.map((scope) => ({
+          directory: scope.directory,
+          sessionID: scope.sessionID,
+        }));
+        return readTranscriptCompletionSignature(
+          transcriptScopes,
+          (directory) => childStores.getChild(directory),
+        );
+      };
     }, [childStores, scopeKey]),
     () => '',
   );
@@ -363,7 +373,12 @@ export function useQueuedMessageAutoSend(enabledOrOptions?: boolean | { enabled?
     return getScopedStatus(scope);
   }, [getScopedStatus]);
   const getTurnState = React.useCallback((scope: BoundScope): QueueTurnState => {
-    return getTrailingQueueTurnState(childStores.getChild(scope.directory)?.getState().message?.[scope.sessionID]);
+    const messages = readTranscriptMessages(
+      scope.directory,
+      scope.sessionID,
+      childStores.getChild(scope.directory),
+    );
+    return getTrailingQueueTurnState(messages);
   }, [childStores]);
   const [wake, setWake] = React.useState(0); const previous = React.useRef(new Map<string, SessionStatusType>()); const reconciliationInFlight = React.useRef(new Set<string>());
   React.useEffect(() => {

@@ -399,7 +399,7 @@ export const ComposerDictation: React.FC<ComposerDictationProps> = ({
                     >
                         {/* Measured for the composer-growth report — keep all
                             transcript/placeholder/error content inside. */}
-                        <div ref={transcriptContentRef}>
+                        <div ref={transcriptContentRef} className={cn(!partialTranscript && 'translate-y-1.5')}>
                             {partialTranscript ? (
                                 <p className="typography-markdown md:typography-ui-label whitespace-pre-wrap" style={{ color: currentTheme.colors.surface.foreground }}>
                                     {partialTranscript}

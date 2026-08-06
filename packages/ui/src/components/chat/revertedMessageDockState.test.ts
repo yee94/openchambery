@@ -17,7 +17,13 @@ const textPart = (id: string, text: string): Part => ({
     text,
 } as Part);
 
-const state = (partial: Partial<State>): Pick<State, 'session' | 'message' | 'part'> => ({
+type LegacyDock = {
+    session: State['session'];
+    message: Record<string, Message[]>;
+    part: Record<string, Part[]>;
+};
+
+const legacy = (partial: Partial<LegacyDock>): LegacyDock => ({
     session: [],
     message: {},
     part: {},
@@ -26,9 +32,9 @@ const state = (partial: Partial<State>): Pick<State, 'session' | 'message' | 'pa
 
 describe('buildRevertedMessageDockState', () => {
     test('returns a shared empty state when the session is not reverted', () => {
-        const first = buildRevertedMessageDockState(state({}), 'ses_1');
+        const first = buildRevertedMessageDockState(legacy({}), 'ses_1');
         const second = buildRevertedMessageDockState(
-            state({ part: { assistant_1: [textPart('part_1', 'streaming')] } }),
+            legacy({ part: { assistant_1: [textPart('part_1', 'streaming')] } }),
             'ses_1',
             first,
         );
@@ -41,7 +47,7 @@ describe('buildRevertedMessageDockState', () => {
         const user = message('user_1', 'user');
         const userParts = [textPart('part_user', 'hello')];
         const first = buildRevertedMessageDockState(
-            state({
+            legacy({
                 session: [{ id: 'ses_1', revert: { messageID: 'user_1' } } as State['session'][number]],
                 message: { ses_1: [user, message('assistant_1', 'assistant')] },
                 part: { user_1: userParts, assistant_1: [textPart('part_a', 'a')] },
@@ -50,7 +56,7 @@ describe('buildRevertedMessageDockState', () => {
         );
 
         const second = buildRevertedMessageDockState(
-            state({
+            legacy({
                 session: [{ id: 'ses_1', revert: { messageID: 'user_1' } } as State['session'][number]],
                 message: { ses_1: [user, message('assistant_1', 'assistant')] },
                 part: { user_1: userParts, assistant_1: [textPart('part_a2', 'updated')] },
@@ -65,7 +71,7 @@ describe('buildRevertedMessageDockState', () => {
     test('updates when a reverted user message part changes', () => {
         const user = message('user_1', 'user');
         const first = buildRevertedMessageDockState(
-            state({
+            legacy({
                 session: [{ id: 'ses_1', revert: { messageID: 'user_1' } } as State['session'][number]],
                 message: { ses_1: [user] },
                 part: { user_1: [textPart('part_user', 'hello')] },
@@ -74,7 +80,7 @@ describe('buildRevertedMessageDockState', () => {
         );
 
         const second = buildRevertedMessageDockState(
-            state({
+            legacy({
                 session: [{ id: 'ses_1', revert: { messageID: 'user_1' } } as State['session'][number]],
                 message: { ses_1: [user] },
                 part: { user_1: [textPart('part_user_updated', 'updated')] },
@@ -85,5 +91,19 @@ describe('buildRevertedMessageDockState', () => {
 
         expect(second).not.toBe(first);
         expect(second.records).toHaveLength(1);
+    });
+
+    test('accepts repository-shaped messages/parts without child-store maps', () => {
+        const user = message('user_1', 'user');
+        const snapshot = buildRevertedMessageDockState(
+            {
+                session: [{ id: 'ses_1', revert: { messageID: 'user_1' } } as State['session'][number]],
+                messages: [user],
+                partsByMessageID: { user_1: [textPart('part_user', 'hello')] },
+            },
+            'ses_1',
+        );
+        expect(snapshot.records).toHaveLength(1);
+        expect(snapshot.records[0]?.message.id).toBe('user_1');
     });
 });
