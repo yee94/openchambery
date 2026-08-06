@@ -413,6 +413,8 @@ export function createEventPipeline(input: EventPipelineInput): EventPipeline {
    * Wait between reconnect attempts. Resolves early when:
    *   - the browser fires `online` (network came back — probe immediately),
    *   - the tab becomes visible (user came back — probe immediately),
+   *   - the OS wakes from sleep (`openchamber:system-resume` — the dead
+   *     connection was already torn down, so probe immediately),
    *   - the pipeline is being torn down (cleanup aborts).
    * Otherwise resolves after `ms` like a plain timer.
    */
@@ -429,6 +431,7 @@ export function createEventPipeline(input: EventPipelineInput): EventPipeline {
       }
       if (typeof globalThis.window !== "undefined") {
         globalThis.window.removeEventListener("online", onInterrupt)
+        globalThis.window.removeEventListener("openchamber:system-resume", onInterrupt)
       }
       if (typeof document !== "undefined") {
         document.removeEventListener("visibilitychange", onVisibilityInterrupt)
@@ -448,6 +451,7 @@ export function createEventPipeline(input: EventPipelineInput): EventPipeline {
     let timer: ReturnType<typeof setTimeout> | undefined = setTimeout(onInterrupt, ms)
     if (typeof globalThis.window !== "undefined") {
       globalThis.window.addEventListener("online", onInterrupt, { once: true })
+      globalThis.window.addEventListener("openchamber:system-resume", onInterrupt, { once: true })
     }
     if (typeof document !== "undefined") {
       document.addEventListener("visibilitychange", onVisibilityInterrupt)
@@ -952,8 +956,9 @@ export function createEventPipeline(input: EventPipelineInput): EventPipeline {
   // is almost certainly dead after sleep — abort immediately so the
   // reconnect loop fires on the next tick with retryDelayMs = 0.
   const onSystemResume = () => {
+    if (!attempt) return
     attemptAbortReason = `${activeTransport}_system_resume`
-    attempt?.abort()
+    attempt.abort()
   }
 
   // Browser told us the network is back. If we're already in a disconnected

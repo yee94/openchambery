@@ -262,6 +262,8 @@ let materializeSessionFromServer: SyncContextApi["materializeSessionFromServer"]
 let resyncDirectoryAfterReconnect: SyncContextApi["resyncDirectoryAfterReconnect"]
 let setActiveSession: SyncContextApi["setActiveSession"]
 let handleEvent: SyncContextApi["handleEvent"]
+let invalidateReconnectTranscriptCache: SyncContextApi["invalidateReconnectTranscriptCache"]
+let resolveReconnectStatusOnly: SyncContextApi["resolveReconnectStatusOnly"]
 let syncContextBound = false
 
 async function ensureSyncContextBound() {
@@ -272,6 +274,8 @@ async function ensureSyncContextBound() {
     resyncDirectoryAfterReconnect = mod.resyncDirectoryAfterReconnect
     setActiveSession = mod.setActiveSession
     handleEvent = mod.handleEvent
+    invalidateReconnectTranscriptCache = mod.invalidateReconnectTranscriptCache
+    resolveReconnectStatusOnly = mod.resolveReconnectStatusOnly
     syncContextBound = true
   }
 }
@@ -364,6 +368,238 @@ describe("sync-context reconnect / materialize → loadSessionMessagePage", () =
     expect(typeof loadCalls[0]?.deps.isStale).toBe("function")
     // Must not fall through to raw session.messages for the page body.
     expect(messagesSdkCalls).toHaveLength(0)
+  })
+
+  test("an actual reconnect dirties every cached session's prefetch while preserving known boundaries", async () => {
+    // Directory state: session S has old messages + exhausted boundary + a
+    // fresh ready prefetch entry; the viewed session after the stream gap is T
+    // (ses_viewed). S must be dirtied so entering it later refreshes the tail.
+    const cachedUser = message("msg_s_user", "user", "ses_s")
+    const store = createDirectoryStore({
+      message: {
+        ses_s: [cachedUser],
+        ses_viewed: [message("msg_t_user", "user", "ses_viewed")],
+      },
+      part: {},
+      session_history_boundary: {
+        ses_s: { kind: "exhausted", loadedTurns: 3 },
+        ses_viewed: { kind: "exhausted", loadedTurns: 1 },
+      },
+      session_status: { ses_viewed: { type: "busy" } },
+    })
+    const prefetchCache = await import("../session-prefetch-cache")
+    prefetchCache.setSessionPrefetch({ directory: "/repo", sessionID: "ses_s", requestedLimit: 6 })
+    prefetchCache.setSessionPrefetch({ directory: "/repo", sessionID: "ses_viewed", requestedLimit: 6 })
+
+    // Invalidation happens at the resync entry, BEFORE the network recovery.
+    invalidateReconnectTranscriptCache("/repo", store)
+    await resyncDirectoryAfterReconnect(
+      "/repo",
+      store,
+      createRoutingIndex(),
+      "stream-reconnect",
+      () => 1,
+    )
+
+    // The viewed session still recovered immediately via purpose=recovery.
+    expect(loadCalls).toHaveLength(1)
+    expect(loadCalls[0]?.purpose).toBe("recovery")
+    expect(loadCalls[0]?.sessionID).toBe("ses_viewed")
+
+    // Both cached sessions were dirtied BEFORE the viewed recovery ran:
+    // the next visit must not skip the authoritative tail fetch.
+    const infoS = prefetchCache.getSessionPrefetch("/repo", "ses_s")
+    expect(infoS?.at).toBe(0)
+    expect(prefetchCache.shouldSkipSessionPrefetch({
+      hasSession: true,
+      hasMessages: true,
+      boundary: store.getState().session_history_boundary.ses_s,
+      info: infoS,
+      pageSize: 6,
+    })).toBe(false)
+    // The known boundary and cached messages survive the dirty mark.
+    expect(store.getState().session_history_boundary.ses_s).toEqual({
+      kind: "exhausted",
+      loadedTurns: 3,
+    })
+    expect(store.getState().message.ses_s).toEqual([cachedUser])
+    expect(prefetchCache.getSessionPrefetch("/repo", "ses_viewed")?.at).toBe(0)
+  })
+
+  test("a clean first connect (statusOnly) does not dirty cached sessions", async () => {
+    const cachedUser = message("msg_s_user", "user", "ses_s")
+    const store = createDirectoryStore({
+      message: { ses_s: [cachedUser] },
+      part: {},
+      session_history_boundary: { ses_s: { kind: "exhausted", loadedTurns: 3 } },
+      session_status: { ses_viewed: { type: "busy" } },
+    })
+    const prefetchCache = await import("../session-prefetch-cache")
+    prefetchCache.setSessionPrefetch({ directory: "/repo", sessionID: "ses_s", requestedLimit: 6 })
+
+    invalidateReconnectTranscriptCache("/repo", store, { statusOnly: true })
+    await resyncDirectoryAfterReconnect(
+      "/repo",
+      store,
+      createRoutingIndex(),
+      "stream-reconnect",
+      () => 1,
+      { statusOnly: true },
+    )
+
+    // Clean first connect: no transcript invalidation — the fresh ready entry
+    // keeps its timestamp, so an exhausted boundary still reuses the cache.
+    const infoS = prefetchCache.getSessionPrefetch("/repo", "ses_s")
+    expect(infoS?.at).not.toBe(0)
+    expect(prefetchCache.shouldSkipSessionPrefetch({
+      hasSession: true,
+      hasMessages: true,
+      boundary: store.getState().session_history_boundary.ses_s,
+      info: infoS,
+      pageSize: 6,
+    })).toBe(true)
+  })
+
+  test("a transport switch dirties cached sessions with the same semantics", async () => {
+    const cachedUser = message("msg_s_user", "user", "ses_s")
+    const store = createDirectoryStore({
+      message: { ses_s: [cachedUser] },
+      part: {},
+      session_history_boundary: { ses_s: { kind: "has-more", cursor: "msg_s_user", loadedTurns: 2 } },
+      session_status: { ses_viewed: { type: "busy" } },
+    })
+    const prefetchCache = await import("../session-prefetch-cache")
+    prefetchCache.setSessionPrefetch({ directory: "/repo", sessionID: "ses_s", requestedLimit: 6 })
+
+    invalidateReconnectTranscriptCache("/repo", store)
+    await resyncDirectoryAfterReconnect(
+      "/repo",
+      store,
+      createRoutingIndex(),
+      "transport-switch",
+      () => 1,
+    )
+
+    const infoS = prefetchCache.getSessionPrefetch("/repo", "ses_s")
+    expect(infoS?.at).toBe(0)
+    expect(store.getState().session_history_boundary.ses_s).toEqual({
+      kind: "has-more",
+      cursor: "msg_s_user",
+      loadedTurns: 2,
+    })
+  })
+
+  test("a boundary-only cached session (no messages) is dirtied on reconnect", async () => {
+    const store = createDirectoryStore({
+      message: {},
+      part: {},
+      session_history_boundary: { ses_b: { kind: "has-more", cursor: "msg_b", loadedTurns: 2 } },
+      session_status: { ses_viewed: { type: "busy" } },
+    })
+    const prefetchCache = await import("../session-prefetch-cache")
+    prefetchCache.setSessionPrefetch({ directory: "/repo", sessionID: "ses_b", requestedLimit: 6 })
+
+    invalidateReconnectTranscriptCache("/repo", store)
+
+    expect(prefetchCache.getSessionPrefetch("/repo", "ses_b")?.at).toBe(0)
+  })
+
+  test("invalidation does not depend on bootstrap or resync-in-flight gates", async () => {
+    // A full reconnect arriving while a previous resync flight is still running
+    // (or while the bootstrap gate is closed) gets its network refresh coalesced
+    // — but the dirty fact must still be recorded so the next entry refetches.
+    const cachedUser = message("msg_s_user", "user", "ses_s")
+    const store = createDirectoryStore({
+      message: { ses_s: [cachedUser] },
+      part: {},
+      session_history_boundary: { ses_s: { kind: "exhausted", loadedTurns: 3 } },
+    })
+    const prefetchCache = await import("../session-prefetch-cache")
+    prefetchCache.setSessionPrefetch({ directory: "/repo", sessionID: "ses_s", requestedLimit: 6 })
+
+    // The invalidation helper takes only (directory, store, options): no
+    // canBootstrap or resyncing consultation, so a coalesced second resync
+    // still leaves the dirty mark behind.
+    invalidateReconnectTranscriptCache("/repo", store)
+    invalidateReconnectTranscriptCache("/repo", store)
+
+    expect(prefetchCache.getSessionPrefetch("/repo", "ses_s")?.at).toBe(0)
+    // No network recovery was issued by invalidation itself.
+    expect(loadCalls).toHaveLength(0)
+    expect(store.getState().session_history_boundary.ses_s).toEqual({
+      kind: "exhausted",
+      loadedTurns: 3,
+    })
+    expect(store.getState().message.ses_s).toEqual([cachedUser])
+  })
+
+  test("invalidation is a no-op without a live child store", async () => {
+    const prefetchCache = await import("../session-prefetch-cache")
+    prefetchCache.setSessionPrefetch({ directory: "/repo", sessionID: "ses_orphan", requestedLimit: 6 })
+
+    invalidateReconnectTranscriptCache("/repo", undefined)
+
+    // No store means no cached transcript state to invalidate.
+    expect(prefetchCache.getSessionPrefetch("/repo", "ses_orphan")?.at).not.toBe(0)
+  })
+
+  test("a failed reconnect recovery keeps the boundary and the next visit still fetches", async () => {
+    const cachedUser = message("msg_s_user", "user", "ses_s")
+    const store = createDirectoryStore({
+      message: { ses_s: [cachedUser] },
+      part: {},
+      session_history_boundary: { ses_s: { kind: "exhausted", loadedTurns: 3 } },
+      session_status: { ses_viewed: { type: "busy" } },
+    })
+    const prefetchCache = await import("../session-prefetch-cache")
+    prefetchCache.setSessionPrefetch({ directory: "/repo", sessionID: "ses_s", requestedLimit: 6 })
+    loaderBehavior = "error"
+
+    invalidateReconnectTranscriptCache("/repo", store)
+    await resyncDirectoryAfterReconnect(
+      "/repo",
+      store,
+      createRoutingIndex(),
+      "stream-reconnect",
+      () => 1,
+    )
+
+    // The dirty mark + failed recovery both leave the next visit eligible.
+    expect(prefetchCache.shouldSkipSessionPrefetch({
+      hasSession: true,
+      hasMessages: true,
+      boundary: store.getState().session_history_boundary.ses_s,
+      info: prefetchCache.getSessionPrefetch("/repo", "ses_s"),
+      pageSize: 6,
+    })).toBe(false)
+    expect(store.getState().session_history_boundary.ses_s).toEqual({
+      kind: "exhausted",
+      loadedTurns: 3,
+    })
+    expect(store.getState().message.ses_s).toEqual([cachedUser])
+  })
+
+  test("resolveReconnectStatusOnly gates statusOnly to a clean first connect only", async () => {
+    // Clean first connect: no prior disconnect → statusOnly (no invalidation).
+    expect(resolveReconnectStatusOnly({
+      isFirstConnect: true,
+      disconnectedBeforeFirstConnect: false,
+    })).toBe(true)
+    // A disconnect before the first connect is a real gap even when the boot
+    // is recent — full reconnect semantics, transcripts get dirtied.
+    expect(resolveReconnectStatusOnly({
+      isFirstConnect: true,
+      disconnectedBeforeFirstConnect: true,
+    })).toBe(false)
+    // Any later reconnect is a real gap regardless of boot recency.
+    expect(resolveReconnectStatusOnly({
+      isFirstConnect: false,
+      disconnectedBeforeFirstConnect: false,
+    })).toBe(false)
+    expect(resolveReconnectStatusOnly({
+      isFirstConnect: false,
+      disconnectedBeforeFirstConnect: true,
+    })).toBe(false)
   })
 
   test("resyncDirectoryAfterReconnect calls unified loader with purpose recovery", async () => {

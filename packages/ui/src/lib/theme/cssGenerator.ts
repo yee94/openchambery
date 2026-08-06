@@ -125,7 +125,8 @@ const sidebarBaseRgb = hexToRgb(theme.colors.surface.muted);
     const softAlpha = isDark ? 0.1 : 0.3;
     // Translucent fill painted over the native macOS vibrancy layer for the
     // left sidebar — high enough alpha to stay legible, low enough to frost.
-    const vibrancyAlpha = isDark ? 0.66 : 0.76;
+    // Lower alpha = more of the native blur shows through (stronger glass).
+    const vibrancyAlpha = isDark ? 0.42 : 0.52;
 
     if (sidebarBaseRgb) {
       vars.push(

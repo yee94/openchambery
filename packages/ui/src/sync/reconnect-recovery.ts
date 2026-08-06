@@ -1,12 +1,36 @@
 import type { SessionStatus, Message, Part } from "@opencode-ai/sdk/v2/client"
 import type { Session } from "@opencode-ai/sdk/v2"
 import { getSessionMaterializationStatus } from "./materialization"
+import type { SessionHistoryBoundary } from "./types"
 
 type ReconnectMaterializationState = {
   session: Session[]
   session_status?: Record<string, SessionStatus>
   message?: Record<string, Message[]>
   part?: Record<string, Part[]>
+  session_history_boundary?: Record<string, SessionHistoryBoundary>
+}
+
+/**
+ * Sessions whose cached transcript state must be invalidated on a real
+ * reconnect / transport switch: the union of cached message keys and
+ * history-boundary keys, deduped. Runs once per reconnect per initialized
+ * directory — O(cached sessions), never per event. The boundary itself is
+ * preserved (last known UI facts); only request freshness is dirtied so the
+ * next visit performs one authoritative tail refresh instead of reusing a
+ * gap-stale cache.
+ */
+export function getReconnectTranscriptInvalidationSessionIds(
+  state: Pick<ReconnectMaterializationState, "message" | "session_history_boundary">,
+): string[] {
+  const ids = new Set<string>()
+  for (const sessionId of Object.keys(state.message ?? {})) {
+    if (sessionId) ids.add(sessionId)
+  }
+  for (const sessionId of Object.keys(state.session_history_boundary ?? {})) {
+    if (sessionId) ids.add(sessionId)
+  }
+  return Array.from(ids)
 }
 
 type ViewedSessionMaterializationTarget = {

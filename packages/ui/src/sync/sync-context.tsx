@@ -30,6 +30,7 @@ import { syncDebug } from "./debug"
 import {
   getReconnectCandidateSessionIds,
   getReconnectMaterializationSessionIds,
+  getReconnectTranscriptInvalidationSessionIds,
   getStatusWatchdogCandidateSessionIds,
 } from "./reconnect-recovery"
 import { opencodeClient } from "@/lib/opencode/client"
@@ -1361,6 +1362,43 @@ export async function resyncBlockingRequestsForDirectory(
   }
 }
 
+/**
+ * Dirty transcript request freshness for every session holding cached
+ * messages or a history boundary in this directory's child store. Runs at the
+ * resync entry — BEFORE the bootstrap gate and the resync-in-flight coalescing
+ * gate — so a full reconnect / transport switch always leaves the dirty fact
+ * behind even when its network refresh is skipped or coalesced. Known
+ * boundaries and cached messages stay as last-known UI facts; no eager body
+ * fetch happens here. Clean first connects (`statusOnly`) and missing stores
+ * are no-ops.
+ */
+export function invalidateReconnectTranscriptCache(
+  directory: string,
+  store: StoreApi<DirectoryStore> | undefined,
+  options?: { statusOnly?: boolean },
+): void {
+  if (options?.statusOnly) return
+  if (!store) return
+  markSessionPrefetchDirty(
+    directory,
+    getReconnectTranscriptInvalidationSessionIds(store.getState()),
+  )
+}
+
+/**
+ * Whether a reconnect cycle only needs a lightweight status resync. Exactly
+ * one case qualifies: the very first connect with no preceding disconnect.
+ * Any disconnect — even one racing the first connect right after boot — is a
+ * real gap and takes full reconnect semantics (transcript invalidation +
+ * viewed-session recovery).
+ */
+export function resolveReconnectStatusOnly(input: {
+  isFirstConnect: boolean
+  disconnectedBeforeFirstConnect: boolean
+}): boolean {
+  return input.isFirstConnect && !input.disconnectedBeforeFirstConnect
+}
+
 export async function resyncDirectoryAfterReconnect(
   directory: string,
   store: StoreApi<DirectoryStore>,
@@ -2019,6 +2057,10 @@ export function SyncProvider(props: {
     reason: SessionMaterializationReason,
     options?: { statusOnly?: boolean },
   ) => {
+    // Transcript freshness invalidation precedes every gate: a full reconnect
+    // / transport switch records the dirty fact even when the bootstrap gate
+    // is closed or a previous resync flight coalesces this network refresh.
+    invalidateReconnectTranscriptCache(directory, childStores.children.get(directory), options)
     if (!canBootstrapDirectory(directory)) return
     const store = childStores.children.get(directory)
     if (!store) return
@@ -2211,11 +2253,13 @@ export function SyncProvider(props: {
         pipelineHasConnectedRef.current = true
         // Always close the bootstrap-GET → WS-ready gap with an authoritative
         // status snapshot. statusOnly still recovers the viewed session body;
-        // it only skips extra reconnect work (e.g. blocking requests).
-        const statusOnly = (
-          (isFirstConnect && !pipelineDisconnectedBeforeFirstConnectRef.current)
-          || isRecentBoot()
-        )
+        // it only skips extra reconnect work (e.g. blocking requests). Only a
+        // clean first connect qualifies — any disconnect is a real gap and
+        // takes full reconnect semantics no matter how recent the boot is.
+        const statusOnly = resolveReconnectStatusOnly({
+          isFirstConnect,
+          disconnectedBeforeFirstConnect: pipelineDisconnectedBeforeFirstConnectRef.current,
+        })
         for (const dir of childStores.children.keys()) {
           triggerDirectoryResync(dir, "stream-reconnect", { statusOnly })
         }

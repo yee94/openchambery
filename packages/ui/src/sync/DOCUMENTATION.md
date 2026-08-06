@@ -655,10 +655,30 @@ both readers agree on when a frame may shrink.
   requires only a matching directory; it must not depend on the session already
   appearing in the reconnect candidate list or child store. Background
   busy/incomplete sessions wait until selection and continue receiving live
-  events without fetching their bodies. `statusOnly` reconnect (first stream
-  ready / recent boot) still runs this bounded viewed-body recovery; it only
+  events without fetching their bodies. `statusOnly` reconnect (clean first
+  stream ready only) still runs this bounded viewed-body recovery; it only
   suppresses extra reconnect work such as blocking-request resync, never viewed
   transcript reconciliation.
+- A real reconnect and every transport switch can gap **every** cached
+  transcript in an initialized directory, not just the viewed session.
+  `triggerDirectoryResync` therefore calls
+  `invalidateReconnectTranscriptCache` FIRST — before the bootstrap gate and
+  before the resync-in-flight coalescing gate — dirtying request freshness
+  (`markSessionPrefetchDirty`, `at=0`) for the union of cached message keys
+  and `session_history_boundary` keys (computed by the pure
+  `getReconnectTranscriptInvalidationSessionIds` helper). A closed bootstrap
+  gate or a coalesced second resync may skip the network refresh, but the
+  dirty fact is always recorded, so entering a background session later
+  performs one authoritative tail fetch (`shouldSkipSessionPrefetch` returns
+  false on dirty) instead of reusing a gap-stale cache. The known boundary
+  and cached messages stay as last-known UI facts; no eager body fetch
+  happens on reconnect. `statusOnly` is resolved by
+  `resolveReconnectStatusOnly` and qualifies ONLY for a clean first connect
+  (no disconnect before it) — a disconnect racing the first connect is a real
+  gap regardless of boot recency and takes full reconnect semantics. A failed
+  viewed-session recovery keeps the boundary and its error/dirty freshness,
+  so the next entry still refetches; a successful pull commits new
+  messages+boundary and restores ready.
 - Reconnect recovery gates session identity and the message body on separate
   live revisions. The identity revision is captured before `session.get`; the
   body revision is captured after it returns. A missing session or live events

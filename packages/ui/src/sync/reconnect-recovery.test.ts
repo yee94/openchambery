@@ -4,8 +4,10 @@ import type { Session } from "@opencode-ai/sdk/v2"
 import {
   getReconnectCandidateSessionIds,
   getReconnectMaterializationSessionIds,
+  getReconnectTranscriptInvalidationSessionIds,
   getStatusWatchdogCandidateSessionIds,
 } from "./reconnect-recovery"
+import type { SessionHistoryBoundary } from "./types"
 
 function createSession(id: string, overrides: Partial<Session> = {}): Session {
   return {
@@ -119,6 +121,37 @@ describe("getReconnectMaterializationSessionIds", () => {
     expect(getReconnectMaterializationSessionIds(["busy-a", "busy-b"], {
       directory: "/repo",
       viewedSession: null,
+    })).toEqual([])
+  })
+})
+
+describe("getReconnectTranscriptInvalidationSessionIds", () => {
+  const hasMore = (cursor: string): SessionHistoryBoundary => ({ kind: "has-more", cursor, loadedTurns: 2 })
+
+  test("unions message keys and boundary keys, deduped", () => {
+    expect(getReconnectTranscriptInvalidationSessionIds({
+      message: {
+        "with-messages": [createAssistantMessage("m-1", "with-messages", 1)],
+        shared: [createAssistantMessage("m-2", "shared", 1)],
+      },
+      session_history_boundary: {
+        "boundary-only": hasMore("m-0"),
+        shared: { kind: "exhausted", loadedTurns: 3 },
+      },
+    }).sort()).toEqual(["boundary-only", "shared", "with-messages"])
+  })
+
+  test("collects sessions that only have a boundary and no messages", () => {
+    expect(getReconnectTranscriptInvalidationSessionIds({
+      message: {},
+      session_history_boundary: { "boundary-only": hasMore("m-0") },
+    })).toEqual(["boundary-only"])
+  })
+
+  test("returns empty when no session has cached transcript state", () => {
+    expect(getReconnectTranscriptInvalidationSessionIds({
+      message: {},
+      session_history_boundary: {},
     })).toEqual([])
   })
 })
