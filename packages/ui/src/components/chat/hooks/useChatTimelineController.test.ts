@@ -510,6 +510,16 @@ describe('useChatTimelineController source contracts', () => {
         expect(source).toContain('isLoadingOlderUi');
     });
 
+    test('historyLoading wait gate is historyMeta.loading only (sync/archive, not prefetch)', () => {
+        // fetchOlderHistory waits on historySignals.historyLoading derived solely
+        // from historyMeta.loading. ChatContainer must not fold prefetch into that
+        // field — otherwise a stuck background tail pull blocks user loadMore.
+        expect(source).toContain('const historyLoading = Boolean(historyMeta?.loading)');
+        expect(source).toContain('waitWhileHistoryLoading');
+        expect(source).not.toContain('sessionPrefetch');
+        expect(source).not.toContain('prefetchStatus');
+    });
+
     test('user-initiated load-earlier toasts on transport failure (no silent flash)', () => {
         expect(source).toContain("chat.history.loadOlderFailed");
         expect(source).toContain('toast.error');

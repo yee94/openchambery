@@ -108,6 +108,20 @@ export const resolveChatHistoryLoadState = (input: {
 }
 
 /**
+ * Timeline `historyMeta.loading` / concurrent-page wait gate.
+ *
+ * Only real useSync pagination flights and assistant-archive page loads block
+ * `fetchOlderHistory`. Background sessionPrefetch (materialize / tail) can
+ * stick at `status === 'loading'` on Relay for a long time and must never
+ * OR into this gate — user-initiated load-more still starts `sync.loadMore`.
+ * Prefetch status remains on the cold transcript gate only.
+ */
+export const resolveChatHistoryPaginationLoading = (input: {
+  syncLoading: boolean
+  assistantLoading: boolean
+}): boolean => input.syncLoading || input.assistantLoading
+
+/**
  * Mobile "load older" affordance contract.
  *
  * Visibility is authoritative-only: an unresolved history boundary (unknown

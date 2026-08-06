@@ -4,6 +4,7 @@ import {
     pendingUserMessagesImplyWorking,
     resolveChatContainerHostFeatures,
     resolveChatHistoryLoadState,
+    resolveChatHistoryPaginationLoading,
     resolveChatSessionTranscriptGate,
     resolveMobileLoadOlderBusy,
     resolveMobileLoadOlderVisibility,
@@ -193,6 +194,43 @@ describe('resolveChatHistoryLoadState', () => {
       boundary: { kind: 'unknown', loadedTurns: 0 },
       assistantComplete: false,
     })).toEqual({ complete: false, canLoadEarlier: false });
+  });
+});
+
+describe('resolveChatHistoryPaginationLoading', () => {
+  test('idle sync + idle assistant is not loading', () => {
+    expect(resolveChatHistoryPaginationLoading({
+      syncLoading: false,
+      assistantLoading: false,
+    })).toBe(false);
+  });
+
+  test('real useSync pagination flight blocks concurrent load-more', () => {
+    expect(resolveChatHistoryPaginationLoading({
+      syncLoading: true,
+      assistantLoading: false,
+    })).toBe(true);
+  });
+
+  test('assistant archive page flight blocks concurrent load-more', () => {
+    expect(resolveChatHistoryPaginationLoading({
+      syncLoading: false,
+      assistantLoading: true,
+    })).toBe(true);
+  });
+
+  test('background sessionPrefetch loading alone never blocks user load-more', () => {
+    // Regression (Android WebView): stuck prefetch status==='loading' used to
+    // OR into historyMeta.loading, so mobile "load older" waited 4s then
+    // toasted with zero sync.loadMore. Prefetch stays on the transcript gate.
+    const prefetchStatus: 'loading' | 'ready' | 'error' = 'loading';
+    const historyLoading = resolveChatHistoryPaginationLoading({
+      syncLoading: false,
+      assistantLoading: false,
+    });
+    // Prefetch must not participate — only the pure inputs above matter.
+    expect(prefetchStatus).toBe('loading');
+    expect(historyLoading).toBe(false);
   });
 });
 

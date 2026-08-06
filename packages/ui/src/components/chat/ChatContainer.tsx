@@ -17,6 +17,7 @@ import type { ChatInputSurface } from './chatInputSurface';
 import {
     resolveChatContainerHostFeatures,
     resolveChatHistoryLoadState,
+    resolveChatHistoryPaginationLoading,
     resolveChatSessionTranscriptGate,
     resolveMobileLoadOlderBusy,
     resolveMobileLoadOlderVisibility,
@@ -903,8 +904,8 @@ const ChatContainerContent: React.FC<ChatContainerContentProps> = ({
     }, [activeRetryStatus, retryFallbackTimestamp]);
 
     // History metadata — boundary facts from the directory child store; request
-    // lifecycle (loading) stays on sync/prefetch status but never feeds
-    // canLoadEarlier/complete/limit.
+    // lifecycle (loading) stays on sync/assistant page flights but never feeds
+    // canLoadEarlier/complete/limit. Prefetch status is cold-transcript only.
     const historyMeta = React.useMemo(() => {
         if (!currentSessionId) return null;
         const sessionDir = { directory: effectiveSessionDirectory };
@@ -918,15 +919,16 @@ const ChatContainerContent: React.FC<ChatContainerContentProps> = ({
             limit: historyBoundary.loadedTurns,
             complete: loadState.complete,
             canLoadEarlier: loadState.canLoadEarlier,
-            // Background materialize/tail loading only — never drives the mobile
-            // load-older button spinner (that is mutation-owned in the timeline
-            // controller). Prefetch status can stick at loading on Relay; OR-ing
-            // it into button busy painted a permanent spinner with no real load.
-            loading: sync.isLoading(currentSessionId, sessionDir)
-                || sessionPrefetchInfo?.status === 'loading'
-                || Boolean(assistantHistory?.loading),
+            // Concurrent-page wait gate for the timeline only (sync.isLoading /
+            // assistant archive). Never OR sessionPrefetch status — it can stick
+            // at loading on Relay and blocked user loadMore for 4s with toast
+            // and zero fetch. Button spinner stays mutation-owned separately.
+            loading: resolveChatHistoryPaginationLoading({
+                syncLoading: sync.isLoading(currentSessionId, sessionDir),
+                assistantLoading: Boolean(assistantHistory?.loading),
+            }),
         };
-    }, [assistantHistory?.complete, assistantHistory?.loading, currentSessionId, effectiveSessionDirectory, historyBoundary, sessionPrefetchInfo?.status, sync]);
+    }, [assistantHistory?.complete, assistantHistory?.loading, currentSessionId, effectiveSessionDirectory, historyBoundary, sync]);
 
     const isMobile = useUIStore((state) => state.isMobile);
     const isDedicatedMobileApp = useMobileAppActions() !== null;

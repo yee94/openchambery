@@ -59,6 +59,18 @@ describe('ChatContainer source contracts', () => {
         expect(source).not.toContain('prefetchHasMore');
     });
 
+    test('historyMeta.loading is sync/assistant only — never stuck prefetch loading', () => {
+        // Timeline wait gate (historyLoading) must not OR prefetch status.
+        // Stuck sessionPrefetch status==='loading' blocked mobile load-more for
+        // 4s with toast and zero fetch; cold transcript gate still uses prefetch.
+        expect(source).toContain('resolveChatHistoryPaginationLoading');
+        expect(source).toContain('syncLoading:');
+        expect(source).toContain('assistantLoading:');
+        expect(source).not.toContain("sessionPrefetchInfo?.status === 'loading'");
+        // Prefetch remains on the cold transcript gate path.
+        expect(source).toContain('prefetchStatus: sessionPrefetchInfo?.status');
+    });
+
     test('mobile load-older button is authoritative-only; unknown availability renders nothing', () => {
         // No speculative placeholder: unresolved history boundary (unknown)
         // must not paint the button or a spinner.
