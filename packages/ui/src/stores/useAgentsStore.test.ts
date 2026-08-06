@@ -12,7 +12,7 @@ const catalogInvalidations: Array<[string | null, string]> = [];
 
 mock.module('@/lib/opencode/client', () => ({ opencodeClient: { getDirectory: () => '/fallback/project', checkHealth: async () => true } }));
 mock.module('@/stores/useProjectsStore', () => ({ useProjectsStore: { getState: () => ({ getActiveProject: () => ({ path: activeProjectPath }), projects: [] }) } }));
-mock.module('@/lib/runtime-switch', () => ({ getRuntimeTransportIdentity: () => runtimeKey, isRuntimeEndpointIdentityChange: () => false, subscribeRuntimeEndpointChanged: () => () => undefined }));
+mock.module('@/lib/runtime-switch', () => ({ getRuntimeTransportIdentity: () => runtimeKey, getRuntimeGeneration: () => 0, isRuntimeEndpointIdentityChange: () => false, subscribeRuntimeEndpointChanged: () => () => undefined }));
 mock.module('@/lib/runtime-fetch', () => ({ runtimeFetch: async () => responseImpl() }));
 mock.module('@/queries/agentQueries', () => ({
   resolveConfigQueryDirectory: () => activeProjectPath,

@@ -21,7 +21,7 @@ mock.module('@/lib/runtime-fetch', () => ({ runtimeFetch: async (path: string, i
   metadataRequest = { path, init };
   return metadataImpl();
 } }));
-mock.module('@/lib/runtime-switch', () => ({ getRuntimeTransportIdentity: () => runtimeKey, isRuntimeEndpointIdentityChange: () => false, subscribeRuntimeEndpointChanged: () => () => undefined }));
+mock.module('@/lib/runtime-switch', () => ({ getRuntimeTransportIdentity: () => runtimeKey, getRuntimeGeneration: () => 0, isRuntimeEndpointIdentityChange: () => false, subscribeRuntimeEndpointChanged: () => () => undefined }));
 
 const { agentQueryOptions, providerQueryOptions, readAgentsSnapshot, readProvidersSnapshot, refreshAgentsQuery, refreshProvidersQuery } = await import('./agentQueries');
 const { ensureRawAgentsQuery } = await import('./configCatalogQueries');

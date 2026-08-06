@@ -35,7 +35,7 @@ describe('mobile press feedback', () => {
 
 describe('static navigation hit targets', () => {
     test('read/skill rows use whole-row activation like edit/write file navigation', () => {
-        expect(progressiveGroupSource).toContain('const isWholeRowNav = Boolean(primaryReadEntry || primarySkillEntry)');
+        expect(progressiveGroupSource).toContain('const isWholeRowNav = Boolean(readFileEntry || skillEntry)');
         expect(progressiveGroupSource).toContain('role={isWholeRowNav ? \'button\' : undefined}');
         expect(progressiveGroupSource).toContain('handleWholeRowNavClick');
         expect(progressiveGroupSource).not.toContain('MinDurationShineText');

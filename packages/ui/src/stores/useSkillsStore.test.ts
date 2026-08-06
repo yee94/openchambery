@@ -7,6 +7,7 @@ const catalogInvalidations: Array<[string | null, string]> = [];
 mock.module('@/lib/opencode/client', () => ({ opencodeClient: { getDirectory: () => '/opencode-directory', checkHealth: async () => true } }));
 mock.module('@/lib/runtime-switch', () => ({
   getRuntimeTransportIdentity: () => 'runtime-a',
+  getRuntimeGeneration: () => 0,
   isRuntimeEndpointIdentityChange: () => false,
   subscribeRuntimeEndpointChanged: () => () => undefined,
 }));

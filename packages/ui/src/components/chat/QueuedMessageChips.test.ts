@@ -87,10 +87,14 @@ describe('QueuedMessageChips production queue boundary', () => {
             runtimeGeneration: 6,
         };
         const item = add(secondaryScope, 'secondary');
-        const foreign = add({ ...secondaryScope, runtimeGeneration: 7 }, 'foreign');
+        // runtimeGeneration is staleness metadata, not part of the ledger address,
+        // so an A→B→A transport bounce still owns the rows it persisted.
+        const bounced = add({ ...secondaryScope, runtimeGeneration: 7 }, 'bounced');
+        const foreign = add({ ...secondaryScope, deliveryTarget: { kind: 'assistant', assistantID: 'assistant-c' } }, 'foreign');
         const legacy = add(legacyQueueScope(scope.sessionID), 'legacy');
 
         expect(queuedMessageItemScope(item, secondaryScope)).toBe(secondaryScope);
+        expect(queuedMessageItemScope(bounced, secondaryScope)).toBe(secondaryScope);
         expect(queuedMessageItemScope(foreign, secondaryScope)).toBeNull();
         expect(queuedMessageItemScope(legacy, secondaryScope)).toEqual(legacyQueueScope(scope.sessionID));
     });

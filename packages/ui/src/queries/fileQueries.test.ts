@@ -6,6 +6,7 @@ let runtimeKey = 'runtime-a';
 
 mock.module('@/lib/runtime-switch', () => ({
   getRuntimeTransportIdentity: () => runtimeKey,
+  getRuntimeGeneration: () => 0,
   isRuntimeEndpointIdentityChange: () => false,
   subscribeRuntimeEndpointChanged: () => () => undefined,
 }));

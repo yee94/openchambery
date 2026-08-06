@@ -19,6 +19,7 @@ mock.module('@/lib/runtime-fetch', () => ({ runtimeFetch: async (_path: string, 
 } }));
 mock.module('@/lib/runtime-switch', () => ({
   getRuntimeTransportIdentity: () => runtimeKey,
+  getRuntimeGeneration: () => 0,
   isRuntimeEndpointIdentityChange: () => false,
   subscribeRuntimeEndpointChanged: () => () => undefined,
 }));

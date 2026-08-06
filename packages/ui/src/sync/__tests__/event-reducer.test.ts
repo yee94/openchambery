@@ -156,6 +156,93 @@ describe("applyTranscriptDirectoryEvent", () => {
   })
 })
 
+describe("applyTranscriptDirectoryEvent streaming text and tool status", () => {
+  function seededDraft(messageID: string): TranscriptEventDraft {
+    return transcriptDraft({
+      message: {
+        ses_1: [{ id: messageID, sessionID: "ses_1", role: "assistant", time: { created: 1 } } as Message],
+      },
+    })
+  }
+
+  function textPartEvent(messageID: string, partID: string, text: string): Event {
+    return partUpdatedEvent({ id: partID, messageID, sessionID: "ses_1", type: "text", text } as Part)
+  }
+
+  function textDeltaEvent(messageID: string, partID: string, delta: string): Event {
+    return {
+      type: "message.part.delta",
+      properties: { sessionID: "ses_1", messageID, partID, field: "text", delta },
+    } as Event
+  }
+
+  function partText(draft: TranscriptEventDraft, messageID: string): string | undefined {
+    return (draft.part[messageID]?.[0] as { text?: string } | undefined)?.text
+  }
+
+  test("does not duplicate overlapping delta text after a newer part.updated replaces an older one", () => {
+    const full = "Fix typo in ToolOutputDialog — toolFailedToReadDiagram vs toolFailedReadDiagram • Let me fix it."
+    const draft = seededDraft("msg_1")
+
+    applyTranscriptDirectoryEvent(draft, textPartEvent("msg_1", "prt_1", "Fix typo in ToolOutputDialog — "))
+    applyTranscriptDirectoryEvent(draft, textPartEvent("msg_1", "prt_1", full))
+    applyTranscriptDirectoryEvent(
+      draft,
+      textDeltaEvent("msg_1", "prt_1", "toolFailedToReadDiagram vs toolFailedReadDiagram • Let me fix it."),
+    )
+
+    expect(draft.part.msg_1).toHaveLength(1)
+    expect(partText(draft, "msg_1")).toBe(full)
+  })
+
+  test("appends only the non-overlapping suffix of a streaming delta", () => {
+    const draft = seededDraft("msg_2")
+
+    applyTranscriptDirectoryEvent(draft, textPartEvent("msg_2", "prt_2", "toolFailedToReadDiagram vs toolFailedRead"))
+    applyTranscriptDirectoryEvent(draft, textPartEvent("msg_2", "prt_2", "toolFailedToReadDiagram vs toolFailedReadDiagra"))
+    applyTranscriptDirectoryEvent(draft, textDeltaEvent("msg_2", "prt_2", "Diagram • Let me fix it."))
+
+    expect(partText(draft, "msg_2")).toBe("toolFailedToReadDiagram vs toolFailedReadDiagram • Let me fix it.")
+  })
+
+  test("appends a non-overlapping delta unchanged", () => {
+    const draft = seededDraft("msg_3")
+
+    applyTranscriptDirectoryEvent(draft, textPartEvent("msg_3", "prt_3", "PR comment done — "))
+    applyTranscriptDirectoryEvent(draft, textDeltaEvent("msg_3", "prt_3", "Let me fix it."))
+
+    expect(partText(draft, "msg_3")).toBe("PR comment done — Let me fix it.")
+  })
+
+  test("preserves legitimate repeated output when no updated-to-delta dedupe window is active", () => {
+    const draft = seededDraft("msg_4")
+
+    applyTranscriptDirectoryEvent(draft, textPartEvent("msg_4", "prt_4", "ha"))
+    applyTranscriptDirectoryEvent(draft, textDeltaEvent("msg_4", "prt_4", "ha"))
+
+    expect(partText(draft, "msg_4")).toBe("haha")
+  })
+
+  test("does not let a stale running tool update overwrite a completed tool part", () => {
+    const draft = seededDraft("msg_5")
+    const toolPart = (status: string, time: { start: number; end?: number }) => ({
+      id: "prt_5",
+      messageID: "msg_5",
+      sessionID: "ses_1",
+      type: "tool",
+      tool: "apply_patch",
+      state: { status, time },
+    } as unknown as Part)
+
+    applyTranscriptDirectoryEvent(draft, partUpdatedEvent(toolPart("completed", { start: 10, end: 20 })))
+    expect(applyTranscriptDirectoryEvent(draft, partUpdatedEvent(toolPart("running", { start: 10 })))).toBe(false)
+
+    const state = (draft.part.msg_5?.[0] as { state?: { status?: string; time?: { end?: number } } } | undefined)?.state
+    expect(state?.status).toBe("completed")
+    expect(state?.time?.end).toBe(20)
+  })
+})
+
 describe("applyDirectoryEvent (non-transcript production domains)", () => {
   test("message SSE is a no-op on production State", () => {
     const draft = directoryState()

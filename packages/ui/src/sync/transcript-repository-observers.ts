@@ -376,31 +376,66 @@ export type TranscriptScopeRef = {
 /**
  * Subscribe to many transcript scopes (one notify for any scope change).
  * Used by queue auto-send which tracks multiple sessions without owning queue domain.
+ *
+ * Callers may pass `subscribeRebuild` for out-of-band events that can change
+ * which repository a scope resolves to — a child-store registry change being
+ * the usual one. Notifying alone is not enough there: a `useSyncExternalStore`
+ * notify only re-reads the snapshot, it never re-runs subscribe.
  */
 export function subscribeTranscriptScopes(
   scopes: readonly TranscriptScopeRef[],
   notify: () => void,
   storeResolver?: (directory: string) => StoreApi<DirectoryStore> | undefined,
+  options?: { subscribeRebuild?: (listener: () => void) => () => void },
 ): () => void {
   if (scopes.length === 0) return () => undefined
-  const unsubs: Array<() => void> = []
-  const seen = new Set<string>()
-  for (const scope of scopes) {
-    const key = `${scope.directory}\n${scope.sessionID}`
-    if (seen.has(key)) continue
-    seen.add(key)
-    const bound = getTranscriptRepository()
-    if (bound) {
-      unsubs.push(bound.subscribe(transcriptScope(scope.directory, scope.sessionID), notify))
-      continue
-    }
-    const store = storeResolver?.(scope.directory)
-    if (!store) continue
-    const repository = resolveTranscriptRepositoryForStore(scope.directory, store)
-    unsubs.push(repository.subscribe(transcriptScope(scope.directory, scope.sessionID), notify))
-  }
-  return () => {
+
+  let unsubs: Array<() => void> = []
+
+  const detach = () => {
     for (const unsub of unsubs) unsub()
+    unsubs = []
+  }
+
+  const attach = () => {
+    const seen = new Set<string>()
+    for (const scope of scopes) {
+      const key = `${scope.directory}\n${scope.sessionID}`
+      if (seen.has(key)) continue
+      seen.add(key)
+      const bound = getTranscriptRepository()
+      if (bound) {
+        unsubs.push(bound.subscribe(transcriptScope(scope.directory, scope.sessionID), notify))
+        continue
+      }
+      const store = storeResolver?.(scope.directory)
+      if (!store) continue
+      const repository = resolveTranscriptRepositoryForStore(scope.directory, store)
+      unsubs.push(repository.subscribe(transcriptScope(scope.directory, scope.sessionID), notify))
+    }
+  }
+
+  const rebuild = () => {
+    detach()
+    attach()
+    notify()
+  }
+
+  attach()
+
+  // Subscribe runs from a child passive effect, so the production Query
+  // repository can still be unbound at this point — SyncProvider binds it in a
+  // parent effect, which React commits later. Without re-arming, every scope
+  // stays pinned to the ephemeral store adapter (or unsubscribed entirely when
+  // the directory store does not exist yet) for the whole provider lifetime,
+  // and the caller only ever wakes up on unrelated signals.
+  const unsubBinding = subscribeTranscriptRepositoryBinding(rebuild)
+  const unsubRebuild = options?.subscribeRebuild?.(rebuild)
+
+  return () => {
+    unsubRebuild?.()
+    unsubBinding()
+    detach()
   }
 }
 

@@ -10,6 +10,7 @@ let installPayload: Record<string, unknown> = { ok: true };
 mock.module('@/lib/opencode/client', () => ({ opencodeClient: { getDirectory: () => '/opencode-directory' } }));
 mock.module('@/lib/runtime-switch', () => ({
   getRuntimeTransportIdentity: () => runtimeKey,
+  getRuntimeGeneration: () => 0,
   isRuntimeEndpointIdentityChange: () => false,
   subscribeRuntimeEndpointChanged: () => () => undefined,
 }));

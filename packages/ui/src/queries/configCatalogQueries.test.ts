@@ -16,6 +16,7 @@ let resolveAgents: (() => void) | undefined;
 
 mock.module('@/lib/runtime-switch', () => ({
   getRuntimeTransportIdentity: () => runtimeKey,
+  getRuntimeGeneration: () => 0,
   isRuntimeEndpointIdentityChange: () => false,
   subscribeRuntimeEndpointChanged: () => () => undefined,
 }));

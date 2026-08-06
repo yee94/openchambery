@@ -340,18 +340,15 @@ export function useQueuedMessageAutoSend(enabledOrOptions?: boolean | { enabled?
           directory: scope.directory,
           sessionID: scope.sessionID,
         }));
-        const unsubRepo = subscribeTranscriptScopes(
+        // Registry changes (directory store appear/disappear) rebuild the scope
+        // subscriptions, so a newly ensured directory attaches its repository
+        // subscription instead of only re-reading the snapshot.
+        return subscribeTranscriptScopes(
           transcriptScopes,
           notify,
           (directory) => childStores.getChild(directory),
+          { subscribeRebuild: (listener) => childStores.subscribeRegistry(listener) },
         );
-        // Registry changes (directory store appear/disappear) still matter so a
-        // newly ensured directory can attach its repository subscription.
-        const unsubRegistry = childStores.subscribeRegistry(() => notify());
-        return () => {
-          unsubRepo();
-          unsubRegistry();
-        };
       };
     }, [childStores, scopeKey]),
     React.useMemo(() => {

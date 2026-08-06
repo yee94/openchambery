@@ -530,12 +530,14 @@ describe('useChatTimelineController source contracts', () => {
         expect(source).toContain("chat.history.loadOlderTimeout");
         expect(source).toContain('toast.error');
         expect(source).toContain('logChatHistoryLoadOlderFailure');
+        // Messages live in the shared logChatHistoryLoadOlderFailure helper, so
+        // pin the text rather than the console.error call shape.
         expect(source).toContain("console.error('[chat-history] load older failed'");
         expect(source).toContain(
-            "console.error('[chat-history] load older timed out waiting for sync pagination'",
+            "'[chat-history] load older timed out waiting for sync pagination',",
         );
         expect(source).toContain(
-            "console.error('[chat-history] load older completed without prepending messages'",
+            "'[chat-history] load older completed without prepending messages',",
         );
         expect(source).toContain('userInitiated');
         // Failure always console.error; toast stays user-initiated-only.
@@ -557,11 +559,12 @@ describe('useChatTimelineController source contracts', () => {
         expect(source).toContain("wait === 'timeout'");
         expect(source).toContain("wait === 'switched'");
         expect(source).toContain("pagesLoaded -= 1");
-        // Wait diagnostics must print prefetch status so a phantom historyLoading
-        // (nothing in Network) is visible in the console.
+        // Wait diagnostics must print the transcript request status so a phantom
+        // historyLoading (nothing in Network) is visible in the console.
         expect(source).toContain("waiting for sync pagination to clear");
         expect(source).toContain('likelyStaleLoadingFlag');
-        expect(source).toContain('getSessionPrefetch');
+        expect(source).toContain('getRequestState');
+        expect(source).toContain('requestStatusAtTimeout');
     });
 
     test('isHistoryLoadingTimeoutError matches typed wait timeout', () => {

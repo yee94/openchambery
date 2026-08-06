@@ -335,4 +335,93 @@ describe("transcript repository readers (Ticket 02)", () => {
       unbindTranscriptRepository()
     }
   })
+
+  // Subscribe happens from a child passive effect, so the production repository
+  // is routinely still unbound at that point. Nothing else re-runs subscribe,
+  // so without re-arming the scope never gets a push subscription.
+  test("re-attaches scope subscriptions after the production repository binds", () => {
+    const store = createHarnessStore({
+      message: { [SESSION]: [userMessage("msg_1")] },
+      session_history_boundary: { [SESSION]: { kind: "exhausted", loadedTurns: 1 } },
+    })
+    const {
+      subscribeTranscriptScopes,
+    } = require("./transcript-repository-observers") as typeof import("./transcript-repository-observers")
+
+    let notifications = 0
+    // No bound repository and no resolvable store: attach finds nothing.
+    const unsub = subscribeTranscriptScopes(
+      [{ directory: DIRECTORY, sessionID: SESSION }],
+      () => {
+        notifications += 1
+      },
+      () => undefined,
+    )
+
+    const repo = createStoreTranscriptRepository({ getStore: () => store })
+    try {
+      bindTranscriptRepositoryInstance(repo)
+      const afterBind = notifications
+      expect(afterBind).toBeGreaterThan(0)
+
+      store.setState({
+        message: { [SESSION]: [userMessage("msg_1"), userMessage("msg_2")] },
+      })
+      expect(notifications).toBeGreaterThan(afterBind)
+
+      unsub()
+      const afterUnsub = notifications
+      store.setState({
+        message: { [SESSION]: [userMessage("msg_1"), userMessage("msg_2"), userMessage("msg_3")] },
+      })
+      expect(notifications).toBe(afterUnsub)
+    } finally {
+      unbindTranscriptRepository()
+    }
+  })
+
+  test("rebuild signal re-resolves scopes whose directory store appeared later", () => {
+    const store = createHarnessStore({
+      message: { [SESSION]: [userMessage("msg_1")] },
+      session_history_boundary: { [SESSION]: { kind: "exhausted", loadedTurns: 1 } },
+    })
+    const {
+      subscribeTranscriptScopes,
+    } = require("./transcript-repository-observers") as typeof import("./transcript-repository-observers")
+
+    let storeReady = false
+    const rebuildListeners = new Set<() => void>()
+    let notifications = 0
+
+    const unsub = subscribeTranscriptScopes(
+      [{ directory: DIRECTORY, sessionID: SESSION }],
+      () => {
+        notifications += 1
+      },
+      () => (storeReady ? store as never : undefined),
+      {
+        subscribeRebuild: (listener) => {
+          rebuildListeners.add(listener)
+          return () => {
+            rebuildListeners.delete(listener)
+          }
+        },
+      },
+    )
+
+    store.setState({ message: { [SESSION]: [userMessage("msg_1"), userMessage("msg_2")] } })
+    expect(notifications).toBe(0)
+
+    storeReady = true
+    for (const listener of rebuildListeners) listener()
+    const afterRebuild = notifications
+
+    store.setState({
+      message: { [SESSION]: [userMessage("msg_1"), userMessage("msg_2"), userMessage("msg_3")] },
+    })
+    expect(notifications).toBeGreaterThan(afterRebuild)
+
+    unsub()
+    expect(rebuildListeners.size).toBe(0)
+  })
 })
