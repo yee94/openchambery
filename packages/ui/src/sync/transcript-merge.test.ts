@@ -25,6 +25,20 @@ function textPart(id: string, messageID: string, text = id): Part {
   return { id, messageID, sessionID: SESSION, type: "text", text } as Part
 }
 
+function toolPart(id: string, messageID: string, state: Record<string, unknown>): Part {
+  return { id, messageID, sessionID: SESSION, type: "tool", tool: "read", callID: `call_${id}`, state } as unknown as Part
+}
+
+function readToolState(
+  data: SessionTranscriptData | undefined,
+  messageID: string,
+  partID: string,
+): Record<string, unknown> | undefined {
+  const parts = data?.pages.flatMap((page) => page.partsByMessageID[messageID] ?? [])
+  const part = parts?.find((candidate) => candidate.id === partID)
+  return (part as { state?: Record<string, unknown> } | undefined)?.state
+}
+
 function page(
   records: Array<{ info: Message; parts?: Part[] }>,
   options: { cursor?: string; complete?: boolean; turnCount?: number } = {},
@@ -132,6 +146,63 @@ describe("mergeSessionTranscript", () => {
     expect(data?.pages[0]?.messagesByID["msg_1"]).toBe(prevUser)
     expect(data?.pages[0]?.partsByMessageID["msg_1"]).toBe(prevUserParts)
     expect((data?.pages[0]?.partsByMessageID["msg_2"]?.[0] as { text?: string })?.text).toBe("b-updated")
+  })
+
+  test("SSE tool lifecycle lands input, output and metadata", () => {
+    const first = mergeSessionTranscript(undefined, SESSION, {
+      type: "http-page",
+      purpose: "initial",
+      page: page(
+        [
+          {
+            info: assistantMessage("msg_1"),
+            parts: [toolPart("p1", "msg_1", { status: "pending", input: {} })],
+          },
+        ],
+        { complete: true, turnCount: 1 },
+      ),
+    }).data!
+
+    const running = mergeSessionTranscript(first, SESSION, {
+      type: "sse-event",
+      event: {
+        type: "message.part.updated",
+        properties: {
+          part: toolPart("p1", "msg_1", {
+            status: "running",
+            input: { filePath: "/repo/README.md" },
+            time: { start: 10 },
+          }),
+        },
+      } as Event,
+    })
+    expect(running.result.changed).toBe(true)
+    const runningState = readToolState(running.data, "msg_1", "p1")
+    expect(runningState?.status).toBe("running")
+    expect(runningState?.input).toEqual({ filePath: "/repo/README.md" })
+
+    const completed = mergeSessionTranscript(running.data, SESSION, {
+      type: "sse-event",
+      event: {
+        type: "message.part.updated",
+        properties: {
+          part: toolPart("p1", "msg_1", {
+            status: "completed",
+            input: { filePath: "/repo/README.md" },
+            output: "file contents",
+            metadata: { preview: "# Title" },
+            title: "README.md",
+            time: { start: 10, end: 20 },
+          }),
+        },
+      } as Event,
+    })
+    expect(completed.result.changed).toBe(true)
+    const completedState = readToolState(completed.data, "msg_1", "p1")
+    expect(completedState?.status).toBe("completed")
+    expect(completedState?.input).toEqual({ filePath: "/repo/README.md" })
+    expect(completedState?.output).toBe("file contents")
+    expect(completedState?.title).toBe("README.md")
   })
 
   test("stale recovery uses insert-only when live revision advanced", () => {

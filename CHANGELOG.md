@@ -4,6 +4,11 @@ All notable changes to this project will be documented in this file.
 
 ## [Unreleased]
 
+## [1.16.123-beta.2] - 2026-08-06
+
+- **Live tool details:** preserve tool part state changes through the transcript cache so Read paths, shell commands, output, metadata, and completion state update in the active conversation without switching sessions or refreshing.
+- **Chat layout:** keep desktop user-message spacing consistent when sticky headers are disabled.
+
 ## [1.16.123-beta.1] - 2026-08-06
 
 - **Transcript state:** move session messages, parts, pagination, optimistic updates, and live revisions behind one QueryCache-backed transcript repository shared by chat, context, assistants, and runtime consumers.

@@ -530,6 +530,29 @@ function sameMessageIdentity(a: Message, b: Message): boolean {
   return a === b
 }
 
+/**
+ * Whether two part snapshots carry the same payload.
+ *
+ * Comparing only `text` treats a tool part as unchanged for its whole
+ * lifecycle: `pending → running → completed` moves `status`, `input`,
+ * `output`, `metadata` and `title`, all of which live under `state`. Callers
+ * use this to keep the previous frozen parts array, so a false "equal" here
+ * silently drops the update and the row stays stuck on its first frame.
+ * The reducer allocates a new object whenever it changes one of these, so
+ * reference comparison is enough.
+ */
+function partPayloadEqual(left: Part, right: Part): boolean {
+  if (left === right) return true
+  if (!left || !right) return false
+  if (left.id !== right.id || left.type !== right.type) return false
+  if ((left as { text?: string }).text !== (right as { text?: string }).text) return false
+  if ((left as { state?: unknown }).state !== (right as { state?: unknown }).state) return false
+  if ((left as { output?: unknown }).output !== (right as { output?: unknown }).output) return false
+  if ((left as { metadata?: unknown }).metadata !== (right as { metadata?: unknown }).metadata) return false
+  if ((left as { time?: unknown }).time !== (right as { time?: unknown }).time) return false
+  return true
+}
+
 function partsArraysEqualByRefOrContent(
   left: readonly Part[],
   right: readonly Part[],
@@ -537,17 +560,7 @@ function partsArraysEqualByRefOrContent(
   if (left === right) return true
   if (left.length !== right.length) return false
   for (let i = 0; i < left.length; i += 1) {
-    const l = left[i]
-    const r = right[i]
-    if (l === r) continue
-    if (!l || !r || l.id !== r.id) return false
-    // Shallow field compare for text streaming preservation of unchanged parts.
-    if (
-      (l as { text?: string }).text !== (r as { text?: string }).text
-      || l.type !== r.type
-    ) {
-      return false
-    }
+    if (!partPayloadEqual(left[i], right[i])) return false
   }
   return true
 }

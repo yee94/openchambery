@@ -1044,7 +1044,7 @@ const ChatMessage: React.FC<ChatMessageProps> = ({
     }
 
     const assistantTopPaddingClass = !isUser && shouldShowHeader
-        ? (stickyUserHeader ? (isMobile ? 'pt-4' : 'pt-6') : 'pt-0')
+        ? (isMobile ? (stickyUserHeader ? 'pt-4' : 'pt-0') : 'pt-6')
         : 'pt-0';
     const userMessageRadius = 'var(--radius-xl)';
 
