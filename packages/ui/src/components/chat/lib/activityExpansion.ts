@@ -6,12 +6,16 @@ import type { TurnRecord } from './turns/types';
  * turn is watchable regardless of the activity setting. Settled turns follow
  * the configured render mode.
  *
- * The last turn is exempt from auto-collapse. A multi-step turn reads settled
- * for the gap between one step's `finish` and the next assistant message, and
- * collapsing in that gap unmounted the nested tool rows and re-expanded them a
- * frame later. Position is a deterministic input, unlike session status, which
- * flaps busy/idle between tool steps: the turn you are watching stays open until
- * your next message pushes it into history, where the render mode applies again.
+ * The last turn is exempt from auto-collapse only while its final body is
+ * unconfirmed. A multi-step turn reads settled for the gap between one step's
+ * `finish` and the next assistant message, and collapsing in that gap unmounted
+ * the nested tool rows and re-expanded them a frame later. Position plus
+ * `hasConfirmedFinalBody` (confirmed terminal stop with zero continuation
+ * tools, no error, plus a model-produced text — the runLoop exit rule) are
+ * deterministic inputs, unlike session status, which flaps busy/idle between
+ * tool steps: the turn you are watching stays open until the final answer is
+ * confirmed, after which an untouched turn follows the render mode like any
+ * settled turn.
  */
 export const resolveDefaultActivityExpanded = (
   completionDisposition: TurnRecord['completionDisposition'] | undefined,
@@ -19,12 +23,18 @@ export const resolveDefaultActivityExpanded = (
   options?: {
     /** Newest turn in the transcript, settled or not. */
     isLastTurn?: boolean;
+    /**
+     * Turn-level confirmed final body (terminal stop with zero continuation
+     * tools, no error, plus a model-produced text). When the option is omitted
+     * the caller is not turn-aware; keep the historical last-turn exemption.
+     */
+    hasConfirmedFinalBody?: boolean;
   },
 ): boolean => {
   if (completionDisposition === 'active') {
     return true;
   }
-  if (options?.isLastTurn) {
+  if (options?.isLastTurn && options.hasConfirmedFinalBody !== true) {
     return true;
   }
   return activityRenderMode === 'summary';

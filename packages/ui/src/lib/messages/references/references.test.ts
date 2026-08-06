@@ -192,10 +192,12 @@ describe('toComposerHighlightRanges', () => {
         });
         const ranges = toComposerHighlightRanges(spans);
         expect(ranges).toHaveLength(1);
-        expect(ranges[0]?.visual).toMatchObject({
+        expect(ranges[0]?.visual).toEqual({
             trigger: '/\u2003',
-            label: 'loop',
             icon: 'command',
+            align: 'end',
+            label: 'loop',
+            suffix: undefined,
             slot: 'reserved',
         });
     });

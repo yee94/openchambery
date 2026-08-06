@@ -17,6 +17,7 @@ import {
     resolveContextPanelChatRenderMode,
     resolveContextPanelConfirmedParentViewKey,
     resolveContextPanelEnsureForce,
+    resolveContextPanelHasMore,
     resolveContextPanelPartialErrorRetry,
     resolveContextPanelPrependAnchor,
     resolveContextPanelPrependScrollTop,
@@ -162,6 +163,24 @@ describe('context panel transcript state', () => {
         expect(shouldConsumeContextPanelPrepend(pending, 7, 'viewport-a')).toBe(true);
         expect(shouldConsumeContextPanelPrepend(pending, 7, 'viewport-b')).toBe(false);
         expect(shouldConsumeContextPanelPrepend(pending, 8, 'viewport-a')).toBe(false);
+    });
+
+    test('boundary-only updates drive the load-older entry; prefetch status is never a fact', () => {
+        // unknown → hidden
+        expect(resolveContextPanelHasMore({ kind: 'unknown' })).toBe(false);
+        // unknown → has-more boundary-only update opens the entry
+        expect(resolveContextPanelHasMore({ kind: 'has-more' })).toBe(true);
+        // unknown → exhausted boundary-only update keeps the entry hidden
+        expect(resolveContextPanelHasMore({ kind: 'exhausted' })).toBe(false);
+        // cached boundaries re-apply immediately on re-entry — no prefetch
+        // status participates in either direction.
+        expect(resolveContextPanelHasMore({ kind: 'has-more' })).toBe(true);
+        expect(resolveContextPanelHasMore({ kind: 'exhausted' })).toBe(false);
+        // The entry fact feeds show/request gates unchanged.
+        expect(shouldShowContextPanelLoadOlder(resolveContextPanelHasMore({ kind: 'has-more' }))).toBe(true);
+        expect(shouldShowContextPanelLoadOlder(resolveContextPanelHasMore({ kind: 'unknown' }))).toBe(false);
+        expect(shouldRequestContextPanelLoadOlder(resolveContextPanelHasMore({ kind: 'has-more' }), false)).toBe(true);
+        expect(shouldRequestContextPanelLoadOlder(resolveContextPanelHasMore({ kind: 'exhausted' }), false)).toBe(false);
     });
 });
 

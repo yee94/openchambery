@@ -136,6 +136,43 @@ describe('turn activity expansion state', () => {
         expect(resolveDefaultActivityExpanded(demoted.completionDisposition, 'collapsed')).toBe(false);
     });
 
+    test('last turn without a confirmed final body always stays expanded', () => {
+        for (const disposition of ['active', 'normal', 'abnormal'] as const) {
+            expect(
+                resolveDefaultActivityExpanded(disposition, 'collapsed', {
+                    isLastTurn: true,
+                    hasConfirmedFinalBody: false,
+                }),
+            ).toBe(true);
+        }
+    });
+
+    test('last turn with a confirmed final body follows the render mode', () => {
+        expect(
+            resolveDefaultActivityExpanded('normal', 'collapsed', {
+                isLastTurn: true,
+                hasConfirmedFinalBody: true,
+            }),
+        ).toBe(false);
+        expect(
+            resolveDefaultActivityExpanded('normal', 'summary', {
+                isLastTurn: true,
+                hasConfirmedFinalBody: true,
+            }),
+        ).toBe(true);
+    });
+
+    test('last active turn stays expanded even with a confirmed final body', () => {
+        // Active always wins: a flapping busy/idle status must not collapse a
+        // turn the projection still reports as open.
+        expect(
+            resolveDefaultActivityExpanded('active', 'collapsed', {
+                isLastTurn: true,
+                hasConfirmedFinalBody: true,
+            }),
+        ).toBe(true);
+    });
+
     test('a toggle flips the current expansion state in both directions', () => {
         expect(resolveToggledActivityExpanded(false)).toBe(true);
         expect(resolveToggledActivityExpanded(true)).toBe(false);

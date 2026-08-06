@@ -4,6 +4,7 @@ import {
   reduceSessionMessagePage,
   type SessionMessageReducerState,
 } from "./session-message-reducer"
+import type { SessionHistoryBoundary } from "./types"
 
 const SKIP_PARTS = new Set(["patch", "step-start", "step-finish"])
 
@@ -20,7 +21,14 @@ function part(id: string, messageID: string, type = "text", text = id): Part {
 }
 
 function emptyState(): SessionMessageReducerState {
-  return { message: {}, part: {} }
+  return { message: {}, part: {}, session_history_boundary: {} }
+}
+
+function boundaryState(
+  sessionID: string,
+  boundary: SessionHistoryBoundary,
+): Record<string, SessionHistoryBoundary> {
+  return { [sessionID]: boundary }
 }
 
 function page(
@@ -38,6 +46,278 @@ function page(
     ...(typeof options.turnCount === "number" ? { turnCount: options.turnCount } : {}),
   }
 }
+
+describe("reduceSessionMessagePage — history boundary", () => {
+  test("complete=true page resolves to an exhausted boundary without a cursor", () => {
+    const result = reduceSessionMessagePage(
+      emptyState(),
+      "ses_1",
+      page([{ info: userMessage("msg_1"), parts: [] }], { complete: true, turnCount: 1 }),
+      { purpose: "initial", skipPartTypes: SKIP_PARTS },
+    )
+
+    expect(result.boundary).toEqual({ kind: "exhausted", loadedTurns: 1 })
+    expect(result.boundaryChanged).toBe(true)
+    expect(result.meta).toEqual({ limit: 1, cursor: undefined, complete: true })
+  })
+
+  test("complete=false page with a cursor resolves to a has-more boundary", () => {
+    const result = reduceSessionMessagePage(
+      emptyState(),
+      "ses_1",
+      page([{ info: userMessage("msg_1"), parts: [] }], { cursor: "msg_1", complete: false, turnCount: 1 }),
+      { purpose: "initial", skipPartTypes: SKIP_PARTS },
+    )
+
+    expect(result.boundary).toEqual({ kind: "has-more", cursor: "msg_1", loadedTurns: 1 })
+    expect(result.boundaryChanged).toBe(true)
+    expect(result.meta).toEqual({ limit: 1, cursor: "msg_1", complete: false })
+  })
+
+  test("a prepend final page flips a has-more boundary to exhausted and accumulates turns", () => {
+    const state: SessionMessageReducerState = {
+      message: { ses_1: [userMessage("msg_2")] },
+      part: {},
+      session_history_boundary: boundaryState("ses_1", { kind: "has-more", cursor: "msg_2", loadedTurns: 1 }),
+    }
+
+    const result = reduceSessionMessagePage(
+      state,
+      "ses_1",
+      page([{ info: userMessage("msg_1"), parts: [] }], { cursor: undefined, complete: true, turnCount: 1 }),
+      { purpose: "prepend", skipPartTypes: SKIP_PARTS },
+    )
+
+    expect(result.boundary).toEqual({ kind: "exhausted", loadedTurns: 2 })
+    expect(result.boundaryChanged).toBe(true)
+    expect(result.meta).toEqual({ limit: 2, cursor: undefined, complete: true })
+  })
+
+  test("proposes the boundary even when message and part references are unchanged", () => {
+    const existing = userMessage("msg_1")
+    const state: SessionMessageReducerState = {
+      message: { ses_1: [existing] },
+      part: {},
+      // No boundary yet — the store only has messages.
+    }
+
+    const result = reduceSessionMessagePage(
+      state,
+      "ses_1",
+      page([{ info: existing, parts: [] }], { complete: true, turnCount: 1 }),
+      { purpose: "initial", skipPartTypes: SKIP_PARTS },
+    )
+
+    expect(result.applied).toBe(true)
+    expect(result.messagesChanged).toBe(false)
+    expect(result.partsChanged).toBe(false)
+    expect(result.message).toBe(state.message)
+    // Boundary must still be committed by the caller even though messages did not change.
+    expect(result.boundaryChanged).toBe(true)
+    expect(result.changed).toBe(true)
+    expect(result.boundary).toEqual({ kind: "exhausted", loadedTurns: 1 })
+  })
+
+  test("keeps the previous boundary reference when the page resolves to the same boundary", () => {
+    const previous: SessionHistoryBoundary = { kind: "has-more", cursor: "msg_1", loadedTurns: 1 }
+    const state: SessionMessageReducerState = {
+      message: { ses_1: [userMessage("msg_1")] },
+      part: {},
+      session_history_boundary: boundaryState("ses_1", previous),
+    }
+
+    const result = reduceSessionMessagePage(
+      state,
+      "ses_1",
+      page([{ info: userMessage("msg_1"), parts: [] }], { cursor: "msg_1", complete: false, turnCount: 1 }),
+      { purpose: "initial", skipPartTypes: SKIP_PARTS },
+    )
+
+    expect(result.boundaryChanged).toBe(false)
+    expect(result.boundary).toBe(previous)
+  })
+
+  test("an unknown previous boundary reads as absent and is established by the first successful page", () => {
+    const state: SessionMessageReducerState = {
+      message: { ses_1: [userMessage("msg_1")] },
+      part: {},
+      session_history_boundary: boundaryState("ses_1", { kind: "unknown", loadedTurns: 0 }),
+    }
+
+    const result = reduceSessionMessagePage(
+      state,
+      "ses_1",
+      page([{ info: userMessage("msg_1"), parts: [] }], { cursor: "msg_1", complete: false, turnCount: 1 }),
+      { purpose: "initial", skipPartTypes: SKIP_PARTS },
+    )
+
+    expect(result.boundary).toEqual({ kind: "has-more", cursor: "msg_1", loadedTurns: 1 })
+    expect(result.boundaryChanged).toBe(true)
+  })
+
+  test("an incomplete page without a cursor is a contract error and preserves the known boundary", () => {
+    const previous: SessionHistoryBoundary = { kind: "has-more", cursor: "msg_9", loadedTurns: 2 }
+    const state: SessionMessageReducerState = {
+      message: { ses_1: [userMessage("msg_9")] },
+      part: {},
+      session_history_boundary: boundaryState("ses_1", previous),
+    }
+
+    const result = reduceSessionMessagePage(
+      state,
+      "ses_1",
+      page([{ info: userMessage("msg_1"), parts: [] }], { cursor: undefined, complete: false, turnCount: 1 }),
+      { purpose: "prepend", skipPartTypes: SKIP_PARTS },
+    )
+
+    expect(result.applied).toBe(false)
+    expect(result.error).toContain("complete=false requires non-empty cursor")
+    expect(result.changed).toBe(false)
+    expect(result.boundary).toBeUndefined()
+    expect(result.boundaryChanged).toBe(false)
+    // Prior state is untouched — the caller keeps the last known boundary.
+    expect(result.message).toBe(state.message)
+    expect(result.part).toBe(state.part)
+    expect(state.session_history_boundary?.ses_1).toBe(previous)
+  })
+
+  test("an incomplete page with an empty-string cursor is a contract error", () => {
+    const result = reduceSessionMessagePage(
+      emptyState(),
+      "ses_1",
+      page([{ info: userMessage("msg_1"), parts: [] }], { cursor: "", complete: false, turnCount: 1 }),
+      { purpose: "initial", skipPartTypes: SKIP_PARTS },
+    )
+
+    expect(result.applied).toBe(false)
+    expect(result.error).toContain("complete=false requires non-empty cursor")
+    expect(result.boundary).toBeUndefined()
+  })
+
+  test("a dropped stale page proposes no boundary", () => {
+    const state: SessionMessageReducerState = {
+      message: { ses_1: [userMessage("msg_1")] },
+      part: {},
+      session_history_boundary: boundaryState("ses_1", { kind: "has-more", cursor: "msg_1", loadedTurns: 1 }),
+    }
+
+    const result = reduceSessionMessagePage(
+      state,
+      "ses_1",
+      page([{ info: userMessage("msg_2"), parts: [] }], { complete: true }),
+      {
+        purpose: "initial",
+        skipPartTypes: SKIP_PARTS,
+        capturedRevision: 3,
+        liveRevision: 5,
+      },
+    )
+
+    expect(result.applied).toBe(false)
+    expect(result.boundary).toBeUndefined()
+    expect(result.boundaryChanged).toBe(false)
+  })
+})
+
+describe("reduceSessionMessagePage — cursor progress invariant", () => {
+  test("a prepend that returns the same cursor is a page contract error and preserves everything", () => {
+    const existing = userMessage("msg_2")
+    const state: SessionMessageReducerState = {
+      message: { ses_1: [existing] },
+      part: {},
+      session_history_boundary: boundaryState("ses_1", { kind: "has-more", cursor: "msg_2", loadedTurns: 2 }),
+    }
+
+    const result = reduceSessionMessagePage(
+      state,
+      "ses_1",
+      page([{ info: userMessage("msg_1"), parts: [] }], { cursor: "msg_2", complete: false, turnCount: 1 }),
+      { purpose: "prepend", skipPartTypes: SKIP_PARTS },
+    )
+
+    expect(result.applied).toBe(false)
+    expect(result.error).toContain("same cursor")
+    // Nothing moves: messages, parts, boundary, and loadedTurns stay put.
+    expect(result.message).toBe(state.message)
+    expect(result.part).toBe(state.part)
+    expect(result.boundary).toBeUndefined()
+    expect(result.boundaryChanged).toBe(false)
+    expect(result.meta).toBeUndefined()
+  })
+
+  test("an empty incomplete page is a no-progress page contract error", () => {
+    const existing = userMessage("msg_2")
+    const state: SessionMessageReducerState = {
+      message: { ses_1: [existing] },
+      part: {},
+      session_history_boundary: boundaryState("ses_1", { kind: "has-more", cursor: "msg_2", loadedTurns: 2 }),
+    }
+
+    const result = reduceSessionMessagePage(
+      state,
+      "ses_1",
+      page([], { cursor: "msg_0", complete: false, turnCount: 0 }),
+      { purpose: "prepend", skipPartTypes: SKIP_PARTS },
+    )
+
+    expect(result.applied).toBe(false)
+    expect(result.error).toContain("no progress")
+    expect(result.message).toBe(state.message)
+    expect(result.boundary).toBeUndefined()
+    expect(result.meta).toBeUndefined()
+  })
+
+  test("an empty incomplete initial page is also rejected (no phantom has-more)", () => {
+    const result = reduceSessionMessagePage(
+      emptyState(),
+      "ses_1",
+      page([], { cursor: "msg_0", complete: false, turnCount: 0 }),
+      { purpose: "initial", skipPartTypes: SKIP_PARTS },
+    )
+
+    expect(result.applied).toBe(false)
+    expect(result.error).toContain("no progress")
+    expect(result.boundary).toBeUndefined()
+  })
+
+  test("a legal prepend with a new cursor accumulates loadedTurns and advances the boundary", () => {
+    const state: SessionMessageReducerState = {
+      message: { ses_1: [userMessage("msg_2")] },
+      part: {},
+      session_history_boundary: boundaryState("ses_1", { kind: "has-more", cursor: "msg_2", loadedTurns: 2 }),
+    }
+
+    const result = reduceSessionMessagePage(
+      state,
+      "ses_1",
+      page([{ info: userMessage("msg_1"), parts: [] }], { cursor: "msg_1", complete: false, turnCount: 1 }),
+      { purpose: "prepend", skipPartTypes: SKIP_PARTS },
+    )
+
+    expect(result.applied).toBe(true)
+    expect(result.error).toBeUndefined()
+    expect(result.boundary).toEqual({ kind: "has-more", cursor: "msg_1", loadedTurns: 3 })
+    expect(result.boundaryChanged).toBe(true)
+  })
+
+  test("a prepend final page exhausts the boundary even though no cursor remains", () => {
+    const state: SessionMessageReducerState = {
+      message: { ses_1: [userMessage("msg_3")] },
+      part: {},
+      session_history_boundary: boundaryState("ses_1", { kind: "has-more", cursor: "msg_3", loadedTurns: 3 }),
+    }
+
+    const result = reduceSessionMessagePage(
+      state,
+      "ses_1",
+      page([{ info: userMessage("msg_1"), parts: [] }], { cursor: undefined, complete: true, turnCount: 2 }),
+      { purpose: "prepend", skipPartTypes: SKIP_PARTS },
+    )
+
+    expect(result.applied).toBe(true)
+    expect(result.boundary).toEqual({ kind: "exhausted", loadedTurns: 5 })
+  })
+})
 
 describe("reduceSessionMessagePage — initial", () => {
   test("atomically writes messages and parts on first load", () => {
@@ -104,7 +384,7 @@ describe("reduceSessionMessagePage — prepend", () => {
     const state: SessionMessageReducerState = {
       message: { ses_1: [newer] },
       part: { msg_2: [newerPart] },
-      meta: { limit: 1, cursor: "msg_2", complete: false },
+      session_history_boundary: boundaryState("ses_1", { kind: "has-more", cursor: "msg_2", loadedTurns: 1 }),
     }
 
     const older = userMessage("msg_1")
@@ -195,7 +475,7 @@ describe("reduceSessionMessagePage — recovery", () => {
     const state: SessionMessageReducerState = {
       message: { ses_1: [existing] },
       part: { msg_1: [existingPart] },
-      meta: { limit: 1, cursor: undefined, complete: true },
+      session_history_boundary: boundaryState("ses_1", { kind: "exhausted", loadedTurns: 1 }),
     }
 
     const result = reduceSessionMessagePage(
@@ -444,7 +724,7 @@ describe("reduceSessionMessagePage — race and error semantics", () => {
     const state: SessionMessageReducerState = {
       message: { ses_1: [existing] },
       part: { msg_1: [existingPart] },
-      meta: { limit: 1, cursor: undefined, complete: true },
+      session_history_boundary: boundaryState("ses_1", { kind: "exhausted", loadedTurns: 1 }),
     }
 
     const result = reduceSessionMessagePage(
@@ -458,7 +738,8 @@ describe("reduceSessionMessagePage — race and error semantics", () => {
     expect(result.changed).toBe(false)
     expect(result.message).toBe(state.message)
     expect(result.part).toBe(state.part)
-    expect(result.meta).toBe(state.meta)
+    // A failed page proposes no new boundary; the caller keeps the last known one.
+    expect(result.boundary).toBeUndefined()
     expect(result.error).toBe("network failed")
   })
 
@@ -468,7 +749,7 @@ describe("reduceSessionMessagePage — race and error semantics", () => {
     const state: SessionMessageReducerState = {
       message: { ses_1: [existingMessage] },
       part: { msg_1: [existingPart] },
-      meta: { limit: 1, cursor: undefined, complete: true },
+      session_history_boundary: boundaryState("ses_1", { kind: "exhausted", loadedTurns: 1 }),
     }
 
     const result = reduceSessionMessagePage(

@@ -39,7 +39,11 @@ describe('resolveActivityPartId', () => {
         // whether a text part renders as a justification row or as the message
         // body. Divergent ids moved that text between two hosts mid-turn.
         const text = { id: 'prt_text', type: 'text', text: 'final answer' } as Part;
-        const messages = [assistant('msg_1', [toolPart('prt_tool'), text], 'stop')];
+        const providerExecutedTool = {
+            ...toolPart('prt_tool'),
+            metadata: { providerExecuted: true },
+        } as Part;
+        const messages = [assistant('msg_1', [providerExecutedTool, text], 'stop')];
 
         const summary = projectTurnSummary(messages);
         const activity = projectTurnActivity({

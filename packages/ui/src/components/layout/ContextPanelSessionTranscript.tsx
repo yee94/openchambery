@@ -17,6 +17,7 @@ import { getRuntimeKey } from '@/lib/runtime-switch';
 import { useConfigStore } from '@/stores/useConfigStore';
 import { getSessionMaterializationStatus } from '@/sync/materialization';
 import { getSessionPrefetch, subscribeSessionPrefetch } from '@/sync/session-prefetch-cache';
+import { UNKNOWN_SESSION_HISTORY_BOUNDARY } from '@/sync/types';
 import { useStreamingStore } from '@/sync/streaming';
 import { useDirectorySync, useSessionMessageCount, useSessionMessageRecords, useSessionStatus, useSyncDirectory } from '@/sync/sync-context';
 import { useSync } from '@/sync/use-sync';
@@ -27,6 +28,7 @@ import {
     normalizeContextPanelDirectory,
     resolveContextPanelEnsureForce,
     resolveContextPanelConfirmedParentViewKey,
+    resolveContextPanelHasMore,
     resolveContextPanelPartialErrorRetry,
     resolveContextPanelPrependAnchor,
     resolveContextPanelPrependScrollTop,
@@ -174,7 +176,14 @@ const ContextPanelSessionTranscriptContent: React.FC<ContextPanelSessionTranscri
     }, [completedPrependToken, scrollRef, sessionMessages, viewportKey]);
 
     const sessionDir = React.useMemo(() => ({ directory: normalizedDirectory }), [normalizedDirectory]);
-    const hasMore = sync.hasMore(sessionId, sessionDir);
+    // Directory child-store boundary is the only pagination fact source. A
+    // boundary-only commit must re-render so the load-older entry converges
+    // immediately; the narrow selector keeps unrelated store updates out.
+    const historyBoundary = useDirectorySync(
+        (state) => state.session_history_boundary?.[sessionId] ?? UNKNOWN_SESSION_HISTORY_BOUNDARY,
+        syncDirectory,
+    );
+    const hasMore = resolveContextPanelHasMore(historyBoundary);
     // Background materialize/prefetch loading — gate concurrent load-more only.
     // Button spinner tracks the mutation below, never stuck prefetch status.
     const backgroundLoading = prefetch?.status === 'loading' || sync.isLoading(sessionId, sessionDir);

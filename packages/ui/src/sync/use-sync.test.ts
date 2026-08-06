@@ -6,72 +6,40 @@ import {
   getConstrainedCacheStateAfterPrefetchEviction,
   shouldFetchSessionForRenderableSync,
   hasUserMessage,
-  resolveMergedSessionSyncMeta,
   resolveSessionHistoryLoadPlan,
+  syncMetaFromBoundary,
 } from './use-sync'
 import { mergeOptimisticPage } from './optimistic'
 import { materializeSessionSnapshots } from './materialization'
 
-describe('resolveMergedSessionSyncMeta', () => {
-  test('local without cursor keeps prefetch cursor so loadMore does not silent-no-op', () => {
-    const merged = resolveMergedSessionSyncMeta(
-      { limit: 2, cursor: undefined, complete: false, loading: true },
-      { limit: 2, cursor: 'msg_older', complete: false, loading: false },
-    )
-    expect(merged.cursor).toBe('msg_older')
-    expect(merged.loading).toBe(true)
-    expect(merged.complete).toBe(false)
+describe('syncMetaFromBoundary', () => {
+  test('an unknown boundary has no cursor and is not complete', () => {
+    const meta = syncMetaFromBoundary({ kind: 'unknown', loadedTurns: 0 })
+    expect(meta.cursor).toBeUndefined()
+    expect(meta.complete).toBe(false)
+    expect(meta.limit).toBe(0)
+    expect(meta.loading).toBe(false)
   })
 
-  test('a cursor-bearing prefetch page exposes older history over a prior local complete page', () => {
-    // A later page response can reveal a cursor after this hook recorded a
-    // complete tail. The cursor-bearing response is usable pagination truth.
-    const merged = resolveMergedSessionSyncMeta(
-      { limit: 4, cursor: undefined, complete: true, loading: false },
-      { limit: 2, cursor: 'msg_still_has_more', complete: false, loading: false },
-    )
-    expect(merged.complete).toBe(false)
-    expect(merged.cursor).toBe('msg_still_has_more')
+  test('a has-more boundary exposes its cursor for pagination', () => {
+    const meta = syncMetaFromBoundary({ kind: 'has-more', cursor: 'msg_x', loadedTurns: 2 })
+    expect(meta.cursor).toBe('msg_x')
+    expect(meta.complete).toBe(false)
+    expect(meta.limit).toBe(2)
+    expect(resolveSessionHistoryLoadPlan(meta)).toEqual({ kind: 'prepend', before: 'msg_x' })
   })
 
-  test('both complete clears cursor', () => {
-    const merged = resolveMergedSessionSyncMeta(
-      { limit: 4, cursor: undefined, complete: true, loading: false },
-      { limit: 4, cursor: undefined, complete: true, loading: false },
-    )
-    expect(merged.complete).toBe(true)
-    expect(merged.cursor).toBeUndefined()
+  test('an exhausted boundary reads as complete with no cursor', () => {
+    const meta = syncMetaFromBoundary({ kind: 'exhausted', loadedTurns: 4 })
+    expect(meta.complete).toBe(true)
+    expect(meta.cursor).toBeUndefined()
+    expect(resolveSessionHistoryLoadPlan(meta)).toEqual({ kind: 'exhausted' })
   })
 
-  test('local cursor preferred when both present', () => {
-    const merged = resolveMergedSessionSyncMeta(
-      { limit: 4, cursor: 'msg_local', complete: false, loading: false },
-      { limit: 2, cursor: 'msg_prefetch', complete: false, loading: false },
-    )
-    expect(merged.cursor).toBe('msg_local')
-    expect(merged.limit).toBe(4)
-  })
-
-  test('the newest response generation owns a complete history boundary', () => {
-    const merged = resolveMergedSessionSyncMeta(
-      { limit: 4, cursor: 'msg_local', complete: false, loading: false, loadGeneration: 4 },
-      { limit: 4, cursor: undefined, complete: true, loading: false, loadGeneration: 5 },
-    )
-
-    expect(merged.complete).toBe(true)
-    expect(merged.cursor).toBeUndefined()
-    expect(merged.loadGeneration).toBe(5)
-  })
-
-  test('the newest response generation owns a cursor-bearing history boundary', () => {
-    const merged = resolveMergedSessionSyncMeta(
-      { limit: 4, cursor: undefined, complete: true, loading: false, loadGeneration: 4 },
-      { limit: 8, cursor: 'msg_prefetch', complete: false, loading: false, loadGeneration: 5 },
-    )
-
-    expect(merged.complete).toBe(false)
-    expect(merged.cursor).toBe('msg_prefetch')
-    expect(merged.loadGeneration).toBe(5)
+  test('loading is a request-lifecycle flag, never part of the boundary', () => {
+    const meta = syncMetaFromBoundary({ kind: 'has-more', cursor: 'msg_x', loadedTurns: 2 }, true)
+    expect(meta.loading).toBe(true)
+    expect(resolveSessionHistoryLoadPlan(meta)).toEqual({ kind: 'busy' })
   })
 })
 

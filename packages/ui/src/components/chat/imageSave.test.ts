@@ -1,9 +1,16 @@
 import { afterEach, describe, expect, mock, test } from 'bun:test';
 
-const runtimeFetchMock = mock(async () => new Response(new Uint8Array([1, 2, 3]), {
-  status: 200,
-  headers: { 'content-type': 'image/png' },
-}));
+// The project's tsconfig does not load bun-test's mock matcher types, so track
+// runtimeFetch calls via a plain array (same precedent as worktreeStatus.test.ts).
+const runtimeFetchCalls: Array<unknown> = [];
+
+const runtimeFetchMock = mock(async (...args: Array<unknown>) => {
+  runtimeFetchCalls.push(args);
+  return new Response(new Uint8Array([1, 2, 3]), {
+    status: 200,
+    headers: { 'content-type': 'image/png' },
+  });
+});
 
 mock.module('@/lib/runtime-fetch', () => ({
   runtimeFetch: runtimeFetchMock,
@@ -48,7 +55,7 @@ const originalFetch = globalThis.fetch;
 
 afterEach(() => {
   globalThis.fetch = originalFetch;
-  runtimeFetchMock.mockClear();
+  runtimeFetchCalls.length = 0;
   mock.restore();
 });
 
@@ -70,7 +77,7 @@ describe('materializeImageBlob', () => {
 
     expect(result.blob).toBe(prefetchedBlob);
     expect(result.filename).toBe('photo.png');
-    expect(runtimeFetchMock).not.toHaveBeenCalled();
+    expect(runtimeFetchCalls).toEqual([]);
   });
 
   test('reads display URLs through fetch before runtime paths', async () => {
@@ -90,6 +97,6 @@ describe('materializeImageBlob', () => {
     expect(result.mimeType).toBe('image/jpeg');
     expect(result.filename).toBe('photo.jpg');
     expect(result.blob.size).toBe(2);
-    expect(runtimeFetchMock).not.toHaveBeenCalled();
+    expect(runtimeFetchCalls).toEqual([]);
   });
 });

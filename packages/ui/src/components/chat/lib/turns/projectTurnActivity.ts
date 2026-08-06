@@ -1,3 +1,4 @@
+import { hasConfirmedTerminalStop } from './assistantMessageLifecycle';
 import type {
     ChatMessageEntry,
     TurnActivityGroup,
@@ -81,20 +82,24 @@ export const projectTurnActivity = (input: ProjectActivityInput): ProjectActivit
         });
     });
 
-    // Canonical stop summary: only when disposition is normal and summary source is a stop text.
-    // Avoid treating interrupt/fallback text as a normal summary that would fold other text away.
+    // Canonical stop summary: the summary source must be a confirmed terminal
+    // stop message (finish === 'stop' with zero continuation tools, the runLoop
+    // exit rule). A stop that still carries continuation tools is a step
+    // boundary: its text stays in Activity justification instead of being
+    // promoted to the canonical body, and it must not fold other text away.
     //
-    // The `finish === 'stop'` check is made on the summary source message itself
-    // rather than on the turn's disposition. Turn disposition is derived from the
-    // *last* assistant, so a multi-step step gap flipped it to normal and back and
-    // took Activity row membership with it — a text part moved between an Activity
-    // justification row and the message body, unmounting the fold. Row membership
-    // must depend only on facts local to the message that owns the part.
+    // The check is made on the summary source message itself rather than on the
+    // turn's disposition. Turn disposition is derived from the *last* assistant,
+    // so a multi-step step gap flipped it to normal and back and took Activity
+    // row membership with it — a text part moved between an Activity
+    // justification row and the message body, unmounting the fold. Row
+    // membership must depend only on facts local to the message that owns the
+    // part.
     const hasCanonicalStopSummary = Boolean(input.summarySourceMessageId)
         && Boolean(input.summarySourcePartId)
         && input.assistantMessages.some((message) => (
             message.info.id === input.summarySourceMessageId
-            && getMessageFinish(message) === 'stop'
+            && hasConfirmedTerminalStop(getMessageFinish(message), message.parts)
         ));
 
     input.assistantMessages.forEach((message) => {
@@ -111,7 +116,7 @@ export const projectTurnActivity = (input: ProjectActivityInput): ProjectActivit
 
             const isConfirmedSummaryText = part.type === 'text'
                 && typeof text === 'string'
-                && finish === 'stop'
+                && hasConfirmedTerminalStop(finish, message.parts)
                 && input.summarySourceMessageId === message.info.id
                 && input.summarySourcePartId === partId;
 

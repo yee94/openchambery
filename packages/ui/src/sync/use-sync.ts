@@ -17,6 +17,7 @@ import {
   getSessionPrefetch,
   clearSessionPrefetch,
 } from "./session-prefetch-cache"
+import type { SessionHistoryBoundary } from "./types"
 import { getSessionMaterializationStatus } from "./materialization"
 import { loadSessionMessagePage } from "./session-message-loader"
 import { getRuntimeKey } from "@/lib/runtime-switch"
@@ -49,14 +50,41 @@ const cmp = (a: string, b: string) => (a < b ? -1 : a > b ? 1 : 0)
 // session recency, not whichever component happened to call sync first.
 const seenByDirectory = new Map<string, Set<string>>()
 
-/** Pagination meta; `limit` is cumulative authored-user **turns**, not messages. */
+/**
+ * Thin read-model over the child-store history boundary; `limit` is cumulative
+ * authored-user **turns**, not messages. Every field except `loading` comes
+ * from the boundary — there is no hook-local pagination fact.
+ */
 type SyncMeta = {
   limit: number
   cursor: string | undefined
   complete: boolean
   loading: boolean
-  /** Latest cache load generation that established the cursor/complete pair. */
-  loadGeneration?: number
+}
+
+/** Read the child-store history boundary (the only pagination read source). */
+function boundaryFromStoreState(
+  state: Pick<State, "session_history_boundary"> | undefined,
+  sessionID: string,
+): SessionHistoryBoundary {
+  return state?.session_history_boundary?.[sessionID] ?? { kind: "unknown", loadedTurns: 0 }
+}
+
+/**
+ * Adapt a child-store `SessionHistoryBoundary` (+ hook-local loading flag) into
+ * the flat `SyncMeta` read shape. This is the thinnest compatibility seam:
+ * cursor/complete/limit always come from the boundary.
+ */
+export function syncMetaFromBoundary(
+  boundary: SessionHistoryBoundary,
+  loading = false,
+): SyncMeta {
+  return {
+    limit: boundary.loadedTurns,
+    cursor: boundary.kind === "has-more" ? boundary.cursor : undefined,
+    complete: boundary.kind === "exhausted",
+    loading,
+  }
 }
 
 export type SessionHistoryLoadPlan =
@@ -100,54 +128,6 @@ const getEffectiveSessionCacheLimit = () => {
   if (isMobileSurfaceRuntime()) return MOBILE_SESSION_CACHE_LIMIT
   return SESSION_CACHE_LIMIT
 }
-const getDefaultMeta = (): SyncMeta => ({
-  limit: getInitialSessionTurnLimit(),
-  cursor: undefined,
-  complete: false,
-  loading: false,
-  loadGeneration: 0,
-})
-
-/**
- * Merge hook-local pagination meta with prefetch.
- *
- * - Local owns `loading` (in-flight pull in this hook).
- * - The newest cache load generation owns cursor and completion. This keeps a
- *   successful page response authoritative after local state from an older pull.
- * - A same-generation loading patch may borrow a still-valid cursor from the
- *   companion source until its response settles.
- */
-export function resolveMergedSessionSyncMeta(
-  local: SyncMeta | undefined,
-  prefetch: SyncMeta | undefined,
-): SyncMeta {
-  if (!local && !prefetch) return getDefaultMeta()
-  if (!local) return prefetch ?? getDefaultMeta()
-  if (!prefetch) return local
-  const localGeneration = local.loadGeneration ?? 0
-  const prefetchGeneration = prefetch.loadGeneration ?? 0
-  if (localGeneration !== prefetchGeneration) {
-    const latest = localGeneration > prefetchGeneration ? local : prefetch
-    const previous = latest === local ? prefetch : local
-    return {
-      limit: Math.max(local.limit, prefetch.limit),
-      cursor: latest.complete ? undefined : (latest.cursor ?? previous.cursor),
-      complete: latest.complete,
-      loading: local.loading,
-      loadGeneration: latest.loadGeneration,
-    }
-  }
-  // Same-generation partial metadata keeps a cursor-bearing history available.
-  const complete = local.complete && prefetch.complete
-  const cursor = complete ? undefined : (local.cursor ?? prefetch.cursor)
-  return {
-    limit: Math.max(local.limit, prefetch.limit),
-    cursor,
-    complete,
-    loading: local.loading,
-    loadGeneration: local.loadGeneration,
-  }
-}
 
 /**
  * Plan explicit history pagination from the latest merged meta.
@@ -163,18 +143,6 @@ export function resolveSessionHistoryLoadPlan(
   if (meta.complete) return { kind: "exhausted" }
   if (!meta.cursor) return { kind: "recover-cursor" }
   return { kind: "prepend", before: meta.cursor }
-}
-
-function getPrefetchMeta(directory: string, sessionID: string): SyncMeta | undefined {
-  const info = getSessionPrefetch(directory, sessionID)
-  if (!info) return undefined
-  return {
-    limit: info.limit,
-    cursor: info.cursor,
-    complete: info.complete,
-    loading: false,
-    loadGeneration: info.loadGeneration,
-  }
 }
 
 function sortParts(parts: Part[]) {
@@ -258,55 +226,63 @@ export function useSync() {
   const store = useDirectoryStore()
   const childStores = useChildStoreManager()
 
-  // Refs for mutable tracking. Pagination meta also bumps this hook-local
+  // Refs for mutable tracking. The loading flip also bumps this hook-local
   // revision: ChatContainer derives the mobile load-older affordance through
-  // this useSync instance, and a ref-only meta update previously waited for an
-  // unrelated scroll render before the button appeared.
+  // this useSync instance, and a ref-only update previously waited for an
+  // unrelated scroll render before the button appeared. Pagination boundary
+  // truth (cursor / complete / loadedTurns) lives exclusively in the directory
+  // child store (`state.session_history_boundary`); the refs below only track
+  // in-flight request lifecycle.
   const optimistic = useRef(new Map<string, Map<string, OptimisticItem>>())
-  const meta = useRef(new Map<string, SyncMeta>())
-  const [metaRevision, setMetaRevision] = useState(0)
+  const loadingRef = useRef(new Set<string>())
+  const [, setLoadingRevision] = useState(0)
 
   const keyFor = useCallback(
     (sessionID: string, targetDirectory = directory) => `${targetDirectory}\n${sessionID}`,
     [directory],
   )
 
-  const getMetaFor = useCallback(
-    (sessionID: string, targetDirectory = directory) => {
-      const key = keyFor(sessionID, targetDirectory)
-      // Prefer hook-local meta for loading ownership, but never let a local
-      // entry that lost its cursor mask a still-valid prefetch cursor.
-      // That mismatch shows canLoadEarlier (UI reads prefetch) while loadMore
-      // silent-no-ops on `!m.cursor` — the mobile "load older" flash-then-stop.
-      return resolveMergedSessionSyncMeta(
-        meta.current.get(key),
-        getPrefetchMeta(targetDirectory, sessionID),
-      )
-    },
-    [directory, keyFor],
+  const getStoreForDirectory = useCallback(
+    (targetDirectory = directory) => (
+      targetDirectory === directory
+        ? store
+        : childStores.getChild(targetDirectory)
+    ),
+    [childStores, directory, store],
   )
 
-  const setMetaFor = useCallback(
-    (sessionID: string, patch: Partial<{ limit: number; cursor: string | undefined; complete: boolean; loading: boolean; loadGeneration: number }>, targetDirectory = directory) => {
-      const key = keyFor(sessionID, targetDirectory)
-      // Base on merged getMetaFor so loading:true patches keep the live cursor
-      // from prefetch when the local map never received a full page settle.
-      const current = getMetaFor(sessionID, targetDirectory)
-      const next = { ...current, ...patch }
-      const previous = meta.current.get(key)
-      meta.current.set(key, next)
-      if (
-        !previous
-        || previous.limit !== next.limit
-        || previous.cursor !== next.cursor
-        || previous.complete !== next.complete
-        || previous.loading !== next.loading
-        || previous.loadGeneration !== next.loadGeneration
-      ) {
-        setMetaRevision((revision) => revision + 1)
-      }
+  const getBoundaryFor = useCallback(
+    (sessionID: string, targetDirectory = directory): SessionHistoryBoundary => {
+      const targetStore = getStoreForDirectory(targetDirectory)
+      return boundaryFromStoreState(targetStore?.getState(), sessionID)
     },
-    [directory, keyFor, getMetaFor],
+    [getStoreForDirectory, directory],
+  )
+
+  // Thin compatibility adapter: boundary (+ local loading flag) → legacy flat
+  // meta. Every field except `loading` is derived from the child-store
+  // boundary; nothing hook-local or prefetch-owned may override it.
+  const getMetaFor = useCallback(
+    (sessionID: string, targetDirectory = directory): SyncMeta => {
+      const boundary = getBoundaryFor(sessionID, targetDirectory)
+      return syncMetaFromBoundary(boundary, loadingRef.current.has(keyFor(sessionID, targetDirectory)))
+    },
+    [getBoundaryFor, keyFor, directory],
+  )
+
+  const setLoadingFor = useCallback(
+    (sessionID: string, loading: boolean, targetDirectory = directory) => {
+      const key = keyFor(sessionID, targetDirectory)
+      const had = loadingRef.current.has(key)
+      if (loading === had) return
+      if (loading) {
+        loadingRef.current.add(key)
+      } else {
+        loadingRef.current.delete(key)
+      }
+      setLoadingRevision((revision) => revision + 1)
+    },
+    [keyFor, directory],
   )
 
   // Session cache eviction — two levels of LRU:
@@ -329,15 +305,18 @@ export function useSync() {
         todo: { ...current.todo },
         permission: { ...current.permission },
         question: { ...current.question },
+        session_history_boundary: { ...current.session_history_boundary },
       }
+      // dropSessionCaches also deletes the session_history_boundary entry, so
+      // the next visit reads `unknown` and refreshes the tail.
       dropSessionCaches(draft, sessionIDs)
       dropCachedSessionMessageRecordsSnapshots(dirStore, sessionIDs)
       dirStore.setState(draft)
 
-      // Clear meta + optimistic + prefetch cache for evicted sessions
+      // Clear optimistic + request-lifecycle state for evicted sessions.
       for (const id of sessionIDs) {
         optimistic.current.delete(`${dir}\n${id}`)
-        meta.current.delete(`${dir}\n${id}`)
+        loadingRef.current.delete(`${dir}\n${id}`)
       }
       clearSessionPrefetch(dir, sessionIDs)
     },
@@ -483,7 +462,7 @@ export function useSync() {
         recordedLimit: m.limit,
         renderedMessageCount: storeMessageCount,
       })
-      setMetaFor(sessionID, { loading: true }, targetDirectory)
+      setLoadingFor(sessionID, true, targetDirectory)
 
       const result = await loadSessionMessagePage({
         purpose: options?.purpose ?? "initial",
@@ -563,29 +542,35 @@ export function useSync() {
               parts: sortParts(record.parts ?? []),
             }
           },
-          // Pagination meta lives in this hook's ref, not the store, so it is
-          // supplied here for the reducer's reference-stability comparison.
+          // The reducer reads the child-store boundary directly; the store is
+          // the single source of truth for cursor/complete/loadedTurns.
           getStoreState: () => {
             const current = targetStore.getState()
-            const currentMeta = getMetaFor(sessionID, targetDirectory)
             return {
               message: current.message,
               part: current.part,
-              meta: {
-                limit: currentMeta.limit,
-                cursor: currentMeta.cursor,
-                complete: currentMeta.complete,
-              },
+              session_history_boundary: current.session_history_boundary,
             }
           },
           commitStore: (reduced) => {
             for (const messageID of reduced.confirmedOptimisticIDs) {
               clearOptimistic(sessionID, messageID, targetDirectory)
             }
-            if (!reduced.messagesChanged && !reduced.partsChanged) return
-            targetStore.setState({
-              ...(reduced.messagesChanged ? { message: reduced.message } : {}),
-              ...(reduced.partsChanged ? { part: reduced.part } : {}),
+            // Commit message/part/boundary in ONE setState so readers never
+            // observe a new transcript with a stale history boundary — even
+            // when the message references are unchanged (boundary-only page).
+            targetStore.setState((state) => {
+              const patch: Partial<State> = {}
+              if (reduced.messagesChanged) patch.message = reduced.message
+              if (reduced.partsChanged) patch.part = reduced.part
+              if (reduced.boundary) {
+                patch.session_history_boundary = {
+                  ...state.session_history_boundary,
+                  [sessionID]: reduced.boundary,
+                }
+              }
+              if (!patch.message && !patch.part && !patch.session_history_boundary) return state
+              return patch
             })
           },
           getOptimistic: () => getOptimistic(sessionID, targetDirectory),
@@ -594,24 +579,15 @@ export function useSync() {
         },
       })
 
-      // The loader owns prefetch meta, load status, and error reporting for
-      // skipped/failed pulls; only the hook-local pagination ref needs clearing.
+      // The loader owns prefetch request status and error reporting for
+      // skipped/failed pulls; the boundary was committed into the child store
+      // by commitStore above. Only the hook-local loading flag needs clearing.
       if (result.status !== "ready") {
-        setMetaFor(sessionID, { loading: false }, targetDirectory)
+        setLoadingFor(sessionID, false, targetDirectory)
         return
       }
 
-      // The loader settles prefetch with a generation-gated response before it
-      // returns. Read that canonical result so an older local request cannot
-      // overwrite a newer page's cursor or complete boundary.
-      const settledPrefetchMeta = getPrefetchMeta(targetDirectory, sessionID)
-      setMetaFor(sessionID, {
-        limit: settledPrefetchMeta?.limit ?? result.meta?.limit ?? result.messages.length,
-        cursor: settledPrefetchMeta?.cursor ?? result.meta?.cursor,
-        complete: settledPrefetchMeta?.complete ?? result.meta?.complete ?? false,
-        loading: false,
-        loadGeneration: settledPrefetchMeta?.loadGeneration,
-      }, targetDirectory)
+      setLoadingFor(sessionID, false, targetDirectory)
       await reconcileActiveSessionStatusAfterMessagePull({
         directory: targetDirectory,
         sessionID,
@@ -623,7 +599,7 @@ export function useSync() {
         isStale: options?.isStale,
       })
     },
-    [childStores, store, getMetaFor, setMetaFor, getOptimistic, clearOptimistic, directory],
+    [childStores, store, getMetaFor, setLoadingFor, getOptimistic, clearOptimistic, directory],
   )
 
   // Sync a session (load if not cached)
@@ -641,20 +617,24 @@ export function useSync() {
         key,
         request: async (isStale) => {
           const current = targetStore.getState()
-          const m = getMetaFor(sessionID, targetDirectory)
+          const boundary = boundaryFromStoreState(current, sessionID)
           const materialization = getSessionMaterializationStatus(current, sessionID)
-          const cached = materialization.hasMessages && materialization.renderable && m.limit > 0
-          const cachedReady = cached && hasSessionMessageBoundary(current.message[sessionID], m.complete)
+          const cached = materialization.hasMessages && materialization.renderable
+          const cachedReady = cached && hasSessionMessageBoundary(current.message[sessionID], boundary.kind === "exhausted")
           const prefetchInfo = !force ? getSessionPrefetch(targetDirectory, sessionID) : undefined
           const hasSession = Binary.search(current.session, sessionID, (s) => s.id).found
 
           // Cache reuse is solely shouldSkipSessionPrefetch (complete/TTL/dirty).
-          // Do not short-circuit on cachedReady+hasSession alone — that bypassed
-          // dirty marks after live events and left half-finished reasoning/text.
+          // An unknown store boundary can never reuse the cache: cached user
+          // messages without an established boundary still trigger one
+          // authoritative tail refresh. Do not short-circuit on
+          // cachedReady+hasSession alone — that bypassed dirty marks after
+          // live events and left half-finished reasoning/text.
           if (!force && shouldSkipSessionPrefetch({
             hasSession,
             hasMessages: cachedReady,
             info: prefetchInfo,
+            boundary,
             pageSize: getInitialSessionTurnLimit(),
           })) return
 
@@ -687,14 +667,14 @@ export function useSync() {
         },
       })
     },
-    [childStores, keyFor, touch, getMetaFor, loadMessages, directory],
+    [childStores, keyFor, touch, loadMessages, directory],
   )
 
   // Load more (pagination). Directory must match the session's workspace —
-  // meta/prefetch cursor is keyed by directory, and a missing directory falls
-  // through to default meta (no cursor) which would silent-no-op.
-  // Cursor resolution uses getMetaFor (local ∪ prefetch) so a local loading
-  // patch that never wrote cursor still finds the prefetch page cursor.
+  // the boundary is keyed by (directory store, session), and a missing
+  // directory falls through to the unknown boundary which would silent-no-op.
+  // Cursor resolution reads the child-store boundary only; an unknown
+  // boundary refreshes the authoritative tail first to recover a cursor.
   const loadMore = useCallback(
     async (sessionID: string, options?: { directory?: string }) => {
       const targetDirectory = options?.directory ?? directory
@@ -881,6 +861,6 @@ export function useSync() {
         confirm: optimisticConfirm,
       },
     }),
-    [syncSession, loadChildren, loadMore, hasMore, isLoading, isComplete, refreshSessionTranscript, optimisticAdd, optimisticRemove, optimisticConfirm, metaRevision],
+    [syncSession, loadChildren, loadMore, hasMore, isLoading, isComplete, refreshSessionTranscript, optimisticAdd, optimisticRemove, optimisticConfirm],
   )
 }

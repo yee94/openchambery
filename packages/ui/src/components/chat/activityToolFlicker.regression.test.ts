@@ -34,6 +34,7 @@ import {
   resolveTurnSettledForPresentation,
 } from './lib/activityExpansion';
 import { projectTurnActivity } from './lib/turns/projectTurnActivity';
+import { projectTurnRecords } from './lib/turns/projectTurnRecords';
 import { resolveVisibleSortedAssistants } from './lib/visibleSortedAssistants';
 import type { ChatMessageEntry } from './lib/turns/types';
 import { getSessionMaterializationStatus, materializeSessionSnapshots, type MaterializedState } from '@/sync/materialization';
@@ -225,16 +226,34 @@ describe('activity tool flicker regression (Trace-20260804T171706)', () => {
     }
   });
 
-  test('4b. the last turn never auto-collapses, whatever disposition it reports', () => {
+  test('4b. the last turn auto-collapses only once its final body is confirmed', () => {
     // A multi-step turn reads settled for the gap between one step's finish and
     // the next assistant message. Auto-collapsing in that gap unmounted the
     // nested tool rows and re-expanded them a frame later, so the newest turn
-    // opts out of auto-collapse entirely rather than consulting a flapping input.
+    // opts out of auto-collapse until the projection confirms a terminal stop
+    // with a model-produced final text (hasConfirmedFinalBody).
     for (const disposition of ['active', 'normal', 'abnormal'] as const) {
       expect(
-        resolveDefaultActivityExpanded(disposition, 'collapsed', { isLastTurn: true }),
+        resolveDefaultActivityExpanded(disposition, 'collapsed', {
+          isLastTurn: true,
+          hasConfirmedFinalBody: false,
+        }),
       ).toBe(true);
     }
+    // Once the final body is confirmed, the untouched last turn follows the
+    // configured render mode like any settled turn.
+    expect(
+      resolveDefaultActivityExpanded('normal', 'collapsed', {
+        isLastTurn: true,
+        hasConfirmedFinalBody: true,
+      }),
+    ).toBe(false);
+    expect(
+      resolveDefaultActivityExpanded('normal', 'summary', {
+        isLastTurn: true,
+        hasConfirmedFinalBody: true,
+      }),
+    ).toBe(true);
   });
 
   test('4d. the completed-turn footer stays hidden through a multi-step step gap', () => {
@@ -299,13 +318,125 @@ describe('activity tool flicker regression (Trace-20260804T171706)', () => {
       headerPresentationDisposition: header.completionDisposition,
     });
     expect(expansionDisposition).toBe('normal');
-    // Auto-collapse applies once the turn is history. The newest turn stays open
-    // until the next message pushes it down (see 4b).
+    // Settled turns follow the render mode. The newest turn keeps its stability
+    // exemption until a confirmed final body makes this transition authoritative.
     expect(resolveDefaultActivityExpanded(expansionDisposition, 'collapsed')).toBe(false);
     expect(resolveDefaultActivityExpanded(expansionDisposition, 'summary')).toBe(true);
     expect(
       resolveDefaultActivityExpanded(expansionDisposition, 'collapsed', { isLastTurn: true }),
     ).toBe(true);
+    expect(
+      resolveDefaultActivityExpanded(expansionDisposition, 'collapsed', {
+        isLastTurn: true,
+        hasConfirmedFinalBody: true,
+      }),
+    ).toBe(false);
+  });
+
+  test('5c. three-frame settle: stop+continuation tool stays open until a confirmed final body folds it', () => {
+    // Full public seam: projectTurnRecords → resolveActivityExpansionDisposition
+    // → resolveDefaultActivityExpanded. OpenCode runLoop semantics say a stop
+    // with a completed ordinary tool is still continuation work, so the last
+    // turn must not auto-collapse until a later assistant confirms the final
+    // body (terminal stop + real text + zero continuation tools).
+    const expansionFor = (turns: ReturnType<typeof projectTurnRecords>['turns']) => {
+      const turn = turns[turns.length - 1];
+      if (!turn) throw new Error('expected a turn');
+      const header = resolveTurnActivityPresentation({
+        completionDisposition: turn.completionDisposition,
+        isLastTurn: true,
+        sessionIsWorking: true,
+      });
+      const disposition = resolveActivityExpansionDisposition({
+        isLastTurn: true,
+        turnCompletionDisposition: turn.completionDisposition,
+        headerPresentationDisposition: header.completionDisposition,
+      });
+      return {
+        completionDisposition: turn.completionDisposition,
+        hasConfirmedFinalBody: turn.hasConfirmedFinalBody,
+        expanded: resolveDefaultActivityExpanded(disposition, 'collapsed', {
+          isLastTurn: true,
+          hasConfirmedFinalBody: turn.hasConfirmedFinalBody,
+        }),
+      };
+    };
+
+    const userEntry: ChatMessageEntry = {
+      info: user('u1'),
+      parts: [textPart('p_u', 'u1', 'run the checks')],
+    };
+    const stepEntry = (id: string, info: Message, parts: Part[]): ChatMessageEntry => ({
+      info: { ...info, parentID: 'u1' } as Message,
+      parts,
+    });
+
+    // Frame 1: last assistant stop + completed ordinary tool + intermediate text.
+    const frame1 = projectTurnRecords([
+      userEntry,
+      stepEntry(
+        'a1',
+        {
+          id: 'a1', sessionID, role: 'assistant', finish: 'stop',
+          time: { created: 2, completed: 30 },
+        } as Message,
+        [toolPart('t1', 'a1', 'bash', 'completed'), textPart('p1', 'a1', 'running the checks')],
+      ),
+    ]).turns;
+    expect(expansionFor(frame1)).toEqual({
+      completionDisposition: 'active',
+      hasConfirmedFinalBody: false,
+      expanded: true,
+    });
+
+    // Frame 2: next assistant streams without a finish.
+    const frame2 = projectTurnRecords([
+      userEntry,
+      stepEntry(
+        'a1',
+        {
+          id: 'a1', sessionID, role: 'assistant', finish: 'stop',
+          time: { created: 2, completed: 30 },
+        } as Message,
+        [toolPart('t1', 'a1', 'bash', 'completed'), textPart('p1', 'a1', 'running the checks')],
+      ),
+      stepEntry(
+        'a2',
+        { id: 'a2', sessionID, role: 'assistant', time: { created: 31 } } as Message,
+        [],
+      ),
+    ]).turns;
+    expect(expansionFor(frame2)).toEqual({
+      completionDisposition: 'active',
+      hasConfirmedFinalBody: false,
+      expanded: true,
+    });
+
+    // Frame 3: next assistant stops with real text and zero continuation tools.
+    const frame3 = projectTurnRecords([
+      userEntry,
+      stepEntry(
+        'a1',
+        {
+          id: 'a1', sessionID, role: 'assistant', finish: 'stop',
+          time: { created: 2, completed: 30 },
+        } as Message,
+        [toolPart('t1', 'a1', 'bash', 'completed'), textPart('p1', 'a1', 'running the checks')],
+      ),
+      stepEntry(
+        'a2',
+        {
+          id: 'a2', sessionID, role: 'assistant', finish: 'stop',
+          time: { created: 31, completed: 60 },
+        } as Message,
+        [textPart('p2', 'a2', 'all checks passed')],
+      ),
+    ]).turns;
+    expect(expansionFor(frame3)).toEqual({
+      completionDisposition: 'normal',
+      hasConfirmedFinalBody: true,
+      expanded: false,
+    });
   });
 
   test('6. full ensure-gate sequence matching ChatContainer effect inputs', () => {

@@ -145,15 +145,18 @@ function installModuleMocks() {
 
       const sessionID = input.sessionID
       const state = input.deps.getStoreState()
+      const boundary = { kind: "exhausted", loadedTurns: loaderMessages.length } as const
       const reduced = {
         applied: true,
         changed: true,
         messagesChanged: true,
         partsChanged: true,
+        boundaryChanged: true,
         merge,
         message: { ...state.message, [sessionID]: loaderMessages },
         part: { ...state.part, ...loaderParts },
         messages: loaderMessages,
+        boundary,
         meta: { limit: loaderMessages.length, cursor: undefined, complete: true },
         confirmedOptimisticIDs: [] as string[],
         commands: [] as Array<{ type: "clear-optimistic"; messageIDs: string[] }>,
@@ -465,6 +468,88 @@ describe("sync-context reconnect / materialize → loadSessionMessagePage", () =
 
     expect(store.getState().message.ses_viewed?.map((item) => item.id)).toEqual(["msg_recovered"])
     expect(store.getState().part.msg_recovered?.[0]?.id).toBe("prt_recovered")
+  })
+
+  test("loader ready commits the boundary atomically with messages (materialize)", async () => {
+    const store = createDirectoryStore({ message: {}, part: {} })
+    loaderMessages = [message("msg_ready")]
+    loaderParts = { msg_ready: [part("prt_ready", "msg_ready")] }
+
+    await materializeSessionFromServer("/repo", "ses_viewed", store, {
+      reason: "orphan-delta",
+    })
+
+    expect(store.getState().message.ses_viewed?.map((item) => item.id)).toEqual(["msg_ready"])
+    // The boundary committed in the same setState, even though the loader
+    // resolved it independently from the message payload.
+    expect(store.getState().session_history_boundary.ses_viewed).toEqual({
+      kind: "exhausted",
+      loadedTurns: 1,
+    })
+  })
+
+  test("loader ready commits the boundary atomically with messages (recovery)", async () => {
+    const store = createDirectoryStore({
+      message: { ses_viewed: [message("msg_old")] },
+      part: { msg_old: [part("prt_old", "msg_old")] },
+      session_status: { ses_viewed: { type: "busy" } },
+    })
+    loaderMessages = [message("msg_recovered")]
+    loaderParts = { msg_recovered: [part("prt_recovered", "msg_recovered")] }
+
+    await resyncDirectoryAfterReconnect(
+      "/repo",
+      store,
+      createRoutingIndex(),
+      "stream-reconnect",
+      () => 1,
+    )
+
+    expect(store.getState().session_history_boundary.ses_viewed).toEqual({
+      kind: "exhausted",
+      loadedTurns: 1,
+    })
+  })
+
+  test("loader error preserves the last known boundary (materialize)", async () => {
+    const existing = message("msg_keep")
+    const existingPart = part("prt_keep", "msg_keep")
+    const known = { kind: "has-more", cursor: "msg_keep", loadedTurns: 2 } as const
+    const store = createDirectoryStore({
+      message: { ses_viewed: [existing] },
+      part: { msg_keep: [existingPart] },
+      session_history_boundary: { ses_viewed: known },
+    })
+    loaderBehavior = "error"
+
+    await materializeSessionFromServer("/repo", "ses_viewed", store, {
+      reason: "ensure-session-messages",
+    })
+
+    expect(store.getState().session_history_boundary.ses_viewed).toEqual(known)
+  })
+
+  test("loader error preserves the last known boundary (recovery)", async () => {
+    const existing = message("msg_keep")
+    const existingPart = part("prt_keep", "msg_keep")
+    const known = { kind: "exhausted", loadedTurns: 3 } as const
+    const store = createDirectoryStore({
+      message: { ses_viewed: [existing] },
+      part: { msg_keep: [existingPart] },
+      session_status: { ses_viewed: { type: "busy" } },
+      session_history_boundary: { ses_viewed: known },
+    })
+    loaderBehavior = "error"
+
+    await resyncDirectoryAfterReconnect(
+      "/repo",
+      store,
+      createRoutingIndex(),
+      "stream-reconnect",
+      () => 1,
+    )
+
+    expect(store.getState().session_history_boundary.ses_viewed).toEqual(known)
   })
 
   test("loader error preserves existing transcript (materialize)", async () => {

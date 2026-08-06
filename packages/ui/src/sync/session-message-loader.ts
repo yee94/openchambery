@@ -6,13 +6,21 @@
  *
  * Application layer: `loadSessionMessagePage` with `purpose` orchestrates
  * policy → query → (assistant-tail recovery) → reducer → store commit, and
- * tracks loading / ready / error via the prefetch cache.
+ * tracks request lifecycle (loading / ready / error) via the prefetch cache.
+ *
+ * Boundary ownership: the reducer resolves the authoritative
+ * `SessionHistoryBoundary` and the caller commits it into the directory child
+ * store in the same setState as message/part. The prefetch cache entry only
+ * carries request status + TTL coordination plus a transport copy of the
+ * boundary so legacy readers keep working; it is never the read source for
+ * pagination.
  */
 
 import type { Message, Part } from "@opencode-ai/sdk/v2/client"
 import {
   beginSessionMessageLoad,
   failSessionMessageLoad,
+  getSessionPrefetch,
   setSessionPrefetch,
 } from "./session-prefetch-cache"
 import {
@@ -29,6 +37,7 @@ import {
   shouldDropStalePage,
   type SessionMessagePagePurpose,
 } from "./session-merge-strategy"
+import type { SessionHistoryBoundary } from "./types"
 
 // ---------------------------------------------------------------------------
 // Transport single-flight (legacy + internal)
@@ -174,7 +183,9 @@ export type LoadSessionMessagePageDeps = {
   getStoreState: () => SessionMessageReducerState
   /**
    * Atomic commit of reducer output into the owning directory store.
-   * Callers may also apply meta / clear optimistic from `result.commands`.
+   * Must apply `result.boundary` (session_history_boundary) in the same
+   * setState as message/part — even when messages are unchanged. Callers may
+   * also clear optimistic from `result.commands`.
    */
   commitStore: (result: ReduceSessionMessagePageResult) => void
   getOptimistic?: () => OptimisticItem[]
@@ -202,6 +213,8 @@ export type LoadSessionMessagePageResult = {
   applied: boolean
   changed: boolean
   meta?: SessionMessagePageMeta
+  /** Boundary the caller must commit (present on applied pages). */
+  boundary?: SessionHistoryBoundary
   messages: Message[]
   /** Records the server page contributed, after assistant-tail parent recovery. */
   recordCount: number
@@ -227,6 +240,15 @@ function isTransportInput<T>(
 ): input is LoadSessionMessagePageTransportInput<T> {
   return typeof (input as LoadSessionMessagePageTransportInput<T>).request === "function"
     && !("purpose" in input && (input as LoadSessionMessagePageAppInput).purpose)
+}
+
+function boundaryToMeta(boundary: SessionHistoryBoundary | undefined, fallbackLimit: number): SessionMessagePageMeta {
+  if (!boundary) return { limit: fallbackLimit, cursor: undefined, complete: false }
+  return {
+    limit: boundary.loadedTurns,
+    cursor: boundary.kind === "has-more" ? boundary.cursor : undefined,
+    complete: boundary.kind === "exhausted",
+  }
 }
 
 /**
@@ -257,6 +279,8 @@ async function loadSessionMessagePageApp(
   const { purpose, runtimeKey, directory, sessionID, before, deps } = input
   const limit = input.limit ?? resolveSessionMessagePageLimit(purpose)
   const emptyMessages = (): Message[] => deps.getStoreState().message[sessionID] ?? []
+  const currentBoundary = (): SessionHistoryBoundary | undefined =>
+    deps.getStoreState().session_history_boundary?.[sessionID]
 
   // A page whose strategy backfills (reconnect recovery) stays useful after live
   // events land: it is the only source for messages the SSE gap swallowed. The
@@ -264,22 +288,38 @@ async function loadSessionMessagePageApp(
   const dropWhenStale = shouldDropStalePage(purpose)
   const lostRaceToLiveState = () => dropWhenStale && Boolean(deps.isStale?.())
 
-  const loadGeneration = beginSessionMessageLoad(directory, sessionID, limit, runtimeKey)
+  // Generation gate: a newer load for the same scope supersedes this one.
+  // A stale completion must not commit messages or a boundary over the newer
+  // load's result — the same gate the prefetch cache uses for settle/fail.
+  // A missing entry (cleared while this load was in flight) means the scope
+  // was reset underneath us; that is not a newer generation.
+  const loadGenerationIsCurrent = () => {
+    const current = getSessionPrefetch(directory, sessionID, runtimeKey)
+    if (!current) return true
+    return current.loadGeneration === loadGeneration
+  }
+
+  // Generation gate: a newer load for the same scope supersedes this one.
+  // Completions that share one single-flight transport response (provider
+  // remount, imperative + reactive pull) belong to the same generation —
+  // only a genuinely newer page request (different transport key, begun
+  // after this one) invalidates this completion.
+  const transportKey = pageKey({ runtimeKey, directory, sessionID, limit, before })
+  const priorPrefetch = getSessionPrefetch(directory, sessionID, runtimeKey)
+  const sharesInflightPage = priorPrefetch?.status === "loading" && inflight.has(transportKey)
+  const loadGeneration = sharesInflightPage
+    ? priorPrefetch.loadGeneration
+    : beginSessionMessageLoad(directory, sessionID, limit, runtimeKey)
   deps.onLoading?.()
 
-  // Prefetch `limit` stores product **turn** budget (not message count).
-  const settlePrefetch = (page: {
-    turnLimit: number
-    cursor?: string
-    complete: boolean
-  }) => {
+  // Settle request lifecycle only — the generation-gated ready write happens
+  // AFTER the store commit below, and never carries pagination facts.
+  const settleRequestReady = () => {
     setSessionPrefetch({
       directory,
       sessionID,
       runtimeKey,
-      limit: page.turnLimit,
-      cursor: page.cursor,
-      complete: page.complete,
+      requestedLimit: limit,
       loadGeneration,
     })
   }
@@ -287,17 +327,16 @@ async function loadSessionMessagePageApp(
   const skipStalePage = (page: {
     recordCount: number
     turnLimit: number
-    cursor?: string
-    complete: boolean
   }): LoadSessionMessagePageResult => {
-    settlePrefetch({ turnLimit: page.turnLimit, cursor: page.cursor, complete: page.complete })
+    settleRequestReady()
     return {
       status: "skipped",
       applied: false,
       changed: false,
       messages: emptyMessages(),
       recordCount: page.recordCount,
-      meta: deps.getStoreState().meta,
+      meta: boundaryToMeta(currentBoundary(), page.turnLimit),
+      boundary: currentBoundary(),
     }
   }
 
@@ -320,8 +359,6 @@ async function loadSessionMessagePageApp(
       return skipStalePage({
         recordCount: page.records.length,
         turnLimit: pageTurnCount,
-        cursor: page.cursor,
-        complete: page.complete,
       })
     }
 
@@ -357,8 +394,6 @@ async function loadSessionMessagePageApp(
       return skipStalePage({
         recordCount: records.length,
         turnLimit: pageTurnCount,
-        cursor: page.cursor,
-        complete: page.complete,
       })
     }
 
@@ -384,33 +419,51 @@ async function loadSessionMessagePageApp(
       },
     )
 
+    if (!loadGenerationIsCurrent()) {
+      // A newer load owns this scope now. Drop the whole completion — messages
+      // and boundary — so an older response cannot overwrite newer state. Do
+      // not settle prefetch either (that write is generation-gated anyway).
+      return {
+        status: "skipped",
+        applied: false,
+        changed: false,
+        messages: emptyMessages(),
+        recordCount: records.length,
+        meta: boundaryToMeta(currentBoundary(), pageTurnCount),
+        boundary: currentBoundary(),
+      }
+    }
+
     if (!reduced.applied) {
-      // Live revision won or reducer declined apply — preserve transcript.
-      settlePrefetch({
-        turnLimit: state.meta?.limit ?? pageTurnCount,
-        cursor: state.meta?.cursor ?? page.cursor,
-        complete: state.meta?.complete ?? page.complete,
-      })
+      if (reduced.error) {
+        // Page contract violation (e.g. complete=false without a usable
+        // cursor): treat the page like a failed load — preserve the last known
+        // boundary and flip request status to error through the normal path.
+        throw new Error(reduced.error)
+      }
+      // Live revision won or reducer declined apply — preserve transcript and
+      // the last known boundary; the page's own boundary is dropped with it.
+      settleRequestReady()
       return {
         status: "skipped",
         applied: false,
         changed: false,
         messages: reduced.messages,
         recordCount: records.length,
-        meta: reduced.meta,
+        meta: reduced.meta ?? boundaryToMeta(currentBoundary(), pageTurnCount),
+        boundary: currentBoundary(),
         reduced,
       }
     }
 
+    // commitStore must apply message/part/boundary atomically (single setState),
+    // even when only the boundary changed. The generation-gated request-ready
+    // settle happens strictly after the store commit.
     deps.commitStore(reduced)
 
-    const meta = reduced.meta
-    settlePrefetch({
-      turnLimit: meta?.limit ?? pageTurnCount,
-      cursor: meta?.cursor,
-      complete: meta?.complete ?? page.complete,
-    })
-    deps.onReady?.(meta)
+    const boundary = reduced.boundary
+    settleRequestReady()
+    deps.onReady?.(reduced.meta)
 
     return {
       status: "ready",
@@ -418,12 +471,19 @@ async function loadSessionMessagePageApp(
       changed: reduced.changed,
       messages: reduced.messages,
       recordCount: records.length,
-      meta,
+      meta: reduced.meta,
+      boundary,
       reduced,
     }
   } catch (error) {
     const message = formatLoadError(error)
-    failSessionMessageLoad(directory, sessionID, message, runtimeKey, loadGeneration)
+    // Failure keeps the last known boundary untouched; only the request
+    // lifecycle flips to error. A caller-declared stale completion (session
+    // switched away mid-flight) must not paint error over a newer in-flight
+    // or ready load for the same scope, so it leaves the entry untouched.
+    if (!deps.isStale?.()) {
+      failSessionMessageLoad(directory, sessionID, message, runtimeKey, loadGeneration)
+    }
     deps.onError?.(message)
     return {
       status: "error",
@@ -431,7 +491,8 @@ async function loadSessionMessagePageApp(
       changed: false,
       messages: emptyMessages(),
       recordCount: 0,
-      meta: deps.getStoreState().meta,
+      meta: boundaryToMeta(currentBoundary(), limit),
+      boundary: currentBoundary(),
       error: message,
     }
   }

@@ -1,3 +1,4 @@
+import { hasConfirmedTerminalStop, isModelTextPart } from './assistantMessageLifecycle';
 import type { ChatMessageEntry, TurnChangedFile, TurnDiffStats, TurnSummaryRecord } from './types';
 import { resolveActivityPartId } from './resolveActivityPartId';
 
@@ -25,16 +26,22 @@ const getTextFromPart = (part: unknown): string | undefined => {
 };
 
 export const projectTurnSummary = (assistantMessages: ChatMessageEntry[]): TurnSummaryRecord => {
+    // Canonical stop summary: only a confirmed terminal stop (finish === 'stop'
+    // with zero continuation tools, per the runLoop exit rule) may own the
+    // canonical body, and only a real model text part — synthetic sidecar text
+    // is skipped so the last model-produced text wins. A stop that still
+    // carries continuation tools is a step boundary, not the final answer —
+    // its text stays in Activity justification.
     for (let messageIndex = assistantMessages.length - 1; messageIndex >= 0; messageIndex -= 1) {
         const assistantMessage = assistantMessages[messageIndex];
         if (!assistantMessage) continue;
 
         const finish = (assistantMessage.info as { finish?: string | null }).finish;
-        if (finish !== 'stop') continue;
+        if (!hasConfirmedTerminalStop(finish, assistantMessage.parts)) continue;
 
         for (let partIndex = assistantMessage.parts.length - 1; partIndex >= 0; partIndex -= 1) {
             const part = assistantMessage.parts[partIndex];
-            if (!part || part.type !== 'text') continue;
+            if (!part || !isModelTextPart(part)) continue;
 
             const text = getTextFromPart(part);
             if (!text) continue;

@@ -444,16 +444,29 @@ export async function materializeSessionFromServer(
       },
       getStoreState: () => {
         const state = store.getState()
-        return { message: state.message, part: state.part }
+        return {
+          message: state.message,
+          part: state.part,
+          session_history_boundary: state.session_history_boundary,
+        }
       },
       commitStore: (reduced: ReduceSessionMessagePageResult) => {
-        if (!reduced.applied || !reduced.changed) return
+        if (!reduced.applied) return
+        // Atomic commit: message/part/boundary move in one setState, and a
+        // boundary-only page (unchanged message references) still commits the
+        // boundary so the store stays the single pagination read source.
         store.setState((state: DirectoryStore) => {
-          if (!reduced.messagesChanged && !reduced.partsChanged) return state
-          return {
-            ...(reduced.messagesChanged ? { message: reduced.message } : {}),
-            ...(reduced.partsChanged ? { part: reduced.part } : {}),
+          const patch: Partial<DirectoryStore> = {}
+          if (reduced.messagesChanged) patch.message = reduced.message
+          if (reduced.partsChanged) patch.part = reduced.part
+          if (reduced.boundary) {
+            patch.session_history_boundary = {
+              ...state.session_history_boundary,
+              [sessionID]: reduced.boundary,
+            }
           }
+          if (!patch.message && !patch.part && !patch.session_history_boundary) return state
+          return patch
         })
       },
       isStale: () => options?.isStale?.() ?? false,
@@ -1489,16 +1502,29 @@ export async function resyncDirectoryAfterReconnect(
           },
           getStoreState: () => {
             const state = store.getState()
-            return { message: state.message, part: state.part }
+            return {
+              message: state.message,
+              part: state.part,
+              session_history_boundary: state.session_history_boundary,
+            }
           },
           commitStore: (reduced: ReduceSessionMessagePageResult) => {
-            if (!reduced.applied || !reduced.changed) return
+            if (!reduced.applied) return
+            // Atomic commit: message/part/boundary move in one setState, and a
+            // boundary-only page (unchanged message references) still commits
+            // the boundary so the store stays the single pagination read source.
             store.setState((state: DirectoryStore) => {
-              if (!reduced.messagesChanged && !reduced.partsChanged) return state
-              return {
-                ...(reduced.messagesChanged ? { message: reduced.message } : {}),
-                ...(reduced.partsChanged ? { part: reduced.part } : {}),
+              const patch: Partial<DirectoryStore> = {}
+              if (reduced.messagesChanged) patch.message = reduced.message
+              if (reduced.partsChanged) patch.part = reduced.part
+              if (reduced.boundary) {
+                patch.session_history_boundary = {
+                  ...state.session_history_boundary,
+                  [sessionId]: reduced.boundary,
+                }
               }
+              if (!patch.message && !patch.part && !patch.session_history_boundary) return state
+              return patch
             })
           },
           getLiveRevision: () => getLiveRevision(sessionId),

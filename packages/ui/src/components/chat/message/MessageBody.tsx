@@ -14,6 +14,7 @@ import type { TurnChangedFile, TurnGroupingContext } from '../lib/turns/types';
 import { cn } from '@/lib/utils';
 import { WorkerHighlightedCode } from '@/components/code/WorkerHighlightedCode';
 import { isEmptyTextPart, extractTextContent } from './partUtils';
+import { hasConfirmedTerminalStop } from '../lib/turns/assistantMessageLifecycle';
 import { FadeInOnReveal } from './FadeInOnReveal';
 import { Button } from '@/components/ui/button';
 import { Tooltip, TooltipContent, TooltipTrigger } from '@/components/ui/tooltip';
@@ -1714,8 +1715,14 @@ const AssistantMessageBody = React.memo(({
     // Compacting / 正在压缩. Visibility is owned only by hideCompactionBody, so
     // do not defer when the disclosure is expanded — otherwise active compact
     // streams stay invisible until finish=stop.
+    // Inline text defer uses the confirmed terminal stop (runLoop exit rule),
+    // not the raw finish: a stop that still carries continuation tools is a
+    // step boundary, and its text must keep deferring to Activity justification
+    // rather than painting as the final body. Message-level completion and the
+    // effective stream phase above still read the raw finish.
+    const hasConfirmedStopFinish = hasConfirmedTerminalStop(messageFinish, visibleParts);
     const shouldDeferSortedInlineText = isSortedRenderMode
-        && !hasStopFinish
+        && !hasConfirmedStopFinish
         && !(isCompactionTurn && isActivityExpanded);
     const showErrorMessage = Boolean(errorMessage);
     const errorIconName = errorVariant === 'info' ? 'information' : 'error-warning';
@@ -1729,7 +1736,7 @@ const AssistantMessageBody = React.memo(({
     const hasAuthoritativeChangedFiles = Array.isArray(turnGroupingContext?.changedFiles);
     const shouldShowChangesPreview = !isMiniChatSurface
         && isLastAssistantInTurn
-        && hasStopFinish
+        && hasConfirmedStopFinish
         && isTurnSettled
         && !hideCompactionBody
         && Boolean(turnGroupingContext?.changedFiles?.length);

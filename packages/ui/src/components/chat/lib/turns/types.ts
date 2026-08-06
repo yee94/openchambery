@@ -71,10 +71,14 @@ export interface TurnStreamState {
 }
 
 /**
- * How the turn finished, derived only from the last assistant message.
- * - normal: finish === 'stop'
- * - abnormal: settled without stop (time.completed or error; includes user interrupt)
- * - active: still in progress
+ * How the turn finished, derived only from the last assistant message with the
+ * OpenCode runLoop continuation semantics.
+ * - normal: finish === 'stop' with zero continuation tool parts (ordinary tools
+ *   in any state — completed included — count; provider-executed tools and
+ *   interrupted orphans do not) and no error
+ * - abnormal: error, or a non-stop terminal finish (includes user interrupt)
+ * - active: finish === 'tool-calls', any continuation tool part, a missing
+ *   finish, or no terminal signal at all (time.completed alone never settles)
  */
 export type TurnCompletionDisposition = 'active' | 'normal' | 'abnormal';
 
@@ -104,6 +108,14 @@ export interface TurnRecord {
     stream: TurnStreamState;
     completionDisposition: TurnCompletionDisposition;
     activityPresentationKind: TurnActivityPresentationKind;
+    /**
+     * Pure derivation from the current last assistant message: `finish === 'stop'`
+     * with zero continuation tool parts (see `assistantMessageLifecycle`), no
+     * error, and at least one non-empty, model-produced text part. Never
+     * latched — a turn that grows a continuation step flips back to `false`.
+     * `projectTurnRecords` always fills it; initial turns start `false`.
+     */
+    hasConfirmedFinalBody: boolean;
     startedAt?: number;
     completedAt?: number;
     durationMs?: number;

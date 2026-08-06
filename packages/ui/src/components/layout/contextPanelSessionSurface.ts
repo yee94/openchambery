@@ -158,6 +158,13 @@ export const resolveContextPanelEnsureForce = (reason: 'active' | 'retry'): bool
 
 export const resolveContextPanelPartialErrorRetry = (hasMore: boolean): 'load-more' | 'ensure' => hasMore ? 'load-more' : 'ensure';
 
+/**
+ * Context-panel load-older entry facts derive only from the directory child
+ * store boundary — `has-more` opens the entry; `unknown`/`exhausted` hide it.
+ * Prefetch request status never participates.
+ */
+export const resolveContextPanelHasMore = (boundary: { kind: 'unknown' | 'has-more' | 'exhausted' }): boolean => boundary.kind === 'has-more';
+
 export const createContextPanelViewportRestoreIdentity = (sessionId: string, viewportKey: string): string => `${sessionId}\n${viewportKey}`;
 
 export const shouldRestoreContextPanelViewport = (

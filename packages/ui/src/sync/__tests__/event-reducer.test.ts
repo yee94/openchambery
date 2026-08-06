@@ -213,6 +213,9 @@ describe("applyDirectoryEvent", () => {
       part: {
         msg_1: [{ id: "prt_1", messageID: "msg_1", sessionID: "ses_1", type: "text", text: "x" } as Part],
       },
+      session_history_boundary: {
+        ses_1: { kind: "has-more", cursor: "msg_1", loadedTurns: 1 },
+      },
     })
 
     expect(applyDirectoryEvent(draft, {
@@ -226,6 +229,37 @@ describe("applyDirectoryEvent", () => {
     // SmartFetch secondaries still wipe caches so they cannot flash content.
     expect(draft.message.ses_1).toBe(undefined)
     expect(draft.part.msg_1).toBe(undefined)
+    // The boundary leaves with the temporary session cache — no orphan boundary.
+    expect(draft.session_history_boundary.ses_1).toBe(undefined)
+  })
+
+  test("session.deleted removes the session history boundary with the cache", () => {
+    const draft = state({
+      session: [buildSession("Doomed", { created: 1, updated: 10 })],
+      sessionTotal: 1,
+      message: {
+        ses_1: [{ id: "msg_1", sessionID: "ses_1", role: "assistant", time: { created: 1 } } as Message],
+      },
+      part: {
+        msg_1: [{ id: "prt_1", messageID: "msg_1", sessionID: "ses_1", type: "text", text: "x" } as Part],
+      },
+      session_history_boundary: {
+        ses_1: { kind: "has-more", cursor: "msg_1", loadedTurns: 2 },
+      },
+    })
+
+    expect(applyDirectoryEvent(draft, {
+      type: "session.deleted",
+      properties: {
+        info: buildSession("Doomed", { created: 1, updated: 20 }),
+      },
+    } as Event)).toBe(true)
+
+    expect(draft.session).toEqual([])
+    expect(draft.message.ses_1).toBe(undefined)
+    expect(draft.part.msg_1).toBe(undefined)
+    // No orphan boundary survives a deleted session.
+    expect(draft.session_history_boundary.ses_1).toBe(undefined)
   })
 
   test("keeps streaming caches when a session is archived mid-run", () => {

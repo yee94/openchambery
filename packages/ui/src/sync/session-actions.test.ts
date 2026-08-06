@@ -35,16 +35,24 @@ mock.module("@/lib/desktop", () => ({
 }))
 
 const hostTurnPageCalls: Array<Record<string, unknown>> = []
+let hostTurnPageBehavior: { cursor: string | null; complete: boolean; turnCount?: number; error?: string } = {
+  cursor: null,
+  complete: true,
+}
 mock.module("./session-turn-page-api", () => ({
   fetchHostSessionTurnPageForPurpose: mock(async (input: Record<string, unknown>) => {
     hostTurnPageCalls.push(input)
     replyCalls.push({ method: "host.session.turnPage", params: input })
+    if (hostTurnPageBehavior.error) throw new Error(hostTurnPageBehavior.error)
     const records = Array.isArray(sessionMessagesResult.data) ? sessionMessagesResult.data : []
     return {
       records,
-      cursor: null,
-      complete: true,
-      turnCount: 0,
+      cursor: hostTurnPageBehavior.cursor,
+      complete: hostTurnPageBehavior.complete,
+      turnCount: hostTurnPageBehavior.turnCount ?? records.filter((record) => {
+        const info = (record as { info?: { role?: unknown; clientRole?: unknown } })?.info
+        return info?.role === "user" || info?.clientRole === "user"
+      }).length,
     }
   }),
   fetchSessionTurnPage: mock(async () => ({
@@ -421,6 +429,9 @@ describe("fetchMessagesForSession startup race", () => {
     configStoreState.isConnected = true
     configStoreState.hasEverConnected = true
     hostTurnPageCalls.length = 0
+    replyCalls.length = 0
+    hostTurnPageBehavior = { cursor: null, complete: true }
+    uiCurrentSessionId = "session-a"
   })
 
   test("replays a selection fetch queued before sync action refs initialize", async () => {
@@ -730,7 +741,7 @@ describe("fetchMessagesForSession startup race", () => {
     })
     const childStores = createChildStores([["/test/project", store]])
     const { setSessionPrefetch, markSessionPrefetchDirty } = await import("./session-prefetch-cache")
-    setSessionPrefetch({ directory: "/test/project", sessionID, limit: 2, complete: true })
+    setSessionPrefetch({ directory: "/test/project", sessionID, requestedLimit: 2 })
     markSessionPrefetchDirty("/test/project", [sessionID])
 
     const { fetchMessagesForSession, setActionRefs } = await import("./session-actions")
@@ -779,6 +790,226 @@ describe("fetchMessagesForSession startup race", () => {
 
     expect(inserted).toBe(false)
     expect(store.getState().message[sessionID]).toBeUndefined()
+  })
+
+  test("a new/empty session's first complete page commits an exhausted boundary atomically", async () => {
+    const sessionID = "session-new-boundary"
+    sessionMessagesResult = { data: [] }
+    hostTurnPageBehavior = { cursor: null, complete: true }
+    const store = createStore({}, {
+      session: [{ id: sessionID, time: { created: 1 } } as Session],
+    })
+    const childStores = createChildStores([["/test/project", store]])
+    const { fetchMessagesForSession, setActionRefs } = await import("./session-actions")
+    setActionRefs(mockSdk as unknown as OpencodeClient, childStores, () => "/test/project")
+    uiCurrentSessionId = sessionID
+
+    await fetchMessagesForSession(sessionID, "/test/project")
+
+    expect(replyCalls.filter((call) => call.method === "host.session.turnPage")).toHaveLength(1)
+    expect(store.getState().session_history_boundary[sessionID]).toEqual({
+      kind: "exhausted",
+      loadedTurns: 0,
+    })
+    expect(store.getState().message[sessionID]).toEqual([])
+  })
+
+  test("cached user messages with an unknown boundary still fetch the authoritative tail", async () => {
+    const sessionID = "session-unknown-boundary"
+    const existingUser = {
+      id: "msg_ub_user",
+      role: "user",
+      sessionID,
+      time: { created: 1 },
+    } as Message
+    sessionMessagesResult = {
+      data: [{ info: existingUser, parts: [{ id: "prt_ub", type: "text", text: "hi" } as Part] }],
+    }
+    hostTurnPageBehavior = { cursor: null, complete: true }
+    const store = createStore({}, {
+      session: [{ id: sessionID, time: { created: 1 } } as Session],
+      message: { [sessionID]: [existingUser] },
+      part: { msg_ub_user: [{ id: "prt_ub", type: "text", text: "hi" } as Part] },
+      session_status: { [sessionID]: { type: "idle" } },
+      // No session_history_boundary entry → unknown.
+    })
+    const childStores = createChildStores([["/test/project", store]])
+    // A clean in-TTL prefetch entry must not rescue the unknown boundary.
+    const { setSessionPrefetch } = await import("./session-prefetch-cache")
+    setSessionPrefetch({ directory: "/test/project", sessionID, requestedLimit: 30 })
+    const { fetchMessagesForSession, setActionRefs } = await import("./session-actions")
+    setActionRefs(mockSdk as unknown as OpencodeClient, childStores, () => "/test/project")
+    uiCurrentSessionId = sessionID
+
+    await fetchMessagesForSession(sessionID, "/test/project")
+
+    expect(replyCalls.filter((call) => call.method === "host.session.turnPage")).toHaveLength(1)
+    expect(store.getState().session_history_boundary[sessionID]).toEqual({
+      kind: "exhausted",
+      loadedTurns: 1,
+    })
+  })
+
+  test("a known exhausted boundary with a clean prefetch entry reuses the cache", async () => {
+    const sessionID = "session-known-boundary"
+    const existingUser = {
+      id: "msg_kb_user",
+      role: "user",
+      sessionID,
+      time: { created: 1 },
+    } as Message
+    const store = createStore({}, {
+      session: [{ id: sessionID, time: { created: 1 } } as Session],
+      message: { [sessionID]: [existingUser] },
+      part: { msg_kb_user: [{ id: "prt_kb", type: "text", text: "hi" } as Part] },
+      session_status: { [sessionID]: { type: "idle" } },
+      session_history_boundary: {
+        [sessionID]: { kind: "exhausted", loadedTurns: 1 },
+      },
+    })
+    const childStores = createChildStores([["/test/project", store]])
+    const { setSessionPrefetch } = await import("./session-prefetch-cache")
+    setSessionPrefetch({ directory: "/test/project", sessionID, requestedLimit: 30 })
+    const { fetchMessagesForSession, setActionRefs } = await import("./session-actions")
+    setActionRefs(mockSdk as unknown as OpencodeClient, childStores, () => "/test/project")
+    uiCurrentSessionId = sessionID
+
+    await fetchMessagesForSession(sessionID, "/test/project")
+
+    expect(replyCalls.filter((call) => call.method === "host.session.turnPage")).toHaveLength(0)
+  })
+
+  test("an incomplete first page with a cursor commits a has-more boundary", async () => {
+    const sessionID = "session-cursor-boundary"
+    const existingUser = {
+      id: "msg_cb_user",
+      role: "user",
+      sessionID,
+      time: { created: 1 },
+    } as Message
+    sessionMessagesResult = {
+      data: [{ info: existingUser, parts: [{ id: "prt_cb", type: "text", text: "hi" } as Part] }],
+    }
+    hostTurnPageBehavior = { cursor: "msg_cb_user", complete: false }
+    const store = createStore({}, {
+      session: [{ id: sessionID, time: { created: 1 } } as Session],
+    })
+    const childStores = createChildStores([["/test/project", store]])
+    const { fetchMessagesForSession, setActionRefs } = await import("./session-actions")
+    setActionRefs(mockSdk as unknown as OpencodeClient, childStores, () => "/test/project")
+    uiCurrentSessionId = sessionID
+
+    await fetchMessagesForSession(sessionID, "/test/project")
+
+    expect(store.getState().session_history_boundary[sessionID]).toEqual({
+      kind: "has-more",
+      cursor: "msg_cb_user",
+      loadedTurns: 1,
+    })
+  })
+
+  test("an unchanged page still commits the boundary (boundary-only commit)", async () => {
+    const sessionID = "session-boundary-only"
+    const existingUser = {
+      id: "msg_bo_user",
+      role: "user",
+      sessionID,
+      time: { created: 1 },
+    } as Message
+    const existingPart = { id: "prt_bo", type: "text", text: "hi" } as Part
+    sessionMessagesResult = {
+      data: [{ info: existingUser, parts: [existingPart] }],
+    }
+    hostTurnPageBehavior = { cursor: null, complete: true }
+    const store = createStore({}, {
+      session: [{ id: sessionID, time: { created: 1 } } as Session],
+      message: { [sessionID]: [existingUser] },
+      part: { msg_bo_user: [existingPart] },
+      session_status: { [sessionID]: { type: "idle" } },
+      // Messages cached, boundary unknown — the page resolves to the same
+      // messages, so only the boundary may change.
+    })
+    const childStores = createChildStores([["/test/project", store]])
+    const { fetchMessagesForSession, setActionRefs } = await import("./session-actions")
+    setActionRefs(mockSdk as unknown as OpencodeClient, childStores, () => "/test/project")
+    uiCurrentSessionId = sessionID
+
+    const messagesBefore = store.getState().message
+    const partsBefore = store.getState().part
+    await fetchMessagesForSession(sessionID, "/test/project")
+
+    expect(replyCalls.filter((call) => call.method === "host.session.turnPage")).toHaveLength(1)
+    // Message/part references stay stable; only the boundary was committed.
+    expect(store.getState().message).toBe(messagesBefore)
+    expect(store.getState().part).toBe(partsBefore)
+    expect(store.getState().session_history_boundary[sessionID]).toEqual({
+      kind: "exhausted",
+      loadedTurns: 1,
+    })
+  })
+
+  test("a switched-away stale completion does not commit messages or the boundary", async () => {
+    const sessionID = "session-switched-away"
+    const existingUser = {
+      id: "msg_sa_user",
+      role: "user",
+      sessionID,
+      time: { created: 1 },
+    } as Message
+    sessionMessagesResult = {
+      data: [{ info: existingUser, parts: [{ id: "prt_sa", type: "text", text: "hi" } as Part] }],
+    }
+    hostTurnPageBehavior = { cursor: null, complete: true }
+    const store = createStore({}, {
+      session: [{ id: sessionID, time: { created: 1 } } as Session],
+    })
+    const childStores = createChildStores([["/test/project", store]])
+    const { fetchMessagesForSession, setActionRefs } = await import("./session-actions")
+    setActionRefs(mockSdk as unknown as OpencodeClient, childStores, () => "/test/project")
+    // The user switched to another session before the fetch starts/settles.
+    uiCurrentSessionId = "someone-else"
+
+    await fetchMessagesForSession(sessionID, "/test/project")
+
+    expect(replyCalls.filter((call) => call.method === "host.session.turnPage")).toHaveLength(1)
+    // Nothing was repopulated: the next visit reads unknown and refetches.
+    expect(store.getState().message[sessionID]).toBeUndefined()
+    expect(store.getState().session_history_boundary[sessionID]).toBeUndefined()
+  })
+
+  test("a failed pull preserves the last known boundary and records request error", async () => {
+    const sessionID = "session-fail-boundary"
+    const existingUser = {
+      id: "msg_fb_user",
+      role: "user",
+      sessionID,
+      time: { created: 1 },
+    } as Message
+    const known = { kind: "has-more", cursor: "msg_fb_user", loadedTurns: 2 } as const
+    const store = createStore({}, {
+      session: [{ id: sessionID, time: { created: 1 } } as Session],
+      message: { [sessionID]: [existingUser] },
+      part: { msg_fb_user: [{ id: "prt_fb", type: "text", text: "hi" } as Part] },
+      session_status: { [sessionID]: { type: "idle" } },
+      session_history_boundary: { [sessionID]: known },
+    })
+    const childStores = createChildStores([["/test/project", store]])
+    // Force the Host page to fail. A dirty prefetch mark ensures the known
+    // boundary still performs one authoritative tail pull.
+    const { fetchMessagesForSession, setActionRefs } = await import("./session-actions")
+    const { setSessionPrefetch, markSessionPrefetchDirty } = await import("./session-prefetch-cache")
+    setSessionPrefetch({ directory: "/test/project", sessionID, requestedLimit: 2 })
+    markSessionPrefetchDirty("/test/project", [sessionID])
+    setActionRefs(mockSdk as unknown as OpencodeClient, childStores, () => "/test/project")
+    uiCurrentSessionId = sessionID
+    hostTurnPageBehavior = { cursor: null, complete: true, error: "host unreachable" }
+
+    await fetchMessagesForSession(sessionID, "/test/project")
+
+    expect(store.getState().session_history_boundary[sessionID]).toEqual(known)
+    expect(store.getState().message[sessionID]).toEqual([existingUser])
+    const { getSessionPrefetch } = await import("./session-prefetch-cache")
+    expect(getSessionPrefetch("/test/project", sessionID)?.status).toBe("error")
   })
 })
 

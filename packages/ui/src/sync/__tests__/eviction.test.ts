@@ -188,4 +188,35 @@ describe("session cache eviction", () => {
     expect(store.message.ses_old).toBe(undefined)
     expect(store.part.msg_1).toBe(undefined)
   })
+
+  test("ordinary eviction deletes the session history boundary with the cache", () => {
+    const store = buildState({
+      message: {
+        ses_old: [{ id: "msg_1", role: "user", time: { created: 1 } } as Message],
+        ses_kept: [{ id: "msg_2", role: "user", time: { created: 2 } } as Message],
+      },
+      session_history_boundary: {
+        ses_old: { kind: "has-more", cursor: "msg_1", loadedTurns: 1 },
+        ses_kept: { kind: "exhausted", loadedTurns: 3 },
+      },
+    })
+
+    dropSessionCaches(store, ["ses_old"])
+
+    // No orphan boundary survives its messages; untouched sessions keep theirs.
+    expect(store.session_history_boundary.ses_old).toBe(undefined)
+    expect(store.session_history_boundary.ses_kept).toEqual({ kind: "exhausted", loadedTurns: 3 })
+  })
+
+  test("dropSessionCaches tolerates a store without a boundary map", () => {
+    const store = buildState({
+      message: {
+        ses_old: [{ id: "msg_1", role: "user", time: { created: 1 } } as Message],
+      },
+    })
+    delete (store as { session_history_boundary?: unknown }).session_history_boundary
+
+    dropSessionCaches(store, ["ses_old"])
+    expect(store.message.ses_old).toBe(undefined)
+  })
 })

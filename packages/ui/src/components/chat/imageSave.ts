@@ -29,7 +29,6 @@ export type ImageSaveTarget = {
 
 export type ImageSaveResult = 'downloaded' | 'saved';
 
-const DEFAULT_FILENAME = 'image.png';
 const DEFAULT_MIME = 'image/png';
 
 type OpenChamberMediaPlugin = {

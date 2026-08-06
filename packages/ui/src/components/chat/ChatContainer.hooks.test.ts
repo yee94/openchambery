@@ -42,20 +42,35 @@ describe('ChatContainer source contracts', () => {
         // Capacitor launches MobileApp directly and does not set the hosted-page
         // __OPENCHAMBER_SURFACE__ global. Width/pointer probing can vary while
         // the WebView viewport changes, whereas isMobile is set before mount.
-        expect(source).toContain('const showLoadOlderButton = isMobile');
+        expect(source).toContain('const showLoadOlderButton = resolveMobileLoadOlderVisibility({');
+        expect(source).toContain('isMobile,');
         expect(source).not.toContain('const showLoadOlderButton = isMobileSurfaceRuntime()');
     });
 
-    test('mobile reserves load-older space while the history boundary resolves', () => {
-        expect(source).toContain('const isHistoryAvailabilityPending = Boolean(');
-        expect(source).toContain("sessionPrefetchInfo?.status !== 'error'");
-        expect(source).toContain(`const showLoadOlderButton = isMobile
-        && (
-            timelineController.historySignals.canLoadEarlier
-            || timelineController.isLoadingOlder
-            || isHistoryAvailabilityPending
-        );`);
-        expect(source).toContain('const loadOlderBusy = isLoadingOlder || isHistoryAvailabilityPending;');
+    test('history pagination facts come only from the child-store boundary', () => {
+        // ChatContainer subscribes the directory child store boundary directly
+        // and never stitches pagination facts from prefetch cursor/complete/limit.
+        expect(source).toContain('state.session_history_boundary?.[');
+        expect(source).toContain('boundary: historyBoundary');
+        expect(source).toContain('limit: historyBoundary.loadedTurns');
+        expect(source).not.toContain('sessionPrefetchInfo?.cursor');
+        expect(source).not.toContain('sessionPrefetchInfo?.complete');
+        expect(source).not.toContain('sessionPrefetchInfo?.limit');
+        expect(source).not.toContain('prefetchHasMore');
+    });
+
+    test('mobile load-older button is authoritative-only; unknown availability renders nothing', () => {
+        // No speculative placeholder: unresolved history boundary (unknown)
+        // must not paint the button or a spinner.
+        expect(source).not.toContain('isHistoryAvailabilityPending');
+        // Visibility = mounted mobile surface && (canLoadEarlier || real
+        // user-initiated loadEarlier mutation in flight).
+        expect(source).toContain('const showLoadOlderButton = resolveMobileLoadOlderVisibility({');
+        expect(source).toContain('canLoadEarlier: timelineController.historySignals.canLoadEarlier');
+        expect(source).toContain('isLoadingOlder: timelineController.isLoadingOlder');
+        // Busy/disabled is mutation-owned only — background prefetch/SWR
+        // loading never drives the button.
+        expect(source).toContain('const loadOlderBusy = resolveMobileLoadOlderBusy({ isLoadingOlder });');
         expect(source).toContain('aria-busy={loadOlderBusy}');
         expect(source).toContain("{t('chat.history.loadOlder')}");
     });

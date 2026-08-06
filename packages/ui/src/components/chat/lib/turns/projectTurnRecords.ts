@@ -1,3 +1,4 @@
+import { countContinuationToolParts, hasConfirmedFinalBody } from './assistantMessageLifecycle';
 import { projectTurnActivity } from './projectTurnActivity';
 import { projectTurnIndexes } from './projectTurnIndexes';
 import { projectTurnChangedFiles, projectTurnDiffStats, projectTurnSummary } from './projectTurnSummary';
@@ -101,36 +102,24 @@ const buildTurnStreamState = (userMessage: ChatMessageEntry, assistantMessages: 
     };
 };
 
-const assistantHasOpenTool = (message: ChatMessageEntry): boolean => {
-    for (const part of message.parts) {
-        if (part.type !== 'tool') continue;
-        const status = (part as { state?: { status?: unknown } }).state?.status;
-        if (status === 'pending' || status === 'running' || status === 'started') {
-            return true;
-        }
-    }
-    return false;
-};
-
 /**
- * Disposition from the last assistant, with multi-step safety.
+ * Disposition from the last assistant, with multi-step safety and the OpenCode
+ * runLoop continuation semantics.
  *
- * - `finish === 'stop'` → normal
- * - error or non-stop finish → abnormal
+ * - error → abnormal (authoritative even with a dangling tool)
+ * - `finish === 'tool-calls'` → active
+ * - any continuation tool part on the last assistant → active. Continuation
+ *   means any ordinary (non-provider-executed) tool that is not an interrupted
+ *   orphan — pending, running, *or completed*; the model may still owe a
+ *   follow-up step for it. Provider-executed tools never block terminal stop.
+ * - `finish === 'stop'` with zero continuation tools → normal
+ * - other non-empty finish → abnormal
  * - Any assistant without `time.completed` → still active (next step not done)
- * - Open/running tools on the last assistant → active even if completed is stamped
  * - `time.completed` alone is **not** enough to settle: multi-step agents often
  *   stamp completed when a shell step ends, before the next assistant arrives.
  *   Treating that as abnormal collapses Activity and blanks nested tools for a
- *   frame (user-visible fold flash). Require a terminal finish/error, or a
- *   completed last message with no open tools and no open siblings.
- *
- * The open-tool rule above applies to the `finish === 'stop'` path too. SSE
- * delivers `message.updated` (carrying finish) and `message.part.updated`
- * (carrying tool state) as separate events, and an HTTP page can materialize
- * finish while local tool state still reads running — settling in that window
- * was the same fold flash from the other direction. An aborted turn still
- * settles: `error` is authoritative even with a dangling tool.
+ *   frame (user-visible fold flash). Require a terminal finish/error, or
+ *   settleHistoricalActiveTurns when a later user message proves the turn is over.
  */
 const resolveTurnCompletionDisposition = (
     assistantMessages: ChatMessageEntry[],
@@ -146,19 +135,30 @@ const resolveTurnCompletionDisposition = (
 
     const finish = (lastAssistant.info as { finish?: unknown }).finish;
     const error = (lastAssistant.info as { error?: unknown }).error;
-    if (finish === 'stop') {
-        if (Boolean(error) || !assistantHasOpenTool(lastAssistant)) {
-            return 'normal';
-        }
-        return 'active';
-    }
-
-    if (Boolean(error)) {
+    // Error is authoritative even alongside stop metadata: an aborted turn
+    // settles even with a dangling tool.
+    if (error) {
         return 'abnormal';
     }
 
+    // Continuation semantics (OpenCode runLoop exit rule): `tool-calls`, or a
+    // last assistant carrying any continuation tool part — provider-executed
+    // tools and interrupted orphans excluded — means the loop is still owed a
+    // step. A *completed* ordinary tool still counts.
+    if (finish === 'tool-calls') {
+        return 'active';
+    }
+
+    if (countContinuationToolParts(lastAssistant.parts) > 0) {
+        return 'active';
+    }
+
+    if (finish === 'stop') {
+        return 'normal';
+    }
+
     if (typeof finish === 'string' && finish.length > 0) {
-        // Non-stop terminal finish (error, canceled, ...).
+        // Non-stop terminal finish (length, canceled, ...).
         return 'abnormal';
     }
 
@@ -169,17 +169,28 @@ const resolveTurnCompletionDisposition = (
         }
     }
 
-    // Last message still running tools → completed timestamp is premature.
-    if (assistantHasOpenTool(lastAssistant)) {
-        return 'active';
-    }
-
     // `time.completed` alone is not a terminal settle. Multi-step agents stamp
     // it when a shell step ends, before the next assistant is appended; treating
     // that as abnormal collapses Activity and blanks nested tools. Real
     // abandons settle via error/finish, or settleHistoricalActiveTurns when a
     // later user message proves the turn is over.
     return 'active';
+};
+
+/**
+ * Pure derivation from the current last assistant: confirmed terminal stop plus
+ * a model-produced final text, vetoed by an error. Never latched — recomputed
+ * per hydration, so a turn that grows a continuation step flips back to `false`.
+ */
+const resolveHasConfirmedFinalBody = (
+    assistantMessages: ChatMessageEntry[],
+): boolean => {
+    const lastAssistant = assistantMessages[assistantMessages.length - 1];
+    if (!lastAssistant) {
+        return false;
+    }
+    const info = lastAssistant.info as { finish?: unknown; error?: unknown };
+    return hasConfirmedFinalBody(info.finish, lastAssistant.parts, info.error);
 };
 
 const getPartText = (part: unknown): string => {
@@ -266,6 +277,7 @@ const hydrateTurnRecord = (
         : undefined;
 
     turn.completionDisposition = resolveTurnCompletionDisposition(turn.assistantMessages);
+    turn.hasConfirmedFinalBody = resolveHasConfirmedFinalBody(turn.assistantMessages);
     turn.activityPresentationKind = resolveTurnActivityPresentationKind(turn.userMessage);
 
     const activity = projectTurnActivity({
@@ -420,6 +432,7 @@ export const projectTurnRecords = (
             },
             completionDisposition: 'active',
             activityPresentationKind: 'default',
+            hasConfirmedFinalBody: false,
         };
         turns.push(turn);
         turnByUserId.set(turn.userMessageId, turn);

@@ -1,6 +1,7 @@
 import { describe, expect, test } from 'bun:test';
 
 import { ChildStoreManager } from './child-store';
+import { UNKNOWN_SESSION_HISTORY_BOUNDARY } from './types';
 
 describe('ChildStoreManager.subscribeAllSelected', () => {
   test('ignores unrelated child-store updates', () => {
@@ -32,6 +33,36 @@ describe('ChildStoreManager.subscribeAllSelected', () => {
     expect(notifications).toBe(1);
 
     unsubscribe();
+    manager.disposeAll();
+  });
+});
+
+describe('ChildStoreManager session history boundary', () => {
+  test('a fresh child store has no boundary entries — every session reads unknown', () => {
+    const manager = new ChildStoreManager();
+    const child = manager.ensureChild('/workspace', { bootstrap: false });
+
+    expect(child.getState().session_history_boundary).toEqual({});
+    expect(
+      child.getState().session_history_boundary['ses_1'] ?? UNKNOWN_SESSION_HISTORY_BOUNDARY,
+    ).toEqual({ kind: 'unknown', loadedTurns: 0 });
+
+    manager.disposeAll();
+  });
+
+  test('disposing and recreating a directory resets its boundaries to unknown', () => {
+    const manager = new ChildStoreManager();
+    const original = manager.ensureChild('/workspace', { bootstrap: false });
+    original.setState({
+      session_history_boundary: {
+        ses_1: { kind: 'exhausted', loadedTurns: 4 },
+      },
+    });
+
+    expect(manager.disposeDirectory('/workspace')).toBe(true);
+    const recreated = manager.ensureChild('/workspace', { bootstrap: false });
+    expect(recreated.getState().session_history_boundary).toEqual({});
+
     manager.disposeAll();
   });
 });

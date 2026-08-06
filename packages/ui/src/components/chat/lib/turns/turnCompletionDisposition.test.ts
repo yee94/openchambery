@@ -78,7 +78,10 @@ describe('turn completion disposition', () => {
         expect(dispositionOf(messages)).toBe('active');
     });
 
-    test('the same turn settles once the tool reports completed', () => {
+    test('a stop with a completed ordinary tool does not settle the turn either', () => {
+        // Continuation semantics: even a completed ordinary tool keeps the
+        // message as continuation work (the model may owe a follow-up step), so
+        // the turn is not confirmed terminal.
         const messages = [
             userMessage('u1', 1),
             assistantMessage({
@@ -90,7 +93,22 @@ describe('turn completion disposition', () => {
                 parts: [tool('t1', 'completed')],
             }),
         ];
-        expect(dispositionOf(messages)).toBe('normal');
+        expect(dispositionOf(messages)).toBe('active');
+    });
+
+    test('finish tool-calls with a completed tool stays active', () => {
+        const messages = [
+            userMessage('u1', 1),
+            assistantMessage({
+                id: 'a1',
+                parentID: 'u1',
+                created: 2,
+                finish: 'tool-calls',
+                completed: 30,
+                parts: [tool('t1', 'completed')],
+            }),
+        ];
+        expect(dispositionOf(messages)).toBe('active');
     });
 
     test('an aborted turn settles even with a dangling running tool', () => {

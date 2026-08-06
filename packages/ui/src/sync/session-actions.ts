@@ -27,7 +27,7 @@ import { getSessionMaterializationStatus, materializeSessionSnapshots } from "./
 import { retry } from "./retry"
 import { getRuntimeGeneration, getRuntimeKey, getRuntimeTransportIdentity } from "@/lib/runtime-switch"
 import { runSessionHistoryMutation } from "./session-history-mutation-coordinator"
-import { loadSessionMessage, recoverAssistantTailBoundary } from "./session-message-loader"
+import { loadSessionMessagePage } from "./session-message-loader"
 import {
   getInitialSessionMessageLimit,
   getMessageRefetchLimit,
@@ -36,12 +36,13 @@ import {
 import { fetchHostSessionTurnPageForPurpose } from "./session-turn-page-api"
 import { resolveSessionMergeStrategy, SEND_GAP_FILL_SESSION_MERGE_STRATEGY } from "./session-merge-strategy"
 import {
-  beginSessionMessageLoad,
-  failSessionMessageLoad,
   getSessionPrefetch,
-  setSessionPrefetch,
   shouldSkipSessionPrefetch,
 } from "./session-prefetch-cache"
+import {
+  UNKNOWN_SESSION_HISTORY_BOUNDARY,
+  type SessionHistoryBoundary,
+} from "./types"
 import { stripMessageDiffSnapshots, stripSessionDiffSnapshots } from "./sanitize"
 import { sessionEvents } from "@/lib/sessionEvents"
 import {
@@ -2749,147 +2750,142 @@ async function fetchMessagesForSessionInternal(
   runtimeKey: string,
   limit: number,
 ): Promise<void> {
-  let loadGeneration: number | undefined
-  try {
-    const s = sdk()
-    const store = dirStoreForDirectory(resolvedDir)
+  const s = sdk()
+  const store = dirStoreForDirectory(resolvedDir)
 
-    const cachedState = store.getState()
-    const statusBeforePull = cachedState.session_status?.[sessionID]
-    const statusObservedAtBeforePull = cachedState.session_status_observed_at?.[sessionID]
-    const cachedMessages = cachedState.message[sessionID]
-    const prefetchMeta = getSessionPrefetch(resolvedDir, sessionID)
-    const cachedComplete = prefetchMeta?.complete === true
-    const isUserRole = (message: Message) =>
-      message.role === "user" || (message as Message & { clientRole?: string }).clientRole === "user"
-    const hasUserBoundary = cachedMessages?.some(isUserRole)
-    // Narrow cache bypass for the long-idle send race: status can be busy while
-    // the list is still the pre-send snapshot (no trailing user row). Do NOT
-    // force-refetch every busy session — that would add needless network on
-    // ordinary switches and is unnecessary once the send is already accounted
-    // for. Only bypass when live work and the local tail does not already look
-    // like a send in progress.
-    const liveStatus = cachedState.session_status?.[sessionID]?.type
-    const sessionIsLive = liveStatus === "busy" || liveStatus === "retry"
-    const lastMessage = cachedMessages?.[cachedMessages.length - 1]
-    const tailLooksLikeInFlightSend = Boolean(lastMessage && isUserRole(lastMessage))
-    const mustRefetchLiveStaleCache = sessionIsLive && !tailLooksLikeInFlightSend
-    // Renderable + user-boundary/complete is necessary but not sufficient: a
-    // dirty prefetch (live events after a prior complete pull) must still
-    // perform one bounded tail page. Reuse shouldSkipSessionPrefetch so no
-    // meta keeps the historical reusable short-circuit, while dirty/stale
-    // meta fails the skip.
-    if (
-      !mustRefetchLiveStaleCache
-      && getSessionMaterializationStatus(cachedState, sessionID).renderable
-      && (hasUserBoundary || cachedComplete)
-      && shouldSkipSessionPrefetch({
-        hasSession: true,
-        hasMessages: true,
-        info: prefetchMeta,
-        pageSize: limit,
-      })
-    ) {
-      return
-    }
+  const cachedState = store.getState()
+  const statusBeforePull = cachedState.session_status?.[sessionID]
+  const statusObservedAtBeforePull = cachedState.session_status_observed_at?.[sessionID]
+  const cachedMessages = cachedState.message[sessionID]
+  const prefetchMeta = getSessionPrefetch(resolvedDir, sessionID)
+  const boundary: SessionHistoryBoundary =
+    cachedState.session_history_boundary?.[sessionID] ?? UNKNOWN_SESSION_HISTORY_BOUNDARY
+  const isUserRole = (message: Message) =>
+    message.role === "user" || (message as Message & { clientRole?: string }).clientRole === "user"
+  const hasUserBoundary = cachedMessages?.some(isUserRole)
+  // Narrow cache bypass for the long-idle send race: status can be busy while
+  // the list is still the pre-send snapshot (no trailing user row). Do NOT
+  // force-refetch every busy session — that would add needless network on
+  // ordinary switches and is unnecessary once the send is already accounted
+  // for. Only bypass when live work and the local tail does not already look
+  // like a send in progress.
+  const liveStatus = cachedState.session_status?.[sessionID]?.type
+  const sessionIsLive = liveStatus === "busy" || liveStatus === "retry"
+  const lastMessage = cachedMessages?.[cachedMessages.length - 1]
+  const tailLooksLikeInFlightSend = Boolean(lastMessage && isUserRole(lastMessage))
+  const mustRefetchLiveStaleCache = sessionIsLive && !tailLooksLikeInFlightSend
+  // Renderable + user-boundary/known-complete is necessary but not sufficient:
+  // a dirty prefetch (live events after a prior complete pull) must still
+  // perform one bounded tail page, and an unknown child-store boundary can
+  // never reuse the cache — cached user messages with no established boundary
+  // trigger one authoritative tail fetch. Only has-more / exhausted
+  // boundaries are reusable.
+  if (
+    !mustRefetchLiveStaleCache
+    && getSessionMaterializationStatus(cachedState, sessionID).renderable
+    && (hasUserBoundary || boundary.kind === "exhausted")
+    && shouldSkipSessionPrefetch({
+      hasSession: true,
+      hasMessages: true,
+      info: prefetchMeta,
+      boundary,
+      pageSize: limit,
+    })
+  ) {
+    return
+  }
 
-    loadGeneration = beginSessionMessageLoad(resolvedDir, sessionID, limit, runtimeKey)
+  // Selection materialize goes through the shared loader: policy limit,
+  // transport single-flight, assistant-tail parent recovery, pure reducer,
+  // and one atomic store commit of message/part/session_history_boundary.
+  // Staleness guard: a rapid session switch may have moved the user off this
+  // session while the fetch was in flight. The completion then skips the
+  // store commit so a slow fetch cannot repopulate (and un-evict) a session
+  // already navigated away from — the next visit reads the unknown/evicted
+  // boundary and refetches.
+  const isStale = () => useSessionUIStore.getState().currentSessionId !== sessionID
 
-    // Selection materialize: Host 2-turn tail (surface scanLimit), not SDK limit=30.
-    const turnPage = await retry(async () =>
-      fetchHostSessionTurnPageForPurpose({
-        sessionID,
-        directory: resolvedDir,
-        purpose: "initial",
-      }),
-    )
-    const cursor = turnPage.cursor ?? undefined
-    const recovered = await recoverAssistantTailBoundary({
-      records: turnPage.records.map((record) => ({
-        info: stripMessageDiffSnapshots(record.info),
-        parts: record.parts ?? [],
-      })),
-      complete: turnPage.complete,
-      requestMessage: async (messageID) => {
-        const response = await loadSessionMessage({
-          runtimeKey,
-          directory: resolvedDir,
-          sessionID,
-          messageID,
-          request: async () => {
-            const result = await s.session.message({ sessionID, messageID, directory: resolvedDir })
-            assertSdkSuccess(result, "session.message")
-            return result
-          },
+  const loadResult = await loadSessionMessagePage({
+    purpose: "initial",
+    runtimeKey,
+    directory: resolvedDir,
+    sessionID,
+    limit,
+    deps: {
+      queryPage: async () => {
+        // Selection materialize: Host 2-turn tail (surface scanLimit), not SDK limit=30.
+        const turnPage = await retry(async () =>
+          fetchHostSessionTurnPageForPurpose({
+            sessionID,
+            directory: resolvedDir,
+            purpose: "initial",
+          }),
+        )
+        return {
+          records: turnPage.records.map((record) => ({
+            info: stripMessageDiffSnapshots(record.info),
+            parts: record.parts ?? [],
+          })),
+          cursor: turnPage.cursor ?? undefined,
+          complete: turnPage.complete,
+          turnCount: turnPage.turnCount,
+        }
+      },
+      queryMessage: async ({ messageID }) => {
+        const response = await retry(async () => {
+          const result = await s.session.message({ sessionID, messageID, directory: resolvedDir })
+          assertSdkSuccess(result, "session.message")
+          return result
         })
         const record = assertSdkSuccess(response, "session.message")
         if (!record?.info?.id) throw new Error("session.message failed: empty response")
-        return { info: stripMessageDiffSnapshots(record.info), parts: record.parts ?? [] }
+        return {
+          info: stripMessageDiffSnapshots(record.info),
+          parts: record.parts ?? [],
+        }
       },
-    })
-    const completeRecords = recovered.records
+      getStoreState: () => {
+        const state = store.getState()
+        return {
+          message: state.message,
+          part: state.part,
+          session_history_boundary: state.session_history_boundary,
+        }
+      },
+      commitStore: (reduced) => {
+        // One atomic commit: message/part/boundary move together, and a
+        // boundary-only page (unchanged message references) still commits the
+        // boundary. The loader already gated stale generations; the isStale
+        // selection guard additionally drops switched-away sessions above.
+        store.setState((state) => {
+          const patch: Partial<typeof state> = {}
+          if (reduced.messagesChanged) patch.message = reduced.message
+          if (reduced.partsChanged) patch.part = reduced.part
+          if (reduced.boundary) {
+            patch.session_history_boundary = {
+              ...state.session_history_boundary,
+              [sessionID]: reduced.boundary,
+            }
+          }
+          if (!patch.message && !patch.part && !patch.session_history_boundary) return state
+          return patch
+        })
+      },
+      isStale,
+      skipPartTypes: MESSAGE_REFETCH_SKIP_PARTS,
+    },
+  })
 
-    // Staleness guard: a rapid session switch may have moved the user off this
-    // session while the fetch was in flight. Skip the write so a slow fetch
-    // can't repopulate (and un-evict) a session already navigated away from.
-    // Product prefetch.limit is cumulative authored-user turns, not message count.
-    const turnLimit = typeof turnPage.turnCount === 'number' && Number.isFinite(turnPage.turnCount)
-      ? Math.max(0, Math.floor(turnPage.turnCount))
-      : completeRecords.length
+  // Error / skipped preserve the transcript and the last known boundary; the
+  // loader already recorded request status through the prefetch cache.
+  if (loadResult.status !== "ready" || !loadResult.applied) return
 
-    if (useSessionUIStore.getState().currentSessionId !== sessionID) {
-      setSessionPrefetch({
-        directory: resolvedDir,
-        sessionID,
-        runtimeKey,
-        limit: turnLimit,
-        cursor,
-        complete: turnPage.complete,
-        loadGeneration,
-      })
-      return
-    }
-
-    // Always materialize the authoritative page. Same-size half-finished
-    // reasoning/text parts must still be replaced when the server returns
-    // completed fields; materializeSessionSnapshots is reference-stable and
-    // no-ops when the snapshot is already equivalent.
-    store.setState((state) => {
-      const materialized = materializeSessionSnapshots(
-        state,
-        sessionID,
-        completeRecords,
-        { skipPartTypes: MESSAGE_REFETCH_SKIP_PARTS },
-      )
-      if (!materialized.messagesChanged && !materialized.partsChanged) return state
-      return { message: materialized.message, part: materialized.part }
-    })
-    setSessionPrefetch({
-      directory: resolvedDir,
-      sessionID,
-      runtimeKey,
-      limit: turnLimit,
-      cursor,
-      complete: turnPage.complete,
-      loadGeneration,
-    })
-    await reconcileActiveSessionStatusAfterMessagePull({
-      directory: resolvedDir,
-      sessionID,
-      store,
-      statusBeforePull,
-      statusObservedAtBeforePull,
-      hasMessages: completeRecords.length > 0,
-    })
-  } catch (error) {
-    // Transient failure — the reactive path in ChatContainer will retry.
-    // Generation-gated so a later in-flight load is not overwritten as error.
-    failSessionMessageLoad(
-      resolvedDir,
-      sessionID,
-      formatSdkError(error),
-      runtimeKey,
-      loadGeneration,
-    )
-  }
+  await reconcileActiveSessionStatusAfterMessagePull({
+    directory: resolvedDir,
+    sessionID,
+    store,
+    statusBeforePull,
+    statusObservedAtBeforePull,
+    hasMessages: loadResult.recordCount > 0,
+  })
 }

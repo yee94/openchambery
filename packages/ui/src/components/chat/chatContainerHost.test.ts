@@ -5,6 +5,8 @@ import {
     resolveChatContainerHostFeatures,
     resolveChatHistoryLoadState,
     resolveChatSessionTranscriptGate,
+    resolveMobileLoadOlderBusy,
+    resolveMobileLoadOlderVisibility,
     type ChatContainerHost,
 } from './chatContainerHost';
 import { hasUserDisplayableParts } from './message/normalizeUserDisplayParts';
@@ -157,58 +159,167 @@ describe('chatContainerHost', () => {
 });
 
 describe('resolveChatHistoryLoadState', () => {
-  test('default meta (incomplete, no cursor) cannot load and is not complete', () => {
+  test('unknown boundary cannot load and is not complete', () => {
     expect(resolveChatHistoryLoadState({
-      syncComplete: false,
-      syncHasMore: false,
-      prefetchHasMore: false,
+      boundary: { kind: 'unknown', loadedTurns: 0 },
       assistantComplete: true,
     })).toEqual({ complete: false, canLoadEarlier: false });
   });
 
-  test('live cursor enables load-more without marking complete', () => {
+  test('has-more boundary enables load-more without marking complete', () => {
     expect(resolveChatHistoryLoadState({
-      syncComplete: false,
-      syncHasMore: true,
-      prefetchHasMore: false,
+      boundary: { kind: 'has-more', cursor: 'msg_1', loadedTurns: 6 },
       assistantComplete: true,
     })).toEqual({ complete: false, canLoadEarlier: true });
   });
 
-  test('prefetch cursor enables load-more while live is not complete', () => {
+  test('exhausted live boundary with no assistant archive is fully complete', () => {
     expect(resolveChatHistoryLoadState({
-      syncComplete: false,
-      syncHasMore: false,
-      prefetchHasMore: true,
-      assistantComplete: true,
-    })).toEqual({ complete: false, canLoadEarlier: true });
-  });
-
-  test('authoritative live complete with no assistant archive is fully complete', () => {
-    expect(resolveChatHistoryLoadState({
-      syncComplete: true,
-      syncHasMore: false,
-      prefetchHasMore: false,
+      boundary: { kind: 'exhausted', loadedTurns: 20 },
       assistantComplete: true,
     })).toEqual({ complete: true, canLoadEarlier: false });
   });
 
-  test('live complete with incomplete assistant archive can still load archive pages', () => {
+  test('live exhausted with incomplete assistant archive can still load archive pages', () => {
     expect(resolveChatHistoryLoadState({
-      syncComplete: true,
-      syncHasMore: false,
-      prefetchHasMore: false,
+      boundary: { kind: 'exhausted', loadedTurns: 20 },
       assistantComplete: false,
     })).toEqual({ complete: false, canLoadEarlier: true });
   });
 
-  test('stale prefetch does not keep load-more after live is complete', () => {
+  test('unknown boundary never gains load-more from an incomplete assistant archive', () => {
+    // The archive may only page after live pagination is positively exhausted.
     expect(resolveChatHistoryLoadState({
-      syncComplete: true,
-      syncHasMore: false,
-      prefetchHasMore: true,
+      boundary: { kind: 'unknown', loadedTurns: 0 },
+      assistantComplete: false,
+    })).toEqual({ complete: false, canLoadEarlier: false });
+  });
+});
+
+describe('boundary-driven history entry', () => {
+  const visible = (boundary: Parameters<typeof resolveChatHistoryLoadState>[0]['boundary']) => {
+    const loadState = resolveChatHistoryLoadState({ boundary, assistantComplete: true });
+    return resolveMobileLoadOlderVisibility({
+      isMobile: true,
+      canLoadEarlier: loadState.canLoadEarlier,
+      isLoadingOlder: false,
+    });
+  };
+
+  test('boundary-only unknown → has-more update opens the history entry', () => {
+    expect(visible({ kind: 'unknown', loadedTurns: 0 })).toBe(false);
+    expect(visible({ kind: 'has-more', cursor: 'msg_1', loadedTurns: 6 })).toBe(true);
+  });
+
+  test('boundary-only unknown → exhausted update keeps the entry hidden', () => {
+    expect(visible({ kind: 'unknown', loadedTurns: 0 })).toBe(false);
+    expect(visible({ kind: 'exhausted', loadedTurns: 2 })).toBe(false);
+  });
+
+  test('cached has-more boundary re-entry shows the entry immediately', () => {
+    // Re-entering a session whose child-store boundary is already known must
+    // not wait for any prefetch/SWR flight.
+    expect(visible({ kind: 'has-more', cursor: 'msg_9', loadedTurns: 12 })).toBe(true);
+  });
+
+  test('cached exhausted boundary re-entry hides the entry immediately', () => {
+    expect(visible({ kind: 'exhausted', loadedTurns: 12 })).toBe(false);
+  });
+
+  test('assistant archive stays loadable after live exhausted', () => {
+    const loadState = resolveChatHistoryLoadState({
+      boundary: { kind: 'exhausted', loadedTurns: 12 },
+      assistantComplete: false,
+    });
+    expect(loadState).toEqual({ complete: false, canLoadEarlier: true });
+    expect(resolveMobileLoadOlderVisibility({
+      isMobile: true,
+      canLoadEarlier: loadState.canLoadEarlier,
+      isLoadingOlder: false,
+    })).toBe(true);
+  });
+
+  test('prefetch request status never contributes entry facts', () => {
+    // loading/ready are lifecycle only: an unknown boundary stays hidden
+    // regardless, and a has-more boundary stays visible regardless.
+    expect(visible({ kind: 'unknown', loadedTurns: 0 })).toBe(false);
+    expect(visible({ kind: 'has-more', cursor: 'msg_1', loadedTurns: 6 })).toBe(true);
+  });
+});
+
+describe('mobile load-older affordance', () => {
+  test('unknown boundary hides the button', () => {
+    const loadState = resolveChatHistoryLoadState({
+      boundary: { kind: 'unknown', loadedTurns: 0 },
       assistantComplete: true,
-    })).toEqual({ complete: true, canLoadEarlier: false });
+    });
+    expect(loadState).toEqual({ complete: false, canLoadEarlier: false });
+    expect(resolveMobileLoadOlderVisibility({
+      isMobile: true,
+      canLoadEarlier: loadState.canLoadEarlier,
+      isLoadingOlder: false,
+    })).toBe(false);
+  });
+
+  test('has-more boundary paints an enabled (non-busy) button', () => {
+    const loadState = resolveChatHistoryLoadState({
+      boundary: { kind: 'has-more', cursor: 'msg_1', loadedTurns: 6 },
+      assistantComplete: true,
+    });
+    expect(loadState.canLoadEarlier).toBe(true);
+    expect(resolveMobileLoadOlderVisibility({
+      isMobile: true,
+      canLoadEarlier: loadState.canLoadEarlier,
+      isLoadingOlder: false,
+    })).toBe(true);
+    expect(resolveMobileLoadOlderBusy({ isLoadingOlder: false })).toBe(false);
+  });
+
+  test('exhausted boundary hides the button', () => {
+    const loadState = resolveChatHistoryLoadState({
+      boundary: { kind: 'exhausted', loadedTurns: 12 },
+      assistantComplete: true,
+    });
+    expect(loadState).toEqual({ complete: true, canLoadEarlier: false });
+    expect(resolveMobileLoadOlderVisibility({
+      isMobile: true,
+      canLoadEarlier: loadState.canLoadEarlier,
+      isLoadingOlder: false,
+    })).toBe(false);
+  });
+
+  test('a user-initiated loadEarlier mutation keeps the button painted and busy', () => {
+    // During the mutation the boundary may still read unknown; the flight
+    // itself must keep the button visible so its spinner has an anchor.
+    expect(resolveMobileLoadOlderVisibility({
+      isMobile: true,
+      canLoadEarlier: false,
+      isLoadingOlder: true,
+    })).toBe(true);
+    expect(resolveMobileLoadOlderBusy({ isLoadingOlder: true })).toBe(true);
+  });
+
+  test('background prefetch/SWR loading never paints or busies the button', () => {
+    // Unknown boundary + background flight only: no placeholder, no spinner.
+    expect(resolveMobileLoadOlderVisibility({
+      isMobile: true,
+      canLoadEarlier: false,
+      isLoadingOlder: false,
+    })).toBe(false);
+    expect(resolveMobileLoadOlderBusy({ isLoadingOlder: false })).toBe(false);
+  });
+
+  test('desktop never paints the mobile button', () => {
+    expect(resolveMobileLoadOlderVisibility({
+      isMobile: false,
+      canLoadEarlier: true,
+      isLoadingOlder: false,
+    })).toBe(false);
+    expect(resolveMobileLoadOlderVisibility({
+      isMobile: false,
+      canLoadEarlier: false,
+      isLoadingOlder: true,
+    })).toBe(false);
   });
 });
 

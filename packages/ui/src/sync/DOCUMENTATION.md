@@ -56,7 +56,7 @@ So:
 
 | Layer / Store | Owns | Scope |
 |---|---|---|
-| child directory stores in `sync-context.tsx` | `session`, `message`, `part`, `permission`, `question`, etc. | One directory |
+| child directory stores in `sync-context.tsx` | `session`, `message`, `part`, `permission`, `question`, `session_history_boundary` (per-session older-history boundary, the only pagination read source), etc. | One directory |
 | `session-ui-store.ts` | Session selection, draft lifecycle, abort prompts, worktree metadata, SDK-facing action entrypoints | App UI state |
 | `useGlobalSessionsStore.ts` | Global active sessions, global archived sessions, `sessionsByDirectory` | All opened project/worktree session lists |
 | `viewport-store.ts` | Scroll anchors, session memory, loading indicators | App UI state |
@@ -146,7 +146,11 @@ directory list only; they do **not** call `dropSessionCaches` for those rows.
 Wiping message/part/status on hide is reserved for temporary SmartFetch
 secondaries and for `session.deleted`. Scheduled tasks and assistants archive
 while still streaming — wiping on archive is what made mid-run viewing look
-nothing like a normal live session.
+nothing like a normal live session. When caches are wiped,
+`dropSessionCaches` also deletes the session's `session_history_boundary`
+entry, so a deleted session, a wiped temporary secondary, and an ordinarily
+evicted session all leave the boundary map clean — a later visit reads
+`unknown` and performs one authoritative tail refresh.
 
 `useCurrentSessionEntity(sessionID)` owns current-session entity resolution for the desktop Header and mobile Header. It prioritizes the matching cross-directory live session, then the matching global active session. A resolved entity remains available for two seconds during a brief source gap; clearing or changing the session ID immediately clears that fallback.
 
@@ -285,14 +289,19 @@ other's channel:
 HTTP pull (initial / prepend / recovery / materialize)
   session-message-policy.ts     limit per runtime + purpose (single source)
   session-merge-strategy.ts     (purpose, stale) → frozen merge strategy
-  session-message-query.ts      TanStack Query: immutable HTTP page cache
+  session-message-query.ts      TanStack Query: immutable HTTP page cache —
+                                transport input only, never a client fact
   session-message-loader.ts     loadSessionMessagePage — the ONLY entry that
                                 orchestrates policy → query → tail recovery →
                                 reducer → store commit (single-flight)
   session-message-reducer.ts    reduceSessionMessagePage — pure page → state
-  session-prefetch-cache.ts     loading / ready / error + TTL meta;
-                                loadGeneration gates concurrent fail/success
-                                so a slower pull cannot flash cold load-error
+                                (+ SessionHistoryBoundary proposal)
+  session-prefetch-cache.ts     request lifecycle ONLY: loading / ready /
+                                error + TTL/dirty + requestedLimit (this
+                                request's turn budget) + loadGeneration gate
+                                so a slower pull cannot flash cold load-error.
+                                It holds NO pagination fact (no cursor, no
+                                completeness, no loaded turns).
   ../queries/sessionStatusQueries.ts
                                 TanStack Query: directory status snapshots +
                                 request-start authority boundary
@@ -327,6 +336,13 @@ Rules that keep this single-sourced:
 - `session-message-reducer.ts` holds no SDK/Query/store side effects; it is a
   pure function so all four purposes stay unit-testable.
 - UI transcript selectors read the directory child store, never TanStack Query.
+- Pagination fact ownership is exclusive: the TanStack Query / Host page
+  response is **transport input** on its way to the store; the directory child
+  store's `state.session_history_boundary[sessionID]`
+  (`SessionHistoryBoundary`) is the **only client-side fact** for older-history
+  availability; `session-prefetch-cache.ts` coordinates **request lifecycle**
+  (`requestedLimit`, `at`/TTL/dirty, `status`, `loadGeneration`) and must
+  never be read for cursor/complete/loaded-turns.
 - `displayParts.ts` is the only place that decides when the parts a view already
   painted may shrink. See below.
 
@@ -388,10 +404,14 @@ both readers agree on when a frame may shrink.
   turn pages must not wipe a bubble that SSE already delivered — and leave the
   key absent when both sides are empty. That empty-key policy is not part of
   the merge strategy.) The reducer also performs optimistic merge,
-  returns reference-stable state when unchanged, and emits commands such as
-  `clear-optimistic`. Callers own store writes and side effects; the reducer
-  never touches SDK/Query/store. Fetch errors (`ok: false`) preserve prior
-  state and never write empty success.
+  returns reference-stable state when unchanged, resolves the session's next
+  `SessionHistoryBoundary` (`result.boundary` + `boundaryChanged`; the legacy
+  flat `result.meta` is a derived projection), and emits commands such as
+  `clear-optimistic`. Callers own store writes and side effects and must
+  commit `message`/`part`/`session_history_boundary` in one `setState` — a
+  boundary-only page (unchanged message references) still commits the
+  boundary. The reducer never touches SDK/Query/store. Fetch errors
+  (`ok: false`) preserve prior state and never write empty success.
 
   Strategy dimensions (`SessionMergeStrategy`):
 
@@ -525,8 +545,9 @@ both readers agree on when a frame may shrink.
 - Product **`limit` means authored-user turns**, never message count. Budgets are
   **link-tiered** via `isRelayModeActive()`: **local/LAN** first paint **6** turns
   and prepend/loadMore **4** turns; **Relay** first paint **2** turns and prepend
-  **4** turns. Meta and
-  prefetch `limit` accumulate turn budgets across pages. Host→OpenCode message
+  **4** turns. The boundary's `loadedTurns` accumulates turn budgets across pages;
+  the prefetch entry's `requestedLimit` only records what the newest request
+  asked for. Host→OpenCode message
   scan chunk is **server-owned** (`_inner_scanLimit` /
   env `OPENCHAMBER_SESSION_TURN_SCAN_LIMIT`, default 100); the shared client
   omits `scanLimit` on the wire. Optional client `scanLimit` remains an
@@ -545,27 +566,53 @@ both readers agree on when a frame may shrink.
   `fetchHostSessionTurnPageForPurpose` when
   `purpose === "prepend"` and `before` is set. Callers must pass the session's
   workspace `directory` into `loadMore` / `hasMore` / `isLoading` / `isComplete`
-  — meta and prefetch cursor are directory-keyed; using the primary sync
-  directory for a cross-project session yields a silent no-op (button visible
-  via directory-scoped prefetch, click does nothing). `getMetaFor` merges
-  hook-local meta with prefetch so a local entry that lost its cursor (loading
-  patch / partial settle) retains a still-valid prefetch cursor. The newest page
-  load generation owns the cursor and complete boundary.
-  `markSessionPrefetchDirty` preserves that response metadata and sets `at=0`,
-  which schedules one bounded tail refresh while retaining known history
-  availability. Explicit
-  `loadMore` refreshes the authoritative tail once when history is incomplete
-  but cursor-less, then prepends from the recovered cursor; persistent cursor
-  absence and prefetch `status=error` surface to user-initiated load-earlier
-  as `chat.history.loadOlderFailed`. Hook-local pagination meta increments a
-  local revision so the ChatContainer affordance rerenders immediately rather
-  than waiting for an unrelated scroll render. Bare `before` without purpose
-  prepend stays on the official SDK path. The client asserts a strict page
-  contract: each record is an object with non-empty `info.id` and optional
-  `parts` array; `turnCount` is an integer in `0..requestedTurns`;
+  — the history boundary lives in the per-directory child store
+  (`state.session_history_boundary[sessionID]`, a `SessionHistoryBoundary`
+  discriminated union of `unknown` / `has-more(cursor, required non-empty)` /
+  `exhausted(no cursor)` plus cumulative `loadedTurns`); using the primary sync
+  directory for a cross-project session yields a silent no-op. The child-store
+  boundary is the **only** client read source: `useSync` `hasMore` /
+  `isComplete` / `loadMore` derive from it through the thin
+  `syncMetaFromBoundary` adapter, and the hook only tracks request `loading`
+  locally. Every successful initial/prepend/recovery/materialize page commits
+  message/part/boundary in one store `setState` — even when message references
+  are unchanged. Failures keep the last known boundary and only flip request
+  status to error; stale completions are dropped by the loader's
+  load-generation gate (a completion that shares one single-flight transport
+   response stays in the same generation, so a remounted provider still
+   commits). Live append never mutates the older-history boundary. The boundary
+   entry belongs to the session cache: `dropSessionCaches` deletes it, so
+   `session.deleted`, temporary SmartFetch-secondary cleanup, and ordinary
+   eviction all remove the boundary with the messages — no orphan boundary
+   survives its session, and the next visit reads `unknown`.
+  `markSessionPrefetchDirty` sets `at=0` on the request-lifecycle entry,
+  which schedules one bounded tail refresh while the child-store boundary
+  retains known history availability. Explicit
+  `loadMore` refreshes the authoritative tail once when the boundary is
+  `unknown` (no cursor), then prepends from the recovered cursor; persistent
+  cursor absence and prefetch `status=error` surface to user-initiated
+  load-earlier as `chat.history.loadOlderFailed`. Bare `before` without
+  purpose prepend stays on the official SDK path. The client asserts a strict
+  page contract: each record is an object with non-empty `info.id` and
+  optional `parts` array; `turnCount` is an integer in `0..requestedTurns`;
   `complete=true` requires `cursor=null`, `complete=false` requires a non-empty
-  cursor string; empty cursor strings and `partial:true` are rejected.
-  `use-sync` adopts `page.complete` strictly (never `|| !cursor`).
+   cursor string; empty cursor strings and `partial:true` are rejected.
+   The reducer additionally enforces the **cursor progress invariant** for
+   incomplete pages: an empty page (`records` empty) makes no progress, and a
+   prepend whose response cursor equals the previous `has-more` cursor would
+   paginate the same window forever — both are page contract errors. A
+   contract error behaves like a failed load: no commit, the previous
+   boundary/messages/loadedTurns are preserved exactly (never widened, never
+   incremented), request status flips to error, and a later retry/SWR pull
+   can still converge. Legal cursor advances keep accumulating `loadedTurns`
+   per prepend, and a final `complete=true` page resolves to `exhausted`.
+   `use-sync` adopts `page.complete` strictly (never `|| !cursor`). The reducer
+   enforces the same contract on commit: `boundaryFromPage` resolves
+   `complete=true` to `exhausted` and requires a non-empty cursor for
+   `complete=false`; an incomplete page with a missing/empty cursor is a page
+   contract error that enters the loader error path (prefetch `status=error`)
+   and preserves the last known boundary — it never widens into a cursor-less
+   `has-more`.
   Host `scanLimit` is not sent by default. Refetch 100 and send-confirmation 30
   are unchanged. The chat
   timeline controller issues at most one Host turn-page request per user
@@ -628,14 +675,19 @@ both readers agree on when a frame may shrink.
 - Snapshot-revision SSE events (not every live `session.*` / `message.*` payload)
   are authoritative change signals for the session message prefetch cache.
   `handleEvent` calls `markSessionPrefetchDirty(directory, [sessionID])` for any
-  snapshot-revision event before the reducer runs, encoding dirty as `at=0`
-  while preserving the response-owned cursor, complete boundary, and limit.
-  `shouldSkipSessionPrefetch` checks dirty (`at === 0`) before complete/limit/TTL
-  so a previously large complete page still refetches. The next
+  snapshot-revision event before the reducer runs, encoding dirty as `at=0` on
+  the request-lifecycle entry; the history boundary itself lives untouched in
+  the child store. `shouldSkipSessionPrefetch` requires a **known** child-store
+  history boundary plus a fresh ready request: an `unknown` boundary (fresh
+  store, post-eviction, failed first load) always fetches; a known boundary
+  without freshness info refreshes in the background while the caller keeps the
+  known UI facts; `exhausted` reuses any fresh ready request; `has-more`
+  compares the boundary's cumulative `loadedTurns` against the requested page
+  size before TTL applies. The next
   `fetchMessagesForSession` / `syncSession` then performs one bounded tail-page
-  pull. After a successful pull, `fetchMessagesForSession` always runs
-  `materializeSessionSnapshots` (reference-stable no-op when unchanged) so
-  same-size completed parts replace truncated live text. On `session.idle` for
+  pull through the shared loader; its reducer-driven materialization is
+  reference-stable when unchanged, so same-size completed parts replace
+  truncated live text. On `session.idle` for
   the **active** top-level session (`setActiveSession` directory/session identity,
   not window focus), `handleEvent` enqueues one bounded `session-idle`
   materialization; background top-level idle stays zero-request; child idle
@@ -863,7 +915,7 @@ Rules:
 8. Sidebar previous/next navigation is scope-aware. `SessionSidebar` publishes the Recent order plus logically visible project rows to `session-navigation.ts`; keyboard and native-menu actions share that registry and update the explicit session Focus before committing current-session authority. Project-origin navigation is restricted to the current expanded project and never falls through to hidden rows or another project.
 9. Global Mod+1…9 navigation is session-row based, not project based. `SessionSidebar` combines the currently revealed Recent rows with logically visible project rows, caps the visual order at nine, and publishes it through `sidebar-numbered-navigation.ts`. The numbered activation preserves the selected row's exact Recent/Project Focus identity.
 10. `optimisticSend()` inserts the optimistic user message and local `busy` status **before** the connection grace wait (`waitForConnectionOrThrow`). Long-idle reconnect must not leave the composer cleared / status busy while the chat list still shows the pre-send snapshot. Connection failure remains a pre-dispatch rollback of that optimistic row.
-  11. `fetchMessagesForSession()` may early-return on a renderable cache only when `shouldSkipSessionPrefetch` also allows reuse (clean ready/complete or in-TTL, no dirty mark). It always bypasses that cache for a live `busy`/`retry` session whose local tail is **not** already a user message (pre-send snapshot while status is busy). Ordinary busy sessions with an optimistic/confirmed trailing user row keep the early-return when the prefetch meta is clean, so session switches do not force a refetch or loading flash. Single-flight applies per runtime/directory/session/limit; concurrent callers share the in-flight promise.
+  11. `fetchMessagesForSession()` may early-return on a renderable cache only when the child-store boundary is known (`has-more`/`exhausted`) **and** `shouldSkipSessionPrefetch` also allows reuse (clean ready/complete or in-TTL, no dirty mark); an `unknown` boundary always performs one authoritative tail fetch even when user messages are already cached. It always bypasses that cache for a live `busy`/`retry` session whose local tail is **not** already a user message (pre-send snapshot while status is busy). Ordinary busy sessions with an optimistic/confirmed trailing user row keep the early-return when the prefetch meta is clean, so session switches do not force a refetch or loading flash. The pull itself goes through `loadSessionMessagePage({ purpose: "initial" })`, so policy limit, transport single-flight, assistant-tail parent recovery, the pure reducer, and one atomic `message`/`part`/`session_history_boundary` commit are shared with every other caller; a switched-away stale completion skips the store commit entirely (no repopulation, next visit reads unknown → refetch) and leaves the prefetch request status untouched. Single-flight applies per runtime/directory/session/limit; concurrent callers share the in-flight promise.
 
 Examples of global-store updates performed in `session-actions.ts`:
 

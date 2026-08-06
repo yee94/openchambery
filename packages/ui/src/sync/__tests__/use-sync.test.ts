@@ -75,11 +75,11 @@ describe("loadMessages transport split source contract (Host turn-page for tail 
     expect(useSyncSource.includes("scopedClient.session.messages(")).toBe(true)
   })
 
-  test("getMetaFor merges local and prefetch via resolveMergedSessionSyncMeta", () => {
-    // Local meta that lost cursor (loading patch / partial settle) must still
-    // resolve cursor from prefetch — otherwise canLoadEarlier is true in UI but
-    // loadMore silent-no-ops on !m.cursor.
-    expect(useSyncSource.includes("resolveMergedSessionSyncMeta")).toBe(true)
+  test("getMetaFor derives from the child-store boundary via syncMetaFromBoundary", () => {
+    // The directory child store's session_history_boundary is the only
+    // pagination fact source; the hook only adapts it (+ local loading flag).
+    expect(useSyncSource.includes("syncMetaFromBoundary")).toBe(true)
+    expect(useSyncSource.includes("session_history_boundary")).toBe(true)
   })
 
   test("loadMore rethrows settled prefetch errors for explicit load-earlier UX", () => {
@@ -94,8 +94,8 @@ describe("loadMessages transport split source contract (Host turn-page for tail 
     expect(useSyncSource.includes("session history cursor unavailable after refresh")).toBe(true)
   })
 
-  test("local pagination meta publishes a revision for immediate affordance updates", () => {
-    expect(useSyncSource.includes("setMetaRevision")).toBe(true)
-    expect(useSyncSource.includes("metaRevision")).toBe(true)
+  test("local loading flips publish a revision for immediate affordance updates", () => {
+    expect(useSyncSource.includes("setLoadingRevision")).toBe(true)
+    expect(useSyncSource.includes("loadingRef")).toBe(true)
   })
 })

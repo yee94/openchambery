@@ -6,6 +6,7 @@ import { fileURLToPath } from 'node:url';
 import {
     chatTimelineAutoFillQueryKey,
     isOlderHistoryPrependCommit,
+    resolveHasMoreAboveTurns,
     resolveHistoryPageDecision,
     resolveHistoryPrependCompensation,
     resolvePublishedViewportMetrics,
@@ -53,6 +54,48 @@ describe('resolveHistoryPrependCompensation', () => {
         expect(resolveHistoryPrependCompensation(false)).toEqual({
             owner: 'controller',
         });
+    });
+});
+
+describe('resolveHasMoreAboveTurns', () => {
+    const meta = (input: { complete: boolean; canLoadEarlier: boolean }) => ({
+        limit: 6,
+        loading: false,
+        ...input,
+    });
+
+    test('unknown boundary meta ({ complete:false, canLoadEarlier:false }) is never has-more', () => {
+        // No `!complete` fallback may reinterpret unknown as loadable.
+        expect(resolveHasMoreAboveTurns(meta({ complete: false, canLoadEarlier: false }), 0)).toBe(false);
+        expect(resolveHasMoreAboveTurns(meta({ complete: false, canLoadEarlier: false }), 100)).toBe(false);
+    });
+
+    test('has-more boundary meta resolves true', () => {
+        expect(resolveHasMoreAboveTurns(meta({ complete: false, canLoadEarlier: true }), 0)).toBe(true);
+    });
+
+    test('exhausted boundary meta resolves false', () => {
+        expect(resolveHasMoreAboveTurns(meta({ complete: true, canLoadEarlier: false }), 100)).toBe(false);
+    });
+
+    test('session switch does not flash the button across meta transitions', () => {
+        // New session opens with unknown meta (hidden), boundary converges to
+        // has-more (shown), then exhausts (hidden). Exhausted → unknown (next
+        // session) must also stay hidden — no transient has-more paint.
+        const unknown = meta({ complete: false, canLoadEarlier: false });
+        const hasMore = meta({ complete: false, canLoadEarlier: true });
+        const exhausted = meta({ complete: true, canLoadEarlier: false });
+        expect(resolveHasMoreAboveTurns(unknown, 50)).toBe(false);
+        expect(resolveHasMoreAboveTurns(hasMore, 50)).toBe(true);
+        expect(resolveHasMoreAboveTurns(exhausted, 50)).toBe(false);
+        expect(resolveHasMoreAboveTurns(unknown, 50)).toBe(false);
+    });
+
+    test('absent meta keeps the legacy message-count heuristic only for non-Chat callers', () => {
+        // ChatContainer always passes meta; a missing meta means the heuristic
+        // window applies (short transcript cannot hide pages above).
+        expect(resolveHasMoreAboveTurns(null, 0)).toBe(false);
+        expect(resolveHasMoreAboveTurns(null, 10_000)).toBe(true);
     });
 });
 
@@ -450,6 +493,12 @@ describe('useChatTimelineController source contracts', () => {
         // Imperative auto-fill effect must stay gone.
         expect(source).not.toMatch(/React\.useEffect\s*\(\s*\(\)\s*=>\s*\{[\s\S]*?fetchOlderHistory/);
         expect(source).not.toMatch(/useEffect\s*\(\s*\(\)\s*=>\s*\{[\s\S]*?shouldAutoFillEarlierHistory/);
+    });
+
+    test('has-more-above-turns never falls back to !complete (unknown ≠ loadable)', () => {
+        expect(source).toContain('export const resolveHasMoreAboveTurns');
+        expect(source).toContain('return historyMeta.canLoadEarlier;');
+        expect(source).not.toContain(': !historyMeta.complete');
     });
 
     test('explicit load-earlier is mutation-owned (button busy ≠ historyLoading)', () => {

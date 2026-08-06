@@ -7,6 +7,7 @@ import {
 } from "../session-prefetch-cache"
 import type { SessionMessageQueryPage } from "../session-message-loader"
 import type { SessionMessageReducerState } from "../session-message-reducer"
+import type { SessionHistoryBoundary } from "../types"
 
 // bun's mock.module is process-global and mutates the module record in place.
 // mock.restore() does NOT put the original export functions back, so after this
@@ -133,14 +134,19 @@ function part(id: string, messageID: string, text = id): Part {
 }
 
 function emptyState(): SessionMessageReducerState {
-  return { message: {}, part: {} }
+  return { message: {}, part: {}, session_history_boundary: {} }
 }
 
 type StoreHarness = {
   state: SessionMessageReducerState
   commits: Array<{ message: Record<string, Message[]>; part: Record<string, Part[]> }>
   getStoreState: () => SessionMessageReducerState
-  commitStore: (next: { message: Record<string, Message[]>; part: Record<string, Part[]>; changed: boolean }) => void
+  commitStore: (next: {
+    message: Record<string, Message[]>
+    part: Record<string, Part[]>
+    changed: boolean
+    boundary?: SessionHistoryBoundary
+  }) => void
 }
 
 function createStore(initial: SessionMessageReducerState = emptyState()): StoreHarness {
@@ -148,9 +154,18 @@ function createStore(initial: SessionMessageReducerState = emptyState()): StoreH
     state: initial,
     commits: [],
     getStoreState: () => harness.state,
+    // Mirrors the real callers: message/part/boundary commit atomically, and a
+    // boundary is applied even when message references are unchanged.
     commitStore: (next) => {
       if (!next.changed) return
-      harness.state = { ...harness.state, message: next.message, part: next.part }
+      harness.state = {
+        ...harness.state,
+        message: next.message,
+        part: next.part,
+        ...(next.boundary
+          ? { session_history_boundary: { ...harness.state.session_history_boundary, ses_app: next.boundary } }
+          : {}),
+      }
       harness.commits.push({ message: next.message, part: next.part })
     },
   }
@@ -369,22 +384,24 @@ describe("assistant-tail helpers", () => {
 })
 
 describe("resolveSessionMessagePageLimit (policy integration)", () => {
-  test("prepend uses 100; initial / recovery / materialize stay at 30", () => {
-    expect(resolveSessionMessagePageLimit("initial")).toBe(30)
-    expect(resolveSessionMessagePageLimit("recovery")).toBe(30)
-    expect(resolveSessionMessagePageLimit("materialize")).toBe(30)
-    expect(resolveSessionMessagePageLimit("prepend")).toBe(100)
+  test("prepend uses the history tier; initial / recovery / materialize use the initial tier", () => {
+    // Local/LAN link tier (test env default): initial 6 turns, history 4 turns.
+    expect(resolveSessionMessagePageLimit("initial")).toBe(6)
+    expect(resolveSessionMessagePageLimit("recovery")).toBe(6)
+    expect(resolveSessionMessagePageLimit("materialize")).toBe(6)
+    expect(resolveSessionMessagePageLimit("prepend")).toBe(4)
 
     mobileSurfaceRuntime = true
-    expect(resolveSessionMessagePageLimit("initial")).toBe(30)
-    expect(resolveSessionMessagePageLimit("recovery")).toBe(30)
-    expect(resolveSessionMessagePageLimit("materialize")).toBe(30)
-    expect(resolveSessionMessagePageLimit("prepend")).toBe(100)
+    expect(resolveSessionMessagePageLimit("initial")).toBe(6)
+    expect(resolveSessionMessagePageLimit("recovery")).toBe(6)
+    expect(resolveSessionMessagePageLimit("materialize")).toBe(6)
+    expect(resolveSessionMessagePageLimit("prepend")).toBe(4)
 
+    // Relay link tier: initial shrinks to 2 turns; history stays 4.
     relayModeActive = true
-    expect(resolveSessionMessagePageLimit("initial")).toBe(30)
-    expect(resolveSessionMessagePageLimit("prepend")).toBe(100)
-    expect(resolveSessionMessagePageLimit("recovery")).toBe(30)
+    expect(resolveSessionMessagePageLimit("initial")).toBe(2)
+    expect(resolveSessionMessagePageLimit("prepend")).toBe(4)
+    expect(resolveSessionMessagePageLimit("recovery")).toBe(2)
   })
 })
 
@@ -423,6 +440,7 @@ describe("loadSessionMessagePage — application orchestration", () => {
               message: reduced.message,
               part: reduced.part,
               changed: reduced.changed,
+              boundary: reduced.boundary,
             })
           },
           skipPartTypes: SKIP_PARTS,
@@ -465,6 +483,7 @@ describe("loadSessionMessagePage — application orchestration", () => {
             message: reduced.message,
             part: reduced.part,
             changed: reduced.changed,
+            boundary: reduced.boundary,
           })
         },
         skipPartTypes: SKIP_PARTS,
@@ -490,11 +509,11 @@ describe("loadSessionMessagePage — application orchestration", () => {
     const store = createStore({
       message: { [sessionID]: [existing] },
       part: { msg_keep: [existingPart] },
-      meta: { limit: 1, cursor: undefined, complete: true },
+      session_history_boundary: { [sessionID]: { kind: "exhausted", loadedTurns: 1 } },
     })
     const dir = `${directory}-fail`
     const rk = `${runtimeKey}-fail`
-    setSessionPrefetch({ directory: dir, sessionID, runtimeKey: rk, limit: 1, complete: true })
+    setSessionPrefetch({ directory: dir, sessionID, runtimeKey: rk, requestedLimit: 1 })
 
     const result = await loadSessionMessagePage({
       purpose: "initial",
@@ -511,6 +530,7 @@ describe("loadSessionMessagePage — application orchestration", () => {
             message: reduced.message,
             part: reduced.part,
             changed: reduced.changed,
+            boundary: reduced.boundary,
           })
         },
         skipPartTypes: SKIP_PARTS,
@@ -524,7 +544,8 @@ describe("loadSessionMessagePage — application orchestration", () => {
     expect(store.state.message[sessionID]).toEqual([existing])
     expect(store.state.part.msg_keep).toEqual([existingPart])
     expect(getSessionPrefetch(dir, sessionID, rk)?.status).toBe("error")
-    expect(getSessionPrefetch(dir, sessionID, rk)?.limit).toBe(30)
+    // Local link tier initial turn budget.
+    expect(getSessionPrefetch(dir, sessionID, rk)?.requestedLimit).toBe(6)
   })
 
   test("provider remount commits the shared transport response into a new store", async () => {
@@ -562,6 +583,7 @@ describe("loadSessionMessagePage — application orchestration", () => {
             message: reduced.message,
             part: reduced.part,
             changed: reduced.changed,
+            boundary: reduced.boundary,
           })
         },
         skipPartTypes: SKIP_PARTS,
@@ -581,6 +603,7 @@ describe("loadSessionMessagePage — application orchestration", () => {
             message: reduced.message,
             part: reduced.part,
             changed: reduced.changed,
+            boundary: reduced.boundary,
           })
         },
         skipPartTypes: SKIP_PARTS,
@@ -630,6 +653,7 @@ describe("loadSessionMessagePage — application orchestration", () => {
             message: reduced.message,
             part: reduced.part,
             changed: reduced.changed,
+            boundary: reduced.boundary,
           })
         },
         getLiveRevision: () => liveRevision,
@@ -677,6 +701,7 @@ describe("loadSessionMessagePage — application orchestration", () => {
             message: reduced.message,
             part: reduced.part,
             changed: reduced.changed,
+            boundary: reduced.boundary,
           })
         },
         skipPartTypes: SKIP_PARTS,
@@ -712,6 +737,7 @@ describe("loadSessionMessagePage — application orchestration", () => {
             message: reduced.message,
             part: reduced.part,
             changed: reduced.changed,
+            boundary: reduced.boundary,
           })
         },
         skipPartTypes: SKIP_PARTS,
@@ -744,6 +770,7 @@ describe("loadSessionMessagePage — application orchestration", () => {
             message: reduced.message,
             part: reduced.part,
             changed: reduced.changed,
+            boundary: reduced.boundary,
           })
         },
         isStale: () => stale,
@@ -754,5 +781,401 @@ describe("loadSessionMessagePage — application orchestration", () => {
     expect(result.status).toBe("skipped")
     expect(result.applied).toBe(false)
     expect(store.commits).toHaveLength(0)
+  })
+
+  test("a successful page commits the boundary through the same commitStore call", async () => {
+    const store = createStore()
+    const dir = `${directory}-boundary`
+    const rk = `${runtimeKey}-boundary`
+    const committed: Array<SessionHistoryBoundary | undefined> = []
+
+    const result = await loadSessionMessagePage({
+      purpose: "initial",
+      runtimeKey: rk,
+      directory: dir,
+      sessionID,
+      deps: {
+        queryPage: async () => ({
+          records: [{ info: message("msg_1", "user"), parts: [] }],
+          complete: false,
+          cursor: "msg_1",
+          turnCount: 1,
+        }),
+        getStoreState: store.getStoreState,
+        commitStore: (reduced) => {
+          committed.push(reduced.boundary)
+          store.commitStore({
+            message: reduced.message,
+            part: reduced.part,
+            changed: reduced.changed,
+            boundary: reduced.boundary,
+          })
+        },
+        skipPartTypes: SKIP_PARTS,
+      },
+    })
+
+    expect(result.status).toBe("ready")
+    expect(result.boundary).toEqual({ kind: "has-more", cursor: "msg_1", loadedTurns: 1 })
+    expect(committed).toEqual([{ kind: "has-more", cursor: "msg_1", loadedTurns: 1 }])
+    expect(store.state.session_history_boundary?.[sessionID]).toEqual({
+      kind: "has-more",
+      cursor: "msg_1",
+      loadedTurns: 1,
+    })
+  })
+
+  test("a failed load preserves the last known boundary and reports the error separately", async () => {
+    const known: SessionHistoryBoundary = { kind: "has-more", cursor: "msg_1", loadedTurns: 1 }
+    const store = createStore({
+      message: { [sessionID]: [message("msg_1", "user")] },
+      part: {},
+      session_history_boundary: { [sessionID]: known },
+    })
+    const dir = `${directory}-fail-boundary`
+    const rk = `${runtimeKey}-fail-boundary`
+    let commits = 0
+
+    const result = await loadSessionMessagePage({
+      purpose: "initial",
+      runtimeKey: rk,
+      directory: dir,
+      sessionID,
+      deps: {
+        queryPage: async () => {
+          throw new Error("network down")
+        },
+        getStoreState: store.getStoreState,
+        commitStore: () => {
+          commits += 1
+        },
+        skipPartTypes: SKIP_PARTS,
+      },
+    })
+
+    expect(result.status).toBe("error")
+    expect(result.error).toContain("network down")
+    expect(commits).toBe(0)
+    // The last known boundary is untouched by the failure.
+    expect(store.state.session_history_boundary?.[sessionID]).toEqual(known)
+    expect(result.boundary).toEqual(known)
+    expect(getSessionPrefetch(dir, sessionID, rk)?.status).toBe("error")
+  })
+
+  test("an invalid incomplete page keeps the known boundary and enters the error path", async () => {
+    const known: SessionHistoryBoundary = { kind: "has-more", cursor: "msg_1", loadedTurns: 1 }
+    const store = createStore({
+      message: { [sessionID]: [message("msg_1", "user")] },
+      part: {},
+      session_history_boundary: { [sessionID]: known },
+    })
+    const dir = `${directory}-contract`
+    const rk = `${runtimeKey}-contract`
+    let commits = 0
+    const errors: string[] = []
+
+    const result = await loadSessionMessagePage({
+      purpose: "initial",
+      runtimeKey: rk,
+      directory: dir,
+      sessionID,
+      deps: {
+        // Violates the page contract: incomplete without a usable cursor.
+        queryPage: async () => ({
+          records: [{ info: message("msg_2", "user"), parts: [] }],
+          complete: false,
+          turnCount: 1,
+        }),
+        getStoreState: store.getStoreState,
+        commitStore: () => {
+          commits += 1
+        },
+        onError: (error) => {
+          errors.push(error)
+        },
+        skipPartTypes: SKIP_PARTS,
+      },
+    })
+
+    expect(result.status).toBe("error")
+    expect(result.error).toContain("complete=false requires non-empty cursor")
+    expect(errors).toHaveLength(1)
+    expect(commits).toBe(0)
+    // The invalid page must not widen into a cursor-less has-more boundary.
+    expect(store.state.session_history_boundary?.[sessionID]).toEqual(known)
+    expect(result.boundary).toEqual(known)
+    expect(getSessionPrefetch(dir, sessionID, rk)?.status).toBe("error")
+  })
+
+  test("a prepend returning the same cursor enters the error path and preserves the boundary", async () => {
+    const known: SessionHistoryBoundary = { kind: "has-more", cursor: "msg_2", loadedTurns: 2 }
+    const store = createStore({
+      message: { [sessionID]: [message("msg_2", "user")] },
+      part: {},
+      session_history_boundary: { [sessionID]: known },
+    })
+    const dir = `${directory}-repeat-cursor`
+    const rk = `${runtimeKey}-repeat-cursor`
+    let commits = 0
+
+    const result = await loadSessionMessagePage({
+      purpose: "prepend",
+      runtimeKey: rk,
+      directory: dir,
+      sessionID,
+      before: "msg_2",
+      deps: {
+        // Contract violation: the page repeats the request cursor.
+        queryPage: async () => ({
+          records: [{ info: message("msg_1", "user"), parts: [] }],
+          complete: false,
+          cursor: "msg_2",
+          turnCount: 1,
+        }),
+        getStoreState: store.getStoreState,
+        commitStore: () => {
+          commits += 1
+        },
+        skipPartTypes: SKIP_PARTS,
+      },
+    })
+
+    expect(result.status).toBe("error")
+    expect(result.error).toContain("same cursor")
+    expect(commits).toBe(0)
+    // Previous boundary, messages, and loadedTurns are untouched — no phantom progress.
+    expect(store.state.session_history_boundary?.[sessionID]).toEqual(known)
+    expect(result.boundary).toEqual(known)
+    expect(getSessionPrefetch(dir, sessionID, rk)?.status).toBe("error")
+  })
+
+  test("an empty incomplete prepend page enters the error path without committing", async () => {
+    const known: SessionHistoryBoundary = { kind: "has-more", cursor: "msg_2", loadedTurns: 2 }
+    const store = createStore({
+      message: { [sessionID]: [message("msg_2", "user")] },
+      part: {},
+      session_history_boundary: { [sessionID]: known },
+    })
+    const dir = `${directory}-empty-incomplete`
+    const rk = `${runtimeKey}-empty-incomplete`
+    let commits = 0
+
+    const result = await loadSessionMessagePage({
+      purpose: "prepend",
+      runtimeKey: rk,
+      directory: dir,
+      sessionID,
+      before: "msg_2",
+      deps: {
+        queryPage: async () => ({
+          records: [],
+          complete: false,
+          cursor: "msg_0",
+          turnCount: 0,
+        }),
+        getStoreState: store.getStoreState,
+        commitStore: () => {
+          commits += 1
+        },
+        skipPartTypes: SKIP_PARTS,
+      },
+    })
+
+    expect(result.status).toBe("error")
+    expect(result.error).toContain("no progress")
+    expect(commits).toBe(0)
+    expect(store.state.session_history_boundary?.[sessionID]).toEqual(known)
+    expect(getSessionPrefetch(dir, sessionID, rk)?.status).toBe("error")
+  })
+
+  test("a contract-failed prepend does not block a later retry", async () => {
+    const known: SessionHistoryBoundary = { kind: "has-more", cursor: "msg_2", loadedTurns: 2 }
+    const store = createStore({
+      message: { [sessionID]: [message("msg_2", "user")] },
+      part: {},
+      session_history_boundary: { [sessionID]: known },
+    })
+    const dir = `${directory}-contract-retry`
+    const rk = `${runtimeKey}-contract-retry`
+    let call = 0
+
+    const run = () => loadSessionMessagePage({
+      purpose: "prepend",
+      runtimeKey: rk,
+      directory: dir,
+      sessionID,
+      before: "msg_2",
+      deps: {
+        queryPage: async () => {
+          call += 1
+          if (call === 1) {
+            return { records: [], complete: false, cursor: "msg_0", turnCount: 0 }
+          }
+          return {
+            records: [{ info: message("msg_1", "user"), parts: [] }],
+            complete: true,
+            turnCount: 1,
+          }
+        },
+        getStoreState: store.getStoreState,
+        commitStore: (reduced) => {
+          store.commitStore({
+            message: reduced.message,
+            part: reduced.part,
+            changed: reduced.changed,
+            boundary: reduced.boundary,
+          })
+        },
+        skipPartTypes: SKIP_PARTS,
+      },
+    })
+
+    const failed = await run()
+    expect(failed.status).toBe("error")
+    expect(getSessionPrefetch(dir, sessionID, rk)?.status).toBe("error")
+
+    const retried = await run()
+    expect(retried.status).toBe("ready")
+    expect(store.state.session_history_boundary?.[sessionID]).toEqual({
+      kind: "exhausted",
+      loadedTurns: 3,
+    })
+    expect(getSessionPrefetch(dir, sessionID, rk)?.status).toBe("ready")
+  })
+
+  test("a legal prepend advances the cursor and accumulates loadedTurns, then exhausts", async () => {
+    const store = createStore({
+      message: { [sessionID]: [message("msg_3", "user")] },
+      part: {},
+      session_history_boundary: { [sessionID]: { kind: "has-more", cursor: "msg_3", loadedTurns: 1 } },
+    })
+    const dir = `${directory}-progress`
+    const rk = `${runtimeKey}-progress`
+
+    const prepend = (before: string, page: SessionMessageQueryPage) => loadSessionMessagePage({
+      purpose: "prepend",
+      runtimeKey: rk,
+      directory: dir,
+      sessionID,
+      before,
+      deps: {
+        queryPage: async () => page,
+        getStoreState: store.getStoreState,
+        commitStore: (reduced) => {
+          store.commitStore({
+            message: reduced.message,
+            part: reduced.part,
+            changed: reduced.changed,
+            boundary: reduced.boundary,
+          })
+        },
+        skipPartTypes: SKIP_PARTS,
+      },
+    })
+
+    const first = await prepend("msg_3", {
+      records: [{ info: message("msg_2", "user"), parts: [] }],
+      complete: false,
+      cursor: "msg_2",
+      turnCount: 1,
+    })
+    expect(first.status).toBe("ready")
+    expect(store.state.session_history_boundary?.[sessionID]).toEqual({
+      kind: "has-more",
+      cursor: "msg_2",
+      loadedTurns: 2,
+    })
+
+    const second = await prepend("msg_2", {
+      records: [{ info: message("msg_1", "user"), parts: [] }],
+      complete: true,
+      turnCount: 1,
+    })
+    expect(second.status).toBe("ready")
+    expect(store.state.session_history_boundary?.[sessionID]).toEqual({
+      kind: "exhausted",
+      loadedTurns: 3,
+    })
+    expect(store.state.message[sessionID]?.map((item) => item.id)).toEqual(["msg_1", "msg_2", "msg_3"])
+  })
+
+  test("a stale completion from an older load generation cannot overwrite a newer boundary", async () => {
+    const store = createStore()
+    const dir = `${directory}-generation`
+    const rk = `${runtimeKey}-generation`
+    let resolveFirst: ((page: SessionMessageQueryPage) => void) | undefined
+    let first = true
+
+    const queryPage = () =>
+      new Promise<SessionMessageQueryPage>((resolve) => {
+        if (first) {
+          first = false
+          resolveFirst = resolve
+          return
+        }
+        resolve({
+          records: [{ info: message("msg_new", "user"), parts: [] }],
+          complete: false,
+          cursor: "msg_new",
+          turnCount: 2,
+        })
+      })
+
+    const deps = {
+      queryPage,
+      getStoreState: store.getStoreState,
+      commitStore: (reduced: Parameters<NonNullable<Parameters<typeof loadSessionMessagePage>[0]["deps"]["commitStore"]>>[0]) => {
+        store.commitStore({
+          message: reduced.message,
+          part: reduced.part,
+          changed: reduced.changed,
+          boundary: reduced.boundary,
+        })
+      },
+      skipPartTypes: SKIP_PARTS,
+    }
+
+    // Load A starts first but settles last; load B (same runtime/directory/
+    // session but a different limit so no single-flight sharing) wins the
+    // newer generation.
+    const loadA = loadSessionMessagePage({
+      purpose: "initial",
+      runtimeKey: rk,
+      directory: dir,
+      sessionID,
+      limit: 30,
+      deps,
+    })
+    const loadB = loadSessionMessagePage({
+      purpose: "initial",
+      runtimeKey: rk,
+      directory: dir,
+      sessionID,
+      limit: 60,
+      deps,
+    })
+
+    await loadB
+    expect(store.state.session_history_boundary?.[sessionID]).toEqual({
+      kind: "has-more",
+      cursor: "msg_new",
+      loadedTurns: 2,
+    })
+
+    // The older in-flight load now settles as exhausted. It is dropped: its
+    // boundary must not replace the newer one.
+    resolveFirst?.({
+      records: [{ info: message("msg_old", "user"), parts: [] }],
+      complete: true,
+      turnCount: 1,
+    })
+    const resultA = await loadA
+
+    expect(resultA.status).toBe("skipped")
+    expect(store.state.session_history_boundary?.[sessionID]).toEqual({
+      kind: "has-more",
+      cursor: "msg_new",
+      loadedTurns: 2,
+    })
   })
 })

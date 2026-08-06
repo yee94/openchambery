@@ -64,6 +64,12 @@ export type State = {
   limit: number
   message: Record<string, Message[]>
   part: Record<string, Part[]>
+  /**
+   * Per-session older-history boundary. Keyed by session ID; a missing entry
+   * reads as `unknown`. Live append never mutates it; eviction deletes the
+   * entry with the rest of the session cache.
+   */
+  session_history_boundary: Record<string, SessionHistoryBoundary>
 }
 
 /** Global store state */
@@ -82,6 +88,35 @@ export type GlobalState = {
 type InitError = {
   type: "init"
   message: string
+}
+
+/**
+ * Client history boundary for a session transcript, scoped to one directory
+ * child store. This is the only client-side read source for older-history
+ * availability (`hasMore` / `isComplete` / `loadMore` cursor):
+ *
+ * - `unknown`   — no successful authoritative page has established the
+ *   boundary yet (fresh store, post-eviction, or a failed first load). An
+ *   unknown boundary must trigger an authoritative tail refresh; cached
+ *   messages alone never prove history availability.
+ * - `has-more`  — an authoritative page returned `complete=false` with a
+ *   non-empty cursor. `cursor` is required and must be non-empty.
+ * - `exhausted` — an authoritative page returned `complete=true`; no cursor
+ *   exists by contract.
+ *
+ * `loadedTurns` is the cumulative authored-user turn budget loaded so far
+ * (product limit, never a message count). Request lifecycle
+ * (idle/loading/error) is tracked separately in `session-prefetch-cache.ts`
+ * and never participates in the boundary.
+ */
+export type SessionHistoryBoundary =
+  | { kind: "unknown"; loadedTurns: number }
+  | { kind: "has-more"; cursor: string; loadedTurns: number }
+  | { kind: "exhausted"; loadedTurns: number }
+
+export const UNKNOWN_SESSION_HISTORY_BOUNDARY: SessionHistoryBoundary = {
+  kind: "unknown",
+  loadedTurns: 0,
 }
 
 export type DirState = {
@@ -137,6 +172,7 @@ export const INITIAL_STATE: State = {
   limit: 20,
   message: {},
   part: {},
+  session_history_boundary: {},
 }
 
 export const INITIAL_GLOBAL_STATE: GlobalState = {

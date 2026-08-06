@@ -3,6 +3,7 @@ import type { SessionSurfaceContextValue } from '@/components/chat/SessionSurfac
 import { hasUserDisplayableParts } from '@/components/chat/message/normalizeUserDisplayParts';
 import type { AssistantHistoryEntry } from '@/queries/assistantQueries';
 import type { PendingUserMessagePresentation } from '@/sync/session-ui-store';
+import type { SessionHistoryBoundary } from '@/sync/types';
 import type { Message, Part } from '@opencode-ai/sdk/v2';
 
 type SessionMessageRecord = { info: Message; parts: Part[] };
@@ -81,29 +82,52 @@ export const pendingUserMessagesImplyWorking = (
 /**
  * Live + assistant archive history gates for the chat timeline.
  *
- * Default sync meta is `{ complete: false, cursor: undefined }` → hasMore false.
- * The old UI treated `!hasMore` as complete and froze load-more/auto-fill on
- * incomplete sessions. Conversely, treating every `!complete` as loadable would
- * auto-fill before a cursor exists (no-op → permanent block).
+ * The directory child store `session_history_boundary[sessionID]` is the only
+ * pagination fact source:
  *
- * - `canLoadEarlier`: real cursor (sync/prefetch) or assistant archive after live complete
- * - `complete`: positively exhausted live history and assistant archive (if any)
+ * - `unknown`   — no authoritative page yet: not complete, cannot load.
+ * - `has-more`  — live history has earlier pages (cursor present).
+ * - `exhausted` — live history is positively complete; the assistant archive
+ *   (when present and incomplete) may still page further.
+ *
+ * `complete` is true only when live history is exhausted AND the assistant
+ * archive (if any) is also complete. An unknown boundary is never treated as
+ * complete, and never enables load-more.
  */
 export const resolveChatHistoryLoadState = (input: {
-  syncComplete: boolean
-  syncHasMore: boolean
-  prefetchHasMore: boolean
+  boundary: SessionHistoryBoundary
   /** When no assistant archive is present, treat as complete. */
   assistantComplete: boolean
 }): { complete: boolean; canLoadEarlier: boolean } => {
-  // Prefetch may extend has-more only until live pagination is authoritative.
-  const hasMoreLive = input.syncHasMore
-    || (!input.syncComplete && input.prefetchHasMore)
-  const canLoadAssistantArchive = input.syncComplete && !input.assistantComplete
+  const liveComplete = input.boundary.kind === 'exhausted'
+  const hasMoreLive = input.boundary.kind === 'has-more'
+  const canLoadAssistantArchive = liveComplete && !input.assistantComplete
   const canLoadEarlier = hasMoreLive || canLoadAssistantArchive
-  const complete = input.syncComplete && input.assistantComplete
+  const complete = liveComplete && input.assistantComplete
   return { complete, canLoadEarlier }
 }
+
+/**
+ * Mobile "load older" affordance contract.
+ *
+ * Visibility is authoritative-only: an unresolved history boundary (unknown
+ * availability) renders nothing — no speculative placeholder, no spinner. The
+ * button exists only when history positively has earlier pages
+ * (`canLoadEarlier`) or a real user-initiated loadEarlier mutation is in
+ * flight (that mutation keeps the button painted so its spinner has an
+ * anchor). Spinner/disabled is mutation-owned (`isLoadingOlder`) — background
+ * prefetch/SWR loading never drives the button.
+ */
+export const resolveMobileLoadOlderVisibility = (input: {
+  isMobile: boolean
+  canLoadEarlier: boolean
+  isLoadingOlder: boolean
+}): boolean =>
+  input.isMobile && (input.canLoadEarlier || input.isLoadingOlder)
+
+export const resolveMobileLoadOlderBusy = (input: {
+  isLoadingOlder: boolean
+}): boolean => input.isLoadingOlder
 
 /**
  * Cold-session transcript gate for ChatContainer.

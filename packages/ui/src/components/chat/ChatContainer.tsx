@@ -18,6 +18,8 @@ import {
     resolveChatContainerHostFeatures,
     resolveChatHistoryLoadState,
     resolveChatSessionTranscriptGate,
+    resolveMobileLoadOlderBusy,
+    resolveMobileLoadOlderVisibility,
     mergePendingUserMessagePresentations,
     pendingUserMessagesImplyWorking,
     type ChatContainerHost,
@@ -79,6 +81,7 @@ import {
 } from '@/sync/sync-context';
 import { useSync } from '@/sync/use-sync';
 import { getSessionPrefetch, subscribeSessionPrefetch } from '@/sync/session-prefetch-cache';
+import { UNKNOWN_SESSION_HISTORY_BOUNDARY, type SessionHistoryBoundary } from '@/sync/types';
 import { getSessionMaterializationStatus } from '@/sync/materialization';
 import { usePlanDetection } from '@/hooks/usePlanDetection';
 import { useI18n } from '@/lib/i18n';
@@ -240,7 +243,6 @@ type ChatViewportProps = {
     sessionPermissions: PermissionRequest[];
     isProgrammaticFollowActive: boolean;
     showLoadOlderButton: boolean;
-    isHistoryAvailabilityPending: boolean;
     onLoadOlder: () => void;
     turnIds: string[];
     activeTurnId: string | null;
@@ -275,7 +277,6 @@ const ChatViewport = React.memo(({
     sessionPermissions,
     isProgrammaticFollowActive,
     showLoadOlderButton,
-    isHistoryAvailabilityPending,
     onLoadOlder,
     turnIds,
     activeTurnId,
@@ -286,7 +287,9 @@ const ChatViewport = React.memo(({
     onLoadEarlierPrompts,
 }: ChatViewportProps) => {
     const { t } = useI18n();
-    const loadOlderBusy = isLoadingOlder || isHistoryAvailabilityPending;
+    // Spinner/disabled is mutation-owned only (isLoadingOlder); background
+    // prefetch/SWR loading never drives the button.
+    const loadOlderBusy = resolveMobileLoadOlderBusy({ isLoadingOlder });
     const promptPreviewsByTurnIdRef = React.useRef<Map<string, Part[]>>(new Map());
     // Cache normalized parts per source array so unchanged messages keep the
     // same reference and the memo below can bail out to the previous map.
@@ -497,7 +500,6 @@ const ChatViewport = React.memo(({
         && prev.sessionPermissions === next.sessionPermissions
         && prev.isProgrammaticFollowActive === next.isProgrammaticFollowActive
         && prev.showLoadOlderButton === next.showLoadOlderButton
-        && prev.isHistoryAvailabilityPending === next.isHistoryAvailabilityPending
         && prev.onLoadOlder === next.onLoadOlder
         && prev.turnIds === next.turnIds
         && prev.activeTurnId === next.activeTurnId
@@ -758,21 +760,39 @@ const ChatContainerContent: React.FC<ChatContainerContentProps> = ({
         getSessionPrefetchInfo,
         EMPTY_PREFETCH_SERVER_SNAPSHOT,
     );
+    // Directory child-store boundary is the only pagination fact source. A
+    // boundary-only commit (no message/part change) must still re-render this
+    // container so the mobile load-older affordance converges immediately;
+    // the narrow selector keeps unrelated store updates out of this render.
+    // The selector is ref-stable so its identity never forces a resubscribe.
+    const historyBoundarySessionRef = React.useRef<string | null>(null);
+    historyBoundarySessionRef.current = currentSessionId;
+    const historyBoundarySelectorRef = React.useRef<((state: {
+        session_history_boundary: Record<string, SessionHistoryBoundary>;
+    }) => SessionHistoryBoundary) | null>(null);
+    if (!historyBoundarySelectorRef.current) {
+        historyBoundarySelectorRef.current = (state) => {
+            const sessionId = historyBoundarySessionRef.current;
+            return (sessionId ? state.session_history_boundary?.[sessionId] : undefined)
+                ?? UNKNOWN_SESSION_HISTORY_BOUNDARY;
+        };
+    }
+    const historyBoundary = useDirectorySync(
+        historyBoundarySelectorRef.current,
+        effectiveSessionDirectory,
+    );
     const loadMoreMessages = useEvent(async (sessionId: string) => {
-        // Always scope meta/loadMore to the session workspace. Prefetch is already
-        // directory-keyed; without this, cross-project sessions show canLoadEarlier
-        // from prefetch but loadMore silent-no-ops on the primary directory meta.
+        // Always scope meta/loadMore to the session workspace — the boundary is
+        // keyed by (directory store, session), and a missing directory falls
+        // through to unknown, which has no load-more entry.
         const sessionDir = { directory: effectiveSessionDirectory };
-        const syncComplete = sync.isComplete(sessionId, sessionDir);
-        const prefetchHasMore = !syncComplete
-            && Boolean(sessionPrefetchInfo?.cursor)
-            && sessionPrefetchInfo?.complete !== true;
-        if (sync.hasMore(sessionId, sessionDir) || prefetchHasMore) {
+        if (historyBoundary.kind === 'has-more') {
             await sync.loadMore(sessionId, sessionDir);
             return;
         }
-        if (!syncComplete) {
-            await sync.loadMore(sessionId, sessionDir);
+        if (historyBoundary.kind === 'unknown') {
+            // Unknown has no user entry: the background initial/SWR pull owns
+            // convergence to a known boundary.
             return;
         }
         // Only page assistant-owned archives after live pagination is authoritative-complete.
@@ -882,29 +902,20 @@ const ChatContainerContent: React.FC<ChatContainerContentProps> = ({
         };
     }, [activeRetryStatus, retryFallbackTimestamp]);
 
-    // History metadata — use sync's hasMore/isLoading (scoped to session directory)
+    // History metadata — boundary facts from the directory child store; request
+    // lifecycle (loading) stays on sync/prefetch status but never feeds
+    // canLoadEarlier/complete/limit.
     const historyMeta = React.useMemo(() => {
         if (!currentSessionId) return null;
-        // Sync isComplete is the only positive live "exhausted" signal. Missing
-        // cursor must neither look complete nor enable load-more. Prefetch may
-        // extend has-more only while live is not yet complete.
         const sessionDir = { directory: effectiveSessionDirectory };
-        const syncComplete = sync.isComplete(currentSessionId, sessionDir);
-        const prefetchHasMore = !syncComplete
-            && Boolean(sessionPrefetchInfo?.cursor)
-            && sessionPrefetchInfo?.complete !== true;
         const loadState = resolveChatHistoryLoadState({
-            syncComplete,
-            syncHasMore: sync.hasMore(currentSessionId, sessionDir),
-            prefetchHasMore,
+            boundary: historyBoundary,
             assistantComplete: assistantHistory?.complete ?? true,
         });
-        // Product limit is cumulative turns (prefetch/sync meta), not message count.
-        const turnLimit = typeof sessionPrefetchInfo?.limit === 'number' && sessionPrefetchInfo.limit > 0
-            ? sessionPrefetchInfo.limit
-            : 0;
         return {
-            limit: turnLimit,
+            // Product limit is cumulative authored-user turns (the boundary's
+            // loadedTurns), not message count.
+            limit: historyBoundary.loadedTurns,
             complete: loadState.complete,
             canLoadEarlier: loadState.canLoadEarlier,
             // Background materialize/tail loading only — never drives the mobile
@@ -915,7 +926,7 @@ const ChatContainerContent: React.FC<ChatContainerContentProps> = ({
                 || sessionPrefetchInfo?.status === 'loading'
                 || Boolean(assistantHistory?.loading),
         };
-    }, [assistantHistory?.complete, assistantHistory?.loading, currentSessionId, effectiveSessionDirectory, sessionPrefetchInfo, sync]);
+    }, [assistantHistory?.complete, assistantHistory?.loading, currentSessionId, effectiveSessionDirectory, historyBoundary, sessionPrefetchInfo?.status, sync]);
 
     const isMobile = useUIStore((state) => state.isMobile);
     const isDedicatedMobileApp = useMobileAppActions() !== null;
@@ -1155,22 +1166,16 @@ const ChatContainerContent: React.FC<ChatContainerContentProps> = ({
     // use width/pointer surface inference here: native WebView viewport changes
     // can temporarily classify as desktop and hide this explicit mobile-only
     // affordance until an unrelated scroll causes another render.
-    // A session's first page already returns the pagination cursor or complete
-    // boundary. Reserve the control while that page resolves so every mobile
-    // entry path has a stable history affordance from its first render.
-    const isHistoryAvailabilityPending = Boolean(
-        currentSessionId
-        && historyMeta
-        && !historyMeta.complete
-        && !timelineController.historySignals.canLoadEarlier
-        && sessionPrefetchInfo?.status !== 'error',
-    );
-    const showLoadOlderButton = isMobile
-        && (
-            timelineController.historySignals.canLoadEarlier
-            || timelineController.isLoadingOlder
-            || isHistoryAvailabilityPending
-        );
+    // Visibility is authoritative-only: canLoadEarlier from the child-store
+    // boundary, or a real user-initiated loadEarlier mutation in flight (that
+    // mutation keeps the button painted so its spinner has an anchor). An
+    // unresolved boundary (unknown availability) renders nothing — never a
+    // speculative placeholder.
+    const showLoadOlderButton = resolveMobileLoadOlderVisibility({
+        isMobile,
+        canLoadEarlier: timelineController.historySignals.canLoadEarlier,
+        isLoadingOlder: timelineController.isLoadingOlder,
+    });
     const isLoadOlderBusy = timelineController.isLoadingOlder;
     const timelineLoadEarlier = timelineController.loadEarlier;
     const handleLoadOlderClick = useEvent(() => {
@@ -1747,7 +1752,6 @@ const ChatContainerContent: React.FC<ChatContainerContentProps> = ({
                 sessionPermissions={sessionPermissions}
                 isProgrammaticFollowActive={isFollowingProgrammatically}
                 showLoadOlderButton={showLoadOlderButton}
-                isHistoryAvailabilityPending={isHistoryAvailabilityPending}
                 onLoadOlder={handleLoadOlderClick}
                 turnIds={timelineController.turnIds}
                 activeTurnId={timelineController.activeTurnId}

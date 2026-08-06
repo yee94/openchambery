@@ -150,6 +150,27 @@ export const resolveHistoryPrependCompensation = (
     ? { owner: 'tanstack-core' }
     : { owner: 'controller' };
 
+/**
+ * Whether the timeline has earlier pages above the rendered turns.
+ *
+ * With a `historyMeta` present, the authoritative child-store boundary answer
+ * (`canLoadEarlier`) is the only source: an unknown boundary
+ * (`{ complete: false, canLoadEarlier: false }`) must NEVER be reinterpreted
+ * as has-more, so no `!complete` fallback exists here. Only when meta is
+ * entirely absent (no Chat-driven caller supplies one) does the legacy
+ * message-count heuristic apply — a transcript with fewer messages than the
+ * historical window cannot have hidden pages above.
+ */
+export const resolveHasMoreAboveTurns = (
+    historyMeta: SessionHistoryMeta | null,
+    messageCount: number,
+): boolean => {
+    if (historyMeta) {
+        return historyMeta.canLoadEarlier;
+    }
+    return messageCount >= getMemoryLimits().HISTORICAL_MESSAGES;
+};
+
 export type HistoryLoadSource = 'scroll' | 'upward-intent';
 
 export const shouldLoadEarlierHistory = (input: {
@@ -475,16 +496,8 @@ export const useChatTimelineController = ({
     }
 
     const historySignals = React.useMemo(() => {
-        const defaultLimit = getMemoryLimits().HISTORICAL_MESSAGES;
         const hasBufferedTurns = false;
-        // Prefer explicit canLoadEarlier (cursor-backed). Fall back to !complete
-        // only for legacy meta without the field; never invent has-more from
-        // message count alone when meta says complete.
-        const hasMoreAboveTurns = historyMeta
-            ? (typeof historyMeta.canLoadEarlier === 'boolean'
-                ? historyMeta.canLoadEarlier
-                : !historyMeta.complete)
-            : messages.length >= defaultLimit;
+        const hasMoreAboveTurns = resolveHasMoreAboveTurns(historyMeta, messages.length);
         const historyLoading = Boolean(historyMeta?.loading);
         return {
             hasBufferedTurns,

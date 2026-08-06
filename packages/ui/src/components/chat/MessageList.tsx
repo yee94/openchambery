@@ -791,7 +791,7 @@ const TurnBlock = React.memo(({
     const defaultExpandedForTurn = resolveDefaultActivityExpanded(
         expansionDisposition,
         activityRenderMode,
-        { isLastTurn },
+        { isLastTurn, hasConfirmedFinalBody: turn.hasConfirmedFinalBody },
     );
     // Explicit per-turn toggle wins; otherwise live-active forces open and
     // settled turns follow activityRenderMode (auto-collapses when processing ends).

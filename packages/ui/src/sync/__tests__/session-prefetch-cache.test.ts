@@ -7,59 +7,184 @@ import {
   markSessionPrefetchDirty,
   setSessionPrefetch,
   shouldSkipSessionPrefetch,
+  type SessionPrefetchMeta,
 } from "../session-prefetch-cache"
+import type { SessionHistoryBoundary } from "../types"
 
-describe("shouldSkipSessionPrefetch", () => {
+const exhausted = (loadedTurns = 2): SessionHistoryBoundary => ({ kind: "exhausted", loadedTurns })
+const hasMore = (loadedTurns = 2, cursor = "msg_x"): SessionHistoryBoundary => ({ kind: "has-more", cursor, loadedTurns })
+const unknown = (): SessionHistoryBoundary => ({ kind: "unknown", loadedTurns: 0 })
+
+const readyInfo = (overrides: Partial<SessionPrefetchMeta> = {}): SessionPrefetchMeta => ({
+  requestedLimit: 30,
+  at: 1_000,
+  status: "ready",
+  loadGeneration: 0,
+  ...overrides,
+})
+
+describe("shouldSkipSessionPrefetch — boundary + request freshness", () => {
   test("does not skip when only metadata exists without cached messages", () => {
     expect(shouldSkipSessionPrefetch({
       hasSession: true,
       hasMessages: false,
-      info: { limit: 200, complete: true, at: 1_000, status: "ready", loadGeneration: 0 },
-      pageSize: 200,
+      boundary: exhausted(),
+      info: readyInfo(),
+      pageSize: 30,
       now: 1_001,
     })).toBe(false)
   })
 
-  test("does not skip a larger fetch when only a smaller partial prefetch is cached", () => {
+  test("does not skip a recent request when the session identity is missing", () => {
     expect(shouldSkipSessionPrefetch({
-      hasSession: true,
+      hasSession: false,
       hasMessages: true,
-      info: { limit: 50, complete: false, at: 1_000, status: "ready", loadGeneration: 0 },
-      pageSize: 200,
+      boundary: exhausted(),
+      info: readyInfo(),
+      pageSize: 30,
       now: 1_001,
     })).toBe(false)
   })
 
-  test("still skips a recent partial prefetch when cached coverage matches the request", () => {
+  test("an unknown boundary always fetches, even with cached messages and a fresh ready request", () => {
     expect(shouldSkipSessionPrefetch({
       hasSession: true,
       hasMessages: true,
-      info: { limit: 200, complete: false, at: 1_000, status: "ready", loadGeneration: 0 },
+      boundary: unknown(),
+      info: readyInfo(),
+      pageSize: 30,
+      now: 1_001,
+    })).toBe(false)
+  })
+
+  test("a missing boundary entry also fetches", () => {
+    expect(shouldSkipSessionPrefetch({
+      hasSession: true,
+      hasMessages: true,
+      info: readyInfo(),
+      pageSize: 30,
+      now: 1_001,
+    })).toBe(false)
+  })
+
+  test("a known boundary with no freshness info refreshes in the background instead of skipping", () => {
+    // The caller keeps the known UI facts (boundary in the child store), but
+    // must still issue the pull that re-establishes request freshness.
+    expect(shouldSkipSessionPrefetch({
+      hasSession: true,
+      hasMessages: true,
+      boundary: exhausted(),
+      pageSize: 30,
+    })).toBe(false)
+    expect(shouldSkipSessionPrefetch({
+      hasSession: true,
+      hasMessages: true,
+      boundary: hasMore(),
+      pageSize: 30,
+    })).toBe(false)
+  })
+
+  test("an exhausted boundary reuses a fresh ready request regardless of turns", () => {
+    expect(shouldSkipSessionPrefetch({
+      hasSession: true,
+      hasMessages: true,
+      boundary: exhausted(1),
+      info: readyInfo({ requestedLimit: 30 }),
       pageSize: 200,
       now: 1_001,
     })).toBe(true)
   })
 
-  test("does not skip a recent prefetch when the session identity is missing", () => {
+  test("a has-more boundary skips a smaller request when loaded turns exceed the page size", () => {
     expect(shouldSkipSessionPrefetch({
-      hasSession: false,
+      hasSession: true,
       hasMessages: true,
-      info: { limit: 200, complete: false, at: 1_000, status: "ready", loadGeneration: 0 },
+      boundary: hasMore(200),
+      info: readyInfo(),
+      pageSize: 30,
+      now: 1_001,
+    })).toBe(true)
+  })
+
+  test("a has-more boundary does not skip a larger request than the loaded turns", () => {
+    expect(shouldSkipSessionPrefetch({
+      hasSession: true,
+      hasMessages: true,
+      boundary: hasMore(50),
+      info: readyInfo(),
       pageSize: 200,
       now: 1_001,
     })).toBe(false)
   })
 
-  test("keeps pagination metadata through loading and error states", () => {
+  test("a has-more boundary at exactly the requested coverage follows the TTL", () => {
+    expect(shouldSkipSessionPrefetch({
+      hasSession: true,
+      hasMessages: true,
+      boundary: hasMore(200),
+      info: readyInfo(),
+      pageSize: 200,
+      now: 1_001,
+    })).toBe(true)
+    expect(shouldSkipSessionPrefetch({
+      hasSession: true,
+      hasMessages: true,
+      boundary: hasMore(200),
+      info: readyInfo(),
+      pageSize: 200,
+      now: 1_000 + 60_000,
+    })).toBe(false)
+  })
+
+  test("request status other than ready never skips", () => {
+    expect(shouldSkipSessionPrefetch({
+      hasSession: true,
+      hasMessages: true,
+      boundary: exhausted(),
+      info: readyInfo({ status: "loading" }),
+      pageSize: 30,
+      now: 1_001,
+    })).toBe(false)
+    expect(shouldSkipSessionPrefetch({
+      hasSession: true,
+      hasMessages: true,
+      boundary: exhausted(),
+      info: readyInfo({ status: "error", error: "boom" }),
+      pageSize: 30,
+      now: 1_001,
+    })).toBe(false)
+  })
+})
+
+describe("SessionPrefetchMeta — request lifecycle only", () => {
+  test("begin → ready keeps only request fields (no pagination facts)", () => {
+    const directory = "/lifecycle-ready"
+    const sessionID = "lifecycle-ready-session"
+
+    const generation = beginSessionMessageLoad(directory, sessionID, 30)
+    setSessionPrefetch({ directory, sessionID, requestedLimit: 30, loadGeneration: generation })
+
+    const info = getSessionPrefetch(directory, sessionID)
+    expect(info).toEqual({
+      requestedLimit: 30,
+      at: info!.at,
+      status: "ready",
+      loadGeneration: generation,
+    })
+    // The entry shape carries no pagination fact at all.
+    expect("cursor" in info!).toBe(false)
+    expect("complete" in info!).toBe(false)
+    expect("limit" in info!).toBe(false)
+  })
+
+  test("keeps the requested limit through loading and error states", () => {
     const directory = "/prefetch-state"
     const sessionID = "session-state"
-    setSessionPrefetch({ directory, sessionID, limit: 30, cursor: "cursor", complete: false, at: 1_000 })
+    setSessionPrefetch({ directory, sessionID, requestedLimit: 30, at: 1_000 })
 
     const generation = beginSessionMessageLoad(directory, sessionID, 30)
     expect(getSessionPrefetch(directory, sessionID)).toEqual({
-      limit: 30,
-      cursor: "cursor",
-      complete: false,
+      requestedLimit: 30,
       at: 1_000,
       status: "loading",
       loadGeneration: generation,
@@ -67,9 +192,7 @@ describe("shouldSkipSessionPrefetch", () => {
 
     failSessionMessageLoad(directory, sessionID, "network unavailable", undefined, generation)
     expect(getSessionPrefetch(directory, sessionID)).toEqual({
-      limit: 30,
-      cursor: "cursor",
-      complete: false,
+      requestedLimit: 30,
       at: 1_000,
       status: "error",
       error: "network unavailable",
@@ -92,8 +215,7 @@ describe("shouldSkipSessionPrefetch", () => {
     setSessionPrefetch({
       directory,
       sessionID,
-      limit: 30,
-      complete: true,
+      requestedLimit: 30,
       loadGeneration: second,
     })
     expect(getSessionPrefetch(directory, sessionID)?.status).toBe("ready")
@@ -108,8 +230,7 @@ describe("shouldSkipSessionPrefetch", () => {
     setSessionPrefetch({
       directory,
       sessionID,
-      limit: 10,
-      complete: true,
+      requestedLimit: 10,
       loadGeneration: first,
     })
     expect(getSessionPrefetch(directory, sessionID)?.status).toBe("loading")
@@ -121,7 +242,7 @@ describe("shouldSkipSessionPrefetch", () => {
     const sessionID = "shared-session"
 
     beginSessionMessageLoad(directory, sessionID, 30, "runtime-a")
-    setSessionPrefetch({ directory, sessionID, runtimeKey: "runtime-b", limit: 30, complete: false, at: 2_000 })
+    setSessionPrefetch({ directory, sessionID, runtimeKey: "runtime-b", requestedLimit: 30, at: 2_000 })
 
     expect(getSessionPrefetch(directory, sessionID, "runtime-a")?.status).toBe("loading")
     expect(getSessionPrefetch(directory, sessionID, "runtime-b")?.status).toBe("ready")
@@ -132,60 +253,34 @@ describe("shouldSkipSessionPrefetch", () => {
     const sessionID = "mobile-session"
 
     beginSessionMessageLoad(directory, sessionID, 16)
-    expect(getSessionPrefetch(directory, sessionID)?.limit).toBe(16)
+    expect(getSessionPrefetch(directory, sessionID)?.requestedLimit).toBe(16)
 
     failSessionMessageLoad(directory, sessionID, "network unavailable")
-    expect(getSessionPrefetch(directory, sessionID)?.limit).toBe(16)
+    expect(getSessionPrefetch(directory, sessionID)?.requestedLimit).toBe(16)
     expect(getSessionPrefetch(directory, sessionID)?.status).toBe("error")
   })
 
   test("keeps the larger recorded request limit while a smaller load begins", () => {
     const directory = "/larger-prefetch"
     const sessionID = "larger-session"
-    setSessionPrefetch({ directory, sessionID, limit: 30, complete: false })
+    setSessionPrefetch({ directory, sessionID, requestedLimit: 30 })
 
     beginSessionMessageLoad(directory, sessionID, 16)
 
-    expect(getSessionPrefetch(directory, sessionID)?.limit).toBe(30)
+    expect(getSessionPrefetch(directory, sessionID)?.requestedLimit).toBe(30)
   })
 })
 
 describe("markSessionPrefetchDirty", () => {
-  test("preserves a complete history boundary while forcing the next tail refresh", () => {
-    const directory = "/dirty-complete"
-    const sessionID = "dirty-complete-session"
-    // A session that previously fetched to completion would be treated as
-    // authoritative forever by shouldSkipSessionPrefetch.
-    setSessionPrefetch({ directory, sessionID, limit: 30, complete: true })
-    expect(shouldSkipSessionPrefetch({
-      hasSession: true,
-      hasMessages: true,
-      info: getSessionPrefetch(directory, sessionID),
-      pageSize: 30,
-    })).toBe(true)
-
-    // An authoritative live event for that session must force one bounded
-    // refetch on the next switch, otherwise a stale transcript survives.
-    markSessionPrefetchDirty(directory, [sessionID])
-
-    const info = getSessionPrefetch(directory, sessionID)
-    expect(info?.complete).toBe(true)
-    expect(shouldSkipSessionPrefetch({
-      hasSession: true,
-      hasMessages: true,
-      info,
-      pageSize: 30,
-    })).toBe(false)
-  })
-
   test("pierces the TTL cache so an in-window entry no longer skips", () => {
     const directory = "/dirty-ttl"
     const sessionID = "dirty-ttl-session"
     const now = Date.now()
-    setSessionPrefetch({ directory, sessionID, limit: 30, complete: false, at: now })
+    setSessionPrefetch({ directory, sessionID, requestedLimit: 30, at: now })
     expect(shouldSkipSessionPrefetch({
       hasSession: true,
       hasMessages: true,
+      boundary: hasMore(30),
       info: getSessionPrefetch(directory, sessionID),
       pageSize: 30,
       now: now + 1,
@@ -196,23 +291,46 @@ describe("markSessionPrefetchDirty", () => {
     expect(shouldSkipSessionPrefetch({
       hasSession: true,
       hasMessages: true,
+      boundary: hasMore(30),
       info: getSessionPrefetch(directory, sessionID),
       pageSize: 30,
       now: now + 1,
     })).toBe(false)
   })
 
-  test("preserves pagination cursor and limit when marking dirty", () => {
+  test("a dirty exhausted boundary still refetches", () => {
+    const directory = "/dirty-complete"
+    const sessionID = "dirty-complete-session"
+    setSessionPrefetch({ directory, sessionID, requestedLimit: 30 })
+    expect(shouldSkipSessionPrefetch({
+      hasSession: true,
+      hasMessages: true,
+      boundary: exhausted(),
+      info: getSessionPrefetch(directory, sessionID),
+      pageSize: 30,
+    })).toBe(true)
+
+    markSessionPrefetchDirty(directory, [sessionID])
+
+    expect(shouldSkipSessionPrefetch({
+      hasSession: true,
+      hasMessages: true,
+      boundary: exhausted(),
+      info: getSessionPrefetch(directory, sessionID),
+      pageSize: 30,
+    })).toBe(false)
+  })
+
+  test("preserves the request lifecycle fields when marking dirty", () => {
     const directory = "/dirty-preserve"
     const sessionID = "dirty-preserve-session"
-    setSessionPrefetch({ directory, sessionID, limit: 30, cursor: "cursor-abc", complete: false })
+    setSessionPrefetch({ directory, sessionID, requestedLimit: 30 })
 
     markSessionPrefetchDirty(directory, [sessionID])
 
     const info = getSessionPrefetch(directory, sessionID)
-    expect(info?.limit).toBe(30)
-    expect(info?.cursor).toBe("cursor-abc")
-    expect(info?.complete).toBe(false)
+    expect(info?.requestedLimit).toBe(30)
+    expect(info?.at).toBe(0)
     expect(info?.status).toBe("ready")
   })
 
@@ -229,37 +347,12 @@ describe("markSessionPrefetchDirty", () => {
   test("scopes dirty marks by runtime key", () => {
     const directory = "/dirty-runtime"
     const sessionID = "dirty-runtime-session"
-    setSessionPrefetch({ directory, sessionID, runtimeKey: "runtime-a", limit: 30, complete: true })
-    setSessionPrefetch({ directory, sessionID, runtimeKey: "runtime-b", limit: 30, complete: true })
+    setSessionPrefetch({ directory, sessionID, runtimeKey: "runtime-a", requestedLimit: 30 })
+    setSessionPrefetch({ directory, sessionID, runtimeKey: "runtime-b", requestedLimit: 30 })
 
     markSessionPrefetchDirty(directory, [sessionID], "runtime-a")
 
-    expect(getSessionPrefetch(directory, sessionID, "runtime-a")?.complete).toBe(true)
-    expect(getSessionPrefetch(directory, sessionID, "runtime-b")?.complete).toBe(true)
-  })
-
-  test("pierces limit > pageSize so a dirty large page still refetches", () => {
-    const directory = "/dirty-large-page"
-    const sessionID = "dirty-large-session"
-    setSessionPrefetch({ directory, sessionID, limit: 200, complete: false, at: Date.now() })
-    expect(shouldSkipSessionPrefetch({
-      hasSession: true,
-      hasMessages: true,
-      info: getSessionPrefetch(directory, sessionID),
-      pageSize: 30,
-    })).toBe(true)
-
-    markSessionPrefetchDirty(directory, [sessionID])
-
-    const info = getSessionPrefetch(directory, sessionID)
-    expect(info?.at).toBe(0)
-    expect(info?.complete).toBe(false)
-    expect(info?.limit).toBe(200)
-    expect(shouldSkipSessionPrefetch({
-      hasSession: true,
-      hasMessages: true,
-      info,
-      pageSize: 30,
-    })).toBe(false)
+    expect(getSessionPrefetch(directory, sessionID, "runtime-a")?.at).toBe(0)
+    expect(getSessionPrefetch(directory, sessionID, "runtime-b")?.at).not.toBe(0)
   })
 })

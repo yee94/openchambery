@@ -6,7 +6,7 @@ import type {
   SessionStatus,
   Todo,
 } from "@opencode-ai/sdk/v2/client"
-import type { FileDiff } from "./types"
+import type { FileDiff, SessionHistoryBoundary } from "./types"
 
 type SessionCache = {
   session_status: Record<string, SessionStatus | undefined>
@@ -17,6 +17,7 @@ type SessionCache = {
   part: Record<string, Part[] | undefined>
   permission: Record<string, PermissionRequest[] | undefined>
   question: Record<string, QuestionRequest[] | undefined>
+  session_history_boundary?: Record<string, SessionHistoryBoundary | undefined>
 }
 
 export function getProtectedSessionCacheIds(store: SessionCache): Set<string> {
@@ -83,6 +84,10 @@ export function dropSessionCaches(store: SessionCache, sessionIDs: Iterable<stri
     if (store.session_status_observed_at) delete store.session_status_observed_at[sessionID]
     delete store.permission[sessionID]
     delete store.question[sessionID]
+    // The older-history boundary belongs to the session cache: session.deleted,
+    // temporary-session cleanup, and ordinary eviction all delete it here so no
+    // orphan boundary survives its messages. The next visit reads `unknown`.
+    if (store.session_history_boundary) delete store.session_history_boundary[sessionID]
   }
 }
 

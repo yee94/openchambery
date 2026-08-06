@@ -339,7 +339,15 @@ describe('projectTurnRecords', () => {
             completedAt: 5,
             finish: 'stop',
             parts: [
-                { id: 'tool_1', type: 'tool', tool: 'bash', state: { status: 'completed' } } as Part,
+                // Provider-executed: not a continuation tool, so this stop is a
+                // confirmed terminal stop and its text is the canonical body.
+                {
+                    id: 'tool_1',
+                    type: 'tool',
+                    tool: 'websearch',
+                    metadata: { providerExecuted: true },
+                    state: { status: 'completed' },
+                } as unknown as Part,
                 { id: 'text_mid', type: 'text', text: 'working on it' } as Part,
                 { id: 'text_final', type: 'text', text: 'all done' } as Part,
             ],
@@ -423,6 +431,15 @@ describe('projectTurnRecords', () => {
     });
 
     test('activityParts keep natural order across task; single segment equals full activityParts', () => {
+        // Tools are provider-executed so the stop is a confirmed terminal stop
+        // (no continuation tools) and the trailing text is the canonical body.
+        const providerTool = (id: string, toolName: string): Part => ({
+            id,
+            type: 'tool',
+            tool: toolName,
+            metadata: { providerExecuted: true },
+            state: { status: 'completed' },
+        } as unknown as Part);
         const user = createMessageEntry({ id: 'u1', role: 'user', createdAt: 1 });
         const assistant = createMessageEntry({
             id: 'a1',
@@ -433,11 +450,11 @@ describe('projectTurnRecords', () => {
             finish: 'stop',
             parts: [
                 { id: 'r1', type: 'reasoning', text: 'plan before task' } as Part,
-                { id: 'tool_bash', type: 'tool', tool: 'bash', state: { status: 'completed' } } as Part,
+                providerTool('tool_bash', 'bash'),
                 { id: 'j1', type: 'text', text: 'justify before task' } as Part,
-                { id: 'task_1', type: 'tool', tool: 'task', state: { status: 'completed' } } as Part,
+                providerTool('task_1', 'task'),
                 { id: 'r2', type: 'reasoning', text: 'plan after task' } as Part,
-                { id: 'tool_read', type: 'tool', tool: 'read', state: { status: 'completed' } } as Part,
+                providerTool('tool_read', 'read'),
                 { id: 'j2', type: 'text', text: 'justify after task' } as Part,
                 { id: 'summary', type: 'text', text: 'final answer' } as Part,
             ],
@@ -526,7 +543,15 @@ describe('projectTurnRecords', () => {
             completedAt: 5,
             finish: 'stop',
             parts: [
-                { id: 'tool_bash', type: 'tool', tool: 'bash', state: { status: 'completed' } } as Part,
+                // Provider-executed: no continuation tools, so this stop is a
+                // confirmed terminal stop and its text is the canonical body.
+                {
+                    id: 'tool_bash',
+                    type: 'tool',
+                    tool: 'bash',
+                    metadata: { providerExecuted: true },
+                    state: { status: 'completed' },
+                } as unknown as Part,
                 { id: 'summary', type: 'text', text: 'done' } as Part,
             ],
         });
@@ -632,6 +657,213 @@ describe('projectTurnRecords', () => {
 
         const projection = projectTurnRecords([user]);
         expect(projection.turns[0]?.activityPresentationKind).toBe('compaction');
+    });
+
+    test('pure stop with model text settles normal and confirms the final body', () => {
+        const user = createMessageEntry({ id: 'u1', role: 'user', createdAt: 1 });
+        const assistant = createMessageEntry({
+            id: 'a1',
+            role: 'assistant',
+            parentID: 'u1',
+            createdAt: 2,
+            completedAt: 5,
+            finish: 'stop',
+            parts: [{ id: 't1', type: 'text', text: 'the answer' } as Part],
+        });
+
+        const turn = projectTurnRecords([user, assistant]).turns[0];
+        expect(turn?.completionDisposition).toBe('normal');
+        expect(turn?.hasConfirmedFinalBody).toBe(true);
+    });
+
+    test('stop with a completed ordinary tool stays active and keeps text in justification activity', () => {
+        const user = createMessageEntry({ id: 'u1', role: 'user', createdAt: 1 });
+        const assistant = createMessageEntry({
+            id: 'a1',
+            role: 'assistant',
+            parentID: 'u1',
+            createdAt: 2,
+            completedAt: 5,
+            finish: 'stop',
+            parts: [
+                { id: 'tool_1', type: 'tool', tool: 'bash', state: { status: 'completed', time: { start: 2, end: 3 } } } as unknown as Part,
+                { id: 'text_1', type: 'text', text: 'ran the check' } as Part,
+            ],
+        });
+
+        const turn = projectTurnRecords([user, assistant], {
+            showTextJustificationActivity: true,
+        }).turns[0];
+        expect(turn?.completionDisposition).toBe('active');
+        expect(turn?.hasConfirmedFinalBody).toBe(false);
+        const justificationTexts = turn?.activityParts
+            .filter((part) => part.kind === 'justification')
+            .map((part) => (part.part as { text?: string }).text) ?? [];
+        expect(justificationTexts).toContain('ran the check');
+    });
+
+    test('stop with a provider-executed tool settles normal and confirms the final body', () => {
+        const user = createMessageEntry({ id: 'u1', role: 'user', createdAt: 1 });
+        const assistant = createMessageEntry({
+            id: 'a1',
+            role: 'assistant',
+            parentID: 'u1',
+            createdAt: 2,
+            completedAt: 5,
+            finish: 'stop',
+            parts: [
+                {
+                    id: 'tool_1',
+                    type: 'tool',
+                    tool: 'websearch',
+                    metadata: { providerExecuted: true },
+                    state: { status: 'completed', time: { start: 2, end: 3 } },
+                } as unknown as Part,
+                { id: 'text_1', type: 'text', text: 'looked it up' } as Part,
+            ],
+        });
+
+        const turn = projectTurnRecords([user, assistant]).turns[0];
+        expect(turn?.completionDisposition).toBe('normal');
+        expect(turn?.hasConfirmedFinalBody).toBe(true);
+    });
+
+    test('stop with an interrupted orphan tool settles normal and confirms the final body', () => {
+        const user = createMessageEntry({ id: 'u1', role: 'user', createdAt: 1 });
+        const assistant = createMessageEntry({
+            id: 'a1',
+            role: 'assistant',
+            parentID: 'u1',
+            createdAt: 2,
+            completedAt: 5,
+            finish: 'stop',
+            parts: [
+                {
+                    id: 'tool_1',
+                    type: 'tool',
+                    tool: 'bash',
+                    state: { status: 'error', metadata: { interrupted: true }, time: { start: 2, end: 3 } },
+                } as unknown as Part,
+                { id: 'text_1', type: 'text', text: 'stopped early with a note' } as Part,
+            ],
+        });
+
+        const turn = projectTurnRecords([user, assistant]).turns[0];
+        expect(turn?.completionDisposition).toBe('normal');
+        expect(turn?.hasConfirmedFinalBody).toBe(true);
+    });
+
+    test('stop with only synthetic or empty text settles normal without confirming a final body', () => {
+        const user = createMessageEntry({ id: 'u1', role: 'user', createdAt: 1 });
+        const assistant = createMessageEntry({
+            id: 'a1',
+            role: 'assistant',
+            parentID: 'u1',
+            createdAt: 2,
+            completedAt: 5,
+            finish: 'stop',
+            parts: [
+                { id: 't1', type: 'text', text: 'sidecar note', synthetic: true } as unknown as Part,
+                { id: 't2', type: 'text', text: '   ' } as Part,
+            ],
+        });
+
+        const turn = projectTurnRecords([user, assistant]).turns[0];
+        expect(turn?.completionDisposition).toBe('normal');
+        expect(turn?.hasConfirmedFinalBody).toBe(false);
+    });
+
+    test('error still settles abnormal even alongside stop finish metadata', () => {
+        const user = createMessageEntry({ id: 'u1', role: 'user', createdAt: 1 });
+        const assistant = createMessageEntry({
+            id: 'a1',
+            role: 'assistant',
+            parentID: 'u1',
+            createdAt: 2,
+            completedAt: 5,
+            finish: 'stop',
+            error: { message: 'provider exploded' },
+            parts: [{ id: 't1', type: 'text', text: 'partial' } as Part],
+        });
+
+        const turn = projectTurnRecords([user, assistant]).turns[0];
+        expect(turn?.completionDisposition).toBe('abnormal');
+        // Error vetoes the confirmed final body: the text is partial, so the
+        // latest turn's Activity stays expanded. Display still shows the
+        // partial text via the summary fallback.
+        expect(turn?.hasConfirmedFinalBody).toBe(false);
+    });
+
+    test('time.completed alone stays active and never confirms a final body', () => {
+        const user = createMessageEntry({ id: 'u1', role: 'user', createdAt: 1 });
+        const assistant = createMessageEntry({
+            id: 'a1',
+            role: 'assistant',
+            parentID: 'u1',
+            createdAt: 2,
+            completedAt: 5,
+            parts: [{ id: 't1', type: 'text', text: 'step done' } as Part],
+        });
+
+        const turn = projectTurnRecords([user, assistant]).turns[0];
+        expect(turn?.completionDisposition).toBe('active');
+        expect(turn?.hasConfirmedFinalBody).toBe(false);
+    });
+
+    test('a fresh turn starts without a confirmed final body', () => {
+        const user = createMessageEntry({ id: 'u1', role: 'user', createdAt: 1 });
+        const turn = projectTurnRecords([user]).turns[0];
+        expect(turn?.hasConfirmedFinalBody).toBe(false);
+    });
+
+    test('stop with a provider-executed running tool still settles normal and confirms the final body', () => {
+        // The runLoop exit rule only excludes provider-executed tools from
+        // continuation; their local status does not matter.
+        const user = createMessageEntry({ id: 'u1', role: 'user', createdAt: 1 });
+        const assistant = createMessageEntry({
+            id: 'a1',
+            role: 'assistant',
+            parentID: 'u1',
+            createdAt: 2,
+            completedAt: 5,
+            finish: 'stop',
+            parts: [
+                {
+                    id: 'tool_1',
+                    type: 'tool',
+                    tool: 'websearch',
+                    metadata: { providerExecuted: true },
+                    state: { status: 'running', time: { start: 2 } },
+                } as unknown as Part,
+                { id: 'text_1', type: 'text', text: 'searched and answered' } as Part,
+            ],
+        });
+
+        const turn = projectTurnRecords([user, assistant]).turns[0];
+        expect(turn?.completionDisposition).toBe('normal');
+        expect(turn?.hasConfirmedFinalBody).toBe(true);
+    });
+
+    test('canonical stop summary skips trailing synthetic text and picks the last real model text', () => {
+        const user = createMessageEntry({ id: 'u1', role: 'user', createdAt: 1 });
+        const assistant = createMessageEntry({
+            id: 'a1',
+            role: 'assistant',
+            parentID: 'u1',
+            createdAt: 2,
+            completedAt: 5,
+            finish: 'stop',
+            parts: [
+                { id: 'text_real', type: 'text', text: 'the real answer' } as Part,
+                { id: 'text_synthetic', type: 'text', text: 'sidecar note', synthetic: true } as unknown as Part,
+            ],
+        });
+
+        const turn = projectTurnRecords([user, assistant]).turns[0];
+        expect(turn?.completionDisposition).toBe('normal');
+        expect(turn?.hasConfirmedFinalBody).toBe(true);
+        expect(turn?.summary.text).toBe('the real answer');
+        expect(turn?.summary.sourcePartId).toBe('text_real');
     });
 
     test('reuses previous projection including activityPresentationKind', () => {
