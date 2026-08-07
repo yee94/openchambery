@@ -168,6 +168,13 @@ export const resolveDesktopLoadOlderStatusVisibility = (input: {
  * - `hydrating`: stable skeleton — loading, or cold with no settled failure
  * - `load-error`: settled failure only (error + not loading + no shell)
  * - `pass`: enough UI shell (user/pending/history) or ready empty snapshot
+ *
+ * The gate is sticky per session: once a transcript has painted, a later
+ * empty read never demotes it. Transcript data is Query-cached, so an idle
+ * session can lose its shell to cache eviction or a transport swap and read
+ * back empty for one refetch. Demoting there swaps the whole viewport for the
+ * skeleton branch, which unmounts the scroll container and composer and so
+ * resets scroll, focus, and the composer caret.
  */
 export type ChatSessionTranscriptGate = 'pass' | 'hydrating' | 'load-error'
 
@@ -177,8 +184,14 @@ export const resolveChatSessionTranscriptGate = (input: {
   hasRenderableSessionSnapshot: boolean
   prefetchStatus?: 'loading' | 'ready' | 'error'
   syncLoading: boolean
+  /** This session already painted a transcript under the current mount. */
+  hasPaintedTranscript?: boolean
 }): ChatSessionTranscriptGate => {
   if (input.hasTranscriptShell) return 'pass'
+
+  // Retained content outranks both the skeleton and the failure wall: a
+  // refetch that errors must not blank a transcript the user is reading.
+  if (input.hasPaintedTranscript) return 'pass'
 
   const loading = input.prefetchStatus === 'loading' || input.syncLoading
   if (loading) return 'hydrating'
@@ -190,6 +203,30 @@ export const resolveChatSessionTranscriptGate = (input: {
   if (!input.hasRenderableSessionSnapshot) return 'hydrating'
 
   return 'pass'
+}
+
+export type PaintedTranscript<T> = { sessionId: string; messages: readonly T[] }
+
+/**
+ * Retain the last painted transcript across a transient empty read.
+ *
+ * A non-empty read always wins and becomes the new retention. An empty read
+ * for the same session replays the retained rows, which keeps the viewport
+ * mounted and keeps the rendered count stable — a 0 → N rebound otherwise
+ * reads as "first content landed" and re-pins the timeline to the bottom.
+ * Switching sessions drops the retention: one session's rows must never paint
+ * under another.
+ */
+export const resolveRetainedTranscript = <T>(input: {
+  sessionId: string | null
+  messages: readonly T[]
+  retained: PaintedTranscript<T> | null
+}): { messages: readonly T[]; retained: PaintedTranscript<T> | null } => {
+  const { sessionId, messages, retained } = input
+  if (!sessionId) return { messages, retained: null }
+  if (messages.length > 0) return { messages, retained: { sessionId, messages } }
+  if (retained?.sessionId === sessionId) return { messages: retained.messages, retained }
+  return { messages, retained: null }
 }
 
 export type ChatContainerHostFeatures = {

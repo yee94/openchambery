@@ -9,6 +9,7 @@ import {
     resolveDesktopLoadOlderStatusVisibility,
     resolveMobileLoadOlderBusy,
     resolveMobileLoadOlderVisibility,
+    resolveRetainedTranscript,
     type ChatContainerHost,
 } from './chatContainerHost';
 import { hasUserDisplayableParts } from './message/normalizeUserDisplayParts';
@@ -430,5 +431,88 @@ describe('resolveChatSessionTranscriptGate', () => {
       prefetchStatus: 'ready',
       syncLoading: false,
     })).toBe('pass');
+  });
+
+  test('a painted transcript is never demoted to the skeleton by a transient empty read', () => {
+    // Cache eviction / transport swap: the shell is momentarily gone and the
+    // refetch is in flight. Demoting here unmounts the viewport and composer.
+    expect(resolveChatSessionTranscriptGate({
+      hasTranscriptShell: false,
+      hasRenderableSessionSnapshot: false,
+      prefetchStatus: 'loading',
+      syncLoading: true,
+      hasPaintedTranscript: true,
+    })).toBe('pass');
+
+    // Same read without the retention still hydrates — the stickiness must be
+    // what carries it, not a loosened loading branch.
+    expect(resolveChatSessionTranscriptGate({
+      hasTranscriptShell: false,
+      hasRenderableSessionSnapshot: false,
+      prefetchStatus: 'loading',
+      syncLoading: true,
+      hasPaintedTranscript: false,
+    })).toBe('hydrating');
+  });
+
+  test('a painted transcript outranks a settled refetch failure', () => {
+    expect(resolveChatSessionTranscriptGate({
+      hasTranscriptShell: false,
+      hasRenderableSessionSnapshot: false,
+      prefetchStatus: 'error',
+      syncLoading: false,
+      hasPaintedTranscript: true,
+    })).toBe('pass');
+  });
+});
+
+describe('resolveRetainedTranscript', () => {
+  const rows = (...ids: string[]) => ids.map((id) => ({ id }));
+
+  test('a non-empty read wins and becomes the retention', () => {
+    const next = rows('m1', 'm2');
+    const result = resolveRetainedTranscript({
+      sessionId: 'ses_1',
+      messages: next,
+      retained: { sessionId: 'ses_1', messages: rows('stale') },
+    });
+
+    expect(result.messages).toBe(next);
+    expect(result.retained).toEqual({ sessionId: 'ses_1', messages: next });
+  });
+
+  test('an empty read replays the retained rows for the same session', () => {
+    const painted = rows('m1', 'm2');
+    const result = resolveRetainedTranscript({
+      sessionId: 'ses_1',
+      messages: [],
+      retained: { sessionId: 'ses_1', messages: painted },
+    });
+
+    // Count stays stable across the empty read, so the timeline does not read
+    // the rebound as "first content landed" and re-pin to the bottom.
+    expect(result.messages).toBe(painted);
+    expect(result.messages).toHaveLength(2);
+  });
+
+  test('retention never leaks across a session switch', () => {
+    const result = resolveRetainedTranscript({
+      sessionId: 'ses_2',
+      messages: [],
+      retained: { sessionId: 'ses_1', messages: rows('other-session') },
+    });
+
+    expect(result.messages).toEqual([]);
+    expect(result.retained).toBeNull();
+  });
+
+  test('drops retention when there is no session', () => {
+    const result = resolveRetainedTranscript({
+      sessionId: null,
+      messages: [],
+      retained: { sessionId: 'ses_1', messages: rows('m1') },
+    });
+
+    expect(result.retained).toBeNull();
   });
 });

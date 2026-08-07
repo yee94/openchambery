@@ -24,8 +24,10 @@ import {
     resolveMobileLoadOlderVisibility,
     mergePendingUserMessagePresentations,
     pendingUserMessagesImplyWorking,
+    resolveRetainedTranscript,
     type ChatContainerHost,
     type ChatContainerHostFeatures,
+    type PaintedTranscript,
 } from './chatContainerHost';
 import { hasUserDisplayableParts } from './message/normalizeUserDisplayParts';
 import {
@@ -1132,6 +1134,21 @@ const ChatContainerContent: React.FC<ChatContainerContentProps> = ({
                 ];
         return mergePendingUserMessagePresentations(authoritativeMessages, pendingUserMessages);
     }, [currentSessionId, currentSessionMessages, historyPrefix, pendingUserMessages]);
+    // Transcript rows come from the Query cache, which an idle session can lose
+    // to eviction or a transport swap. Replaying the last painted rows through
+    // that empty read keeps the viewport from being torn down and rebuilt.
+    const paintedTranscriptRef = React.useRef<PaintedTranscript<SessionMessageRecord> | null>(null);
+    const retainedTranscript = React.useMemo(
+        () => resolveRetainedTranscript({
+            sessionId: currentSessionId,
+            messages: viewportMessages,
+            retained: paintedTranscriptRef.current,
+        }),
+        [currentSessionId, viewportMessages],
+    );
+    paintedTranscriptRef.current = retainedTranscript.retained;
+    const renderedViewportMessages = retainedTranscript.messages as SessionMessageRecord[];
+    const hasPaintedTranscript = retainedTranscript.retained !== null;
     const materializedPendingMessageIDs = React.useMemo(() => {
         if (pendingUserMessages.length === 0) return [];
         // A row counts as materialized only once it can paint a user bubble —
@@ -1154,7 +1171,7 @@ const ChatContainerContent: React.FC<ChatContainerContentProps> = ({
     const timelineController = useChatTimelineController({
         sessionId: currentSessionId,
         directory: effectiveSessionDirectory,
-        messages: viewportMessages,
+        messages: renderedViewportMessages,
         historyMeta,
         scrollRef,
         messageListRef,
@@ -1338,6 +1355,7 @@ const ChatContainerContent: React.FC<ChatContainerContentProps> = ({
         hasRenderableSessionSnapshot,
         prefetchStatus: sessionPrefetchInfo?.status,
         syncLoading: Boolean(currentSessionId && sync.isLoading(currentSessionId, { directory: effectiveSessionDirectory })),
+        hasPaintedTranscript,
     });
     const isSessionHydrating = Boolean(currentSessionId) && sessionTranscriptGate === 'hydrating';
     // Assistant-owned history is authoritative for prior bindings. Do not replace
@@ -1353,7 +1371,7 @@ const ChatContainerContent: React.FC<ChatContainerContentProps> = ({
         // (trace: one programmatic ScrollLayer before ChatMessage paint → blank).
         if (isSessionHydrating) return;
 
-        const messageCount = viewportMessages.length;
+        const messageCount = renderedViewportMessages.length;
         const sessionChanged = lastScrolledSessionRef.current !== currentSessionId;
         const firstContentLanded = !sessionChanged
             && lastPinnedMessageCountRef.current === 0
@@ -1388,7 +1406,7 @@ const ChatContainerContent: React.FC<ChatContainerContentProps> = ({
         isSessionHydrating,
         releaseAutoFollow,
         restoreSnapshot,
-        viewportMessages.length,
+        renderedViewportMessages.length,
     ]);
 
     React.useEffect(() => {
@@ -1697,7 +1715,7 @@ const ChatContainerContent: React.FC<ChatContainerContentProps> = ({
         );
     }
 
-	if (viewportMessages.length === 0 && !sessionIsWorking) {
+	if (renderedViewportMessages.length === 0 && !sessionIsWorking) {
 		return (
 			// No transform here either — same fixed-positioning constraint as the
 			// draft branch above.
@@ -1784,7 +1802,7 @@ const ChatContainerContent: React.FC<ChatContainerContentProps> = ({
                         : 'bg-background'
                 )}
             >
-                {!isDesktopExpandedInput && viewportMessages.length > 0 && (
+                {!isDesktopExpandedInput && renderedViewportMessages.length > 0 && (
                     <ScrollToBottomButton
                         visible={timelineController.showScrollToBottom}
                         onClick={navigation.resumeToLatest}
