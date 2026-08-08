@@ -339,8 +339,8 @@ export const SortableTabsStrip: React.FC<SortableTabsStripProps> = ({
         {usesActivePillIndicator && pillRect ? (
           <div
             className={cn(
-              'pointer-events-none absolute left-0 top-0 z-0 rounded-[9px] [corner-shape:squircle] supports-[corner-shape:squircle]:rounded-[50px] bg-[var(--surface-elevated)]',
-              'border border-border/60'
+              // Shared segmented selected chrome (light elevated / dark selection tokens).
+              'oc-segmented-selected-pill pointer-events-none absolute left-0 top-0 z-0 rounded-[9px] [corner-shape:squircle] supports-[corner-shape:squircle]:rounded-[50px]',
             )}
             style={{
               transform: `translate3d(${pillRect.left}px, ${pillRect.top}px, 0)`,

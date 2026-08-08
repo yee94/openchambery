@@ -996,7 +996,7 @@ button.oc-mobile-group-label-trigger:focus-visible {
 }
 
 /* Quiet canvas only: Settings detail must not inherit floating-surface fill.
-   Higher specificity beats generic .oc-mobile-floating-surface (and Android /
+   Higher specificity beats generic .oc-mobile-floating-surface (and
    reduced-transparency opaque chrome overrides further below). */
 .oc-mobile-floating-surface.oc-mobile-settings-detail-card,
 .oc-mobile-settings-detail-card {
@@ -2153,52 +2153,12 @@ button.oc-mobile-group-label-trigger:focus-visible {
   );
 }
 
-/* Android WebView uses opaque semantic fills for persistent floating chrome.
-   Shadows retain the shared elevation hierarchy while avoiding continuous
-   backdrop compositing during scroll and native window movement. */
-:root.oc-capacitor-app.oc-platform-android .oc-mobile-floating-surface,
-:root.oc-capacitor-app.oc-platform-android .oc-mobile-glass-surface,
-:root.oc-capacitor-app.oc-platform-android .oc-mobile-floating-bottom-bar {
-  background: color-mix(
-    in srgb,
-    var(--surface-elevated) 88%,
-    var(--background)
-  );
-}
-
-/* Settings detail is not floating chrome — keep the quiet page canvas so
-   SettingsGroup cards are the only nested material (no giant outer card). */
-:root.oc-capacitor-app.oc-platform-android
-  .oc-mobile-floating-surface.oc-mobile-settings-detail-card,
-:root.oc-capacitor-app.oc-platform-android .oc-mobile-settings-detail-card {
-  background: transparent;
-  box-shadow: none;
-  -webkit-backdrop-filter: none;
-  backdrop-filter: none;
-}
-
-:root.oc-capacitor-app.oc-platform-android .oc-mobile-glass-control,
-:root.oc-capacitor-app.oc-platform-android .oc-mobile-floating-action {
-  background: var(--surface-elevated);
-}
-
-:root.oc-capacitor-app.oc-platform-android .oc-mobile-overlay-surface {
-  background: color-mix(
-    in srgb,
-    var(--surface-elevated) 96%,
-    var(--background)
-  );
-}
-
-:root.oc-capacitor-app.oc-platform-android .oc-mobile-floating-surface,
-:root.oc-capacitor-app.oc-platform-android .oc-mobile-glass-surface,
-:root.oc-capacitor-app.oc-platform-android .oc-mobile-floating-bottom-bar,
-:root.oc-capacitor-app.oc-platform-android .oc-mobile-glass-control,
-:root.oc-capacitor-app.oc-platform-android .oc-mobile-floating-action,
-:root.oc-capacitor-app.oc-platform-android .oc-mobile-overlay-surface {
-  -webkit-backdrop-filter: none;
-  backdrop-filter: none;
-}
+/* Android Capacitor keeps the same floating glass recipe as iOS (translucent
+   fill + backdrop-filter). Do not blanket-disable blur here — that was an
+   intentional full-platform downgrade, not progressive enhancement.
+   Accessibility fallback remains `@media (prefers-reduced-transparency: reduce)`
+   above. Settings detail stays a quiet canvas via the shared
+   `.oc-mobile-settings-detail-card` rules (transparent, no blur). */
 
 :root.oc-capacitor-app.oc-platform-android .header-safe-area {
   padding-top: var(--oc-safe-area-top);

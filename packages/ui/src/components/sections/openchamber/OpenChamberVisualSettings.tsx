@@ -924,7 +924,7 @@ export const OpenChamberVisualSettings: React.FC<OpenChamberVisualSettingsProps>
                                     label={t('settings.openchamber.visual.field.themeMode')}
                                 >
                                     <div
-                                        className="flex flex-wrap items-center justify-end gap-1"
+                                        className="flex flex-nowrap items-center justify-end gap-1"
                                         role="group"
                                         aria-label={t('settings.openchamber.visual.field.themeMode')}
                                     >
@@ -934,7 +934,7 @@ export const OpenChamberVisualSettings: React.FC<OpenChamberVisualSettingsProps>
                                                 variant="chip"
                                                 size="xs"
                                                 aria-pressed={themeMode === option.value}
-                                                className="oc-mobile-settings-chip !font-normal"
+                                                className="oc-mobile-settings-chip shrink-0 !font-normal"
                                                 onClick={() => setThemeMode(option.value)}
                                             >
                                                 {tUnsafe(option.labelKey)}

@@ -90,6 +90,17 @@ Input footers stay transparent over the elevated input surface.
 } />
 ```
 
+### Segmented control selected pill
+
+For one-of-N chips on a muted track (workspace tabs, filters, pill tab strips), use the shared design-system class instead of hand-rolled elevated + `shadow-sm dark:shadow-none`:
+
+```tsx
+<span className="oc-segmented-selected-pill absolute inset-0 rounded-lg" aria-hidden />
+```
+
+- Light: `surface.elevated` + soft outer elevation.
+- Dark: selection-derived fill (elevated often equals muted in dark palettes). Defined in `packages/ui/src/styles/design-system.css`.
+
 ### Error Feedback
 
 ```tsx

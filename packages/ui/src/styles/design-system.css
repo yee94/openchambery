@@ -463,4 +463,32 @@
     background: rgb(from var(--agent-color-bg) r g b / 0.1);
     border-color: rgb(from var(--agent-color) r g b / 0.2);
   }
+
+  /*
+   * Segmented control selected pill (tabs / filters / workspace switchers).
+   * Light: elevated paper on a muted track with soft outer elevation.
+   * Dark: interactive selection material — elevated≈muted in many dark palettes,
+   * so selection tokens (not surface-elevated + shadow-sm) carry contrast.
+   * Prefer this class over ad-hoc bg-[var(--surface-elevated)] shadow-sm dark:shadow-none.
+   */
+  .oc-segmented-selected-pill {
+    background: var(--surface-elevated);
+    color: var(--surface-elevated-foreground, var(--foreground));
+    box-shadow:
+      0 1px 2px color-mix(in srgb, var(--surface-foreground) 10%, transparent),
+      0 0 0 1px color-mix(in srgb, var(--surface-foreground) 6%, transparent);
+  }
+
+  .dark .oc-segmented-selected-pill {
+    background: color-mix(
+      in srgb,
+      var(--interactive-selection-foreground) 16%,
+      var(--surface-elevated)
+    );
+    color: var(--interactive-selection-foreground);
+    box-shadow:
+      inset 0 0 0 1px
+        color-mix(in srgb, var(--interactive-selection-foreground) 14%, transparent),
+      0 1px 3px rgb(0 0 0 / 0.4);
+  }
 }

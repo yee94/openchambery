@@ -827,7 +827,7 @@ export function ScheduledTasksWorkspace({
                 {workspaceView === view ? (
                   <motion.span
                     layoutId="scheduled-workspace-view-pill"
-                    className="absolute inset-0 rounded-lg bg-[var(--surface-elevated)] shadow-sm hover:bg-[var(--surface-elevated)] dark:shadow-none"
+                    className="oc-segmented-selected-pill absolute inset-0 rounded-lg"
                     transition={{ duration: reduceMotion ? 0 : 0.18, ease: [0.22, 1, 0.36, 1] }}
                     aria-hidden="true"
                   />
@@ -871,7 +871,7 @@ export function ScheduledTasksWorkspace({
                     <motion.span
                       layoutId="scheduled-task-filter-pill"
                       className={cn(
-                        'absolute inset-0 bg-[var(--surface-elevated)]',
+                        'oc-segmented-selected-pill absolute inset-0',
                         isMobileTab ? 'rounded-[var(--oc-mobile-inset-radius)]' : 'rounded-xl',
                       )}
                       transition={{ duration: reduceMotion ? 0 : 0.18, ease: [0.22, 1, 0.36, 1] }}

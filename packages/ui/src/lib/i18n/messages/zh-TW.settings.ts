@@ -1803,7 +1803,7 @@
   'settings.openchamber.visual.field.sendAnonymousUsageReportsAria': '送出匿名使用報告',
   'settings.openchamber.visual.field.sendAnonymousUsageReports': '送出匿名使用報告',
   'settings.openchamber.visual.field.sendAnonymousUsageReportsHint': '協助我們了解哪些應用程式版本仍在被積極使用，以便優先改進。僅收集應用程式版本、平台與執行階段資訊，不收集個人資料或程式碼。',
-  'settings.openchamber.visual.option.themeMode.system': '跟隨系統',
+  'settings.openchamber.visual.option.themeMode.system': '隨系統',
   'settings.openchamber.visual.option.themeMode.light': '淺色',
   'settings.openchamber.visual.option.themeMode.dark': '深色',
   'settings.openchamber.visual.option.diffLayout.dynamic.label': '動態',

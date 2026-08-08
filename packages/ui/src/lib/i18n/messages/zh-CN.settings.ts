@@ -1892,7 +1892,7 @@ export const settingsDict = {
   'settings.openchamber.visual.field.sendAnonymousUsageReportsAria': '发送匿名使用报告',
   'settings.openchamber.visual.field.sendAnonymousUsageReports': '发送匿名使用报告',
   'settings.openchamber.visual.field.sendAnonymousUsageReportsHint': '帮助我们了解哪些应用版本正在被积极使用，以便优先改进。仅收集应用版本、平台和运行时信息，不收集个人数据或代码。',
-  'settings.openchamber.visual.option.themeMode.system': '跟随系统',
+  'settings.openchamber.visual.option.themeMode.system': '随系统',
   'settings.openchamber.visual.option.themeMode.light': '浅色',
   'settings.openchamber.visual.option.themeMode.dark': '深色',
   'settings.openchamber.visual.option.diffLayout.dynamic.label': '动态',

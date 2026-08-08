@@ -164,7 +164,10 @@ iOS Simulator helpers: `mobile:sim:{boot,install,launch,run,serve,list,kill}` (s
   then restores it. Device builds include it normally.
 - **Android WebView version**: the UI uses `color-mix()` (Tailwind v4 + theme) which needs
   Chromium **111+**. An outdated Android System WebView renders translucency/selection wrong — tell
-  testers to keep Android System WebView updated (or use a device with a current one).
+  testers to keep Android System WebView updated (or use a device with a current one). Floating
+  glass (`backdrop-filter`) is **enabled** on Android Capacitor the same as iOS; only
+  `prefers-reduced-transparency` forces an opaque fallback. Do not re-add a platform-wide
+  Android “no blur” override in `mobile.css`.
 - **Capacitor stream transport is locked to SSE** on the native apps (native WebSocket streaming is
   unreliable on Android). The Chat transport setting shows SSE selected and disables the others in
   the Capacitor shell.

@@ -84,9 +84,28 @@ Then let the component own the real compact size via Tailwind (`h-7 w-3`, etc.).
 3. Validate with **`mobile-pointer` present** (real phone or DevTools coarse pointer). Inspect-only desktop pointer is not sufficient.
 4. Do not remove the global 36px rule for ordinary primary actions; only exempt intentional dense clusters.
 
+## Floating glass (mobile)
+
+Shared classes (`.oc-mobile-floating-surface`, `.oc-mobile-glass-control`, dock, etc.) use translucent fills plus `backdrop-filter` on **all** mobile shells, including Capacitor Android. Do **not** reintroduce an Android-only “opaque fill + no blur” blanket; that is a full-platform downgrade, not progressive enhancement.
+
+Legitimate glass fallbacks:
+
+| Gate | Behavior |
+|---|---|
+| `@media (prefers-reduced-transparency: reduce)` | Opaque elevated fill, `backdrop-filter: none` |
+| Unsupported WebView / no filter | Browser ignores `backdrop-filter`; translucent fill + shadow still read as elevation |
+| Settings detail canvas | `.oc-mobile-settings-detail-card` stays transparent (group cards own material) |
+
+Android System WebView should be Chromium **111+** for `color-mix()` and reliable translucency (`packages/mobile/HANDOFF.md`).
+
+## Segmented selected pill
+
+Shared class `.oc-segmented-selected-pill` in `design-system.css` owns light/dark chrome for selected segments on muted tracks (scheduled Tasks/History, filter chips, `SortableTabsStrip` active-pill). Do not reintroduce `bg-[var(--surface-elevated)] shadow-sm dark:shadow-none` for that pattern — dark themes often collapse elevated into muted, so selection tokens carry contrast.
+
 ## Related owners
 
 - Detection / root classes: `packages/ui/src/lib/device.ts`
 - Touch CSS: `packages/ui/src/styles/mobile.css`
+- Design-system components: `packages/ui/src/styles/design-system.css` (`.oc-segmented-selected-pill`)
 - Queued message chip layout: `packages/ui/src/components/chat/QueuedMessageChips.tsx` (root class `oc-composer-queue`)
 - Mobile shell early `isMobile`: `packages/ui/src/apps/renderMobileApp.tsx`
