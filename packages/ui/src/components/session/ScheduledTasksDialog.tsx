@@ -695,8 +695,12 @@ export function ScheduledTasksWorkspace({
 
   return (
     <div className={cn(
-      'relative flex min-h-0 bg-background',
-      isMobileTab ? 'oc-mobile-scheduled-workspace flex-col overflow-visible' : 'h-full overflow-hidden',
+      'relative flex min-h-0',
+      // mobile-tab participates in MobileTabsRoot tabpanel scroll (like Projects).
+      // Keep shell background transparent so the floating shell tone shows through.
+      isMobileTab
+        ? 'oc-mobile-scheduled-workspace w-full flex-col overflow-visible bg-transparent'
+        : 'h-full overflow-hidden bg-background',
       isMobilePanel && 'flex-col',
     )} data-presentation={presentation}>
       <div
@@ -706,7 +710,9 @@ export function ScheduledTasksWorkspace({
         inert={isMobileTab && editorMode !== 'closed' ? true : undefined}
         className={cn(
           isMobileTab
-            ? 'fixed inset-0 z-20 flex h-[100dvh] w-full min-w-0 max-w-full flex-col gap-[var(--oc-mobile-page-gap)] overflow-y-auto overflow-x-hidden overscroll-contain bg-background px-[var(--oc-mobile-page-inline-inset)] pb-[calc(var(--oc-mobile-dock-height)+2.5rem+var(--safe-area-inset-bottom,env(safe-area-inset-bottom,0px)))] pt-[calc(var(--safe-area-inset-top,env(safe-area-inset-top,0px))+1rem)] [contain:layout_paint]'
+            // In-flow underlay: tabpanel owns safe-area/dock padding and scrollbar-none.
+            // Editor back animation still targets this node via underlayRef.
+            ? 'flex w-full min-w-0 flex-col gap-[var(--oc-mobile-page-gap)]'
             : 'contents',
         )}
       >
@@ -780,8 +786,9 @@ export function ScheduledTasksWorkspace({
         </header>
       ) : null}
       <section className={cn(
-        'min-w-0 flex-1 flex-col transition-[width] duration-300 ease-out',
-        isMobileTab ? 'overflow-visible' : 'overflow-hidden',
+        'min-w-0 flex-col transition-[width] duration-300 ease-out',
+        // mobile-tab: natural height so the enclosing tabpanel can scroll.
+        isMobileTab ? 'flex-none overflow-visible' : 'flex-1 overflow-hidden',
         isMobilePanel && !isMobileTab && editorMode !== 'closed' ? 'hidden' : 'flex',
       )}>
         <header className={cn(
@@ -791,8 +798,10 @@ export function ScheduledTasksWorkspace({
           <div className={cn('mx-auto w-full', isMobileTab ? 'max-w-[26rem]' : 'max-w-4xl')}>
           <div
             className={cn(
-              'mb-3 grid grid-cols-2 gap-1 rounded-xl bg-[var(--surface-muted)] p-1',
-              isMobileTab && 'oc-mobile-floating-surface',
+              'mb-3 grid grid-cols-2 gap-1 rounded-xl p-1',
+              isMobileTab
+                ? 'oc-mobile-floating-surface'
+                : 'bg-[var(--surface-muted)]',
             )}
             role="tablist"
             aria-label={t('sessions.scheduledTasks.workspace.views.aria')}
@@ -894,13 +903,13 @@ export function ScheduledTasksWorkspace({
         </header>
 
         <div className={cn(
-          'min-h-0 flex-1',
-          isMobileTab ? 'overflow-visible' : 'overflow-y-auto',
           isMobileTab
-            ? 'overscroll-none pb-[max(1rem,env(safe-area-inset-bottom))] pt-5'
-            : isMobilePanel
-              ? 'overscroll-none px-3 pb-[max(1rem,env(safe-area-inset-bottom))]'
-              : 'px-6 pb-6 [scrollbar-gutter:stable]',
+            // No nested scroll region: tabpanel is the only vertical scroller.
+            ? 'flex-none overflow-visible pt-5'
+            : 'min-h-0 flex-1 overflow-y-auto',
+          !isMobileTab && (isMobilePanel
+            ? 'overscroll-none px-3 pb-[max(1rem,env(safe-area-inset-bottom))]'
+            : 'px-6 pb-6 [scrollbar-gutter:stable]'),
         )}>
           <div className={cn(
             'mx-auto w-full',
@@ -1083,8 +1092,11 @@ export function ScheduledTasksWorkspace({
                         <article
                           key={run.id}
                           className={cn(
-                            'w-full rounded-xl border border-border/60 bg-[var(--surface-elevated)] p-4 shadow-sm dark:shadow-none',
-                            isMobileTab && 'oc-mobile-floating-surface',
+                            'w-full p-4',
+                            // mobile-tab history cards match task cards / project shells.
+                            isMobileTab
+                              ? 'oc-mobile-floating-surface rounded-[var(--oc-mobile-surface-radius)]'
+                              : 'rounded-xl border border-border/60 bg-[var(--surface-elevated)] shadow-sm dark:shadow-none',
                           )}
                         >
                           {runBody}

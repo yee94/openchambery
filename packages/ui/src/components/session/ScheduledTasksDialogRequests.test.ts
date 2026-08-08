@@ -162,7 +162,9 @@ describe('ScheduledTasksDialog queries', () => {
     expect(editorContent).toContain('MOBILE_PANEL_ROW_CLASS');
     expect(editorContent).toContain('MOBILE_PANEL_CONTROL_CLASS');
     expect(workspaceContent).toContain("isMobileTab ? 'pb-0 pt-0'");
-    expect(workspaceContent).toContain("? 'overscroll-none pb-[max(1rem,env(safe-area-inset-bottom))] pt-5'");
+    // mobile-tab list is in-flow under the root tabpanel scroller (no nested safe-area pad).
+    expect(workspaceContent).toContain("? 'flex-none overflow-visible pt-5'");
+    expect(workspaceContent).not.toContain("overscroll-none pb-[max(1rem,env(safe-area-inset-bottom))] pt-5");
     expect(editorContent).toContain('overflow-y-auto overflow-x-hidden px-[var(--oc-mobile-page-inline-inset)] pb-[calc(var(--oc-mobile-dock-height)+2.5rem');
     expect(editorContent).not.toContain('<div className="px-3 pb-5 pt-4">');
   });
@@ -203,10 +205,15 @@ describe('ScheduledTasksDialog queries', () => {
     expect(workspaceContent).toContain('registerEditorBackHandler?: (handler: (() => boolean) | null) => void');
     expect(workspaceContent).toContain("onEditorActiveChange?.(editorMode !== 'closed')");
     expect(workspaceContent).toContain('underlayRef: mobileNavigationUnderlayRef');
+    // Editor push stays fixed; list underlay is in-flow so tabpanel owns scroll + hidden scrollbar.
     expect(workspaceContent).toContain("'fixed inset-0 z-50 flex h-[100dvh]");
-    expect(workspaceContent).toContain('gap-[var(--oc-mobile-page-gap)]');
+    expect(workspaceContent).toContain("? 'flex w-full min-w-0 flex-col gap-[var(--oc-mobile-page-gap)]'");
+    expect(workspaceContent).not.toContain('fixed inset-0 z-20 flex h-[100dvh]');
+    expect(workspaceContent).not.toContain("isMobileTab\n            ? 'fixed inset-0 z-20");
+    expect(workspaceContent).toContain("isMobileTab ? 'flex-none overflow-visible' : 'flex-1 overflow-hidden'");
     expect(workspaceContent).toContain("isMobileTab ? 'pb-0 pt-0'");
     expect(workspaceContent).toContain("isMobilePanel && !isMobileTab && editorMode !== 'closed' ? 'hidden' : 'flex'");
+    expect(workspaceContent).toContain("? 'oc-mobile-floating-surface rounded-[var(--oc-mobile-surface-radius)]'");
     expect(workspaceContent).not.toContain('mobileTaskGroupStarts');
     expect(mobileAppContent).toContain('onEditorActiveChange={onEditorActiveChange}');
     expect(phoneShellContent).toContain('<MobileScheduledTab showHeader={false}>');
@@ -236,6 +243,9 @@ describe('ScheduledTasksDialog queries', () => {
     expect(tabRootContent).not.toContain("secondaryPage && 'opacity-0'");
     expect(scheduledTabContent).toContain('scrollsWithPage');
     expect(scheduledTabContent).not.toContain('scrollsWithPage={showHeader}');
+    // Root tabpanel is the sole scroller for scheduled content (matches Projects).
+    expect(tabRootContent).toContain('scrollbar-none h-full min-h-0 flex-1 overflow-y-auto');
+    expect(scheduledTabContent).toContain("surfaceClassName={cn('oc-mobile-scheduled-content'");
     const mobileTabEditorContent = editorContent
       .split("if (presentation === 'mobile-tab')")[1]
       ?.split('if (isMobile)')[0] ?? '';

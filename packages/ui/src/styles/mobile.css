@@ -717,9 +717,16 @@ button.oc-mobile-group-label-trigger:focus-visible {
   justify-content: center;
 }
 
-.oc-mobile-assistant-content > *,
-.oc-mobile-scheduled-content > * {
+.oc-mobile-assistant-content > * {
   height: 100%;
+  min-height: 0;
+}
+
+/* Scheduled tab content participates in the root tabpanel scroll (like Projects).
+   Auto height lets task/history lists grow and scroll with the shell, not a nested
+   fixed viewport that flashes a native scrollbar. */
+.oc-mobile-scheduled-content > * {
+  height: auto;
   min-height: 0;
 }
 
