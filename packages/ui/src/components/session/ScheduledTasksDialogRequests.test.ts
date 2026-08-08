@@ -144,9 +144,9 @@ describe('ScheduledTasksDialog queries', () => {
     ]);
     expect(workspaceContent.match(/max-w-\[26rem\]/g)?.length).toBeGreaterThanOrEqual(2);
     expect(workspaceContent).toContain('layoutId="scheduled-task-filter-pill"');
-    // View switcher keeps an independent elevated pill so selected chrome survives tab changes.
+    // View switcher animates the original elevated selected chrome (fill + shadow-sm).
     expect(workspaceContent).toContain('layoutId="scheduled-workspace-view-pill"');
-    expect(workspaceContent).toContain("? 'text-foreground shadow-sm hover:text-foreground dark:shadow-none'");
+    expect(workspaceContent).toContain('absolute inset-0 rounded-lg bg-[var(--surface-elevated)] shadow-sm hover:bg-[var(--surface-elevated)] dark:shadow-none');
     expect(workspaceContent).toContain("isMobileTab && 'oc-mobile-floating-surface oc-mobile-scheduled-controls'");
     expect(workspaceContent).toContain("!isMobileTab ? (");
     expect(workspaceContent).toContain('oc-mobile-project-trigger oc-mobile-scheduled-task-row');

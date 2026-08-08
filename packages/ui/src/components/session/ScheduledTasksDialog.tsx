@@ -798,12 +798,9 @@ export function ScheduledTasksWorkspace({
           <div className={cn('mx-auto w-full', isMobileTab ? 'max-w-[26rem]' : 'max-w-4xl')}>
           <div
             className={cn(
-              'mb-3 grid grid-cols-2 gap-1 rounded-xl p-1',
-              // Track is the quiet shell; the selected pill owns the elevated chrome
-              // so switching views never drops the white/shadow selected surface.
-              isMobileTab
-                ? 'oc-mobile-floating-surface'
-                : 'bg-[var(--surface-muted)]',
+              // Original track chrome: muted fill on desktop, floating shell on mobile.
+              'mb-3 grid grid-cols-2 gap-1 rounded-xl bg-[var(--surface-muted)] p-1',
+              isMobileTab && 'oc-mobile-floating-surface',
             )}
             role="tablist"
             aria-label={t('sessions.scheduledTasks.workspace.views.aria')}
@@ -817,25 +814,20 @@ export function ScheduledTasksWorkspace({
                 role="tab"
                 aria-selected={workspaceView === view}
                 className={cn(
-                  // Keep overflow visible so the selected pill's soft shadow is not clipped.
-                  // Avoid overflow-hidden: mobile.css rewrites it to overflow-y:auto.
-                  'relative min-h-9 rounded-lg border-0 bg-transparent text-muted-foreground shadow-none transition-[color,background-color,box-shadow,transform] duration-150 ease-out hover:bg-transparent motion-reduce:transition-none',
+                  // Same visual tokens as before; elevated fill/shadow live on the
+                  // sliding pill so switching views keeps the original selected look.
+                  'relative min-h-9 rounded-lg text-muted-foreground transition-[background-color,color,box-shadow] motion-reduce:transition-none',
                   isMobilePanel && 'min-h-11',
                   workspaceView === view
-                    ? 'text-foreground shadow-sm hover:text-foreground dark:shadow-none'
-                    : 'hover:text-foreground',
+                    ? 'text-foreground hover:bg-transparent hover:text-foreground'
+                    : 'hover:bg-interactive-hover/40 hover:text-foreground',
                 )}
                 onClick={() => handleWorkspaceViewChange(view)}
               >
                 {workspaceView === view ? (
                   <motion.span
                     layoutId="scheduled-workspace-view-pill"
-                    className={cn(
-                      'absolute inset-0 bg-[var(--surface-elevated)]',
-                      isMobileTab
-                        ? 'rounded-[var(--oc-mobile-inset-radius)]'
-                        : 'rounded-lg',
-                    )}
+                    className="absolute inset-0 rounded-lg bg-[var(--surface-elevated)] shadow-sm hover:bg-[var(--surface-elevated)] dark:shadow-none"
                     transition={{ duration: reduceMotion ? 0 : 0.18, ease: [0.22, 1, 0.36, 1] }}
                     aria-hidden="true"
                   />
