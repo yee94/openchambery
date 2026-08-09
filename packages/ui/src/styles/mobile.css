@@ -369,16 +369,30 @@
   );
 }
 
+/*
+ * Expanded (collapse=0) matches the pre-collapse root rhythm:
+ *   tabpanel pt = safe-area + 1rem, header pt = 0.375rem (pt-1.5).
+ * Collapsed (collapse=1) matches detail-nav compact chrome:
+ *   padding-top = max(0.25rem, safe-area).
+ * Height is content-driven (title + trailing min-h-10); no forced min-height.
+ */
 .oc-mobile-collapsing-header {
   --oc-mobile-title-collapse: 0;
   position: sticky;
   z-index: 30;
   top: 0;
   isolation: isolate;
-  min-height: calc(4.25rem - (0.75rem * var(--oc-mobile-title-collapse)));
   margin-inline: calc(-1 * var(--oc-mobile-page-inline-inset));
-  padding-top: max(0.25rem, var(--oc-safe-area-top, 0px));
+  padding-top: calc(
+    (
+        var(--oc-safe-area-top, 0px) + 1rem + 0.375rem
+      ) *
+      (1 - var(--oc-mobile-title-collapse)) +
+      max(0.25rem, var(--oc-safe-area-top, 0px)) *
+      var(--oc-mobile-title-collapse)
+  );
   padding-right: calc(var(--oc-mobile-page-inline-inset) + 0.25rem);
+  padding-bottom: 0;
   padding-left: calc(var(--oc-mobile-page-inline-inset) + 0.25rem);
   background: transparent;
 }

@@ -346,7 +346,9 @@ describe('ScheduledTasksDialog queries', () => {
     expect(rootHeaderContent).toContain("matchMedia('(prefers-reduced-motion: reduce)')");
     expect(mobileStyles).toContain('.oc-mobile-collapsing-header::after');
     expect(mobileStyles).toContain('opacity: var(--oc-mobile-title-collapse)');
-    expect(mobileStyles).toContain('padding-top: max(0.25rem, var(--oc-safe-area-top, 0px))');
+    // Expanded = safe-area + 1rem (page) + 0.375rem (legacy header pt-1.5); collapsed → detail-nav floor.
+    expect(mobileStyles).toContain('var(--oc-safe-area-top, 0px) + 1rem + 0.375rem');
+    expect(mobileStyles).toContain('max(0.25rem, var(--oc-safe-area-top, 0px))');
     expect(mobileStyles).toContain('[role="tabpanel"]:has(.oc-mobile-collapsing-header)');
     expect(mobileStyles).toContain('.oc-mobile-settings-root-surface:has(.oc-mobile-collapsing-header)');
     expect(settingsContent).not.toContain('oc-mobile-settings-detail-navigation');
