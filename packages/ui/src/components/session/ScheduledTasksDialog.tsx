@@ -859,10 +859,9 @@ export function ScheduledTasksWorkspace({
                   <motion.span
                     layoutId="scheduled-workspace-view-pill"
                     className={cn(
+                      // Mobile radius comes from .oc-mobile-segmented-item CSS vars.
                       'oc-segmented-selected-pill absolute inset-0',
-                      isMobileTab
-                        ? 'rounded-[var(--oc-mobile-inset-radius)]'
-                        : 'rounded-lg',
+                      !isMobileTab && 'rounded-lg',
                     )}
                     transition={{ duration: reduceMotion ? 0 : 0.18, ease: [0.22, 1, 0.36, 1] }}
                     aria-hidden="true"
@@ -917,10 +916,9 @@ export function ScheduledTasksWorkspace({
                     <motion.span
                       layoutId="scheduled-task-filter-pill"
                       className={cn(
+                        // Mobile radius comes from .oc-mobile-segmented-item CSS vars.
                         'oc-segmented-selected-pill absolute inset-0',
-                        isMobileTab
-                          ? 'rounded-[var(--oc-mobile-inset-radius)]'
-                          : 'rounded-xl',
+                        !isMobileTab && 'rounded-xl',
                       )}
                       transition={{ duration: reduceMotion ? 0 : 0.18, ease: [0.22, 1, 0.36, 1] }}
                       aria-hidden="true"
@@ -934,7 +932,7 @@ export function ScheduledTasksWorkspace({
               <Button
                 variant="ghost"
                 data-mobile-press-feedback="none"
-                className="oc-mobile-segmented-action shrink-0 rounded-full bg-foreground text-background transition-[background-color,transform,box-shadow] duration-150 ease-out hover:bg-foreground/90 hover:text-background hover:shadow-sm active:scale-[0.97] motion-reduce:transition-none"
+                className="oc-mobile-segmented-action shrink-0 bg-foreground text-background transition-[background-color,transform,box-shadow] duration-150 ease-out hover:bg-foreground/90 hover:text-background hover:shadow-sm active:scale-[0.97] motion-reduce:transition-none"
                 onClick={handleCreate}
                 disabled={!createProjectID}
                 aria-label={t('sessions.scheduledTasks.dialog.actions.create')}

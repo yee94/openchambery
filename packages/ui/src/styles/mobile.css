@@ -891,7 +891,9 @@ button.oc-mobile-worktree-label-trigger:active,
 
 /* Shared mobile segmented track (Tasks/History, filters, similar one-of-N bars).
    Pair with .oc-mobile-floating-surface for glass elevation. Selected chrome is
-   .oc-segmented-selected-pill from design-system.css — keep inset radius there.
+   .oc-segmented-selected-pill from design-system.css.
+   Radius system: outer uses --oc-mobile-surface-radius; inner item/pill radius is
+   surface − pad so corners stay concentric with the track (one variable family).
    Track height may differ by content (e.g. trailing +), but pad/gap/item height
    stay shared so vertical rhythm and pill centering match across rows. */
 .oc-mobile-segmented-track,
@@ -899,11 +901,17 @@ button.oc-mobile-worktree-label-trigger:active,
   --oc-mobile-segmented-pad: 0.25rem;
   --oc-mobile-segmented-gap: 0.25rem;
   --oc-mobile-segmented-item-height: 2.5rem;
+  /* Outer + inner from the same surface radius token. */
+  --oc-mobile-segmented-track-radius: var(--oc-mobile-surface-radius);
+  --oc-mobile-segmented-item-radius: max(
+    0px,
+    calc(var(--oc-mobile-segmented-track-radius) - var(--oc-mobile-segmented-pad))
+  );
   box-sizing: border-box;
   display: flex;
   align-items: center;
   gap: var(--oc-mobile-segmented-gap);
-  border-radius: var(--oc-mobile-surface-radius);
+  border-radius: var(--oc-mobile-segmented-track-radius);
   padding: var(--oc-mobile-segmented-pad);
   /* Content-sized: pad + item height. Do not force a taller min-height. */
   min-height: calc(
@@ -932,7 +940,7 @@ button.oc-mobile-worktree-label-trigger:active,
   justify-content: center;
   padding-inline: 0.5rem !important;
   border: 0;
-  border-radius: var(--oc-mobile-inset-radius);
+  border-radius: var(--oc-mobile-segmented-item-radius);
   background: transparent;
   box-shadow: none;
   color: var(--surface-muted-foreground, var(--muted-foreground));
@@ -944,7 +952,13 @@ button.oc-mobile-worktree-label-trigger:active,
     transform 150ms ease-out;
 }
 
-/* Trailing control on a segmented track (e.g. create +) — same height as items. */
+/* Selected pill inherits the same item radius (no separate inset token). */
+.oc-mobile-segmented-item > .oc-segmented-selected-pill {
+  border-radius: var(--oc-mobile-segmented-item-radius);
+}
+
+/* Trailing control on a segmented track (e.g. create +) — same height as items.
+   Full-circle uses half the item height so it still reads as a disc inside the track. */
 .oc-mobile-segmented-track > .oc-mobile-segmented-action,
 .oc-mobile-scheduled-controls > .oc-mobile-segmented-action {
   width: var(--oc-mobile-segmented-item-height) !important;
@@ -954,6 +968,7 @@ button.oc-mobile-worktree-label-trigger:active,
   max-height: var(--oc-mobile-segmented-item-height) !important;
   flex: none;
   padding: 0 !important;
+  border-radius: var(--oc-mobile-segmented-item-radius) !important;
 }
 
 .oc-mobile-segmented-item:hover {
