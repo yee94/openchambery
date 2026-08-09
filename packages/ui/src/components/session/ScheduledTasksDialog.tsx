@@ -1023,7 +1023,14 @@ export function ScheduledTasksWorkspace({
                   <p className="mt-1 typography-meta text-muted-foreground">{t('sessions.scheduledTasks.history.empty.description')}</p>
                 </div>
               ) : (
-                <div className={cn(isMobilePanel ? 'space-y-2' : 'divide-y divide-border/50 overflow-hidden rounded-xl border border-border/60 bg-[var(--surface-elevated)]')}>
+                <div className={cn(
+                  // Match Tasks list rhythm on mobile tab (space-y-4); denser sheet / desktop rows elsewhere.
+                  isMobileTab
+                    ? 'space-y-4'
+                    : isMobilePanel
+                      ? 'space-y-2'
+                      : 'divide-y divide-border/50 overflow-hidden rounded-xl border border-border/60 bg-[var(--surface-elevated)]',
+                )}>
                   {runs.map((run) => {
                     const project = projectById.get(run.projectId);
                     const projectLabel = project ? formatDirectoryName(project.path) : run.projectId;
@@ -1171,13 +1178,10 @@ export function ScheduledTasksWorkspace({
                             ) : null}
                           </div>
                           {run.error ? (
+                            // line-clamp must live on the text node only: applying it to the flex
+                            // row sets display:-webkit-box and stacks icon above the message.
                             <div
-                              className={cn(
-                                'flex min-w-0 items-start gap-1.5 break-words typography-micro text-[var(--surface-muted-foreground)]',
-                                isMobilePanel
-                                  ? 'mt-1.5 line-clamp-3'
-                                  : 'mt-1.5 line-clamp-1',
-                              )}
+                              className="mt-1.5 flex min-w-0 items-start gap-1.5 typography-micro text-[var(--surface-muted-foreground)]"
                               title={run.error.slice(0, 300)}
                             >
                               <Icon
@@ -1185,7 +1189,12 @@ export function ScheduledTasksWorkspace({
                                 className="mt-px size-3.5 shrink-0 text-[var(--status-error)]"
                                 aria-hidden="true"
                               />
-                              <span className="min-w-0 break-words [overflow-wrap:anywhere]">
+                              <span
+                                className={cn(
+                                  'min-w-0 break-words [overflow-wrap:anywhere]',
+                                  isMobilePanel ? 'line-clamp-3' : 'line-clamp-1',
+                                )}
+                              >
                                 {run.error.slice(0, 300)}
                               </span>
                             </div>
