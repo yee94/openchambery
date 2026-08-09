@@ -26,6 +26,8 @@ type Args = {
   createFolder: (scopeKey: string, name: string, parentId?: string | null) => FolderEntry;
   addSessionToFolder: (scopeKey: string, folderId: string, sessionId: string) => void;
   cleanupSessions: (scopeKey: string, existingSessionIds: Set<string>) => void;
+  /** When false, skip archived-folder derivation (hidden sidebar). */
+  enabled?: boolean;
 };
 
 export const useArchivedAutoFolders = (args: Args): void => {
@@ -39,10 +41,11 @@ export const useArchivedAutoFolders = (args: Args): void => {
     createFolder,
     addSessionToFolder,
     cleanupSessions,
+    enabled = true,
   } = args;
 
   React.useEffect(() => {
-    if (isSessionsLoading) {
+    if (!enabled || isSessionsLoading) {
       return;
     }
 
@@ -72,6 +75,7 @@ export const useArchivedAutoFolders = (args: Args): void => {
       }
     });
   }, [
+    enabled,
     normalizedProjects,
     ownership,
     isSessionsLoading,

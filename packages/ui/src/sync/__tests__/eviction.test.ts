@@ -114,6 +114,46 @@ describe("pickDirectoriesToEvict", () => {
     })
     expect(list).toEqual(["/idle"])
   })
+
+  test("does not overflow-evict a directory still inside the grace window", () => {
+    const now = 100_000
+    const stores = ["/fresh", "/old-idle"]
+    const state = new Map<string, DirState>([
+      ["/fresh", { lastAccessAt: now - 5_000 }],
+      ["/old-idle", { lastAccessAt: 0 }],
+    ])
+    const list = pickDirectoriesToEvict({
+      stores,
+      state,
+      pins: new Set(),
+      max: 1,
+      ttl: 60_000,
+      graceMs: 30_000,
+      now,
+    })
+    expect(list).not.toContain("/fresh")
+    expect(list).toContain("/old-idle")
+  })
+
+  test("overflow-evicts a non-idle directory after the grace window expires", () => {
+    const now = 100_000
+    const stores = ["/stale-active", "/kept"]
+    const state = new Map<string, DirState>([
+      ["/stale-active", { lastAccessAt: now - 40_000 }],
+      ["/kept", { lastAccessAt: now }],
+    ])
+    const list = pickDirectoriesToEvict({
+      stores,
+      state,
+      pins: new Set(),
+      max: 1,
+      ttl: 60_000,
+      graceMs: 30_000,
+      now,
+    })
+    expect(list).toContain("/stale-active")
+    expect(list).not.toContain("/kept")
+  })
 })
 
 describe("canDisposeDirectory", () => {

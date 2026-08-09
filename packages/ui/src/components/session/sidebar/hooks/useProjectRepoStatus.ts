@@ -12,6 +12,8 @@ type Args = {
   gitRepoStatus: Map<string, { isGitRepo: boolean | null; branch: string | null }>;
   setProjectRepoStatus: React.Dispatch<React.SetStateAction<Map<string, boolean | null>>>;
   setProjectRootBranches: React.Dispatch<React.SetStateAction<Map<string, string>>>;
+  /** When false, skip git status / branch enrichment (hidden sidebar). */
+  enabled?: boolean;
 };
 
 export const useProjectRepoStatus = (args: Args): void => {
@@ -21,18 +23,24 @@ export const useProjectRepoStatus = (args: Args): void => {
     gitRepoStatus,
     setProjectRepoStatus,
     setProjectRootBranches,
+    enabled = true,
   } = args;
 
   const { git } = useRuntimeAPIs();
   const ensureStatus = useGitStore((state) => state.ensureStatus);
   const activeProjects = React.useMemo(
-    () => normalizedProjects.filter((project) => project.id === activeProjectId),
-    [activeProjectId, normalizedProjects],
+    () => (enabled
+      ? normalizedProjects.filter((project) => project.id === activeProjectId)
+      : []),
+    [activeProjectId, enabled, normalizedProjects],
   );
 
   // Derive repo status from centralized Git store
   React.useEffect(() => {
-    if (!git || activeProjects.length === 0) {
+    if (!enabled || !git || activeProjects.length === 0) {
+      if (!enabled) {
+        return;
+      }
       setProjectRepoStatus(new Map());
       return;
     }
@@ -42,7 +50,7 @@ export const useProjectRepoStatus = (args: Args): void => {
     activeProjects.forEach((project) => {
       void ensureStatus(project.normalizedPath, git);
     });
-  }, [activeProjects, git, ensureStatus, setProjectRepoStatus]);
+  }, [activeProjects, enabled, git, ensureStatus, setProjectRepoStatus]);
 
   // Read isGitRepo from the store-populated state
   React.useEffect(() => {

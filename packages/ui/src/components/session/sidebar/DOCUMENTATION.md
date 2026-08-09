@@ -99,7 +99,11 @@
   persistent session index has confirmed that it has at least one child.
   Pinned rows stay flat: no subsession chevron and no nested children.
 - Session rows are single-line (no inline timestamp); details (title, relative time, folder/project,
-  branch) open in an immediate floating hover card (`delayDuration={0}`, top-left aligned).
+  branch) open in an immediate floating hover card. A shared `TooltipProvider`
+  (`delay=0`, `closeDelay=150`, `timeout=600`) groups row tips so adjacent handoff
+  is instant; per-row tooltips do not nest their own Provider. Pointer click keeps
+  focus for Enter-to-rename, but row `mouseleave` blurs so `:focus-within` does not
+  stick hover chrome after the card dismisses.
 - A session title button focused by an explicit mouse click enters inline rename
   on Enter. Keyboard or programmatic focus does not arm this shortcut, and blur
   clears the mouse-focus authorization.
@@ -179,6 +183,20 @@
 - Session order is keyed by each group's `folderScopeKey` and bound to the activity/member snapshot captured at drag time. Later activity or membership changes restore natural sorting; visual rows, navigation, and sortable items consume the same scope-local rule.
 - `sessionSortableOrder.ts` derives visible sortable IDs and the shared scope-local comparator from the rendered folder tree, collapsed/search state, Show-more slice, and order activity snapshot. Reordering stays within one folder or the ungrouped scope; folder drops own cross-folder moves.
 - `hooks/useStickyProjectHeaders.ts`: Tracks which project headers are sticky/stuck via `IntersectionObserver`.
+- Visibility performance (`isVisible` prop): desktop passes `isSidebarOpen`, mobile
+  passes `mobileLeftDrawerVisible`. When false, the session row tree unmounts and
+  speculative work stops (live session/status aggregates, sticky headers, PR
+  enrichment, search listeners, archived auto-folders, project repo status). The
+  outer sidebar chrome stays mounted so UI state and authoritative session-index
+  refresh remain available for an immediate reopen (mobile always-mount for
+  issue #1695 is preserved at the layout shell).
+- Structural vs recency: global `upsertSession` and live-list equivalence ignore
+  pure `time.updated` churn so ownership/grouping memos do not rebuild on every
+  streaming tick. Title/parent/archive/directory/share/metadata still invalidate.
+  Row activity continues to come from the session-keyed live status channel.
+- Directory child-store eviction uses a soft `MAX_DIR_STORES` plus a 30s grace
+  window and microtask-coalesced eviction so expanding a project with many
+  worktrees cannot thrash still-mounting directories.
 
 ### Types and utilities
 

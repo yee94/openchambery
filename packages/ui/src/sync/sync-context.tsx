@@ -270,32 +270,66 @@ export function resolveGlobalSessionStatus(
   return undefined
 }
 
+const EMPTY_LIVE_SESSIONS: Session[] = []
+const EMPTY_LIVE_STATUSES: Record<string, SessionStatus> = {}
+
+type LiveAggregateOptions = {
+  /**
+   * When false, skip the cross-directory live subscription and return a stable
+   * empty snapshot. Used by hidden sidebars so streaming does not drive
+   * off-screen React work. Defaults to true.
+   */
+  enabled?: boolean
+}
+
 /** Read all session statuses (for sidebar) */
-export function useAllSessionStatuses(): Record<string, SessionStatus> {
+export function useAllSessionStatuses(options?: LiveAggregateOptions): Record<string, SessionStatus> {
+  const enabled = options?.enabled ?? true
   return useLiveSyncSelector(
-    useCallback((states) => aggregateLiveSessionStatuses(states), []),
+    useCallback(
+      (states) => (enabled ? aggregateLiveSessionStatuses(states) : EMPTY_LIVE_STATUSES),
+      [enabled],
+    ),
     areStatusMapsEquivalent,
     useCallback(
-      (childStores: ChildStoreManager, notify: () => void) => childStores.subscribeAllSelected(
-        (state: State) => state.session_status,
-        notify,
-      ),
-      [],
+      (childStores: ChildStoreManager, notify: () => void) => {
+        if (!enabled) {
+          return () => {}
+        }
+        return childStores.subscribeAllSelected(
+          (state: State) => state.session_status,
+          notify,
+        )
+      },
+      [enabled],
     ),
   )
 }
 
-export function useAllLiveSessions(): Session[] {
+export function useAllLiveSessions(options?: LiveAggregateOptions): Session[] {
+  const enabled = options?.enabled ?? true
   const pendingDeletionIds = useGlobalSessionsStore((state) => state.pendingDeletionIds)
   return useLiveSyncSelector(
-    useMemo(() => (states: State[]) => aggregateLiveSessions(states, pendingDeletionIds), [pendingDeletionIds]),
+    useMemo(
+      () => (states: State[]) => (
+        enabled
+          ? aggregateLiveSessions(states, pendingDeletionIds)
+          : EMPTY_LIVE_SESSIONS
+      ),
+      [enabled, pendingDeletionIds],
+    ),
     areSessionListsEquivalent,
     useCallback(
-      (childStores: ChildStoreManager, notify: () => void) => childStores.subscribeAllSelected(
-        (state: State) => state.session,
-        notify,
-      ),
-      [],
+      (childStores: ChildStoreManager, notify: () => void) => {
+        if (!enabled) {
+          return () => {}
+        }
+        return childStores.subscribeAllSelected(
+          (state: State) => state.session,
+          notify,
+        )
+      },
+      [enabled],
     ),
   )
 }

@@ -4,14 +4,22 @@ type Args = {
   isDesktopShellRuntime: boolean;
   projectSections: unknown[];
   projectHeaderSentinelRefs: React.MutableRefObject<Map<string, HTMLDivElement | null>>;
+  /** When false, disconnect the observer and clear stuck state. */
+  enabled?: boolean;
 };
 
 export const useStickyProjectHeaders = (args: Args): Set<string> => {
-  const { isDesktopShellRuntime, projectSections, projectHeaderSentinelRefs } = args;
+  const {
+    isDesktopShellRuntime,
+    projectSections,
+    projectHeaderSentinelRefs,
+    enabled = true,
+  } = args;
   const [stuckProjectHeaders, setStuckProjectHeaders] = React.useState<Set<string>>(new Set());
 
   React.useEffect(() => {
-    if (!isDesktopShellRuntime) {
+    if (!enabled || !isDesktopShellRuntime) {
+      setStuckProjectHeaders((prev) => (prev.size === 0 ? prev : new Set()));
       return;
     }
 
@@ -44,7 +52,7 @@ export const useStickyProjectHeaders = (args: Args): Set<string> => {
     });
 
     return () => observer.disconnect();
-  }, [isDesktopShellRuntime, projectHeaderSentinelRefs, projectSections]);
+  }, [enabled, isDesktopShellRuntime, projectHeaderSentinelRefs, projectSections]);
 
   return stuckProjectHeaders;
 };

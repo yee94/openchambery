@@ -3,6 +3,10 @@ import { useEvent } from '@reactuses/core';
 
 import { Icon } from '@/components/icon/Icon';
 import { Button } from '@/components/ui/button';
+import {
+  createMobileLongPressController,
+  type MobileLongPressController,
+} from '@/components/ui/mobileLongPress';
 import { Input } from '@/components/ui/input';
 import { useI18n } from '@/lib/i18n';
 import { cn } from '@/lib/utils';
@@ -25,6 +29,24 @@ import {
 } from './MobileSessionRow';
 import { resolveMobileSessionIndicator } from './mobileSessionIndicator';
 import { filterMobileProjectsForSearch } from './mobileProjectSearch';
+
+const INTENT_LOCK_PX = 10;
+const REVEALED_WORKTREE_EVENT = 'oc:mobile-worktree-row-revealed';
+
+const broadcastWorktreeRevealed = (id: string): void => {
+  window.dispatchEvent(new CustomEvent(REVEALED_WORKTREE_EVENT, { detail: id }));
+};
+
+type GestureIntent = 'pending' | 'horizontal' | 'vertical';
+
+type ActiveGesture = {
+  pointerId: number;
+  startX: number;
+  startY: number;
+  startOffset: number;
+  actionWidth: number;
+  intent: GestureIntent;
+};
 
 export type MobileSessionTreeNode = MobileSessionRowModel & {
   directory?: string;
@@ -61,8 +83,12 @@ export type MobileProjectsHomeProps = {
   onToggleProject: (project: MobileProjectHomeItem) => void;
   onOpenProjectActions: (project: MobileProjectHomeItem) => void;
   onToggleWorktree: (project: MobileProjectHomeItem, worktree: MobileWorktreeGroup) => void;
-  /** Worktrees currently expose one direct action: start a session in that directory. */
+  /** Start a session in the worktree directory (header + / swipe / action sheet). */
   onNewWorktreeSession?: (project: MobileProjectHomeItem, worktree: MobileWorktreeGroup) => void;
+  /** Opens the worktree action sheet (long press / more / swipe delete entry). */
+  onOpenWorktreeActions?: (project: MobileProjectHomeItem, worktree: MobileWorktreeGroup) => void;
+  /** Swipe-rail delete; omit when delete is unavailable. */
+  onDeleteWorktree?: (project: MobileProjectHomeItem, worktree: MobileWorktreeGroup) => void;
   onSelectSession: (session: MobileSessionTreeNode) => void;
   onPinSession: (session: MobileSessionTreeNode) => void;
   onArchiveSession: (session: MobileSessionTreeNode) => void;
@@ -198,6 +224,311 @@ function WorkspaceGroupLabel({
   );
 }
 
+/**
+ * Linked worktree header: same long-press + left-swipe pattern as session rows.
+ * Swipe reveals New session / Delete (PC hover parity); long press opens the full sheet.
+ */
+function MobileWorktreeGroupLabel({
+  project,
+  worktree,
+  expanded,
+  onToggle,
+  onNewSession,
+  onOpenActions,
+  onDelete,
+}: {
+  project: MobileProjectHomeItem;
+  worktree: MobileWorktreeGroup;
+  expanded: boolean;
+  onToggle: () => void;
+  onNewSession?: (project: MobileProjectHomeItem, worktree: MobileWorktreeGroup) => void;
+  onOpenActions?: (project: MobileProjectHomeItem, worktree: MobileWorktreeGroup) => void;
+  onDelete?: (project: MobileProjectHomeItem, worktree: MobileWorktreeGroup) => void;
+}) {
+  const { t } = useI18n();
+  const rowKey = `${project.id}::${worktree.id}`;
+  const canSwipe = Boolean(onNewSession || onDelete);
+  const canOpenActions = Boolean(onOpenActions);
+  const swipeActionCount = Number(Boolean(onNewSession)) + Number(Boolean(onDelete));
+  const [offset, setOffset] = React.useState(0);
+  const [pressed, setPressed] = React.useState(false);
+  const [dragging, setDragging] = React.useState(false);
+  const gestureRef = React.useRef<ActiveGesture | null>(null);
+  const suppressClickRef = React.useRef(false);
+  const actionRailRef = React.useRef<HTMLDivElement | null>(null);
+  const longPressRef = React.useRef<MobileLongPressController | null>(null);
+
+  if (!longPressRef.current) {
+    longPressRef.current = createMobileLongPressController({
+      onPressedKeyChange: (key) => setPressed(key === rowKey),
+    });
+  }
+
+  React.useEffect(() => () => longPressRef.current?.reset(), []);
+
+  React.useEffect(() => {
+    const handleRevealed = (event: Event) => {
+      const revealedId = (event as CustomEvent<string>).detail;
+      if (revealedId !== rowKey) setOffset(0);
+    };
+    window.addEventListener(REVEALED_WORKTREE_EVENT, handleRevealed);
+    return () => window.removeEventListener(REVEALED_WORKTREE_EVENT, handleRevealed);
+  }, [rowKey]);
+
+  React.useEffect(() => {
+    setOffset(0);
+  }, [rowKey]);
+
+  const closeActions = useEvent(() => setOffset(0));
+  const revealed = offset !== 0;
+
+  const handlePointerDown = useEvent((event: React.PointerEvent<HTMLElement>) => {
+    if (event.button !== 0) return;
+    if (event.pointerType !== 'touch' && event.pointerType !== 'pen') return;
+
+    if (canSwipe) {
+      const actionWidth = actionRailRef.current?.offsetWidth ?? 0;
+      if (actionWidth > 0) {
+        gestureRef.current = {
+          pointerId: event.pointerId,
+          startX: event.clientX,
+          startY: event.clientY,
+          startOffset: offset,
+          actionWidth,
+          intent: 'pending',
+        };
+        suppressClickRef.current = false;
+      }
+    }
+
+    if (!canOpenActions) return;
+    longPressRef.current?.start({
+      pointerId: event.pointerId,
+      key: rowKey,
+      clientX: event.clientX,
+      clientY: event.clientY,
+      onTrigger: () => {
+        setPressed(false);
+        onOpenActions?.(project, worktree);
+      },
+    });
+  });
+
+  const handlePointerMove = useEvent((event: React.PointerEvent<HTMLElement>) => {
+    const gesture = gestureRef.current;
+    if (!gesture || gesture.pointerId !== event.pointerId) {
+      longPressRef.current?.move(event.pointerId, event.clientX, event.clientY);
+      return;
+    }
+
+    const deltaX = event.clientX - gesture.startX;
+    const deltaY = event.clientY - gesture.startY;
+    longPressRef.current?.move(event.pointerId, event.clientX, event.clientY);
+
+    if (gesture.intent === 'pending') {
+      const absX = Math.abs(deltaX);
+      const absY = Math.abs(deltaY);
+      if (absY > INTENT_LOCK_PX && absY > absX) {
+        gesture.intent = 'vertical';
+        gestureRef.current = null;
+        longPressRef.current?.cancel(event.pointerId);
+        return;
+      }
+      if (absX > INTENT_LOCK_PX && absX > absY) {
+        gesture.intent = 'horizontal';
+        setDragging(true);
+        suppressClickRef.current = true;
+        longPressRef.current?.cancel(event.pointerId);
+        try {
+          event.currentTarget.setPointerCapture(event.pointerId);
+        } catch {
+          // Embedded webviews may reject capture after release.
+        }
+        broadcastWorktreeRevealed(rowKey);
+      }
+    }
+
+    if (gesture.intent !== 'horizontal') return;
+    event.preventDefault();
+    const nextOffset = Math.max(-gesture.actionWidth, Math.min(0, gesture.startOffset + deltaX));
+    setOffset(nextOffset);
+  });
+
+  const finishGesture = useEvent((event: React.PointerEvent<HTMLElement>) => {
+    const gesture = gestureRef.current;
+    longPressRef.current?.end(event.pointerId);
+    if (!gesture || gesture.pointerId !== event.pointerId) return;
+    gestureRef.current = null;
+    if (gesture.intent !== 'horizontal') return;
+    setDragging(false);
+    setOffset((current) => (current < -(gesture.actionWidth * 0.35) ? -gesture.actionWidth : 0));
+  });
+
+  const handlePointerCancel = useEvent((event: React.PointerEvent<HTMLElement>) => {
+    const gesture = gestureRef.current;
+    gestureRef.current = null;
+    longPressRef.current?.cancel(event.pointerId);
+    setDragging(false);
+    setOffset(gesture?.startOffset ?? 0);
+  });
+
+  const handleToggle = useEvent(() => {
+    if (longPressRef.current?.consumeClick(rowKey)) return;
+    if (suppressClickRef.current) {
+      suppressClickRef.current = false;
+      return;
+    }
+    if (offset !== 0) {
+      closeActions();
+      return;
+    }
+    onToggle();
+  });
+
+  const handleContextMenu = useEvent((event: React.MouseEvent<HTMLElement>) => {
+    if (!canOpenActions) return;
+    event.preventDefault();
+    event.stopPropagation();
+    longPressRef.current?.openFromContextMenu(rowKey, () => {
+      setPressed(false);
+      onOpenActions?.(project, worktree);
+    });
+  });
+
+  const handleNewSession = useEvent(() => {
+    closeActions();
+    onNewSession?.(project, worktree);
+  });
+
+  const handleDelete = useEvent(() => {
+    closeActions();
+    onDelete?.(project, worktree);
+  });
+
+  const handleOpenActions = useEvent(() => onOpenActions?.(project, worktree));
+
+  const content = (
+    <>
+      <span className="oc-mobile-group-label-icon" aria-hidden>
+        <Icon name="git-branch" className="size-3.5" />
+      </span>
+      <span className="min-w-0 flex-1 truncate text-left typography-ui-label font-semibold text-foreground">
+        {worktree.name}
+      </span>
+      <span className="typography-small text-muted-foreground tabular-nums">
+        {worktree.sessionCount === 1
+          ? t('mobile.sessions.project.sessionsSingle')
+          : t('mobile.sessions.project.sessionsPlural', { count: worktree.sessionCount })}
+      </span>
+      <Icon
+        name="arrow-down-s"
+        className={cn(
+          'size-3.5 text-muted-foreground transition-transform duration-150 motion-reduce:transition-none',
+          expanded ? 'rotate-0' : '-rotate-90',
+        )}
+      />
+    </>
+  );
+
+  return (
+    <div className="oc-mobile-group-label oc-mobile-worktree-label relative isolate overflow-hidden">
+      {canSwipe ? (
+        <div
+          ref={actionRailRef}
+          className={cn(
+            'oc-mobile-worktree-actions absolute inset-y-0 right-0 z-0 flex items-stretch',
+            dragging ? 'transition-none' : 'transition-transform duration-150 ease-out',
+            !revealed && 'invisible pointer-events-none',
+          )}
+          style={{
+            // Width tracks the visible action count so a single-button rail
+            // does not leave a half-empty swipe region.
+            width: `calc(${swipeActionCount} * var(--oc-mobile-worktree-action-width))`,
+            transform: `translate3d(calc(100% + ${offset}px), 0, 0)`,
+            willChange: offset === 0 ? undefined : 'transform',
+          }}
+          aria-hidden={!revealed}
+        >
+          {onNewSession ? (
+            <Button
+              type="button"
+              variant="secondary"
+              className="oc-mobile-worktree-action h-full flex-col rounded-none border-0 bg-interactive-selection px-1 text-interactive-selection-foreground hover:bg-interactive-active"
+              aria-label={t('mobile.sessions.newSessionAria')}
+              tabIndex={revealed ? 0 : -1}
+              onClick={handleNewSession}
+            >
+              <Icon name="add" className="size-[18px]" />
+              <span className="oc-mobile-session-action-label font-medium">
+                {t('sessions.sidebar.project.actions.newSession')}
+              </span>
+            </Button>
+          ) : null}
+          {onDelete ? (
+            <Button
+              type="button"
+              variant="destructive"
+              className="oc-mobile-worktree-action h-full flex-col rounded-none border-0 px-1"
+              aria-label={t('mobile.projectEdit.deleteWorktreeAria', { label: worktree.name })}
+              tabIndex={revealed ? 0 : -1}
+              onClick={handleDelete}
+            >
+              <Icon name="delete-bin" className="size-[18px]" />
+              <span className="oc-mobile-session-action-label font-medium">
+                {t('mobile.projectEdit.deleteWorktreeConfirmButton')}
+              </span>
+            </Button>
+          ) : null}
+        </div>
+      ) : null}
+
+      <div
+        className={cn(
+          'oc-mobile-worktree-label-content relative z-10 flex min-w-0 flex-1 items-center',
+          'ease-out motion-reduce:transition-none',
+          // Match session rows: transform-only while dragging; no fill on press/click.
+          dragging ? 'transition-none' : 'transition-transform duration-150',
+        )}
+        style={{
+          transform: `translate3d(${offset}px, 0, 0)`,
+          willChange: offset === 0 ? undefined : 'transform',
+        }}
+        data-pressed={pressed ? 'true' : undefined}
+      >
+        <button
+          type="button"
+          // Soft scale only — no hover/active fill (session row parity).
+          data-mobile-press-feedback="soft"
+          className="oc-mobile-group-label-trigger oc-mobile-worktree-label-trigger"
+          aria-expanded={expanded}
+          onClick={handleToggle}
+          onPointerDown={handlePointerDown}
+          onPointerMove={handlePointerMove}
+          onPointerUp={finishGesture}
+          onPointerCancel={handlePointerCancel}
+          onContextMenu={handleContextMenu}
+          style={{ touchAction: 'pan-y' }}
+        >
+          {content}
+        </button>
+
+        {canOpenActions ? (
+          <Button
+            type="button"
+            variant="ghost"
+            size="icon"
+            className="oc-mobile-worktree-more rounded-full text-muted-foreground"
+            aria-label={t('agentManager.detail.actions.worktreeActionsAria')}
+            onClick={handleOpenActions}
+          >
+            <Icon name="more-2" className="size-3.5" />
+          </Button>
+        ) : null}
+      </div>
+    </div>
+  );
+}
+
 /** Collect root-level sessions from a tree (for pinned extraction). */
 const collectRootSessions = (sessions: MobileSessionTreeNode[]): MobileSessionTreeNode[] =>
   sessions.filter((session) => !session.id.startsWith('__show_'));
@@ -220,6 +551,8 @@ export function MobileProjectsHome({
   onOpenProjectActions,
   onToggleWorktree,
   onNewWorktreeSession,
+  onOpenWorktreeActions,
+  onDeleteWorktree,
   onSelectSession,
   onPinSession,
   onArchiveSession,
@@ -265,11 +598,6 @@ export function MobileProjectsHome({
   const handleSelectSearchSession = useEvent((session: MobileSessionTreeNode) => {
     closeSearch();
     onSelectSession(session);
-  });
-  const handleNewWorktreeSession = useEvent((event: React.MouseEvent<HTMLButtonElement>) => {
-    const project = projects.find((candidate) => candidate.id === event.currentTarget.dataset.projectId);
-    const worktree = project?.worktrees.find((candidate) => candidate.id === event.currentTarget.dataset.worktreeId);
-    if (project && worktree) onNewWorktreeSession?.(project, worktree);
   });
 
   return (
@@ -435,35 +763,23 @@ export function MobileProjectsHome({
                   {/* Every linked worktree gets an independent label + session card. */}
                   {linkedWorktrees.map((worktree) => {
                     const worktreeRest = worktree.sessions.filter((session) => !session.pinned);
-                    const worktreeExpanded = searching || worktree.expanded;
+                    const worktreeExpanded = searching || Boolean(worktree.expanded);
                     return (
                       <MobileLabeledSurfaceGroup
                         key={worktree.id}
                         className="oc-mobile-worktree-group"
                         ariaLabel={worktree.name}
                         label={(
-                          <WorkspaceGroupLabel
-                            icon={<Icon name="git-branch" className="size-3.5" />}
-                            label={worktree.name}
-                            count={worktree.sessionCount}
+                          <MobileWorktreeGroupLabel
+                            project={project}
+                            worktree={worktree}
                             expanded={worktreeExpanded}
                             onToggle={() => searching
                               ? handleSearchWorktreeOpen(project, worktree)
                               : onToggleWorktree(project, worktree)}
-                            actions={onNewWorktreeSession ? (
-                              <Button
-                                type="button"
-                                data-project-id={project.id}
-                                data-worktree-id={worktree.id}
-                                variant="ghost"
-                                size="icon"
-                                className="oc-mobile-worktree-new-session rounded-full text-muted-foreground"
-                                aria-label={t('mobile.sessions.newSessionAria')}
-                                onClick={handleNewWorktreeSession}
-                              >
-                                <Icon name="add" className="size-4" />
-                              </Button>
-                            ) : null}
+                            onNewSession={onNewWorktreeSession}
+                            onOpenActions={searching ? undefined : onOpenWorktreeActions}
+                            onDelete={searching ? undefined : onDeleteWorktree}
                           />
                         )}
                       >

@@ -356,6 +356,11 @@ const buildSessionsByDirectory = (sessions: Session[]): Map<string, Session[]> =
   return next;
 };
 
+/**
+ * Full content signature including recency. Used when the store must decide
+ * whether to replace a session object (e.g. snapshot merges that may carry a
+ * newer `time.updated` while structural fields stay the same).
+ */
 const getSessionSignature = (session: Session): string => {
   return [
     session.id,
@@ -370,6 +375,36 @@ const getSessionSignature = (session: Session): string => {
   ].join(':');
 };
 
+/**
+ * Structural identity for sidebar/tree consumers.
+ * Omits `time.updated` so streaming recency does not publish a new array
+ * reference and force ownership/grouping rebuilds. Create/delete, title,
+ * parent, archive, directory, share, metadata, and hasChildren still change it.
+ */
+export const getSessionStructuralSignature = (session: Session): string => {
+  const record = session as Session & {
+    parentID?: string | null;
+    metadata?: unknown;
+    hasChildren?: boolean;
+  };
+  return [
+    session.id,
+    session.title ?? '',
+    record.parentID ?? '',
+    session.time?.created ?? 0,
+    session.time?.archived ?? 0,
+    session.share?.url ?? '',
+    JSON.stringify(record.metadata ?? null),
+    String(record.hasChildren ?? false),
+    resolveGlobalSessionDirectory(session) ?? '',
+  ].join(':');
+};
+
+export const isGlobalSessionRecencyOnlyUpdate = (existing: Session, incoming: Session): boolean => {
+  return existing.time?.updated !== incoming.time?.updated
+    && getSessionStructuralSignature(existing) === getSessionStructuralSignature(incoming);
+};
+
 const sameSessionList = (prev: Session[], next: Session[]): boolean => {
   if (prev === next) {
     return true;
@@ -379,6 +414,22 @@ const sameSessionList = (prev: Session[], next: Session[]): boolean => {
   }
   for (let index = 0; index < prev.length; index += 1) {
     if (getSessionSignature(prev[index]) !== getSessionSignature(next[index])) {
+      return false;
+    }
+  }
+  return true;
+};
+
+/** Structural list equality — ignores pure recency (`time.updated`) churn. */
+const sameSessionListStructurally = (prev: Session[], next: Session[]): boolean => {
+  if (prev === next) {
+    return true;
+  }
+  if (prev.length !== next.length) {
+    return false;
+  }
+  for (let index = 0; index < prev.length; index += 1) {
+    if (getSessionStructuralSignature(prev[index]) !== getSessionStructuralSignature(next[index])) {
       return false;
     }
   }
@@ -813,8 +864,16 @@ const upsertSessionIntoList = (sessions: Session[], session: Session): Session[]
   if (index === -1) {
     return [session, ...sessions];
   }
-  const mergedSession = mergeSessionDirectoryMetadata(session, sessions[index]);
-  if (getSessionSignature(sessions[index]) === getSessionSignature(mergedSession)) {
+  const existing = sessions[index];
+  const mergedSession = mergeSessionDirectoryMetadata(session, existing);
+  // Recency-only ticks keep the previous object reference so structural
+  // subscribers (sidebar ownership/grouping) do not rebuild. The fresher
+  // timestamp is not needed for tree membership; activity indicators use
+  // the live status channel instead.
+  if (isGlobalSessionRecencyOnlyUpdate(existing, mergedSession)) {
+    return sessions;
+  }
+  if (getSessionSignature(existing) === getSessionSignature(mergedSession)) {
     return sessions;
   }
   const next = [...sessions];

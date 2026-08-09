@@ -8,6 +8,7 @@ import { Input } from '@/components/ui/input';
 import { MobileOverlayPanel } from '@/components/ui/MobileOverlayPanel';
 import { Button } from '@/components/ui/button';
 import { toast } from '@/components/ui';
+import { MobileDeleteWorktreeDialog } from '@/apps/MobileDeleteWorktreeDialog';
 import { copyTextToClipboard } from '@/lib/clipboard';
 import { useRuntimeAPIs } from '@/hooks/useRuntimeAPIs';
 import { useI18n } from '@/lib/i18n';
@@ -18,6 +19,8 @@ import { useSessionPinnedStore } from '@/stores/useSessionPinnedStore';
 import { syncGlobalSessionsForDirectories } from '@/stores/useGlobalSessionsStore';
 import { useSessionUIStore } from '@/sync/session-ui-store';
 import { forceRefreshProjectWorktreeCatalog } from '@/lib/worktrees/worktreeManager';
+import { normalizePath } from '@/lib/pathNormalization';
+import type { WorktreeMetadata } from '@/types/worktree';
 
 import { useMobileNavigationStore } from '../useMobileNavigationStore';
 
@@ -91,6 +94,10 @@ export function MobileProjectsHomeContainer({
   const [smartTitleRequesting, setSmartTitleRequesting] = React.useState(false);
   const [newWorktreeDialogOpen, setNewWorktreeDialogOpen] = React.useState(false);
   const [worktreeDialogProjectId, setWorktreeDialogProjectId] = React.useState<string | null>(null);
+  const [worktreeToDelete, setWorktreeToDelete] = React.useState<{
+    project: ProjectMeta;
+    worktree: WorktreeMetadata;
+  } | null>(null);
 
   const collectSessionTreeIds = useEvent((sessionId: string): string[] => {
     const childrenByParent = new Map<string, string[]>();
@@ -213,6 +220,20 @@ export function MobileProjectsHomeContainer({
       });
   });
 
+  const resolveWorktreeMetadata = useEvent((
+    project: ProjectMeta,
+    worktreePath: string,
+  ): WorktreeMetadata | null => {
+    const normalized = normalizePath(worktreePath);
+    if (!normalized) return null;
+    const fromProject = project.worktrees.find(
+      (entry) => normalizePath(entry.path) === normalized,
+    );
+    if (fromProject) return fromProject;
+    const catalog = useSessionUIStore.getState().availableWorktreesByProject.get(project.path) ?? [];
+    return catalog.find((entry) => normalizePath(entry.path) === normalized) ?? null;
+  });
+
   const handleNewWorktreeSession = useEvent((
     project: MobileProjectHomeItem,
     worktree: MobileWorktreeGroup,
@@ -220,6 +241,37 @@ export function MobileProjectsHomeContainer({
     const meta = model.projectMetaById.get(project.id);
     if (!meta) return;
     startSessionDraftForDirectory(meta, worktree.path);
+  });
+
+  const handleOpenWorktreeActions = useEvent((
+    project: MobileProjectHomeItem,
+    worktree: MobileWorktreeGroup,
+  ) => {
+    const meta = model.projectMetaById.get(project.id);
+    if (!meta) return;
+    setActionTarget({
+      kind: 'worktree',
+      project: meta,
+      worktreePath: worktree.path,
+      worktreeName: worktree.name,
+    });
+    setActionsOpen(true);
+  });
+
+  const handleDeleteWorktree = useEvent((
+    project: MobileProjectHomeItem,
+    worktree: MobileWorktreeGroup,
+  ) => {
+    const meta = model.projectMetaById.get(project.id);
+    if (!meta) return;
+    const metadata = resolveWorktreeMetadata(meta, worktree.path);
+    if (!metadata) {
+      toast.error(t('sessions.sidebar.sessionDialogs.worktree.errorRemoveTitle'), {
+        description: t('sessions.sidebar.dialogs.deleteResult.tryAgain'),
+      });
+      return;
+    }
+    setWorktreeToDelete({ project: meta, worktree: metadata });
   });
 
   const handleNewWorktree = useEvent((projectId: string) => {
@@ -417,8 +469,16 @@ export function MobileProjectsHomeContainer({
     const { project, worktreePath } = actionTarget;
     return {
       onNewSession: () => startSessionDraftForDirectory(project, worktreePath),
-      // TODO: delete worktree — MobileDeleteWorktreeDialog is owned by MobileSessionsSheet.
-      onDeleteWorktree: undefined,
+      onDeleteWorktree: () => {
+        const metadata = resolveWorktreeMetadata(project, worktreePath);
+        if (!metadata) {
+          toast.error(t('sessions.sidebar.sessionDialogs.worktree.errorRemoveTitle'), {
+            description: t('sessions.sidebar.dialogs.deleteResult.tryAgain'),
+          });
+          return;
+        }
+        setWorktreeToDelete({ project, worktree: metadata });
+      },
     };
   }, [
     actionTarget,
@@ -429,7 +489,7 @@ export function MobileProjectsHomeContainer({
     handleSyncProjectSessions,
     handleShareFromMenu,
     handleUnshareFromMenu,
-    removeProject,
+    resolveWorktreeMetadata,
     startSessionDraftForDirectory,
     t,
     togglePinnedSession,
@@ -446,6 +506,8 @@ export function MobileProjectsHomeContainer({
         onOpenProjectActions={handleOpenProjectActions}
         onToggleWorktree={handleToggleWorktree}
         onNewWorktreeSession={handleNewWorktreeSession}
+        onOpenWorktreeActions={handleOpenWorktreeActions}
+        onDeleteWorktree={handleDeleteWorktree}
         onSelectSession={handleSelectSession}
         onPinSession={handlePinSession}
         onArchiveSession={(session) => {
@@ -473,6 +535,15 @@ export function MobileProjectsHomeContainer({
         }}
         onWorktreeCreated={handleWorktreeCreated}
       />
+
+      {worktreeToDelete ? (
+        <MobileDeleteWorktreeDialog
+          open
+          project={{ id: worktreeToDelete.project.id, path: worktreeToDelete.project.path }}
+          worktree={worktreeToDelete.worktree}
+          onClose={() => setWorktreeToDelete(null)}
+        />
+      ) : null}
 
       <MobileOverlayPanel
         open={Boolean(closingProject)}

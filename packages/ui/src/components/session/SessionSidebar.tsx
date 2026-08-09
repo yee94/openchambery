@@ -202,6 +202,9 @@ const isKnownActiveSessionDirectory = (
 const SIDEBAR_PR_NO_PR_RETRY_MS = 5 * 60_000;
 
 const EMPTY_SUBTREE_SET: Set<string> = new Set();
+const EMPTY_STRING_SET: Set<string> = new Set();
+const EMPTY_PATH_LIST: string[] = [];
+const EMPTY_STATUS_BY_ID = new Map<string, { status: 'busy' | 'retry'; directory: string }>();
 
 const useStableRenderCallback = <Args extends unknown[], Return>(
   handler: (...args: Args) => Return,
@@ -217,6 +220,14 @@ interface SessionSidebarProps {
   allowReselect?: boolean;
   hideDirectoryControls?: boolean;
   showOnlyMainWorkspace?: boolean;
+  /**
+   * When false, speculative sidebar work stops and the session row tree
+   * unmounts (live row subscriptions, sticky headers, PR enrichment, search
+   * listeners, archived-folder derivation). Outer chrome stays mounted so UI
+   * state and authoritative session-index refresh remain available for an
+   * immediate reopen. Defaults to true (VS Code compact/expanded always visible).
+   */
+  isVisible?: boolean;
 }
 
 export const SessionSidebar: React.FC<SessionSidebarProps> = ({
@@ -225,6 +236,7 @@ export const SessionSidebar: React.FC<SessionSidebarProps> = ({
   allowReselect = false,
   hideDirectoryControls = false,
   showOnlyMainWorkspace = false,
+  isVisible = true,
 }) => {
   const { t } = useI18n();
   const [updateDialogOpen, setUpdateDialogOpen] = React.useState(false);
@@ -425,7 +437,7 @@ export const SessionSidebar: React.FC<SessionSidebarProps> = ({
   const reorderSessions = useSessionFoldersStore((state) => state.reorderSessions);
 
   useSessionSearchEffects({
-    isSessionSearchOpen,
+    isSessionSearchOpen: isVisible && isSessionSearchOpen,
     setIsSessionSearchOpen,
     sessionSearchInputRef,
     sessionSearchContainerRef,
@@ -433,10 +445,18 @@ export const SessionSidebar: React.FC<SessionSidebarProps> = ({
 
   const gitBranches = React.useMemo(() => new Map<string, string | null>(), []);
 
-  const liveSessions = useAllLiveSessions();
-  const liveSessionStatuses = useAllSessionStatuses();
-  const fallbackSessionStatuses = useGlobalSessionStatusStore((state) => state.statusById);
+  // Hidden surface: skip cross-directory live aggregate subscriptions so chat
+  // streaming does not drive off-screen sidebar React work. Structural global
+  // session lists still update (authoritative index / create-delete).
+  const liveSessions = useAllLiveSessions({ enabled: isVisible });
+  const liveSessionStatuses = useAllSessionStatuses({ enabled: isVisible });
+  const fallbackSessionStatuses = useGlobalSessionStatusStore((state) =>
+    isVisible ? state.statusById : EMPTY_STATUS_BY_ID,
+  );
   const runningSessionIds = React.useMemo(() => {
+    if (!isVisible) {
+      return EMPTY_STRING_SET;
+    }
     const ids = new Set<string>();
     for (const [sessionId, status] of Object.entries(liveSessionStatuses)) {
       if (status.type === 'busy' || status.type === 'retry') ids.add(sessionId);
@@ -445,7 +465,7 @@ export const SessionSidebar: React.FC<SessionSidebarProps> = ({
       if (liveSessionStatuses[sessionId] === undefined) ids.add(sessionId);
     }
     return ids;
-  }, [fallbackSessionStatuses, liveSessionStatuses]);
+  }, [fallbackSessionStatuses, isVisible, liveSessionStatuses]);
   const isVSCode = React.useMemo(() => isVSCodeRuntime(), []);
   const fullCatalogSessionIds = useGlobalSessionsStore((state) => state.fullCatalogSessionIds);
   const fullCatalogGeneration = useGlobalSessionsStore((state) => state.fullCatalogGeneration);
@@ -1429,7 +1449,7 @@ export const SessionSidebar: React.FC<SessionSidebarProps> = ({
   const githubAuthQuery = useGitHubAuthQuery();
   const githubAuthStatus = githubAuthQuery.data ?? null;
   const githubAuthChecked = githubAuthQuery.isFetched;
-  const gitRepoStatus = useGitRepoStatusMap(normalizedProjectPaths);
+  const gitRepoStatus = useGitRepoStatusMap(isVisible ? normalizedProjectPaths : EMPTY_PATH_LIST);
   const ensurePrStatusEntry = useGitHubPrStatusStore(
     (state) => state.ensureEntry,
   );
@@ -1444,6 +1464,7 @@ export const SessionSidebar: React.FC<SessionSidebarProps> = ({
     gitRepoStatus,
     setProjectRepoStatus,
     setProjectRootBranches,
+    enabled: isVisible,
   });
 
   const isSessionsLoading = useSessionUIStore((state) => state.isLoading);
@@ -1520,6 +1541,7 @@ export const SessionSidebar: React.FC<SessionSidebarProps> = ({
     createFolder,
     addSessionToFolder,
     cleanupSessions,
+    enabled: isVisible,
   });
 
   // Keep last-known repo status to avoid UI jiggling during project switch
@@ -2161,7 +2183,7 @@ export const SessionSidebar: React.FC<SessionSidebarProps> = ({
   const prVisualSummaryMap = usePrVisualSummaryByKeys(prLookupKeys);
 
   React.useEffect(() => {
-    if (!githubAuthChecked || !githubAuthStatus?.connected || !github) {
+    if (!isVisible || !githubAuthChecked || !githubAuthStatus?.connected || !github) {
       return;
     }
 
@@ -2255,6 +2277,7 @@ export const SessionSidebar: React.FC<SessionSidebarProps> = ({
     githubAuthChecked,
     githubAuthStatus?.connected,
     gitBranches,
+    isVisible,
     refreshPrStatusTargets,
     sectionsForSidebarRender,
     setPrStatusParams,
@@ -2264,6 +2287,7 @@ export const SessionSidebar: React.FC<SessionSidebarProps> = ({
     isDesktopShellRuntime,
     projectSections,
     projectHeaderSentinelRefs,
+    enabled: isVisible,
   });
 
   const renderSessionNode = useStableRenderCallback(
@@ -2666,6 +2690,7 @@ export const SessionSidebar: React.FC<SessionSidebarProps> = ({
 
       {desktopBrandHeader}
 
+      {isVisible ? (
       <SidebarProjectsList
         topContent={topContent}
         hasLeadingSection={topContent !== null && pinnedItems.length > 0}
@@ -2708,6 +2733,7 @@ export const SessionSidebar: React.FC<SessionSidebarProps> = ({
         refreshingProjectIds={refreshingProjectIds}
         isProjectSessionsSyncing={isProjectSessionsSyncing}
       />
+      ) : null}
 
       {selectionModeEnabled && hasSelection ? (
         <BulkActionBar

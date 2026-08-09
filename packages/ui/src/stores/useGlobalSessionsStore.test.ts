@@ -134,6 +134,45 @@ describe('useGlobalSessionsStore', () => {
     expect(useGlobalSessionsStore.getState().activeSessions).toEqual([]);
   });
 
+  test('keeps the same activeSessions reference for recency-only upserts', () => {
+    const session = buildSession('https://share.example/recency', {
+      id: 'ses_recency',
+      title: 'stable title',
+      time: { created: 1_000, updated: 2_000 },
+    });
+    useGlobalSessionsStore.getState().upsertSession(session);
+    const first = useGlobalSessionsStore.getState().activeSessions;
+
+    useGlobalSessionsStore.getState().upsertSession({
+      ...session,
+      time: { created: 1_000, updated: 9_999 },
+    });
+    const second = useGlobalSessionsStore.getState().activeSessions;
+
+    expect(second).toBe(first);
+    expect(second[0]?.time?.updated).toBe(2_000);
+  });
+
+  test('replaces activeSessions when a structural field changes on upsert', () => {
+    const session = buildSession('https://share.example/title', {
+      id: 'ses_title',
+      title: 'before',
+      time: { created: 1_000, updated: 2_000 },
+    });
+    useGlobalSessionsStore.getState().upsertSession(session);
+    const first = useGlobalSessionsStore.getState().activeSessions;
+
+    useGlobalSessionsStore.getState().upsertSession({
+      ...session,
+      title: 'after',
+      time: { created: 1_000, updated: 2_001 },
+    });
+    const second = useGlobalSessionsStore.getState().activeSessions;
+
+    expect(second).not.toBe(first);
+    expect(second[0]?.title).toBe('after');
+  });
+
   test('keeps pending deletes hidden through snapshots and live upserts until cleared', () => {
     const session = buildSession('https://share.example/pending', { id: 'ses_pending' });
     const store = useGlobalSessionsStore.getState();

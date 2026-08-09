@@ -116,6 +116,12 @@ export type EvictPlan = {
   max: number
   ttl: number
   now: number
+  /**
+   * Soft overflow grace. Directories touched more recently than this are not
+   * overflow victims (they are almost certainly still mounting / waiting for
+   * pin effects). Idle TTL eviction is unaffected.
+   */
+  graceMs?: number
   hasPendingBlockingRequests?: (directory: string) => boolean
 }
 
@@ -128,7 +134,14 @@ export type DisposeCheck = {
   hasPendingBlockingRequests: boolean
 }
 
+/** Soft cap: burst mounts may briefly exceed this while grace windows hold. */
 export const MAX_DIR_STORES = 30
+/**
+ * Directories touched within this window are never overflow-evicted. Prevents
+ * the expand-many-worktrees thrash where ensureChild (render) runs before pin
+ * effects (commit) and immediately disposes still-mounted directories.
+ */
+export const EVICTION_GRACE_MS = 30 * 1000
 export const DIR_IDLE_TTL_MS = 20 * 60 * 1000
 export const SESSION_CACHE_LIMIT = 40
 

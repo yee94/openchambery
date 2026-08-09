@@ -15,20 +15,28 @@ const getSessionUpdatedAt = (session: Session): number => {
   return typeof createdAt === 'number' && Number.isFinite(createdAt) ? createdAt : 0
 }
 
-const getSessionSignature = (session: Session): string => {
+/**
+ * Structural identity for live session list equivalence.
+ * Intentionally omits `time.updated`: streaming/recency ticks must not force
+ * sidebar ownership/grouping rebuilds. Title/parent/archive/directory/share
+ * changes still invalidate the list.
+ */
+export const getLiveSessionStructuralSignature = (session: Session): string => {
   const directory = (session as Session & { directory?: string | null }).directory ?? ''
   const parentID = (session as Session & { parentID?: string | null }).parentID ?? ''
   return [
     session.id,
     session.title ?? '',
     session.time?.created ?? 0,
-    session.time?.updated ?? 0,
     session.time?.archived ?? 0,
     directory,
     parentID,
     session.share?.url ?? '',
   ].join('|')
 }
+
+/** @deprecated Prefer getLiveSessionStructuralSignature — name kept for local call sites. */
+const getSessionSignature = getLiveSessionStructuralSignature
 
 const getStatusPriority = (status: SessionStatus | undefined): number => {
   switch (status?.type) {

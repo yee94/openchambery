@@ -283,8 +283,9 @@ describe('ScheduledTasksDialog queries', () => {
 
   test('shares one mobile detail navigation across settings, task editing, and chat', async () => {
     const directory = dirname(fileURLToPath(import.meta.url));
-    const [navigationContent, projectsHomeContent, buttonContent, editorContent, settingsContent, settingsTabContent, chatHeaderContent, chatScreenContent, mobileStyles, mobileSurfaceShellContent] = await Promise.all([
+    const [navigationContent, rootHeaderContent, projectsHomeContent, buttonContent, editorContent, settingsContent, settingsTabContent, chatHeaderContent, chatScreenContent, mobileStyles, mobileSurfaceShellContent] = await Promise.all([
       readFile(join(directory, '../../mobile/MobileDetailNavigation.tsx'), 'utf8'),
+      readFile(join(directory, '../../mobile/MobileTabPageHeader.tsx'), 'utf8'),
       readFile(join(directory, '../../mobile/projects/MobileProjectsHome.tsx'), 'utf8'),
       readFile(join(directory, '../ui/button.tsx'), 'utf8'),
       readFile(join(directory, 'ScheduledTaskEditorDialog.tsx'), 'utf8'),
@@ -337,8 +338,17 @@ describe('ScheduledTasksDialog queries', () => {
     expect(mobileStyles).toContain('var(--oc-safe-area-left, 0px)');
     expect(mobileStyles).toContain('var(--oc-safe-area-right, 0px)');
     expect(mobileStyles).not.toContain('.oc-mobile-tab-page-flow .oc-mobile-detail-navigation');
-    expect(mobileStyles).not.toContain('margin-inline: calc(-1 * var(--oc-mobile-page-inline-inset))');
+    expect(navigationContent).not.toContain('margin-inline');
     expect(mobileStyles).not.toContain('--oc-mobile-detail-navigation-inline-inset');
+    expect(rootHeaderContent).toContain('oc-mobile-collapsing-header');
+    expect(rootHeaderContent).toContain("header.style.setProperty('--oc-mobile-title-collapse'");
+    expect(rootHeaderContent).toContain("addEventListener('scroll', scheduleCollapseProgress, { passive: true })");
+    expect(rootHeaderContent).toContain("matchMedia('(prefers-reduced-motion: reduce)')");
+    expect(mobileStyles).toContain('.oc-mobile-collapsing-header::after');
+    expect(mobileStyles).toContain('opacity: var(--oc-mobile-title-collapse)');
+    expect(mobileStyles).toContain('padding-top: max(0.25rem, var(--oc-safe-area-top, 0px))');
+    expect(mobileStyles).toContain('[role="tabpanel"]:has(.oc-mobile-collapsing-header)');
+    expect(mobileStyles).toContain('.oc-mobile-settings-root-surface:has(.oc-mobile-collapsing-header)');
     expect(settingsContent).not.toContain('oc-mobile-settings-detail-navigation');
     expect(settingsContent).not.toContain('oc-mobile-settings-detail-header');
     expect(chatScreenContent).toContain('var(--oc-mobile-detail-navigation-height)');

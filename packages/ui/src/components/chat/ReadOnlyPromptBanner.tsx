@@ -4,6 +4,8 @@ import { AgentAvatar } from '@/components/chat/AgentAvatar';
 import { Icon } from '@/components/icon/Icon';
 import { ModelLogo } from '@/components/ui/ModelLogo';
 import { useI18n } from '@/lib/i18n';
+import { cn } from '@/lib/utils';
+import { useUIStore } from '@/stores/useUIStore';
 
 type ReadOnlyPromptBannerProps = {
     agentName?: string;
@@ -14,6 +16,9 @@ type ReadOnlyPromptBannerProps = {
 
 /** Mobile needs an explicit size: `.typography-*` is unset on mobile-pointer. */
 const BANNER_TEXT_CLASS = 'text-[13px] leading-4 sm:text-[length:var(--text-micro)] sm:leading-5';
+
+/** Matches ChatInput's solid mobile foot: no elevation, Capacitor safe-area cover. */
+const MOBILE_FOOT_CLASS = 'relative bottom-safe-area oc-mobile-readonly-prompt-foot';
 
 const ExecutionModelIcon: React.FC<{
     providerId?: string;
@@ -37,10 +42,11 @@ const ExecutionModelIcon: React.FC<{
 
 export const ReadOnlyPromptBanner: React.FC<ReadOnlyPromptBannerProps> = (props) => {
     const { t } = useI18n();
+    const isMobile = useUIStore((state) => state.isMobile);
     const showExecutionMetadata = 'agentName' in props || 'providerId' in props || 'modelId' in props || 'modelName' in props;
     if (!showExecutionMetadata) {
         return (
-            <div className="p-3">
+            <div className={cn('p-3', isMobile && MOBILE_FOOT_CLASS)}>
                 <div className={`rounded-2xl border border-border/70 bg-[var(--surface-background)] px-4 py-3 text-muted-foreground ${BANNER_TEXT_CLASS}`}>
                     {t('chat.container.readOnlySubagentPromptBanner')}
                 </div>
@@ -57,8 +63,18 @@ export const ReadOnlyPromptBanner: React.FC<ReadOnlyPromptBannerProps> = (props)
     const modelLabel = `${t('chat.leaderKey.action.model')}: ${modelName}`;
 
     return (
-        <aside className="shrink-0 border-t border-border/70 bg-[var(--surface-background)] p-3">
-            <div className="rounded-2xl border border-border/70 bg-[var(--surface-elevated)] px-3 py-2.5 sm:px-4 sm:py-3">
+        <aside
+            className={cn(
+                'shrink-0 border-t border-border/70 bg-[var(--surface-background)] p-3',
+                isMobile && MOBILE_FOOT_CLASS,
+            )}
+        >
+            <div
+                className={cn(
+                    'rounded-2xl border border-border/70 bg-[var(--surface-elevated)] px-3 py-2.5 sm:px-4 sm:py-3',
+                    isMobile && 'oc-mobile-readonly-prompt-surface',
+                )}
+            >
                 <div className={`text-muted-foreground ${BANNER_TEXT_CLASS}`}>
                     {t('chat.container.readOnlySubagentPromptBanner')}
                 </div>

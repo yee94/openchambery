@@ -10,15 +10,27 @@ import {
 } from '@dnd-kit/core';
 import { SortableContext, arrayMove, sortableKeyboardCoordinates, verticalListSortingStrategy } from '@dnd-kit/sortable';
 import { ScrollableOverlay } from '@/components/ui/ScrollableOverlay';
+import { TooltipProvider } from '@/components/ui/tooltip';
 import { formatDirectoryName, formatPathForDisplay, cn } from '@/lib/utils';
 import type { SessionGroup } from './types';
 import type { SortableDragHandleProps } from './sortableItems';
-import { SortableGroupItem, SortableProjectItem } from './sortableItems';
+import { SortableProjectItem, SortableGroupItem } from './sortableItems';
 import { SIDEBAR_MUTED_HINT_CLASS, getSidebarRowPaddingLeft } from './utils';
 import { useI18n } from '@/lib/i18n';
 import type { MainTab } from '@/stores/useUIStore';
 import { SidebarSectionHeader } from './SidebarSectionHeader';
 import type { ProjectSortOrder } from '@/stores/useSessionDisplayStore';
+
+/**
+ * Shared tooltip group for session hover cards + action tips.
+ * delay=0 open, closeDelay bridges inter-row gaps, timeout keeps handoff instant
+ * while the pointer moves between adjacent rows (Base UI grouping).
+ */
+const SidebarTooltipProvider = ({ children }: { children: React.ReactNode }) => (
+  <TooltipProvider delay={0} closeDelay={150} timeout={600}>
+    {children}
+  </TooltipProvider>
+);
 
 type ProjectSection = {
   project: {
@@ -146,19 +158,29 @@ export function SidebarProjectsList(props: Props): React.ReactNode {
 
   if (props.sharedSessionsOnly) {
     return (
+      <SidebarTooltipProvider>
       <ScrollableOverlay useScrollShadow scrollShadowSize={96} outerClassName="flex-1 min-h-0" className={cn('space-y-1 px-3 pb-1', props.mobileVariant ? '' : '')}>
         {props.topContent}
         {!props.hasSharedSessions ? (props.hasSessionSearchQuery ? props.searchEmptyState : props.emptyState) : null}
       </ScrollableOverlay>
+      </SidebarTooltipProvider>
     );
   }
 
   if (props.projectSections.length === 0) {
-    return <ScrollableOverlay useScrollShadow scrollShadowSize={96} outerClassName="flex-1 min-h-0" className={cn('space-y-1 px-3 pb-1', props.mobileVariant ? '' : '')}>{props.topContent}{projectsHeader}{props.emptyState}</ScrollableOverlay>;
+    return (
+      <SidebarTooltipProvider>
+        <ScrollableOverlay useScrollShadow scrollShadowSize={96} outerClassName="flex-1 min-h-0" className={cn('space-y-1 px-3 pb-1', props.mobileVariant ? '' : '')}>{props.topContent}{projectsHeader}{props.emptyState}</ScrollableOverlay>
+      </SidebarTooltipProvider>
+    );
   }
 
   if (props.sectionsForRender.length === 0) {
-    return <ScrollableOverlay useScrollShadow scrollShadowSize={96} outerClassName="flex-1 min-h-0" className={cn('space-y-1 px-3 pb-1', props.mobileVariant ? '' : '')}>{props.searchEmptyState}</ScrollableOverlay>;
+    return (
+      <SidebarTooltipProvider>
+        <ScrollableOverlay useScrollShadow scrollShadowSize={96} outerClassName="flex-1 min-h-0" className={cn('space-y-1 px-3 pb-1', props.mobileVariant ? '' : '')}>{props.searchEmptyState}</ScrollableOverlay>
+      </SidebarTooltipProvider>
+    );
   }
 
   return (
@@ -167,6 +189,7 @@ export function SidebarProjectsList(props: Props): React.ReactNode {
     // button) and holds it in place, which makes newly revealed sessions look
     // like they insert upward. With anchoring off, scrollTop stays put and new
     // rows appear below naturally.
+    <SidebarTooltipProvider>
     <ScrollableOverlay ref={scrollContainerRef} useScrollShadow scrollShadowSize={96} outerClassName="flex-1 min-h-0" className={cn('space-y-1 px-3 pb-1 [overflow-anchor:none]', props.mobileVariant ? '' : '')}>
       {props.topContent}
       {props.showOnlyMainWorkspace ? (
@@ -334,5 +357,6 @@ export function SidebarProjectsList(props: Props): React.ReactNode {
         </>
       )}
     </ScrollableOverlay>
+    </SidebarTooltipProvider>
   );
 }

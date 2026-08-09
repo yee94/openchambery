@@ -51,12 +51,14 @@ function TooltipProvider({
   skipDelayDuration,
   delay,
   closeDelay,
+  timeout,
   ...props
 }: ProviderProps) {
   return (
     <BaseTooltip.Provider
       delay={delay ?? delayDuration}
       closeDelay={closeDelay ?? skipDelayDuration}
+      timeout={timeout}
       {...props}
     />
   )

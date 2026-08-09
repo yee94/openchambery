@@ -1,6 +1,7 @@
 import React from 'react';
 import type { SessionNode } from './types';
 import { useI18n } from '@/lib/i18n';
+import { TooltipProvider } from '@/components/ui/tooltip';
 import {
   collectSubtreeContainingId,
   computeNodeStructureKey,
@@ -100,6 +101,9 @@ export function SidebarPinnedSessions({
   }
 
   return (
+    // Same grouping params as SidebarProjectsList so pinned ↔ project handoff
+    // stays instant when both sections are visible.
+    <TooltipProvider delay={0} closeDelay={150} timeout={600}>
     <div className="pb-1">
       <SidebarSectionHeader
         title={t('directoryTree.section.pinned')}
@@ -126,5 +130,6 @@ export function SidebarPinnedSessions({
         </div>
       ) : null}
     </div>
+    </TooltipProvider>
   );
 }

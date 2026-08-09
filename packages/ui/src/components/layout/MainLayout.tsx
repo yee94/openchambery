@@ -499,11 +499,14 @@ export const MainLayout: React.FC = () => {
                                 fetch, worktree discovery, repo status, PR status, and 10+ memo
                                 recomputations. On Android PWA this manifested as a >10s delay
                                 before the drawer became interactive (issue #1695). Visibility is
-                                controlled by the leftDrawerX transform (off-screen when closed).
-                                The invisible class matters when fully hidden: leftDrawerWidth is
-                                not recomputed on resize/rotation, so a closed drawer translated by
-                                the old width could otherwise peek into the viewport; it also keeps
-                                the off-screen sidebar out of the tab order and skips painting it. */}
+                                controlled by the leftDrawerX transform (off-screen when closed)
+                                plus SessionSidebar isVisible={mobileLeftDrawerVisible}, which
+                                unmounts the row tree and stops live/PR/sticky work while the
+                                outer shell stays mounted. The invisible class matters when fully
+                                hidden: leftDrawerWidth is not recomputed on resize/rotation, so a
+                                closed drawer translated by the old width could otherwise peek into
+                                the viewport; it also keeps the off-screen sidebar out of the tab
+                                order and skips painting it. */}
                             <motion.div
                                 className={cn(
                                     'absolute inset-0 z-20 bg-sidebar',
@@ -514,7 +517,10 @@ export const MainLayout: React.FC = () => {
                                 aria-hidden={!mobileLeftDrawerOpen}
                             >
                                 <ErrorBoundary>
-                                    <SessionSidebar mobileVariant />
+                                    <SessionSidebar
+                                        mobileVariant
+                                        isVisible={mobileLeftDrawerVisible}
+                                    />
                                 </ErrorBoundary>
                             </motion.div>
                             {mobileRightDrawerVisible && (
@@ -557,7 +563,7 @@ export const MainLayout: React.FC = () => {
                             className="border-border/50"
                             topBar={<SidebarTopBar />}
                         >
-                            <SessionSidebar />
+                            <SessionSidebar isVisible={isSidebarOpen} />
                         </Sidebar>
                         <div className="relative flex flex-1 min-w-0 flex-col overflow-hidden bg-background" data-page-scroll-lock="true">
                             {isExclusivePrimary ? (

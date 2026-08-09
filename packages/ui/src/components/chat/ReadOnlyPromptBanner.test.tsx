@@ -5,6 +5,9 @@ import { renderToStaticMarkup } from 'react-dom/server';
 import { I18nProvider } from '@/lib/i18n';
 
 mock.module('@/components/ui/ModelLogo', () => ({ ModelLogo: () => null }));
+mock.module('@/stores/useUIStore', () => ({
+    useUIStore: (selector: (state: { isMobile: boolean }) => unknown) => selector({ isMobile: true }),
+}));
 
 const { ReadOnlyPromptBanner } = await import('./ReadOnlyPromptBanner');
 
@@ -18,6 +21,8 @@ describe('ReadOnlyPromptBanner', () => {
 
         expect(markup).toContain('Agent: Fixer');
         expect(markup).toContain('>Fixer</span>');
+        expect(markup).toContain('oc-mobile-readonly-prompt-foot');
+        expect(markup).toContain('oc-mobile-readonly-prompt-surface');
     });
 
     test('keeps agent and model metadata in a two-column row', () => {
@@ -38,5 +43,6 @@ describe('ReadOnlyPromptBanner', () => {
         expect(markup).toContain('>Oracle</span>');
         expect(markup).toContain('>GPT-5.6 Sol Fast</span>');
         expect(markup).toContain('text-right');
+        expect(markup).toContain('oc-mobile-readonly-prompt-foot');
     });
 });

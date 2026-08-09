@@ -3,6 +3,7 @@ import { describe, expect, it } from 'bun:test'
 import {
   aggregateLiveSessions,
   aggregateLiveSessionStatuses,
+  areSessionListsEquivalent,
   areStatusMapsEquivalent,
   findLiveSession,
   findLiveSessionStatus,
@@ -124,5 +125,18 @@ describe('live aggregate', () => {
       { 'ses-1': retryStatus },
       { 'ses-1': { ...retryStatus, attempt: 2, next: 200 } },
     )).toBe(false)
+  })
+
+  it('treats pure time.updated churn as structurally equivalent for live lists', () => {
+    // Keep created fixed — the fixture helper sets created = updated - 1 by default.
+    const left = [session('ses-1', '/a', 10, { title: 'same', time: { created: 5, updated: 10 } })]
+    const right = [session('ses-1', '/a', 99, { title: 'same', time: { created: 5, updated: 99 } })]
+    expect(areSessionListsEquivalent(left, right)).toBe(true)
+  })
+
+  it('detects structural title changes even when updated timestamps match', () => {
+    const left = [session('ses-1', '/a', 10, { title: 'old' })]
+    const right = [session('ses-1', '/a', 10, { title: 'new' })]
+    expect(areSessionListsEquivalent(left, right)).toBe(false)
   })
 })

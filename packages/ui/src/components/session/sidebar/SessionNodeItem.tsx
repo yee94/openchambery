@@ -191,8 +191,10 @@ const QuickSessionAction = React.memo(function QuickSessionAction({
   onMouseDown,
   onPin,
 }: QuickSessionActionProps): React.ReactNode {
+  // No per-tooltip Provider — inherit the sidebar TooltipProvider grouping
+  // so adjacent row tips hand off instantly.
   return (
-    <Tooltip delayDuration={0}>
+    <Tooltip>
       <TooltipTrigger asChild>
         <button
           type="button"
@@ -256,7 +258,7 @@ const QuickArchiveAction = React.memo(function QuickArchiveAction({
   };
 
   return (
-    <Tooltip delayDuration={0}>
+    <Tooltip>
       <TooltipTrigger asChild>
         <button
           type="button"
@@ -797,6 +799,9 @@ function SessionNodeItemComponent(props: Props): React.ReactNode {
   const handleTitleClick = useEvent((event: React.MouseEvent<HTMLButtonElement>) => {
     handleRowSelect(event);
     if (!mouseFocusedTitleRef.current) return;
+    // Keep focus after an explicit mouse click so Enter can arm inline rename.
+    // Row mouse-leave (below) blurs when the pointer leaves so :focus-within
+    // does not stick hover chrome after the card dismisses.
     const titleButton = event.currentTarget;
     window.requestAnimationFrame(() => {
       mouseFocusedTitleRef.current = true;
@@ -804,6 +809,15 @@ function SessionNodeItemComponent(props: Props): React.ReactNode {
     });
   });
   const handleRowBlur = useEvent(() => {
+    mouseFocusedTitleRef.current = false;
+  });
+  const handleRowMouseLeave = useEvent((event: React.MouseEvent<HTMLDivElement>) => {
+    if (!mouseFocusedTitleRef.current) return;
+    const next = event.relatedTarget;
+    if (next instanceof Node && event.currentTarget.contains(next)) return;
+    const focused = document.activeElement;
+    if (!(focused instanceof HTMLElement) || !event.currentTarget.contains(focused)) return;
+    focused.blur();
     mouseFocusedTitleRef.current = false;
   });
 
@@ -966,6 +980,9 @@ function SessionNodeItemComponent(props: Props): React.ReactNode {
       tabIndex={0}
       onClick={(event) => {
         event.stopPropagation();
+        // Blur pointer-click focus so hover-only chevron / row action chrome
+        // resets on mouse-leave instead of sticking via :focus-within.
+        event.currentTarget.blur();
         toggleSubsessionTree();
       }}
       onKeyDown={(event) => {
@@ -1204,6 +1221,7 @@ function SessionNodeItemComponent(props: Props): React.ReactNode {
                 data-session-archived={archivedBucket ? '1' : '0'}
                 data-session-depth={depth}
                 onClick={handleRowBackgroundClick}
+                onMouseLeave={handleRowMouseLeave}
                 className={cn(
                   // Full-width chip; nest indent lives on the inner content row
                   // so ContextMenu render-prop merges cannot drop paddingLeft.
@@ -1223,7 +1241,9 @@ function SessionNodeItemComponent(props: Props): React.ReactNode {
             style={{ paddingLeft: getSidebarRowPaddingLeft(depth) }}
           >
           <div className="flex min-w-0 flex-1 items-center">
-              <Tooltip delayDuration={0}>
+              {/* Inherit sidebar TooltipProvider — no delayDuration here, so
+                  Base UI grouping can hand the hover card between rows. */}
+              <Tooltip>
                 <TooltipTrigger asChild>
                   <button
                     type="button"
@@ -1355,7 +1375,7 @@ function SessionNodeItemComponent(props: Props): React.ReactNode {
               />
             ) : null}
             {showQuickUnpinAction ? (
-              <Tooltip delayDuration={0}>
+              <Tooltip>
                 <TooltipTrigger asChild>
                   <button
                     type="button"
@@ -1378,7 +1398,7 @@ function SessionNodeItemComponent(props: Props): React.ReactNode {
               </Tooltip>
             ) : null}
             {showOpenInEditorAction ? (
-              <Tooltip delayDuration={0}>
+              <Tooltip>
                 <TooltipTrigger asChild>
                   <button
                     type="button"

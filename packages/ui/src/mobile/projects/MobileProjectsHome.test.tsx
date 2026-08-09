@@ -43,6 +43,9 @@ const props: MobileProjectsHomeProps = {
   onToggleProject: noop,
   onOpenProjectActions: noop,
   onToggleWorktree: noop,
+  onNewWorktreeSession: noop,
+  onOpenWorktreeActions: noop,
+  onDeleteWorktree: noop,
   onSelectSession: noop,
   onPinSession: noop,
   onArchiveSession: noop,
@@ -61,5 +64,19 @@ describe('MobileProjectsHome workspace groups', () => {
     expect(html).not.toContain('Main workspace');
     expect(html).toContain('Feature branch');
     expect(html).toContain('Feature session');
+  });
+
+  test('wires worktree action affordances on linked worktree headers', () => {
+    const html = renderToString(
+      <I18nProvider>
+        <MobileProjectsHome {...props} />
+      </I18nProvider>,
+    );
+
+    // Swipe rail + trailing overflow menu (session-row parity; no always-on +).
+    expect(html).toContain('oc-mobile-worktree-actions');
+    expect(html).toContain('oc-mobile-worktree-more');
+    expect(html).toContain('oc-mobile-worktree-label-trigger');
+    expect(html).not.toContain('oc-mobile-worktree-new-session');
   });
 });

@@ -1,6 +1,6 @@
 import { create, type StoreApi } from "zustand"
 import type { DirState, State } from "./types"
-import { INITIAL_STATE, MAX_DIR_STORES, DIR_IDLE_TTL_MS } from "./types"
+import { INITIAL_STATE, MAX_DIR_STORES, DIR_IDLE_TTL_MS, EVICTION_GRACE_MS } from "./types"
 import { pickDirectoriesToEvict, canDisposeDirectory, hasPendingBlockingRequests } from "./eviction"
 import { clearLegacySessionCache, readDirCache, persistVcs, persistProjectMeta, persistIcon } from "./persist-cache"
 
@@ -49,6 +49,7 @@ export class ChildStoreManager {
   private readonly disposers = new Map<string, () => void>()
   private readonly registrySubscribers = new Set<() => void>()
   private readonly generations = new Map<string, number>()
+  private evictionScheduled = false
 
   private onBootstrap?: (directory: string) => void
   private onDispose?: (directory: string) => void
@@ -76,7 +77,23 @@ export class ChildStoreManager {
   mark(directory: string) {
     if (!directory) return
     this.lifecycle.set(directory, { lastAccessAt: Date.now() })
-    this.runEviction(directory)
+    this.scheduleEviction()
+  }
+
+  /**
+   * Coalesce eviction into one pass per tick.
+   *
+   * `ensureChild` runs during render (once per sidebar row). Deferring the pass
+   * lets a whole commit — and with it every pin effect — settle before overflow
+   * decisions, which is what stops expand-many-worktrees thrash.
+   */
+  private scheduleEviction() {
+    if (this.evictionScheduled) return
+    this.evictionScheduled = true
+    queueMicrotask(() => {
+      this.evictionScheduled = false
+      this.runEviction()
+    })
   }
 
   pin(directory: string) {
@@ -93,7 +110,7 @@ export class ChildStoreManager {
       return
     }
     this.pins.delete(directory)
-    this.runEviction()
+    this.scheduleEviction()
   }
 
   pinned(directory: string) {
@@ -170,6 +187,7 @@ export class ChildStoreManager {
       pins: new Set(stores.filter((d) => this.pinned(d))),
       max: MAX_DIR_STORES,
       ttl: DIR_IDLE_TTL_MS,
+      graceMs: EVICTION_GRACE_MS,
       now: Date.now(),
       hasPendingBlockingRequests: (dir) => this.hasPendingBlockingRequestsForDirectory(dir),
     }).filter((d) => d !== skip)
