@@ -20,6 +20,12 @@ export function routeStateFromPath(pathWithSearch: string): RouteState {
   const parsed = parseAppPath(pathWithSearch);
 
   switch (parsed.kind) {
+    case 'new':
+      return {
+        ...emptyRoute(),
+        isNewSession: true,
+        tab: 'chat',
+      };
     case 'session': {
       const tab: MainTab =
         parsed.tab === 'chat' && parsed.mode === 'plan'
@@ -27,6 +33,7 @@ export function routeStateFromPath(pathWithSearch: string): RouteState {
           : (parsed.tab as MainTab);
       return {
         sessionId: parsed.sessionId,
+        isNewSession: false,
         tab: tab === 'chat' && parsed.mode !== 'plan' ? null : tab,
         settingsPath: null,
         settingsEntityId: null,
@@ -41,9 +48,8 @@ export function routeStateFromPath(pathWithSearch: string): RouteState {
     }
     case 'schedule':
       return {
-        // Schedule is not session-scoped; leave sessionId null so store does not
-        // re-serialize under /session/$id.
         sessionId: null,
+        isNewSession: false,
         tab: SCHEDULE_TAB_ID,
         settingsPath: null,
         settingsEntityId: null,
@@ -58,6 +64,7 @@ export function routeStateFromPath(pathWithSearch: string): RouteState {
     case 'assistant':
       return {
         sessionId: null,
+        isNewSession: false,
         tab: 'assistant',
         settingsPath: null,
         settingsEntityId: null,
@@ -72,6 +79,7 @@ export function routeStateFromPath(pathWithSearch: string): RouteState {
     case 'settings':
       return {
         sessionId: null,
+        isNewSession: false,
         tab: null,
         settingsPath: parsed.slug,
         settingsEntityId: parsed.entityId,
@@ -83,7 +91,6 @@ export function routeStateFromPath(pathWithSearch: string): RouteState {
         assistantId: null,
         focusSessionId: null,
       };
-    case 'new':
     case 'connect':
     case 'unknown':
     default:
@@ -94,6 +101,7 @@ export function routeStateFromPath(pathWithSearch: string): RouteState {
 function emptyRoute(): RouteState {
   return {
     sessionId: null,
+    isNewSession: false,
     tab: null,
     settingsPath: null,
     settingsEntityId: null,
@@ -116,10 +124,10 @@ export function hasRouteParams(): boolean {
     const parsed = parseAppPath(`${window.location.pathname}${window.location.search}`);
     return (
       parsed.kind === 'session'
+      || parsed.kind === 'new'
       || parsed.kind === 'schedule'
       || parsed.kind === 'assistant'
       || parsed.kind === 'settings'
-      || parsed.kind === 'new'
       || parsed.kind === 'connect'
     );
   } catch {

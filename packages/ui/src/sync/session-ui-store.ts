@@ -1657,6 +1657,8 @@ export const useSessionUIStore = create<SessionUIState>()((set, get) => ({
       error: null,
     })
     setRuntimeInteractiveSessionRequestId(null)
+    // Leave schedule/assistant exclusive surfaces so the welcome composer mounts.
+    useUIStore.getState().setActiveMainTab('chat')
 
     // Workspace panels (context/subagent/file preview + right sidebar git/files)
     // are session-correlated. openNewSessionDraft bypasses setCurrentSession, so

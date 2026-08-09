@@ -7,6 +7,7 @@ These are **siblings**, not children of a session:
 | Primary | Path | Main column |
 |---|---|---|
 | **session** | `/session/$id` · `/session/$id/plan` · `/session/$id/{git,diff,…}` | Chat + optional tool |
+| **new session** | `/session/new` (alias `/new`) | Welcome / draft composer (no real session id) |
 | **schedule** | `/schedule` · `/schedule/history` · `/schedule/tasks/$p/$t` · `…/agent/$focus` | Schedule workspace only |
 | **assistant** | `/assistant` · `/assistant/$id` · `…/agent/$focus` | Assistant workspace only |
 | **settings** | `/settings/$slug[/$entity]` | Settings overlay only |

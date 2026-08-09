@@ -38,7 +38,7 @@ describe('pathContract — session paths', () => {
   });
 
   test('new session path', () => {
-    expect(buildNewSessionPath()).toBe('/new');
+    expect(buildNewSessionPath()).toBe('/session/new');
   });
 });
 
@@ -71,6 +71,7 @@ describe('pathContract — parseAppPath', () => {
       slug: 'providers',
       entityId: null,
     });
+    expect(parseAppPath('/session/new')).toEqual({ kind: 'new' });
     expect(parseAppPath('/new')).toEqual({ kind: 'new' });
   });
 

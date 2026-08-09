@@ -341,14 +341,21 @@ describe('ScheduledTasksDialog queries', () => {
     expect(navigationContent).not.toContain('margin-inline');
     expect(mobileStyles).not.toContain('--oc-mobile-detail-navigation-inline-inset');
     expect(rootHeaderContent).toContain('oc-mobile-collapsing-header');
+    expect(rootHeaderContent).toContain('oc-mobile-collapsing-header-inner');
+    expect(rootHeaderContent).toContain('oc-mobile-collapsing-header-spacer');
+    expect(rootHeaderContent).toContain('oc-mobile-collapsing-header-title-block');
     expect(rootHeaderContent).toContain("header.style.setProperty('--oc-mobile-title-collapse'");
     expect(rootHeaderContent).toContain("addEventListener('scroll', scheduleCollapseProgress, { passive: true })");
     expect(rootHeaderContent).toContain("matchMedia('(prefers-reduced-motion: reduce)')");
     expect(mobileStyles).toContain('.oc-mobile-collapsing-header::after');
     expect(mobileStyles).toContain('opacity: var(--oc-mobile-title-collapse)');
-    // Expanded = safe-area + 1rem (page) + 0.375rem (legacy header pt-1.5); collapsed → detail-nav floor.
-    expect(mobileStyles).toContain('var(--oc-safe-area-top, 0px) + 1rem + 0.375rem');
-    expect(mobileStyles).toContain('max(0.25rem, var(--oc-safe-area-top, 0px))');
+    // Bounce-free: layout box is constant; collapse only drives transform/opacity.
+    expect(mobileStyles).toContain('transform-origin: top left');
+    expect(mobileStyles).toContain('0.53125 * var(--oc-mobile-title-collapse, 0)');
+    expect(mobileStyles).toContain('--oc-mobile-collapsing-expand-shift: 0.625rem');
+    expect(mobileStyles).toContain('.oc-mobile-collapsing-header-spacer');
+    expect(mobileStyles).toContain('var(--oc-safe-area-top, 0px) + 0.75rem');
+    expect(mobileStyles).toContain('--oc-mobile-collapsing-action-size: 2.5rem');
     expect(mobileStyles).toContain('[role="tabpanel"]:has(.oc-mobile-collapsing-header)');
     expect(mobileStyles).toContain('.oc-mobile-settings-root-surface:has(.oc-mobile-collapsing-header)');
     expect(settingsContent).not.toContain('oc-mobile-settings-detail-navigation');

@@ -7,6 +7,8 @@ import type { MainTab } from '@/stores/useUIStore';
  */
 export interface RouteState {
   sessionId: string | null;
+  /** True for `/session/new` draft surface (mutually exclusive with sessionId). */
+  isNewSession: boolean;
   tab: MainTab | null;
   settingsPath: string | null;
   settingsEntityId: string | null;

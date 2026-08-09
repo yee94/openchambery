@@ -128,6 +128,16 @@ export function useRouter(): void {
           return;
         }
 
+        // 2b. New-session draft surface (`/session/new`)
+        if (route.isNewSession) {
+          setActiveMainTab('chat');
+          const draft = useSessionUIStore.getState().newSessionDraft;
+          if (!draft.open) {
+            useSessionUIStore.getState().openNewSessionDraft();
+          }
+          return;
+        }
+
         // 3. Session primary: resolve directory (memory → index by-id → session.get)
         if (route.sessionId) {
           const sessionId = route.sessionId;
@@ -179,26 +189,36 @@ export function useRouter(): void {
     const uiState = useUIStore.getState();
     const pathState = parseRoute();
     const tab = uiState.activeMainTab;
-    const isExclusive = tab === 'schedule' || tab === 'assistant';
+    // New-session draft wins over exclusive primaries once draft is open and
+    // no real session is selected (openNewSessionDraft clears currentSessionId).
+    const isNewSession = Boolean(sessionState.newSessionDraft?.open)
+      && !sessionState.currentSessionId;
+    const isExclusive = !isNewSession && (tab === 'schedule' || tab === 'assistant');
 
     return {
-      // Exclusive primaries must not serialize under a session id.
-      // While a deep-link session is still resolving, keep pathState.sessionId so
-      // store sync cannot wipe /session/$id into a bare `/` (new-session UI).
-      sessionId: isExclusive
+      // Draft surface owns `/session/new` — do not keep a previous session id
+      // on the path or deep-link reconcile will re-open the old conversation.
+      isNewSession,
+      sessionId: isExclusive || isNewSession
         ? null
         : (sessionState.currentSessionId ?? pathState.sessionId),
-      tab: isExclusive ? tab : (uiState.activeMainTab || pathState.tab || 'chat'),
+      tab: isNewSession
+        ? 'chat'
+        : isExclusive
+          ? tab
+          : (uiState.activeMainTab || pathState.tab || 'chat'),
       isSettingsOpen: uiState.isSettingsDialogOpen,
       settingsPath: uiState.settingsPage,
       settingsEntityId: pathState.settingsEntityId,
-      diffFile: isExclusive ? null : (uiState.pendingDiffFile ?? pathState.diffFile),
-      diffScope: isExclusive ? null : pathState.diffScope,
-      scheduleView: tab === 'schedule' ? pathState.scheduleView : null,
-      scheduleProjectId: tab === 'schedule' ? pathState.scheduleProjectId : null,
-      scheduleTaskId: tab === 'schedule' ? pathState.scheduleTaskId : null,
+      diffFile: isExclusive || isNewSession
+        ? null
+        : (uiState.pendingDiffFile ?? pathState.diffFile),
+      diffScope: isExclusive || isNewSession ? null : pathState.diffScope,
+      scheduleView: isExclusive && tab === 'schedule' ? pathState.scheduleView : null,
+      scheduleProjectId: isExclusive && tab === 'schedule' ? pathState.scheduleProjectId : null,
+      scheduleTaskId: isExclusive && tab === 'schedule' ? pathState.scheduleTaskId : null,
       // Prefer live store selection so /assistant/$id updates when user picks one
-      assistantId: tab === 'assistant'
+      assistantId: isExclusive && tab === 'assistant'
         ? (getSelectedAssistantID() ?? pathState.assistantId)
         : null,
       focusSessionId: isExclusive ? pathState.focusSessionId : null,
@@ -246,14 +266,20 @@ export function useRouter(): void {
       // the session's directory/message bootstrap is still catching up.
       if (!isVSCode && !isEmbeddedChat) {
         // Prefer route.sessionId so deep links are not wiped while directory resolves.
+        // New-session path must not reintroduce a previous session id.
         updateBrowserURL({
           ...getCurrentAppState(),
-          sessionId: route.sessionId
-            ?? useSessionUIStore.getState().currentSessionId
-            ?? getCurrentAppState().sessionId,
+          isNewSession: route.isNewSession || getCurrentAppState().isNewSession,
+          sessionId: route.isNewSession
+            ? null
+            : (route.sessionId
+              ?? useSessionUIStore.getState().currentSessionId
+              ?? getCurrentAppState().sessionId),
           tab: route.tab ?? useUIStore.getState().activeMainTab,
           settingsPath: route.settingsPath ?? useUIStore.getState().settingsPage,
-          diffFile: route.diffFile ?? useUIStore.getState().pendingDiffFile,
+          diffFile: route.isNewSession
+            ? null
+            : (route.diffFile ?? useUIStore.getState().pendingDiffFile),
         }, { replace: true, force: true });
       }
     };
@@ -263,8 +289,9 @@ export function useRouter(): void {
 
   // Deep-link reconcile: memory list, then by-id index, then session.get.
   // Never wipe the URL into a new-session welcome when lookup fails.
+  // Skip entirely while on `/session/new` draft or exclusive primaries.
   React.useEffect(() => {
-    if (!route.sessionId) {
+    if (!route.sessionId || route.isNewSession) {
       return;
     }
 
@@ -313,13 +340,14 @@ export function useRouter(): void {
     currentSessionId,
     failDeepLinkSession,
     hasLoadedGlobalSessions,
+    route.isNewSession,
     route.sessionId,
     setCurrentSession,
   ]);
 
   React.useEffect(() => {
     const isResolved = currentSessionId === route.sessionId && Boolean(currentSessionDirectory);
-    if (!route.sessionId || isVSCode || isResolved) {
+    if (!route.sessionId || route.isNewSession || isVSCode || isResolved) {
       return;
     }
 
@@ -336,23 +364,29 @@ export function useRouter(): void {
     return () => clearTimeout(timeout);
   }, [currentSessionDirectory, currentSessionId, failDeepLinkSession, isVSCode, route.sessionId]);
 
-  // Subscribe to session changes
+  // Subscribe to session + new-session draft changes (URL authority)
   React.useEffect(() => {
     if (isVSCode || isEmbeddedChat) {
       return;
     }
 
     let prevSessionId: string | null = useSessionUIStore.getState().currentSessionId;
+    let prevDraftOpen = Boolean(useSessionUIStore.getState().newSessionDraft?.open);
 
     const unsubscribe = useSessionUIStore.subscribe((state) => {
       const sessionId = state.currentSessionId;
+      const draftOpen = Boolean(state.newSessionDraft?.open);
 
-      // Skip if no change or if we're currently applying a route
-      if (sessionId === prevSessionId || isApplyingRouteRef.current) {
+      // Skip if no relevant change or if we're currently applying a route
+      if (
+        (sessionId === prevSessionId && draftOpen === prevDraftOpen)
+        || isApplyingRouteRef.current
+      ) {
         return;
       }
 
       prevSessionId = sessionId;
+      prevDraftOpen = draftOpen;
       syncURLFromState();
       setRoute(parseRoute());
     });

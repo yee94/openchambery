@@ -128,6 +128,9 @@ export type ParsedAppPath =
   | { kind: 'connect' }
   | { kind: 'unknown' };
 
+/** Canonical new-session draft path (session primary, no real session id). */
+export const NEW_SESSION_PATH = '/session/new';
+
 const SESSION_TOOL_SET = new Set<string>(SESSION_TOOL_TABS);
 const SCHEDULE_VIEW_SET = new Set<string>(SCHEDULE_VIEWS);
 const DIFF_SCOPE_SET = new Set<string>(['staged', 'working', 'turn']);
@@ -158,7 +161,7 @@ export function normalizeDiffScope(scope: string | null | undefined): DiffScope 
 }
 
 export function buildNewSessionPath(): string {
-  return '/new';
+  return NEW_SESSION_PATH;
 }
 
 export function buildConnectPath(): string {
@@ -371,7 +374,10 @@ export function parseAppPath(pathWithSearch: string): ParsedAppPath {
   const hash = pathname.indexOf('#');
   if (hash >= 0) pathname = pathname.slice(0, hash);
 
-  if (pathname === '/new') return { kind: 'new' };
+  // Canonical + short aliases for the new-session draft surface
+  if (pathname === NEW_SESSION_PATH || pathname === '/new' || pathname === '/session/new/') {
+    return { kind: 'new' };
+  }
   if (pathname === '/connect') return { kind: 'connect' };
 
   const settingsMatch = pathname.match(/^\/settings(?:\/([^/]+)(?:\/([^/]+))?)?$/);
@@ -407,6 +413,10 @@ export function parseAppPath(pathWithSearch: string): ParsedAppPath {
   if (head === 'session') {
     const sessionId = parts[1] ? decodeURIComponent(parts[1]) : '';
     if (!sessionId) return { kind: 'unknown' };
+    // Reserved: /session/new is the draft surface, never a real session id
+    if (sessionId === 'new') {
+      return { kind: 'new' };
+    }
 
     const { file, mode, scope } = parseSearch(search);
     const segment = parts[2];

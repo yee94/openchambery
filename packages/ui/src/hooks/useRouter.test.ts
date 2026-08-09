@@ -128,6 +128,7 @@ let globalSessionsState = {
 let resolvedSessionDirectory = '/repo';
 let urlRoute = {
   sessionId: 'session-1' as string | null,
+  isNewSession: false,
   tab: null as 'chat' | null,
   settingsPath: null as string | null,
   settingsEntityId: null as string | null,
@@ -182,6 +183,7 @@ mock.module('@/lib/router', () => ({
   }) => {
     urlRoute = {
       sessionId: state.sessionId,
+      isNewSession: Boolean((state as { isNewSession?: boolean }).isNewSession),
       tab: null,
       settingsPath: state.isSettingsOpen ? state.settingsPath : null,
       settingsEntityId: null,
@@ -263,6 +265,7 @@ describe('useRouter', () => {
     resolvedSessionDirectory = '/repo';
     urlRoute = {
       sessionId: 'session-1',
+      isNewSession: false,
       tab: null,
       settingsPath: null,
       settingsEntityId: null,

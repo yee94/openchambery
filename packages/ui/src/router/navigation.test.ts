@@ -122,7 +122,7 @@ describe('createAppNavigation (memory router)', () => {
     expect(locationOf(router)).toBe('/session/s1/files');
 
     await nav.goNewSession();
-    expect(locationOf(router)).toBe('/new');
+    expect(locationOf(router)).toBe('/session/new');
   });
 
   test('openSettings normalizes illegal slug to home', async () => {
@@ -148,7 +148,7 @@ describe('createAppNavigation (memory router)', () => {
     expect(locationOf(router)).toBe('/session/x/terminal');
 
     await nav.applyIntent(intents[1]!);
-    expect(locationOf(router)).toBe('/new');
+    expect(locationOf(router)).toBe('/session/new');
 
     await nav.goSession('x');
     await nav.applyIntent(intents[2]!);

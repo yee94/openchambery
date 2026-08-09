@@ -188,6 +188,7 @@ describe('routeStateFromPath', () => {
   test('parses session and settings paths', () => {
     expect(routeStateFromPath('/session/abc')).toEqual({
       sessionId: 'abc',
+      isNewSession: false,
       tab: null,
       settingsPath: null,
       settingsEntityId: null,
@@ -199,12 +200,39 @@ describe('routeStateFromPath', () => {
       assistantId: null,
       focusSessionId: null,
     });
+    expect(routeStateFromPath('/session/new').isNewSession).toBe(true);
+    expect(routeStateFromPath('/session/new').sessionId).toBeNull();
     expect(routeStateFromPath('/settings/providers').settingsPath).toBe('providers');
     expect(routeStateFromPath('/schedule/history').scheduleView).toBe('history');
   });
 
   test('legacy query-only location is not a route', () => {
     expect(routeStateFromPath('/?session=abc').sessionId).toBeNull();
+  });
+});
+
+
+describe('new session draft path', () => {
+  test('serializes to /session/new without a session id', () => {
+    expect(serializeAppPath({
+      sessionId: null,
+      isNewSession: true,
+      tab: 'chat',
+      isSettingsOpen: false,
+      settingsPath: 'home',
+      diffFile: null,
+    })).toBe('/session/new');
+  });
+
+  test('draft wins over a lingering session id', () => {
+    expect(serializeAppPath({
+      sessionId: 'ses_old',
+      isNewSession: true,
+      tab: 'chat',
+      isSettingsOpen: false,
+      settingsPath: 'home',
+      diffFile: null,
+    })).toBe('/session/new');
   });
 });
 
