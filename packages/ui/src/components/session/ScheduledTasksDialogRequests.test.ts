@@ -80,17 +80,15 @@ describe('ScheduledTasksDialog queries', () => {
     expect(content).not.toContain("t('sessions.scheduledTasks.history.meta.duration')");
     expect(content).toContain("name=\"time\"");
     expect(content).toContain("run.trigger === 'manual' ? 'play' : 'calendar-schedule'");
-    // Shared PC/mobile rows: full-width body; mobile stacks meta so time/trigger
-    // are not ellipsized beside open-session.
+    // Shared PC/mobile rows: full-width body; mobile omits open-session button.
     expect(content).toContain('const runBody = (');
     expect(content).toContain("isMobilePanel ? 'gap-2.5' : 'gap-3'");
     expect(content).toContain("t('sessions.scheduledTasks.history.openSession')");
-    expect(content).toContain("'h-8 min-h-8 self-start px-2.5 typography-micro'");
-    expect(content).toContain("'flex-col items-stretch'");
+    expect(content).toContain("!isMobilePanel && canOpenSession ? (");
     expect(content).not.toContain("isMobilePanel && 'flex-nowrap gap-2'");
     expect(content).toContain('whitespace-nowrap tabular-nums');
     expect(content).toContain("month: 'numeric'");
-    // Text-only ghost button (keeps hover); no external-link glyph.
+    // Text-only ghost button on desktop (keeps hover); no external-link glyph.
     expect(content).not.toContain('<Icon name="external-link" className="size-4" />');
     expect(content).toContain("divide-y divide-border/50 overflow-hidden rounded-xl border border-border/60");
     // Run error detail uses the active theme's muted foreground and a status icon.
@@ -112,7 +110,11 @@ describe('ScheduledTasksDialog queries', () => {
     expect(handler).not.toContain('if (!run.sessionId || !run.directory) return;');
     expect(content).toContain('const canOpenSession = Boolean(run.sessionId && run.directory)');
     expect(content).toContain("t('sessions.scheduledTasks.history.openSession')");
-    expect(content).toContain('{canOpenSession ? (');
+    // Desktop: trailing ghost button. Mobile: whole-card press surface + trigger.
+    expect(content).toContain("!isMobilePanel && canOpenSession ? (");
+    expect(content).toContain('data-mobile-press-surface="soft"');
+    expect(content).toContain('data-mobile-press-surface-trigger');
+    expect(content).toContain('oc-mobile-scheduled-task-row');
     expect(content).toContain('onClick={() => handleOpenRunSession(run)}');
   });
 

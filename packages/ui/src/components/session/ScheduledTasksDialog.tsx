@@ -1138,8 +1138,9 @@ export function ScheduledTasksWorkspace({
                           {locationRow}
                           <div className={cn(
                             'mt-1 flex w-full min-w-0 gap-2',
+                            // Mobile: whole card opens the session — no trailing button.
                             isMobilePanel
-                              ? 'flex-col items-stretch'
+                              ? 'items-center'
                               : 'items-center justify-between gap-3',
                           )}>
                             <div className={cn(
@@ -1155,16 +1156,11 @@ export function ScheduledTasksWorkspace({
                                 <span className="whitespace-nowrap">{triggerLabel}</span>
                               </span>
                             </div>
-                            {canOpenSession ? (
+                            {!isMobilePanel && canOpenSession ? (
                               <Button
                                 variant="ghost"
                                 size="sm"
-                                className={cn(
-                                  'shrink-0 text-foreground',
-                                  isMobilePanel
-                                    ? 'h-8 min-h-8 self-start px-2.5 typography-micro'
-                                    : 'h-7 self-center',
-                                )}
+                                className="h-7 shrink-0 self-center text-foreground"
                                 onClick={() => handleOpenRunSession(run)}
                               >
                                 {t('sessions.scheduledTasks.history.openSession')}
@@ -1196,16 +1192,42 @@ export function ScheduledTasksWorkspace({
                     );
 
                     if (isMobilePanel) {
+                      // Whole-card open + shared soft press scale (same as task cards).
+                      const openLabel = t('sessions.scheduledTasks.history.openSession');
+                      const shellClass = cn(
+                        // scheduled-task-card: container-type for soft press scale (mobile.css).
+                        'oc-mobile-scheduled-task-card w-full',
+                        isMobileTab
+                          ? 'oc-mobile-floating-surface oc-mobile-project-shell rounded-[var(--oc-mobile-surface-radius)]'
+                          : 'rounded-xl border border-border/60 bg-[var(--surface-elevated)] shadow-sm dark:shadow-none',
+                      );
+                      if (canOpenSession) {
+                        return (
+                          <article
+                            key={run.id}
+                            data-mobile-press-surface="soft"
+                            className={shellClass}
+                          >
+                            <button
+                              type="button"
+                              data-mobile-press-surface-trigger
+                              data-mobile-press-feedback="none"
+                              className={cn(
+                                'oc-mobile-scheduled-task-row w-full p-3 text-left outline-none',
+                                'focus-visible:ring-2 focus-visible:ring-inset focus-visible:ring-[var(--interactive-focus-ring)]',
+                              )}
+                              aria-label={openLabel}
+                              onClick={() => handleOpenRunSession(run)}
+                            >
+                              {runBody}
+                            </button>
+                          </article>
+                        );
+                      }
                       return (
                         <article
                           key={run.id}
-                          className={cn(
-                            'w-full p-3',
-                            // mobile-tab history cards match task cards / project shells.
-                            isMobileTab
-                              ? 'oc-mobile-floating-surface rounded-[var(--oc-mobile-surface-radius)]'
-                              : 'rounded-xl border border-border/60 bg-[var(--surface-elevated)] shadow-sm dark:shadow-none',
-                          )}
+                          className={cn(shellClass, 'p-3')}
                         >
                           {runBody}
                         </article>
