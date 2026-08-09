@@ -830,7 +830,9 @@ export function ScheduledTasksWorkspace({
             className={cn(
               // Desktop: quiet muted track. Mobile: shared segmented track metrics
               // (pad/gap/item height) with the filter row below.
-              'mb-3',
+              // Tasks: denser tab→filter. History mobile-tab: no mb here so
+              // content owns a single --oc-mobile-page-gap (same as Tasks filter→list).
+              (workspaceView === 'tasks' || !isMobileTab) && 'mb-3',
               isMobileTab
                 ? 'oc-mobile-floating-surface oc-mobile-segmented-track'
                 : 'grid grid-cols-2 gap-1 rounded-xl bg-[var(--surface-muted)] p-1',
@@ -981,7 +983,8 @@ export function ScheduledTasksWorkspace({
         <div className={cn(
           isMobileTab
             // No nested scroll region: tabpanel is the only vertical scroller.
-            ? 'flex-none overflow-visible pt-5'
+            // One page-gap after tab (History) or after filter row (Tasks).
+            ? 'flex-none overflow-visible pt-[var(--oc-mobile-page-gap)]'
             : 'min-h-0 flex-1 overflow-y-auto',
           !isMobileTab && (isMobilePanel
             ? 'overscroll-none px-3 pb-[max(1rem,env(safe-area-inset-bottom))]'

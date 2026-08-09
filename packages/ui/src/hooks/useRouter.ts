@@ -9,6 +9,10 @@ import type { MainTab } from '@/stores/useUIStore';
 import { resolveSettingsSlug } from '@/lib/settings/metadata';
 import { isEmbeddedSessionChat } from '@/components/layout/contextPanelEmbeddedChat';
 import {
+  isRuntimeEndpointIdentityChange,
+  subscribeRuntimeEndpointChanged,
+} from '@/lib/runtime-switch';
+import {
   resolveSessionDirectoryForRoute,
   resolveSessionForRoute,
 } from '@/router/sessionLookup';
@@ -75,9 +79,16 @@ export function useRouter(): void {
    * Deep-link failure: keep the user on the session path, show an error toast once
    * per session id, and do NOT clear the URL into a new-session/welcome state.
    * Re-runs of the reconcile effect (index refresh / hasLoaded flips) must not spam.
+   * Skip entirely when the live path no longer requests this session (runtime
+   * switch / clearStaleSessionPath already rewrote the URL).
    */
   const failDeepLinkSession = React.useCallback((sessionId: string) => {
     if (isVSCode) {
+      return;
+    }
+    // Path may already have been cleared by runtimeEndpointReset while this
+    // reconcile still held a stale React route.sessionId — do not re-pin it.
+    if (parseRoute().sessionId !== sessionId) {
       return;
     }
     const firstFailure = !failedDeepLinkSessionIdsRef.current.has(sessionId);
@@ -309,6 +320,12 @@ export function useRouter(): void {
     let cancelled = false;
     const sessionId = route.sessionId;
 
+    // Live path may already have been cleared by runtime identity switch while
+    // React route state still holds the previous-runtime session id.
+    if (parseRoute().sessionId !== sessionId) {
+      return;
+    }
+
     const alreadyOpen =
       currentSessionId === sessionId && Boolean(currentSessionDirectory);
     if (alreadyOpen) {
@@ -332,6 +349,10 @@ export function useRouter(): void {
     void (async () => {
       const resolved = await resolveSessionForRoute(sessionId);
       if (cancelled) return;
+      // Path may have been cleared mid-resolve (instance switch).
+      if (parseRoute().sessionId !== sessionId) {
+        return;
+      }
       if (resolved?.directory) {
         failedDeepLinkSessionIdsRef.current.delete(sessionId);
         const current = useSessionUIStore.getState();
@@ -511,4 +532,25 @@ export function useRouter(): void {
       window.removeEventListener('popstate', handlePopState);
     };
   }, [applyRoute, isVSCode, isEmbeddedChat, setActiveMainTab, setSettingsDialogOpen]);
+
+  // Identity runtime switch rewrites history via runtimeEndpointReset without
+  // popstate. Re-parse path into React route state and drop stale deep-link
+  // failure bookkeeping so reconcile cannot re-pin a previous-runtime session.
+  // queueMicrotask: MobileApp/App clear the path in the same event turn; re-parse
+  // after every sync listener finishes so we do not snapshot the pre-clear URL.
+  React.useEffect(() => {
+    if (isVSCode || isEmbeddedChat) {
+      return;
+    }
+
+    return subscribeRuntimeEndpointChanged((detail) => {
+      if (!isRuntimeEndpointIdentityChange(detail)) {
+        return;
+      }
+      failedDeepLinkSessionIdsRef.current.clear();
+      queueMicrotask(() => {
+        setRoute(parseRoute());
+      });
+    });
+  }, [isVSCode, isEmbeddedChat]);
 }

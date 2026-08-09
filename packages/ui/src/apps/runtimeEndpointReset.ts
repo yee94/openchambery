@@ -1,5 +1,5 @@
 import { opencodeClient } from '@/lib/opencode/client';
-import { parseRoute, updateBrowserURL } from '@/lib/router';
+import { updateBrowserURL } from '@/lib/router';
 import { getRuntimeTransportIdentity, type RuntimeEndpointChangedDetail } from '@/lib/runtime-switch';
 import { disposeTerminalInputTransport } from '@/lib/terminalApi';
 import { useConfigStore } from '@/stores/useConfigStore';
@@ -13,21 +13,17 @@ import { useSessionUIStore } from '@/sync/session-ui-store';
 import { resetStreamingState } from '@/sync/streaming';
 
 /**
- * Drop a previous-runtime session path after identity switch.
- * useRouter falls back to path sessionId when the store is empty, so leaving
- * `/session/ses_old` would re-trigger deep-link resolve + missing-directory toasts.
+ * After identity switch, never leave the previous runtime's session id on the
+ * path. useRouter falls back to path sessionId when the store is empty, so a
+ * leftover `/session/ses_old` re-triggers deep-link resolve + missing-directory
+ * toasts on first switch into a cold runtime.
+ *
+ * Always rewrite: restored session (if any) is the only id allowed; otherwise
+ * clear. updateBrowserURL no-ops without a browser window / VS Code / embedded chat.
  */
 const clearStaleSessionPathAfterRuntimeSwitch = (): void => {
-  // updateBrowserURL no-ops without a browser window / in VS Code / embedded chat.
-  const path = parseRoute();
-  if (!path.sessionId) {
-    return;
-  }
   const sessionState = useSessionUIStore.getState();
   const restoredSessionId = sessionState.currentSessionId;
-  if (restoredSessionId && restoredSessionId === path.sessionId) {
-    return;
-  }
   const uiState = useUIStore.getState();
   const isNewSession = Boolean(sessionState.newSessionDraft?.open) && !restoredSessionId;
   updateBrowserURL({

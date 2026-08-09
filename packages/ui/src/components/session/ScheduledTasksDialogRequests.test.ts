@@ -170,8 +170,10 @@ describe('ScheduledTasksDialog queries', () => {
     expect(editorContent).toContain('MOBILE_PANEL_CONTROL_CLASS');
     expect(workspaceContent).toContain("isMobileTab ? 'pb-0 pt-0'");
     // mobile-tab list is in-flow under the root tabpanel scroller (no nested safe-area pad).
-    expect(workspaceContent).toContain("? 'flex-none overflow-visible pt-5'");
+    expect(workspaceContent).toContain("? 'flex-none overflow-visible pt-[var(--oc-mobile-page-gap)]'");
     expect(workspaceContent).not.toContain("overscroll-none pb-[max(1rem,env(safe-area-inset-bottom))] pt-5");
+    // History mobile-tab: tablist has no mb-3 so only page-gap separates tab→list.
+    expect(workspaceContent).toContain("(workspaceView === 'tasks' || !isMobileTab) && 'mb-3'");
     expect(editorContent).toContain('overflow-y-auto overflow-x-hidden px-[var(--oc-mobile-page-inline-inset)] pb-[calc(var(--oc-mobile-dock-height)+2.5rem');
     expect(editorContent).not.toContain('<div className="px-3 pb-5 pt-4">');
   });
@@ -220,7 +222,7 @@ describe('ScheduledTasksDialog queries', () => {
     expect(workspaceContent).toContain("isMobileTab ? 'flex-none overflow-visible' : 'flex-1 overflow-hidden'");
     expect(workspaceContent).toContain("isMobileTab ? 'pb-0 pt-0'");
     expect(workspaceContent).toContain("isMobilePanel && !isMobileTab && editorMode !== 'closed' ? 'hidden' : 'flex'");
-    expect(workspaceContent).toContain("? 'oc-mobile-floating-surface rounded-[var(--oc-mobile-surface-radius)]'");
+    expect(workspaceContent).toContain("? 'oc-mobile-floating-surface oc-mobile-project-shell rounded-[var(--oc-mobile-surface-radius)]'");
     expect(workspaceContent).not.toContain('mobileTaskGroupStarts');
     expect(mobileAppContent).toContain('onEditorActiveChange={onEditorActiveChange}');
     expect(phoneShellContent).toContain('<MobileScheduledTab showHeader={false}>');
@@ -376,7 +378,7 @@ describe('ScheduledTasksDialog queries', () => {
     expect(settingsContent).toContain('<MobileTabPageHeader');
     expect(settingsContent).toContain('underlayRef: mobileBackUnderlayRef');
     expect(settingsContent).toContain('fixed inset-0 z-20 flex h-[100dvh]');
-    expect(settingsContent).toContain('flex-col gap-6');
+    expect(settingsContent).toContain('flex-col gap-[var(--oc-mobile-page-gap)]');
     expect(settingsContent).toContain('"flex-1 min-h-0 overflow-hidden bg-transparent"');
     expect(settingsContent).toContain(': "px-[var(--oc-mobile-page-inline-inset)]"');
     expect(settingsContent).toContain('"oc-settings-workspace-mobile bg-transparent"');

@@ -173,6 +173,14 @@ mock.module('@/stores/useGlobalSessionsStore', () => ({
     { getState: () => globalSessionsState },
   ),
 }));
+const runtimeEndpointListeners = new Set<(detail: {
+  apiBaseUrl: string;
+  previousApiBaseUrl: string;
+  runtimeKey: string;
+  previousRuntimeKey: string;
+  transportIdentityChanged?: boolean;
+}) => void>();
+
 mock.module('@/lib/router', () => ({
   parseRoute: () => ({ ...urlRoute }),
   hasRouteParams: () => true,
@@ -195,6 +203,25 @@ mock.module('@/lib/router', () => ({
       assistantId: null,
       focusSessionId: null,
     };
+  },
+}));
+mock.module('@/lib/runtime-switch', () => ({
+  getRuntimeTransportIdentity: () => 'test-transport',
+  getRuntimeGeneration: () => 0,
+  getRuntimeKey: () => 'test-runtime',
+  isRuntimeEndpointIdentityChange: (detail: { transportIdentityChanged?: boolean }) =>
+    detail.transportIdentityChanged !== false,
+  subscribeRuntimeEndpointChanged: (
+    callback: (detail: {
+      apiBaseUrl: string;
+      previousApiBaseUrl: string;
+      runtimeKey: string;
+      previousRuntimeKey: string;
+      transportIdentityChanged?: boolean;
+    }) => void,
+  ) => {
+    runtimeEndpointListeners.add(callback);
+    return () => runtimeEndpointListeners.delete(callback);
   },
 }));
 mock.module('@/lib/settings/metadata', () => ({ resolveSettingsSlug: (path: string) => path }));
@@ -252,6 +279,7 @@ describe('useRouter', () => {
     harness.reset();
     sessionSubscribers.clear();
     uiSubscribers.clear();
+    runtimeEndpointListeners.clear();
     settingsDialogOpenCalls.length = 0;
     setCurrentSessionCalls.length = 0;
     notifySessionOpenFailedCalls.length = 0;
@@ -378,5 +406,80 @@ describe('useRouter', () => {
     await Promise.resolve();
 
     expect(notifySessionOpenFailedCalls).toHaveLength(1);
+  });
+
+  test('identity runtime switch drops a stale path session without missing-directory toast', async () => {
+    sessionState.currentSessionId = null;
+    sessionState.currentSessionDirectory = null;
+    urlRoute.sessionId = 'ses_previous_runtime';
+    globalSessionsState = {
+      hasLoaded: false,
+      activeSessions: [],
+      archivedSessions: [],
+    };
+
+    harness.render(useRouter);
+    // Let mount init rewrite URL, then clear as runtimeEndpointReset does.
+    await Promise.resolve();
+    await Promise.resolve();
+    expect(runtimeEndpointListeners.size).toBeGreaterThan(0);
+
+    urlRoute.sessionId = null;
+    for (const listener of runtimeEndpointListeners) {
+      listener({
+        apiBaseUrl: 'https://b.example',
+        previousApiBaseUrl: 'https://a.example',
+        runtimeKey: 'runtime-b',
+        previousRuntimeKey: 'runtime-a',
+        transportIdentityChanged: true,
+      });
+    }
+    // queueMicrotask re-parse from the runtime-switch listener.
+    await Promise.resolve();
+    await Promise.resolve();
+
+    globalSessionsState = {
+      hasLoaded: true,
+      activeSessions: [],
+      archivedSessions: [],
+    };
+    harness.render(useRouter);
+    await Promise.resolve();
+    await Promise.resolve();
+
+    expect(notifySessionOpenFailedCalls).toEqual([]);
+    expect(urlRoute.sessionId).toBeNull();
+  });
+
+  test('failDeepLinkSession does not re-pin a session id already cleared from the path', async () => {
+    sessionState.currentSessionId = null;
+    sessionState.currentSessionDirectory = null;
+    urlRoute.sessionId = 'ses_stale_route';
+    // Start unloaded so reconcile cannot hard-fail before we clear the path.
+    globalSessionsState = {
+      hasLoaded: false,
+      activeSessions: [],
+      archivedSessions: [],
+    };
+
+    harness.render(useRouter);
+    await Promise.resolve();
+    await Promise.resolve();
+
+    // Mid-reconcile identity switch: live path cleared while React route may still
+    // hold the old session id until the runtime-switch listener re-parses.
+    urlRoute.sessionId = null;
+    globalSessionsState = {
+      hasLoaded: true,
+      activeSessions: [],
+      archivedSessions: [],
+    };
+    harness.render(useRouter);
+    await Promise.resolve();
+    await Promise.resolve();
+
+    expect(notifySessionOpenFailedCalls).toEqual([]);
+    // Must not re-write the dead id after the live path was cleared.
+    expect(urlRoute.sessionId).toBeNull();
   });
 });

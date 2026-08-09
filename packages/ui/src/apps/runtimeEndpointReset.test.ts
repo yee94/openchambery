@@ -109,10 +109,30 @@ test('runtime endpoint switch clears a previous-runtime session path when restor
   expect(call.options).toEqual({ replace: true, force: true });
 });
 
-test('runtime endpoint switch keeps path when restore recovers the same session id', () => {
+test('runtime endpoint switch always rewrites path to restored session id', () => {
+  updateBrowserURLCalls.length = 0;
+  pathSessionId = 'ses_previous_runtime';
+  restoredSessionId = 'ses_restored';
+  newSessionDraftOpen = false;
+  resetAppForRuntimeEndpointChange({ previousRuntimeKey: 'runtime-b', runtimeKey: 'runtime-a' } as never);
+  expect(updateBrowserURLCalls).toHaveLength(1);
+  const call = updateBrowserURLCalls[0] as {
+    state: { sessionId: string | null; isNewSession: boolean };
+    options: { replace: boolean; force: boolean };
+  };
+  expect(call.state.sessionId).toBe('ses_restored');
+  expect(call.state.isNewSession).toBe(false);
+  expect(call.options).toEqual({ replace: true, force: true });
+});
+
+test('runtime endpoint switch rewrites path even when path already matches restored session', () => {
   updateBrowserURLCalls.length = 0;
   pathSessionId = 'ses_restored';
   restoredSessionId = 'ses_restored';
   resetAppForRuntimeEndpointChange({ previousRuntimeKey: 'runtime-b', runtimeKey: 'runtime-a' } as never);
-  expect(updateBrowserURLCalls).toEqual([]);
+  expect(updateBrowserURLCalls).toHaveLength(1);
+  const call = updateBrowserURLCalls[0] as {
+    state: { sessionId: string | null };
+  };
+  expect(call.state.sessionId).toBe('ses_restored');
 });
