@@ -91,13 +91,12 @@ describe('ScheduledTasksDialog queries', () => {
     // Text-only ghost button on desktop (keeps hover); no external-link glyph.
     expect(content).not.toContain('<Icon name="external-link" className="size-4" />');
     expect(content).toContain("divide-y divide-border/50 overflow-hidden rounded-xl border border-border/60");
-    // Run error detail uses the active theme's muted foreground and a status icon.
-    // line-clamp stays on the text span so flex keeps icon + message on one row.
+    // Run error detail: inline icon + text (wraps at the trailing edge, not stacked).
     expect(content).toContain('{run.error ? (');
-    expect(content).toContain('flex min-w-0 items-start gap-1.5 typography-micro text-[var(--surface-muted-foreground)]');
+    expect(content).toContain('mt-1.5 min-w-0 break-words typography-micro text-[var(--surface-muted-foreground)] [overflow-wrap:anywhere]');
     expect(content).toContain("isMobilePanel ? 'line-clamp-3' : 'line-clamp-1'");
     expect(content).toContain('name="error-warning"');
-    expect(content).toContain('text-[var(--status-error)]');
+    expect(content).toContain('mr-1 inline-block size-3 align-[-0.125em] text-[var(--status-error)]');
     // History mobile-tab card gap matches Tasks list (space-y-4).
     expect(content).toContain("isMobileTab\n                    ? 'space-y-4'");
   });

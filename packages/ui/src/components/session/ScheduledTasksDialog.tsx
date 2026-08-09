@@ -1178,26 +1178,22 @@ export function ScheduledTasksWorkspace({
                             ) : null}
                           </div>
                           {run.error ? (
-                            // line-clamp must live on the text node only: applying it to the flex
-                            // row sets display:-webkit-box and stacks icon above the message.
-                            <div
-                              className="mt-1.5 flex min-w-0 items-start gap-1.5 typography-micro text-[var(--surface-muted-foreground)]"
+                            // Inline glyph + copy so the icon sits on the first line and wraps
+                            // only at the trailing edge (not a stacked flex/grid column).
+                            <p
+                              className={cn(
+                                'mt-1.5 min-w-0 break-words typography-micro text-[var(--surface-muted-foreground)] [overflow-wrap:anywhere]',
+                                isMobilePanel ? 'line-clamp-3' : 'line-clamp-1',
+                              )}
                               title={run.error.slice(0, 300)}
                             >
                               <Icon
                                 name="error-warning"
-                                className="mt-px size-3.5 shrink-0 text-[var(--status-error)]"
+                                className="mr-1 inline-block size-3 align-[-0.125em] text-[var(--status-error)]"
                                 aria-hidden="true"
                               />
-                              <span
-                                className={cn(
-                                  'min-w-0 break-words [overflow-wrap:anywhere]',
-                                  isMobilePanel ? 'line-clamp-3' : 'line-clamp-1',
-                                )}
-                              >
-                                {run.error.slice(0, 300)}
-                              </span>
-                            </div>
+                              {run.error.slice(0, 300)}
+                            </p>
                           ) : null}
                         </div>
                       </div>
