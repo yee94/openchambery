@@ -466,17 +466,15 @@
 
   /*
    * Segmented control selected pill (tabs / filters / workspace switchers).
-   * Light: elevated paper on a muted track with soft outer elevation.
-   * Dark: interactive selection material — elevated≈muted in many dark palettes,
-   * so selection tokens (not surface-elevated + shadow-sm) carry contrast.
+   * Light: keep the original elevated paper + soft shadow only — no ring/border.
+   * Dark: selection-derived fill so elevated≈muted palettes still contrast.
    * Prefer this class over ad-hoc bg-[var(--surface-elevated)] shadow-sm dark:shadow-none.
    */
   .oc-segmented-selected-pill {
     background: var(--surface-elevated);
     color: var(--surface-elevated-foreground, var(--foreground));
-    box-shadow:
-      0 1px 2px color-mix(in srgb, var(--surface-foreground) 10%, transparent),
-      0 0 0 1px color-mix(in srgb, var(--surface-foreground) 6%, transparent);
+    /* Matches Tailwind shadow-sm: soft elevation, no outline. */
+    box-shadow: 0 1px 2px 0 color-mix(in srgb, var(--surface-foreground) 8%, transparent);
   }
 
   .dark .oc-segmented-selected-pill {
@@ -486,9 +484,7 @@
       var(--surface-elevated)
     );
     color: var(--interactive-selection-foreground);
-    box-shadow:
-      inset 0 0 0 1px
-        color-mix(in srgb, var(--interactive-selection-foreground) 14%, transparent),
-      0 1px 3px rgb(0 0 0 / 0.4);
+    /* Soft lift only — no full border ring. */
+    box-shadow: 0 1px 3px rgb(0 0 0 / 0.45);
   }
 }

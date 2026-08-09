@@ -10,6 +10,7 @@ import { formatDirectoryName, cn } from '@/lib/utils';
 import { useSessionUIStore } from '@/sync/session-ui-store';
 import { useAllLiveSessions, useAllSessionStatuses } from '@/sync/sync-context';
 import { useAssistantCapabilityQuery } from '@/queries/assistantQueries';
+import { openAssistant } from '@/stores/useAssistantUIStore';
 import { useGlobalSessionStatusStore } from '@/sync/global-session-status';
 import { useDirectoryStore } from '@/stores/useDirectoryStore';
 import { useProjectsStore } from '@/stores/useProjectsStore';
@@ -112,6 +113,7 @@ import {
   getDefaultProjectGroupVisibleCount,
 } from "./sidebar/sessionNavigationModel";
 import { reconcileSessionFocus } from "./sidebar/sessionFocusReconciliation";
+import { resolveFocusedProjectTarget } from "./sidebar/resolveFocusedProjectTarget";
 import {
   buildSidebarNumberedSessionTargets,
   getSidebarNumberedSessionNumber,
@@ -470,6 +472,15 @@ export const SessionSidebar: React.FC<SessionSidebarProps> = ({
     React.useDeferredValue(globalActiveSessions);
   const archivedSessions = React.useDeferredValue(archivedSessionsRaw);
   const currentSessionId = useSessionUIStore((state) => state.currentSessionId);
+  // Viewing + running sessions stay in the visible window of already-loaded
+  // lists (does not fetch more sessions from the server).
+  const alwaysVisibleSessionIds = React.useMemo(() => {
+    if (!currentSessionId) return runningSessionIds;
+    if (runningSessionIds.has(currentSessionId)) return runningSessionIds;
+    const ids = new Set(runningSessionIds);
+    ids.add(currentSessionId);
+    return ids;
+  }, [currentSessionId, runningSessionIds]);
   const sessionFocus = useSessionFocusStore((state) => state.focus);
   const sessionSwitchIntent = React.useSyncExternalStore(
     subscribeSessionSwitchIntent,
@@ -805,7 +816,7 @@ export const SessionSidebar: React.FC<SessionSidebarProps> = ({
 
   const handleOpenScheduledTasks = React.useCallback(() => {
     if (!mobileVariant) {
-      setActiveMainTab("scheduled");
+      setActiveMainTab("schedule");
       return;
     }
     setScheduledTasksDialogOpen(true);
@@ -818,11 +829,12 @@ export const SessionSidebar: React.FC<SessionSidebarProps> = ({
   ]);
 
   const handleOpenAssistants = React.useCallback(() => {
-    setActiveMainTab("assistant");
+    // openAssistant keeps current selection → URL becomes /assistant or /assistant/$id
+    openAssistant();
     if (mobileVariant) {
       setSessionSwitcherOpen(false);
     }
-  }, [mobileVariant, setActiveMainTab, setSessionSwitcherOpen]);
+  }, [mobileVariant, setSessionSwitcherOpen]);
 
   const showSidebarUpdateButton =
     updateStore.available &&
@@ -1827,15 +1839,15 @@ export const SessionSidebar: React.FC<SessionSidebarProps> = ({
       visibleSessionCountByGroup,
       defaultVisibleSessionCount: getDefaultProjectGroupVisibleCount(),
       hasSessionSearchQuery,
-      alwaysVisibleSessionIds: runningSessionIds,
+      alwaysVisibleSessionIds,
     })
   ), [
+    alwaysVisibleSessionIds,
     collapsedFolderIds,
     collapsedGroups,
     collapsedProjects,
     hasSessionSearchQuery,
     projectNavigationTargets,
-    runningSessionIds,
     visibleSessionCountByGroup,
   ]);
 
@@ -2031,35 +2043,58 @@ export const SessionSidebar: React.FC<SessionSidebarProps> = ({
     sessionSidebarMetaById,
   ]);
 
+  // Deep links announce focus with projectId=null; resolve among already-loaded
+  // navigation targets only (never invent unloaded sessions).
   const focusedProjectTarget = React.useMemo(() => {
-    if (!sessionFocus || sessionFocus.scope !== "project") {
-      return null;
-    }
-    return (
-      projectNavigationTargets.find(
-        (target) =>
-          target.sessionId === sessionFocus.sessionId &&
-          target.projectId === sessionFocus.projectId,
-      ) ?? null
+    const metaProjectId = sessionFocus?.sessionId
+      ? (sessionSidebarMetaById.get(sessionFocus.sessionId)?.projectId ?? null)
+      : null;
+    return resolveFocusedProjectTarget(
+      sessionFocus,
+      projectNavigationTargets,
+      metaProjectId,
     );
-  }, [projectNavigationTargets, sessionFocus]);
+  }, [projectNavigationTargets, sessionFocus, sessionSidebarMetaById]);
 
   const revealedSessionSwitchRevisionRef = React.useRef<number | null>(null);
+  const revealedForCurrentSessionRef = React.useRef<string | null>(null);
 
-  // Shortcut navigation can target rows whose project/group/folder is not
-  // mounted yet. Reveal the full ancestor chain synchronously, before paint,
-  // so the precise Project row can satisfy the visual-selection barrier. Each
-  // navigation revision may reveal once; later dependency refreshes must not
-  // undo an explicit project collapse while that session remains focused.
+  React.useEffect(() => {
+    if (revealedForCurrentSessionRef.current
+      && revealedForCurrentSessionRef.current !== currentSessionId) {
+      revealedForCurrentSessionRef.current = null;
+    }
+  }, [currentSessionId]);
+
+  // Shortcut navigation and URL deep links can target rows already present in
+  // the loaded tree but hidden behind collapse / default "show 3". Reveal the
+  // ancestor chain and raise the local visible count to the row index — never
+  // fetch more sessions from the server. Unloaded ids produce no target and
+  // are ignored.
   React.useLayoutEffect(() => {
-    if (
-      !focusedProjectTarget?.projectId ||
-      sessionSwitchIntent.sessionId !== focusedProjectTarget.sessionId ||
-      revealedSessionSwitchRevisionRef.current === sessionSwitchIntent.revision
-    ) {
+    if (!focusedProjectTarget?.projectId) {
       return;
     }
-    revealedSessionSwitchRevisionRef.current = sessionSwitchIntent.revision;
+    const sessionId = focusedProjectTarget.sessionId;
+    const matchesIntent = sessionSwitchIntent.sessionId === sessionId;
+    const matchesCurrent = currentSessionId === sessionId;
+    if (!matchesIntent && !matchesCurrent) {
+      return;
+    }
+    // Prefer intent revision dedup when available; otherwise once per session
+    // open (deep link after async resolve may only set currentSessionId).
+    if (matchesIntent) {
+      if (revealedSessionSwitchRevisionRef.current === sessionSwitchIntent.revision) {
+        return;
+      }
+      revealedSessionSwitchRevisionRef.current = sessionSwitchIntent.revision;
+      revealedForCurrentSessionRef.current = sessionId;
+    } else {
+      if (revealedForCurrentSessionRef.current === sessionId) {
+        return;
+      }
+      revealedForCurrentSessionRef.current = sessionId;
+    }
 
     ensureProjectExpanded(focusedProjectTarget.projectId);
 
@@ -2081,6 +2116,8 @@ export const SessionSidebar: React.FC<SessionSidebarProps> = ({
       }
     });
 
+    // Expand the default "show N" window only far enough to include this row
+    // among already-loaded sessions (e.g. index 5 → show 6 of the loaded list).
     if (
       focusedProjectTarget.groupKey &&
       focusedProjectTarget.visibleIndex !== undefined
@@ -2096,7 +2133,12 @@ export const SessionSidebar: React.FC<SessionSidebarProps> = ({
         return next;
       });
     }
-  }, [ensureProjectExpanded, focusedProjectTarget, sessionSwitchIntent]);
+  }, [
+    currentSessionId,
+    ensureProjectExpanded,
+    focusedProjectTarget,
+    sessionSwitchIntent,
+  ]);
 
   const prLookupKeys = React.useMemo(() => {
     const keys = new Set<string>();
@@ -2539,7 +2581,7 @@ export const SessionSidebar: React.FC<SessionSidebarProps> = ({
             size="sm"
             className={cn(
               "w-full justify-start font-normal",
-              activeMainTab === "scheduled" && "bg-interactive-selection text-interactive-selection-foreground",
+              activeMainTab === "schedule" && "bg-interactive-selection text-interactive-selection-foreground",
               mobileVariant && "h-11",
             )}
             onClick={handleOpenScheduledTasks}

@@ -45,4 +45,21 @@ export const registerSessionIndexRoutes = (app, { sessionIndexService, sessionIn
     sessionIndexService.remove(req.params.sessionId);
     res.status(204).end();
   });
+
+  // Deep-link resolution: GET by session id without requiring a directory.
+  app.get('/api/openchamber/session-index/session/:sessionId', (req, res) => {
+    if (!sessionIndexService) return unsupported(res);
+    if (typeof sessionIndexService.findBySessionId !== 'function') {
+      return res.status(501).json({ error: 'Session lookup is unavailable' });
+    }
+    const sessionId = req.params.sessionId;
+    if (typeof sessionId !== 'string' || !sessionId.trim()) {
+      return res.status(400).json({ error: 'sessionId is required' });
+    }
+    const hit = sessionIndexService.findBySessionId(sessionId.trim());
+    if (!hit) {
+      return res.status(404).json({ error: 'session_not_found', sessionId: sessionId.trim() });
+    }
+    res.json({ available: true, session: hit });
+  });
 };

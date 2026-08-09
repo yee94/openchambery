@@ -36,6 +36,18 @@ describe('canAbortActiveComposerShortcut', () => {
       primaryCanAbort: true,
     })).toBe(false);
   });
+
+  test('prefers surface wiring abort availability over the status-row fallback', () => {
+    // The primary surface carries its own session activity (busy/retry) so a
+    // double-ESC abort works even when the status-row derived `working.canAbort`
+    // lags (e.g. after an abort + re-send in the same session).
+    expect(canAbortActiveComposerShortcut({
+      sessionId: 'session-1',
+      surfaceKind: 'primary',
+      wiringCanAbort: true,
+      primaryCanAbort: false,
+    })).toBe(true);
+  });
 });
 
 describe('executeLeaderCompact', () => {

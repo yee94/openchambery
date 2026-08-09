@@ -1,0 +1,162 @@
+{
+  "name": "openchamber-router-path-e2e",
+  "legacyQueryParamsForbidden": [
+    "session",
+    "tab",
+    "settings"
+  ],
+  "allowedSearchParams": [
+    "file",
+    "mode"
+  ],
+  "scenarios": [
+    {
+      "id": "E1",
+      "title": "cold start path form",
+      "assert": {
+        "pathnameMatches": "^/(session/[^/]+(/[^/]+)?|new|settings/[^/]+)?$",
+        "legacyQueryAbsent": true
+      }
+    },
+    {
+      "id": "E2",
+      "title": "open session",
+      "actions": [
+        {
+          "type": "openSessionFromSidebar"
+        }
+      ],
+      "assert": {
+        "pathnameMatches": "^/session/[^/]+$",
+        "legacyQueryAbsent": true
+      }
+    },
+    {
+      "id": "E3",
+      "title": "diff tab with file",
+      "actions": [
+        {
+          "type": "setMainTab",
+          "tab": "diff"
+        },
+        {
+          "type": "selectDiffFile"
+        }
+      ],
+      "assert": {
+        "pathnameMatches": "^/session/[^/]+/diff$",
+        "searchHas": [
+          "file"
+        ],
+        "legacyQueryAbsent": true
+      }
+    },
+    {
+      "id": "E4",
+      "title": "settings overlay",
+      "actions": [
+        {
+          "type": "openSettings",
+          "slug": "providers"
+        }
+      ],
+      "assert": {
+        "pathnameMatches": "^/settings/providers$",
+        "legacyQueryAbsent": true
+      }
+    },
+    {
+      "id": "E5",
+      "title": "close settings restores workspace",
+      "actions": [
+        {
+          "type": "closeSettings"
+        }
+      ],
+      "assert": {
+        "pathnameMatches": "^/session/",
+        "legacyQueryAbsent": true
+      }
+    },
+    {
+      "id": "E6",
+      "title": "browser back",
+      "actions": [
+        {
+          "type": "historyBack"
+        }
+      ],
+      "assert": {
+        "legacyQueryAbsent": true
+      }
+    },
+    {
+      "id": "E7",
+      "title": "hard reload keeps session path",
+      "actions": [
+        {
+          "type": "reload"
+        }
+      ],
+      "assert": {
+        "pathnameMatches": "^/session/[^/]+",
+        "legacyQueryAbsent": true
+      }
+    },
+    {
+      "id": "E8",
+      "title": "oauth callback path not swallowed",
+      "actions": [
+        {
+          "type": "navigate",
+          "url": "/mcp/oauth/callback"
+        }
+      ],
+      "assert": {
+        "pathnameMatches": "^/mcp/oauth/callback$"
+      }
+    },
+    {
+      "id": "E9",
+      "title": "illegal tab falls back",
+      "actions": [
+        {
+          "type": "navigate",
+          "url": "/session/ses_demo/not-a-tab"
+        }
+      ],
+      "assert": {
+        "sessionChatOrNormalized": true,
+        "noWhiteScreen": true
+      }
+    },
+    {
+      "id": "E10",
+      "title": "schedule history subtype",
+      "actions": [
+        {
+          "type": "navigate",
+          "url": "/schedule/history"
+        }
+      ],
+      "assert": {
+        "pathnameMatches": "^/schedule/history$",
+        "legacyQueryAbsent": true
+      }
+    },
+    {
+      "id": "E11",
+      "title": "settings entity path",
+      "actions": [
+        {
+          "type": "navigate",
+          "url": "/settings/providers/openai"
+        }
+      ],
+      "assert": {
+        "pathnameMatches": "^/settings/providers/[^/]+$",
+        "legacyQueryAbsent": true
+      }
+    }
+  ]
+}

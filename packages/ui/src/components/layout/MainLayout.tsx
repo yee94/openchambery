@@ -355,10 +355,9 @@ export const MainLayout: React.FC = () => {
         setMobileRightSidebarOpen(!mobileRightSidebarOpen);
     }, [mobileLeftDrawerOpen, mobileRightSidebarOpen, setMobileSessionPanelOpen]);
 
+    // Session-only tool layers (never plan/schedule/assistant — those are exclusive primaries).
     const secondaryView = React.useMemo(() => {
         switch (activeMainTab) {
-            case 'plan':
-                return <React.Suspense fallback={null}><PlanView /></React.Suspense>;
             case 'git':
                 return <React.Suspense fallback={null}><GitView isActive={!mobileRightSidebarOpen} /></React.Suspense>;
             case 'diff':
@@ -373,16 +372,19 @@ export const MainLayout: React.FC = () => {
                 return <React.Suspense fallback={null}><ProjectContextPanel /></React.Suspense>;
             case 'diagram':
                 return <React.Suspense fallback={null}><DiagramView /></React.Suspense>;
-            case 'assistant':
-                return <React.Suspense fallback={null}><AssistantView /></React.Suspense>;
             default:
                 return null;
         }
     }, [activeMainTab, isBottomTerminalOpen, mobileRightSidebarOpen]);
 
-    const isChatActive = activeMainTab === 'chat';
-    const isScheduledTasksActive = activeMainTab === 'scheduled';
+    // Product mutual exclusion: exactly one exclusive full-main primary OR session shell.
+    const isScheduleActive = activeMainTab === 'schedule';
     const isAssistantActive = activeMainTab === 'assistant';
+    const isPlanActive = activeMainTab === 'plan';
+    const isExclusivePrimary = isScheduleActive || isAssistantActive || isPlanActive;
+    const isChatActive = activeMainTab === 'chat';
+    // Keep-alive chat only under session primary (chat or session tools) — never under exclusive primaries.
+    const mountChatKeepAlive = !isExclusivePrimary && !isSettingsDialogOpen;
 
     return (
         <DiffWorkerProvider>
@@ -419,7 +421,7 @@ export const MainLayout: React.FC = () => {
                     setRightSidebarOpen: setMobileRightSidebarOpen,
                 }}>
                     {/* Mobile: header + drawer mode */}
-                    {!isSettingsDialogOpen && !isAssistantActive && <Header 
+                    {!isSettingsDialogOpen && !isExclusivePrimary && <Header 
                         onToggleLeftDrawer={() => {
                             const nextOpen = !mobileLeftDrawerOpen;
                             if (mobileRightSidebarOpen) {
@@ -443,12 +445,40 @@ export const MainLayout: React.FC = () => {
                         )}
                     >
                         <main className="w-full h-full overflow-hidden bg-background relative" data-page-scroll-lock="true">
-                            {!isAssistantActive && (
+                            {/* Exclusive primaries: never keep ChatView mounted underneath. */}
+                            {isScheduleActive && (
+                                <div className="absolute inset-0">
+                                    <ErrorBoundary>
+                                        <React.Suspense fallback={null}>
+                                            <ScheduledTasksWorkspace />
+                                        </React.Suspense>
+                                    </ErrorBoundary>
+                                </div>
+                            )}
+                            {isAssistantActive && (
+                                <div className="absolute inset-0">
+                                    <ErrorBoundary>
+                                        <React.Suspense fallback={null}>
+                                            <AssistantView />
+                                        </React.Suspense>
+                                    </ErrorBoundary>
+                                </div>
+                            )}
+                            {isPlanActive && (
+                                <div className="absolute inset-0">
+                                    <ErrorBoundary>
+                                        <React.Suspense fallback={null}>
+                                            <PlanView />
+                                        </React.Suspense>
+                                    </ErrorBoundary>
+                                </div>
+                            )}
+                            {mountChatKeepAlive && (
                                 <div className={cn('absolute inset-0', !isChatActive && 'invisible')}>
                                     <ErrorBoundary><ChatView /></ErrorBoundary>
                                 </div>
                             )}
-                            {secondaryView && (
+                            {mountChatKeepAlive && secondaryView && (
                                 <div className="absolute inset-0">
                                     <ErrorBoundary>{secondaryView}</ErrorBoundary>
                                 </div>
@@ -530,11 +560,17 @@ export const MainLayout: React.FC = () => {
                             <SessionSidebar />
                         </Sidebar>
                         <div className="relative flex flex-1 min-w-0 flex-col overflow-hidden bg-background" data-page-scroll-lock="true">
-                            {isScheduledTasksActive || isAssistantActive ? (
+                            {isExclusivePrimary ? (
                                 <main className="flex-1 overflow-hidden bg-background" data-page-scroll-lock="true">
                                     <ErrorBoundary>
                                         <React.Suspense fallback={null}>
-                                            {isAssistantActive ? <AssistantView /> : <ScheduledTasksWorkspace />}
+                                            {isAssistantActive ? (
+                                                <AssistantView />
+                                            ) : isPlanActive ? (
+                                                <PlanView />
+                                            ) : (
+                                                <ScheduledTasksWorkspace />
+                                            )}
                                         </React.Suspense>
                                     </ErrorBoundary>
                                 </main>
@@ -546,10 +582,12 @@ export const MainLayout: React.FC = () => {
                                     <div className="flex flex-1 min-h-0 overflow-hidden" data-page-scroll-lock="true">
                                         <div className="relative flex flex-1 min-h-0 min-w-0 overflow-hidden" data-page-scroll-lock="true">
                                             <main className="flex-1 overflow-hidden bg-background relative" data-page-scroll-lock="true">
-                                                <div className={cn('absolute inset-0', !isChatActive && 'invisible')}>
-                                                    <ErrorBoundary><ChatView /></ErrorBoundary>
-                                                </div>
-                                                {secondaryView && (
+                                                {mountChatKeepAlive && (
+                                                    <div className={cn('absolute inset-0', !isChatActive && 'invisible')}>
+                                                        <ErrorBoundary><ChatView /></ErrorBoundary>
+                                                    </div>
+                                                )}
+                                                {mountChatKeepAlive && secondaryView && (
                                                     <div className="absolute inset-0">
                                                         <ErrorBoundary>{secondaryView}</ErrorBoundary>
                                                     </div>

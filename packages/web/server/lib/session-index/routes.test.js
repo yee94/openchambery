@@ -90,4 +90,51 @@ describe('session index routes', () => {
 
     expect(route('GET', '/api/openchamber/session-index/changes')).toBeUndefined();
   });
+
+  it('looks up a session by id for deep links', () => {
+    const { app, route } = registry();
+    const findBySessionId = vi.fn(() => ({
+      id: 'ses_abc',
+      directory: '/repo/work',
+      title: 'Hello',
+    }));
+    registerSessionIndexRoutes(app, {
+      sessionIndexService: {
+        snapshot: () => ({ directories: [] }),
+        findBySessionId,
+      },
+    });
+    const res = response();
+
+    route('GET', '/api/openchamber/session-index/session/:sessionId')(
+      { params: { sessionId: 'ses_abc' } },
+      res,
+    );
+
+    expect(findBySessionId).toHaveBeenCalledWith('ses_abc');
+    expect(res.statusCode).toBe(200);
+    expect(res.body).toEqual({
+      available: true,
+      session: { id: 'ses_abc', directory: '/repo/work', title: 'Hello' },
+    });
+  });
+
+  it('returns 404 when session id is unknown', () => {
+    const { app, route } = registry();
+    registerSessionIndexRoutes(app, {
+      sessionIndexService: {
+        snapshot: () => ({ directories: [] }),
+        findBySessionId: () => null,
+      },
+    });
+    const res = response();
+
+    route('GET', '/api/openchamber/session-index/session/:sessionId')(
+      { params: { sessionId: 'ses_missing' } },
+      res,
+    );
+
+    expect(res.statusCode).toBe(404);
+    expect(res.body).toMatchObject({ error: 'session_not_found' });
+  });
 });

@@ -740,10 +740,55 @@ button.oc-mobile-group-label-trigger:focus-visible {
   box-shadow: var(--oc-mobile-glass-shadow);
 }
 
+/* Shared mobile segmented track (Tasks/History, filters, similar one-of-N bars).
+   Pair with .oc-mobile-floating-surface for glass elevation. Selected chrome is
+   .oc-segmented-selected-pill from design-system.css — keep inset radius there. */
+.oc-mobile-segmented-track,
 .oc-mobile-scheduled-controls {
   min-height: 3.25rem;
+  gap: 0.25rem;
   border-radius: var(--oc-mobile-surface-radius);
   padding: 0.25rem;
+}
+
+.oc-mobile-segmented-item {
+  position: relative;
+  min-height: 2.75rem;
+  border: 0;
+  border-radius: var(--oc-mobile-inset-radius);
+  background: transparent;
+  box-shadow: none;
+  color: var(--surface-muted-foreground, var(--muted-foreground));
+  /* Do not clip: selected pill soft shadow must paint outside the hit target. */
+  overflow: visible;
+  transition:
+    color 150ms ease-out,
+    background-color 150ms ease-out,
+    transform 150ms ease-out;
+}
+
+.oc-mobile-segmented-item:hover {
+  background: transparent;
+  color: var(--foreground);
+}
+
+.oc-mobile-segmented-item[aria-selected="true"],
+.oc-mobile-segmented-item[aria-pressed="true"] {
+  color: var(--foreground);
+}
+
+.oc-mobile-segmented-item:active {
+  transform: scale(0.97);
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .oc-mobile-segmented-item {
+    transition: none;
+  }
+
+  .oc-mobile-segmented-item:active {
+    transform: none;
+  }
 }
 
 .oc-mobile-scheduled-task-card {

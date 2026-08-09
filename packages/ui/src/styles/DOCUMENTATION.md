@@ -102,6 +102,16 @@ Android System WebView should be Chromium **111+** for `color-mix()` and reliabl
 
 Shared class `.oc-segmented-selected-pill` in `design-system.css` owns light/dark chrome for selected segments on muted tracks (scheduled Tasks/History, filter chips, `SortableTabsStrip` active-pill). Do not reintroduce `bg-[var(--surface-elevated)] shadow-sm dark:shadow-none` for that pattern — dark themes often collapse elevated into muted, so selection tokens carry contrast.
 
+Mobile phone tracks also share:
+
+| Class | Role |
+|---|---|
+| `.oc-mobile-segmented-track` | Outer floating track (`surface-radius`, padding) — pair with `.oc-mobile-floating-surface` |
+| `.oc-mobile-segmented-item` | Hit target (`inset-radius`, transparent, press scale) |
+| `.oc-segmented-selected-pill` | Selected fill + soft shadow (no border ring) |
+
+Tasks/History and All/Active/Paused must use the same three classes so radius, shadow, and press feedback stay aligned.
+
 ## Related owners
 
 - Detection / root classes: `packages/ui/src/lib/device.ts`

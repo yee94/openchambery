@@ -63,7 +63,7 @@ describe('activeChatInputSurface', () => {
   test('treats chat and assistant tabs as composer tabs', () => {
     expect(isChatComposerMainTab('chat')).toBe(true);
     expect(isChatComposerMainTab('assistant')).toBe(true);
-    expect(isChatComposerMainTab('scheduled')).toBe(false);
+    expect(isChatComposerMainTab('schedule')).toBe(false);
   });
 
   test('tracks the active mounted composer surface', () => {

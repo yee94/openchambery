@@ -26,6 +26,7 @@ import {
     useDirectoryStore as useChildDirectoryStore,
     useDirectorySync,
     useSessionMessages,
+    useSessionStatus,
     useSyncDirectory,
     useUserMessageHistory,
 } from '@/sync/sync-context';
@@ -1166,12 +1167,25 @@ const ChatInputRuntime: React.FC<ChatInputProps> = ({ onOpenSettings, scrollToBo
     }, [primaryDraftKey]);
     const surfaceContext = useChatInputSurfaceContext();
     const primarySurfaceActive = useUIStore((state) => state.activeMainTab === 'chat');
+    // Authoritative session_status only (same contract as AssistantView). Double-ESC
+    // abort must not depend on useSessionActivity heuristics (pending-assistant /
+    // idleCoversPendingAssistant) or the status-row `working.canAbort` path, both of
+    // which can lag after abort + re-send. Missing status is idle, never `unknown`.
+    const primarySessionStatus = useSessionStatus(primarySessionID ?? '', primaryDirectory ?? undefined);
     const primarySurface = usePrimaryChatInputSurface({
         kind: 'primary',
         surfaceID: 'primary',
         active: primarySurfaceActive,
         sessionID: primarySessionID,
         directory: primaryDirectory ?? null,
+        activity: {
+            phase: primarySessionStatus?.type === 'busy'
+                ? 'busy'
+                : primarySessionStatus?.type === 'retry'
+                    ? 'retry'
+                    : 'idle',
+            canAbort: primarySessionStatus?.type === 'busy' || primarySessionStatus?.type === 'retry',
+        },
         draftKey: primaryDraftKey,
         transportIdentity: composerTransportIdentity,
         runtimeGeneration: getRuntimeGeneration(),

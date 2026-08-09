@@ -1609,7 +1609,9 @@ export const Header: React.FC<HeaderProps> = ({
   }, [shortcutOverrides]);
 
   useEffect(() => {
-    if ((!isMobile && (activeMainTab === 'git' || activeMainTab === 'terminal' || activeMainTab === 'diff' || activeMainTab === 'files' || activeMainTab === 'context')) || (isMobile && activeMainTab === 'scheduled')) {
+    // Session tools are desktop-only in this shell; exclusive primaries (schedule/assistant/plan)
+    // must never be silently forced back to chat — that caused path/UI desync and overlap.
+    if (!isMobile && (activeMainTab === 'git' || activeMainTab === 'terminal' || activeMainTab === 'diff' || activeMainTab === 'files' || activeMainTab === 'context')) {
       setActiveMainTab('chat');
     }
   }, [activeMainTab, isMobile, setActiveMainTab]);

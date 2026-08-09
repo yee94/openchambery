@@ -98,20 +98,15 @@ describe('ScheduledTasksDialog queries', () => {
     expect(content).toContain('text-[var(--status-error)]');
   });
 
-  test('opens linked run sessions through phone navigation or the desktop chat path and omits incomplete identities', async () => {
+  test('opens linked run sessions through openSessionWithFeedback (visible errors when incomplete)', async () => {
     const content = await readFile(join(dirname(fileURLToPath(import.meta.url)), 'ScheduledTasksDialog.tsx'), 'utf8');
     const handler = content.slice(content.indexOf('const handleOpenRunSession'), content.indexOf('const handleRetryRuns'));
-    expect(handler).toContain("if (presentation === 'mobile-panel') onOpenChange?.(false)");
-    // Hosted H5 and Capacitor phone both use presentation mobile-tab/panel;
-    // gating on isCapacitorApp alone left H5 with a URL change and no chat page.
-    expect(handler).toContain('if (isMobilePanel && !isIPadApp())');
+    // Unified open path: requires sessionId+directory; phone shell via option.
+    expect(handler).toContain('openSessionWithFeedback(run.sessionId, run.directory');
+    expect(handler).toContain('phoneShell: Boolean(isMobilePanel && !isIPadApp())');
     expect(handler).not.toContain('isCapacitorApp()');
-    expect(handler).toContain('useMobileNavigationStore.getState().openSession({');
-    expect(handler).toContain('sessionId: run.sessionId');
-    expect(handler).toContain('directory: run.directory');
-    expect(handler).toContain('return;');
-    expect(handler).toContain("useUIStore.getState().setActiveMainTab('chat')");
-    expect(handler).toContain('openSessionFromToast(run.sessionId, run.directory)');
+    // Incomplete identities still go through feedback (toast), not silent return-only.
+    expect(handler).not.toContain('if (!run.sessionId || !run.directory) return;');
     expect(content).toContain('const canOpenSession = Boolean(run.sessionId && run.directory)');
     expect(content).toContain("t('sessions.scheduledTasks.history.openSession')");
     expect(content).toContain('{canOpenSession ? (');
@@ -144,11 +139,12 @@ describe('ScheduledTasksDialog queries', () => {
     ]);
     expect(workspaceContent.match(/max-w-\[26rem\]/g)?.length).toBeGreaterThanOrEqual(2);
     expect(workspaceContent).toContain('layoutId="scheduled-task-filter-pill"');
-    // View switcher uses the shared segmented selected pill (theme-aware light/dark).
+    // View switcher + filters share the mobile segmented track/item + selected pill.
     expect(workspaceContent).toContain('layoutId="scheduled-workspace-view-pill"');
-    expect(workspaceContent).toContain('oc-segmented-selected-pill absolute inset-0 rounded-lg');
+    expect(workspaceContent).toContain("? 'oc-mobile-floating-surface oc-mobile-segmented-track'");
+    expect(workspaceContent).toContain("? 'oc-mobile-segmented-item min-w-0 flex-1 px-2'");
     expect(workspaceContent).toContain("'oc-segmented-selected-pill absolute inset-0'");
-    expect(workspaceContent).toContain("isMobileTab && 'oc-mobile-floating-surface oc-mobile-scheduled-controls'");
+    expect(workspaceContent).toContain("isMobileTab && 'oc-mobile-floating-surface oc-mobile-segmented-track oc-mobile-scheduled-controls'");
     expect(workspaceContent).toContain("!isMobileTab ? (");
     expect(workspaceContent).toContain('oc-mobile-project-trigger oc-mobile-scheduled-task-row');
     expect(workspaceContent).toContain("formatSchedule(task, t, !isMobileTab)");
@@ -180,7 +176,7 @@ describe('ScheduledTasksDialog queries', () => {
       readFile(join(directory, '../../mobile/MobilePhoneShell.tsx'), 'utf8'),
     ]);
     const overflowMenu = content.slice(content.indexOf('const overflowItems'), content.indexOf('return (', content.indexOf('const overflowItems')));
-    expect(overflowMenu).not.toContain("key: 'scheduled'");
+    expect(overflowMenu).not.toContain("key: 'schedule'");
     expect(content).toContain('|| scheduledTasksDialogOpen');
     expect(content).toContain('if (scheduledTasksDialogOpen) {');
     expect(content).toContain("window.dispatchEvent(new Event('oc:scheduled-tasks-close-request'));");

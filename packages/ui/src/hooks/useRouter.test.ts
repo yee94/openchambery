@@ -130,7 +130,14 @@ let urlRoute = {
   sessionId: 'session-1' as string | null,
   tab: null as 'chat' | null,
   settingsPath: null as string | null,
+  settingsEntityId: null as string | null,
   diffFile: null as string | null,
+  diffScope: null as 'staged' | 'working' | 'turn' | null,
+  scheduleView: null as 'tasks' | 'history' | null,
+  scheduleProjectId: null as string | null,
+  scheduleTaskId: null as string | null,
+  assistantId: null as string | null,
+  focusSessionId: null as string | null,
 };
 
 mock.module('react', () => ({ default: harness.react }));
@@ -177,12 +184,61 @@ mock.module('@/lib/router', () => ({
       sessionId: state.sessionId,
       tab: null,
       settingsPath: state.isSettingsOpen ? state.settingsPath : null,
+      settingsEntityId: null,
       diffFile: null,
+      diffScope: null,
+      scheduleView: null,
+      scheduleProjectId: null,
+      scheduleTaskId: null,
+      assistantId: null,
+      focusSessionId: null,
     };
   },
 }));
 mock.module('@/lib/settings/metadata', () => ({ resolveSettingsSlug: (path: string) => path }));
 mock.module('@/components/layout/contextPanelEmbeddedChat', () => ({ isEmbeddedSessionChat: () => false }));
+mock.module('@/sync/openSessionWithFeedback', () => ({
+  notifySessionOpenFailed: () => undefined,
+  openSessionWithFeedback: () => ({ ok: false, reason: 'missing-directory', sessionId: null }),
+}));
+mock.module('@/stores/useAssistantUIStore', () => ({
+  getSelectedAssistantID: () => null,
+  useAssistantUIStore: {
+    getState: () => ({ selectAssistant: () => undefined }),
+    subscribe: () => () => undefined,
+  },
+}));
+mock.module('@/router/sessionLookup', () => ({
+  resolveSessionDirectoryForRoute: (sessionId: string) => {
+    const found = [...globalSessionsState.activeSessions, ...globalSessionsState.archivedSessions]
+      .some((session) => session.id === sessionId);
+    return found ? resolvedSessionDirectory : null;
+  },
+  resolveSessionForRoute: async (sessionId: string) => {
+    const found = [...globalSessionsState.activeSessions, ...globalSessionsState.archivedSessions]
+      .find((session) => session.id === sessionId);
+    if (!found) return null;
+    return {
+      sessionId,
+      directory: resolvedSessionDirectory,
+      session: found,
+      fromCache: !globalSessionsState.hasLoaded,
+      source: 'memory' as const,
+    };
+  },
+  findSessionById: (sessionId: string) => {
+    const found = [...globalSessionsState.activeSessions, ...globalSessionsState.archivedSessions]
+      .find((session) => session.id === sessionId);
+    if (!found) return null;
+    return {
+      sessionId,
+      directory: resolvedSessionDirectory,
+      session: found,
+      fromCache: !globalSessionsState.hasLoaded,
+      source: 'memory' as const,
+    };
+  },
+}));
 
 const { useRouter } = await import('./useRouter');
 
@@ -209,7 +265,14 @@ describe('useRouter', () => {
       sessionId: 'session-1',
       tab: null,
       settingsPath: null,
+      settingsEntityId: null,
       diffFile: null,
+      diffScope: null,
+      scheduleView: null,
+      scheduleProjectId: null,
+      scheduleTaskId: null,
+      assistantId: null,
+      focusSessionId: null,
     };
   });
 

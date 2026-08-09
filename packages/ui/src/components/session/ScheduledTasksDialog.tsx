@@ -38,9 +38,9 @@ import { AnimatePresence, motion, useReducedMotion } from 'motion/react';
 import { queryClient, queryKeys } from '@/lib/queryRuntime';
 import { useMobileBackRoute } from '@/mobile/mobileBackNavigation';
 import { MobileTabPageHeader } from '@/mobile/MobileTabPageHeader';
-import { useMobileNavigationStore } from '@/mobile/useMobileNavigationStore';
-import { openSessionFromToast } from '@/sync/session-opener';
+import { openSessionWithFeedback } from '@/sync/openSessionWithFeedback';
 import { isIPadApp } from '@/lib/platform';
+import { parseRoute, updateBrowserURL } from '@/lib/router';
 
 const scheduleTimes = (task: ScheduledTask): string[] => {
   const raw = Array.isArray(task.schedule.times)
@@ -301,7 +301,10 @@ export function ScheduledTasksWorkspace({
   const [selectedTaskIdentity, setSelectedTaskIdentity] = React.useState<TaskIdentity | null>(null);
   const [editorMode, setEditorMode] = React.useState<WorkspaceEditorMode>('closed');
   const [filter, setFilter] = React.useState<WorkspaceFilter>('all');
-  const [workspaceView, setWorkspaceView] = React.useState<WorkspaceView>('tasks');
+  const [workspaceView, setWorkspaceView] = React.useState<WorkspaceView>(() => {
+    const route = parseRoute();
+    return route.scheduleView === 'history' ? 'history' : 'tasks';
+  });
   const [search, setSearch] = React.useState('');
   const [draftDirty, setDraftDirty] = React.useState(false);
   const [mutatingTaskIdentity, setMutatingTaskIdentity] = React.useState<string | null>(null);
@@ -320,6 +323,20 @@ export function ScheduledTasksWorkspace({
     onEditorActiveChange?.(editorMode !== 'closed');
     return () => onEditorActiveChange?.(false);
   }, [editorMode, isMobileTab, onEditorActiveChange]);
+
+  // Path → UI: when deep-linked to /schedule/history (or browser back), mirror view.
+  React.useEffect(() => {
+    if (!open) return;
+    const onPop = () => {
+      const route = parseRoute();
+      if (route.tab === 'schedule' || useUIStore.getState().activeMainTab === 'schedule') {
+        const next = route.scheduleView === 'history' ? 'history' : 'tasks';
+        setWorkspaceView((prev) => (prev === next ? prev : next));
+      }
+    };
+    window.addEventListener('popstate', onPop);
+    return () => window.removeEventListener('popstate', onPop);
+  }, [open]);
 
   React.useEffect(() => {
     if (projects.some((project) => project.id === createProjectID)) return;
@@ -468,7 +485,7 @@ export function ScheduledTasksWorkspace({
       return;
     }
     const guard = (nextTab: MainTab) => (
-      nextTab === 'scheduled' || window.confirm(t('sessions.scheduledTasks.workspace.confirm.discardChanges'))
+      nextTab === 'schedule' || window.confirm(t('sessions.scheduledTasks.workspace.confirm.discardChanges'))
     );
     setMainTabGuard(guard);
     return () => {
@@ -500,6 +517,21 @@ export function ScheduledTasksWorkspace({
     setDraftDirty(false);
   });
 
+  const syncScheduledPath = useEvent((nextView: WorkspaceView, task?: { projectId: string; taskId: string } | null) => {
+    const ui = useUIStore.getState();
+    // Schedule is a top-level primary — never /session/$id/schedule
+    updateBrowserURL({
+      sessionId: null,
+      tab: 'schedule',
+      isSettingsOpen: ui.isSettingsDialogOpen,
+      settingsPath: ui.settingsPage,
+      diffFile: null,
+      scheduleView: nextView,
+      scheduleProjectId: task?.projectId ?? null,
+      scheduleTaskId: task?.taskId ?? null,
+    });
+  });
+
   const handleWorkspaceViewChange = useEvent((nextView: WorkspaceView) => {
     if (workspaceView === nextView) return;
     if (editorMode !== 'closed' && !confirmDraftChange()) return;
@@ -507,24 +539,19 @@ export function ScheduledTasksWorkspace({
     setEditorMode('closed');
     setDraftDirty(false);
     setWorkspaceView(nextView);
+    syncScheduledPath(nextView, null);
   });
 
   const handleOpenRunSession = useEvent((run: ScheduledTaskRun) => {
-    if (!run.sessionId || !run.directory) return;
-    if (presentation === 'mobile-panel') onOpenChange?.(false);
-    // Phone shell (Capacitor or hosted H5): chat is a secondary route owned by
-    // the mobile navigation store. Updating the session store alone changes
-    // the URL without mounting the chat page. Do not gate on isCapacitorApp —
-    // hosted mobile uses the same phone shell with presentation mobile-tab.
-    if (isMobilePanel && !isIPadApp()) {
-      useMobileNavigationStore.getState().openSession({
-        sessionId: run.sessionId,
-        directory: run.directory,
-      });
-      return;
+    // Missing session id or workspace path: toast "unable to load conversation …"
+    // — never open under the wrong current project cwd.
+    if (presentation === 'mobile-panel' && run.sessionId && run.directory) {
+      onOpenChange?.(false);
     }
-    useUIStore.getState().setActiveMainTab('chat');
-    openSessionFromToast(run.sessionId, run.directory);
+    openSessionWithFeedback(run.sessionId, run.directory, {
+      phoneShell: Boolean(isMobilePanel && !isIPadApp()),
+      switchToChat: true,
+    });
   });
 
   const handleRetryRuns = useEvent(async () => {
@@ -798,9 +825,12 @@ export function ScheduledTasksWorkspace({
           <div className={cn('mx-auto w-full', isMobileTab ? 'max-w-[26rem]' : 'max-w-4xl')}>
           <div
             className={cn(
-              // Original track chrome: muted fill on desktop, floating shell on mobile.
-              'mb-3 grid grid-cols-2 gap-1 rounded-xl bg-[var(--surface-muted)] p-1',
-              isMobileTab && 'oc-mobile-floating-surface',
+              // Desktop: quiet muted track. Mobile: same floating segmented track
+              // as the filter row (surface radius, glass, selected pill chrome).
+              'mb-3 grid grid-cols-2',
+              isMobileTab
+                ? 'oc-mobile-floating-surface oc-mobile-segmented-track'
+                : 'gap-1 rounded-xl bg-[var(--surface-muted)] p-1',
             )}
             role="tablist"
             aria-label={t('sessions.scheduledTasks.workspace.views.aria')}
@@ -813,21 +843,27 @@ export function ScheduledTasksWorkspace({
                 size="sm"
                 role="tab"
                 aria-selected={workspaceView === view}
+                data-mobile-press-feedback={isMobileTab ? 'none' : undefined}
                 className={cn(
-                  // Same visual tokens as before; elevated fill/shadow live on the
-                  // sliding pill so switching views keeps the original selected look.
-                  'relative min-h-9 rounded-lg text-muted-foreground transition-[background-color,color,box-shadow] motion-reduce:transition-none',
-                  isMobilePanel && 'min-h-11',
-                  workspaceView === view
+                  isMobileTab
+                    ? 'oc-mobile-segmented-item min-w-0 flex-1 px-2'
+                    : 'relative min-h-9 rounded-lg text-muted-foreground transition-[background-color,color,box-shadow] motion-reduce:transition-none',
+                  !isMobileTab && isMobilePanel && 'min-h-11',
+                  !isMobileTab && (workspaceView === view
                     ? 'text-foreground hover:bg-transparent hover:text-foreground'
-                    : 'hover:bg-interactive-hover/40 hover:text-foreground',
+                    : 'hover:bg-interactive-hover/40 hover:text-foreground'),
                 )}
                 onClick={() => handleWorkspaceViewChange(view)}
               >
                 {workspaceView === view ? (
                   <motion.span
                     layoutId="scheduled-workspace-view-pill"
-                    className="oc-segmented-selected-pill absolute inset-0 rounded-lg"
+                    className={cn(
+                      'oc-segmented-selected-pill absolute inset-0',
+                      isMobileTab
+                        ? 'rounded-[var(--oc-mobile-inset-radius)]'
+                        : 'rounded-lg',
+                    )}
                     transition={{ duration: reduceMotion ? 0 : 0.18, ease: [0.22, 1, 0.36, 1] }}
                     aria-hidden="true"
                   />
@@ -844,7 +880,7 @@ export function ScheduledTasksWorkspace({
           <div className={cn(
             'flex items-center justify-between',
             isMobilePanel ? 'gap-2' : 'gap-3',
-            isMobileTab && 'oc-mobile-floating-surface oc-mobile-scheduled-controls',
+            isMobileTab && 'oc-mobile-floating-surface oc-mobile-segmented-track oc-mobile-scheduled-controls',
           )}>
             <div className={cn('flex items-center gap-1', isMobilePanel && 'min-w-0 flex-1')} role="group" aria-label={t('sessions.scheduledTasks.dialog.title')}>
               {(['all', 'active', 'paused'] as const).map((value) => (
@@ -853,16 +889,17 @@ export function ScheduledTasksWorkspace({
                   type="button"
                   variant="ghost"
                   size="sm"
+                  data-mobile-press-feedback={isMobileTab ? 'none' : undefined}
                   className={cn(
-                    // overflow-clip (not overflow-hidden): mobile.css rewrites
-                    // .overflow-hidden → overflow-y:auto, which flashes a
-                    // scrollbar on the filter pill during layout animation.
-                    'active:scale-[0.97] overflow-clip border-0 bg-transparent text-muted-foreground shadow-none transition-[color,background-color,transform] duration-150 ease-out motion-reduce:transition-none',
-                    isMobileTab ? 'rounded-[var(--oc-mobile-inset-radius)]' : 'rounded-xl',
-                    isMobilePanel ? 'h-11 min-h-11 min-w-0 flex-1 px-2' : '!h-9 !min-h-9 px-3',
-                    filter === value
+                    isMobileTab
+                      ? 'oc-mobile-segmented-item min-w-0 flex-1 px-2'
+                      // Avoid overflow-hidden (mobile.css → overflow-y:auto). Soft
+                      // selected-pill shadow must not be clipped on desktop either.
+                      : 'relative border-0 bg-transparent text-muted-foreground shadow-none transition-[color,background-color,transform] duration-150 ease-out motion-reduce:transition-none active:scale-[0.97]',
+                    !isMobileTab && (isMobilePanel ? 'h-11 min-h-11 min-w-0 flex-1 rounded-xl px-2' : '!h-9 !min-h-9 rounded-xl px-3'),
+                    !isMobileTab && (filter === value
                       ? 'text-foreground hover:bg-transparent hover:text-foreground'
-                      : 'hover:bg-interactive-hover/40 hover:text-foreground',
+                      : 'hover:bg-interactive-hover/40 hover:text-foreground'),
                   )}
                   aria-pressed={filter === value}
                   onClick={() => setFilter(value)}
@@ -872,9 +909,12 @@ export function ScheduledTasksWorkspace({
                       layoutId="scheduled-task-filter-pill"
                       className={cn(
                         'oc-segmented-selected-pill absolute inset-0',
-                        isMobileTab ? 'rounded-[var(--oc-mobile-inset-radius)]' : 'rounded-xl',
+                        isMobileTab
+                          ? 'rounded-[var(--oc-mobile-inset-radius)]'
+                          : 'rounded-xl',
                       )}
                       transition={{ duration: reduceMotion ? 0 : 0.18, ease: [0.22, 1, 0.36, 1] }}
+                      aria-hidden="true"
                     />
                   ) : null}
                   <span className="relative z-[1]">{t(`sessions.scheduledTasks.workspace.filters.${value}`)}</span>

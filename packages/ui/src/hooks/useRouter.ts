@@ -1,12 +1,18 @@
 import React from 'react';
 import { useSessionUIStore } from '@/sync/session-ui-store';
 import { useUIStore } from '@/stores/useUIStore';
-import { resolveGlobalSessionDirectory, useGlobalSessionsStore } from '@/stores/useGlobalSessionsStore';
+import { useGlobalSessionsStore } from '@/stores/useGlobalSessionsStore';
+import { getSelectedAssistantID, useAssistantUIStore } from '@/stores/useAssistantUIStore';
 import { parseRoute, updateBrowserURL, hasRouteParams } from '@/lib/router';
 import type { RouteState, AppRouteState } from '@/lib/router';
 import type { MainTab } from '@/stores/useUIStore';
 import { resolveSettingsSlug } from '@/lib/settings/metadata';
 import { isEmbeddedSessionChat } from '@/components/layout/contextPanelEmbeddedChat';
+import {
+  resolveSessionDirectoryForRoute,
+  resolveSessionForRoute,
+} from '@/router/sessionLookup';
+import { notifySessionOpenFailed } from '@/sync/openSessionWithFeedback';
 
 const SESSION_ROUTE_TIMEOUT_MS = 30_000;
 
@@ -63,17 +69,22 @@ export function useRouter(): void {
   const activeSessions = useGlobalSessionsStore((state) => state.activeSessions);
   const archivedSessions = useGlobalSessionsStore((state) => state.archivedSessions);
 
-  const redirectToHome = React.useCallback(() => {
+  /**
+   * Deep-link failure: keep the user on the session path, show an error toast,
+   * and do NOT clear the URL into a new-session/welcome state.
+   */
+  const failDeepLinkSession = React.useCallback((sessionId: string) => {
     if (isVSCode) {
       return;
     }
-
+    notifySessionOpenFailed(sessionId, 'missing-directory');
+    // Preserve path in the address bar so refresh/retry remains possible.
     isApplyingRouteRef.current = true;
     try {
       setSettingsDialogOpen(false);
       setActiveMainTab('chat');
       updateBrowserURL({
-        sessionId: null,
+        sessionId,
         tab: 'chat',
         isSettingsOpen: false,
         settingsPath: 'home',
@@ -97,47 +108,59 @@ export function useRouter(): void {
       isApplyingRouteRef.current = true;
 
       try {
-        // 1. Apply session first (may trigger async operations)
-        if (route.sessionId) {
-          const globalSessions = useGlobalSessionsStore.getState();
-          const session = [...globalSessions.activeSessions, ...globalSessions.archivedSessions]
-            .find((candidate) => candidate.id === route.sessionId);
-          const directoryHint = session ? resolveGlobalSessionDirectory(session) : null;
-          const currentSession = useSessionUIStore.getState();
-
-          // Session summaries arrive asynchronously at startup. Keep the URL
-          // target pending until the authoritative index provides its directory.
-          if (
-            globalSessions.hasLoaded
-            && directoryHint
-            && (
-              route.sessionId !== currentSession.currentSessionId
-              || directoryHint !== currentSession.currentSessionDirectory
-            )
-          ) {
-            setCurrentSession(route.sessionId, directoryHint);
-          }
-        }
-
-        // 2. Handle settings (takes precedence over tabs - it's a full-screen overlay)
+        // 1. Settings overlay (exclusive)
         if (route.settingsPath) {
           setSettingsPage(resolveSettingsSlug(route.settingsPath));
           setSettingsDialogOpen(true);
-          // Don't process tab when settings is open
           return;
         }
 
-        // Close settings if URL has no settings section
         if (useUIStore.getState().isSettingsDialogOpen) {
           setSettingsDialogOpen(false);
         }
 
-        // 3. Apply tab
-        if (route.tab) {
+        // 2. Exclusive primaries schedule / assistant — no session path binding
+        if (route.tab === 'schedule' || route.tab === 'assistant') {
           setActiveMainTab(route.tab);
+          if (route.tab === 'assistant' && route.assistantId) {
+            useAssistantUIStore.getState().selectAssistant(route.assistantId);
+          }
+          return;
         }
 
-        // 4. Apply diff file (only if going to diff tab)
+        // 3. Session primary: resolve directory (memory → index by-id → session.get)
+        if (route.sessionId) {
+          const sessionId = route.sessionId;
+          let directoryHint = resolveSessionDirectoryForRoute(sessionId);
+          if (!directoryHint) {
+            // Allow concurrent index hydrate / by-id lookup before giving up.
+            isApplyingRouteRef.current = false;
+            const resolved = await resolveSessionForRoute(sessionId);
+            isApplyingRouteRef.current = true;
+            directoryHint = resolved?.directory ?? null;
+          }
+
+          const currentSession = useSessionUIStore.getState();
+          if (directoryHint) {
+            if (
+              sessionId !== currentSession.currentSessionId
+              || directoryHint !== currentSession.currentSessionDirectory
+            ) {
+              setCurrentSession(sessionId, directoryHint);
+            }
+          }
+          // If still unresolved, leave store alone — reconcile effect will retry
+          // or failDeepLinkSession with a toast (never silent new-session).
+        }
+
+        // 4. Apply session tool / plan tab
+        if (route.tab) {
+          setActiveMainTab(route.tab);
+        } else if (route.sessionId) {
+          setActiveMainTab('chat');
+        }
+
+        // 5. Diff file
         if (route.diffFile && (route.tab === 'diff' || !route.tab)) {
           navigateToDiff(route.diffFile);
         }
@@ -154,13 +177,31 @@ export function useRouter(): void {
   const getCurrentAppState = React.useCallback((): AppRouteState => {
     const sessionState = useSessionUIStore.getState();
     const uiState = useUIStore.getState();
+    const pathState = parseRoute();
+    const tab = uiState.activeMainTab;
+    const isExclusive = tab === 'schedule' || tab === 'assistant';
 
     return {
-      sessionId: sessionState.currentSessionId,
-      tab: uiState.activeMainTab,
+      // Exclusive primaries must not serialize under a session id.
+      // While a deep-link session is still resolving, keep pathState.sessionId so
+      // store sync cannot wipe /session/$id into a bare `/` (new-session UI).
+      sessionId: isExclusive
+        ? null
+        : (sessionState.currentSessionId ?? pathState.sessionId),
+      tab: isExclusive ? tab : (uiState.activeMainTab || pathState.tab || 'chat'),
       isSettingsOpen: uiState.isSettingsDialogOpen,
       settingsPath: uiState.settingsPage,
-      diffFile: uiState.pendingDiffFile,
+      settingsEntityId: pathState.settingsEntityId,
+      diffFile: isExclusive ? null : (uiState.pendingDiffFile ?? pathState.diffFile),
+      diffScope: isExclusive ? null : pathState.diffScope,
+      scheduleView: tab === 'schedule' ? pathState.scheduleView : null,
+      scheduleProjectId: tab === 'schedule' ? pathState.scheduleProjectId : null,
+      scheduleTaskId: tab === 'schedule' ? pathState.scheduleTaskId : null,
+      // Prefer live store selection so /assistant/$id updates when user picks one
+      assistantId: tab === 'assistant'
+        ? (getSelectedAssistantID() ?? pathState.assistantId)
+        : null,
+      focusSessionId: isExclusive ? pathState.focusSessionId : null,
     };
   }, []);
 
@@ -204,9 +245,12 @@ export function useRouter(): void {
       // deep links do not briefly normalize `?session=...` back to `/` while
       // the session's directory/message bootstrap is still catching up.
       if (!isVSCode && !isEmbeddedChat) {
+        // Prefer route.sessionId so deep links are not wiped while directory resolves.
         updateBrowserURL({
           ...getCurrentAppState(),
-          sessionId: route.sessionId ?? useSessionUIStore.getState().currentSessionId,
+          sessionId: route.sessionId
+            ?? useSessionUIStore.getState().currentSessionId
+            ?? getCurrentAppState().sessionId,
           tab: route.tab ?? useUIStore.getState().activeMainTab,
           settingsPath: route.settingsPath ?? useUIStore.getState().settingsPage,
           diffFile: route.diffFile ?? useUIStore.getState().pendingDiffFile,
@@ -217,35 +261,61 @@ export function useRouter(): void {
     void initializeRoute();
   }, [applyRoute, getCurrentAppState, isVSCode, isEmbeddedChat]);
 
-  // A deep-linked session can be absent while the startup index is loading.
-  // Resolve it from the completed authoritative snapshot, or return home.
+  // Deep-link reconcile: memory list, then by-id index, then session.get.
+  // Never wipe the URL into a new-session welcome when lookup fails.
   React.useEffect(() => {
-    if (!route.sessionId || !hasLoadedGlobalSessions) {
+    if (!route.sessionId) {
       return;
     }
 
-    const session = [...activeSessions, ...archivedSessions]
-      .find((candidate) => candidate.id === route.sessionId);
-    const directory = session ? resolveGlobalSessionDirectory(session) : null;
-    if (directory) {
-      if (
-        currentSessionId !== route.sessionId
-        || currentSessionDirectory !== directory
-      ) {
-        setCurrentSession(route.sessionId, directory);
+    let cancelled = false;
+    const sessionId = route.sessionId;
+
+    const alreadyOpen =
+      currentSessionId === sessionId && Boolean(currentSessionDirectory);
+    if (alreadyOpen) {
+      return;
+    }
+
+    const memoryDir = resolveSessionDirectoryForRoute(sessionId);
+    if (memoryDir) {
+      setCurrentSession(sessionId, memoryDir);
+      return;
+    }
+
+    // Wait for index hydrate before hard-failing; still try by-id immediately.
+    void (async () => {
+      const resolved = await resolveSessionForRoute(sessionId);
+      if (cancelled) return;
+      if (resolved?.directory) {
+        const current = useSessionUIStore.getState();
+        if (
+          current.currentSessionId !== sessionId
+          || current.currentSessionDirectory !== resolved.directory
+        ) {
+          setCurrentSession(sessionId, resolved.directory);
+        }
+        return;
       }
-      return;
-    }
+      // Only fail after global lists have loaded (avoid racing cold start).
+      if (useGlobalSessionsStore.getState().hasLoaded) {
+        failDeepLinkSession(sessionId);
+      }
+    })();
 
-    if (
-      currentSessionId === route.sessionId
-      && currentSessionDirectory
-    ) {
-      return;
-    }
-
-    redirectToHome();
-  }, [activeSessions, archivedSessions, currentSessionDirectory, currentSessionId, hasLoadedGlobalSessions, redirectToHome, route, setCurrentSession]);
+    return () => {
+      cancelled = true;
+    };
+  }, [
+    activeSessions,
+    archivedSessions,
+    currentSessionDirectory,
+    currentSessionId,
+    failDeepLinkSession,
+    hasLoadedGlobalSessions,
+    route.sessionId,
+    setCurrentSession,
+  ]);
 
   React.useEffect(() => {
     const isResolved = currentSessionId === route.sessionId && Boolean(currentSessionDirectory);
@@ -259,12 +329,12 @@ export function useRouter(): void {
       const resolvedWhileWaiting = currentSession.currentSessionId === sessionId
         && Boolean(currentSession.currentSessionDirectory);
       if (parseRoute().sessionId === sessionId && !resolvedWhileWaiting) {
-        redirectToHome();
+        failDeepLinkSession(sessionId);
       }
     }, SESSION_ROUTE_TIMEOUT_MS);
 
     return () => clearTimeout(timeout);
-  }, [currentSessionDirectory, currentSessionId, isVSCode, redirectToHome, route.sessionId]);
+  }, [currentSessionDirectory, currentSessionId, failDeepLinkSession, isVSCode, route.sessionId]);
 
   // Subscribe to session changes
   React.useEffect(() => {
@@ -322,6 +392,33 @@ export function useRouter(): void {
       if (tabChanged || settingsOpenChanged || settingsPathChanged || diffFileChanged) {
         syncURLFromState();
       }
+    });
+
+    return unsubscribe;
+  }, [isVSCode, isEmbeddedChat, syncURLFromState]);
+
+  // Assistant selection → /assistant/$id (store is source when picking in UI)
+  React.useEffect(() => {
+    if (isVSCode || isEmbeddedChat) {
+      return;
+    }
+
+    let prevAssistantId = getSelectedAssistantID();
+
+    const unsubscribe = useAssistantUIStore.subscribe(() => {
+      if (isApplyingRouteRef.current) {
+        return;
+      }
+      if (useUIStore.getState().activeMainTab !== 'assistant') {
+        prevAssistantId = getSelectedAssistantID();
+        return;
+      }
+      const nextId = getSelectedAssistantID();
+      if (nextId === prevAssistantId) {
+        return;
+      }
+      prevAssistantId = nextId;
+      syncURLFromState();
     });
 
     return unsubscribe;

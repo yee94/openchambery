@@ -1,134 +1,126 @@
 import type { MainTab } from '@/stores/useUIStore';
-import {
-  type RouteState,
-  VALID_TABS,
-  VALID_SETTINGS_SECTIONS,
-  ROUTE_PARAMS,
-} from './types';
+import { parseAppPath } from '@/router/pathContract';
+import { SCHEDULE_TAB_ID } from '@/router/primarySurface';
+import type { RouteState } from './types';
 
-/**
- * Parse the current URL search parameters into a RouteState.
- * Returns null values for any parameter that is missing or invalid.
- */
 export function parseRoute(searchParams?: URLSearchParams): RouteState {
-  const params = searchParams ?? getSearchParams();
+  if (typeof window === 'undefined') {
+    return emptyRoute();
+  }
 
+  const pathWithSearch =
+    searchParams !== undefined
+      ? `${window.location.pathname}?${searchParams.toString()}`
+      : `${window.location.pathname}${window.location.search}`;
+
+  return routeStateFromPath(pathWithSearch);
+}
+
+export function routeStateFromPath(pathWithSearch: string): RouteState {
+  const parsed = parseAppPath(pathWithSearch);
+
+  switch (parsed.kind) {
+    case 'session': {
+      const tab: MainTab =
+        parsed.tab === 'chat' && parsed.mode === 'plan'
+          ? 'plan'
+          : (parsed.tab as MainTab);
+      return {
+        sessionId: parsed.sessionId,
+        tab: tab === 'chat' && parsed.mode !== 'plan' ? null : tab,
+        settingsPath: null,
+        settingsEntityId: null,
+        diffFile: parsed.file,
+        diffScope: parsed.scope,
+        scheduleView: null,
+        scheduleProjectId: null,
+        scheduleTaskId: null,
+        assistantId: null,
+        focusSessionId: null,
+      };
+    }
+    case 'schedule':
+      return {
+        // Schedule is not session-scoped; leave sessionId null so store does not
+        // re-serialize under /session/$id.
+        sessionId: null,
+        tab: SCHEDULE_TAB_ID,
+        settingsPath: null,
+        settingsEntityId: null,
+        diffFile: null,
+        diffScope: null,
+        scheduleView: parsed.scheduleView,
+        scheduleProjectId: parsed.scheduleProjectId,
+        scheduleTaskId: parsed.scheduleTaskId,
+        assistantId: null,
+        focusSessionId: parsed.focusSessionId,
+      };
+    case 'assistant':
+      return {
+        sessionId: null,
+        tab: 'assistant',
+        settingsPath: null,
+        settingsEntityId: null,
+        diffFile: null,
+        diffScope: null,
+        scheduleView: null,
+        scheduleProjectId: null,
+        scheduleTaskId: null,
+        assistantId: parsed.assistantId,
+        focusSessionId: parsed.focusSessionId,
+      };
+    case 'settings':
+      return {
+        sessionId: null,
+        tab: null,
+        settingsPath: parsed.slug,
+        settingsEntityId: parsed.entityId,
+        diffFile: null,
+        diffScope: null,
+        scheduleView: null,
+        scheduleProjectId: null,
+        scheduleTaskId: null,
+        assistantId: null,
+        focusSessionId: null,
+      };
+    case 'new':
+    case 'connect':
+    case 'unknown':
+    default:
+      return emptyRoute();
+  }
+}
+
+function emptyRoute(): RouteState {
   return {
-    sessionId: parseSessionId(params),
-    tab: parseTab(params),
-    settingsPath: parseSettingsPath(params),
-    diffFile: parseDiffFile(params),
+    sessionId: null,
+    tab: null,
+    settingsPath: null,
+    settingsEntityId: null,
+    diffFile: null,
+    diffScope: null,
+    scheduleView: null,
+    scheduleProjectId: null,
+    scheduleTaskId: null,
+    assistantId: null,
+    focusSessionId: null,
   };
 }
 
-/**
- * Safely get URLSearchParams from the current location.
- */
-function getSearchParams(): URLSearchParams {
-  if (typeof window === 'undefined') {
-    return new URLSearchParams();
-  }
-
-  try {
-    return new URLSearchParams(window.location.search);
-  } catch {
-    return new URLSearchParams();
-  }
-}
-
-/**
- * Parse session ID from URL parameters.
- * Returns null if missing or empty.
- */
-function parseSessionId(params: URLSearchParams): string | null {
-  const value = params.get(ROUTE_PARAMS.SESSION);
-  if (!value || value.trim().length === 0) {
-    return null;
-  }
-  return value.trim();
-}
-
-/**
- * Parse main tab from URL parameters.
- * Returns null if missing or invalid.
- */
-function parseTab(params: URLSearchParams): MainTab | null {
-  const value = params.get(ROUTE_PARAMS.TAB);
-  if (!value) {
-    return null;
-  }
-
-  const normalized = value.toLowerCase().trim() as MainTab;
-  if (VALID_TABS.includes(normalized)) {
-    return normalized;
-  }
-
-  return null;
-}
-
-/**
- * Parse settings target from URL parameters.
- * Returns null if missing/empty.
- */
-function parseSettingsPath(params: URLSearchParams): string | null {
-  const value = params.get(ROUTE_PARAMS.SETTINGS);
-  if (!value) {
-    return null;
-  }
-
-  const normalized = value.toLowerCase().trim();
-
-  if (normalized.length === 0) {
-    return null;
-  }
-
-  // Handle common aliases
-  if (normalized === 'openchamber' || normalized === 'general' || normalized === 'preferences') {
-    return 'home';
-  }
-
-  // Keep legacy section ids as-is (mapping happens at apply time).
-  if ((VALID_SETTINGS_SECTIONS as readonly string[]).includes(normalized)) {
-    return normalized;
-  }
-
-  return normalized;
-}
-
-/**
- * Parse diff file path from URL parameters.
- * Returns null if missing or empty.
- */
-function parseDiffFile(params: URLSearchParams): string | null {
-  const value = params.get(ROUTE_PARAMS.FILE);
-  if (!value || value.trim().length === 0) {
-    return null;
-  }
-
-  // URL decode the file path
-  try {
-    return decodeURIComponent(value.trim());
-  } catch {
-    // If decoding fails, return the raw value
-    return value.trim();
-  }
-}
-
-/**
- * Check if the current URL has any route parameters.
- */
 export function hasRouteParams(): boolean {
   if (typeof window === 'undefined') {
     return false;
   }
 
   try {
-    const params = new URLSearchParams(window.location.search);
+    const parsed = parseAppPath(`${window.location.pathname}${window.location.search}`);
     return (
-      params.has(ROUTE_PARAMS.SESSION) ||
-      params.has(ROUTE_PARAMS.TAB) ||
-      params.has(ROUTE_PARAMS.SETTINGS) ||
-      params.has(ROUTE_PARAMS.FILE)
+      parsed.kind === 'session'
+      || parsed.kind === 'schedule'
+      || parsed.kind === 'assistant'
+      || parsed.kind === 'settings'
+      || parsed.kind === 'new'
+      || parsed.kind === 'connect'
     );
   } catch {
     return false;

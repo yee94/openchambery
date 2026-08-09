@@ -48,7 +48,9 @@ const execute = (intent: DeepLinkIntent): boolean => {
       // Phone: route through the navigation coordinator so the chat page opens
       // (single authority: coordinator runs setCurrentSession synchronously).
       // Other surfaces (iPad split layout, desktop MainLayout) keep the direct
-      // store selection.
+      // store selection. Path URL is written by useRouter ← setCurrentSession
+      // (path mode: /session/$id). See `@/router/deepLinkIntent` for the
+      // NavigationIntent mapping used by tests and future applyIntent cutover.
       if (!isIPadApp()) {
         useMobileNavigationStore.getState().openSession({
           sessionId: intent.sessionId,

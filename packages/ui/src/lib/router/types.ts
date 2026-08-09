@@ -2,27 +2,41 @@ import type { SidebarSection } from '@/constants/sidebar';
 import type { MainTab } from '@/stores/useUIStore';
 
 /**
- * Represents the current route state derived from URL parameters.
- * All fields are nullable - null means "not specified in URL" (use app defaults).
+ * Route state derived from history path.
+ * All fields nullable = not specified (app defaults).
  */
 export interface RouteState {
-  /** Session ID to navigate to */
   sessionId: string | null;
-  /** Main tab to display (chat, git, diff, terminal, files) */
   tab: MainTab | null;
-  /** Settings section - when non-null, settings dialog should be open */
   settingsPath: string | null;
-  /** File path for diff view */
+  settingsEntityId: string | null;
   diffFile: string | null;
+  diffScope: 'staged' | 'working' | 'turn' | null;
+  scheduleView: 'tasks' | 'history' | null;
+  scheduleProjectId: string | null;
+  scheduleTaskId: string | null;
+  assistantId: string | null;
+  /** Focused nested/subagent session under schedule or assistant primary. */
+  focusSessionId: string | null;
 }
 
 /**
- * Valid main tab values for URL routing.
+ * @deprecated Path-mode tabs live in `@/router/pathContract`.
  */
-export const VALID_TABS: readonly MainTab[] = ['chat', 'git', 'diff', 'terminal', 'files', 'diagram', 'scheduled', 'assistant'] as const;
+export const VALID_TABS: readonly MainTab[] = [
+  'chat',
+  'git',
+  'diff',
+  'terminal',
+  'files',
+  'diagram',
+  'plan',
+  'schedule',
+  'assistant',
+] as const;
 
 /**
- * Valid settings section values for URL routing.
+ * @deprecated Settings slugs live in settings metadata / pathContract.
  */
 export const VALID_SETTINGS_SECTIONS: readonly SidebarSection[] = [
   'settings',
@@ -35,7 +49,7 @@ export const VALID_SETTINGS_SECTIONS: readonly SidebarSection[] = [
 ] as const;
 
 /**
- * URL parameter names used for routing.
+ * @deprecated Legacy query param names.
  */
 export const ROUTE_PARAMS = {
   SESSION: 'session',

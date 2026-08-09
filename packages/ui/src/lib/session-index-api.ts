@@ -66,6 +66,52 @@ let sessionIndexSnapshotInflight: Promise<SessionIndexSnapshot | null> | undefin
  * Authoritative session-index GET. Concurrent callers share one in-flight request
  * so hydrate + tip consumers cannot fan out identical snapshots.
  */
+export type SessionIndexLookupHit = {
+  id: string;
+  directory: string;
+  title?: string;
+  parentID?: string | null;
+};
+
+/**
+ * Resolve a session's workspace directory by id from the server index.
+ * Used when the in-memory sidebar list has not hydrated the row yet (deep links).
+ */
+export const lookupSessionIndexById = async (
+  sessionId: string,
+  options?: { signal?: AbortSignal },
+): Promise<SessionIndexLookupHit | null> => {
+  if (typeof window === 'undefined') return null;
+  const id = sessionId.trim();
+  if (!id) return null;
+  try {
+    const response = await runtimeFetch(
+      `/api/openchamber/session-index/session/${encodeURIComponent(id)}`,
+      { signal: options?.signal },
+    );
+    if (response.status === 404 || response.status === 501) return null;
+    await ensureOk(response);
+    const payload = await response.json() as {
+      available?: boolean;
+      session?: { id?: string; directory?: string; title?: string; parentID?: string | null };
+    };
+    if (payload.available !== true || !payload.session) return null;
+    const directory = typeof payload.session.directory === 'string'
+      ? payload.session.directory.trim()
+      : '';
+    const sid = typeof payload.session.id === 'string' ? payload.session.id : id;
+    if (!directory) return null;
+    return {
+      id: sid,
+      directory,
+      title: typeof payload.session.title === 'string' ? payload.session.title : undefined,
+      parentID: payload.session.parentID ?? null,
+    };
+  } catch {
+    return null;
+  }
+};
+
 export const loadSessionIndexSnapshot = async (
   options?: { signal?: AbortSignal },
 ): Promise<SessionIndexSnapshot | null> => {

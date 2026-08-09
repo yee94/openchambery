@@ -87,6 +87,22 @@ describe('ChatInput surface controller wiring', () => {
   });
 });
 
+describe('primary surface abort availability contract', () => {
+  test('drives wiring canAbort from authoritative busy/retry only (not pending-assistant heuristics)', () => {
+    const primary = surface('A');
+    // Same contract as AssistantView: canAbort is status.type === busy|retry only.
+    primary.activity = { phase: 'busy', canAbort: true };
+    expect(createChatInputControllerWiring(primary)!.canAbort).toBe(true);
+
+    primary.activity = { phase: 'retry', canAbort: true };
+    expect(createChatInputControllerWiring(primary)!.canAbort).toBe(true);
+
+    // Idle must not advertise abort, even if a trailing assistant is still incomplete.
+    primary.activity = { phase: 'idle', canAbort: false };
+    expect(createChatInputControllerWiring(primary)!.canAbort).toBe(false);
+  });
+});
+
 describe('primary delivery request helpers', () => {
   test('primarySendOptionsFromDeliveryRequest pins existing session and directory', () => {
     expect(primarySendOptionsFromDeliveryRequest({

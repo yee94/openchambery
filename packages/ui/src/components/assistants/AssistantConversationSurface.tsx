@@ -9,10 +9,11 @@ import { useAssistantHistoryInfiniteQuery } from '@/queries/assistantQueries';
 import { useEvent } from '@reactuses/core';
 import { useMobileAppActions } from '@/apps/mobileAppContext';
 import { isIPadApp } from '@/lib/platform';
-import { useMobileNavigationStore } from '@/mobile/useMobileNavigationStore';
-import { useSessionUIStore } from '@/sync/session-ui-store';
-import { useUIStore } from '@/stores/useUIStore';
 import type { PendingUserMessagePresentation } from '@/sync/session-ui-store';
+import {
+  notifySessionOpenFailed,
+  openSessionWithFeedback,
+} from '@/sync/openSessionWithFeedback';
 
 type AssistantConversationSurfaceProps = {
   assistant: AssistantDTO;
@@ -72,17 +73,18 @@ export const AssistantConversationSurface: React.FC<AssistantConversationSurface
   const mobileActions = useMobileAppActions();
   const openSourceSession = useEvent((targetSessionID: string, targetDirectory: string) => {
     const expectedDirectory = targetSessionID === sessionID ? directory : historyDirectories.get(targetSessionID);
-    if (!expectedDirectory || expectedDirectory !== targetDirectory) return;
-    // Leave the Assistant surface and continue the underlying OpenCode session in Chat.
-    // Phone shell (native or hosted H5): secondary chat route owns mounting.
-    // Updating the session store alone changes selection without mounting chat —
-    // same contract as scheduled-task history open. Do not gate on isCapacitorApp.
-    if (mobileActions && !isIPadApp()) {
-      useMobileNavigationStore.getState().openSession({ sessionId: targetSessionID, directory: targetDirectory });
+    // History entry must carry a stable workspace path. If missing or conflicting,
+    // fail visibly — never open under the wrong current project cwd.
+    if (!expectedDirectory || expectedDirectory !== targetDirectory) {
+      notifySessionOpenFailed(targetSessionID, 'missing-directory');
       return;
     }
-    if (!useUIStore.getState().setActiveMainTab('chat')) return;
-    void useSessionUIStore.getState().setCurrentSession(targetSessionID, targetDirectory);
+    // Leave the Assistant surface and continue the underlying OpenCode session in Chat.
+    // Phone shell (native or hosted H5): secondary chat route owns mounting.
+    openSessionWithFeedback(targetSessionID, targetDirectory, {
+      phoneShell: Boolean(mobileActions && !isIPadApp()),
+      switchToChat: true,
+    });
   });
   const sessionSurface = React.useMemo(() => ({
     kind: 'embedded' as const,

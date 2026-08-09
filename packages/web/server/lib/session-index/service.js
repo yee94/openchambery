@@ -407,6 +407,39 @@ export const createSessionIndexService = ({ dbPath, getRuntimeConfig = () => nul
     return result.changes > 0;
   }
 
+  /**
+   * Lookup a session by id across all directories for the current runtime.
+   * Used for deep-link /session/$id when the UI list has not hydrated the row.
+   */
+  function findBySessionId(sessionID) {
+    if (typeof sessionID !== 'string' || !sessionID) return null;
+    const key = runtimeKey();
+    const row = db.prepare(`
+      SELECT directory, session_id AS id, title, created_at AS createdAt, updated_at AS updatedAt,
+        activity_updated_at AS activityUpdatedAt, archived_at AS archivedAt,
+        parent_id AS parentID, has_children AS hasChildren,
+        assistant_id AS assistantID, assistant_name AS assistantName
+      FROM session_summary
+      WHERE runtime_key = ? AND session_id = ?
+      ORDER BY activity_updated_at DESC, updated_at DESC
+      LIMIT 1
+    `).get(key, sessionID);
+    if (!row || typeof row.directory !== 'string' || !row.directory) return null;
+    return {
+      id: row.id,
+      directory: row.directory,
+      title: typeof row.title === 'string' ? row.title : '',
+      createdAt: toTimestamp(row.createdAt),
+      updatedAt: toTimestamp(row.updatedAt),
+      activityUpdatedAt: toTimestamp(row.activityUpdatedAt),
+      archivedAt: toTimestamp(row.archivedAt),
+      parentID: typeof row.parentID === 'string' ? row.parentID : null,
+      hasChildren: Boolean(row.hasChildren),
+      assistantID: typeof row.assistantID === 'string' ? row.assistantID : null,
+      assistantName: typeof row.assistantName === 'string' ? row.assistantName : null,
+    };
+  }
+
   const touchActivity = (sessionID, observedAt) => {
     if (typeof sessionID !== 'string' || !sessionID) return false;
     const timestamp = toTimestamp(observedAt);
@@ -455,6 +488,7 @@ export const createSessionIndexService = ({ dbPath, getRuntimeConfig = () => nul
     touchActivity,
     updateStatus,
     remove,
+    findBySessionId,
     replaceChildSessions,
     snapshot,
     getRuntimeKey: runtimeKey,

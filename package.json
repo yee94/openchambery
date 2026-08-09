@@ -41,6 +41,7 @@
     "lint:mobile": "bun run --cwd packages/mobile lint",
     "test": "bun run --filter '*' test",
     "test:ui": "bun run --cwd packages/ui test",
+    "e2e:router:check": "node packages/web/e2e/router/check-scenarios.mjs",
     "clean": "bun run --filter '*' clean",
     "changelog-card": "node scripts/changelog-card/generate.mjs",
     "postinstall": "node ./fix-deprecation.js",

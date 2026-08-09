@@ -1,7 +1,7 @@
 import { afterAll, afterEach, beforeEach, describe, expect, test } from 'bun:test';
-import { updateBrowserURL } from './serializeRoute';
+import { updateBrowserURL, serializeAppPath } from './serializeRoute';
 import type { AppRouteState } from './serializeRoute';
-import { parseRoute } from './parseRoute';
+import { parseRoute, routeStateFromPath } from './parseRoute';
 import { isEmbeddedSessionChat, resetEmbeddedSessionChatCache } from '@/components/layout/contextPanelEmbeddedChat';
 
 const originalWindow = globalThis.window;
@@ -18,13 +18,27 @@ const installWindow = (href: string): HistoryStub => {
   const history: HistoryStub = {
     state: null,
     lastURL: null,
-    replaceState(state, _title, url) {
+    replaceState(state, _title, nextUrl) {
       this.state = state;
-      this.lastURL = url ?? null;
+      this.lastURL = nextUrl ?? null;
+      if (typeof nextUrl === 'string') {
+        const resolved = new URL(nextUrl, url.origin);
+        url.pathname = resolved.pathname;
+        url.search = resolved.search;
+        url.hash = resolved.hash;
+        url.href = resolved.href;
+      }
     },
-    pushState(state, _title, url) {
+    pushState(state, _title, nextUrl) {
       this.state = state;
-      this.lastURL = url ?? null;
+      this.lastURL = nextUrl ?? null;
+      if (typeof nextUrl === 'string') {
+        const resolved = new URL(nextUrl, url.origin);
+        url.pathname = resolved.pathname;
+        url.search = resolved.search;
+        url.hash = resolved.hash;
+        url.href = resolved.href;
+      }
     },
   };
   Object.defineProperty(globalThis, 'window', {
@@ -33,8 +47,15 @@ const installWindow = (href: string): HistoryStub => {
       location: {
         href: url.toString(),
         origin: url.origin,
-        pathname: url.pathname,
-        search: url.search,
+        get pathname() {
+          return url.pathname;
+        },
+        get search() {
+          return url.search;
+        },
+        get hash() {
+          return url.hash;
+        },
       },
       history,
     },
@@ -46,7 +67,7 @@ const historyOf = (): HistoryStub =>
   (globalThis.window as unknown as { history: HistoryStub }).history;
 
 beforeEach(() => {
-  installWindow('http://127.0.0.1:5173/app');
+  installWindow('http://127.0.0.1:5173/');
   resetEmbeddedSessionChatCache();
 });
 
@@ -72,78 +93,130 @@ const sessionState = (sessionId: string): AppRouteState => ({
   diffFile: null,
 });
 
+describe('serializeAppPath path mode', () => {
+  test('session chat is a path without query session=', () => {
+    expect(serializeAppPath(sessionState('ses_main'))).toBe('/session/ses_main');
+    expect(serializeAppPath(sessionState('ses_main'))).not.toContain('session=');
+  });
+
+  test('workspace tabs and diff file use path + search', () => {
+    expect(
+      serializeAppPath({
+        ...sessionState('ses_main'),
+        tab: 'git',
+      }),
+    ).toBe('/session/ses_main/git');
+
+    expect(
+      serializeAppPath({
+        ...sessionState('ses_main'),
+        tab: 'diff',
+        diffFile: 'src/a.ts',
+      }),
+    ).toBe('/session/ses_main/diff?file=src%2Fa.ts');
+  });
+
+  test('settings is a path overlay', () => {
+    expect(
+      serializeAppPath({
+        ...sessionState('ses_main'),
+        isSettingsOpen: true,
+        settingsPath: 'providers',
+      }),
+    ).toBe('/settings/providers');
+  });
+});
+
 describe('updateBrowserURL embedded-session-chat guard', () => {
-  test('is a no-op in the embedded session-chat iframe (mirrors isVSCodeContext)', () => {
-    // The embedded iframe's URL identity (ocPanel/sessionId/directory/
-    // readOnly) must never be rewritten. updateBrowserURL rebuilds the
-    // query string from scratch using only session/tab/settings/file —
-    // which would strip ocPanel and break isEmbeddedSessionChat().
-    // The guard prevents this, exactly like isVSCodeContext() does for
-    // VS Code webviews.
+  test('is a no-op in the embedded session-chat iframe', () => {
     const history = installWindow(
       'http://127.0.0.1:5173/app?ocPanel=session-chat&sessionId=ses_child&directory=%2Frepo&readOnly=1',
     );
 
     updateBrowserURL(sessionState('ses_grandchild'), { replace: true, force: true });
 
-    // No URL update happened — history was never touched.
     expect(history.lastURL).toBeNull();
   });
 
-  test('rewrites the URL normally outside the embedded iframe', () => {
-    installWindow('http://127.0.0.1:5173/app');
+  test('rewrites to path mode outside the embedded iframe', () => {
+    installWindow('http://127.0.0.1:5173/');
 
     updateBrowserURL(sessionState('ses_main'), { replace: true, force: true });
 
     const writtenURL = historyOf().lastURL ?? '';
-    expect(writtenURL).toContain('session=ses_main');
+    expect(writtenURL).toBe('/session/ses_main');
+    expect(writtenURL).not.toContain('session=');
   });
 });
 
-describe('scheduled tasks route', () => {
-  test('round-trips through URL serialization and parsing', () => {
-    const state: AppRouteState = {
+describe('scheduled / assistant path tabs', () => {
+  test('serialize under session path', () => {
+    const scheduled: AppRouteState = {
       ...sessionState('ses_main'),
-      tab: 'scheduled',
+      tab: 'schedule',
     };
+    expect(serializeAppPath(scheduled)).toBe('/schedule');
 
-    updateBrowserURL(state, { replace: true, force: true });
+    const assistant: AppRouteState = {
+      ...sessionState('ses_main'),
+      tab: 'assistant',
+    };
+    expect(serializeAppPath(assistant)).toBe('/assistant');
 
-    expect(historyOf().lastURL).toContain('tab=scheduled');
-    expect(historyOf().lastURL).not.toContain('session=');
-    expect(parseRoute(new URLSearchParams('tab=scheduled')).tab).toBe('scheduled');
+    expect(
+      serializeAppPath({
+        ...assistant,
+        sessionId: null,
+        assistantId: 'asst_demo',
+      }),
+    ).toBe('/assistant/asst_demo');
+  });
+
+  test('parse path tabs', () => {
+    installWindow('http://127.0.0.1:5173/schedule');
+    expect(parseRoute().tab).toBe('schedule');
+    // schedule is top-level — no session id in path
+    expect(parseRoute().sessionId).toBeNull();
+
+    installWindow('http://127.0.0.1:5173/assistant');
+    expect(parseRoute().tab).toBe('assistant');
+    expect(parseRoute().sessionId).toBeNull();
   });
 });
 
-describe('assistant route', () => {
-  test('round-trips as an independent main page', () => {
-    updateBrowserURL({ ...sessionState('ses_main'), tab: 'assistant' }, { replace: true, force: true });
+describe('routeStateFromPath', () => {
+  test('parses session and settings paths', () => {
+    expect(routeStateFromPath('/session/abc')).toEqual({
+      sessionId: 'abc',
+      tab: null,
+      settingsPath: null,
+      settingsEntityId: null,
+      diffFile: null,
+      diffScope: null,
+      scheduleView: null,
+      scheduleProjectId: null,
+      scheduleTaskId: null,
+      assistantId: null,
+      focusSessionId: null,
+    });
+    expect(routeStateFromPath('/settings/providers').settingsPath).toBe('providers');
+    expect(routeStateFromPath('/schedule/history').scheduleView).toBe('history');
+  });
 
-    expect(historyOf().lastURL).toContain('tab=assistant');
-    expect(historyOf().lastURL).not.toContain('session=');
-    expect(parseRoute(new URLSearchParams('tab=assistant')).tab).toBe('assistant');
+  test('legacy query-only location is not a route', () => {
+    expect(routeStateFromPath('/?session=abc').sessionId).toBeNull();
   });
 });
 
 describe('isEmbeddedSessionChat caching', () => {
-  test('caches the first result so URL rewrites cannot flip it (mirrors VS Code stable global)', () => {
-    // VS Code detects its webview via the stable `window.__VSCODE_CONFIG__`
-    // global — it never changes. The embedded iframe's identity is equally
-    // fixed at mount (the parent builds the src); caching the first read
-    // makes detection just as stable, surviving any URL rewrite.
-    //
-    // We need a fresh module cache for this test. Since the cache is
-    // module-level, we test the invariant: once true, always true.
+  test('caches the first result so URL rewrites cannot flip it', () => {
     installWindow(
       'http://127.0.0.1:5173/app?ocPanel=session-chat&sessionId=ses_child&directory=%2Frepo&readOnly=1',
     );
 
-    // First read: caches true.
     expect(isEmbeddedSessionChat()).toBe(true);
 
-    // Even if the URL were rewritten (the guard above prevents this, but
-    // defense in depth), the cached value stays true.
-    installWindow('http://127.0.0.1:5173/app?session=ses_grandchild');
+    installWindow('http://127.0.0.1:5173/session/ses_grandchild');
     expect(isEmbeddedSessionChat()).toBe(true);
   });
 });
