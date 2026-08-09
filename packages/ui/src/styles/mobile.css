@@ -364,22 +364,28 @@
  *
  * Expanded visual = compact sticky + spacer (0.625rem) + inner translateY
  * matching the pre-collapse rhythm (safe-area + 1rem + pt-1.5).
- * Compact scale = detail-title / root-title (0.9375 / 2 = 0.46875).
+ * Compact title is 1.25rem (not detail-nav 0.9375rem) so it holds weight next
+ * to the 40px glass actions: scale = 1.25 / 2 = 0.625 (reduce by 0.375).
  */
 .oc-mobile-root-page-title {
   width: max-content;
   max-width: 100%;
   font-size: var(--oc-mobile-root-title-size);
   line-height: 1.2;
-  letter-spacing: -0.04em;
-  transform: scale(calc(1 - (0.53125 * var(--oc-mobile-title-collapse, 0))));
-  transform-origin: top left;
+  letter-spacing: calc(
+    -0.04em + (0.02em * var(--oc-mobile-title-collapse, 0))
+  );
+  /* scale 1 → 0.625; origin left center keeps left edge and vertical balance
+     with the action row (top-left looked undersized/top-heavy vs 40px buttons). */
+  transform: scale(calc(1 - (0.375 * var(--oc-mobile-title-collapse, 0))));
+  transform-origin: left center;
   will-change: transform;
 }
 
 .oc-mobile-collapsing-header {
   --oc-mobile-title-collapse: 0;
   --oc-mobile-collapsing-action-size: 2.5rem;
+  --oc-mobile-collapsing-title-compact-size: 1.25rem;
   /* Expanded top inset minus collapsed top inset (1rem + 0.375rem - 0.75rem). */
   --oc-mobile-collapsing-expand-shift: 0.625rem;
   position: sticky;
@@ -406,7 +412,8 @@
   width: 100%;
   min-width: 0;
   flex-direction: row;
-  align-items: flex-start;
+  /* Center title row with 40px glass actions for a single compact chrome band. */
+  align-items: center;
   gap: 1rem;
   /* Expanded: shift content down into the spacer; collapsed: sit in chrome. */
   transform: translateY(
@@ -430,7 +437,7 @@
 }
 
 .oc-mobile-collapsing-header-trailing {
-  align-self: flex-start;
+  align-self: center;
   overflow: visible;
 }
 
@@ -884,18 +891,46 @@ button.oc-mobile-worktree-label-trigger:active,
 
 /* Shared mobile segmented track (Tasks/History, filters, similar one-of-N bars).
    Pair with .oc-mobile-floating-surface for glass elevation. Selected chrome is
-   .oc-segmented-selected-pill from design-system.css — keep inset radius there. */
+   .oc-segmented-selected-pill from design-system.css — keep inset radius there.
+   Track height may differ by content (e.g. trailing +), but pad/gap/item height
+   stay shared so vertical rhythm and pill centering match across rows. */
 .oc-mobile-segmented-track,
 .oc-mobile-scheduled-controls {
-  min-height: 3.25rem;
-  gap: 0.25rem;
+  --oc-mobile-segmented-pad: 0.25rem;
+  --oc-mobile-segmented-gap: 0.25rem;
+  --oc-mobile-segmented-item-height: 2.5rem;
+  box-sizing: border-box;
+  display: flex;
+  align-items: center;
+  gap: var(--oc-mobile-segmented-gap);
   border-radius: var(--oc-mobile-surface-radius);
-  padding: 0.25rem;
+  padding: var(--oc-mobile-segmented-pad);
+  /* Content-sized: pad + item height. Do not force a taller min-height. */
+  min-height: calc(
+    var(--oc-mobile-segmented-item-height) + (var(--oc-mobile-segmented-pad) * 2)
+  );
+}
+
+.oc-mobile-segmented-group {
+  display: flex;
+  min-width: 0;
+  flex: 1 1 auto;
+  align-items: center;
+  gap: var(--oc-mobile-segmented-gap, 0.25rem);
 }
 
 .oc-mobile-segmented-item {
   position: relative;
-  min-height: 2.75rem;
+  box-sizing: border-box;
+  display: inline-flex;
+  height: var(--oc-mobile-segmented-item-height) !important;
+  min-height: var(--oc-mobile-segmented-item-height) !important;
+  max-height: var(--oc-mobile-segmented-item-height) !important;
+  min-width: 0;
+  flex: 1 1 0%;
+  align-items: center;
+  justify-content: center;
+  padding-inline: 0.5rem !important;
   border: 0;
   border-radius: var(--oc-mobile-inset-radius);
   background: transparent;
@@ -907,6 +942,18 @@ button.oc-mobile-worktree-label-trigger:active,
     color 150ms ease-out,
     background-color 150ms ease-out,
     transform 150ms ease-out;
+}
+
+/* Trailing control on a segmented track (e.g. create +) — same height as items. */
+.oc-mobile-segmented-track > .oc-mobile-segmented-action,
+.oc-mobile-scheduled-controls > .oc-mobile-segmented-action {
+  width: var(--oc-mobile-segmented-item-height) !important;
+  height: var(--oc-mobile-segmented-item-height) !important;
+  min-width: var(--oc-mobile-segmented-item-height) !important;
+  min-height: var(--oc-mobile-segmented-item-height) !important;
+  max-height: var(--oc-mobile-segmented-item-height) !important;
+  flex: none;
+  padding: 0 !important;
 }
 
 .oc-mobile-segmented-item:hover {
@@ -931,6 +978,33 @@ button.oc-mobile-worktree-label-trigger:active,
   .oc-mobile-segmented-item:active {
     transform: none;
   }
+}
+
+/* Dense segmented chips: opt out of the global 36px touch min so pad/item
+   metrics stay exact (still ≥ 40px with 2.5rem item height). */
+:root.mobile-pointer:not(.desktop-runtime)
+  .oc-mobile-segmented-track
+  button.oc-mobile-segmented-item,
+:root.mobile-pointer:not(.desktop-runtime)
+  .oc-mobile-segmented-track
+  button.oc-mobile-segmented-action,
+:root.mobile-pointer:not(.desktop-runtime)
+  .oc-mobile-scheduled-controls
+  button.oc-mobile-segmented-item,
+:root.mobile-pointer:not(.desktop-runtime)
+  .oc-mobile-scheduled-controls
+  button.oc-mobile-segmented-action {
+  min-height: var(--oc-mobile-segmented-item-height) !important;
+  min-width: 0 !important;
+}
+
+:root.mobile-pointer:not(.desktop-runtime)
+  .oc-mobile-segmented-track
+  button.oc-mobile-segmented-action,
+:root.mobile-pointer:not(.desktop-runtime)
+  .oc-mobile-scheduled-controls
+  button.oc-mobile-segmented-action {
+  min-width: var(--oc-mobile-segmented-item-height) !important;
 }
 
 .oc-mobile-scheduled-task-card {

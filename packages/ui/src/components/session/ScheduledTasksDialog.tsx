@@ -825,12 +825,12 @@ export function ScheduledTasksWorkspace({
           <div className={cn('mx-auto w-full', isMobileTab ? 'max-w-[26rem]' : 'max-w-4xl')}>
           <div
             className={cn(
-              // Desktop: quiet muted track. Mobile: same floating segmented track
-              // as the filter row (surface radius, glass, selected pill chrome).
-              'mb-3 grid grid-cols-2',
+              // Desktop: quiet muted track. Mobile: shared segmented track metrics
+              // (pad/gap/item height) with the filter row below.
+              'mb-3',
               isMobileTab
                 ? 'oc-mobile-floating-surface oc-mobile-segmented-track'
-                : 'gap-1 rounded-xl bg-[var(--surface-muted)] p-1',
+                : 'grid grid-cols-2 gap-1 rounded-xl bg-[var(--surface-muted)] p-1',
             )}
             role="tablist"
             aria-label={t('sessions.scheduledTasks.workspace.views.aria')}
@@ -846,7 +846,7 @@ export function ScheduledTasksWorkspace({
                 data-mobile-press-feedback={isMobileTab ? 'none' : undefined}
                 className={cn(
                   isMobileTab
-                    ? 'oc-mobile-segmented-item min-w-0 flex-1 px-2'
+                    ? 'oc-mobile-segmented-item'
                     : 'relative min-h-9 rounded-lg text-muted-foreground transition-[background-color,color,box-shadow] motion-reduce:transition-none',
                   !isMobileTab && isMobilePanel && 'min-h-11',
                   !isMobileTab && (workspaceView === view
@@ -868,8 +868,8 @@ export function ScheduledTasksWorkspace({
                     aria-hidden="true"
                   />
                 ) : null}
-                <span className="relative z-[1] inline-flex items-center gap-2">
-                  <Icon name={view === 'tasks' ? 'calendar-schedule' : 'history'} className="size-4" />
+                <span className="relative z-[1] inline-flex items-center gap-1.5">
+                  <Icon name={view === 'tasks' ? 'calendar-schedule' : 'history'} className="size-4 shrink-0" />
                   {t(`sessions.scheduledTasks.workspace.views.${view}`)}
                 </span>
               </Button>
@@ -878,11 +878,20 @@ export function ScheduledTasksWorkspace({
           {workspaceView === 'tasks' ? (
           <>
           <div className={cn(
-            'flex items-center justify-between',
-            isMobilePanel ? 'gap-2' : 'gap-3',
-            isMobileTab && 'oc-mobile-floating-surface oc-mobile-segmented-track oc-mobile-scheduled-controls',
+            isMobileTab
+              // Same track class as the view switcher — pad/gap owned by CSS.
+              ? 'oc-mobile-floating-surface oc-mobile-segmented-track oc-mobile-scheduled-controls'
+              : cn('flex items-center justify-between', isMobilePanel ? 'gap-2' : 'gap-3'),
           )}>
-            <div className={cn('flex items-center gap-1', isMobilePanel && 'min-w-0 flex-1')} role="group" aria-label={t('sessions.scheduledTasks.dialog.title')}>
+            <div
+              className={cn(
+                isMobileTab
+                  ? 'oc-mobile-segmented-group'
+                  : cn('flex items-center gap-1', isMobilePanel && 'min-w-0 flex-1'),
+              )}
+              role="group"
+              aria-label={t('sessions.scheduledTasks.dialog.title')}
+            >
               {(['all', 'active', 'paused'] as const).map((value) => (
                 <Button
                   key={value}
@@ -892,7 +901,7 @@ export function ScheduledTasksWorkspace({
                   data-mobile-press-feedback={isMobileTab ? 'none' : undefined}
                   className={cn(
                     isMobileTab
-                      ? 'oc-mobile-segmented-item min-w-0 flex-1 px-2'
+                      ? 'oc-mobile-segmented-item'
                       // Avoid overflow-hidden (mobile.css → overflow-y:auto). Soft
                       // selected-pill shadow must not be clipped on desktop either.
                       : 'relative border-0 bg-transparent text-muted-foreground shadow-none transition-[color,background-color,transform] duration-150 ease-out motion-reduce:transition-none active:scale-[0.97]',
@@ -921,20 +930,33 @@ export function ScheduledTasksWorkspace({
                 </Button>
               ))}
             </div>
-            <div className="flex min-w-0 items-center gap-2">
+            {isMobileTab ? (
               <Button
                 variant="ghost"
-                className={cn(
-                  'shrink-0 rounded-full bg-foreground text-background transition-[background-color,transform,box-shadow] duration-150 ease-out hover:bg-foreground/90 hover:text-background hover:shadow-sm active:scale-[0.97] motion-reduce:transition-none',
-                  isMobilePanel ? 'size-11 min-h-11 px-0 min-[400px]:w-auto min-[400px]:px-3.5' : '!h-9 !min-h-9 px-3.5',
-                )}
+                data-mobile-press-feedback="none"
+                className="oc-mobile-segmented-action shrink-0 rounded-full bg-foreground text-background transition-[background-color,transform,box-shadow] duration-150 ease-out hover:bg-foreground/90 hover:text-background hover:shadow-sm active:scale-[0.97] motion-reduce:transition-none"
                 onClick={handleCreate}
                 disabled={!createProjectID}
                 aria-label={t('sessions.scheduledTasks.dialog.actions.create')}
               >
-                <Icon name="add" className="h-4 w-4" /> <span className={cn(isMobilePanel && 'hidden min-[400px]:inline')}>{t('sessions.scheduledTasks.dialog.actions.create')}</span>
+                <Icon name="add" className="size-4" />
               </Button>
-            </div>
+            ) : (
+              <div className="flex min-w-0 items-center gap-2">
+                <Button
+                  variant="ghost"
+                  className={cn(
+                    'shrink-0 rounded-full bg-foreground text-background transition-[background-color,transform,box-shadow] duration-150 ease-out hover:bg-foreground/90 hover:text-background hover:shadow-sm active:scale-[0.97] motion-reduce:transition-none',
+                    isMobilePanel ? 'size-11 min-h-11 px-0 min-[400px]:w-auto min-[400px]:px-3.5' : '!h-9 !min-h-9 px-3.5',
+                  )}
+                  onClick={handleCreate}
+                  disabled={!createProjectID}
+                  aria-label={t('sessions.scheduledTasks.dialog.actions.create')}
+                >
+                  <Icon name="add" className="h-4 w-4" /> <span className={cn(isMobilePanel && 'hidden min-[400px]:inline')}>{t('sessions.scheduledTasks.dialog.actions.create')}</span>
+                </Button>
+              </div>
+            )}
           </div>
           {!isMobileTab ? (
             <div className={cn('group relative w-full', isMobilePanel ? 'mt-3' : 'mt-7')}>

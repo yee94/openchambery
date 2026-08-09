@@ -106,11 +106,13 @@ Mobile phone tracks also share:
 
 | Class | Role |
 |---|---|
-| `.oc-mobile-segmented-track` | Outer floating track (`surface-radius`, padding) — pair with `.oc-mobile-floating-surface` |
-| `.oc-mobile-segmented-item` | Hit target (`inset-radius`, transparent, press scale) |
+| `.oc-mobile-segmented-track` | Outer floating track — shared CSS vars for pad `0.25rem`, gap `0.25rem`, item height `2.5rem` |
+| `.oc-mobile-segmented-group` | Flex group of items (filters) that shares track gap |
+| `.oc-mobile-segmented-item` | Hit target — fixed item height, inset radius, centered label, press scale |
+| `.oc-mobile-segmented-action` | Trailing control (create +) sized to the same item height |
 | `.oc-segmented-selected-pill` | Selected fill + soft shadow (no border ring) |
 
-Tasks/History and All/Active/Paused must use the same three classes so radius, shadow, and press feedback stay aligned.
+Track total height may differ when a trailing action is present; pad/gap/item height stay identical so selected pills center the same way.
 
 ## Related owners
 

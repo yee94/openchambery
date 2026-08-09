@@ -142,9 +142,11 @@ describe('ScheduledTasksDialog queries', () => {
     // View switcher + filters share the mobile segmented track/item + selected pill.
     expect(workspaceContent).toContain('layoutId="scheduled-workspace-view-pill"');
     expect(workspaceContent).toContain("? 'oc-mobile-floating-surface oc-mobile-segmented-track'");
-    expect(workspaceContent).toContain("? 'oc-mobile-segmented-item min-w-0 flex-1 px-2'");
+    expect(workspaceContent).toContain("? 'oc-mobile-segmented-item'");
+    expect(workspaceContent).toContain("? 'oc-mobile-segmented-group'");
+    expect(workspaceContent).toContain('oc-mobile-segmented-action');
     expect(workspaceContent).toContain("'oc-segmented-selected-pill absolute inset-0'");
-    expect(workspaceContent).toContain("isMobileTab && 'oc-mobile-floating-surface oc-mobile-segmented-track oc-mobile-scheduled-controls'");
+    expect(workspaceContent).toContain("? 'oc-mobile-floating-surface oc-mobile-segmented-track oc-mobile-scheduled-controls'");
     expect(workspaceContent).toContain("!isMobileTab ? (");
     expect(workspaceContent).toContain('oc-mobile-project-trigger oc-mobile-scheduled-task-row');
     expect(workspaceContent).toContain("formatSchedule(task, t, !isMobileTab)");
@@ -350,8 +352,10 @@ describe('ScheduledTasksDialog queries', () => {
     expect(mobileStyles).toContain('.oc-mobile-collapsing-header::after');
     expect(mobileStyles).toContain('opacity: var(--oc-mobile-title-collapse)');
     // Bounce-free: layout box is constant; collapse only drives transform/opacity.
-    expect(mobileStyles).toContain('transform-origin: top left');
-    expect(mobileStyles).toContain('0.53125 * var(--oc-mobile-title-collapse, 0)');
+    // Compact end is 1.25rem (scale 0.625), not detail-nav 0.9375rem — balances 40px actions.
+    expect(mobileStyles).toContain('transform-origin: left center');
+    expect(mobileStyles).toContain('0.375 * var(--oc-mobile-title-collapse, 0)');
+    expect(mobileStyles).toContain('--oc-mobile-collapsing-title-compact-size: 1.25rem');
     expect(mobileStyles).toContain('--oc-mobile-collapsing-expand-shift: 0.625rem');
     expect(mobileStyles).toContain('.oc-mobile-collapsing-header-spacer');
     expect(mobileStyles).toContain('var(--oc-safe-area-top, 0px) + 0.75rem');
