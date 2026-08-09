@@ -55,6 +55,8 @@ export function useRouter(): void {
   // Track initialization to avoid duplicate applies
   const initializedRef = React.useRef(false);
   const isApplyingRouteRef = React.useRef(false);
+  /** Session ids that already surfaced a deep-link failure toast this mount. */
+  const failedDeepLinkSessionIdsRef = React.useRef(new Set<string>());
   const [route, setRoute] = React.useState<RouteState>(() => parseRoute());
 
   // Get store actions (stable references)
@@ -70,14 +72,19 @@ export function useRouter(): void {
   const archivedSessions = useGlobalSessionsStore((state) => state.archivedSessions);
 
   /**
-   * Deep-link failure: keep the user on the session path, show an error toast,
-   * and do NOT clear the URL into a new-session/welcome state.
+   * Deep-link failure: keep the user on the session path, show an error toast once
+   * per session id, and do NOT clear the URL into a new-session/welcome state.
+   * Re-runs of the reconcile effect (index refresh / hasLoaded flips) must not spam.
    */
   const failDeepLinkSession = React.useCallback((sessionId: string) => {
     if (isVSCode) {
       return;
     }
-    notifySessionOpenFailed(sessionId, 'missing-directory');
+    const firstFailure = !failedDeepLinkSessionIdsRef.current.has(sessionId);
+    if (firstFailure) {
+      failedDeepLinkSessionIdsRef.current.add(sessionId);
+      notifySessionOpenFailed(sessionId, 'missing-directory');
+    }
     // Preserve path in the address bar so refresh/retry remains possible.
     isApplyingRouteRef.current = true;
     try {
@@ -198,6 +205,10 @@ export function useRouter(): void {
     return {
       // Draft surface owns `/session/new` — do not keep a previous session id
       // on the path or deep-link reconcile will re-open the old conversation.
+      // Keep path sessionId while store is still resolving a deep link.
+      // Runtime identity switches clear stale path session ids in
+      // resetAppForRuntimeEndpointChange so this fallback cannot re-pin a
+      // previous-runtime conversation.
       isNewSession,
       sessionId: isExclusive || isNewSession
         ? null
@@ -304,8 +315,15 @@ export function useRouter(): void {
       return;
     }
 
+    // A prior hard-fail for this id already toasts once; skip re-resolve churn
+    // while the path still holds the dead session (index refresh must not spam).
+    if (failedDeepLinkSessionIdsRef.current.has(sessionId)) {
+      return;
+    }
+
     const memoryDir = resolveSessionDirectoryForRoute(sessionId);
     if (memoryDir) {
+      failedDeepLinkSessionIdsRef.current.delete(sessionId);
       setCurrentSession(sessionId, memoryDir);
       return;
     }
@@ -315,6 +333,7 @@ export function useRouter(): void {
       const resolved = await resolveSessionForRoute(sessionId);
       if (cancelled) return;
       if (resolved?.directory) {
+        failedDeepLinkSessionIdsRef.current.delete(sessionId);
         const current = useSessionUIStore.getState();
         if (
           current.currentSessionId !== sessionId

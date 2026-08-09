@@ -199,8 +199,11 @@ mock.module('@/lib/router', () => ({
 }));
 mock.module('@/lib/settings/metadata', () => ({ resolveSettingsSlug: (path: string) => path }));
 mock.module('@/components/layout/contextPanelEmbeddedChat', () => ({ isEmbeddedSessionChat: () => false }));
+const notifySessionOpenFailedCalls: Array<{ sessionId: string | null; reason: string }> = [];
 mock.module('@/sync/openSessionWithFeedback', () => ({
-  notifySessionOpenFailed: () => undefined,
+  notifySessionOpenFailed: (sessionId: string | null, reason: string) => {
+    notifySessionOpenFailedCalls.push({ sessionId, reason });
+  },
   openSessionWithFeedback: () => ({ ok: false, reason: 'missing-directory', sessionId: null }),
 }));
 mock.module('@/stores/useAssistantUIStore', () => ({
@@ -251,6 +254,7 @@ describe('useRouter', () => {
     uiSubscribers.clear();
     settingsDialogOpenCalls.length = 0;
     setCurrentSessionCalls.length = 0;
+    notifySessionOpenFailedCalls.length = 0;
     sessionState.currentSessionId = 'session-1';
     sessionState.currentSessionDirectory = '/repo';
     uiState.activeMainTab = 'chat';
@@ -343,5 +347,36 @@ describe('useRouter', () => {
       directory: '/repo/worktree',
     });
     expect(sessionState.currentSessionDirectory).toBe('/repo/worktree');
+  });
+
+  test('toasts missing-directory only once for a dead deep-link session', async () => {
+    sessionState.currentSessionId = null;
+    sessionState.currentSessionDirectory = null;
+    urlRoute.sessionId = 'ses_dead';
+    globalSessionsState = {
+      hasLoaded: true,
+      activeSessions: [],
+      archivedSessions: [],
+    };
+
+    harness.render(useRouter);
+    await Promise.resolve();
+    await Promise.resolve();
+
+    expect(notifySessionOpenFailedCalls).toEqual([
+      { sessionId: 'ses_dead', reason: 'missing-directory' },
+    ]);
+
+    // Index refresh re-runs reconcile deps without a second toast.
+    globalSessionsState = {
+      hasLoaded: true,
+      activeSessions: [],
+      archivedSessions: [],
+    };
+    harness.render(useRouter);
+    await Promise.resolve();
+    await Promise.resolve();
+
+    expect(notifySessionOpenFailedCalls).toHaveLength(1);
   });
 });

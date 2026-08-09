@@ -80,20 +80,23 @@ describe('ScheduledTasksDialog queries', () => {
     expect(content).not.toContain("t('sessions.scheduledTasks.history.meta.duration')");
     expect(content).toContain("name=\"time\"");
     expect(content).toContain("run.trigger === 'manual' ? 'play' : 'calendar-schedule'");
-    // Shared PC/mobile rows: full-width body so justify-between pins trailing actions.
+    // Shared PC/mobile rows: full-width body; mobile stacks meta so time/trigger
+    // are not ellipsized beside open-session.
     expect(content).toContain('const runBody = (');
-    expect(content).toContain('className="flex w-full min-w-0 items-start gap-3"');
+    expect(content).toContain("isMobilePanel ? 'gap-2.5' : 'gap-3'");
     expect(content).toContain("t('sessions.scheduledTasks.history.openSession')");
-    expect(content).toContain("isMobilePanel ? 'h-11 min-h-11' : 'h-7'");
-    expect(content).toContain("isMobilePanel && 'flex-nowrap gap-2'");
-    expect(content).toContain("isMobilePanel && 'flex-1'");
+    expect(content).toContain("'h-8 min-h-8 self-start px-2.5 typography-micro'");
+    expect(content).toContain("'flex-col items-stretch'");
+    expect(content).not.toContain("isMobilePanel && 'flex-nowrap gap-2'");
+    expect(content).toContain('whitespace-nowrap tabular-nums');
+    expect(content).toContain("month: 'numeric'");
     // Text-only ghost button (keeps hover); no external-link glyph.
     expect(content).not.toContain('<Icon name="external-link" className="size-4" />');
     expect(content).toContain("divide-y divide-border/50 overflow-hidden rounded-xl border border-border/60");
     // Run error detail uses the active theme's muted foreground and a status icon.
     expect(content).toContain('{run.error ? (');
     expect(content).toContain('flex min-w-0 items-start gap-1.5 break-words typography-micro text-[var(--surface-muted-foreground)]');
-    expect(content).toContain("? 'mt-2 line-clamp-2'");
+    expect(content).toContain("? 'mt-1.5 line-clamp-3'");
     expect(content).toContain('name="error-warning"');
     expect(content).toContain('text-[var(--status-error)]');
   });

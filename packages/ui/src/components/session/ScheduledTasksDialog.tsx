@@ -148,9 +148,12 @@ const formatRelativeTime = (value: number | undefined, t: ReturnType<typeof useI
     : t('sessions.scheduledTasks.dialog.relativeTime.durationAgo', { duration: body });
 };
 
+/** History list timestamps — compact enough for mobile cards without ellipsis. */
 const formatRunDateTime = (value: number): string => new Intl.DateTimeFormat(getCurrentIntlLocale(), {
-  dateStyle: 'medium',
-  timeStyle: 'short',
+  month: 'numeric',
+  day: 'numeric',
+  hour: '2-digit',
+  minute: '2-digit',
 }).format(new Date(value));
 
 /** Prefer wall-clock span when finished; live elapsed while running. */
@@ -1064,21 +1067,35 @@ export function ScheduledTasksWorkspace({
                     );
                     const statusIcon = (
                       <span
-                        className="mt-0.5 flex size-8 shrink-0 items-center justify-center rounded-full border"
+                        className={cn(
+                          'mt-0.5 flex shrink-0 items-center justify-center rounded-full border',
+                          isMobilePanel ? 'size-7' : 'size-8',
+                        )}
                         style={toneStyle(statusMeta.tone)}
                         title={statusLabel}
                         aria-label={statusLabel}
                       >
-                        <Icon name={statusMeta.Icon} className={cn('size-4', statusMeta.spin && 'animate-spin motion-reduce:animate-none')} />
+                        <Icon
+                          name={statusMeta.Icon}
+                          className={cn(
+                            isMobilePanel ? 'size-3.5' : 'size-4',
+                            statusMeta.spin && 'animate-spin motion-reduce:animate-none',
+                          )}
+                        />
                       </span>
                     );
                     const locationRow = (
                       <p
-                        className="mt-0.5 flex min-w-0 items-center gap-1.5 truncate typography-meta text-muted-foreground"
+                        className={cn(
+                          'mt-0.5 flex min-w-0 items-center gap-1.5 text-muted-foreground',
+                          isMobilePanel ? 'typography-micro' : 'truncate typography-meta',
+                        )}
                         title={run.directory ?? projectLabel}
                       >
                         {projectIcon}
-                        <span className="min-w-0 truncate">{locationLabel}</span>
+                        <span className={cn('min-w-0', isMobilePanel ? 'break-words' : 'truncate')}>
+                          {locationLabel}
+                        </span>
                       </p>
                     );
                     // Compact cluster: duration (muted) immediately left of status.
@@ -1098,30 +1115,44 @@ export function ScheduledTasksWorkspace({
                     // Shared card body (mobile card chrome vs desktop list row).
                     // Must be full width so justify-between can pin duration / open
                     // session to the trailing edge and keep rows vertically aligned.
+                    // Mobile: allow meta to wrap and avoid flex-1 + nowrap, which
+                    // ellipsizes time/trigger next to "打开会话".
                     const runBody = (
-                      <div className="flex w-full min-w-0 items-start gap-3">
+                      <div className={cn(
+                        'flex w-full min-w-0 items-start',
+                        isMobilePanel ? 'gap-2.5' : 'gap-3',
+                      )}>
                         {statusIcon}
                         <div className="min-w-0 flex-1">
-                          <div className="flex w-full min-w-0 items-center justify-between gap-3">
-                            <h3 className="min-w-0 flex-1 truncate typography-ui-label font-semibold text-foreground">{run.taskName}</h3>
+                          <div className="flex w-full min-w-0 items-start justify-between gap-2">
+                            <h3 className={cn(
+                              'min-w-0 flex-1 font-semibold text-foreground',
+                              isMobilePanel
+                                ? 'break-words typography-meta leading-snug'
+                                : 'truncate typography-ui-label',
+                            )}>
+                              {run.taskName}
+                            </h3>
                             {durationStatus}
                           </div>
                           {locationRow}
                           <div className={cn(
-                            'mt-1 flex w-full min-w-0 items-center justify-between gap-3',
-                            isMobilePanel && 'min-h-11',
+                            'mt-1 flex w-full min-w-0 gap-2',
+                            isMobilePanel
+                              ? 'flex-col items-stretch'
+                              : 'items-center justify-between gap-3',
                           )}>
                             <div className={cn(
                               'flex min-w-0 flex-1 flex-wrap items-center gap-x-3 gap-y-1 typography-micro text-muted-foreground',
-                              isMobilePanel && 'flex-nowrap gap-2',
+                              isMobilePanel && 'gap-x-2.5 gap-y-0.5',
                             )}>
-                              <span className={cn('inline-flex min-w-0 items-center gap-1.5', isMobilePanel && 'flex-1')} title={startedLabel}>
-                                <Icon name="time" className="size-3.5 shrink-0" aria-hidden="true" />
-                                <span className="truncate tabular-nums">{startedLabel}</span>
+                              <span className="inline-flex min-w-0 max-w-full items-center gap-1" title={startedLabel}>
+                                <Icon name="time" className="size-3 shrink-0" aria-hidden="true" />
+                                <span className="whitespace-nowrap tabular-nums">{startedLabel}</span>
                               </span>
-                              <span className={cn('inline-flex min-w-0 items-center gap-1.5', isMobilePanel && 'flex-1')} title={triggerLabel}>
-                                <Icon name={triggerIcon} className="size-3.5 shrink-0" aria-hidden="true" />
-                                <span className="truncate">{triggerLabel}</span>
+                              <span className="inline-flex min-w-0 max-w-full items-center gap-1" title={triggerLabel}>
+                                <Icon name={triggerIcon} className="size-3 shrink-0" aria-hidden="true" />
+                                <span className="whitespace-nowrap">{triggerLabel}</span>
                               </span>
                             </div>
                             {canOpenSession ? (
@@ -1129,8 +1160,10 @@ export function ScheduledTasksWorkspace({
                                 variant="ghost"
                                 size="sm"
                                 className={cn(
-                                  'shrink-0 self-center text-foreground',
-                                  isMobilePanel ? 'h-11 min-h-11' : 'h-7',
+                                  'shrink-0 text-foreground',
+                                  isMobilePanel
+                                    ? 'h-8 min-h-8 self-start px-2.5 typography-micro'
+                                    : 'h-7 self-center',
                                 )}
                                 onClick={() => handleOpenRunSession(run)}
                               >
@@ -1143,7 +1176,7 @@ export function ScheduledTasksWorkspace({
                               className={cn(
                                 'flex min-w-0 items-start gap-1.5 break-words typography-micro text-[var(--surface-muted-foreground)]',
                                 isMobilePanel
-                                  ? 'mt-2 line-clamp-2'
+                                  ? 'mt-1.5 line-clamp-3'
                                   : 'mt-1.5 line-clamp-1',
                               )}
                               title={run.error.slice(0, 300)}
@@ -1153,7 +1186,9 @@ export function ScheduledTasksWorkspace({
                                 className="mt-px size-3.5 shrink-0 text-[var(--status-error)]"
                                 aria-hidden="true"
                               />
-                              <span className="min-w-0">{run.error.slice(0, 300)}</span>
+                              <span className="min-w-0 break-words [overflow-wrap:anywhere]">
+                                {run.error.slice(0, 300)}
+                              </span>
                             </div>
                           ) : null}
                         </div>
@@ -1165,7 +1200,7 @@ export function ScheduledTasksWorkspace({
                         <article
                           key={run.id}
                           className={cn(
-                            'w-full p-4',
+                            'w-full p-3',
                             // mobile-tab history cards match task cards / project shells.
                             isMobileTab
                               ? 'oc-mobile-floating-surface rounded-[var(--oc-mobile-surface-radius)]'

@@ -1,4 +1,5 @@
 import { opencodeClient } from '@/lib/opencode/client';
+import { parseRoute, updateBrowserURL } from '@/lib/router';
 import { getRuntimeTransportIdentity, type RuntimeEndpointChangedDetail } from '@/lib/runtime-switch';
 import { disposeTerminalInputTransport } from '@/lib/terminalApi';
 import { useConfigStore } from '@/stores/useConfigStore';
@@ -10,6 +11,35 @@ import { usePermissionStore } from '@/stores/permissionStore';
 import { resetQuotaStoreForRuntimeSwitch } from '@/stores/useQuotaStore';
 import { useSessionUIStore } from '@/sync/session-ui-store';
 import { resetStreamingState } from '@/sync/streaming';
+
+/**
+ * Drop a previous-runtime session path after identity switch.
+ * useRouter falls back to path sessionId when the store is empty, so leaving
+ * `/session/ses_old` would re-trigger deep-link resolve + missing-directory toasts.
+ */
+const clearStaleSessionPathAfterRuntimeSwitch = (): void => {
+  // updateBrowserURL no-ops without a browser window / in VS Code / embedded chat.
+  const path = parseRoute();
+  if (!path.sessionId) {
+    return;
+  }
+  const sessionState = useSessionUIStore.getState();
+  const restoredSessionId = sessionState.currentSessionId;
+  if (restoredSessionId && restoredSessionId === path.sessionId) {
+    return;
+  }
+  const uiState = useUIStore.getState();
+  const isNewSession = Boolean(sessionState.newSessionDraft?.open) && !restoredSessionId;
+  updateBrowserURL({
+    sessionId: restoredSessionId,
+    isNewSession,
+    tab: uiState.activeMainTab || 'chat',
+    isSettingsOpen: uiState.isSettingsDialogOpen,
+    settingsPath: uiState.settingsPage,
+    diffFile: null,
+    diffScope: null,
+  }, { replace: true, force: true });
+};
 
 // Same-device transport switch (LAN⇄relay for one paired device): rebind the SDK
 // to the new transport WITHOUT tearing down connection/session state or remounting
@@ -76,5 +106,6 @@ export const resetAppForRuntimeEndpointChange = (detail: RuntimeEndpointChangedD
   resetQuotaStoreForRuntimeSwitch();
   useSessionUIStore.getState().restoreForRuntimeSwitch(detail.runtimeKey);
   useUIStore.getState().restoreForRuntimeSwitch(detail.runtimeKey);
+  clearStaleSessionPathAfterRuntimeSwitch();
   resetStreamingState();
 };
