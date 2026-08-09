@@ -1724,7 +1724,7 @@ export const SettingsView: React.FC<SettingsViewProps> = ({
           data-mobile-navigation-underlay={rootIsUnderlay ? "true" : undefined}
           aria-hidden={detailActive ? "true" : undefined}
           inert={detailActive ? true : undefined}
-          className="oc-mobile-settings-root-surface fixed inset-0 z-20 flex h-[100dvh] w-full min-w-0 max-w-full flex-col gap-6 overflow-y-auto overflow-x-hidden overscroll-contain px-[var(--oc-mobile-page-inline-inset)] pb-[calc(var(--oc-mobile-dock-height)+2.5rem+var(--oc-safe-area-bottom,env(safe-area-inset-bottom,0px)))] pt-[calc(var(--oc-safe-area-top,env(safe-area-inset-top,0px))+1rem)] [contain:layout_paint]"
+          className="oc-mobile-settings-root-surface fixed inset-0 z-20 flex h-[100dvh] w-full min-w-0 max-w-full flex-col gap-[var(--oc-mobile-page-gap)] overflow-y-auto overflow-x-hidden overscroll-contain px-[var(--oc-mobile-page-inline-inset)] pb-[calc(var(--oc-mobile-dock-height)+2.5rem+var(--oc-safe-area-bottom,env(safe-area-inset-bottom,0px)))] pt-[calc(var(--oc-safe-area-top,env(safe-area-inset-top,0px))+1rem)] [contain:layout_paint]"
         >
           <MobileTabPageHeader title={t("mobile.settings.placeholder.title")} />
           {renderMobileNavStage()}
