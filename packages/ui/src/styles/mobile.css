@@ -1689,10 +1689,6 @@ button.oc-mobile-worktree-label-trigger:active,
     --text-micro: 0.75rem;
   }
 
-  :root.mobile-pointer:not(.desktop-runtime) .markdown-content ul > li::before {
-    left: -1rem;
-  }
-
   /* Typography utility classes hardcode font-size; unset so they inherit --text-* */
   :root.mobile-pointer:not(.desktop-runtime) .typography-markdown,
   :root.mobile-pointer:not(.desktop-runtime) .typography-code,

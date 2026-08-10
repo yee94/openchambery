@@ -611,7 +611,7 @@ export const buildVSCodeThemeFromPalette = (palette: VSCodeThemePalette): Theme 
         blockquote: foreground,
         blockquoteBackground: read('textBlockQuote.background', 'transparent'),
         blockquoteBorder: read('textBlockQuote.border', effectiveBorder),
-        listMarker: applyAlpha(accent, 0.6),
+        listMarker: accent,
       },
       // Scrollbar
       scrollbar: {

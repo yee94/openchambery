@@ -180,42 +180,41 @@
     font-family: var(--font-mono, ui-monospace, SFMono-Regular, 'Liberation Mono', Menlo, monospace) !important;
   }
 
-  /* Restore default list styling inside markdown content - override Tailwind preflight.
-     Codex App uses pl-6 (1.5rem) on ul/ol inside chat markdown. */
+  /* Markdown lists — match agent-tracker `.markdown-body` rhythm:
+     native disc/decimal outside markers, compact li spacing, brand marker. */
   .markdown-content ul,
   .markdown-content ol {
-    padding-left: 1.5rem !important;
-    margin: 0 0 var(--markdown-paragraph-spacing) 0 !important;
+    margin: 0 0 0.625rem 0 !important;
   }
 
   .markdown-content ul {
-    list-style-type: none !important;
-  }
-
-  .markdown-content ul > li {
-    position: relative;
-  }
-
-  .markdown-content ul > li::before {
-    content: "–";
-    position: absolute;
-    left: -1.25em;
-    color: inherit;
+    padding-left: 18px !important;
+    list-style-type: disc !important;
+    list-style-position: outside !important;
   }
 
   .markdown-content ol {
+    padding-left: 19px !important;
     list-style-type: decimal !important;
     list-style-position: outside !important;
   }
 
   .markdown-content li {
     display: list-item !important;
+    margin: 4px 0;
+    padding-left: 1px;
     line-height: var(--markdown-list-line-height, var(--markdown-body-line-height, 1.625));
   }
 
-  /* Slightly separate sibling items without making a list feel like paragraphs. */
-  .markdown-content li + li {
-    margin-top: 0.25rem;
+  .markdown-content li::marker {
+    color: var(--markdown-list-marker, var(--primary-base, var(--primary)));
+    font-size: 0.72em;
+  }
+
+  /* Keep list item paragraphs inline so marker + text share one line rhythm. */
+  .markdown-content li > p {
+    display: inline;
+    margin: 0;
   }
 
   /* Nested lists need the same gentle breathing room, rather than inheriting

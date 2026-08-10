@@ -4,6 +4,10 @@ All notable changes to this project will be documented in this file.
 
 ## [Unreleased]
 
+## [1.16.126-beta.1] - 2026-08-10
+
+- **Markdown list styling:** use native disc/decimal outside markers with theme-primary colored `::marker` (no faded en-dash pseudo-bullets); compact list item spacing aligned with agent-tracker prose rhythm. Body line-height stays `1.625`.
+
 ## [1.16.125] - 2026-08-10
 
 - **Scheduled history mobile cards:** whole-card open with the shared soft press surface (no trailing open-session button); compact datetime and status chrome; time/trigger meta no longer ellipsized; error text uses an inline warning glyph that stays on the first line and wraps only at the trailing edge.

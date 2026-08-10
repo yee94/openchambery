@@ -404,7 +404,10 @@ const sidebarBaseRgb = hexToRgb(theme.colors.surface.muted);
     vars.push(`  --markdown-inline-code-bg: ${markdown.inlineCodeBackground || chatBackground};`);
     vars.push(`  --markdown-blockquote: ${markdown.blockquote || theme.colors.surface.mutedForeground};`);
     vars.push(`  --markdown-blockquote-border: ${markdown.blockquoteBorder || theme.colors.interactive.border};`);
-    vars.push(`  --markdown-list-marker: ${markdown.listMarker || this.opacity(primary, 0.6)};`);
+    // Solid primary accent (agent-tracker brand marker). Theme JSON listMarker
+    // values are often 8-digit hex with alpha (~60%) which washes out bullets;
+    // always use primary so markers clearly follow the active theme color.
+    vars.push(`  --markdown-list-marker: ${primary};`);
     vars.push(`  --markdown-bold: ${markdown.bold || theme.colors.surface.foreground};`);
     vars.push(`  --markdown-italic: ${markdown.italic || this.opacity(theme.colors.surface.foreground, 0.9)};`);
     vars.push(`  --markdown-strikethrough: ${markdown.strikethrough || theme.colors.surface.mutedForeground};`);
@@ -428,7 +431,7 @@ const sidebarBaseRgb = hexToRgb(theme.colors.surface.muted);
     vars.push(`  --markdown-inline-code-bg: ${chatBackground};`);
     vars.push(`  --markdown-blockquote: ${theme.colors.surface.mutedForeground};`);
     vars.push(`  --markdown-blockquote-border: ${theme.colors.interactive.border};`);
-    vars.push(`  --markdown-list-marker: ${this.opacity(primary, 0.6)};`);
+    vars.push(`  --markdown-list-marker: ${primary};`);
     vars.push(`  --markdown-bold: ${theme.colors.surface.foreground};`);
     vars.push(`  --markdown-italic: ${this.opacity(theme.colors.surface.foreground, 0.9)};`);
     vars.push(`  --markdown-strikethrough: ${theme.colors.surface.mutedForeground};`);
@@ -617,7 +620,7 @@ const sidebarBaseRgb = hexToRgb(theme.colors.surface.muted);
      vars.push('  --markdown-h5-letter-spacing: 0;');
      vars.push('  --markdown-h6-line-height: 1.5rem;');
      vars.push('  --markdown-h6-letter-spacing: 0.01em;');
-    // Keep list leading in lockstep with body (Codex does not tighten li line-height).
+    // Keep list leading in lockstep with body.
     vars.push('  --markdown-list-line-height: 1.625;');
     vars.push('  --markdown-code-block-line-height: 1rem;');
 
