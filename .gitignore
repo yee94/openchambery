@@ -79,3 +79,6 @@ test-results/
 .slim/worktrees.json
 # END oh-my-opencode-slim worktrees
 .vercel
+
+# Electron icon release backups (never ship build artifacts)
+packages/electron/resources/icons/*.release-backup

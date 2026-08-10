@@ -29,6 +29,16 @@ export const useMiniChatKeyboardShortcuts = () => {
         return;
       }
 
+      // Mini chat has no context-panel tabs — Cmd/Ctrl+W closes the window.
+      // Menu Close uses registerAccelerator:false so the renderer owns this.
+      if (canUseElectronDesktopIPC() && eventMatchesShortcut(event, combo('close_context_panel_tab'))) {
+        event.preventDefault();
+        void invokeDesktop('desktop_close_current_window').catch((error) => {
+          console.warn('[mini-chat-shortcuts] failed to close current window', error);
+        });
+        return;
+      }
+
       if (canUseElectronDesktopIPC() && eventMatchesShortcut(event, combo('new_mini_chat'))) {
         event.preventDefault();
         void invokeDesktop('desktop_open_draft_mini_chat_window', {

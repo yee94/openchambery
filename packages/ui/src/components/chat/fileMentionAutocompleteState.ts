@@ -1,6 +1,75 @@
 import type { Session } from '@opencode-ai/sdk/v2';
+import { scoreTextAgainstQuery } from '@/lib/search/fuzzySearch';
+import type { ProjectFileSearchHit } from '@/lib/opencode/client';
 
 export type FileMentionAutocompleteInputSource = 'manual' | 'paste';
+
+export type FileMentionPathHit = ProjectFileSearchHit & {
+  isDirectory?: boolean;
+};
+
+/**
+ * Merge file + directory search hits into one flat list ranked by path/name
+ * similarity. Lower score is better (same tiers as scoreTextAgainstQuery).
+ * Does not group by kind — folder vs file only differs by isDirectory.
+ */
+export const mergeAndRankFileMentionPathHits = ({
+  files,
+  directories,
+  query,
+  excludePaths,
+  limit = 20,
+}: {
+  files: readonly ProjectFileSearchHit[];
+  directories: readonly ProjectFileSearchHit[];
+  query: string;
+  excludePaths?: ReadonlySet<string>;
+  limit?: number;
+}): FileMentionPathHit[] => {
+  const byPath = new Map<string, FileMentionPathHit>();
+
+  for (const hit of directories) {
+    if (!hit.path || excludePaths?.has(hit.path)) continue;
+    byPath.set(hit.path, { ...hit, isDirectory: true });
+  }
+
+  for (const hit of files) {
+    if (!hit.path || excludePaths?.has(hit.path) || byPath.has(hit.path)) continue;
+    byPath.set(hit.path, { ...hit, isDirectory: hit.isDirectory === true });
+  }
+
+  const normalizedQuery = query.trim().toLowerCase();
+  const items = Array.from(byPath.values());
+  if (!normalizedQuery) {
+    return items.slice(0, limit);
+  }
+
+  const scored = items.map((item) => {
+    const path = (item.relativePath || item.name || '').toLowerCase();
+    const name = (item.name || '').toLowerCase();
+    const pathScore = scoreTextAgainstQuery(path, normalizedQuery);
+    const nameScore = scoreTextAgainstQuery(name, normalizedQuery);
+    let score: number;
+    if (pathScore === null && nameScore === null) {
+      // Server may return fuzzy-only hits; keep them after substring tiers.
+      score = 10 + path.length / 1e4;
+    } else {
+      score = Math.min(
+        pathScore ?? Number.POSITIVE_INFINITY,
+        nameScore ?? Number.POSITIVE_INFINITY,
+      );
+    }
+    return { item, score, sortKey: path };
+  });
+
+  scored.sort((a, b) => {
+    if (a.score !== b.score) return a.score - b.score;
+    if (a.sortKey.length !== b.sortKey.length) return a.sortKey.length - b.sortKey.length;
+    return a.sortKey.localeCompare(b.sortKey, undefined, { sensitivity: 'accent' });
+  });
+
+  return scored.slice(0, limit).map(({ item }) => item);
+};
 
 const SESSION_MENTION_PATTERN = /(^|[\s([{])(@session:([A-Za-z0-9_-]+))(?=$|[\s)\]},.!?;:])/g;
 

@@ -3,6 +3,7 @@ import { spawn, spawnSync } from 'node:child_process';
 import net from 'node:net';
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
+import { buildElectronDevChildEnv } from './electron-dev-env.mjs';
 
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = path.dirname(__filename);
@@ -183,6 +184,15 @@ async function main() {
   let hmrApiPort = '';
   let hmrUiPort = '';
 
+  // Drop production/preview process leakage (UI password, dist dir, runtime
+  // flags, scheduled-task bridge, managed OpenCode secrets). Without this,
+  // electron:dev launched from a Desktop agent shell inherits the running app
+  // and the HMR API 401s every request.
+  const childEnvBase = buildElectronDevChildEnv(process.env, {
+    OPENCHAMBER_ELECTRON_DEV: '1',
+    OPENCHAMBER_DISABLE_PWA_DEV: '1',
+  });
+
   if (useBundledUi) {
     await runProcess('bun', ['run', '--cwd', 'packages/electron', 'build:web-assets']);
   } else {
@@ -190,11 +200,9 @@ async function main() {
     hmrUiPort = String(await findAvailablePort(preferredHmrUiPort));
     devServer = spawnProcess('node', ['./scripts/dev-web-hmr.mjs'], {
       env: {
-        ...process.env,
-        OPENCHAMBER_ELECTRON_DEV: '1',
+        ...childEnvBase,
         OPENCHAMBER_HMR_UI_PORT: hmrUiPort,
         OPENCHAMBER_HMR_API_PORT: hmrApiPort,
-        OPENCHAMBER_DISABLE_PWA_DEV: '1',
       },
     });
   }
@@ -202,12 +210,10 @@ async function main() {
   const electron = spawnProcess('npx', ['electron', './main.mjs'], {
     cwd: electronDir,
     env: {
-      ...process.env,
-      OPENCHAMBER_ELECTRON_DEV: '1',
+      ...childEnvBase,
       ...(useBundledUi ? { OPENCHAMBER_ELECTRON_USE_BUNDLED_UI: '1' } : {}),
       OPENCHAMBER_HMR_UI_PORT: hmrUiPort,
       OPENCHAMBER_HMR_API_PORT: hmrApiPort,
-      OPENCHAMBER_DISABLE_PWA_DEV: '1',
     },
   });
 

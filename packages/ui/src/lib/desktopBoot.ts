@@ -273,8 +273,7 @@ export function getInjectedBootOutcome(): DesktopBootOutcome | null {
     return null;
   }
 
-  const raw = (window as { __OPENCHAMBER_DESKTOP_BOOT_OUTCOME__?: unknown })
-    .__OPENCHAMBER_DESKTOP_BOOT_OUTCOME__;
+  const raw = readRawBootOutcome();
 
   const result = validateBootOutcome(raw);
   return result.valid ? result.outcome : null;
@@ -288,13 +287,40 @@ export function getInjectedBootOutcome(): DesktopBootOutcome | null {
  * - `'malformed'`: the global is present but failed validation (deterministic failure)
  * - `'valid'`: the global is present and passes validation
  */
+const readRawBootOutcome = (): unknown => {
+  if (typeof window === 'undefined') {
+    return undefined;
+  }
+
+  // Prefer the main-world global when initScript has written it (host switch /
+  // hosts_set live inject). Fall back to the preload getter so cold New Window
+  // / re-shown windows have a synchronous outcome before executeJavaScript runs.
+  const fromGlobal = (window as { __OPENCHAMBER_DESKTOP_BOOT_OUTCOME__?: unknown })
+    .__OPENCHAMBER_DESKTOP_BOOT_OUTCOME__;
+  if (fromGlobal !== undefined && fromGlobal !== null) {
+    return fromGlobal;
+  }
+
+  const bridge = (window as {
+    __OPENCHAMBER_DESKTOP_BOOT__?: { getOutcome?: () => unknown };
+  }).__OPENCHAMBER_DESKTOP_BOOT__;
+  if (bridge && typeof bridge.getOutcome === 'function') {
+    try {
+      return bridge.getOutcome();
+    } catch {
+      return undefined;
+    }
+  }
+
+  return fromGlobal;
+};
+
 export function getBootInjectionStatus(): BootInjectionStatus {
   if (typeof window === 'undefined') {
     return 'not-injected';
   }
 
-  const raw = (window as { __OPENCHAMBER_DESKTOP_BOOT_OUTCOME__?: unknown })
-    .__OPENCHAMBER_DESKTOP_BOOT_OUTCOME__;
+  const raw = readRawBootOutcome();
 
   if (raw === undefined || raw === null) {
     return 'not-injected';

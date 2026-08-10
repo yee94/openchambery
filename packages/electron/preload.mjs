@@ -23,6 +23,22 @@ const macVibrancySupported = process.platform === 'darwin';
 // Effective state for this window (main process resolves the saved preference
 // and passes it in). Defaults on when supported unless explicitly '0'.
 const hasMacVibrancy = macVibrancySupported && readArgValue('--openchamber-mac-vibrancy') !== '0';
+// Boot outcome must be available synchronously at document start so the
+// renderer splash gate does not race executeJavaScript(initScript). contextBridge
+// values are read-only, so keep a mutable holder and expose a getter; main can
+// push updates over IPC after hosts_set / host switch.
+const bootOutcomeRaw = readArgValue('--openchamber-boot-outcome');
+let bootOutcomeState = null;
+if (bootOutcomeRaw) {
+  try {
+    const parsed = JSON.parse(bootOutcomeRaw);
+    if (parsed && typeof parsed === 'object') {
+      bootOutcomeState = parsed;
+    }
+  } catch {
+    // Malformed argv is treated as not-injected; initScript may still recover.
+  }
+}
 
 // Preload re-executes on every cross-origin navigation (we run with
 // sandbox:false, per-document). Two separate concerns to balance:
@@ -116,10 +132,19 @@ contextBridge.exposeInMainWorld('__OPENCHAMBER_ELECTRON__', {
 
 contextBridge.exposeInMainWorld('__OPENCHAMBER_PLATFORM__', process.platform);
 
-// Note: bootOutcome must stay writable from the main world's initScript so
-// re-navigations (host switch via deep link) can refresh it. contextBridge-
-// exposed globals are read-only, which blocks that update — rely solely on
-// the main-process initScript injection (dispatched on did-finish-load).
+// Synchronous boot-outcome getter (see bootOutcomeState above). Main may also
+// write window.__OPENCHAMBER_DESKTOP_BOOT_OUTCOME__ via initScript for hosts
+// that re-navigate; desktopBoot prefers that global when present.
+contextBridge.exposeInMainWorld('__OPENCHAMBER_DESKTOP_BOOT__', {
+  getOutcome: () => bootOutcomeState,
+});
+ipcRenderer.on('openchamber:boot-outcome', (_event, outcome) => {
+  if (outcome && typeof outcome === 'object') {
+    bootOutcomeState = outcome;
+  } else if (outcome === null) {
+    bootOutcomeState = null;
+  }
+});
 
 const addListener = (event, handler) => {
   const listeners = eventListeners.get(event) || new Set();

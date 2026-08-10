@@ -1708,9 +1708,14 @@ const buildInitScript = (localOrigin, bootOutcome, apiBaseUrl = '', clientToken 
   const packagedOrigin = JSON.stringify(packagedUiOrigin());
   const macVersion = macosMajorVersion();
   const outcome = JSON.stringify(bootOutcome ?? null);
+  // contextBridge-exposed keys are non-writable. Reassigning them throws (or
+  // no-ops under a single try/catch), which used to abort before boot outcome
+  // was written — leaving New Window / re-shown windows stuck on the splash.
+  // Assign each key independently and never clobber values preload already set.
   return [
     '(function(){',
-    `try{var __oc_local=${local};var __oc_api=${apiBase};var __oc_headers=${headers};var __oc_packaged=${packagedOrigin};var __oc_origin=window.location&&window.location.origin||'';var __oc_protocol=window.location&&window.location.protocol||'';var __oc_host=window.location&&window.location.hostname||'';var __oc_is_packaged=__oc_origin===__oc_packaged||__oc_protocol==='openchamber-ui:'||(__oc_protocol==='openchamber-ui:'&&__oc_host==='app');var __oc_is_local=false;try{__oc_is_local=!!(__oc_local&&__oc_origin===new URL(__oc_local).origin);}catch(_l){}window.__OPENCHAMBER_MACOS_MAJOR__=${macVersion};window.__OPENCHAMBER_LOCAL_ORIGIN__=__oc_local;window.__OPENCHAMBER_API_BASE_URL__=__oc_api;if(__oc_is_local||__oc_is_packaged){window.__OPENCHAMBER_HOME__=${home};window.__OPENCHAMBER_RUNTIME_HEADERS__=__oc_headers;}if((__oc_is_local||__oc_is_packaged)&&${token}){window.__OPENCHAMBER_CLIENT_TOKEN__=${token};}var __oc_bo=${outcome};if(__oc_bo){window.__OPENCHAMBER_DESKTOP_BOOT_OUTCOME__=__oc_bo;}}catch(_e){}`,
+    'var __oc_set=function(k,v){try{if(window[k]===undefined){window[k]=v;}}catch(_e){}};',
+    `try{var __oc_local=${local};var __oc_api=${apiBase};var __oc_headers=${headers};var __oc_packaged=${packagedOrigin};var __oc_origin=window.location&&window.location.origin||'';var __oc_protocol=window.location&&window.location.protocol||'';var __oc_host=window.location&&window.location.hostname||'';var __oc_is_packaged=__oc_origin===__oc_packaged||__oc_protocol==='openchamber-ui:'||(__oc_protocol==='openchamber-ui:'&&__oc_host==='app');var __oc_is_local=false;try{__oc_is_local=!!(__oc_local&&__oc_origin===new URL(__oc_local).origin);}catch(_l){}__oc_set('__OPENCHAMBER_MACOS_MAJOR__',${macVersion});__oc_set('__OPENCHAMBER_LOCAL_ORIGIN__',__oc_local);__oc_set('__OPENCHAMBER_API_BASE_URL__',__oc_api);if(__oc_is_local||__oc_is_packaged){__oc_set('__OPENCHAMBER_HOME__',${home});__oc_set('__OPENCHAMBER_RUNTIME_HEADERS__',__oc_headers);}if((__oc_is_local||__oc_is_packaged)&&${token}){__oc_set('__OPENCHAMBER_CLIENT_TOKEN__',${token});}var __oc_bo=${outcome};if(__oc_bo){try{window.__OPENCHAMBER_DESKTOP_BOOT_OUTCOME__=__oc_bo;}catch(_bo){}}}catch(_e){}`,
     '}())',
   ].join('');
 };
@@ -2004,15 +2009,47 @@ const loginRemoteAndIssueClientToken = async ({ url, password, trustDevice, requ
   return token ? { ok: true, token } : { ok: false, status: 500 };
 };
 
+const pushBootOutcomeToWindow = (browserWindow, bootOutcome = state.bootOutcome) => {
+  if (!browserWindow || browserWindow.isDestroyed()) return;
+  try {
+    browserWindow.webContents.send('openchamber:boot-outcome', bootOutcome ?? null);
+  } catch {
+    // Window may be mid-teardown.
+  }
+};
+
+const pushBootOutcomeToAllWindows = (bootOutcome = state.bootOutcome) => {
+  for (const browserWindow of BrowserWindow.getAllWindows()) {
+    pushBootOutcomeToWindow(browserWindow, bootOutcome);
+  }
+};
+
 const emitToWindow = (browserWindow, event, detail) => {
   if (!browserWindow || browserWindow.isDestroyed()) return;
   browserWindow.webContents.send('openchamber:emit', { event, detail });
 };
 
-const emitToAllWindows = (event, detail) => {
-  for (const browserWindow of BrowserWindow.getAllWindows()) {
-    emitToWindow(browserWindow, event, detail);
+// Single-main-window semantics: app-level events (deep links, notification
+// clicks, updater progress, SSH status, …) go to the main window only.
+// Additional windows may be attached to a different host instance — routing a
+// session/project open to every window would replay it against the wrong
+// server. Mini-chat windows are ephemeral and never inherit main status.
+const resolveMainWindowTarget = () => {
+  if (state.mainWindow && !state.mainWindow.isDestroyed()) {
+    return state.mainWindow;
   }
+  // Main window closed: promote the oldest surviving primary window so
+  // broadcasts keep landing on exactly one surface (succession by creation
+  // order — BrowserWindow.getAllWindows() returns windows in creation order).
+  const successor = BrowserWindow.getAllWindows().find(
+    (window) => !window.isDestroyed() && window.__ocMiniChat !== true,
+  );
+  state.mainWindow = successor || null;
+  return state.mainWindow;
+};
+
+const emitToAllWindows = (event, detail) => {
+  emitToWindow(resolveMainWindowTarget(), event, detail);
 };
 
 // macOS vibrancy: the native NSVisualEffectView needs a moment to settle after
@@ -2042,6 +2079,18 @@ const scheduleMacVibrancyReady = (browserWindow, delayMs = 160) => {
     setMacVibrancyReady(browserWindow, true);
   }, delayMs);
   if (typeof timer?.unref === 'function') timer.unref();
+};
+
+const presentBrowserWindow = (browserWindow, { useVibrancy = false } = {}) => {
+  if (!browserWindow || browserWindow.isDestroyed()) return;
+  browserWindow.show();
+  browserWindow.focus();
+  // Apply vibrancy to a live, on-screen window (constructor-time vibrancy
+  // leaves the material uncomposited on a cold launch until a state change).
+  if (useVibrancy) {
+    applyMacVibrancy(browserWindow);
+    scheduleMacVibrancyReady(browserWindow, 180);
+  }
 };
 
 
@@ -2691,6 +2740,9 @@ const createBrowserWindow = ({ label, restoreGeometry, url, runtimeConfig = {} }
     state.focusedWindowIds.delete(browserWindow.id);
     if (state.mainWindow && browserWindow.id === state.mainWindow.id) {
       state.mainWindow = null;
+      // Main-window succession: promote the next surviving primary window so
+      // single-main-window broadcasts keep working after the original closes.
+      resolveMainWindowTarget();
     }
     if (BrowserWindow.getAllWindows().length === 0) {
       if (process.platform !== 'darwin') {
@@ -2750,14 +2802,14 @@ const createBrowserWindow = ({ label, restoreGeometry, url, runtimeConfig = {} }
     void shell.openExternal(url).catch(() => {});
   });
 
-  // Restore session zoom; allow Mod+=/-/0 and pinch-to-zoom.
+  // Restore session zoom; Mod+=/-/0 keyboard zoom. Do NOT call
+  // setVisualZoomLevelLimits here: on macOS with Electron 41 it breaks the
+  // window's compositor surface (layoutViewport collapses to 0×0 and every
+  // pixel composites opaque/blank). The first window only survived because it
+  // navigates splash → app, which resets the broken state; additional windows
+  // that navigate once stay permanently black. Keyboard zoom still works
+  // without explicit visual-zoom limits.
   applyWebviewZoomFactor(browserWindow.webContents, state.webviewZoomFactor);
-  try {
-    // Zoom level 0 = 100%. Same min/max disables pinch; open a useful range.
-    browserWindow.webContents.setVisualZoomLevelLimits(-3, 5);
-  } catch {
-    // Older Electron builds may not expose visual zoom limits.
-  }
   browserWindow.webContents.on('zoom-changed', () => {
     // Pinch/trackpad zoom is applied by Chromium — just remember the factor.
     try {
@@ -2803,9 +2855,7 @@ const createBrowserWindow = ({ label, restoreGeometry, url, runtimeConfig = {} }
   });
 
   browserWindow.once('ready-to-show', () => {
-    browserWindow.show();
-    browserWindow.focus();
-    if (useVibrancy) applyMacVibrancy(browserWindow);
+    presentBrowserWindow(browserWindow, { useVibrancy });
   });
 
   if (url) {
@@ -3039,9 +3089,7 @@ const createMiniChatWindow = async ({ mode, sessionId = '', directory = '', proj
   }
 
   browserWindow.once('ready-to-show', () => {
-    browserWindow.show();
-    browserWindow.focus();
-    if (useVibrancy) applyMacVibrancy(browserWindow);
+    presentBrowserWindow(browserWindow, { useVibrancy });
   });
 
   browserWindow.webContents.setWindowOpenHandler(({ url }) => {
@@ -4323,8 +4371,9 @@ const handleInvoke = async (browserWindow, command, args = {}) => {
       // First-launch chooser reloads after this write. Stale per-window scripts
       // would re-inject not-configured and trap the UI on onboarding forever.
       syncWindowInitScriptsFromState();
-      // Await live inject so announceAvailable → soft main transition can read
-      // the updated __OPENCHAMBER_DESKTOP_BOOT_OUTCOME__ before hosts_set returns.
+      // Push the updated outcome through preload (synchronous getter) and the
+      // main-world initScript so announceAvailable → soft main transition sees it.
+      pushBootOutcomeToAllWindows(state.bootOutcome);
       await Promise.all(
         BrowserWindow.getAllWindows().map(async (browserWindow) => {
           if (!browserWindow || browserWindow.isDestroyed()) return;
@@ -4519,27 +4568,41 @@ const handleInvoke = async (browserWindow, command, args = {}) => {
       return await detectLanIPv4Address();
 
     case 'desktop_new_window': {
+      // Match openMainWindow resolution so additional windows inherit the same
+      // UI origin + runtime config (including relay-host local-UI boot).
       const config = readDesktopHostsConfig();
-      const localUiUrl = shouldUsePackagedUi() ? buildPackagedUiUrl('/index.html') : (state.sidecarUrl || state.localOrigin);
-      let targetUrl = localUiUrl;
-      let runtimeConfig = {
-        apiBaseUrl: state.sidecarUrl || state.localOrigin || '',
-        clientToken: readDesktopLocalClientToken(),
-        requestHeaders: {},
-      };
-      if (config.defaultHostId && config.defaultHostId !== LOCAL_HOST_ID) {
-        const host = config.hosts.find((entry) => entry.id === config.defaultHostId);
-        const apiUrl = host?.apiUrl || host?.url;
-        if (host?.url && apiUrl && !state.unreachableHosts.has(apiUrl)) {
-          targetUrl = shouldUsePackagedUi() ? buildPackagedUiUrl('/index.html') : host.url;
-          runtimeConfig = {
-            apiBaseUrl: normalizeHostUrl(apiUrl),
-            clientToken: sanitizeClientTokenForStorage(host.clientToken),
-            requestHeaders: sanitizeRuntimeRequestHeaders(host.requestHeaders),
-          };
-        }
+      const localUiUrl = shouldUsePackagedUi()
+        ? buildPackagedUiUrl('/index.html')
+        : (state.localUiOrigin || state.sidecarUrl || state.localOrigin);
+      const host = config.defaultHostId && config.defaultHostId !== LOCAL_HOST_ID
+        ? config.hosts.find((entry) => entry.id === config.defaultHostId)
+        : null;
+      const relayHost = host && host.relay && typeof host.relay === 'object' ? host : null;
+      if (relayHost) {
+        const localApiBaseUrl = state.sidecarUrl || state.apiBaseUrl || state.localOrigin || '';
+        const localToken = resolveStoredClientTokenForUrl(localApiBaseUrl, config) || state.clientToken || '';
+        await createAdditionalWindow(localUiUrl, {
+          apiBaseUrl: localApiBaseUrl,
+          clientToken: localToken,
+          requestHeaders: {},
+          relayHostId: relayHost.id,
+        });
+        return null;
       }
-      await createAdditionalWindow(targetUrl, runtimeConfig);
+      const apiBaseUrl = host?.apiUrl || host?.url || state.sidecarUrl || state.apiBaseUrl || state.localOrigin || '';
+      const clientToken = host?.clientToken
+        || resolveStoredClientTokenForUrl(apiBaseUrl, config)
+        || state.clientToken
+        || readDesktopLocalClientToken();
+      const requestHeaders = sanitizeRuntimeRequestHeaders(host?.requestHeaders || state.requestHeaders || {});
+      const targetUrl = host?.url && apiBaseUrl && !state.unreachableHosts.has(apiBaseUrl)
+        ? (shouldUsePackagedUi() ? buildPackagedUiUrl('/index.html') : host.url)
+        : localUiUrl;
+      await createAdditionalWindow(targetUrl, {
+        apiBaseUrl: normalizeHostUrl(apiBaseUrl) || apiBaseUrl,
+        clientToken: sanitizeClientTokenForStorage(clientToken),
+        requestHeaders,
+      });
       return null;
     }
 
@@ -4740,6 +4803,7 @@ const buildMacMenu = () => {
         },
         { type: 'separator' },
         { label: 'Settings', accelerator: 'Cmd+,', click: () => dispatchAction('settings') },
+        { label: 'Switch Instance', click: () => dispatchAction('switch-instance') },
         { label: 'Reload Webview', click: () => reloadMenuTargetWindow() },
         { label: 'Restart', click: () => relaunchFromMenu() },
         { label: 'Command Palette', accelerator: 'Cmd+P', click: () => dispatchAction('command-palette') },
@@ -4755,15 +4819,14 @@ const buildMacMenu = () => {
     {
       label: 'File',
       submenu: [
-        { label: 'New Window', accelerator: 'Cmd+Shift+Alt+N', click: () => void handleInvoke(null, 'desktop_new_window') },
+        { label: 'New Window', accelerator: 'Cmd+Shift+N', click: () => void handleInvoke(null, 'desktop_new_window') },
         { type: 'separator' },
         { label: 'New Session', accelerator: 'Cmd+N', click: () => dispatchAction('new-session') },
-        { label: 'New Worktree', accelerator: 'Cmd+Shift+N', click: () => dispatchAction('new-worktree-session') },
         // registerAccelerator:false → show the shortcut hint but let the
         // renderer own the (customizable) key binding, avoiding a double open.
         { label: 'New Mini Chat', accelerator: 'Cmd+Alt+N', registerAccelerator: false, click: () => dispatchOpenMiniChat() },
         { type: 'separator' },
-        { label: 'Add Workspace', click: () => dispatchAction('change-workspace') },
+        { label: 'Add Project', click: () => dispatchAction('change-workspace') },
         { type: 'separator' },
         // registerAccelerator:false → renderer owns Cmd/Ctrl+W so an open
         // context-panel tab closes first (VS Code-style) instead of the window.
@@ -4859,6 +4922,7 @@ const buildAutoHiddenMenu = () => {
         },
         { type: 'separator' },
         { label: 'Settings', accelerator: 'Ctrl+,', click: () => dispatchAction('settings') },
+        { label: 'Switch Instance', click: () => dispatchAction('switch-instance') },
         { label: 'Reload Webview', click: () => reloadMenuTargetWindow() },
         { label: 'Restart', click: () => relaunchFromMenu() },
         { label: 'Command Palette', accelerator: 'Ctrl+P', click: () => dispatchAction('command-palette') },
@@ -4869,12 +4933,11 @@ const buildAutoHiddenMenu = () => {
     {
       label: 'File',
       submenu: [
-        { label: 'New Window', accelerator: 'Ctrl+Shift+Alt+N', click: () => void handleInvoke(null, 'desktop_new_window') },
+        { label: 'New Window', accelerator: 'Ctrl+Shift+N', click: () => void handleInvoke(null, 'desktop_new_window') },
         { type: 'separator' },
         { label: 'New Session', accelerator: 'Ctrl+N', click: () => dispatchAction('new-session') },
-        { label: 'New Worktree', accelerator: 'Ctrl+Shift+N', click: () => dispatchAction('new-worktree-session') },
         { type: 'separator' },
-        { label: 'Add Workspace', click: () => dispatchAction('change-workspace') },
+        { label: 'Add Project', click: () => dispatchAction('change-workspace') },
         { type: 'separator' },
         { role: 'quit' },
       ],
@@ -4961,6 +5024,40 @@ const buildAutoHiddenMenu = () => {
       ],
     },
   ]);
+};
+
+// macOS Dock right-click: quick actions above the system window list / Options.
+// Keep this short — Dock menus are glanceable, not a second application menu.
+// Always reveal a main surface first: Dock clicks often arrive with no focused window.
+const setupDockMenu = () => {
+  if (process.platform !== 'darwin' || !app.dock) return;
+
+  const withMainWindow = async (run) => {
+    const target = await revealMainWindow();
+    if (!target || target.isDestroyed()) return;
+    await run(target);
+  };
+
+  app.dock.setMenu(Menu.buildFromTemplate([
+    { label: 'New Window', click: () => void handleInvoke(null, 'desktop_new_window') },
+    { type: 'separator' },
+    {
+      label: 'New Session',
+      click: () => {
+        void withMainWindow((target) => {
+          emitToWindow(target, 'openchamber:open-draft-session', { directory: '', projectId: '' });
+        });
+      },
+    },
+    {
+      label: 'New Mini Chat',
+      click: () => {
+        void withMainWindow((target) => {
+          dispatchOpenMiniChat(target);
+        });
+      },
+    },
+  ]));
 };
 
 contextMenu({
@@ -5438,6 +5535,7 @@ app.whenReady().then(async () => {
 
   if (process.platform === 'darwin') {
     Menu.setApplicationMenu(buildMacMenu());
+    setupDockMenu();
   } else {
     Menu.setApplicationMenu(buildAutoHiddenMenu());
   }

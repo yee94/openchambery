@@ -6,6 +6,7 @@ import {
     getFileMentionAutocompleteQuery,
     getSessionMentionToken,
     getVisibleSessionMentionCandidates,
+    mergeAndRankFileMentionPathHits,
     replaceSessionMentionTokens,
     resolveSessionMentionDeletion,
 } from '../fileMentionAutocompleteState';
@@ -153,5 +154,77 @@ describe('session mentions', () => {
         const parsed = JSON.parse(payload) as SessionMentionContext[];
         expect(parsed.map((context) => context.id)).toEqual(['ses_123', 'ses_456']);
         expect(parsed[0].messages[0]?.text).toContain('[Message truncated]');
+    });
+});
+
+describe('mergeAndRankFileMentionPathHits', () => {
+    const hit = (relativePath: string, extras?: { isDirectory?: boolean; path?: string }) => {
+        const name = relativePath.split('/').filter(Boolean).pop() || relativePath;
+        return {
+            name,
+            path: extras?.path ?? `/project/${relativePath}`,
+            relativePath,
+            extension: name.includes('.') ? name.split('.').pop()?.toLowerCase() : undefined,
+            isDirectory: extras?.isDirectory,
+        };
+    };
+
+    test('interleaves files and directories by similarity without group-by kind', () => {
+        const ranked = mergeAndRankFileMentionPathHits({
+            files: [
+                hit('packages/ui/src/config.ts'),
+                hit('docs/config.md'),
+            ],
+            directories: [
+                hit('config', { isDirectory: true }),
+                hit('packages/config', { isDirectory: true }),
+            ],
+            query: 'config',
+            limit: 10,
+        });
+
+        // Exact name "config" wins for both the root dir and packages/config;
+        // file hits follow by path/name tier — never folders-first then files.
+        expect(ranked.map((item) => item.relativePath)).toEqual([
+            'config',
+            'packages/config',
+            'docs/config.md',
+            'packages/ui/src/config.ts',
+        ]);
+        expect(ranked.map((item) => Boolean(item.isDirectory))).toEqual([
+            true,
+            true,
+            false,
+            false,
+        ]);
+        // Critical: a mid-score file is not forced after every directory.
+        // packages/config (dir) is only ahead of docs/config.md because its
+        // basename matches exactly, not because of kind grouping.
+    });
+
+    test('keeps a better-matching file ahead of a weaker directory hit', () => {
+        const ranked = mergeAndRankFileMentionPathHits({
+            files: [hit('src/search.ts')],
+            directories: [hit('packages/search-utils', { isDirectory: true })],
+            query: 'search.ts',
+        });
+
+        expect(ranked.map((item) => item.relativePath)).toEqual([
+            'src/search.ts',
+            'packages/search-utils',
+        ]);
+        expect(ranked[0]?.isDirectory).toBeFalsy();
+    });
+
+    test('excludes recent paths and preserves directory mime flag', () => {
+        const ranked = mergeAndRankFileMentionPathHits({
+            files: [hit('src/a.ts'), hit('src/b.ts')],
+            directories: [hit('src', { isDirectory: true })],
+            query: 'src',
+            excludePaths: new Set(['/project/src/a.ts']),
+        });
+
+        expect(ranked.map((item) => item.path)).not.toContain('/project/src/a.ts');
+        expect(ranked.find((item) => item.relativePath === 'src')?.isDirectory).toBe(true);
     });
 });

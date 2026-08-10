@@ -97,7 +97,7 @@ export const HelpDialog: React.FC = () => {
           keys: '',
         },
         {
-          keys: [`Shift + Alt + ${mod} + N`],
+          keys: [`Shift + ${mod} + N`],
           descriptionKey: "helpDialog.item.newWindow",
           icon: "window",
         },

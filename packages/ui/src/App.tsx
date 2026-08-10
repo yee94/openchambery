@@ -1120,7 +1120,7 @@ function App({ apis }: AppProps) {
                   <SessionStartupCoordinator />
                   <OpenCodeUpdateToast />
                   <MainLayout />
-                  {isDesktopRuntime && desktopRuntimeTransition.epoch > 0 && (
+                  {isDesktopRuntime && (
                     <DesktopRuntimeSwitchOverlay
                       transition={desktopRuntimeTransition}
                       ready={isInitialized && isConnected}

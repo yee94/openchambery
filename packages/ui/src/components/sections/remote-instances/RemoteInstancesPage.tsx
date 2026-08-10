@@ -1,4 +1,5 @@
 import React from 'react';
+import { useEvent } from '@reactuses/core';
 import QRCode from 'qrcode';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
@@ -57,10 +58,18 @@ import {
   type DesktopHostRelay,
   type HostProbeResult,
 } from '@/lib/desktopHosts';
+import {
+  isDesktopHostActive,
+  type DesktopHostProbeSnapshot,
+} from '@/lib/desktopHostSwitch';
 import { createRelayTunnelClient } from '@/lib/relay/tunnel-client';
 import { getDesktopLanAddress, isDesktopLocalOriginActive, isDesktopShell } from '@/lib/desktop';
 import { runtimeFetch } from '@/lib/runtime-fetch';
-import { getRuntimeApiBaseUrl, switchRuntimeEndpoint } from '@/lib/runtime-switch';
+import { getRuntimeApiBaseUrl, subscribeRuntimeEndpointChanged, switchRuntimeEndpoint } from '@/lib/runtime-switch';
+import {
+  switchDesktopHostInstance,
+  useDesktopHostSwitchPending,
+} from '@/queries/desktopHostSwitchMutation';
 import { createUuid } from '@/lib/uuid';
 import {
   DEFAULT_PAIRING_RELAY_URL,
@@ -466,10 +475,13 @@ export const RemoteInstancesPage: React.FC = () => {
   const [directHosts, setDirectHosts] = React.useState<DesktopHost[]>([]);
   // Live reachability per saved host (undefined = probe in flight), mirroring
   // the host switcher's status line so this list is not just dead text.
-  const [directHostStatus, setDirectHostStatus] = React.useState<Record<string, HostProbeResult>>({});
+  const [directHostStatus, setDirectHostStatus] = React.useState<Record<string, DesktopHostProbeSnapshot>>({});
   const [directDefaultHostId, setDirectDefaultHostId] = React.useState<string | null>('local');
   const [directLoading, setDirectLoading] = React.useState(false);
   const [directSaving, setDirectSaving] = React.useState(false);
+  // Bumps when the active runtime endpoint changes so "Current" badges re-render.
+  const [directRuntimeEpoch, setDirectRuntimeEpoch] = React.useState(0);
+  const hostSwitchPending = useDesktopHostSwitchPending();
   const [directLabel, setDirectLabel] = React.useState('');
   const [directUrl, setDirectUrl] = React.useState('');
   const [directToken, setDirectToken] = React.useState('');
@@ -801,6 +813,25 @@ export const RemoteInstancesPage: React.FC = () => {
     await persistDirectHosts(directHosts, id);
   }, [directHosts, persistDirectHosts]);
 
+  const switchToDirectHost = useEvent(async (host: DesktopHost) => {
+    if (isDesktopHostActive(host) || hostSwitchPending) return;
+    setDirectError(null);
+    // Global mutation entry: pending state + full-screen overlay are owned by
+    // desktopHostSwitchMutation / DesktopRuntimeSwitchOverlay.
+    const result = await switchDesktopHostInstance({
+      host,
+      cachedProbe: directHostStatus[host.id] || null,
+    });
+    setDirectHostStatus((prev) => ({ ...prev, [host.id]: result.status }));
+  });
+
+  React.useEffect(() => {
+    if (!showInstanceManagement) return;
+    return subscribeRuntimeEndpointChanged(() => {
+      setDirectRuntimeEpoch((value) => value + 1);
+    });
+  }, [showInstanceManagement]);
+
   // Probe saved hosts whenever the list changes so each row shows a live
   // Connected/Unreachable status like the host switcher does. One pass per
   // list identity — no polling; the row set changes rarely.
@@ -808,7 +839,12 @@ export const RemoteInstancesPage: React.FC = () => {
     if (!showInstanceManagement || directHosts.length === 0) return;
     let cancelled = false;
     void Promise.all(directHosts.map(async (host) => {
-      const relayProbe = () => probeRelayDesktopHost(host.relay!).catch((): HostProbeResult => ({ status: 'unreachable', latencyMs: 0 }));
+      const relayProbe = async (): Promise<DesktopHostProbeSnapshot> => {
+        const result = await probeRelayDesktopHost(host.relay!).catch((): HostProbeResult => ({ status: 'unreachable', latencyMs: 0 }));
+        return result.status === 'ok'
+          ? { status: result.status, latencyMs: result.latencyMs, via: 'relay' }
+          : { status: result.status, latencyMs: result.latencyMs };
+      };
       // Relay-only host: tunnel probe. Multi-transport host: direct first,
       // relay as the away-from-home fallback.
       if (host.relay && !host.apiUrl) {
@@ -816,7 +852,7 @@ export const RemoteInstancesPage: React.FC = () => {
       }
       const url = normalizeHostUrl(getDesktopHostApiUrl(host));
       if (!url) {
-        return [host.id, host.relay ? await relayProbe() : ({ status: 'unreachable', latencyMs: 0 } as HostProbeResult)] as const;
+        return [host.id, host.relay ? await relayProbe() : ({ status: 'unreachable', latencyMs: 0 } as DesktopHostProbeSnapshot)] as const;
       }
       const direct = await desktopHostProbe(url, { clientToken: host.clientToken || null, requestHeaders: host.requestHeaders || null })
         .catch((): HostProbeResult => ({ status: 'unreachable', latencyMs: 0 }));
@@ -1595,6 +1631,8 @@ export const RemoteInstancesPage: React.FC = () => {
               ) : directHosts.length === 0 ? (
                 <p className="typography-meta text-muted-foreground">{t('settings.remoteInstances.direct.state.empty')}</p>
               ) : directHosts.map((host) => {
+                // directRuntimeEpoch keeps isActive fresh after an in-page switch.
+                void directRuntimeEpoch;
                 const probe = directHostStatus[host.id];
                 const statusKey: I18nKey = !probe
                   ? 'desktopHostSwitcher.status.checking'
@@ -1610,6 +1648,8 @@ export const RemoteInstancesPage: React.FC = () => {
                             ? 'desktopHostSwitcher.status.wrongService'
                             : 'desktopHostSwitcher.status.unreachable';
                 const isOnline = probe?.status === 'ok';
+                const isActive = isDesktopHostActive(host);
+                const switchBlocked = isActive || hostSwitchPending || directSaving;
                 return (
                 <div key={host.id} className="py-1.5">
                   <div className="flex items-center justify-between gap-3">
@@ -1617,11 +1657,12 @@ export const RemoteInstancesPage: React.FC = () => {
                         <div className="flex min-w-0 items-center gap-2">
                           <span className={cn(
                             'h-2 w-2 shrink-0 rounded-full',
-                            !probe ? 'bg-muted-foreground/30 animate-pulse' : isOnline ? 'bg-[var(--status-success)]' : 'bg-[var(--status-error)]',
+                            !probe ? 'bg-muted-foreground/30 animate-pulse' : isOnline || isActive ? 'bg-[var(--status-success)]' : 'bg-[var(--status-error)]',
                           )} />
                           <p className="typography-ui-label text-foreground truncate">{redactSensitiveUrl(host.label)}</p>
+                          {isActive ? <span className="typography-micro text-muted-foreground shrink-0">{t('desktopHostSwitcher.header.current')}</span> : null}
                           {directDefaultHostId === host.id ? <span className="typography-micro text-muted-foreground shrink-0">{t('desktopHostSwitcher.header.default')}</span> : null}
-                          <span className={cn('typography-micro shrink-0', isOnline ? 'text-[var(--status-success)]' : 'text-muted-foreground')}>
+                          <span className={cn('typography-micro shrink-0', isOnline || isActive ? 'text-[var(--status-success)]' : 'text-muted-foreground')}>
                             {t(statusKey)}
                             {isOnline && typeof probe?.latencyMs === 'number'
                               ? t('desktopHostSwitcher.status.ping', { ms: Math.max(0, Math.round(probe.latencyMs)) })
@@ -1633,6 +1674,18 @@ export const RemoteInstancesPage: React.FC = () => {
                         </p>
                       </div>
                       <div className="flex shrink-0 items-center gap-1">
+                        <Button
+                          type="button"
+                          variant="outline"
+                          size="xs"
+                          className="!font-normal"
+                          onClick={() => void switchToDirectHost(host)}
+                          disabled={switchBlocked}
+                          aria-label={t('desktopHostSwitcher.actions.switchToAria', { instance: redactSensitiveUrl(host.label) })}
+                        >
+                          <Icon name="arrow-left-right" className="h-3.5 w-3.5" />
+                          {isActive ? t('desktopHostSwitcher.header.current') : t('desktopHostSwitcher.actions.switchInstance')}
+                        </Button>
                         <Button type="button" variant="ghost" size="xs" className="!font-normal" onClick={() => void setDefaultDirectHost(host.id)} disabled={directSaving || directDefaultHostId === host.id} aria-label={t('desktopHostSwitcher.actions.setAsDefaultAria')}>
                           {directDefaultHostId === host.id ? <Icon name="star-fill" className="h-3.5 w-3.5" /> : <Icon name="star" className="h-3.5 w-3.5" />}
                         </Button>
@@ -1641,12 +1694,12 @@ export const RemoteInstancesPage: React.FC = () => {
                             link instead. Multi-transport hosts keep their relay leg
                             through the edit (object spread preserves it). */}
                         {host.relay && !host.apiUrl ? null : (
-                          <Button type="button" variant="ghost" size="xs" className="!font-normal" onClick={() => beginEditDirectHost(host)} disabled={directSaving}>
+                          <Button type="button" variant="ghost" size="xs" className="!font-normal" onClick={() => beginEditDirectHost(host)} disabled={directSaving || hostSwitchPending}>
                             <Icon name="pencil" className="h-3.5 w-3.5" />
                             {t('desktopHostSwitcher.actions.edit')}
                           </Button>
                         )}
-                        <Button type="button" variant="ghost" size="xs" className="!font-normal" onClick={() => void handleRemoveDirectHost(host.id)} disabled={directSaving}>
+                        <Button type="button" variant="ghost" size="xs" className="!font-normal" onClick={() => void handleRemoveDirectHost(host.id)} disabled={directSaving || hostSwitchPending}>
                           <Icon name="delete-bin" className="h-3.5 w-3.5" />
                           {t('settings.common.actions.delete')}
                         </Button>

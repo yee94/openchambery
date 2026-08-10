@@ -4,6 +4,16 @@ All notable changes to this project will be documented in this file.
 
 ## [Unreleased]
 
+## [1.16.127-beta.1] - 2026-08-10
+
+- **Desktop new window black screen fix:** remove `setVisualZoomLevelLimits(-3, 5)` which broke the macOS compositor surface (0×0 layout viewport, fully opaque/blank paint) on Electron 41 additional windows; first window only survived because splash → app navigation reset the broken state.
+- **Desktop window boot reliability:** per-key init-script assignment so contextBridge read-only globals no longer abort boot-outcome injection (fixes New Window / re-shown windows stuck on splash); boot outcome pushed through preload for host switches.
+- **Desktop single-main-window semantics:** app-level broadcasts (deep links, notification clicks, updater/SSH/installed-apps events, system resume) now route to the main window only; closing the main window promotes the next surviving primary window in creation order.
+- **electron:dev environment isolation:** strip production/preview `OPENCHAMBER_*` / `OPENCODE_*` env leakage (UI password, dist dir, runtime flags) from HMR children so dev API no longer 401s.
+- **Desktop menu/dock:** New Window accelerator restored to Cmd/Ctrl+Shift+N, New Worktree entry removed, "Add Workspace" → "Add Project", and a dock menu (New Window / New Session / New Mini Chat).
+- **File mention autocomplete:** move state derivation into a focused `fileMentionAutocompleteState.ts` module with tests.
+- **Desktop host switch:** extract desktop host switch mutation/query helpers with tests.
+
 ## [1.16.126-beta.1] - 2026-08-10
 
 - **Markdown list styling:** use native disc/decimal outside markers with theme-primary colored `::marker` (no faded en-dash pseudo-bullets); compact list item spacing aligned with agent-tracker prose rhythm. Body line-height stays `1.625`.

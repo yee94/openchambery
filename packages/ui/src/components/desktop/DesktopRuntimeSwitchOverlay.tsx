@@ -1,6 +1,7 @@
 import * as React from 'react';
 import { OpenChamberLogo } from '@/components/ui/OpenChamberLogo';
 import { useI18n } from '@/lib/i18n';
+import { useDesktopHostSwitchPending } from '@/queries/desktopHostSwitchMutation';
 import { getDesktopRuntimeSwitchRemainingMs } from './desktopRuntimeSwitchOverlayTiming';
 
 type DesktopRuntimeSwitchOverlayProps = {
@@ -13,11 +14,15 @@ type DesktopRuntimeSwitchOverlayProps = {
 
 export function DesktopRuntimeSwitchOverlay({ transition, ready }: DesktopRuntimeSwitchOverlayProps) {
   const { t } = useI18n();
+  const mutationPending = useDesktopHostSwitchPending();
   const [completedEpoch, setCompletedEpoch] = React.useState(0);
-  const visible = transition.epoch > completedEpoch;
+  // Keep overlay through probe/switch mutation AND the post-endpoint reconnect
+  // window (identity-change epoch). One shared surface for every entry point.
+  const epochVisible = transition.epoch > completedEpoch;
+  const visible = mutationPending || epochVisible;
 
   React.useEffect(() => {
-    if (!visible) return;
+    if (!epochVisible || mutationPending) return;
     const remainingMs = getDesktopRuntimeSwitchRemainingMs(transition.startedAt, Date.now(), ready);
     if (remainingMs === null) return;
 
@@ -25,7 +30,7 @@ export function DesktopRuntimeSwitchOverlay({ transition, ready }: DesktopRuntim
       setCompletedEpoch((current) => Math.max(current, transition.epoch));
     }, remainingMs);
     return () => window.clearTimeout(timer);
-  }, [ready, transition.epoch, transition.startedAt, visible]);
+  }, [epochVisible, mutationPending, ready, transition.epoch, transition.startedAt]);
 
   if (!visible) return null;
 

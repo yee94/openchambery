@@ -279,6 +279,37 @@ describe('getInjectedBootOutcome', () => {
     }
   });
 
+  test('reads boot outcome from preload bridge when global is absent', () => {
+    const w = mockWindow();
+    w.__OPENCHAMBER_DESKTOP_BOOT__ = {
+      getOutcome: () => ({ target: 'local', status: 'ok' }),
+    };
+    try {
+      expect(getInjectedBootOutcome()).toEqual({ target: 'local', status: 'ok' });
+      expect(getBootInjectionStatus()).toBe('valid');
+    } finally {
+      restoreWindow();
+    }
+  });
+
+  test('prefers main-world global over preload bridge', () => {
+    const w = mockWindow();
+    w.__OPENCHAMBER_DESKTOP_BOOT_OUTCOME__ = { target: 'remote', status: 'ok', hostId: 'h1', url: 'https://x.test' };
+    w.__OPENCHAMBER_DESKTOP_BOOT__ = {
+      getOutcome: () => ({ target: 'local', status: 'ok' }),
+    };
+    try {
+      expect(getInjectedBootOutcome()).toEqual({
+        target: 'remote',
+        status: 'ok',
+        hostId: 'h1',
+        url: 'https://x.test',
+      });
+    } finally {
+      restoreWindow();
+    }
+  });
+
   test('returns null for payload with numeric kind', () => {
     const w = mockWindow();
     w.__OPENCHAMBER_DESKTOP_BOOT_OUTCOME__ = { kind: 42 };

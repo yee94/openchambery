@@ -98,6 +98,7 @@ export const resolveMenuActionEventSource = (
 type MenuAction =
   | 'about'
   | 'settings'
+  | 'switch-instance'
   | 'command-palette'
   | 'quick-open'
   | 'new-session'
@@ -137,6 +138,7 @@ export const useMenuActions = (
   const setSessionSwitcherOpen = useUIStore((s) => s.setSessionSwitcherOpen);
   const setActiveMainTab = useUIStore((s) => s.setActiveMainTab);
   const setSettingsDialogOpen = useUIStore((s) => s.setSettingsDialogOpen);
+  const setSettingsPage = useUIStore((s) => s.setSettingsPage);
   const setAboutDialogOpen = useUIStore((s) => s.setAboutDialogOpen);
   const toggleRightSidebar = useUIStore((s) => s.toggleRightSidebar);
   const setRightSidebarOpen = useUIStore((s) => s.setRightSidebarOpen);
@@ -219,6 +221,12 @@ export const useMenuActions = (
           break;
 
         case 'settings':
+          setSettingsDialogOpen(true);
+          break;
+
+        case 'switch-instance':
+          // Same surface as DesktopHostSwitcher → Settings → Remote Instances.
+          setSettingsPage('remote-instances');
           setSettingsDialogOpen(true);
           break;
 
@@ -360,6 +368,7 @@ export const useMenuActions = (
       setSessionSwitcherOpen,
       setCommandPaletteOpen,
       setSettingsDialogOpen,
+      setSettingsPage,
       setBottomTerminalExpanded,
       setRightSidebarOpen,
       setRightSidebarTab,
