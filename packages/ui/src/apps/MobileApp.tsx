@@ -1,5 +1,6 @@
 import React from 'react';
 import { useEvent } from '@reactuses/core';
+import { useStartupCatalogRecovery } from '@/hooks/useStartupCatalogRecovery';
 import { toast } from 'sonner';
 
 import { Icon } from '@/components/icon/Icon';
@@ -3564,10 +3565,6 @@ export function MobileApp({ apis }: MobileAppProps) {
   const isInitialized = useConfigStore((state) => state.isInitialized);
   const isConnected = useConfigStore((state) => state.isConnected);
   const connectionPhase = useConfigStore((state) => state.connectionPhase);
-  const providersCount = useConfigStore((state) => state.providers.length);
-  const agentsCount = useConfigStore((state) => state.agents.length);
-  const loadProviders = useConfigStore((state) => state.loadProviders);
-  const loadAgents = useConfigStore((state) => state.loadAgents);
   const currentDirectory = useDirectoryStore((state) => state.currentDirectory);
   const currentSessionId = useSessionUIStore((state) => state.currentSessionId);
   const newSessionDraftOpen = useSessionUIStore((state) => Boolean(state.newSessionDraft?.open));
@@ -3633,8 +3630,10 @@ export function MobileApp({ apis }: MobileAppProps) {
     const refreshInPlace = () => {
       void initializeApp();
       void refreshGitHubAuthStatus(apis.github, { force: true });
-      if (providersCount === 0) void loadProviders({ source: 'mobileApp:nativeResume' });
-      if (agentsCount === 0) void loadAgents({ source: 'mobileApp:nativeResume' });
+      // Catalog recovery is owned by useStartupCatalogRecovery; resume only
+      // re-runs initializeApp and auth. Empty catalogs re-enter recovery when
+      // isConnected stays true or connectionEpoch remounts bootstrap.
+      void useConfigStore.getState().refreshMissingCatalogs({ source: 'mobileApp:nativeResume' });
     };
     const disconnect = () => {
       switchRuntimeEndpoint({ apiBaseUrl: '', clientToken: null, runtimeKey: 'mobile-disconnected' });
@@ -3790,11 +3789,10 @@ export function MobileApp({ apis }: MobileAppProps) {
     void initializeApp();
   }, [connectionEpoch, initializeApp, isNativeMobileApp]);
 
-  React.useEffect(() => {
-    if (!isConnected) return;
-    if (providersCount === 0) void loadProviders({ source: 'mobileApp:recovery' });
-    if (agentsCount === 0) void loadAgents({ source: 'mobileApp:recovery' });
-  }, [agentsCount, isConnected, loadAgents, loadProviders, providersCount]);
+  useStartupCatalogRecovery({
+    enabled: !isNativeMobileApp || Boolean(getRuntimeApiBaseUrl()),
+    source: 'mobileApp:recovery',
+  });
 
   React.useEffect(() => {
     if (!isConnected) return;

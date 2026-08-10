@@ -68,6 +68,7 @@ import { OpenCodeUpdateToast } from '@/components/update/OpenCodeUpdateToast';
 import { StartupSessionSyncOverlay } from '@/components/session/StartupSessionSyncOverlay';
 import { DesktopRuntimeSwitchOverlay } from '@/components/desktop/DesktopRuntimeSwitchOverlay';
 import { SessionStartupCoordinator } from '@/components/session/SessionStartupCoordinator';
+import { useStartupCatalogRecovery } from '@/hooks/useStartupCatalogRecovery';
 import { useGlobalSessionsStore } from '@/stores/useGlobalSessionsStore';
 import { useUpdateStore } from '@/stores/useUpdateStore';
 import { markStartupTrace, startupTraceEnabled } from '@/lib/startupTrace';
@@ -230,10 +231,6 @@ function App({ apis }: AppProps) {
   const initializeApp = useConfigStore((s) => s.initializeApp);
   const isInitialized = useConfigStore((s) => s.isInitialized);
   const isConnected = useConfigStore((s) => s.isConnected);
-  const providersCount = useConfigStore((state) => state.providers.length);
-  const agentsCount = useConfigStore((state) => state.agents.length);
-  const loadProviders = useConfigStore((state) => state.loadProviders);
-  const loadAgents = useConfigStore((state) => state.loadAgents);
   const error = useSessionUIStore((s) => s.error);
   const clearError = useSessionUIStore((s) => s.clearError);
   const currentSessionId = useSessionUIStore((state) => state.currentSessionId);
@@ -570,30 +567,12 @@ function App({ apis }: AppProps) {
   // Startup recovery: poll until providers AND agents are loaded.
   // loadProviders/loadAgents resolve normally even on failure (errors swallowed),
   // so a reactive effect can't detect failure — we need an interval.
-  React.useEffect(() => {
-    if (!embeddedBackgroundWorkEnabled || isVSCodeRuntime || !isConnected) return;
-    if (providersCount > 0 && agentsCount > 0) return;
-
-    let active = true;
-    let retries = 0;
-    const MAX_RETRIES = 15;
-    const attempt = async () => {
-      const state = useConfigStore.getState();
-      if (state.providers.length > 0 && state.agents.length > 0) return;
-      try {
-        if (state.providers.length === 0) await loadProviders({ source: 'startupRecovery' });
-        if (useConfigStore.getState().agents.length === 0) await loadAgents({ source: 'startupRecovery' });
-      } catch { /* retry next interval */ }
-    };
-
-    void attempt();
-    const id = setInterval(() => {
-      if (!active) return;
-      if (++retries >= MAX_RETRIES) { clearInterval(id); return; }
-      void attempt();
-    }, 2000);
-    return () => { active = false; clearInterval(id); };
-  }, [embeddedBackgroundWorkEnabled, isConnected, isVSCodeRuntime, loadAgents, loadProviders, providersCount, agentsCount]);
+  // refreshMissingCatalogs force-refreshes empty Infinity Query caches so a
+  // successful-but-empty warm catalog does not stick forever.
+  useStartupCatalogRecovery({
+    enabled: embeddedBackgroundWorkEnabled && !isVSCodeRuntime,
+    source: 'startupRecovery',
+  });
 
   React.useEffect(() => {
     if (isSwitchingDirectory) {

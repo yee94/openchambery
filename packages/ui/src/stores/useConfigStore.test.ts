@@ -1653,6 +1653,118 @@ describe('useConfigStore provider persistence', () => {
     expect(useConfigStore.getState().providers.map((entry) => entry.id)).toEqual(['new']);
   });
 
+  test('refreshMissingCatalogs force-refreshes empty provider and agent Infinity caches after a successful empty warm load', async () => {
+    getProvidersForConfigImpl = async () => ({ providers: [], default: {} });
+    listAgentsImpl = async () => [];
+    await useConfigStore.getState().loadProviders({ directory: DIRECTORY, source: 'test:emptyWarm', forceRefresh: true });
+    await useConfigStore.getState().loadAgents({ directory: DIRECTORY, source: 'test:emptyWarm', forceRefresh: true });
+    expect(useConfigStore.getState().providers).toEqual([]);
+    expect(useConfigStore.getState().agents).toEqual([]);
+    const providerCallsAfterEmpty = getProvidersCalls;
+    const agentCallsAfterEmpty = listAgentsCalls;
+
+    getProvidersForConfigImpl = null;
+    listAgentsImpl = null;
+    liveProviderId = 'recovered';
+    liveAgents = [testAgent('build')];
+
+    // Ordinary ensure keeps the successful empty Infinity cache — no second network read.
+    await useConfigStore.getState().loadProviders({ directory: DIRECTORY, source: 'test:staleEnsure' });
+    await useConfigStore.getState().loadAgents({ directory: DIRECTORY, source: 'test:staleEnsure' });
+    expect(getProvidersCalls).toBe(providerCallsAfterEmpty);
+    expect(listAgentsCalls).toBe(agentCallsAfterEmpty);
+    expect(useConfigStore.getState().providers).toEqual([]);
+    expect(useConfigStore.getState().agents).toEqual([]);
+
+    await useConfigStore.getState().refreshMissingCatalogs({ source: 'test:recovery' });
+
+    expect(getProvidersCalls).toBe(providerCallsAfterEmpty + 1);
+    expect(listAgentsCalls).toBe(agentCallsAfterEmpty + 1);
+    expect(useConfigStore.getState().providers.map((entry) => entry.id)).toEqual(['recovered']);
+    expect(useConfigStore.getState().currentProviderId).toBe('recovered');
+    expect(useConfigStore.getState().currentModelId).toBe('recovered-model');
+    expect(useConfigStore.getState().agents.map((entry) => entry.name)).toEqual(['build']);
+  });
+
+  test('refreshMissingCatalogs force-refreshes only an empty provider Infinity cache', async () => {
+    liveAgents = [testAgent('build')];
+    await useConfigStore.getState().loadAgents({ directory: DIRECTORY, source: 'test:agentsWarm' });
+    getProvidersForConfigImpl = async () => ({ providers: [], default: {} });
+    await useConfigStore.getState().loadProviders({ directory: DIRECTORY, source: 'test:emptyProviders', forceRefresh: true });
+    expect(useConfigStore.getState().providers).toEqual([]);
+    expect(useConfigStore.getState().agents.map((entry) => entry.name)).toEqual(['build']);
+    const providerCallsAfterEmpty = getProvidersCalls;
+    const agentCallsAfterEmpty = listAgentsCalls;
+
+    getProvidersForConfigImpl = null;
+    liveProviderId = 'provider-only';
+    liveAgents = [testAgent('should-not-reload')];
+
+    await useConfigStore.getState().refreshMissingCatalogs({ source: 'test:providerOnly' });
+
+    expect(getProvidersCalls).toBe(providerCallsAfterEmpty + 1);
+    expect(listAgentsCalls).toBe(agentCallsAfterEmpty);
+    expect(useConfigStore.getState().providers.map((entry) => entry.id)).toEqual(['provider-only']);
+    expect(useConfigStore.getState().currentModelId).toBe('provider-only-model');
+    expect(useConfigStore.getState().agents.map((entry) => entry.name)).toEqual(['build']);
+  });
+
+  test('refreshMissingCatalogs force-refreshes only an empty agent Infinity cache', async () => {
+    liveProviderId = 'provider-ready';
+    await useConfigStore.getState().loadProviders({ directory: DIRECTORY, source: 'test:providersWarm' });
+    listAgentsImpl = async () => [];
+    await useConfigStore.getState().loadAgents({ directory: DIRECTORY, source: 'test:emptyAgents', forceRefresh: true });
+    expect(useConfigStore.getState().providers.map((entry) => entry.id)).toEqual(['provider-ready']);
+    expect(useConfigStore.getState().agents).toEqual([]);
+    const providerCallsAfterEmpty = getProvidersCalls;
+    const agentCallsAfterEmpty = listAgentsCalls;
+
+    listAgentsImpl = null;
+    liveProviderId = 'should-not-reload';
+    liveAgents = [testAgent('agent-only')];
+
+    await useConfigStore.getState().refreshMissingCatalogs({ source: 'test:agentOnly' });
+
+    expect(getProvidersCalls).toBe(providerCallsAfterEmpty);
+    expect(listAgentsCalls).toBe(agentCallsAfterEmpty + 1);
+    expect(useConfigStore.getState().providers.map((entry) => entry.id)).toEqual(['provider-ready']);
+    expect(useConfigStore.getState().agents.map((entry) => entry.name)).toEqual(['agent-only']);
+  });
+
+  test('refreshMissingCatalogs merges concurrent force-refresh calls into one flight', async () => {
+    const pendingProviders = deferred<{ providers: ReturnType<typeof providerResponse>[]; default: Record<string, string> }>();
+    const pendingAgents = deferred<TestAgent[]>();
+    getProvidersForConfigImpl = () => pendingProviders.promise;
+    listAgentsImpl = () => pendingAgents.promise;
+    useConfigStore.setState({
+      catalogTransportIdentity: runtimeIdentity,
+      activeDirectoryKey: DIRECTORY,
+      providers: [],
+      agents: [],
+      directoryScoped: {},
+    });
+
+    const first = useConfigStore.getState().refreshMissingCatalogs({ source: 'test:inflight-a' });
+    const second = useConfigStore.getState().refreshMissingCatalogs({ source: 'test:inflight-b' });
+    expect(second).toBe(first);
+    // Let the shared flight reach the catalog network boundary.
+    await Promise.resolve();
+    await Promise.resolve();
+    expect(getProvidersCalls).toBe(1);
+
+    pendingProviders.resolve({ providers: [providerResponse('merged')], default: {} });
+    // Agents load only after providers settle (sequential recovery).
+    await Promise.resolve();
+    await Promise.resolve();
+    pendingAgents.resolve([testAgent('build')]);
+    await Promise.all([first, second]);
+
+    expect(getProvidersCalls).toBe(1);
+    expect(listAgentsCalls).toBe(1);
+    expect(useConfigStore.getState().providers.map((entry) => entry.id)).toEqual(['merged']);
+    expect(useConfigStore.getState().agents.map((entry) => entry.name)).toEqual(['build']);
+  });
+
   test('catalog byte budget drops only the active Provider snapshot and retains selections', () => {
     const models = Array.from({ length: 100 }, (_, index) => ({ id: `model-${index}`, name: 'm'.repeat(500) }));
     const providers = Array.from({ length: 100 }, (_, index) => ({ id: `provider-${index}`, name: 'p'.repeat(500), models }));

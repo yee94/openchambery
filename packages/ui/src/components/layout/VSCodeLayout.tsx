@@ -405,13 +405,10 @@ export const VSCodeLayout: React.FC = () => {
         const configStore = useConfigStore.getState();
 
         // Keep trying to fetch core datasets on cold starts.
+        // Force-refresh empty Infinity Query caches so a successful-but-empty
+        // warm catalog does not stick until a full page restart.
         if (configStore.isConnected) {
-          if (configStore.providers.length === 0) {
-            await configStore.loadProviders({ source: 'vscodeLayout:bootstrap' });
-          }
-          if (configStore.agents.length === 0) {
-            await configStore.loadAgents({ source: 'vscodeLayout:bootstrap' });
-          }
+          await configStore.refreshMissingCatalogs({ source: 'vscodeLayout:bootstrap' });
         }
 
         const configState = useConfigStore.getState();

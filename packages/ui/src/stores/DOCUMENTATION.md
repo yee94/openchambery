@@ -126,7 +126,14 @@ startup snapshot for the active configuration directory, seeds an empty Provider
 Query from that complete snapshot, and Agent catalogs remain memory-only.
 Startup and new-draft target activation explicitly force-refresh Providers while
 historical session activation reuses the snapshot. Failed refreshes retain the
-previous snapshot. Persisted selection, startup snapshots, and settings carry
+previous snapshot. A successful empty Provider or Agent catalog remains a valid
+success response and is retained by TanStack Query's infinite freshness; cold-start
+  recovery therefore uses `refreshMissingCatalogs`, which re-reads the authoritative
+  store and force-refreshes only missing catalogs over the network so a temporary
+  empty warm response cannot stick until a page restart. Concurrent recovery calls
+  share one in-flight promise. App shells own the poll via `useStartupCatalogRecovery`
+  (`useInterval` + bounded attempts); VS Code bootstrap invokes the store action
+  directly. Persisted selection, startup snapshots, and settings carry
 transport identity; another transport receives isolated catalogs and directory
 selection. Runtime
 endpoint reset clears Provider and Agent snapshots, directory scopes, defaults, and catalog

@@ -61,6 +61,7 @@ import {
   refetchSessionMessages,
   revertToMessage as revertToMessageAction,
   stageMessageEdit,
+  abortBusySessionForMessageEdit,
   commitMessageEdit,
   unrevertSession as unrevertSessionAction,
   forkSession as forkSessionAction,
@@ -1987,16 +1988,21 @@ export const useSessionUIStore = create<SessionUIState>()((set, get) => ({
   ) => {
     const stagedMessageEdit = get().stagedMessageEdit
     const requestedSessionId = options?.sessionId ?? get().currentSessionId
-    if (options?.commitStagedMessageEdit && stagedMessageEdit && stagedMessageEdit.sessionId === requestedSessionId) {
+    // Abort any still-busy turn before dispatching the replacement. The old
+    // tail is deleted only after the replacement send is accepted — otherwise a
+    // failed resend (connection grace, server still aborting) leaves the user
+    // with neither the aborted turn nor the replacement.
+    const pendingStagedEdit =
+      options?.commitStagedMessageEdit
+      && stagedMessageEdit
+      && stagedMessageEdit.sessionId === requestedSessionId
+        ? stagedMessageEdit
+        : null
+    if (pendingStagedEdit) {
       try {
-        await commitMessageEdit(stagedMessageEdit.sessionId, stagedMessageEdit.messageId)
-      } finally {
-        // Success deletes the row; failure keeps it — either way the "editing"
-        // paint is done and its actions come back.
-        get().endMessageEditCommit(stagedMessageEdit.sessionId, stagedMessageEdit.messageId)
-      }
-      if (get().stagedMessageEdit === stagedMessageEdit) {
-        set({ stagedMessageEdit: null })
+        await abortBusySessionForMessageEdit(pendingStagedEdit.sessionId)
+      } catch {
+        // abort is best-effort; the send path still owns failure handling
       }
     }
 
@@ -2187,33 +2193,67 @@ export const useSessionUIStore = create<SessionUIState>()((set, get) => ({
       filename: a.filename,
     }))
 
-    await routeMessage({
-      sessionId: targetSessionId || "",
-      directory: currentSessionDirectory,
-      content,
-      providerID,
-      modelID,
-      agent: effectiveAgent,
-      agentMentionName,
-      variant,
-      inputMode,
-      files,
-      delivery: options?.delivery,
-      messageID: options?.messageID,
-      ticket: options?.ticket,
-      preserveOptimisticOnAmbiguous: options?.preserveOptimisticOnAmbiguous,
-      onSendConfirmed: options?.onSendConfirmed,
-      additionalParts: additionalParts?.map((p) => ({
-        text: p.text,
-        synthetic: p.synthetic,
-        files: p.attachments?.map((a) => ({
-          type: "file" as const,
-          mime: a.mimeType,
-          url: a.dataUrl,
-          filename: a.filename,
+    try {
+      await routeMessage({
+        sessionId: targetSessionId || "",
+        directory: currentSessionDirectory,
+        content,
+        providerID,
+        modelID,
+        agent: effectiveAgent,
+        agentMentionName,
+        variant,
+        inputMode,
+        files,
+        delivery: options?.delivery,
+        messageID: options?.messageID,
+        ticket: options?.ticket,
+        preserveOptimisticOnAmbiguous: options?.preserveOptimisticOnAmbiguous,
+        onSendConfirmed: options?.onSendConfirmed,
+        additionalParts: additionalParts?.map((p) => ({
+          text: p.text,
+          synthetic: p.synthetic,
+          files: p.attachments?.map((a) => ({
+            type: "file" as const,
+            mime: a.mimeType,
+            url: a.dataUrl,
+            filename: a.filename,
+          })),
         })),
-      })),
-    })
+      })
+    } catch (error) {
+      // Replacement never left the client: leave the staged edit armed and the
+      // old tail intact so the user can retry without losing the aborted turn.
+      if (pendingStagedEdit) {
+        get().endMessageEditCommit(pendingStagedEdit.sessionId, pendingStagedEdit.messageId)
+      }
+      throw error
+    }
+
+    // Replacement accepted — now drop the edited target and its old forward
+    // tail. Preserve the replacement id so refetch cannot delete the just-sent
+    // message (pendingSend may already be cleared by settle).
+    if (pendingStagedEdit) {
+      try {
+        const preserveMessageId =
+          options?.messageID
+          ?? options?.ticket?.messageID
+          ?? get().pendingSendMessageIDs.get(pendingStagedEdit.sessionId)
+        await commitMessageEdit(pendingStagedEdit.sessionId, pendingStagedEdit.messageId, {
+          directory: currentSessionDirectory ?? undefined,
+          preserveMessageId: preserveMessageId ?? undefined,
+        })
+      } finally {
+        // Replacement already accepted: always drop the staged edit so a later
+        // delete failure cannot re-arm a second replacement send. The "editing"
+        // paint ends either way.
+        if (get().stagedMessageEdit === pendingStagedEdit) {
+          set({ stagedMessageEdit: null })
+        }
+        get().endMessageEditCommit(pendingStagedEdit.sessionId, pendingStagedEdit.messageId)
+      }
+    }
+
     promoteProjectForConversation(currentSessionDirectory, get().availableWorktreesByProject)
     if (targetSessionId) {
       applyArmedGoal(targetSessionId, currentSessionDirectory)

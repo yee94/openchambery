@@ -2454,12 +2454,15 @@ const cmpMessageId = (a: string, b: string) => (a < b ? -1 : a > b ? 1 : 0)
  * Two invariants protect history: the range is forward-only — nothing older than
  * the target can enter it — and it holds server-known ids only, so an in-flight
  * optimistic row (including a replacement the server already echoed back) is
- * never a delete candidate.
+ * never a delete candidate. When a replacement message id is known, everything
+ * at or after that id is also preserved so a successful resend is not deleted
+ * with the old tail.
  */
 function resolveMessageEditDeleteRange(
   sessionId: string,
   messageId: string,
   authoritative: readonly Message[],
+  options?: { preserveMessageId?: string },
 ): Message[] {
   const ordered = [...authoritative].sort((left, right) => cmpMessageId(left.id, right.id))
   const targetIndex = ordered.findIndex((message) => message.id === messageId)
@@ -2468,41 +2471,73 @@ function resolveMessageEditDeleteRange(
     throw new Error("The selected user message is unavailable")
   }
 
-  const inFlightMessageId = useSessionUIStore.getState().pendingSendMessageIDs.get(sessionId)
+  const preserveMessageId = options?.preserveMessageId
+    ?? useSessionUIStore.getState().pendingSendMessageIDs.get(sessionId)
   return ordered
     .slice(targetIndex)
-    .filter((message) => cmpMessageId(message.id, messageId) >= 0 && message.id !== inFlightMessageId)
+    .filter((message) => {
+      if (cmpMessageId(message.id, messageId) < 0) return false
+      // Keep the replacement and any turns that already arrived after it.
+      if (preserveMessageId && cmpMessageId(message.id, preserveMessageId) >= 0) return false
+      return true
+    })
 }
 
 /**
- * Commit a staged message edit immediately before sending its replacement.
+ * Abort a still-busy session before an edit replacement is dispatched.
+ * Kept separate from {@link commitMessageEdit} so a successful replacement send
+ * is never cancelled when the old tail is deleted afterward.
+ */
+export async function abortBusySessionForMessageEdit(
+  sessionId: string,
+  options?: { directory?: string },
+): Promise<void> {
+  const directoryOverride = options?.directory
+  const { store, directory } = dirStoreForSession(sessionId, directoryOverride)
+  const status = store.getState().session_status[sessionId]
+  if (!status || status.type === "idle") return
+  try {
+    await sdk().session.abort({ sessionID: sessionId, directory })
+  } catch {
+    // ignore abort errors — the subsequent send still owns failure handling
+  }
+}
+
+/**
+ * Commit a staged message edit after its replacement send has been accepted
+ * (or, for legacy callers, before send when no preserveMessageId is supplied).
  * The official delete-message endpoint removes conversation data only, so the
- * action deletes the target turn and every later message while retaining files.
+ * action deletes the target turn and every later message while retaining files
+ * — except a preserved replacement id and anything after it.
  *
  * Local rows are dropped one by one as their remote delete succeeds — nothing is
  * hidden up front. The composer paints an "editing" affordance on the target
  * instead, so a failed abort / refetch / delete can never leave the transcript
  * showing a tail the server still holds (or hiding one it no longer does).
+ *
+ * When `preserveMessageId` is set, this path must not abort: the session is
+ * expected to be busy on the replacement turn.
  */
 export async function commitMessageEdit(
   sessionId: string,
   messageId: string,
-  options?: { directory?: string },
+  options?: { directory?: string; preserveMessageId?: string },
 ): Promise<void> {
   const directoryOverride = options?.directory
+  const preserveMessageId = options?.preserveMessageId
   const { store, directory } = dirStoreForSession(sessionId, directoryOverride)
 
-  const status = store.getState().session_status[sessionId]
-  if (status && status.type !== "idle") {
-    try {
-      await sdk().session.abort({ sessionID: sessionId, directory })
-    } catch {
-      // ignore abort errors
-    }
+  // Abort only when no replacement is already owned. After a successful
+  // replacement send the session is busy on that turn — aborting here would
+  // cancel the message the user just sent.
+  if (!preserveMessageId) {
+    await abortBusySessionForMessageEdit(sessionId, { directory: directoryOverride })
   }
 
   const authoritative = await refetchSessionMessages(sessionId, directoryOverride)
-  const removedMessages = resolveMessageEditDeleteRange(sessionId, messageId, authoritative)
+  const removedMessages = resolveMessageEditDeleteRange(sessionId, messageId, authoritative, {
+    preserveMessageId,
+  })
 
   for (const message of [...removedMessages].reverse()) {
     await opencodeClient.deleteSessionMessage(sessionId, message.id, directory)

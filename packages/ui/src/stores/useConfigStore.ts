@@ -1045,6 +1045,12 @@ interface ConfigStore {
 
     loadProviders: (options?: { directory?: string | null; source?: string; forceRefresh?: boolean }) => Promise<void>;
     loadAgents: (options?: { directory?: string | null; source?: string; forceRefresh?: boolean }) => Promise<boolean>;
+    /**
+     * Cold-start recovery for catalogs that are still empty after a successful
+     * but temporarily empty network response was cached with staleTime: Infinity.
+     * Force-refreshes only missing Provider/Agent catalogs for the active directory.
+     */
+    refreshMissingCatalogs: (options?: { source?: string }) => Promise<void>;
     invalidateProviderCache: (directory?: string | null) => void;
     setProvider: (providerId: string) => void;
     setModel: (modelId: string) => void;
@@ -1085,6 +1091,7 @@ declare global {
 }
 
 let _initializeAppInFlight: Promise<void> | null = null;
+let _refreshMissingCatalogsInFlight: Promise<void> | null = null;
 
 export const useConfigStore = create<ConfigStore>()(
     devtools(
@@ -1665,6 +1672,33 @@ export const useConfigStore = create<ConfigStore>()(
                     });
 
                     return promise;
+                },
+
+                // Not `async`: must return the same Promise reference for single-flight callers.
+                refreshMissingCatalogs: (options) => {
+                    if (_refreshMissingCatalogsInFlight) {
+                        return _refreshMissingCatalogsInFlight;
+                    }
+
+                    const source = options?.source ?? 'refreshMissingCatalogs';
+                    const run = (async () => {
+                        // Read the authoritative store snapshot first so recovery only
+                        // force-refreshes catalogs that are still empty after a successful
+                        // empty warm load (staleTime: Infinity otherwise keeps that empty result).
+                        if (get().providers.length === 0) {
+                            await get().loadProviders({ source, forceRefresh: true });
+                        }
+                        // Re-read after providers: agent selection cascade depends on the
+                        // latest provider snapshot, and agents may have been filled meanwhile.
+                        if (get().agents.length === 0) {
+                            await get().loadAgents({ source, forceRefresh: true });
+                        }
+                    })().finally(() => {
+                        _refreshMissingCatalogsInFlight = null;
+                    });
+
+                    _refreshMissingCatalogsInFlight = run;
+                    return run;
                 },
 
                 setProvider: (providerId: string) => {
