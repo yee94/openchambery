@@ -38,7 +38,6 @@ import {
     coerceToText,
 } from '../toolRenderers';
 import { JsonTreeViewer } from '@/components/ui/JsonTreeViewer';
-import { JsonSummaryView } from './JsonSummaryView';
 import { Icon } from "@/components/icon/Icon";
 import { AgentAvatar } from '@/components/chat/AgentAvatar';
 import { type DiffViewMode } from '../DiffViewToggle';
@@ -857,15 +856,15 @@ const ToolScrollableTextOutput: React.FC<{
     const renderedOutput = getToolOutputText(output, part, metadata);
     const outputLanguage = getToolOutputLanguage(output, part, metadata, input);
     const jsonResult = React.useMemo(() => tryParseJsonOutput(renderedOutput), [renderedOutput]);
-    const [jsonViewMode, setJsonViewMode] = React.useState<'summary' | 'formatted' | 'raw'>('summary');
+    const [jsonViewMode, setJsonViewMode] = React.useState<'formatted' | 'raw'>('formatted');
     const [copiedJson, setCopiedJson] = React.useState(false);
 
     React.useEffect(() => {
-        setJsonViewMode('summary');
+        setJsonViewMode('formatted');
         setCopiedJson(false);
     }, [renderedOutput]);
 
-    const handleJsonViewChange = useEvent((view: 'summary' | 'formatted' | 'raw', event: React.MouseEvent<HTMLButtonElement>) => {
+    const handleJsonViewChange = useEvent((view: 'formatted' | 'raw', event: React.MouseEvent<HTMLButtonElement>) => {
         event.stopPropagation();
         setJsonViewMode(view);
     });
@@ -887,17 +886,6 @@ const ToolScrollableTextOutput: React.FC<{
         return (
             <div className="tool-output-surface relative p-2 rounded-xl w-full min-w-0">
                 <div className="absolute right-2 top-2 z-10 flex items-center gap-1">
-                    <Button
-                        variant="ghost"
-                        size="icon"
-                        className={cn('h-6 w-6 rounded-md text-muted-foreground hover:text-foreground', jsonViewMode === 'summary' && 'bg-[var(--interactive-selection)] text-[var(--interactive-selection-foreground)]')}
-                        onClick={(event) => handleJsonViewChange('summary', event)}
-                        onPointerDown={(event) => event.stopPropagation()}
-                        aria-label={t('chat.toolPart.showNavigableJson')}
-                        title={t('chat.toolPart.showNavigableJson')}
-                    >
-                        <Icon name="list-unordered" className="h-3.5 w-3.5" />
-                    </Button>
                     <Button
                         variant="ghost"
                         size="icon"
@@ -932,9 +920,7 @@ const ToolScrollableTextOutput: React.FC<{
                         <Icon name={copiedJson ? 'check' : 'file-copy'} className="h-3.5 w-3.5" />
                     </Button>
                 </div>
-                {jsonViewMode === 'summary' ? (
-                    <JsonSummaryView data={jsonResult.data} />
-                ) : jsonViewMode === 'formatted' ? (
+                {jsonViewMode === 'formatted' ? (
                     <JsonTreeViewer
                         data={jsonResult.data}
                         initiallyExpandedDepth={1}

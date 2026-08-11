@@ -8,7 +8,6 @@ import { Input } from '@/components/ui/input';
 import { ScrollShadow } from '@/components/ui/ScrollShadow';
 import { Icon } from '@/components/icon/Icon';
 import { FileTypeIcon } from '@/components/icons/FileTypeIcon';
-import { JsonTreeView } from '@/components/ui/JsonTreeView';
 import { SimpleMarkdownRenderer } from '@/components/chat/MarkdownRenderer';
 import { PIERRE_RUNTIME_BASE_CSS } from '@/components/views/PierreDiffViewer';
 import { useThemeSystem } from '@/contexts/useThemeSystem';
@@ -81,8 +80,6 @@ const getImageSrc = (path: string): string => {
 };
 
 const isMarkdownFile = (path: string): boolean => /\.(md|mdx|markdown)$/i.test(path);
-const isJsonFile = (path: string): boolean => /\.(json|jsonc)$/i.test(path);
-
 type MobileFilesSurfaceProps = {
   /** When provided, header gets a close X that calls this; used when the surface is hosted in MobileSurfaceShell. */
   onClose?: () => void;
@@ -590,9 +587,6 @@ const MobileTextFile: React.FC<{ path: string; content: string }> = ({ path, con
         <SimpleMarkdownRenderer content={content} enableFileReferences={false} />
       </ScrollShadow>
     );
-  }
-  if (isJsonFile(path)) {
-    return <JsonTreeView jsonString={content} className="h-full overflow-auto" />;
   }
   return (
     <div className="flex h-full flex-col overflow-hidden">

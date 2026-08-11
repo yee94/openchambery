@@ -4,6 +4,11 @@ All notable changes to this project will be documented in this file.
 
 ## [Unreleased]
 
+## [1.16.127-beta.6] - 2026-08-11
+
+- **File preview JSON/JSONC:** remove the JSON tree viewer from sidebar and mobile file preview; `.json` / `.jsonc` files now always open in the standard editor.
+- **Tool JSON output:** drop the summary/item JSON view in shell and tool results; keep only the collapsible tree viewer (default) and raw JSON toggle.
+
 ## [1.16.127] - 2026-08-11
 
 - **Assistant transcript loading:** materialize each active Assistant binding through the shared transcript repository, so current OpenCode messages load immediately and historical pagination continues through the standard conversation timeline.

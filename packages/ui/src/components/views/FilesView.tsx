@@ -25,7 +25,6 @@ import { Tooltip, TooltipContent, TooltipTrigger } from '@/components/ui/tooltip
 import { CodeMirrorEditor } from '@/components/ui/CodeMirrorEditor';
 import { GoToLineDialog } from './GoToLineDialog';
 import { PreviewToggleButton } from './PreviewToggleButton';
-import { JsonTreeView } from '@/components/ui/JsonTreeView';
 import { SimpleMarkdownRenderer } from '@/components/chat/MarkdownRenderer';
 import { attachmentCitationDisplay } from '@/composer/inline-visual';
 import { languageByExtension, loadLanguageByExtension } from '@/lib/codemirror/languageByExtension';
@@ -355,12 +354,6 @@ const isMarkdownFile = (path: string): boolean => {
   if (!path) return false;
   const ext = path.toLowerCase().split('.').pop();
   return ext === 'md' || ext === 'markdown';
-};
-
-const isJsonFile = (path: string): boolean => {
-  if (!path) return false;
-  const ext = path.toLowerCase().split('.').pop();
-  return ext === 'json' || ext === 'jsonc' || ext === 'json5' || ext === 'geojson';
 };
 
 const isHtmlFile = (path: string): boolean => {
@@ -792,7 +785,6 @@ export const FilesView: React.FC<FilesViewProps> = ({ mode = 'full', isActive = 
 
   const [textViewMode, setTextViewMode] = React.useState<TextViewMode>('edit');
   const [mdViewMode, setMdViewMode] = React.useState<PreviewViewMode>('edit');
-  const [jsonViewMode, setJsonViewMode] = React.useState<'tree' | 'text'>('tree');
   const [htmlViewMode, setHtmlViewMode] = React.useState<PreviewViewMode>('edit');
   const [drawioViewMode, setDrawioViewMode] = React.useState<PreviewViewMode>('preview');
   const [drawioRemountNonce, setDrawioRemountNonce] = React.useState(0);
@@ -2390,15 +2382,13 @@ export const FilesView: React.FC<FilesViewProps> = ({ mode = 'full', isActive = 
   const canCopyPath = Boolean(selectedFile && displaySelectedPath.length > 0);
   const canEdit = Boolean(selectedFile && !selectedFileIsOutsideWorkspace && !isSelectedImage && !isSelectedPdf && files.writeFile && fileContent.length <= MAX_VIEW_CHARS);
   const isMarkdown = Boolean(selectedFile?.path && isMarkdownFile(selectedFile.path));
-  const isJson = Boolean(selectedFile?.path && isJsonFile(selectedFile.path));
   const isHtml = Boolean(selectedFile?.path && isHtmlFile(selectedFile.path));
   const isDrawio = Boolean(selectedFile?.path && isDrawioFile(selectedFile.path));
   const isTextFile = Boolean(selectedFile && !isSelectedImage && !isSelectedPdf);
   const canUseShikiFileView = isTextFile && !isMarkdown && !isDrawio && !(isHtml && htmlViewMode === 'preview');
   const isEditingFile = (isMarkdown && mdViewMode === 'edit')
     || (isHtml && htmlViewMode === 'edit')
-    || (isJson && jsonViewMode === 'text')
-    || (!isMarkdown && !isHtml && !isJson && textViewMode === 'edit');
+    || (!isMarkdown && !isHtml && textViewMode === 'edit');
   const staticLanguageExtension = React.useMemo(
     () => (selectedFilePath ? languageByExtension(selectedFilePath) : null),
     [selectedFilePath],
@@ -2434,8 +2424,6 @@ export const FilesView: React.FC<FilesViewProps> = ({ mode = 'full', isActive = 
 
   const MD_VIEWER_MODE_KEY = 'openchamber:files:md-viewer-mode';
   const HTML_VIEWER_MODE_KEY = 'openchamber:files:html-viewer-mode';
-  const JSON_VIEWER_MODE_KEY = 'openchamber:files:json-viewer-mode';
-
   React.useEffect(() => {
     const selectedPath = selectedFile?.path;
     if (!selectedPath) {
@@ -2468,17 +2456,6 @@ export const FilesView: React.FC<FilesViewProps> = ({ mode = 'full', isActive = 
     }
     setHtmlViewMode(htmlViewModeByPathRef.current[selectedPath] ?? htmlDefault);
     setDrawioViewMode(drawioViewModeByPathRef.current[selectedPath] ?? (settingsDefaultFileViewerPreview ? 'preview' : 'edit'));
-
-    let jsonDefault: 'tree' | 'text' = settingsDefaultFileViewerPreview ? 'tree' : 'text';
-    try {
-      const stored = localStorage.getItem(JSON_VIEWER_MODE_KEY);
-      if (stored === 'tree' || stored === 'text') {
-        jsonDefault = stored;
-      }
-    } catch {
-      // Ignore localStorage errors
-    }
-    setJsonViewMode(jsonDefault);
   }, [selectedFile?.path, settingsDefaultFileViewerPreview]);
 
   const saveTextViewMode = React.useCallback((mode: TextViewMode) => {
@@ -2505,16 +2482,6 @@ export const FilesView: React.FC<FilesViewProps> = ({ mode = 'full', isActive = 
   const getMdViewMode = React.useCallback((): PreviewViewMode => {
     return mdViewMode;
   }, [mdViewMode]);
-
-  const saveJsonViewMode = React.useCallback((mode: 'tree' | 'text') => {
-    setJsonViewMode(mode);
-    try {
-      localStorage.setItem(JSON_VIEWER_MODE_KEY, mode);
-    } catch {
-      // Ignore localStorage errors
-    }
-  }, []);
-
   const saveHtmlViewMode = React.useCallback((mode: PreviewViewMode) => {
     const selectedPath = selectedFile?.path;
     if (selectedPath) {
@@ -2633,7 +2600,6 @@ export const FilesView: React.FC<FilesViewProps> = ({ mode = 'full', isActive = 
   React.useEffect(() => {
     const applyDefaultFileViewerMode = (enabled: boolean) => {
       const previewMode: PreviewViewMode = enabled ? 'preview' : 'edit';
-      const nextJsonMode: 'tree' | 'text' = enabled ? 'tree' : 'text';
 
       for (const path of openPaths) {
         textViewModeByPathRef.current[path] = 'edit';
@@ -2652,12 +2618,10 @@ export const FilesView: React.FC<FilesViewProps> = ({ mode = 'full', isActive = 
       setMdViewMode(previewMode);
       setHtmlViewMode(previewMode);
       setDrawioViewMode(previewMode);
-      setJsonViewMode(nextJsonMode);
 
       try {
         localStorage.setItem(MD_VIEWER_MODE_KEY, previewMode);
         localStorage.setItem(HTML_VIEWER_MODE_KEY, previewMode);
-        localStorage.setItem(JSON_VIEWER_MODE_KEY, nextJsonMode);
       } catch {
         // Ignore localStorage errors
       }
@@ -3398,7 +3362,7 @@ export const FilesView: React.FC<FilesViewProps> = ({ mode = 'full', isActive = 
           </>
         )}
 
-        {canUseShikiFileView && canEdit && !isJson && !isHtml && (
+        {canUseShikiFileView && canEdit && !isHtml && (
           <PreviewToggleButton
             currentMode={textViewMode === 'view' ? 'preview' : 'edit'}
             onToggle={() => {
@@ -3500,24 +3464,6 @@ export const FilesView: React.FC<FilesViewProps> = ({ mode = 'full', isActive = 
               </Button>
             )}
           </>
-        )}
-
-        {isJson && (
-          withTooltip(jsonViewMode === 'tree' ? t('filesView.editor.switchToTextView') : t('filesView.editor.switchToTreeView'),
-            <Button
-              variant="ghost"
-              size="sm"
-              onClick={() => saveJsonViewMode(jsonViewMode === 'tree' ? 'text' : 'tree')}
-              className="size-6 p-0 text-muted-foreground opacity-65 hover:bg-transparent hover:opacity-100 focus-visible:bg-transparent active:bg-transparent"
-              title={jsonViewMode === 'tree' ? t('filesView.editor.switchToTextView') : t('filesView.editor.switchToTreeView')}
-            >
-              {jsonViewMode === 'tree' ? (
-                <Icon name="code-sslash" className="size-4" />
-              ) : (
-                <Icon name="node-tree" className="size-4" />
-              )}
-            </Button>
-          )
         )}
 
         {canCopy && (
@@ -3931,25 +3877,6 @@ export const FilesView: React.FC<FilesViewProps> = ({ mode = 'full', isActive = 
                 onChange={handleDiagramChange}
               />
             </div>
-          ) : selectedFile && isJson && jsonViewMode === 'tree' ? (
-            <ErrorBoundary
-              fallback={
-                <div className="rounded-md border border-destructive/20 bg-destructive/10 px-3 py-2">
-                  <div className="mb-1 font-medium text-destructive">{t('filesView.error.jsonViewerUnavailable')}</div>
-                  <div className="text-sm text-muted-foreground">
-                    {t('filesView.error.switchToTextMode')}
-                  </div>
-                </div>
-              }
-            >
-              <div className="h-full overflow-auto">
-                <JsonTreeView
-                  jsonString={fileContent}
-                  maxHeight="100%"
-                  initiallyExpandedDepth={2}
-                />
-              </div>
-            </ErrorBoundary>
           ) : selectedFile && isMarkdown && getMdViewMode() === 'preview' ? (
             <div className="h-full overflow-auto p-3">
               {fileContent.length > 500 * 1024 && (
