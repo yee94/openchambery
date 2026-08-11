@@ -92,8 +92,16 @@ Examples:
 - `useDirectoryStore.ts`
 - `useFeatureFlagsStore.ts`
 - `useUpdateStore.ts`
+- `useSidebarBrandStore.ts`
 
 These stores coordinate visible app state, navigation, selected tabs, dialogs, and lightweight feature flags.
+
+`useSidebarBrandStore` persists the sidebar wordmark. Packaged Electron multi-window
+shares one UI origin while each window may bind a different API host, so the store
+uses transport-scoped localStorage (`createRuntimeScopedJSONStorage` in
+`runtimeScopedStorage.ts`). In-window host switches rehydrate from the new transport
+bucket. Theme localStorage keys follow the same transport-scoped helper so remote
+windows do not inherit the local theme.
 
 `useModelPickerSectionsStore` persists model-picker section collapse choices for the empty-search view. `ModelPickerList` starts active-search results expanded, keeps collapse choices component-local during that search, and clears them when the search ends.
 

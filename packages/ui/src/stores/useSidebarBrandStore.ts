@@ -1,6 +1,7 @@
 import { create } from 'zustand';
 import { persist } from 'zustand/middleware';
-import { createDeferredSafeJSONStorage } from './utils/safeStorage';
+import { createRuntimeScopedJSONStorage } from '@/lib/runtimeScopedStorage';
+import { isRuntimeEndpointIdentityChange, subscribeRuntimeEndpointChanged } from '@/lib/runtime-switch';
 
 // Default wordmark is uppercase so it reads as a mark, not body UI text.
 export const DEFAULT_SIDEBAR_BRAND_NAME = 'OPEN CHAMBER';
@@ -20,8 +21,10 @@ export const useSidebarBrandStore = create<SidebarBrandStore>()(
       },
     }),
     {
+      // Transport-scoped so packaged multi-window (shared openchamber-ui:// origin)
+      // does not leak local brand into a remote-host window (or the reverse).
       name: 'sidebar-brand-store',
-      storage: createDeferredSafeJSONStorage(),
+      storage: createRuntimeScopedJSONStorage(),
       version: 2,
       migrate: (persistedState, version) => {
         if (!persistedState || typeof persistedState !== 'object') {
@@ -41,3 +44,11 @@ export const useSidebarBrandStore = create<SidebarBrandStore>()(
     },
   ),
 );
+
+// In-window host switch: rehydrate brand from the new transport's scoped bucket.
+if (typeof window !== 'undefined') {
+  subscribeRuntimeEndpointChanged((detail) => {
+    if (!isRuntimeEndpointIdentityChange(detail)) return;
+    void useSidebarBrandStore.persist.rehydrate();
+  });
+}

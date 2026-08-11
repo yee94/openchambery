@@ -11,6 +11,7 @@ import { sanitizeStarterRefs } from '@/lib/draftStarters';
 import { normalizeMobileKeyboardMode, setStoredMobileKeyboardMode } from '@/lib/mobileKeyboardMode';
 import { runtimeFetch } from '@/lib/runtime-fetch';
 import { getRuntimeTransportIdentity } from '@/lib/runtime-switch';
+import { writeRuntimeScopedItem } from '@/lib/runtimeScopedStorage';
 import { projectSettingsBootstrapPatch } from '@/queries/settingsBootstrapParser';
 import { patchSettingsBootstrapSnapshot } from '@/queries/settingsBootstrapQueries';
 
@@ -34,20 +35,31 @@ const persistToLocalStorage = (settings: DesktopSettings) => {
     return;
   }
 
+  // Theme prefs are transport-scoped so packaged multi-window (shared UI origin,
+  // different API hosts) cannot overwrite each other's theme localStorage.
   if (settings.themeId) {
-    localStorage.setItem('selectedThemeId', settings.themeId);
+    writeRuntimeScopedItem('selectedThemeId', settings.themeId);
   }
   if (settings.themeVariant) {
-    localStorage.setItem('selectedThemeVariant', settings.themeVariant);
+    writeRuntimeScopedItem('selectedThemeVariant', settings.themeVariant);
   }
   if (settings.lightThemeId) {
-    localStorage.setItem('lightThemeId', settings.lightThemeId);
+    writeRuntimeScopedItem('lightThemeId', settings.lightThemeId);
   }
   if (settings.darkThemeId) {
-    localStorage.setItem('darkThemeId', settings.darkThemeId);
+    writeRuntimeScopedItem('darkThemeId', settings.darkThemeId);
   }
   if (typeof settings.useSystemTheme === 'boolean') {
-    localStorage.setItem('useSystemTheme', String(settings.useSystemTheme));
+    writeRuntimeScopedItem('useSystemTheme', String(settings.useSystemTheme));
+    // themeMode is the primary key ThemeSystemContext reads; keep it aligned.
+    writeRuntimeScopedItem(
+      'themeMode',
+      settings.useSystemTheme
+        ? 'system'
+        : (settings.themeVariant === 'dark' || settings.themeVariant === 'light'
+          ? settings.themeVariant
+          : 'system'),
+    );
   }
   if (settings.lastDirectory) {
     localStorage.setItem('lastDirectory', settings.lastDirectory);

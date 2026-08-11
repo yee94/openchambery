@@ -12,6 +12,12 @@ import { setDesktopWindowTheme } from '@/lib/desktopNative';
 import { CSSVariableGenerator } from '@/lib/theme/cssGenerator';
 import { updateDesktopSettings } from '@/lib/persistence';
 import {
+  isRuntimeScopedStorageEventKey,
+  readRuntimeScopedItem,
+  writeRuntimeScopedItem,
+} from '@/lib/runtimeScopedStorage';
+import { isRuntimeEndpointIdentityChange, subscribeRuntimeEndpointChanged } from '@/lib/runtime-switch';
+import {
   themes,
   getThemeById,
   getDefaultTheme,
@@ -90,12 +96,14 @@ const buildInitialPreferences = (defaultThemeId?: string): ThemePreferences => {
     const embeddedMode = embeddedParams?.get('themeMode');
     const embeddedLightId = embeddedParams?.get('lightThemeId');
     const embeddedDarkId = embeddedParams?.get('darkThemeId');
-    const storedMode = localStorage.getItem('themeMode');
-    const storedLightId = localStorage.getItem('lightThemeId');
-    const storedDarkId = localStorage.getItem('darkThemeId');
-    const legacyUseSystem = localStorage.getItem('useSystemTheme');
-    const legacyThemeId = localStorage.getItem('selectedThemeId');
-    const legacyVariant = localStorage.getItem('selectedThemeVariant');
+    // Transport-scoped reads so packaged multi-window remote hosts do not
+    // inherit the local window's unscoped themeMode / theme ids.
+    const storedMode = readRuntimeScopedItem('themeMode');
+    const storedLightId = readRuntimeScopedItem('lightThemeId');
+    const storedDarkId = readRuntimeScopedItem('darkThemeId');
+    const legacyUseSystem = readRuntimeScopedItem('useSystemTheme');
+    const legacyThemeId = readRuntimeScopedItem('selectedThemeId');
+    const legacyVariant = readRuntimeScopedItem('selectedThemeVariant');
 
     if (embeddedMode === 'light' || embeddedMode === 'dark' || embeddedMode === 'system') {
       themeMode = embeddedMode;
@@ -159,6 +167,8 @@ interface ThemeSystemProviderProps {
 export function ThemeSystemProvider({ children, defaultThemeId }: ThemeSystemProviderProps) {
   const cssGenerator = useMemo(() => new CSSVariableGenerator(), []);
   const [preferences, setPreferences] = useState<ThemePreferences>(() => buildInitialPreferences(defaultThemeId));
+  // Prevent cold-start defaults from being PUT to the server before settings hydrate.
+  const [themeServerSyncArmed, setThemeServerSyncArmed] = useState(false);
   const [systemPrefersDark, setSystemPrefersDark] = useState<boolean>(() => getInitialSystemPreference());
   const [customThemes, setCustomThemes] = useState<Theme[]>([]);
   const [embeddedBootstrapTheme] = useState<Theme | null>(() => readEmbeddedCurrentTheme());
@@ -389,26 +399,39 @@ export function ThemeSystemProvider({ children, defaultThemeId }: ThemeSystemPro
       return;
     }
 
-    localStorage.setItem('themeMode', preferences.themeMode);
-    localStorage.setItem('lightThemeId', preferences.lightThemeId);
-    localStorage.setItem('darkThemeId', preferences.darkThemeId);
-    localStorage.setItem('useSystemTheme', String(preferences.themeMode === 'system'));
-    localStorage.setItem('selectedThemeId', currentTheme.metadata.id);
-    localStorage.setItem(
+    // Transport-scoped writes: packaged multi-window shares origin/localStorage.
+    writeRuntimeScopedItem('themeMode', preferences.themeMode);
+    writeRuntimeScopedItem('lightThemeId', preferences.lightThemeId);
+    writeRuntimeScopedItem('darkThemeId', preferences.darkThemeId);
+    writeRuntimeScopedItem('useSystemTheme', String(preferences.themeMode === 'system'));
+    writeRuntimeScopedItem('selectedThemeId', currentTheme.metadata.id);
+    writeRuntimeScopedItem(
       'selectedThemeVariant',
       currentTheme.metadata.variant === 'light' ? 'light' : 'dark',
     );
 
     // Splash screen (packages/web/index.html) runs before the theme CSS vars load.
-    // Persist just enough to theme it on next boot.
+    // Persist just enough to theme it on next boot (scoped per runtime).
     const lightTheme = ensureThemeById(preferences.lightThemeId, 'light');
     const darkTheme = ensureThemeById(preferences.darkThemeId, 'dark');
 
-    localStorage.setItem('splashBgLight', lightTheme.colors.surface.background);
-    localStorage.setItem('splashFgLight', lightTheme.colors.surface.foreground);
-    localStorage.setItem('splashBgDark', darkTheme.colors.surface.background);
-    localStorage.setItem('splashFgDark', darkTheme.colors.surface.foreground);
-  }, [preferences, currentTheme, ensureThemeById, receivesParentThemeSync]);
+    writeRuntimeScopedItem('splashBgLight', lightTheme.colors.surface.background);
+    writeRuntimeScopedItem('splashFgLight', lightTheme.colors.surface.foreground);
+    writeRuntimeScopedItem('splashBgDark', darkTheme.colors.surface.background);
+    writeRuntimeScopedItem('splashFgDark', darkTheme.colors.surface.foreground);
+
+    // Cold-start HTML (packages/web/index.html) cannot know the transport identity.
+    // Mirror splash keys unscoped only for the local desktop window so local boot
+    // still themes correctly; remote windows must not overwrite that shared bucket.
+    if (isLocalDesktopOrigin) {
+      localStorage.setItem('themeMode', preferences.themeMode);
+      localStorage.setItem('useSystemTheme', String(preferences.themeMode === 'system'));
+      localStorage.setItem('splashBgLight', lightTheme.colors.surface.background);
+      localStorage.setItem('splashFgLight', lightTheme.colors.surface.foreground);
+      localStorage.setItem('splashBgDark', darkTheme.colors.surface.background);
+      localStorage.setItem('splashFgDark', darkTheme.colors.surface.foreground);
+    }
+  }, [preferences, currentTheme, ensureThemeById, isLocalDesktopOrigin, receivesParentThemeSync]);
 
   useEffect(() => {
     if (typeof window === 'undefined') {
@@ -424,23 +447,29 @@ export function ThemeSystemProvider({ children, defaultThemeId }: ThemeSystemPro
         return;
       }
 
-      if (event.key !== 'themeMode' && event.key !== 'lightThemeId' && event.key !== 'darkThemeId') {
+      // Only react to this runtime's scoped keys (or same-window unscoped legacy
+      // for local single-host). Ignore other windows writing other hosts' keys.
+      const isScopedThemeKey =
+        isRuntimeScopedStorageEventKey(event.key, 'themeMode')
+        || isRuntimeScopedStorageEventKey(event.key, 'lightThemeId')
+        || isRuntimeScopedStorageEventKey(event.key, 'darkThemeId');
+      if (!isScopedThemeKey) {
         return;
       }
 
       setPreferences((prev) => {
-        const nextModeRaw = localStorage.getItem('themeMode');
+        const nextModeRaw = readRuntimeScopedItem('themeMode');
         const nextMode: ThemeMode =
           nextModeRaw === 'light' || nextModeRaw === 'dark' || nextModeRaw === 'system'
             ? nextModeRaw
             : prev.themeMode;
 
-        const nextLightRaw = localStorage.getItem('lightThemeId');
+        const nextLightRaw = readRuntimeScopedItem('lightThemeId');
         const nextLight = typeof nextLightRaw === 'string' && nextLightRaw.trim().length > 0
           ? nextLightRaw.trim()
           : prev.lightThemeId;
 
-        const nextDarkRaw = localStorage.getItem('darkThemeId');
+        const nextDarkRaw = readRuntimeScopedItem('darkThemeId');
         const nextDark = typeof nextDarkRaw === 'string' && nextDarkRaw.trim().length > 0
           ? nextDarkRaw.trim()
           : prev.darkThemeId;
@@ -546,8 +575,11 @@ export function ThemeSystemProvider({ children, defaultThemeId }: ThemeSystemPro
     return () => window.removeEventListener('message', handleMessage);
   }, [applyIncomingThemeSync]);
 
+  // Do not push theme to the server until settings hydrate has completed for
+  // this runtime. Otherwise a multi-window remote boot can write local/default
+  // theme prefs into the remote host before GET /api/config/settings returns.
   useEffect(() => {
-    if (receivesParentThemeSync) {
+    if (receivesParentThemeSync || !themeServerSyncArmed) {
       return;
     }
 
@@ -565,7 +597,7 @@ export function ThemeSystemProvider({ children, defaultThemeId }: ThemeSystemPro
       splashBgDark: darkTheme.colors.surface.background,
       splashFgDark: darkTheme.colors.surface.foreground,
     });
-  }, [currentTheme.metadata.id, currentTheme.metadata.variant, ensureThemeById, preferences.themeMode, preferences.lightThemeId, preferences.darkThemeId, receivesParentThemeSync]);
+  }, [currentTheme.metadata.id, currentTheme.metadata.variant, ensureThemeById, preferences.themeMode, preferences.lightThemeId, preferences.darkThemeId, receivesParentThemeSync, themeServerSyncArmed]);
 
   useEffect(() => {
     if (receivesParentThemeSync || !isDesktopShell) {
@@ -587,6 +619,8 @@ export function ThemeSystemProvider({ children, defaultThemeId }: ThemeSystemPro
         return;
       }
 
+      // Apply server prefs first, then arm write-back so we never PUT the
+      // pre-hydrate local/default snapshot into a remote host.
       setPreferences((prev) => {
         let nextMode = prev.themeMode;
         if (detail.useSystemTheme === true) {
@@ -622,11 +656,43 @@ export function ThemeSystemProvider({ children, defaultThemeId }: ThemeSystemPro
           darkThemeId: nextDark,
         };
       });
+      setThemeServerSyncArmed(true);
     };
 
     window.addEventListener('openchamber:settings-synced', handleSettingsSynced);
     return () => window.removeEventListener('openchamber:settings-synced', handleSettingsSynced);
   }, []);
+
+  // In-window host switch: reload theme prefs from the new transport's scoped bucket
+  // (server sync will still override via openchamber:settings-synced).
+  useEffect(() => {
+    if (receivesParentThemeSync || typeof window === 'undefined') return;
+    return subscribeRuntimeEndpointChanged((detail) => {
+      if (!isRuntimeEndpointIdentityChange(detail)) return;
+      setPreferences((prev) => {
+        const nextModeRaw = readRuntimeScopedItem('themeMode');
+        const nextMode: ThemeMode =
+          nextModeRaw === 'light' || nextModeRaw === 'dark' || nextModeRaw === 'system'
+            ? nextModeRaw
+            : prev.themeMode;
+        const nextLightRaw = readRuntimeScopedItem('lightThemeId');
+        const nextLight = typeof nextLightRaw === 'string' && nextLightRaw.trim().length > 0
+          ? nextLightRaw.trim()
+          : prev.lightThemeId;
+        const nextDarkRaw = readRuntimeScopedItem('darkThemeId');
+        const nextDark = typeof nextDarkRaw === 'string' && nextDarkRaw.trim().length > 0
+          ? nextDarkRaw.trim()
+          : prev.darkThemeId;
+        if (nextMode === prev.themeMode && nextLight === prev.lightThemeId && nextDark === prev.darkThemeId) {
+          return prev;
+        }
+        return { themeMode: nextMode, lightThemeId: nextLight, darkThemeId: nextDark };
+      });
+      // Require a fresh settings sync before writing theme back to the new host.
+      setThemeServerSyncArmed(false);
+    });
+  }, [receivesParentThemeSync]);
+
 
   const setTheme = useEvent((themeId: string) => {
       const theme = availableThemes.find((candidate) => candidate.metadata.id === themeId);

@@ -146,7 +146,7 @@
 - `SidebarHeader.tsx`: Optional session-search field only (action toolbar removed).
 - `GlobalSearchButton.tsx`: Shared command-palette trigger. Electron with a configured logo renders it in the fixed (non-scrolling) sidebar brand row while open; otherwise it sits next to the titlebar collapse control (web parity, including logo-less Electron).
 - `TitlebarLeftControls.tsx`: Persistent Web brand and sidebar-toggle controls, plus Electron global search when the sidebar is collapsed or no logo is configured.
-- `SessionSidebar.tsx` desktop brand header: When a logo/wordmark is configured, Electron renders brand + search above `SidebarProjectsList` (`shrink-0`, outside the scroll region). Empty brand config reserves no row and leaves search in the titlebar.
+- `SessionSidebar.tsx` desktop brand header: When a logo/wordmark is configured, Electron renders brand + search above `SidebarProjectsList` (`shrink-0`, outside the scroll region). Empty brand config reserves no row and leaves search in the titlebar. Sidebar brand text is transport-scoped in localStorage (`useSidebarBrandStore` via `createRuntimeScopedJSONStorage`) so packaged multi-window local and remote hosts do not share a wordmark.
 - `SidebarTopBar.tsx`: Desktop titlebar strip with preserved window-drag regions beneath the persistent titlebar controls.
 - `SidebarDisplayModeMenu.tsx`: Project collapse/expand overflow menu; rendered in the Projects section title row beside the add-project action.
 - `SidebarPinnedSessions.tsx`: Global top section renderer for pinned sessions.

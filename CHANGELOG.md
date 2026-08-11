@@ -4,6 +4,10 @@ All notable changes to this project will be documented in this file.
 
 ## [Unreleased]
 
+## [1.16.128-beta.2] - 2026-08-12
+
+- **Desktop multi-window appearance isolation:** scope sidebar brand and theme localStorage by runtime transport so a packaged local window and a remote-host window no longer share logo/theme prefs; delay theme server write-back until settings hydrate so remote hosts are not polluted with local defaults.
+
 ## [1.16.128-beta.1] - 2026-08-12
 
 - **Relay event-stream stability:** serialize host-side WebSocket outbound fragments so large frames no longer interleave and corrupt JSON over the tunnel.
