@@ -65,7 +65,7 @@ import { useTerminalStore } from '@/stores/useTerminalStore';
 import { ProjectActionsButton } from '@/components/layout/ProjectActionsButton';
 import { SessionSwitcherDropdown } from '@/components/session/SessionSwitcherDropdown';
 import { useEffectiveDirectory } from '@/hooks/useEffectiveDirectory';
-import { canUseElectronDesktopIPC, invokeDesktop, isDesktopLocalOriginActive, isDesktopShell, isVSCodeRuntime, startDesktopWindowDrag, type UpdateInfo } from '@/lib/desktop';
+import { canUseElectronDesktopIPC, getElectronPlatform, invokeDesktop, isDesktopLocalOriginActive, isDesktopShell, isVSCodeRuntime, startDesktopWindowDrag, type UpdateInfo } from '@/lib/desktop';
 import { desktopHostsGet, getDesktopHostApiUrl, locationMatchesHost, redactSensitiveUrl } from '@/lib/desktopHosts';
 import { Icon } from "@/components/icon/Icon";
 import { useI18n } from '@/lib/i18n';
@@ -739,6 +739,7 @@ export const Header: React.FC<HeaderProps> = ({
     return isDesktopShell();
   });
   const hasElectronDesktopIPC = React.useMemo(() => canUseElectronDesktopIPC(), []);
+  const usesSolidWindowsChrome = isDesktopApp && getElectronPlatform() === 'win32';
   const isTabletStandalonePwa = useTabletStandalonePwaRuntime();
   const [isDesktopWindowFullscreen, setIsDesktopWindowFullscreen] = React.useState(false);
 
@@ -2513,6 +2514,7 @@ export const Header: React.FC<HeaderProps> = ({
 
   const headerClassName = cn(
     'header-safe-area relative z-10 bg-background',
+    usesSolidWindowsChrome && 'bg-[var(--surface-background)] backdrop-blur-none',
     // Mobile keeps a full-width divider. On desktop the divider lives on the chat
     // content wrapper instead, so it doesn't run between the header and the right
     // sidebar (they read as one continuous surface).

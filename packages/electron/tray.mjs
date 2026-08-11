@@ -28,6 +28,15 @@ const truncate = (value, max) => {
   return `${text.slice(0, Math.max(0, max - 1))}…`;
 };
 
+/** Safe `{name}` template fill — values are stringified; missing names become empty. */
+const formatLabel = (template, params = {}) => {
+  const source = typeof template === 'string' ? template : '';
+  return source.replace(/\{(\w+)\}/g, (_, key) => {
+    const value = params[key];
+    return value == null ? '' : String(value);
+  });
+};
+
 // Which status icon key a session maps to. 'blank' (a transparent image)
 // reserves the same left gutter for idle rows so every row aligns.
 const statusIconKey = (session) => {
@@ -36,19 +45,6 @@ const statusIconKey = (session) => {
   if (session.hasError) return 'error';
   if (session.unseen > 0) return 'unseen';
   return 'blank';
-};
-
-const sessionLabel = (session) => {
-  // The status is a native left icon (the ✓ already signals unread), so the
-  // label is just the session title.
-  return truncate(session.title || 'Untitled session', 40);
-};
-
-const approvalLabel = (approval) => {
-  const icon = approval.kind === 'permission' ? '⛔' : '❓';
-  const who = truncate(approval.sessionTitle || 'Session', 24);
-  const what = truncate(approval.label || (approval.kind === 'permission' ? 'Permission request' : 'Question'), 34);
-  return `${icon} ${who} — ${what}`;
 };
 
 // Text shown next to the icon — reserved for the two states where a precise
@@ -71,17 +67,6 @@ const computeIconState = (counts) => {
   return 'idle';
 };
 
-const computeTooltip = (counts, sessionCount) => {
-  if (sessionCount === 0) return 'OpenChamber — no active sessions';
-  const bits = [];
-  if (counts.approvals > 0) bits.push(`${counts.approvals} awaiting approval`);
-  if (counts.error > 0) bits.push(`${counts.error} with errors`);
-  if (counts.busy > 0) bits.push(`${counts.busy} working`);
-  if (counts.unseen > 0) bits.push(`${counts.unseen} unread`);
-  const suffix = bits.length ? ` · ${bits.join(', ')}` : ' · idle';
-  return `OpenChamber — ${sessionCount} session${sessionCount === 1 ? '' : 's'}${suffix}`;
-};
-
 // Frame cadence for the "breathing" busy animation. With the eased frame set
 // (denser near the extremes) a slower tick reads as a calm, continuous glow
 // rather than a snappy blink.
@@ -96,9 +81,18 @@ const toTemplateImage = (p) => {
 // idleIconPath: plain outline (calm state). unseenIconPath: statically filled
 // (a finished session left unread). breathIconPaths: eased outline→fill frames
 // the busy state ping-pongs through.
-export const createTrayController = ({ idleIconPath, unseenIconPath, breathIconPaths, statusIconPaths, onAction }) => {
+export const createTrayController = ({
+  idleIconPath,
+  unseenIconPath,
+  breathIconPaths,
+  statusIconPaths,
+  onAction,
+  labels: initialLabels,
+}) => {
   let tray = null;
   let lastTitle = null;
+  let labels = initialLabels && typeof initialLabels === 'object' ? initialLabels : {};
+  let lastSnapshot = { sessions: [], approvals: [] };
 
   // macOS auto-picks the @2x file next to each path and tints the alpha.
   // Windows uses the regular app icon and ignores template tinting.
@@ -164,6 +158,47 @@ export const createTrayController = ({ idleIconPath, unseenIconPath, breathIconP
     return tray;
   };
 
+  const sessionLabel = (session) => {
+    // The status is a native left icon (the ✓ already signals unread), so the
+    // label is just the session title.
+    return truncate(session.title || labels.trayUntitledSession, 40);
+  };
+
+  const approvalLabel = (approval) => {
+    const icon = approval.kind === 'permission' ? '⛔' : '❓';
+    const who = truncate(approval.sessionTitle || labels.traySession, 24);
+    const what = truncate(
+      approval.label
+        || (approval.kind === 'permission' ? labels.trayPermissionRequest : labels.trayQuestion),
+      34,
+    );
+    return `${icon} ${who} — ${what}`;
+  };
+
+  const computeTooltip = (counts, sessionCount) => {
+    if (sessionCount === 0) {
+      return labels.trayTooltipEmpty;
+    }
+    const bits = [];
+    if (counts.approvals > 0) {
+      bits.push(formatLabel(labels.trayTooltipAwaitingApproval, { count: counts.approvals }));
+    }
+    if (counts.error > 0) {
+      bits.push(formatLabel(labels.trayTooltipWithErrors, { count: counts.error }));
+    }
+    if (counts.busy > 0) {
+      bits.push(formatLabel(labels.trayTooltipWorking, { count: counts.busy }));
+    }
+    if (counts.unseen > 0) {
+      bits.push(formatLabel(labels.trayTooltipUnread, { count: counts.unseen }));
+    }
+    const details = bits.length ? bits.join(', ') : labels.trayTooltipIdle;
+    const template = sessionCount === 1
+      ? labels.trayTooltipSessionsOne
+      : labels.trayTooltipSessionsMany;
+    return formatLabel(template, { count: sessionCount, details });
+  };
+
   const buildMenu = (snapshot) => {
     const sessions = Array.isArray(snapshot.sessions) ? snapshot.sessions : [];
     const approvals = Array.isArray(snapshot.approvals) ? snapshot.approvals : [];
@@ -177,18 +212,18 @@ export const createTrayController = ({ idleIconPath, unseenIconPath, breathIconP
     ];
 
     if (approvals.length > 0) {
-      template.push({ label: 'Needs your attention', enabled: false });
+      template.push({ label: labels.trayNeedsYourAttention, enabled: false });
       const approvalItem = (approval) => {
         if (approval.kind === 'permission') {
           return {
             label: approvalLabel(approval),
             submenu: [
-              { label: 'Allow once', click: () => onAction({ type: 'respond-permission', sessionId: approval.sessionId, id: approval.id, response: 'once' }) },
-              { label: 'Allow always', click: () => onAction({ type: 'respond-permission', sessionId: approval.sessionId, id: approval.id, response: 'always' }) },
+              { label: labels.trayAllowOnce, click: () => onAction({ type: 'respond-permission', sessionId: approval.sessionId, id: approval.id, response: 'once' }) },
+              { label: labels.trayAllowAlways, click: () => onAction({ type: 'respond-permission', sessionId: approval.sessionId, id: approval.id, response: 'always' }) },
               { type: 'separator' },
-              { label: 'Deny', click: () => onAction({ type: 'respond-permission', sessionId: approval.sessionId, id: approval.id, response: 'reject' }) },
+              { label: labels.trayDeny, click: () => onAction({ type: 'respond-permission', sessionId: approval.sessionId, id: approval.id, response: 'reject' }) },
               { type: 'separator' },
-              { label: 'Open in app', click: () => onAction({ type: 'focus-session', sessionId: approval.sessionId, directory: approval.directory || '' }) },
+              { label: labels.trayOpenInApp, click: () => onAction({ type: 'focus-session', sessionId: approval.sessionId, directory: approval.directory || '' }) },
             ],
           };
         }
@@ -203,7 +238,7 @@ export const createTrayController = ({ idleIconPath, unseenIconPath, breathIconP
       const approvalOverflow = approvals.slice(MAX_APPROVALS);
       if (approvalOverflow.length > 0) {
         template.push({
-          label: `${approvalOverflow.length} more…`,
+          label: formatLabel(labels.trayMoreCount, { count: approvalOverflow.length }),
           submenu: approvalOverflow.map(approvalItem),
         });
       }
@@ -221,19 +256,19 @@ export const createTrayController = ({ idleIconPath, unseenIconPath, breathIconP
     });
 
     if (sessions.length > 0) {
-      template.push({ label: 'Sessions', enabled: false });
+      template.push({ label: labels.traySessions, enabled: false });
       for (const session of sessions.slice(0, MAX_SESSIONS)) {
         template.push(sessionItem(session));
       }
       const overflow = sessions.slice(MAX_SESSIONS);
       if (overflow.length > 0) {
         template.push({
-          label: `${overflow.length} more…`,
+          label: formatLabel(labels.trayMoreCount, { count: overflow.length }),
           submenu: overflow.map(sessionItem),
         });
       }
     } else {
-      template.push({ label: 'No active sessions', enabled: false });
+      template.push({ label: labels.trayNoActiveSessions, enabled: false });
     }
 
     // Usage submenu — only when the user has enabled providers for the dropdown
@@ -241,7 +276,7 @@ export const createTrayController = ({ idleIconPath, unseenIconPath, breathIconP
     const usage = snapshot.usage && typeof snapshot.usage === 'object' ? snapshot.usage : null;
     const usageGroups = usage && Array.isArray(usage.groups) ? usage.groups : [];
     if (usageGroups.length > 0) {
-      const modeLabel = usage.mode === 'remaining' ? 'Remaining' : 'Used';
+      const modeLabel = usage.mode === 'remaining' ? labels.trayRemaining : labels.trayUsed;
       const usageSubmenu = [];
       usageGroups.forEach((group, index) => {
         if (index > 0) usageSubmenu.push({ type: 'separator' });
@@ -258,24 +293,23 @@ export const createTrayController = ({ idleIconPath, unseenIconPath, breathIconP
       });
       template.push(
         { type: 'separator' },
-        { label: `Usage (${modeLabel})`, submenu: usageSubmenu },
+        { label: formatLabel(labels.trayUsageWithMode, { mode: modeLabel }), submenu: usageSubmenu },
       );
     }
 
     template.push(
       { type: 'separator' },
-      { label: 'New Session', click: () => onAction({ type: 'new-session' }) },
-      { label: 'New Mini Chat', click: () => onAction({ type: 'new-mini-chat' }) },
-      { label: 'Show OpenChamber', click: () => onAction({ type: 'show-main-window' }) },
+      { label: labels.newSession, click: () => onAction({ type: 'new-session' }) },
+      { label: labels.newMiniChat, click: () => onAction({ type: 'new-mini-chat' }) },
+      { label: labels.trayShowOpenChamber, click: () => onAction({ type: 'show-main-window' }) },
       { type: 'separator' },
-      { label: 'Quit OpenChamber', click: () => onAction({ type: 'quit' }) },
+      { label: labels.quit, click: () => onAction({ type: 'quit' }) },
     );
 
     return Menu.buildFromTemplate(template);
   };
 
-  const update = (rawSnapshot) => {
-    const snapshot = rawSnapshot && typeof rawSnapshot === 'object' ? rawSnapshot : {};
+  const applyPresentation = (snapshot) => {
     const sessions = Array.isArray(snapshot.sessions) ? snapshot.sessions : [];
     const approvals = Array.isArray(snapshot.approvals) ? snapshot.approvals : [];
 
@@ -297,6 +331,20 @@ export const createTrayController = ({ idleIconPath, unseenIconPath, breathIconP
     widget.setContextMenu(buildMenu(snapshot));
   };
 
+  const update = (rawSnapshot) => {
+    const snapshot = rawSnapshot && typeof rawSnapshot === 'object' ? rawSnapshot : {};
+    lastSnapshot = snapshot;
+    applyPresentation(snapshot);
+  };
+
+  const setLabels = (nextLabels) => {
+    labels = nextLabels && typeof nextLabels === 'object' ? nextLabels : {};
+    // Rebuild menu/tooltip for the retained snapshot; keep tray + animation alive.
+    if (tray && !tray.isDestroyed?.()) {
+      applyPresentation(lastSnapshot);
+    }
+  };
+
   const destroy = () => {
     stopAnim();
     if (tray && !tray.isDestroyed?.()) {
@@ -307,5 +355,5 @@ export const createTrayController = ({ idleIconPath, unseenIconPath, breathIconP
     iconState = null;
   };
 
-  return { update, destroy };
+  return { update, setLabels, destroy };
 };

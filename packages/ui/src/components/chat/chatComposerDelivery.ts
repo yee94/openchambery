@@ -5,6 +5,7 @@ import { compileAuthoredDeliveryPlan, dedupeDeliveryAttachments } from '@/compos
 import type { ComposerReferenceSemantic } from '@/composer/extensions';
 import type { ComposerSendPlan } from '@/composer/send-plan';
 import { getSyncSessions } from '@/sync/sync-refs';
+import { basename, isAbsolute, join, normalize } from 'pathe';
 import {
     DIRECTORY_ATTACHMENT_MIME,
     expandCodeSelectionCitations,
@@ -14,11 +15,22 @@ import { collectSessionMentionIds, replaceSessionMentionTokens } from './fileMen
 
 // Optional reserved icon em-space between `/` and the skill name.
 const INLINE_SKILL_TOKEN_PATTERN = /(^|\s)\/\u2003?([a-z0-9](?:[a-z0-9-]{0,62}[a-z0-9])?)/g;
+
+/** Normalize filesystem paths with pathe (POSIX + Windows drive + UNC → `/` separators). */
+const normalizeFsPath = (path: string): string => normalize(path.trim());
+
+/** Encode a normalized filesystem path as a file:// URL (drive letters → file:///C:/...). */
 const toServerFileUrl = (filepath: string): string => {
-    const normalized = filepath.replace(/\\/g, '/').trim();
-    if (normalized.toLowerCase().startsWith('file://')) return normalized;
-    const encoded = normalized.split('/').map((segment, index) => index === 1 && /^[A-Za-z]:$/.test(segment) ? segment : encodeURIComponent(segment)).join('/');
-    return `file://${/^[A-Za-z]:/.test(encoded) ? `/${encoded}` : encoded}`;
+    const trimmed = filepath.trim();
+    if (trimmed.toLowerCase().startsWith('file://')) return trimmed;
+    const normalized = normalizeFsPath(trimmed);
+    const encoded = normalized
+        .split('/')
+        .map((segment) => (/^[A-Za-z]:$/.test(segment) ? segment : encodeURIComponent(segment)))
+        .join('/');
+    // Drive-letter paths need an extra slash so URL pathname is `/C:/...`.
+    if (/^[A-Za-z]:/.test(encoded)) return `file:///${encoded}`;
+    return `file://${encoded}`;
 };
 
 export const legacyTextToAuthoredPlan = (text: string): ComposerSendPlan => ({
@@ -36,8 +48,9 @@ export const extractInlineFileMentions = ({ text, root, confirmedFilePaths, conf
 }): AttachedFile[] => {
     const attachments: AttachedFile[] = [];
     const seenPaths = new Set<string>();
-    const normalizedRoot = root?.replace(/\\/g, '/').replace(/\/+$/, '') ?? '';
-    const normalizeMentionPath = (path: string): string => path.replace(/\\/g, '/').replace(/^\.\//, '');
+    // Trailing slashes stripped for stable join; pathe keeps drive/UNC roots intact.
+    const normalizedRoot = root ? normalizeFsPath(root).replace(/\/+$/, '') : '';
+    const normalizeMentionPath = (path: string): string => normalizeFsPath(path).replace(/^\.\//, '');
     const confirmed = new Set(confirmedFilePaths.map((path) => normalizeMentionPath(path)));
     const confirmedDirectories = new Set(confirmedDirectoryPaths.map((path) => normalizeMentionPath(path)));
     const mentions = /@([^\s]+)/g;
@@ -47,17 +60,29 @@ export const extractInlineFileMentions = ({ text, root, confirmedFilePaths, conf
         if (before && !/(\s|\(|\)|\[|\]|\{|\}|"|'|`|,|\.|;|:)/.test(before)) continue;
         const mention = match[1].trim().replace(/^[`"'<(]+/, '').replace(/[),.;:!?`"'>]+$/g, '');
         if (!mention || agentNames.has(mention.toLowerCase())) continue;
-        const normalizedMention = normalizeMentionPath(mention).replace(/^\/+/, '');
-        const looksLikePath = confirmed.has(normalizeMentionPath(mention)) || confirmed.has(normalizedMention) || mention.includes('/') || mention.includes('\\') || mention.includes('.');
+        const normalizedMentionPath = normalizeMentionPath(mention);
+        // Relative form for confirmed-set matching (strip leading `/` only; never strip drive/UNC).
+        const relativeMentionKey = isAbsolute(mention) || isAbsolute(normalizedMentionPath)
+            ? normalizedMentionPath
+            : normalizedMentionPath.replace(/^\/+/, '');
+        const looksLikePath = confirmed.has(normalizedMentionPath)
+            || confirmed.has(relativeMentionKey)
+            || mention.includes('/')
+            || mention.includes('\\')
+            || mention.includes('.');
         if (!looksLikePath) continue;
-        const serverPath = mention.startsWith('/') ? mention.replace(/\\/g, '/') : normalizedRoot ? `${normalizedRoot}/${normalizedMention}` : null;
-        const normalizedServerPath = serverPath?.replace(/\/+/g, '/');
-        if (!normalizedMention || !normalizedServerPath || seenPaths.has(normalizedServerPath)) continue;
+        // Absolute Windows drive / UNC / POSIX paths keep their own root — never join project root.
+        const normalizedServerPath = (isAbsolute(mention) || isAbsolute(normalizedMentionPath))
+            ? normalizedMentionPath
+            : normalizedRoot
+                ? join(normalizedRoot, relativeMentionKey)
+                : null;
+        if (!relativeMentionKey || !normalizedServerPath || seenPaths.has(normalizedServerPath)) continue;
         seenPaths.add(normalizedServerPath);
-        const filename = normalizedMention.split('/').filter(Boolean).pop() || normalizedMention;
+        const filename = basename(normalizedServerPath) || relativeMentionKey;
         // Prefer OpenCode's directory mime so message chips render a folder icon.
-        const isDirectory = confirmedDirectories.has(normalizeMentionPath(mention))
-            || confirmedDirectories.has(normalizedMention)
+        const isDirectory = confirmedDirectories.has(normalizedMentionPath)
+            || confirmedDirectories.has(relativeMentionKey)
             || /[/\\]$/.test(mention);
         const mimeType = isDirectory ? DIRECTORY_ATTACHMENT_MIME : 'text/plain';
         attachments.push({ id: createUuid(), file: new File([], filename, { type: mimeType }), filename, mimeType, size: 0, dataUrl: toServerFileUrl(normalizedServerPath), source: 'server', serverPath: normalizedServerPath });

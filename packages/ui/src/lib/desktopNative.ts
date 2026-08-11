@@ -51,6 +51,18 @@ export const setDesktopWindowTheme = async (
   }
 };
 
+export const setDesktopMenuLocale = async (locale: string): Promise<void> => {
+  if (!isDesktopShell()) {
+    return;
+  }
+
+  try {
+    await invokeDesktopCommand('desktop_set_menu_locale', { locale });
+  } catch {
+    // ignore
+  }
+};
+
 export const getDesktopAppVersion = async (): Promise<string | null> => {
   if (!isDesktopShell()) {
     return null;

@@ -82,7 +82,7 @@ export const useI18nStore = create<I18nState>()((set, get) => ({
     }).catch((error) => {
       console.error(`[i18n] failed to load locale ${locale}`, error);
       if (get().locale === locale) {
-        set({ dictionary: enDict, loadingLocale: null });
+        set({ locale: DEFAULT_LOCALE, dictionary: enDict, loadingLocale: null });
       }
     });
   },

@@ -21,6 +21,7 @@ import { getUpdateDownloadSnapshot } from './updater-download-status.mjs';
 import { resolveUpdaterFeed } from './updater-feed.mjs';
 import { resolveQuitInterception } from './quit-confirmation.mjs';
 import { isRemoteIpcCommandAllowed } from './ipc-command-gate.mjs';
+import { getMenuLabels, normalizeMenuLocale } from './menu-i18n.mjs';
 import { mintOutsideFileGrant } from '@openchamber/web/server/lib/fs/routes.js';
 import {
   UI_PROTOCOL,
@@ -4784,125 +4785,150 @@ const handleInvoke = async (browserWindow, command, args = {}) => {
       sshManager.clearLogsForInstance(String(args.id || '').trim());
       return null;
 
+    // Local renderer only: remote host pages must not control local shell menu language.
+    case 'desktop_set_menu_locale': {
+      const locale = normalizeMenuLocale(args.locale);
+      if (locale === menuLocale) return locale;
+      menuLocale = locale;
+      rebuildApplicationMenus();
+      setupDockMenu();
+      if (state.trayController?.setLabels) {
+        state.trayController.setLabels(getMenuLabels(menuLocale));
+      }
+      return locale;
+    }
+
     default:
       throw new Error(`Unknown desktop command: ${command}`);
   }
 };
 
+/** Current native menu locale; tracks the renderer UI locale via desktop_set_menu_locale. */
+let menuLocale = 'en';
+
+const rebuildApplicationMenus = () => {
+  if (process.platform === 'darwin') {
+    Menu.setApplicationMenu(buildMacMenu());
+  } else {
+    Menu.setApplicationMenu(buildAutoHiddenMenu());
+  }
+};
+
 const buildMacMenu = () => {
   const dispatchAction = (action) => dispatchMenuAction(action);
+  const labels = getMenuLabels(menuLocale);
 
   return Menu.buildFromTemplate([
     {
       label: app.name,
       submenu: [
-        { label: 'About OpenChamber', click: () => dispatchAction('about') },
+        { label: labels.aboutOpenChamber, click: () => dispatchAction('about') },
         {
-          label: 'Check for Updates',
+          label: labels.checkForUpdates,
           click: () => dispatchCheckForUpdates(),
         },
         { type: 'separator' },
-        { label: 'Settings', accelerator: 'Cmd+,', click: () => dispatchAction('settings') },
-        { label: 'Switch Instance', click: () => dispatchAction('switch-instance') },
-        { label: 'Reload Webview', click: () => reloadMenuTargetWindow() },
-        { label: 'Restart', click: () => relaunchFromMenu() },
-        { label: 'Command Palette', accelerator: 'Cmd+P', click: () => dispatchAction('command-palette') },
+        { label: labels.settings, accelerator: 'Cmd+,', click: () => dispatchAction('settings') },
+        { label: labels.switchInstance, click: () => dispatchAction('switch-instance') },
+        { label: labels.reloadWebview, click: () => reloadMenuTargetWindow() },
+        { label: labels.restart, click: () => relaunchFromMenu() },
+        { label: labels.commandPalette, accelerator: 'Cmd+P', click: () => dispatchAction('command-palette') },
         { type: 'separator' },
-        { role: 'services' },
+        { role: 'services', label: labels.services },
         { type: 'separator' },
-        { role: 'hide' },
-        { role: 'hideOthers' },
+        { role: 'hide', label: labels.hide },
+        { role: 'hideOthers', label: labels.hideOthers },
         { type: 'separator' },
-        { role: 'quit' },
+        { role: 'quit', label: labels.quit },
       ],
     },
     {
-      label: 'File',
+      label: labels.file,
       submenu: [
-        { label: 'New Window', accelerator: 'Cmd+Shift+N', click: () => void handleInvoke(null, 'desktop_new_window') },
+        { label: labels.newWindow, accelerator: 'Cmd+Shift+N', click: () => void handleInvoke(null, 'desktop_new_window') },
         { type: 'separator' },
-        { label: 'New Session', accelerator: 'Cmd+N', click: () => dispatchAction('new-session') },
+        { label: labels.newSession, accelerator: 'Cmd+N', click: () => dispatchAction('new-session') },
         // registerAccelerator:false → show the shortcut hint but let the
         // renderer own the (customizable) key binding, avoiding a double open.
-        { label: 'New Mini Chat', accelerator: 'Cmd+Alt+N', registerAccelerator: false, click: () => dispatchOpenMiniChat() },
+        { label: labels.newMiniChat, accelerator: 'Cmd+Alt+N', registerAccelerator: false, click: () => dispatchOpenMiniChat() },
         { type: 'separator' },
-        { label: 'Add Project', click: () => dispatchAction('change-workspace') },
+        { label: labels.addProject, click: () => dispatchAction('change-workspace') },
         { type: 'separator' },
         // registerAccelerator:false → renderer owns Cmd/Ctrl+W so an open
         // context-panel tab closes first (VS Code-style) instead of the window.
-        { label: 'Close', accelerator: 'Cmd+W', registerAccelerator: false, click: () => dispatchAction('close-tab-or-window') },
+        { label: labels.close, accelerator: 'Cmd+W', registerAccelerator: false, click: () => dispatchAction('close-tab-or-window') },
       ],
     },
     {
-      label: 'Edit',
+      label: labels.edit,
       submenu: [
-        { role: 'undo' },
-        { role: 'redo' },
+        { role: 'undo', label: labels.undo },
+        { role: 'redo', label: labels.redo },
         { type: 'separator' },
-        { role: 'cut' },
-        { label: 'Copy', accelerator: 'Cmd+C', click: () => copyFromMenuTarget() },
-        { role: 'paste' },
-        { role: 'selectAll' },
+        { role: 'cut', label: labels.cut },
+        { label: labels.copy, accelerator: 'Cmd+C', click: () => copyFromMenuTarget() },
+        { role: 'paste', label: labels.paste },
+        { role: 'selectAll', label: labels.selectAll },
       ],
     },
     {
-      label: 'View',
+      label: labels.view,
       submenu: [
         // registerAccelerator:false → menu shows the hint; renderer owns the
         // (customizable) binding so toggle actions are not fired twice.
-        { label: 'Toggle Review Panel', accelerator: 'Cmd+Alt+B', registerAccelerator: false, click: () => dispatchAction('toggle-right-sidebar') },
-        { label: 'Open Git Sidebar', accelerator: 'Cmd+Shift+G', registerAccelerator: false, click: () => dispatchAction('open-right-sidebar-git') },
-        { label: 'Open Files Sidebar', accelerator: 'Cmd+Shift+F', registerAccelerator: false, click: () => dispatchAction('open-right-sidebar-files') },
+        { label: labels.toggleReviewPanel, accelerator: 'Cmd+Alt+B', registerAccelerator: false, click: () => dispatchAction('toggle-right-sidebar') },
+        { label: labels.openGitSidebar, accelerator: 'Cmd+Shift+G', registerAccelerator: false, click: () => dispatchAction('open-right-sidebar-git') },
+        { label: labels.openFilesSidebar, accelerator: 'Cmd+Shift+F', registerAccelerator: false, click: () => dispatchAction('open-right-sidebar-files') },
         { type: 'separator' },
-        { label: 'Toggle Bottom Panel', accelerator: 'Cmd+J', registerAccelerator: false, click: () => dispatchAction('toggle-terminal') },
-        { label: 'Toggle Terminal', accelerator: 'Ctrl+`', registerAccelerator: false, click: () => dispatchAction('toggle-terminal') },
-        { label: 'Toggle Terminal Expanded', accelerator: 'Cmd+Shift+J', registerAccelerator: false, click: () => dispatchAction('toggle-terminal-expanded') },
+        { label: labels.toggleBottomPanel, accelerator: 'Cmd+J', registerAccelerator: false, click: () => dispatchAction('toggle-terminal') },
+        { label: labels.toggleTerminal, accelerator: 'Ctrl+`', registerAccelerator: false, click: () => dispatchAction('toggle-terminal') },
+        { label: labels.toggleTerminalExpanded, accelerator: 'Cmd+Shift+J', registerAccelerator: false, click: () => dispatchAction('toggle-terminal-expanded') },
         { type: 'separator' },
-        { label: 'Light Theme', click: () => dispatchAction('theme-light') },
-        { label: 'Dark Theme', click: () => dispatchAction('theme-dark') },
-        { label: 'System Theme', click: () => dispatchAction('theme-system') },
+        { label: labels.lightTheme, click: () => dispatchAction('theme-light') },
+        { label: labels.darkTheme, click: () => dispatchAction('theme-dark') },
+        { label: labels.systemTheme, click: () => dispatchAction('theme-system') },
         { type: 'separator' },
-        { label: 'Toggle Session Sidebar', accelerator: 'Cmd+B', registerAccelerator: false, click: () => dispatchAction('toggle-sidebar') },
-        { label: 'Toggle Memory Debug', accelerator: 'Cmd+Shift+D', click: () => dispatchAction('toggle-memory-debug') },
+        { label: labels.toggleSessionSidebar, accelerator: 'Cmd+B', registerAccelerator: false, click: () => dispatchAction('toggle-sidebar') },
+        { label: labels.toggleMemoryDebug, accelerator: 'Cmd+Shift+D', click: () => dispatchAction('toggle-memory-debug') },
         { type: 'separator' },
         // Chromium/webview zoom — renderer owns the (customizable) binding.
-        { label: 'Zoom In', accelerator: 'Cmd+=', registerAccelerator: false, click: () => dispatchAction('zoom-in') },
-        { label: 'Zoom Out', accelerator: 'Cmd+-', registerAccelerator: false, click: () => dispatchAction('zoom-out') },
-        { label: 'Actual Size', accelerator: 'Cmd+0', registerAccelerator: false, click: () => dispatchAction('zoom-reset') },
+        { label: labels.zoomIn, accelerator: 'Cmd+=', registerAccelerator: false, click: () => dispatchAction('zoom-in') },
+        { label: labels.zoomOut, accelerator: 'Cmd+-', registerAccelerator: false, click: () => dispatchAction('zoom-out') },
+        { label: labels.actualSize, accelerator: 'Cmd+0', registerAccelerator: false, click: () => dispatchAction('zoom-reset') },
         { type: 'separator' },
-        { role: 'togglefullscreen' },
+        { role: 'togglefullscreen', label: labels.toggleFullscreen },
       ],
     },
     {
-      label: 'Go',
+      label: labels.go,
       submenu: [
-        { label: 'Previous Session', accelerator: 'Cmd+Shift+[', registerAccelerator: false, click: () => dispatchAction('previous-session') },
-        { label: 'Next Session', accelerator: 'Cmd+Shift+]', registerAccelerator: false, click: () => dispatchAction('next-session') },
+        { label: labels.previousSession, accelerator: 'Cmd+Shift+[', registerAccelerator: false, click: () => dispatchAction('previous-session') },
+        { label: labels.nextSession, accelerator: 'Cmd+Shift+]', registerAccelerator: false, click: () => dispatchAction('next-session') },
       ],
     },
     {
-      label: 'Window',
+      label: labels.window,
       submenu: [
-        { role: 'minimize' },
-        { role: 'zoom' },
+        { role: 'minimize', label: labels.minimize },
+        { role: 'zoom', label: labels.zoom },
         { type: 'separator' },
         // Same Close path as File menu — avoid a second native Cmd+W accelerator.
-        { label: 'Close Window', accelerator: 'Cmd+W', registerAccelerator: false, click: () => dispatchAction('close-tab-or-window') },
+        { label: labels.closeWindow, accelerator: 'Cmd+W', registerAccelerator: false, click: () => dispatchAction('close-tab-or-window') },
       ],
     },
     {
-      label: 'Help',
+      label: labels.help,
       submenu: [
-        { label: 'Keyboard Shortcuts', accelerator: 'Cmd+.', click: () => dispatchAction('help-dialog') },
-        { label: 'Show Diagnostics', accelerator: 'Cmd+Shift+L', click: () => dispatchAction('download-logs') },
-        { label: 'Toggle Developer Tools', accelerator: 'Cmd+Alt+I', click: () => openDevToolsForMenuTarget() },
+        { label: labels.keyboardShortcuts, accelerator: 'Cmd+.', click: () => dispatchAction('help-dialog') },
+        { label: labels.showDiagnostics, accelerator: 'Cmd+Shift+L', click: () => dispatchAction('download-logs') },
+        { label: labels.toggleDeveloperTools, accelerator: 'Cmd+Alt+I', click: () => openDevToolsForMenuTarget() },
         { type: 'separator' },
-        { label: 'Clear Cache', click: () => void handleInvoke(null, 'desktop_clear_cache') },
+        { label: labels.clearCache, click: () => void handleInvoke(null, 'desktop_clear_cache') },
         { type: 'separator' },
-        { label: 'Report a Bug', click: () => shell.openExternal(GITHUB_BUG_REPORT_URL) },
-        { label: 'Request a Feature', click: () => shell.openExternal(GITHUB_FEATURE_REQUEST_URL) },
+        { label: labels.reportABug, click: () => shell.openExternal(GITHUB_BUG_REPORT_URL) },
+        { label: labels.requestAFeature, click: () => shell.openExternal(GITHUB_FEATURE_REQUEST_URL) },
         { type: 'separator' },
-        { label: 'Join Discord', click: () => shell.openExternal(DISCORD_INVITE_URL) },
+        { label: labels.joinDiscord, click: () => shell.openExternal(DISCORD_INVITE_URL) },
       ],
     },
   ]);
@@ -4910,117 +4936,118 @@ const buildMacMenu = () => {
 
 const buildAutoHiddenMenu = () => {
   const dispatchAction = (action) => dispatchMenuAction(action);
+  const labels = getMenuLabels(menuLocale);
 
   return Menu.buildFromTemplate([
     {
       label: 'OpenChamber',
       submenu: [
-        { label: 'About OpenChamber', click: () => dispatchAction('about') },
+        { label: labels.aboutOpenChamber, click: () => dispatchAction('about') },
         {
-          label: 'Check for Updates',
+          label: labels.checkForUpdates,
           click: () => dispatchCheckForUpdates(),
         },
         { type: 'separator' },
-        { label: 'Settings', accelerator: 'Ctrl+,', click: () => dispatchAction('settings') },
-        { label: 'Switch Instance', click: () => dispatchAction('switch-instance') },
-        { label: 'Reload Webview', click: () => reloadMenuTargetWindow() },
-        { label: 'Restart', click: () => relaunchFromMenu() },
-        { label: 'Command Palette', accelerator: 'Ctrl+P', click: () => dispatchAction('command-palette') },
+        { label: labels.settings, accelerator: 'Ctrl+,', click: () => dispatchAction('settings') },
+        { label: labels.switchInstance, click: () => dispatchAction('switch-instance') },
+        { label: labels.reloadWebview, click: () => reloadMenuTargetWindow() },
+        { label: labels.restart, click: () => relaunchFromMenu() },
+        { label: labels.commandPalette, accelerator: 'Ctrl+P', click: () => dispatchAction('command-palette') },
         { type: 'separator' },
-        { role: 'quit' },
+        { role: 'quit', label: labels.quit },
       ],
     },
     {
-      label: 'File',
+      label: labels.file,
       submenu: [
-        { label: 'New Window', accelerator: 'Ctrl+Shift+N', click: () => void handleInvoke(null, 'desktop_new_window') },
+        { label: labels.newWindow, accelerator: 'Ctrl+Shift+N', click: () => void handleInvoke(null, 'desktop_new_window') },
         { type: 'separator' },
-        { label: 'New Session', accelerator: 'Ctrl+N', click: () => dispatchAction('new-session') },
+        { label: labels.newSession, accelerator: 'Ctrl+N', click: () => dispatchAction('new-session') },
         { type: 'separator' },
-        { label: 'Add Project', click: () => dispatchAction('change-workspace') },
+        { label: labels.addProject, click: () => dispatchAction('change-workspace') },
         { type: 'separator' },
-        { role: 'quit' },
+        { role: 'quit', label: labels.quit },
       ],
     },
     {
-      label: 'Edit',
+      label: labels.edit,
       submenu: [
-        { role: 'undo' },
-        { role: 'redo' },
+        { role: 'undo', label: labels.undo },
+        { role: 'redo', label: labels.redo },
         { type: 'separator' },
-        { role: 'cut' },
-        { label: 'Copy', accelerator: 'Ctrl+C', click: () => copyFromMenuTarget() },
-        { role: 'paste' },
-        { role: 'selectAll' },
+        { role: 'cut', label: labels.cut },
+        { label: labels.copy, accelerator: 'Ctrl+C', click: () => copyFromMenuTarget() },
+        { role: 'paste', label: labels.paste },
+        { role: 'selectAll', label: labels.selectAll },
       ],
     },
     {
-      label: 'View',
+      label: labels.view,
       submenu: [
-        { role: 'reload' },
-        { role: 'forceReload' },
-        { label: 'Toggle Developer Tools', accelerator: 'Ctrl+Alt+I', click: () => openDevToolsForMenuTarget() },
+        { role: 'reload', label: labels.reload },
+        { role: 'forceReload', label: labels.forceReload },
+        { label: labels.toggleDeveloperTools, accelerator: 'Ctrl+Alt+I', click: () => openDevToolsForMenuTarget() },
         { type: 'separator' },
         // registerAccelerator:false → menu shows the hint; renderer owns the
         // (customizable) binding so toggle actions are not fired twice.
-        { label: 'Toggle Review Panel', accelerator: 'Ctrl+Alt+B', registerAccelerator: false, click: () => dispatchAction('toggle-right-sidebar') },
-        { label: 'Open Git Sidebar', accelerator: 'Ctrl+Shift+G', registerAccelerator: false, click: () => dispatchAction('open-right-sidebar-git') },
-        { label: 'Open Files Sidebar', accelerator: 'Ctrl+Shift+F', registerAccelerator: false, click: () => dispatchAction('open-right-sidebar-files') },
+        { label: labels.toggleReviewPanel, accelerator: 'Ctrl+Alt+B', registerAccelerator: false, click: () => dispatchAction('toggle-right-sidebar') },
+        { label: labels.openGitSidebar, accelerator: 'Ctrl+Shift+G', registerAccelerator: false, click: () => dispatchAction('open-right-sidebar-git') },
+        { label: labels.openFilesSidebar, accelerator: 'Ctrl+Shift+F', registerAccelerator: false, click: () => dispatchAction('open-right-sidebar-files') },
         { type: 'separator' },
-        { label: 'Toggle Bottom Panel', accelerator: 'Ctrl+J', registerAccelerator: false, click: () => dispatchAction('toggle-terminal') },
-        { label: 'Toggle Terminal', accelerator: 'Ctrl+`', registerAccelerator: false, click: () => dispatchAction('toggle-terminal') },
-        { label: 'Toggle Terminal Expanded', accelerator: 'Ctrl+Shift+J', registerAccelerator: false, click: () => dispatchAction('toggle-terminal-expanded') },
+        { label: labels.toggleBottomPanel, accelerator: 'Ctrl+J', registerAccelerator: false, click: () => dispatchAction('toggle-terminal') },
+        { label: labels.toggleTerminal, accelerator: 'Ctrl+`', registerAccelerator: false, click: () => dispatchAction('toggle-terminal') },
+        { label: labels.toggleTerminalExpanded, accelerator: 'Ctrl+Shift+J', registerAccelerator: false, click: () => dispatchAction('toggle-terminal-expanded') },
         { type: 'separator' },
-        { label: 'Light Theme', click: () => dispatchAction('theme-light') },
-        { label: 'Dark Theme', click: () => dispatchAction('theme-dark') },
-        { label: 'System Theme', click: () => dispatchAction('theme-system') },
+        { label: labels.lightTheme, click: () => dispatchAction('theme-light') },
+        { label: labels.darkTheme, click: () => dispatchAction('theme-dark') },
+        { label: labels.systemTheme, click: () => dispatchAction('theme-system') },
         { type: 'separator' },
-        { label: 'Toggle Session Sidebar', accelerator: 'Ctrl+B', registerAccelerator: false, click: () => dispatchAction('toggle-sidebar') },
-        { label: 'Toggle Memory Debug', accelerator: 'Ctrl+Shift+D', click: () => dispatchAction('toggle-memory-debug') },
+        { label: labels.toggleSessionSidebar, accelerator: 'Ctrl+B', registerAccelerator: false, click: () => dispatchAction('toggle-sidebar') },
+        { label: labels.toggleMemoryDebug, accelerator: 'Ctrl+Shift+D', click: () => dispatchAction('toggle-memory-debug') },
         { type: 'separator' },
         // Chromium/webview zoom — renderer owns the (customizable) binding.
-        { label: 'Zoom In', accelerator: 'Ctrl+=', registerAccelerator: false, click: () => dispatchAction('zoom-in') },
-        { label: 'Zoom Out', accelerator: 'Ctrl+-', registerAccelerator: false, click: () => dispatchAction('zoom-out') },
-        { label: 'Actual Size', accelerator: 'Ctrl+0', registerAccelerator: false, click: () => dispatchAction('zoom-reset') },
+        { label: labels.zoomIn, accelerator: 'Ctrl+=', registerAccelerator: false, click: () => dispatchAction('zoom-in') },
+        { label: labels.zoomOut, accelerator: 'Ctrl+-', registerAccelerator: false, click: () => dispatchAction('zoom-out') },
+        { label: labels.actualSize, accelerator: 'Ctrl+0', registerAccelerator: false, click: () => dispatchAction('zoom-reset') },
         { type: 'separator' },
-        { role: 'togglefullscreen' },
+        { role: 'togglefullscreen', label: labels.toggleFullscreen },
       ],
     },
     {
-      label: 'Go',
+      label: labels.go,
       submenu: [
-        { label: 'Back', accelerator: 'Ctrl+[', click: () => dispatchAction('go-back') },
-        { label: 'Forward', accelerator: 'Ctrl+]', click: () => dispatchAction('go-forward') },
+        { label: labels.back, accelerator: 'Ctrl+[', click: () => dispatchAction('go-back') },
+        { label: labels.forward, accelerator: 'Ctrl+]', click: () => dispatchAction('go-forward') },
         { type: 'separator' },
-        { label: 'Previous Session', accelerator: 'Ctrl+Shift+[', registerAccelerator: false, click: () => dispatchAction('previous-session') },
-        { label: 'Next Session', accelerator: 'Ctrl+Shift+]', registerAccelerator: false, click: () => dispatchAction('next-session') },
+        { label: labels.previousSession, accelerator: 'Ctrl+Shift+[', registerAccelerator: false, click: () => dispatchAction('previous-session') },
+        { label: labels.nextSession, accelerator: 'Ctrl+Shift+]', registerAccelerator: false, click: () => dispatchAction('next-session') },
         { type: 'separator' },
-        { label: 'Previous Project', accelerator: 'Ctrl+Alt+Up', click: () => dispatchAction('previous-project') },
-        { label: 'Next Project', accelerator: 'Ctrl+Alt+Down', click: () => dispatchAction('next-project') },
+        { label: labels.previousProject, accelerator: 'Ctrl+Alt+Up', click: () => dispatchAction('previous-project') },
+        { label: labels.nextProject, accelerator: 'Ctrl+Alt+Down', click: () => dispatchAction('next-project') },
       ],
     },
     {
-      label: 'Window',
+      label: labels.window,
       submenu: [
-        { role: 'minimize' },
-        { role: 'togglefullscreen' },
+        { role: 'minimize', label: labels.minimize },
+        { role: 'togglefullscreen', label: labels.toggleFullscreen },
         { type: 'separator' },
         // registerAccelerator:false → renderer owns Ctrl+W (close tab, then window).
-        { label: 'Close', accelerator: 'Ctrl+W', registerAccelerator: false, click: () => dispatchAction('close-tab-or-window') },
+        { label: labels.close, accelerator: 'Ctrl+W', registerAccelerator: false, click: () => dispatchAction('close-tab-or-window') },
       ],
     },
     {
-      label: 'Help',
+      label: labels.help,
       submenu: [
-        { label: 'Keyboard Shortcuts', accelerator: 'Ctrl+.', click: () => dispatchAction('help-dialog') },
-        { label: 'Show Diagnostics', accelerator: 'Ctrl+Shift+L', click: () => dispatchAction('download-logs') },
+        { label: labels.keyboardShortcuts, accelerator: 'Ctrl+.', click: () => dispatchAction('help-dialog') },
+        { label: labels.showDiagnostics, accelerator: 'Ctrl+Shift+L', click: () => dispatchAction('download-logs') },
         { type: 'separator' },
-        { label: 'Clear Cache', click: () => void handleInvoke(null, 'desktop_clear_cache') },
+        { label: labels.clearCache, click: () => void handleInvoke(null, 'desktop_clear_cache') },
         { type: 'separator' },
-        { label: 'Report a Bug', click: () => shell.openExternal(GITHUB_BUG_REPORT_URL) },
-        { label: 'Request a Feature', click: () => shell.openExternal(GITHUB_FEATURE_REQUEST_URL) },
+        { label: labels.reportABug, click: () => shell.openExternal(GITHUB_BUG_REPORT_URL) },
+        { label: labels.requestAFeature, click: () => shell.openExternal(GITHUB_FEATURE_REQUEST_URL) },
         { type: 'separator' },
-        { label: 'Join Discord', click: () => shell.openExternal(DISCORD_INVITE_URL) },
+        { label: labels.joinDiscord, click: () => shell.openExternal(DISCORD_INVITE_URL) },
       ],
     },
   ]);
@@ -5032,6 +5059,7 @@ const buildAutoHiddenMenu = () => {
 const setupDockMenu = () => {
   if (process.platform !== 'darwin' || !app.dock) return;
 
+  const labels = getMenuLabels(menuLocale);
   const withMainWindow = async (run) => {
     const target = await revealMainWindow();
     if (!target || target.isDestroyed()) return;
@@ -5039,10 +5067,10 @@ const setupDockMenu = () => {
   };
 
   app.dock.setMenu(Menu.buildFromTemplate([
-    { label: 'New Window', click: () => void handleInvoke(null, 'desktop_new_window') },
+    { label: labels.newWindow, click: () => void handleInvoke(null, 'desktop_new_window') },
     { type: 'separator' },
     {
-      label: 'New Session',
+      label: labels.newSession,
       click: () => {
         void withMainWindow((target) => {
           emitToWindow(target, 'openchamber:open-draft-session', { directory: '', projectId: '' });
@@ -5050,7 +5078,7 @@ const setupDockMenu = () => {
       },
     },
     {
-      label: 'New Mini Chat',
+      label: labels.newMiniChat,
       click: () => {
         void withMainWindow((target) => {
           dispatchOpenMiniChat(target);
@@ -5322,6 +5350,7 @@ const setupTray = () => {
   try {
     state.trayController = createTrayController({
       ...assets,
+      labels: getMenuLabels(menuLocale),
       onAction: (action) => { void dispatchTrayAction(action); },
     });
     // Seed an empty snapshot so the icon appears immediately; the renderer
@@ -5533,12 +5562,8 @@ app.whenReady().then(async () => {
   registerVirtualAssetProtocol();
   setupAutoUpdater();
 
-  if (process.platform === 'darwin') {
-    Menu.setApplicationMenu(buildMacMenu());
-    setupDockMenu();
-  } else {
-    Menu.setApplicationMenu(buildAutoHiddenMenu());
-  }
+  rebuildApplicationMenus();
+  setupDockMenu();
   setupTray();
 
   if ((process.platform === 'darwin' || process.platform === 'win32') && app.isPackaged) {

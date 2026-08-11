@@ -1,19 +1,32 @@
 import { afterEach, describe, expect, mock, test } from 'bun:test';
 
-const desktopHostProbe = mock(async () => ({ status: 'ok' as const, latencyMs: 12 }));
-const probeRelayDesktopHost = mock(async () => ({ status: 'ok' as const, latencyMs: 30 }));
-const switchRuntimeEndpoint = mock(() => undefined);
-const scheduleDesktopHostCandidateRefresh = mock(() => undefined);
-const adoptRelayTunnel = mock(() => undefined);
-const isElectronShell = mock(() => true);
-const getRuntimeKey = mock(() => 'local');
+// Controllable impls + manual call tracking (project bun-test.d.ts does not
+// declare mock matcher / mockClear types; existing tests use plain arrays).
+let desktopHostProbeImpl: (...args: unknown[]) => Promise<{ status: 'ok' | 'unreachable'; latencyMs: number }> =
+  async () => ({ status: 'ok', latencyMs: 12 });
+let probeRelayDesktopHostImpl: (...args: unknown[]) => Promise<{ status: 'ok' | 'unreachable'; latencyMs: number }> =
+  async () => ({ status: 'ok', latencyMs: 30 });
+let switchRuntimeEndpointImpl: (...args: unknown[]) => void = () => undefined;
+let scheduleDesktopHostCandidateRefreshImpl: (...args: unknown[]) => void = () => undefined;
+let adoptRelayTunnelImpl: (...args: unknown[]) => void = () => undefined;
+let isElectronShellImpl: () => boolean = () => true;
+let getRuntimeKeyImpl: () => string = () => 'local';
+
+const desktopHostProbeCalls: unknown[][] = [];
+const probeRelayDesktopHostCalls: unknown[][] = [];
+const switchRuntimeEndpointCalls: unknown[][] = [];
+const scheduleDesktopHostCandidateRefreshCalls: unknown[][] = [];
+const adoptRelayTunnelCalls: unknown[][] = [];
 
 mock.module('@/lib/desktop', () => ({
-  isElectronShell: () => isElectronShell(),
+  isElectronShell: () => isElectronShellImpl(),
 }));
 
 mock.module('@/lib/desktopHosts', () => ({
-  desktopHostProbe: (...args: unknown[]) => desktopHostProbe(...args),
+  desktopHostProbe: (...args: unknown[]) => {
+    desktopHostProbeCalls.push(args);
+    return desktopHostProbeImpl(...args);
+  },
   getDesktopHostApiUrl: (host: { apiUrl?: string; url: string }) => host.apiUrl || host.url,
   normalizeHostUrl: (raw: string) => {
     try {
@@ -24,15 +37,24 @@ mock.module('@/lib/desktopHosts', () => ({
       return null;
     }
   },
-  probeRelayDesktopHost: (...args: unknown[]) => probeRelayDesktopHost(...args),
+  probeRelayDesktopHost: (...args: unknown[]) => {
+    probeRelayDesktopHostCalls.push(args);
+    return probeRelayDesktopHostImpl(...args);
+  },
 }));
 
 mock.module('@/lib/desktopRelayRestore', () => ({
-  scheduleDesktopHostCandidateRefresh: (...args: unknown[]) => scheduleDesktopHostCandidateRefresh(...args),
+  scheduleDesktopHostCandidateRefresh: (...args: unknown[]) => {
+    scheduleDesktopHostCandidateRefreshCalls.push(args);
+    return scheduleDesktopHostCandidateRefreshImpl(...args);
+  },
 }));
 
 mock.module('@/lib/relay/runtime-tunnel', () => ({
-  adoptRelayTunnel: (...args: unknown[]) => adoptRelayTunnel(...args),
+  adoptRelayTunnel: (...args: unknown[]) => {
+    adoptRelayTunnelCalls.push(args);
+    return adoptRelayTunnelImpl(...args);
+  },
 }));
 
 mock.module('@/lib/relay/tunnel-client', () => ({
@@ -40,8 +62,11 @@ mock.module('@/lib/relay/tunnel-client', () => ({
 }));
 
 mock.module('@/lib/runtime-switch', () => ({
-  getRuntimeKey: () => getRuntimeKey(),
-  switchRuntimeEndpoint: (...args: unknown[]) => switchRuntimeEndpoint(...args),
+  getRuntimeKey: () => getRuntimeKeyImpl(),
+  switchRuntimeEndpoint: (...args: unknown[]) => {
+    switchRuntimeEndpointCalls.push(args);
+    return switchRuntimeEndpointImpl(...args);
+  },
 }));
 
 const { isDesktopHostActive, runtimeKeyForDesktopHost, switchDesktopHost } = await import('./desktopHostSwitch');
@@ -67,15 +92,18 @@ const relayHost = {
 };
 
 afterEach(() => {
-  desktopHostProbe.mockClear();
-  probeRelayDesktopHost.mockClear();
-  switchRuntimeEndpoint.mockClear();
-  scheduleDesktopHostCandidateRefresh.mockClear();
-  adoptRelayTunnel.mockClear();
-  isElectronShell.mockReset();
-  isElectronShell.mockImplementation(() => true);
-  getRuntimeKey.mockReset();
-  getRuntimeKey.mockImplementation(() => 'local');
+  desktopHostProbeCalls.length = 0;
+  probeRelayDesktopHostCalls.length = 0;
+  switchRuntimeEndpointCalls.length = 0;
+  scheduleDesktopHostCandidateRefreshCalls.length = 0;
+  adoptRelayTunnelCalls.length = 0;
+  desktopHostProbeImpl = async () => ({ status: 'ok', latencyMs: 12 });
+  probeRelayDesktopHostImpl = async () => ({ status: 'ok', latencyMs: 30 });
+  switchRuntimeEndpointImpl = () => undefined;
+  scheduleDesktopHostCandidateRefreshImpl = () => undefined;
+  adoptRelayTunnelImpl = () => undefined;
+  isElectronShellImpl = () => true;
+  getRuntimeKeyImpl = () => 'local';
 });
 
 describe('desktopHostSwitch', () => {
@@ -85,17 +113,17 @@ describe('desktopHostSwitch', () => {
   });
 
   test('isDesktopHostActive uses runtime key', () => {
-    getRuntimeKey.mockImplementation(() => 'host:host-a');
+    getRuntimeKeyImpl = () => 'host:host-a';
     expect(isDesktopHostActive(directHost)).toBe(true);
     expect(isDesktopHostActive(relayHost)).toBe(false);
   });
 
   test('switchDesktopHost returns unsupported outside Electron', async () => {
-    isElectronShell.mockImplementation(() => false);
+    isElectronShellImpl = () => false;
     const result = await switchDesktopHost(directHost);
     expect(result.ok).toBe(false);
     if (!result.ok) expect(result.reason).toBe('unsupported');
-    expect(switchRuntimeEndpoint).not.toHaveBeenCalled();
+    expect(switchRuntimeEndpointCalls).toEqual([]);
   });
 
   test('switchDesktopHost uses cached direct probe without re-probing', async () => {
@@ -107,18 +135,18 @@ describe('desktopHostSwitch', () => {
       via: 'direct',
       status: { status: 'ok', latencyMs: 9 },
     });
-    expect(desktopHostProbe).not.toHaveBeenCalled();
-    expect(switchRuntimeEndpoint).toHaveBeenCalledWith({
+    expect(desktopHostProbeCalls).toEqual([]);
+    expect(switchRuntimeEndpointCalls).toEqual([[{
       apiBaseUrl: 'http://192.168.1.10:4096',
       clientToken: 'token-a',
       requestHeaders: null,
       runtimeKey: 'host:host-a',
-    });
+    }]]);
   });
 
   test('switchDesktopHost falls back to relay when direct is blocked', async () => {
-    desktopHostProbe.mockImplementation(async () => ({ status: 'unreachable' as const, latencyMs: 0 }));
-    probeRelayDesktopHost.mockImplementation(async () => ({ status: 'ok' as const, latencyMs: 40 }));
+    desktopHostProbeImpl = async () => ({ status: 'unreachable', latencyMs: 0 });
+    probeRelayDesktopHostImpl = async () => ({ status: 'ok', latencyMs: 40 });
 
     const multi = {
       ...directHost,
@@ -131,17 +159,17 @@ describe('desktopHostSwitch', () => {
       expect(result.via).toBe('relay');
       expect(result.status.via).toBe('relay');
     }
-    expect(switchRuntimeEndpoint).toHaveBeenCalledWith(expect.objectContaining({
-      runtimeKey: 'host:host-multi',
-      relay: multi.relay,
-      clientToken: 'token-a',
-    }));
-    expect(scheduleDesktopHostCandidateRefresh).toHaveBeenCalledWith('host-multi');
+    expect(switchRuntimeEndpointCalls).toHaveLength(1);
+    const switchArgs = switchRuntimeEndpointCalls[0]?.[0] as Record<string, unknown> | undefined;
+    expect(switchArgs?.runtimeKey).toBe('host:host-multi');
+    expect(switchArgs?.relay).toEqual(multi.relay);
+    expect(switchArgs?.clientToken).toBe('token-a');
+    expect(scheduleDesktopHostCandidateRefreshCalls).toEqual([['host-multi']]);
   });
 
   test('switchDesktopHost reports unreachable when every transport fails', async () => {
-    desktopHostProbe.mockImplementation(async () => ({ status: 'unreachable' as const, latencyMs: 0 }));
-    probeRelayDesktopHost.mockImplementation(async () => ({ status: 'unreachable' as const, latencyMs: 0 }));
+    desktopHostProbeImpl = async () => ({ status: 'unreachable', latencyMs: 0 });
+    probeRelayDesktopHostImpl = async () => ({ status: 'unreachable', latencyMs: 0 });
 
     const multi = {
       ...directHost,
@@ -151,6 +179,6 @@ describe('desktopHostSwitch', () => {
     const result = await switchDesktopHost(multi);
     expect(result.ok).toBe(false);
     if (!result.ok) expect(result.reason).toBe('unreachable');
-    expect(switchRuntimeEndpoint).not.toHaveBeenCalled();
+    expect(switchRuntimeEndpointCalls).toEqual([]);
   });
 });

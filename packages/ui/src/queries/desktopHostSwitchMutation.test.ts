@@ -1,21 +1,34 @@
 import { afterEach, describe, expect, mock, test } from 'bun:test';
 import { QueryClient } from '@tanstack/react-query';
 
-const switchDesktopHost = mock(async () => ({
-  ok: true as const,
-  via: 'direct' as const,
-  status: { status: 'ok' as const, latencyMs: 8 },
-}));
-const switchRuntimeEndpoint = mock(() => undefined);
-const isDesktopHostActive = mock(() => false);
-const toastError = mock(() => undefined);
+// Controllable impls + manual call tracking (project bun-test.d.ts does not
+// declare mock matcher / mockClear types; existing tests use plain arrays).
+type SwitchDesktopHostResult =
+  | { ok: true; via: 'direct' | 'relay'; status: { status: 'ok'; latencyMs: number } | { status: 'ok'; latencyMs: number; via?: string } }
+  | { ok: false; status: { status: 'unreachable'; latencyMs: number }; reason: 'unreachable' | 'unsupported' };
+
+let switchDesktopHostImpl: (...args: unknown[]) => Promise<SwitchDesktopHostResult> = async () => ({
+  ok: true,
+  via: 'direct',
+  status: { status: 'ok', latencyMs: 8 },
+});
+let switchRuntimeEndpointImpl: (...args: unknown[]) => void = () => undefined;
+let isDesktopHostActiveImpl: () => boolean = () => false;
+let toastErrorImpl: (...args: unknown[]) => void = () => undefined;
+
+const switchDesktopHostCalls: unknown[][] = [];
+const switchRuntimeEndpointCalls: unknown[][] = [];
+const toastErrorCalls: unknown[][] = [];
 
 const queryClient = new QueryClient();
 
 mock.module('@/lib/desktopHostSwitch', () => ({
-  isDesktopHostActive: () => isDesktopHostActive(),
+  isDesktopHostActive: () => isDesktopHostActiveImpl(),
   runtimeKeyForDesktopHost: (host: { id: string }) => (host.id === 'local' ? 'local' : `host:${host.id}`),
-  switchDesktopHost: (...args: unknown[]) => switchDesktopHost(...args as [never]),
+  switchDesktopHost: (...args: unknown[]) => {
+    switchDesktopHostCalls.push(args);
+    return switchDesktopHostImpl(...args);
+  },
 }));
 
 mock.module('@/lib/desktopHosts', () => ({
@@ -23,7 +36,10 @@ mock.module('@/lib/desktopHosts', () => ({
 }));
 
 mock.module('@/lib/runtime-switch', () => ({
-  switchRuntimeEndpoint: (...args: unknown[]) => switchRuntimeEndpoint(...args as [never]),
+  switchRuntimeEndpoint: (...args: unknown[]) => {
+    switchRuntimeEndpointCalls.push(args);
+    return switchRuntimeEndpointImpl(...args);
+  },
 }));
 
 mock.module('@/lib/queryRuntime', () => ({
@@ -31,7 +47,13 @@ mock.module('@/lib/queryRuntime', () => ({
 }));
 
 mock.module('@/components/ui', () => ({
-  toast: { error: (...args: unknown[]) => toastError(...args as [never]), success: () => undefined },
+  toast: {
+    error: (...args: unknown[]) => {
+      toastErrorCalls.push(args);
+      return toastErrorImpl(...args);
+    },
+    success: () => undefined,
+  },
 }));
 
 mock.module('@/lib/i18n', () => ({
@@ -62,11 +84,17 @@ const host = {
 
 afterEach(() => {
   resetDesktopHostSwitchMutationForTests();
-  switchDesktopHost.mockClear();
-  switchRuntimeEndpoint.mockClear();
-  isDesktopHostActive.mockReset();
-  isDesktopHostActive.mockImplementation(() => false);
-  toastError.mockClear();
+  switchDesktopHostCalls.length = 0;
+  switchRuntimeEndpointCalls.length = 0;
+  toastErrorCalls.length = 0;
+  switchDesktopHostImpl = async () => ({
+    ok: true,
+    via: 'direct',
+    status: { status: 'ok', latencyMs: 8 },
+  });
+  switchRuntimeEndpointImpl = () => undefined;
+  isDesktopHostActiveImpl = () => false;
+  toastErrorImpl = () => undefined;
 });
 
 describe('desktopHostSwitchMutation', () => {
@@ -75,10 +103,10 @@ describe('desktopHostSwitchMutation', () => {
   });
 
   test('switchDesktopHostInstance is a no-op success when already active', async () => {
-    isDesktopHostActive.mockImplementation(() => true);
+    isDesktopHostActiveImpl = () => true;
     const result = await switchDesktopHostInstance({ host });
     expect(result.ok).toBe(true);
-    expect(switchDesktopHost).not.toHaveBeenCalled();
+    expect(switchDesktopHostCalls).toEqual([]);
     expect(isDesktopHostSwitchPending()).toBe(false);
   });
 
@@ -92,9 +120,9 @@ describe('desktopHostSwitchMutation', () => {
       via: 'direct',
       status: { status: 'ok', latencyMs: 8 },
     });
-    expect(switchDesktopHost).toHaveBeenCalledWith(host, {
+    expect(switchDesktopHostCalls).toEqual([[host, {
       cachedProbe: { status: 'ok', latencyMs: 4 },
-    });
+    }]]);
   });
 
   test('switchDesktopHostInstance switches local via runtime endpoint', async () => {
@@ -105,30 +133,30 @@ describe('desktopHostSwitchMutation', () => {
       localClientToken: 'local-token',
     });
     expect(result.ok).toBe(true);
-    expect(switchRuntimeEndpoint).toHaveBeenCalledWith({
+    expect(switchRuntimeEndpointCalls).toEqual([[{
       apiBaseUrl: 'http://127.0.0.1:4096',
       clientToken: 'local-token',
       runtimeKey: 'local',
-    });
-    expect(switchDesktopHost).not.toHaveBeenCalled();
+    }]]);
+    expect(switchDesktopHostCalls).toEqual([]);
   });
 
   test('unreachable remote surfaces toast via mutation onError and returns result', async () => {
-    switchDesktopHost.mockImplementation(async () => ({
-      ok: false as const,
-      status: { status: 'unreachable' as const, latencyMs: 0 },
-      reason: 'unreachable' as const,
-    }));
+    switchDesktopHostImpl = async () => ({
+      ok: false,
+      status: { status: 'unreachable', latencyMs: 0 },
+      reason: 'unreachable',
+    });
     const result = await switchDesktopHostInstance({ host });
     expect(result.ok).toBe(false);
-    expect(toastError).toHaveBeenCalled();
+    expect(toastErrorCalls.length).toBeGreaterThan(0);
   });
 
   test('concurrent second switch is rejected while first is pending', async () => {
-    let resolveSwitch: ((value: unknown) => void) | null = null;
-    switchDesktopHost.mockImplementation(() => new Promise((resolve) => {
+    let resolveSwitch: ((value: SwitchDesktopHostResult) => void) = () => undefined;
+    switchDesktopHostImpl = () => new Promise<SwitchDesktopHostResult>((resolve) => {
       resolveSwitch = resolve;
-    }));
+    });
 
     const first = switchDesktopHostInstance({ host });
     // Yield so the mutation enters pending.
@@ -142,7 +170,7 @@ describe('desktopHostSwitchMutation', () => {
     expect(second.ok).toBe(false);
     if (!second.ok) expect(second.reason).toBe('unsupported');
 
-    resolveSwitch?.({
+    resolveSwitch({
       ok: true,
       via: 'direct',
       status: { status: 'ok', latencyMs: 1 },

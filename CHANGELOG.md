@@ -4,6 +4,13 @@ All notable changes to this project will be documented in this file.
 
 ## [Unreleased]
 
+## [1.16.127-beta.4] - 2026-08-11
+
+- **Desktop language consistency:** localize native application menus, dock actions, and tray controls with the selected UI language; refresh their labels when the language changes.
+- **Windows title bar:** use an opaque theme surface for Windows chrome and window controls.
+- **Windows file references:** normalize drive-letter and UNC paths with `pathe`, preserving absolute roots and generating valid `file://` URLs for referenced files and folders.
+- **Language recovery:** return the active locale state to the default language when a translation dictionary fails to load.
+
 ## [1.16.126] - 2026-08-11
 
 - **Message edit while busy:** keep the editing state, abort then wait for session idle before deleting the old tail, then send the replacement (fixes OpenCode 409 Session is busy).

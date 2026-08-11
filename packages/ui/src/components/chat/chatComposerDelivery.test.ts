@@ -76,6 +76,86 @@ test('confirmed directory mentions send application/x-directory mime', () => {
     expect(compiled.attachments[0]?.filename).toBe('opencode');
 });
 
+test('Windows absolute drive path is kept and never joined with project root', () => {
+    const compiled = compileChatComposerDelivery({
+        plan: legacyTextToAuthoredPlan('open @C:\\abs\\f.ts'),
+        agents,
+        installedSkillNames: new Set(),
+        directory: 'C:\\project',
+        root: 'C:\\project',
+        confirmedFilePaths: ['C:\\abs\\f.ts'],
+    });
+
+    expect(compiled.attachments).toHaveLength(1);
+    expect(compiled.attachments[0]?.serverPath).toBe('C:/abs/f.ts');
+    expect(compiled.attachments[0]?.filename).toBe('f.ts');
+    expect(compiled.attachments[0]?.dataUrl).toBe('file:///C:/abs/f.ts');
+});
+
+test('Windows drive root resolves relative mentions without double-joining', () => {
+    const compiled = compileChatComposerDelivery({
+        plan: legacyTextToAuthoredPlan('open @src\\a.ts'),
+        agents,
+        installedSkillNames: new Set(),
+        directory: 'C:\\project',
+        root: 'C:\\project',
+        confirmedFilePaths: ['src\\a.ts'],
+    });
+
+    expect(compiled.attachments).toHaveLength(1);
+    expect(compiled.attachments[0]?.serverPath).toBe('C:/project/src/a.ts');
+    expect(compiled.attachments[0]?.filename).toBe('a.ts');
+    expect(compiled.attachments[0]?.dataUrl).toBe('file:///C:/project/src/a.ts');
+});
+
+test('Windows bare drive root C:\\ joins relative mentions as C:/...', () => {
+    const compiled = compileChatComposerDelivery({
+        plan: legacyTextToAuthoredPlan('open @src\\a.ts'),
+        agents,
+        installedSkillNames: new Set(),
+        directory: 'C:\\',
+        root: 'C:\\',
+        confirmedFilePaths: ['src\\a.ts'],
+    });
+
+    expect(compiled.attachments).toHaveLength(1);
+    expect(compiled.attachments[0]?.serverPath).toBe('C:/src/a.ts');
+    expect(compiled.attachments[0]?.filename).toBe('a.ts');
+    expect(compiled.attachments[0]?.dataUrl).toBe('file:///C:/src/a.ts');
+});
+
+test('UNC absolute path is kept as //server/share form', () => {
+    const compiled = compileChatComposerDelivery({
+        plan: legacyTextToAuthoredPlan('open @\\\\server\\share\\f.ts'),
+        agents,
+        installedSkillNames: new Set(),
+        directory: 'C:\\project',
+        root: 'C:\\project',
+        confirmedFilePaths: ['\\\\server\\share\\f.ts'],
+    });
+
+    expect(compiled.attachments).toHaveLength(1);
+    expect(compiled.attachments[0]?.serverPath).toBe('//server/share/f.ts');
+    expect(compiled.attachments[0]?.filename).toBe('f.ts');
+    expect(compiled.attachments[0]?.dataUrl).toBe('file:////server/share/f.ts');
+});
+
+test('UNC root resolves relative mentions under the share', () => {
+    const compiled = compileChatComposerDelivery({
+        plan: legacyTextToAuthoredPlan('open @src\\a.ts'),
+        agents,
+        installedSkillNames: new Set(),
+        directory: '\\\\server\\share',
+        root: '\\\\server\\share',
+        confirmedFilePaths: ['src\\a.ts'],
+    });
+
+    expect(compiled.attachments).toHaveLength(1);
+    expect(compiled.attachments[0]?.serverPath).toBe('//server/share/src/a.ts');
+    expect(compiled.attachments[0]?.filename).toBe('a.ts');
+    expect(compiled.attachments[0]?.dataUrl).toBe('file:////server/share/src/a.ts');
+});
+
 test('compiler preserves Paste payload bytes while resolving authored session tokens', () => {
     const paste = '@session:ses_1 /review\n\n';
     const compiled = compileChatComposerDelivery({

@@ -5,6 +5,8 @@ import { fileURLToPath } from 'node:url';
 
 const __dirname = dirname(fileURLToPath(import.meta.url));
 const titlebarSource = readFileSync(join(__dirname, '..', 'TitlebarLeftControls.tsx'), 'utf-8');
+const headerSource = readFileSync(join(__dirname, '..', 'Header.tsx'), 'utf-8');
+const windowsWindowControlsSource = readFileSync(join(__dirname, '..', '..', 'desktop', 'WindowsWindowControls.tsx'), 'utf-8');
 const sessionSidebarSource = readFileSync(join(__dirname, '..', '..', 'session', 'SessionSidebar.tsx'), 'utf-8');
 
 describe('Electron global search placement', () => {
@@ -43,5 +45,14 @@ describe('Electron global search placement', () => {
     expect(titlebarSource).toContain(
       '{showGlobalSearchInTitlebar ? <GlobalSearchButton /> : null}',
     );
+  });
+});
+
+describe('Windows titlebar surfaces', () => {
+  test('uses an opaque theme surface only for Windows chrome', () => {
+    expect(headerSource).toContain("usesSolidWindowsChrome = isDesktopApp && getElectronPlatform() === 'win32'");
+    expect(headerSource).toContain("usesSolidWindowsChrome && 'bg-[var(--surface-background)] backdrop-blur-none'");
+    expect(windowsWindowControlsSource).toContain("usesSolidWindowsChrome = getElectronPlatform() === 'win32'");
+    expect(windowsWindowControlsSource.match(/usesSolidWindowsChrome && 'bg-\[var\(--surface-background\)\] backdrop-blur-none'/g)).toHaveLength(2);
   });
 });

@@ -99,7 +99,7 @@
     },
     "packages/electron": {
       "name": "@openchamber/electron",
-      "version": "1.16.124-beta.1",
+      "version": "1.16.126",
       "dependencies": {
         "@openchamber/web": "workspace:*",
         "electron-context-menu": "^4.1.2",
@@ -114,7 +114,7 @@
     },
     "packages/mobile": {
       "name": "@openchamber/mobile",
-      "version": "1.16.124-beta.1",
+      "version": "1.16.126",
       "dependencies": {
         "@aparajita/capacitor-secure-storage": "^8.0.0",
         "@capacitor-mlkit/barcode-scanning": "^8.1.0",
@@ -135,7 +135,7 @@
     },
     "packages/relay-server": {
       "name": "@openchamber/relay-server",
-      "version": "1.16.124-beta.1",
+      "version": "1.16.126",
       "bin": {
         "openchamber-relay": "./bin/openchamber-relay.js",
       },
@@ -145,7 +145,7 @@
     },
     "packages/ui": {
       "name": "@openchamber/ui",
-      "version": "1.16.124-beta.1",
+      "version": "1.16.126",
       "dependencies": {
         "@aparajita/capacitor-secure-storage": "^8.0.0",
         "@base-ui/react": "^1.4.0",
@@ -207,6 +207,7 @@
         "morphdom": "^2.7.7",
         "motion": "^12.23.24",
         "next-themes": "^0.4.6",
+        "pathe": "^2.0.3",
         "qrcode": "^1.5.4",
         "react": "^19.2.0",
         "react-dom": "^19.2.0",
@@ -252,7 +253,7 @@
     },
     "packages/vscode": {
       "name": "openchamber",
-      "version": "1.16.124-beta.1",
+      "version": "1.16.126",
       "dependencies": {
         "@openchamber/ui": "workspace:*",
         "@opencode-ai/sdk": "1.18.4",
@@ -278,7 +279,7 @@
     },
     "packages/web": {
       "name": "@openchamber/web",
-      "version": "1.16.124-beta.1",
+      "version": "1.16.126",
       "bin": {
         "openchamber": "./bin/cli.js",
       },
