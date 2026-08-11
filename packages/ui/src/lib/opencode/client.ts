@@ -11,6 +11,7 @@ import type {
   Agent,
   TextPartInput,
   FilePartInput,
+  SnapshotFileDiff,
 } from "@opencode-ai/sdk/v2";
 import type { PermissionRequest } from "@/types/permission";
 import type { QuestionRequest } from "@/types/question";
@@ -651,6 +652,28 @@ class OpencodeService {
       ...(typeof limit === 'number' ? { limit } : {}),
     });
     return unwrapSdkData(response, 'session.messages');
+  }
+
+  /**
+   * Full turn/session file diffs including patch bodies.
+   * Uses OpenCode `GET /session/{sessionID}/diff` (optional `messageID` scopes to a user turn).
+   * Throws on transport/SDK failure — never returns an empty list as a silent success.
+   */
+  async getSessionDiff(params: {
+    sessionID: string;
+    directory?: string | null;
+    messageID?: string | null;
+  }): Promise<SnapshotFileDiff[]> {
+    const requestDirectory = this.normalizeCandidatePath(params.directory) ?? this.currentDirectory;
+    const messageID = typeof params.messageID === 'string' && params.messageID.trim().length > 0
+      ? params.messageID.trim()
+      : undefined;
+    const response = await this.client.session.diff({
+      sessionID: params.sessionID,
+      ...(requestDirectory ? { directory: requestDirectory } : {}),
+      ...(messageID ? { messageID } : {}),
+    });
+    return unwrapSdkData(response, 'session.diff');
   }
 
   async getSessionTodos(sessionId: string): Promise<Array<{ id: string; content: string; status: string; priority: string }>> {

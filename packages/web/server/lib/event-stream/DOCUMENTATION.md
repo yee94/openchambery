@@ -9,6 +9,7 @@ This module contains the OpenChamber message-stream WebSocket protocol and runti
 - `packages/web/server/lib/event-stream/global-ws-bridge.js`: browser-facing global WS bridge that subscribes clients to the shared global hub.
 - `packages/web/server/lib/event-stream/directory-ws-bridge.js`: browser-facing per-directory WS bridge that owns one scoped upstream reader per connection.
 - `packages/web/server/lib/event-stream/protocol.js`: path constants, SSE envelope parsing, and WebSocket frame serialization helpers.
+- `packages/web/server/lib/event-stream/diff-summary.js`: pure outbound FileDiff summarization (drops patch/before/after/from/to; keeps file/status/additions/deletions).
 - `packages/web/server/lib/event-stream/upstream-reader.js`: reusable upstream SSE reader with event-id tracking, stall recovery, and reconnect handling.
 - `packages/web/server/lib/event-stream/runtime.js`: thin WebSocket server runtime for upgrade handling and path dispatch to the global/directory bridges.
 - `packages/web/server/lib/event-stream/protocol.test.js`: unit tests for protocol helpers.
@@ -25,7 +26,7 @@ The following APIs are exported by their owning modules. `event-stream/index.js`
 - `MESSAGE_STREAM_WS_HEARTBEAT_INTERVAL_MS`: heartbeat interval for browser-facing WS connections.
 - `parseSseEventEnvelope(block)`: parses an SSE block into `{ eventId, directory, payload }`.
 - `sendMessageStreamWsFrame(socket, payload)`: serializes and sends a JSON WS frame.
-- `sendMessageStreamWsEvent(socket, payload, options)`: sends an event frame with optional `eventId` and `directory`.
+- `sendMessageStreamWsEvent(socket, payload, options)`: sends an event frame with optional `eventId` and `directory`. Outbound `session.diff` and message/session `summary.diffs` are summarized to file/status/additions/deletions only (no full patch bodies).
 
 ### Runtime helpers
 - `createGlobalMessageStreamHub(...)`: creates a shared `/global/event` upstream SSE hub with event/status subscribers and bounded event-id replay.
@@ -43,6 +44,7 @@ The following APIs are exported by their owning modules. `event-stream/index.js`
 - OpenChamber still fetches OpenCode upstream event streams over SSE.
 - The web server creates one shared global message-stream hub. OpenCode watcher side effects and global WS clients subscribe to that hub, so there is one upstream `/global/event` SSE reader for both server-side processing and browser fan-out.
 - The global hub keeps a bounded replay buffer keyed by SSE `eventId` so reconnecting browser clients can receive buffered events after their requested `Last-Event-ID`.
+- Outbound FileDiff payloads are summarized before hub fan-out/replay and again at WS send, so Relay never carries full patch frames larger than 64KB.
 - Global WS reconnect protocol is **replay events → ready barrier**. On initial connect and on each first-ready for a client, the bridge synchronously sends any `replayAfter(lastEventId)` frames first, then emits `{ type: 'ready', scope: 'global' }`. Clients must not start HTTP compensation until they observe ready, so buffered history can merge first.
 - Directory WS clients still attach one upstream `/event?directory=...` SSE reader per connection because directory streams are scoped.
 - If an upstream SSE connection delays response headers or an attached stream stalls, the reader aborts that upstream fetch and reconnects upstream with `Last-Event-ID`, keeping the browser WS alive when recovery is fast.

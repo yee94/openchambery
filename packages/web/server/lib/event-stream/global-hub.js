@@ -1,3 +1,4 @@
+import { summarizeOutboundEventPayload } from './diff-summary.js';
 import { createUpstreamSseReader } from './upstream-reader.js';
 
 // Raised from 512 → 2048 to improve recovery after brief disconnects during
@@ -100,9 +101,12 @@ export function createGlobalMessageStreamHub({
     const directory =
       typeof envelope?.directory === 'string' && envelope.directory.length > 0 ? envelope.directory : 'global';
     const eventId = typeof envelope?.eventId === 'string' && envelope.eventId.length > 0 ? envelope.eventId : undefined;
+    // Summarize FileDiff bodies before fan-out and replay buffering so reconnect
+    // replay cannot re-amplify full patch frames into >64KB WS payloads.
+    const outboundPayload = summarizeOutboundEventPayload(payload);
     return {
       envelope,
-      payload,
+      payload: outboundPayload,
       directory,
       eventId,
       ...(connectionContext ? { runtimeIdentity: connectionContext } : {}),

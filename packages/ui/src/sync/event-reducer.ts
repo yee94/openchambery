@@ -11,7 +11,7 @@ import { isVisibleGlobalSession } from "@/stores/globalSessions"
 import { Binary } from "./binary"
 import type { FileDiff, GlobalState, State } from "./types"
 import { dropSessionCaches } from "./session-cache"
-import { stripSessionDiffSnapshots } from "./sanitize"
+import { stripSessionDiffSnapshots, summarizeFileDiffs } from "./sanitize"
 import { shouldSkipStaleSessionEvent } from "./session-event-freshness"
 
 function areSessionStatusesEqual(left: SessionStatus | undefined, right: SessionStatus): boolean {
@@ -206,7 +206,7 @@ export function applyDirectoryEvent(
 
     case "session.diff": {
       const props = event.properties as { sessionID: string; diff: FileDiff[] }
-      draft.session_diff[props.sessionID] = props.diff
+      draft.session_diff[props.sessionID] = summarizeFileDiffs(props.diff)
       return true
     }
 

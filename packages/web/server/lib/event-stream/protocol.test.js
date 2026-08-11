@@ -179,4 +179,118 @@ describe('event stream protocol helpers', () => {
       directory: '/tmp/project',
     });
   });
+
+  it('summarizes session.diff large patches on outbound WS event frames', () => {
+    let rawPayload = null;
+    const socket = {
+      readyState: 1,
+      send(payload) {
+        rawPayload = payload;
+      },
+    };
+
+    const largePatch = '@@ -1,40 +1,50 @@\n' + 'x'.repeat(70_000);
+    const sent = sendMessageStreamWsEvent(socket, {
+      type: 'session.diff',
+      properties: {
+        sessionID: 'ses_hot',
+        diff: [{
+          file: 'src/hot.ts',
+          status: 'modified',
+          additions: 12,
+          deletions: 3,
+          patch: largePatch,
+          before: 'old-body',
+          after: 'new-body',
+          from: 'from-body',
+          to: 'to-body',
+        }],
+      },
+    });
+
+    expect(sent).toBe(true);
+    const frame = JSON.parse(rawPayload);
+    expect(frame.type).toBe('event');
+    expect(frame.payload.type).toBe('session.diff');
+    expect(frame.payload.properties.diff).toEqual([{
+      file: 'src/hot.ts',
+      status: 'modified',
+      additions: 12,
+      deletions: 3,
+    }]);
+    expect(JSON.stringify(frame)).not.toContain('patch');
+    expect(JSON.stringify(frame)).not.toContain(largePatch.slice(0, 32));
+    expect(rawPayload.length).toBeLessThan(64 * 1024);
+  });
+
+  it('summarizes message.updated summary.diffs patches on outbound frames', () => {
+    let rawPayload = null;
+    const socket = {
+      readyState: 1,
+      send(payload) {
+        rawPayload = payload;
+      },
+    };
+
+    const sent = sendMessageStreamWsEvent(socket, {
+      type: 'message.updated',
+      properties: {
+        info: {
+          id: 'msg_1',
+          sessionID: 'ses_1',
+          role: 'assistant',
+          summary: {
+            diffs: [{
+              file: 'a.ts',
+              status: 'modified',
+              additions: 2,
+              deletions: 1,
+              patch: '@@ heavy patch body @@\n' + 'y'.repeat(1000),
+            }],
+          },
+        },
+      },
+    });
+
+    expect(sent).toBe(true);
+    const frame = JSON.parse(rawPayload);
+    expect(frame.payload.properties.info.summary.diffs).toEqual([{
+      file: 'a.ts',
+      status: 'modified',
+      additions: 2,
+      deletions: 1,
+    }]);
+    expect(JSON.stringify(frame)).not.toContain('patch');
+  });
+
+  it('leaves ordinary session.status events unchanged', () => {
+    let rawPayload = null;
+    const socket = {
+      readyState: 1,
+      send(payload) {
+        rawPayload = payload;
+      },
+    };
+
+    const statusPayload = {
+      type: 'session.status',
+      properties: {
+        sessionID: 'ses_1',
+        status: { type: 'busy' },
+      },
+    };
+
+    const sent = sendMessageStreamWsEvent(socket, statusPayload, {
+      eventId: 'evt-status',
+      directory: '/tmp/project',
+    });
+
+    expect(sent).toBe(true);
+    expect(JSON.parse(rawPayload)).toEqual({
+      type: 'event',
+      payload: statusPayload,
+      eventId: 'evt-status',
+      directory: '/tmp/project',
+    });
+  });
 });

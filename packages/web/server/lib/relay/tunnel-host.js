@@ -85,13 +85,34 @@ const isWsClosePayload = (parsed) => Boolean(parsed && typeof parsed === 'object
  *   getLocalPort: () => number,
  *   sendFrame: (plaintextFrame: Uint8Array) => void | Promise<void>,
  *   getBufferedAmount: () => number,
+ *   createWebSocket?: (url: string, protocols: string[] | undefined, options: { headers: Record<string, string> }) => import('ws').WebSocket,
  * }} deps
  */
-export const createTunnelHost = ({ connectionId, getLocalPort, sendFrame, getBufferedAmount }) => {
+export const createTunnelHost = ({
+  connectionId,
+  getLocalPort,
+  sendFrame,
+  getBufferedAmount,
+  createWebSocket = (url, protocols, options) => new WebSocket(url, protocols, options),
+}) => {
   /** @type {Map<number, { kind: 'http', abort: AbortController, body: ReadableStreamDefaultController | null } | { kind: 'ws', socket: WebSocket, opened: boolean }>} */
   const streams = new Map();
   const assembler = createFragmentAssembler();
   let closed = false;
+  // Serialize outbound WS logical messages for the host lifetime so every
+  // encodeFragmentedMessage fragment of one message is queued into sendFrame
+  // before the next message starts. HTTP streams stay concurrent.
+  let wsOutboundChain = Promise.resolve();
+
+  const enqueueWsOutbound = (task) => {
+    const run = wsOutboundChain.then(task);
+    // Swallow rejection on the chain so a failed send still lets later tasks run
+    // and never surfaces as an unhandled rejection from the queue itself.
+    // Return the non-rejecting link (not `run`) so fire-and-forget callers never
+    // hold a promise that can become an unhandled rejection when discarded.
+    wsOutboundChain = run.catch(() => {});
+    return wsOutboundChain;
+  };
 
   const send = async (frame) => {
     if (closed) return;
@@ -316,7 +337,7 @@ export const createTunnelHost = ({ connectionId, getLocalPort, sendFrame, getBuf
     };
     let socket;
     try {
-      socket = new WebSocket(url, open.protocols, {
+      socket = createWebSocket(url, open.protocols, {
         headers: dialHeaders,
       });
     } catch (error) {
@@ -335,13 +356,13 @@ export const createTunnelHost = ({ connectionId, getLocalPort, sendFrame, getBuf
       if (streams.get(streamId) !== stream || closed) return;
       const bytes = Buffer.isBuffer(data) ? new Uint8Array(data) : new Uint8Array(Buffer.concat(data));
       const frameType = isBinary ? TunnelFrameType.WsBinary : TunnelFrameType.WsText;
-      void (async () => {
+      void enqueueWsOutbound(async () => {
         for (const frame of encodeFragmentedMessage(frameType, streamId, bytes)) {
           await waitForBackpressure(null);
           if (streams.get(streamId) !== stream || closed) return;
           await send(frame);
         }
-      })();
+      });
     });
     socket.on('close', (code, reasonBuffer) => {
       if (streams.get(streamId) !== stream) return;

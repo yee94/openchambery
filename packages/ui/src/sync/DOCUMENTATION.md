@@ -467,6 +467,17 @@ Host global WS `replay events → ready` protocol:
   `true` when a recovery context was captured for a real gap. SSE and WS share
   the same hook so reconnect, visibility restore, and system resume use one
   compensation seam.
+- **WS protocol consistency:** JSON parse failure, an unknown/missing top-level
+  frame `type`, or an `event` frame whose payload cannot be normalized are real
+  transport faults (not silent drops). The pipeline keeps the last
+  **successfully ingested** `eventId` (ingest success is explicit; `eventId`
+  advances only after a domain event is enqueued), captures recovery context,
+  closes the socket, and enters the normal disconnect/reconnect path so the next
+  ready compensation is `isReconnect:true`. In `auto` mode these faults also arm
+  the SSE fallback window. Bad frames never call `reportTransportActivity`, so
+  corrupted input cannot postpone heartbeat recovery. Frame bodies and other
+  sensitive payload data are never logged. SSE keeps its existing per-event
+  drop semantics for non-normalizable payloads.
 - `onReconnect` remains the connection-state hook for non-transcript resync
   (status, catalog, blocking requests). Production wires
   **`onRecoveryContextCaptured`** (checkpoint capture with `lastEventId`, once
@@ -1380,7 +1391,7 @@ Keep this in sync with `handleDirectoryEvent` in `sync-context.tsx`:
 | Event type | Fields to clone |
 |---|---|
 | `session.created/updated/deleted` | `session`, `permission`, `todo`, `part` |
-| `session.diff` | `session_diff` |
+| `session.diff` | `session_diff` (preview summary only: file/status/additions/deletions; no patch bodies — full patches load on demand via `GET /session/{id}/diff`) |
 | `session.status/session.idle/session.error` | `session_status` |
 | `todo.updated` | `todo` |
 | `message.updated` | `message`, `part` when a loaded session observes a new assistant before its first part |

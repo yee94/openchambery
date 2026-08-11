@@ -25,7 +25,12 @@ type DiffEntry = {
   after?: string
   from?: string
   to?: string
+  patch?: string
+  [key: string]: unknown
 }
+
+/** Lightweight FileDiff fields safe for store / event hot paths (preview UI only). */
+const FILE_DIFF_SUMMARY_KEYS = ["file", "status", "additions", "deletions"] as const
 
 type SessionSummary = {
   diffs?: DiffEntry[]
@@ -68,31 +73,55 @@ const hasSessionListRevertDetails = (revert: unknown): boolean => {
   return Object.keys(revert).some((key) => key !== "messageID" && key !== "partID")
 }
 
-const stripDiffSnapshotFields = <T extends DiffEntry>(diff: T, includePatch: boolean): T => {
-  if (!diff || typeof diff !== "object") {
+const hasHeavyDiffBody = (diff: DiffEntry): boolean => {
+  if (typeof diff.before === "string") return true
+  if (typeof diff.after === "string") return true
+  if (typeof diff.from === "string") return true
+  if (typeof diff.to === "string") return true
+  if (typeof diff.patch === "string") return true
+  return false
+}
+
+/**
+ * Reduce a FileDiff / SnapshotFileDiff to preview-safe scalars only.
+ * Drops patch / before / after / from / to and any other large body fields.
+ * Already-summary objects keep identity.
+ */
+export function summarizeFileDiff<T>(diff: T): T {
+  if (!diff || typeof diff !== "object" || Array.isArray(diff)) {
     return diff
   }
 
-  const shouldStrip =
-    typeof diff.before === "string"
-    || typeof diff.after === "string"
-    || typeof diff.from === "string"
-    || typeof diff.to === "string"
-    || (includePatch && "patch" in (diff as T & { patch?: unknown }) && typeof (diff as T & { patch?: unknown }).patch === "string")
-
-  if (!shouldStrip) {
+  const record = diff as DiffEntry
+  if (!hasHeavyDiffBody(record)) {
     return diff
   }
 
-  const rest = { ...diff } as T & { patch?: string }
-  delete rest.before
-  delete rest.after
-  delete rest.from
-  delete rest.to
-  if (includePatch) {
-    delete rest.patch
+  const summary: Record<string, unknown> = {}
+  for (const key of FILE_DIFF_SUMMARY_KEYS) {
+    if (key in record && record[key] !== undefined) {
+      summary[key] = record[key]
+    }
   }
-  return rest
+  return summary as T
+}
+
+/** Summarize a FileDiff list; preserves array identity when nothing changes. */
+export function summarizeFileDiffs<T>(diffs: T): T {
+  if (!Array.isArray(diffs)) {
+    return diffs
+  }
+
+  let changed = false
+  const next = diffs.map((entry) => {
+    const summarized = summarizeFileDiff(entry)
+    if (summarized !== entry) {
+      changed = true
+    }
+    return summarized
+  })
+
+  return (changed ? next : diffs) as T
 }
 
 /** Strip oversized snapshot fields from summary.diffs on a session object */
@@ -113,13 +142,10 @@ export function stripSessionDiffSnapshots(session: Session): Session {
 
   if (!summary?.diffs || !Array.isArray(summary.diffs)) return nextSession
 
-  const stripped = summary.diffs.map((d) => {
-    const nextDiff = stripDiffSnapshotFields(d, true)
-    if (nextDiff !== d) {
-      changed = true
-    }
-    return nextDiff
-  })
+  const stripped = summarizeFileDiffs(summary.diffs)
+  if (stripped !== summary.diffs) {
+    changed = true
+  }
 
   if (!changed) return nextSession
   return { ...nextSession, summary: { ...summary, diffs: stripped } } as Session
@@ -167,15 +193,7 @@ export function stripMessageDiffSnapshots(message: Message): Message {
   const summary = (message as { summary?: SessionSummary }).summary
   if (!summary?.diffs || !Array.isArray(summary.diffs)) return message
 
-  let changed = false
-  const stripped = summary.diffs.map((d) => {
-    const nextDiff = stripDiffSnapshotFields(d, false)
-    if (nextDiff !== d) {
-      changed = true
-    }
-    return nextDiff
-  })
-
-  if (!changed) return message
+  const stripped = summarizeFileDiffs(summary.diffs)
+  if (stripped === summary.diffs) return message
   return { ...message, summary: { ...summary, diffs: stripped } } as Message
 }

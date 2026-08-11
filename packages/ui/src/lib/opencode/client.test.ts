@@ -36,6 +36,20 @@ const sessionActiveMock = mock(async (...args: unknown[]) => {
   };
 });
 
+const sessionDiffSdkCalls: unknown[][] = [];
+const sessionDiffResults: Array<unknown> = [];
+
+const sessionDiffMock = mock(async (...args: unknown[]) => {
+  sessionDiffSdkCalls.push(args);
+  const next = sessionDiffResults.shift();
+  if (next instanceof Error) throw next;
+  return next ?? {
+    data: [],
+    error: undefined,
+    response: new Response(null, { status: 200 }),
+  };
+});
+
 mock.module('@opencode-ai/sdk/v2', () => ({
   createOpencodeClient: mock((config: unknown) => {
     sdkClientConfigs.push(config);
@@ -60,6 +74,7 @@ mock.module('@opencode-ai/sdk/v2', () => ({
         sessionStatusSdkCalls.push(args);
         return Promise.resolve({ data: {} });
       }),
+      diff: sessionDiffMock,
     },
     v2: {
       session: {
@@ -113,6 +128,8 @@ beforeEach(() => {
   sessionStatusSdkCalls.length = 0;
   sessionActiveSdkCalls.length = 0;
   sessionActiveResults.length = 0;
+  sessionDiffSdkCalls.length = 0;
+  sessionDiffResults.length = 0;
   sdkClientConfigs.length = 0;
   runtimeKey = 'test-runtime';
   runtimeBase = '/api';
@@ -152,6 +169,66 @@ describe('opencodeClient V2 runtime base', () => {
     await opencodeClient.getSessionActive();
 
     expect((sdkClientConfigs.at(-1) as { baseUrl: string }).baseUrl).toBe('https://runtime.example');
+  });
+});
+
+describe('opencodeClient getSessionDiff', () => {
+  test('returns full SnapshotFileDiff rows on success', async () => {
+    const rows = [
+      { file: 'src/a.ts', additions: 1, deletions: 0, patch: '@@ -1 +1 @@\n-old\n+new', status: 'modified' as const },
+    ];
+    sessionDiffResults.push({
+      data: rows,
+      error: undefined,
+      response: new Response(null, { status: 200 }),
+    });
+
+    const result = await opencodeClient.getSessionDiff({
+      sessionID: 'ses_1',
+      directory: '/workspace/project',
+      messageID: 'msg_user',
+    });
+    expect(result).toEqual(rows);
+
+    expect(sessionDiffSdkCalls[0]).toEqual([{
+      sessionID: 'ses_1',
+      directory: '/workspace/project',
+      messageID: 'msg_user',
+    }]);
+  });
+
+  test('throws on SDK error and does not treat failure as empty success', async () => {
+    sessionDiffResults.push({
+      data: undefined,
+      error: { message: 'boom' },
+      response: new Response(null, { status: 500 }),
+    });
+
+    let thrown: unknown;
+    try {
+      await opencodeClient.getSessionDiff({ sessionID: 'ses_1' });
+    } catch (error) {
+      thrown = error;
+    }
+    expect(thrown instanceof Error).toBe(true);
+    expect((thrown as Error).message).toContain('session.diff failed');
+  });
+
+  test('throws on empty response body', async () => {
+    sessionDiffResults.push({
+      data: null,
+      error: undefined,
+      response: new Response(null, { status: 200 }),
+    });
+
+    let thrown: unknown;
+    try {
+      await opencodeClient.getSessionDiff({ sessionID: 'ses_1' });
+    } catch (error) {
+      thrown = error;
+    }
+    expect(thrown instanceof Error).toBe(true);
+    expect((thrown as Error).message).toContain('empty response');
   });
 });
 

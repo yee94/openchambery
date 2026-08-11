@@ -305,4 +305,41 @@ describe("applyDirectoryEvent (non-transcript production domains)", () => {
     } as Event)).toBe(true)
     expect(draft.session.some((s) => s.id === "ses_1")).toBe(true)
   })
+
+  test("session.diff stores summarized file diffs without large body fields", () => {
+    const draft = directoryState()
+    const heavyDiff = {
+      file: "src/hot.ts",
+      status: "modified",
+      additions: 12,
+      deletions: 3,
+      patch: "@@ -1,40 +1,50 @@\n" + "x".repeat(5000),
+      before: "old-body",
+      after: "new-body",
+      from: "from-body",
+      to: "to-body",
+    }
+
+    expect(applyDirectoryEvent(draft, {
+      type: "session.diff",
+      properties: {
+        sessionID: "ses_hot",
+        diff: [heavyDiff],
+      },
+    } as unknown as Event)).toBe(true)
+
+    const stored = draft.session_diff.ses_hot
+    expect(stored).toHaveLength(1)
+    expect(stored[0]).toEqual({
+      file: "src/hot.ts",
+      status: "modified",
+      additions: 12,
+      deletions: 3,
+    })
+    expect(stored[0].patch).toBeUndefined()
+    expect(stored[0].before).toBeUndefined()
+    expect(stored[0].after).toBeUndefined()
+    expect(stored[0].from).toBeUndefined()
+    expect(stored[0].to).toBeUndefined()
+  })
 })

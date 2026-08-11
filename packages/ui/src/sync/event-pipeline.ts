@@ -674,11 +674,16 @@ export function createEventPipeline(input: EventPipelineInput): EventPipeline {
     scheduleDir(routedDirectory)
   }
 
-  const ingestTransportPayload = (frame: unknown, rawPayload: unknown) => {
+  /**
+   * Returns true only when a domain event was successfully normalized and
+   * enqueued. Callers that advance lastEventId (WS event frames) must gate on
+   * this so a non-normalizable payload cannot move the resume tip.
+   */
+  const ingestTransportPayload = (frame: unknown, rawPayload: unknown): boolean => {
     const payload = resolveEventPayload(rawPayload)
-    if (!payload) return
+    if (!payload) return false
     const ingress = normalizeIngressEvent(payload)
-    if (!ingress) return
+    if (!ingress) return false
     const directory = resolveEventDirectory(
       frame,
       payload,
@@ -686,6 +691,7 @@ export function createEventPipeline(input: EventPipelineInput): EventPipeline {
       ingress.normalized.locationDirectory,
     )
     enqueueEvent(directory, ingress.event, ingress.normalized)
+    return true
   }
 
   const armHeartbeat = () => {
@@ -853,23 +859,41 @@ export function createEventPipeline(input: EventPipelineInput): EventPipeline {
         // before sending the ready frame, clearing would cause log spam.
       }
 
-      socket.onmessage = (messageEvent) => {
-        reportTransportActivity()
-        streamErrorLogged = false
+      // Protocol-frame failures are real transport faults: preserve the last
+      // successfully ingested eventId, capture recovery via the main-loop
+      // disconnect path, close the socket, and prefer SSE in auto mode. Never
+      // report activity for bad frames (would postpone heartbeat recovery),
+      // and never log frame bodies or other sensitive payload data.
+      const rejectInvalidFrame = (reason: string) => {
+        if (transport === "auto") {
+          wsFallbackUntil = Date.now() + WS_FALLBACK_WINDOW_MS
+        }
+        const error = new Error("Message stream WebSocket invalid frame")
+        ;(error as Error & { reason?: string }).reason = reason
+        settleReject(error)
+        try {
+          socket.close()
+        } catch {
+          // ignore
+        }
+      }
 
+      socket.onmessage = (messageEvent) => {
         let frame: MessageStreamWsFrame | null = null
         try {
           frame = JSON.parse(String(messageEvent.data)) as MessageStreamWsFrame
-        } catch (error) {
-          console.warn("[event-pipeline] Failed to parse WS frame", error)
+        } catch {
+          rejectInvalidFrame("ws_invalid_frame:json")
           return
         }
 
         if (!frame || typeof frame.type !== "string") {
+          rejectInvalidFrame("ws_invalid_frame:type")
           return
         }
 
         if (frame.type === "ready") {
+          reportTransportActivity()
           opened = true
           readyAt = Date.now()
           if (readyTimer) {
@@ -882,6 +906,7 @@ export function createEventPipeline(input: EventPipelineInput): EventPipeline {
         }
 
         if (frame.type === "error") {
+          reportTransportActivity()
           const error = new Error(frame.message || "Message stream WebSocket error")
           ;(error as Error & { reason?: string }).reason = `ws_error_frame:${frame.message || "unknown"}`
           setFallbackCode(error)
@@ -895,22 +920,30 @@ export function createEventPipeline(input: EventPipelineInput): EventPipeline {
         }
 
         if (frame.type === "backpressure") {
+          reportTransportActivity()
           backpressureUntil = Date.now() + BACKPRESSURE_MODE_MS
           return
         }
 
         if (frame.type !== "event") {
+          rejectInvalidFrame("ws_invalid_frame:type")
           return
         }
 
-        if (typeof frame.eventId === "string" && frame.eventId.length > 0) {
-          lastEventId = frame.eventId
-        }
-
-        ingestTransportPayload(
+        const ingested = ingestTransportPayload(
           { directory: frame.directory, payload: frame.payload },
           frame.payload,
         )
+        if (!ingested) {
+          rejectInvalidFrame("ws_invalid_frame:event_payload")
+          return
+        }
+
+        reportTransportActivity()
+        streamErrorLogged = false
+        if (typeof frame.eventId === "string" && frame.eventId.length > 0) {
+          lastEventId = frame.eventId
+        }
       }
 
       socket.onerror = () => {

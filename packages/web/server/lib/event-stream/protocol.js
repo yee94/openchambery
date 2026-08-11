@@ -1,3 +1,5 @@
+import { summarizeOutboundEventPayload } from './diff-summary.js';
+
 export const MESSAGE_STREAM_GLOBAL_WS_PATH = '/api/global/event/ws';
 export const MESSAGE_STREAM_DIRECTORY_WS_PATH = '/api/event/ws';
 export const MESSAGE_STREAM_WS_HEARTBEAT_INTERVAL_MS = 15 * 1000;
@@ -124,9 +126,12 @@ export function sendMessageStreamWsFrame(socket, payload) {
 }
 
 export function sendMessageStreamWsEvent(socket, payload, options = {}) {
+  // Summarize FileDiff bodies before fan-out so Relay/WS never carries full
+  // patch frames. Identity is preserved for non-diff and already-summary events.
+  const outbound = summarizeOutboundEventPayload(payload);
   return sendMessageStreamWsFrame(socket, {
     type: 'event',
-    payload,
+    payload: outbound,
     ...(typeof options.eventId === 'string' && options.eventId.length > 0 ? { eventId: options.eventId } : {}),
     ...(typeof options.directory === 'string' && options.directory.length > 0 ? { directory: options.directory } : {}),
   });

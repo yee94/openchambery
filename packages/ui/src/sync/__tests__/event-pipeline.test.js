@@ -49,6 +49,11 @@ class FakeWebSocket {
     this.onmessage?.({ data: JSON.stringify(payload) });
   }
 
+  /** Deliver raw WebSocket data without JSON.stringify (e.g. truncated frames). */
+  emitRawData(data) {
+    this.onmessage?.({ data });
+  }
+
   emitClose() {
     this.readyState = 3;
     this.onclose?.({ code: 1006, reason: '' });
@@ -699,6 +704,194 @@ describe('createEventPipeline', () => {
         },
       },
     ]);
+  });
+
+  it('treats invalid WS event frames as transport faults, keeps lastEventId, and reconnects via SSE with isReconnect compensation', async () => {
+    installDomStubs();
+    installFakeWebSocket();
+    const originalConsoleError = console.error;
+    console.error = () => {};
+
+    let releaseStream;
+    const hold = new Promise((resolve) => {
+      releaseStream = resolve;
+    });
+
+    const eventOptions = [];
+    const disconnectReasons = [];
+    const compensations = [];
+    let activityCount = 0;
+    let cleanup;
+
+    const recovered = new Promise((resolve) => {
+      const pipeline = createEventPipeline({
+        sdk: {
+          global: {
+            event: async (options) => {
+              eventOptions.push(options);
+              return {
+                stream: (async function* () {
+                  await hold;
+                })(),
+              };
+            },
+          },
+        },
+        transport: 'auto',
+        reconnectDelayMs: 0,
+        onEvent: () => {},
+        onTransportActivity: () => {
+          activityCount += 1;
+        },
+        onDisconnect: (reason) => {
+          disconnectReasons.push(reason);
+        },
+        onCompensation: (trigger) => {
+          compensations.push(trigger);
+          if (compensations.length === 2 && trigger.transport === 'sse') {
+            cleanup();
+            releaseStream();
+            resolve();
+          }
+        },
+      });
+      cleanup = pipeline.cleanup;
+    });
+
+    try {
+      await Promise.resolve();
+
+      const firstSocket = FakeWebSocket.instances[0];
+      firstSocket.emitOpen();
+      firstSocket.emitMessage({ type: 'ready', scope: 'global' });
+      firstSocket.emitMessage({
+        type: 'event',
+        eventId: 'evt-1',
+        directory: '/tmp/project',
+        payload: {
+          type: 'session.status',
+          properties: {
+            sessionID: 'session-1',
+            status: { type: 'busy' },
+          },
+        },
+      });
+
+      const activityAfterGoodFrames = activityCount;
+
+      // Legal JSON, but no normalizable domain event payload — must fail the
+      // transport without advancing lastEventId or reporting activity.
+      firstSocket.emitMessage({
+        type: 'event',
+        eventId: 'evt-should-not-advance',
+        directory: '/tmp/project',
+        payload: {},
+      });
+
+      expect(activityCount).toBe(activityAfterGoodFrames);
+      expect(firstSocket.readyState).toBe(3);
+
+      await withTimeout(recovered, 500, 'timed out waiting for invalid-frame SSE recovery');
+
+      expect(disconnectReasons.some((reason) => reason === 'ws_invalid_frame:event_payload')).toBe(true);
+      expect(eventOptions[0]?.headers?.['Last-Event-ID']).toBe('evt-1');
+      expect(compensations).toHaveLength(2);
+      expect(compensations[0]).toMatchObject({
+        isReconnect: false,
+        reason: 'ready',
+        transport: 'ws',
+      });
+      expect(compensations[1]).toMatchObject({
+        isReconnect: true,
+        reason: 'ws_invalid_frame:event_payload',
+        lastEventId: 'evt-1',
+        transport: 'sse',
+      });
+      expect(typeof compensations[1].disconnectedAt).toBe('number');
+    } finally {
+      cleanup?.();
+      releaseStream?.();
+      console.error = originalConsoleError;
+    }
+  });
+
+  it('treats truncated WS JSON frames as transport faults and reconnects via SSE with isReconnect compensation', async () => {
+    installDomStubs();
+    installFakeWebSocket();
+    const originalConsoleError = console.error;
+    console.error = () => {};
+
+    let releaseStream;
+    const hold = new Promise((resolve) => {
+      releaseStream = resolve;
+    });
+
+    const disconnectReasons = [];
+    const compensations = [];
+    let cleanup;
+
+    const recovered = new Promise((resolve) => {
+      const pipeline = createEventPipeline({
+        sdk: {
+          global: {
+            event: async () => ({
+              stream: (async function* () {
+                await hold;
+              })(),
+            }),
+          },
+        },
+        transport: 'auto',
+        reconnectDelayMs: 0,
+        onEvent: () => {},
+        onDisconnect: (reason) => {
+          disconnectReasons.push(reason);
+        },
+        onCompensation: (trigger) => {
+          compensations.push(trigger);
+          if (compensations.length === 2 && trigger.transport === 'sse') {
+            cleanup();
+            releaseStream();
+            resolve();
+          }
+        },
+      });
+      cleanup = pipeline.cleanup;
+    });
+
+    try {
+      await Promise.resolve();
+
+      const firstSocket = FakeWebSocket.instances[0];
+      firstSocket.emitOpen();
+      firstSocket.emitMessage({ type: 'ready', scope: 'global' });
+
+      // Truncated JSON text — hits JSON.parse and must fail as ws_invalid_frame:json
+      // without logging the raw frame body.
+      firstSocket.emitRawData('{"type":"event","eventId":"evt-trunc"');
+
+      expect(firstSocket.readyState).toBe(3);
+
+      await withTimeout(recovered, 500, 'timed out waiting for truncated-json SSE recovery');
+
+      expect(disconnectReasons.some((reason) => reason === 'ws_invalid_frame:json')).toBe(true);
+      expect(compensations).toHaveLength(2);
+      expect(compensations[0]).toMatchObject({
+        isReconnect: false,
+        reason: 'ready',
+        transport: 'ws',
+      });
+      expect(compensations[1]).toMatchObject({
+        isReconnect: true,
+        reason: 'ws_invalid_frame:json',
+        transport: 'sse',
+      });
+      expect(typeof compensations[1].disconnectedAt).toBe('number');
+    } finally {
+      cleanup?.();
+      releaseStream?.();
+      console.error = originalConsoleError;
+    }
   });
 
   it('passes the last websocket event id when falling back to SSE', async () => {
