@@ -4,6 +4,10 @@ All notable changes to this project will be documented in this file.
 
 ## [Unreleased]
 
+## [1.16.127-beta.5] - 2026-08-11
+
+- **Assistant transcript loading:** materialize each active Assistant binding through the shared transcript repository, so current OpenCode messages load immediately and historical pagination continues through the standard conversation timeline.
+
 ## [1.16.127-beta.4] - 2026-08-11
 
 - **Desktop language consistency:** localize native application menus, dock actions, and tray controls with the selected UI language; refresh their labels when the language changes.

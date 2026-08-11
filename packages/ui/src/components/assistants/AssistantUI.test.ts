@@ -507,6 +507,10 @@ describe('Assistant UI product contract', () => {
     expect(statusRow).toContain('useAssistantStatus(currentSessionId, currentSessionDirectory)');
     expect(statusRow).toContain('surface.sessionId ?? primarySessionId');
     expect(view).toContain('if (active && assistantID && !sessionID) void ensureAssistantSession(assistantID)');
+    // Active binding with a sessionID force-materializes via refreshBinding (TranscriptRepository).
+    expect(view).toContain('if (!active || !assistantID || !sessionID || !directory || sessionGeneration === undefined) return;');
+    expect(view).toContain('{ sessionID, directory, sessionGeneration },');
+    expect(view).toContain('[active, assistantID, directory, refreshBinding, sessionGeneration, sessionID]');
   });
 
   test('returns from Assistant on Android back', async () => {

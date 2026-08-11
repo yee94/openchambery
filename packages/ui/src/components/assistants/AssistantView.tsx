@@ -326,12 +326,25 @@ export const AssistantView: React.FC<AssistantViewProps> = ({ activeOverride, on
   const refreshBinding = useEvent(async (binding: SessionBinding, options?: { force?: boolean }) => {
     if (!binding.sessionID) return;
     // Soft ensure after ordinary sends so live sync/SSE can update the transcript in place.
-    // Force only when the binding itself changed (/new, compact) or the user retries a failed load.
+    // Force only when the binding itself changed (/new, compact), on active binding
+    // materialization (initial/switch), or the user retries a failed load.
     await sync.ensureSessionRenderable(binding.sessionID, {
       directory: binding.directory,
       ...(options?.force ? { force: true } : {}),
     });
   });
+  // Active binding materialization: force TranscriptRepository initial pull so the
+  // live OpenCode session loads even when Assistant SQLite history is empty/delayed.
+  // Deps are binding identity only — same binding must not re-fire on snapshot churn.
+  // Do not swallow ensure failures: request/error state keeps existing retry UI.
+  const sessionGeneration = assistant?.sessionGeneration;
+  React.useEffect(() => {
+    if (!active || !assistantID || !sessionID || !directory || sessionGeneration === undefined) return;
+    void refreshBinding(
+      { sessionID, directory, sessionGeneration },
+      { force: true },
+    );
+  }, [active, assistantID, directory, refreshBinding, sessionGeneration, sessionID]);
   const removePendingMessages = useEvent((targetAssistantID: string, messageIDs: readonly string[]) => {
     if (messageIDs.length === 0) return;
     const removed = new Set(messageIDs);

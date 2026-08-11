@@ -115,3 +115,27 @@ describe('AssistantView synthetic part consumption', () => {
     ).map((item) => item.id)).toEqual(['r'])
   })
 })
+
+describe('AssistantView active binding materialization', () => {
+  test('force-refreshes the active binding identity and skips invalid or inactive bindings', async () => {
+    const source = await readFile(join(directory, 'AssistantView.tsx'), 'utf8')
+    // Gate: only active + complete (assistantID, sessionID, directory, sessionGeneration).
+    expect(source).toContain('if (!active || !assistantID || !sessionID || !directory || sessionGeneration === undefined) return;')
+    // Standard materialization path with force so TranscriptRepository initial-pulls.
+    expect(source).toContain('void refreshBinding(')
+    expect(source).toContain('{ sessionID, directory, sessionGeneration },')
+    expect(source).toContain('{ force: true },')
+    // Binding-identity deps only — snapshot churn without binding change must not re-fire.
+    expect(source).toContain('[active, assistantID, directory, refreshBinding, sessionGeneration, sessionID]')
+    // Empty-session path stays separate; inactive / missing sessionID never force-refreshes.
+    expect(source).toContain('if (active && assistantID && !sessionID) void ensureAssistantSession(assistantID)')
+    // Must not swallow ensure failures into empty success (no catch on this materialization).
+    const materializationEffect = source.slice(
+      source.indexOf('// Active binding materialization:'),
+      source.indexOf('const removePendingMessages'),
+    )
+    expect(materializationEffect).toContain('void refreshBinding(')
+    expect(materializationEffect).not.toContain('.catch(')
+    expect(materializationEffect).not.toContain('catch (')
+  })
+})
