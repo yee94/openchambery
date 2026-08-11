@@ -2784,14 +2784,13 @@ describe("message edit staging", () => {
     expect(sessionStore.getState().message["session-a"].map((message) => message.id)).toEqual(["msg_9"])
   })
 
-  test("commitMessageEdit with preserveMessageId skips abort and keeps the accepted replacement", async () => {
+  test("commitMessageEdit waits for idle after abort before deleting", async () => {
     const session = { id: "session-a", time: { created: 1 } } as Session
     const targetMessage = { id: "msg_3", sessionID: "session-a", role: "user", time: { created: 3 } } as Message
     const targetReply = { id: "msg_4", sessionID: "session-a", role: "assistant", time: { created: 4 } } as Message
-    const replacement = { id: "msg_9", sessionID: "session-a", role: "user", time: { created: 9 } } as Message
     const sessionStore = createStore({}, {
       session: [session],
-      message: { "session-a": [targetMessage, targetReply, replacement] },
+      message: { "session-a": [targetMessage, targetReply] },
       session_status: { "session-a": { type: "busy" as const } },
       part: {},
     })
@@ -2800,21 +2799,29 @@ describe("message edit staging", () => {
       data: [
         { info: targetMessage, parts: [] },
         { info: targetReply, parts: [] },
-        { info: replacement, parts: [] },
       ],
     }
+    mockSdk.session.abort = mock(async (params: Record<string, unknown>) => {
+      replyCalls.push({ method: "session.abort", params })
+      setTimeout(() => {
+        sessionStore.setState({
+          session_status: { "session-a": { type: "idle" as const } },
+        })
+      }, 20)
+      return { data: true }
+    })
     const { commitMessageEdit, setActionRefs } = await import("./session-actions")
     setActionRefs(mockSdk as unknown as OpencodeClient, childStores, () => "/test/project")
 
-    await commitMessageEdit("session-a", "msg_3", { preserveMessageId: "msg_9" })
+    await commitMessageEdit("session-a", "msg_3")
 
-    expect(replyCalls.filter((call) => call.method === "session.abort")).toEqual([])
+    expect(replyCalls.some((call) => call.method === "session.abort")).toBe(true)
     expect(
       replyCalls
         .filter((call) => call.method === "session.deleteMessage")
         .map((call) => call.params.messageID),
     ).toEqual(["msg_4", "msg_3"])
-    expect(sessionStore.getState().message["session-a"].map((message) => message.id)).toEqual(["msg_9"])
+    expect(sessionStore.getState().message["session-a"]).toEqual([])
   })
 
 })

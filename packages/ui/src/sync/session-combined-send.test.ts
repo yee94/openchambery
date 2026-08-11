@@ -1248,13 +1248,80 @@ describe('staged message edits', () => {
       commitStagedMessageEdit: true,
     })
 
-    // Replacement is dispatched first; the old tail is deleted only after
-    // the send is accepted so a failed resend cannot erase both turns.
-    expect(sequence).toEqual(['send:programmatic', 'send:replacement', 'delete:msg_3', 'delete:msg_2'])
+    // OpenCode rejects delete while busy: delete the old tail first (session
+    // still idle / after abort), then dispatch the replacement.
+    expect(sequence).toEqual(['send:programmatic', 'delete:msg_3', 'delete:msg_2', 'send:replacement'])
     expect(useSessionUIStore.getState().stagedMessageEdit).toBe(null)
   })
 
-  test('staged edit keeps the old tail when the replacement send fails', async () => {
+  test('staged edit waits for idle after abort before deleting the old tail', async () => {
+    const messages = {
+      [SESSION_ID]: [
+        { id: 'msg_2', sessionID: SESSION_ID, role: 'user', time: { created: 2 } },
+        { id: 'msg_3', sessionID: SESSION_ID, role: 'assistant', time: { created: 3 } },
+      ],
+    }
+    const parts = {
+      msg_2: [{ id: 'prt_2', messageID: 'msg_2', type: 'text', text: 'original' }],
+      msg_3: [{ id: 'prt_3', messageID: 'msg_3', type: 'text', text: 'answer' }],
+    }
+    let status: { type: 'busy' | 'idle' } = { type: 'busy' }
+    const childStore = {
+      getState: () => ({ session: [], message: messages, part: parts, session_status: { [SESSION_ID]: status } }),
+      setState: (patch: Record<string, unknown>) => {
+        if (patch.message) Object.assign(messages, patch.message)
+        if (patch.part) Object.assign(parts, patch.part)
+        if (patch.session_status) {
+          const next = (patch.session_status as Record<string, { type: 'busy' | 'idle' }>)[SESSION_ID]
+          if (next) status = next
+        }
+      },
+    }
+    const childStores = {
+      children: new Map([[PROJECT.path, childStore]]),
+      ensureChild: () => childStore,
+      getChild: () => childStore,
+    }
+    setActionRefs({
+      session: {
+        messages: async () => ({
+          data: messages[SESSION_ID].map((info) => ({ info, parts: parts[info.id as 'msg_2' | 'msg_3'] ?? [] })),
+        }),
+        abort: async () => {
+          // Abort is async relative to status events: stay busy briefly, then idle.
+          setTimeout(() => { status = { type: 'idle' } }, 30)
+          return { data: true }
+        },
+      },
+    } as any, childStores as any, () => PROJECT.path)
+    useSessionUIStore.setState({
+      currentSessionId: SESSION_ID,
+      currentSessionDirectory: PROJECT.path,
+      stagedMessageEdit: { sessionId: SESSION_ID, messageId: 'msg_2' },
+      messageEditCommitting: { sessionId: SESSION_ID, messageId: 'msg_2' },
+    })
+
+    const sequence: string[] = []
+    opencodeClient.deleteSessionMessage = (async (_sessionId: string, messageId: string) => {
+      // Must only run after the session became idle.
+      expect(status.type).toBe('idle')
+      sequence.push(`delete:${messageId}`)
+      return true
+    }) as any
+    opencodeClient.sendMessage = (async (params: { text: string }) => {
+      sequence.push(`send:${params.text}`)
+    }) as any
+
+    await useSessionUIStore.getState().sendMessage('replacement', 'openai', 'gpt-4o', undefined, undefined, undefined, undefined, undefined, undefined, {
+      commitStagedMessageEdit: true,
+    })
+
+    expect(sequence).toEqual(['delete:msg_3', 'delete:msg_2', 'send:replacement'])
+    expect(useSessionUIStore.getState().stagedMessageEdit).toBe(null)
+    expect(useSessionUIStore.getState().messageEditCommitting).toBe(null)
+  })
+
+  test('staged edit keeps the old tail when delete fails before send', async () => {
     const messages = {
       [SESSION_ID]: [
         { id: 'msg_2', sessionID: SESSION_ID, role: 'user', time: { created: 2 } },
@@ -1289,16 +1356,16 @@ describe('staged message edits', () => {
       currentSessionId: SESSION_ID,
       currentSessionDirectory: PROJECT.path,
       stagedMessageEdit: { sessionId: SESSION_ID, messageId: 'msg_2' },
+      messageEditCommitting: { sessionId: SESSION_ID, messageId: 'msg_2' },
     })
 
     const sequence: string[] = []
     opencodeClient.deleteSessionMessage = (async (_sessionId: string, messageId: string) => {
       sequence.push(`delete:${messageId}`)
-      return true
+      throw new Error('session.deleteMessage failed (500): rejected')
     }) as any
     opencodeClient.sendMessage = (async () => {
-      sequence.push('send:fail')
-      throw Object.assign(new Error('Connection lost'), { status: undefined })
+      sequence.push('send:should-not-run')
     }) as any
 
     let failed: unknown = null
@@ -1320,8 +1387,9 @@ describe('staged message edits', () => {
     }
     expect(failed).toBeTruthy()
 
-    expect(sequence).toEqual(['send:fail'])
+    expect(sequence).toEqual(['delete:msg_3'])
     expect(useSessionUIStore.getState().stagedMessageEdit).toEqual({ sessionId: SESSION_ID, messageId: 'msg_2' })
+    expect(useSessionUIStore.getState().messageEditCommitting).toBe(null)
     expect(messages[SESSION_ID].map((message) => message.id)).toEqual(['msg_2', 'msg_3'])
   })
 

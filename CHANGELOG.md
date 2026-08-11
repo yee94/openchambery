@@ -4,6 +4,10 @@ All notable changes to this project will be documented in this file.
 
 ## [Unreleased]
 
+## [1.16.127-beta.3] - 2026-08-11
+
+- **Message edit delete while busy:** keep the editing state, abort then wait for session idle before deleting the old tail, then send the replacement (fixes OpenCode 409 Session is busy).
+
 ## [1.16.127-beta.2] - 2026-08-11
 
 - **Cold-start Provider catalog recovery:** force-refresh empty Provider/Agent catalogs after a successful temporary empty warm load (`staleTime: Infinity`), with store-level single-flight and a shared `useStartupCatalogRecovery` poll (`useInterval`, bounded attempts) on web, mobile, and mini-chat; VS Code bootstrap uses the same store action.

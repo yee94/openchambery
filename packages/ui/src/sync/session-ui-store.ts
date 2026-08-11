@@ -61,7 +61,6 @@ import {
   refetchSessionMessages,
   revertToMessage as revertToMessageAction,
   stageMessageEdit,
-  abortBusySessionForMessageEdit,
   commitMessageEdit,
   unrevertSession as unrevertSessionAction,
   forkSession as forkSessionAction,
@@ -1988,23 +1987,15 @@ export const useSessionUIStore = create<SessionUIState>()((set, get) => ({
   ) => {
     const stagedMessageEdit = get().stagedMessageEdit
     const requestedSessionId = options?.sessionId ?? get().currentSessionId
-    // Abort any still-busy turn before dispatching the replacement. The old
-    // tail is deleted only after the replacement send is accepted — otherwise a
-    // failed resend (connection grace, server still aborting) leaves the user
-    // with neither the aborted turn nor the replacement.
+    // OpenCode rejects deleteMessage while the session is busy (HTTP 409).
+    // Keep `messageEditCommitting` painted, abort → wait idle → delete old tail,
+    // then dispatch the replacement. Waiting is expected UX for edit commit.
     const pendingStagedEdit =
       options?.commitStagedMessageEdit
       && stagedMessageEdit
       && stagedMessageEdit.sessionId === requestedSessionId
         ? stagedMessageEdit
         : null
-    if (pendingStagedEdit) {
-      try {
-        await abortBusySessionForMessageEdit(pendingStagedEdit.sessionId)
-      } catch {
-        // abort is best-effort; the send path still owns failure handling
-      }
-    }
 
     // Clear non-Git changed-files bar on new user message for current session
     const sid = options?.sessionId ?? get().currentSessionId;
@@ -2193,6 +2184,24 @@ export const useSessionUIStore = create<SessionUIState>()((set, get) => ({
       filename: a.filename,
     }))
 
+    // Delete the edited target + old forward tail while still idle, then send.
+    // `messageEditCommitting` stays set through abort/wait/delete (ChatInput
+    // paints it before calling sendMessage).
+    if (pendingStagedEdit) {
+      try {
+        await commitMessageEdit(pendingStagedEdit.sessionId, pendingStagedEdit.messageId, {
+          directory: currentSessionDirectory ?? undefined,
+        })
+        if (get().stagedMessageEdit === pendingStagedEdit) {
+          set({ stagedMessageEdit: null })
+        }
+      } catch (error) {
+        // Abort/wait/delete failed: keep staged edit + old tail for retry.
+        get().endMessageEditCommit(pendingStagedEdit.sessionId, pendingStagedEdit.messageId)
+        throw error
+      }
+    }
+
     try {
       await routeMessage({
         sessionId: targetSessionId || "",
@@ -2221,35 +2230,11 @@ export const useSessionUIStore = create<SessionUIState>()((set, get) => ({
           })),
         })),
       })
-    } catch (error) {
-      // Replacement never left the client: leave the staged edit armed and the
-      // old tail intact so the user can retry without losing the aborted turn.
+    } finally {
+      // Replacement path ends the "editing" paint whether send succeeds or fails.
+      // On success the old tail is already gone; on send failure the composer draft
+      // still holds the replacement text for an ordinary resend.
       if (pendingStagedEdit) {
-        get().endMessageEditCommit(pendingStagedEdit.sessionId, pendingStagedEdit.messageId)
-      }
-      throw error
-    }
-
-    // Replacement accepted — now drop the edited target and its old forward
-    // tail. Preserve the replacement id so refetch cannot delete the just-sent
-    // message (pendingSend may already be cleared by settle).
-    if (pendingStagedEdit) {
-      try {
-        const preserveMessageId =
-          options?.messageID
-          ?? options?.ticket?.messageID
-          ?? get().pendingSendMessageIDs.get(pendingStagedEdit.sessionId)
-        await commitMessageEdit(pendingStagedEdit.sessionId, pendingStagedEdit.messageId, {
-          directory: currentSessionDirectory ?? undefined,
-          preserveMessageId: preserveMessageId ?? undefined,
-        })
-      } finally {
-        // Replacement already accepted: always drop the staged edit so a later
-        // delete failure cannot re-arm a second replacement send. The "editing"
-        // paint ends either way.
-        if (get().stagedMessageEdit === pendingStagedEdit) {
-          set({ stagedMessageEdit: null })
-        }
         get().endMessageEditCommit(pendingStagedEdit.sessionId, pendingStagedEdit.messageId)
       }
     }

@@ -2485,8 +2485,8 @@ function resolveMessageEditDeleteRange(
 
 /**
  * Abort a still-busy session before an edit replacement is dispatched.
- * Kept separate from {@link commitMessageEdit} so a successful replacement send
- * is never cancelled when the old tail is deleted afterward.
+ * OpenCode rejects deleteMessage while the session is busy (HTTP 409), so callers
+ * must wait for idle after abort before deleting the old tail.
  */
 export async function abortBusySessionForMessageEdit(
   sessionId: string,
@@ -2499,24 +2499,47 @@ export async function abortBusySessionForMessageEdit(
   try {
     await sdk().session.abort({ sessionID: sessionId, directory })
   } catch {
-    // ignore abort errors — the subsequent send still owns failure handling
+    // ignore abort errors — waitForSessionIdle still observes the live status
   }
 }
 
 /**
- * Commit a staged message edit after its replacement send has been accepted
- * (or, for legacy callers, before send when no preserveMessageId is supplied).
+ * Wait until the session reports idle (or has no status entry).
+ * Used after abort so deleteMessage is not rejected with "Session is busy".
+ * The composer keeps `messageEditCommitting` painted while this wait runs.
+ */
+export async function waitForSessionIdleForMessageEdit(
+  sessionId: string,
+  options?: { directory?: string; timeoutMs?: number; intervalMs?: number },
+): Promise<void> {
+  const directoryOverride = options?.directory
+  const timeoutMs = options?.timeoutMs ?? 15_000
+  const intervalMs = options?.intervalMs ?? 100
+  const { store } = dirStoreForSession(sessionId, directoryOverride)
+  const deadline = Date.now() + timeoutMs
+
+  while (Date.now() < deadline) {
+    const status = store.getState().session_status[sessionId]
+    if (!status || status.type === "idle") return
+    await new Promise<void>((resolve) => setTimeout(resolve, intervalMs))
+  }
+
+  const status = store.getState().session_status[sessionId]
+  if (!status || status.type === "idle") return
+  throw new Error(`Session is still busy after waiting to edit: ${sessionId}`)
+}
+
+/**
+ * Commit a staged message edit before its replacement send.
+ * Order required by OpenCode: abort (if busy) → wait idle → delete old tail → send.
  * The official delete-message endpoint removes conversation data only, so the
  * action deletes the target turn and every later message while retaining files
- * — except a preserved replacement id and anything after it.
+ * — except a preserved replacement id and anything after it (safety for an
+ * already-echoed in-flight row).
  *
  * Local rows are dropped one by one as their remote delete succeeds — nothing is
  * hidden up front. The composer paints an "editing" affordance on the target
- * instead, so a failed abort / refetch / delete can never leave the transcript
- * showing a tail the server still holds (or hiding one it no longer does).
- *
- * When `preserveMessageId` is set, this path must not abort: the session is
- * expected to be busy on the replacement turn.
+ * while abort/wait/delete run.
  */
 export async function commitMessageEdit(
   sessionId: string,
@@ -2527,12 +2550,8 @@ export async function commitMessageEdit(
   const preserveMessageId = options?.preserveMessageId
   const { store, directory } = dirStoreForSession(sessionId, directoryOverride)
 
-  // Abort only when no replacement is already owned. After a successful
-  // replacement send the session is busy on that turn — aborting here would
-  // cancel the message the user just sent.
-  if (!preserveMessageId) {
-    await abortBusySessionForMessageEdit(sessionId, { directory: directoryOverride })
-  }
+  await abortBusySessionForMessageEdit(sessionId, { directory: directoryOverride })
+  await waitForSessionIdleForMessageEdit(sessionId, { directory: directoryOverride })
 
   const authoritative = await refetchSessionMessages(sessionId, directoryOverride)
   const removedMessages = resolveMessageEditDeleteRange(sessionId, messageId, authoritative, {
