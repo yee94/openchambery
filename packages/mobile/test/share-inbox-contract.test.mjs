@@ -96,9 +96,11 @@ test('Android Assistant shortcut delivery is durable and acknowledged only by th
 });
 
 test('native navigation exposes iOS edge progress and Android predictive back', async () => {
-  const [ios, android, activity, manifest, readme] = await Promise.all([
+  const [ios, android, animationSupport, invokeSupport, activity, manifest, readme] = await Promise.all([
     source('ios/App/App/OpenChamberBridgeViewController.swift'),
     source('android/app/src/main/java/com/openchamber/app/OpenChamberNavigationPlugin.java'),
+    source('android/app/src/main/java/com/openchamber/app/OpenChamberBackAnimationSupport.java'),
+    source('android/app/src/main/java/com/openchamber/app/OpenChamberBackInvokeSupport.java'),
     source('android/app/src/main/java/com/openchamber/app/MainActivity.java'),
     source('android/app/src/main/AndroidManifest.xml'),
     source('README.md'),
@@ -115,9 +117,15 @@ test('native navigation exposes iOS edge progress and Android predictive back', 
   assert.match(ios, /progressPending = true/);
   assert.match(ios, /registerPluginInstance\(OpenChamberNavigationPlugin\(\)\)/);
 
-  assert.match(android, /OnBackAnimationCallback/);
-  assert.match(android, /backEvent\.getProgress\(\)/);
-  assert.match(android, /registerOnBackInvokedCallback/);
+  // Framework back APIs stay in support classes so Android 12 never class-loads them
+  // while registering OpenChamberNavigationPlugin at startup.
+  assert.doesNotMatch(android, /import android\.window\./);
+  assert.match(android, /OpenChamberBackAnimationSupport\.create/);
+  assert.match(android, /OpenChamberBackInvokeSupport\.create/);
+  assert.match(android, /Build\.VERSION\.SDK_INT < Build\.VERSION_CODES\.TIRAMISU/);
+  assert.match(animationSupport, /OnBackAnimationCallback/);
+  assert.match(animationSupport, /backEvent\.getProgress\(\)/);
+  assert.match(invokeSupport, /registerOnBackInvokedCallback/);
   assert.match(activity, /registerPlugin\(OpenChamberNavigationPlugin\.class\)/);
   assert.match(manifest, /android:enableOnBackInvokedCallback="true"/);
   assert.match(readme, /Predictive Back/);

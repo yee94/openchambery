@@ -2,20 +2,45 @@ package com.openchamber.app;
 
 import android.app.Activity;
 import android.os.Build;
-import android.window.BackEvent;
-import android.window.OnBackAnimationCallback;
-import android.window.OnBackInvokedCallback;
-import android.window.OnBackInvokedDispatcher;
 import com.getcapacitor.JSObject;
 import com.getcapacitor.Plugin;
 import com.getcapacitor.PluginCall;
 import com.getcapacitor.PluginMethod;
 import com.getcapacitor.annotation.CapacitorPlugin;
 
+/**
+ * Progress-only native back input for the shared UI navigation coordinator.
+ *
+ * Android 14+ Predictive Back types ({@code OnBackAnimationCallback}) and
+ * Android 13 invoke types live in companion support classes so this plugin can
+ * be registered on Android 12 without resolving those framework classes.
+ */
 @CapacitorPlugin(name = "OpenChamberNavigation")
 public class OpenChamberNavigationPlugin extends Plugin {
-    private OnBackInvokedCallback callback;
+    private Object callback;
     private boolean registered;
+
+    private final OpenChamberBackNavListener listener = new OpenChamberBackNavListener() {
+        @Override
+        public void onBackStarted(float progress) {
+            notifyProgress("backStarted", progress);
+        }
+
+        @Override
+        public void onBackProgressed(float progress) {
+            notifyProgress("backProgressed", progress);
+        }
+
+        @Override
+        public void onBackCancelled() {
+            notifyListeners("backCancelled", new JSObject());
+        }
+
+        @Override
+        public void onBackInvoked() {
+            notifyListeners("backInvoked", new JSObject());
+        }
+    };
 
     @PluginMethod
     public void setEnabled(PluginCall call) {
@@ -33,46 +58,21 @@ public class OpenChamberNavigationPlugin extends Plugin {
 
     private void setRegistered(Activity activity, boolean enabled) {
         if (Build.VERSION.SDK_INT < Build.VERSION_CODES.TIRAMISU || enabled == registered) return;
-        OnBackInvokedDispatcher dispatcher = activity.getOnBackInvokedDispatcher();
         if (enabled) {
-            callback = Build.VERSION.SDK_INT >= Build.VERSION_CODES.UPSIDE_DOWN_CAKE
-                ? createAnimationCallback()
-                : createInvokeCallback();
-            dispatcher.registerOnBackInvokedCallback(OnBackInvokedDispatcher.PRIORITY_DEFAULT, callback);
+            // Touch API 33/34 support classes only after the SDK gate. Loading those
+            // classes on Android 12 resolves missing android.window.* types and crashes.
+            if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.UPSIDE_DOWN_CAKE) {
+                callback = OpenChamberBackAnimationSupport.create(listener);
+            } else {
+                callback = OpenChamberBackInvokeSupport.create(listener);
+            }
+            OpenChamberBackInvokeSupport.register(activity, callback);
             registered = true;
             return;
         }
-        if (callback != null) dispatcher.unregisterOnBackInvokedCallback(callback);
+        OpenChamberBackInvokeSupport.unregister(activity, callback);
         callback = null;
         registered = false;
-    }
-
-    private OnBackInvokedCallback createInvokeCallback() {
-        return () -> notifyListeners("backInvoked", new JSObject());
-    }
-
-    private OnBackAnimationCallback createAnimationCallback() {
-        return new OnBackAnimationCallback() {
-            @Override
-            public void onBackStarted(BackEvent backEvent) {
-                notifyProgress("backStarted", backEvent.getProgress());
-            }
-
-            @Override
-            public void onBackProgressed(BackEvent backEvent) {
-                notifyProgress("backProgressed", backEvent.getProgress());
-            }
-
-            @Override
-            public void onBackCancelled() {
-                notifyListeners("backCancelled", new JSObject());
-            }
-
-            @Override
-            public void onBackInvoked() {
-                notifyListeners("backInvoked", new JSObject());
-            }
-        };
     }
 
     private void notifyProgress(String eventName, float progress) {

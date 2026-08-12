@@ -4,6 +4,10 @@ All notable changes to this project will be documented in this file.
 
 ## [Unreleased]
 
+## [1.16.130-beta.1] - 2026-08-13
+
+- **Android 12 launch crash:** move `OnBackAnimationCallback` / `OnBackInvokedCallback` out of `OpenChamberNavigationPlugin` into SDK-gated support classes so registering the plugin no longer class-loads Android 13/14-only `android.window.*` types on older devices.
+
 ## [1.16.129] - 2026-08-12
 
 - **Android package identity:** change release `applicationId` to `com.yee94.openchamber` (debug: `com.yee94.openchamber.debug`) so the fork no longer collides with upstream `com.openchamber.app` installs that use a different signing key. Uninstall any older `com.openchamber.app` build before installing this APK.
