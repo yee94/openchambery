@@ -1,5 +1,6 @@
 import { admitTextQueueItem, editTextQueueItem, fetchMessageQueueScope, fetchMessageQueueServerStatus, fetchMessageQueueSnapshot, MessageQueueServerError, pauseMessageQueueAuthority, releaseMessageQueueItemEditReservation, removeQueueItem, removeReservedMessageQueueItem, reorderQueueScope, reserveMessageQueueItemForEdit, renewEditReservation, resumeMessageQueueAuthority, sendQueueItemNow, waitForMessageQueueInvalidation, type MessageQueueAdmissionItem, type MessageQueueEditReservation, type MessageQueueEditReservationRenewal, type MessageQueueItem, type MessageQueueScope, type MessageQueueScopeDescriptor } from '@/lib/message-queue-server';
 import { queryClient } from '@/lib/queryRuntime';
+import { normalizeDirectoryKey } from '@/lib/pathNormalization';
 import { getRuntimeGeneration, getRuntimeTransportIdentity, subscribeRuntimeEndpointChanged, isRuntimeEndpointIdentityChange } from '@/lib/runtime-switch';
 import { clearMessageQueueScope, clearMessageQueueScopes, ensureMessageQueueStatus, invalidateMessageQueueScope, readMessageQueueScope, replaceMessageQueueScope, replaceMessageQueueSnapshot, replaceMessageQueueStatus, refreshMessageQueueSnapshot } from '@/queries/messageQueueQueries';
 import { uploadQueueAttachments, type QueueAttachmentCandidate } from './message-queue-server-attachment-adapter';
@@ -110,7 +111,14 @@ const mergeVisibleQueueOrder = (queueItemIDs: readonly string[], current: Messag
   const requestedSet = new Set(requested);
   return [...requested, ...currentIDs.filter((id) => !requestedSet.has(id))];
 };
-const scopeKey = (scope: { transportIdentity: string; directory: string; sessionID: string }) => `${scope.transportIdentity}\u0000${scope.directory}\u0000${scope.sessionID}`;
+/**
+ * Subscribers address a scope with the directory spelling the composer holds,
+ * while notifications carry the spelling the server sent. Those agree today
+ * only because both sides happen to pass the raw server string through, so the
+ * key is built from the canonical form to keep the two halves addressable no
+ * matter which side normalizes first.
+ */
+const scopeKey = (scope: { transportIdentity: string; directory: string; sessionID: string }) => `${scope.transportIdentity}\u0000${normalizeDirectoryKey(scope.directory)}\u0000${scope.sessionID}`;
 const pause = (ms: number, signal: AbortSignal) => new Promise<void>((resolve) => { const timer = setTimeout(resolve, ms); signal.addEventListener('abort', () => { clearTimeout(timer); resolve(); }, { once: true }); });
 const withDeadline = <T>(run: (signal: AbortSignal) => Promise<T>, parent: AbortSignal | undefined, timeoutMs: number): Promise<T> => {
   const controller = new AbortController();
@@ -415,7 +423,7 @@ export const createMessageQueueServerRuntime = (dependencies: Partial<Dependenci
     subscribe: (listener) => { listeners.add(listener); return () => listeners.delete(listener); },
     subscribeScope: (scope, listener) => { const key = scopeKey(scope), entries = scopeListeners.get(key) ?? new Set(); entries.add(listener); scopeListeners.set(key, entries); return () => { entries.delete(listener); if (!entries.size) scopeListeners.delete(key); }; },
     getState: () => { synchronizeTransport(); return state; }, captureRuntime: () => synchronizeTransport(),
-    getScope: (scope) => { const capture = synchronizeTransport(); if (scope.transportIdentity !== capture.transportIdentity || state.transportIdentity !== scope.transportIdentity) return undefined; const descriptor = [...state.scopes.values()].find((entry) => entry.directory === scope.directory && entry.sessionID === scope.sessionID); if (!descriptor) return undefined; const key = `${scope.transportIdentity}\u0000${descriptor.scopeID}`, cached = scopeSnapshots.get(key); if (cached?.revision === descriptor.revision) return cached.scope; const loaded = readMessageQueueScope(deps.client, descriptor.scopeID, descriptor.revision, scope.transportIdentity); if (loaded) scopeSnapshots.set(key, { revision: descriptor.revision, scope: loaded }); return loaded; },
+    getScope: (scope) => { const capture = synchronizeTransport(); if (scope.transportIdentity !== capture.transportIdentity || state.transportIdentity !== scope.transportIdentity) return undefined; const descriptor = [...state.scopes.values()].find((entry) => normalizeDirectoryKey(entry.directory) === normalizeDirectoryKey(scope.directory) && entry.sessionID === scope.sessionID); if (!descriptor) return undefined; const key = `${scope.transportIdentity}\u0000${descriptor.scopeID}`, cached = scopeSnapshots.get(key); if (cached?.revision === descriptor.revision) return cached.scope; const loaded = readMessageQueueScope(deps.client, descriptor.scopeID, descriptor.revision, scope.transportIdentity); if (loaded) scopeSnapshots.set(key, { revision: descriptor.revision, scope: loaded }); return loaded; },
     getPendingAdmissions: (scope) => {
       const capture = synchronizeTransport();
       return scope.transportIdentity === capture.transportIdentity && state.transportIdentity === scope.transportIdentity ? pendingAdmissions.get(scopeKey(scope)) ?? EMPTY_PENDING_ADMISSIONS : EMPTY_PENDING_ADMISSIONS;

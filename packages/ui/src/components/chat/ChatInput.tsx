@@ -102,6 +102,7 @@ import { readInstalledSkillsSnapshot, useInstalledSkillsQuery } from '@/queries/
 import { useCommandsQuery } from '@/queries/commandQueries';
 import { useRuntimeAPIs } from '@/hooks/useRuntimeAPIs';
 import { useEffectiveDirectory } from '@/hooks/useEffectiveDirectory';
+import { normalizeDirectoryKey } from '@/lib/pathNormalization';
 import { buildSessionTargetOptions } from '@/sync/session-worktree-contract';
 import { DraftSessionBranchSelector } from './DraftSessionBranchSelector';
 import { resolveDraftSessionBranchLabel } from './draftSessionBranchLabel';
@@ -2553,7 +2554,11 @@ const ChatInputRuntime: React.FC<ChatInputProps> = ({ onOpenSettings, scrollToBo
                 || queueScopeAtStart.sessionID !== (primaryQueueSessionIdAtStart ?? queueScopeAtStart.sessionID)
                 || (
                     primaryQueueSessionIdAtStart
-                    && (useSessionUIStore.getState().getDirectoryForSession(primaryQueueSessionIdAtStart) ?? null) !== queueScopeAtStart.directory
+                    // Both sides name the same directory through different stores: the live
+                    // one is `normalizePath`-ed, the scope carries the server spelling. On
+                    // Windows those differ by separator alone, so a raw compare declared
+                    // every admission stale and handed the message back to the composer.
+                    && normalizeDirectoryKey(useSessionUIStore.getState().getDirectoryForSession(primaryQueueSessionIdAtStart)) !== normalizeDirectoryKey(queueScopeAtStart.directory)
                 )
             ) {
                 await restoreQueueComposer();

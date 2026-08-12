@@ -5,6 +5,7 @@ import type { AttachedFile } from './types/sessionTypes';
 import { updateDesktopSettings } from '@/lib/persistence';
 import { ascendingId } from '@/sync/message-id';
 import { createUuid } from '@/lib/uuid';
+import { normalizeDirectoryKey } from '@/lib/pathNormalization';
 import { parseDraftComposerDocument, parseDraftMentions, type DraftComposerDocument, type DraftMention } from '@/sync/input-draft-types';
 import { serializeComposerDocument } from '@/composer/document';
 import { describeComposerDocumentResources } from '@/composer/extensions';
@@ -32,9 +33,15 @@ export const legacyQueueScope = (sessionID: string): QueueScope => ({ state: 'un
  * still belong to the same endpoint, and a restart resets it to zero.
  * `transportIdentity` stays because it is the real addressing unit that keeps
  * one session ID isolated across different runtimes.
+ *
+ * The directory is addressed by its canonical key, never by the spelling the
+ * caller happened to hold. One scope is assembled from the sync session entity
+ * (server payload, `C:\p` on Windows) while the row it must find was written
+ * from a `normalizePath`-ed store (`C:/p`), so keying on the raw string split
+ * one queue into two ledgers on Windows and nowhere else.
  */
 export const queueScopeKey = (scope: QueueScope): string => scope.state === 'bound'
-  ? `bound:${JSON.stringify([scope.transportIdentity, scope.directory, scope.sessionID, scope.deliveryTarget ?? { kind: 'primary' }])}`
+  ? `bound:${JSON.stringify([scope.transportIdentity, normalizeDirectoryKey(scope.directory), scope.sessionID, scope.deliveryTarget ?? { kind: 'primary' }])}`
   : `unbound-legacy:${JSON.stringify([scope.sessionID])}`;
 export const getQueueForScope = (state: { queuedMessages: Record<string, QueueItem[]> }, scope: QueueScope): QueueItem[] => state.queuedMessages[queueScopeKey(scope)] ?? EMPTY_QUEUE;
 const EMPTY_QUEUE: QueueItem[] = [];

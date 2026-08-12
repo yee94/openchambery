@@ -4,6 +4,7 @@ import type { DraftKey } from '@/sync/input-draft-types';
 import type { DraftCommitInput } from '@/sync/input-store';
 import { isMessageQueuePendingAdmissionItem, type MessageQueueServerDisplayItem } from '@/sync/message-queue-server-runtime';
 import { isInlineAttachmentCitation } from '@/composer/inline-attachment-sync';
+import { normalizeDirectoryKey } from '@/lib/pathNormalization';
 import {
     buildMessageReferenceParts,
     type MessageReferenceDetectContext,
@@ -126,7 +127,7 @@ type ServerQueueExactScope = { transportIdentity: string; runtimeGeneration: num
 const matchesExactScope = (operation: ServerQueueOperationIdentity, exactScope: ServerQueueExactScope): boolean => (
     operation.transportIdentity === exactScope.transportIdentity
     && operation.runtimeGeneration === exactScope.runtimeGeneration
-    && operation.directory === exactScope.directory
+    && normalizeDirectoryKey(operation.directory) === normalizeDirectoryKey(exactScope.directory)
     && operation.sessionID === exactScope.sessionID
     && operation.scopeID === exactScope.scopeID
 );

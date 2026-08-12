@@ -32,6 +32,26 @@ describe('messageQueueStore scoped ledger', () => {
     expect(queueScopeKey({ ...a, runtimeGeneration: 5 })).toBe(queueScopeKey(a));
     expect(useMessageQueueStore.getState().getQueueForScope({ ...a, runtimeGeneration: 5 })[0]).toBe(first);
   });
+  test('addresses one directory through every Windows spelling it arrives in', () => {
+    // The composer scope carries the server spelling while cutover rebinds legacy
+    // rows through a `normalizePath`-ed store, so a raw key split one Windows
+    // queue into two ledgers that could never see each other's rows.
+    const server: Extract<QueueScope, { state: 'bound' }> = { ...a, directory: 'C:\\project' };
+    const normalized: Extract<QueueScope, { state: 'bound' }> = { ...a, directory: 'C:/project' };
+    const sloppy: Extract<QueueScope, { state: 'bound' }> = { ...a, directory: 'c:\\project\\' };
+    const item = mustAdd(server);
+    expect(queueScopeKey(normalized)).toBe(queueScopeKey(server));
+    expect(queueScopeKey(sloppy)).toBe(queueScopeKey(server));
+    expect(useMessageQueueStore.getState().getQueueForScope(normalized)[0]).toBe(item);
+    expect(useMessageQueueStore.getState().getQueueForScope(sloppy)[0]).toBe(item);
+  });
+  test('keeps genuinely different directories in separate ledgers', () => {
+    const first = mustAdd({ ...a, directory: 'C:\\project' });
+    const other = mustAdd({ ...a, directory: 'C:\\project-two' });
+    expect(queueScopeKey({ ...a, directory: 'C:\\project' })).not.toBe(queueScopeKey({ ...a, directory: 'C:\\project-two' }));
+    expect(useMessageQueueStore.getState().getQueueForScope({ ...a, directory: 'C:/project' })[0]).toBe(first);
+    expect(useMessageQueueStore.getState().getQueueForScope({ ...a, directory: 'C:/project-two' })[0]).toBe(other);
+  });
   test('recovers rows persisted under superseded generations into one live scope in order', () => {
     // An A→B→A transport bounce persisted the same endpoint under two generations.
     const oldKey = (generation: number) => `bound:${JSON.stringify([a.transportIdentity, a.directory, a.sessionID, { kind: 'primary' }, generation])}`;
