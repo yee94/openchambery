@@ -1914,3 +1914,209 @@ describe('createEventPipeline — delta coalescing (Option C)', () => {
     expect(received[0].payload.properties.status.type).toBe('idle');
   });
 });
+
+// Reconnect pacing is not instant even at reconnectDelayMs: 0, so wait for the
+// socket to actually be constructed rather than guessing a sleep.
+async function waitForSocket(index, timeoutMs = 2000) {
+  const deadline = Date.now() + timeoutMs;
+  while (Date.now() < deadline) {
+    const socket = FakeWebSocket.instances[index];
+    if (socket) return socket;
+    await new Promise((resolve) => setTimeout(resolve, 10));
+  }
+  throw new Error(`timed out waiting for WebSocket instance ${index}`);
+}
+
+describe('event pipeline benign drops', () => {
+  it('skips durable sync replicas without faulting the transport and advances the resume tip', async () => {
+    installDomStubs();
+    installFakeWebSocket();
+
+    let releaseStream;
+    const hold = new Promise((resolve) => {
+      releaseStream = resolve;
+    });
+
+    const received = [];
+    const disconnectReasons = [];
+    const { cleanup } = createEventPipeline({
+      sdk: {
+        global: {
+          event: async () => ({
+            stream: (async function* () {
+              await hold;
+            })(),
+          }),
+        },
+      },
+      transport: 'ws',
+      reconnectDelayMs: 0,
+      onEvent: (directory, payload) => {
+        received.push({ directory, payload });
+      },
+      onDisconnect: (reason) => {
+        disconnectReasons.push(reason);
+      },
+    });
+
+    try {
+      await Promise.resolve();
+
+      const socket = FakeWebSocket.instances[0];
+      socket.emitOpen();
+      socket.emitMessage({ type: 'ready', scope: 'global' });
+
+      socket.emitMessage({
+        type: 'event',
+        eventId: 'evt-1',
+        directory: '/tmp/project',
+        payload: {
+          type: 'session.status',
+          properties: { sessionID: 'session-1', status: { type: 'busy' } },
+        },
+      });
+
+      // OpenCode durable sync replica: the normalizer declines it on purpose so
+      // the same logical event is not applied twice. That is not a fault.
+      socket.emitMessage({
+        type: 'event',
+        eventId: 'evt-2-sync-replica',
+        directory: '/tmp/project',
+        payload: {
+          type: 'session.status',
+          durable: { kind: 'sync', aggregateID: 'agg', seq: 1, version: 1 },
+          data: { sessionID: 'session-1', status: { type: 'busy' } },
+        },
+      });
+
+      expect(socket.readyState).toBe(1);
+      expect(disconnectReasons).toHaveLength(0);
+
+      // The turn ends after the replica — idle must still reach the reducer.
+      socket.emitMessage({
+        type: 'event',
+        eventId: 'evt-3',
+        directory: '/tmp/project',
+        payload: {
+          type: 'session.idle',
+          properties: { sessionID: 'session-1' },
+        },
+      });
+
+      await new Promise((resolve) => setTimeout(resolve, 80));
+
+      expect(received.some((entry) => entry.payload.type === 'session.idle')).toBe(true);
+      expect(socket.readyState).toBe(1);
+
+      // Resume tip moved past the declined frame, so a reconnect cannot replay it.
+      socket.emitClose();
+
+      const reconnected = await waitForSocket(1);
+      expect(reconnected.url).toContain('evt-3');
+    } finally {
+      cleanup();
+      releaseStream();
+    }
+  });
+
+  it('steps over a frame it can never read instead of resuming into it forever', async () => {
+    installDomStubs();
+    installFakeWebSocket();
+    const originalConsoleError = console.error;
+    console.error = () => {};
+
+    let releaseStream;
+    const hold = new Promise((resolve) => {
+      releaseStream = resolve;
+    });
+
+    const { cleanup } = createEventPipeline({
+      sdk: {
+        global: {
+          event: async () => ({
+            stream: (async function* () {
+              await hold;
+            })(),
+          }),
+        },
+      },
+      transport: 'ws',
+      reconnectDelayMs: 0,
+      onEvent: () => {},
+      onDisconnect: () => {},
+    });
+
+    const poison = {
+      type: 'event',
+      eventId: 'evt-poison',
+      directory: '/tmp/project',
+      payload: {},
+    };
+
+    try {
+      await Promise.resolve();
+
+      const first = FakeWebSocket.instances[0];
+      first.emitOpen();
+      first.emitMessage({ type: 'ready', scope: 'global' });
+      first.emitMessage({
+        type: 'event',
+        eventId: 'evt-1',
+        directory: '/tmp/project',
+        payload: {
+          type: 'session.status',
+          properties: { sessionID: 'session-1', status: { type: 'busy' } },
+        },
+      });
+
+      // First encounter: transport fault, resume tip held at the last good id.
+      first.emitMessage(poison);
+      expect(first.readyState).toBe(3);
+
+      const second = await waitForSocket(1);
+      expect(second.url).toContain('evt-1');
+
+      // The server replays from evt-1 and redelivers the same unreadable frame.
+      // Holding the tip again would wedge the stream here forever.
+      second.emitOpen();
+      second.emitMessage({ type: 'ready', scope: 'global' });
+      second.emitMessage(poison);
+
+      const third = await waitForSocket(2);
+      expect(third.url).toContain('evt-poison');
+    } finally {
+      cleanup();
+      releaseStream();
+      console.error = originalConsoleError;
+    }
+  });
+
+  it('keeps the SSE stream flowing across a durable sync replica', async () => {
+    const received = await runPipelineWithEvents([
+      {
+        directory: 'dir-a',
+        payload: {
+          type: 'session.status',
+          properties: { sessionID: 's1', status: { type: 'busy' } },
+        },
+      },
+      {
+        directory: 'dir-a',
+        payload: {
+          type: 'session.status',
+          durable: { kind: 'sync', aggregateID: 'agg', seq: 1, version: 1 },
+          data: { sessionID: 's1', status: { type: 'busy' } },
+        },
+      },
+      {
+        directory: 'dir-a',
+        payload: {
+          type: 'session.idle',
+          properties: { sessionID: 's1' },
+        },
+      },
+    ]);
+
+    expect(received.some((entry) => entry.payload.type === 'session.idle')).toBe(true);
+  });
+});

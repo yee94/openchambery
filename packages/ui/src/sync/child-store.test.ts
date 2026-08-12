@@ -96,3 +96,92 @@ describe('ChildStoreManager captures', () => {
     expect(manager.isCurrentChildCapture(second)).toBe(false);
   });
 });
+
+// Directory strings reach this class from the session record, worktree
+// metadata, window config and the directory picker. On Windows those disagree
+// on separators and drive-letter case; with exact string keys a second store
+// would be minted, take an HTTP status snapshot, and then never see another
+// live event.
+describe('ChildStoreManager Windows path spellings', () => {
+  const spellings = [
+    'c:\\Users\\me\\project',
+    'C:\\Users\\me\\project',
+    'C:/Users/me/project',
+    'C:/Users/me/project/',
+  ];
+
+  test('every spelling of one directory resolves to the same store', () => {
+    const manager = new ChildStoreManager();
+    const canonical = manager.ensureChild(spellings[0], { bootstrap: false });
+
+    for (const spelling of spellings) {
+      expect(manager.ensureChild(spelling, { bootstrap: false })).toBe(canonical);
+      expect(manager.getChild(spelling)).toBe(canonical);
+    }
+
+    expect(manager.children.size).toBe(1);
+    manager.disposeAll();
+  });
+
+  test('an idle status written under one spelling is visible under another', () => {
+    const manager = new ChildStoreManager();
+    manager.ensureChild('C:/Users/me/project', { bootstrap: false });
+
+    // The composer reads through the raw session-record spelling.
+    manager.update('c:\\Users\\me\\project', (state) => ({
+      session_status: { ...state.session_status, ses_1: { type: 'busy' } },
+    }));
+    expect(manager.getState('C:/Users/me/project')?.session_status.ses_1)
+      .toEqual({ type: 'busy' });
+
+    // The event router writes through the canonical spelling.
+    manager.update('C:/Users/me/project/', (state) => ({
+      session_status: { ...state.session_status, ses_1: { type: 'idle' } },
+    }));
+    expect(manager.getState('c:\\Users\\me\\project')?.session_status.ses_1)
+      .toEqual({ type: 'idle' });
+
+    manager.disposeAll();
+  });
+
+  test('lifecycle bookkeeping shares one key across spellings', () => {
+    const manager = new ChildStoreManager();
+    manager.ensureChild('C:/Users/me/project', { bootstrap: false });
+
+    manager.pin('c:\\Users\\me\\project');
+    expect(manager.pinned('C:/Users/me/project/')).toBe(true);
+    // A pinned directory must not be disposable through another spelling.
+    expect(manager.disposeDirectory('c:\\Users\\me\\project')).toBe(false);
+
+    manager.unpin('C:/Users/me/project/');
+    expect(manager.pinned('c:\\Users\\me\\project')).toBe(false);
+    expect(manager.disposeDirectory('C:\\Users\\me\\project')).toBe(true);
+    expect(manager.children.size).toBe(0);
+
+    manager.disposeAll();
+  });
+
+  test('a capture stays current when re-checked through another spelling', () => {
+    const manager = new ChildStoreManager();
+    const capture = manager.captureChild('c:\\Users\\me\\project', { bootstrap: false });
+
+    expect(manager.isCurrentChildCapture(capture)).toBe(true);
+    expect(manager.isCurrentChildCapture({ ...capture, directory: 'C:/Users/me/project/' }))
+      .toBe(true);
+
+    manager.disposeAll();
+  });
+
+  test('genuinely different directories keep separate stores', () => {
+    const manager = new ChildStoreManager();
+    manager.ensureChild('C:/Users/me/project', { bootstrap: false });
+    manager.ensureChild('C:/Users/me/other', { bootstrap: false });
+    // Case-sensitive filesystems make this a real distinction; only the drive
+    // letter is folded, never directory names.
+    manager.ensureChild('/home/me/Project', { bootstrap: false });
+    manager.ensureChild('/home/me/project', { bootstrap: false });
+
+    expect(manager.children.size).toBe(4);
+    manager.disposeAll();
+  });
+});

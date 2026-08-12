@@ -1,4 +1,5 @@
 import { create, type StoreApi } from "zustand"
+import { normalizeDirectoryKey } from "@/lib/pathNormalization"
 import type { DirState, State } from "./types"
 import { INITIAL_STATE, MAX_DIR_STORES, DIR_IDLE_TTL_MS, EVICTION_GRACE_MS } from "./types"
 import { pickDirectoriesToEvict, canDisposeDirectory, hasPendingBlockingRequests } from "./eviction"
@@ -42,6 +43,20 @@ function createDirectoryStore(directory: string): StoreApi<DirectoryStore> {
   return store
 }
 
+/**
+ * One directory, one store — whatever spelling the caller happened to hold.
+ *
+ * Every key crossing this class is canonicalized here rather than at the call
+ * sites. Callers receive directory strings from a dozen upstream sources (the
+ * session record, worktree metadata, window config, the directory picker) and
+ * on Windows those disagree on separators and drive-letter case. With exact
+ * string keys, one differently-spelled lookup used to mint a second store that
+ * took an HTTP status snapshot and then never received another live event —
+ * leaving whatever read through it stuck on stale status forever.
+ *
+ * Canonicalizing at the boundary makes that unrepresentable regardless of which
+ * caller is sloppy.
+ */
 export class ChildStoreManager {
   readonly children = new Map<string, StoreApi<DirectoryStore>>()
   private readonly lifecycle = new Map<string, DirState>()
@@ -74,7 +89,8 @@ export class ChildStoreManager {
     this.isLoadingSessions = callbacks.isLoadingSessions
   }
 
-  mark(directory: string) {
+  mark(rawDirectory: string) {
+    const directory = normalizeDirectoryKey(rawDirectory)
     if (!directory) return
     this.lifecycle.set(directory, { lastAccessAt: Date.now() })
     this.scheduleEviction()
@@ -96,13 +112,15 @@ export class ChildStoreManager {
     })
   }
 
-  pin(directory: string) {
+  pin(rawDirectory: string) {
+    const directory = normalizeDirectoryKey(rawDirectory)
     if (!directory) return
     this.pins.set(directory, (this.pins.get(directory) ?? 0) + 1)
     this.mark(directory)
   }
 
-  unpin(directory: string) {
+  unpin(rawDirectory: string) {
+    const directory = normalizeDirectoryKey(rawDirectory)
     if (!directory) return
     const next = (this.pins.get(directory) ?? 0) - 1
     if (next > 0) {
@@ -113,11 +131,12 @@ export class ChildStoreManager {
     this.scheduleEviction()
   }
 
-  pinned(directory: string) {
-    return (this.pins.get(directory) ?? 0) > 0
+  pinned(rawDirectory: string) {
+    return (this.pins.get(normalizeDirectoryKey(rawDirectory)) ?? 0) > 0
   }
 
-  ensureChild(directory: string, options?: { bootstrap?: boolean }): StoreApi<DirectoryStore> {
+  ensureChild(rawDirectory: string, options?: { bootstrap?: boolean }): StoreApi<DirectoryStore> {
+    const directory = normalizeDirectoryKey(rawDirectory)
     if (!directory) throw new Error("No directory provided to ensureChild")
 
     let store = this.children.get(directory)
@@ -138,21 +157,24 @@ export class ChildStoreManager {
     return store
   }
 
-  getChild(directory: string): StoreApi<DirectoryStore> | undefined {
-    return this.children.get(directory)
+  getChild(rawDirectory: string): StoreApi<DirectoryStore> | undefined {
+    return this.children.get(normalizeDirectoryKey(rawDirectory))
   }
 
-  captureChild(directory: string, options?: { bootstrap?: boolean }): ChildStoreCapture {
+  captureChild(rawDirectory: string, options?: { bootstrap?: boolean }): ChildStoreCapture {
+    const directory = normalizeDirectoryKey(rawDirectory)
     const store = this.ensureChild(directory, options)
     return { directory, generation: this.generations.get(directory) ?? 0, store }
   }
 
   isCurrentChildCapture(capture: ChildStoreCapture): boolean {
-    return this.children.get(capture.directory) === capture.store
-      && this.generations.get(capture.directory) === capture.generation
+    const directory = normalizeDirectoryKey(capture.directory)
+    return this.children.get(directory) === capture.store
+      && this.generations.get(directory) === capture.generation
   }
 
-  disposeDirectory(directory: string): boolean {
+  disposeDirectory(rawDirectory: string): boolean {
+    const directory = normalizeDirectoryKey(rawDirectory)
     if (
       !canDisposeDirectory({
         directory,
@@ -196,13 +218,13 @@ export class ChildStoreManager {
     }
   }
 
-  hasPendingBlockingRequestsForDirectory(directory: string): boolean {
-    return hasPendingBlockingRequests(this.children.get(directory)?.getState())
+  hasPendingBlockingRequestsForDirectory(rawDirectory: string): boolean {
+    return hasPendingBlockingRequests(this.getChild(rawDirectory)?.getState())
   }
 
   /** Apply a state mutation to a directory's store */
-  update(directory: string, fn: (state: State) => Partial<State>) {
-    const store = this.children.get(directory)
+  update(rawDirectory: string, fn: (state: State) => Partial<State>) {
+    const store = this.getChild(rawDirectory)
     if (!store) return
     const current = store.getState()
     const patch = fn(current)
@@ -210,8 +232,8 @@ export class ChildStoreManager {
   }
 
   /** Get current state of a directory store (snapshot) */
-  getState(directory: string): State | undefined {
-    return this.children.get(directory)?.getState()
+  getState(rawDirectory: string): State | undefined {
+    return this.getChild(rawDirectory)?.getState()
   }
 
   disposeAll() {

@@ -1,6 +1,6 @@
 import { describe, expect, test } from 'bun:test';
 
-import { normalizePath } from './pathNormalization';
+import { arePathsEquivalent, normalizeDirectoryKey, normalizePath } from './pathNormalization';
 
 describe('normalizePath', () => {
   describe('non-string inputs', () => {
@@ -95,5 +95,79 @@ describe('normalizePath', () => {
     test('strips trailing slashes from Unix paths', () => {
       expect(normalizePath('/home/user/project/')).toBe('/home/user/project');
     });
+  });
+
+  describe('Windows UNC and device paths', () => {
+    test('keeps a UNC share rooted on two slashes', () => {
+      expect(normalizePath('\\\\server\\share\\dir')).toBe('//server/share/dir');
+    });
+
+    test('keeps an already-normalized UNC share intact', () => {
+      expect(normalizePath('//server/share/dir')).toBe('//server/share/dir');
+    });
+
+    test('keeps a \\\\?\\ device path addressable', () => {
+      expect(normalizePath('\\\\?\\C:\\x')).toBe('//?/C:/x');
+    });
+  });
+
+  describe('relative segments', () => {
+    test('resolves parent segments', () => {
+      expect(normalizePath('C:/a/../b')).toBe('C:/b');
+    });
+
+    test('collapses duplicate separators inside a path', () => {
+      expect(normalizePath('/home//user///project')).toBe('/home/user/project');
+    });
+  });
+});
+
+describe('normalizeDirectoryKey', () => {
+  test('agrees with normalizePath for usable input', () => {
+    expect(normalizeDirectoryKey('c:\\Users\\me\\project\\')).toBe('C:/Users/me/project');
+  });
+
+  test('collapses every spelling of one directory onto one key', () => {
+    const spellings = [
+      'c:\\Users\\me\\project',
+      'C:\\Users\\me\\project',
+      'C:/Users/me/project',
+      'C:/Users/me/project/',
+      'C:/Users/me/other/../project',
+    ];
+    const keys = new Set(spellings.map((spelling) => normalizeDirectoryKey(spelling)));
+    expect(keys.size).toBe(1);
+  });
+
+  test('is total — degenerate input degrades to itself rather than merging', () => {
+    // normalizePath rejects these; a key must still exist and must stay distinct.
+    expect(normalizeDirectoryKey('///')).toBe('///');
+    expect(normalizeDirectoryKey('\\\\')).toBe('\\\\');
+    expect(normalizeDirectoryKey('///')).not.toBe(normalizeDirectoryKey('\\\\'));
+  });
+
+  test('returns an empty key for absent input', () => {
+    expect(normalizeDirectoryKey(null)).toBe('');
+    expect(normalizeDirectoryKey(undefined)).toBe('');
+    expect(normalizeDirectoryKey('   ')).toBe('');
+  });
+
+  test('does not case-fold beyond the drive letter', () => {
+    expect(normalizeDirectoryKey('C:/Users/Me')).not.toBe(normalizeDirectoryKey('C:/Users/me'));
+  });
+});
+
+describe('arePathsEquivalent', () => {
+  test('matches across separator, drive case and trailing slash', () => {
+    expect(arePathsEquivalent('c:\\Users\\me\\project\\', 'C:/Users/me/project')).toBe(true);
+  });
+
+  test('does not match different directories', () => {
+    expect(arePathsEquivalent('/home/a', '/home/b')).toBe(false);
+  });
+
+  test('never matches on unusable input', () => {
+    expect(arePathsEquivalent(null, null)).toBe(false);
+    expect(arePathsEquivalent('', '')).toBe(false);
   });
 });

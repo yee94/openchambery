@@ -33,6 +33,9 @@ const STREAM_YIELD_MS = 8
 const DEFAULT_RECONNECT_DELAY_MS = 250
 const DEFAULT_HEARTBEAT_TIMEOUT_MS = 30_000
 const WS_FALLBACK_WINDOW_MS = 60_000
+// Consecutive rejections of the same eventId before the pipeline steps over it
+// rather than resuming into the same failure again.
+const UNUSABLE_FRAME_SKIP_AFTER = 2
 const DEFAULT_WS_READY_TIMEOUT_MS = 2_000
 // Retry pacing. Visible+online tabs probe quickly so the user sees connection
 // recovery in under a second of real outage; hidden/offline tabs back off
@@ -200,17 +203,31 @@ const normalizeOpenChamberSessionStatus = (payload: Event): Event | null => {
  * envelope normalizer (legacy properties / current data / durable sync filter /
  * versioned type strip), producing the legacy Event shape for reducers.
  */
-const normalizeIngressEvent = (payload: unknown): {
-  event: Event
-  normalized: NormalizedOpenCodeEvent
-} | null => {
-  if (!payload || typeof payload !== "object") return null
+/**
+ * Ingress classification.
+ *
+ * `declined` is NOT a fault: the frame was a well-formed event that the
+ * normalizer intentionally refused (currently OpenCode's durable `sync`
+ * replicas, filtered so one logical event is not applied twice). The frame was
+ * received and handled — the resume tip must advance past it, or a reconnect
+ * replays the same frame forever.
+ *
+ * `unusable` means the frame carried nothing that could be read as an event.
+ */
+type IngressResult =
+  | { status: "event"; event: Event; normalized: NormalizedOpenCodeEvent }
+  | { status: "declined" }
+  | { status: "unusable" }
+
+const normalizeIngressEvent = (payload: unknown): IngressResult => {
+  if (!payload || typeof payload !== "object") return { status: "unusable" }
 
   // openchamber:session-status → canonical session.status before general path
   const openChamber = normalizeOpenChamberSessionStatus(payload as Event)
   if (openChamber) {
     const props = openChamber.properties as Record<string, unknown>
     return {
+      status: "event",
       event: openChamber,
       normalized: {
         id: typeof openChamber.id === "string" ? openChamber.id : undefined,
@@ -221,10 +238,13 @@ const normalizeIngressEvent = (payload: unknown): {
   }
 
   const result = normalizeOpenCodeEvent(payload)
-  if (result.action === "drop") return null
+  if (result.action === "drop") {
+    return result.reason === "sync-duplicate" ? { status: "declined" } : { status: "unusable" }
+  }
 
   const legacy = toLegacyEventShape(result.event)
   return {
+    status: "event",
     event: legacy as Event,
     normalized: result.event,
   }
@@ -359,6 +379,12 @@ export function createEventPipeline(input: EventPipelineInput): EventPipeline {
   let disconnected = false
   let lastEventId: string | undefined
   let wsFallbackUntil = 0
+  // Poison-frame guard. The server resumes from lastEventId, so a frame this
+  // client can never read would otherwise be replayed into the same rejection
+  // on every reconnect and pin the stream at one position. Track repeats of a
+  // single eventId and, once the failure proves reproducible, step over it.
+  let unusableFrameEventId: string | undefined
+  let unusableFrameStrikes = 0
   // Earliest gap snapshot for the current disconnect cycle. Cleared when ready
   // publishes the one-shot compensation trigger for that gap.
   let recoveryContext: CapturedRecoveryContext | null = null
@@ -675,15 +701,22 @@ export function createEventPipeline(input: EventPipelineInput): EventPipeline {
   }
 
   /**
-   * Returns true only when a domain event was successfully normalized and
-   * enqueued. Callers that advance lastEventId (WS event frames) must gate on
-   * this so a non-normalizable payload cannot move the resume tip.
+   * `ingested` — normalized and enqueued.
+   * `declined` — a readable frame the normalizer intentionally skipped. Callers
+   *   must treat it as delivered and advance the resume tip; it is not a fault.
+   * `unusable` — nothing event-shaped in the frame. Only this is a transport
+   *   fault, and only it may hold the resume tip back.
    */
-  const ingestTransportPayload = (frame: unknown, rawPayload: unknown): boolean => {
+  const ingestTransportPayload = (
+    frame: unknown,
+    rawPayload: unknown,
+  ): "ingested" | "declined" | "unusable" => {
     const payload = resolveEventPayload(rawPayload)
-    if (!payload) return false
+    if (!payload) return "unusable"
     const ingress = normalizeIngressEvent(payload)
-    if (!ingress) return false
+    if (ingress.status !== "event") {
+      return ingress.status === "declined" ? "declined" : "unusable"
+    }
     const directory = resolveEventDirectory(
       frame,
       payload,
@@ -691,7 +724,7 @@ export function createEventPipeline(input: EventPipelineInput): EventPipeline {
       ingress.normalized.locationDirectory,
     )
     enqueueEvent(directory, ingress.event, ingress.normalized)
-    return true
+    return "ingested"
   }
 
   const armHeartbeat = () => {
@@ -930,19 +963,37 @@ export function createEventPipeline(input: EventPipelineInput): EventPipeline {
           return
         }
 
-        const ingested = ingestTransportPayload(
+        const frameEventId = typeof frame.eventId === "string" && frame.eventId.length > 0
+          ? frame.eventId
+          : undefined
+
+        const outcome = ingestTransportPayload(
           { directory: frame.directory, payload: frame.payload },
           frame.payload,
         )
-        if (!ingested) {
+
+        if (outcome === "unusable") {
+          if (frameEventId) {
+            unusableFrameStrikes = unusableFrameEventId === frameEventId ? unusableFrameStrikes + 1 : 1
+            unusableFrameEventId = frameEventId
+            if (unusableFrameStrikes >= UNUSABLE_FRAME_SKIP_AFTER) {
+              lastEventId = frameEventId
+              unusableFrameEventId = undefined
+              unusableFrameStrikes = 0
+            }
+          }
           rejectInvalidFrame("ws_invalid_frame:event_payload")
           return
         }
 
+        // `declined` frames were read successfully and skipped on purpose, so
+        // they count as delivered for both activity and resume purposes.
+        unusableFrameEventId = undefined
+        unusableFrameStrikes = 0
         reportTransportActivity()
         streamErrorLogged = false
-        if (typeof frame.eventId === "string" && frame.eventId.length > 0) {
-          lastEventId = frame.eventId
+        if (frameEventId) {
+          lastEventId = frameEventId
         }
       }
 

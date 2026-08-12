@@ -2725,9 +2725,17 @@ export function useSessionParts(messageID: string, directory?: string, sessionID
   return useTranscriptParts(messageID, targetDirectory, store, sessionID) as Part[]
 }
 
-/** Get status for a specific session */
+/**
+ * Get status for a specific session.
+ *
+ * Observing status must never provision a directory. These hooks are called
+ * with directory strings from many sources, and letting a read bootstrap on a
+ * miss meant an unexpected spelling would mint a store, seed it from a one-shot
+ * HTTP snapshot, and then never see another live event — so the composer read
+ * `busy` from it forever. Read-only: `{ bootstrap: false }`.
+ */
 export function useSessionStatus(sessionID: string, directory?: string) {
-  const store = useDirectoryStore(directory)
+  const store = useDirectoryStore(directory, { bootstrap: false })
   const getSnapshot = useCallback(() => {
     if (!sessionID) return undefined
     return store.getState().session_status?.[sessionID]
@@ -2740,7 +2748,7 @@ export function useSessionStatus(sessionID: string, directory?: string) {
 }
 
 export function useSessionStatusObservedAt(sessionID: string, directory?: string) {
-  const store = useDirectoryStore(directory)
+  const store = useDirectoryStore(directory, { bootstrap: false })
   const getSnapshot = useCallback(() => {
     if (!sessionID) return undefined
     return store.getState().session_status_observed_at?.[sessionID]
@@ -2753,7 +2761,7 @@ export function useSessionStatusObservedAt(sessionID: string, directory?: string
 }
 
 export function useSessionStatusSnapshotAt(directory?: string, enabled = true) {
-  const store = useDirectoryStore(directory)
+  const store = useDirectoryStore(directory, { bootstrap: false })
   const getSnapshot = useCallback(
     () => enabled ? store.getState().session_status_snapshot_at : undefined,
     [enabled, store],
