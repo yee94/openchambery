@@ -4,6 +4,16 @@ All notable changes to this project will be documented in this file.
 
 ## [Unreleased]
 
+## [1.16.128] - 2026-08-12
+
+- **Desktop multi-window appearance isolation:** scope sidebar brand and theme localStorage by runtime transport so a packaged local window and a remote-host window no longer share logo/theme prefs; delay theme server write-back until settings hydrate so remote hosts are not polluted with local defaults.
+- **Relay event-stream stability:** serialize host-side WebSocket outbound fragments so large frames no longer interleave and corrupt JSON over the tunnel.
+- **Event pipeline recovery:** treat invalid WS frames (JSON parse, bad type, non-normalizable event payload) as transport faults; keep the last good event id, reconnect with compensation, and prefer SSE fallback in auto mode without postponing heartbeat recovery.
+- **Diff summary over the wire:** Host outbound `session.diff` and message/session `summary.diffs` now ship preview fields only (`file` / `status` / `additions` / `deletions`); full patch bodies are stripped before fan-out and replay.
+- **Client store sanitization:** summarize `session.diff` and message summary diffs on ingest so large patch/before/after blobs never enter live stores.
+- **Turn Diff on demand:** DiffView turn scope loads full patches via `GET /session/{id}/diff` when expanding a turn, merges them with summary stats, keeps tool-patch paths inline, and surfaces load failure with retry while preserving the summary file list.
+- **Update button polish:** sidebar update button is now a compact solid theme-color circle (24px, no translucent tint); in-progress buttons in the update dialog use a solid primary fill instead of a semi-transparent one.
+
 ## [1.16.128-beta.2] - 2026-08-12
 
 - **Desktop multi-window appearance isolation:** scope sidebar brand and theme localStorage by runtime transport so a packaged local window and a remote-host window no longer share logo/theme prefs; delay theme server write-back until settings hydrate so remote hosts are not polluted with local defaults.
