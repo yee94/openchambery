@@ -156,6 +156,17 @@ export const resolveContextPanelTranscriptState = (input: {
 
 export const resolveContextPanelEnsureForce = (reason: 'active' | 'retry'): boolean => reason === 'retry';
 
+/**
+ * When the Context Panel is still active but transcript rows are gone (e.g.
+ * after focus/reconnect recovery), force a one-shot ensure so empty UI does
+ * not stick while the panel remains open.
+ */
+export const shouldForceContextPanelEnsureOnFocus = (input: {
+  active: boolean
+  visible: boolean
+  messageCount: number
+}): boolean => input.active && input.visible && input.messageCount <= 0
+
 export const resolveContextPanelPartialErrorRetry = (hasMore: boolean): 'load-more' | 'ensure' => hasMore ? 'load-more' : 'ensure';
 
 /**

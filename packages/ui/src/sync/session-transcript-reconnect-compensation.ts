@@ -82,6 +82,11 @@ export type CollectImmediateCompensationSessionsInput = {
   /** Active scopes from Query observers + repository listeners. */
   readonly activeScopes: readonly CompensationSessionRef[]
   readonly viewed?: CompensationSessionRef | null
+  /**
+   * Additional viewed sessions (e.g. Context Panel open child + main chat).
+   * Precedence: viewedSessions order, then singular viewed, then busy/retry, then active.
+   */
+  readonly viewedSessions?: readonly CompensationSessionRef[]
   /** Non-idle (busy / retry) session statuses in the directory. */
   readonly busyOrRetrySessionIDs?: readonly string[]
   readonly directory: string
@@ -105,6 +110,10 @@ export function collectImmediateCompensationSessions(
     out.push({ directory, sessionID })
   }
 
+  for (const ref of input.viewedSessions ?? []) {
+    if (ref.directory.trim() !== directory) continue
+    push(ref.sessionID)
+  }
   if (input.viewed?.directory.trim() === directory) {
     push(input.viewed.sessionID)
   }
@@ -165,8 +174,15 @@ export type CreateTranscriptReconnectCompensationControllerInput = {
   getBusyOrRetrySessionIDs: (directory: string) => readonly string[]
   /**
    * Currently viewed session (any directory), if any.
+   * Prefer {@link getViewedSessions} when the host can expose multiple surfaces
+   * (main chat + Context Panel child).
    */
   getViewedSession: () => CompensationSessionRef | null
+  /**
+   * All currently viewed sessions across surfaces. When provided, takes
+   * precedence over {@link getViewedSession} for immediate-set priority.
+   */
+  getViewedSessions?: () => readonly CompensationSessionRef[]
   /**
    * Optional cache budget for listing canonical sessions + active scopes.
    * Defaults to repository.getCacheBudget() when present.
@@ -367,7 +383,7 @@ export function createTranscriptReconnectCompensationController(
    */
   const listCompensationDirectories = (
     identity: { transport: string; generation: number },
-    viewed: CompensationSessionRef | null,
+    viewedSessions: readonly CompensationSessionRef[],
   ): Set<string> => {
     const directories = new Set(
       input.listDirectories().map((d) => d.trim()).filter(Boolean),
@@ -383,10 +399,30 @@ export function createTranscriptReconnectCompensationController(
       if (scope.generation !== identity.generation) continue
       directories.add(scope.directory)
     }
-    if (viewed?.directory) {
-      directories.add(viewed.directory.trim())
+    for (const viewed of viewedSessions) {
+      if (viewed.directory) directories.add(viewed.directory.trim())
     }
     return directories
+  }
+
+  const resolveViewedSessions = (): CompensationSessionRef[] => {
+    if (input.getViewedSessions) {
+      const seen = new Set<string>()
+      const out: CompensationSessionRef[] = []
+      for (const ref of input.getViewedSessions()) {
+        const directory = ref.directory.trim()
+        const sessionID = ref.sessionID
+        if (!directory || !sessionID) continue
+        const key = flightKey(directory, sessionID)
+        if (seen.has(key)) continue
+        seen.add(key)
+        out.push({ directory, sessionID })
+      }
+      return out
+    }
+    const viewed = input.getViewedSession()
+    if (!viewed?.sessionID) return []
+    return [{ directory: viewed.directory.trim(), sessionID: viewed.sessionID }]
   }
 
   const captureCheckpoints = (captureInput: {
@@ -401,8 +437,8 @@ export function createTranscriptReconnectCompensationController(
       generation: captureInput.generation ?? resolveIdentity(input).generation,
     }
     const capturedAt = now()
-    const viewed = input.getViewedSession()
-    const directories = listCompensationDirectories(identity, viewed)
+    const viewedSessions = resolveViewedSessions()
+    const directories = listCompensationDirectories(identity, viewedSessions)
 
     // Capture for every known canonical session in this transport/generation
     // plus retained-only scopes (no canonical entry yet) plus viewed / busy.
@@ -426,9 +462,9 @@ export function createTranscriptReconnectCompensationController(
         sessionID: scope.sessionID,
       })
     }
-    if (viewed?.sessionID) {
+    for (const viewed of viewedSessions) {
       targets.set(flightKey(viewed.directory, viewed.sessionID), {
-        directory: viewed.directory.trim(),
+        directory: viewed.directory,
         sessionID: viewed.sessionID,
       })
     }
@@ -464,7 +500,7 @@ export function createTranscriptReconnectCompensationController(
       const immediate = collectImmediateCompensationSessions({
         directory,
         activeScopes,
-        viewed,
+        viewedSessions,
         busyOrRetrySessionIDs: input.getBusyOrRetrySessionIDs(directory),
       })
       for (const ref of immediate) {
@@ -560,6 +596,68 @@ export function createTranscriptReconnectCompensationController(
     }
   }
 
+  /**
+   * Anchorless / unknown-gap path: refresh via ensureInitial without purging.
+   * Subagent transcripts often lack authored-user anchors (subtask/synthetic);
+   * destructiveReset would blank the Context Panel on focus/reconnect recovery.
+   */
+  const runEnsureTail = async (
+    scope: TranscriptScope,
+    cacheScope: TranscriptCacheScope,
+    epoch: number,
+  ) => {
+    assertRuntimeCurrent(
+      { transport: cacheScope.transport, generation: cacheScope.generation },
+      input,
+    )
+    if (epoch !== controllerEpoch) throw new SessionMessageRuntimeStaleError()
+
+    writeTranscriptRecoveryCheckpoint(
+      client,
+      withTranscriptRecoveryCheckpointState(
+        readTranscriptRecoveryCheckpoint(client, cacheScope)
+          ?? createTranscriptRecoveryCheckpoint({
+            transport: cacheScope.transport,
+            generation: cacheScope.generation,
+            directory: cacheScope.directory,
+            sessionID: cacheScope.sessionID,
+            transcript: repository.getTranscript(scope),
+            lastEventID: null,
+          }),
+        { state: "reconciling", continuation: null },
+      ),
+    )
+
+    try {
+      await repository.ensureInitial(scope)
+      assertRuntimeCurrent(
+        { transport: cacheScope.transport, generation: cacheScope.generation },
+        input,
+      )
+      if (epoch !== controllerEpoch) throw new SessionMessageRuntimeStaleError()
+      clearTranscriptRecoveryCheckpoint(client, cacheScope)
+      clearStale(cacheScope.directory, cacheScope.sessionID)
+    } catch (error) {
+      // Preserve prior authoritative transcript; leave checkpoint pending for retry.
+      writeTranscriptRecoveryCheckpoint(
+        client,
+        withTranscriptRecoveryCheckpointState(
+          readTranscriptRecoveryCheckpoint(client, cacheScope)
+            ?? createTranscriptRecoveryCheckpoint({
+              transport: cacheScope.transport,
+              generation: cacheScope.generation,
+              directory: cacheScope.directory,
+              sessionID: cacheScope.sessionID,
+              transcript: repository.getTranscript(scope),
+              lastEventID: null,
+            }),
+          { state: "pending" },
+        ),
+      )
+      throw error
+    }
+  }
+
   const runSessionReconcile = async (
     ref: CompensationSessionRef,
     identity: { transport: string; generation: number },
@@ -602,8 +700,8 @@ export function createTranscriptReconnectCompensationController(
       }
 
       if (!checkpoint.anchorMessageID) {
-        await runDestructiveTail(scope, cacheScope, epoch)
-        client.setQueryData(taskKey, { status: "reset", finishedAt: now() })
+        await runEnsureTail(scope, cacheScope, epoch)
+        client.setQueryData(taskKey, { status: "ensure", finishedAt: now() })
         return
       }
 
@@ -639,8 +737,8 @@ export function createTranscriptReconnectCompensationController(
 
           const capturedLiveRevision = repository.getTranscript(scope).liveRevision
           if (!continuation && !roundAnchor) {
-            await runDestructiveTail(scope, cacheScope, epoch)
-            client.setQueryData(taskKey, { status: "reset", finishedAt: now() })
+            await runEnsureTail(scope, cacheScope, epoch)
+            client.setQueryData(taskKey, { status: "ensure", finishedAt: now() })
             return
           }
           const page = await fetchReconcile({
@@ -812,10 +910,10 @@ export function createTranscriptReconnectCompensationController(
     transport: string
     generation: number
   }) => {
-    const viewed = input.getViewedSession()
+    const viewedSessions = resolveViewedSessions()
     // Same universe as captureCheckpoints so busy/retry under
     // canonical-only directories is not skipped.
-    const directories = listCompensationDirectories(identity, viewed)
+    const directories = listCompensationDirectories(identity, viewedSessions)
 
     for (const directory of directories) {
       // Includes listRetained scopes that have no canonical query entry yet.
@@ -824,7 +922,7 @@ export function createTranscriptReconnectCompensationController(
       const immediate = collectImmediateCompensationSessions({
         directory,
         activeScopes,
-        viewed,
+        viewedSessions,
         busyOrRetrySessionIDs: input.getBusyOrRetrySessionIDs(directory),
       })
       for (const ref of immediate) {

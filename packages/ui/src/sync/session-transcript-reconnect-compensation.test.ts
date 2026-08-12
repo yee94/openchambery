@@ -155,6 +155,24 @@ describe("collectImmediateCompensationSessions", () => {
     ])
   })
 
+  test("keeps context-panel viewed sessions ahead of main viewed and active", () => {
+    const result = collectImmediateCompensationSessions({
+      directory: DIRECTORY,
+      activeScopes: [{ directory: DIRECTORY, sessionID: "ses_active" }],
+      viewedSessions: [
+        { directory: DIRECTORY, sessionID: "ses_panel_child" },
+        { directory: DIRECTORY, sessionID: "ses_main" },
+      ],
+      viewed: { directory: DIRECTORY, sessionID: "ses_main" },
+      busyOrRetrySessionIDs: [],
+    })
+    expect(result.map((r) => r.sessionID)).toEqual([
+      "ses_panel_child",
+      "ses_main",
+      "ses_active",
+    ])
+  })
+
   test("ignores viewed from another directory", () => {
     const result = collectImmediateCompensationSessions({
       directory: DIRECTORY,
@@ -569,12 +587,12 @@ describe("createTranscriptReconnectCompensationController", () => {
     unsub()
   })
 
-  test("anchorless checkpoint takes destructive tail path", async () => {
+  test("anchorless checkpoint takes non-destructive ensure path", async () => {
     // Transcript with only assistant messages → no stable user anchor.
     const a1 = msg("a1", "assistant")
-    const fetcher = createFetcher([{ info: a1, parts: [part("p1", "a1")] }])
     const clientLocal = new QueryClient({ defaultOptions: { queries: { retry: false } } })
-    let ensureCalls = 0
+    let ensureInitialCalls = 0
+    let destructiveCalls = 0
     const repo = createQueryTranscriptRepository({
       client: clientLocal,
       transport: TRANSPORT,
@@ -583,22 +601,22 @@ describe("createTranscriptReconnectCompensationController", () => {
         getTransport: () => TRANSPORT,
         getGeneration: () => GENERATION,
       },
-      fetcher: async () => {
-        ensureCalls += 1
-        if (ensureCalls === 1) {
-          return {
-            records: [{ info: a1, parts: [part("p1", "a1")] }],
-            complete: true,
-            turnCount: 0,
-          }
-        }
-        return {
-          records: [{ info: msg("u_new", "user"), parts: [part("pn", "u_new")] }],
-          complete: true,
-          turnCount: 1,
-        }
-      },
+      fetcher: async () => ({
+        records: [{ info: a1, parts: [part("p1", "a1")] }],
+        complete: true,
+        turnCount: 0,
+      }),
     }) as QueryTranscriptCompensationRepository
+    const originalEnsure = repo.ensureInitial.bind(repo)
+    repo.ensureInitial = async (scope) => {
+      ensureInitialCalls += 1
+      return originalEnsure(scope)
+    }
+    const originalDestructive = repo.destructiveReset.bind(repo)
+    repo.destructiveReset = async (scope) => {
+      destructiveCalls += 1
+      return originalDestructive(scope)
+    }
 
     let reconcileCalls = 0
     const controller = createTranscriptReconnectCompensationController({
@@ -655,7 +673,122 @@ describe("createTranscriptReconnectCompensationController", () => {
     }
 
     expect(reconcileCalls).toBe(0)
-    expect(ensureCalls).toBeGreaterThanOrEqual(2)
+    expect(destructiveCalls).toBe(0)
+    expect(ensureInitialCalls).toBeGreaterThanOrEqual(2)
+    expect(
+      repo.getTranscript({
+        directory: DIRECTORY,
+        sessionID: "ses_1",
+        transport: TRANSPORT,
+        generation: GENERATION,
+      }).messageOrder,
+    ).toContain("a1")
+    unsub()
+  })
+
+  test("subtask-only child session survives reconnect ensure failure without wipe", async () => {
+    const subtaskUser = msg("u_sub", "user")
+    const assistant = msg("a_sub", "assistant")
+    const subtaskPart = { id: "p_sub", messageID: "u_sub", sessionID: "ses_child", type: "subtask" } as Part
+    const clientLocal = new QueryClient({ defaultOptions: { queries: { retry: false } } })
+    let ensureInitialCalls = 0
+    let destructiveCalls = 0
+    const repo = createQueryTranscriptRepository({
+      client: clientLocal,
+      transport: TRANSPORT,
+      generation: GENERATION,
+      probe: {
+        getTransport: () => TRANSPORT,
+        getGeneration: () => GENERATION,
+      },
+      fetcher: async () => ({
+        records: [
+          { info: subtaskUser, parts: [subtaskPart] },
+          { info: assistant, parts: [part("p_a", "a_sub")] },
+        ],
+        complete: true,
+        turnCount: 0,
+      }),
+    }) as QueryTranscriptCompensationRepository
+    const originalEnsure = repo.ensureInitial.bind(repo)
+    repo.ensureInitial = async (scope) => {
+      ensureInitialCalls += 1
+      if (ensureInitialCalls === 1) return originalEnsure(scope)
+      throw new Error("tail_fetch_failed")
+    }
+    const originalDestructive = repo.destructiveReset.bind(repo)
+    repo.destructiveReset = async (scope) => {
+      destructiveCalls += 1
+      return originalDestructive(scope)
+    }
+
+    const controller = createTranscriptReconnectCompensationController({
+      client: clientLocal,
+      repository: repo,
+      listDirectories: () => [DIRECTORY],
+      getBusyOrRetrySessionIDs: () => ["ses_child"],
+      getViewedSession: () => ({ directory: DIRECTORY, sessionID: "ses_main" }),
+      getViewedSessions: () => [
+        { directory: DIRECTORY, sessionID: "ses_child" },
+        { directory: DIRECTORY, sessionID: "ses_main" },
+      ],
+      transport: TRANSPORT,
+      generation: GENERATION,
+      probe: {
+        getTransport: () => TRANSPORT,
+        getGeneration: () => GENERATION,
+      },
+      fetchReconcile: async () => reconcilePage(),
+    })
+    controllers.push(controller)
+
+    await repo.ensureInitial({
+      directory: DIRECTORY,
+      sessionID: "ses_child",
+      transport: TRANSPORT,
+      generation: GENERATION,
+    })
+    const unsub = repo.subscribe(
+      { directory: DIRECTORY, sessionID: "ses_child", transport: TRANSPORT, generation: GENERATION },
+      () => {},
+    )
+
+    expect(
+      selectStableTranscriptAnchorMessageID(
+        repo.getTranscript({
+          directory: DIRECTORY,
+          sessionID: "ses_child",
+          transport: TRANSPORT,
+          generation: GENERATION,
+        }),
+      ),
+    ).toBe(null)
+
+    controller.captureCheckpoints({ lastEventID: "evt_child", reason: "disconnect" })
+    controller.onCompensation({
+      lastEventId: "evt_child",
+      disconnectedAt: Date.now(),
+      runtimeGeneration: GENERATION,
+      reason: "reconnect",
+      transport: "ws",
+      isReconnect: true,
+    })
+
+    for (let i = 0; i < 50; i += 1) {
+      if (!controller.isSessionInFlight(DIRECTORY, "ses_child")) break
+      await new Promise((r) => setTimeout(r, 10))
+    }
+
+    expect(destructiveCalls).toBe(0)
+    expect(ensureInitialCalls).toBeGreaterThanOrEqual(2)
+    expect(
+      repo.getTranscript({
+        directory: DIRECTORY,
+        sessionID: "ses_child",
+        transport: TRANSPORT,
+        generation: GENERATION,
+      }).messageOrder,
+    ).toEqual(["u_sub", "a_sub"])
     unsub()
   })
 
@@ -1222,7 +1355,7 @@ describe("createTranscriptReconnectCompensationController", () => {
       await new Promise((r) => setTimeout(r, 10))
     }
     // Immediate set scheduled the retained session; anchorless path ensures tail
-    // (destructiveReset) rather than Host reconcile.
+    // (non-destructive ensureInitial) rather than Host reconcile.
     expect(ensureCalls).toBeGreaterThanOrEqual(1)
     expect(reconcileFetches).toBe(0)
     releaseRetain()

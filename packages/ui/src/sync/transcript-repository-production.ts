@@ -153,6 +153,7 @@ export type MountProductionTranscriptStackInput = {
   client?: QueryClient
   childStores: ChildStoreManager
   getViewedSession?: () => { directory: string; sessionID: string } | null
+  getViewedSessions?: () => readonly { directory: string; sessionID: string }[]
 }
 
 /**
@@ -207,6 +208,9 @@ export function mountProductionTranscriptStack(
       return ids
     },
     getViewedSession: () => input.getViewedSession?.() ?? null,
+    getViewedSessions: input.getViewedSessions
+      ? () => input.getViewedSessions!()
+      : undefined,
     cacheBudget,
     probe: {
       getTransport: getRuntimeTransportIdentity,

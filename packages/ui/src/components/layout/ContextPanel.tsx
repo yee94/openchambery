@@ -18,7 +18,7 @@ import { useInlineCommentDraftStore } from '@/stores/useInlineCommentDraftStore'
 import { useSessionUIStore } from '@/sync/session-ui-store';
 import { useInputStore } from '@/sync/input-store';
 import { markSessionViewed } from '@/sync/notification-store';
-import { setExternallyViewedSession, useDirectoryStore } from '@/sync/sync-context';
+import { setContextPanelViewedSession, setExternallyViewedSession, useDirectoryStore } from '@/sync/sync-context';
 import { ContextPanelContent } from './ContextSidebarTab';
 import { toast } from '@/components/ui';
 import { runtimeFetch } from '@/lib/runtime-fetch';
@@ -2322,6 +2322,17 @@ export const ContextPanel: React.FC = () => {
     activeChatTabID ? sessionNavigationByTabId[createContextPanelSessionSurfaceId(directoryKey, activeChatTabID)] : undefined,
     activeChatTabID ? getSessionIDFromDedupeKey(activeTab?.dedupeKey) : null,
   );
+
+  React.useEffect(() => {
+    if (!isOpen || !directoryKey || !activeChatSessionID) {
+      setContextPanelViewedSession('', null);
+      return;
+    }
+    setContextPanelViewedSession(directoryKey, activeChatSessionID);
+    return () => {
+      setContextPanelViewedSession('', null);
+    };
+  }, [activeChatSessionID, directoryKey, isOpen]);
 
   React.useEffect(() => {
     if (!isOpen || !directoryKey || !activeChatSessionID || typeof window === 'undefined') {

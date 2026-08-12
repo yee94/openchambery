@@ -25,6 +25,7 @@ import {
     resolveContextPanelViewedSessionId,
     shouldApplyContextPanelManualPrependCompensation,
     shouldConsumeContextPanelPrepend,
+    shouldForceContextPanelEnsureOnFocus,
     shouldRequestContextPanelLoadOlder,
     shouldShowContextPanelLoadOlder,
     shouldRestoreContextPanelViewport,
@@ -120,6 +121,13 @@ describe('context panel transcript state', () => {
     test('uses ordinary ensure for activation and force only for explicit retry', () => {
         expect(resolveContextPanelEnsureForce('active')).toBe(false);
         expect(resolveContextPanelEnsureForce('retry')).toBe(true);
+    });
+
+    test('force-ensures empty active panel transcripts on focus recovery', () => {
+        expect(shouldForceContextPanelEnsureOnFocus({ active: true, visible: true, messageCount: 0 })).toBe(true);
+        expect(shouldForceContextPanelEnsureOnFocus({ active: true, visible: true, messageCount: 3 })).toBe(false);
+        expect(shouldForceContextPanelEnsureOnFocus({ active: true, visible: false, messageCount: 0 })).toBe(false);
+        expect(shouldForceContextPanelEnsureOnFocus({ active: false, visible: true, messageCount: 0 })).toBe(false);
     });
 
     test('resolves fail-closed and transcript lifecycle states', () => {

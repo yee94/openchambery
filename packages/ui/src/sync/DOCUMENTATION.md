@@ -314,7 +314,7 @@ Modules:
 | `session-cache-limits.ts` | Shared platform capacity targets (VS Code 4 / mobile 12 / default 40) for QueryCache transcript LRU (and residual non-transcript eviction budgets) |
 | `session-transcript-reconcile-api.ts` | Host anchor-reconcile HTTP client (`fetchSessionTranscriptReconcile`) — runtimeFetch, timeout race, strict contract, classified retry |
 | `session-transcript-recovery-checkpoint.ts` | Stable authored-user turn anchor selection + recovery checkpoint model / QueryCache read-write |
-| `session-transcript-reconnect-compensation.ts` | Query reconnect compensation controller — checkpoint-before-replay, immediate set, directory concurrency, serial continuation, multi-round head chase, destructiveReset |
+| `session-transcript-reconnect-compensation.ts` | Query reconnect compensation controller — checkpoint-before-replay, immediate set (main + Context Panel viewed), directory concurrency, serial continuation, multi-round head chase; null-anchor → non-destructive `ensureInitial`; Host `resetRequired` → `destructiveReset` |
 | `transcript-reconnect-compensation-runtime.ts` | Registration seam; production `mountProductionTranscriptStack` registers the Query controller so SyncProvider `onRecoveryContextCaptured` / `onCompensation` reach it |
 | `transcript-repository-runtime.ts` | Production binding revision + `bindTranscriptRepositoryInstance` (Query) / test-only store bind; `fetchTranscriptPreviousPage` / `ensureTranscriptInitial` / `purgeTranscriptSession` |
 | `transcript-repository-production.ts` | `mountProductionTranscriptStack` (registry + budget + Query repo + compensation) and Host turn-page production fetcher (`fetchProductionTranscriptTransportPage` → Query `http-page`) |
@@ -403,7 +403,12 @@ Modules:
     `purgeGeneration` for the previous transport/generation identity.
 - Query reconnect compensation is production-registered. Ready +
   `isReconnect:true` triggers Query gap compensation after replay flush; first
-  ready (`isReconnect:false`) skips gap compensation. Merge purpose
+  ready (`isReconnect:false`) skips gap compensation. Immediate set prioritizes
+  Context Panel open sessions (persist across blur) plus the main active
+  session. Sessions without a stable authored-user anchor (typical subagent /
+  subtask transcripts) refresh via non-destructive `ensureInitial` so a failed
+  or focus-time recovery cannot blank an open panel; Host `resetRequired` and
+  reconcile budget exhaustion still use `destructiveReset`. Merge purpose
   `reconcile-page` upserts records with recovery/liveRevision rules but
   **never** rewrites the canonical history boundary / cursor / loadedTurns
   (`complete` ends a compensation round only). Checkpoint is fixed on

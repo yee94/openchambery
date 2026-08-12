@@ -493,6 +493,9 @@ export async function materializeSessionFromServer(
 // Used to determine if user is currently viewing the session when a notification arrives.
 let _activeDirectory = ""
 let _activeSession = ""
+/** Context Panel open session — persists across window blur (unlike externallyViewed). */
+let _contextPanelDirectory = ""
+let _contextPanelSession = ""
 const externallyViewedSessions = new Map<string, number>()
 const EXTERNAL_VIEW_TTL_MS = 15_000
 
@@ -579,6 +582,37 @@ export function setExternallyViewedSession(directory: string, sessionId: string,
     return
   }
   externallyViewedSessions.set(key, Date.now() + EXTERNAL_VIEW_TTL_MS)
+}
+
+/**
+ * Track the session currently open in the Context Panel react surface.
+ * Unlike {@link setExternallyViewedSession}, this survives window blur so
+ * reconnect compensation keeps prioritizing the panel child transcript.
+ */
+export function setContextPanelViewedSession(directory: string, sessionId: string | null) {
+  if (!directory || !sessionId) {
+    _contextPanelDirectory = ""
+    _contextPanelSession = ""
+    return
+  }
+  _contextPanelDirectory = directory
+  _contextPanelSession = sessionId
+}
+
+/** Viewed sessions for transcript reconnect compensation (panel first, then main). */
+export function getCompensationViewedSessions(): Array<{ directory: string; sessionID: string }> {
+  const out: Array<{ directory: string; sessionID: string }> = []
+  const seen = new Set<string>()
+  const push = (directory: string, sessionID: string) => {
+    if (!directory || !sessionID) return
+    const key = viewedSessionKey(directory, sessionID)
+    if (seen.has(key)) return
+    seen.add(key)
+    out.push({ directory, sessionID })
+  }
+  push(_contextPanelDirectory, _contextPanelSession)
+  push(_activeDirectory, _activeSession)
+  return out
 }
 
 // The window must actually be focused for the active session to count as
@@ -2460,9 +2494,10 @@ export function SyncProvider(props: {
     const stack = mountProductionTranscriptStack({
       childStores,
       getViewedSession: () => {
-        if (!_activeDirectory || !_activeSession) return null
-        return { directory: _activeDirectory, sessionID: _activeSession }
+        const sessions = getCompensationViewedSessions()
+        return sessions[0] ?? null
       },
+      getViewedSessions: () => getCompensationViewedSessions(),
     })
     transcriptStackRef.current = stack
     lastRuntimeIdentityRef.current = {

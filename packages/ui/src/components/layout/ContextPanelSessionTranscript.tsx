@@ -45,6 +45,7 @@ import {
     resolveContextPanelTranscriptState,
     shouldApplyContextPanelManualPrependCompensation,
     shouldConsumeContextPanelPrepend,
+    shouldForceContextPanelEnsureOnFocus,
     shouldRequestContextPanelLoadOlder,
     shouldShowContextPanelLoadOlder,
     shouldRestoreContextPanelViewport,
@@ -144,6 +145,24 @@ const ContextPanelSessionTranscriptContent: React.FC<ContextPanelSessionTranscri
     React.useEffect(() => {
         if (active) ensureSession('active');
     }, [active, ensureSession]);
+    React.useEffect(() => {
+        if (typeof window === 'undefined') return;
+        const recoverIfEmpty = () => {
+            const visible = document.visibilityState !== 'hidden' && document.hasFocus();
+            if (!shouldForceContextPanelEnsureOnFocus({
+                active,
+                visible,
+                messageCount: sessionMessageCount,
+            })) return;
+            ensureSession('retry');
+        };
+        window.addEventListener('focus', recoverIfEmpty);
+        document.addEventListener('visibilitychange', recoverIfEmpty);
+        return () => {
+            window.removeEventListener('focus', recoverIfEmpty);
+            document.removeEventListener('visibilitychange', recoverIfEmpty);
+        };
+    }, [active, ensureSession, sessionMessageCount]);
     React.useEffect(() => {
         onEstimateBytes?.(viewportKey, estimateContextPanelSessionBytes(sessionMessageCount));
     }, [onEstimateBytes, sessionMessageCount, viewportKey]);
