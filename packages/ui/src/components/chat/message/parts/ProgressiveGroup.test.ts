@@ -194,10 +194,12 @@ describe('progressive activity presentation', () => {
     });
 
     test('shows expanded compaction summary body while still streaming (before stop)', () => {
-        // Ordinary sorted turns defer non-stop inline text into Activity; compaction
+        // Ordinary sorted turns defer non-final inline text into Activity; compaction
         // must paint the streaming summary under the open disclosure instead.
         expect(messageBodySource).toContain('&& !(isCompactionTurn && isActivityExpanded)');
         expect(messageBodySource).toContain('const shouldDeferSortedInlineText = isSortedRenderMode');
+        expect(messageBodySource).toContain('canRevealSortedFinalBody');
+        expect(messageBodySource).toContain('shouldStreamSortedFinalBody');
         expect(messageBodySource).not.toContain(
             'const shouldDeferSortedInlineText = isSortedRenderMode && !hasStopFinish;',
         );

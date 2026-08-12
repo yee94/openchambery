@@ -1954,7 +1954,7 @@ export const settingsDict = {
   'settings.openchamber.visual.option.userMessageRendering.plain.description': 'ユーザーテキストを空白とリンクを保持して表示。',
   'chat.message.userText.collapseAria': 'ユーザーメッセージを折りたたむ',
   'settings.openchamber.visual.option.chatRenderMode.sorted.label': 'ソート',
-  'settings.openchamber.visual.option.chatRenderMode.sorted.description': '完了したアシスタントメッセージをライブストリーミングなしで表示。',
+  'settings.openchamber.visual.option.chatRenderMode.sorted.description': '途中経過は Activity に整理し、最終結論の本文だけをストリーミング表示します。',
   'settings.openchamber.visual.option.chatRenderMode.live.label': 'ライブ',
   'settings.openchamber.visual.option.chatRenderMode.live.description': 'アシスタントのテキストとツールを到着次第ストリーミング。',
   'settings.openchamber.visual.option.messageTransport.auto.label': '自動',

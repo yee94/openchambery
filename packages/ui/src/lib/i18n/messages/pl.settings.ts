@@ -1139,7 +1139,7 @@ export const settingsDict = {
   'settings.openchamber.visual.option.activityRenderMode.summary.label': 'Rozwinięta',
   'settings.openchamber.visual.option.chatRenderMode.live.description': 'Strumieniuj tekst asystenta i narzędzia w miarę ich pojawiania się.',
   'settings.openchamber.visual.option.chatRenderMode.live.label': 'Na żywo',
-  'settings.openchamber.visual.option.chatRenderMode.sorted.description': 'Renderuj zakończone wiadomości asystenta bez strumieniowania na żywo.',
+  'settings.openchamber.visual.option.chatRenderMode.sorted.description': 'Parkuj pracę pośrednią w Activity; streamuj tylko końcową konkluzję.',
   'settings.openchamber.visual.option.chatRenderMode.sorted.label': 'Posortowane',
   'settings.openchamber.visual.option.diffLayout.dynamic.description': 'Nowe pliki w widoku inline, zmodyfikowane obok siebie.',
   'settings.openchamber.visual.option.diffLayout.dynamic.label': 'Dynamiczny',

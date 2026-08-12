@@ -1921,7 +1921,7 @@ export const settingsDict = {
   'settings.openchamber.visual.option.userMessageRendering.plain.description': '保留空白和链接，以纯文本渲染用户文本。',
   'chat.message.userText.collapseAria': '折叠用户消息',
   'settings.openchamber.visual.option.chatRenderMode.sorted.label': '整理后显示',
-  'settings.openchamber.visual.option.chatRenderMode.sorted.description': '不进行实时流式显示，待助手消息完成后再渲染。',
+  'settings.openchamber.visual.option.chatRenderMode.sorted.description': '中间过程整理进 Activity；仅最终结论正文流式输出。',
   'settings.openchamber.visual.option.chatRenderMode.live.label': '实时显示',
   'settings.openchamber.visual.option.chatRenderMode.live.description': '助手文本与工具输出到达即流式渲染。',
   'settings.openchamber.visual.option.messageTransport.auto.label': '自动',

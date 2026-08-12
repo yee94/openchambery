@@ -23,6 +23,12 @@ interface AssistantTextPartProps {
     messageId: string;
     streamPhase: StreamPhase;
     chatRenderMode?: 'sorted' | 'live';
+    /**
+     * Sorted mode normally disables body streaming. When the parent has already
+     * classified this part as the live final-conclusion body, allow paced
+     * streaming for this segment only.
+     */
+    allowSortedFinalStreaming?: boolean;
     hasStreamingHapticLifecycle?: boolean;
     onContentChange?: (reason?: ContentChangeReason, messageId?: string) => void;
     onShowPopup?: (content: ToolPopupContent) => void;
@@ -34,6 +40,7 @@ const AssistantTextPart: React.FC<AssistantTextPartProps> = ({
     messageId,
     streamPhase,
     chatRenderMode = 'live',
+    allowSortedFinalStreaming = false,
     hasStreamingHapticLifecycle = false,
     onShowPopup,
 }) => {
@@ -48,7 +55,8 @@ const AssistantTextPart: React.FC<AssistantTextPartProps> = ({
     }, '');
     const isStreamingPhase = streamPhase === 'streaming';
     const isCooldownPhase = streamPhase === 'cooldown';
-    const isStreaming = chatRenderMode === 'live' && (isStreamingPhase || isCooldownPhase);
+    const allowStreaming = chatRenderMode === 'live' || allowSortedFinalStreaming;
+    const isStreaming = allowStreaming && (isStreamingPhase || isCooldownPhase);
 
     streamPerfCount('ui.assistant_text_part.render');
     if (isStreaming) {
@@ -129,7 +137,7 @@ const AssistantTextPart: React.FC<AssistantTextPartProps> = ({
                 messageId={messageId}
                 isAnimated={false}
                 isStreaming={isStreaming}
-                disableStreamAnimation={chatRenderMode === 'sorted'}
+                disableStreamAnimation={chatRenderMode === 'sorted' && !allowSortedFinalStreaming}
                 variant={part.type === 'reasoning' ? 'reasoning' : 'assistant'}
                 enableFileReferences={isFinalized}
                 onShowPopup={onShowPopup}

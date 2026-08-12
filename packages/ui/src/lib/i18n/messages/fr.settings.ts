@@ -1827,7 +1827,7 @@ export const settingsDict = {
   'settings.openchamber.visual.option.userMessageRendering.plain.description': 'Rendre le texte utilisateur avec des espaces et des liens préservés.',
   'chat.message.userText.collapseAria': 'Réduire le message utilisateur',
   'settings.openchamber.visual.option.chatRenderMode.sorted.label': 'Trié',
-  'settings.openchamber.visual.option.chatRenderMode.sorted.description': 'Restituez les messages de l\'assistant terminés sans diffusion en direct.',
+  'settings.openchamber.visual.option.chatRenderMode.sorted.description': 'Classez le travail intermédiaire dans Activity ; ne streamez que la conclusion finale.',
   'settings.openchamber.visual.option.chatRenderMode.live.label': 'En direct',
   'settings.openchamber.visual.option.chatRenderMode.live.description': 'Diffusez le texte et les outils de l’assistant dès leur arrivée.',
   'settings.openchamber.visual.option.messageTransport.auto.label': 'Auto',

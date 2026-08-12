@@ -1921,7 +1921,7 @@ export const settingsDict = {
   "settings.openchamber.visual.option.userMessageRendering.plain.description": "Renderiza o texto do usuário com espaços em branco e links preservados.",
   "chat.message.userText.collapseAria": "Recolher mensagem do usuário",
   "settings.openchamber.visual.option.chatRenderMode.sorted.label": "Ordenado",
-  "settings.openchamber.visual.option.chatRenderMode.sorted.description": "Renderiza mensagens concluídas do assistente sem transmissão ao vivo.",
+  "settings.openchamber.visual.option.chatRenderMode.sorted.description": "Organize o trabalho intermediário em Activity; transmita apenas a conclusão final.",
   "settings.openchamber.visual.option.chatRenderMode.live.label": "Ao vivo",
   "settings.openchamber.visual.option.chatRenderMode.live.description": "Transmite o texto do assistente e as ferramentas conforme chegam.",
   "settings.openchamber.visual.option.messageTransport.auto.label": "Automático",

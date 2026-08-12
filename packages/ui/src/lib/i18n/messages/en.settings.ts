@@ -1954,7 +1954,7 @@ export const settingsDict = {
   'settings.openchamber.visual.option.userMessageRendering.plain.description': 'Render user text with preserved whitespace and links.',
   'chat.message.userText.collapseAria': 'Collapse user message',
   'settings.openchamber.visual.option.chatRenderMode.sorted.label': 'Sorted',
-  'settings.openchamber.visual.option.chatRenderMode.sorted.description': 'Render completed assistant messages without live streaming.',
+  'settings.openchamber.visual.option.chatRenderMode.sorted.description': 'Park intermediate work in Activity; stream only the final conclusion.',
   'settings.openchamber.visual.option.chatRenderMode.live.label': 'Live',
   'settings.openchamber.visual.option.chatRenderMode.live.description': 'Stream assistant text and tools as they arrive.',
   'settings.openchamber.visual.option.messageTransport.auto.label': 'Auto',

@@ -14,7 +14,11 @@ import type { TurnChangedFile, TurnGroupingContext } from '../lib/turns/types';
 import { cn } from '@/lib/utils';
 import { WorkerHighlightedCode } from '@/components/code/WorkerHighlightedCode';
 import { isEmptyTextPart, extractTextContent } from './partUtils';
-import { hasConfirmedTerminalStop } from '../lib/turns/assistantMessageLifecycle';
+import {
+    canRevealSortedFinalBody,
+    hasConfirmedTerminalStop,
+    shouldStreamSortedFinalBody,
+} from '../lib/turns/assistantMessageLifecycle';
 import { FadeInOnReveal } from './FadeInOnReveal';
 import { Button } from '@/components/ui/button';
 import { Tooltip, TooltipContent, TooltipTrigger } from '@/components/ui/tooltip';
@@ -1709,20 +1713,30 @@ const AssistantMessageBody = React.memo(({
         && (hasAnchoredActivitySegments || isCompactionTurn)
         && Boolean(toggleActivityGroup);
 
-    // Sorted mode defers non-stop inline text so mid-turn stream text does not
-    // paint outside Activity (justification owns intermediate text). Compaction
-    // is different: the streaming summary *is* the foldable body under
-    // Compacting / 正在压缩. Visibility is owned only by hideCompactionBody, so
-    // do not defer when the disclosure is expanded — otherwise active compact
-    // streams stay invisible until finish=stop.
-    // Inline text defer uses the confirmed terminal stop (runLoop exit rule),
-    // not the raw finish: a stop that still carries continuation tools is a
-    // step boundary, and its text must keep deferring to Activity justification
-    // rather than painting as the final body. Message-level completion and the
-    // effective stream phase above still read the raw finish.
+    // Sorted mode defers mid-turn stream text so it stays in Activity
+    // (justification). The final-conclusion body may reveal earlier than a
+    // confirmed terminal stop when the live message already matches the
+    // terminal-stop shape (no continuation tools, finish absent/`stop`) — and
+    // only that segment streams. Compaction is different: the streaming
+    // summary *is* the foldable body under Compacting / 正在压缩. Visibility is
+    // owned only by hideCompactionBody, so do not defer when the disclosure is
+    // expanded — otherwise active compact streams stay invisible until finish=stop.
+    // A stop that still carries continuation tools is a step boundary, and its
+    // text must keep deferring to Activity justification rather than painting
+    // as the final body. Message-level completion and the effective stream
+    // phase above still read the raw finish.
     const hasConfirmedStopFinish = hasConfirmedTerminalStop(messageFinish, visibleParts);
+    const sortedFinalBodyReveal = {
+        finish: messageFinish,
+        parts: visibleParts,
+        streamPhase: effectiveStreamPhase,
+        error: errorMessage,
+        isLastAssistantInTurn,
+    };
+    const canRevealSortedBody = canRevealSortedFinalBody(sortedFinalBodyReveal);
+    const streamSortedFinalBody = isSortedRenderMode && shouldStreamSortedFinalBody(sortedFinalBodyReveal);
     const shouldDeferSortedInlineText = isSortedRenderMode
-        && !hasConfirmedStopFinish
+        && !canRevealSortedBody
         && !(isCompactionTurn && isActivityExpanded);
     const showErrorMessage = Boolean(errorMessage);
     const errorIconName = errorVariant === 'info' ? 'information' : 'error-warning';
@@ -1885,6 +1899,7 @@ const AssistantMessageBody = React.memo(({
                             messageId={messageId}
                             streamPhase={effectiveStreamPhase}
                             chatRenderMode={chatRenderMode}
+                            allowSortedFinalStreaming={streamSortedFinalBody}
                             hasStreamingHapticLifecycle={hasStreamingHapticLifecycle}
                             onContentChange={onContentChange}
                             onShowPopup={onShowPopup}
@@ -2041,6 +2056,7 @@ const AssistantMessageBody = React.memo(({
         hasStreamingHapticLifecycle,
         showReasoningTraces,
         shouldDeferSortedInlineText,
+        streamSortedFinalBody,
         toggleActivityGroup,
         turnGroupingContext,
         visibleParts,

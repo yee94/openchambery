@@ -13,11 +13,13 @@ import { describe, expect, test } from 'bun:test';
 import type { Part } from '@opencode-ai/sdk/v2';
 
 import {
+    canRevealSortedFinalBody,
     countContinuationToolParts,
     hasConfirmedFinalBody,
     hasConfirmedTerminalStop,
     isContinuationToolPart,
     isModelTextPart,
+    shouldStreamSortedFinalBody,
 } from './assistantMessageLifecycle';
 
 const toolPart = (input: {
@@ -149,6 +151,71 @@ describe('isModelTextPart', () => {
         expect(isModelTextPart(textPart('p1', 'sidecar', true))).toBe(false);
         expect(isModelTextPart(textPart('p1', '   '))).toBe(false);
         expect(isModelTextPart(toolPart({ id: 't1' }))).toBe(false);
+    });
+});
+
+describe('canRevealSortedFinalBody / shouldStreamSortedFinalBody', () => {
+    test('confirmed terminal stop reveals without needing a live stream phase', () => {
+        expect(canRevealSortedFinalBody({
+            finish: 'stop',
+            parts: [textPart('p1', 'done')],
+            streamPhase: 'completed',
+        })).toBe(true);
+        expect(shouldStreamSortedFinalBody({
+            finish: 'stop',
+            parts: [textPart('p1', 'done')],
+            streamPhase: 'completed',
+        })).toBe(false);
+    });
+
+    test('live tool-less stream reveals and streams as the final conclusion', () => {
+        const input = {
+            finish: undefined,
+            parts: [textPart('p1', 'partial answer')],
+            streamPhase: 'streaming' as const,
+            isLastAssistantInTurn: true,
+        };
+        expect(canRevealSortedFinalBody(input)).toBe(true);
+        expect(shouldStreamSortedFinalBody(input)).toBe(true);
+    });
+
+    test('continuation tools keep intermediate text deferred', () => {
+        const input = {
+            finish: undefined,
+            parts: [
+                toolPart({ id: 't1', status: 'completed' }),
+                textPart('p1', 'working...'),
+            ],
+            streamPhase: 'streaming' as const,
+            isLastAssistantInTurn: true,
+        };
+        expect(canRevealSortedFinalBody(input)).toBe(false);
+        expect(shouldStreamSortedFinalBody(input)).toBe(false);
+    });
+
+    test('non-stop finish and non-last assistants never reveal as final body', () => {
+        expect(canRevealSortedFinalBody({
+            finish: 'tool-calls',
+            parts: [textPart('p1', 'step')],
+            streamPhase: 'streaming',
+            isLastAssistantInTurn: true,
+        })).toBe(false);
+        expect(canRevealSortedFinalBody({
+            finish: undefined,
+            parts: [textPart('p1', 'step')],
+            streamPhase: 'streaming',
+            isLastAssistantInTurn: false,
+        })).toBe(false);
+    });
+
+    test('errors veto reveal even while streaming', () => {
+        expect(canRevealSortedFinalBody({
+            finish: undefined,
+            parts: [textPart('p1', 'partial')],
+            streamPhase: 'streaming',
+            error: { message: 'aborted' },
+            isLastAssistantInTurn: true,
+        })).toBe(false);
     });
 });
 

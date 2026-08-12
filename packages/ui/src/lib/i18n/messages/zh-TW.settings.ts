@@ -1832,7 +1832,7 @@
   'settings.openchamber.visual.option.userMessageRendering.plain.description': '保留空白和連結，以純文字渲染使用者文字。',
   'chat.message.userText.collapseAria': '收合使用者訊息',
   'settings.openchamber.visual.option.chatRenderMode.sorted.label': '整理後顯示',
-  'settings.openchamber.visual.option.chatRenderMode.sorted.description': '不進行即時串流顯示，待助理訊息完成後再渲染。',
+  'settings.openchamber.visual.option.chatRenderMode.sorted.description': '中間過程整理進 Activity；僅最終結論正文串流輸出。',
   'settings.openchamber.visual.option.chatRenderMode.live.label': '即時顯示',
   'settings.openchamber.visual.option.chatRenderMode.live.description': '助理文字與工具輸出到達即串流渲染。',
   'settings.openchamber.visual.option.messageTransport.auto.label': '自動',
