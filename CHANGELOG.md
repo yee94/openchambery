@@ -4,6 +4,10 @@ All notable changes to this project will be documented in this file.
 
 ## [Unreleased]
 
+## [1.16.129-beta.2] - 2026-08-12
+
+- **Sidebar session hover card:** let the session title wrap to multiple lines so the full name stays readable instead of truncating with an ellipsis.
+
 ## [1.16.129-beta.1] - 2026-08-12
 
 - **Android package identity:** change release `applicationId` to `com.yee94.openchamber` (debug: `com.yee94.openchamber.debug`) so the fork no longer collides with upstream `com.openchamber.app` installs that use a different signing key. Uninstall any older `com.openchamber.app` build before installing this APK.
