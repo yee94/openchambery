@@ -4,6 +4,17 @@ All notable changes to this project will be documented in this file.
 
 ## [Unreleased]
 
+## [1.16.129] - 2026-08-12
+
+- **Android package identity:** change release `applicationId` to `com.yee94.openchamber` (debug: `com.yee94.openchamber.debug`) so the fork no longer collides with upstream `com.openchamber.app` installs that use a different signing key. Uninstall any older `com.openchamber.app` build before installing this APK.
+- **Windows: agent turns end reliably.** An agent turn no longer leaves the composer stuck in a busy state: benign durable-sync replica frames no longer tear down the WebSocket stream, a single unreadable frame can no longer wedge reconnect resume, and directory spellings that differ by drive-letter case or separators converge on the same session store so `session.idle` always reaches the composer.
+- **Windows: queued follow-ups are admitted again.** Queue admission, ledger keys, chip scope matching, and server-queue scope lookup now address the canonical directory, so one project resolves to one queue whichever win32/canonical spelling a caller holds.
+- **Path normalization hardening:** directory identity keys now canonicalize Windows drive-letter case and separator spellings, and read-only session status hooks no longer provision a directory store on a miss.
+- **Sidebar session hover card:** let the session title wrap to multiple lines so the full name stays readable instead of truncating with an ellipsis.
+- **Sorted chat final-body streaming:** in “Sorted” / “整理后显示” mode, intermediate tool and reasoning work still lands in Activity; only the terminal final-conclusion body reveals and streams once the assistant reaches the no-continuation / finish absent-or-`stop` shape.
+- **Context Panel subagent transcript after focus:** Sorted + collapsed Activity no longer blanks an open Context Panel chat when the window refocuses. Null-anchor (subtask/synthetic) reconnect refresh uses non-destructive `ensureInitial` instead of wiping the transcript; the panel’s open session stays in the compensation viewed set across blur; an empty open surface force-ensures on focus.
+- **i18n:** clarify Sorted-mode descriptions across locales so the setting matches the final-body-only streaming behavior.
+
 ## [1.16.129-beta.6] - 2026-08-12
 
 - **Context Panel subagent transcript after focus:** Sorted + collapsed Activity no longer blanks an open Context Panel chat when the window refocuses. Null-anchor (subtask/synthetic) reconnect refresh uses non-destructive `ensureInitial` instead of wiping the transcript; the panel’s open session stays in the compensation viewed set across blur; an empty open surface force-ensures on focus.
