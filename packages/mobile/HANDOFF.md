@@ -11,9 +11,10 @@ renderer), not the desktop shell. The native app is a WKWebView (iOS) / Android 
 bundled copy of the web build; native capabilities are added via Capacitor plugins and two iOS app
 extensions.
 
-- App id / package: `com.openchamber.app` (release); debug uses `com.openchamber.app.debug` via
-  `applicationIdSuffix` so a local debug APK can sit alongside a store/CI release install.
-  Launcher label is `OpenChamber` / `OpenChamber Debug`.
+- App id / package: `com.yee94.openchamber` (release Android `applicationId` + iOS bundle id);
+  debug Android uses `com.yee94.openchamber.debug` via `applicationIdSuffix` so a local debug
+  APK can sit alongside a store/CI release install. Java/R namespace remains
+  `com.openchamber.app`. Launcher label is `OpenChamber` / `OpenChamber Debug`.
 - Capacitor config: `capacitor.config.ts` (Keyboard `resize: 'none'`; Android
   `adjustNothing` + cached-height composer CSS FLIP + `ImeSyncBridge`
   (zero parent padding, backdrop, state/height bookends), StatusBar overlay,
@@ -76,7 +77,7 @@ bun run --cwd packages/mobile android:logcat      # app logs
 
 Typical device iteration: `bun run --cwd packages/mobile build:android:debug` then
 `android:run`. APK path: `android/app/build/outputs/apk/debug/app-debug.apk`
-(package `com.openchamber.app.debug`; does not replace a release install of `com.openchamber.app`).
+(package `com.yee94.openchamber.debug`; does not replace a release install of `com.yee94.openchamber`).
 
 iOS Simulator helpers: `mobile:sim:{boot,install,launch,run,serve,list,kill}` (see
 `scripts/ios-sim.mjs`; `serve-sim` for a browser preview of the simulator).
@@ -96,7 +97,7 @@ iOS Simulator helpers: `mobile:sim:{boot,install,launch,run,serve,list,kill}` (s
   device's push when an interactive (desktop/web) client is visible.
 - **iOS widgets + Control Center + Notification Service Extension** — WidgetKit extension
   (`OpenChamberWidget`), a Control Center control, and an NSE (`OpenChamberNotificationService`)
-  that refreshes widgets from push. All share the App Group `group.com.openchamber.app`.
+  that refreshes widgets from push. All share the App Group `group.com.yee94.openchamber`.
 - **Native chrome** — status bar (iOS overlay + safe-area; Android inset + themed background),
   keyboard handling (iOS pre-focus cached-height FLIP calibrated by Keyboard events; Android pre-focus cached-height FLIP), edge-swipe session switch,
   back-button handling, app-icon badge.
@@ -125,7 +126,7 @@ iOS Simulator helpers: `mobile:sim:{boot,install,launch,run,serve,list,kill}` (s
   gaps, and the Composer removes its resting bottom-safe padding while the keyboard is open.
 - Extensions: `OpenChamberWidget` (WidgetKit, deployment 17.0) and `OpenChamberNotificationService`
   (NSE, 15.5), both hand-wired into `App.xcodeproj/project.pbxproj` and embedded via a copy phase.
-- App Group `group.com.openchamber.app` in all three targets' entitlements (app + widget + NSE).
+- App Group `group.com.yee94.openchamber` in all three targets' entitlements (app + widget + NSE).
 - `Info.plist`: `CFBundleURLTypes` scheme `openchamber`, `NSCameraUsageDescription`.
 - Push entitlement (aps-environment) required.
 - APNs `mutable-content: 1` (set server/relay side) wakes the NSE to refresh widgets.
@@ -194,8 +195,8 @@ TestFlight / Play internal testing:
 ### iOS
 
 - Apple Developer account; App IDs for the app **and** both extensions
-  (`com.openchamber.app`, `.OpenChamberWidget`, `.OpenChamberNotificationService`), each enabled for
-  the **App Group** and (app) **Push**.
+  (`com.yee94.openchamber`, `.OpenChamberWidget`, `.OpenChamberNotificationService`,
+  `.OpenChamberShareExtension`), each enabled for the **App Group** and (app) **Push**.
 - Signing certificate + provisioning profiles for all three targets (extensions need their own).
 - App Store Connect API key for non-interactive TestFlight upload (`xcodebuild archive` +
   `notarytool`/`altool`, or fastlane `gym`+`pilot`).

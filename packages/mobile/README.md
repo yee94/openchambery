@@ -70,6 +70,9 @@ The mobile package reuses the web build, then rewrites `mobile.html` to `index.h
 - **iOS TestFlight (public link):** https://testflight.apple.com/join/ZCENBHtm  
   External group: `OpenChamber Beta`. New CI uploads are attached to this group after processing; first-time external builds require Apple Beta App Review.
 - **Android:** signed APK/AAB assets on [GitHub Releases](https://github.com/yee94/openchamber/releases).
+  Package id is `com.yee94.openchamber`. If an older build used upstream `com.openchamber.app`,
+  uninstall that app first — same icon/name does not mean Android will overwrite it when the
+  signing key differs.
 
 ## Commands
 
@@ -79,7 +82,7 @@ Run these from `packages/mobile`, or use the root `mobile:*` aliases.
 - `bun run sync`: prepares assets and runs `cap sync`.
 - `bun run add:ios`: creates the native iOS project.
 - `bun run add:android`: creates the native Android project.
-- `bun run build:android:debug`: builds a debug Android APK (`com.openchamber.app.debug`) without launching an emulator. Safe to install beside a release build of `com.openchamber.app`.
+- `bun run build:android:debug`: builds a debug Android APK (`com.yee94.openchamber.debug`) without launching an emulator. Safe to install beside a release build of `com.yee94.openchamber`.
 - `bun run build:ios:simulator`: builds an iOS Simulator app without launching Xcode or Simulator.
 - `bun run sim:run`: boots a simulator if needed, installs the built iOS app, and launches it.
 - `bun run sim:serve`: starts `serve-sim` in detached JSON mode and prints the browser preview URL.

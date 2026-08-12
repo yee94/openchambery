@@ -2,8 +2,8 @@
 <resources>
     <string name="app_name">OpenChamber</string>
     <string name="title_activity_main">OpenChamber</string>
-    <string name="package_name">com.openchamber.app</string>
-    <string name="custom_url_scheme">com.openchamber.app</string>
+    <string name="package_name">com.yee94.openchamber</string>
+    <string name="custom_url_scheme">com.yee94.openchamber</string>
     <string name="share_title">Share with OpenChamber</string>
     <string name="share_assistant">Assistant</string>
     <string name="share_missing_target">Choose a default share assistant in OpenChamber.</string>

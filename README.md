@@ -84,7 +84,7 @@ Install from the [Marketplace](https://marketplace.visualstudio.com/items?itemNa
 
 - **iOS (TestFlight):** [testflight.apple.com/join/ZCENBHtm](https://testflight.apple.com/join/ZCENBHtm)  
   Public beta. Install [TestFlight](https://apps.apple.com/app/testflight/id899247664) first, then open the link on your device. First-time external testers may need Apple Beta App Review approval before the build becomes installable.
-- **Android:** download the signed APK from [Releases](https://github.com/yee94/openchamber/releases/latest) (`app-release.apk`).
+- **Android:** download the signed APK from [Releases](https://github.com/yee94/openchamber/releases/latest) (`app-release.apk`). Package id is `com.yee94.openchamber`; uninstall any older `com.openchamber.app` install first if the update is refused.
 
 The native app connects to an existing OpenChamber server; it does not embed OpenCode itself.
 

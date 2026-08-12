@@ -9,10 +9,15 @@ def ciKeyPassword = System.getenv('OPENCHAMBER_ANDROID_KEY_PASSWORD')
 def hasCiSigning = ciKeystorePath && ciKeystorePassword && ciKeyAlias && ciKeyPassword
 
 android {
+    // Java/R class namespace stays upstream-compatible; Play/install identity is
+    // applicationId below (aligned with iOS PRODUCT_BUNDLE_IDENTIFIER).
     namespace "com.openchamber.app"
     compileSdk rootProject.ext.compileSdkVersion
     defaultConfig {
-        applicationId "com.openchamber.app"
+        // Fork identity: must not share applicationId with upstream
+        // openchamber/openchamber (also com.openchamber.app) — different signing
+        // keys make sidegrade installs fail with "package incompatible".
+        applicationId "com.yee94.openchamber"
         minSdkVersion rootProject.ext.minSdkVersion
         targetSdkVersion rootProject.ext.targetSdkVersion
         versionCode ciVersionCode ? ciVersionCode.toInteger() : 1
