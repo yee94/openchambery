@@ -4,6 +4,10 @@ All notable changes to this project will be documented in this file.
 
 ## [Unreleased]
 
+## [1.16.129-beta.4] - 2026-08-12
+
+- **Windows: queued follow-ups are admitted again.** Outgoing requests carry a canonicalized directory while session payloads come back in the win32 spelling, so queue admission compared two spellings of the same directory, judged every attempt stale, and handed the message back to the composer. Admission, the queue ledger key, chip scope matching, and server-queue scope lookup now address the canonical directory, so one project resolves to one queue whichever spelling a caller holds.
+
 ## [1.16.129-beta.3] - 2026-08-12
 
 - **Windows: agent turns end reliably.** An agent turn no longer leaves the composer stuck in a busy state: benign durable-sync replica frames no longer tear down the WebSocket stream, a single unreadable frame can no longer wedge reconnect resume, and directory spellings that differ by drive-letter case or separators converge on the same session store so `session.idle` always reaches the composer.
