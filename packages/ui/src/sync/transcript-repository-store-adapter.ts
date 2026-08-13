@@ -339,9 +339,10 @@ function applyRemoveMessage(
   let messagesChanged = false
   if (messages) {
     const next = [...messages]
-    const search = Binary.search(next, messageID, (item) => item.id)
-    if (search.found) {
-      next.splice(search.index, 1)
+    // Conversation order is messageOrder, not id lexicographic order.
+    const index = next.findIndex((item) => item.id === messageID)
+    if (index >= 0) {
+      next.splice(index, 1)
       message[sessionID] = next
       messagesChanged = true
     }

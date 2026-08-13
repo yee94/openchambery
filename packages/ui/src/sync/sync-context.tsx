@@ -64,6 +64,7 @@ import {
   useTranscriptParts,
 } from "./transcript-repository-observers"
 import { stripMessageDiffSnapshots, stripSessionDiffSnapshots } from "./sanitize"
+import { messagesVisibleWithRevert } from "./conversation-order"
 import { applySessionEventToGlobalSessions } from "./session-event-router"
 import { syncDebug } from "./debug"
 import {
@@ -3298,11 +3299,12 @@ function getVisibleMessagesForSource(
   }
 
   const asArray = sourceMessages as Message[]
+  const visibleMessages = revertMessageID
+    ? messagesVisibleWithRevert(asArray, revertMessageID)
+    : (sourceMessages.length === 0 ? EMPTY_MESSAGES : asArray.slice())
   return {
     sourceMessages,
-    visibleMessages: revertMessageID
-      ? asArray.filter((message) => message.id < revertMessageID)
-      : (sourceMessages.length === 0 ? EMPTY_MESSAGES : asArray.slice()),
+    visibleMessages,
     revertMessageID,
   }
 }

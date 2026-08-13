@@ -106,4 +106,21 @@ describe('buildRevertedMessageDockState', () => {
         expect(snapshot.records).toHaveLength(1);
         expect(snapshot.records[0]?.message.id).toBe('user_1');
     });
+
+    test('lists reverted user rows by conversation order when ids are not monotonic', () => {
+        const olderHighId = message('msg_9', 'user');
+        const laterLowId = message('msg_2', 'user');
+        const snapshot = buildRevertedMessageDockState(
+            {
+                session: [{ id: 'ses_1', revert: { messageID: 'msg_2' } } as State['session'][number]],
+                messages: [olderHighId, laterLowId],
+                partsByMessageID: {
+                    msg_9: [textPart('part_9', 'older')],
+                    msg_2: [textPart('part_2', 'later')],
+                },
+            },
+            'ses_1',
+        );
+        expect(snapshot.records.map((record) => record.message.id)).toEqual(['msg_2']);
+    });
 });

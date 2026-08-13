@@ -25,6 +25,7 @@ import {
 } from "./message-composer-restoration"
 import { retry } from "./retry"
 import { getRuntimeGeneration, getRuntimeKey, getRuntimeTransportIdentity } from "@/lib/runtime-switch"
+import { isRelayTransportReady } from "@/lib/relay/runtime-tunnel"
 import {
   applyTranscriptCommand,
   getTranscriptRepository,
@@ -471,11 +472,17 @@ export function classifySendFailure(error: unknown, transportEntered: boolean): 
 // blip) otherwise surface as a hard "Connection lost" toast even though the
 // pipeline recovers within a second. While waiting, run bounded health probes
 // inside the same grace window so stale disconnected state can recover quickly.
+//
+// Relay: `isConnected` is the event stream, not the tunnel. A live tunnel can
+// already carry the send HTTP request while the event WS is reconnecting. Skip
+// the 500ms OpenCode health probe in that case — it is what surfaces as
+// "Connection lost (health_probe_unhealthy)" on a working tunnel.
 const CONNECTION_GRACE_MS = 2000
 export async function waitForConnectionOrThrow(): Promise<void> {
   const deadline = Date.now() + CONNECTION_GRACE_MS
   while (Date.now() < deadline) {
     if (useConfigStore.getState().isConnected) return
+    if (isRelayTransportReady()) return
     const remainingMs = deadline - Date.now()
     if (remainingMs <= 0) break
     if (await useConfigStore.getState().probeConnection({ timeoutMs: Math.min(500, remainingMs) })) return
@@ -2447,38 +2454,36 @@ export async function stageMessageEdit(
   }
 }
 
-const cmpMessageId = (a: string, b: string) => (a < b ? -1 : a > b ? 1 : 0)
-
 /**
- * Resolve the delete range for an edit commit from the authoritative snapshot.
- * Two invariants protect history: the range is forward-only — nothing older than
- * the target can enter it — and it holds server-known ids only, so an in-flight
- * optimistic row (including a replacement the server already echoed back) is
- * never a delete candidate. When a replacement message id is known, everything
- * at or after that id is also preserved so a successful resend is not deleted
- * with the old tail.
+ * Resolve the delete range for an edit commit from live conversation order.
+ * `conversation` is transcript `messageOrder` (oldest → newest) — never
+ * re-sorted by id. Forward means "at or after the target in that array".
+ * Only server-known ids are candidates, so an optimistic row is never deleted.
+ * When a replacement id is known, the tail stops at that conversation
+ * position so the echoed resend (and anything after it) is kept.
  */
 function resolveMessageEditDeleteRange(
-  sessionId: string,
   messageId: string,
-  authoritative: readonly Message[],
+  conversation: readonly Message[],
+  serverKnownIds: ReadonlySet<string>,
   options?: { preserveMessageId?: string },
 ): Message[] {
-  const ordered = [...authoritative].sort((left, right) => cmpMessageId(left.id, right.id))
-  const targetIndex = ordered.findIndex((message) => message.id === messageId)
-  const targetMessage = targetIndex >= 0 ? ordered[targetIndex] : undefined
-  if (!targetMessage || targetMessage.role !== "user") {
+  const targetIndex = conversation.findIndex((message) => message.id === messageId)
+  const targetMessage = targetIndex >= 0 ? conversation[targetIndex] : undefined
+  if (!targetMessage || targetMessage.role !== "user" || !serverKnownIds.has(messageId)) {
     throw new Error("The selected user message is unavailable")
   }
 
   const preserveMessageId = options?.preserveMessageId
-    ?? useSessionUIStore.getState().pendingSendMessageIDs.get(sessionId)
-  return ordered
-    .slice(targetIndex)
+  const preserveIndex = preserveMessageId
+    ? conversation.findIndex((message) => message.id === preserveMessageId)
+    : -1
+  const end = preserveIndex > targetIndex ? preserveIndex : conversation.length
+  return conversation
+    .slice(targetIndex, end)
     .filter((message) => {
-      if (cmpMessageId(message.id, messageId) < 0) return false
-      // Keep the replacement and any turns that already arrived after it.
-      if (preserveMessageId && cmpMessageId(message.id, preserveMessageId) >= 0) return false
+      if (!serverKnownIds.has(message.id)) return false
+      if (preserveMessageId && message.id === preserveMessageId) return false
       return true
     })
 }
@@ -2533,13 +2538,15 @@ export async function waitForSessionIdleForMessageEdit(
  * Commit a staged message edit before its replacement send.
  * Order required by OpenCode: abort (if busy) → wait idle → delete old tail → send.
  * The official delete-message endpoint removes conversation data only, so the
- * action deletes the target turn and every later message while retaining files
- * — except a preserved replacement id and anything after it (safety for an
- * already-echoed in-flight row).
+ * action deletes the target turn and every later conversation-order message
+ * while retaining files — except a preserved replacement id and anything after
+ * it in `messageOrder` (safety for an already-echoed in-flight row).
  *
  * Local rows are dropped one by one as their remote delete succeeds — nothing is
  * hidden up front. The composer paints an "editing" affordance on the target
- * while abort/wait/delete run.
+ * while abort/wait/delete run. The server snapshot is membership-only and is
+ * not materialized, so a windowed or id-sorted refetch cannot rewrite the
+ * visible timeline.
  */
 export async function commitMessageEdit(
   sessionId: string,
@@ -2548,13 +2555,19 @@ export async function commitMessageEdit(
 ): Promise<void> {
   const directoryOverride = options?.directory
   const preserveMessageId = options?.preserveMessageId
+    ?? useSessionUIStore.getState().pendingSendMessageIDs.get(sessionId)
   const { store, directory } = dirStoreForSession(sessionId, directoryOverride)
 
   await abortBusySessionForMessageEdit(sessionId, { directory: directoryOverride })
   await waitForSessionIdleForMessageEdit(sessionId, { directory: directoryOverride })
 
-  const authoritative = await refetchSessionMessages(sessionId, directoryOverride)
-  const removedMessages = resolveMessageEditDeleteRange(sessionId, messageId, authoritative, {
+  const serverKnownIds = new Set(
+    (await fetchSessionMessageSnapshot(sessionId, directoryOverride)).map((message) => message.id),
+  )
+  // Read order after the snapshot await so abort/SSE rows that landed during
+  // the membership fetch are included in the conversation tail.
+  const conversation = readSessionMessages(sessionId, directoryOverride)
+  const removedMessages = resolveMessageEditDeleteRange(messageId, conversation, serverKnownIds, {
     preserveMessageId,
   })
 
@@ -2562,6 +2575,19 @@ export async function commitMessageEdit(
     await opencodeClient.deleteSessionMessage(sessionId, message.id, directory)
     removeSessionMessageFromStore(store, sessionId, message.id, directory)
   }
+}
+
+/** Server membership snapshot — does not rewrite the live transcript. */
+async function fetchSessionMessageSnapshot(sessionId: string, directoryOverride?: string): Promise<Message[]> {
+  const { directory } = dirStoreForSession(sessionId, directoryOverride)
+  const result = await sdk().session.messages({
+    sessionID: sessionId,
+    directory,
+    limit: getMessageRefetchLimit(),
+  })
+  const records = (assertSdkSuccess(result, "session.messages") ?? [])
+    .filter((record: { info?: { id?: string } }) => !!record?.info?.id)
+  return records.map((record: { info: Message }) => stripMessageDiffSnapshots(record.info))
 }
 
 /** Resolves to the authoritative snapshot this refetch materialized. */
@@ -2581,7 +2607,7 @@ export async function refetchSessionMessages(sessionId: string, directoryOverrid
     parts: record.parts ?? [],
   }))
 
-  // Ticket 03/09: edit refetch materializes through TranscriptRepository.
+  // Ticket 03/09: revert/redo refetch materializes through TranscriptRepository.
   void store
   const scope = transcriptScope(directory ?? _getDirectory(), sessionId)
   const applied = applyTranscriptCommand(scope, {

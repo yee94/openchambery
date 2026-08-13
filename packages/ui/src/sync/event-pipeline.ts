@@ -18,6 +18,7 @@ import { getRuntimeUrlResolver } from "@/lib/runtime-url"
 import { clearRuntimeUrlAuthToken, refreshRuntimeUrlAuthToken } from "@/lib/runtime-auth"
 import { type RelayTunnelWebSocket } from "@/lib/relay/tunnel-client"
 import { openRuntimeWebSocket } from "@/lib/relay/runtime-socket"
+import { isRelayModeActive } from "@/lib/relay/runtime-tunnel"
 import { getRuntimeGeneration } from "@/lib/runtime-switch"
 import {
   normalizeOpenCodeEvent,
@@ -37,6 +38,7 @@ const WS_FALLBACK_WINDOW_MS = 60_000
 // rather than resuming into the same failure again.
 const UNUSABLE_FRAME_SKIP_AFTER = 2
 const DEFAULT_WS_READY_TIMEOUT_MS = 2_000
+const RELAY_WS_READY_TIMEOUT_MS = 8_000
 // Retry pacing. Visible+online tabs probe quickly so the user sees connection
 // recovery in under a second of real outage; hidden/offline tabs back off
 // further so a backgrounded PWA on a flaky link doesn't burn battery probing
@@ -373,8 +375,10 @@ export function createEventPipeline(input: EventPipelineInput): EventPipeline {
     transport = "auto",
     heartbeatTimeoutMs = DEFAULT_HEARTBEAT_TIMEOUT_MS,
     reconnectDelayMs = DEFAULT_RECONNECT_DELAY_MS,
-    wsReadyTimeoutMs = DEFAULT_WS_READY_TIMEOUT_MS,
+    wsReadyTimeoutMs,
   } = input
+  const resolvedWsReadyTimeoutMs = wsReadyTimeoutMs
+    ?? (isRelayModeActive() ? RELAY_WS_READY_TIMEOUT_MS : DEFAULT_WS_READY_TIMEOUT_MS)
   const abort = new AbortController()
   let disconnected = false
   let lastEventId: string | undefined
@@ -847,7 +851,7 @@ export function createEventPipeline(input: EventPipelineInput): EventPipeline {
         } catch {
           // ignore
         }
-      }, wsReadyTimeoutMs)
+      }, resolvedWsReadyTimeoutMs)
 
       const cleanup = () => {
         if (readyTimer) {

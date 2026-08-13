@@ -266,6 +266,7 @@ export const registerOpenCodeRoutes = (app, dependencies) => {
       const healthResponse = await fetch(buildOpenCodeUrl('/global/health', ''), {
         method: 'GET',
         headers: { Accept: 'application/json', ...getOpenCodeAuthHeaders() },
+        signal: AbortSignal.timeout(4_000),
       });
       const health = await healthResponse.json().catch(() => null);
       if (!healthResponse.ok) {

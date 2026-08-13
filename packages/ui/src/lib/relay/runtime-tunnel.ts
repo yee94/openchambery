@@ -25,6 +25,9 @@ export const getActiveRelayTunnel = (): RelayTunnelClient | null => activeTunnel
 
 export const isRelayModeActive = (): boolean => activeTunnel !== null;
 
+/** True when the E2EE tunnel is up. Event-pipeline `isConnected` can still be false while the multiplexed event WS is reconnecting; HTTP send still works. */
+export const isRelayTransportReady = (): boolean => activeTunnel?.getStatus().state === 'connected';
+
 /**
  * Activates relay mode with the given descriptor, replacing any previous tunnel.
  * Reuses the existing client when the descriptor is unchanged so a redundant

@@ -58,7 +58,6 @@ import {
   unshareSession as unshareSessionAction,
   optimisticSend,
   optimisticInsertUserMessage,
-  refetchSessionMessages,
   revertToMessage as revertToMessageAction,
   stageMessageEdit,
   commitMessageEdit,
@@ -78,6 +77,7 @@ import { useSessionGoalArmStore } from "@/stores/useSessionGoalArmStore"
 import { setSessionGoal } from "@/lib/sessionGoalActions"
 import { wrapSystemReminder } from "@/lib/systemReminder"
 import { useUIStore } from "@/stores/useUIStore"
+import { resolveRevertRedoTarget, resolveRevertUndoTarget } from "./conversation-order"
 import { useSelectionStore } from "./selection-store"
 import { getViewportSessionMemory, useViewportStore, viewportSessionKey } from "./viewport-store"
 import { useSessionWorktreeStore } from "./session-worktree-store"
@@ -1684,17 +1684,15 @@ export const useSessionUIStore = create<SessionUIState>()((set, get) => ({
       useInputStore.getState().setPendingInputText(options.initialPrompt)
     }
 
-    // Config (providers/agents/default model+agent) lives at the PROJECT level. When the user
-    // came from a worktree session, `directory` is the worktree path, whose provider list does
-    // not include project/global-scoped providers (e.g. the default agent's non-opencode model)
-    // — resolving defaults against it would wrongly fall back to opencode/big-pickle. Activate
-    // the project's config instead so the default cascade matches app startup, then re-apply it
-    // (a fresh draft must start from defaults, not inherit the previous session's selection).
+    // Selection (last model ID / agent) is per Project. The provider catalog is
+    // global — activateDirectory restores this Project's last pick without
+    // refetching the catalog. Then re-apply the default cascade so a fresh
+    // draft starts from defaults, not the previous session's live selection.
     const configDirectory = normalizePath(selectedProject?.path ?? null) ?? directory
     const normalizedConfigDirectory = selectedProject ? normalizePath(configDirectory) : null
     const openedDraftID = nextDraft.draftID
     const transportIdentity = getRuntimeTransportIdentity()
-    void activateConfigForDirectory(configDirectory, { refreshProviders: true, source: 'newSessionDraft' }).then(() => {
+    void activateConfigForDirectory(configDirectory, { source: 'newSessionDraft' }).then(() => {
       const currentDraft = get().newSessionDraft
       const activeConfigDirectory = normalizePath(useConfigStore.getState().activeDirectoryKey)
       if (
@@ -1762,7 +1760,7 @@ export const useSessionUIStore = create<SessionUIState>()((set, get) => ({
         },
       }
     })
-    void activateConfigForDirectory(nextDirectory, { refreshProviders: true, source: 'setNewSessionDraftTarget' })
+    void activateConfigForDirectory(nextDirectory, { source: 'setNewSessionDraftTarget' })
 
     if (nextDirectory && nextDirectory !== useDirectoryStore.getState().currentDirectory) {
       useDirectoryStore.getState().setDirectory(nextDirectory)
@@ -1921,7 +1919,7 @@ export const useSessionUIStore = create<SessionUIState>()((set, get) => ({
       )
       return { newSessionDraft: nextDraft }
     })
-    void activateConfigForDirectory(nextDirectory, { refreshProviders: true, source: 'overrideNewSessionDraftTarget' })
+    void activateConfigForDirectory(nextDirectory, { source: 'overrideNewSessionDraftTarget' })
 
     if (nextDirectory && nextDirectory !== useDirectoryStore.getState().currentDirectory) {
       useDirectoryStore.getState().setDirectory(nextDirectory)
@@ -2338,9 +2336,8 @@ export const useSessionUIStore = create<SessionUIState>()((set, get) => ({
   // revertToMessage — delegates to session-actions (single implementation)
   // ---------------------------------------------------------------------------
   revertToMessage: async (sessionId, messageId, options) => {
-    // Ensure the complete message range is present before applying the revert
-    // marker. Reverted UI is derived from session.revert + stored messages.
-    await refetchSessionMessages(sessionId, options?.directory)
+    // Reverted UI is derived from session.revert + stored messages. Do not
+    // materialize a refetch here — that rewrites messageOrder by id.
     await revertToMessageAction(sessionId, messageId, options?.directory)
   },
 
@@ -2359,17 +2356,8 @@ export const useSessionUIStore = create<SessionUIState>()((set, get) => ({
     const sessions = getSyncSessions()
     const currentSession = sessions.find((s) => s.id === sessionId)
 
-    const userMessages = messages.filter((m) => m.role === "user")
-    if (userMessages.length === 0) return
-
     const revertToId = currentSession?.revert?.messageID
-    let targetMessage: typeof messages[number] | undefined
-    if (revertToId) {
-      targetMessage = [...userMessages].reverse().find((m) => m.id < revertToId)
-    } else {
-      targetMessage = userMessages[userMessages.length - 1]
-    }
-
+    const targetMessage = resolveRevertUndoTarget(messages, revertToId)
     if (!targetMessage) return
 
     // Read target message parts BEFORE calling revertToMessage.
@@ -2409,10 +2397,8 @@ export const useSessionUIStore = create<SessionUIState>()((set, get) => ({
     const revertToId = currentSession?.revert?.messageID
     if (!revertToId) return
 
-    await refetchSessionMessages(sessionId)
     const messages = getSyncMessages(sessionId)
-    const userMessages = messages.filter((m) => m.role === "user")
-    const targetMessage = userMessages.find((m) => m.id > revertToId)
+    const targetMessage = resolveRevertRedoTarget(messages, revertToId)
 
     if (targetMessage) {
       await get().revertToMessage(sessionId, targetMessage.id, { skipRedoPush: true })

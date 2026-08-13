@@ -128,7 +128,6 @@ const applyProjectDefaultSelectionForWorktreeSession = async (
       ?? useProjectsStore.getState().projects.find((entry) => normalizePath(entry.path) === normalizePath(projectRef.path));
     const expectedKey = getConfigDirectoryKey(projectRef.path);
     await useConfigStore.getState().activateDirectory(projectRef.path, {
-      refreshProviders: true,
       source: 'worktreeSessionCreator',
     });
     const afterActivate = useConfigStore.getState();

@@ -100,4 +100,23 @@ describe('buildUserMessageHistorySnapshot', () => {
 
     expect(snapshot.history).toEqual(['kept']);
   });
+
+  test('excludes reverted turns by conversation order when ids are not monotonic', () => {
+    const olderHighId = message('msg_9', 'user');
+    const laterLowId = message('msg_2', 'user');
+
+    const snapshot = buildUserMessageHistorySnapshot(
+      state({
+        session: [{ id: 'ses_1', revert: { messageID: 'msg_2' } } as State['session'][number]],
+        message: { ses_1: [olderHighId, laterLowId] },
+        part: {
+          msg_9: [textPart('part_9', 'kept older')],
+          msg_2: [textPart('part_2', 'reverted later')],
+        },
+      }),
+      'ses_1',
+    );
+
+    expect(snapshot.history).toEqual(['kept older']);
+  });
 });

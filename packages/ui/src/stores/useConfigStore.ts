@@ -34,7 +34,6 @@ const FALLBACK_MODEL_ID = "big-pickle";
 const ADD_PROVIDER_SENTINEL = "__add_provider__";
 const GIT_UTILITY_PROVIDER_ID = "zen";
 const GIT_UTILITY_PREFERRED_MODEL_ID = "big-pickle";
-const PROVIDER_CONFIG_REFRESH_CONCURRENCY = 4;
 
 interface OpenChamberDefaults {
     defaultModel?: string;
@@ -628,10 +627,9 @@ interface DirectoryScopedConfig {
 }
 
 /**
- * Lift the active directory's cached provider/agent snapshot into the top-level
- * fields the pickers read (`providers`, `agents`, selections), so a cold start
- * paints instantly from persisted data. Falls back to legacy top-level selection
- * fields when the active directory has no snapshot.
+ * Lift persisted selection for the active directory into the picker fields.
+ * Provider catalog is global: prefer an already-hydrated top-level list, then
+ * the active directory's startup snapshot (persist vehicle only).
  */
 const hydrateActiveDirectorySnapshot = <T extends Partial<ConfigStore>>(merged: T): T => {
     const directoryScoped = merged.directoryScoped;
@@ -641,9 +639,14 @@ const hydrateActiveDirectorySnapshot = <T extends Partial<ConfigStore>>(merged: 
     if (!snapshot) return merged;
 
     const next: Partial<ConfigStore> = { ...merged };
-    next.providers = snapshot.providers;
+    const globalProviders = (merged.providers && merged.providers.length > 0)
+        ? merged.providers
+        : snapshot.providers;
+    next.providers = globalProviders;
     next.agents = [];
-    next.defaultProviders = snapshot.defaultProviders;
+    next.defaultProviders = (merged.defaultProviders && Object.keys(merged.defaultProviders).length > 0)
+        ? merged.defaultProviders
+        : snapshot.defaultProviders;
     next.currentProviderId = snapshot.currentProviderId;
     next.currentModelId = snapshot.currentModelId;
     next.currentVariant = snapshot.currentVariant;
@@ -655,8 +658,12 @@ const hydrateActiveDirectorySnapshot = <T extends Partial<ConfigStore>>(merged: 
     next.opencodeDefaultAgent = snapshot.opencodeDefaultAgent;
     next.opencodeDefaultModel = snapshot.opencodeDefaultModel;
     next.selectionSource = snapshot.selectionSource ?? "auto";
-    if (snapshot.providers.length > 0 && snapshot.providerCatalogPartial !== true) {
-        seedProviderCatalogQuery(fromDirectoryKey(activeKey), snapshot);
+    if (globalProviders.length > 0 && snapshot.providerCatalogPartial !== true) {
+        seedProviderCatalogQuery(null, {
+            providers: globalProviders,
+            defaultProviders: next.defaultProviders ?? {},
+            providerCatalogPartial: false,
+        });
     }
     return next as T;
 };
@@ -1367,14 +1374,21 @@ export const useConfigStore = create<ConfigStore>()(
 
                     set((state) => {
                         const snapshot = state.directoryScoped[directoryKey];
-                        const shouldLoadProviders = state.isConnected && !snapshot?.providers.length;
-                        const shouldLoadAgents = state.isConnected && !snapshot?.agents.length;
+                        const globalProviders = state.providers.length > 0
+                            ? state.providers
+                            : (snapshot?.providers ?? []);
+                        const globalDefaults = Object.keys(state.defaultProviders).length > 0
+                            ? state.defaultProviders
+                            : (snapshot?.defaultProviders ?? {});
+                        snapshotHadProviders = globalProviders.length > 0;
+                        snapshotHadAgents = Boolean(snapshot?.agents.length);
+                        const shouldLoadProviders = state.isConnected && !snapshotHadProviders;
+                        const shouldLoadAgents = state.isConnected && !snapshotHadAgents;
                         if (snapshot) {
-                            snapshotHadProviders = snapshot.providers.length > 0;
-                            snapshotHadAgents = snapshot.agents.length > 0;
                             return {
                                 activeDirectoryKey: directoryKey,
-                                providers: snapshot.providers,
+                                providers: globalProviders,
+                                defaultProviders: globalDefaults,
                                 agents: snapshot.agents,
                                 currentProviderId: snapshot.currentProviderId,
                                 currentModelId: snapshot.currentModelId,
@@ -1385,7 +1399,6 @@ export const useConfigStore = create<ConfigStore>()(
                                 lastSelectedAgentName: snapshot.lastSelectedAgentName,
                                 lastUserSelection: snapshot.lastUserSelection,
                                 // globalLastUserSelection is cross-project — never cleared on activate.
-                                defaultProviders: snapshot.defaultProviders,
                                 opencodeDefaultAgent: snapshot.opencodeDefaultAgent,
                                 opencodeDefaultModel: snapshot.opencodeDefaultModel,
                                 selectionSource: snapshot.selectionSource ?? "auto",
@@ -1402,7 +1415,8 @@ export const useConfigStore = create<ConfigStore>()(
 
                         return {
                             activeDirectoryKey: directoryKey,
-                            providers: [],
+                            providers: globalProviders,
+                            defaultProviders: globalDefaults,
                             agents: [],
                             currentProviderId: "",
                             currentModelId: "",
@@ -1412,7 +1426,6 @@ export const useConfigStore = create<ConfigStore>()(
                             lastSelectedAgentName: undefined,
                             lastUserSelection: undefined,
                             // Keep globalLastUserSelection so a Project with no memory can fall back.
-                            defaultProviders: {},
                             opencodeDefaultAgent: undefined,
                             opencodeDefaultModel: undefined,
                             selectionSource: "auto",
@@ -1431,10 +1444,10 @@ export const useConfigStore = create<ConfigStore>()(
                         return;
                     }
 
-                    // Stale-while-revalidate: when a cached snapshot already
-                    // populated the pickers, refresh in the background so the UI
-                    // stays instant but never shows stale provider/agent data for
-                    // longer than one fetch. Only block when there is nothing to show.
+                    // Provider catalog is global. Reuse it across projects; only fetch
+                    // when we have nothing to show. Explicit refreshProviders still
+                    // refetches (config-change / initializeApp), but a new draft must
+                    // not block on a second catalog round-trip.
                     if (!snapshotHadProviders || options?.refreshProviders) {
                         await get().loadProviders({ directory: fromDirectoryKey(directoryKey), source: options?.source ?? 'activateDirectory', forceRefresh: options?.refreshProviders });
                     }
@@ -1444,20 +1457,15 @@ export const useConfigStore = create<ConfigStore>()(
                     }
                 },
 
-                invalidateProviderCache: (directory) => {
+                invalidateProviderCache: (_directory) => {
                     const transport = getRuntimeTransportIdentity();
-                    const directoryKeys = directory === undefined
-                        ? Array.from(new Set([get().activeDirectoryKey, ...Object.keys(get().directoryScoped)]))
-                        : [toDirectoryKey(resolveConfigDirectory(directory))];
-                    for (const directoryKey of directoryKeys) {
-                        void invalidateProviderCatalogQuery(fromDirectoryKey(directoryKey), transport);
-                    }
+                    void invalidateProviderCatalogQuery(null, transport);
                 },
 
                 loadProviders: async (options) => {
                     const requestedDirectory = options?.directory ?? fromDirectoryKey(get().activeDirectoryKey);
-                    // Providers are project-scoped: resolve a worktree to its project
-                    // so it reuses one shared snapshot instead of its own.
+                    // Catalog is global. The directory is only an OpenCode request hint
+                    // and the key for lastUserSelection; it must not partition the cache.
                     const configDirectory = resolveConfigDirectory(requestedDirectory);
                     if (!configDirectory) {
                         markStartupTrace('loadProviders:skippedUnknownDirectory', { requestedDirectory, source: options?.source ?? 'unknown' });
@@ -1475,10 +1483,9 @@ export const useConfigStore = create<ConfigStore>()(
                     markStartupTrace('loadProviders:called', { directoryKey, source, requestedDirectory, effectiveDirectory });
 
                     const currentProviderSnapshot = get().directoryScoped[directoryKey];
-                    const hasProviderData = Boolean(
-                        currentProviderSnapshot?.providers.length
-                        || (get().activeDirectoryKey === directoryKey && get().providers.length > 0)
-                    );
+                    // Catalog is global; a Project snapshot is only a persist vehicle.
+                    const hasProviderData = get().providers.length > 0
+                        || Boolean(currentProviderSnapshot?.providers.length);
                     if (!hasProviderData) {
                         set((state) => ({
                             providerConfigLoadingByDirectory: {
@@ -1492,8 +1499,12 @@ export const useConfigStore = create<ConfigStore>()(
                     const loaderStarted = typeof performance !== 'undefined' ? performance.now() : Date.now();
                     markStartupTrace('loadProviders:start', { directoryKey, source, requestedDirectory, effectiveDirectory });
                     const existingSnapshot = get().directoryScoped[directoryKey];
-                    const previousProviders = existingSnapshot?.providers ?? (get().activeDirectoryKey === directoryKey ? get().providers : []);
-                    const previousDefaults = existingSnapshot?.defaultProviders ?? (get().activeDirectoryKey === directoryKey ? get().defaultProviders : {});
+                    const previousProviders = get().providers.length > 0
+                        ? get().providers
+                        : existingSnapshot?.providers ?? [];
+                    const previousDefaults = Object.keys(get().defaultProviders).length > 0
+                        ? get().defaultProviders
+                        : existingSnapshot?.defaultProviders ?? {};
                     try {
                             const apiResult = await measureStartupTrace(
                                 'loadProviders:api',
@@ -1562,6 +1573,8 @@ export const useConfigStore = create<ConfigStore>()(
                                 };
 
                                 const nextState: Partial<ConfigStore> = {
+                                    providers: processedProviders,
+                                    defaultProviders: defaults,
                                     directoryScoped: {
                                         ...state.directoryScoped,
                                         [directoryKey]: nextSnapshot,
@@ -1569,8 +1582,6 @@ export const useConfigStore = create<ConfigStore>()(
                                 };
 
                                 if (state.activeDirectoryKey === directoryKey) {
-                                    nextState.providers = processedProviders;
-                                    nextState.defaultProviders = defaults;
                                     nextState.currentProviderId = nextSnapshot.currentProviderId;
                                     nextState.currentModelId = nextSnapshot.currentModelId;
                                     nextState.currentVariant = nextSnapshot.currentVariant;
@@ -1625,6 +1636,8 @@ export const useConfigStore = create<ConfigStore>()(
                         };
 
                         const nextState: Partial<ConfigStore> = {
+                            providers: previousProviders,
+                            defaultProviders: previousDefaults,
                             directoryScoped: {
                                 ...state.directoryScoped,
                                 [directoryKey]: nextSnapshot,
@@ -1632,8 +1645,6 @@ export const useConfigStore = create<ConfigStore>()(
                         };
 
                         if (state.activeDirectoryKey === directoryKey) {
-                            nextState.providers = previousProviders;
-                            nextState.defaultProviders = previousDefaults;
 
                             if (!state.currentProviderId && !state.currentModelId && state.settingsDefaultModel) {
                                 const parsed = parseModelString(state.settingsDefaultModel);
@@ -3340,42 +3351,65 @@ export const useConfigStore = create<ConfigStore>()(
                     }),
                 partialize: (state) => {
                     const activeSnapshot = state.directoryScoped[state.activeDirectoryKey];
-                    const activeCatalog = activeSnapshot && activeSnapshot.providerCatalogPartial !== true
+                    const globalCatalog = state.providers.length > 0
                         ? {
-                            providers: sanitizeProviderList(activeSnapshot.providers),
-                            defaultProviders: sanitizeDefaultProviders(activeSnapshot.defaultProviders),
+                            providers: sanitizeProviderList(state.providers),
+                            defaultProviders: sanitizeDefaultProviders(state.defaultProviders),
                             providerCatalogPartial: false,
                         }
-                        : { providers: [], defaultProviders: {}, providerCatalogPartial: activeSnapshot?.providerCatalogPartial === true };
+                        : activeSnapshot && activeSnapshot.providerCatalogPartial !== true
+                            ? {
+                                providers: sanitizeProviderList(activeSnapshot.providers),
+                                defaultProviders: sanitizeDefaultProviders(activeSnapshot.defaultProviders),
+                                providerCatalogPartial: false,
+                            }
+                            : { providers: [], defaultProviders: {}, providerCatalogPartial: activeSnapshot?.providerCatalogPartial === true };
+                    const activeCatalog = globalCatalog;
+                    const serializeDirectorySnapshot = (
+                        directoryKey: string,
+                        snapshot: DirectoryScopedConfig | undefined,
+                    ) => {
+                        const lastUserSelection = sanitizeLastUserSelection(snapshot?.lastUserSelection)
+                            ?? deriveLastUserSelectionFromLegacy(
+                                sanitizeSelectionIdentifier(snapshot?.lastSelectedAgentName, true),
+                                sanitizeAgentModelSelections(snapshot?.agentModelSelections),
+                            )
+                            ?? (directoryKey === state.activeDirectoryKey
+                                ? sanitizeLastUserSelection(state.lastUserSelection)
+                                : undefined);
+                        return {
+                            ...(directoryKey === state.activeDirectoryKey
+                                ? activeCatalog
+                                : { providers: [], defaultProviders: {}, providerCatalogPartial: snapshot?.providerCatalogPartial === true }),
+                            agents: [],
+                            currentProviderId: snapshot?.currentProviderId ?? (directoryKey === state.activeDirectoryKey ? state.currentProviderId : ''),
+                            currentModelId: snapshot?.currentModelId ?? (directoryKey === state.activeDirectoryKey ? state.currentModelId : ''),
+                            currentVariant: snapshot?.currentVariant ?? (directoryKey === state.activeDirectoryKey ? state.currentVariant : undefined),
+                            currentAgentName: snapshot?.currentAgentName ?? (directoryKey === state.activeDirectoryKey ? state.currentAgentName : undefined),
+                            selectedProviderId: sanitizePersistedSelectedProviderId(
+                                snapshot?.selectedProviderId ?? (directoryKey === state.activeDirectoryKey ? state.selectedProviderId : ''),
+                            ),
+                            agentModelSelections: {},
+                            lastSelectedAgentName: lastUserSelection?.agentName
+                                ?? sanitizeSelectionIdentifier(snapshot?.lastSelectedAgentName, true),
+                            lastUserSelection,
+                            opencodeDefaultAgent: snapshot?.opencodeDefaultAgent,
+                            opencodeDefaultModel: snapshot?.opencodeDefaultModel,
+                            selectionSource: snapshot?.selectionSource ?? (directoryKey === state.activeDirectoryKey ? state.selectionSource : undefined),
+                        };
+                    };
                     const directoryScoped = Object.fromEntries(
-                        Object.entries(state.directoryScoped).map(([directoryKey, snapshot]) => {
-                            const lastUserSelection = sanitizeLastUserSelection(snapshot.lastUserSelection)
-                                ?? deriveLastUserSelectionFromLegacy(
-                                    sanitizeSelectionIdentifier(snapshot.lastSelectedAgentName, true),
-                                    sanitizeAgentModelSelections(snapshot.agentModelSelections),
-                                );
-                            return [
-                                directoryKey,
-                                {
-                                    ...(directoryKey === state.activeDirectoryKey ? activeCatalog : { providers: [], defaultProviders: {}, providerCatalogPartial: snapshot.providerCatalogPartial === true }),
-                                    agents: [],
-                                    currentProviderId: snapshot.currentProviderId,
-                                    currentModelId: snapshot.currentModelId,
-                                    currentVariant: snapshot.currentVariant,
-                                    currentAgentName: snapshot.currentAgentName,
-                                    selectedProviderId: sanitizePersistedSelectedProviderId(snapshot.selectedProviderId),
-                                    // Do not persist the legacy per-agent map; unit pick is enough.
-                                    agentModelSelections: {},
-                                    lastSelectedAgentName: lastUserSelection?.agentName
-                                        ?? sanitizeSelectionIdentifier(snapshot.lastSelectedAgentName, true),
-                                    lastUserSelection,
-                                    opencodeDefaultAgent: snapshot.opencodeDefaultAgent,
-                                    opencodeDefaultModel: snapshot.opencodeDefaultModel,
-                                    selectionSource: snapshot.selectionSource,
-                                },
-                            ];
-                        }),
+                        Object.entries(state.directoryScoped).map(([directoryKey, snapshot]) => [
+                            directoryKey,
+                            serializeDirectorySnapshot(directoryKey, snapshot),
+                        ]),
                     );
+                    if (state.activeDirectoryKey && !directoryScoped[state.activeDirectoryKey]) {
+                        directoryScoped[state.activeDirectoryKey] = serializeDirectorySnapshot(
+                            state.activeDirectoryKey,
+                            undefined,
+                        );
+                    }
                     const activeCatalogSerialized = JSON.stringify(activeCatalog);
                     if (persistedCatalogTextEncoder.encode(activeCatalogSerialized).byteLength > PERSISTED_CONFIG_CATALOG_BYTE_BUDGET) {
                         const active = directoryScoped[state.activeDirectoryKey] as Record<string, unknown> | undefined;
@@ -3424,27 +3458,10 @@ if (typeof window !== "undefined") {
 }
 
 const refreshKnownProviderDirectories = async (source: string): Promise<void> => {
-    const state = useConfigStore.getState();
-    const directoryKeys = Array.from(new Set([
-        state.activeDirectoryKey,
-        ...Object.keys(state.directoryScoped),
-    ])).filter((key) => key.length > 0);
-
-    let nextIndex = 0;
-    const workerCount = Math.min(PROVIDER_CONFIG_REFRESH_CONCURRENCY, directoryKeys.length);
-    const workers = Array.from({ length: workerCount }, async () => {
-        while (nextIndex < directoryKeys.length) {
-            const directoryKey = directoryKeys[nextIndex];
-            nextIndex += 1;
-            await useConfigStore.getState().loadProviders({
-                directory: fromDirectoryKey(directoryKey),
-                source,
-                forceRefresh: true,
-            });
-        }
+    await useConfigStore.getState().loadProviders({
+        source,
+        forceRefresh: true,
     });
-
-    await Promise.all(workers);
 };
 
 let unsubscribeConfigStoreChanges: (() => void) | null = null;

@@ -379,7 +379,7 @@ describe('useConfigStore provider persistence', () => {
     expect(reloaded.currentModelId).toBe('fresh-model');
   });
 
-  test('provider config events refresh all known directory provider caches immediately', async () => {
+  test('provider config events refresh the global catalog once', async () => {
     useConfigStore.setState({
       activeDirectoryKey: DIRECTORY,
       providers: [provider('active-stale')],
@@ -419,10 +419,12 @@ describe('useConfigStore provider persistence', () => {
     await configListener?.({ scopes: ['providers'], timestamp: Date.now() });
 
     const state = useConfigStore.getState();
-    expect(getProvidersCalls).toBe(2);
+    expect(getProvidersCalls).toBe(1);
+    expect(state.providers.map((entry) => entry.id)).toEqual(['active-live']);
     expect(state.directoryScoped[DIRECTORY]?.providers.map((entry) => entry.id)).toEqual(['active-live']);
-    expect(state.directoryScoped[OTHER_DIRECTORY]?.providers.map((entry) => entry.id)).toEqual(['inactive-live']);
-    expect(state.directoryScoped[OTHER_DIRECTORY]?.defaultProviders).toEqual({ default: 'inactive-live' });
+    expect(state.directoryScoped[DIRECTORY]?.defaultProviders).toEqual({ default: 'active-live' });
+    expect(state.directoryScoped[OTHER_DIRECTORY]?.currentProviderId).toBe('inactive-cached');
+    expect(state.directoryScoped[OTHER_DIRECTORY]?.currentModelId).toBe('inactive-cached-model');
   });
 
   test('provider reload preserves a valid current variant', async () => {
@@ -588,6 +590,29 @@ describe('useConfigStore provider persistence', () => {
     expect(persisted.directoryScoped[OTHER_DIRECTORY].lastUserSelection).toEqual({ agentName: 'review', providerId: 'other', modelId: 'other-model' });
     expect(persisted.directoryScoped[DIRECTORY].agentModelSelections).toEqual({});
     expect(persisted.directoryScoped[OTHER_DIRECTORY].agentModelSelections).toEqual({});
+  });
+
+  test('partialize keeps the global Provider catalog when the new active directory has no snapshot', () => {
+    useConfigStore.setState({
+      activeDirectoryKey: OTHER_DIRECTORY,
+      providers: [provider('global')],
+      defaultProviders: { default: 'global' },
+      directoryScoped: {
+        [DIRECTORY]: {
+          providers: [provider('stale')], agents: [], currentProviderId: 'stale', currentModelId: 'stale-model',
+          currentAgentName: 'build', selectedProviderId: 'stale', agentModelSelections: {},
+          lastUserSelection: { agentName: 'build', providerId: 'stale', modelId: 'stale-model' },
+          defaultProviders: { default: 'stale' },
+        },
+      },
+    });
+
+    const persisted = useConfigStore.persist.getOptions().partialize?.(useConfigStore.getState()) as { directoryScoped: Record<string, Record<string, unknown>> };
+    expect(persisted.directoryScoped[OTHER_DIRECTORY].providers).toHaveLength(1);
+    expect((persisted.directoryScoped[OTHER_DIRECTORY].providers as Array<{ id: string }>)[0]?.id).toBe('global');
+    expect(persisted.directoryScoped[OTHER_DIRECTORY].defaultProviders).toEqual({ default: 'global' });
+    expect(persisted.directoryScoped[DIRECTORY].providers).toEqual([]);
+    expect(persisted.directoryScoped[DIRECTORY].lastUserSelection).toEqual({ agentName: 'build', providerId: 'stale', modelId: 'stale-model' });
   });
 
   test('rehydrate migrates legacy per-agent picks into lastUserSelection and rejects bad keys', async () => {
@@ -1641,6 +1666,24 @@ describe('useConfigStore provider persistence', () => {
     await useConfigStore.getState().activateDirectory(OTHER_DIRECTORY, { refreshProviders: true, source: 'test:explicitRefresh' });
     expect(getProvidersCalls).toBe(1);
     expect(useConfigStore.getState().providers.map((entry) => entry.id)).toEqual(['fresh']);
+  });
+
+  test('new directory reuses the global Provider catalog without refetch', async () => {
+    useConfigStore.setState({
+      activeDirectoryKey: DIRECTORY,
+      providers: [provider('global')],
+      defaultProviders: { default: 'global' },
+      directoryScoped: {
+        [DIRECTORY]: {
+          providers: [provider('global')], agents: [], currentProviderId: 'global', currentModelId: 'global-model',
+          currentAgentName: undefined, selectedProviderId: 'global', agentModelSelections: {}, defaultProviders: { default: 'global' },
+        },
+      },
+    });
+    await useConfigStore.getState().activateDirectory(OTHER_DIRECTORY);
+    expect(getProvidersCalls).toBe(0);
+    expect(useConfigStore.getState().providers.map((entry) => entry.id)).toEqual(['global']);
+    expect(useConfigStore.getState().activeDirectoryKey).toBe(OTHER_DIRECTORY);
   });
 
   test('initializeApp force-refreshes a warm Provider Query snapshot', async () => {

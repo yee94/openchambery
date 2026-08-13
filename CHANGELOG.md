@@ -4,6 +4,13 @@ All notable changes to this project will be documented in this file.
 
 ## [Unreleased]
 
+## [1.16.131-beta.2] - 2026-08-13
+
+- **Relay send:** if the event pipeline is down but the E2EE tunnel is connected, skip the nested OpenCode health probe so send no longer fails with `Connection lost (health probe unhealthy)`.
+- **Relay event-stream ready:** wait up to 8s for the WebSocket to become ready (LAN stays 2s); Host `/api/opencode/health` nested fetch now times out at 4s.
+- **Provider catalog:** one global cache per transport. New project / new-draft no longer force-refreshes the model list; only last selected model ID stays per project.
+- **Conversation order:** revert visibility, the revert dock, and user-message history compare position by `messageOrder`, not lexicographic message ids.
+
 ## [1.16.131-beta.1] - 2026-08-13
 
 - **Chat LaTeX:** render Pandoc-style `$...$` inline math with currency-safe pairing so `$I_m$` becomes KaTeX while `$50` / `US$ 680` stay money.

@@ -117,8 +117,10 @@ Web and Electron store up to four panel transcript views within a 48 MiB local c
 the cache is runtime-scoped through each view's geometry key and is cleared for
 all nested views when its tab closes.
 
-`configCatalogQueries.ts` owns the safe Provider catalog and raw Agent catalog by transport
-identity plus normalized project configuration directory. New OpenChamber hosts always use the safe
+`configCatalogQueries.ts` owns the safe Provider catalog by transport
+identity. The catalog is one global cache per transport (LAN vs relay); project
+directory is only an OpenCode request hint (`x-opencode-directory`) and must not
+appear in the Query key. New OpenChamber hosts always use the safe
 projection from `GET /api/config/catalog/providers` via `runtimeFetch`, with directory and AbortSignal
 propagation. Older OpenChamber hosts that answer 404 or 501 use one compatibility read through the
 official SDK's `/api/config/providers` network path; its raw response is parsed immediately into the
@@ -126,14 +128,16 @@ safe DTO. The Provider DTO admits only provider/model display and capability fie
 the parser constructs each field, drops unknown keys, bounds collections, and accepts
 partial catalogs with invalid individual entities removed. TanStack Query owns the sole
 network retry policy, infinite freshness/retention, exact invalidation, and single-flight.
-`useConfigStore.ts` owns project-scoped UI projections, selection (including directory-scoped `lastUserSelection` plus cross-project `globalLastUserSelection` for new-draft unit inherit of agent+model+variant; legacy `agentModelSelections` / `lastSelectedAgentName` are hydrate-only), and mutation
+`useConfigStore.ts` owns the global Provider UI projection, per-project selection (including directory-scoped `lastUserSelection` plus cross-project `globalLastUserSelection` for new-draft unit inherit of agent+model+variant; legacy `agentModelSelections` / `lastSelectedAgentName` are hydrate-only), and mutation
 orchestration. It applies the Provider DTO allowlist again when projecting Query
 results into the store. TanStack Query remains the Provider/Agent network SWR
 owner. `config-store` localStorage keeps one bounded safe Provider/default DTO
-startup snapshot for the active configuration directory, seeds an empty Provider
+startup snapshot on the active configuration directory (persist vehicle for the
+global catalog), seeds an empty Provider
 Query from that complete snapshot, and Agent catalogs remain memory-only.
-Startup and new-draft target activation explicitly force-refresh Providers while
-historical session activation reuses the snapshot. Failed refreshes retain the
+Startup and config-change still force-refresh Providers; new-draft and project
+switch reuse the global catalog and only restore that project's last model ID.
+Failed refreshes retain the
 previous snapshot. A successful empty Provider or Agent catalog remains a valid
 success response and is retained by TanStack Query's infinite freshness; cold-start
   recovery therefore uses `refreshMissingCatalogs`, which re-reads the authoritative

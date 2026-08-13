@@ -114,7 +114,16 @@ describe('configCatalogQueries', () => {
     await refreshed;
     expect(agentCalls).toBe(4);
     expect(rawAgentsQueryOptions('/workspace/project', 'runtime-a').queryKey).toEqual(['runtime-a', 'agents', 'raw', '/workspace/project']);
-    expect(providerCatalogQueryOptions('/workspace/project', 'runtime-a').queryKey).toEqual(['runtime-a', 'configCatalog', 'providers', '/workspace/project']);
+    expect(providerCatalogQueryOptions('/workspace/project', 'runtime-a').queryKey).toEqual(['runtime-a', 'configCatalog', 'providers']);
+  });
+
+  test('Provider Catalog 跨目录共享同一份全局 cache', async () => {
+    await ensureProviderCatalogQuery('/workspace/project', runtimeKey);
+    await ensureProviderCatalogQuery('/workspace/other', runtimeKey);
+    expect(providerCalls).toBe(1);
+    expect(providerCatalogQueryOptions('/workspace/project', runtimeKey).queryKey).toEqual(
+      providerCatalogQueryOptions('/workspace/other', runtimeKey).queryKey,
+    );
   });
 
   test('Provider Catalog 使用安全宿主路由、目录和 AbortSignal，并丢弃敏感字段', async () => {
@@ -145,11 +154,10 @@ describe('configCatalogQueries', () => {
       defaultProviders: { default: 'replacement' },
       providerCatalogPartial: false,
     }, runtimeKey);
-    expect(queryClient.getQueryData(providerCatalogQueryOptions('/workspace/project', runtimeKey).queryKey)).toEqual(warmCatalog);
+    expect(queryClient.getQueryData(providerCatalogQueryOptions('/workspace/other', runtimeKey).queryKey)).toEqual(warmCatalog);
 
-    const coldPartialKey = providerCatalogQueryOptions('/workspace/cold-partial', runtimeKey).queryKey;
     seedProviderCatalogQuery('/workspace/cold-partial', { providers: [], defaultProviders: {}, providerCatalogPartial: true }, runtimeKey);
-    expect(queryClient.getQueryData(coldPartialKey)).toBe(undefined);
+    expect(queryClient.getQueryData(providerCatalogQueryOptions('/workspace/cold-partial', runtimeKey).queryKey)).toEqual(warmCatalog);
   });
 
   test('Provider Catalog 顶层 schema 失效时失败关闭', async () => {

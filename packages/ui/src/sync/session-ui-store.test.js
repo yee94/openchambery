@@ -393,14 +393,14 @@ describe('openNewSessionDraft project binding', () => {
     expect(useProjectsStore.getState().activeProjectId).toBe(createdProject?.id);
   });
 
-  test('new draft activation explicitly requests a Provider refresh', async () => {
+  test('new draft activation reuses the global Provider catalog', async () => {
     const originalActivateDirectory = useConfigStore.getState().activateDirectory;
     const calls = [];
     useConfigStore.setState({ activateDirectory: async (...args) => { calls.push(args); } });
     try {
       useSessionUIStore.getState().openNewSessionDraft({ selectedProjectId: projectA.id });
       await new Promise((resolve) => setTimeout(resolve, 0));
-      expect(calls).toEqual([[projectA.path, { refreshProviders: true, source: 'newSessionDraft' }]]);
+      expect(calls).toEqual([[projectA.path, { source: 'newSessionDraft' }]]);
     } finally {
       useConfigStore.setState({ activateDirectory: originalActivateDirectory });
     }

@@ -1,5 +1,6 @@
 import type { Message, Part } from '@opencode-ai/sdk/v2/client';
 import type { State } from '@/sync/types';
+import { isAtOrAfterRevert } from '@/sync/conversation-order';
 
 type RevertedMessageRecord = {
     message: Message & { role: 'user' };
@@ -80,7 +81,7 @@ export const buildRevertedMessageDockState = (
 
     const records: RevertedMessageRecord[] = [];
     for (const message of messages) {
-        if (!isUserMessage(message) || message.id < revertMessageID) {
+        if (!isUserMessage(message) || !isAtOrAfterRevert(messages, message.id, revertMessageID)) {
             continue;
         }
         records.push({

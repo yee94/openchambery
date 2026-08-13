@@ -25,9 +25,10 @@ export const queryKeys = {
     list: (directory: string | null, transport = getRuntimeTransportIdentity()): readonly [string, 'agents', string | null] => [transport, 'agents', directory],
     raw: (directory: string | null, transport = getRuntimeTransportIdentity()): readonly [string, 'agents', 'raw', string | null] => [transport, 'agents', 'raw', normalizeQueryDirectory(directory)],
   },
-  configCatalog: {
-    providers: (directory: string | null, transport = getRuntimeTransportIdentity()): readonly [string, 'configCatalog', 'providers', string | null] => [transport, 'configCatalog', 'providers', normalizeQueryDirectory(directory)],
-  },
+    configCatalog: {
+      // Directory is an OpenCode request hint only; the catalog is one cache per transport.
+      providers: (_directory: string | null, transport = getRuntimeTransportIdentity()): readonly [string, 'configCatalog', 'providers'] => [transport, 'configCatalog', 'providers'],
+    },
   providers: {
     list: (directory: string | null, transport = getRuntimeTransportIdentity()): readonly [string, 'providers', string | null] => [transport, 'providers', directory],
   },

@@ -1,5 +1,6 @@
 import type { Message, Part } from '@opencode-ai/sdk/v2/client';
 import type { State } from './types';
+import { isAtOrAfterRevert } from './conversation-order';
 
 type UserMessageHistoryRecord = {
   message: Message;
@@ -74,7 +75,7 @@ export const buildUserMessageHistorySnapshotFromSource = (
     if (message.role !== 'user') {
       continue;
     }
-    if (revertMessageID && message.id >= revertMessageID) {
+    if (revertMessageID && isAtOrAfterRevert(messages, message.id, revertMessageID)) {
       continue;
     }
     records.push({
