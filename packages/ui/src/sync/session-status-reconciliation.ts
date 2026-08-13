@@ -103,16 +103,48 @@ function haveEquivalentStatuses(
  * membership IDs from other directories are never copied into this store.
  *
  * Rules (P0):
- * - active running + legacy retry → retry (preserve retry metadata)
+ * - active running + legacy retry still inside `next` → keep retry metadata
+ * - active running + expired/absent retry → busy (the attempt has resumed)
  * - active running + busy / absent → busy
  * - active success + absent from membership → idle
  * - active unknown / unsupported → use legacy only
  * - both failed → preserve (caller must not apply)
  */
+export function isRetryInBackoff(status: SessionStatus, now: number): boolean {
+  return status.type === "retry"
+    && typeof status.next === "number"
+    && status.next > now
+}
+
+/**
+ * Live `session.next.*` / activity means the retry attempt already resumed.
+ * Promote `retry` → `busy` so the retry overlay and retryInfo clear.
+ */
+export function promoteRetryToBusyOnLiveActivity(
+  store: StoreApi<DirectoryStore>,
+  sessionID: string,
+  now: number = Date.now(),
+): boolean {
+  const status = store.getState().session_status?.[sessionID]
+  if (status?.type !== "retry") return false
+  store.setState((state) => ({
+    session_status: {
+      ...state.session_status,
+      [sessionID]: { type: "busy" },
+    },
+    session_status_observed_at: {
+      ...state.session_status_observed_at,
+      [sessionID]: now,
+    },
+  }))
+  return true
+}
+
 export function fuseActiveWithLegacyStatus(
   active: SessionActiveResult | null | undefined,
   legacy: DirectorySessionStatusSnapshot | null | undefined,
   candidateSessionIds: string[],
+  now: number = Date.now(),
 ): {
   snapshot: DirectorySessionStatusSnapshot | null
   source: "fused" | "legacy" | "none"
@@ -145,7 +177,7 @@ export function fuseActiveWithLegacyStatus(
     const legacyStatus = toSessionStatus(legacyMap[sessionId])
 
     if (isRunning) {
-      if (legacyStatus?.type === "retry") {
+      if (legacyStatus && isRetryInBackoff(legacyStatus, now)) {
         fused[sessionId] = legacyStatus
       } else {
         fused[sessionId] = { type: "busy" }

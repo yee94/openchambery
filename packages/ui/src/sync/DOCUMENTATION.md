@@ -664,8 +664,9 @@ both readers agree on when a frame may shrink.
   post-message-pull convergence. Each resync issues **parallel** directory
   legacy `/session/status` and process-global active membership pulls, then
   fuses them (`fuseActiveWithLegacyStatus`):
-  - active running + legacy retry → keep retry metadata
-  - active running + busy / absent → busy
+   - active running + legacy retry still inside `next` → keep retry metadata
+   - active running + expired retry → busy (the attempt has resumed)
+   - active running + busy / absent → busy
   - active supported + absent from membership → idle (stale busy converges)
   - active unknown / unsupported → legacy only
   - both unusable → preserve prior status; **do not** advance

@@ -9,16 +9,19 @@ import {
   applySessionStatusSnapshot,
   collectSessionStatusSnapshotApplyIds,
   fuseActiveWithLegacyStatus,
+  promoteRetryToBusyOnLiveActivity,
   reconcileActiveSessionStatusAfterMessagePull,
   resyncDirectorySessionStatuses,
 } from "../session-status-reconciliation"
 import type { SessionActiveResult } from "@/lib/opencode/client"
 import {
+  handleNormalizedOpenCodeHints,
   isLiveRevisionCurrent,
   resolveStrictDomainSessionID,
   shouldTriggerDomainRecovery,
   shouldTriggerStaleResync,
 } from "../sync-context"
+import { ChildStoreManager } from "../child-store"
 
 type StatusSnapshot = Record<string, { type: "idle" | "busy" | "retry"; attempt?: number; message?: string; next?: number }>
 
@@ -56,14 +59,26 @@ describe("fuseActiveWithLegacyStatus", () => {
     expect(snapshot?.ses_a).toEqual({ type: "idle" })
   })
 
-  test("active running + legacy retry keeps retry", () => {
-    const retry = { type: "retry" as const, attempt: 2, message: "x", next: 30 }
+  test("active running + legacy retry keeps retry while backoff is pending", () => {
+    const retry = { type: "retry" as const, attempt: 2, message: "x", next: 1_700_000_060_000 }
     const { snapshot } = fuseActiveWithLegacyStatus(
       { state: "supported", membership: { ses_a: { type: "running" } } },
       { ses_a: retry },
       ["ses_a"],
+      1_700_000_000_000,
     )
     expect(snapshot?.ses_a).toEqual(retry)
+  })
+
+  test("active running + expired legacy retry becomes busy", () => {
+    const retry = { type: "retry" as const, attempt: 2, message: "Connection error", next: 1_700_000_000_000 }
+    const { snapshot } = fuseActiveWithLegacyStatus(
+      { state: "supported", membership: { ses_a: { type: "running" } } },
+      { ses_a: retry },
+      ["ses_a"],
+      1_700_000_030_000,
+    )
+    expect(snapshot?.ses_a).toEqual({ type: "busy" })
   })
 
   test("active running + absent legacy becomes busy", () => {
@@ -124,6 +139,47 @@ describe("fuseActiveWithLegacyStatus", () => {
     )
     expect(source).toBe("none")
     expect(snapshot).toBe(null)
+  })
+})
+
+describe("promoteRetryToBusyOnLiveActivity", () => {
+  test("promotes retry to busy and stamps observed_at", () => {
+    const store = createDirectoryStore({
+      session_status: { ses_a: { type: "retry", attempt: 1, message: "Connection error", next: 99 } },
+      session_status_observed_at: { ses_a: 10 },
+    })
+    expect(promoteRetryToBusyOnLiveActivity(store, "ses_a", 50)).toBe(true)
+    expect(store.getState().session_status.ses_a).toEqual({ type: "busy" })
+    expect(store.getState().session_status_observed_at.ses_a).toBe(50)
+  })
+
+  test("leaves non-retry status untouched", () => {
+    const store = createDirectoryStore({
+      session_status: { ses_a: BUSY },
+      session_status_observed_at: { ses_a: 10 },
+    })
+    expect(promoteRetryToBusyOnLiveActivity(store, "ses_a", 50)).toBe(false)
+    expect(store.getState().session_status.ses_a).toEqual(BUSY)
+    expect(store.getState().session_status_observed_at.ses_a).toBe(10)
+  })
+})
+
+describe("handleNormalizedOpenCodeHints", () => {
+  test("live session.next activity clears a retry overlay status", () => {
+    const manager = new ChildStoreManager()
+    const store = manager.ensureChild("/workspace", { bootstrap: false })
+    store.setState({
+      session_status: { ses_a: { type: "retry", attempt: 1, message: "Connection error", next: Date.now() + 30_000 } },
+    })
+
+    handleNormalizedOpenCodeHints("/workspace", {
+      type: "session.next.reasoning.delta",
+      properties: { sessionID: "ses_a" },
+      domainActivityHint: { sessionID: "ses_a", kind: "activity" },
+    }, manager)
+
+    expect(store.getState().session_status.ses_a).toEqual({ type: "busy" })
+    manager.disposeAll()
   })
 })
 

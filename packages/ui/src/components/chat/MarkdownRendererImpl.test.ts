@@ -140,6 +140,11 @@ describe('stream completion reuses the streamed DOM', () => {
         expect(markdownCoreSource).toContain("mode: isLast ? tailMode : 'full',");
     });
 
+    test('dollar math is lexed through the currency-safe matcher', () => {
+        expect(markdownCoreSource).toContain('matchDollarMath');
+        expect(markdownCoreSource).toContain('dollarMathExtension');
+    });
+
     test('the non-streaming render yields on a time budget, not once per block', () => {
         expect(markdownCoreSource).toContain('sliceDeadline = nowMs() + RENDER_SLICE_BUDGET_MS;');
     });

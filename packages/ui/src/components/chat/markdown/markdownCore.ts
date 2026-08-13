@@ -7,6 +7,7 @@ import { scheduleAfterPaintTask } from '@/lib/afterPaintTaskQueue';
 import { buildAgentMentionUrl, parseAgentHref, parseSkillHref } from '@/lib/messages/inlineMessageLinks';
 import { isVSCodeRuntime } from '@/lib/desktop';
 import { parseCodeFenceInfo, type CodeFenceInfo } from './codeFenceInfo';
+import { findDollarMathStart, matchDollarMath } from './markdownMath';
 import { highlightCodeInWorker } from './markdown-worker';
 import type { MarkdownWorkerPriority } from './markdown-worker-protocol';
 
@@ -197,10 +198,32 @@ const blockMathExtension = {
   },
 };
 
+// `$...$` / `$$...$$` at lex time (Pandoc pairing in markdownMath). Must run
+// as a tokenizer so `$I_m$` is not split by `_` emphasis, and so `$$...$$`
+// is not clipped into a stray `$` plus inline math.
+type DollarMathToken = MathToken & { display: boolean };
+
+const dollarMathExtension = {
+  name: 'dollarMath',
+  level: 'inline' as const,
+  start(src: string) {
+    return findDollarMathStart(src);
+  },
+  tokenizer(src: string): DollarMathToken | undefined {
+    const match = matchDollarMath(src);
+    if (!match) return undefined;
+    return { type: 'dollarMath', raw: match.raw, text: match.text, display: match.display };
+  },
+  renderer(token: Tokens.Generic) {
+    const math = token as DollarMathToken;
+    return renderKatex(math.text, math.raw, math.display);
+  },
+};
+
 const parser = marked.use({
   gfm: true,
   breaks: false,
-  extensions: [inlineMathExtension, blockMathExtension],
+  extensions: [inlineMathExtension, blockMathExtension, dollarMathExtension],
   renderer: {
     link({ href, title, text }) {
       const target = href ?? '';

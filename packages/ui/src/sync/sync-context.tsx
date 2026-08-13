@@ -126,6 +126,7 @@ import {
 } from "./scoped-session-status"
 import { CURRENT_SESSION_ENTITY_CACHE_TTL_MS, resolveCurrentSessionEntity, resolveParentSessionTarget } from "./current-session-entity"
 import {
+  promoteRetryToBusyOnLiveActivity,
   reconcileActiveSessionStatusAfterMessagePull,
   resyncDirectorySessionStatuses,
   setAuthoritativeGlobalSessionStatusConverge,
@@ -433,6 +434,13 @@ export function handleNormalizedOpenCodeHints(
       ? normalized.properties.sessionID
       : undefined)
   if (!sessionID || !directory || directory === "global") return
+
+  // Live step/text/reasoning/tool streams mean the retry attempt already
+  // resumed. Promote retry → busy so the overlay does not stay pinned.
+  if (normalized.domainActivityHint?.kind === "activity") {
+    const store = childStores.getChild(directory)
+    if (store) promoteRetryToBusyOnLiveActivity(store, sessionID)
+  }
 
   // Admission confirmation + activity: Ticket 09 Query path relies on SSE merge
   // and observe-ensure for stale inactive transcripts (no session-prefetch dirty).
