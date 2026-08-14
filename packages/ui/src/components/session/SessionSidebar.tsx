@@ -2673,7 +2673,7 @@ export const SessionSidebar: React.FC<SessionSidebarProps> = ({
     <div
       ref={sessionSearchContainerRef}
       className={cn(
-        "relative flex h-full flex-col text-foreground overflow-x-hidden",
+        "oc-session-sidebar relative flex h-full flex-col text-foreground overflow-x-hidden",
         mobileVariant ? "" : "bg-transparent",
       )}
     >

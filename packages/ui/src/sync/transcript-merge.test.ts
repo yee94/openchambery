@@ -311,4 +311,148 @@ describe("mergeSessionTranscript", () => {
     expect(Object.isFrozen(pageData)).toBe(true)
     expect(Object.isFrozen(pageData.messageOrder)).toBe(true)
   })
+
+  test("idle materialize keeps a live last turn omitted by a lagging snapshot", () => {
+    const live = mergeSessionTranscript(undefined, SESSION, {
+      type: "http-page",
+      purpose: "initial",
+      page: page(
+        [
+          { info: userMessage("msg_1"), parts: [textPart("p1", "msg_1", "older")] },
+          { info: assistantMessage("msg_2"), parts: [textPart("p2", "msg_2", "older-reply")] },
+          { info: userMessage("msg_3"), parts: [textPart("p3", "msg_3", "just sent")] },
+          { info: assistantMessage("msg_4"), parts: [textPart("p4", "msg_4", "just finished")] },
+        ],
+        { complete: true, turnCount: 2 },
+      ),
+    }).data!
+
+    const { data, result } = mergeSessionTranscript(live, SESSION, {
+      type: "http-page",
+      purpose: "materialize",
+      page: page(
+        [
+          { info: userMessage("msg_1"), parts: [textPart("p1", "msg_1", "older")] },
+          { info: assistantMessage("msg_2"), parts: [textPart("p2", "msg_2", "older-reply")] },
+        ],
+        { complete: true, turnCount: 1 },
+      ),
+    })
+
+    expect(result.applied).toBe(true)
+    const flat = projectFlatFromTranscriptData(data, SESSION)
+    expect(flat.messageOrder).toEqual(["msg_1", "msg_2", "msg_3", "msg_4"])
+    expect((flat.partsByMessageID["msg_3"]?.[0] as { text?: string })?.text).toBe("just sent")
+    expect((flat.partsByMessageID["msg_4"]?.[0] as { text?: string })?.text).toBe("just finished")
+  })
+
+  test("idle materialize does not wipe live parts when the snapshot returns empty shells", () => {
+    const live = mergeSessionTranscript(undefined, SESSION, {
+      type: "http-page",
+      purpose: "initial",
+      page: page(
+        [
+          { info: userMessage("msg_1"), parts: [textPart("p1", "msg_1", "just sent")] },
+          { info: assistantMessage("msg_2"), parts: [textPart("p2", "msg_2", "just finished")] },
+        ],
+        { complete: true, turnCount: 1 },
+      ),
+    }).data!
+
+    const { data } = mergeSessionTranscript(live, SESSION, {
+      type: "http-page",
+      purpose: "materialize",
+      page: page(
+        [
+          { info: userMessage("msg_1"), parts: [] },
+          { info: assistantMessage("msg_2"), parts: [] },
+        ],
+        { complete: true, turnCount: 1 },
+      ),
+    })
+
+    const flat = projectFlatFromTranscriptData(data, SESSION)
+    expect(flat.messageOrder).toEqual(["msg_1", "msg_2"])
+    expect((flat.partsByMessageID["msg_1"]?.[0] as { text?: string })?.text).toBe("just sent")
+    expect((flat.partsByMessageID["msg_2"]?.[0] as { text?: string })?.text).toBe("just finished")
+  })
+
+  test("shareSessionTranscriptData keeps a live last turn on a same-length lagging tail", () => {
+    const live = mergeSessionTranscript(undefined, SESSION, {
+      type: "http-page",
+      purpose: "initial",
+      page: page(
+        [
+          { info: userMessage("msg_1"), parts: [textPart("p1", "msg_1", "older")] },
+          { info: assistantMessage("msg_2"), parts: [textPart("p2", "msg_2", "older-reply")] },
+          { info: userMessage("msg_3"), parts: [textPart("p3", "msg_3", "just sent")] },
+          { info: assistantMessage("msg_4"), parts: [textPart("p4", "msg_4", "just finished")] },
+        ],
+        { complete: true, turnCount: 2 },
+      ),
+    }).data!
+
+    const lagging = mergeSessionTranscript(undefined, SESSION, {
+      type: "http-page",
+      purpose: "initial",
+      page: page(
+        [
+          { info: userMessage("msg_1"), parts: [textPart("p1", "msg_1", "older")] },
+          { info: assistantMessage("msg_2"), parts: [textPart("p2", "msg_2", "older-reply")] },
+        ],
+        { complete: true, turnCount: 1 },
+      ),
+    }).data!
+
+    const shared = shareSessionTranscriptData(live, lagging, SESSION)
+    const flat = projectFlatFromTranscriptData(shared, SESSION)
+    expect(flat.messageOrder).toEqual(["msg_1", "msg_2", "msg_3", "msg_4"])
+    expect((flat.partsByMessageID["msg_3"]?.[0] as { text?: string })?.text).toBe("just sent")
+    expect((flat.partsByMessageID["msg_4"]?.[0] as { text?: string })?.text).toBe("just finished")
+  })
+
+  test("shareSessionTranscriptData keeps a live last turn when Query collapses to one tail", () => {
+    const tail = mergeSessionTranscript(undefined, SESSION, {
+      type: "http-page",
+      purpose: "initial",
+      page: page(
+        [
+          { info: userMessage("msg_10"), parts: [textPart("p10", "msg_10", "recent")] },
+          { info: assistantMessage("msg_11"), parts: [textPart("p11", "msg_11", "recent-reply")] },
+          { info: userMessage("msg_12"), parts: [textPart("p12", "msg_12", "just sent")] },
+          { info: assistantMessage("msg_13"), parts: [textPart("p13", "msg_13", "just finished")] },
+        ],
+        { cursor: "msg_10", complete: false, turnCount: 2 },
+      ),
+    }).data!
+
+    const live = mergeSessionTranscript(tail, SESSION, {
+      type: "http-page",
+      purpose: "prepend",
+      page: page(
+        [{ info: userMessage("msg_01"), parts: [textPart("p01", "msg_01", "old")] }],
+        { complete: true, turnCount: 1 },
+      ),
+    }).data!
+    expect(live.pages.length).toBe(2)
+
+    const collapsed = mergeSessionTranscript(undefined, SESSION, {
+      type: "http-page",
+      purpose: "initial",
+      page: page(
+        [
+          { info: userMessage("msg_10"), parts: [textPart("p10", "msg_10", "recent")] },
+          { info: assistantMessage("msg_11"), parts: [textPart("p11", "msg_11", "recent-reply")] },
+        ],
+        { complete: true, turnCount: 1 },
+      ),
+    }).data!
+
+    const shared = shareSessionTranscriptData(live, collapsed, SESSION)
+    const flat = projectFlatFromTranscriptData(shared, SESSION)
+    expect(flat.messageOrder).toContain("msg_12")
+    expect(flat.messageOrder).toContain("msg_13")
+    expect((flat.partsByMessageID["msg_12"]?.[0] as { text?: string })?.text).toBe("just sent")
+    expect((flat.partsByMessageID["msg_13"]?.[0] as { text?: string })?.text).toBe("just finished")
+  })
 })

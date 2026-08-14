@@ -472,6 +472,16 @@ export async function materializeSessionFromServer(
 
   // Ticket 09: Query sole write — raw Host turn page → repository http-page.
   try {
+    const readLiveRevision = () => {
+      try {
+        return getTranscriptRepository()?.getTranscript(
+          transcriptScope(directory, sessionID),
+        ).liveRevision
+      } catch {
+        return undefined
+      }
+    }
+    const capturedLiveRevision = readLiveRevision()
     const page = await fetchProductionTranscriptTransportPage({
       directory,
       sessionID,
@@ -485,6 +495,8 @@ export async function materializeSessionFromServer(
       sessionID,
       purpose: "materialize",
       page,
+      capturedLiveRevision,
+      liveRevision: readLiveRevision(),
       skipPartTypes: RECONNECT_SKIP_PARTS,
     })
     if (!result.applied) return "skipped"

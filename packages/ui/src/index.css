@@ -96,6 +96,16 @@ html[data-oc-vibrancy] .oc-vibrancy-pill {
   background-color: transparent !important;
 }
 
+/* Dark mode: lift session-sidebar ink so labels stay readable on the
+   charcoal / vibrancy surface. Mix toward white from inherited sidebar
+   tokens so custom themes keep their hue; do not read --foreground /
+   --muted-foreground here (redefining them from themselves would cycle). */
+.dark .oc-session-sidebar {
+  --foreground: color-mix(in oklch, var(--sidebar-accent-foreground) 42%, white);
+  --muted-foreground: color-mix(in oklch, var(--surface-muted-foreground, var(--sidebar-foreground)) 70%, white);
+  --surface-foreground: var(--foreground);
+}
+
 /* Accessibility: drop translucency when the OS asks for reduced transparency. */
 @media (prefers-reduced-transparency: reduce) {
   html[data-oc-vibrancy] body,

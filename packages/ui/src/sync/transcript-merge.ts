@@ -977,6 +977,37 @@ export function mergeSessionTranscript(
   }
 }
 
+function transportFromTranscriptPage(page: TranscriptPage): TranscriptTransportPage {
+  return {
+    records: page.messageOrder.map((id) => ({
+      info: page.messagesByID[id]!,
+      parts: page.partsByMessageID[id] ? [...page.partsByMessageID[id]!] : [],
+    })),
+    cursor: page.cursor ?? undefined,
+    complete: page.complete,
+    turnCount: page.turnCount,
+  }
+}
+
+/**
+ * Fold an incoming tail into live InfiniteData with insert-only materialize.
+ * A lagging HTTP snapshot must not drop SSE-admitted messages.
+ */
+function mergeIncomingTail(
+  oldData: SessionTranscriptData,
+  incoming: TranscriptPage,
+  sessionID: string,
+  purpose: SessionMessagePagePurpose = "materialize",
+): SessionTranscriptData | undefined {
+  const merged = mergeSessionTranscript(oldData, sessionID, {
+    type: "http-page",
+    purpose,
+    page: transportFromTranscriptPage(incoming),
+    liveRevision: incoming.sync.liveRevision,
+  })
+  return merged.data
+}
+
 /**
  * structuralSharing for InfiniteQuery: when TanStack assembles a raw page
  * chain, re-merge through strategy so live parts and insert-only rules apply.
@@ -991,52 +1022,31 @@ export function shareSessionTranscriptData(
     return freezeSessionTranscriptData(newData)
   }
   if (newData.pages.length === oldData.pages.length) {
-    // Same length — share refs for unchanged pages.
-    return shareEqualLength(oldData, newData)
+    const shared = shareEqualLength(oldData, newData)
+    if (shared === oldData) return oldData
+    // Same page count but different content — typically a Query tail refetch.
+    // Re-merge through materialize so a lagging snapshot cannot clobber the
+    // live last turn SSE already admitted.
+    const incoming = newData.pages[newData.pages.length - 1]!
+    return mergeIncomingTail(oldData, incoming, sessionID) ?? shared
   }
   if (newData.pages.length === oldData.pages.length + 1) {
     // Prepend: first page is the new history window.
     const incoming = newData.pages[0]!
-    const transport: TranscriptTransportPage = {
-      records: incoming.messageOrder.map((id) => ({
-        info: incoming.messagesByID[id]!,
-        parts: incoming.partsByMessageID[id]
-          ? [...incoming.partsByMessageID[id]!]
-          : [],
-      })),
-      cursor: incoming.cursor ?? undefined,
-      complete: incoming.complete,
-      turnCount: incoming.turnCount,
-    }
     const merged = mergeSessionTranscript(oldData, sessionID, {
       type: "http-page",
       purpose: "prepend",
-      page: transport,
+      page: transportFromTranscriptPage(incoming),
       liveRevision: incoming.sync.liveRevision,
     })
     return merged.data
   }
-  if (oldData.pages.length === 0 || (newData.pages.length === 1 && oldData.pages.length > 1)) {
-    // Reset-like replacement with a single tail.
+  if (newData.pages.length === 1 && oldData.pages.length > 1) {
+    // Query refetch collapsed InfiniteData to a single tail. Keep live
+    // messages the snapshot omitted (including the just-finished turn).
     const incoming = newData.pages[0]!
-    const transport: TranscriptTransportPage = {
-      records: incoming.messageOrder.map((id) => ({
-        info: incoming.messagesByID[id]!,
-        parts: incoming.partsByMessageID[id]
-          ? [...incoming.partsByMessageID[id]!]
-          : [],
-      })),
-      cursor: incoming.cursor ?? undefined,
-      complete: incoming.complete,
-      turnCount: incoming.turnCount,
-    }
-    const merged = mergeSessionTranscript(undefined, sessionID, {
-      type: "http-page",
-      purpose: "initial",
-      page: transport,
-      liveRevision: incoming.sync.liveRevision,
-    })
-    return merged.data
+    return mergeIncomingTail(oldData, incoming, sessionID)
+      ?? freezeSessionTranscriptData(newData)
   }
   return freezeSessionTranscriptData(newData)
 }

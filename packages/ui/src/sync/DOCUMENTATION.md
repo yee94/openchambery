@@ -873,7 +873,12 @@ both readers agree on when a frame may shrink.
   (`setActiveSession` directory/session identity, not window focus),
   `handleEvent` enqueues one bounded `session-idle` materialization; background
   top-level idle stays zero-request; child idle still materializes the parent
-  (`child-session-idle`). Events missed during a suspend with no SSE delivery
+  (`child-session-idle`). Idle materialize captures live revision before the
+  HTTP round trip and drops the page when SSE advanced while it was in flight.
+  Query `structuralSharing` (`shareSessionTranscriptData`) re-merges a same-
+  length or collapsed tail through insert-only `materialize` so a lagging Host
+  snapshot cannot replace a live last turn the stream already admitted.
+  Events missed during a suspend with no SSE delivery
   remain covered by reconnect compensation + viewed-session recovery.
 - The client stall timer starts before SSE response headers arrive. Transport
   activity includes SSE comments and heartbeats, iterator events, and every
