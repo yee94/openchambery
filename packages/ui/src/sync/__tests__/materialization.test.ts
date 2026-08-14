@@ -8,6 +8,7 @@ import {
 import { resolveSessionMergeStrategy } from "../session-merge-strategy"
 
 const RECOVERY_MERGE = resolveSessionMergeStrategy({ purpose: "recovery" })
+const MATERIALIZE_MERGE = resolveSessionMergeStrategy({ purpose: "materialize" })
 
 function message(id: string, sessionID = "ses_1"): Message {
   return { id, sessionID, role: "assistant", time: { created: 1 } } as Message
@@ -346,6 +347,81 @@ describe("materializeSessionSnapshots", () => {
     const mergedPart = result.part.msg_1[0] as { state?: { time?: { start?: number; end?: number } } }
     expect(mergedPart.state?.time?.start).toBe(1000)
     expect(mergedPart.state?.time?.end).toBe(2000)
+  })
+
+  test("insert-only fills missing finish and completed without replacing the live row", () => {
+    const live = message("msg_1")
+    const snapshot = {
+      ...live,
+      finish: "stop",
+      time: { created: 1, completed: 9 },
+    } as Message
+    const result = materializeSessionSnapshots(
+      { message: { ses_1: [live] }, part: { msg_1: [part("prt_1", "msg_1", "text", "the answer")] } },
+      "ses_1",
+      [{ info: snapshot, parts: [part("prt_1", "msg_1", "text", "the answer")] }],
+      { merge: MATERIALIZE_MERGE },
+    )
+
+    const merged = result.message.ses_1[0] as Message & {
+      finish?: string
+      time?: { created?: number; completed?: number }
+    }
+    expect(merged).not.toBe(live)
+    expect(merged.id).toBe("msg_1")
+    expect(merged.finish).toBe("stop")
+    expect(merged.time?.created).toBe(1)
+    expect(merged.time?.completed).toBe(9)
+    expect(result.messagesChanged).toBe(true)
+  })
+
+  test("insert-only fills a missing error so an aborted turn can settle", () => {
+    const live = message("msg_1")
+    const snapshot = {
+      ...live,
+      error: { name: "UnknownError", data: { message: "aborted" } },
+    } as unknown as Message
+    const result = materializeSessionSnapshots(
+      { message: { ses_1: [live] }, part: { msg_1: [part("prt_1", "msg_1")] } },
+      "ses_1",
+      [{ info: snapshot, parts: [part("prt_1", "msg_1")] }],
+      { merge: MATERIALIZE_MERGE },
+    )
+
+    expect(result.message.ses_1[0]).not.toBe(live)
+    expect((result.message.ses_1[0] as { error?: { name?: string } }).error?.name).toBe("UnknownError")
+  })
+
+  test("insert-only does not strip live finish when the snapshot is still open", () => {
+    const live = {
+      ...message("msg_1"),
+      finish: "stop",
+      time: { created: 1, completed: 9 },
+    } as Message
+    const openSnapshot = message("msg_1")
+    const result = materializeSessionSnapshots(
+      { message: { ses_1: [live] }, part: { msg_1: [part("prt_1", "msg_1")] } },
+      "ses_1",
+      [{ info: openSnapshot, parts: [part("prt_1", "msg_1")] }],
+      { merge: MATERIALIZE_MERGE },
+    )
+
+    expect(result.message.ses_1[0]).toBe(live)
+    expect(result.messagesChanged).toBe(false)
+  })
+
+  test("insert-only still appends messages the store does not yet hold", () => {
+    const existing = userMessage("msg_1")
+    const incoming = message("msg_2")
+    const result = materializeSessionSnapshots(
+      { message: { ses_1: [existing] }, part: {} },
+      "ses_1",
+      [{ info: incoming, parts: [part("prt_2", "msg_2")] }],
+      { merge: MATERIALIZE_MERGE },
+    )
+
+    expect(result.message.ses_1.map((item) => item.id)).toEqual(["msg_1", "msg_2"])
+    expect(result.message.ses_1[0]).toBe(existing)
   })
 
   test("recovery replaces fetched message metadata while retaining older local history and live parts", () => {

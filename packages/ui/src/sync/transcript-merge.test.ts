@@ -377,6 +377,125 @@ describe("mergeSessionTranscript", () => {
     expect((flat.partsByMessageID["msg_2"]?.[0] as { text?: string })?.text).toBe("just finished")
   })
 
+  test("idle materialize fills missing finish on a live last turn", () => {
+    const live = mergeSessionTranscript(undefined, SESSION, {
+      type: "http-page",
+      purpose: "initial",
+      page: page(
+        [
+          { info: userMessage("msg_1"), parts: [textPart("p1", "msg_1", "just sent")] },
+          { info: assistantMessage("msg_2"), parts: [textPart("p2", "msg_2", "just finished")] },
+        ],
+        { complete: true, turnCount: 1 },
+      ),
+    }).data!
+
+    const { data, result } = mergeSessionTranscript(live, SESSION, {
+      type: "http-page",
+      purpose: "materialize",
+      page: page(
+        [
+          { info: userMessage("msg_1"), parts: [textPart("p1", "msg_1", "just sent")] },
+          {
+            info: {
+              ...assistantMessage("msg_2"),
+              finish: "stop",
+              time: { created: 1, completed: 9 },
+            } as Message,
+            parts: [textPart("p2", "msg_2", "just finished")],
+          },
+        ],
+        { complete: true, turnCount: 1 },
+      ),
+    })
+
+    expect(result.applied).toBe(true)
+    const flat = projectFlatFromTranscriptData(data, SESSION)
+    const assistant = flat.messagesByID["msg_2"] as Message & {
+      finish?: string
+      time?: { created?: number; completed?: number }
+    }
+    expect(assistant?.finish).toBe("stop")
+    expect(assistant?.time?.completed).toBe(9)
+    expect((flat.partsByMessageID["msg_2"]?.[0] as { text?: string })?.text).toBe("just finished")
+  })
+
+  test("idle materialize does not strip live finish when the snapshot is still open", () => {
+    const live = mergeSessionTranscript(undefined, SESSION, {
+      type: "http-page",
+      purpose: "initial",
+      page: page(
+        [
+          { info: userMessage("msg_1"), parts: [textPart("p1", "msg_1", "just sent")] },
+          {
+            info: {
+              ...assistantMessage("msg_2"),
+              finish: "stop",
+              time: { created: 1, completed: 9 },
+            } as Message,
+            parts: [textPart("p2", "msg_2", "just finished")],
+          },
+        ],
+        { complete: true, turnCount: 1 },
+      ),
+    }).data!
+    const liveAssistant = live.pages[0]!.messagesByID["msg_2"]
+
+    const { data } = mergeSessionTranscript(live, SESSION, {
+      type: "http-page",
+      purpose: "materialize",
+      page: page(
+        [
+          { info: userMessage("msg_1"), parts: [textPart("p1", "msg_1", "just sent")] },
+          { info: assistantMessage("msg_2"), parts: [textPart("p2", "msg_2", "just finished")] },
+        ],
+        { complete: true, turnCount: 1 },
+      ),
+    })
+
+    const flat = projectFlatFromTranscriptData(data, SESSION)
+    expect(flat.messagesByID["msg_2"]).toBe(liveAssistant)
+    expect((flat.messagesByID["msg_2"] as { finish?: string }).finish).toBe("stop")
+  })
+
+  test("shareSessionTranscriptData fills missing finish on a same-length settled tail", () => {
+    const live = mergeSessionTranscript(undefined, SESSION, {
+      type: "http-page",
+      purpose: "initial",
+      page: page(
+        [
+          { info: userMessage("msg_1"), parts: [textPart("p1", "msg_1", "just sent")] },
+          { info: assistantMessage("msg_2"), parts: [textPart("p2", "msg_2", "just finished")] },
+        ],
+        { complete: true, turnCount: 1 },
+      ),
+    }).data!
+
+    const settled = mergeSessionTranscript(undefined, SESSION, {
+      type: "http-page",
+      purpose: "initial",
+      page: page(
+        [
+          { info: userMessage("msg_1"), parts: [textPart("p1", "msg_1", "just sent")] },
+          {
+            info: {
+              ...assistantMessage("msg_2"),
+              finish: "stop",
+              time: { created: 1, completed: 9 },
+            } as Message,
+            parts: [textPart("p2", "msg_2", "just finished")],
+          },
+        ],
+        { complete: true, turnCount: 1 },
+      ),
+    }).data!
+
+    const shared = shareSessionTranscriptData(live, settled, SESSION)
+    const flat = projectFlatFromTranscriptData(shared, SESSION)
+    expect((flat.messagesByID["msg_2"] as { finish?: string }).finish).toBe("stop")
+    expect((flat.messagesByID["msg_2"] as { time?: { completed?: number } }).time?.completed).toBe(9)
+  })
+
   test("shareSessionTranscriptData keeps a live last turn on a same-length lagging tail", () => {
     const live = mergeSessionTranscript(undefined, SESSION, {
       type: "http-page",

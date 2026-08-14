@@ -608,7 +608,7 @@ both readers agree on when a frame may shrink.
   | field | values | meaning |
   |---|---|---|
   | `onStale` | `drop` \| `backfill` | discard the page, or still apply it as hole-filling |
-  | `messages` | `upsert` \| `insert-only` | replace existing message objects, or only add absent IDs |
+  | `messages` | `upsert` \| `insert-only` | replace existing message objects, or only add absent IDs. Insert-only also copies missing terminal settle fields (`finish`, `time.completed`, `error`) onto the live object; live terminal fields are never cleared |
   | `parts` | `replace` \| `skip-existing` | fetched parts are authoritative, or leave messages that already have parts |
   | `preserveStreaming` | `assistant` \| `all` \| `none` | which roles keep live parts the snapshot omits or truncates (streaming text/output, in-flight tools, and mid-turn completed tools) |
 
@@ -626,8 +626,11 @@ both readers agree on when a frame may shrink.
   dimensions for recovery and reconcile-page: `messages` goes from `upsert` to
   `insert-only`, and `parts` goes from `replace` to `skip-existing`. A stale
   reconnect page still supplies messages/parts the SSE gap swallowed (`onStale:
-  backfill`), but never rewrites existing live messages or their already-held
-  parts. Current recovery/reconcile still upserts messages and replaces parts
+  backfill`), but never replaces existing live messages or their already-held
+  parts. Insert-only may still copy missing terminal settle fields (`finish`,
+  `time.completed`, `error`) onto a live assistant so Activity can auto-collapse
+  after idle/Query backfill; a lagging snapshot cannot strip fields the live
+  row already has. Current recovery/reconcile still upserts messages and replaces parts
   against server truth. Every other purpose drops the page when stale
   (`shouldDropStalePage(purpose)`). Note the historical helper names:
   `mergeMessages` is insert-only while `mergeRecoveryMessages` is an upsert —
@@ -877,7 +880,8 @@ both readers agree on when a frame may shrink.
   HTTP round trip and drops the page when SSE advanced while it was in flight.
   Query `structuralSharing` (`shareSessionTranscriptData`) re-merges a same-
   length or collapsed tail through insert-only `materialize` so a lagging Host
-  snapshot cannot replace a live last turn the stream already admitted.
+  snapshot cannot replace a live last turn the stream already admitted, while
+  still filling `finish` / `time.completed` / `error` the live row is missing.
   Events missed during a suspend with no SSE delivery
   remain covered by reconnect compensation + viewed-session recovery.
 - The client stall timer starts before SSE response headers arrive. Transport

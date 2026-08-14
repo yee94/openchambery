@@ -1,6 +1,5 @@
 import type { Message, Part } from "@opencode-ai/sdk/v2/client"
 import { isMessageSnapshotOpen } from "./displayParts"
-import { mergeMessages } from "./optimistic"
 import {
   DEFAULT_SESSION_MERGE_STRATEGY,
   shouldPreserveStreamingParts,
@@ -294,6 +293,85 @@ function mergeMaterializedParts(
   return [...mergedParts, ...missingLiveParts].sort((a, b) => cmp(a.id, b.id))
 }
 
+type MessageTerminalFields = {
+  finish?: unknown
+  error?: unknown
+  time?: { created?: unknown; completed?: unknown }
+}
+
+const readTerminalFields = (message: Message): MessageTerminalFields => message as MessageTerminalFields
+
+const hasNonEmptyFinish = (message: Message): boolean => {
+  const finish = readTerminalFields(message).finish
+  return typeof finish === "string" && finish.length > 0
+}
+
+const hasCompletedTime = (message: Message): boolean => (
+  typeof readTerminalFields(message).time?.completed === "number"
+)
+
+const hasError = (message: Message): boolean => Boolean(readTerminalFields(message).error)
+
+/**
+ * Copy terminal settle fields the live object is still missing.
+ * Insert-only must not replace live messages (a lagging snapshot would clobber
+ * the last turn), but Activity auto-collapse needs `finish` / `time.completed`
+ * / `error` when SSE omitted them and the HTTP snapshot has them.
+ * Live terminal fields are never cleared or overwritten.
+ */
+function fillMissingTerminalMessageFields(live: Message, snapshot: Message): Message {
+  const snapshotFields = readTerminalFields(snapshot)
+  const snapshotFinish = snapshotFields.finish
+  const snapshotCompleted = snapshotFields.time?.completed
+  const snapshotError = snapshotFields.error
+
+  const takeFinish = !hasNonEmptyFinish(live)
+    && typeof snapshotFinish === "string"
+    && snapshotFinish.length > 0
+  const takeCompleted = !hasCompletedTime(live) && typeof snapshotCompleted === "number"
+  const takeError = !hasError(live) && Boolean(snapshotError)
+
+  if (!takeFinish && !takeCompleted && !takeError) {
+    return live
+  }
+
+  const next: MessageTerminalFields = { ...live }
+  if (takeFinish) {
+    next.finish = snapshotFinish
+  }
+  if (takeCompleted) {
+    next.time = { ...readTerminalFields(live).time, completed: snapshotCompleted }
+  }
+  if (takeError) {
+    next.error = snapshotError
+  }
+  return next as Message
+}
+
+/**
+ * Insert-only merge that still fills missing terminal settle fields.
+ * New snapshot IDs are appended; existing IDs keep the live object unless the
+ * snapshot supplies `finish`, `time.completed`, or `error` the live row lacks.
+ */
+function mergeInsertOnlyMessages(existing: Message[], snapshots: Message[]): Message[] {
+  const snapshotByID = new Map(snapshots.map((message) => [message.id, message]))
+  let changed = false
+  const merged = existing.map((message) => {
+    const snapshot = snapshotByID.get(message.id)
+    snapshotByID.delete(message.id)
+    if (!snapshot) return message
+    const next = fillMissingTerminalMessageFields(message, snapshot)
+    if (next !== message) changed = true
+    return next
+  })
+  if (snapshotByID.size > 0) {
+    changed = true
+    merged.push(...snapshotByID.values())
+    merged.sort((left, right) => cmp(left.id, right.id))
+  }
+  return changed ? merged : existing
+}
+
 /**
  * `upsert` semantics: fetched snapshots replace their existing counterparts and
  * unseen snapshots are appended. Contrast with `mergeMessages`, which is
@@ -334,7 +412,7 @@ export function materializeSessionSnapshots(
   const currentMessages = existingMessages ?? []
   const messages = merge.messages === "upsert"
     ? upsertMessages(currentMessages, nextMessages)
-    : mergeMessages(currentMessages, nextMessages)
+    : mergeInsertOnlyMessages(currentMessages, nextMessages)
   const messagesChanged = messages !== currentMessages || (existingMessages === undefined && snapshots.length === 0)
 
   let partsChanged = false

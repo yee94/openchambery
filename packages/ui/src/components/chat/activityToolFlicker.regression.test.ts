@@ -439,6 +439,69 @@ describe('activity tool flicker regression (Trace-20260804T171706)', () => {
     });
   });
 
+  test('5e. insert-only idle snapshot fills finish so the last turn can auto-collapse', () => {
+    const answer = textPart('p1', 'a1', 'the answer');
+    const liveAssistant = { ...openAssistant('a1'), parentID: 'u1' } as Message;
+    const liveState = {
+      message: { [sessionID]: [user('u1'), liveAssistant] },
+      part: {
+        u1: [textPart('p_u', 'u1', 'summarize')],
+        a1: [answer],
+      },
+    };
+
+    const expansionForState = (state: { message: Record<string, Message[]>; part: Record<string, Part[]> }) => {
+      const messages: ChatMessageEntry[] = (state.message[sessionID] ?? []).map((info) => ({
+        info,
+        parts: state.part[info.id] ?? [],
+      }));
+      const turn = projectTurnRecords(messages).turns[0];
+      if (!turn) throw new Error('expected a turn');
+      const header = resolveTurnActivityPresentation({
+        completionDisposition: turn.completionDisposition,
+        isLastTurn: true,
+        sessionIsWorking: false,
+      });
+      const disposition = resolveActivityExpansionDisposition({
+        isLastTurn: true,
+        turnCompletionDisposition: turn.completionDisposition,
+        headerPresentationDisposition: header.completionDisposition,
+      });
+      return {
+        completionDisposition: turn.completionDisposition,
+        hasConfirmedFinalBody: turn.hasConfirmedFinalBody,
+        expanded: resolveDefaultActivityExpanded(disposition, 'collapsed', {
+          isLastTurn: true,
+          hasConfirmedFinalBody: turn.hasConfirmedFinalBody,
+        }),
+      };
+    };
+
+    expect(expansionForState(liveState)).toEqual({
+      completionDisposition: 'active',
+      hasConfirmedFinalBody: false,
+      expanded: true,
+    });
+
+    const settled = materializeSessionSnapshots(
+      liveState,
+      sessionID,
+      [{
+        info: { ...liveAssistant, finish: 'stop', time: { created: 2, completed: 9 } } as Message,
+        parts: [answer],
+      }],
+    );
+
+    expect(expansionForState({
+      message: settled.message,
+      part: settled.part,
+    })).toEqual({
+      completionDisposition: 'normal',
+      hasConfirmedFinalBody: true,
+      expanded: false,
+    });
+  });
+
   test('6. full ensure-gate sequence matching ChatContainer effect inputs', () => {
     // Cold: no entity, not renderable → ensure
     expect(
