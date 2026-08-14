@@ -2983,3 +2983,35 @@ button.oc-mobile-worktree-label-trigger:active,
 .oc-composer-morph-content-fade > * {
   animation: oc-composer-morph-fade 0.18s ease-out 0.26s both;
 }
+
+/* CameraX pairing scanner: the native preview sits behind the WebView, so the
+   page must go transparent and hide chrome until a code is read or cancelled. */
+html.oc-barcode-scanner-active,
+html.oc-barcode-scanner-active body {
+  background: transparent !important;
+}
+
+html.oc-barcode-scanner-active body > * {
+  visibility: hidden !important;
+}
+
+html.oc-barcode-scanner-active .oc-barcode-scanner-chrome {
+  visibility: visible !important;
+  position: fixed;
+  top: calc(var(--oc-safe-area-top, env(safe-area-inset-top, 0px)) + 12px);
+  right: calc(var(--oc-safe-area-right, env(safe-area-inset-right, 0px)) + 12px);
+  z-index: 9999;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  width: 44px;
+  height: 44px;
+  padding: 0;
+  border: 0;
+  border-radius: 999px;
+  background: rgb(0 0 0 / 55%);
+  color: #fff;
+  font-size: 28px;
+  line-height: 1;
+  cursor: pointer;
+}

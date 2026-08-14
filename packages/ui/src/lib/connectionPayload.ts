@@ -202,19 +202,53 @@ export const encodePairingConnectionPayload = (payload: PairingConnectionPayload
   return `openchamber://connect?${params.toString()}`;
 };
 
+// URL-string-only sibling of parsePairingConnectionPayload. Old Android WebViews
+// (e.g. Chromium 97–114) mis-parse non-special schemes: `new URL('openchamber://connect?...')`
+// yields hostname "" and pathname "//connect", so the URL-based parser rejects a
+// perfectly valid pairing link. This parser never touches the URL/URLSearchParams APIs —
+// it matches the head with a regex and reads `v`/`p` straight off the query string.
+// Keeps every existing validation (version, payload length, base64url, candidate
+// normalization).
+export const parsePairingConnectionPayloadString = (value: string): PairingConnectionPayload | null => {
+  const trimmed = value.trim();
+  if (!trimmed || trimmed.length > MAX_PAIRING_PAYLOAD_LENGTH) return null;
+  const question = trimmed.indexOf('?');
+  if (question === -1 || !/^openchamber:\/\/connect\/?$/i.test(trimmed.slice(0, question))) return null;
+  let version: string | null = null;
+  let encoded: string | null = null;
+  for (const part of trimmed.slice(question + 1).split('&')) {
+    const eq = part.indexOf('=');
+    if (eq === -1) continue;
+    const key = part.slice(0, eq);
+    const raw = part.slice(eq + 1);
+    if (key === 'v') version = raw;
+    else if (key === 'p') encoded = raw;
+  }
+  if (version !== '2' || !encoded || encoded.length > MAX_PAIRING_PAYLOAD_LENGTH) return null;
+  const decoded = base64UrlDecode(encoded);
+  if (!decoded || decoded.length > MAX_PAIRING_PAYLOAD_LENGTH) return null;
+  try {
+    return normalizePairingPayload(JSON.parse(decoded) as unknown);
+  } catch {
+    return null;
+  }
+};
+
 export const parsePairingConnectionPayload = (value: string): PairingConnectionPayload | null => {
   const trimmed = value.trim();
   if (!trimmed || trimmed.length > MAX_PAIRING_PAYLOAD_LENGTH) return null;
   try {
     const url = new URL(trimmed);
-    if (url.protocol !== 'openchamber:' || url.hostname !== 'connect') return null;
-    if (url.searchParams.get('v') !== '2') return null;
-    const encoded = url.searchParams.get('p') || '';
-    if (!encoded || encoded.length > MAX_PAIRING_PAYLOAD_LENGTH) return null;
-    const decoded = base64UrlDecode(encoded);
-    if (!decoded || decoded.length > MAX_PAIRING_PAYLOAD_LENGTH) return null;
-    return normalizePairingPayload(JSON.parse(decoded) as unknown);
+    if (url.protocol === 'openchamber:' && url.hostname === 'connect') {
+      if (url.searchParams.get('v') !== '2') return null;
+      const encoded = url.searchParams.get('p') || '';
+      if (!encoded || encoded.length > MAX_PAIRING_PAYLOAD_LENGTH) return null;
+      const decoded = base64UrlDecode(encoded);
+      if (!decoded || decoded.length > MAX_PAIRING_PAYLOAD_LENGTH) return null;
+      return normalizePairingPayload(JSON.parse(decoded) as unknown);
+    }
   } catch {
-    return null;
+    // Fall through: some WebViews throw on this scheme, others mis-parse it.
   }
+  return parsePairingConnectionPayloadString(trimmed);
 };

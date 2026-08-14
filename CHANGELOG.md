@@ -4,6 +4,10 @@ All notable changes to this project will be documented in this file.
 
 ## [Unreleased]
 
+## [1.16.132-beta.1] - 2026-08-14
+
+- **Mobile/Android pairing QR:** Google scan still runs first on devices with Play Services; if it fails to start, fall back to the bundled CameraX scanner so phones without GMS can pair. Old WebViews that misread `openchamber://` pairing links now parse the scanned string directly.
+
 ## [1.16.131] - 2026-08-14
 
 - **Markdown code line numbers:** size gutters from wrapped layout height so mobile line wrap no longer desyncs numbers from the code.

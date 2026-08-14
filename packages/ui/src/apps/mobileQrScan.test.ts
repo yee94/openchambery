@@ -2,7 +2,11 @@ import { describe, expect, test } from 'bun:test';
 
 import { encodePairingConnectionPayload, buildPairingConnectionPayload } from '@/lib/connectionPayload';
 
-import { evaluateQrScanSupport, parseConnectionPayload } from './mobileQrScan';
+import {
+  evaluateQrScanSupport,
+  parseConnectionPayload,
+  shouldFallbackToBundledScanner,
+} from './mobileQrScan';
 
 const hostEncPubJwk = { kty: 'EC', crv: 'P-256', x: 'eHhY', y: 'eVlZ' } as const;
 
@@ -52,5 +56,24 @@ describe('parseConnectionPayload', () => {
     expect(parseConnectionPayload('openchamber://connect?v=1&server=http%3A%2F%2F192.168.1.10%3A2606&token=tok')).toBeNull();
     // Legacy relay-offer format (mode=relay + fragment) is no longer accepted.
     expect(parseConnectionPayload('openchamber://connect?v=1&mode=relay#offer=eyJ2IjoxfQ')).toBeNull();
+  });
+});
+
+describe('shouldFallbackToBundledScanner', () => {
+  test('does not fall back when the user canceled the Google scanner', () => {
+    expect(shouldFallbackToBundledScanner(new Error('scan canceled.'))).toBe(false);
+    expect(shouldFallbackToBundledScanner({ message: 'scan canceled.' })).toBe(false);
+  });
+
+  test('does not fall back when camera permission is denied', () => {
+    expect(shouldFallbackToBundledScanner(new Error('User denied access to camera.'))).toBe(false);
+  });
+
+  test('falls back when Google scan cannot start', () => {
+    expect(shouldFallbackToBundledScanner(new Error(
+      'The Google Barcode Scanner Module is not available. You must install it first using the installGoogleBarcodeScannerModule method.',
+    ))).toBe(true);
+    expect(shouldFallbackToBundledScanner(new Error('17: API_NOT_CONNECTED'))).toBe(true);
+    expect(shouldFallbackToBundledScanner(new Error('module install timed out'))).toBe(true);
   });
 });

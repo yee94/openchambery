@@ -4,6 +4,7 @@ import {
   buildPairingConnectionPayload,
   encodePairingConnectionPayload,
   parsePairingConnectionPayload,
+  parsePairingConnectionPayloadString,
 } from './connectionPayload';
 
 const hostEncPubJwk = { kty: 'EC', crv: 'P-256', x: 'eHhY', y: 'eVlZ' } as const;
@@ -130,5 +131,22 @@ describe('connection payload helpers', () => {
       candidates: [{ type: 'lan', url: 'http://runtime.example' }],
     })).toString('base64url');
     expect(parsePairingConnectionPayload(`openchamber://connect?v=2&p=${expired}`)).toBeNull();
+  });
+
+  test('string parser reads a v2 pairing link without the URL API', () => {
+    const payload = buildPairingConnectionPayload({
+      pairingId: 'pair_old_webview',
+      secret: 'one-time-secret',
+      label: 'Phone',
+      candidates: [{ type: 'lan', url: 'http://192.168.1.20:4096', priority: 10 }],
+    });
+    const encoded = encodePairingConnectionPayload(payload);
+    expect(parsePairingConnectionPayloadString(encoded)).toEqual({
+      ...payload,
+      candidates: [{ type: 'lan', url: 'http://192.168.1.20:4096', priority: 10 }],
+    });
+    expect(parsePairingConnectionPayloadString('openchamber://connect?v=1&p=abc')).toBeNull();
+    expect(parsePairingConnectionPayloadString('openchamber://session/abc?v=2&p=abc')).toBeNull();
+    expect(parsePairingConnectionPayloadString('openchamber://connect')).toBeNull();
   });
 });
