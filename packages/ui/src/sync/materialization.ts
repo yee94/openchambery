@@ -32,6 +32,12 @@ export type MaterializeSessionSnapshotsOptions = {
   skipPartTypes?: ReadonlySet<string>
   /** Resolved by `resolveSessionMergeStrategy`; defaults to `initial` semantics. */
   merge?: SessionMergeStrategy
+  /**
+   * Where to put snapshot IDs that share no neighbor with the live transcript.
+   * Prepend uses `"prepend"` so older history stays in front; idle/queue
+   * materialize uses `"append"` so a just-sent user turn stays at the tail.
+   */
+  placeUnanchoredNewMessages?: "append" | "prepend"
 }
 
 export type MaterializeSessionSnapshotsResult = {
@@ -349,51 +355,87 @@ function fillMissingTerminalMessageFields(live: Message, snapshot: Message): Mes
 }
 
 /**
- * Insert-only merge that still fills missing terminal settle fields.
- * New snapshot IDs are appended; existing IDs keep the live object unless the
- * snapshot supplies `finish`, `time.completed`, or `error` the live row lacks.
+ * Fold snapshot rows into live conversation order.
+ * Known IDs stay where they are. New IDs insert after the previous snapshot
+ * neighbor already in the live list. A snapshot that shares no IDs uses
+ * `unanchored` (prepend older history, append idle/queue tail).
  */
-function mergeInsertOnlyMessages(existing: Message[], snapshots: Message[]): Message[] {
+function mergeMessagesInConversationOrder(
+  existing: Message[],
+  snapshots: Message[],
+  resolveExisting: (live: Message, snapshot: Message | undefined) => Message,
+  unanchored: "append" | "prepend",
+): Message[] {
+  if (snapshots.length === 0) return existing
   const snapshotByID = new Map(snapshots.map((message) => [message.id, message]))
   let changed = false
-  const merged = existing.map((message) => {
-    const snapshot = snapshotByID.get(message.id)
-    snapshotByID.delete(message.id)
-    if (!snapshot) return message
-    const next = fillMissingTerminalMessageFields(message, snapshot)
+  const merged: Message[] = []
+  for (const message of existing) {
+    const next = resolveExisting(message, snapshotByID.get(message.id))
     if (next !== message) changed = true
-    return next
-  })
-  if (snapshotByID.size > 0) {
-    changed = true
-    merged.push(...snapshotByID.values())
-    merged.sort((left, right) => cmp(left.id, right.id))
+    merged.push(next)
   }
-  return changed ? merged : existing
+  const existingIDs = new Set(existing.map((message) => message.id))
+  const newcomers = snapshots.filter((message) => !existingIDs.has(message.id))
+  if (newcomers.length === 0) return changed ? merged : existing
+
+  const anchored = snapshots.some((message) => existingIDs.has(message.id))
+  if (!anchored) {
+    return unanchored === "prepend" ? [...newcomers, ...merged] : [...merged, ...newcomers]
+  }
+
+  let lastPlacedIndex = -1
+  for (const snapshot of snapshots) {
+    const index = merged.findIndex((message) => message.id === snapshot.id)
+    if (index >= 0) {
+      lastPlacedIndex = index
+      continue
+    }
+    lastPlacedIndex += 1
+    merged.splice(lastPlacedIndex, 0, snapshot)
+  }
+  return merged
+}
+
+/**
+ * Insert-only merge that still fills missing terminal settle fields.
+ * New snapshot IDs keep conversation position; existing IDs keep the live
+ * object unless the snapshot supplies `finish`, `time.completed`, or `error`
+ * the live row lacks.
+ */
+function mergeInsertOnlyMessages(
+  existing: Message[],
+  snapshots: Message[],
+  unanchored: "append" | "prepend",
+): Message[] {
+  return mergeMessagesInConversationOrder(
+    existing,
+    snapshots,
+    (live, snapshot) => (snapshot ? fillMissingTerminalMessageFields(live, snapshot) : live),
+    unanchored,
+  )
 }
 
 /**
  * `upsert` semantics: fetched snapshots replace their existing counterparts and
- * unseen snapshots are appended. Contrast with `mergeMessages`, which is
- * insert-only and therefore never refreshes a message the store already holds.
+ * unseen snapshots keep conversation position. Contrast with `mergeMessages`,
+ * which is insert-only and therefore never refreshes a message the store
+ * already holds.
  */
-function upsertMessages(existing: Message[], snapshots: Message[]): Message[] {
-  const nextByID = new Map(snapshots.map((message) => [message.id, message]))
-  let changed = false
-  const merged = existing.map((message) => {
-    const snapshot = nextByID.get(message.id)
-    if (!snapshot) return message
-    nextByID.delete(message.id)
-    if (JSON.stringify(message) === JSON.stringify(snapshot)) return message
-    changed = true
-    return snapshot
-  })
-  if (nextByID.size > 0) {
-    changed = true
-    merged.push(...nextByID.values())
-    merged.sort((left, right) => cmp(left.id, right.id))
-  }
-  return changed ? merged : existing
+function upsertMessages(
+  existing: Message[],
+  snapshots: Message[],
+  unanchored: "append" | "prepend",
+): Message[] {
+  return mergeMessagesInConversationOrder(
+    existing,
+    snapshots,
+    (live, snapshot) => {
+      if (!snapshot) return live
+      return JSON.stringify(live) === JSON.stringify(snapshot) ? live : snapshot
+    },
+    unanchored,
+  )
 }
 
 export function materializeSessionSnapshots(
@@ -404,15 +446,16 @@ export function materializeSessionSnapshots(
 ): MaterializeSessionSnapshotsResult {
   const skipPartTypes = options.skipPartTypes ?? new Set<string>()
   const merge = options.merge ?? DEFAULT_SESSION_MERGE_STRATEGY
-  const snapshots = records
-    .filter((record) => !!record?.info?.id)
-    .sort((left, right) => cmp(left.info.id, right.info.id))
+  const unanchored = options.placeUnanchoredNewMessages ?? "append"
+  // Keep page/conversation order. Message ids are identity only — sorting here
+  // used to hide a just-sent user turn in the middle of the transcript.
+  const snapshots = records.filter((record) => !!record?.info?.id)
   const nextMessages = snapshots.map((record) => record.info)
   const existingMessages = state.message[sessionID]
   const currentMessages = existingMessages ?? []
   const messages = merge.messages === "upsert"
-    ? upsertMessages(currentMessages, nextMessages)
-    : mergeInsertOnlyMessages(currentMessages, nextMessages)
+    ? upsertMessages(currentMessages, nextMessages, unanchored)
+    : mergeInsertOnlyMessages(currentMessages, nextMessages, unanchored)
   const messagesChanged = messages !== currentMessages || (existingMessages === undefined && snapshots.length === 0)
 
   let partsChanged = false

@@ -274,6 +274,38 @@ describe("mergeSessionTranscript", () => {
     expect(projectFlatFromTranscriptData(removed.data, SESSION).messagesByID["msg_opt"]).toBeUndefined()
   })
 
+  test("optimistic add of a queued message stays at the conversation tail, not the id slot", () => {
+    // Queue items often keep a messageID minted while the previous turn was
+    // still streaming. Id-insert then drops the new user row into the middle.
+    const live = mergeSessionTranscript(undefined, SESSION, {
+      type: "http-page",
+      purpose: "initial",
+      page: page(
+        [
+          { info: userMessage("msg_9") },
+          { info: assistantMessage("msg_1") },
+          { info: userMessage("msg_2") },
+          { info: assistantMessage("msg_3") },
+        ],
+        { complete: true, turnCount: 2 },
+      ),
+    }).data!
+
+    const queued = userMessage("msg_15")
+    const added = mergeSessionTranscript(live, SESSION, {
+      type: "optimistic-add",
+      message: queued,
+      parts: [textPart("p_queued", "msg_15", "queued")],
+    })
+    expect(projectFlatFromTranscriptData(added.data, SESSION).messageOrder).toEqual([
+      "msg_9",
+      "msg_1",
+      "msg_2",
+      "msg_3",
+      "msg_15",
+    ])
+  })
+
   test("reset clears page chain and optional new tail", () => {
     const base = mergeSessionTranscript(undefined, SESSION, {
       type: "http-page",

@@ -424,6 +424,32 @@ describe("materializeSessionSnapshots", () => {
     expect(result.message.ses_1[0]).toBe(existing)
   })
 
+  test("insert-only appends a missing message without rewriting conversation order", () => {
+    // Same shape as conversation-order: an earlier high-id row, then later low-id turns.
+    // Queue send / idle materialize must not id-sort this back into msg_1…msg_9.
+    const live = [
+      userMessage("msg_9"),
+      message("msg_1"),
+      userMessage("msg_2"),
+      message("msg_3"),
+    ]
+    const result = materializeSessionSnapshots(
+      { message: { ses_1: live }, part: {} },
+      "ses_1",
+      [{ info: userMessage("msg_4"), parts: [] }],
+      { merge: MATERIALIZE_MERGE },
+    )
+
+    expect(result.message.ses_1.map((item) => item.id)).toEqual([
+      "msg_9",
+      "msg_1",
+      "msg_2",
+      "msg_3",
+      "msg_4",
+    ])
+    expect(result.message.ses_1[0]).toBe(live[0])
+  })
+
   test("recovery replaces fetched message metadata while retaining older local history and live parts", () => {
     const incomplete = message("msg_2")
     const older = userMessage("msg_1")

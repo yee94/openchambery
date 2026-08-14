@@ -270,6 +270,7 @@ export function reduceSessionMessagePage(
     {
       skipPartTypes: options.skipPartTypes,
       merge,
+      placeUnanchoredNewMessages: options.purpose === "prepend" ? "prepend" : "append",
     },
   )
 

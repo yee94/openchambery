@@ -761,10 +761,10 @@ function applyOptimisticAdd(
   const messages = flat.message[sessionID] ? [...flat.message[sessionID]] : []
   const existing = messages.findIndex((item) => item.id === message.id)
   if (existing < 0) {
-    // Insert sorted by id (matches Binary.search insert semantics).
-    let index = messages.findIndex((item) => item.id > message.id)
-    if (index < 0) index = messages.length
-    messages.splice(index, 0, message)
+    // New user sends (including queue dispatch) are the latest conversation
+    // turn. Inserting by id drops a mid-turn-minted messageID into history
+    // and the bubble never appears at the tail.
+    messages.push(message)
   }
   const part = { ...flat.part, [message.id]: sortParts(parts) }
 
