@@ -156,6 +156,53 @@ const findTextPosition = (nodes: Text[], targetOffset: number): { node: Text; of
   return last ? { node: last, offset: last.data.length } : null;
 };
 
+type LineBox = { top: number; bottom: number; width: number; height: number };
+
+// WebKit (iOS) often reports a wrapped line as one tall client rect instead of
+// N row tops. Counting unique tops then treats that line as a single row and
+// the gutter walks off the wrapped code. Use the union height instead.
+export const heightFromLineRects = (
+  rects: ArrayLike<LineBox>,
+  lineHeight: number,
+): number => {
+  let top = Infinity;
+  let bottom = -Infinity;
+  for (let index = 0; index < rects.length; index += 1) {
+    const rect = rects[index];
+    if (!rect || (rect.width === 0 && rect.height === 0)) continue;
+    if (rect.top < top) top = rect.top;
+    if (rect.bottom > bottom) bottom = rect.bottom;
+  }
+  if (!Number.isFinite(top) || bottom <= top) return lineHeight;
+  return Math.max(lineHeight, bottom - top);
+};
+
+const collectShikiLineSpans = (code: HTMLElement): HTMLElement[] =>
+  Array.from(code.children).filter((node): node is HTMLElement => (
+    node instanceof HTMLElement && node.classList.contains('line')
+  ));
+
+const applyLineNumberSize = (lineEl: HTMLElement, height: number, lineHeight: number): void => {
+  lineEl.style.height = `${height}px`;
+  lineEl.style.lineHeight = `${lineHeight}px`;
+};
+
+const measureRangeLineHeight = (
+  start: { node: Text; offset: number },
+  end: { node: Text; offset: number },
+  lineHeight: number,
+): number => {
+  const range = document.createRange();
+  range.setStart(start.node, start.offset);
+  range.setEnd(end.node, end.offset);
+  const height = Math.max(
+    heightFromLineRects(range.getClientRects(), lineHeight),
+    heightFromLineRects([range.getBoundingClientRect()], lineHeight),
+  );
+  range.detach();
+  return height;
+};
+
 export const syncMarkdownCodeLineNumbers = (root: HTMLElement): void => {
   const wrappers = root.querySelectorAll<HTMLElement>('[data-component="markdown-code"]');
   for (const wrapper of Array.from(wrappers)) {
@@ -164,13 +211,38 @@ export const syncMarkdownCodeLineNumbers = (root: HTMLElement): void => {
     if (!code || !gutter) continue;
 
     const numbers = Array.from(gutter.children) as HTMLElement[];
-    const text = code.textContent ?? '';
-    const textNodes = collectTextNodes(code);
     const codeStyle = window.getComputedStyle(code);
     const lineHeight = Number.parseFloat(codeStyle.lineHeight) || 20;
     gutter.style.fontFamily = codeStyle.fontFamily;
     gutter.style.fontSize = codeStyle.fontSize;
     gutter.style.lineHeight = `${lineHeight}px`;
+
+    // Shiki emits one `.line` span per logical line. Adjacent tops already
+    // include wrap, so this stays aligned even when Range client rects collapse.
+    const lineSpans = collectShikiLineSpans(code);
+    if (lineSpans.length === numbers.length) {
+      const spanRects = lineSpans.map((el) => el.getBoundingClientRect());
+      for (let index = 0; index < numbers.length; index += 1) {
+        const lineEl = numbers[index];
+        const current = spanRects[index];
+        if (!lineEl || !current) continue;
+        const next = spanRects[index + 1];
+        applyLineNumberSize(
+          lineEl,
+          heightFromLineRects([{
+            top: current.top,
+            bottom: next ? next.top : current.bottom,
+            width: 1,
+            height: (next ? next.top : current.bottom) - current.top,
+          }], lineHeight),
+          lineHeight,
+        );
+      }
+      continue;
+    }
+
+    const text = code.textContent ?? '';
+    const textNodes = collectTextNodes(code);
     let lineStart = 0;
 
     for (let index = 0; index < numbers.length; index += 1) {
@@ -182,23 +254,9 @@ export const syncMarkdownCodeLineNumbers = (root: HTMLElement): void => {
       const start = findTextPosition(textNodes, lineStart);
       const end = findTextPosition(textNodes, lineEnd);
       if (!start || !end || lineStart === lineEnd) {
-        lineEl.style.height = `${lineHeight}px`;
-        lineEl.style.lineHeight = `${lineHeight}px`;
+        applyLineNumberSize(lineEl, lineHeight, lineHeight);
       } else {
-        const range = document.createRange();
-        range.setStart(start.node, start.offset);
-        range.setEnd(end.node, end.offset);
-        const rowTops: number[] = [];
-        for (const rect of Array.from(range.getClientRects())) {
-          if (rect.width === 0 && rect.height === 0) continue;
-          if (!rowTops.some((top) => Math.abs(top - rect.top) < 2)) {
-            rowTops.push(rect.top);
-          }
-        }
-        const height = Math.max(lineHeight, Math.max(1, rowTops.length) * lineHeight);
-        range.detach();
-        lineEl.style.height = `${height}px`;
-        lineEl.style.lineHeight = `${lineHeight}px`;
+        applyLineNumberSize(lineEl, measureRangeLineHeight(start, end, lineHeight), lineHeight);
       }
 
       lineStart = lineEnd + 1;
