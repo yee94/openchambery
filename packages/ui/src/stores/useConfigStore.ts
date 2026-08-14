@@ -1099,6 +1099,8 @@ declare global {
 
 let _initializeAppInFlight: Promise<void> | null = null;
 let _refreshMissingCatalogsInFlight: Promise<void> | null = null;
+let _providerLoadEpochByDirectory: Record<string, number> = {};
+let _agentLoadEpochByDirectory: Record<string, number> = {};
 
 export const useConfigStore = create<ConfigStore>()(
     devtools(
@@ -1480,6 +1482,8 @@ export const useConfigStore = create<ConfigStore>()(
                         && getRuntimeTransportIdentity() === transport
                         && get().catalogTransportIdentity === transport
                         && resolveConfigDirectory(requestedDirectory) === configDirectory;
+                    const loadEpoch = (_providerLoadEpochByDirectory[directoryKey] ?? 0) + 1;
+                    _providerLoadEpochByDirectory[directoryKey] = loadEpoch;
                     markStartupTrace('loadProviders:called', { directoryKey, source, requestedDirectory, effectiveDirectory });
 
                     const currentProviderSnapshot = get().directoryScoped[directoryKey];
@@ -1673,8 +1677,8 @@ export const useConfigStore = create<ConfigStore>()(
                         return nextState;
                     });
                     })().finally(() => {
-                        if (!isCurrent()) return;
-                        set((state) => state.catalogTransportIdentity !== transport ? state : ({
+                        if (_providerLoadEpochByDirectory[directoryKey] !== loadEpoch) return;
+                        set((state) => ({
                             providerConfigLoadingByDirectory: {
                                 ...state.providerConfigLoadingByDirectory,
                                 [directoryKey]: false,
@@ -1985,6 +1989,8 @@ export const useConfigStore = create<ConfigStore>()(
                         && getRuntimeTransportIdentity() === transport
                         && get().catalogTransportIdentity === transport
                         && resolveConfigDirectory(requestedDirectory) === configDirectory;
+                    const loadEpoch = (_agentLoadEpochByDirectory[directoryKey] ?? 0) + 1;
+                    _agentLoadEpochByDirectory[directoryKey] = loadEpoch;
                     markStartupTrace('loadAgents:called', { directoryKey, source, requestedDirectory, effectiveDirectory });
 
                     const currentAgentSnapshot = get().directoryScoped[directoryKey];
@@ -2399,8 +2405,8 @@ export const useConfigStore = create<ConfigStore>()(
                     return false;
                     }
                     })().finally(() => {
-                        if (!isCurrent()) return;
-                        set((state) => state.catalogTransportIdentity !== transport ? state : ({
+                        if (_agentLoadEpochByDirectory[directoryKey] !== loadEpoch) return;
+                        set((state) => ({
                             agentConfigLoadingByDirectory: {
                                 ...state.agentConfigLoadingByDirectory,
                                 [directoryKey]: false,

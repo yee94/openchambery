@@ -14,6 +14,13 @@
    bottom dock deliberately share this exact recipe so their elevation reads
    as one system. Keep blur on the three container surfaces, never per row. */
 .oc-mobile-floating-shell {
+  /* Quiet page canvas shared with .oc-mobile-app-shell so short tab content
+     and bottom-safe padding never seam against plain --background. */
+  --oc-mobile-page-background: color-mix(
+    in srgb,
+    var(--surface-muted) 18%,
+    var(--surface-background)
+  );
   --oc-mobile-border: color-mix(
     in srgb,
     var(--surface-foreground) 6%,
@@ -1985,6 +1992,14 @@ button.oc-mobile-worktree-label-trigger:active,
     -webkit-overflow-scrolling: touch;
   }
 
+  /* Phone tab shell must stay a clipping frame, not a scrollport. The generic
+     rule above would otherwise let short Projects content size the shell to
+     its children and reveal the parent --background underneath. */
+  :root.mobile-pointer:not(.desktop-runtime)
+    .oc-mobile-floating-shell.overflow-hidden {
+    overflow: hidden !important;
+  }
+
   :root.mobile-pointer:not(.desktop-runtime) [data-page-scroll-lock="true"] {
     overflow: hidden !important;
     overscroll-behavior: none;
@@ -2477,6 +2492,17 @@ button.oc-mobile-worktree-label-trigger:active,
    https://developer.android.com/develop/ui/views/layout/sw-keyboard
 
    --oc-keyboard-inset: portal overlays. --oc-kb-layout: shell settle after FLIP. */
+/* Match the tabs-root canvas so Capacitor bottom-safe padding and any
+   under-filled phone shell never seam against plain --background. */
+.oc-mobile-app-shell {
+  --oc-mobile-page-background: color-mix(
+    in srgb,
+    var(--surface-muted) 18%,
+    var(--surface-background)
+  );
+  background-color: var(--oc-mobile-page-background);
+}
+
 :root.oc-capacitor-app .oc-mobile-app-shell {
   height: calc(100dvh - var(--oc-kb-layout, 0px));
   /* Reserve the bottom safe area only while the keyboard is down — when it's up the

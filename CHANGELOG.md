@@ -4,6 +4,11 @@ All notable changes to this project will be documented in this file.
 
 ## [Unreleased]
 
+## [1.16.132-beta.4] - 2026-08-14
+
+- **Mobile Projects canvas:** share one page-background token between the app shell and tabs root, and keep the floating shell as a clip frame so short project lists no longer seam into plain `--background`.
+- **Provider/agent catalog:** give `listAgents` a 12s timeout with merged abort signals, clear loading flags by per-directory load epoch, and keep startup catalog recovery single-flight across directory changes.
+
 ## [1.16.132-beta.3] - 2026-08-14
 
 - **Transcript tail:** a lagging idle/Query snapshot no longer replaces the live last turn. Same-length or collapsed tail refreshes merge insert-only, and idle materialize drops the page if SSE moved while it was in flight.

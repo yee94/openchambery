@@ -1846,7 +1846,7 @@ describe('useConfigStore provider persistence', () => {
     await load;
 
     expect(useConfigStore.getState().providers.map((entry) => entry.id)).toEqual(['runtime-b']);
-    expect(useConfigStore.getState().providerConfigLoadingByDirectory).toEqual({});
+    expect(useConfigStore.getState().providerConfigLoadingByDirectory[DIRECTORY]).toBe(false);
   });
 
   test('stale agent resolve and rejection stay silent through an A to B to A generation sequence', async () => {
@@ -1863,7 +1863,7 @@ describe('useConfigStore provider persistence', () => {
     pendingAgents.resolve([testAgent('stale')]);
     await resolveLoad;
     expect(useConfigStore.getState().agents.map((agent) => agent.name)).toEqual(['current']);
-    expect(useConfigStore.getState().agentConfigLoadingByDirectory).toEqual({});
+    expect(useConfigStore.getState().agentConfigLoadingByDirectory[DIRECTORY]).toBe(false);
 
     listAgentsImpl = async () => { throw new Error('stale failure'); };
     let errorCalls = 0;
@@ -1875,6 +1875,58 @@ describe('useConfigStore provider persistence', () => {
     console.error = originalError;
     expect(errorCalls).toBe(0);
     expect(useConfigStore.getState().agents.map((agent) => agent.name)).toEqual(['current']);
+  });
+
+  test('in-flight loadAgents still clears loading after a generation bump', async () => {
+    const pendingAgents = deferred<TestAgent[]>();
+    listAgentsImpl = () => pendingAgents.promise;
+    useConfigStore.setState({
+      catalogTransportIdentity: 'test-runtime',
+      activeDirectoryKey: DIRECTORY,
+      agents: [],
+      directoryScoped: {},
+      agentConfigLoadingByDirectory: {},
+      isConnected: true,
+    });
+    const load = useConfigStore.getState().loadAgents({ directory: DIRECTORY, source: 'test:loadingLeak' });
+    expect(useConfigStore.getState().agentConfigLoadingByDirectory[DIRECTORY]).toBe(true);
+
+    runtimeGeneration += 1;
+    pendingAgents.resolve([testAgent('build')]);
+    await load;
+
+    expect(useConfigStore.getState().agentConfigLoadingByDirectory[DIRECTORY]).toBe(false);
+  });
+
+  test('stale loadAgents does not clear a newer load loading flag', async () => {
+    const first = deferred<TestAgent[]>();
+    const second = deferred<TestAgent[]>();
+    listAgentsImpl = () => first.promise;
+    useConfigStore.setState({
+      catalogTransportIdentity: 'test-runtime',
+      activeDirectoryKey: DIRECTORY,
+      agents: [],
+      directoryScoped: {},
+      agentConfigLoadingByDirectory: {},
+      isConnected: true,
+    });
+    const load1 = useConfigStore.getState().loadAgents({ directory: DIRECTORY, source: 'test:epoch-old' });
+    expect(useConfigStore.getState().agentConfigLoadingByDirectory[DIRECTORY]).toBe(true);
+
+    runtimeGeneration += 1;
+    runtimeIdentity = 'runtime-b';
+    useConfigStore.setState({ catalogTransportIdentity: 'runtime-b' });
+    listAgentsImpl = () => second.promise;
+    const load2 = useConfigStore.getState().loadAgents({ directory: DIRECTORY, source: 'test:epoch-new' });
+    expect(useConfigStore.getState().agentConfigLoadingByDirectory[DIRECTORY]).toBe(true);
+
+    first.resolve([testAgent('stale')]);
+    await load1;
+    expect(useConfigStore.getState().agentConfigLoadingByDirectory[DIRECTORY]).toBe(true);
+
+    second.resolve([testAgent('fresh')]);
+    await load2;
+    expect(useConfigStore.getState().agentConfigLoadingByDirectory[DIRECTORY]).toBe(false);
   });
 
   test('sync config without defaults clears stored OpenCode defaults without changing manual selection', () => {

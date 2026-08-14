@@ -140,7 +140,7 @@ export function MobileTabsRoot({
     <div
       className={cn(
         'oc-mobile-floating-shell relative isolate flex h-full min-h-0 flex-col overflow-hidden text-foreground',
-        'bg-[color:color-mix(in_srgb,var(--surface-muted)_18%,var(--surface-background))]',
+        'bg-[var(--oc-mobile-page-background)]',
         className,
       )}
     >

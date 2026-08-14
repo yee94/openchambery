@@ -284,6 +284,17 @@ describe('MobileTabsRoot secondary enter', () => {
     );
     expect(source).toContain('onBack: handleSecondaryBack,');
   });
+
+  // Short Projects lists must paint the shared page canvas full-height; never
+  // leave a plain --background band under the last card.
+  test('uses shared page-canvas background token', async () => {
+    const source = await readFile(new URL('./MobileTabsRoot.tsx', import.meta.url), 'utf8');
+    const styles = await readFile(new URL('../styles/mobile.css', import.meta.url), 'utf8');
+    expect(source).toContain('bg-[var(--oc-mobile-page-background)]');
+    expect(styles).toContain('--oc-mobile-page-background: color-mix(');
+    expect(styles).toContain('.oc-mobile-floating-shell.overflow-hidden');
+    expect(styles).toContain('background-color: var(--oc-mobile-page-background)');
+  });
 });
 
 describe('resolveMobileSecondaryBackDecision', () => {

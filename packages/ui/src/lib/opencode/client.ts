@@ -61,6 +61,7 @@ const CONFIG_CACHE_TTL_MS = 10_000;
 const OPENCODE_HEALTH_TIMEOUT_MS = 4_000;
 const OPENCODE_HEALTH_CACHE_TTL_MS = 3_000;
 const OPENCODE_HEALTH_FAILURE_CACHE_TTL_MS = 1_000;
+const LIST_AGENTS_TIMEOUT_MS = 12_000;
 
 /**
  * Render an SDK error payload into a short string for Error messages.
@@ -154,6 +155,7 @@ const resolveRuntimeV2BaseUrl = (): string | null => {
 
 type AbortSignalConstructorWithTimeout = typeof AbortSignal & {
   timeout?: (milliseconds: number) => AbortSignal;
+  any?: (signals: AbortSignal[]) => AbortSignal;
 };
 
 const createTimeoutSignal = (timeoutMs: number): { signal: AbortSignal; cleanup: () => void } => {
@@ -169,6 +171,39 @@ const createTimeoutSignal = (timeoutMs: number): { signal: AbortSignal; cleanup:
   return {
     signal: controller.signal,
     cleanup: () => clearTimeout(timeoutId),
+  };
+};
+
+const mergeAbortSignals = (signals: AbortSignal[]): { signal: AbortSignal; cleanup: () => void } => {
+  const live = signals.filter((signal) => signal != null);
+  if (live.length === 0) {
+    return { signal: new AbortController().signal, cleanup: () => undefined };
+  }
+  if (live.length === 1) {
+    return { signal: live[0], cleanup: () => undefined };
+  }
+  const abortSignal = typeof AbortSignal !== 'undefined'
+    ? AbortSignal as AbortSignalConstructorWithTimeout
+    : undefined;
+  if (typeof abortSignal?.any === 'function') {
+    return { signal: abortSignal.any(live), cleanup: () => undefined };
+  }
+  const controller = new AbortController();
+  const onAbort = () => controller.abort();
+  for (const signal of live) {
+    if (signal.aborted) {
+      controller.abort();
+      break;
+    }
+    signal.addEventListener('abort', onAbort);
+  }
+  return {
+    signal: controller.signal,
+    cleanup: () => {
+      for (const signal of live) {
+        signal.removeEventListener('abort', onAbort);
+      }
+    },
   };
 };
 
@@ -1644,30 +1679,37 @@ class OpencodeService {
     }
 
     const request = (async () => {
-      const params = effectiveDirectory ? { directory: effectiveDirectory } : undefined;
-      const response = await this.client.app.agents(params, signal ? { signal } : undefined);
-      if (!response.error && Array.isArray(response.data) && response.data.length > 0) {
-        return response.data;
-      }
-
-      // SDK gap / endpoint drift: current OpenCode exposes the authoritative
-      // agent list at /agent, while app.agents can be empty on some runtimes.
-      const fallbackResponse = await runtimeFetch('/api/agent', {
-        ...(effectiveDirectory ? { query: { directory: effectiveDirectory } } : {}),
-        signal,
-      });
-      if (!fallbackResponse.ok) {
-        if (response.error) {
-          throw new Error(`app.agents failed${response.response?.status ? ` (${response.response.status})` : ''}: ${formatSdkError(response.error)}`);
+      const timeout = createTimeoutSignal(LIST_AGENTS_TIMEOUT_MS);
+      const merged = mergeAbortSignals(signal ? [signal, timeout.signal] : [timeout.signal]);
+      try {
+        const params = effectiveDirectory ? { directory: effectiveDirectory } : undefined;
+        const response = await this.client.app.agents(params, { signal: merged.signal });
+        if (!response.error && Array.isArray(response.data) && response.data.length > 0) {
+          return response.data;
         }
-        throw new Error(`agent.list failed (${fallbackResponse.status})`);
-      }
 
-      const fallbackData = await fallbackResponse.json().catch(() => null) as unknown;
-      if (!Array.isArray(fallbackData)) {
-        throw new Error('agent.list failed: invalid response');
+        // SDK gap / endpoint drift: current OpenCode exposes the authoritative
+        // agent list at /agent, while app.agents can be empty on some runtimes.
+        const fallbackResponse = await runtimeFetch('/api/agent', {
+          ...(effectiveDirectory ? { query: { directory: effectiveDirectory } } : {}),
+          signal: merged.signal,
+        });
+        if (!fallbackResponse.ok) {
+          if (response.error) {
+            throw new Error(`app.agents failed${response.response?.status ? ` (${response.response.status})` : ''}: ${formatSdkError(response.error)}`);
+          }
+          throw new Error(`agent.list failed (${fallbackResponse.status})`);
+        }
+
+        const fallbackData = await fallbackResponse.json().catch(() => null) as unknown;
+        if (!Array.isArray(fallbackData)) {
+          throw new Error('agent.list failed: invalid response');
+        }
+        return fallbackData as Agent[];
+      } finally {
+        timeout.cleanup();
+        merged.cleanup();
       }
-      return fallbackData as Agent[];
     })();
 
     if (signal) return request;

@@ -137,11 +137,14 @@ beforeEach(() => {
 
 describe('opencodeClient abort signals', () => {
   test('passes signals to scoped SDK catalog requests', async () => {
-    const agentSignal = new AbortController().signal;
+    const controller = new AbortController();
 
-    await opencodeClient.listAgents('/workspace/project', agentSignal);
+    await opencodeClient.listAgents('/workspace/project', controller.signal);
 
-    expect(agentSdkCalls[0]?.[1]).toEqual({ signal: agentSignal });
+    const passed = (agentSdkCalls[0]?.[1] as { signal?: AbortSignal } | undefined)?.signal;
+    expect(passed).toBeInstanceOf(AbortSignal);
+    controller.abort();
+    expect(passed?.aborted).toBe(true);
   });
 
   test('passes signals to directory session-status requests', async () => {

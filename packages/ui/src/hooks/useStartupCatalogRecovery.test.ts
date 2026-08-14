@@ -15,5 +15,7 @@ describe('useStartupCatalogRecovery contract', () => {
     // Immediate kick and interval share the same recovery entry.
     expect(source).toContain('void runRecovery()');
     expect(source).toContain('useInterval(runRecovery');
+    expect(source).toContain('activeDirectoryKey');
+    expect(source).toContain('inFlightRef');
   });
 });
