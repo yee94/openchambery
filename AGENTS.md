@@ -62,6 +62,7 @@ Release artifacts and repository links use `yee94/openchamber`. Electron is the 
 - Never let fetch failure masquerade as authoritative empty success.
 - Make partial results, rollback, cleanup, and stale-data behavior explicit.
 - One failed entity must not erase or block unrelated complete entities.
+- Rank a collection by its order source, not by identity, unless identity order is the contract.
 - Runtime-specific differences must be intentional and visible in code.
 
 ## UI State and Runtime Ownership

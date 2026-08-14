@@ -41,7 +41,13 @@ Track completeness at the smallest entity/scope. One failed project or directory
 - Scope delayed-live fallbacks to the active entity and clear them when authoritative state arrives.
 - Do not let stale persisted data keep a fallback active indefinitely.
 - Define field precedence when global and local/live snapshots feed the same view.
-- Use one ordering/rank source for all views of the same entities.
+
+## Ordering
+
+- Use one order source for all views of the same collection. An identity key is not a rank source unless that collection is defined to be identity-sorted.
+- Locate a member by identity. Place a new member by the order source: replace in place, append newest, or neighbor-anchor.
+- A binary search or ranked splice is valid only when the searched key is that order source.
+- When the order contract changes, move every reader and every writer of the collection in the same change.
 
 ## Event Reducers
 
@@ -98,6 +104,7 @@ Cover the relevant lifecycle, not only static state:
 - fetch failure preserving prior state;
 - reconnect/retry and stale completion;
 - repeated/no-op/out-of-order events;
+- ordered collections whose identities sort differently from live order, on each public write seam — not only on a test-constructed array;
 - optimistic success, reconciliation, and rollback;
 - create, stream, abort, permission, archive/delete, and revisit when session behavior changes;
 - partial multi-directory/project failure;
@@ -112,3 +119,5 @@ Cover the relevant lifecycle, not only static state:
 - Queue reads current model/agent at send time.
 - New session lookup assumes SSE already indexed it.
 - Optimistic data has no shadow entry or rollback.
+- Binary search or ranked insert on a collection whose order source is not that key.
+- Order-contract tests that never go through a writer.

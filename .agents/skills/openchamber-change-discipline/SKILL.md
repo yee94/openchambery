@@ -36,6 +36,7 @@ Apply every matching category. Do not escalate local work into workspace-wide ri
 ## Mandatory Rules
 
 - Identify existing behavior covered by tests or callers; preserve it unless explicitly replaced.
+- When a collection's order contract changes, update every reader and writer, not only the path in the ticket.
 - Do not add dependencies unless explicitly requested.
 - Do not add compatibility paths without a concrete persisted or external consumer.
 - Enforce security and correctness in core logic, not only UI controls or prompts.
