@@ -132,6 +132,7 @@ import {
   resyncDirectorySessionStatuses,
   setAuthoritativeGlobalSessionStatusConverge,
 } from "./session-status-reconciliation"
+import { seedSessionTodosFromHydratedTranscript } from "./session-todo-projection"
 import type { NormalizedOpenCodeEvent } from "./opencode-event-normalizer"
 
 // ---------------------------------------------------------------------------
@@ -487,6 +488,12 @@ export async function materializeSessionFromServer(
       skipPartTypes: RECONNECT_SKIP_PARTS,
     })
     if (!result.applied) return "skipped"
+    seedSessionTodosFromHydratedTranscript({
+      directory,
+      sessionID,
+      store,
+      isStale: options?.isStale,
+    })
     if (page.records.length === 0) return "ready"
 
     if (statusBeforeMaterialization && statusBeforeMaterialization.type !== "idle" && !options?.isStale?.()) {
@@ -1620,6 +1627,13 @@ export async function resyncDirectoryAfterReconnect(
             .filter((message): message is Message => Boolean(message)),
         )
 
+        seedSessionTodosFromHydratedTranscript({
+          directory,
+          sessionID: sessionId,
+          store,
+          transcript,
+          isStale: isBodyStale,
+        })
         await reconcileActiveSessionStatusAfterMessagePull({
           directory,
           sessionID: sessionId,
@@ -3655,7 +3669,14 @@ export function useEnsureSessionMessages(sessionID: string, directory?: string) 
       resolved: resolved === true ? true : undefined,
     })
     // Already loaded into a renderable repository projection — nothing to do.
-    if (status.renderable) return
+    if (status.renderable) {
+      seedSessionTodosFromHydratedTranscript({
+        directory: resolvedDirectory,
+        sessionID,
+        store,
+      })
+      return
+    }
     // Session doesn't exist in catalog — nothing to load
     const state = store.getState()
     if (!state.session.some((s) => s.id === sessionID)) return
@@ -3675,6 +3696,13 @@ export function useEnsureSessionMessages(sessionID: string, directory?: string) 
         if (getTranscriptRepository()) {
           try {
             await ensureTranscriptInitial(resolvedDirectory, sessionID)
+            if (isStale()) return
+            seedSessionTodosFromHydratedTranscript({
+              directory: resolvedDirectory,
+              sessionID,
+              store,
+              isStale,
+            })
           } catch {
             if (isStale()) return
             await materializeSessionFromServer(resolvedDirectory, sessionID, store, {

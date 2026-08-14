@@ -320,6 +320,7 @@ Modules:
 | `transcript-repository-runtime.ts` | Production binding revision + `bindTranscriptRepositoryInstance` (Query) / test-only store bind; `fetchTranscriptPreviousPage` / `ensureTranscriptInitial` / `purgeTranscriptSession` |
 | `transcript-repository-production.ts` | `mountProductionTranscriptStack` (registry + budget + Query repo + compensation) and Host turn-page production fetcher (`fetchProductionTranscriptTransportPage` → Query `http-page`) |
 | `transcript-parent-recovery.ts` | Production assistant-parent recovery helpers for the Query transport fetcher (no nested store commit) |
+| `session-todo-projection.ts` | Hydrate-path todo seed: project the latest loaded `todowrite`/`todoread` list into `store.todo` + persist when live `todo.updated` never arrived. No extra HTTP. |
 | `transcript-repository.test.ts` | Focused seam tests (reads, all purposes, SSE, optimistic, reset, materialize/remove, subscribe) |
 | `session-transcript-query-cache.test.ts` | Capacity constants, key families, active retain, LRU order, purge families, long growth, destructive reset, generation isolation, adapter integration |
 | `session-transcript-reconcile-api.test.ts` / `session-transcript-reconnect-compensation.test.ts` | Client contract, checkpoint/anchor, first-ready skip, priority set, concurrency, continuation, multi-round, reset, generation cancel |
@@ -386,6 +387,13 @@ Modules:
 - **Not** owned by the repository: session catalog, status, permission, question,
   todo, session_diff, and multi-domain eviction (`dropSessionCaches` for
   session.deleted / non-transcript cache eviction). Those keep their existing writers.
+  `todo` is written by live `todo.updated` SSE; after transcript hydrate
+  (`loadMessages`, session cache reuse, reconnect recovery, materialize),
+  `session-todo-projection.ts` may fill an unoccupied `store.todo[sessionID]`
+  from the latest loaded todowrite/todoread part so clients that missed the
+  write event (typical mobile) still show the list. Occupied keys, including
+  an explicit empty list, are never overwritten, and empty projections do not
+  clear existing data.
 - QueryCache transcript LRU is production-active:
   - Capacity reuses `session-cache-limits` (VS Code 4 / mobile 12 / default 40)
     per transport / generation / directory bucket for **inactive** canonical
@@ -693,6 +701,11 @@ both readers agree on when a frame may shrink.
   Session selection, reactive sync, forced sync, reconnect, and materialization
   share the Query request layer. Idle, empty, history, stale, and superseded
   pulls add zero status requests.
+- `session-todo-projection.ts` seeds `store.todo` after transcript hydrate
+  without a new HTTP round-trip. Live `todo.updated` remains authoritative;
+  projection only fills a missing key from the newest loaded todowrite/todoread
+  part. Cache-reuse session opens still seed, because eviction can drop
+  `store.todo` while Query still has the transcript.
 - `opencode-event-normalizer.ts` is a pure transport-ingress normalizer that
   runs **before** directory resolution and coalescing. It accepts legacy
   `{ type, properties }`, current `{ type, data, location, durable }`, and

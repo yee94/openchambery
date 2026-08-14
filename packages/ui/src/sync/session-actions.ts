@@ -54,6 +54,7 @@ import {
   type SessionMetadataRecord,
 } from "@/lib/sessionReviewMetadata"
 import { reconcileActiveSessionStatusAfterMessagePull } from "./session-status-reconciliation"
+import { seedSessionTodosFromHydratedTranscript } from "./session-todo-projection"
 
 const SEND_CONFIRMATION_REFETCH_ATTEMPTS = 2
 const SEND_CONFIRMATION_REFETCH_RETRY_MS = 150
@@ -2988,6 +2989,12 @@ async function fetchMessagesForSessionInternal(
     && hasKnownBoundary
     && request?.status !== "error"
   ) {
+    seedSessionTodosFromHydratedTranscript({
+      directory: resolvedDir,
+      sessionID,
+      store,
+      transcript,
+    })
     return
   }
 
@@ -3021,6 +3028,12 @@ async function fetchMessagesForSessionInternal(
   }
   if (isStale()) return
 
+  seedSessionTodosFromHydratedTranscript({
+    directory: resolvedDir,
+    sessionID,
+    store,
+    isStale,
+  })
   await reconcileActiveSessionStatusAfterMessagePull({
     directory: resolvedDir,
     sessionID,

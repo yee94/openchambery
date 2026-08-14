@@ -32,6 +32,7 @@ import {
   getMessageRefetchLimit,
 } from "./session-message-policy"
 import { reconcileActiveSessionStatusAfterMessagePull } from "./session-status-reconciliation"
+import { seedSessionTodosFromHydratedTranscript } from "./session-todo-projection"
 
 const MAX_SEEN_DIRS = 30
 const cmp = (a: string, b: string) => (a < b ? -1 : a > b ? 1 : 0)
@@ -360,6 +361,13 @@ export function useSync() {
 
       const repository = getTranscriptRepository()
       const transcript = repository?.getTranscript(transcriptScope(targetDirectory, sessionID))
+      seedSessionTodosFromHydratedTranscript({
+        directory: targetDirectory,
+        sessionID,
+        store: targetStore,
+        transcript,
+        isStale: options?.isStale,
+      })
       await reconcileActiveSessionStatusAfterMessagePull({
         directory: targetDirectory,
         sessionID,
@@ -406,6 +414,12 @@ export function useSync() {
             && request?.status !== "error"
             && hasSession
           ) {
+            seedSessionTodosFromHydratedTranscript({
+              directory: targetDirectory,
+              sessionID,
+              store: targetStore,
+              isStale,
+            })
             return
           }
 
@@ -536,11 +550,17 @@ export function useSync() {
       if (!targetDirectory || targetDirectory === "global") return
       try {
         await ensureTranscriptInitial(targetDirectory, sessionID)
+        const targetStore = childStores.ensureChild(targetDirectory, { bootstrap: false })
+        seedSessionTodosFromHydratedTranscript({
+          directory: targetDirectory,
+          sessionID,
+          store: targetStore,
+        })
       } catch {
         throw new Error("refresh transcript failed")
       }
     },
-    [directory],
+    [childStores, directory],
   )
 
   return useMemo(
