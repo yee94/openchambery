@@ -105,16 +105,30 @@ describe('configCatalogQueries', () => {
     const secondTransport = ensureRawAgentsQuery('/workspace/project', runtimeKey);
     resolveAgents?.();
     await secondTransport;
-    expect(agentCalls).toBe(3);
+    expect(agentCalls).toBe(2);
 
     await invalidateRawAgentsQuery('/workspace/project', 'runtime-a');
     runtimeKey = 'runtime-a';
     const refreshed = ensureRawAgentsQuery('/workspace/project', runtimeKey);
     resolveAgents?.();
     await refreshed;
-    expect(agentCalls).toBe(4);
-    expect(rawAgentsQueryOptions('/workspace/project', 'runtime-a').queryKey).toEqual(['runtime-a', 'agents', 'raw', '/workspace/project']);
+    expect(agentCalls).toBe(3);
+    expect(rawAgentsQueryOptions('/workspace/project', 'runtime-a').queryKey).toEqual(['runtime-a', 'agents', 'raw']);
+    expect(rawAgentsQueryOptions('/workspace/project', 'runtime-a').queryKey).toEqual(
+      rawAgentsQueryOptions('/workspace/other', 'runtime-a').queryKey,
+    );
     expect(providerCatalogQueryOptions('/workspace/project', 'runtime-a').queryKey).toEqual(['runtime-a', 'configCatalog', 'providers']);
+  });
+
+  test('Agent catalog 跨目录共享同一份全局 cache', async () => {
+    const first = ensureRawAgentsQuery('/workspace/project', runtimeKey);
+    resolveAgents?.();
+    await first;
+    await ensureRawAgentsQuery('/workspace/other', runtimeKey);
+    expect(agentCalls).toBe(1);
+    expect(rawAgentsQueryOptions('/workspace/project', runtimeKey).queryKey).toEqual(
+      rawAgentsQueryOptions('/workspace/other', runtimeKey).queryKey,
+    );
   });
 
   test('Provider Catalog 跨目录共享同一份全局 cache', async () => {

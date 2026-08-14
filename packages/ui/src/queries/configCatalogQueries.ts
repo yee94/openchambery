@@ -66,6 +66,10 @@ export const providerCatalogQueryOptions = (
   };
 };
 
+// Composer Agent catalog is one cache per transport. `directory` is only an
+// OpenCode request hint so the first load can bind to an instance; later
+// projects reuse this list immediately. Project-only agents are rare and
+// arrive later via force-refresh / Agents settings metadata.
 export const rawAgentsQueryOptions = (
   directory: string | null,
   transport = getRuntimeTransportIdentity(),

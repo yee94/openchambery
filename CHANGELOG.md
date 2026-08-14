@@ -4,6 +4,10 @@ All notable changes to this project will be documented in this file.
 
 ## [Unreleased]
 
+## [1.16.132-beta.7] - 2026-08-14
+
+- **Provider/agent catalog:** new draft and project switch immediately reuse the already-loaded global Agent and Provider lists. Composer no longer clears agents or waits on a per-project fetch; last selected agent+model ID stays per project. Project-only agents remain rare and arrive later via force-refresh or Agents settings.
+
 ## [1.16.132-beta.6] - 2026-08-14
 
 - **Conversation order on send:** idle/Query insert-only and optimistic queue inserts no longer re-sort the transcript by message id. A just-sent or queued user turn stays at the tail instead of disappearing into the middle of history.

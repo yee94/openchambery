@@ -1206,7 +1206,7 @@ describe('useConfigStore provider persistence', () => {
     await useConfigStore.getState().loadAgents({ directory: DIRECTORY, source: 'test:settingsBootstrapA' });
     await useConfigStore.getState().loadAgents({ directory: OTHER_DIRECTORY, source: 'test:settingsBootstrapB' });
 
-    expect(listAgentsCalls).toBe(2);
+    expect(listAgentsCalls).toBe(1);
     expect(settingsBootstrapCalls).toBe(1);
   });
 
@@ -1684,6 +1684,41 @@ describe('useConfigStore provider persistence', () => {
     expect(getProvidersCalls).toBe(0);
     expect(useConfigStore.getState().providers.map((entry) => entry.id)).toEqual(['global']);
     expect(useConfigStore.getState().activeDirectoryKey).toBe(OTHER_DIRECTORY);
+  });
+
+  test('new directory reuses the global Agent catalog without refetch or loading', async () => {
+    useConfigStore.setState({
+      activeDirectoryKey: DIRECTORY,
+      providers: [provider('global')],
+      defaultProviders: { default: 'global' },
+      agents: [testAgent('build'), testAgent('plan')],
+      currentAgentName: 'plan',
+      globalLastUserSelection: { agentName: 'plan', providerId: 'global', modelId: 'global-model' },
+      directoryScoped: {
+        [DIRECTORY]: {
+          providers: [provider('global')], agents: [testAgent('build')], currentProviderId: 'global', currentModelId: 'global-model',
+          currentAgentName: 'plan', selectedProviderId: 'global', agentModelSelections: {}, defaultProviders: { default: 'global' },
+        },
+      },
+    });
+    await useConfigStore.getState().activateDirectory(OTHER_DIRECTORY);
+    expect(listAgentsCalls).toBe(0);
+    expect(getProvidersCalls).toBe(0);
+    expect(useConfigStore.getState().agents.map((entry) => entry.name)).toEqual(['build', 'plan']);
+    expect(useConfigStore.getState().agentConfigLoadingByDirectory[OTHER_DIRECTORY]).not.toBe(true);
+    expect(useConfigStore.getState().currentAgentName).toBe('plan');
+    expect(useConfigStore.getState().activeDirectoryKey).toBe(OTHER_DIRECTORY);
+  });
+
+  test('non-force empty Agent overlay retains the global catalog', async () => {
+    liveAgents = [testAgent('build')];
+    await useConfigStore.getState().loadAgents({ directory: DIRECTORY, source: 'test:globalAgents' });
+    expect(useConfigStore.getState().agents.map((entry) => entry.name)).toEqual(['build']);
+    queryClient.clear();
+    listAgentsImpl = async () => [];
+    await useConfigStore.getState().loadAgents({ directory: OTHER_DIRECTORY, source: 'test:emptyOverlay' });
+    expect(useConfigStore.getState().agents.map((entry) => entry.name)).toEqual(['build']);
+    expect(useConfigStore.getState().agentConfigLoadingByDirectory[OTHER_DIRECTORY]).not.toBe(true);
   });
 
   test('initializeApp force-refreshes a warm Provider Query snapshot', async () => {

@@ -1373,6 +1373,7 @@ export const useConfigStore = create<ConfigStore>()(
                     const directoryKey = toDirectoryKey(configDirectory);
                     let snapshotHadProviders = false;
                     let snapshotHadAgents = false;
+                    let hadInMemoryDirectoryAgents = false;
 
                     set((state) => {
                         const snapshot = state.directoryScoped[directoryKey];
@@ -1382,8 +1383,12 @@ export const useConfigStore = create<ConfigStore>()(
                         const globalDefaults = Object.keys(state.defaultProviders).length > 0
                             ? state.defaultProviders
                             : (snapshot?.defaultProviders ?? {});
+                        const globalAgents = state.agents.length > 0
+                            ? state.agents
+                            : (snapshot?.agents ?? []);
                         snapshotHadProviders = globalProviders.length > 0;
-                        snapshotHadAgents = Boolean(snapshot?.agents.length);
+                        snapshotHadAgents = globalAgents.length > 0;
+                        hadInMemoryDirectoryAgents = Boolean(snapshot?.agents.length);
                         const shouldLoadProviders = state.isConnected && !snapshotHadProviders;
                         const shouldLoadAgents = state.isConnected && !snapshotHadAgents;
                         if (snapshot) {
@@ -1391,7 +1396,7 @@ export const useConfigStore = create<ConfigStore>()(
                                 activeDirectoryKey: directoryKey,
                                 providers: globalProviders,
                                 defaultProviders: globalDefaults,
-                                agents: snapshot.agents,
+                                agents: snapshot.agents.length > 0 ? snapshot.agents : globalAgents,
                                 currentProviderId: snapshot.currentProviderId,
                                 currentModelId: snapshot.currentModelId,
                                 currentVariant: snapshot.currentVariant,
@@ -1419,7 +1424,7 @@ export const useConfigStore = create<ConfigStore>()(
                             activeDirectoryKey: directoryKey,
                             providers: globalProviders,
                             defaultProviders: globalDefaults,
-                            agents: [],
+                            agents: globalAgents,
                             currentProviderId: "",
                             currentModelId: "",
                             currentAgentName: undefined,
@@ -1442,14 +1447,20 @@ export const useConfigStore = create<ConfigStore>()(
                         };
                     });
 
+                    // New / persisted-empty directories inherit immediately from the
+                    // already-loaded global catalogs. Do not wait on a project fetch.
+                    if (snapshotHadAgents && snapshotHadProviders && !hadInMemoryDirectoryAgents) {
+                        get().applyDefaultModelAgentSelection();
+                    }
+
                     if (!get().isConnected) {
                         return;
                     }
 
-                    // Provider catalog is global. Reuse it across projects; only fetch
-                    // when we have nothing to show. Explicit refreshProviders still
-                    // refetches (config-change / initializeApp), but a new draft must
-                    // not block on a second catalog round-trip.
+                    // Provider and Agent catalogs are global. Reuse them across projects;
+                    // only fetch when we have nothing to show. Explicit refreshProviders
+                    // still refetches (config-change / initializeApp), but a new draft
+                    // must not block on a second catalog round-trip.
                     if (!snapshotHadProviders || options?.refreshProviders) {
                         await get().loadProviders({ directory: fromDirectoryKey(directoryKey), source: options?.source ?? 'activateDirectory', forceRefresh: options?.refreshProviders });
                     }
@@ -1973,8 +1984,8 @@ export const useConfigStore = create<ConfigStore>()(
 
                 loadAgents: async (options) => {
                     const requestedDirectory = options?.directory ?? fromDirectoryKey(get().activeDirectoryKey);
-                    // Agents are project-scoped: resolve a worktree to its project
-                    // so it reuses one shared snapshot instead of its own.
+                    // Composer Agent catalog is global per transport. Directory is an
+                    // OpenCode instance hint and the lastUserSelection key, not a cache partition.
                     const configDirectory = resolveConfigDirectory(requestedDirectory);
                     if (!configDirectory) {
                         markStartupTrace('loadAgents:skippedUnknownDirectory', { requestedDirectory, source: options?.source ?? 'unknown' });
@@ -1994,10 +2005,8 @@ export const useConfigStore = create<ConfigStore>()(
                     markStartupTrace('loadAgents:called', { directoryKey, source, requestedDirectory, effectiveDirectory });
 
                     const currentAgentSnapshot = get().directoryScoped[directoryKey];
-                    const hasAgentData = Boolean(
-                        currentAgentSnapshot?.agents.length
-                        || (get().activeDirectoryKey === directoryKey && get().agents.length > 0)
-                    );
+                    const hasAgentData = get().agents.length > 0
+                        || Boolean(currentAgentSnapshot?.agents.length);
                     if (!hasAgentData) {
                         set((state) => ({
                             agentConfigLoadingByDirectory: {
@@ -2011,7 +2020,9 @@ export const useConfigStore = create<ConfigStore>()(
                     const loaderStarted = typeof performance !== 'undefined' ? performance.now() : Date.now();
                     markStartupTrace('loadAgents:start', { directoryKey, source, requestedDirectory, effectiveDirectory });
                     const existingSnapshot = get().directoryScoped[directoryKey];
-                    const previousAgents = existingSnapshot?.agents ?? (get().activeDirectoryKey === directoryKey ? get().agents : []);
+                    const previousAgents = get().agents.length > 0
+                        ? get().agents
+                        : existingSnapshot?.agents ?? [];
                     try {
                             // Fetch agents and OpenChamber settings in parallel. OpenCode config
                             // comes from sync state if it is already available; it must not block
@@ -2163,6 +2174,22 @@ export const useConfigStore = create<ConfigStore>()(
                             }
 
                             if (safeAgents.length === 0) {
+                                // A later project overlay must not blank the already-loaded
+                                // global catalog unless this is an explicit force-refresh.
+                                if (previousAgents.length > 0 && !options?.forceRefresh) {
+                                    if (!isCurrent()) return false;
+                                    const loaderEnded = typeof performance !== 'undefined' ? performance.now() : Date.now();
+                                    markStartupTrace('loadAgents:end', {
+                                        directoryKey,
+                                        source,
+                                        requestedDirectory,
+                                        effectiveDirectory,
+                                        durationMs: Math.round(loaderEnded - loaderStarted),
+                                        agents: previousAgents.length,
+                                        retainedPrevious: true,
+                                    });
+                                    return true;
+                                }
                                 set((state) => {
                                     if (!isCurrent() || state.catalogTransportIdentity !== transport) return state;
                                     const baseSnapshot: DirectoryScopedConfig = state.directoryScoped[directoryKey] ?? {
@@ -3278,7 +3305,7 @@ export const useConfigStore = create<ConfigStore>()(
                         seen.add(directoryKey);
 
                         const snapshot = get().directoryScoped[directoryKey];
-                        if (snapshot?.providers.length && snapshot.agents.length) {
+                        if ((snapshot?.providers.length || get().providers.length > 0) && (snapshot?.agents.length || get().agents.length > 0)) {
                             continue;
                         }
                         const scopedDirectory = fromDirectoryKey(directoryKey);
@@ -3295,10 +3322,10 @@ export const useConfigStore = create<ConfigStore>()(
                         const directoryKey = toConfigDirectoryKey(directory);
                         const snapshot = get().directoryScoped[directoryKey];
                         const tasks: Promise<unknown>[] = [];
-                        if (!snapshot?.providers.length) {
+                        if (!snapshot?.providers.length && get().providers.length === 0) {
                             tasks.push(get().loadProviders({ directory, source: 'projectConfigPrewarm' }));
                         }
-                        if (!snapshot?.agents.length) {
+                        if (!snapshot?.agents.length && get().agents.length === 0) {
                             tasks.push(get().loadAgents({ directory, source: 'projectConfigPrewarm' }));
                         }
                         if (tasks.length > 0) {

@@ -62,7 +62,7 @@ describe('agentQueries', () => {
     await refreshAgentsQuery(queryClient, activeProjectPath, runtimeKey);
     runtimeKey = 'runtime-b';
     await refreshAgentsQuery(queryClient, activeProjectPath, 'runtime-a');
-    expect(listCalls).toBe(2);
+    expect(listCalls).toBe(1);
     expect(agentQueryOptions(activeProjectPath).queryKey).toEqual(['runtime-b', 'agents', '/workspace/second']);
   });
 
