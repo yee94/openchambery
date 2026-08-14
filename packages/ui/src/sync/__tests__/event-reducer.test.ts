@@ -99,6 +99,63 @@ describe("applyTranscriptDirectoryEvent", () => {
     expect(draft.part.msg_user).toBeDefined()
   })
 
+  test("message.updated settles an existing tail assistant in conversation order", () => {
+    const open = {
+      id: "msg_2",
+      sessionID: "ses_1",
+      role: "assistant",
+      time: { created: 1 },
+    } as Message
+    const draft = transcriptDraft({
+      message: {
+        ses_1: [
+          { id: "msg_1", sessionID: "ses_1", role: "user", time: { created: 1 } } as Message,
+          { id: "msg_3", sessionID: "ses_1", role: "assistant", time: { created: 1 } } as Message,
+          { id: "msg_9", sessionID: "ses_1", role: "user", time: { created: 1 } } as Message,
+          open,
+        ],
+      },
+    })
+    const settled = {
+      ...open,
+      finish: "stop",
+      time: { created: 1, completed: 9 },
+    } as Message
+
+    expect(applyTranscriptDirectoryEvent(draft, messageUpdatedEvent(settled))).toBe(true)
+    expect(draft.message.ses_1?.map((message) => message.id)).toEqual([
+      "msg_1",
+      "msg_3",
+      "msg_9",
+      "msg_2",
+    ])
+    expect((draft.message.ses_1?.[3] as { finish?: string }).finish).toBe("stop")
+  })
+
+  test("message.updated appends a new user turn at the tail instead of the id slot", () => {
+    const draft = transcriptDraft({
+      message: {
+        ses_1: [
+          { id: "msg_9", sessionID: "ses_1", role: "user", time: { created: 1 } } as Message,
+          { id: "msg_1", sessionID: "ses_1", role: "assistant", time: { created: 1 } } as Message,
+        ],
+      },
+    })
+    const sent = {
+      id: "msg_15",
+      sessionID: "ses_1",
+      role: "user",
+      time: { created: 2 },
+    } as Message
+
+    expect(applyTranscriptDirectoryEvent(draft, messageUpdatedEvent(sent))).toBe(true)
+    expect(draft.message.ses_1?.map((message) => message.id)).toEqual([
+      "msg_9",
+      "msg_1",
+      "msg_15",
+    ])
+  })
+
   test("does not invent empty parts for the first assistant on a cold session", () => {
     const draft = transcriptDraft()
     const nextAssistant = {

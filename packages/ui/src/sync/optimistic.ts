@@ -1,5 +1,4 @@
 import type { Message, Part } from "@opencode-ai/sdk/v2/client"
-import { Binary } from "./binary"
 
 const cmp = (a: string, b: string) => (a < b ? -1 : a > b ? 1 : 0)
 
@@ -27,11 +26,11 @@ export function mergeOptimisticPage(page: MessagePage, items: OptimisticItem[]) 
   const confirmed: string[] = []
 
   for (const item of items) {
-    const result = Binary.search(session, item.message.id, (message) => message.id)
-    const found = result.found
-    if (!found) {
-      // Not on the server yet — keep the optimistic message + parts as placeholders.
-      session.splice(result.index, 0, item.message)
+    const index = session.findIndex((message) => message.id === item.message.id)
+    if (index < 0) {
+      // Not on the server yet — keep the optimistic message at the conversation
+      // tail. Id-insert drops a mid-turn-minted messageID into history.
+      session.push(item.message)
       part.set(item.message.id, sortParts(item.parts))
       continue
     }

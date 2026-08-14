@@ -65,6 +65,11 @@ import {
 } from "./transcript-repository-observers"
 import { stripMessageDiffSnapshots, stripSessionDiffSnapshots } from "./sanitize"
 import { messagesVisibleWithRevert } from "./conversation-order"
+import {
+  deferIdleTranscriptSettle,
+  planSessionIdleMaterialization,
+  takeDeferredIdleTranscriptSettle,
+} from "./session-idle-materialization"
 import { applySessionEventToGlobalSessions } from "./session-event-router"
 import { syncDebug } from "./debug"
 import {
@@ -521,6 +526,7 @@ export async function materializeSessionFromServer(
 // Used to determine if user is currently viewing the session when a notification arrives.
 let _activeDirectory = ""
 let _activeSession = ""
+let idleTranscriptSettleStores: ChildStoreManager | null = null
 /** Context Panel open session — persists across window blur (unlike externallyViewed). */
 let _contextPanelDirectory = ""
 let _contextPanelSession = ""
@@ -597,9 +603,25 @@ const handleUiNotificationEvent = (payload: Event, fallbackDirectory: string): b
   return true
 }
 
+function flushDeferredIdleTranscriptSettle(directory: string, sessionId: string) {
+  if (!directory || !sessionId || !idleTranscriptSettleStores) return
+  if (!takeDeferredIdleTranscriptSettle(directory, sessionId)) return
+  enqueueSessionMaterialization(directory, sessionId, idleTranscriptSettleStores, {
+    reason: "session-idle",
+  })
+}
+
+function bindIdleTranscriptSettleStores(stores: ChildStoreManager | null) {
+  idleTranscriptSettleStores = stores
+  if (stores) {
+    flushDeferredIdleTranscriptSettle(_activeDirectory, _activeSession)
+  }
+}
+
 export function setActiveSession(directory: string, sessionId: string) {
   _activeDirectory = directory
   _activeSession = sessionId
+  flushDeferredIdleTranscriptSettle(directory, sessionId)
 }
 
 export function setExternallyViewedSession(directory: string, sessionId: string, viewed: boolean) {
@@ -1881,8 +1903,9 @@ export function handleEvent(
   // - child idle → materialize parent (task tool completion without mounted ToolPart)
   // - active top-level idle → one bounded tail materialize so half-finished
   //   reasoning/text is replaced by the authoritative completed snapshot.
-  //   Background top-level idle stays zero-request. Active identity uses
-  //   setActiveSession directory/session only (not window focus).
+  // - background top-level idle stays zero-request now, then the same
+  //   session-idle materialize runs when setActiveSession views it.
+  //   Active identity uses setActiveSession directory/session only (not window focus).
   if (payload.type === "session.idle") {
     const idleSessionId = getSessionIdFromPayload(payload)
     if (idleSessionId && resolvedDirectory && resolvedDirectory !== "global") {
@@ -1891,13 +1914,19 @@ export function handleEvent(
       const parentID = idleSession
         ? (idleSession as Session & { parentID?: string | null }).parentID
         : null
-      if (parentID) {
-        enqueueSessionMaterialization(resolvedDirectory, parentID, childStores, { reason: "child-session-idle" })
-      } else if (
-        idleSessionId === _activeSession
-        && resolvedDirectory === _activeDirectory
-      ) {
-        enqueueSessionMaterialization(resolvedDirectory, idleSessionId, childStores, { reason: "session-idle" })
+      const plan = planSessionIdleMaterialization({
+        idleSessionID: idleSessionId,
+        directory: resolvedDirectory,
+        parentID,
+        activeSessionID: _activeSession,
+        activeDirectory: _activeDirectory,
+      })
+      if (plan.action === "materialize-parent") {
+        enqueueSessionMaterialization(resolvedDirectory, plan.sessionID, childStores, { reason: "child-session-idle" })
+      } else if (plan.action === "materialize-now") {
+        enqueueSessionMaterialization(resolvedDirectory, plan.sessionID, childStores, { reason: "session-idle" })
+      } else if (plan.action === "defer-until-viewed") {
+        deferIdleTranscriptSettle(resolvedDirectory, plan.sessionID)
       }
     }
   }
@@ -2147,6 +2176,13 @@ export function SyncProvider(props: {
     }),
     [childStores, props.sdk, props.directory],
   )
+
+  useEffect(() => {
+    bindIdleTranscriptSettleStores(childStores)
+    return () => {
+      bindIdleTranscriptSettleStores(null)
+    }
+  }, [childStores])
 
   const triggerDirectoryResync = useCallback((
     directory: string,

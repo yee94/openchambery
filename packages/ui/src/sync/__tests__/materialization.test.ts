@@ -375,6 +375,36 @@ describe("materializeSessionSnapshots", () => {
     expect(result.messagesChanged).toBe(true)
   })
 
+  test("insert-only still admits the completed snapshot's final text and closed reasoning", () => {
+    const live = message("msg_1")
+    const openReasoning = {
+      ...part("prt_reason", "msg_1", "reasoning", "thinking"),
+      time: { start: 1 },
+    } as Part
+    const closedReasoning = {
+      ...openReasoning,
+      time: { start: 1, end: 8 },
+    } as Part
+    const conclusion = part("prt_text", "msg_1", "text", "the answer")
+    const snapshot = {
+      ...live,
+      finish: "stop",
+      time: { created: 1, completed: 9 },
+    } as Message
+    const result = materializeSessionSnapshots(
+      { message: { ses_1: [live] }, part: { msg_1: [openReasoning] } },
+      "ses_1",
+      [{ info: snapshot, parts: [closedReasoning, conclusion] }],
+      { merge: MATERIALIZE_MERGE },
+    )
+
+    const merged = result.message.ses_1[0] as Message & { finish?: string }
+    expect(merged.finish).toBe("stop")
+    expect(result.part.msg_1.map((item) => item.id)).toEqual(["prt_reason", "prt_text"])
+    expect((result.part.msg_1[0] as { time?: { end?: number } }).time?.end).toBe(8)
+    expect((result.part.msg_1[1] as { text?: string }).text).toBe("the answer")
+  })
+
   test("insert-only fills a missing error so an aborted turn can settle", () => {
     const live = message("msg_1")
     const snapshot = {

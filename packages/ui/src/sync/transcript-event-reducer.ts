@@ -6,6 +6,7 @@
  */
 import type { Event, Message, Part } from "@opencode-ai/sdk/v2/client"
 import { Binary } from "./binary"
+import { conversationIndexOf } from "./conversation-order"
 import { syncDebug } from "./debug"
 import type { DirectoryEventResult, SessionMaterializationReason } from "./event-reducer"
 
@@ -131,7 +132,7 @@ function hasMessage(draft: TranscriptEventDraft, sessionID: string | undefined, 
   if (!sessionID) return false
   const messages = draft.message[sessionID]
   if (!messages) return false
-  return Binary.search(messages, messageID, (message) => message.id).found
+  return conversationIndexOf(messages, messageID) >= 0
 }
 
 /**
@@ -156,22 +157,20 @@ export function applyTranscriptDirectoryEvent(
         draft.message[info.sessionID] = [info]
         return true
       }
-      const result = Binary.search(messages, info.id, (m) => m.id)
-      if (result.found) {
+      const index = conversationIndexOf(messages, info.id)
+      if (index >= 0) {
         // Skip message replacement if unchanged — preserves reference, avoids re-render
-        const existing = messages[result.index]
+        const existing = messages[index]
         const unchanged = areMessageUpdateFieldsEqual(existing, info)
         if (unchanged) {
           syncDebug.reducer.messageUpdatedUnchanged(info.sessionID, info.id, info.role, (info as { finish?: unknown }).finish, (info.time as { completed?: number })?.completed)
           return false
         }
         const next = [...messages]
-        next[result.index] = info
+        next[index] = info
         draft.message[info.sessionID] = next
       } else {
-        const next = [...messages]
-        next.splice(result.index, 0, info)
-        draft.message[info.sessionID] = next
+        draft.message[info.sessionID] = [...messages, info]
       }
       return true
     }
@@ -180,10 +179,10 @@ export function applyTranscriptDirectoryEvent(
       const props = event.properties as { sessionID: string; messageID: string }
       const messages = draft.message[props.sessionID]
       if (messages) {
-        const next = [...messages]
-        const result = Binary.search(next, props.messageID, (m) => m.id)
-        if (result.found) {
-          next.splice(result.index, 1)
+        const index = conversationIndexOf(messages, props.messageID)
+        if (index >= 0) {
+          const next = [...messages]
+          next.splice(index, 1)
           draft.message[props.sessionID] = next
         }
       }

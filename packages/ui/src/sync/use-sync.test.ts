@@ -330,6 +330,40 @@ describe('mergeOptimisticPage idempotency across commits (#2084)', () => {
     expect(parts.filter((part) => part.type === 'file')).toHaveLength(1)
     expect(parts.find((part) => part.type === 'file')?.id).toBe('prt_server_file')
   })
+
+  test('confirms an optimistic tail row in conversation order without duplicating it', () => {
+    const optimistic = userMessage('msg_15')
+    const page = {
+      session: [
+        userMessage('msg_9'),
+        assistantMessage('msg_1'),
+        userMessage('msg_2'),
+        assistantMessage('msg_3'),
+        optimistic,
+      ],
+      part: [
+        { id: 'msg_9', part: [] },
+        { id: 'msg_1', part: [] },
+        { id: 'msg_2', part: [] },
+        { id: 'msg_3', part: [] },
+        { id: 'msg_15', part: [textPart('p_15', 'msg_15')] },
+      ],
+      cursor: undefined,
+      complete: true,
+    }
+    const merged = mergeOptimisticPage(page, [{
+      message: optimistic,
+      parts: [textPart('p_opt', 'msg_15')],
+    }])
+    expect(merged.session.map((message) => message.id)).toEqual([
+      'msg_9',
+      'msg_1',
+      'msg_2',
+      'msg_3',
+      'msg_15',
+    ])
+    expect(merged.confirmed).toEqual(['msg_15'])
+  })
 })
 
 describe('first-commit gating invariant (#2084)', () => {

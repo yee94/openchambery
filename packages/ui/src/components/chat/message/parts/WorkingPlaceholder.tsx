@@ -39,11 +39,12 @@ export function WorkingPlaceholder({
   const [displayedPermission, setDisplayedPermission] = React.useState<boolean>(false);
   const displayedTextRef = React.useRef(displayedText);
   const displayedPermissionRef = React.useRef(displayedPermission);
+  const displayedGenericRef = React.useRef(false);
   displayedTextRef.current = displayedText;
   displayedPermissionRef.current = displayedPermission;
 
   const statusShownAtRef = React.useRef<number>(0);
-  const queuedStatusRef = React.useRef<{ text: string; permission: boolean } | null>(null);
+  const queuedStatusRef = React.useRef<{ text: string; permission: boolean; generic: boolean } | null>(null);
   const processQueueTimerRef = React.useRef<ReturnType<typeof setTimeout> | null>(null);
 
   // Countdown state for retry mode
@@ -75,11 +76,12 @@ export function WorkingPlaceholder({
     }
   });
 
-  const showStatus = useEvent((text: string, permission: boolean) => {
+  const showStatus = useEvent((text: string, permission: boolean, generic = false) => {
     clearTimers();
     queuedStatusRef.current = null;
     setDisplayedText(text);
     setDisplayedPermission(permission);
+    displayedGenericRef.current = generic;
     statusShownAtRef.current = Date.now();
   });
 
@@ -92,7 +94,7 @@ export function WorkingPlaceholder({
 
       const queued = queuedStatusRef.current;
       if (queued) {
-        showStatus(queued.text, queued.permission);
+        showStatus(queued.text, queued.permission, queued.generic);
       }
     }, remaining);
   });
@@ -103,6 +105,7 @@ export function WorkingPlaceholder({
       queuedStatusRef.current = null;
       setDisplayedText(null);
       setDisplayedPermission(false);
+      displayedGenericRef.current = false;
       return;
     }
 
@@ -122,7 +125,7 @@ export function WorkingPlaceholder({
     }
 
     if (!displayedTextRef.current) {
-      showStatus(incomingText, incomingPermission);
+      showStatus(incomingText, incomingPermission, incomingGeneric);
       return;
     }
 
@@ -130,18 +133,19 @@ export function WorkingPlaceholder({
       return;
     }
 
-    // Ignore generic churn.
-    if (incomingGeneric) {
+    // Ignore generic→generic churn. A specific status such as "sending"
+    // must still yield to the next generic working phrase.
+    if (incomingGeneric && displayedGenericRef.current) {
       return;
     }
 
     const elapsed = Date.now() - statusShownAtRef.current;
     if (elapsed >= STATUS_DISPLAY_TIME_MS) {
-      showStatus(incomingText, incomingPermission);
+      showStatus(incomingText, incomingPermission, incomingGeneric);
       return;
     }
 
-    queuedStatusRef.current = { text: incomingText, permission: incomingPermission };
+    queuedStatusRef.current = { text: incomingText, permission: incomingPermission, generic: incomingGeneric };
     scheduleQueueProcess();
     // useEvent identities are stable; rerun only when status inputs change.
   }, [

@@ -6,7 +6,7 @@
  * reducers:
  * - HTTP pages → reduceSessionMessagePage → atomic store commit
  * - SSE events → applyTranscriptDirectoryEvent (transcript event types only)
- * - optimistic add/confirm/remove → binary-insert / clear shadow / remove
+ * - optimistic add/confirm/remove → append / clear shadow / remove
  * - reset → transcript-only clear (message/parts/boundary), optional initial page
  *
  * Production authority is QueryCache (`createQueryTranscriptRepository`).
@@ -15,7 +15,6 @@
 
 import type { Event, Message, Part } from "@opencode-ai/sdk/v2/client"
 
-import { Binary } from "./binary"
 import { applyTranscriptDirectoryEvent } from "./transcript-event-reducer"
 import { materializeSessionSnapshots } from "./materialization"
 import {
@@ -385,9 +384,8 @@ function applyOptimisticAdd(
   const part = { ...(current.part ?? {}) }
 
   const messages = message[sessionID] ? [...message[sessionID]] : []
-  const search = Binary.search(messages, command.message.id, (m) => m.id)
-  if (!search.found) {
-    messages.splice(search.index, 0, command.message)
+  if (!messages.some((item) => item.id === command.message.id)) {
+    messages.push(command.message)
   }
   message[sessionID] = messages
   part[command.message.id] = sortParts(command.parts)
@@ -413,9 +411,9 @@ function applyOptimisticRemove(
   const messages = message[sessionID]
   if (messages) {
     const next = [...messages]
-    const search = Binary.search(next, messageID, (m) => m.id)
-    if (search.found) {
-      next.splice(search.index, 1)
+    const index = next.findIndex((item) => item.id === messageID)
+    if (index >= 0) {
+      next.splice(index, 1)
       message[sessionID] = next
       changed = true
     }
