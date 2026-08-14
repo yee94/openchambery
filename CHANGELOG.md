@@ -4,6 +4,19 @@ All notable changes to this project will be documented in this file.
 
 ## [Unreleased]
 
+## [1.16.132] - 2026-08-14
+
+- **Transcript echo:** SSE `message.updated` and optimistic merges locate rows by conversation order, not id binary-search. A completed turn keeps its finish/body on the live last assistant, and a just-sent user message is not duplicated while "Sending message..." stays pinned.
+- **Conversation order on send:** idle/Query insert-only and optimistic queue inserts no longer re-sort the transcript by message id. A just-sent or queued user turn stays at the tail.
+- **Transcript tail:** a lagging idle/Query snapshot no longer replaces the live last turn. Same-length or collapsed tail refreshes merge insert-only, and idle materialize drops the page if SSE moved while it was in flight.
+- **Chat Activity auto-collapse:** insert-only idle/Query merges now copy missing `finish` / `time.completed` / `error` onto the live last assistant, so a completed turn can fold after the final body is visible.
+- **Background idle settle:** a session that finishes off-screen is refreshed with the completed snapshot when you switch back, so reasoning can collapse and the final conclusion appears without restarting the app.
+- **Provider/agent catalog:** new draft and project switch reuse the already-loaded global Agent and Provider lists. Composer no longer clears agents or waits on a per-project fetch; last selected agent+model ID stays per project. `listAgents` has a 12s timeout with merged abort signals, and startup catalog recovery stays single-flight across directory changes.
+- **Session todos:** after opening a session, fill the todo list from the latest loaded `todowrite`/`todoread` in the transcript when live `todo.updated` never arrived.
+- **Mobile Projects canvas:** share one page-background token between the app shell and tabs root, and keep the floating shell as a clip frame so short project lists no longer seam into plain `--background`.
+- **Sidebar contrast:** lift session-sidebar ink in dark mode so labels stay readable on charcoal / vibrancy surfaces.
+- **Mobile/Android pairing QR:** Google scan still runs first on devices with Play Services; if it fails to start, fall back to the bundled CameraX scanner so phones without GMS can pair. Old WebViews that misread `openchamber://` pairing links now parse the scanned string directly.
+
 ## [1.16.132-beta.8] - 2026-08-14
 
 - **Transcript echo:** SSE `message.updated` and optimistic merges locate rows by conversation order, not id binary-search. A completed turn keeps its finish/body on the live last assistant, and a just-sent user message is not duplicated while "Sending message..." stays pinned.
