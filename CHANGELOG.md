@@ -4,6 +4,11 @@ All notable changes to this project will be documented in this file.
 
 ## [Unreleased]
 
+## [1.16.139-beta.2] - 2026-08-15
+
+- **Sync messages:** Refresh is disabled only when the live session is actually busy or retrying. A sticky leftover busy flag no longer greys out the mobile overflow button.
+- **Send self-heal:** after a long idle gap the client no longer trusts a zombie "connected" stream. It reconnects before sending, and a hung prompt times out so "Sending message" cannot stick forever.
+
 ## [1.16.139-beta.1] - 2026-08-15
 
 - **Sync messages:** desktop session right-click and the mobile overflow Refresh now force an authoritative OpenCode tail. Success replaces the visible transcript; failure keeps the previous messages. Busy or retrying sessions disable the action so a live turn is not interrupted.

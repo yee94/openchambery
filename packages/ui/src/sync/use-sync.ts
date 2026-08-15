@@ -16,7 +16,6 @@ import {
   requireTranscriptRepository,
   transcriptScope,
 } from "./transcript-repository-runtime"
-import { useGlobalSessionStatusStore } from "./global-session-status"
 import { stripSessionDiffSnapshots } from "./sanitize"
 import {
   getEffectiveSessionCacheLimit,
@@ -560,8 +559,7 @@ export function useSync() {
       if (!targetDirectory || targetDirectory === "global") return
       const targetStore = childStores.ensureChild(targetDirectory, { bootstrap: false })
       const liveType = targetStore.getState().session_status?.[sessionID]?.type
-      const fallbackType = useGlobalSessionStatusStore.getState().statusById.get(sessionID)?.status
-      if (isUserTranscriptRefreshBlocked(liveType ?? fallbackType)) {
+      if (isUserTranscriptRefreshBlocked(liveType)) {
         throw new Error("refresh transcript busy")
       }
       try {

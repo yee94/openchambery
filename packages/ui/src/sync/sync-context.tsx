@@ -6,6 +6,7 @@ import type { StoreApi } from "zustand"
 import { useStore } from "zustand"
 import type { OpencodeClient } from "@opencode-ai/sdk/v2/client"
 import { createEventPipeline } from "./event-pipeline"
+import { bindStreamReconnect, noteStreamActivity } from "./stream-liveness"
 import { isVSCodeRuntime } from "@/lib/desktop"
 import { isMobileSurfaceRuntime } from "@/lib/runtimeSurface"
 import { reduceGlobalEvent, applyGlobalProject, applyDirectoryEvent, type SessionMaterializationReason } from "./event-reducer"
@@ -2373,7 +2374,9 @@ export function SyncProvider(props: {
         handleEvent(directory, payload, childStores, routingIndex)
       },
       onTransportActivity: () => {
-        lastStreamActivityAtRef.current = Date.now()
+        const now = Date.now()
+        lastStreamActivityAtRef.current = now
+        noteStreamActivity(now)
       },
       onReconnect: () => {
         useConfigStore.setState({
@@ -2438,7 +2441,9 @@ export function SyncProvider(props: {
       },
     })
     pipelineReconnectRef.current = pipeline.reconnect
+    const unbindStreamReconnect = bindStreamReconnect(pipeline.reconnect)
     return () => {
+      unbindStreamReconnect()
       if (pipelineReconnectRef.current === pipeline.reconnect) {
         pipelineReconnectRef.current = null
       }

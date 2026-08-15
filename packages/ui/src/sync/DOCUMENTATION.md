@@ -645,7 +645,12 @@ both readers agree on when a frame may shrink.
   "Sync messages" and the dedicated-mobile overflow "Refresh" both call
   `refreshSessionTranscript`. Do not route those buttons through `ensureInitial`
   (hot-cache no-op) or `destructiveReset` (ensure failure blanks the chat).
-  Busy/retry sessions refuse the action.
+  Busy/retry refuse only when the child-store live status is busy/retry.
+  Sticky global fallback busy (missed idle, no mobile tray snapshot) must not
+  disable refresh. Send self-heal: if the event stream has been silent past
+  the stale threshold, `waitForConnectionOrThrow` reconnects before trusting
+  `isConnected`; a hung prompt times out and requests the same reconnect so
+  "Sending message" cannot stick forever.
 - Production application orchestration for transcript pages is owned by
   `transcript-repository-production.ts` + the Query adapter: Host turn-page
   via `fetchProductionTranscriptTransportPage` (policy limit, parent recovery,

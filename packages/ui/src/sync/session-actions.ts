@@ -27,6 +27,10 @@ import { retry } from "./retry"
 import { getRuntimeGeneration, getRuntimeKey, getRuntimeTransportIdentity } from "@/lib/runtime-switch"
 import { isRelayTransportReady } from "@/lib/relay/runtime-tunnel"
 import {
+  isStreamActivityStale,
+  requestStreamReconnect,
+} from "./stream-liveness"
+import {
   applyTranscriptCommand,
   getTranscriptRepository,
   requireTranscriptRepository,
@@ -479,20 +483,48 @@ export function classifySendFailure(error: unknown, transportEntered: boolean): 
 // the 500ms OpenCode health probe in that case — it is what surfaces as
 // "Connection lost (health_probe_unhealthy)" on a working tunnel.
 const CONNECTION_GRACE_MS = 2000
+const STALE_STREAM_HEAL_GRACE_MS = 5000
+const SEND_DISPATCH_TIMEOUT_MS = 30_000
+
 export async function waitForConnectionOrThrow(): Promise<void> {
-  const deadline = Date.now() + CONNECTION_GRACE_MS
+  const healStaleStream = isStreamActivityStale()
+  if (healStaleStream) {
+    requestStreamReconnect("send_stream_stale")
+  }
+  const deadline = Date.now() + (healStaleStream ? STALE_STREAM_HEAL_GRACE_MS : CONNECTION_GRACE_MS)
   while (Date.now() < deadline) {
-    if (useConfigStore.getState().isConnected) return
-    if (isRelayTransportReady()) return
+    if (useConfigStore.getState().isConnected && !isStreamActivityStale()) return
+    if (isRelayTransportReady() && !isStreamActivityStale()) return
     const remainingMs = deadline - Date.now()
     if (remainingMs <= 0) break
-    if (await useConfigStore.getState().probeConnection({ timeoutMs: Math.min(500, remainingMs) })) return
+    if (await useConfigStore.getState().probeConnection({ timeoutMs: Math.min(500, remainingMs) })) {
+      if (!isStreamActivityStale()) return
+    }
     const sleepMs = Math.min(100, deadline - Date.now())
     if (sleepMs > 0) {
       await new Promise((resolve) => setTimeout(resolve, sleepMs))
     }
   }
   throw connectionLostError()
+}
+
+function withSendDispatchTimeout(send: Promise<void>): Promise<void> {
+  return new Promise((resolve, reject) => {
+    const timer = setTimeout(() => {
+      requestStreamReconnect("send_timeout")
+      reject(new DOMException("Send timed out", "TimeoutError"))
+    }, SEND_DISPATCH_TIMEOUT_MS)
+    send.then(
+      (value) => {
+        clearTimeout(timer)
+        resolve(value)
+      },
+      (error) => {
+        clearTimeout(timer)
+        reject(error)
+      },
+    )
+  })
 }
 
 type SessionListSnapshot = {
@@ -1421,7 +1453,7 @@ export async function settleOptimisticSend(input: {
     await waitForConnectionOrThrow()
     assertCurrentSendTarget(capture, transport)
     transportEntered = true
-    await input.send(messageID)
+    await withSendDispatchTimeout(input.send(messageID))
     if (!isCurrentSendTarget(capture, transport)) {
       throw new SendDispatchError(
         "ambiguous-dispatched",

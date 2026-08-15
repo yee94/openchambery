@@ -15,7 +15,7 @@ import type { ChildSessionExport } from '@/lib/exportSession';
 import {
   buildSessionMessageRecordsSnapshotFromSource,
   useDirectoryStore,
-  useGlobalSessionStatus,
+  useLiveSessionStatus,
   useSessionPermissions,
   useSessionQuestions,
 } from '@/sync/sync-context';
@@ -445,7 +445,7 @@ function SessionNodeItemComponent(props: Props): React.ReactNode {
       [session.id],
     ),
   );
-  const sessionStatus = useGlobalSessionStatus(session.id);
+  const sessionStatus = useLiveSessionStatus(session.id);
   const sessionPermissions = useSessionPermissions(
     session.id,
     sessionDirectory ?? undefined,

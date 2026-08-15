@@ -2,6 +2,12 @@ import { describe, expect, test, beforeEach, afterEach, mock } from "bun:test"
 import type { PermissionRequest } from "@/types/permission"
 import type { QuestionRequest } from "@/types/question"
 import { adoptRelayTunnel, deactivateRelayTunnel } from "@/lib/relay/runtime-tunnel"
+import {
+  bindStreamReconnect,
+  noteStreamActivity,
+  resetStreamLivenessForTests,
+  STREAM_STALE_MS,
+} from "./stream-liveness"
 import type { RelayTunnelClient } from "@/lib/relay/tunnel-client"
 
 // Mock SDK client that records permission.reply / question.reply calls
@@ -1504,6 +1510,7 @@ describe("optimisticSend target directory", () => {
 
   afterEach(() => {
     deactivateRelayTunnel()
+    resetStreamLivenessForTests()
   })
 
   test("keeps the pending send status until the prompt request settles for every runtime", async () => {
@@ -1737,6 +1744,30 @@ describe("optimisticSend target directory", () => {
       },
     })
     expect(sendCalled).toBe(true)
+  })
+
+  test("reconnects a stale event stream before trusting isConnected for send", async () => {
+    const reasons: string[] = []
+    bindStreamReconnect((reason) => {
+      reasons.push(reason ?? "")
+      configStoreState.isConnected = false
+    })
+    noteStreamActivity(Date.now() - STREAM_STALE_MS)
+    configStoreState.isConnected = true
+    configStoreState.probeConnection = async () => {
+      configStoreState.isConnected = true
+      noteStreamActivity(Date.now())
+      return true
+    }
+
+    const { waitForConnectionOrThrow } = await import("./session-actions")
+    try {
+      await waitForConnectionOrThrow()
+      expect(reasons).toEqual(["send_stream_stale"])
+      expect(configStoreState.isConnected).toBe(true)
+    } finally {
+      configStoreState.probeConnection = async () => configStoreState.isConnected
+    }
   })
 
   test("passes the prompt directory to optimistic state during session switch races", async () => {

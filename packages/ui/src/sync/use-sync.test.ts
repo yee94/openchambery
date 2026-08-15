@@ -421,4 +421,10 @@ describe('isUserTranscriptRefreshBlocked', () => {
     expect(isUserTranscriptRefreshBlocked(undefined)).toBe(false)
     expect(isUserTranscriptRefreshBlocked(null)).toBe(false)
   })
+
+  test('unknown live status is not blocked even if a sticky global busy exists', () => {
+    // Refresh gates must read child-store live status only. A missed idle
+    // left in the global fallback must not disable the button.
+    expect(isUserTranscriptRefreshBlocked(undefined)).toBe(false)
+  })
 })

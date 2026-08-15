@@ -68,7 +68,7 @@ import { SessionStartupCoordinator } from '@/components/session/SessionStartupCo
 import { DirectoryExplorerDialog } from '@/components/session/DirectoryExplorerDialog';
 import { ScheduledTasksDialog, ScheduledTasksWorkspace } from '@/components/session/ScheduledTasksDialog';
 import { SettingsGroup } from '@/components/sections/shared/SettingsGroup';
-import { SyncProvider, useCurrentSessionEntity, useGlobalSessionStatus, useParentSessionTarget, useSessionMessages } from '@/sync/sync-context';
+import { SyncProvider, useCurrentSessionEntity, useLiveSessionStatus, useParentSessionTarget, useSessionMessages } from '@/sync/sync-context';
 import { useSync } from '@/sync/use-sync';
 
 import { SyncAppEffects } from './AppEffects';
@@ -2665,7 +2665,7 @@ const MobileShell: React.FC<{
   );
   const currentSessionDirectory = useSessionUIStore(currentSessionDirectorySelector);
   const parentSessionTarget = useParentSessionTarget(currentSessionId, currentSessionDirectory || currentDirectory || undefined);
-  const currentSessionStatus = useGlobalSessionStatus(currentSessionId ?? '');
+  const currentSessionStatus = useLiveSessionStatus(currentSessionId ?? '');
   const isSessionBusy = currentSessionStatus?.type === 'busy' || currentSessionStatus?.type === 'retry';
   const refreshCurrentTranscript = useEvent(() => {
     const sessionID = currentSessionId;
