@@ -641,7 +641,10 @@ both readers agree on when a frame may shrink.
   that is a separate decision; the table makes the behavior visible.
   User-triggered refresh is a different path: `refreshFromAuthority` fetches a
   fresh tail first, then replaces the canonical transcript with that page.
-  Fetch failure keeps the prior transcript. Desktop session context-menu
+  Fetch failure keeps the prior transcript. The fetch is outside the
+  InfiniteQuery observer, so `getRequestState` stays `ready`;
+  `refreshTranscriptFromAuthority` publishes an in-flight signal
+  (`transcript-authority-refresh-flight`) for mobile title hints. Desktop session context-menu
   "Sync messages" and the dedicated-mobile overflow "Refresh" both call
   `refreshSessionTranscript`. Do not route those buttons through `ensureInitial`
   (hot-cache no-op) or `destructiveReset` (ensure failure blanks the chat).

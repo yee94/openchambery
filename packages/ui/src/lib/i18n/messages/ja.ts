@@ -110,6 +110,7 @@ export const dict: Record<I18nKey, string> = {
   'mobile.menu.refreshTranscript': '会話を再読み込み',
   'mobile.menu.refreshTranscriptSuccess': '会話を再読み込みしました',
   'mobile.menu.refreshTranscriptFailed': '会話を再読み込みできませんでした',
+  'mobile.chat.syncingMessages': 'メッセージを同期中...',
   'mobile.menu.files': 'ファイル',
   'mobile.menu.changes': '変更',
   'mobile.menu.mcp': 'MCP',

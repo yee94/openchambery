@@ -108,6 +108,7 @@ export const dict: Record<I18nKey, string> = {
   'mobile.menu.refreshTranscript': '重新整理',
   'mobile.menu.refreshTranscriptSuccess': '已重新整理',
   'mobile.menu.refreshTranscriptFailed': '無法重新整理',
+  'mobile.chat.syncingMessages': '正在同步訊息...',
   'mobile.menu.files': '檔案',
   'mobile.menu.changes': '變更',
   'mobile.menu.mcp': 'MCP',

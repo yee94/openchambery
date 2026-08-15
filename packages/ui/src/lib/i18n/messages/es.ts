@@ -109,6 +109,7 @@ export const dict: Record<I18nKey, string> = {
   "mobile.menu.refreshTranscript": "Actualizar conversación",
   "mobile.menu.refreshTranscriptSuccess": "Conversación actualizada",
   "mobile.menu.refreshTranscriptFailed": "No se pudo actualizar la conversación",
+  "mobile.chat.syncingMessages": "Sincronizando mensajes...",
   "mobile.menu.files": "Archivos",
   "mobile.menu.changes": "Cambios",
   "mobile.menu.mcp": "MCP",

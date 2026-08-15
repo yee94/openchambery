@@ -108,6 +108,7 @@ export const dict: Record<I18nKey, string> = {
   'mobile.menu.refreshTranscript': '대화 내용 새로고침',
   'mobile.menu.refreshTranscriptSuccess': '대화 내용을 새로고침했습니다',
   'mobile.menu.refreshTranscriptFailed': '대화 내용을 새로고침하지 못했습니다',
+  'mobile.chat.syncingMessages': '메시지 동기화 중...',
   'mobile.menu.files': '파일',
   'mobile.menu.changes': '변경사항',
   'mobile.menu.mcp': 'MCP',

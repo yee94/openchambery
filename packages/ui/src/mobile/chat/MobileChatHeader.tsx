@@ -6,6 +6,7 @@ import { MobileDetailNavigation } from '@/mobile/MobileDetailNavigation';
 
 export type MobileChatHeaderProps = {
   title: string;
+  subtitle?: string | null;
   onBack: () => void;
   onOpenMenu: () => void;
   /** Whether the overflow menu is open — elevates the more button for re-tap close. */
@@ -19,6 +20,7 @@ export type MobileChatHeaderProps = {
 /** Safe-area-aware navigation bar for the mobile chat page. */
 export function MobileChatHeader({
   title,
+  subtitle,
   onBack,
   onOpenMenu,
   menuOpen = false,
@@ -32,6 +34,7 @@ export function MobileChatHeader({
   return (
     <MobileDetailNavigation
       title={title}
+      subtitle={subtitle}
       backAriaLabel={t('header.actions.backAria')}
       onBack={handleBack}
       overlay

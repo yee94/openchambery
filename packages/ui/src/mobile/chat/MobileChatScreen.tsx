@@ -7,6 +7,7 @@ import { useCurrentSessionEntity } from '@/sync/sync-context';
 
 import { MobileChatHeader } from './MobileChatHeader';
 import { MobileContextProgressButton } from './MobileContextProgressButton';
+import { useMobileTranscriptSyncHint } from './useMobileTranscriptSyncHint';
 
 export type MobileChatScreenProps = {
   /** Empty string = new-session draft mode (no entity/status lookups). */
@@ -42,6 +43,7 @@ export function MobileChatScreen({
   const resolvedTitle = isDraft
     ? (title?.trim() || t('mobile.menu.newSession'))
     : (title?.trim() || session?.title?.trim() || t('mobile.sessions.untitled'));
+  const syncHint = useMobileTranscriptSyncHint(isDraft ? '' : sessionId);
   const [contextOpen, setContextOpen] = React.useState(false);
 
   // Overflow menu and context panel are mutually exclusive. Switching from one
@@ -69,6 +71,7 @@ export function MobileChatScreen({
     >
       <MobileChatHeader
         title={resolvedTitle}
+        subtitle={syncHint}
         onBack={onBack}
         onOpenMenu={handleOpenMenu}
         menuOpen={menuOpen}

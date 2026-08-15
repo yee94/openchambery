@@ -2,6 +2,7 @@ import { describe, expect, test } from "bun:test"
 import type { Message } from "@opencode-ai/sdk/v2/client"
 import { QueryClient } from "@tanstack/react-query"
 
+import { isTranscriptAuthorityRefreshInFlight } from "./transcript-authority-refresh-flight"
 import {
   bindTranscriptRepositoryInstance,
   getTranscriptRepository,
@@ -175,9 +176,44 @@ describe("refreshTranscriptFromAuthority", () => {
     })
     await repo.ensureInitial(scope)
     expect(repo.getTranscript(scope).messageOrder).toEqual(["msg_old"])
+    expect(isTranscriptAuthorityRefreshInFlight("ses_1", "/ws")).toBe(false)
     await refreshTranscriptFromAuthority("/ws", "ses_1")
+    expect(isTranscriptAuthorityRefreshInFlight("ses_1", "/ws")).toBe(false)
     expect(fetches).toBe(2)
     expect(repo.getTranscript(scope).messageOrder).toEqual(["msg_new"])
+    unbindTranscriptRepository()
+    repo.destroy()
+  })
+
+  test("marks the session in flight until refresh settles, including failure", async () => {
+    unbindTranscriptRepository()
+    let release!: () => void
+    const gate = new Promise<void>((resolve) => {
+      release = resolve
+    })
+    const client = new QueryClient({
+      defaultOptions: { queries: { retry: false } },
+    })
+    const repo = createQueryTranscriptRepository({
+      client,
+      transport: "transport-a",
+      generation: 1,
+      initialLimit: 2,
+      fetcher: async () => {
+        await gate
+        throw new Error("authority_unavailable")
+      },
+      probe: {
+        getTransport: () => "transport-a",
+        getGeneration: () => 1,
+      },
+    })
+    bindTranscriptRepositoryInstance(repo)
+    const pending = refreshTranscriptFromAuthority("/ws", "ses_1")
+    expect(isTranscriptAuthorityRefreshInFlight("ses_1", "/ws")).toBe(true)
+    release()
+    await expect(pending).rejects.toThrow("authority_unavailable")
+    expect(isTranscriptAuthorityRefreshInFlight("ses_1", "/ws")).toBe(false)
     unbindTranscriptRepository()
     repo.destroy()
   })

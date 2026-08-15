@@ -90,6 +90,7 @@ import {
   getLatestUserMessageModel,
   getNumericLimit,
   MobileChatScreen,
+  useMobileTranscriptSyncHint,
   type MobileContextDisplay,
 } from '@/mobile/chat';
 import { useMobileNavigationStore } from '@/mobile/useMobileNavigationStore';
@@ -2029,6 +2030,8 @@ const MobileSessionMetadataButton = React.memo(function MobileSessionMetadataBut
 }) {
   const { t } = useI18n();
   const { git } = useRuntimeAPIs();
+  const syncHint = useMobileTranscriptSyncHint(currentSessionId ?? '', effectiveDirectory || undefined);
+  const statusLabel = syncHint ?? secondaryLabel;
   const metadataTriggerRef = React.useRef<HTMLButtonElement>(null);
   const activeSessionMessages = useSessionMessages(currentSessionId ?? '', effectiveDirectory || undefined);
   const isGitRepo = useIsGitRepo(gitDirectory);
@@ -2175,8 +2178,16 @@ const MobileSessionMetadataButton = React.memo(function MobileSessionMetadataBut
       <div className="flex min-w-0 flex-1 items-center px-2 py-1.5 text-left">
         <span className="flex min-w-0 flex-1 flex-col leading-tight">
           <span className="block truncate typography-ui-label text-foreground">{primaryLabel}</span>
-          {secondaryLabel ? (
-            <span className="block truncate typography-micro text-muted-foreground">{secondaryLabel}</span>
+          {statusLabel ? (
+            <span
+              className={cn(
+                'block truncate',
+                syncHint ? 'oc-mobile-detail-subtitle text-muted-foreground' : 'typography-micro text-muted-foreground',
+              )}
+              aria-live="polite"
+            >
+              {statusLabel}
+            </span>
           ) : null}
         </span>
       </div>

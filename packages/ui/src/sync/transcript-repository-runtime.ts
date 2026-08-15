@@ -23,6 +23,10 @@ import type {
   TranscriptRepository,
   TranscriptScope,
 } from "./transcript-repository"
+import {
+  beginTranscriptAuthorityRefresh,
+  endTranscriptAuthorityRefresh,
+} from "./transcript-authority-refresh-flight"
 
 type TranscriptRepositoryBinding = {
   kind: "query" | "store-test"
@@ -203,7 +207,12 @@ export async function refreshTranscriptFromAuthority(
   if (typeof repository.refreshFromAuthority !== "function") {
     throw new Error("TranscriptRepository does not support refreshFromAuthority")
   }
-  await repository.refreshFromAuthority(transcriptScope(directory, sessionID))
+  beginTranscriptAuthorityRefresh(directory, sessionID)
+  try {
+    await repository.refreshFromAuthority(transcriptScope(directory, sessionID))
+  } finally {
+    endTranscriptAuthorityRefresh(directory, sessionID)
+  }
 }
 
 /**

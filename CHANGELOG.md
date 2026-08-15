@@ -4,6 +4,10 @@ All notable changes to this project will be documented in this file.
 
 ## [Unreleased]
 
+## [1.16.139-beta.3] - 2026-08-15
+
+- **Mobile sync hint:** the chat title shows a tiny "Syncing messages..." line while the current session is first loading, user-refreshing, or reconnecting. Idle chats stay a single title line.
+
 ## [1.16.139-beta.2] - 2026-08-15
 
 - **Sync messages:** Refresh is disabled only when the live session is actually busy or retrying. A sticky leftover busy flag no longer greys out the mobile overflow button.

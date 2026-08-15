@@ -108,6 +108,7 @@ export const dict = {
   'mobile.menu.refreshTranscript': 'Refresh',
   'mobile.menu.refreshTranscriptSuccess': 'Refreshed',
   'mobile.menu.refreshTranscriptFailed': 'Failed to refresh',
+  'mobile.chat.syncingMessages': 'Syncing messages...',
   'mobile.menu.files': 'Files',
   'mobile.menu.changes': 'Changes',
   'mobile.menu.mcp': 'MCP',

@@ -6,6 +6,7 @@
   --device-type: "desktop";
   --font-scale: 1;
   --oc-mobile-detail-title-size: 0.9375rem;
+  --oc-mobile-detail-subtitle-size: 0.625rem;
   --oc-mobile-detail-navigation-height: 3.5rem;
   --oc-mobile-detail-action-edge-inset: 1rem;
 }
@@ -1242,6 +1243,13 @@ button.oc-mobile-worktree-label-trigger:active,
   font-size: var(--oc-mobile-detail-title-size);
   line-height: 1.125rem;
   font-weight: 650;
+  text-align: center;
+}
+
+.oc-mobile-detail-subtitle {
+  font-size: var(--oc-mobile-detail-subtitle-size);
+  line-height: 0.75rem;
+  font-weight: 400;
   text-align: center;
 }
 

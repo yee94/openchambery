@@ -2811,6 +2811,7 @@ export const dict = {
   'mobile.menu.refreshTranscript': 'Actualiser la transcription',
   'mobile.menu.refreshTranscriptSuccess': 'Transcription actualisée',
   'mobile.menu.refreshTranscriptFailed': 'Échec de l’actualisation de la transcription',
+  'mobile.chat.syncingMessages': 'Synchronisation des messages...',
   'mobile.menu.files': 'Fichiers',
   'mobile.menu.changes': 'Modifications',
   'mobile.menu.mcp': 'MCP',

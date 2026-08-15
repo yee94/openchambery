@@ -18,6 +18,8 @@ export type MobileDetailNavigationAction = {
 
 export type MobileDetailNavigationProps = {
   title: ReactNode;
+  /** WeChat-style whisper under the title (e.g. syncing messages). */
+  subtitle?: ReactNode;
   backAriaLabel: string;
   onBack?: () => void;
   backDisabled?: boolean;
@@ -36,6 +38,7 @@ export type MobileDetailNavigationProps = {
 /** Shared safe-area navigation for mobile secondary pages. */
 export function MobileDetailNavigation({
   title,
+  subtitle,
   backAriaLabel,
   onBack,
   backDisabled = false,
@@ -81,8 +84,15 @@ export function MobileDetailNavigation({
           </Button>
         ) : <span aria-hidden="true" />}
 
-        <div className="oc-mobile-detail-title w-full max-w-72 min-w-0 justify-self-center truncate px-1 typography-ui-label font-medium text-foreground">
-          {title}
+        <div className="flex w-full max-w-72 min-w-0 flex-col items-center justify-center justify-self-center px-1">
+          <div className="oc-mobile-detail-title w-full truncate typography-ui-label font-medium text-foreground">
+            {title}
+          </div>
+          {subtitle ? (
+            <div className="oc-mobile-detail-subtitle w-full truncate text-muted-foreground" aria-live="polite">
+              {subtitle}
+            </div>
+          ) : null}
         </div>
 
         <div className="flex min-w-0 items-center justify-end gap-1">
