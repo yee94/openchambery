@@ -8,6 +8,7 @@ import {
   getTranscriptRepository,
   getTranscriptRepositoryBindingRevision,
   refreshTranscriptFromAuthority,
+  retryTranscriptInitial,
   subscribeTranscriptRepositoryBinding,
   transcriptScope,
   unbindTranscriptRepository,
@@ -214,6 +215,49 @@ describe("refreshTranscriptFromAuthority", () => {
     release()
     await expect(pending).rejects.toThrow("authority_unavailable")
     expect(isTranscriptAuthorityRefreshInFlight("ses_1", "/ws")).toBe(false)
+    unbindTranscriptRepository()
+    repo.destroy()
+  })
+})
+
+describe("retryTranscriptInitial", () => {
+  test("purges a failed chain and fetches a fresh tail", async () => {
+    unbindTranscriptRepository()
+    let fetches = 0
+    let fail = true
+    const client = new QueryClient({
+      defaultOptions: { queries: { retry: false } },
+    })
+    const repo = createQueryTranscriptRepository({
+      client,
+      transport: "transport-a",
+      generation: 1,
+      initialLimit: 2,
+      fetcher: async () => {
+        fetches += 1
+        if (fail) throw new Error("tail_unavailable")
+        return {
+          records: [{ info: userMessage("msg_retry"), parts: [] }],
+          complete: true,
+          turnCount: 1,
+        }
+      },
+      probe: {
+        getTransport: () => "transport-a",
+        getGeneration: () => 1,
+      },
+    })
+    bindTranscriptRepositoryInstance(repo)
+    const scope = transcriptScope("/ws", "ses_1", {
+      transport: "transport-a",
+      generation: 1,
+    })
+    await repo.ensureInitial(scope).catch(() => undefined)
+    expect(fetches).toBeGreaterThan(0)
+    expect(repo.getTranscript(scope).messageOrder).toEqual([])
+    fail = false
+    await retryTranscriptInitial("/ws", "ses_1")
+    expect(repo.getTranscript(scope).messageOrder).toEqual(["msg_retry"])
     unbindTranscriptRepository()
     repo.destroy()
   })

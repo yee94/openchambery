@@ -165,9 +165,13 @@ export const resolveDesktopLoadOlderStatusVisibility = (input: {
  * stale `prefetch.status === 'error'` must not flash the "Unable to load"
  * wall while a load is in flight or before the first paint has a shell.
  *
- * - `hydrating`: stable skeleton — loading, or cold with no settled failure
- * - `load-error`: settled failure only (error + not loading + no shell)
+ * - `hydrating`: stable skeleton — loading, user retry, or cold with no settled failure
+ * - `load-error`: settled failure only (error + not loading + not retrying + no shell)
  * - `pass`: enough UI shell (user/pending/history) or ready empty snapshot
+ *
+ * Retry from the load-error wall sets `userRetrying` so the gate returns to
+ * `hydrating` on the click, then `retryTranscriptInitial` purges the failed
+ * chain and ensures a fresh tail.
  *
  * The gate is sticky per session: once a transcript has painted, a later
  * empty read never demotes it. Transcript data is Query-cached, so an idle
@@ -184,6 +188,8 @@ export const resolveChatSessionTranscriptGate = (input: {
   hasRenderableSessionSnapshot: boolean
   prefetchStatus?: 'loading' | 'ready' | 'error'
   syncLoading: boolean
+  /** User clicked retry on the settled load-error wall for this session. */
+  userRetrying?: boolean
   /** This session already painted a transcript under the current mount. */
   hasPaintedTranscript?: boolean
 }): ChatSessionTranscriptGate => {
@@ -193,7 +199,7 @@ export const resolveChatSessionTranscriptGate = (input: {
   // refetch that errors must not blank a transcript the user is reading.
   if (input.hasPaintedTranscript) return 'pass'
 
-  const loading = input.prefetchStatus === 'loading' || input.syncLoading
+  const loading = input.prefetchStatus === 'loading' || input.syncLoading || Boolean(input.userRetrying)
   if (loading) return 'hydrating'
 
   // Settled cold failure — only after the load epoch finished as error.

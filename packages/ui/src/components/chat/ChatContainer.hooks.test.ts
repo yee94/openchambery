@@ -47,6 +47,13 @@ describe('ChatContainer source contracts', () => {
         expect(source).not.toContain('const showLoadOlderButton = isMobileSurfaceRuntime()');
     });
 
+    test('load-error retry reloads the transcript and enters the hydrating skeleton', () => {
+        expect(source).toContain('retryTranscriptInitial');
+        expect(source).toContain('userRetrying: isRetryingSessionHistory');
+        expect(source).toContain('onClick={retrySessionHistory}');
+        expect(source).not.toContain('sync.syncSession(currentSessionId, true)');
+    });
+
     test('history pagination facts come only from the transcript repository projection', () => {
         // Ticket 02: ChatContainer reads pagination via useSessionTranscriptPagination
         // (repository getPagination) and never stitches facts from prefetch.

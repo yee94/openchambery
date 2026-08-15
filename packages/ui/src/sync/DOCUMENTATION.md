@@ -317,7 +317,7 @@ Modules:
 | `session-transcript-recovery-checkpoint.ts` | Stable authored-user turn anchor selection + recovery checkpoint model / QueryCache read-write |
 | `session-transcript-reconnect-compensation.ts` | Query reconnect compensation controller — checkpoint-before-replay, immediate set (main + Context Panel viewed), directory concurrency, serial continuation, multi-round head chase; null-anchor → non-destructive `ensureInitial`; Host `resetRequired` → `destructiveReset` |
 | `transcript-reconnect-compensation-runtime.ts` | Registration seam; production `mountProductionTranscriptStack` registers the Query controller so SyncProvider `onRecoveryContextCaptured` / `onCompensation` reach it |
-| `transcript-repository-runtime.ts` | Production binding revision + `bindTranscriptRepositoryInstance` (Query) / test-only store bind; `fetchTranscriptPreviousPage` / `ensureTranscriptInitial` / `purgeTranscriptSession` |
+| `transcript-repository-runtime.ts` | Production binding revision + `bindTranscriptRepositoryInstance` (Query) / test-only store bind; `fetchTranscriptPreviousPage` / `ensureTranscriptInitial` / `retryTranscriptInitial` / `purgeTranscriptSession` |
 | `transcript-repository-production.ts` | `mountProductionTranscriptStack` (registry + budget + Query repo + compensation) and Host turn-page production fetcher (`fetchProductionTranscriptTransportPage` → Query `http-page`) |
 | `transcript-parent-recovery.ts` | Production assistant-parent recovery helpers for the Query transport fetcher (no nested store commit) |
 | `session-todo-projection.ts` | Hydrate-path todo seed: project the latest loaded `todowrite`/`todoread` list into `store.todo` + persist when live `todo.updated` never arrived. No extra HTTP. |
@@ -646,9 +646,12 @@ both readers agree on when a frame may shrink.
   `refreshTranscriptFromAuthority` publishes an in-flight signal
   (`transcript-authority-refresh-flight`) for mobile title hints. Desktop session context-menu
   "Sync messages" and the dedicated-mobile overflow "Refresh" both call
-  `refreshSessionTranscript`. Do not route those buttons through `ensureInitial`
-  (hot-cache no-op) or `destructiveReset` (ensure failure blanks the chat).
-  Busy/retry refuse only when the child-store live status is busy/retry.
+   `refreshSessionTranscript`. Do not route those buttons through `ensureInitial`
+   (hot-cache no-op) or `destructiveReset` (ensure failure blanks the chat).
+   The chat load-error wall has no transcript to keep, so Retry calls
+   `retryTranscriptInitial` (`destructiveReset` + fresh ensure) and the gate
+   treats that click as `hydrating` until the reload settles.
+   Busy/retry refuse only when the child-store live status is busy/retry.
   Sticky global fallback busy (missed idle, no mobile tray snapshot) must not
   disable refresh. Send self-heal: if the event stream has been silent past
   the stale threshold, `waitForConnectionOrThrow` reconnects before trusting

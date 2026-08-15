@@ -193,6 +193,31 @@ export async function ensureTranscriptInitial(
 }
 
 /**
+ * User-triggered cold reload after a settled transcript failure.
+ *
+ * `ensureInitial` is a hot-cache no-op, so retry must purge the failed chain
+ * and ensure a fresh tail. Ensure failure leaves the empty/failed state.
+ */
+export async function retryTranscriptInitial(
+  directory: string,
+  sessionID: string,
+): Promise<void> {
+  const repository = requireTranscriptRepository() as TranscriptRepository & {
+    destructiveReset?: (scope: TranscriptScope) => Promise<unknown>
+    ensureInitial?: (scope: TranscriptScope) => Promise<unknown>
+  }
+  const scope = transcriptScope(directory, sessionID)
+  if (typeof repository.destructiveReset === "function") {
+    await repository.destructiveReset(scope)
+    return
+  }
+  if (typeof repository.ensureInitial !== "function") {
+    throw new Error("TranscriptRepository does not support retryInitial")
+  }
+  await repository.ensureInitial(scope)
+}
+
+/**
  * User-triggered refresh: fetch a fresh tail, then replace. Failure keeps the
  * prior transcript. Do not use ensureInitial (hot-cache no-op) or
  * destructiveReset (ensure failure blanks the chat).

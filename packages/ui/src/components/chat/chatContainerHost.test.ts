@@ -417,6 +417,16 @@ describe('resolveChatSessionTranscriptGate', () => {
     })).toBe('load-error');
   });
 
+  test('user retry leaves the load-error wall for the skeleton', () => {
+    expect(resolveChatSessionTranscriptGate({
+      hasTranscriptShell: false,
+      hasRenderableSessionSnapshot: false,
+      prefetchStatus: 'error',
+      syncLoading: false,
+      userRetrying: true,
+    })).toBe('hydrating');
+  });
+
   test('passes through when a transcript shell or ready empty snapshot exists', () => {
     expect(resolveChatSessionTranscriptGate({
       hasTranscriptShell: true,

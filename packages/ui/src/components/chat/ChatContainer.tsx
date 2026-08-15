@@ -90,6 +90,7 @@ import { useSync } from '@/sync/use-sync';
 import {
     ensureTranscriptInitial,
     fetchTranscriptPreviousPage,
+    retryTranscriptInitial,
 } from '@/sync/transcript-repository-runtime';
 
 import { usePlanDetection } from '@/hooks/usePlanDetection';
@@ -777,6 +778,25 @@ const ChatContainerContent: React.FC<ChatContainerContentProps> = ({
         currentSessionId ?? '',
         effectiveSessionDirectory,
     );
+    const [retryingSessionHistoryId, setRetryingSessionHistoryId] = React.useState<string | null>(null);
+    const isRetryingSessionHistory = Boolean(currentSessionId)
+        && retryingSessionHistoryId === currentSessionId;
+    const retrySessionHistory = useEvent(() => {
+        if (!currentSessionId || isRetryingSessionHistory) return;
+        const sessionId = currentSessionId;
+        const directory = effectiveSessionDirectory;
+        setRetryingSessionHistoryId(sessionId);
+        void (async () => {
+            try {
+                await retryTranscriptInitial(directory, sessionId);
+                await sync.ensureSessionRenderable(sessionId, { directory });
+            } catch {
+                // Settled failure returns to the load-error wall after retrying clears.
+            } finally {
+                setRetryingSessionHistoryId((current) => (current === sessionId ? null : current));
+            }
+        })();
+    });
     // Ticket 02: pagination from TranscriptRepository.getPagination projection.
     // Boundary-only commits still re-render via repository subscribe.
     const transcriptPagination = useSessionTranscriptPagination(
@@ -1355,6 +1375,7 @@ const ChatContainerContent: React.FC<ChatContainerContentProps> = ({
         hasRenderableSessionSnapshot,
         prefetchStatus: sessionPrefetchInfo?.status,
         syncLoading: Boolean(currentSessionId && sync.isLoading(currentSessionId, { directory: effectiveSessionDirectory })),
+        userRetrying: isRetryingSessionHistory,
         hasPaintedTranscript,
     });
     const isSessionHydrating = Boolean(currentSessionId) && sessionTranscriptGate === 'hydrating';
@@ -1636,7 +1657,7 @@ const ChatContainerContent: React.FC<ChatContainerContentProps> = ({
 								<Button
 									type="button"
 									className="mt-5"
-									onClick={() => void sync.syncSession(currentSessionId, true)}
+									onClick={retrySessionHistory}
 								>
 									<Icon name="refresh" className="size-4" aria-hidden="true" />
 									{t('chat.history.retry')}
