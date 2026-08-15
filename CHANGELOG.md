@@ -4,6 +4,15 @@ All notable changes to this project will be documented in this file.
 
 ## [Unreleased]
 
+## [1.16.133] - 2026-08-15
+
+- **Sync messages:** desktop session right-click and the mobile overflow Refresh force an authoritative OpenCode tail. Success replaces the visible transcript; failure keeps the previous messages. Refresh is disabled only when the live session is actually busy or retrying.
+- **Send self-heal:** after a long idle gap the client no longer trusts a zombie "connected" stream. It reconnects before sending, and a hung prompt times out so "Sending message" cannot stick forever.
+- **Cold open:** a first tail page still lands when SSE moved while it was in flight, so the skeleton does not wait for another GET. Any landed row, including an assistant-only first page, dismisses the skeleton. An empty success still does not become an empty chat.
+- **Load-error retry:** clicking Try again on "Unable to load this conversation" now shows the skeleton and actually reloads the transcript.
+- **Mobile sync hint:** the chat title shows a tiny "Syncing messages..." line while the current session is first loading, user-refreshing, or reconnecting. Once a transcript is already visible, reconnect no longer keeps the whisper.
+- **Relay:** apply per-direction backpressure and fair-queue pumps so one busy tunnel cannot monopolize the event loop or get heartbeat-reaped while paused.
+
 ## [1.16.139-beta.5] - 2026-08-15
 
 - **Cold open:** a first tail page still lands when SSE moved while it was in flight, so the skeleton does not wait for another GET. Any landed row, including an assistant-only first page, dismisses the skeleton. An empty success still does not become an empty chat.
