@@ -4,6 +4,12 @@ All notable changes to this project will be documented in this file.
 
 ## [Unreleased]
 
+## [1.16.134-beta.2] - 2026-08-16
+
+- **Chat activity:** consecutive read, search, and directory tools now collapse into a localized exploration group with live progress and expandable details.
+- **Tool labels:** built-in tool names are localized, with concise Chinese labels for editing, writing, patches, and delegated tasks.
+- **Activity polish:** refined activity, exploration, and editing tool icon sizing and status presentation.
+
 ## [1.16.134-beta.1] - 2026-08-15
 
 - **Frozen transcript:** the message body and the session status line are separate subscriptions, so the body could stop updating while the header kept showing activity — a just-sent message and the reply that followed it would never appear. The body now always subscribes, and the option that could silence it has been removed outright.
