@@ -189,6 +189,24 @@ export async function ensureTranscriptInitial(
 }
 
 /**
+ * User-triggered refresh: fetch a fresh tail, then replace. Failure keeps the
+ * prior transcript. Do not use ensureInitial (hot-cache no-op) or
+ * destructiveReset (ensure failure blanks the chat).
+ */
+export async function refreshTranscriptFromAuthority(
+  directory: string,
+  sessionID: string,
+): Promise<void> {
+  const repository = requireTranscriptRepository() as TranscriptRepository & {
+    refreshFromAuthority?: (scope: TranscriptScope) => Promise<unknown>
+  }
+  if (typeof repository.refreshFromAuthority !== "function") {
+    throw new Error("TranscriptRepository does not support refreshFromAuthority")
+  }
+  await repository.refreshFromAuthority(transcriptScope(directory, sessionID))
+}
+
+/**
  * Purge one session's transcript families (delete / eviction).
  * No-op when the bound repository lacks purgeSession.
  */

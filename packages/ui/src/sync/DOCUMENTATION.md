@@ -639,6 +639,13 @@ both readers agree on when a frame may shrink.
   Known limitation: `initial` resolves to `insert-only`, so a first-screen load
   cannot refresh a message body the server has since changed. Whether to change
   that is a separate decision; the table makes the behavior visible.
+  User-triggered refresh is a different path: `refreshFromAuthority` fetches a
+  fresh tail first, then replaces the canonical transcript with that page.
+  Fetch failure keeps the prior transcript. Desktop session context-menu
+  "Sync messages" and the dedicated-mobile overflow "Refresh" both call
+  `refreshSessionTranscript`. Do not route those buttons through `ensureInitial`
+  (hot-cache no-op) or `destructiveReset` (ensure failure blanks the chat).
+  Busy/retry sessions refuse the action.
 - Production application orchestration for transcript pages is owned by
   `transcript-repository-production.ts` + the Query adapter: Host turn-page
   via `fetchProductionTranscriptTransportPage` (policy limit, parent recovery,

@@ -563,6 +563,155 @@ describe("createQueryTranscriptRepository", () => {
     repo.destroy()
   })
 
+  test("ensureInitial on a hot cache does not refetch or replace bodies", async () => {
+    let fetches = 0
+    const repo = createQueryTranscriptRepository({
+      client,
+      transport: TRANSPORT,
+      generation: GENERATION,
+      initialLimit: 2,
+      historyLimit: 2,
+      fetcher: async () => {
+        fetches += 1
+        if (fetches === 1) {
+          return transportPage(
+            [{ info: userMessage("msg_1"), parts: [textPart("p1", "msg_1", "stale")] }],
+            { complete: true },
+          )
+        }
+        return transportPage(
+          [{ info: userMessage("msg_1"), parts: [textPart("p1", "msg_1", "fresh")] }],
+          { complete: true },
+        )
+      },
+      probe: {
+        getTransport: () => TRANSPORT,
+        getGeneration: () => GENERATION,
+      },
+    })
+
+    await repo.ensureInitial(scope)
+    await repo.ensureInitial(scope)
+    expect(fetches).toBe(1)
+    expect((repo.getParts(scope, "msg_1")[0] as { text?: string })?.text).toBe("stale")
+    repo.destroy()
+  })
+
+  test("refreshFromAuthority fetches on a hot cache and replaces the tail", async () => {
+    let fetches = 0
+    const repo = createQueryTranscriptRepository({
+      client,
+      transport: TRANSPORT,
+      generation: GENERATION,
+      initialLimit: 2,
+      historyLimit: 2,
+      fetcher: async () => {
+        fetches += 1
+        if (fetches === 1) {
+          return transportPage(
+            [
+              { info: userMessage("msg_old"), parts: [textPart("p_old", "msg_old", "stale")] },
+              { info: assistantMessage("msg_extra") },
+            ],
+            { complete: true },
+          )
+        }
+        return transportPage(
+          [
+            { info: userMessage("msg_old"), parts: [textPart("p_old", "msg_old", "fresh")] },
+            { info: assistantMessage("msg_new"), parts: [textPart("p_new", "msg_new", "added")] },
+          ],
+          { complete: true },
+        )
+      },
+      probe: {
+        getTransport: () => TRANSPORT,
+        getGeneration: () => GENERATION,
+      },
+    })
+
+    await repo.ensureInitial(scope)
+    expect(repo.getTranscript(scope).messageOrder).toEqual(["msg_old", "msg_extra"])
+    expect((repo.getParts(scope, "msg_old")[0] as { text?: string })?.text).toBe("stale")
+
+    const refreshed = await repo.refreshFromAuthority(scope)
+    expect(fetches).toBe(2)
+    expect(refreshed.messageOrder).toEqual(["msg_old", "msg_new"])
+    expect((repo.getParts(scope, "msg_old")[0] as { text?: string })?.text).toBe("fresh")
+    expect(repo.getMessage(scope, "msg_extra")).toBeUndefined()
+    expect(repo.getMessage(scope, "msg_new")?.id).toBe("msg_new")
+    repo.destroy()
+  })
+
+  test("refreshFromAuthority keeps the prior transcript when the fetch fails", async () => {
+    let fetches = 0
+    const repo = createQueryTranscriptRepository({
+      client,
+      transport: TRANSPORT,
+      generation: GENERATION,
+      initialLimit: 2,
+      historyLimit: 2,
+      fetcher: async () => {
+        fetches += 1
+        if (fetches === 1) {
+          return transportPage(
+            [{ info: userMessage("msg_keep"), parts: [textPart("p_keep", "msg_keep", "keep")] }],
+            { complete: true },
+          )
+        }
+        throw new Error("authority_unavailable")
+      },
+      probe: {
+        getTransport: () => TRANSPORT,
+        getGeneration: () => GENERATION,
+      },
+    })
+
+    await repo.ensureInitial(scope)
+    await expect(repo.refreshFromAuthority(scope)).rejects.toThrow("authority_unavailable")
+    expect(repo.getTranscript(scope).messageOrder).toEqual(["msg_keep"])
+    expect((repo.getParts(scope, "msg_keep")[0] as { text?: string })?.text).toBe("keep")
+    repo.destroy()
+  })
+
+  test("refreshFromAuthority drops unmatched optimistic ids after a successful fetch", async () => {
+    const cleared: string[] = []
+    const repo = createQueryTranscriptRepository({
+      client,
+      transport: TRANSPORT,
+      generation: GENERATION,
+      initialLimit: 2,
+      historyLimit: 2,
+      clearOptimisticShadow: ({ messageID }) => {
+        cleared.push(messageID)
+      },
+      fetcher: async () => transportPage(
+        [{ info: userMessage("msg_server") }],
+        { complete: true },
+      ),
+      probe: {
+        getTransport: () => TRANSPORT,
+        getGeneration: () => GENERATION,
+      },
+    })
+
+    repo.apply(scope, {
+      type: "http-page",
+      purpose: "initial",
+      page: transportPage(
+        [
+          { info: userMessage("msg_server") },
+          { info: userMessage("msg_optimistic") },
+        ],
+        { complete: true },
+      ),
+    })
+    const refreshed = await repo.refreshFromAuthority(scope)
+    expect(refreshed.messageOrder).toEqual(["msg_server"])
+    expect(cleared).toEqual(["msg_optimistic"])
+    repo.destroy()
+  })
+
   test("hasSession is true for empty-records http-page apply (loaded empty)", () => {
     const repo = createQueryTranscriptRepository({
       client,

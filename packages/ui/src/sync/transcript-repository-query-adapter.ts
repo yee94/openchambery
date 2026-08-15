@@ -59,6 +59,7 @@ import {
   type TranscriptRequestState,
   type TranscriptScope,
 } from "./transcript-repository"
+import { getInitialSessionTurnLimit } from "./session-message-policy"
 import { UNKNOWN_SESSION_HISTORY_BOUNDARY } from "./types"
 
 // ---------------------------------------------------------------------------
@@ -186,6 +187,11 @@ export type QueryTranscriptRepository = TranscriptRepository & {
    * the new chain. Ensure failure leaves an empty/failed state (no old restore).
    */
   destructiveReset: (scope: TranscriptScope) => Promise<TranscriptData>
+  /**
+   * User-triggered refresh: fetch a fresh tail first. Success replaces the
+   * canonical transcript with that page; failure leaves prior data untouched.
+   */
+  refreshFromAuthority: (scope: TranscriptScope) => Promise<TranscriptData>
   /** Evict one session's transcript key families (delete / ordinary eviction). */
   purgeSession: (scope: TranscriptScope) => void
   /** Purge all transcript families for a transport generation (runtime switch). */
@@ -719,6 +725,37 @@ export function createQueryTranscriptRepository(
 
     getCacheBudget() {
       return cacheBudget
+    },
+
+    async refreshFromAuthority(scope) {
+      if (!deps.fetcher) {
+        throw new Error(
+          "Query transcript repository requires a fetcher for refreshFromAuthority",
+        )
+      }
+      const identity = resolveScopeIdentity(scope, deps)
+      const previous = repository.getTranscript(scope)
+      const page = await deps.fetcher({
+        directory: identity.directory,
+        sessionID: identity.sessionID,
+        limit: deps.initialLimit ?? getInitialSessionTurnLimit(),
+        signal: new AbortController().signal,
+      })
+      repository.apply(scope, { type: "reset", page })
+      const next = repository.getTranscript(scope)
+      if (deps.clearOptimisticShadow) {
+        for (const messageID of previous.messageOrder) {
+          if (!next.messagesByID[messageID]) {
+            deps.clearOptimisticShadow({
+              directory: identity.directory,
+              sessionID: identity.sessionID,
+              messageID,
+            })
+          }
+        }
+      }
+      cacheBudget.noteScopeObserved(toCacheScope(scope))
+      return next
     },
 
     async destructiveReset(scope) {

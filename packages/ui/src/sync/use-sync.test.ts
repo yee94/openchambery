@@ -6,6 +6,7 @@ import {
   getConstrainedCacheStateAfterPrefetchEviction,
   shouldFetchSessionForRenderableSync,
   hasUserMessage,
+  isUserTranscriptRefreshBlocked,
   resolveSessionHistoryLoadPlan,
   syncMetaFromBoundary,
 } from './use-sync'
@@ -406,5 +407,18 @@ describe('first-commit gating invariant (#2084)', () => {
     //   const deferFirstCommit = !options?.before && !page.complete && !hasUserMessage(page.session)
     const deferFirstCommit = !hasBefore && !isComplete && !hasUserMessage(assistantOnlyPage)
     expect(deferFirstCommit).toBe(false) // prepend must not defer
+  })
+})
+
+describe('isUserTranscriptRefreshBlocked', () => {
+  test('refuses busy and retry so a user refresh cannot fight SSE', () => {
+    expect(isUserTranscriptRefreshBlocked('busy')).toBe(true)
+    expect(isUserTranscriptRefreshBlocked('retry')).toBe(true)
+  })
+
+  test('allows idle and unknown status', () => {
+    expect(isUserTranscriptRefreshBlocked('idle')).toBe(false)
+    expect(isUserTranscriptRefreshBlocked(undefined)).toBe(false)
+    expect(isUserTranscriptRefreshBlocked(null)).toBe(false)
   })
 })

@@ -67,6 +67,11 @@
 - Each project menu provides a session-sync action. It refreshes the project's
   root and known worktree directories through the Electron server-owned index
   queue, while Web and VS Code use the bounded SDK refresh fallback.
+- Each session context menu provides a transcript refresh action ("Sync
+  messages"). It fetches an authoritative OpenCode tail and replaces that
+  session's visible transcript only after the fetch succeeds. Failure keeps the
+  prior transcript. Busy/retry sessions disable the action. This is not the
+  project session-list sync.
 - The native tray consumes the sidebar/global cache and lightweight global status; it does not trigger a delayed all-project session-list fanout.
 - Mounting active or archived session rows creates only lightweight child-store
   subscriptions (`bootstrap: false`). Routed live status/permission events still

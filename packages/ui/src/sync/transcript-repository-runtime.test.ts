@@ -6,6 +6,7 @@ import {
   bindTranscriptRepositoryInstance,
   getTranscriptRepository,
   getTranscriptRepositoryBindingRevision,
+  refreshTranscriptFromAuthority,
   subscribeTranscriptRepositoryBinding,
   transcriptScope,
   unbindTranscriptRepository,
@@ -134,6 +135,49 @@ describe("transcript repository binding (Ticket 09)", () => {
       generation: 1,
     })).messageOrder).toEqual([])
 
+    unbindTranscriptRepository()
+    repo.destroy()
+  })
+})
+
+describe("refreshTranscriptFromAuthority", () => {
+  test("replaces a hot cache only after a successful fetch", async () => {
+    unbindTranscriptRepository()
+    let fetches = 0
+    const client = new QueryClient({
+      defaultOptions: { queries: { retry: false } },
+    })
+    const repo = createQueryTranscriptRepository({
+      client,
+      transport: "transport-a",
+      generation: 1,
+      initialLimit: 2,
+      fetcher: async () => {
+        fetches += 1
+        return {
+          records: [{
+            info: userMessage(fetches === 1 ? "msg_old" : "msg_new"),
+            parts: [],
+          }],
+          complete: true,
+          turnCount: 1,
+        }
+      },
+      probe: {
+        getTransport: () => "transport-a",
+        getGeneration: () => 1,
+      },
+    })
+    bindTranscriptRepositoryInstance(repo)
+    const scope = transcriptScope("/ws", "ses_1", {
+      transport: "transport-a",
+      generation: 1,
+    })
+    await repo.ensureInitial(scope)
+    expect(repo.getTranscript(scope).messageOrder).toEqual(["msg_old"])
+    await refreshTranscriptFromAuthority("/ws", "ses_1")
+    expect(fetches).toBe(2)
+    expect(repo.getTranscript(scope).messageOrder).toEqual(["msg_new"])
     unbindTranscriptRepository()
     repo.destroy()
   })

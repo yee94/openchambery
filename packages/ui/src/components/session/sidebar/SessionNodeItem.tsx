@@ -435,6 +435,7 @@ function SessionNodeItemComponent(props: Props): React.ReactNode {
 
   const [exportDialogOpen, setExportDialogOpen] = React.useState(false);
   const [exportIncludeSubtasks, setExportIncludeSubtasks] = React.useState(true);
+  const [isTranscriptRefreshing, setIsTranscriptRefreshing] = React.useState(false);
 
   const menuInstanceKey = `${renderContext}:${archivedBucket ? 'archived' : 'active'}:${session.id}`;
   const isZombie = useViewportStore(
@@ -717,6 +718,24 @@ function SessionNodeItemComponent(props: Props): React.ReactNode {
     event.stopPropagation();
     setOpenSidebarMenuKey(null);
     togglePinnedSession(session.id);
+  });
+
+  const handleRefreshTranscript = useEvent(() => {
+    const statusType = sessionStatus?.type ?? 'idle';
+    if (!sessionDirectory || isTranscriptRefreshing || statusType === 'busy' || statusType === 'retry') {
+      return;
+    }
+    setIsTranscriptRefreshing(true);
+    void (async () => {
+      try {
+        await sync.refreshSessionTranscript(session.id, { directory: sessionDirectory });
+        toast.success(t('sessions.sidebar.session.menu.refreshTranscriptSuccess'));
+      } catch {
+        toast.error(t('sessions.sidebar.session.menu.refreshTranscriptFailed'));
+      } finally {
+        setIsTranscriptRefreshing(false);
+      }
+    })();
   });
 
   const handleOpenInEditorPointerDown = useEvent((event: React.PointerEvent<HTMLButtonElement>) => {
@@ -1067,6 +1086,14 @@ function SessionNodeItemComponent(props: Props): React.ReactNode {
       <Item onClick={() => { void handleExportSession(); }} className="[&>svg]:mr-1">
         <Icon name="download" className="mr-1 h-4 w-4" />
         {t('sessions.sidebar.session.menu.exportMarkdown')}
+      </Item>
+      <Item
+        disabled={!sessionDirectory || isStreaming || isTranscriptRefreshing}
+        onClick={() => { handleRefreshTranscript(); }}
+        className="[&>svg]:mr-1"
+      >
+        <Icon name="refresh" className={cn('mr-1 h-4 w-4', isTranscriptRefreshing && 'animate-spin')} />
+        {t('sessions.sidebar.session.menu.refreshTranscript')}
       </Item>
       {isMultiRunLikeSession ? (
         <Item onClick={() => setFusionDialogOpen(true)} className="[&>svg]:mr-1">

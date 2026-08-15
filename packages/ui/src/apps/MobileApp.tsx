@@ -68,7 +68,7 @@ import { SessionStartupCoordinator } from '@/components/session/SessionStartupCo
 import { DirectoryExplorerDialog } from '@/components/session/DirectoryExplorerDialog';
 import { ScheduledTasksDialog, ScheduledTasksWorkspace } from '@/components/session/ScheduledTasksDialog';
 import { SettingsGroup } from '@/components/sections/shared/SettingsGroup';
-import { SyncProvider, useCurrentSessionEntity, useParentSessionTarget, useSessionMessages } from '@/sync/sync-context';
+import { SyncProvider, useCurrentSessionEntity, useGlobalSessionStatus, useParentSessionTarget, useSessionMessages } from '@/sync/sync-context';
 import { useSync } from '@/sync/use-sync';
 
 import { SyncAppEffects } from './AppEffects';
@@ -2665,9 +2665,11 @@ const MobileShell: React.FC<{
   );
   const currentSessionDirectory = useSessionUIStore(currentSessionDirectorySelector);
   const parentSessionTarget = useParentSessionTarget(currentSessionId, currentSessionDirectory || currentDirectory || undefined);
+  const currentSessionStatus = useGlobalSessionStatus(currentSessionId ?? '');
+  const isSessionBusy = currentSessionStatus?.type === 'busy' || currentSessionStatus?.type === 'retry';
   const refreshCurrentTranscript = useEvent(() => {
     const sessionID = currentSessionId;
-    if (!sessionID || isTranscriptRefreshing) return;
+    if (!sessionID || isTranscriptRefreshing || isSessionBusy) return;
     const directory = currentSessionDirectory || currentDirectory || undefined;
 
     setIsTranscriptRefreshing(true);
@@ -2990,14 +2992,14 @@ const MobileShell: React.FC<{
           key: 'refresh-transcript',
           icon: 'refresh',
           label: t('mobile.menu.refreshTranscript'),
-          disabled: isTranscriptRefreshing,
+          disabled: isTranscriptRefreshing || isSessionBusy,
           spinning: isTranscriptRefreshing,
           onSelect: refreshCurrentTranscript,
         });
       }
       return items;
     },
-    [currentSessionId, dirtyChangeCount, isIPad, isTranscriptRefreshing, openChangesSurface, openFilesSurface, openNewSessionDraft, openSettingsSurface, refreshCurrentTranscript, setActiveMainTab, showUpdateItem, t],
+    [currentSessionId, dirtyChangeCount, isIPad, isSessionBusy, isTranscriptRefreshing, openChangesSurface, openFilesSurface, openNewSessionDraft, openSettingsSurface, refreshCurrentTranscript, setActiveMainTab, showUpdateItem, t],
   );
 
   return (

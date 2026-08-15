@@ -12,9 +12,11 @@ import {
   ensureTranscriptInitial,
   getTranscriptRepository,
   purgeTranscriptSession,
+  refreshTranscriptFromAuthority,
   requireTranscriptRepository,
   transcriptScope,
 } from "./transcript-repository-runtime"
+import { useGlobalSessionStatusStore } from "./global-session-status"
 import { stripSessionDiffSnapshots } from "./sanitize"
 import {
   getEffectiveSessionCacheLimit,
@@ -36,6 +38,13 @@ import { seedSessionTodosFromHydratedTranscript } from "./session-todo-projectio
 
 const MAX_SEEN_DIRS = 30
 const cmp = (a: string, b: string) => (a < b ? -1 : a > b ? 1 : 0)
+
+/** User refresh must not fight an in-flight SSE turn. */
+export function isUserTranscriptRefreshBlocked(
+  statusType: string | undefined | null,
+): boolean {
+  return statusType === "busy" || statusType === "retry"
+}
 
 // Shared across useSync() instances so cache eviction is based on app-level
 // session recency, not whichever component happened to call sync first.
@@ -540,7 +549,8 @@ export function useSync() {
   )
 
   /**
-   * User-triggered transcript refresh — Query ensureInitial (sole write).
+   * User-triggered transcript refresh — fetch first, replace tail on success.
+   * Failure keeps the prior transcript. Busy/retry refuses so SSE keeps the live turn.
    */
   const refreshSessionTranscript = useCallback(
     async (sessionID: string, options?: { directory?: string }) => {
@@ -548,15 +558,23 @@ export function useSync() {
       await waitForSessionStartupBarrier()
       const targetDirectory = options?.directory ?? directory
       if (!targetDirectory || targetDirectory === "global") return
+      const targetStore = childStores.ensureChild(targetDirectory, { bootstrap: false })
+      const liveType = targetStore.getState().session_status?.[sessionID]?.type
+      const fallbackType = useGlobalSessionStatusStore.getState().statusById.get(sessionID)?.status
+      if (isUserTranscriptRefreshBlocked(liveType ?? fallbackType)) {
+        throw new Error("refresh transcript busy")
+      }
       try {
-        await ensureTranscriptInitial(targetDirectory, sessionID)
-        const targetStore = childStores.ensureChild(targetDirectory, { bootstrap: false })
+        await refreshTranscriptFromAuthority(targetDirectory, sessionID)
         seedSessionTodosFromHydratedTranscript({
           directory: targetDirectory,
           sessionID,
           store: targetStore,
         })
-      } catch {
+      } catch (error) {
+        if (error instanceof Error && error.message === "refresh transcript busy") {
+          throw error
+        }
         throw new Error("refresh transcript failed")
       }
     },
