@@ -8,7 +8,7 @@ The Relay server brokers Layer 1 routing: Host control connections, client route
 
 Host and Client terminate the E2EE channel. Each Host authenticates Relay connections with its long-lived P-256 signing key. Pairing secrets and client bearer credentials continue through endpoint validation; Relay reachability grants transport access.
 
-Relay v1 admission accepts anonymous Client route requests. Per-IP, global, pending-connection, raw-socket, frame, and queue limits bound that public entry point. Configure limits for the expected traffic volume and keep the Relay behind TLS.
+Relay v1 admission accepts anonymous Client route requests. Per-IP, global, pending-connection, raw-socket, frame, and queue limits bound that public entry point. Configure limits for the expected traffic volume and keep the Relay behind TLS. Pair queues pause the fast sender at half the per-connection byte limit so a slow peer applies TCP backpressure instead of filling memory until `4029`. Ready pairs send one frame per tick so one tunnel cannot monopolize the event loop.
 
 The Relay keeps process-local routing state only. Hosts reconnect after Relay restarts, and a control disconnect retains its Host route for the 30-second grace period.
 

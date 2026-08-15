@@ -155,6 +155,57 @@ it('releases a control queue when its send callback reports an error', async () 
   await eventually(() => relay.getSnapshot().controls === 0 && relay.getSnapshot().queuedBytes === 0);
 });
 
+it('pauses the fast sender before the pair queue limit and keeps the pair up', async () => {
+  let clientSocket;
+  const relay = await start({ maxQueuedBytesPerConnection: 32 }, {
+    onSocketAccepted({ socket, role }) {
+      if (role === 'client') clientSocket = socket;
+      if (role === 'host-data') socket.send = () => {};
+    },
+  });
+  const host = identity(); const hostControl = await control(relay, host); const id = await connected(relay, host, hostControl);
+  const client = sockets.at(-1);
+  await open(hostUrl(relay, host, 'host-data', id));
+  client.send(Buffer.alloc(20));
+  await eventually(() => Boolean(clientSocket?._relayPaused));
+  expect(relay.getSnapshot()).toMatchObject({ clients: 1, pairs: 1, reasons: { limited: 0 } });
+});
+
+it('does not reap a sender paused for backpressure', async () => {
+  let clientSocket;
+  let heartbeatTick;
+  const relay = await start({ maxQueuedBytesPerConnection: 32, heartbeatMs: 10 }, {
+    clock: { setInterval(callback) { heartbeatTick = callback; return 1; }, clearInterval() {} },
+    onSocketAccepted({ socket, role }) {
+      if (role === 'client') clientSocket = socket;
+      if (role === 'host-data') socket.send = () => {};
+    },
+  });
+  const host = identity(); const hostControl = await control(relay, host); const id = await connected(relay, host, hostControl);
+  const client = sockets.at(-1);
+  await open(hostUrl(relay, host, 'host-data', id));
+  client.send(Buffer.alloc(20));
+  await eventually(() => Boolean(clientSocket?._relayPaused));
+  clientSocket._relayAlive = false;
+  heartbeatTick();
+  expect(relay.getSnapshot().clients).toBe(1);
+  expect(clientSocket.readyState).toBe(clientSocket.OPEN);
+});
+
+it('interleaves pair pumps so a second tunnel is not stuck behind a large first queue', async () => {
+  const relay = await start(); const host = identity(); const hostControl = await control(relay, host);
+  const firstId = await connected(relay, host, hostControl); const client1 = sockets.at(-1);
+  const data1 = await open(hostUrl(relay, host, 'host-data', firstId));
+  const secondId = await connected(relay, host, hostControl); const client2 = sockets.at(-1);
+  const data2 = await open(hostUrl(relay, host, 'host-data', secondId));
+  const second = nextMessage(data2);
+  for (let index = 0; index < 40; index += 1) client1.send(Buffer.alloc(1024, 1));
+  client2.send('hi');
+  const [payload] = await Promise.race([second, wait(1_000).then(() => { throw new Error('second pair starved'); })]);
+  expect(payload.toString()).toBe('hi');
+  data1.terminate();
+});
+
 it('enforces aggregate pair queue bytes with both sends in flight', async () => {
   const held = new Map();
   const relay = await start({ maxQueuedBytesPerConnection: 10 }, { onSocketAccepted({ socket, role }) { if (role === 'client' || role === 'host-data') { held.set(role, socket); socket.send = () => {}; } } });

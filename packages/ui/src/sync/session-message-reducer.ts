@@ -229,20 +229,25 @@ export function reduceSessionMessagePage(
   }
 
   if (liveRevisionStale && merge.onStale === "drop") {
-    return {
-      applied: false,
-      merge,
-      changed: false,
-      messagesChanged: false,
-      partsChanged: false,
-      boundaryChanged: false,
-      message: state.message,
-      part: state.part,
-      messages: state.message[sessionID] ?? [],
-      boundary: undefined,
-      meta: undefined,
-      confirmedOptimisticIDs: [],
-      commands: [],
+    const existing = state.message[sessionID] ?? []
+    // Cold open has nothing to protect. Dropping the first tail leaves the
+    // skeleton waiting for another GET after SSE already moved.
+    if (existing.length > 0) {
+      return {
+        applied: false,
+        merge,
+        changed: false,
+        messagesChanged: false,
+        partsChanged: false,
+        boundaryChanged: false,
+        message: state.message,
+        part: state.part,
+        messages: existing,
+        boundary: undefined,
+        meta: undefined,
+        confirmedOptimisticIDs: [],
+        commands: [],
+      }
     }
   }
 

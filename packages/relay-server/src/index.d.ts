@@ -62,6 +62,7 @@ export interface Clock {
   clearTimeout: typeof globalThis.clearTimeout;
   setInterval: typeof globalThis.setInterval;
   clearInterval: typeof globalThis.clearInterval;
+  setImmediate: typeof globalThis.setImmediate;
 }
 
 export interface Options {

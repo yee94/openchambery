@@ -25,6 +25,8 @@ describe('resolveMobileTranscriptSyncHint', () => {
 
     expect(resolveMobileTranscriptSyncHint({
       ...idle,
+      hasTranscript: false,
+      loadStatus: 'error',
       isConnected: false,
       connectionPhase: 'reconnecting',
     })).toBe('syncing');
@@ -34,6 +36,17 @@ describe('resolveMobileTranscriptSyncHint', () => {
       hasTranscript: false,
       loadStatus: 'loading',
     })).toBe('syncing');
+  });
+
+  test('hides once messages are present after a finished refresh', () => {
+    expect(resolveMobileTranscriptSyncHint({
+      ...idle,
+      hasTranscript: true,
+      loadStatus: 'loading',
+      userRefreshInFlight: false,
+      isConnected: false,
+      connectionPhase: 'reconnecting',
+    })).toBeNull();
   });
 
   test('ignores warm prefetch loading and first-connect splash', () => {

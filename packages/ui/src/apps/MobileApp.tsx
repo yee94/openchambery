@@ -3153,6 +3153,7 @@ const MobileShell: React.FC<{
               renderChat={(target) => (
                 <MobileChatScreen
                   sessionId={target.sessionId}
+                  directory={target.directory}
                   onBack={() => {
                     closeOverflowMenu();
                     mobileBackNavigationCoordinator.requestAnimatedBack('root');

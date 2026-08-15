@@ -19,4 +19,5 @@ test('overflow refresh uses the authoritative user transcript path', async () =>
   expect(source).not.toContain('ensureTranscriptInitial')
   expect(source).toContain("useMobileTranscriptSyncHint(currentSessionId ?? '', effectiveDirectory || undefined)")
   expect(source).toContain('const statusLabel = syncHint ?? secondaryLabel')
+  expect(source).toContain('directory={target.directory}')
 })

@@ -4,6 +4,12 @@ All notable changes to this project will be documented in this file.
 
 ## [Unreleased]
 
+## [1.16.139-beta.5] - 2026-08-15
+
+- **Cold open:** a first tail page still lands when SSE moved while it was in flight, so the skeleton does not wait for another GET. Any landed row, including an assistant-only first page, dismisses the skeleton. An empty success still does not become an empty chat.
+- **Mobile sync hint:** once the current session already has a transcript, reconnect no longer keeps the "Syncing messages..." whisper. The hint now reads the same directory as the chat.
+- **Relay:** apply per-direction backpressure and fair-queue pumps so one busy tunnel cannot monopolize the event loop or get heartbeat-reaped while paused.
+
 ## [1.16.139-beta.4] - 2026-08-15
 
 - **Load-error retry:** clicking Try again on "Unable to load this conversation" now shows the skeleton and actually reloads the transcript instead of doing nothing.

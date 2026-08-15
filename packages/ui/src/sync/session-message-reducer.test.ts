@@ -217,6 +217,23 @@ describe("reduceSessionMessagePage — history boundary", () => {
     expect(result.boundary).toBeUndefined()
     expect(result.boundaryChanged).toBe(false)
   })
+
+  test("a stale initial page still applies when the transcript is empty", () => {
+    const result = reduceSessionMessagePage(
+      emptyState(),
+      "ses_1",
+      page([{ info: userMessage("msg_1"), parts: [] }], { complete: true, turnCount: 1 }),
+      {
+        purpose: "initial",
+        skipPartTypes: SKIP_PARTS,
+        capturedRevision: 3,
+        liveRevision: 5,
+      },
+    )
+
+    expect(result.applied).toBe(true)
+    expect(result.messages.map((item) => item.id)).toEqual(["msg_1"])
+  })
 })
 
 describe("reduceSessionMessagePage — cursor progress invariant", () => {

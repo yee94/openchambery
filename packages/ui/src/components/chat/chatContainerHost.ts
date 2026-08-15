@@ -167,7 +167,7 @@ export const resolveDesktopLoadOlderStatusVisibility = (input: {
  *
  * - `hydrating`: stable skeleton — loading, user retry, or cold with no settled failure
  * - `load-error`: settled failure only (error + not loading + not retrying + no shell)
- * - `pass`: enough UI shell (user/pending/history) or ready empty snapshot
+ * - `pass`: enough UI shell (any transcript row / pending / history) or ready empty snapshot
  *
  * Retry from the load-error wall sets `userRetrying` so the gate returns to
  * `hydrating` on the click, then `retryTranscriptInitial` purges the failed
@@ -181,6 +181,16 @@ export const resolveDesktopLoadOlderStatusVisibility = (input: {
  * resets scroll, focus, and the composer caret.
  */
 export type ChatSessionTranscriptGate = 'pass' | 'hydrating' | 'load-error'
+
+/** Any landed row is a shell. Do not wait for a user message to leave the skeleton. */
+export const hasChatTranscriptShell = (input: {
+  transcriptMessageCount: number
+  pendingUserCount: number
+  historyPrefixCount: number
+}): boolean =>
+  input.transcriptMessageCount > 0
+  || input.pendingUserCount > 0
+  || input.historyPrefixCount > 0
 
 export const resolveChatSessionTranscriptGate = (input: {
   /** User boundary, retained pending rows, or hosted history prefix. */

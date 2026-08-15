@@ -631,8 +631,9 @@ both readers agree on when a frame may shrink.
   `time.completed`, `error`) onto a live assistant so Activity can auto-collapse
   after idle/Query backfill; a lagging snapshot cannot strip fields the live
   row already has. Current recovery/reconcile still upserts messages and replaces parts
-  against server truth. Every other purpose drops the page when stale
-  (`shouldDropStalePage(purpose)`). Note the historical helper names:
+  against server truth.   Every other purpose drops the page when stale
+  (`shouldDropStalePage(purpose)`), except a cold empty transcript: the first
+  tail still applies so the skeleton can leave. Note the historical helper names:
   `mergeMessages` is insert-only while `mergeRecoveryMessages` is an upsert —
   the strategy field names that asymmetry explicitly.
 
@@ -643,8 +644,12 @@ both readers agree on when a frame may shrink.
   fresh tail first, then replaces the canonical transcript with that page.
   Fetch failure keeps the prior transcript. The fetch is outside the
   InfiniteQuery observer, so `getRequestState` stays `ready`;
-  `refreshTranscriptFromAuthority` publishes an in-flight signal
-  (`transcript-authority-refresh-flight`) for mobile title hints. Desktop session context-menu
+   `refreshTranscriptFromAuthority` publishes an in-flight signal
+   (`transcript-authority-refresh-flight`) for mobile title hints. The whisper
+   stays up only while that refresh is in flight, during cold first paint
+   (no transcript yet), or while reconnecting before any messages exist.
+   A loaded transcript hides it even if the socket is still reconnecting or
+   the InfiniteQuery observer is still `isFetching`. Desktop session context-menu
   "Sync messages" and the dedicated-mobile overflow "Refresh" both call
    `refreshSessionTranscript`. Do not route those buttons through `ensureInitial`
    (hot-cache no-op) or `destructiveReset` (ensure failure blanks the chat).

@@ -18,6 +18,7 @@ import {
     resolveChatContainerHostFeatures,
     resolveChatHistoryLoadState,
     resolveChatHistoryPaginationLoading,
+    hasChatTranscriptShell,
     resolveChatSessionTranscriptGate,
     resolveDesktopLoadOlderStatusVisibility,
     resolveMobileLoadOlderBusy,
@@ -765,13 +766,6 @@ const ChatContainerContent: React.FC<ChatContainerContentProps> = ({
         // (e.g. deepseek-v4-flash → "DeepSeek V4 Flash") instead of raw ids.
         return getProviderModelDisplayName(provider, sessionExecution.modelId) || sessionExecution.modelId;
     }, [providers, sessionExecution.modelId, sessionExecution.providerId, t]);
-    const hasUserBoundary = React.useMemo(
-        () => sessionMessages.some(({ info }) => (
-            info.role === 'user'
-            || (info as Message & { clientRole?: string }).clientRole === 'user'
-        )),
-        [sessionMessages],
-    );
     // useMemo callback factories for useSyncExternalStore (stable identity; never useCallback).
     // Ticket 09: request lifecycle from repository (no session-prefetch).
     const sessionPrefetchInfo = useSessionMessageLoadState(
@@ -1368,10 +1362,11 @@ const ChatContainerContent: React.FC<ChatContainerContentProps> = ({
     // "Unable to load this conversation" wall while imperative + reactive
     // pulls race on session switch (stale error or concurrent fail).
     const sessionTranscriptGate = resolveChatSessionTranscriptGate({
-        hasTranscriptShell:
-            hasUserBoundary
-            || pendingUserMessages.length > 0
-            || historyPrefix.length > 0,
+        hasTranscriptShell: hasChatTranscriptShell({
+            transcriptMessageCount: sessionMessages.length,
+            pendingUserCount: pendingUserMessages.length,
+            historyPrefixCount: historyPrefix.length,
+        }),
         hasRenderableSessionSnapshot,
         prefetchStatus: sessionPrefetchInfo?.status,
         syncLoading: Boolean(currentSessionId && sync.isLoading(currentSessionId, { directory: effectiveSessionDirectory })),

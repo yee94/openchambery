@@ -12,6 +12,8 @@ import { useMobileTranscriptSyncHint } from './useMobileTranscriptSyncHint';
 export type MobileChatScreenProps = {
   /** Empty string = new-session draft mode (no entity/status lookups). */
   sessionId: string;
+  /** Session workspace. Required so the sync hint reads the same transcript as ChatView. */
+  directory?: string | null;
   title?: string;
   onBack: () => void;
   onOpenMenu: () => void;
@@ -29,6 +31,7 @@ export type MobileChatScreenProps = {
  */
 export function MobileChatScreen({
   sessionId,
+  directory,
   title,
   onBack,
   onOpenMenu,
@@ -43,7 +46,10 @@ export function MobileChatScreen({
   const resolvedTitle = isDraft
     ? (title?.trim() || t('mobile.menu.newSession'))
     : (title?.trim() || session?.title?.trim() || t('mobile.sessions.untitled'));
-  const syncHint = useMobileTranscriptSyncHint(isDraft ? '' : sessionId);
+  const syncHint = useMobileTranscriptSyncHint(
+    isDraft ? '' : sessionId,
+    directory || undefined,
+  );
   const [contextOpen, setContextOpen] = React.useState(false);
 
   // Overflow menu and context panel are mutually exclusive. Switching from one

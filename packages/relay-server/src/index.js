@@ -58,7 +58,7 @@ const decodeJwk = (encoded) => {
 export const createPrivateRelayServer = (options = {}) => {
   const limits = { ...DEFAULT_LIMITS, ...options.limits };
   if (limits.replayMs < limits.timestampSkewMs * 2 || limits.maxReplayEntries < 1) throw new RangeError('invalid replay limits');
-  const clock = { now: Date.now, setTimeout, clearTimeout, setInterval, clearInterval, ...options.clock };
+  const clock = { now: Date.now, setTimeout, clearTimeout, setInterval, clearInterval, setImmediate, ...options.clock };
   const randomBytes = options.randomBytes ?? crypto.randomBytes;
   const hosts = new Map(); const replay = new Map(); const admissions = new Map(); const clientIpCounts = new Map(); const rawIpCounts = new Map();
   const accepted = new Set(); const rawSockets = new Set();
@@ -145,6 +145,7 @@ export const createPrivateRelayServer = (options = {}) => {
     host.clients.delete(entry.id); counts.clients -= 1; decrement(clientIpCounts, entry.ip); if (entry.data) counts.pairs -= 1; else counts.pending -= 1;
     if (entry.pendingTimer) clock.clearTimeout(entry.pendingTimer);
     releasePump(entry, entry.toData); releasePump(entry, entry.toClient);
+    setRelayPaused(entry.client, false); setRelayPaused(entry.data, false);
     if (entry.client) safeClose(entry.client, code, reason); if (entry.data) safeClose(entry.data, code, reason);
     if (notify) controlPump(host, { type: 'disconnected', connectionId: entry.id });
     if (!host.control && host.clients.size === 0 && !host.graceTimer && hosts.delete(host.serverId)) counts.hosts -= 1;
@@ -159,11 +160,61 @@ export const createPrivateRelayServer = (options = {}) => {
     if (hosts.get(host.serverId) !== host || host.epoch !== epoch || host.graceTimer) return;
     host.graceTimer = clock.setTimeout(() => expireHost(host, epoch), limits.graceMs);
   };
-  const pump = (host, entry, direction) => {
+  const pauseHigh = Math.max(1, Math.min(limits.maxQueuedBytesPerConnection - 1, Math.floor(limits.maxQueuedBytesPerConnection / 2)));
+  const pauseLow = Math.min(pauseHigh, Math.floor(limits.maxQueuedBytesPerConnection / 4));
+  const sourceOf = (entry, direction) => (direction === 'toData' ? entry.client : entry.data);
+  // Pause the fast sender when this direction's queue is above the high watermark.
+  const setRelayPaused = (socket, paused) => {
+    if (!socket || Boolean(socket._relayPaused) === paused) return;
+    if (paused && socket.readyState !== socket.OPEN) return;
+    try {
+      if (typeof socket.pause === 'function' && typeof socket.resume === 'function') {
+        if (paused) socket.pause();
+        else socket.resume();
+      } else {
+        const stream = socket._socket;
+        if (stream && typeof stream.pause === 'function') {
+          if (paused) stream.pause();
+          else stream.resume();
+        }
+      }
+    } catch { /* pause/resume only apply while OPEN */ }
+    socket._relayPaused = paused;
+  };
+  const applyBackpressure = (entry, direction) => {
+    const source = sourceOf(entry, direction);
+    if (!source) return;
+    const queued = entry[direction].bytes;
+    if (queued >= pauseHigh) setRelayPaused(source, true);
+    else if (queued <= pauseLow) setRelayPaused(source, false);
+  };
+  const fairReady = [];
+  let fairScheduled = false;
+  const requestPump = (host, entry, direction) => {
+    const channel = entry[direction];
+    if (channel.scheduled) return;
+    channel.scheduled = true;
+    fairReady.push({ host, entry, direction });
+    if (fairScheduled) return;
+    fairScheduled = true;
+    clock.setImmediate(runFairPump);
+  };
+  // One frame per ready pair per tick so a single tunnel cannot monopolize the event loop.
+  const runFairPump = () => {
+    fairScheduled = false;
+    const pending = fairReady.length;
+    for (let index = 0; index < pending; index += 1) {
+      const job = fairReady.shift();
+      if (!job) break;
+      job.entry[job.direction].scheduled = false;
+      sendOne(job.host, job.entry, job.direction);
+    }
+  };
+  const sendOne = (host, entry, direction) => {
     const channel = entry[direction]; const target = direction === 'toData' ? entry.data : entry.client;
     if (host.clients.get(entry.id) !== entry || channel.busy || !channel.queue.length) return;
     if (!target || target.readyState !== target.OPEN || target.bufferedAmount > limits.maxBufferedAmount) {
-      if (!channel.retry) channel.retry = clock.setTimeout(() => { channel.retry = null; pump(host, entry, direction); }, limits.pumpRetryMs);
+      if (!channel.retry) channel.retry = clock.setTimeout(() => { channel.retry = null; requestPump(host, entry, direction); }, limits.pumpRetryMs);
       return;
     }
     channel.busy = true; const item = channel.queue[0];
@@ -172,13 +223,16 @@ export const createPrivateRelayServer = (options = {}) => {
       channel.busy = false;
       if (error) { removeClient(host, entry, CLOSE.limit, 'send failure'); return; }
       channel.queue.shift(); channel.bytes = Math.max(0, channel.bytes - item.data.length); entry.queuedBytes = Math.max(0, entry.queuedBytes - item.data.length); counts.queuedBytes = Math.max(0, counts.queuedBytes - item.data.length);
-      pump(host, entry, direction);
+      applyBackpressure(entry, direction);
+      if (channel.queue.length) requestPump(host, entry, direction);
     });
   };
   const enqueue = (host, entry, direction, data, binary) => {
     const payload = Buffer.from(data); const channel = entry[direction];
     if (payload.length > limits.maxFrameBytes || entry.queuedBytes + payload.length > limits.maxQueuedBytesPerConnection || counts.queuedBytes + payload.length > limits.maxGlobalQueuedBytes) { addReason('limited'); removeClient(host, entry, CLOSE.limit, 'queue limit'); return; }
-    channel.queue.push({ data: payload, binary }); channel.bytes += payload.length; entry.queuedBytes += payload.length; counts.queuedBytes += payload.length; pump(host, entry, direction);
+    channel.queue.push({ data: payload, binary }); channel.bytes += payload.length; entry.queuedBytes += payload.length; counts.queuedBytes += payload.length;
+    applyBackpressure(entry, direction);
+    requestPump(host, entry, direction);
   };
   const bindClient = (host, entry, socket) => {
     entry.client = socket;
@@ -189,7 +243,7 @@ export const createPrivateRelayServer = (options = {}) => {
     entry.data = socket; counts.pending -= 1; counts.pairs += 1; if (entry.pendingTimer) clock.clearTimeout(entry.pendingTimer);
     socket.on('message', (data, binary) => enqueue(host, entry, 'toClient', data, binary));
     socket.on('close', () => { if (host.clients.get(entry.id) === entry && entry.data === socket) removeClient(host, entry, CLOSE.away, 'host data closed'); }); socket.on('error', () => {});
-    pump(host, entry, 'toData');
+    requestPump(host, entry, 'toData');
   };
   const parse = (request) => {
     if (!request.url || bytes(request.url) > limits.maxUrlBytes) return null;
@@ -241,7 +295,7 @@ export const createPrivateRelayServer = (options = {}) => {
       if (!host) return safeClose(socket, CLOSE.unavailable, 'host unavailable');
       if (counts.clients >= limits.maxConnections || host.clients.size >= limits.maxClientsPerHost || counts.pending >= limits.maxPendingClients || (clientIpCounts.get(ip) ?? 0) >= limits.maxClientsPerIp) { addReason('limited'); return safeClose(socket, CLOSE.limit, 'client limit'); }
       const id = idFor(host); if (!id) { addReason('limited'); return safeClose(socket, CLOSE.limit, 'id collision'); }
-      const entry = { id, ip, client: null, data: null, queuedBytes: 0, toData: { queue: [], bytes: 0, busy: false, retry: null }, toClient: { queue: [], bytes: 0, busy: false, retry: null }, pendingTimer: null };
+      const entry = { id, ip, client: null, data: null, queuedBytes: 0, toData: { queue: [], bytes: 0, busy: false, retry: null, scheduled: false }, toClient: { queue: [], bytes: 0, busy: false, retry: null, scheduled: false }, pendingTimer: null };
       host.clients.set(id, entry); counts.clients += 1; counts.pending += 1; clientIpCounts.set(ip, (clientIpCounts.get(ip) ?? 0) + 1); bindClient(host, entry, socket);
       entry.pendingTimer = clock.setTimeout(() => { if (host.clients.get(id) === entry && !entry.data) removeClient(host, entry, CLOSE.limit, 'pending timeout'); }, limits.pendingMs);
       controlPump(host, { type: 'connected', connectionId: id }); return;
@@ -282,7 +336,7 @@ export const createPrivateRelayServer = (options = {}) => {
       if (counts.sockets >= limits.maxSockets) { addReason('limited'); return reject(request, socket, head, CLOSE.limit); }
       localWss.handleUpgrade(request, socket, head, (ws) => { accepted.add(ws); counts.sockets += 1; ws.on('close', () => removeSocket(ws)); ws._relayHandshake = clock.setTimeout(() => { if (!ws._relayRole) safeClose(ws, CLOSE.malformed, 'handshake timeout'); }, limits.handshakeMs); options.onSocketAccepted?.({ socket: ws, role: parsed.role }); attach(ws, request, parsed); if (ws._relayHandshake) { clock.clearTimeout(ws._relayHandshake); ws._relayHandshake = null; } });
     });
-    heartbeat = clock.setInterval(() => { purge(); for (const socket of accepted) { if (socket.readyState !== socket.OPEN) continue; if (!socket._relayAlive) { addReason('heartbeatReaped'); safeClose(socket, socket._relayRole === 'host-control' ? CLOSE.stuck : CLOSE.away, 'heartbeat'); continue; } socket._relayAlive = false; try { socket.ping(); } catch { safeClose(socket, CLOSE.away, 'heartbeat'); } } }, limits.heartbeatMs);
+    heartbeat = clock.setInterval(() => { purge(); for (const socket of accepted) { if (socket.readyState !== socket.OPEN) continue; if (socket._relayPaused) socket._relayAlive = true; if (!socket._relayAlive) { addReason('heartbeatReaped'); safeClose(socket, socket._relayRole === 'host-control' ? CLOSE.stuck : CLOSE.away, 'heartbeat'); continue; } socket._relayAlive = false; try { socket.ping(); } catch { safeClose(socket, CLOSE.away, 'heartbeat'); } } }, limits.heartbeatMs);
     startPromise = new Promise((resolve, rejectStart) => {
       const fail = (error) => { if (localGeneration !== generation) return; localServer.off('listening', ready); cleanupStart(); rejectStart(error); };
       const ready = () => { localServer.off('error', fail); if (localGeneration !== generation || state !== 'starting') return; state = 'running'; resolve(); };

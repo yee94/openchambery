@@ -5,6 +5,7 @@ import {
     resolveChatContainerHostFeatures,
     resolveChatHistoryLoadState,
     resolveChatHistoryPaginationLoading,
+    hasChatTranscriptShell,
     resolveChatSessionTranscriptGate,
     resolveDesktopLoadOlderStatusVisibility,
     resolveMobileLoadOlderBusy,
@@ -380,6 +381,24 @@ describe('mobile load-older affordance', () => {
       isMobile: false,
       canLoadEarlier: false,
       isLoadingOlder: true,
+    })).toBe(false);
+  });
+});
+
+describe('hasChatTranscriptShell', () => {
+  test('any landed transcript row is a shell, including assistant-only', () => {
+    expect(hasChatTranscriptShell({
+      transcriptMessageCount: 1,
+      pendingUserCount: 0,
+      historyPrefixCount: 0,
+    })).toBe(true);
+  });
+
+  test('an empty transcript is not a shell', () => {
+    expect(hasChatTranscriptShell({
+      transcriptMessageCount: 0,
+      pendingUserCount: 0,
+      historyPrefixCount: 0,
     })).toBe(false);
   });
 });
