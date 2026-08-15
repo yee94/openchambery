@@ -58,6 +58,8 @@ Use this doc when you ask an agent to change tool/header/description behavior.
   - Task tools (`task`) show `AgentAvatar` + subagent nickname (`input.subagent_type`) in the
     leading icon column (same slot as the expand chevron). Idle = avatar; hover = chevron only when
     Settings → Visual → "Show Sub-agent Work Details" (`showSubagentTaskDetails`) is on.
+  - Shell tools (`bash` / `shell` / `cmd` / `terminal`) show the shared 14px `LatticeOrb` while
+    active and restore the mapped `terminal-box` icon after settling.
   - That setting defaults **off**: no vertical task-summary rail. Clicking the compact row always
     opens the sub-agent session (context panel / mobile session switch), including while the task
     is still loading — if the child session id is delayed, the click is queued until it arrives.

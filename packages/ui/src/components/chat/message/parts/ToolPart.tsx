@@ -70,6 +70,7 @@ import {
 } from './toolExpandedLayout';
 import { navigateNestedSession, useSessionSurface } from '../../SessionSurfaceContext';
 import { pushPhoneNestedSession } from '@/mobile/useMobileNavigationStore';
+import { LatticeOrb } from './LatticeOrb';
 
 const TOOL_ROW_TEXT_CLASS = '!text-[length:var(--text-meta)] !leading-5 sm:!leading-6 tracking-normal';
 const TOOL_ROW_TITLE_CLASS = cn('typography-meta font-medium', TOOL_ROW_TEXT_CLASS);
@@ -219,6 +220,7 @@ const GIT_REFRESH_MUTATING_TOOLS = new Set([
     'patch',
     'task',
 ]);
+const SHELL_TOOL_NAMES = new Set(['bash', 'shell', 'cmd', 'terminal']);
 
 /** Edit/write 类：不展开，点击在右侧打开改动行（与 Read 同属导航工具） */
 const FILE_NAV_TOOL_NAMES = new Set([
@@ -1896,6 +1898,7 @@ const ToolPartContent: React.FC<ToolPartProps> = ({
 
     const normalizedPartTool = normalizeToolName(part.tool);
     const isTaskTool = normalizedPartTool === 'task';
+    const isShellTool = SHELL_TOOL_NAMES.has(normalizedPartTool);
     const isTodoTool = normalizedPartTool === 'todowrite' || normalizedPartTool === 'todoread';
     // Edit/Write：单行导航，不展开详情
     const isFileNavTool = isFileNavToolName(normalizedPartTool);
@@ -2435,6 +2438,7 @@ const ToolPartContent: React.FC<ToolPartProps> = ({
     const iconStyle = !isTaskTool && isError ? TOOL_ERROR_ICON_STYLE : TOOL_NORMAL_ICON_STYLE;
     const titleStyle = !isTaskTool && isError ? TOOL_ERROR_TITLE_STYLE : TOOL_NORMAL_TITLE_STYLE;
     const taskBusy = Boolean(isTaskTool && effectiveActive && !isError);
+    const shellBusy = Boolean(isShellTool && effectiveActive);
     // Expanded bodies render synchronously with `isExpanded`. A deferred mount
     // (double rAF + startTransition) painted an empty fold for a frame whenever
     // `isExpanded` dipped false, and default-open rows must report their real
@@ -2514,6 +2518,12 @@ const ToolPartContent: React.FC<ToolPartProps> = ({
                                     name={part.id || taskAgentName || 'subagent'}
                                     size={14}
                                     label={taskTitle}
+                                />
+                            ) : shellBusy ? (
+                                <LatticeOrb
+                                    size={14}
+                                    className="text-[var(--tools-icon)]"
+                                    label={t('chat.assistantStatus.runningCommand')}
                                 />
                             ) : (
                                 getToolIcon(normalizedPartTool || part.tool)

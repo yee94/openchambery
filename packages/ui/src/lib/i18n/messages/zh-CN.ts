@@ -2365,7 +2365,7 @@ export const dict: Record<I18nKey, string> = {
   'chat.tools.display.write': '写入',
   'chat.tools.display.edit': '编辑',
   'chat.tools.display.multiedit': '批量编辑',
-  'chat.tools.display.apply_patch': '编辑',
+  'chat.tools.display.apply_patch': '批量修改',
   'chat.tools.display.bash': '运行',
   'chat.tools.display.grep': '搜索文件',
   'chat.tools.display.glob': '查找文件',

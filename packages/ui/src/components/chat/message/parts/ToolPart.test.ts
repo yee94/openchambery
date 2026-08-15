@@ -79,6 +79,25 @@ describe('tool busy title chrome', () => {
         expect(toolPartSource).toContain('taskBusy && \'animate-text-shimmer\'');
         expect(toolPartSource).toContain("normalizedPartTool === 'bash' && typeof effectiveTimeStart === 'number'");
     });
+
+    test('active shell rows use the shared loading orb and settled rows keep the terminal icon', () => {
+        expect(toolPartSource).toContain("import { LatticeOrb } from './LatticeOrb';");
+        expect(toolPartSource).toContain("const SHELL_TOOL_NAMES = new Set(['bash', 'shell', 'cmd', 'terminal']);");
+        expect(toolPartSource).toContain('const shellBusy = Boolean(isShellTool && effectiveActive);');
+        expect(toolPartSource).toContain(') : shellBusy ? (\n                                <LatticeOrb');
+        expect(toolPartSource).toContain("label={t('chat.assistantStatus.runningCommand')}");
+        expect(toolPartSource).toContain('getToolIcon(normalizedPartTool || part.tool)');
+    });
+
+    test('task rows keep the agent avatar across activity states', () => {
+        const taskIconBranch = toolPartSource.slice(
+            toolPartSource.indexOf('{isTaskTool ? (', toolPartSource.indexOf('style={isTaskTool ? undefined : iconStyle}')),
+            toolPartSource.indexOf(') : shellBusy ? (', toolPartSource.indexOf('style={isTaskTool ? undefined : iconStyle}')),
+        );
+
+        expect(taskIconBranch).toContain('<AgentAvatar');
+        expect(taskIconBranch).not.toContain('<LatticeOrb');
+    });
 });
 
 describe('readTaskTagSessionIdFromOutput', () => {

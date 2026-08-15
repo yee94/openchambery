@@ -4,6 +4,12 @@ All notable changes to this project will be documented in this file.
 
 ## [Unreleased]
 
+## [1.16.134-beta.3] - 2026-08-16
+
+- **Shell activity:** running shell/terminal tools show the shared loading orb; settled rows restore the terminal icon.
+- **Tool labels:** Chinese `apply_patch` label is now “批量修改” so patch edits read apart from single-file edit.
+- **Task chrome:** delegated task rows keep the agent avatar across busy and idle states (loading orb is shell-only).
+
 ## [1.16.134-beta.2] - 2026-08-16
 
 - **Chat activity:** consecutive read, search, and directory tools now collapse into a localized exploration group with live progress and expandable details.
