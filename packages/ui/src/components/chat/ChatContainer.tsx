@@ -91,8 +91,19 @@ import { useSync } from '@/sync/use-sync';
 import {
     ensureTranscriptInitial,
     fetchTranscriptPreviousPage,
+    refreshTranscriptFromAuthority,
     retryTranscriptInitial,
 } from '@/sync/transcript-repository-runtime';
+import {
+    INITIAL_TRANSCRIPT_STALL_STATE,
+    TRANSCRIPT_STALL_COOLDOWN_MS,
+    TRANSCRIPT_STALL_MAX_ATTEMPTS,
+    TRANSCRIPT_STALL_POLL_MS,
+    TRANSCRIPT_STALL_THRESHOLD_MS,
+    advanceTranscriptStallState,
+    buildTranscriptTailFingerprint,
+    reportTranscriptStall,
+} from './transcriptStallWatchdog';
 
 import { usePlanDetection } from '@/hooks/usePlanDetection';
 import { useI18n } from '@/lib/i18n';
@@ -733,7 +744,6 @@ const ChatContainerContent: React.FC<ChatContainerContentProps> = ({
     }>({ key: sessionIdentityEnsureKey, attempt: 0 });
     // Messages from sync system
     const sessionMessageRecords = useSessionMessageRecords(currentSessionId ?? '', effectiveSessionDirectory, {
-        enabled: active,
         suspendPartUpdates: Boolean(streamingMessageId),
         suspendPartUpdatesForMessageId: streamingMessageId,
     });
@@ -1163,6 +1173,59 @@ const ChatContainerContent: React.FC<ChatContainerContentProps> = ({
     paintedTranscriptRef.current = retainedTranscript.retained;
     const renderedViewportMessages = retainedTranscript.messages as SessionMessageRecord[];
     const hasPaintedTranscript = retainedTranscript.retained !== null;
+    // The status line and the body are independent subscriptions, so the body
+    // can freeze while the session keeps reporting work. Repair that state
+    // instead of leaving the user with a transcript that silently drops their
+    // own message. See transcriptStallWatchdog for the firing conditions.
+    const transcriptStallRef = React.useRef(INITIAL_TRANSCRIPT_STALL_STATE);
+    const transcriptStallSessionKey = currentSessionId
+        ? `${effectiveSessionDirectory}\n${currentSessionId}`
+        : null;
+    const readTranscriptTailFingerprint = useEvent(
+        () => buildTranscriptTailFingerprint(renderedViewportMessages),
+    );
+    React.useEffect(() => {
+        if (!currentSessionId || !transcriptStallSessionKey || !sessionIsWorking) {
+            transcriptStallRef.current = { ...transcriptStallRef.current, lastMovementAt: null };
+            return;
+        }
+        const sessionId = currentSessionId;
+        const directory = effectiveSessionDirectory;
+        const interval = setInterval(() => {
+            const fingerprint = readTranscriptTailFingerprint();
+            const result = advanceTranscriptStallState(transcriptStallRef.current, {
+                sessionKey: transcriptStallSessionKey,
+                working: true,
+                streaming: Boolean(streamingMessageId),
+                fingerprint,
+                now: Date.now(),
+                thresholdMs: TRANSCRIPT_STALL_THRESHOLD_MS,
+                cooldownMs: TRANSCRIPT_STALL_COOLDOWN_MS,
+                maxAttempts: TRANSCRIPT_STALL_MAX_ATTEMPTS,
+            });
+            transcriptStallRef.current = result.state;
+            if (!result.shouldRefresh) return;
+            reportTranscriptStall({
+                sessionId,
+                directory,
+                stalledForMs: result.stalledForMs,
+                attempt: result.state.attempts,
+                fingerprint,
+            });
+            void refreshTranscriptFromAuthority(directory, sessionId).catch(() => {
+                // Authority refresh keeps the prior transcript on failure; the
+                // cooldown governs the next attempt.
+            });
+        }, TRANSCRIPT_STALL_POLL_MS);
+        return () => clearInterval(interval);
+    }, [
+        currentSessionId,
+        effectiveSessionDirectory,
+        readTranscriptTailFingerprint,
+        sessionIsWorking,
+        streamingMessageId,
+        transcriptStallSessionKey,
+    ]);
     const materializedPendingMessageIDs = React.useMemo(() => {
         if (pendingUserMessages.length === 0) return [];
         // A row counts as materialized only once it can paint a user bubble —

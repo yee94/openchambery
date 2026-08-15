@@ -3571,7 +3571,7 @@ export function useUserMessageHistory(sessionID: string, directory?: string): st
 export function useSessionMessageRecords(
   sessionID: string,
   directory?: string,
-  options?: { enabled?: boolean; suspendPartUpdates?: boolean; suspendPartUpdatesForMessageId?: string | null },
+  options?: { suspendPartUpdates?: boolean; suspendPartUpdatesForMessageId?: string | null },
 ) {
   const system = useSyncSystem()
   const targetDirectory = directory ?? system.directory
@@ -3653,8 +3653,13 @@ export function useSessionMessageRecords(
     targetDirectory,
   ])
 
+  // getSnapshot always reads live transcript data, so the subscription must be
+  // unconditional. Gating it on an `enabled` flag produced a snapshot that was
+  // fresh on read but never notified: the body kept whatever it had painted at
+  // the last unrelated re-render while sibling always-on readers (session
+  // status) kept animating, which reads as "working, but my message vanished".
   const subscribe = useCallback((notify: () => void) => {
-    if (!sessionID || options?.enabled === false) return () => undefined
+    if (!sessionID) return () => undefined
     // Observe-path ensure for reconnect-stale inactive sessions (batch 1A).
     scheduleEnsureTranscriptOnObserve(targetDirectory, sessionID)
     let repoUnsub = (() => {
@@ -3684,7 +3689,7 @@ export function useSessionMessageRecords(
       repoUnsub()
       unsubStore()
     }
-  }, [options?.enabled, sessionID, store, targetDirectory])
+  }, [sessionID, store, targetDirectory])
 
   return React.useSyncExternalStore(subscribe, getSnapshot, getSnapshot)
 }

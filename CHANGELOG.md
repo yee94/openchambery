@@ -4,6 +4,11 @@ All notable changes to this project will be documented in this file.
 
 ## [Unreleased]
 
+## [1.16.134-beta.1] - 2026-08-15
+
+- **Frozen transcript:** the message body and the session status line are separate subscriptions, so the body could stop updating while the header kept showing activity — a just-sent message and the reply that followed it would never appear. The body now always subscribes, and the option that could silence it has been removed outright.
+- **Transcript self-heal:** if a session still reports work while the visible transcript has not moved at all for 20 seconds and no local stream is running, the client refetches the authoritative tail on its own. A failed refetch keeps the messages already on screen, and the case is logged so the underlying cause can be traced.
+
 ## [1.16.133] - 2026-08-15
 
 - **Sync messages:** desktop session right-click and the mobile overflow Refresh force an authoritative OpenCode tail. Success replaces the visible transcript; failure keeps the previous messages. Refresh is disabled only when the live session is actually busy or retrying.
