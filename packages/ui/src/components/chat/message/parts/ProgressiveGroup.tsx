@@ -11,8 +11,11 @@ import { FileTypeIcon } from '@/components/icons/FileTypeIcon';
 import { Text } from '@/components/ui/text';
 import { Icon } from "@/components/icon/Icon";
 import { getToolIcon } from './toolPresentation';
-import { getToolMetadata } from '@/lib/toolHelpers';
-import { isExpandableTool, isStandaloneTool, isStaticTool } from './toolRenderUtils';
+import { resolveToolDisplayName } from '@/lib/toolHelpers';
+import { ContextToolGroup } from './ContextToolGroup';
+import { collectConsecutiveContextTools, hasContextExploreSuccessor } from './contextToolGrouping';
+import { LatticeOrb } from './LatticeOrb';
+import { isContextGroupTool, isExpandableTool, isStandaloneTool, isStaticTool } from './toolRenderUtils';
 import { RuntimeAPIContext } from '@/contexts/runtimeAPIContext';
 import { useDirectoryStore } from '@/stores/useDirectoryStore';
 import { useUIStore } from '@/stores/useUIStore';
@@ -369,6 +372,7 @@ const getToolShortDescription = (activity: TurnActivityPart): string | null => {
 type AggregatedRow =
     | { type: 'tool-expandable'; activity: TurnActivityPart }
     | { type: 'tool-static-group'; toolName: string; activities: TurnActivityPart[] }
+    | { type: 'tool-context-group'; activities: TurnActivityPart[]; hasFollowingOtherType: boolean }
     | { type: 'reasoning'; activity: TurnActivityPart }
     | { type: 'justification'; activity: TurnActivityPart }
     | { type: 'tool-fallback'; activity: TurnActivityPart };
@@ -507,6 +511,23 @@ const aggregateRows = (parts: TurnActivityPart[]): AggregatedRow[] => {
         const toolPart = activity.part as ToolPartType;
         const toolName = toolPart.tool?.toLowerCase() ?? '';
 
+        if (isContextGroupTool(toolName)) {
+            const grouped = collectConsecutiveContextTools(parts, i, (item) => {
+                const tool = item.part as ToolPartType;
+                return tool.tool;
+            });
+            rows.push({
+                type: 'tool-context-group',
+                activities: grouped.items,
+                hasFollowingOtherType: hasContextExploreSuccessor(parts, grouped.end, (item) => ({
+                    kind: item.kind,
+                    toolName: (item.part as ToolPartType).tool,
+                })),
+            });
+            i = grouped.end;
+            continue;
+        }
+
         if (isStandaloneTool(toolName)) {
             rows.push({ type: 'tool-expandable', activity });
             i++;
@@ -572,8 +593,9 @@ const StaticToolRowInner: React.FC<{
     activities: TurnActivityPart[];
     animateTailText: boolean;
 }> = ({ toolName, activities, animateTailText }) => {
+    const { t } = useI18n();
     const showToolFileIcons = useUIStore((state) => state.showToolFileIcons);
-    const displayName = getToolMetadata(toolName).displayName;
+    const displayName = resolveToolDisplayName(toolName, t);
     const icon = getToolIcon(toolName);
     const isReadGroup = toolName.toLowerCase() === 'read';
     const runtime = React.useContext(RuntimeAPIContext);
@@ -1066,6 +1088,29 @@ const ProgressiveGroup: React.FC<ProgressiveGroupProps> = ({
                     />
                 );
 
+            case 'tool-context-group':
+                return (
+                    <ContextToolGroup
+                        key={row.activities[0]?.id ?? `context-${index}`}
+                        activities={row.activities}
+                        isMobile={isMobile}
+                        isTurnLive={isActive}
+                        hasFollowingOtherType={row.hasFollowingOtherType}
+                    >
+                        {row.activities.map((activity) => {
+                            const groupedTool = activity.part as ToolPartType;
+                            return (
+                                <StaticToolRow
+                                    key={activity.id}
+                                    toolName={groupedTool.tool?.toLowerCase() ?? ''}
+                                    activities={[activity]}
+                                    animateTailText={false}
+                                />
+                            );
+                        })}
+                    </ContextToolGroup>
+                );
+
             case 'tool-fallback':
                 return (
                     <MemoExpandableToolRow
@@ -1121,11 +1166,18 @@ const ProgressiveGroup: React.FC<ProgressiveGroupProps> = ({
                         <span
                             className={cn(
                                 'inline-flex flex-shrink-0 items-center',
-                                isMobile ? 'h-4' : 'h-5',
+                                isMobile ? 'h-5' : 'h-6',
                             )}
                             style={{ color: 'var(--tools-icon)' }}
                         >
-                            <Icon name={activityIconName} className={isMobile ? 'size-3' : 'size-3.5'} />
+                            {isActive && !isCompaction ? (
+                                <LatticeOrb
+                                    size={isMobile ? 16 : 18}
+                                    label={activityStatusLabel}
+                                />
+                            ) : (
+                                <Icon name={activityIconName} className="h-[14px] w-[14px]" />
+                            )}
                         </span>
                         <span className={cn(
                             'inline-flex flex-shrink-0 items-center',

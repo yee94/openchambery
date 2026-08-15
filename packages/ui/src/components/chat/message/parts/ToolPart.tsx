@@ -5,7 +5,7 @@ import { RuntimeAPIContext } from '@/contexts/runtimeAPIContext';
 import { PatchDiff } from '@pierre/diffs/react';
 import { cn } from '@/lib/utils';
 import { SimpleMarkdownRenderer } from '../../MarkdownRenderer';
-import { getToolMetadata } from '@/lib/toolHelpers';
+import { resolveToolDisplayName } from '@/lib/toolHelpers';
 import type { ToolPart as ToolPartType, ToolState as ToolStateUnion } from '@opencode-ai/sdk/v2';
 import { toolDisplayStyles } from '@/lib/typography';
 import { WorkerHighlightedCode } from '@/components/code/WorkerHighlightedCode';
@@ -1049,12 +1049,13 @@ const TaskSummaryEntryRow = React.memo(({
     animateTailText: boolean;
     showToolFileIcons: boolean;
 }) => {
+    const { t } = useI18n();
     const normalizedToolName = normalizeToolName(entry.tool);
     const toolName = normalizedToolName.length > 0 ? normalizedToolName : 'tool';
     const label = getTaskSummaryLabel(entry);
     const hasLabel = label.trim().length > 0;
     const status = entry.state?.status;
-    const displayName = getToolMetadata(toolName).displayName;
+    const displayName = resolveToolDisplayName(toolName, t);
 
     return (
         <div className={cn('flex gap-1.5 min-w-0 w-full py-px', isMobile ? 'items-start' : 'items-center')}>
@@ -1884,6 +1885,7 @@ const ToolPartContent: React.FC<ToolPartProps> = ({
     const openContextDiff = useUIStore((s) => s.openContextDiff);
     const openContextToolDiff = useUIStore((s) => s.openContextToolDiff);
     const navigateToDiff = useUIStore((s) => s.navigateToDiff);
+    const { t } = useI18n();
     const effectiveDirectory = useEffectiveDirectory();
     const setCurrentSession = useSessionUIStore((s) => s.setCurrentSession);
     const mobileActions = useMobileAppActions();
@@ -2180,7 +2182,7 @@ const ToolPartContent: React.FC<ToolPartProps> = ({
     const normalizedPart = normalizedPartTool !== part.tool ? ({ ...part, tool: normalizedPartTool } as ToolPartType) : part;
     const descriptionPath = getToolDescriptionPath(normalizedPart, state, currentDirectory);
     const description = getToolDescription(normalizedPart, state, currentDirectory);
-    const displayName = getToolMetadata(normalizedPartTool || part.tool).displayName;
+    const displayName = resolveToolDisplayName(normalizedPartTool || part.tool, t);
     // Task 工具：用子 Agent 昵称替换通用 “Agent Task” 文案
     const taskAgentName = isTaskTool ? resolveTaskAgentName(input) : undefined;
     const taskTitle = taskAgentName ? formatAgentDisplayName(taskAgentName) : displayName;
@@ -2739,7 +2741,7 @@ const ToolPart: React.FC<ToolPartProps> = (props) => {
     const { t } = useI18n();
     const deferHydration = useDeferredToolHydration();
     const toolName = normalizeToolName(props.part.tool) || 'tool';
-    const displayName = getToolMetadata(toolName).displayName;
+    const displayName = resolveToolDisplayName(toolName, t);
     const [isHydrated, setIsHydrated] = React.useState(() => (
         !deferHydration || hydratedHistoricalToolIds.get(props.part.id) === true
     ));

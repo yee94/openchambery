@@ -5,6 +5,8 @@ const STATIC_TOOL_NAMES = new Set<string>(['read', 'skill']);
 
 const STANDALONE_TOOL_NAMES = new Set<string>(['task']);
 
+const CONTEXT_GROUP_TOOL_NAMES = new Set<string>(['read', 'glob', 'grep', 'list']);
+
 const normalizeToolName = (toolName: unknown): string => {
     if (typeof toolName !== 'string') return '';
     const trimmed = toolName.trim().toLowerCase();
@@ -29,3 +31,9 @@ export const isStandaloneTool = (toolName: unknown): boolean => {
 export const isStaticTool = (toolName: unknown): boolean => {
     return STATIC_TOOL_NAMES.has(normalizeToolName(toolName));
 };
+
+export const isContextGroupTool = (toolName: unknown): boolean => {
+    return CONTEXT_GROUP_TOOL_NAMES.has(normalizeToolName(toolName));
+};
+
+export const normalizeContextToolName = normalizeToolName;

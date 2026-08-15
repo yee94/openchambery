@@ -1,6 +1,6 @@
 import { describe, expect, test } from 'bun:test';
 
-import { isExpandableTool, isStaticTool } from './toolRenderUtils';
+import { isContextGroupTool, isExpandableTool, isStaticTool } from './toolRenderUtils';
 
 describe('tool rendering classification', () => {
     test('keeps navigation tools compact', () => {
@@ -26,5 +26,16 @@ describe('tool rendering classification', () => {
     test('normalizes dotted and indexed tool names', () => {
         expect(isStaticTool('runtime.read:2')).toBe(true);
         expect(isExpandableTool('runtime.custom_tool:2')).toBe(true);
+        expect(isContextGroupTool('runtime.grep:3')).toBe(true);
+    });
+
+    test('marks consecutive exploration tools as context-group members', () => {
+        expect(isContextGroupTool('read')).toBe(true);
+        expect(isContextGroupTool('glob')).toBe(true);
+        expect(isContextGroupTool('grep')).toBe(true);
+        expect(isContextGroupTool('list')).toBe(true);
+        expect(isContextGroupTool('skill')).toBe(false);
+        expect(isContextGroupTool('bash')).toBe(false);
+        expect(isContextGroupTool('edit')).toBe(false);
     });
 });

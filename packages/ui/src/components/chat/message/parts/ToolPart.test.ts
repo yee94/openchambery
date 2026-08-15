@@ -25,6 +25,15 @@ const mobileChangesSurfaceSource = readFileSync(join(__dirname, '../../../../app
 const diffViewSource = readFileSync(join(__dirname, '../../../views/DiffView.tsx'), 'utf-8');
 const contextPanelSource = readFileSync(join(__dirname, '../../../layout/ContextPanel.tsx'), 'utf-8');
 const progressiveGroupSource = readFileSync(join(__dirname, 'ProgressiveGroup.tsx'), 'utf-8');
+const toolPresentationSource = readFileSync(join(__dirname, 'toolPresentation.tsx'), 'utf-8');
+
+describe('editing tool icon size', () => {
+    test('keeps edit and write icons slightly smaller than the 14px tool row slot', () => {
+        expect(toolPresentationSource).toContain("const editIconClass = 'h-[13px] w-[13px] flex-shrink-0'");
+        expect(toolPresentationSource).toContain('<Icon name="pencil" className={editIconClass} />');
+        expect(toolPresentationSource).toContain('<Icon name="file-edit" className={editIconClass} />');
+    });
+});
 
 describe('mobile press feedback', () => {
     test('tool rows opt into soft press so full-width subagent/tool rows never use compact scale', () => {
