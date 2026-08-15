@@ -19,21 +19,13 @@ const TOOL_ROW_TEXT_CLASS = '!text-[length:var(--text-meta)] !leading-5 sm:!lead
 export const ContextToolGroup: React.FC<{
     activities: TurnActivityPart[];
     isMobile: boolean;
-    /** 本轮仍在进行时，后面没出现其他类型内容也保持探索中。 */
-    isTurnLive?: boolean;
-    /** 本组之后是否已出现正文 / 非 context 工具。 */
-    hasFollowingOtherType?: boolean;
     children?: React.ReactNode;
-}> = ({ activities, isMobile, isTurnLive = false, hasFollowingOtherType = false, children }) => {
+}> = ({ activities, isMobile, children }) => {
     const { t } = useI18n();
     const [isExpanded, setIsExpanded] = React.useState(false);
     const contentId = React.useId();
     const toolParts = activities.map((activity) => activity.part as ToolPartType);
-    const isActive = isContextGroupExploring({
-        statuses: toolParts.map((part) => part.state?.status),
-        hasFollowingOtherType,
-        isTurnLive,
-    });
+    const isActive = isContextGroupExploring(toolParts);
     const counts = summarizeContextTools(toolParts.map((part) => part.tool));
     const summary = CONTEXT_TOOL_COUNT_ORDER
         .filter((key) => counts[key] > 0)
@@ -76,7 +68,7 @@ export const ContextToolGroup: React.FC<{
                 aria-controls={contentId}
                 aria-label={ariaLabel}
                 data-mobile-press-feedback="soft"
-                className={cn('flex min-w-0 items-center gap-1.5', TOOL_ROW_INTERACTIVE_CHROME_CLASS)}
+                className={cn('flex w-full min-w-0 items-center gap-1.5', TOOL_ROW_INTERACTIVE_CHROME_CLASS)}
                 onClick={handleToggle}
                 onKeyDown={handleKeyDown}
             >
@@ -87,7 +79,7 @@ export const ContextToolGroup: React.FC<{
                     {isActive ? (
                         <LatticeOrb size={14} label={t('chat.contextGroup.exploring')} />
                     ) : (
-                        <Icon name={isExpanded ? 'arrow-down-s' : 'search'} className="h-[13px] w-[13px]" />
+                        <Icon name="search" className="h-[13px] w-[13px]" />
                     )}
                 </span>
                 <span
@@ -111,6 +103,10 @@ export const ContextToolGroup: React.FC<{
                         <FlipUpText text={summary} active={isActive} />
                     </span>
                 ) : null}
+                <Icon
+                    name={isExpanded ? 'arrow-down-s' : 'arrow-right-s'}
+                    className="ml-auto size-3.5 flex-none text-muted-foreground opacity-70"
+                />
             </div>
 
             {isExpanded && children ? (

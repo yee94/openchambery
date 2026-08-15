@@ -55,38 +55,34 @@ describe('ContextToolGroup', () => {
         expect(markup).toContain('1 search, 3 reads');
     });
 
-    test('keeps exploring on a live turn after tools complete', () => {
+    test('settles as soon as every grouped call settles', () => {
         const activities = [
             contextActivity('grep-1', 'grep', 'completed'),
             contextActivity('read-1', 'read', 'completed'),
         ];
         const markup = renderToStaticMarkup(
             <I18nProvider>
-                <ContextToolGroup activities={activities} isMobile={false} isTurnLive />
+                <ContextToolGroup activities={activities} isMobile={false} />
+            </I18nProvider>,
+        );
+
+        expect(markup).toContain('Explored');
+        expect(markup).toContain('#oc-search');
+        expect(markup).not.toContain('oc-lattice-orb-dot');
+    });
+
+    test('keeps the group active while any member lacks settlement evidence', () => {
+        const activities = [
+            contextActivity('grep-1', 'grep', 'completed'),
+            contextActivity('read-1', 'read', 'unknown'),
+        ];
+        const markup = renderToStaticMarkup(
+            <I18nProvider>
+                <ContextToolGroup activities={activities} isMobile={false} />
             </I18nProvider>,
         );
 
         expect(markup).toContain('Exploring');
         expect(markup).toContain('oc-lattice-orb-dot');
-    });
-
-    test('settles once a later non-explore part exists', () => {
-        const activities = [
-            contextActivity('grep-1', 'grep', 'completed'),
-            contextActivity('read-1', 'read', 'completed'),
-        ];
-        const markup = renderToStaticMarkup(
-            <I18nProvider>
-                <ContextToolGroup
-                    activities={activities}
-                    isMobile={false}
-                    isTurnLive
-                    hasFollowingOtherType
-                />
-            </I18nProvider>,
-        );
-
-        expect(markup).toContain('Explored');
-        expect(markup).not.toContain('Exploring');
     });
 });

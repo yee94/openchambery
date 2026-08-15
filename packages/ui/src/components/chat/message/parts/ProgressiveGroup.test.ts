@@ -25,8 +25,6 @@ describe('progressive activity presentation', () => {
         expect(progressiveGroupSource).toContain('if (isContextGroupTool(toolName))');
         expect(progressiveGroupSource).toContain('collectConsecutiveContextTools');
         expect(progressiveGroupSource).toContain("type: 'tool-context-group'");
-        expect(progressiveGroupSource).toContain('hasFollowingOtherType: hasContextExploreSuccessor');
-        expect(progressiveGroupSource).toContain('isTurnLive={isActive}');
         expect(progressiveGroupSource).toContain('case \'tool-context-group\':');
         expect(progressiveGroupSource).toContain('<ContextToolGroup');
         // MessageBody flat path mirrors the same grouping
@@ -54,6 +52,19 @@ describe('progressive activity presentation', () => {
         expect(progressiveGroupSource).toContain('LatticeOrb');
         expect(progressiveGroupSource).toContain('isActive && !isCompaction');
         expect(progressiveGroupSource).toContain("activityIconName = isCompaction ? 'fold-vertical' : 'stack'");
+    });
+
+    test('static tool rows use the shared lifecycle and restore their mapped icon after settlement', () => {
+        expect(progressiveGroupSource).toContain('const isActive = primaryActivity ? isToolPartActive(primaryActivity.part) : true;');
+        expect(progressiveGroupSource).toContain("t('chat.assistantStatus.usingTool', { tool: displayName })");
+        expect(progressiveGroupSource).toContain(') : icon}');
+        expect(progressiveGroupSource).toContain('inline-flex size-3.5 items-center justify-center flex-shrink-0');
+    });
+
+    test('keeps lifecycle-unknown tool parts visible from their first frame', () => {
+        expect(messageBodySource).toContain('const isActiveTool = isToolPartActive;');
+        expect(messageBodySource).toContain('const isToolFinalized = isToolPartSettled;');
+        expect(messageBodySource).not.toContain('shouldShowTool');
     });
 
     test('localizes every activity state and exposes its expanded state', () => {
@@ -91,8 +102,8 @@ describe('progressive activity presentation', () => {
         expect(simplifiedChinese).toContain("'chat.activity.collapseAria': '收起处理详情'");
         expect(simplifiedChinese).toContain("'chat.activity.completed': '已处理 {duration}'");
         expect(simplifiedChinese).toContain("'chat.activity.completedStatus': '已处理'");
-        expect(simplifiedChinese).toContain("'chat.activity.agentsWorking': '{count} 个智能体处理中'");
-        expect(simplifiedChinese).toContain("'chat.activity.agentsInvolved': '{count} 个智能体参与'");
+        expect(simplifiedChinese).toContain("'chat.activity.agentsWorking': '{count} 个 Agent 处理中'");
+        expect(simplifiedChinese).toContain("'chat.activity.agentsInvolved': '{count} 个 Agent 参与'");
         expect(simplifiedChinese).toContain("'chat.contextGroup.explored': '探索'");
         expect(simplifiedChinese).toContain("'chat.contextGroup.listPlural': '{count} 次列举'");
         expect(traditionalChinese).toContain("'chat.activity.title': '處理詳情'");

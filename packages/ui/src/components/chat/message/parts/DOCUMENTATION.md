@@ -33,11 +33,13 @@ Use this doc when you ask an agent to change tool/header/description behavior.
     one-frame disposition flap unmounted every nested row. Structural stability against
     regressing store frames belongs to `@/sync/displayParts`, not to this component.
   - If you want to change how individual `read`/`skill` compact rows look inside or outside a group, edit `StaticToolRow` here.
+  - Every visible static call uses the shared tool lifecycle: a 14px `LatticeOrb` stays in the fixed leading slot until status or valid end timing proves settlement, then the mapped tool icon returns. Expanded context-group children use this same row.
 
 - `ContextToolGroup.tsx`
   - Collapsible "Exploring" / "Explored" header for consecutive context tools.
   - Receives `children` for the expanded list (do not import `StaticToolRow` here — that would cycle with `ProgressiveGroup`).
-  - Active state uses S1 `LatticeOrb` (same orb as streaming Thought in `ReasoningPart`).
+  - Active state uses the 14px S1 `LatticeOrb` (same orb as streaming Thought in `ReasoningPart`) while any grouped call lacks settlement evidence. The grouped-call lifecycle exclusively determines this state.
+  - The fixed leading slot restores the Search icon after every grouped call settles; the disclosure chevron stays in the trailing slot across activity states.
   - While Exploring, the whole count summary flips upward when the counts change.
 
 - `contextToolGrouping.ts`
@@ -55,11 +57,8 @@ Use this doc when you ask an agent to change tool/header/description behavior.
 - `ToolPart.tsx`
   - Renders expandable tool rows (bash/edit/write/question/task + fallback).
   - Controls expandable header title/description/diff stats/timer and expanded output body.
-  - Task tools (`task`) show `AgentAvatar` + subagent nickname (`input.subagent_type`) in the
-    leading icon column (same slot as the expand chevron). Idle = avatar; hover = chevron only when
-    Settings → Visual → "Show Sub-agent Work Details" (`showSubagentTaskDetails`) is on.
-  - Shell tools (`bash` / `shell` / `cmd` / `terminal`) show the shared 14px `LatticeOrb` while
-    active and restore the mapped `terminal-box` icon after settling.
+  - Every visible expandable call shows the shared 14px `LatticeOrb` in a fixed leading slot while active and restores its mapped icon after settling. Task restores `AgentAvatar` + subagent nickname (`input.subagent_type`).
+  - Expandable rows keep their chevron in the trailing slot, so hover and expansion preserve the lifecycle indicator. Task shows that chevron when Settings → Visual → "Show Sub-agent Work Details" (`showSubagentTaskDetails`) is on.
   - That setting defaults **off**: no vertical task-summary rail. Clicking the compact row always
     opens the sub-agent session (context panel / mobile session switch), including while the task
     is still loading — if the child session id is delayed, the click is queued until it arrives.
@@ -104,6 +103,7 @@ Use this doc when you ask an agent to change tool/header/description behavior.
     - `isStaticTool`
     - `isStandaloneTool`
     - `isContextGroupTool` (`read` / `glob` / `grep` / `list`)
+    - `isToolPartActive` / `isToolPartSettled` lifecycle evidence shared by flat rendering, static rows, context groups, and expandable rows
   - If a tool should switch between static vs expandable, or join Explored grouping, change it here.
 
 - `ReasoningPart.tsx`
@@ -117,6 +117,7 @@ Use this doc when you ask an agent to change tool/header/description behavior.
 ## Current important behavior
 
 - `read` is both a **static navigation tool** (`StaticToolRow`) and a **context-group member**. Consecutive `read` / `glob` / `grep` / `list` collapse into one `ContextToolGroup` ("Exploring" while any call is active, otherwise "Explored" plus search/read/list counts). Expanded children are one `StaticToolRow` per call. Grouping is client-side on `part.tool` names — not an OpenCode API v1/v2 feature. Logic lives in `contextToolGrouping.ts` + `isContextGroupTool`; both Activity (`ProgressiveGroup.aggregateRows`) and the flat `MessageBody` loop apply it. In sorted mode those rows live inside Activity and collapse with the Processed disclosure.
+- A visible tool part stays in loading presentation until an explicit terminal status or valid end timing proves settlement. `completed`, `error`, `failed`, `timeout`, `cancelled`, and `aborted` restore the tool identity; `pending`, `started`, and `running` keep the 14px orb even when timing fields arrive early. Flat `MessageBody` rendering keeps lifecycle-unknown tool parts visible so this contract starts with the call row itself.
 - `skill` stays a **single** `StaticToolRow` (one call per row). It is not a context-group tool and must not join Explored collapse.
 - For `read` / `skill` rows, the whole row is the hit target (same as Edit/Write). On dedicated mobile, clicks call `mobileActions.openFile` and open the same gesture `MobileResizableSheet` used by direct Edit/Write diffs (phone) or the right Files panel (iPad); desktop still uses context-panel `openContextFile`.
 - Do **not** revive multi-target chip merge (`+N` hidden targets on one static row). Non-context static tools stay one call per row; only context tools share an Explored header.

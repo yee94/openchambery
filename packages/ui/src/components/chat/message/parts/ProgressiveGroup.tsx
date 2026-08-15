@@ -13,9 +13,9 @@ import { Icon } from "@/components/icon/Icon";
 import { getToolIcon } from './toolPresentation';
 import { resolveToolDisplayName } from '@/lib/toolHelpers';
 import { ContextToolGroup } from './ContextToolGroup';
-import { collectConsecutiveContextTools, hasContextExploreSuccessor } from './contextToolGrouping';
+import { collectConsecutiveContextTools } from './contextToolGrouping';
 import { LatticeOrb } from './LatticeOrb';
-import { isContextGroupTool, isExpandableTool, isStandaloneTool, isStaticTool } from './toolRenderUtils';
+import { isContextGroupTool, isExpandableTool, isStandaloneTool, isStaticTool, isToolPartActive } from './toolRenderUtils';
 import { RuntimeAPIContext } from '@/contexts/runtimeAPIContext';
 import { useDirectoryStore } from '@/stores/useDirectoryStore';
 import { useUIStore } from '@/stores/useUIStore';
@@ -372,7 +372,7 @@ const getToolShortDescription = (activity: TurnActivityPart): string | null => {
 type AggregatedRow =
     | { type: 'tool-expandable'; activity: TurnActivityPart }
     | { type: 'tool-static-group'; toolName: string; activities: TurnActivityPart[] }
-    | { type: 'tool-context-group'; activities: TurnActivityPart[]; hasFollowingOtherType: boolean }
+    | { type: 'tool-context-group'; activities: TurnActivityPart[] }
     | { type: 'reasoning'; activity: TurnActivityPart }
     | { type: 'justification'; activity: TurnActivityPart }
     | { type: 'tool-fallback'; activity: TurnActivityPart };
@@ -519,10 +519,6 @@ const aggregateRows = (parts: TurnActivityPart[]): AggregatedRow[] => {
             rows.push({
                 type: 'tool-context-group',
                 activities: grouped.items,
-                hasFollowingOtherType: hasContextExploreSuccessor(parts, grouped.end, (item) => ({
-                    kind: item.kind,
-                    toolName: (item.part as ToolPartType).tool,
-                })),
             });
             i = grouped.end;
             continue;
@@ -611,6 +607,7 @@ const StaticToolRowInner: React.FC<{
 
     // Rows are one call each; still accept a list so callers can pass a single activity.
     const primaryActivity = activities[0] ?? null;
+    const isActive = primaryActivity ? isToolPartActive(primaryActivity.part) : true;
     const description = primaryActivity ? getToolShortDescription(primaryActivity) : null;
 
     const skillEntry = React.useMemo(() => {
@@ -766,8 +763,13 @@ const StaticToolRowInner: React.FC<{
             tabIndex={isWholeRowNav && canActivateWholeRowNav ? 0 : undefined}
             aria-disabled={isWholeRowNav && !canActivateWholeRowNav ? true : undefined}
         >
-            <div className="inline-flex h-5 items-center flex-shrink-0" style={{ color: 'var(--tools-icon)' }}>
-                {icon}
+            <div className="inline-flex size-3.5 items-center justify-center flex-shrink-0" style={{ color: 'var(--tools-icon)' }}>
+                {isActive ? (
+                    <LatticeOrb
+                        size={14}
+                        label={t('chat.assistantStatus.usingTool', { tool: displayName })}
+                    />
+                ) : icon}
             </div>
             <span
                 className={cn(TOOL_ROW_TITLE_CLASS, 'inline-flex items-center flex-shrink-0 opacity-85')}
@@ -1094,8 +1096,6 @@ const ProgressiveGroup: React.FC<ProgressiveGroupProps> = ({
                         key={row.activities[0]?.id ?? `context-${index}`}
                         activities={row.activities}
                         isMobile={isMobile}
-                        isTurnLive={isActive}
-                        hasFollowingOtherType={row.hasFollowingOtherType}
                     >
                         {row.activities.map((activity) => {
                             const groupedTool = activity.part as ToolPartType;

@@ -34,11 +34,12 @@ describe('context tool grouping', () => {
     });
 
     test('treats pending, running, and started tools as active', () => {
-        expect(isContextToolActive('pending')).toBe(true);
-        expect(isContextToolActive('running')).toBe(true);
-        expect(isContextToolActive('started')).toBe(true);
-        expect(isContextToolActive('completed')).toBe(false);
-        expect(isContextToolActive('error')).toBe(false);
+        expect(isContextToolActive({ state: { status: 'pending' } })).toBe(true);
+        expect(isContextToolActive({ state: { status: 'running' } })).toBe(true);
+        expect(isContextToolActive({ state: { status: 'started' } })).toBe(true);
+        expect(isContextToolActive({ state: { status: 'completed' } })).toBe(false);
+        expect(isContextToolActive({ state: { status: 'error' } })).toBe(false);
+        expect(isContextToolActive({ state: { status: 'cancelled' } })).toBe(false);
     });
 
     test('keeps exploring until a later non-explore part appears', () => {
@@ -55,25 +56,13 @@ describe('context tool grouping', () => {
         expect(hasContextExploreSuccessor(timeline, 1, (item) => item)).toBe(true);
         expect(hasContextExploreSuccessor(timeline.slice(0, 2), 1, (item) => item)).toBe(false);
 
-        expect(isContextGroupExploring({
-            statuses: ['completed', 'completed'],
-            hasFollowingOtherType: false,
-            isTurnLive: true,
-        })).toBe(true);
-        expect(isContextGroupExploring({
-            statuses: ['completed', 'completed'],
-            hasFollowingOtherType: true,
-            isTurnLive: true,
-        })).toBe(false);
-        expect(isContextGroupExploring({
-            statuses: ['completed'],
-            hasFollowingOtherType: false,
-            isTurnLive: false,
-        })).toBe(false);
-        expect(isContextGroupExploring({
-            statuses: ['running'],
-            hasFollowingOtherType: true,
-            isTurnLive: false,
-        })).toBe(true);
+        expect(isContextGroupExploring([
+            { state: { status: 'completed' } },
+            { state: { status: 'completed' } },
+        ])).toBe(false);
+        expect(isContextGroupExploring([
+            { state: { status: 'completed' } },
+            { state: { status: 'running' } },
+        ])).toBe(true);
     });
 });

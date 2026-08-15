@@ -80,23 +80,28 @@ describe('tool busy title chrome', () => {
         expect(toolPartSource).toContain("normalizedPartTool === 'bash' && typeof effectiveTimeStart === 'number'");
     });
 
-    test('active shell rows use the shared loading orb and settled rows keep the terminal icon', () => {
+    test('every active expandable tool uses the shared loading orb and settled rows restore identity', () => {
         expect(toolPartSource).toContain("import { LatticeOrb } from './LatticeOrb';");
-        expect(toolPartSource).toContain("const SHELL_TOOL_NAMES = new Set(['bash', 'shell', 'cmd', 'terminal']);");
-        expect(toolPartSource).toContain('const shellBusy = Boolean(isShellTool && effectiveActive);');
-        expect(toolPartSource).toContain(') : shellBusy ? (\n                                <LatticeOrb');
-        expect(toolPartSource).toContain("label={t('chat.assistantStatus.runningCommand')}");
+        expect(toolPartSource).toContain('const isFinalized = isToolPartSettled(part);');
+        expect(toolPartSource).toContain('{effectiveActive ? (');
+        expect(toolPartSource).toContain("label={t('chat.assistantStatus.usingTool', { tool: taskTitle })}");
         expect(toolPartSource).toContain('getToolIcon(normalizedPartTool || part.tool)');
     });
 
-    test('task rows keep the agent avatar across activity states', () => {
-        const taskIconBranch = toolPartSource.slice(
-            toolPartSource.indexOf('{isTaskTool ? (', toolPartSource.indexOf('style={isTaskTool ? undefined : iconStyle}')),
-            toolPartSource.indexOf(') : shellBusy ? (', toolPartSource.indexOf('style={isTaskTool ? undefined : iconStyle}')),
+    test('task rows load with the orb and restore the agent avatar after settlement', () => {
+        const lifecycleBranch = toolPartSource.slice(
+            toolPartSource.indexOf('{effectiveActive ? ('),
+            toolPartSource.indexOf('getToolIcon(normalizedPartTool || part.tool)'),
         );
+        expect(lifecycleBranch).toContain('<LatticeOrb');
+        expect(lifecycleBranch).toContain(') : isTaskTool ? (');
+        expect(lifecycleBranch).toContain('<AgentAvatar');
+    });
 
-        expect(taskIconBranch).toContain('<AgentAvatar');
-        expect(taskIconBranch).not.toContain('<LatticeOrb');
+    test('keeps lifecycle identity in the fixed leading slot and moves disclosure to the trailing edge', () => {
+        expect(toolPartSource).toContain('className="relative size-3.5 flex-shrink-0"');
+        expect(toolPartSource).toContain('className="ml-auto inline-flex size-3.5 flex-shrink-0 items-center justify-center');
+        expect(toolPartSource).not.toContain('group-hover/tool:opacity-0');
     });
 });
 

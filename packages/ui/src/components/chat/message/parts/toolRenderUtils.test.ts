@@ -1,6 +1,12 @@
 import { describe, expect, test } from 'bun:test';
 
-import { isContextGroupTool, isExpandableTool, isStaticTool } from './toolRenderUtils';
+import {
+    isContextGroupTool,
+    isExpandableTool,
+    isStaticTool,
+    isToolPartActive,
+    isToolPartSettled,
+} from './toolRenderUtils';
 
 describe('tool rendering classification', () => {
     test('keeps navigation tools compact', () => {
@@ -37,5 +43,21 @@ describe('tool rendering classification', () => {
         expect(isContextGroupTool('skill')).toBe(false);
         expect(isContextGroupTool('bash')).toBe(false);
         expect(isContextGroupTool('edit')).toBe(false);
+    });
+
+    test('keeps visible calls active until status or timing proves settlement', () => {
+        expect(isToolPartActive({ state: undefined })).toBe(true);
+        expect(isToolPartActive({ state: { status: 'pending' } })).toBe(true);
+        expect(isToolPartActive({ state: { status: 'started' } })).toBe(true);
+        expect(isToolPartActive({ state: { status: 'running', time: { start: 10, end: 20 } } })).toBe(true);
+        expect(isToolPartActive({ state: { status: 'unknown' } })).toBe(true);
+    });
+
+    test('settles completed, failed, cancelled, and end-timed calls', () => {
+        for (const status of ['completed', 'error', 'failed', 'aborted', 'timeout', 'cancelled']) {
+            expect(isToolPartSettled({ state: { status } })).toBe(true);
+        }
+        expect(isToolPartSettled({ state: { status: 'unknown', time: { start: 10, end: 20 } } })).toBe(true);
+        expect(isToolPartSettled({ state: { status: 'unknown', time: { start: 20, end: 10 } } })).toBe(false);
     });
 });

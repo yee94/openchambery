@@ -4,6 +4,11 @@ All notable changes to this project will be documented in this file.
 
 ## [Unreleased]
 
+## [1.16.134-beta.4] - 2026-08-16
+
+- **Tool loading:** every chat tool shows the shared loading state from first appearance until it settles; settled rows restore their normal icons.
+- **Docs (zh-CN):** refreshed Chinese documentation and sidebar navigation for the included product guides.
+
 ## [1.16.134-beta.3] - 2026-08-16
 
 - **Shell activity:** running shell/terminal tools show the shared loading orb; settled rows restore the terminal icon.

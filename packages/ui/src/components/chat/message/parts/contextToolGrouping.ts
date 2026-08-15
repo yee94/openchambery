@@ -1,4 +1,4 @@
-import { isContextGroupTool, normalizeContextToolName } from './toolRenderUtils';
+import { isContextGroupTool, isToolPartActive, normalizeContextToolName } from './toolRenderUtils';
 
 export type ContextToolCountKey = 'read' | 'search' | 'list';
 
@@ -23,8 +23,8 @@ export function summarizeContextTools(toolNames: readonly unknown[]): ContextToo
     return counts;
 }
 
-export function isContextToolActive(status: unknown): boolean {
-    return status === 'pending' || status === 'running' || status === 'started';
+export function isContextToolActive(part: unknown): boolean {
+    return isToolPartActive(part);
 }
 
 /** 思考轨迹仍算探索过程；正文 / 非 context 工具才结束「探索中」。 */
@@ -58,22 +58,8 @@ export function hasContextExploreSuccessor<T>(
     return false;
 }
 
-/**
- * 组内仍有 running，或本轮还在进行且后面还没出现其他类型内容，都保持探索中。
- * 只看 tool status 会在批次空档误判成「探索」。
- */
-export function isContextGroupExploring(input: {
-    statuses: readonly unknown[];
-    hasFollowingOtherType: boolean;
-    isTurnLive: boolean;
-}): boolean {
-    if (input.statuses.some((status) => isContextToolActive(status))) {
-        return true;
-    }
-    if (input.hasFollowingOtherType) {
-        return false;
-    }
-    return input.isTurnLive;
+export function isContextGroupExploring(parts: readonly unknown[]): boolean {
+    return parts.some((part) => isContextToolActive(part));
 }
 
 export function collectConsecutiveContextTools<T>(
