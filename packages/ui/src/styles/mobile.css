@@ -1936,25 +1936,10 @@ button.oc-mobile-worktree-label-trigger:active,
     transition-duration: 0ms;
   }
 
-  /* Composer: same absolute-ish soft language as wide cards. */
-  :root.mobile-pointer:not(.desktop-runtime)
-    [data-mobile-composer-surface="true"] {
-    -webkit-tap-highlight-color: transparent;
-    touch-action: manipulation;
-    transform-origin: center;
-    transition: scale var(--oc-press-release-duration) var(--oc-press-release-ease);
-  }
-
-  :root.mobile-pointer:not(.desktop-runtime)
-    [data-mobile-composer-surface="true"]:has(textarea:active),
-  :root.mobile-pointer:not(.desktop-runtime)
-    [data-mobile-composer-surface="true"]:has(
-      [data-mobile-composer-trigger="true"]:active
-    ) {
-    scale: var(--oc-press-soft-scale);
-    transition-duration: 0ms;
-  }
-
+  /* Composer surface must not press-scale. Scaling the card (or leaving a
+     CSS `scale` / transform containing block on it) makes a long textarea
+     intermittently unscrollable in WKWebView. Footer buttons still use the
+     generic button press rules above. */
 
   @media (prefers-reduced-motion: reduce) {
     :root.mobile-pointer:not(.desktop-runtime)
@@ -1962,9 +1947,7 @@ button.oc-mobile-worktree-label-trigger:active,
         [aria-disabled="true"]
       ):not([data-mobile-press-feedback="none"]),
     :root.mobile-pointer:not(.desktop-runtime)
-      [data-mobile-press-surface="soft"],
-    :root.mobile-pointer:not(.desktop-runtime)
-      [data-mobile-composer-surface="true"] {
+      [data-mobile-press-surface="soft"] {
       transition: none;
       scale: 1 !important;
     }
@@ -2689,29 +2672,46 @@ button.oc-mobile-worktree-label-trigger:active,
   background: var(--background) !important;
   background-color: var(--background) !important;
   isolation: isolate;
+  overflow: visible;
   box-shadow: none !important;
   filter: none !important;
 }
 
 /* The composer host blends into the transcript through a short page-background
-   fade above the status row while the input card remains fully opaque. */
+   fade above the status row while the input card remains fully opaque.
+   WKWebView drops or muddies color-mix()/transparent stops in overflowing
+   isolated gradients (Android Chromium paints them). Keep a solid page fill
+   and fade only the alpha mask; z-index must stay non-negative so the
+   compositor includes the overflow above the host. */
 .oc-mobile-composer::after,
 .oc-mobile-readonly-prompt-foot::after {
   content: "";
   position: absolute;
-  z-index: -1;
+  z-index: 0;
   right: 0;
   bottom: 100%;
   left: 0;
   height: 2.75rem;
   pointer-events: none;
-  background: linear-gradient(
+  background: var(--background);
+  -webkit-mask-image: linear-gradient(
     to top,
-    var(--background) 0%,
-    color-mix(in srgb, var(--background) 88%, transparent) 38%,
-    color-mix(in srgb, var(--background) 48%, transparent) 72%,
+    #000 0%,
+    rgba(0, 0, 0, 0.88) 38%,
+    rgba(0, 0, 0, 0.48) 72%,
     transparent 100%
   );
+  mask-image: linear-gradient(
+    to top,
+    #000 0%,
+    rgba(0, 0, 0, 0.88) 38%,
+    rgba(0, 0, 0, 0.48) 72%,
+    transparent 100%
+  );
+  -webkit-mask-repeat: no-repeat;
+  mask-repeat: no-repeat;
+  -webkit-mask-size: 100% 100%;
+  mask-size: 100% 100%;
 }
 
 /* Capacitor chat safe-area cover: keep the home-indicator / navigation foot
@@ -2783,21 +2783,10 @@ button.oc-mobile-worktree-label-trigger:active,
 }
 
 .oc-mobile-composer-surface:not(.oc-mobile-composer-collapsed) {
-  animation: oc-mobile-composer-expand 200ms cubic-bezier(0.32, 0.72, 0, 1);
   /* Popovers (CommandAutocomplete etc.) render as absolute children above
-     the card; never clip them after expand. */
+     the card; never clip them after expand. No scale/transform on open —
+     that containing block leaves a long textarea unscrollable on iOS. */
   overflow: visible;
-}
-
-@keyframes oc-mobile-composer-expand {
-  from {
-    opacity: 0.92;
-    transform: scaleY(0.96);
-  }
-  to {
-    opacity: 1;
-    transform: scaleY(1);
-  }
 }
 
 .oc-mobile-composer-surface:not(.oc-mobile-composer-collapsed)
@@ -2828,14 +2817,11 @@ button.oc-mobile-worktree-label-trigger:active,
   /* Match the old pill surface: pl-2 pr-1 so attach is not flush left. */
   padding-left: 0.5rem;
   padding-right: 0.25rem;
-  /* Kill expand keyframes while collapsed so reopen always plays cleanly. */
-  animation: none;
 }
 
 @media (prefers-reduced-motion: reduce) {
   .oc-mobile-composer-surface {
     transition: none;
-    animation: none;
   }
 
   .oc-mobile-composer-surface:not(.oc-mobile-composer-collapsed)
