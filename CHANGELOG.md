@@ -4,6 +4,11 @@ All notable changes to this project will be documented in this file.
 
 ## [Unreleased]
 
+## [1.16.134-beta.19] - 2026-08-16
+
+- **Status bar:** on mobile, the composer status uses the same type size as collapsed Processed activity titles.
+- **Mobile sessions:** worktree sessions now share the project-level indent instead of sitting one extra level deeper.
+
 ## [1.16.134-beta.18] - 2026-08-16
 
 - **Status bar:** while a Task is running, the composer status stays on the stable Chinese copy 正在委派任务 instead of the subagent name.

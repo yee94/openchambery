@@ -103,11 +103,11 @@ type LongPressHandlers = {
   onContextMenu: React.MouseEventHandler<HTMLButtonElement>;
 };
 
-// Left padding for session rows so the title's first letter aligns with its
-// parent label. Root/project-level sessions align with the project label;
-// worktree sessions sit one level deeper. SessionRow adds 16px (dot + gap) on top.
+// Left padding for session rows so the title's first letter aligns with the
+// project label. Worktree sessions share this indent with root sessions
+// instead of receiving an additional nested indent. SessionRow adds 16px
+// (dot + gap) on top.
 const PROJECT_SESSION_INDENT = 36;
-const WORKTREE_SESSION_INDENT = 52;
 // Extra left padding applied to each nested subsession level.
 const CHILD_INDENT_STEP = 18;
 
@@ -1747,7 +1747,7 @@ export const MobileSessionsSheet: React.FC<MobileSessionsSheetProps> = ({ open, 
                                       </span>
                                     </button>
                                     {worktreeExpanded
-                                      ? renderBucketSessions(node, bucket, WORKTREE_SESSION_INDENT)
+                                      ? renderBucketSessions(node, bucket, PROJECT_SESSION_INDENT)
                                       : null}
                                   </div>
                                 );
