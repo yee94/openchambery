@@ -38,7 +38,7 @@ Stable packaged clients must never be offered a beta through auto-update. When r
 - **Must not** point desktop updater feeds, Discord “latest”, or Android “latest APK” at a beta. Desktop Vercel `/desktop/latest*.yml` proxies GitHub `/releases/latest`; Android also uses `/releases/latest`.
 - **Must** leave `autoUpdater.allowPrerelease = false` alone unless the user explicitly requests prerelease auto-update.
 - After pushing a beta tag, if a previous beta was accidentally published as Latest, immediately restore the newest stable release as Latest (`gh release edit vX.Y.Z --latest`) and confirm `release-manifest.json` / Vercel `latest-mac.yml` still show that stable version.
-- Beta still skips iOS/TestFlight (Apple marketing versions cannot include `-beta`).
+- Beta still uploads iOS to Internal TestFlight only. Strip the `-prerelease` suffix for Apple marketing versions (`1.16.134-beta.8` → `1.16.134`). Do not attach beta builds to the existing external TestFlight group or submit Beta App Review.
 
 Constraints:
 

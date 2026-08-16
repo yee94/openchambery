@@ -51,7 +51,7 @@ git push origin main
 git push origin "v$VERSION"
 ```
 
-`release.yml` 在 `v*` tag push 后创建 Draft Release、构建桌面端和移动端、上传产物，再将 Draft Release 发布为正式 Release。Android 流程会生成签名 APK/AAB 并上传到对应 GitHub Release，iOS 流程会上传 IPA 到 TestFlight、等待 Apple 处理完成、关联外测群组并自动提交 Beta App Review。
+`release.yml` 在 `v*` tag push 后创建 Draft Release、构建桌面端和移动端、上传产物，再将 Draft Release 发布为正式 Release。Android 流程会生成签名 APK/AAB 并上传到对应 GitHub Release。iOS 流程会上传 IPA 到 TestFlight：稳定版关联外测群组并提交 Beta App Review；prerelease 只进内测，不走已有外测组。
 
 ### Beta / prerelease
 
@@ -70,7 +70,7 @@ git push origin "v$VERSION"
 2. 依赖 `release.yml`：含 `-` 的版本创建/发布 GitHub Release 时设置 `prerelease: true`，从而**不会**成为 `/releases/latest`。
 3. 依赖 finalize-release **跳过** `deploy/update-service/release-manifest.json` 写入；`write-release-manifest.mjs` 对 prerelease 直接 exit 0。Agent 不得手工把该 manifest 改成 beta 版本并推送。
 4. 保持 Electron `autoUpdater.allowPrerelease = false`（稳定客户端不订阅 prerelease）。
-5. 仍跳过 iOS/TestFlight（Apple marketing version 不能含 `-beta`）。
+5. iOS 仍上传 TestFlight，但只进内测。Apple marketing version 会去掉 `-beta` 后缀（`1.16.134-beta.8` → `1.16.134`）；**禁止**把 prerelease 构建关联到已有外测组或提交 Beta App Review。
 
 **发布时禁止**
 
@@ -110,7 +110,7 @@ Agent 入口命令：`.opencode/commands/release.md`。
 
 - `TESTFLIGHT_EXTERNAL_BETA_GROUP_ID`：App Store Connect 外测群组 UUID。
 
-`mobile-release.yml` 会把每次 iOS 构建关联到这个固定群组。群组的 TestFlight Public Link 保持不变；Apple 批准新的 Beta App Review 后，该链接会自动提供最新获准构建。
+稳定版 `mobile-release.yml` 会把 iOS 构建关联到这个固定外测群组。群组的 TestFlight Public Link 保持不变；Apple 批准新的 Beta App Review 后，该链接会自动提供最新获准构建。prerelease / `-beta` 构建只上传到 TestFlight 内测，不写入该外测组。
 
 CI 每次关联新构建后保留外测组最近三个构建，并通过 App Store Connect API 移除更旧的组关联。Apple 的 TestFlight App Review 采用滚动 24 小时提交额度；额度耗尽时构建保持在外测组并记录为 `deferred-submission-limit`，GitHub Release 继续完成，后续构建在额度恢复后重新提交。
 
