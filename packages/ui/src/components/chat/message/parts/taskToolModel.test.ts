@@ -101,7 +101,7 @@ describe('taskToolModel', () => {
     test('settled tasks never stay on the delegating label even without a child session', () => {
         const chrome = resolveTaskRowChrome({
             isFinalized: true,
-            displayName: '智能体任务',
+            displayName: 'Agent 任务',
             delegatingLabel: '委派任务中...',
             formatName: (name) => name.charAt(0).toUpperCase() + name.slice(1),
         });
@@ -109,7 +109,7 @@ describe('taskToolModel', () => {
         expect(chrome).toEqual({
             isDelegating: false,
             showAvatar: false,
-            title: '智能体任务',
+            title: 'Agent 任务',
         });
     });
 
@@ -118,7 +118,7 @@ describe('taskToolModel', () => {
             isFinalized: false,
             taskSessionId: 'ses_child',
             taskAgentName: 'explorer',
-            displayName: '智能体任务',
+            displayName: 'Agent 任务',
             delegatingLabel: '委派任务中...',
             formatName: (name) => name.charAt(0).toUpperCase() + name.slice(1),
         })).toEqual({
@@ -131,7 +131,7 @@ describe('taskToolModel', () => {
     test('only live tasks without a session or agent stay delegating', () => {
         expect(resolveTaskRowChrome({
             isFinalized: false,
-            displayName: '智能体任务',
+            displayName: 'Agent 任务',
             delegatingLabel: '委派任务中...',
             formatName: (name) => name,
         })).toEqual({

@@ -2371,7 +2371,7 @@ export const dict: Record<I18nKey, string> = {
   'chat.tools.display.grep': '搜索文件',
   'chat.tools.display.glob': '查找文件',
   'chat.tools.display.list': '列出目录',
-  'chat.tools.display.task': '智能体任务',
+  'chat.tools.display.task': 'Agent 任务',
   'chat.tools.display.webfetch': '获取网页',
   'chat.tools.display.websearch': '网页搜索',
   'chat.tools.display.codesearch': '代码搜索',
