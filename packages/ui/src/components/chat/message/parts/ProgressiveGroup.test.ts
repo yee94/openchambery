@@ -18,8 +18,19 @@ describe('progressive activity presentation', () => {
         expect(progressiveGroupSource).toContain('animateTailText={false}');
     });
 
-    test('renders each static tool call as its own row without consecutive merge', () => {
+    test('skill and non-context static tools stay one-call rows; context tools collapse into Explored groups', () => {
+        // skill / other non-context static tools: one call per tool-static-group row
         expect(progressiveGroupSource).toContain("rows.push({ type: 'tool-static-group', toolName, activities: [activity] });");
+        // context tools (read/glob/grep/list): consecutive collapse via collectConsecutiveContextTools
+        expect(progressiveGroupSource).toContain('if (isContextGroupTool(toolName))');
+        expect(progressiveGroupSource).toContain('collectConsecutiveContextTools');
+        expect(progressiveGroupSource).toContain("type: 'tool-context-group'");
+        expect(progressiveGroupSource).toContain('case \'tool-context-group\':');
+        expect(progressiveGroupSource).toContain('<ContextToolGroup');
+        // MessageBody flat path mirrors the same grouping
+        expect(messageBodySource).toContain('isContextGroupTool');
+        expect(messageBodySource).toContain('ContextToolGroup');
+        // Do not revive multi-target chip merge
         expect(progressiveGroupSource).not.toContain('const activities = [activity];');
         expect(progressiveGroupSource).not.toContain('if (nextToolName !== toolName || !isStaticTool(nextToolName))');
         expect(progressiveGroupSource).not.toContain('i = nextIndex;');
@@ -32,16 +43,28 @@ describe('progressive activity presentation', () => {
     test('every collapsed activity state hides all detail rows', () => {
         expect(messageBodySource).toContain('const collapsedPreviewCount = 0;');
         expect(messageBodySource).not.toContain('collapsedPreviewCount = completionDisposition');
-    });
-
-    test('row mounting depends only on the disclosure, never on turn disposition', () => {
-        // Deriving mount state from disposition or streamPhase leaked live behavior
-        // into settled turns (an aborted turn never left the live branch) and made a
-        // one-frame disposition flap unmount every nested row. Structural stability
-        // is owned by the data layer instead: see sync/displayParts.ts.
         expect(progressiveGroupSource).toContain('const shouldRenderRows = !showHeader || isExpanded || previewCount > 0;');
         expect(progressiveGroupSource).not.toContain('isLiveActivity');
         expect(progressiveGroupSource).not.toContain('stickyOpenPartsRef');
+    });
+
+    test('uses the S1 lattice orb while activity is live and the stack icon when settled', () => {
+        expect(progressiveGroupSource).toContain('LatticeOrb');
+        expect(progressiveGroupSource).toContain('isActive && !isCompaction');
+        expect(progressiveGroupSource).toContain("activityIconName = isCompaction ? 'fold-vertical' : 'stack'");
+    });
+
+    test('static tool rows use the shared lifecycle and restore their mapped icon after settlement', () => {
+        expect(progressiveGroupSource).toContain('const isActive = primaryActivity ? isToolPartActive(primaryActivity.part) : true;');
+        expect(progressiveGroupSource).toContain("t('chat.assistantStatus.usingTool', { tool: displayName })");
+        expect(progressiveGroupSource).toContain(') : icon}');
+        expect(progressiveGroupSource).toContain('inline-flex size-3.5 items-center justify-center flex-shrink-0');
+    });
+
+    test('keeps lifecycle-unknown tool parts visible from their first frame', () => {
+        expect(messageBodySource).toContain('const isActiveTool = isToolPartActive;');
+        expect(messageBodySource).toContain('const isToolFinalized = isToolPartSettled;');
+        expect(messageBodySource).not.toContain('shouldShowTool');
     });
 
     test('localizes every activity state and exposes its expanded state', () => {
@@ -63,6 +86,11 @@ describe('progressive activity presentation', () => {
             expect(dictionarySource).toContain('chat.activity.compactionCompleted');
             expect(dictionarySource).toContain('chat.activity.agentsWorking');
             expect(dictionarySource).toContain('chat.activity.agentsInvolved');
+            expect(dictionarySource).toContain('chat.contextGroup.exploring');
+            expect(dictionarySource).toContain('chat.contextGroup.explored');
+            expect(dictionarySource).toContain('chat.contextGroup.searchPlural');
+            expect(dictionarySource).toContain('chat.contextGroup.readPlural');
+            expect(dictionarySource).toContain('chat.contextGroup.listPlural');
         }
         const simplifiedChinese = readFileSync(join(messageDictionaryDirectory, 'zh-CN.ts'), 'utf-8');
         const traditionalChinese = readFileSync(join(messageDictionaryDirectory, 'zh-TW.ts'), 'utf-8');
@@ -74,8 +102,10 @@ describe('progressive activity presentation', () => {
         expect(simplifiedChinese).toContain("'chat.activity.collapseAria': '收起处理详情'");
         expect(simplifiedChinese).toContain("'chat.activity.completed': '已处理 {duration}'");
         expect(simplifiedChinese).toContain("'chat.activity.completedStatus': '已处理'");
-        expect(simplifiedChinese).toContain("'chat.activity.agentsWorking': '{count} 个 agent 处理中'");
-        expect(simplifiedChinese).toContain("'chat.activity.agentsInvolved': '{count} 个 agent 参与'");
+        expect(simplifiedChinese).toContain("'chat.activity.agentsWorking': '{count} 个 Agent 处理中'");
+        expect(simplifiedChinese).toContain("'chat.activity.agentsInvolved': '{count} 个 Agent 参与'");
+        expect(simplifiedChinese).toContain("'chat.contextGroup.explored': '探索'");
+        expect(simplifiedChinese).toContain("'chat.contextGroup.listPlural': '{count} 次列举'");
         expect(traditionalChinese).toContain("'chat.activity.title': '處理詳情'");
         expect(traditionalChinese).toContain("'chat.activity.compacting': '正在壓縮'");
         expect(traditionalChinese).toContain("'chat.activity.compactionCompleted': '已完成壓縮'");

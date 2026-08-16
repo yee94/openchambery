@@ -1753,6 +1753,47 @@ input[aria-label="Terminal input"] {
   animation: oc-busy-pulse 1.2s ease-in-out infinite;
 }
 
+@keyframes oc-lattice-orb-swell {
+  0%,
+  100% {
+    opacity: 0.16;
+  }
+  35% {
+    opacity: 1;
+  }
+}
+
+.oc-lattice-orb-dot {
+  opacity: 0.16;
+  animation: oc-lattice-orb-swell 2.4s ease-in-out infinite;
+}
+
+@keyframes oc-summary-flip-out {
+  to {
+    transform: translateY(-100%);
+    opacity: 0;
+  }
+}
+
+@keyframes oc-summary-flip-in {
+  from {
+    transform: translateY(100%);
+    opacity: 0;
+  }
+  to {
+    transform: translateY(0);
+    opacity: 1;
+  }
+}
+
+.oc-summary-flip-out {
+  animation: oc-summary-flip-out 280ms ease-out forwards;
+}
+
+.oc-summary-flip-in {
+  animation: oc-summary-flip-in 280ms ease-out forwards;
+}
+
 /* Highlight sweep across live status / thinking labels (Delegating…, Thinking…). */
 @keyframes oc-text-shimmer {
   0% {
@@ -1935,8 +1976,15 @@ input[aria-label="Terminal input"] {
     background-image: none;
   }
 
-  .animate-busy-pulse {
+  .animate-busy-pulse,
+  .oc-lattice-orb-dot,
+  .oc-summary-flip-out,
+  .oc-summary-flip-in {
     animation: none;
+  }
+
+  .oc-lattice-orb-dot[data-center="true"] {
+    opacity: 1;
   }
 
   .open-file-name-marquee-track {

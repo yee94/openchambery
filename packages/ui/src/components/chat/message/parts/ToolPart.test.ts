@@ -25,6 +25,15 @@ const mobileChangesSurfaceSource = readFileSync(join(__dirname, '../../../../app
 const diffViewSource = readFileSync(join(__dirname, '../../../views/DiffView.tsx'), 'utf-8');
 const contextPanelSource = readFileSync(join(__dirname, '../../../layout/ContextPanel.tsx'), 'utf-8');
 const progressiveGroupSource = readFileSync(join(__dirname, 'ProgressiveGroup.tsx'), 'utf-8');
+const toolPresentationSource = readFileSync(join(__dirname, 'toolPresentation.tsx'), 'utf-8');
+
+describe('editing tool icon size', () => {
+    test('keeps edit and write icons slightly smaller than the 14px tool row slot', () => {
+        expect(toolPresentationSource).toContain("const editIconClass = 'h-[13px] w-[13px] flex-shrink-0'");
+        expect(toolPresentationSource).toContain('<Icon name="pencil" className={editIconClass} />');
+        expect(toolPresentationSource).toContain('<Icon name="file-edit" className={editIconClass} />');
+    });
+});
 
 describe('mobile press feedback', () => {
     test('tool rows opt into soft press so full-width subagent/tool rows never use compact scale', () => {
@@ -69,6 +78,30 @@ describe('tool busy title chrome', () => {
         expect(toolPartSource).not.toContain('MinDurationShineText');
         expect(toolPartSource).toContain('taskBusy && \'animate-text-shimmer\'');
         expect(toolPartSource).toContain("normalizedPartTool === 'bash' && typeof effectiveTimeStart === 'number'");
+    });
+
+    test('every active expandable tool uses the shared loading orb and settled rows restore identity', () => {
+        expect(toolPartSource).toContain("import { LatticeOrb } from './LatticeOrb';");
+        expect(toolPartSource).toContain('const isFinalized = isToolPartSettled(part);');
+        expect(toolPartSource).toContain('{effectiveActive ? (');
+        expect(toolPartSource).toContain("label={t('chat.assistantStatus.usingTool', { tool: taskTitle })}");
+        expect(toolPartSource).toContain('getToolIcon(normalizedPartTool || part.tool)');
+    });
+
+    test('task rows load with the orb and restore the agent avatar after settlement', () => {
+        const lifecycleBranch = toolPartSource.slice(
+            toolPartSource.indexOf('{effectiveActive ? ('),
+            toolPartSource.indexOf('getToolIcon(normalizedPartTool || part.tool)'),
+        );
+        expect(lifecycleBranch).toContain('<LatticeOrb');
+        expect(lifecycleBranch).toContain(') : isTaskTool ? (');
+        expect(lifecycleBranch).toContain('<AgentAvatar');
+    });
+
+    test('keeps lifecycle identity in the fixed leading slot and moves disclosure to the trailing edge', () => {
+        expect(toolPartSource).toContain('className="relative size-3.5 flex-shrink-0"');
+        expect(toolPartSource).toContain('className="ml-auto inline-flex size-3.5 flex-shrink-0 items-center justify-center');
+        expect(toolPartSource).not.toContain('group-hover/tool:opacity-0');
     });
 });
 

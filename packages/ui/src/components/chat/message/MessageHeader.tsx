@@ -25,7 +25,7 @@ const resolveVariantSuffix = (variant?: string) => {
     return formatEffortLabel(trimmed);
 };
 
-const MessageHeader: React.FC<MessageHeaderProps> = ({ isUser, isMobile, providerID, modelID, agentName, modelName, variant }) => {
+const MessageHeader: React.FC<MessageHeaderProps> = ({ isUser, providerID, modelID, agentName, modelName, variant }) => {
     const variantSuffix = !isUser ? resolveVariantSuffix(variant) : null;
     const displayModelName = modelName || 'Assistant';
 
@@ -69,16 +69,14 @@ const MessageHeader: React.FC<MessageHeaderProps> = ({ isUser, isMobile, provide
                         {!isUser && agentName && (
                             <div
                                 className={cn(
-                                    'flex items-center gap-1 px-1.5 py-0 rounded cursor-default',
-                                    'agent-badge',
-                                    isMobile ? 'text-[12px]' : 'typography-meta',
-                                    'hover:bg-[rgb(from_var(--agent-color-bg)_r_g_b_/_0.1)] hover:border-[rgb(from_var(--agent-color)_r_g_b_/_0.2)]',
+                                    'agent-badge inline-flex items-center gap-1 cursor-default rounded px-1.5 py-0.5',
+                                    'typography-micro font-normal leading-none',
                                     getAgentColor(agentName).class
                                 )}
                             >
                                 {/* 与选择 Agent 一致：用 identicon 头像代替通用机器人图标 */}
-                                <AgentAvatar name={agentName} size={12} />
-                                <span className="font-medium">
+                                <AgentAvatar name={agentName} size={10} />
+                                <span>
                                     {agentName.charAt(0).toUpperCase() + agentName.slice(1)}
                                 </span>
                             </div>

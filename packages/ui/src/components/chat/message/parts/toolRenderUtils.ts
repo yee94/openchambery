@@ -5,6 +5,19 @@ const STATIC_TOOL_NAMES = new Set<string>(['read', 'skill']);
 
 const STANDALONE_TOOL_NAMES = new Set<string>(['task']);
 
+const CONTEXT_GROUP_TOOL_NAMES = new Set<string>(['read', 'glob', 'grep', 'list']);
+
+const SETTLED_TOOL_STATUSES = new Set<string>([
+    'completed',
+    'error',
+    'failed',
+    'aborted',
+    'timeout',
+    'cancelled',
+]);
+
+const ACTIVE_TOOL_STATUSES = new Set<string>(['pending', 'started', 'running']);
+
 const normalizeToolName = (toolName: unknown): string => {
     if (typeof toolName !== 'string') return '';
     const trimmed = toolName.trim().toLowerCase();
@@ -29,3 +42,33 @@ export const isStandaloneTool = (toolName: unknown): boolean => {
 export const isStaticTool = (toolName: unknown): boolean => {
     return STATIC_TOOL_NAMES.has(normalizeToolName(toolName));
 };
+
+export const isContextGroupTool = (toolName: unknown): boolean => {
+    return CONTEXT_GROUP_TOOL_NAMES.has(normalizeToolName(toolName));
+};
+
+export const isToolPartSettled = (part: unknown): boolean => {
+    if (!part || typeof part !== 'object') return false;
+
+    const state = (part as { state?: unknown }).state;
+    if (!state || typeof state !== 'object') return false;
+
+    const status = (state as { status?: unknown }).status;
+    if (typeof status === 'string') {
+        const normalizedStatus = status.trim().toLowerCase();
+        if (ACTIVE_TOOL_STATUSES.has(normalizedStatus)) return false;
+        if (SETTLED_TOOL_STATUSES.has(normalizedStatus)) return true;
+    }
+
+    const time = (state as { time?: unknown }).time;
+    if (!time || typeof time !== 'object') return false;
+
+    const start = (time as { start?: unknown }).start;
+    const end = (time as { end?: unknown }).end;
+    if (typeof end !== 'number' || !Number.isFinite(end)) return false;
+    return typeof start !== 'number' || !Number.isFinite(start) || end >= start;
+};
+
+export const isToolPartActive = (part: unknown): boolean => !isToolPartSettled(part);
+
+export const normalizeContextToolName = normalizeToolName;
