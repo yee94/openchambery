@@ -4,6 +4,10 @@ All notable changes to this project will be documented in this file.
 
 ## [Unreleased]
 
+## [1.17.0-beta.4] - 2026-08-17
+
+- **Chat settings:** hide Inline Assistant Actions and Show Tool File Icons. Chinese labels now say 显示隐藏文件 / 顯示隱藏檔案 instead of 显示点文件.
+
 ## [1.17.0-beta.3] - 2026-08-17
 
 - **Prompt attachment uploads:** inline image/file bytes are uploaded as a binary stream before the prompt is sent, and the prompt JSON only carries a host `file://` reference. Sending large attachments no longer head-of-line blocks the shared relay tunnel with a giant data URL.

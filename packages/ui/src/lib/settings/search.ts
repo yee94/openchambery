@@ -308,6 +308,7 @@ const SETTINGS_SEARCH_ITEMS: readonly SettingsSearchItem[] = [
     titleKey: 'settings.openchamber.visual.field.showSplitAssistantMessageActions',
     descriptionKey: 'settings.openchamber.visual.field.showSplitAssistantMessageActionsTooltip',
     keywords: ['copy', 'read aloud'],
+    isAvailable: () => false,
   },
   {
     id: 'chat.assistant-tps',
@@ -327,6 +328,7 @@ const SETTINGS_SEARCH_ITEMS: readonly SettingsSearchItem[] = [
     page: 'chat',
     titleKey: 'settings.openchamber.visual.field.showToolFileIcons',
     keywords: ['tools', 'files', 'icons'],
+    isAvailable: () => false,
   },
   {
     id: 'chat.tools-and-files',

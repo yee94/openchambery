@@ -715,6 +715,7 @@ export const OpenChamberVisualSettings: React.FC<OpenChamberVisualSettingsProps>
     }, []);
 
     const shouldShow = (setting: VisibleSetting): boolean => {
+        if (setting === 'splitAssistantMessageActions' || setting === 'showToolFileIcons') return false;
         if (!visibleSettings) return true;
         return visibleSettings.includes(setting);
     };
