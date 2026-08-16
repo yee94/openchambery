@@ -4,6 +4,10 @@ All notable changes to this project will be documented in this file.
 
 ## [Unreleased]
 
+## [1.16.134-beta.18] - 2026-08-16
+
+- **Status bar:** while a Task is running, the composer status stays on the stable Chinese copy 正在委派任务 instead of the subagent name.
+
 ## [1.16.134-beta.17] - 2026-08-16
 
 - **Provider recovery:** messages no longer get stuck after a failed provider load. Sending re-triggers a fresh provider refresh once before giving up, and an empty provider catalog is never cached as permanently fresh, so the model list is re-fetched on demand instead of being stranded forever.

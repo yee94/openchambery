@@ -1907,7 +1907,7 @@ export const dict: Record<I18nKey, string> = {
   'chat.assistantStatus.searchingContent': '正在搜索内容',
   'chat.assistantStatus.findingFiles': '正在查找文件',
   'chat.assistantStatus.listingDirectory': '正在列出目录',
-  'chat.assistantStatus.delegatingTask': '委派任务中...',
+  'chat.assistantStatus.delegatingTask': '正在委派任务',
   'chat.assistantStatus.taskWorking': '{name}处理中',
   'chat.assistantStatus.fetchingUrl': '正在获取 URL',
   'chat.assistantStatus.searchingWeb': '正在搜索网页',

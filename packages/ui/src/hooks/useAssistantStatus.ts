@@ -119,33 +119,7 @@ type ParsedStatusResult = {
     isGenericStatus: boolean;
 };
 
-const readTaskAgentName = (part: ToolPart): string | undefined => {
-    const state = part.state && typeof part.state === 'object'
-        ? part.state as { input?: unknown; metadata?: unknown }
-        : undefined;
-    for (const source of [state?.input, state?.metadata]) {
-        if (!source || typeof source !== 'object' || Array.isArray(source)) continue;
-        const record = source as Record<string, unknown>;
-        for (const raw of [record.subagent_type, record.subagentType, record.agent, record.subagent]) {
-            if (typeof raw !== 'string') continue;
-            const trimmed = raw.trim();
-            if (trimmed.length > 0) {
-                return trimmed.charAt(0).toUpperCase() + trimmed.slice(1);
-            }
-        }
-    }
-    return undefined;
-};
-
-const getToolStatusPhrase = (
-    toolName: string,
-    t: (key: I18nKey, params?: I18nParams) => string,
-    part?: ToolPart,
-): string => {
-    if (toolName === 'task') {
-        const agentName = part ? readTaskAgentName(part) : undefined;
-        return agentName ?? t('chat.assistantStatus.delegatingTask');
-    }
+const getToolStatusPhrase = (toolName: string, t: (key: I18nKey, params?: I18nParams) => string): string => {
     const key = TOOL_STATUS_KEYS[toolName];
     return key ? t(key) : t('chat.assistantStatus.usingTool', { tool: toolName });
 };
@@ -170,7 +144,6 @@ const createParsedStatus = (
 ): ParsedStatusResult => {
     let activePartType: ParsedStatusResult['activePartType'] = undefined;
     let activeToolName: string | undefined = undefined;
-    let activeToolPart: ToolPart | undefined = undefined;
 
     if (!isFullySyntheticMessage(parts)) {
         for (let index = parts.length - 1; index >= 0; index -= 1) {
@@ -190,7 +163,6 @@ const createParsedStatus = (
                     const toolStatus = part.state?.status;
                     if ((toolStatus === 'running' || toolStatus === 'pending') && !activePartType) {
                         const toolName = getToolDisplayName(part);
-                        activeToolPart = part;
                         if (EDITING_TOOLS.has(toolName)) {
                             activePartType = 'editing';
                             activeToolName = toolName;
@@ -220,8 +192,8 @@ const createParsedStatus = (
 
     const isGenericStatus = activePartType === undefined;
     const statusText = (() => {
-        if (activePartType === 'editing') return activeToolName === 'multiedit' ? getToolStatusPhrase(activeToolName, t, activeToolPart) : t('chat.assistantStatus.editingFile');
-        if (activePartType === 'tool' && activeToolName) return getToolStatusPhrase(activeToolName, t, activeToolPart);
+        if (activePartType === 'editing') return activeToolName === 'multiedit' ? getToolStatusPhrase(activeToolName, t) : t('chat.assistantStatus.editingFile');
+        if (activePartType === 'tool' && activeToolName) return getToolStatusPhrase(activeToolName, t);
         if (activePartType === 'reasoning') return t('chat.assistantStatus.thinking');
         if (activePartType === 'text') return t('chat.assistantStatus.composing');
         return getStableWorkingPhrase(genericKey, t);
