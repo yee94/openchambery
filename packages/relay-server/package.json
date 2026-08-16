@@ -1,6 +1,6 @@
 {
   "name": "@openchamber/relay-server",
-  "version": "1.16.134-beta.8",
+  "version": "1.16.134-beta.9",
   "description": "Self-hosted private relay server for OpenChamber",
   "private": false,
   "type": "module",
