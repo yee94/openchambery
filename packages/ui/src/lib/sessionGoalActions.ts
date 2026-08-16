@@ -147,6 +147,26 @@ export async function setSessionGoal(
   });
 }
 
+/**
+ * Pause an active goal because a pending question is already on screen.
+ * Does not abort the current turn — the question is the wait state.
+ * No-op when there is no goal or it is not active.
+ */
+export async function pauseSessionGoalForQuestion(
+  sessionId: string,
+  directory: string | undefined,
+): Promise<void> {
+  await writeGoal(sessionId, directory, (currentGoal) => {
+    if (!currentGoal || currentGoal.status !== 'active') return currentGoal;
+    return {
+      ...currentGoal,
+      status: 'paused',
+      statusReason: 'paused for question',
+      updatedAt: Date.now(),
+    };
+  });
+}
+
 export async function setSessionGoalStatus(
   sessionId: string,
   directory: string | undefined,

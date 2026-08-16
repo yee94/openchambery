@@ -49,6 +49,7 @@ import {
     parseTaskMetadataBlock,
     readTaskSessionIdFromOutput,
     readTaskSessionIdFromRecord,
+    resolveTaskRowChrome,
     prepareTaskOutputForDisplay,
     type TaskToolSummaryEntry,
 } from './taskToolModel';
@@ -2090,6 +2091,16 @@ const ToolPartContent: React.FC<ToolPartProps> = ({
             return metadataSessionId;
         }
 
+        const stateSessionId = readTaskSessionIdFromRecord(stateWithData);
+        if (stateSessionId) {
+            return stateSessionId;
+        }
+
+        const inputSessionId = readTaskSessionIdFromRecord(input);
+        if (inputSessionId) {
+            return inputSessionId;
+        }
+
         const partLevelSessionId = readTaskSessionIdFromRecord(partMetadata);
         if (partLevelSessionId) {
             return partLevelSessionId;
@@ -2099,7 +2110,7 @@ const ToolPartContent: React.FC<ToolPartProps> = ({
             return parsedTaskMetadata.sessionId;
         }
         return readTaskSessionIdFromOutput(taskOutputString);
-    }, [isTaskTool, metadata, parsedTaskMetadata.sessionId, partMetadata, taskOutputString]);
+    }, [input, isTaskTool, metadata, parsedTaskMetadata.sessionId, partMetadata, stateWithData, taskOutputString]);
 
     const taskSessionId = explicitTaskSessionId;
     const shouldObserveTaskStatus = isTaskTool && !isFinalized && activeLatched;
@@ -2213,13 +2224,18 @@ const ToolPartContent: React.FC<ToolPartProps> = ({
     const taskAgentName = isTaskTool
         ? resolveTaskAgentName(input, metadata, partMetadata, childTaskSession)
         : undefined;
-    const isDelegatingTask = Boolean(isTaskTool && !taskSessionId && !taskAgentName);
-    const taskAgentLabel = taskAgentName ? formatAgentDisplayName(taskAgentName) : undefined;
-    const taskTitle = isDelegatingTask
-        ? t('chat.assistantStatus.delegatingTask')
-        : taskAgentLabel && taskBusy
-            ? t('chat.assistantStatus.taskWorking', { name: taskAgentLabel })
-            : taskAgentLabel ?? displayName;
+    const taskRowChrome = resolveTaskRowChrome({
+        isFinalized,
+        taskSessionId,
+        taskAgentName,
+        isBusy: taskBusy,
+        displayName,
+        delegatingLabel: t('chat.assistantStatus.delegatingTask'),
+        workingLabel: (name) => t('chat.assistantStatus.taskWorking', { name }),
+        formatName: formatAgentDisplayName,
+    });
+    const isDelegatingTask = isTaskTool && taskRowChrome.isDelegating;
+    const taskTitle = taskRowChrome.title;
     
     // Tool title/description — shown inline as context
     const justificationText = React.useMemo(() => {
@@ -2504,9 +2520,9 @@ const ToolPartContent: React.FC<ToolPartProps> = ({
                     <div className="relative size-3.5 flex-shrink-0">
                         <div
                             className="absolute inset-0 flex items-center justify-center"
-                            style={isTaskTool && !isDelegatingTask ? undefined : iconStyle}
+                            style={isTaskTool && taskRowChrome.showAvatar ? undefined : iconStyle}
                         >
-                            {isTaskTool && !isDelegatingTask ? (
+                            {isTaskTool && taskRowChrome.showAvatar ? (
                                 <AgentAvatar
                                     // 同一 agent 可并发多个 task；identicon/颜色按 task id 区分，label 仍用 agent 展示名
                                     name={part.id || taskAgentName || 'subagent'}

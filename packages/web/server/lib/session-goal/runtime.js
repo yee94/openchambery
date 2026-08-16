@@ -168,6 +168,18 @@ const extractAbortedAssistant = (payload) => {
   return { sessionId: info.sessionID };
 };
 
+// QuestionRequest shape: properties.sessionID, optional properties.directory.
+const extractQuestionAsked = (payload, directoryHint = '') => {
+  if (!payload || payload.type !== 'question.asked') return null;
+  const properties = payload.properties && typeof payload.properties === 'object' ? payload.properties : {};
+  const sessionId = typeof properties.sessionID === 'string' ? properties.sessionID.trim() : '';
+  if (!sessionId) return null;
+  const directory = typeof properties.directory === 'string' && properties.directory
+    ? properties.directory
+    : directoryHint;
+  return { sessionId, directory };
+};
+
 const extractSessionUpdate = (payload) => {
   if (!payload || payload.type !== 'session.updated') return null;
   const info = payload.properties?.info;
@@ -732,6 +744,28 @@ export const createSessionGoalRuntime = ({
     console.log(`[session-goal] ${sessionId} paused after user abort`);
   };
 
+  // Pause the active goal when the agent asks a question — without aborting
+  // the current turn. Aborting would kill the pending question. A question
+  // from a child/sub-agent session pauses the parent session's goal.
+  const pauseForQuestion = async (sessionId, directory) => {
+    const session = await openCodeFetch(`/session/${encodeURIComponent(sessionId)}`, { directory })
+      .catch(() => null);
+    if (!session || typeof session !== 'object') return;
+    const parentId = typeof session.parentID === 'string' ? session.parentID.trim() : '';
+    const targetId = parentId || sessionId;
+    if (parentId) clearTimer(parentId);
+    const target = parentId
+      ? await openCodeFetch(`/session/${encodeURIComponent(targetId)}`, { directory }).catch(() => null)
+      : session;
+    const goal = parseGoalMetadata(target);
+    if (!goal || goal.status !== 'active') return;
+    await writeGoal(targetId, directory, goal.id, () => ({
+      status: 'paused',
+      statusReason: 'paused for question',
+    }));
+    console.log(`[session-goal] ${targetId} paused for question`);
+  };
+
   const processPayload = (payload, directoryHint = '') => {
     if (stopped) return;
 
@@ -746,6 +780,22 @@ export const createSessionGoalRuntime = ({
           })
           .finally(() => {
             inflight.delete(aborted.sessionId);
+          });
+      }
+      return;
+    }
+
+    const asked = extractQuestionAsked(payload, directoryHint);
+    if (asked) {
+      clearTimer(asked.sessionId);
+      if (!inflight.has(asked.sessionId)) {
+        inflight.add(asked.sessionId);
+        pauseForQuestion(asked.sessionId, asked.directory || directoryHint)
+          .catch((error) => {
+            console.warn('[session-goal] pause for question failed:', error?.message || error);
+          })
+          .finally(() => {
+            inflight.delete(asked.sessionId);
           });
       }
       return;

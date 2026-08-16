@@ -1,11 +1,11 @@
 import React from 'react';
 import { useEvent } from '@reactuses/core';
 import { Icon } from '@/components/icon/Icon';
-import { useSessionStatus } from '@/sync/sync-context';
+import { useScopedBlockingQuestions, useSessionStatus } from '@/sync/sync-context';
 import { useGoalObjectiveContent, useSessionGoal } from '@/hooks/useSessionGoal';
 import { formatGoalDuration, formatGoalTokens } from '@/lib/sessionGoalMetadata';
 import { sessionGoalStatusColor, sessionGoalStatusLabelKey } from '@/lib/sessionGoalPresentation';
-import { setSessionGoalStatus } from '@/lib/sessionGoalActions';
+import { pauseSessionGoalForQuestion, setSessionGoalStatus } from '@/lib/sessionGoalActions';
 import { toast } from '@/components/ui';
 import { useI18n } from '@/lib/i18n';
 import { useUIStore } from '@/stores/useUIStore';
@@ -27,6 +27,8 @@ export const SessionGoalRow: React.FC<SessionGoalRowProps> = React.memo(({ sessi
   const { goal, enabled } = useSessionGoal(sessionId ?? '', directory);
   const objectiveContent = useGoalObjectiveContent(sessionId ?? '', goal);
   const sessionStatus = useSessionStatus(sessionId ?? '', directory);
+  const pendingQuestions = useScopedBlockingQuestions(sessionId, directory);
+  const autoPausedForQuestionRef = React.useRef<string | null>(null);
   const [busy, setBusy] = React.useState(false);
   // Tick so the elapsed label advances while the goal is live without
   // depending on session.updated fanout for wall-clock display.
@@ -39,6 +41,16 @@ export const SessionGoalRow: React.FC<SessionGoalRowProps> = React.memo(({ sessi
     const id = window.setInterval(() => setNow(Date.now()), 1_000);
     return () => window.clearInterval(id);
   }, [goal?.id, goal?.status]);
+
+  React.useEffect(() => {
+    if (!sessionId || !goal || goal.status !== 'active') return;
+    const firstQuestionId = pendingQuestions[0]?.id;
+    if (!firstQuestionId) return;
+    const pauseKey = `${sessionId}:${goal.id}:${firstQuestionId}`;
+    if (autoPausedForQuestionRef.current === pauseKey) return;
+    autoPausedForQuestionRef.current = pauseKey;
+    void pauseSessionGoalForQuestion(sessionId, directory);
+  }, [sessionId, directory, goal, pendingQuestions]);
 
   const handleToggleStatus = useEvent(async (nextStatus: 'active' | 'paused') => {
     if (!sessionId || busy) return;

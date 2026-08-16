@@ -325,3 +325,127 @@ describe('session-goal runtime — restart-orphan quiescence', () => {
     });
   });
 });
+
+const questionAskedPayload = (sessionID = 'ses-goal') => ({
+  type: 'question.asked',
+  properties: {
+    id: 'que_1',
+    sessionID,
+    questions: [{ question: 'Push?', header: 'Push', options: [{ label: 'Yes', description: '' }] }],
+  },
+});
+
+const flushQuestionPause = () => new Promise((resolve) => setTimeout(resolve, 50));
+
+describe('session-goal runtime — pause for question', () => {
+  it('patches an active goal to paused without sending a continuation', async () => {
+    const patches = [];
+    const calls = { promptAsync: 0, abort: 0 };
+    const session = buildSession('active');
+    const fetchImpl = async (input, init = {}) => {
+      const url = String(input);
+      const path = url.split('?')[0];
+      if (path.includes('/abort')) {
+        calls.abort += 1;
+        return new Response(JSON.stringify({}), { status: 200 });
+      }
+      if (path.endsWith('/prompt_async')) {
+        calls.promptAsync += 1;
+        return new Response(JSON.stringify({}), { status: 200 });
+      }
+      if (path.endsWith('/session/ses-goal')) {
+        if (init.method === 'PATCH') {
+          const body = JSON.parse(init.body || '{}');
+          patches.push(body);
+          session.metadata = body.metadata;
+        }
+        return new Response(JSON.stringify(session), { status: 200 });
+      }
+      return new Response(JSON.stringify(session), { status: 200 });
+    };
+
+    await withFetch(fetchImpl, async () => {
+      const runtime = makeRuntime();
+      runtime.processPayload(questionAskedPayload(), '/repo');
+      await flushQuestionPause();
+      expect(patches.length).toBe(1);
+      expect(patches[0].metadata.openchamber.goal.status).toBe('paused');
+      expect(patches[0].metadata.openchamber.goal.statusReason).toBe('paused for question');
+      expect(calls.promptAsync).toBe(0);
+      expect(calls.abort).toBe(0);
+      runtime.stop();
+    });
+  });
+
+  it('does not PATCH a session that has no goal', async () => {
+    let patchCount = 0;
+    const session = { id: 'ses-goal', directory: '/repo' };
+    const fetchImpl = async (input, init = {}) => {
+      const path = String(input).split('?')[0];
+      if (path.endsWith('/session/ses-goal') && init.method === 'PATCH') {
+        patchCount += 1;
+      }
+      return new Response(JSON.stringify(session), { status: 200 });
+    };
+
+    await withFetch(fetchImpl, async () => {
+      const runtime = makeRuntime();
+      runtime.processPayload(questionAskedPayload(), '/repo');
+      await flushQuestionPause();
+      expect(patchCount).toBe(0);
+      runtime.stop();
+    });
+  });
+
+  it('does not change an already paused goal', async () => {
+    const patches = [];
+    const session = buildSession('paused');
+    const fetchImpl = async (input, init = {}) => {
+      const path = String(input).split('?')[0];
+      if (path.endsWith('/session/ses-goal') && init.method === 'PATCH') {
+        patches.push(JSON.parse(init.body || '{}'));
+      }
+      return new Response(JSON.stringify(session), { status: 200 });
+    };
+
+    await withFetch(fetchImpl, async () => {
+      const runtime = makeRuntime();
+      runtime.processPayload(questionAskedPayload(), '/repo');
+      await flushQuestionPause();
+      expect(patches.length).toBe(0);
+      expect(session.metadata.openchamber.goal.status).toBe('paused');
+      runtime.stop();
+    });
+  });
+
+  it('pauses the parent session goal when a child session asks a question', async () => {
+    const patches = [];
+    const child = { id: 'ses-child', parentID: 'ses-goal', directory: '/repo' };
+    const parent = buildSession('active');
+    const fetchImpl = async (input, init = {}) => {
+      const path = String(input).split('?')[0];
+      if (path.endsWith('/session/ses-child')) {
+        return new Response(JSON.stringify(child), { status: 200 });
+      }
+      if (path.endsWith('/session/ses-goal')) {
+        if (init.method === 'PATCH') {
+          const body = JSON.parse(init.body || '{}');
+          patches.push(body);
+          parent.metadata = body.metadata;
+        }
+        return new Response(JSON.stringify(parent), { status: 200 });
+      }
+      return new Response(JSON.stringify(parent), { status: 200 });
+    };
+
+    await withFetch(fetchImpl, async () => {
+      const runtime = makeRuntime();
+      runtime.processPayload(questionAskedPayload('ses-child'), '/repo');
+      await flushQuestionPause();
+      expect(patches.length).toBe(1);
+      expect(patches[0].metadata.openchamber.goal.status).toBe('paused');
+      expect(patches[0].metadata.openchamber.goal.statusReason).toBe('paused for question');
+      runtime.stop();
+    });
+  });
+});

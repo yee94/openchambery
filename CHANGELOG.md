@@ -4,6 +4,13 @@ All notable changes to this project will be documented in this file.
 
 ## [Unreleased]
 
+## [1.16.134-beta.12] - 2026-08-16
+
+- **Session goals:** when the agent asks a question, the goal pauses instead of staying on Evaluating. The current turn keeps waiting for your answer; resume after you reply.
+- **Questions:** missed pending questions are fetched again so the answer card comes back, instead of leaving only unclickable chips in the transcript.
+- **Subagent rows:** assigned task rows keep the agent name instead of falling back to Delegating.
+- **Dev server:** bundled web dev no longer pulls server or test files into the browser graph.
+
 ## [1.16.134-beta.11] - 2026-08-16
 
 - **iOS beta:** prerelease TestFlight marketing version again strips the suffix (`1.16.134-beta.10` → `1.16.134`) instead of pinning to `0.99.0`, so Apple can treat it as an update on the current 1.16.x train.

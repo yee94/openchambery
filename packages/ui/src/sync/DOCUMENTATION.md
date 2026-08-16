@@ -861,9 +861,14 @@ both readers agree on when a frame may shrink.
   session already appearing in the reconnect candidate list or child-store
   catalog. Background busy sessions wait until selection and continue receiving
   live events without fetching their bodies. `statusOnly` reconnect (clean first
-  stream ready only) still runs this bounded viewed-body recovery; it only
-  suppresses extra reconnect work such as blocking-request resync, never viewed
-  transcript reconciliation. Ready + `isReconnect:true` triggers Query
+  stream ready only) still runs this bounded viewed-body recovery and an
+  authoritative blocking-request resync (`question.list` / `permission.list`);
+  it only skips heavier reconnect work such as full routing ingest, never viewed
+  transcript reconciliation. A viewed session whose transcript still has an
+  unanswered `question` tool while `state.question[sessionID]` is empty lists
+  once via `useRecoverPendingQuestions` (`resyncBlockingRequestsForDirectory`
+  scoped to that session); it never invents a `QuestionRequest` from tool
+  parts. Ready + `isReconnect:true` triggers Query
   compensation after replay; first ready skips gap compensation.
 - A real reconnect and every transport switch can gap **every** cached
   transcript in an initialized directory, not just the viewed session.

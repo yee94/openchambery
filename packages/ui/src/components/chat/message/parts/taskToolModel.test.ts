@@ -9,6 +9,7 @@ import {
     prepareTaskOutputForDisplay,
     readTaskSessionIdFromRecord,
     readTaskSessionIdFromOutput,
+    resolveTaskRowChrome,
 } from './taskToolModel';
 
 describe('taskToolModel', () => {
@@ -95,5 +96,54 @@ describe('taskToolModel', () => {
         ].join('\n');
 
         expect(prepareTaskOutputForDisplay(output)).toBe('## Summary\n\nDone');
+    });
+
+    test('settled tasks never stay on the delegating label even without a child session', () => {
+        const chrome = resolveTaskRowChrome({
+            isFinalized: true,
+            isBusy: false,
+            displayName: '智能体任务',
+            delegatingLabel: '委派任务中...',
+            workingLabel: (name) => `${name}处理中`,
+            formatName: (name) => name.charAt(0).toUpperCase() + name.slice(1),
+        });
+
+        expect(chrome).toEqual({
+            isDelegating: false,
+            showAvatar: false,
+            title: '智能体任务',
+        });
+    });
+
+    test('assigned busy tasks show the working name instead of delegating', () => {
+        expect(resolveTaskRowChrome({
+            isFinalized: false,
+            taskSessionId: 'ses_child',
+            taskAgentName: 'explorer',
+            isBusy: true,
+            displayName: '智能体任务',
+            delegatingLabel: '委派任务中...',
+            workingLabel: (name) => `${name}处理中`,
+            formatName: (name) => name.charAt(0).toUpperCase() + name.slice(1),
+        })).toEqual({
+            isDelegating: false,
+            showAvatar: true,
+            title: 'Explorer处理中',
+        });
+    });
+
+    test('only live tasks without a session or agent stay delegating', () => {
+        expect(resolveTaskRowChrome({
+            isFinalized: false,
+            isBusy: true,
+            displayName: '智能体任务',
+            delegatingLabel: '委派任务中...',
+            workingLabel: (name) => `${name}处理中`,
+            formatName: (name) => name,
+        })).toEqual({
+            isDelegating: true,
+            showAvatar: false,
+            title: '委派任务中...',
+        });
     });
 });
