@@ -27,9 +27,14 @@ describe('progressive activity presentation', () => {
         expect(progressiveGroupSource).toContain("type: 'tool-context-group'");
         expect(progressiveGroupSource).toContain('case \'tool-context-group\':');
         expect(progressiveGroupSource).toContain('<ContextToolGroup');
+        expect(progressiveGroupSource).toContain('hasContextExploreSuccessor');
+        expect(progressiveGroupSource).toContain('isTurnLive={isActive}');
+        expect(progressiveGroupSource).toContain('hasFollowingOtherType={row.hasFollowingOtherType}');
         // MessageBody flat path mirrors the same grouping
         expect(messageBodySource).toContain('isContextGroupTool');
         expect(messageBodySource).toContain('ContextToolGroup');
+        expect(messageBodySource).toContain('hasContextExploreSuccessor');
+        expect(messageBodySource).toContain('isTurnLive={effectiveStreamPhase !== \'completed\'}');
         // Do not revive multi-target chip merge
         expect(progressiveGroupSource).not.toContain('const activities = [activity];');
         expect(progressiveGroupSource).not.toContain('if (nextToolName !== toolName || !isStaticTool(nextToolName))');

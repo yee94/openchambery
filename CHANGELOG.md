@@ -4,6 +4,10 @@ All notable changes to this project will be documented in this file.
 
 ## [Unreleased]
 
+## [1.16.134-beta.5] - 2026-08-16
+
+- **Exploration groups:** the grouped Exploring state now lasts from the first search/read/list call until a later non-explore part appears, instead of stopping as soon as those calls settle.
+
 ## [1.16.134-beta.4] - 2026-08-16
 
 - **Tool loading:** every chat tool shows the shared loading state from first appearance until it settles; settled rows restore their normal icons.

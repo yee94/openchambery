@@ -45,6 +45,7 @@ import { computeAssistantTps, formatAssistantTps } from './assistantTps';
 import { ContextToolGroup } from './parts/ContextToolGroup';
 import { StaticToolRow } from './parts/ProgressiveGroup';
 import { getToolRowBlockClass, TOOL_ROW_CHIP_GEOMETRY_CLASS } from './parts/toolRowChrome';
+import { hasContextExploreSuccessor } from './parts/contextToolGrouping';
 import { isContextGroupTool, isExpandableTool, isToolPartActive, isToolPartSettled } from './parts/toolRenderUtils';
 import TurnActivity from '../components/TurnActivity';
 import { useEffectiveDirectory } from '@/hooks/useEffectiveDirectory';
@@ -1978,6 +1979,11 @@ const AssistantMessageBody = React.memo(({
                                 key={`context-tools-${run[0].id}`}
                                 activities={run}
                                 isMobile={isMobile}
+                                isTurnLive={effectiveStreamPhase !== 'completed'}
+                                hasFollowingOtherType={hasContextExploreSuccessor(visibleParts, j, (item) => ({
+                                    type: item.type,
+                                    toolName: item.type === 'tool' ? (item as ToolPartType).tool : undefined,
+                                }))}
                             >
                                 {run.map((activity) => (
                                     <StaticToolRow
