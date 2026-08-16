@@ -92,6 +92,7 @@ describe('tool busy title chrome', () => {
     test('unassigned task rows stay on the loading orb until an agent is assigned', () => {
         expect(toolPartSource).toContain('const isDelegatingTask = isTaskTool && taskRowChrome.isDelegating;');
         expect(toolPartSource).toContain('resolveTaskRowChrome({');
+        expect(toolPartSource).toContain('isTaskTool,');
         expect(toolPartSource).toContain("t('chat.assistantStatus.delegatingTask')");
         const lifecycleBranch = toolPartSource.slice(
             toolPartSource.indexOf('{isTaskTool && taskRowChrome.showAvatar ? ('),

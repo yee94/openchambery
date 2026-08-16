@@ -198,8 +198,9 @@ export type TaskRowChrome = {
     title: string;
 };
 
-/** 委派中只属于尚未结算、且还没有子会话/Agent 名的窗口。 */
+/** 委派中只属于尚未结算、且还没有子会话/Agent 名的 Task 窗口。普通 tool 永远用自己的 displayName。 */
 export const resolveTaskRowChrome = (input: {
+    isTaskTool: boolean;
     isFinalized: boolean;
     taskSessionId?: string;
     taskAgentName?: string;
@@ -207,6 +208,9 @@ export const resolveTaskRowChrome = (input: {
     delegatingLabel: string;
     formatName: (name: string) => string;
 }): TaskRowChrome => {
+    if (!input.isTaskTool) {
+        return { isDelegating: false, showAvatar: false, title: input.displayName };
+    }
     const agentLabel = input.taskAgentName ? input.formatName(input.taskAgentName) : undefined;
     const isAssigned = Boolean(input.taskSessionId || agentLabel);
     const isDelegating = !input.isFinalized && !isAssigned;

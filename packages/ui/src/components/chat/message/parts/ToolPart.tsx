@@ -2225,6 +2225,7 @@ const ToolPartContent: React.FC<ToolPartProps> = ({
         ? resolveTaskAgentName(input, metadata, partMetadata, childTaskSession)
         : undefined;
     const taskRowChrome = resolveTaskRowChrome({
+        isTaskTool,
         isFinalized,
         taskSessionId,
         taskAgentName,

@@ -4,6 +4,10 @@ All notable changes to this project will be documented in this file.
 
 ## [Unreleased]
 
+## [1.16.134-beta.15] - 2026-08-16
+
+- **Tool rows:** ordinary running tools keep their own titles. Only an unassigned live Task shows Delegating.
+
 ## [1.16.134-beta.14] - 2026-08-16
 
 - **Agent naming:** reasoning and activity copy now consistently use "Agent" in Simplified and Traditional Chinese instead of 智能体 / 智能體 (including the task tool row). The existing code comment in ToolPart is left untouched.
