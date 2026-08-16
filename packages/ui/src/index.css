@@ -1788,7 +1788,9 @@ input[aria-label="Terminal input"] {
 
 .oc-summary-flip-viewport,
 .oc-summary-flip-stage {
-  overflow: hidden;
+  /* clip does not create a scroll container; hidden does, and Android paints a thumb. */
+  overflow: clip;
+  scrollbar-width: none;
   isolation: isolate;
   contain: strict;
   transform: translateZ(0);

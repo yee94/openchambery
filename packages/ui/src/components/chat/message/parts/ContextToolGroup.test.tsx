@@ -63,8 +63,8 @@ describe('ContextToolGroup', () => {
         expect(markup).toContain('aria-expanded="false"');
         expect(markup).toContain('Exploring');
         expect(markup).toContain('1 search, 3 reads');
-        expect(markup).toContain('typography-meta h-5 min-h-0 w-0 min-w-0 max-w-full flex-1 overflow-hidden sm:h-6');
-        expect(markup).toContain('oc-summary-flip-viewport relative block h-5 min-h-0 w-full min-w-0 max-w-full overflow-hidden sm:h-6');
+        expect(markup).toContain('typography-meta h-5 min-h-0 w-0 min-w-0 max-w-full flex-1 overflow-clip sm:h-6');
+        expect(markup).toContain('oc-summary-flip-viewport relative block h-5 min-h-0 w-full min-w-0 max-w-full overflow-clip sm:h-6');
     });
 
     test('uses a 16px orb and matching leading slot on mobile', () => {
@@ -77,12 +77,13 @@ describe('ContextToolGroup', () => {
 
         expect(markup).toContain('flex flex-none items-center justify-center size-4');
         expect(markup).toContain('width:16px;height:16px');
-        expect(markup).toContain('min-h-0 min-w-0 items-center gap-1.5 overflow-hidden');
+        expect(markup).toContain('min-h-0 min-w-0 items-center gap-1.5 overflow-clip');
     });
 
     test('clips both moving layers inside a fixed-height paint viewport', () => {
-        expect(flipUpTextSource).toContain("'oc-summary-flip-viewport relative block h-5 min-h-0 w-full min-w-0 max-w-full overflow-hidden sm:h-6'");
-        expect(flipUpTextSource).toContain('oc-summary-flip-stage absolute inset-0 block overflow-hidden');
+        expect(flipUpTextSource).toContain("'oc-summary-flip-viewport relative block h-5 min-h-0 w-full min-w-0 max-w-full overflow-clip sm:h-6'");
+        expect(flipUpTextSource).toContain('oc-summary-flip-stage absolute inset-0 block overflow-clip');
+        expect(indexCssSource).toContain('overflow: clip;');
         expect(flipUpTextSource).toContain('oc-summary-flip-out absolute inset-x-0 top-0 block h-full truncate');
         expect(flipUpTextSource).toContain('oc-summary-flip-in absolute inset-x-0 top-0 block h-full truncate');
         expect(indexCssSource).toContain('.oc-summary-flip-viewport,');

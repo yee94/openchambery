@@ -4,6 +4,10 @@ All notable changes to this project will be documented in this file.
 
 ## [Unreleased]
 
+## [1.16.134-beta.21] - 2026-08-16
+
+- **Exploration groups:** the count flip uses overflow clipping that does not create a scroll box, so Android no longer paints a tiny overlay thumb on the row.
+
 ## [1.16.134-beta.20] - 2026-08-16
 
 - **Exploration groups:** the count flip still moves upward, but compositor layers no longer poke out of the row and flash a mobile scrollbar.
