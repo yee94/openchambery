@@ -4,6 +4,21 @@ All notable changes to this project will be documented in this file.
 
 ## [Unreleased]
 
+## [1.16.134] - 2026-08-16
+
+- **Exploration groups:** consecutive read, search, and directory tools collapse into a localized exploration group with live progress and expandable details. The grouped Exploring state lasts from the first exploration call until a later non-explore part appears, and the live count flip no longer spills out of the row or opens a mobile scrollbar (overflow-clipped so Android does not paint an overlay thumb).
+- **Tool loading:** every chat tool shows the shared loading state from first appearance until it settles, then restores its normal icon; running shell tools show the loading orb while settled rows keep the terminal icon.
+- **Delegated task rows:** assigned task rows keep the agent avatar and name across busy and idle states; only an unassigned live Task shows Delegating, while ordinary running tools keep their own titles. The agent badge chip on mobile is smaller, regular weight, and fill-only.
+- **Localized tool names:** built-in tools carry concise Chinese labels (apply_patch is "批量修改" so patch edits read apart from single-file edit), and reasoning/activity copy consistently uses "Agent" in Simplified and Traditional Chinese instead of 智能体 / 智能體.
+- **Transcript reliability:** a just-sent message and its follow-up could stop appearing while the status line kept moving; the message body now always subscribes and the option that could silence it has been removed. If a session still reports work while the visible transcript has not moved for 20 seconds and no local stream is running, the client refetches the authoritative tail itself; a failed refetch keeps the messages on screen and is logged.
+- **Provider recovery:** messages no longer get stuck after a failed provider load. Sending re-triggers a fresh provider refresh once before giving up, and an empty provider catalog is never cached as permanently fresh, so the model list is re-fetched on demand instead of being stranded forever.
+- **Session goals & questions:** when the agent asks a question, the goal pauses instead of staying on Evaluating and keeps waiting for your reply; a missed pending question is fetched again so its answer card returns instead of leaving unclickable chips.
+- **Mobile session layout:** worktree sessions share the project-level indent instead of sitting one extra level deeper; the composer status uses the same type size as collapsed Processed activity titles and stays on the stable copy 正在委派任务 while a Task runs; the lattice loading orb is slightly larger on phones.
+- **Diagnostics & privacy:** About export now saves a file via the system save picker (iOS Files / Android create-document) instead of copying to the clipboard. Anonymous usage reporting stays off unless the user turns it on, and prerelease builds record transcript sync/load-failure facts locally without ever including message bodies or tokens.
+- **Remote instances:** pairing names an instance instead of a device, and relay matches require the relay URL in addition to paired credentials.
+- **Dev server:** the bundled web dev build no longer pulls server or test files into the browser graph.
+- **Docs (zh-CN):** refreshed Chinese documentation and sidebar navigation for the included product guides.
+
 ## [1.16.134-beta.21] - 2026-08-16
 
 - **Exploration groups:** the count flip uses overflow clipping that does not create a scroll box, so Android no longer paints a tiny overlay thumb on the row.

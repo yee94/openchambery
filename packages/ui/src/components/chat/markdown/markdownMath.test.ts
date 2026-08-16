@@ -17,7 +17,7 @@ const dollarParser = marked.use({
       return { type: 'dollarMath', raw: match.raw, text: match.text, display: match.display };
     },
     renderer(token: Tokens.Generic) {
-      const math = token as { text: string; raw: string; display: boolean };
+      const math = token as unknown as { text: string; raw: string; display: boolean };
       try {
         return katex.renderToString(math.text, { displayMode: math.display, throwOnError: false });
       } catch {
@@ -48,8 +48,8 @@ describe('matchDollarMath', () => {
   });
 
   test('stops at the first formula so a later $I_m$ can match on its own', () => {
-    expect(matchDollarMath('$I_m$ 最小的点 ($f_{sw,\\max}=127$)').raw).toBe('$I_m$');
-    expect(matchDollarMath('$I_m$ and $I_{oe}$').raw).toBe('$I_m$');
+    expect(matchDollarMath('$I_m$ 最小的点 ($f_{sw,\\max}=127$)')!.raw).toBe('$I_m$');
+    expect(matchDollarMath('$I_m$ and $I_{oe}$')!.raw).toBe('$I_m$');
   });
 
   test('rejects spaced delimiters and a closer glued to a digit', () => {
