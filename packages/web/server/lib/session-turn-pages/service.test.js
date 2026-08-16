@@ -185,10 +185,61 @@ describe('projectSlimParts', () => {
       callID: 'call_prt_1',
       tool: 'bash',
       type: 'tool',
-      state: { status: 'completed', title: 'ran bash', time: { start: 1, end: 2 } },
+      state: {
+        status: 'completed',
+        title: 'ran bash',
+        time: { start: 1, end: 2 },
+        input: { command: 'ls' },
+      },
       slim: true,
     });
     expect(JSON.stringify(part)).not.toContain('xxxx');
+  });
+
+  it('keeps read/grep locators and drops write content', () => {
+    const [record] = projectSlimParts([
+      {
+        info: { id: 'msg_a1', role: 'assistant' },
+        parts: [
+          {
+            id: 'prt_read',
+            sessionID: 'ses_1',
+            messageID: 'msg_a1',
+            callID: 'call_read',
+            type: 'tool',
+            tool: 'read',
+            state: {
+              status: 'completed',
+              title: 'read file',
+              input: { path: 'src/app.ts', offset: 1, content: 'SECRET BODY' },
+              output: 'file body',
+            },
+          },
+          {
+            id: 'prt_grep',
+            sessionID: 'ses_1',
+            messageID: 'msg_a1',
+            callID: 'call_grep',
+            type: 'tool',
+            tool: 'grep',
+            state: {
+              status: 'completed',
+              input: { pattern: 'TODO', path: 'packages/ui', include: '*.ts' },
+              output: 'many hits',
+            },
+          },
+        ],
+      },
+    ]);
+
+    expect(record.parts[0].state.input).toEqual({ path: 'src/app.ts', offset: 1 });
+    expect(record.parts[1].state.input).toEqual({
+      pattern: 'TODO',
+      path: 'packages/ui',
+      include: '*.ts',
+    });
+    expect(JSON.stringify(record.parts)).not.toContain('SECRET BODY');
+    expect(JSON.stringify(record.parts)).not.toContain('file body');
   });
 
   it('drops the reasoning body and keeps identity and timing', () => {

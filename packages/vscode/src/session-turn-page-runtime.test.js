@@ -721,7 +721,12 @@ describe('projectSlimParts (VS Code parity with web host)', () => {
       callID: 'call_prt_1',
       tool: 'bash',
       type: 'tool',
-      state: { status: 'completed', title: 'ran bash', time: { start: 1, end: 2 } },
+      state: {
+        status: 'completed',
+        title: 'ran bash',
+        time: { start: 1, end: 2 },
+        input: { command: 'ls' },
+      },
       slim: true,
     });
 

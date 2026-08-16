@@ -99,9 +99,46 @@ const recordId = (record) => {
 /** Marker stamped on every projected part; clients treat unstamped as full. */
 export const SLIM_PARTS_PROJECTION = 'slim-v1';
 
-/** Identity/status fields kept on a projected tool part — never the output body. */
+/** Locator fields the first-packet UI needs. Never copy result bodies. */
+const SLIM_TOOL_INPUT_KEYS = [
+  'path',
+  'filePath',
+  'file_path',
+  'pattern',
+  'glob',
+  'include',
+  'exclude',
+  'query',
+  'target',
+  'command',
+  'offset',
+  'limit',
+];
+const SLIM_TOOL_INPUT_STRING_MAX = 240;
+
+const projectSlimToolInput = (input) => {
+  if (!input || typeof input !== 'object' || Array.isArray(input)) return undefined;
+  const slim = {};
+  for (const key of SLIM_TOOL_INPUT_KEYS) {
+    if (!Object.hasOwn(input, key)) continue;
+    const value = input[key];
+    if (typeof value === 'string') {
+      const trimmed = value.trim();
+      if (!trimmed) continue;
+      slim[key] = trimmed.length > SLIM_TOOL_INPUT_STRING_MAX
+        ? trimmed.slice(0, SLIM_TOOL_INPUT_STRING_MAX)
+        : trimmed;
+      continue;
+    }
+    if (typeof value === 'number' && Number.isFinite(value)) slim[key] = value;
+  }
+  return Object.keys(slim).length > 0 ? slim : undefined;
+};
+
+/** Identity/status/locator fields kept on a projected tool part — never the output body. */
 const projectToolPart = (part) => {
   const state = part.state && typeof part.state === 'object' ? part.state : undefined;
+  const input = state ? projectSlimToolInput(state.input) : undefined;
   return {
     ...(part.id === undefined ? {} : { id: part.id }),
     ...(part.sessionID === undefined ? {} : { sessionID: part.sessionID }),
@@ -115,6 +152,7 @@ const projectToolPart = (part) => {
           ...(state.status === undefined ? {} : { status: state.status }),
           ...(state.title === undefined ? {} : { title: state.title }),
           ...(state.time === undefined ? {} : { time: state.time }),
+          ...(input ? { input } : {}),
         },
       }
       : {}),
