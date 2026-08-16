@@ -111,6 +111,11 @@ describe('MobileSessionStatusBar SessionItem', () => {
 });
 
 describe('MobileSessionStatusBar phone navigation contracts', () => {
+  test('worktree session rows share the root list inset instead of a nested indent', () => {
+    expect(statusBarSource).toContain('// Worktree sessions share the root list inset so titles align with');
+    expect(statusBarSource).not.toContain("!isRoot && 'pl-4'");
+  });
+
   test('new chat and worktree draft entry points use phone openDraft, not store-only draft open', () => {
     // Phone ChatView selectionOverride comes from the secondary route. Opening a
     // draft without openDraft leaves the previous session route mounted.

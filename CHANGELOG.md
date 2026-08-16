@@ -4,6 +4,11 @@ All notable changes to this project will be documented in this file.
 
 ## [Unreleased]
 
+## [1.16.134-beta.20] - 2026-08-16
+
+- **Exploration groups:** the count flip still moves upward, but compositor layers no longer poke out of the row and flash a mobile scrollbar.
+- **Mobile sessions:** expanded worktree lists no longer add a second indent under the project.
+
 ## [1.16.134-beta.19] - 2026-08-16
 
 - **Status bar:** on mobile, the composer status uses the same type size as collapsed Processed activity titles.
