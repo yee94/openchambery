@@ -4,6 +4,10 @@ All notable changes to this project will be documented in this file.
 
 ## [Unreleased]
 
+## [1.16.134-beta.17] - 2026-08-16
+
+- **Provider recovery:** messages no longer get stuck after a failed provider load. Sending re-triggers a fresh provider refresh once before giving up, and an empty provider catalog is never cached as permanently fresh, so the model list is re-fetched on demand instead of being stranded forever.
+
 ## [1.16.134-beta.16] - 2026-08-16
 
 - **Exploration groups:** the count flip keeps its upward motion, but the row can no longer grow and open a mobile scrollbar.
