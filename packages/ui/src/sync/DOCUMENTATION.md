@@ -322,7 +322,7 @@ Modules:
 | `transcript-parent-recovery.ts` | Production assistant-parent recovery helpers for the Query transport fetcher (no nested store commit) |
 | `session-todo-projection.ts` | Hydrate-path todo seed: project the latest loaded `todowrite`/`todoread` list into `store.todo` + persist when live `todo.updated` never arrived. No extra HTTP. |
 | `transcript-diagnostics.ts` | Client diagnostics hub: named `feat` events (`transcript` today), redacted snapshots (no bodies/tokens/URLs), bounded recorder, export schema `openchamber.client-diagnostics.v1` |
-| `transcript-diagnostics-runtime.ts` | Production selector: prerelease + user opt-in gate, IndexedDB/memory sink, About-page export/download |
+| `transcript-diagnostics-runtime.ts` | Production selector: prerelease-only gate, IndexedDB/memory sink, About-page export/download |
 | `transcript-diagnostics-indexeddb.ts` | IndexedDB ring buffer for local feat events |
 | `transcript-repository.test.ts` | Focused seam tests (reads, all purposes, SSE, optimistic, reset, materialize/remove, subscribe) |
 | `session-transcript-query-cache.test.ts` | Capacity constants, key families, active retain, LRU order, purge families, long growth, destructive reset, generation isolation, adapter integration |

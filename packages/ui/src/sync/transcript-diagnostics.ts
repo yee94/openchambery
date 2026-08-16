@@ -1,7 +1,17 @@
 import type { Message, Part } from "@opencode-ai/sdk/v2"
 
-import { isSlimPart } from "./displayParts"
-import type { TranscriptCommand, TranscriptData, TranscriptHydrationState, TranscriptRequestState } from "./transcript-repository"
+import type { TranscriptCommand, TranscriptData, TranscriptRequestState } from "./transcript-repository"
+
+function isSlimPart(part: Part): boolean {
+  return (part as { slim?: unknown }).slim === true
+}
+
+/** Optional paint/hydration facts. This branch has no hydration repository API. */
+export type TranscriptDiagnosticsHydration = {
+  readonly sessionID?: string
+  readonly phase?: string
+  readonly p0Satisfied?: boolean
+}
 
 /**
  * Client diagnostics hub. Each domain reports through a named feat
@@ -37,8 +47,9 @@ export type TranscriptDiagnosticsEvent = {
   readonly source?: TranscriptDiagnosticsSource
   readonly durationMs?: number
   readonly requestStatus?: TranscriptRequestState["status"]
-  readonly hydrationPhase?: TranscriptHydrationState["phase"]
+  readonly hydrationPhase?: string
   readonly p0Satisfied?: boolean
+  readonly httpStatus?: number
   readonly messageCount?: number
   readonly lastMessageIDs?: readonly string[]
   readonly boundaryKind?: TranscriptData["boundary"]["kind"]
@@ -78,6 +89,20 @@ export function diagnosticsExportEventCount(content: string): number {
   } catch {
     return 0
   }
+}
+
+export function diagnosticsHttpStatus(error: unknown): number | undefined {
+  if (error && typeof error === "object" && "status" in error) {
+    const status = (error as { status?: unknown }).status
+    if (typeof status === "number" && Number.isFinite(status) && status >= 100 && status <= 599) {
+      return status
+    }
+  }
+  const text = error instanceof Error ? error.message : typeof error === "string" ? error : ""
+  const match = text.match(/\((\d{3})\)/)
+  if (!match) return undefined
+  const status = Number(match[1])
+  return status >= 100 && status <= 599 ? status : undefined
 }
 
 export function sanitizeDiagnosticsError(value: unknown): string | undefined {
@@ -123,7 +148,7 @@ export function snapshotTranscriptDiagnostics(input: {
   durationMs?: number
   transcript?: TranscriptData
   request?: TranscriptRequestState
-  hydration?: TranscriptHydrationState
+  hydration?: TranscriptDiagnosticsHydration
   command?: TranscriptCommand["type"]
   purpose?: string
   sseType?: string
@@ -157,7 +182,12 @@ export function snapshotTranscriptDiagnostics(input: {
     ...(input.command ? { command: input.command } : {}),
     ...(input.purpose ? { purpose: input.purpose } : {}),
     ...(input.sseType ? { sseType: input.sseType } : {}),
-    ...(sanitizeDiagnosticsError(input.error) ? { error: sanitizeDiagnosticsError(input.error) } : {}),
+    ...(sanitizeDiagnosticsError(input.error ?? input.request?.error)
+      ? { error: sanitizeDiagnosticsError(input.error ?? input.request?.error) }
+      : {}),
+    ...(diagnosticsHttpStatus(input.error) !== undefined
+      ? { httpStatus: diagnosticsHttpStatus(input.error) }
+      : {}),
   }
 }
 

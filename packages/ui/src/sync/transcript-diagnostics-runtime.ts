@@ -20,13 +20,13 @@ import {
   isPrereleaseClientVersion,
   snapshotTranscriptDiagnostics,
   type TranscriptDiagnosticsEvent,
+  type TranscriptDiagnosticsHydration,
   type TranscriptDiagnosticsRecorder,
   type TranscriptDiagnosticsSink,
 } from "./transcript-diagnostics"
 import type {
   TranscriptCommand,
   TranscriptData,
-  TranscriptHydrationState,
   TranscriptRequestState,
 } from "./transcript-repository"
 import { createIndexedDBTranscriptDiagnosticsSink } from "./transcript-diagnostics-indexeddb"
@@ -92,7 +92,7 @@ export function recordTranscriptCommandDiagnostics(input: {
   command: TranscriptCommand
   transcript?: TranscriptData
   request?: TranscriptRequestState
-  hydration?: TranscriptHydrationState
+  hydration?: TranscriptDiagnosticsHydration
   error?: unknown
 }): void {
   const kind = diagnosticsKindForCommand(input.command)

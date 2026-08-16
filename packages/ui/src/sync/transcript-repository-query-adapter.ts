@@ -60,6 +60,7 @@ import {
   type TranscriptScope,
 } from "./transcript-repository"
 import { getInitialSessionTurnLimit } from "./session-message-policy"
+import { recordTranscriptCommandDiagnostics, recordTranscriptDiagnostics, snapshotTranscriptDiagnostics } from "./transcript-diagnostics-runtime"
 import { UNKNOWN_SESSION_HISTORY_BOUNDARY } from "./types"
 
 // ---------------------------------------------------------------------------
@@ -532,6 +533,7 @@ export function createQueryTranscriptRepository(
       const identity = resolveScopeIdentity(scope, deps)
       const queryKey = queryKeyFor(scope)
 
+      const result = ((): TranscriptCommandResult => {
       switch (command.type) {
         case "http-page": {
           const merge = applySessionTranscriptMerge(
@@ -664,6 +666,20 @@ export function createQueryTranscriptRepository(
           return { applied: false, changed: false }
         }
       }
+      })()
+      if (result.applied) {
+        recordTranscriptCommandDiagnostics({
+          directory: identity.directory,
+          sessionID: identity.sessionID,
+          transport: identity.transport,
+          generation: identity.generation,
+          command,
+          transcript: toTranscriptData(readData(scope), identity.sessionID),
+          request: repository.getRequestState?.(scope),
+          error: result.error,
+        })
+      }
+      return result
     },
 
     subscribe(scope, listener) {
@@ -697,25 +713,88 @@ export function createQueryTranscriptRepository(
     },
 
     async ensureInitial(scope) {
+      const captured = resolveScopeIdentity(scope, deps)
+      const startedAt = Date.now()
+      const hadCanonical = readData(scope) !== undefined
       const controller = ensureController(scope)
-      await controller.ensureInitial()
+      try {
+        await controller.ensureInitial()
+      } catch (error) {
+        recordTranscriptDiagnostics(snapshotTranscriptDiagnostics({
+          kind: "request-error",
+          sessionID: captured.sessionID,
+          directory: captured.directory,
+          transport: captured.transport,
+          generation: captured.generation,
+          source: hadCanonical ? "query-cache" : "network",
+          purpose: "initial",
+          durationMs: Date.now() - startedAt,
+          transcript: toTranscriptData(readData(scope), captured.sessionID),
+          request: repository.getRequestState?.(scope),
+          error,
+        }))
+        throw error
+      }
       // Start min-residency from this ensure so immediate enforce cannot evict.
       cacheBudget.noteScopeObserved(toCacheScope(scope))
       enforceBudgetAfterWrite(scope)
-      return repository.getTranscript(scope)
+      const transcript = repository.getTranscript(scope)
+      recordTranscriptDiagnostics(snapshotTranscriptDiagnostics({
+        kind: "ensure-initial",
+        sessionID: captured.sessionID,
+        directory: captured.directory,
+        transport: captured.transport,
+        generation: captured.generation,
+        source: hadCanonical ? "query-cache" : "network",
+        durationMs: Date.now() - startedAt,
+        transcript,
+        request: repository.getRequestState?.(scope),
+      }))
+      return transcript
     },
 
     async fetchPreviousPage(scope) {
+      const captured = resolveScopeIdentity(scope, deps)
+      const startedAt = Date.now()
       const controller = ensureController(scope)
-      // Ensure we have a tail first.
-      if (!controller.getData() || controller.getData()!.pages.length === 0) {
-        await controller.ensureInitial()
-        cacheBudget.noteScopeObserved(toCacheScope(scope))
+      try {
+        // Ensure we have a tail first.
+        if (!controller.getData() || controller.getData()!.pages.length === 0) {
+          await controller.ensureInitial()
+          cacheBudget.noteScopeObserved(toCacheScope(scope))
+        }
+        await controller.fetchPreviousPage()
+        // Active transcript retains all pages; enforce only bounds inactive peers.
+        enforceBudgetAfterWrite(scope)
+        const transcript = repository.getTranscript(scope)
+        recordTranscriptDiagnostics(snapshotTranscriptDiagnostics({
+          kind: "http-page",
+          sessionID: captured.sessionID,
+          directory: captured.directory,
+          transport: captured.transport,
+          generation: captured.generation,
+          source: "network",
+          durationMs: Date.now() - startedAt,
+          purpose: "prepend",
+          command: "http-page",
+          transcript,
+          request: repository.getRequestState?.(scope),
+        }))
+        return transcript
+      } catch (error) {
+        recordTranscriptDiagnostics(snapshotTranscriptDiagnostics({
+          kind: "request-error",
+          sessionID: captured.sessionID,
+          directory: captured.directory,
+          transport: captured.transport,
+          generation: captured.generation,
+          source: "network",
+          durationMs: Date.now() - startedAt,
+          purpose: "prepend",
+          error,
+        }))
+        throw error
       }
-      await controller.fetchPreviousPage()
-      // Active transcript retains all pages; enforce only bounds inactive peers.
-      enforceBudgetAfterWrite(scope)
-      return repository.getTranscript(scope)
     },
 
     getController(scope) {

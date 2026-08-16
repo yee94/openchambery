@@ -95,6 +95,10 @@ import {
     retryTranscriptInitial,
 } from '@/sync/transcript-repository-runtime';
 import {
+    recordTranscriptDiagnostics,
+    snapshotTranscriptDiagnostics,
+} from '@/sync/transcript-diagnostics-runtime';
+import {
     INITIAL_TRANSCRIPT_STALL_STATE,
     TRANSCRIPT_STALL_COOLDOWN_MS,
     TRANSCRIPT_STALL_MAX_ATTEMPTS,
@@ -790,12 +794,34 @@ const ChatContainerContent: React.FC<ChatContainerContentProps> = ({
         const sessionId = currentSessionId;
         const directory = effectiveSessionDirectory;
         setRetryingSessionHistoryId(sessionId);
+        recordTranscriptDiagnostics(snapshotTranscriptDiagnostics({
+            kind: 'refresh',
+            sessionID: sessionId,
+            directory,
+            purpose: 'retry',
+            source: 'network',
+            request: sessionPrefetchInfo
+                ? {
+                    sessionID: sessionId,
+                    status: sessionPrefetchInfo.status,
+                    error: sessionPrefetchInfo.error,
+                }
+                : undefined,
+            error: sessionPrefetchInfo?.error,
+        }));
         void (async () => {
             try {
                 await retryTranscriptInitial(directory, sessionId);
                 await sync.ensureSessionRenderable(sessionId, { directory });
-            } catch {
-                // Settled failure returns to the load-error wall after retrying clears.
+            } catch (error) {
+                recordTranscriptDiagnostics(snapshotTranscriptDiagnostics({
+                    kind: 'request-error',
+                    sessionID: sessionId,
+                    directory,
+                    purpose: 'retry',
+                    source: 'network',
+                    error,
+                }));
             } finally {
                 setRetryingSessionHistoryId((current) => (current === sessionId ? null : current));
             }
@@ -1441,6 +1467,30 @@ const ChatContainerContent: React.FC<ChatContainerContentProps> = ({
     // a restorable transcript with the live-session load-failure wall.
     const hasSessionHistoryLoadError =
         Boolean(currentSessionId) && sessionTranscriptGate === 'load-error';
+
+    React.useEffect(() => {
+        if (!hasSessionHistoryLoadError || !currentSessionId) return;
+        recordTranscriptDiagnostics(snapshotTranscriptDiagnostics({
+            kind: 'request-error',
+            sessionID: currentSessionId,
+            directory: effectiveSessionDirectory,
+            purpose: 'load-failed',
+            source: 'network',
+            request: sessionPrefetchInfo
+                ? {
+                    sessionID: currentSessionId,
+                    status: sessionPrefetchInfo.status,
+                    error: sessionPrefetchInfo.error,
+                }
+                : undefined,
+            error: sessionPrefetchInfo?.error,
+        }));
+    }, [
+        currentSessionId,
+        effectiveSessionDirectory,
+        hasSessionHistoryLoadError,
+        sessionPrefetchInfo,
+    ]);
 
     React.useEffect(() => {
         if (!active || !currentSessionId) return;
