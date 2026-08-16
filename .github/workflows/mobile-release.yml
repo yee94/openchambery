@@ -30,6 +30,11 @@ on:
         required: false
         default: false
         type: boolean
+      publish_external_testflight:
+        description: Associate the uploaded iOS build with the external TestFlight group and submit Beta App Review. Leave off for internal-only beta builds.
+        required: false
+        default: true
+        type: boolean
   workflow_call:
     inputs:
       version_name:
@@ -59,6 +64,11 @@ on:
         required: false
         default: false
         type: boolean
+      publish_external_testflight:
+        description: Associate the uploaded iOS build with the external TestFlight group and submit Beta App Review.
+        required: false
+        default: true
+        type: boolean
 
 concurrency:
   group: mobile-release-${{ inputs.release_tag != '' && inputs.release_tag || github.run_id }}
@@ -75,6 +85,7 @@ jobs:
     runs-on: ubuntu-latest
     outputs:
       version_name: ${{ steps.version.outputs.version_name }}
+      ios_marketing_version: ${{ steps.version.outputs.ios_marketing_version }}
       build_number: ${{ steps.version.outputs.build_number }}
       release_tag: ${{ steps.version.outputs.release_tag }}
     steps:
@@ -99,11 +110,14 @@ jobs:
           fi
 
           version_name="${input_version:-$package_version}"
+          # Apple CFBundleShortVersionString cannot contain a prerelease suffix.
+          ios_marketing_version="${version_name%%-*}"
           build_number="${input_build:-${{ github.run_number }}}"
           release_tag="$input_release_tag"
 
           {
             echo "version_name=$version_name"
+            echo "ios_marketing_version=$ios_marketing_version"
             echo "build_number=$build_number"
             echo "release_tag=$release_tag"
           } >> "$GITHUB_OUTPUT"
@@ -261,7 +275,7 @@ jobs:
       - name: Set TestFlight entitlement and versions
         shell: bash
         env:
-          VERSION_NAME: ${{ needs.resolve-version.outputs.version_name }}
+          VERSION_NAME: ${{ needs.resolve-version.outputs.ios_marketing_version }}
           BUILD_NUMBER: ${{ needs.resolve-version.outputs.build_number }}
           APPLE_TEAM_ID: ${{ secrets.APPLE_TEAM_ID }}
           IOS_APP_PROFILE_NAME: ${{ secrets.IOS_APP_PROFILE_NAME }}
@@ -420,6 +434,7 @@ jobs:
             --apiIssuer "$APP_STORE_CONNECT_ISSUER_ID"
 
       - name: Publish build to external TestFlight group
+        if: inputs.publish_external_testflight
         shell: bash
         env:
           APP_STORE_CONNECT_KEY_ID: ${{ secrets.APP_STORE_CONNECT_KEY_ID }}
