@@ -83,19 +83,21 @@ describe('tool busy title chrome', () => {
     test('every active expandable tool uses the shared loading orb and settled rows restore identity', () => {
         expect(toolPartSource).toContain("import { LatticeOrb } from './LatticeOrb';");
         expect(toolPartSource).toContain('const isFinalized = isToolPartSettled(part);');
-        expect(toolPartSource).toContain('{effectiveActive ? (');
+        expect(toolPartSource).toContain('{isTaskTool ? (');
+        expect(toolPartSource).toContain(') : effectiveActive ? (');
         expect(toolPartSource).toContain("label={t('chat.assistantStatus.usingTool', { tool: taskTitle })}");
         expect(toolPartSource).toContain('getToolIcon(normalizedPartTool || part.tool)');
     });
 
-    test('task rows load with the orb and restore the agent avatar after settlement', () => {
+    test('task rows keep the agent avatar across busy and settled states', () => {
         const lifecycleBranch = toolPartSource.slice(
-            toolPartSource.indexOf('{effectiveActive ? ('),
+            toolPartSource.indexOf('{isTaskTool ? ('),
             toolPartSource.indexOf('getToolIcon(normalizedPartTool || part.tool)'),
         );
-        expect(lifecycleBranch).toContain('<LatticeOrb');
-        expect(lifecycleBranch).toContain(') : isTaskTool ? (');
         expect(lifecycleBranch).toContain('<AgentAvatar');
+        expect(lifecycleBranch).toContain(') : effectiveActive ? (');
+        expect(lifecycleBranch).toContain('<LatticeOrb');
+        expect(lifecycleBranch.indexOf('<AgentAvatar')).toBeLessThan(lifecycleBranch.indexOf('<LatticeOrb'));
     });
 
     test('keeps lifecycle identity in the fixed leading slot and moves disclosure to the trailing edge', () => {
