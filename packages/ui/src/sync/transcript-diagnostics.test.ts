@@ -10,6 +10,8 @@ import {
   diagnosticsSourceForCommand,
   isPrereleaseClientVersion,
   lastTranscriptMessageIDs,
+  parseTranscriptDiagnosticsPreference,
+  resolveTranscriptDiagnosticsEnabled,
   sanitizeDiagnosticsError,
   snapshotTranscriptDiagnostics,
 } from "./transcript-diagnostics"
@@ -22,6 +24,16 @@ describe("transcript diagnostics", () => {
     expect(isPrereleaseClientVersion("1.16.134-beta.5")).toBe(true)
     expect(isPrereleaseClientVersion("")).toBe(false)
     expect(isPrereleaseClientVersion(undefined)).toBe(false)
+  })
+
+  test("defaults the About switch on for beta and off for stable", () => {
+    expect(resolveTranscriptDiagnosticsEnabled({ version: "1.16.134" })).toBe(false)
+    expect(resolveTranscriptDiagnosticsEnabled({ version: "1.16.134-beta.9" })).toBe(true)
+    expect(resolveTranscriptDiagnosticsEnabled({ version: "1.16.134", preference: true })).toBe(true)
+    expect(resolveTranscriptDiagnosticsEnabled({ version: "1.16.134-beta.9", preference: false })).toBe(false)
+    expect(parseTranscriptDiagnosticsPreference(null)).toBeNull()
+    expect(parseTranscriptDiagnosticsPreference("true")).toBe(true)
+    expect(parseTranscriptDiagnosticsPreference("false")).toBe(false)
   })
 
   test("redacts credential-shaped errors and keeps ordinary codes", () => {

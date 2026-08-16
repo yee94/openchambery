@@ -1,7 +1,17 @@
 import type { Message, Part } from "@opencode-ai/sdk/v2"
 
-import { isSlimPart } from "./displayParts"
-import type { TranscriptCommand, TranscriptData, TranscriptHydrationState, TranscriptRequestState } from "./transcript-repository"
+import type { TranscriptCommand, TranscriptData, TranscriptRequestState } from "./transcript-repository"
+
+function isSlimPart(part: Part): boolean {
+  return (part as { slim?: unknown }).slim === true
+}
+
+/** Optional paint/hydration facts. Compatible with TranscriptHydrationState. */
+export type TranscriptDiagnosticsHydration = {
+  readonly sessionID?: string
+  readonly phase?: string
+  readonly p0Satisfied?: boolean
+}
 
 /**
  * Client diagnostics hub. Each domain reports through a named feat
@@ -37,8 +47,9 @@ export type TranscriptDiagnosticsEvent = {
   readonly source?: TranscriptDiagnosticsSource
   readonly durationMs?: number
   readonly requestStatus?: TranscriptRequestState["status"]
-  readonly hydrationPhase?: TranscriptHydrationState["phase"]
+  readonly hydrationPhase?: string
   readonly p0Satisfied?: boolean
+  readonly httpStatus?: number
   readonly messageCount?: number
   readonly lastMessageIDs?: readonly string[]
   readonly boundaryKind?: TranscriptData["boundary"]["kind"]
@@ -48,7 +59,6 @@ export type TranscriptDiagnosticsEvent = {
   readonly purpose?: string
   readonly sseType?: string
   readonly error?: string
-  readonly httpStatus?: number
 }
 
 export type TranscriptDiagnosticsSink = {
@@ -64,6 +74,23 @@ const SENSITIVE_ERROR = /bearer|token|authorization|password|secret|cookie/i
 
 export function isPrereleaseClientVersion(version: string | null | undefined): boolean {
   return typeof version === "string" && version.includes("-")
+}
+
+export const TRANSCRIPT_DIAGNOSTICS_PREFERENCE_KEY = "openchamber.client-diagnostics.enabled"
+
+export function parseTranscriptDiagnosticsPreference(raw: string | null | undefined): boolean | null {
+  if (raw === "true") return true
+  if (raw === "false") return false
+  return null
+}
+
+export function resolveTranscriptDiagnosticsEnabled(input: {
+  version?: string | null
+  preference?: boolean | null
+}): boolean {
+  if (input.preference === true) return true
+  if (input.preference === false) return false
+  return isPrereleaseClientVersion(input.version)
 }
 
 export function diagnosticsExportFileName(now = Date.now()): string {
@@ -138,7 +165,7 @@ export function snapshotTranscriptDiagnostics(input: {
   durationMs?: number
   transcript?: TranscriptData
   request?: TranscriptRequestState
-  hydration?: TranscriptHydrationState
+  hydration?: TranscriptDiagnosticsHydration
   command?: TranscriptCommand["type"]
   purpose?: string
   sseType?: string

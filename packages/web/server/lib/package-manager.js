@@ -108,7 +108,7 @@ async function checkForUpdatesFromUpdateService(updateCheckUrl, currentVersion, 
       currentVersion,
       installId: getOrCreateInstallId(appType),
       instanceMode: options.instanceMode || 'unknown',
-      reportUsage: options.reportUsage !== false,
+      reportUsage: options.reportUsage === true,
     };
 
     const response = await fetch(updateCheckUrl, {

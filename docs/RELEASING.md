@@ -70,7 +70,7 @@ git push origin "v$VERSION"
 2. 依赖 `release.yml`：含 `-` 的版本创建/发布 GitHub Release 时设置 `prerelease: true`，从而**不会**成为 `/releases/latest`。
 3. 依赖 finalize-release **跳过** `deploy/update-service/release-manifest.json` 写入；`write-release-manifest.mjs` 对 prerelease 直接 exit 0。Agent 不得手工把该 manifest 改成 beta 版本并推送。
 4. 保持 Electron `autoUpdater.allowPrerelease = false`（稳定客户端不订阅 prerelease）。
-5. iOS 仍上传 TestFlight，但只进内测。Apple marketing version 会去掉 `-beta` 后缀（`1.16.134-beta.8` → `1.16.134`）；**禁止**把 prerelease 构建关联到已有外测组或提交 Beta App Review。
+5. iOS 仍上传 TestFlight，但只进内测。Apple marketing version 对 prerelease **固定为 `0.99.0`**（`1.16.134-beta.8` → `0.99.0`），build number 继续递增；稳定版仍用真实版本号。这样 package 版本在 `1.16.139` 与 `1.16.134` 之间跳动时，TestFlight 列车不会回退。**禁止**把 prerelease 构建关联到已有外测组或提交 Beta App Review。
 
 **发布时禁止**
 
