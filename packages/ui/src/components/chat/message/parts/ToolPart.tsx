@@ -249,7 +249,29 @@ const LiveDuration: React.FC<{ start: number; end?: number; active: boolean }> =
     return <>{formatDuration(start, end, now)}</>;
 };
 
+const parseDiffCount = (value: unknown): number | null => {
+    if (typeof value === 'number' && Number.isFinite(value)) {
+        return Math.max(0, Math.trunc(value));
+    }
+    if (typeof value === 'string') {
+        const parsed = Number.parseInt(value, 10);
+        if (Number.isFinite(parsed)) {
+            return Math.max(0, parsed);
+        }
+    }
+    return null;
+};
+
 const parseDiffStats = (metadata?: Record<string, unknown>): { added: number; removed: number } | null => {
+    const addedFromMeta = parseDiffCount(metadata?.additions);
+    const removedFromMeta = parseDiffCount(metadata?.deletions);
+    if (addedFromMeta !== null || removedFromMeta !== null) {
+        const added = addedFromMeta ?? 0;
+        const removed = removedFromMeta ?? 0;
+        if (added === 0 && removed === 0) return null;
+        return { added, removed };
+    }
+
     const diffText = getPatchText((metadata as { patch?: unknown } | undefined)?.patch)
         ?? getPatchText(metadata?.diff);
     if (!diffText) return null;

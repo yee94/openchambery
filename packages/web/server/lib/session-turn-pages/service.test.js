@@ -242,6 +242,109 @@ describe('projectSlimParts', () => {
     expect(JSON.stringify(record.parts)).not.toContain('file body');
   });
 
+  it('keeps edit line counts and drops the patch body', () => {
+    const [record] = projectSlimParts([
+      {
+        info: { id: 'msg_a1', role: 'assistant' },
+        parts: [{
+          id: 'prt_edit',
+          sessionID: 'ses_1',
+          messageID: 'msg_a1',
+          callID: 'call_edit',
+          type: 'tool',
+          tool: 'edit',
+          state: {
+            status: 'completed',
+            title: 'edit file',
+            input: { path: 'src/app.ts', oldString: 'foo', newString: 'bar' },
+            metadata: {
+              patch: '--- a/src/app.ts\n+++ b/src/app.ts\n@@ -1,2 +1,3 @@\n-foo\n+bar\n+baz\n',
+            },
+            output: 'applied',
+          },
+        }],
+      },
+    ]);
+
+    expect(record.parts[0].state.input).toEqual({ path: 'src/app.ts' });
+    expect(record.parts[0].state.metadata).toEqual({ additions: 2, deletions: 1 });
+    expect(JSON.stringify(record.parts[0])).not.toContain('oldString');
+    expect(JSON.stringify(record.parts[0])).not.toContain('+bar');
+    expect(JSON.stringify(record.parts[0])).not.toContain('applied');
+  });
+
+  it('keeps per-file edit counts without file patches', () => {
+    const [record] = projectSlimParts([
+      {
+        info: { id: 'msg_a1', role: 'assistant' },
+        parts: [{
+          id: 'prt_multi',
+          sessionID: 'ses_1',
+          messageID: 'msg_a1',
+          callID: 'call_multi',
+          type: 'tool',
+          tool: 'multiedit',
+          state: {
+            status: 'completed',
+            metadata: {
+              files: [
+                { relativePath: 'a.ts', additions: 3, deletions: 1, patch: 'SECRET PATCH A' },
+                { filePath: 'b.ts', additions: 0, deletions: 2, patch: 'SECRET PATCH B' },
+              ],
+            },
+          },
+        }],
+      },
+    ]);
+
+    expect(record.parts[0].state.metadata).toEqual({
+      files: [
+        { relativePath: 'a.ts', additions: 3, deletions: 1 },
+        { filePath: 'b.ts', additions: 0, deletions: 2 },
+      ],
+      additions: 3,
+      deletions: 3,
+    });
+    expect(JSON.stringify(record.parts[0])).not.toContain('SECRET PATCH');
+  });
+
+  it('keeps task agent name, description, and child session id', () => {
+    const [record] = projectSlimParts([
+      {
+        info: { id: 'msg_a1', role: 'assistant' },
+        parts: [{
+          id: 'prt_task',
+          sessionID: 'ses_1',
+          messageID: 'msg_a1',
+          callID: 'call_task',
+          type: 'tool',
+          tool: 'task',
+          metadata: { sessionId: 'ses_child_part' },
+          state: {
+            status: 'completed',
+            title: 'Goal 遇题自动暂停',
+            input: {
+              subagent_type: 'fixer',
+              description: 'fix the load wall',
+              prompt: 'A VERY LONG TASK PROMPT THAT MUST BE DROPPED',
+            },
+            metadata: { sessionId: 'ses_child', huge: 'x'.repeat(200) },
+            output: '<task_metadata>{"sessionId":"ses_from_output"}</task_metadata>',
+          },
+        }],
+      },
+    ]);
+
+    expect(record.parts[0].metadata).toEqual({ sessionId: 'ses_child_part' });
+    expect(record.parts[0].state.input).toEqual({
+      subagent_type: 'fixer',
+      description: 'fix the load wall',
+    });
+    expect(record.parts[0].state.metadata).toEqual({ sessionId: 'ses_child' });
+    expect(JSON.stringify(record.parts[0])).not.toContain('VERY LONG TASK PROMPT');
+    expect(JSON.stringify(record.parts[0])).not.toContain('ses_from_output');
+  });
+
   it('drops the reasoning body and keeps identity and timing', () => {
     const [record] = projectSlimParts([
       {

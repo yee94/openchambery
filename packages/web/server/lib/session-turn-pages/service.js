@@ -113,6 +113,11 @@ const SLIM_TOOL_INPUT_KEYS = [
   'command',
   'offset',
   'limit',
+  'description',
+  'subagent_type',
+  'subagentType',
+  'agent',
+  'subagent',
 ];
 const SLIM_TOOL_INPUT_STRING_MAX = 240;
 
@@ -135,16 +140,142 @@ const projectSlimToolInput = (input) => {
   return Object.keys(slim).length > 0 ? slim : undefined;
 };
 
+const parseSlimCount = (value) => {
+  if (typeof value === 'number' && Number.isFinite(value)) return Math.max(0, Math.trunc(value));
+  if (typeof value === 'string') {
+    const parsed = Number.parseInt(value, 10);
+    if (Number.isFinite(parsed)) return Math.max(0, parsed);
+  }
+  return undefined;
+};
+
+const countDiffLines = (diffText) => {
+  if (typeof diffText !== 'string' || !diffText) return undefined;
+  let additions = 0;
+  let deletions = 0;
+  let lineStart = 0;
+  for (let index = 0; index <= diffText.length; index += 1) {
+    if (index < diffText.length && diffText.charCodeAt(index) !== 10) continue;
+    const line = diffText.slice(lineStart, index);
+    if (line.startsWith('+') && !line.startsWith('+++')) additions += 1;
+    if (line.startsWith('-') && !line.startsWith('---')) deletions += 1;
+    lineStart = index + 1;
+  }
+  if (additions === 0 && deletions === 0) return undefined;
+  return { additions, deletions };
+};
+
+const projectSlimFileEntry = (file) => {
+  if (!file || typeof file !== 'object' || Array.isArray(file)) return undefined;
+  const counted = countDiffLines(
+    typeof file.patch === 'string' ? file.patch : typeof file.diff === 'string' ? file.diff : '',
+  );
+  const additions = parseSlimCount(file.additions) ?? counted?.additions;
+  const deletions = parseSlimCount(file.deletions) ?? counted?.deletions;
+  const relativePath = typeof file.relativePath === 'string' ? file.relativePath.trim() : '';
+  const filePath = typeof file.filePath === 'string' ? file.filePath.trim() : '';
+  const path = typeof file.path === 'string' ? file.path.trim() : '';
+  if (!relativePath && !filePath && !path && additions === undefined && deletions === undefined) {
+    return undefined;
+  }
+  return {
+    ...(relativePath ? { relativePath } : {}),
+    ...(filePath ? { filePath } : {}),
+    ...(!relativePath && !filePath && path ? { path } : {}),
+    ...(additions !== undefined ? { additions } : {}),
+    ...(deletions !== undefined ? { deletions } : {}),
+  };
+};
+
+/** Keep edit +/− counts. Never copy patch/result bodies. */
+const copySlimSessionId = (record) => {
+  const sessionId = typeof record.sessionId === 'string' ? record.sessionId.trim() : '';
+  const sessionID = typeof record.sessionID === 'string' ? record.sessionID.trim() : '';
+  if (!sessionId && !sessionID) return undefined;
+  return {
+    ...(sessionId ? { sessionId } : {}),
+    ...(sessionID && sessionID !== sessionId ? { sessionID } : {}),
+  };
+};
+
+const projectSlimToolMetadata = (metadata) => {
+  if (!metadata || typeof metadata !== 'object' || Array.isArray(metadata)) return undefined;
+  const slim = { ...copySlimSessionId(metadata) };
+  const counted = countDiffLines(
+    typeof metadata.patch === 'string'
+      ? metadata.patch
+      : typeof metadata.diff === 'string'
+        ? metadata.diff
+        : '',
+  );
+  let additions = parseSlimCount(metadata.additions) ?? counted?.additions;
+  let deletions = parseSlimCount(metadata.deletions) ?? counted?.deletions;
+
+  if (Array.isArray(metadata.files)) {
+    const files = metadata.files.map((file) => projectSlimFileEntry(file)).filter(Boolean);
+    if (files.length > 0) {
+      slim.files = files;
+      if (additions === undefined && deletions === undefined) {
+        let added = 0;
+        let removed = 0;
+        let any = false;
+        for (const file of files) {
+          if (typeof file.additions === 'number') {
+            added += file.additions;
+            any = true;
+          }
+          if (typeof file.deletions === 'number') {
+            removed += file.deletions;
+            any = true;
+          }
+        }
+        if (any) {
+          additions = added;
+          deletions = removed;
+        }
+      }
+    }
+  }
+
+  if (metadata.filediff && typeof metadata.filediff === 'object' && !Array.isArray(metadata.filediff)) {
+    const filediff = projectSlimFileEntry({
+      ...metadata.filediff,
+      filePath: typeof metadata.filediff.file === 'string'
+        ? metadata.filediff.file
+        : metadata.filediff.filePath,
+    });
+    if (filediff) {
+      slim.filediff = {
+        ...(typeof metadata.filediff.file === 'string' ? { file: metadata.filediff.file } : {}),
+        ...filediff,
+      };
+      additions ??= filediff.additions;
+      deletions ??= filediff.deletions;
+    }
+  }
+
+  if (additions !== undefined) slim.additions = additions;
+  if (deletions !== undefined) slim.deletions = deletions;
+  return Object.keys(slim).length > 0 ? slim : undefined;
+};
+
 /** Identity/status/locator fields kept on a projected tool part — never the output body. */
 const projectToolPart = (part) => {
   const state = part.state && typeof part.state === 'object' ? part.state : undefined;
   const input = state ? projectSlimToolInput(state.input) : undefined;
+  const metadata = state ? projectSlimToolMetadata(state.metadata) : undefined;
+  const partMetadata = copySlimSessionId(
+    part.metadata && typeof part.metadata === 'object' && !Array.isArray(part.metadata)
+      ? part.metadata
+      : {},
+  );
   return {
     ...(part.id === undefined ? {} : { id: part.id }),
     ...(part.sessionID === undefined ? {} : { sessionID: part.sessionID }),
     ...(part.messageID === undefined ? {} : { messageID: part.messageID }),
     ...(part.callID === undefined ? {} : { callID: part.callID }),
     ...(part.tool === undefined ? {} : { tool: part.tool }),
+    ...(partMetadata ? { metadata: partMetadata } : {}),
     type: 'tool',
     ...(state
       ? {
@@ -153,6 +284,7 @@ const projectToolPart = (part) => {
           ...(state.title === undefined ? {} : { title: state.title }),
           ...(state.time === undefined ? {} : { time: state.time }),
           ...(input ? { input } : {}),
+          ...(metadata ? { metadata } : {}),
         },
       }
       : {}),

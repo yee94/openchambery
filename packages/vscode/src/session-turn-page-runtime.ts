@@ -128,6 +128,11 @@ const SLIM_TOOL_INPUT_KEYS = [
   'command',
   'offset',
   'limit',
+  'description',
+  'subagent_type',
+  'subagentType',
+  'agent',
+  'subagent',
 ] as const;
 const SLIM_TOOL_INPUT_STRING_MAX = 240;
 
@@ -151,18 +156,143 @@ const projectSlimToolInput = (input: unknown): LoosePart | undefined => {
   return Object.keys(slim).length > 0 ? slim : undefined;
 };
 
+const parseSlimCount = (value: unknown): number | undefined => {
+  if (typeof value === 'number' && Number.isFinite(value)) return Math.max(0, Math.trunc(value));
+  if (typeof value === 'string') {
+    const parsed = Number.parseInt(value, 10);
+    if (Number.isFinite(parsed)) return Math.max(0, parsed);
+  }
+  return undefined;
+};
+
+const countDiffLines = (diffText: unknown): { additions: number; deletions: number } | undefined => {
+  if (typeof diffText !== 'string' || !diffText) return undefined;
+  let additions = 0;
+  let deletions = 0;
+  let lineStart = 0;
+  for (let index = 0; index <= diffText.length; index += 1) {
+    if (index < diffText.length && diffText.charCodeAt(index) !== 10) continue;
+    const line = diffText.slice(lineStart, index);
+    if (line.startsWith('+') && !line.startsWith('+++')) additions += 1;
+    if (line.startsWith('-') && !line.startsWith('---')) deletions += 1;
+    lineStart = index + 1;
+  }
+  if (additions === 0 && deletions === 0) return undefined;
+  return { additions, deletions };
+};
+
+const projectSlimFileEntry = (file: unknown): LoosePart | undefined => {
+  if (!file || typeof file !== 'object' || Array.isArray(file)) return undefined;
+  const record = file as LoosePart;
+  const counted = countDiffLines(
+    typeof record.patch === 'string' ? record.patch : record.diff,
+  );
+  const additions = parseSlimCount(record.additions) ?? counted?.additions;
+  const deletions = parseSlimCount(record.deletions) ?? counted?.deletions;
+  const relativePath = typeof record.relativePath === 'string' ? record.relativePath.trim() : '';
+  const filePath = typeof record.filePath === 'string' ? record.filePath.trim() : '';
+  const path = typeof record.path === 'string' ? record.path.trim() : '';
+  if (!relativePath && !filePath && !path && additions === undefined && deletions === undefined) {
+    return undefined;
+  }
+  return {
+    ...(relativePath ? { relativePath } : {}),
+    ...(filePath ? { filePath } : {}),
+    ...(!relativePath && !filePath && path ? { path } : {}),
+    ...(additions !== undefined ? { additions } : {}),
+    ...(deletions !== undefined ? { deletions } : {}),
+  };
+};
+
+/** Keep edit +/− counts. Never copy patch/result bodies. */
+const copySlimSessionId = (record: LoosePart): LoosePart | undefined => {
+  const sessionId = typeof record.sessionId === 'string' ? record.sessionId.trim() : '';
+  const sessionID = typeof record.sessionID === 'string' ? record.sessionID.trim() : '';
+  if (!sessionId && !sessionID) return undefined;
+  return {
+    ...(sessionId ? { sessionId } : {}),
+    ...(sessionID && sessionID !== sessionId ? { sessionID } : {}),
+  };
+};
+
+const projectSlimToolMetadata = (metadata: unknown): LoosePart | undefined => {
+  if (!metadata || typeof metadata !== 'object' || Array.isArray(metadata)) return undefined;
+  const record = metadata as LoosePart;
+  const slim: LoosePart = { ...copySlimSessionId(record) };
+  const counted = countDiffLines(
+    typeof record.patch === 'string' ? record.patch : record.diff,
+  );
+  let additions = parseSlimCount(record.additions) ?? counted?.additions;
+  let deletions = parseSlimCount(record.deletions) ?? counted?.deletions;
+
+  if (Array.isArray(record.files)) {
+    const files = record.files
+      .map((file) => projectSlimFileEntry(file))
+      .filter((file): file is LoosePart => Boolean(file));
+    if (files.length > 0) {
+      slim.files = files;
+      if (additions === undefined && deletions === undefined) {
+        let added = 0;
+        let removed = 0;
+        let any = false;
+        for (const file of files) {
+          if (typeof file.additions === 'number') {
+            added += file.additions;
+            any = true;
+          }
+          if (typeof file.deletions === 'number') {
+            removed += file.deletions;
+            any = true;
+          }
+        }
+        if (any) {
+          additions = added;
+          deletions = removed;
+        }
+      }
+    }
+  }
+
+  if (record.filediff && typeof record.filediff === 'object' && !Array.isArray(record.filediff)) {
+    const source = record.filediff as LoosePart;
+    const filediff = projectSlimFileEntry({
+      ...source,
+      filePath: typeof source.file === 'string' ? source.file : source.filePath,
+    });
+    if (filediff) {
+      slim.filediff = {
+        ...(typeof source.file === 'string' ? { file: source.file } : {}),
+        ...filediff,
+      };
+      additions ??= typeof filediff.additions === 'number' ? filediff.additions : undefined;
+      deletions ??= typeof filediff.deletions === 'number' ? filediff.deletions : undefined;
+    }
+  }
+
+  if (additions !== undefined) slim.additions = additions;
+  if (deletions !== undefined) slim.deletions = deletions;
+  return Object.keys(slim).length > 0 ? slim : undefined;
+};
+
 /** Identity/status/locator fields kept on a projected tool part — never the output body. */
 const projectToolPart = (part: LoosePart): LoosePart => {
   const state = part.state && typeof part.state === 'object'
     ? (part.state as LoosePart)
     : undefined;
   const input = state ? projectSlimToolInput(state.input) : undefined;
+  const metadata = state ? projectSlimToolMetadata(state.metadata) : undefined;
+  const partMetadata = copySlimSessionId(
+    part.metadata && typeof part.metadata === 'object' && !Array.isArray(part.metadata)
+      ? part.metadata as LoosePart
+      : {},
+  );
   return {
     ...(part.id === undefined ? {} : { id: part.id }),
     ...(part.sessionID === undefined ? {} : { sessionID: part.sessionID }),
     ...(part.messageID === undefined ? {} : { messageID: part.messageID }),
     ...(part.callID === undefined ? {} : { callID: part.callID }),
     ...(part.tool === undefined ? {} : { tool: part.tool }),
+    ...(partMetadata ? { metadata: partMetadata } : {}),
     type: 'tool',
     ...(state
       ? {
@@ -171,6 +301,7 @@ const projectToolPart = (part: LoosePart): LoosePart => {
           ...(state.title === undefined ? {} : { title: state.title }),
           ...(state.time === undefined ? {} : { time: state.time }),
           ...(input ? { input } : {}),
+          ...(metadata ? { metadata } : {}),
         },
       }
       : {}),

@@ -27,6 +27,13 @@ const contextPanelSource = readFileSync(join(__dirname, '../../../layout/Context
 const progressiveGroupSource = readFileSync(join(__dirname, 'ProgressiveGroup.tsx'), 'utf-8');
 const toolPresentationSource = readFileSync(join(__dirname, 'toolPresentation.tsx'), 'utf-8');
 
+describe('edit slim line counts', () => {
+    test('prefers metadata additions/deletions over parsing a dropped patch', () => {
+        expect(toolPartSource).toContain('const addedFromMeta = parseDiffCount(metadata?.additions);');
+        expect(toolPartSource).toContain('const removedFromMeta = parseDiffCount(metadata?.deletions);');
+    });
+});
+
 describe('editing tool icon size', () => {
     test('keeps edit and write icons slightly smaller than the 14px tool row slot', () => {
         expect(toolPresentationSource).toContain("const editIconClass = 'h-[13px] w-[13px] flex-shrink-0'");

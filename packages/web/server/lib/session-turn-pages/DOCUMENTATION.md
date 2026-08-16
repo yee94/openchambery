@@ -75,14 +75,14 @@ A first packet summarizes `tool`, `reasoning`, and `file` parts so it does not h
 
 | Kept | Dropped |
 |---|---|
-| `tool`: `id`, `sessionID`, `messageID`, `callID`, `tool`, `state.status`, `state.title`, `state.time`, slim locator `state.input` (`path` / `filePath` / `pattern` / `query` / `command` / …) | `state.output`, write `content`, `state.metadata`, `state.error` |
+| `tool`: `id`, `sessionID`, `messageID`, `callID`, `tool`, `state.status`, `state.title`, `state.time`, slim locator `state.input` (`path` / `pattern` / `command` / `subagent_type` / `description` / …), slim `state.metadata` (`sessionId`, `additions` / `deletions`) | `state.output`, write `content`, task `prompt`, patch/diff bodies, other metadata, `state.error` |
 | `reasoning`: `id`, `sessionID`, `messageID`, `time` | reasoning `text` body |
 | `file` (user and assistant): `id`, `sessionID`, `messageID`, `type`, `mime`, `filename`, existing stable `size` / `width` / `height`, derived `byteSize` | `url`, base64, attachment body |
 
 Rules:
 
 - Every projected part carries `slim: true`. An unstamped part is full content. The host never lets a projection look full.
-- Slim tool input keeps only short locator fields for first-paint labels (path, pattern, query, command). Projection still drops result bodies and large write payloads.
+- Slim tool input keeps only short locator and task-identity fields (path, pattern, query, command, `subagent_type`, `description`). Slim metadata keeps `sessionId` plus edit `additions`/`deletions`. Projection still drops result bodies, task prompts, patches, and large write payloads.
 - Assistant `text` stays intact. User rows are no longer wholesale pass-through: their `file` parts are projected; other user parts stay as-is.
 - `file` projection keeps already-present size/width/height (top-level or `metadata`). `byteSize` is derived from a data URL when present. PNG/GIF/JPEG/WebP headers may fill missing `width`/`height`. Unknown dimensions omit those fields.
 - A slim `file` part is a reference, not renderable content. Clients must hydrate the full message (`session.message` by `messageID`) before painting or editing the attachment. Do not treat slim file metadata as a complete part.
