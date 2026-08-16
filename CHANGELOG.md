@@ -4,6 +4,10 @@ All notable changes to this project will be documented in this file.
 
 ## [Unreleased]
 
+## [1.16.134-beta.16] - 2026-08-16
+
+- **Exploration groups:** the count flip keeps its upward motion, but the row can no longer grow and open a mobile scrollbar.
+
 ## [1.16.134-beta.15] - 2026-08-16
 
 - **Tool rows:** ordinary running tools keep their own titles. Only an unassigned live Task shows Delegating.
