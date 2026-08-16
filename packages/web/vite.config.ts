@@ -38,6 +38,63 @@ function resolveVendorChunkName(id: string): string | undefined {
   return `vendor-${sanitized}`;
 }
 
+const CLIENT_TEST_FILE_RE = /\.(?:test|spec)\.[cm]?[jt]sx?$/;
+
+function normalizeModuleId(id: string): string {
+  return id.replace(/\\/g, '/').replace(/[?#].*$/, '');
+}
+
+function isNonClientSource(id: string): boolean {
+  const normalized = normalizeModuleId(id);
+  if (CLIENT_TEST_FILE_RE.test(normalized)) return true;
+  // Node backend lives under the Vite root; it must not enter the browser graph.
+  return normalized.includes('/packages/web/server/') || normalized.startsWith('server/');
+}
+
+const NON_CLIENT_SOURCE_FILTER = /(?:\.(?:test|spec)\.[cm]?[jt]sx?$)|(?:^bun:test$)|(?:^server\/)|(?:\/packages\/web\/server\/)/;
+const NON_CLIENT_LOAD_FILTER = /(?:\0virtual:(?:bun-test|non-client-source))|(?:\.(?:test|spec)\.[cm]?[jt]sx?$)|(?:^server\/)|(?:\/packages\/web\/server\/)/;
+
+// bundledDev shares the client graph with production entries, but Rolldown will
+// still parse watched/aliased test and server files and then fail named imports
+// from bun:test / Node builtins (`MISSING_EXPORT`). Replace those sources with
+// empty modules before their imports are followed.
+function omitNonClientSourcesPlugin() {
+  return {
+    name: 'omit-non-client-sources',
+    enforce: 'pre' as const,
+    resolveId: {
+      filter: { id: NON_CLIENT_SOURCE_FILTER },
+      handler(id: string) {
+        if (id === 'bun:test') return '\0virtual:bun-test';
+        if (isNonClientSource(id)) return '\0virtual:non-client-source';
+        return undefined;
+      },
+    },
+    load: {
+      filter: { id: NON_CLIENT_LOAD_FILTER },
+      handler(id: string) {
+        if (id === '\0virtual:bun-test') {
+          return [
+            'export const describe = () => {};',
+            'export const test = () => {};',
+            'export const it = () => {};',
+            'export const expect = () => {};',
+            'export const mock = () => {};',
+            'export const beforeEach = () => {};',
+            'export const afterEach = () => {};',
+            'export const beforeAll = () => {};',
+            'export const afterAll = () => {};',
+          ].join('\n');
+        }
+        if (id === '\0virtual:non-client-source' || isNonClientSource(id)) {
+          return 'export {}';
+        }
+        return undefined;
+      },
+    },
+  };
+}
+
 export default defineConfig(({ command }) => ({
   root: path.resolve(__dirname, '.'),
   // Experimental Rolldown bundled dev: serve bundled chunks instead of per-module ESM.
@@ -45,6 +102,7 @@ export default defineConfig(({ command }) => ({
     bundledDev: true,
   },
   plugins: [
+    omitNonClientSourcesPlugin(),
     react(),
     // React Compiler via Rolldown Babel preset (plugin-react v6 no longer embeds Babel).
     babel({

@@ -1943,6 +1943,7 @@ export const dict = {
   'chat.assistantStatus.findingFiles': 'Finding files',
   'chat.assistantStatus.listingDirectory': 'Listing directory',
   'chat.assistantStatus.delegatingTask': 'Delegating task',
+  'chat.assistantStatus.taskWorking': '{name} working',
   'chat.assistantStatus.fetchingUrl': 'Fetching URL',
   'chat.assistantStatus.searchingWeb': 'Searching web',
   'chat.assistantStatus.webCodeSearch': 'Searching web code',

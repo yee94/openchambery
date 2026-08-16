@@ -81,16 +81,16 @@ export const ContextToolGroup: React.FC<{
                 aria-controls={contentId}
                 aria-label={ariaLabel}
                 data-mobile-press-feedback="soft"
-                className={cn('flex w-full min-w-0 items-center gap-1.5', TOOL_ROW_INTERACTIVE_CHROME_CLASS)}
+                className={cn('flex w-full min-w-0 items-center gap-1.5', isMobile && 'overflow-hidden', TOOL_ROW_INTERACTIVE_CHROME_CLASS)}
                 onClick={handleToggle}
                 onKeyDown={handleKeyDown}
             >
                 <span
-                    className="flex h-3.5 w-3.5 flex-none items-center justify-center"
+                    className={cn('flex flex-none items-center justify-center', isMobile ? 'size-4' : 'size-3.5')}
                     style={{ color: 'var(--tools-icon)' }}
                 >
                     {isActive ? (
-                        <LatticeOrb size={14} label={t('chat.contextGroup.exploring')} />
+                        <LatticeOrb isMobile={isMobile} label={t('chat.contextGroup.exploring')} />
                     ) : (
                         <Icon name="search" className="h-[13px] w-[13px]" />
                     )}
@@ -110,7 +110,7 @@ export const ContextToolGroup: React.FC<{
                 </span>
                 {summary ? (
                     <span
-                        className={cn('typography-meta h-5 min-w-0 flex-1 overflow-hidden sm:h-6', TOOL_ROW_TEXT_CLASS)}
+                        className={cn('typography-meta h-5 w-0 min-w-0 max-w-full flex-1 overflow-hidden sm:h-6', TOOL_ROW_TEXT_CLASS)}
                         style={{ color: 'var(--tools-description)' }}
                     >
                         <FlipUpText text={summary} active={isActive} />

@@ -34,17 +34,17 @@ export const FlipUpText: React.FC<{
         <span className={cn('oc-summary-flip-viewport relative block h-full w-full min-w-0 max-w-full overflow-hidden', className)}>
             <span className={cn('block min-w-0 truncate', outgoing && 'invisible')}>{displayed}</span>
             {outgoing ? (
-                <>
-                    <span className="oc-summary-flip-out absolute inset-0 block truncate" aria-hidden="true">
+                <span className="oc-summary-flip-stage absolute inset-0 block overflow-hidden">
+                    <span className="oc-summary-flip-out absolute left-0 right-0 top-0 block h-full truncate" aria-hidden="true">
                         {outgoing}
                     </span>
                     <span
-                        className="oc-summary-flip-in absolute inset-0 block truncate"
+                        className="oc-summary-flip-in absolute left-0 right-0 top-0 block h-full truncate"
                         onAnimationEnd={handleAnimationEnd}
                     >
                         {displayed}
                     </span>
-                </>
+                </span>
             ) : null}
         </span>
     );

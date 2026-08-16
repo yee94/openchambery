@@ -135,29 +135,48 @@ describe('mobile connection storage', () => {
     }
   });
 
-  test('re-pairing the same server replaces its saved Relay endpoint', async () => {
+  test('same serverId with a different Relay endpoint stays a separate connection', async () => {
     try {
       installTestWindow();
       await upsertMobileConnection({
-        label: 'My Desktop',
+        label: 'Stable',
         candidates: [{ kind: 'relay', relay: testRelay }],
-        clientToken: 'old-token',
+        clientToken: 'stable-token',
       });
       await upsertMobileConnection({
-        label: 'My Desktop',
+        label: 'Preview',
         candidates: [{
           kind: 'relay',
           relay: { ...testRelay, relayUrl: 'wss://self-hosted.example/ws' },
         }],
+        clientToken: 'preview-token',
+      });
+
+      const connections = await loadMobileConnections();
+      expect(connections).toHaveLength(2);
+      expect(connections.map((c) => c.label).sort()).toEqual(['Preview', 'Stable']);
+    } finally {
+      restoreGlobals();
+    }
+  });
+
+  test('re-pairing the same server and Relay endpoint updates the saved connection', async () => {
+    try {
+      installTestWindow();
+      await upsertMobileConnection({
+        label: 'Home Mac',
+        candidates: [{ kind: 'relay', relay: testRelay }],
+        clientToken: 'old-token',
+      });
+      await upsertMobileConnection({
+        label: 'Home Mac renamed',
+        candidates: [{ kind: 'relay', relay: testRelay }],
         clientToken: 'new-token',
       });
 
       const connections = await loadMobileConnections();
       expect(connections).toHaveLength(1);
-      expect(connections[0]?.candidates).toEqual([{
-        kind: 'relay',
-        relay: { ...testRelay, relayUrl: 'wss://self-hosted.example/ws' },
-      }]);
+      expect(connections[0]?.label).toBe('Home Mac renamed');
       expect(connections[0]?.clientToken).toBe('new-token');
     } finally {
       restoreGlobals();

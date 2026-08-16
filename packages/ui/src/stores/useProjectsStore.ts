@@ -12,6 +12,12 @@ import { streamDebugEnabled } from '@/stores/utils/streamDebug';
 import { useSessionUIStore } from '@/sync/session-ui-store';
 import { runtimeFetch } from '@/lib/runtime-fetch';
 import { getRuntimeApiBaseUrl } from '@/lib/runtime-switch';
+import {
+  mayReadLegacyApiBaseUrlInstanceCache,
+  readInstanceScopedItem,
+  removeInstanceScopedItem,
+  writeInstanceScopedItem,
+} from '@/lib/instanceScopedStorage';
 
 interface ProjectPathValidationResult {
   ok: boolean;
@@ -57,35 +63,7 @@ interface ProjectsStore {
 const safeStorage = getDeferredSafeStorage();
 const PROJECTS_STORAGE_KEY = 'projects';
 const ACTIVE_PROJECT_STORAGE_KEY = 'activeProjectId';
-
-const getLocalRuntimeOrigin = (): string => {
-  if (typeof window === 'undefined') return '';
-  const value = (window as typeof window & { __OPENCHAMBER_LOCAL_ORIGIN__?: string }).__OPENCHAMBER_LOCAL_ORIGIN__;
-  return typeof value === 'string' ? value.trim().replace(/\/+$/, '') : '';
-};
-
-const getProjectsStorageNamespace = (): string => {
-  const apiBaseUrl = getRuntimeApiBaseUrl().trim().replace(/\/+$/, '');
-  if (!apiBaseUrl) return '';
-  return apiBaseUrl;
-};
-
-const getProjectsStorageKey = (): string => {
-  const namespace = getProjectsStorageNamespace();
-  return namespace ? `${PROJECTS_STORAGE_KEY}:${encodeURIComponent(namespace)}` : PROJECTS_STORAGE_KEY;
-};
-
-const getActiveProjectStorageKey = (): string => {
-  const namespace = getProjectsStorageNamespace();
-  return namespace ? `${ACTIVE_PROJECT_STORAGE_KEY}:${encodeURIComponent(namespace)}` : ACTIVE_PROJECT_STORAGE_KEY;
-};
-
-const shouldReadLegacyProjectsCache = (): boolean => {
-  const namespace = getProjectsStorageNamespace();
-  if (!namespace) return true;
-  const localOrigin = getLocalRuntimeOrigin();
-  return Boolean(localOrigin && namespace === localOrigin);
-};
+const MANUAL_ORDER_STORAGE_KEY = 'projects:manualOrder';
 
 const resolveTildePath = (value: string, homeDir?: string | null): string => {
   const trimmed = value.trim();
@@ -138,7 +116,9 @@ const normalizeProjectPath = (value: string): string => {
     return '';
   }
 
-  const homeDirectory = safeStorage.getItem('homeDirectory') || useDirectoryStore.getState().homeDirectory || '';
+  const homeDirectory = readInstanceScopedItem('homeDirectory', { storage: safeStorage })
+    || useDirectoryStore.getState().homeDirectory
+    || '';
   const expanded = resolveTildePath(trimmed, homeDirectory);
 
   const normalized = expanded.replace(/\\/g, '/');
@@ -287,8 +267,7 @@ const sanitizeProjects = (value: unknown): ProjectEntry[] => {
 
 const readPersistedProjects = (): ProjectEntry[] => {
   try {
-    const raw = safeStorage.getItem(getProjectsStorageKey())
-      || (shouldReadLegacyProjectsCache() ? safeStorage.getItem(PROJECTS_STORAGE_KEY) : null);
+    const raw = readInstanceScopedItem(PROJECTS_STORAGE_KEY, { storage: safeStorage });
     if (!raw) {
       return [];
     }
@@ -298,9 +277,17 @@ const readPersistedProjects = (): ProjectEntry[] => {
   }
 };
 
+const readLegacyApiBaseUrlManualOrder = (): string | null => {
+  if (!mayReadLegacyApiBaseUrlInstanceCache()) return null;
+  const apiBaseUrl = getRuntimeApiBaseUrl().trim().replace(/\/+$/, '');
+  if (!apiBaseUrl) return null;
+  return safeStorage.getItem(`${PROJECTS_STORAGE_KEY}:${encodeURIComponent(apiBaseUrl)}:manualOrder`);
+};
+
 const readPersistedManualOrder = (): string[] => {
   try {
-    const raw = safeStorage.getItem(getProjectsStorageKey() + ':manualOrder');
+    const raw = readInstanceScopedItem(MANUAL_ORDER_STORAGE_KEY, { storage: safeStorage })
+      || readLegacyApiBaseUrlManualOrder();
     if (!raw) return [];
     const parsed = JSON.parse(raw);
     return Array.isArray(parsed) ? parsed.filter((id): id is string => typeof id === 'string') : [];
@@ -311,8 +298,7 @@ const readPersistedManualOrder = (): string[] => {
 
 const readPersistedActiveProjectId = (): string | null => {
   try {
-    const raw = safeStorage.getItem(getActiveProjectStorageKey())
-      || (shouldReadLegacyProjectsCache() ? safeStorage.getItem(ACTIVE_PROJECT_STORAGE_KEY) : null);
+    const raw = readInstanceScopedItem(ACTIVE_PROJECT_STORAGE_KEY, { storage: safeStorage });
     if (typeof raw === 'string' && raw.trim().length > 0) {
       return raw.trim();
     }
@@ -324,17 +310,16 @@ const readPersistedActiveProjectId = (): string | null => {
 
 const cacheProjects = (projects: ProjectEntry[], activeProjectId: string | null) => {
   try {
-    safeStorage.setItem(getProjectsStorageKey(), JSON.stringify(projects));
+    writeInstanceScopedItem(PROJECTS_STORAGE_KEY, JSON.stringify(projects), { storage: safeStorage });
   } catch {
     // ignored
   }
 
   try {
-    const activeProjectStorageKey = getActiveProjectStorageKey();
     if (activeProjectId) {
-      safeStorage.setItem(activeProjectStorageKey, activeProjectId);
+      writeInstanceScopedItem(ACTIVE_PROJECT_STORAGE_KEY, activeProjectId, { storage: safeStorage });
     } else {
-      safeStorage.removeItem(activeProjectStorageKey);
+      removeInstanceScopedItem(ACTIVE_PROJECT_STORAGE_KEY, { storage: safeStorage });
     }
   } catch {
     // ignored
@@ -351,7 +336,7 @@ const persistProjects = (projects: ProjectEntry[], activeProjectId: string | nul
 
 const persistManualProjectOrder = (manualOrder: string[]) => {
   try {
-    safeStorage.setItem(getProjectsStorageKey() + ':manualOrder', JSON.stringify(manualOrder));
+    writeInstanceScopedItem(MANUAL_ORDER_STORAGE_KEY, JSON.stringify(manualOrder), { storage: safeStorage });
   } catch {
     // ignored
   }
@@ -914,7 +899,9 @@ export const useProjectsStore = create<ProjectsStore>()(
       const nextActiveProjectId = projects.some((project) => project.id === activeProjectId)
         ? activeProjectId
         : projects[0]?.id ?? null;
-      set({ projects, activeProjectId: nextActiveProjectId, manualProjectOrder: [] });
+      const incomingIds = new Set(projects.map((project) => project.id));
+      const manualProjectOrder = readPersistedManualOrder().filter((id) => incomingIds.has(id));
+      set({ projects, activeProjectId: nextActiveProjectId, manualProjectOrder });
     },
 
     synchronizeFromSettings: (settings: DesktopSettings) => {

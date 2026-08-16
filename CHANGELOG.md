@@ -4,6 +4,31 @@ All notable changes to this project will be documented in this file.
 
 ## [Unreleased]
 
+## [1.16.134-beta.15] - 2026-08-16
+
+- **Tool rows:** ordinary running tools keep their own titles. Only an unassigned live Task shows Delegating.
+
+## [1.16.134-beta.14] - 2026-08-16
+
+- **Agent naming:** reasoning and activity copy now consistently use "Agent" in Simplified and Traditional Chinese instead of 智能体 / 智能體 (including the task tool row). The existing code comment in ToolPart is left untouched.
+
+## [1.16.134-beta.13] - 2026-08-16
+
+- **Tool rows:** only an unassigned Task shows Delegating. Assigned tasks keep the agent name; other tools keep their normal titles and only swap in the loading orb.
+- **Mobile loading:** the lattice orb is slightly larger on phones, and the exploration count flip no longer opens a scrollbar.
+- **Remote instances:** pairing names an instance instead of a device, and relay matches require both server id and relay URL.
+
+## [1.16.134-beta.12] - 2026-08-16
+
+- **Session goals:** when the agent asks a question, the goal pauses instead of staying on Evaluating. The current turn keeps waiting for your answer; resume after you reply.
+- **Questions:** missed pending questions are fetched again so the answer card comes back, instead of leaving only unclickable chips in the transcript.
+- **Subagent rows:** assigned task rows keep the agent name instead of falling back to Delegating.
+- **Dev server:** bundled web dev no longer pulls server or test files into the browser graph.
+
+## [1.16.134-beta.11] - 2026-08-16
+
+- **iOS beta:** prerelease TestFlight marketing version again strips the suffix (`1.16.134-beta.10` → `1.16.134`) instead of pinning to `0.99.0`, so Apple can treat it as an update on the current 1.16.x train.
+
 ## [1.16.134-beta.10] - 2026-08-16
 
 - **Diagnostics export:** About export now saves a file. Capacitor opens the system save picker (iOS Files / Android create-document) instead of copying to the clipboard.

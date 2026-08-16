@@ -1561,17 +1561,10 @@ async function main(options = {}) {
     // Stable server identity for client-side verification of learned addresses.
     // Lazily resolved: the relay service is constructed after these routes.
     getServerId: () => (relayServiceInstance ? relayServiceInstance.getServerId() : Promise.resolve(null)),
-    // The display name a paired device shows for THIS server. Devices name the
-    // connection by the issuing machine's hostname, not the per-device pairing
-    // label typed by the operator.
-    getServerLabel: () => {
-      try {
-        const name = os.hostname();
-        return typeof name === 'string' && name.trim().length > 0 ? name.trim() : 'OpenChamber';
-      } catch {
-        return 'OpenChamber';
-      }
-    },
+    // Fallback display name a paired device shows for THIS server when the
+    // pairing payload did not carry an operator-typed instance name. Hostname
+    // is not an instance identity — one machine can run several servers.
+    getServerLabel: () => 'OpenChamber',
     readSettingsFromDiskMigrated,
     normalizeTunnelSessionTtlMs,
     authorizeManagedOpenCodeBridgeRequest: managedCapabilitiesRuntime.authorizeManagedOpenCodeBridgeRequest,

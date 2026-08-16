@@ -1546,6 +1546,22 @@ export function resolveReconnectStatusOnly(input: {
   return input.isFirstConnect && !input.disconnectedBeforeFirstConnect
 }
 
+/**
+ * After the status snapshot (and viewed-body recovery), decide which extra
+ * reconnect steps still run. `statusOnly` still hydrates pending
+ * questions/permissions because bootstrap Phase 2 and WS-ready can drop
+ * `question.asked`. Full routing ingest stays reconnect-only.
+ */
+export function resolveReconnectFollowUpWork(options?: { statusOnly?: boolean }): {
+  resyncBlockingRequests: true
+  ingestRoutingIndex: boolean
+} {
+  return {
+    resyncBlockingRequests: true,
+    ingestRoutingIndex: !options?.statusOnly,
+  }
+}
+
 export async function resyncDirectoryAfterReconnect(
   directory: string,
   store: StoreApi<DirectoryStore>,
@@ -1562,10 +1578,13 @@ export async function resyncDirectoryAfterReconnect(
   // background idle→busy transitions are lost across reconnect.
   await resyncDirectorySessionStatuses(directory, store, candidateSessionIds)
 
-  // statusOnly suppresses extra reconnect work (blocking requests, full routing
-  // ingest) but must still run bounded authoritative recovery for the currently
-  // viewed session. Bootstrap does not load message bodies; without this path
-  // stale transcript remains indefinitely after first stream ready / recent boot.
+  // statusOnly suppresses extra reconnect work (full routing ingest) but must
+  // still run bounded authoritative recovery for the currently viewed session
+  // AND an authoritative pending question/permission list. Bootstrap Phase 2
+  // and WS-ready can drop `question.asked`; without this path the viewed
+  // session shows unclickable question chips and no QuestionCard. Bootstrap
+  // also does not load message bodies; without the viewed-body path a stale
+  // transcript remains indefinitely after first stream ready / recent boot.
   const refreshedCandidateSessionIds = getActiveSessionCandidateIds(directory, store.getState())
   const materializationSessionIds = getReconnectMaterializationSessionIds(refreshedCandidateSessionIds, {
     directory,
@@ -1681,9 +1700,11 @@ export async function resyncDirectoryAfterReconnect(
     }))
   }
 
-  if (options?.statusOnly) return
-
-  await resyncBlockingRequestsForDirectory(directory, store, candidateSessionIds)
+  const followUp = resolveReconnectFollowUpWork(options)
+  if (followUp.resyncBlockingRequests) {
+    await resyncBlockingRequestsForDirectory(directory, store, candidateSessionIds)
+  }
+  if (!followUp.ingestRoutingIndex) return
 
   ingestDirectoryStateIntoRoutingIndex(routingIndex, directory, store.getState())
 }
@@ -2384,8 +2405,9 @@ export function SyncProvider(props: {
         const isFirstConnect = !pipelineHasConnectedRef.current
         pipelineHasConnectedRef.current = true
         // Always close the bootstrap-GET → WS-ready gap with an authoritative
-        // status snapshot. statusOnly still recovers the viewed session body;
-        // it only skips extra reconnect work (e.g. blocking requests). Only a
+        // status snapshot. statusOnly still recovers the viewed session body
+        // and hydrates pending questions/permissions; it only skips heavier
+        // reconnect work (full routing ingest). Only a
         // clean first connect qualifies — any disconnect is a real gap and
         // takes full reconnect semantics no matter how recent the boot is.
         const statusOnly = resolveReconnectStatusOnly({

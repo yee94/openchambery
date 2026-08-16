@@ -516,6 +516,7 @@ const StaticGroupedToolRow: React.FC<StaticGroupedToolRowProps> = ({
             <StaticToolRow
                 toolName={toolName}
                 activities={activities}
+                isMobile={isMobile}
                 animateTailText={false}
             />
         </div>
@@ -638,8 +639,9 @@ const areActivityListsEqual = (left: TurnActivityPart[], right: TurnActivityPart
 const StaticToolRowInner: React.FC<{
     toolName: string;
     activities: TurnActivityPart[];
+    isMobile: boolean;
     animateTailText: boolean;
-}> = ({ toolName, activities, animateTailText }) => {
+}> = ({ toolName, activities, isMobile, animateTailText }) => {
     const { t } = useI18n();
     const showToolFileIcons = useUIStore((state) => state.showToolFileIcons);
     const displayName = resolveToolDisplayName(toolName, t);
@@ -814,10 +816,10 @@ const StaticToolRowInner: React.FC<{
             tabIndex={isWholeRowNav && canActivateWholeRowNav ? 0 : undefined}
             aria-disabled={isWholeRowNav && !canActivateWholeRowNav ? true : undefined}
         >
-            <div className="inline-flex size-3.5 items-center justify-center flex-shrink-0" style={{ color: 'var(--tools-icon)' }}>
+            <div className={cn('inline-flex items-center justify-center flex-shrink-0', isMobile ? 'size-4' : 'size-3.5')} style={{ color: 'var(--tools-icon)' }}>
                 {isActive ? (
                     <LatticeOrb
-                        size={14}
+                        isMobile={isMobile}
                         label={t('chat.assistantStatus.usingTool', { tool: displayName })}
                     />
                 ) : icon}
@@ -904,6 +906,7 @@ const StaticToolRowInner: React.FC<{
 
 export const StaticToolRow = React.memo(StaticToolRowInner, (prev, next) => {
     return prev.toolName === next.toolName
+        && prev.isMobile === next.isMobile
         && prev.animateTailText === next.animateTailText
         && areActivityListsEqual(prev.activities, next.activities);
 });
@@ -1219,6 +1222,7 @@ const ProgressiveGroup: React.FC<ProgressiveGroupProps> = ({
                                     key={activity.id}
                                     toolName={groupedTool.tool?.toLowerCase() ?? ''}
                                     activities={[activity]}
+                                    isMobile={isMobile}
                                     animateTailText={false}
                                 />
                             );

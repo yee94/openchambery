@@ -103,6 +103,11 @@ export const isRuntimeEndpointIdentityChange = (detail: RuntimeEndpointChangedDe
   ?? normalizeRuntimeUrlKey(detail.apiBaseUrl) !== normalizeRuntimeUrlKey(detail.previousApiBaseUrl)
 );
 
+/** True when the paired device / OpenChamber host changed. LAN⇄relay keeps the same runtimeKey. */
+export const isRuntimeInstanceChange = (detail: RuntimeEndpointChangedDetail): boolean => (
+  detail.runtimeKey !== detail.previousRuntimeKey
+);
+
 const readInjectedApiBaseUrl = (): string => {
   if (typeof window === 'undefined') return '';
   const injected = (window as typeof window & { __OPENCHAMBER_API_BASE_URL__?: string }).__OPENCHAMBER_API_BASE_URL__;

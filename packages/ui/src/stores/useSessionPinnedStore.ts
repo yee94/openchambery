@@ -1,9 +1,13 @@
 import { create } from 'zustand';
+import { createInstanceScopedStorageAdapter } from '@/lib/instanceScopedStorage';
+import { isRuntimeInstanceChange, subscribeRuntimeEndpointChanged } from '@/lib/runtime-switch';
 import { getDeferredSafeStorage } from './utils/safeStorage';
 
 const SESSION_PINNED_STORAGE_KEY = 'oc.sessions.pinned';
 
-const readPinned = (storage: Storage): Set<string> => {
+type PinnedStorage = Pick<Storage, 'getItem' | 'setItem' | 'removeItem'>;
+
+const readPinned = (storage: PinnedStorage): Set<string> => {
   try {
     const raw = storage.getItem(SESSION_PINNED_STORAGE_KEY);
     if (!raw) return new Set();
@@ -15,7 +19,7 @@ const readPinned = (storage: Storage): Set<string> => {
   }
 };
 
-const persistPinned = (storage: Storage, ids: Set<string>): void => {
+const persistPinned = (storage: PinnedStorage, ids: Set<string>): void => {
   try {
     storage.setItem(SESSION_PINNED_STORAGE_KEY, JSON.stringify([...ids]));
   } catch {
@@ -29,7 +33,7 @@ type SessionPinnedStore = {
   toggle: (sessionId: string) => void;
 };
 
-const safeStorage = getDeferredSafeStorage();
+const safeStorage = createInstanceScopedStorageAdapter(getDeferredSafeStorage());
 
 export const useSessionPinnedStore = create<SessionPinnedStore>((set, get) => ({
   ids: readPinned(safeStorage),
@@ -52,3 +56,10 @@ export const useSessionPinnedStore = create<SessionPinnedStore>((set, get) => ({
     persistPinned(safeStorage, next);
   },
 }));
+
+if (typeof window !== 'undefined') {
+  subscribeRuntimeEndpointChanged((detail) => {
+    if (!isRuntimeInstanceChange(detail)) return;
+    useSessionPinnedStore.setState({ ids: readPinned(safeStorage) });
+  });
+}

@@ -1,4 +1,6 @@
 import { beforeEach, describe, expect, test } from 'bun:test';
+import { createProjectIdFromPath } from '@/lib/projectId';
+import { switchRuntimeEndpoint } from '@/lib/runtime-switch';
 import { reorderProjectEntriesById, useProjectsStore } from './useProjectsStore';
 
 describe('useProjectsStore moveProjectToTop', () => {
@@ -32,6 +34,57 @@ describe('useProjectsStore moveProjectToTop', () => {
 
     useProjectsStore.getState().moveProjectToTop('missing');
     expect(useProjectsStore.getState().projects).toBe(initial);
+  });
+});
+
+describe('useProjectsStore instance-scoped order', () => {
+  const seedProjects = () => {
+    const alpha = createProjectIdFromPath('/workspace/alpha');
+    const beta = createProjectIdFromPath('/workspace/beta');
+    const gamma = createProjectIdFromPath('/workspace/gamma');
+    useProjectsStore.setState({
+      projects: [
+        { id: alpha, path: '/workspace/alpha', label: 'Alpha' },
+        { id: beta, path: '/workspace/beta', label: 'Beta' },
+        { id: gamma, path: '/workspace/gamma', label: 'Gamma' },
+      ],
+      activeProjectId: alpha,
+      manualProjectOrder: [alpha, beta, gamma],
+    });
+    return { alpha, beta, gamma };
+  };
+
+  test('keeps independent manual order across two relay instances that share the UI origin', () => {
+    switchRuntimeEndpoint({
+      apiBaseUrl: 'https://app.example',
+      runtimeKey: 'relay:server-a@wss://relay.example',
+    });
+    const ids = seedProjects();
+    useProjectsStore.getState().reorderProjectsById(ids.gamma, ids.alpha);
+    expect(useProjectsStore.getState().manualProjectOrder).toEqual([ids.gamma, ids.alpha, ids.beta]);
+
+    switchRuntimeEndpoint({
+      apiBaseUrl: 'https://app.example',
+      runtimeKey: 'relay:server-b@wss://relay.example',
+    });
+    useProjectsStore.getState().resetForRuntimeSwitch();
+    expect(useProjectsStore.getState().manualProjectOrder).toEqual([]);
+
+    seedProjects();
+    useProjectsStore.getState().reorderProjectsById(ids.beta, ids.alpha);
+    expect(useProjectsStore.getState().manualProjectOrder).toEqual([ids.beta, ids.alpha, ids.gamma]);
+
+    switchRuntimeEndpoint({
+      apiBaseUrl: 'https://app.example',
+      runtimeKey: 'relay:server-a@wss://relay.example',
+    });
+    useProjectsStore.getState().resetForRuntimeSwitch();
+    expect(useProjectsStore.getState().manualProjectOrder).toEqual([ids.gamma, ids.alpha, ids.beta]);
+    expect(useProjectsStore.getState().projects.map((project) => project.id)).toEqual([
+      ids.gamma,
+      ids.alpha,
+      ids.beta,
+    ]);
   });
 });
 

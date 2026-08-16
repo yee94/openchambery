@@ -111,12 +111,11 @@ jobs:
 
           version_name="${input_version:-$package_version}"
           build_number="${input_build:-${{ github.run_number }}}"
-          # Apple CFBundleShortVersionString cannot contain a prerelease suffix,
-          # and marketing versions must not go backwards across uploads.
-          # Pin every prerelease IPA to a fixed 0.99.0 train; CFBundleVersion
-          # (build_number) still increments so TestFlight can always update.
+          # Apple CFBundleShortVersionString cannot contain a prerelease suffix.
+          # Strip it so 1.16.134-beta.10 ships as marketing version 1.16.134.
+          # CFBundleVersion (build_number) still increments within that train.
           if [[ "$version_name" == *-* ]]; then
-            ios_marketing_version="0.99.0"
+            ios_marketing_version="${version_name%%-*}"
           else
             ios_marketing_version="$version_name"
           fi

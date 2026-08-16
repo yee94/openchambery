@@ -1944,6 +1944,7 @@ export const dict: Record<I18nKey, string> = {
   'chat.assistantStatus.findingFiles': '파일 찾는 중',
   'chat.assistantStatus.listingDirectory': '디렉터리 나열 중',
   'chat.assistantStatus.delegatingTask': '작업 위임 중',
+  'chat.assistantStatus.taskWorking': '{name} 처리 중',
   'chat.assistantStatus.fetchingUrl': 'URL 가져오는 중',
   'chat.assistantStatus.searchingWeb': '웹 검색 중',
   'chat.assistantStatus.webCodeSearch': '웹 코드 검색 중',

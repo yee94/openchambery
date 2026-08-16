@@ -50,7 +50,7 @@ mock.module("@/components/ui", () => ({
 
 import { INITIAL_STATE, type State } from "../types"
 import type { DirectoryStore } from "../child-store"
-import { resyncBlockingRequestsForDirectory } from "../sync-context"
+import { resolveReconnectFollowUpWork, resyncBlockingRequestsForDirectory } from "../sync-context"
 
 function buildQuestion(overrides: Partial<QuestionRequest> = {}): QuestionRequest {
   return {
@@ -82,6 +82,22 @@ function createDirectoryStore(initial: Partial<State>): StoreApi<DirectoryStore>
     replace: (next) => set(next),
   }))
 }
+
+describe("resolveReconnectFollowUpWork", () => {
+  test("statusOnly still hydrates pending questions/permissions and skips routing ingest", () => {
+    expect(resolveReconnectFollowUpWork({ statusOnly: true })).toEqual({
+      resyncBlockingRequests: true,
+      ingestRoutingIndex: false,
+    })
+  })
+
+  test("full reconnect hydrates blocking requests and ingests the routing index", () => {
+    expect(resolveReconnectFollowUpWork()).toEqual({
+      resyncBlockingRequests: true,
+      ingestRoutingIndex: true,
+    })
+  })
+})
 
 describe("resyncBlockingRequestsForDirectory", () => {
   beforeEach(() => {

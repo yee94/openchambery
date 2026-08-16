@@ -224,14 +224,19 @@ const secureTokenKeyOf = (connection: { candidates: MobileTransportCandidate[] }
 
 export const mobileConnectionKey = secureTokenKeyOf;
 
-// Two candidate sets are the same device if they share a relay serverId or a
-// normalized direct URL — used to dedupe saved connections on upsert.
+// Two candidate sets are the same instance if they share a relay identity
+// (serverId + relayUrl) or a normalized direct URL. Hostname is never an
+// identity: one machine can run several servers, and those servers may use
+// different relay endpoints.
 const candidateSetsMatch = (a: MobileTransportCandidate[], b: MobileTransportCandidate[]): boolean => {
   const aRelay = a.find((c) => c.kind === 'relay');
   const aServerId = aRelay && aRelay.kind === 'relay' ? aRelay.relay.serverId : null;
+  const aRelayUrl = aRelay && aRelay.kind === 'relay' ? aRelay.relay.relayUrl.trim() : null;
   const aUrls = new Set(a.filter((c) => c.kind === 'direct').map((c) => getConnectionStorageKey((c as { url: string }).url)));
   return b.some((c) => {
-    if (c.kind === 'relay') return aServerId !== null && c.relay.serverId === aServerId;
+    if (c.kind === 'relay') {
+      return aServerId !== null && c.relay.serverId === aServerId && c.relay.relayUrl.trim() === aRelayUrl;
+    }
     return aUrls.has(getConnectionStorageKey(c.url));
   });
 };
@@ -1470,9 +1475,9 @@ export const useMobileConnection = (onConnected: () => void): UseMobileConnectio
         setError(t('mobile.connect.error.authRequired'));
         return;
       }
-      // Name the connection by the issuing server (its hostname), not the
-      // per-device pairing label — that label is the operator's name for THIS
-      // phone in their device list, not a name for the server we connect to.
+      // Name the connection by the operator-typed instance name in the pairing
+      // payload. Fall back to the server's advertised label, then the URL host.
+      // Never invent a hostname-based identity here.
       const serverLabel = typeof result?.server?.label === 'string' ? result.server.label : '';
       const label = payload.label || serverLabel || getConnectionLabel(connectionDisplayUrl({ candidates: deviceCandidates }));
 

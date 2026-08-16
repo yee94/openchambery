@@ -402,8 +402,8 @@ export const registerAuthAndAccessRoutes = (app, dependencies) => {
     getDirectCandidateUrls = () => [],
     // Stable server identity for client-side verification of learned addresses.
     getServerId = async () => null,
-    // Display name a paired device shows for THIS server (issuing machine's
-    // hostname), distinct from the per-device pairing label typed by the operator.
+    // Fallback display name a paired device shows for THIS server when the
+    // pairing payload did not carry an operator-typed instance name.
     getServerLabel = () => 'OpenChamber',
     authorizeManagedOpenCodeBridgeRequest = () => false,
   } = dependencies;

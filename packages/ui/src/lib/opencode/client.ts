@@ -2,6 +2,7 @@ import { createOpencodeClient, OpencodeClient } from "@opencode-ai/sdk/v2";
 import type { PermissionV2Request, PermissionV2Effect, PermissionV2Source } from "@opencode-ai/sdk/v2/client";
 import type { FilesAPI } from "../api/types";
 import { getDesktopHomeDirectory } from "../desktop";
+import { readInstanceScopedItem } from "../instanceScopedStorage";
 import type {
   Session,
   Message,
@@ -576,8 +577,8 @@ class OpencodeService {
 
     if (typeof window !== 'undefined') {
       try {
-        addCandidate(window.localStorage.getItem('lastDirectory'));
-        addCandidate(window.localStorage.getItem('homeDirectory'));
+        addCandidate(readInstanceScopedItem('lastDirectory'));
+        addCandidate(readInstanceScopedItem('homeDirectory'));
       } catch {
         // Access to storage failed (e.g. privacy mode)
       }

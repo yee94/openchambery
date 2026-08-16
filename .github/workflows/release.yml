@@ -549,8 +549,9 @@ jobs:
       upload_github_release: true
       build_android: true
       # Beta still uploads iOS for Internal TestFlight. Prerelease marketing
-      # version is pinned to 0.99.0 in mobile-release.yml. Do not attach
-      # prereleases to the existing external group or submit Beta App Review.
+      # version strips the suffix in mobile-release.yml (1.16.134-beta.10 →
+      # 1.16.134). Do not attach prereleases to the existing external group
+      # or submit Beta App Review.
       build_ios: true
       publish_external_testflight: ${{ !contains(needs.create-release.outputs.version, '-') }}
     secrets: inherit

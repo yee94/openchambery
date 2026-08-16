@@ -33,12 +33,15 @@ const contextActivity = (
 } as unknown as TurnActivityRecord);
 
 describe('LatticeOrb', () => {
-    test('renders an accessible 3 by 3 lattice', () => {
-        const markup = renderToStaticMarkup(<LatticeOrb size={14} label="Exploring" />);
+    test('renders an accessible 3 by 3 lattice at desktop and mobile sizes', () => {
+        const desktopMarkup = renderToStaticMarkup(<LatticeOrb label="Exploring" />);
+        const mobileMarkup = renderToStaticMarkup(<LatticeOrb isMobile label="Exploring" />);
 
-        expect(markup).toContain('aria-label="Exploring"');
-        expect(markup.match(/oc-lattice-orb-dot/g)).toHaveLength(9);
-        expect(markup).toContain('data-center="true"');
+        expect(desktopMarkup).toContain('aria-label="Exploring"');
+        expect(desktopMarkup).toContain('width:14px;height:14px');
+        expect(mobileMarkup).toContain('width:16px;height:16px');
+        expect(desktopMarkup.match(/oc-lattice-orb-dot/g)).toHaveLength(9);
+        expect(desktopMarkup).toContain('data-center="true"');
     });
 });
 
@@ -60,19 +63,39 @@ describe('ContextToolGroup', () => {
         expect(markup).toContain('aria-expanded="false"');
         expect(markup).toContain('Exploring');
         expect(markup).toContain('1 search, 3 reads');
-        expect(markup).toContain('typography-meta h-5 min-w-0 flex-1 overflow-hidden sm:h-6');
+        expect(markup).toContain('typography-meta h-5 w-0 min-w-0 max-w-full flex-1 overflow-hidden sm:h-6');
         expect(markup).toContain('oc-summary-flip-viewport relative block h-full w-full min-w-0 max-w-full overflow-hidden');
     });
 
-    test('clips both translated flip layers inside a fixed-height paint viewport', () => {
+    test('uses a 16px orb and matching leading slot on mobile', () => {
+        const activities = [contextActivity('grep-1', 'grep', 'running')];
+        const markup = renderToStaticMarkup(
+            <I18nProvider>
+                <ContextToolGroup activities={activities} isMobile />
+            </I18nProvider>,
+        );
+
+        expect(markup).toContain('flex flex-none items-center justify-center size-4');
+        expect(markup).toContain('width:16px;height:16px');
+        expect(markup).toContain('overflow-hidden oc-tool-row');
+    });
+
+    test('clips both moving layers inside a fixed-height paint viewport', () => {
         expect(flipUpTextSource).toContain("'oc-summary-flip-viewport relative block h-full w-full min-w-0 max-w-full overflow-hidden'");
-        expect(flipUpTextSource).toContain('oc-summary-flip-out absolute inset-0 block truncate');
-        expect(flipUpTextSource).toContain('oc-summary-flip-in absolute inset-0 block truncate');
+        expect(flipUpTextSource).toContain('oc-summary-flip-stage absolute inset-0 block overflow-hidden');
+        expect(flipUpTextSource).toContain('oc-summary-flip-out absolute left-0 right-0 top-0 block h-full truncate');
+        expect(flipUpTextSource).toContain('oc-summary-flip-in absolute left-0 right-0 top-0 block h-full truncate');
         expect(indexCssSource).toContain('.oc-summary-flip-viewport {');
+        expect(indexCssSource).toContain('.oc-summary-flip-stage {');
         expect(indexCssSource).toContain('overflow: clip;');
-        expect(indexCssSource).toContain('contain: paint;');
+        expect(indexCssSource).toContain('contain: layout paint;');
+        expect(indexCssSource).toContain('-webkit-clip-path: inset(0);');
+        expect(indexCssSource).toContain('transform: translateY(-100%);');
+        expect(indexCssSource).toContain('transform: translateY(100%);');
         expect(indexCssSource).toContain('animation: oc-summary-flip-out 280ms ease-out forwards;');
         expect(indexCssSource).toContain('animation: oc-summary-flip-in 280ms ease-out forwards;');
+        expect(indexCssSource).toContain('.oc-summary-flip-out {\n    display: none;');
+        expect(indexCssSource).toContain('.oc-summary-flip-in {\n    transform: none;\n    opacity: 1;');
     });
 
     test('keeps exploring after grouped calls settle until a later non-explore part appears', () => {

@@ -110,6 +110,7 @@ import {
 } from './transcriptStallWatchdog';
 
 import { usePlanDetection } from '@/hooks/usePlanDetection';
+import { useRecoverPendingQuestions } from '@/hooks/useRecoverPendingQuestions';
 import { useI18n } from '@/lib/i18n';
 import { BusyDots } from './message/parts/BusyDots';
 import { isMobileSurfaceRuntime } from '@/lib/runtimeSurface';
@@ -870,6 +871,12 @@ const ChatContainerContent: React.FC<ChatContainerContentProps> = ({
     // the directory.
     const sessionPermissions = useScopedBlockingPermissions(currentSessionId, effectiveSessionDirectory);
     const sessionQuestions = useScopedBlockingQuestions(currentSessionId, effectiveSessionDirectory);
+    useRecoverPendingQuestions(
+        currentSessionId,
+        effectiveSessionDirectory,
+        sessionMessages,
+        sessionQuestions.length,
+    );
 
     const sessionIsWorking = React.useMemo(() => {
         if (!currentSessionId || sessionPermissions.length > 0 || sessionQuestions.length > 0) {
