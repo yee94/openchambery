@@ -1938,6 +1938,7 @@ export const dict: Record<I18nKey, string> = {
   'chat.assistantStatus.findingFiles': 'ファイルを検索中',
   'chat.assistantStatus.listingDirectory': 'ディレクトリを一覧表示中',
   'chat.assistantStatus.delegatingTask': 'タスクを委任中',
+  'chat.assistantStatus.taskWorking': '{name}が処理中',
   'chat.assistantStatus.fetchingUrl': 'URL を取得中',
   'chat.assistantStatus.searchingWeb': 'ウェブを検索中',
   'chat.assistantStatus.webCodeSearch': 'ウェブコードを検索中',

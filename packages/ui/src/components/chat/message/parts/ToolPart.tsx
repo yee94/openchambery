@@ -12,7 +12,7 @@ import { WorkerHighlightedCode } from '@/components/code/WorkerHighlightedCode';
 import { useOptionalThemeSystem } from '@/contexts/useThemeSystem';
 import { useEffectiveDirectory } from '@/hooks/useEffectiveDirectory';
 import { useSessionUIStore } from '@/sync/session-ui-store';
-import { useSessionMessageRecords, useEnsureSessionMessages, useSessionStatus, useSessionStatusObservedAt, useSessionStatusSnapshotAt } from '@/sync/sync-context';
+import { useSession, useSessionMessageRecords, useEnsureSessionMessages, useSessionStatus, useSessionStatusObservedAt, useSessionStatusSnapshotAt } from '@/sync/sync-context';
 import { useUIStore } from '@/stores/useUIStore';
 import { sessionEvents } from '@/lib/sessionEvents';
 import { ScrollShadow } from '@/components/ui/ScrollShadow';
@@ -80,12 +80,31 @@ const TOOL_ROW_DESCRIPTION_CLASS = cn('typography-meta', TOOL_ROW_TEXT_CLASS);
 const TASK_SUMMARY_TEXT_CLASS = 'typography-micro !text-[length:calc(var(--text-meta)-0.0625rem)] !leading-5 tracking-normal';
 const TASK_SUMMARY_LIST_CLASS = 'flex w-full min-w-0 flex-col gap-1';
 
-/** 从 task input / metadata 解析子 Agent 名（OpenCode 子 Agent 不一定在主选择器里） */
-const resolveTaskAgentName = (...sources: Array<Record<string, unknown> | undefined>): string | undefined => {
+const asTaskAgentSource = (value: unknown): Record<string, unknown> | undefined => {
+    if (value && typeof value === 'object' && !Array.isArray(value)) {
+        return value as Record<string, unknown>;
+    }
+    if (typeof value !== 'string') return undefined;
+    const trimmed = value.trim();
+    if (!trimmed.startsWith('{')) return undefined;
+    try {
+        const parsed = JSON.parse(trimmed) as unknown;
+        if (parsed && typeof parsed === 'object' && !Array.isArray(parsed)) {
+            return parsed as Record<string, unknown>;
+        }
+    } catch {
+        return undefined;
+    }
+    return undefined;
+};
+
+/** 从 task input / metadata / 子会话解析子 Agent 名（OpenCode 子 Agent 不一定在主选择器里） */
+const resolveTaskAgentName = (...sources: unknown[]): string | undefined => {
     for (const source of sources) {
-        if (!source) continue;
+        const record = asTaskAgentSource(source);
+        if (!record) continue;
         // 优先官方 task 字段；兼容偶发的 agent / subagent 别名
-        const candidates = [source.subagent_type, source.subagentType, source.agent, source.subagent];
+        const candidates = [record.subagent_type, record.subagentType, record.agent, record.subagent];
         for (const raw of candidates) {
             if (typeof raw !== 'string') continue;
             const trimmed = raw.trim();
@@ -2142,6 +2161,7 @@ const ToolPartContent: React.FC<ToolPartProps> = ({
         statusSnapshotAt,
     });
     const effectiveActive = isActive && !suppressTaskLoading;
+    const taskBusy = Boolean(isTaskTool && effectiveActive && !isError);
     React.useEffect(() => {
         if (suppressTaskLoading) setActiveLatched(false);
     }, [suppressTaskLoading]);
@@ -2186,17 +2206,20 @@ const ToolPartContent: React.FC<ToolPartProps> = ({
     const descriptionPath = getToolDescriptionPath(normalizedPart, state, currentDirectory);
     const description = getToolDescription(normalizedPart, state, currentDirectory);
     const displayName = resolveToolDisplayName(normalizedPartTool || part.tool, t);
+    const childTaskSessionInDirectory = useSession(isTaskTool ? taskSessionId : undefined, currentDirectory);
+    const childTaskSessionLive = useSession(isTaskTool ? taskSessionId : undefined);
+    const childTaskSession = childTaskSessionInDirectory ?? childTaskSessionLive;
     // Task 工具：用子 Agent 昵称替换通用 “Agent Task” 文案
     const taskAgentName = isTaskTool
-        ? resolveTaskAgentName(
-            input,
-            metadata,
-            partMetadata && typeof partMetadata === 'object'
-                ? partMetadata as Record<string, unknown>
-                : undefined,
-        )
+        ? resolveTaskAgentName(input, metadata, partMetadata, childTaskSession)
         : undefined;
-    const taskTitle = taskAgentName ? formatAgentDisplayName(taskAgentName) : displayName;
+    const isDelegatingTask = Boolean(isTaskTool && !taskSessionId && !taskAgentName);
+    const taskAgentLabel = taskAgentName ? formatAgentDisplayName(taskAgentName) : undefined;
+    const taskTitle = isDelegatingTask
+        ? t('chat.assistantStatus.delegatingTask')
+        : taskAgentLabel && taskBusy
+            ? t('chat.assistantStatus.taskWorking', { name: taskAgentLabel })
+            : taskAgentLabel ?? displayName;
     
     // Tool title/description — shown inline as context
     const justificationText = React.useMemo(() => {
@@ -2445,7 +2468,6 @@ const ToolPartContent: React.FC<ToolPartProps> = ({
 
     const iconStyle = !isTaskTool && isError ? TOOL_ERROR_ICON_STYLE : TOOL_NORMAL_ICON_STYLE;
     const titleStyle = !isTaskTool && isError ? TOOL_ERROR_TITLE_STYLE : TOOL_NORMAL_TITLE_STYLE;
-    const taskBusy = Boolean(isTaskTool && effectiveActive && !isError);
     // Expanded bodies render synchronously with `isExpanded`. A deferred mount
     // (double rAF + startTransition) painted an empty fold for a frame whenever
     // `isExpanded` dipped false, and default-open rows must report their real
@@ -2482,9 +2504,9 @@ const ToolPartContent: React.FC<ToolPartProps> = ({
                     <div className="relative size-3.5 flex-shrink-0">
                         <div
                             className="absolute inset-0 flex items-center justify-center"
-                            style={isTaskTool ? undefined : iconStyle}
+                            style={isTaskTool && !isDelegatingTask ? undefined : iconStyle}
                         >
-                            {isTaskTool ? (
+                            {isTaskTool && !isDelegatingTask ? (
                                 <AgentAvatar
                                     // 同一 agent 可并发多个 task；identicon/颜色按 task id 区分，label 仍用 agent 展示名
                                     name={part.id || taskAgentName || 'subagent'}

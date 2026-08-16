@@ -83,25 +83,29 @@ describe('tool busy title chrome', () => {
     test('every active expandable tool uses the shared loading orb and settled rows restore identity', () => {
         expect(toolPartSource).toContain("import { LatticeOrb } from './LatticeOrb';");
         expect(toolPartSource).toContain('const isFinalized = isToolPartSettled(part);');
-        expect(toolPartSource).toContain('{isTaskTool ? (');
+        expect(toolPartSource).toContain('{isTaskTool && !isDelegatingTask ? (');
         expect(toolPartSource).toContain(') : effectiveActive ? (');
         expect(toolPartSource).toContain("label={t('chat.assistantStatus.usingTool', { tool: taskTitle })}");
         expect(toolPartSource).toContain('getToolIcon(normalizedPartTool || part.tool)');
     });
 
-    test('task rows keep the agent avatar across busy and settled states', () => {
+    test('unassigned task rows stay on the loading orb until an agent is assigned', () => {
+        expect(toolPartSource).toContain('const isDelegatingTask = Boolean(isTaskTool && !taskSessionId && !taskAgentName);');
+        expect(toolPartSource).toContain("t('chat.assistantStatus.delegatingTask')");
+        expect(toolPartSource).toContain("t('chat.assistantStatus.taskWorking', { name: taskAgentLabel })");
         const lifecycleBranch = toolPartSource.slice(
-            toolPartSource.indexOf('{isTaskTool ? ('),
+            toolPartSource.indexOf('{isTaskTool && !isDelegatingTask ? ('),
             toolPartSource.indexOf('getToolIcon(normalizedPartTool || part.tool)'),
         );
         expect(lifecycleBranch).toContain('<AgentAvatar');
         expect(lifecycleBranch).toContain(') : effectiveActive ? (');
         expect(lifecycleBranch).toContain('<LatticeOrb');
-        expect(lifecycleBranch.indexOf('<AgentAvatar')).toBeLessThan(lifecycleBranch.indexOf('<LatticeOrb'));
+        expect(lifecycleBranch.indexOf('<LatticeOrb')).toBeGreaterThan(lifecycleBranch.indexOf('<AgentAvatar'));
     });
 
-    test('task rows keep the agent name visible beside the avatar', () => {
-        expect(toolPartSource).toContain('const taskTitle = taskAgentName ? formatAgentDisplayName(taskAgentName) : displayName;');
+    test('assigned task rows keep the agent name visible beside the avatar', () => {
+        expect(toolPartSource).toContain('const taskAgentLabel = taskAgentName ? formatAgentDisplayName(taskAgentName) : undefined;');
+        expect(toolPartSource).toContain("t('chat.assistantStatus.taskWorking', { name: taskAgentLabel })");
         expect(toolPartSource).toContain("className={cn(TOOL_ROW_TITLE_CLASS, 'shrink-0 whitespace-nowrap animate-text-shimmer')}");
         expect(toolPartSource).toContain("className={cn(TOOL_ROW_TITLE_CLASS, 'shrink-0 whitespace-nowrap')}");
         expect(toolPartSource).toContain('{taskTitle}');

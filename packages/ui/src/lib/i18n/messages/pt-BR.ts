@@ -1920,6 +1920,7 @@ export const dict: Record<I18nKey, string> = {
   "chat.assistantStatus.findingFiles": "Localizando arquivos",
   "chat.assistantStatus.listingDirectory": "Listando diretório",
   "chat.assistantStatus.delegatingTask": "Delegando tarefa",
+  "chat.assistantStatus.taskWorking": "{name} em andamento",
   "chat.assistantStatus.fetchingUrl": "Obtendo URL",
   "chat.assistantStatus.searchingWeb": "Pesquisando na web",
   "chat.assistantStatus.webCodeSearch": "Pesquisando código na web",

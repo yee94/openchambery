@@ -1912,6 +1912,7 @@ export const dict: Record<I18nKey, string> = {
   'chat.assistantStatus.findingFiles': '正在尋找檔案',
   'chat.assistantStatus.listingDirectory': '正在列出目錄',
   'chat.assistantStatus.delegatingTask': '正在委派工作',
+  'chat.assistantStatus.taskWorking': '{name}處理中',
   'chat.assistantStatus.fetchingUrl': '正在擷取 URL',
   'chat.assistantStatus.searchingWeb': '正在搜尋網頁',
   'chat.assistantStatus.webCodeSearch': '正在搜尋網頁程式碼',

@@ -1720,6 +1720,7 @@ export const dict = {
   'chat.assistantStatus.findingFiles': 'Recherche de fichiers',
   'chat.assistantStatus.listingDirectory': 'Liste du répertoire',
   'chat.assistantStatus.delegatingTask': 'Délégation de tâche',
+  'chat.assistantStatus.taskWorking': '{name} en cours',
   'chat.assistantStatus.fetchingUrl': 'Récupération de l’URL',
   'chat.assistantStatus.searchingWeb': 'Recherche sur le web',
   'chat.assistantStatus.webCodeSearch': 'Recherche de code web',

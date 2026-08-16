@@ -798,6 +798,7 @@ export const dict: Record<I18nKey, string> = {
   'chat.assistantStatus.findingFiles': 'Wyszukiwanie plików',
   'chat.assistantStatus.listingDirectory': 'Wyświetlanie katalogu',
   'chat.assistantStatus.delegatingTask': 'Delegowanie zadania',
+  'chat.assistantStatus.taskWorking': '{name} w toku',
   'chat.assistantStatus.fetchingUrl': 'Pobieranie adresu URL',
   'chat.assistantStatus.searchingWeb': 'Przeszukiwanie sieci',
   'chat.assistantStatus.webCodeSearch': 'Wyszukiwanie kodu w sieci',

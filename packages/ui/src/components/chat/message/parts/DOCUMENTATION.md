@@ -57,7 +57,7 @@ Use this doc when you ask an agent to change tool/header/description behavior.
 - `ToolPart.tsx`
   - Renders expandable tool rows (bash/edit/write/question/task + fallback).
   - Controls expandable header title/description/diff stats/timer and expanded output body.
-  - Every visible expandable call shows the shared 14px `LatticeOrb` in a fixed leading slot while active and restores its mapped icon after settling. Task keeps `AgentAvatar` plus the visible subagent nickname (`input.subagent_type`) for the whole lifecycle and never uses the loading orb.
+  - Every visible expandable call shows the shared 14px `LatticeOrb` in a fixed leading slot while active and restores its mapped icon after settling. Task stays on that orb plus the delegating label only until a child session id or agent name exists. After assignment it keeps `AgentAvatar` plus `{name} working` while busy, then the bare nickname when settled. The row still opens the child session when clicked.
   - Expandable rows keep their chevron in the trailing slot, so hover and expansion preserve the lifecycle indicator. Task shows that chevron when Settings → Visual → "Show Sub-agent Work Details" (`showSubagentTaskDetails`) is on.
   - That setting defaults **off**: no vertical task-summary rail. Clicking the compact row always
     opens the sub-agent session (context panel / mobile session switch), including while the task
