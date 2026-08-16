@@ -56,13 +56,32 @@ describe('context tool grouping', () => {
         expect(hasContextExploreSuccessor(timeline, 1, (item) => item)).toBe(true);
         expect(hasContextExploreSuccessor(timeline.slice(0, 2), 1, (item) => item)).toBe(false);
 
-        expect(isContextGroupExploring([
+        const settledParts = [
             { state: { status: 'completed' } },
             { state: { status: 'completed' } },
-        ])).toBe(false);
-        expect(isContextGroupExploring([
-            { state: { status: 'completed' } },
-            { state: { status: 'running' } },
-        ])).toBe(true);
+        ];
+        expect(isContextGroupExploring({
+            parts: settledParts,
+            hasFollowingOtherType: false,
+            isTurnLive: true,
+        })).toBe(true);
+        expect(isContextGroupExploring({
+            parts: settledParts,
+            hasFollowingOtherType: true,
+            isTurnLive: true,
+        })).toBe(false);
+        expect(isContextGroupExploring({
+            parts: settledParts,
+            hasFollowingOtherType: false,
+            isTurnLive: false,
+        })).toBe(false);
+        expect(isContextGroupExploring({
+            parts: [
+                { state: { status: 'completed' } },
+                { state: { status: 'running' } },
+            ],
+            hasFollowingOtherType: true,
+            isTurnLive: false,
+        })).toBe(true);
     });
 });

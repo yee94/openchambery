@@ -55,20 +55,32 @@ describe('ContextToolGroup', () => {
         expect(markup).toContain('1 search, 3 reads');
     });
 
-    test('settles as soon as every grouped call settles', () => {
+    test('keeps exploring after grouped calls settle until a later non-explore part appears', () => {
         const activities = [
             contextActivity('grep-1', 'grep', 'completed'),
             contextActivity('read-1', 'read', 'completed'),
         ];
-        const markup = renderToStaticMarkup(
+        const liveMarkup = renderToStaticMarkup(
             <I18nProvider>
-                <ContextToolGroup activities={activities} isMobile={false} />
+                <ContextToolGroup activities={activities} isMobile={false} isTurnLive />
+            </I18nProvider>,
+        );
+        const settledMarkup = renderToStaticMarkup(
+            <I18nProvider>
+                <ContextToolGroup
+                    activities={activities}
+                    isMobile={false}
+                    isTurnLive
+                    hasFollowingOtherType
+                />
             </I18nProvider>,
         );
 
-        expect(markup).toContain('Explored');
-        expect(markup).toContain('#oc-search');
-        expect(markup).not.toContain('oc-lattice-orb-dot');
+        expect(liveMarkup).toContain('Exploring');
+        expect(liveMarkup).toContain('oc-lattice-orb-dot');
+        expect(settledMarkup).toContain('Explored');
+        expect(settledMarkup).toContain('#oc-search');
+        expect(settledMarkup).not.toContain('oc-lattice-orb-dot');
     });
 
     test('keeps the group active while any member lacks settlement evidence', () => {

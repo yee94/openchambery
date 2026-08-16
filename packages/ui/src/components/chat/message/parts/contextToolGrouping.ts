@@ -58,8 +58,22 @@ export function hasContextExploreSuccessor<T>(
     return false;
 }
 
-export function isContextGroupExploring(parts: readonly unknown[]): boolean {
-    return parts.some((part) => isContextToolActive(part));
+/**
+ * 组内仍有未结算调用，或本轮还在进行且后面还没出现其他类型内容，都保持探索中。
+ * 只看组内 tool status 会在批次空档（思考 / 等待下一轮探索工具）误判成「已探索」。
+ */
+export function isContextGroupExploring(input: {
+    parts: readonly unknown[];
+    hasFollowingOtherType: boolean;
+    isTurnLive: boolean;
+}): boolean {
+    if (input.parts.some((part) => isContextToolActive(part))) {
+        return true;
+    }
+    if (input.hasFollowingOtherType) {
+        return false;
+    }
+    return input.isTurnLive;
 }
 
 export function collectConsecutiveContextTools<T>(

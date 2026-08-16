@@ -19,13 +19,21 @@ const TOOL_ROW_TEXT_CLASS = '!text-[length:var(--text-meta)] !leading-5 sm:!lead
 export const ContextToolGroup: React.FC<{
     activities: TurnActivityPart[];
     isMobile: boolean;
+    /** 本轮仍在进行时，后面没出现其他类型内容也保持探索中。 */
+    isTurnLive?: boolean;
+    /** 本组之后是否已出现正文 / 非 context 工具。 */
+    hasFollowingOtherType?: boolean;
     children?: React.ReactNode;
-}> = ({ activities, isMobile, children }) => {
+}> = ({ activities, isMobile, isTurnLive = false, hasFollowingOtherType = false, children }) => {
     const { t } = useI18n();
     const [isExpanded, setIsExpanded] = React.useState(false);
     const contentId = React.useId();
     const toolParts = activities.map((activity) => activity.part as ToolPartType);
-    const isActive = isContextGroupExploring(toolParts);
+    const isActive = isContextGroupExploring({
+        parts: toolParts,
+        hasFollowingOtherType,
+        isTurnLive,
+    });
     const counts = summarizeContextTools(toolParts.map((part) => part.tool));
     const summary = CONTEXT_TOOL_COUNT_ORDER
         .filter((key) => counts[key] > 0)

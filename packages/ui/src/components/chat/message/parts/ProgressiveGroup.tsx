@@ -13,7 +13,7 @@ import { Icon } from "@/components/icon/Icon";
 import { getToolIcon } from './toolPresentation';
 import { resolveToolDisplayName } from '@/lib/toolHelpers';
 import { ContextToolGroup } from './ContextToolGroup';
-import { collectConsecutiveContextTools } from './contextToolGrouping';
+import { collectConsecutiveContextTools, hasContextExploreSuccessor } from './contextToolGrouping';
 import { LatticeOrb } from './LatticeOrb';
 import { isContextGroupTool, isExpandableTool, isStandaloneTool, isStaticTool, isToolPartActive } from './toolRenderUtils';
 import { RuntimeAPIContext } from '@/contexts/runtimeAPIContext';
@@ -419,7 +419,7 @@ const getToolShortDescription = (activity: TurnActivityPart): string | null => {
 type AggregatedRow =
     | { type: 'tool-expandable'; activity: TurnActivityPart }
     | { type: 'tool-static-group'; toolName: string; activities: TurnActivityPart[] }
-    | { type: 'tool-context-group'; activities: TurnActivityPart[] }
+    | { type: 'tool-context-group'; activities: TurnActivityPart[]; hasFollowingOtherType: boolean }
     | { type: 'reasoning'; activity: TurnActivityPart }
     | { type: 'justification'; activity: TurnActivityPart }
     | { type: 'tool-fallback'; activity: TurnActivityPart };
@@ -566,6 +566,10 @@ const aggregateRows = (parts: TurnActivityPart[]): AggregatedRow[] => {
             rows.push({
                 type: 'tool-context-group',
                 activities: grouped.items,
+                hasFollowingOtherType: hasContextExploreSuccessor(parts, grouped.end, (item) => ({
+                    kind: item.kind,
+                    toolName: (item.part as ToolPartType).tool,
+                })),
             });
             i = grouped.end;
             continue;
@@ -1205,6 +1209,8 @@ const ProgressiveGroup: React.FC<ProgressiveGroupProps> = ({
                         key={row.activities[0]?.id ?? `context-${index}`}
                         activities={row.activities}
                         isMobile={isMobile}
+                        isTurnLive={isActive}
+                        hasFollowingOtherType={row.hasFollowingOtherType}
                     >
                         {row.activities.map((activity) => {
                             const groupedTool = activity.part as ToolPartType;
