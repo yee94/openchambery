@@ -15,7 +15,6 @@ import {
   sanitizeDiagnosticsError,
   snapshotTranscriptDiagnostics,
 } from "./transcript-diagnostics"
-import type { TranscriptCommand } from "./transcript-repository"
 import { UNKNOWN_SESSION_HISTORY_BOUNDARY } from "./types"
 
 describe("transcript diagnostics", () => {

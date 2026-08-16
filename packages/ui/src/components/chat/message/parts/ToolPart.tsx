@@ -2257,6 +2257,8 @@ const ToolPartContent: React.FC<ToolPartProps> = ({
     });
     const isDelegatingTask = isTaskTool && taskRowChrome.isDelegating;
     const taskTitle = taskRowChrome.title;
+    // 委派中的任务行：root 层暴露 data 属性，供测试与诊断用，不影响渲染
+    const delegatingDataAttr = isDelegatingTask ? { 'data-delegating': 'true' } : undefined;
     
     // Tool title/description — shown inline as context
     const justificationText = React.useMemo(() => {
@@ -2531,6 +2533,7 @@ const ToolPartContent: React.FC<ToolPartProps> = ({
             )}
                 // Full-width tool / subagent rows use soft press (default); never compact.
                 data-mobile-press-feedback="soft"
+                {...delegatingDataAttr}
                 onClick={handleMainClick}
                 onKeyDown={handleMainKeyDown}
                 role="button"
