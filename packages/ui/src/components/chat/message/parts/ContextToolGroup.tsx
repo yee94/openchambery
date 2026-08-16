@@ -81,7 +81,7 @@ export const ContextToolGroup: React.FC<{
                 aria-controls={contentId}
                 aria-label={ariaLabel}
                 data-mobile-press-feedback="soft"
-                className={cn('flex w-full min-w-0 items-center gap-1.5', isMobile && 'overflow-hidden', TOOL_ROW_INTERACTIVE_CHROME_CLASS)}
+                className={cn('flex w-full min-h-0 min-w-0 items-center gap-1.5 overflow-hidden', TOOL_ROW_INTERACTIVE_CHROME_CLASS)}
                 onClick={handleToggle}
                 onKeyDown={handleKeyDown}
             >
@@ -110,7 +110,7 @@ export const ContextToolGroup: React.FC<{
                 </span>
                 {summary ? (
                     <span
-                        className={cn('typography-meta h-5 w-0 min-w-0 max-w-full flex-1 overflow-hidden sm:h-6', TOOL_ROW_TEXT_CLASS)}
+                        className={cn('typography-meta h-5 min-h-0 w-0 min-w-0 max-w-full flex-1 overflow-hidden sm:h-6', TOOL_ROW_TEXT_CLASS)}
                         style={{ color: 'var(--tools-description)' }}
                     >
                         <FlipUpText text={summary} active={isActive} />

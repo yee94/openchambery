@@ -31,15 +31,15 @@ export const FlipUpText: React.FC<{
     });
 
     return (
-        <span className={cn('oc-summary-flip-viewport relative block h-full w-full min-w-0 max-w-full overflow-hidden', className)}>
-            <span className={cn('block min-w-0 truncate', outgoing && 'invisible')}>{displayed}</span>
+        <span className={cn('oc-summary-flip-viewport relative block h-full min-h-0 w-full min-w-0 max-w-full overflow-hidden', className)}>
+            <span className={cn('block h-full min-w-0 truncate', outgoing && 'invisible')}>{displayed}</span>
             {outgoing ? (
                 <span className="oc-summary-flip-stage absolute inset-0 block overflow-hidden">
-                    <span className="oc-summary-flip-out absolute left-0 right-0 top-0 block h-full truncate" aria-hidden="true">
+                    <span className="oc-summary-flip-out absolute inset-x-0 top-0 block h-full truncate" aria-hidden="true">
                         {outgoing}
                     </span>
                     <span
-                        className="oc-summary-flip-in absolute left-0 right-0 top-0 block h-full truncate"
+                        className="oc-summary-flip-in absolute inset-x-0 top-0 block h-full truncate"
                         onAnimationEnd={handleAnimationEnd}
                     >
                         {displayed}

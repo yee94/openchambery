@@ -1789,12 +1789,16 @@ input[aria-label="Terminal input"] {
 .oc-summary-flip-viewport {
   overflow: hidden;
   overflow: clip;
+  isolation: isolate;
   contain: paint;
+  -webkit-clip-path: inset(0);
+  clip-path: inset(0);
 }
 
 .oc-summary-flip-stage {
   overflow: hidden;
   overflow: clip;
+  isolation: isolate;
   contain: layout paint;
   -webkit-clip-path: inset(0);
   clip-path: inset(0);

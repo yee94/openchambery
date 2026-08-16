@@ -40,7 +40,7 @@ Use this doc when you ask an agent to change tool/header/description behavior.
   - Receives `children` for the expanded list (do not import `StaticToolRow` here — that would cycle with `ProgressiveGroup`).
   - Active state uses the 14px desktop / 16px mobile S1 `LatticeOrb` (same orb as streaming Thought in `ReasoningPart`) while any grouped call lacks settlement evidence, or while the turn is still live and no later non-explore part (final text / non-context tool) has appeared. Reasoning between explore calls does not settle the group. Individual child rows still use the shared per-call lifecycle.
   - The fixed leading slot restores the Search icon after every grouped call settles; the disclosure chevron stays in the trailing slot across activity states.
-  - While Exploring, the whole count summary flips upward when the counts change. Its zero-basis flex column keeps the established 20px / 24px line box, and nested paint/layout clipping constrains both absolutely positioned layers throughout the 280ms top-position transition so WebKit row geometry and chat overflow stay stable.
+  - While Exploring, the whole count summary flips upward when the counts change. The 20px / 24px line box stays fixed (`min-h-0` so a flex item cannot grow with the moving layers). Nested `overflow` / `clip-path` keep the `translateY` layers inside that box so the chat scroller does not appear.
 
 - `contextToolGrouping.ts`
   - Grouping helpers: `collectConsecutiveContextTools`, `summarizeContextTools`, `isContextToolActive`, count keys for search/read/list summary copy.
