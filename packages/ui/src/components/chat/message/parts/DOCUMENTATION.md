@@ -40,7 +40,7 @@ Use this doc when you ask an agent to change tool/header/description behavior.
   - Receives `children` for the expanded list (do not import `StaticToolRow` here — that would cycle with `ProgressiveGroup`).
   - Active state uses the 14px S1 `LatticeOrb` (same orb as streaming Thought in `ReasoningPart`) while any grouped call lacks settlement evidence, or while the turn is still live and no later non-explore part (final text / non-context tool) has appeared. Reasoning between explore calls does not settle the group. Individual child rows still use the shared per-call lifecycle.
   - The fixed leading slot restores the Search icon after every grouped call settles; the disclosure chevron stays in the trailing slot across activity states.
-  - While Exploring, the whole count summary flips upward when the counts change.
+  - While Exploring, the whole count summary flips upward when the counts change. Its flexing summary column keeps the established 20px / 24px line box, and a paint-contained block viewport clips both translated layers throughout the 280ms transition so row geometry and chat overflow stay stable.
 
 - `contextToolGrouping.ts`
   - Grouping helpers: `collectConsecutiveContextTools`, `summarizeContextTools`, `isContextToolActive`, count keys for search/read/list summary copy.
@@ -57,7 +57,7 @@ Use this doc when you ask an agent to change tool/header/description behavior.
 - `ToolPart.tsx`
   - Renders expandable tool rows (bash/edit/write/question/task + fallback).
   - Controls expandable header title/description/diff stats/timer and expanded output body.
-  - Every visible expandable call shows the shared 14px `LatticeOrb` in a fixed leading slot while active and restores its mapped icon after settling. Task keeps `AgentAvatar` + subagent nickname (`input.subagent_type`) for the whole lifecycle and never uses the loading orb.
+  - Every visible expandable call shows the shared 14px `LatticeOrb` in a fixed leading slot while active and restores its mapped icon after settling. Task keeps `AgentAvatar` plus the visible subagent nickname (`input.subagent_type`) for the whole lifecycle and never uses the loading orb.
   - Expandable rows keep their chevron in the trailing slot, so hover and expansion preserve the lifecycle indicator. Task shows that chevron when Settings → Visual → "Show Sub-agent Work Details" (`showSubagentTaskDetails`) is on.
   - That setting defaults **off**: no vertical task-summary rail. Clicking the compact row always
     opens the sub-agent session (context panel / mobile session switch), including while the task

@@ -80,15 +80,17 @@ const TOOL_ROW_DESCRIPTION_CLASS = cn('typography-meta', TOOL_ROW_TEXT_CLASS);
 const TASK_SUMMARY_TEXT_CLASS = 'typography-micro !text-[length:calc(var(--text-meta)-0.0625rem)] !leading-5 tracking-normal';
 const TASK_SUMMARY_LIST_CLASS = 'flex w-full min-w-0 flex-col gap-1';
 
-/** 从 task input 解析子 Agent 名（OpenCode 子 Agent 不一定在主选择器里） */
-const resolveTaskAgentName = (input: Record<string, unknown> | undefined): string | undefined => {
-    if (!input) return undefined;
-    // 优先官方 task 字段；兼容偶发的 agent / subagent 别名
-    const candidates = [input.subagent_type, input.agent, input.subagent];
-    for (const raw of candidates) {
-        if (typeof raw !== 'string') continue;
-        const trimmed = raw.trim();
-        if (trimmed.length > 0) return trimmed;
+/** 从 task input / metadata 解析子 Agent 名（OpenCode 子 Agent 不一定在主选择器里） */
+const resolveTaskAgentName = (...sources: Array<Record<string, unknown> | undefined>): string | undefined => {
+    for (const source of sources) {
+        if (!source) continue;
+        // 优先官方 task 字段；兼容偶发的 agent / subagent 别名
+        const candidates = [source.subagent_type, source.subagentType, source.agent, source.subagent];
+        for (const raw of candidates) {
+            if (typeof raw !== 'string') continue;
+            const trimmed = raw.trim();
+            if (trimmed.length > 0) return trimmed;
+        }
     }
     return undefined;
 };
@@ -2185,7 +2187,15 @@ const ToolPartContent: React.FC<ToolPartProps> = ({
     const description = getToolDescription(normalizedPart, state, currentDirectory);
     const displayName = resolveToolDisplayName(normalizedPartTool || part.tool, t);
     // Task 工具：用子 Agent 昵称替换通用 “Agent Task” 文案
-    const taskAgentName = isTaskTool ? resolveTaskAgentName(input) : undefined;
+    const taskAgentName = isTaskTool
+        ? resolveTaskAgentName(
+            input,
+            metadata,
+            partMetadata && typeof partMetadata === 'object'
+                ? partMetadata as Record<string, unknown>
+                : undefined,
+        )
+        : undefined;
     const taskTitle = taskAgentName ? formatAgentDisplayName(taskAgentName) : displayName;
     
     // Tool title/description — shown inline as context
@@ -2505,28 +2515,26 @@ const ToolPartContent: React.FC<ToolPartProps> = ({
                         </>
                     ) : (
                         <>
-                            <div className="flex items-center gap-2 min-w-0 flex-1">
-                                {taskBusy ? (
-                                    <span
-                                        className={cn(TOOL_ROW_TITLE_CLASS, 'flex-shrink-0 animate-text-shimmer')}
-                                        style={{
-                                            color: 'var(--tools-title)',
-                                            ['--oc-text-shimmer-base' as string]: 'var(--tools-title)',
-                                        }}
-                                        title={taskTitle}
-                                    >
-                                        {taskTitle}
-                                    </span>
-                                ) : (
-                                    <span
-                                        className={cn(TOOL_ROW_TITLE_CLASS, 'flex-shrink-0')}
-                                        style={titleStyle}
-                                        title={taskTitle}
-                                    >
-                                        {taskTitle}
-                                    </span>
-                                )}
-                            </div>
+                            {taskBusy ? (
+                                <span
+                                    className={cn(TOOL_ROW_TITLE_CLASS, 'shrink-0 whitespace-nowrap animate-text-shimmer')}
+                                    style={{
+                                        color: 'var(--tools-title)',
+                                        ['--oc-text-shimmer-base' as string]: 'var(--tools-title)',
+                                    }}
+                                    title={taskTitle}
+                                >
+                                    {taskTitle}
+                                </span>
+                            ) : (
+                                <span
+                                    className={cn(TOOL_ROW_TITLE_CLASS, 'shrink-0 whitespace-nowrap')}
+                                    style={titleStyle}
+                                    title={taskTitle}
+                                >
+                                    {taskTitle}
+                                </span>
+                            )}
                             {normalizedPartTool === 'bash' && typeof effectiveTimeStart === 'number' ? (
                                 <span className={cn('flex-shrink-0 tabular-nums text-muted-foreground/80', TOOL_ROW_DESCRIPTION_CLASS)}>
                                     <LiveDuration
