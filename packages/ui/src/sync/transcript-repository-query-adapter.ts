@@ -711,6 +711,7 @@ export function createQueryTranscriptRepository(
     const existing = authorityTailInflight.get(flightKey)
     if (existing) return existing
     const run = (async () => {
+      const startedAt = Date.now()
       authorityFlights.set(flightKey, { status: "loading" })
       try {
         const page = await fetchAuthorityTail(captured)
@@ -738,6 +739,12 @@ export function createQueryTranscriptRepository(
           directory: captured.directory,
           transport: captured.transport,
           generation: captured.generation,
+          source: "network",
+          purpose: "initial",
+          durationMs: Date.now() - startedAt,
+          transcript: toTranscriptData(readData(scope), captured.sessionID),
+          request: repository.getRequestState?.(scope),
+          hydration: repository.getHydrationState?.(scope),
           error,
         }))
         throw error
@@ -1164,8 +1171,17 @@ export function createQueryTranscriptRepository(
               suppressDurableWrite -= 1
             }
           }
-        } catch {
-          // Store failure must not block the network path or wipe authority.
+        } catch (error) {
+          recordTranscriptDiagnostics(snapshotTranscriptDiagnostics({
+            kind: "request-error",
+            sessionID: captured.sessionID,
+            directory: captured.directory,
+            transport: captured.transport,
+            generation: captured.generation,
+            source: "durable-cache",
+            purpose: "durable-seed",
+            error,
+          }))
         }
       }
 
@@ -1195,7 +1211,25 @@ export function createQueryTranscriptRepository(
       const hadCanonical = readData(scope) !== undefined
       // Drop a stale authority error so observer status can become ready.
       authorityFlights.delete(flightKey)
-      await controller.ensureInitial()
+      try {
+        await controller.ensureInitial()
+      } catch (error) {
+        recordTranscriptDiagnostics(snapshotTranscriptDiagnostics({
+          kind: "request-error",
+          sessionID: captured.sessionID,
+          directory: captured.directory,
+          transport: captured.transport,
+          generation: captured.generation,
+          source: hadCanonical ? "query-cache" : "network",
+          purpose: "initial",
+          durationMs: Date.now() - startedAt,
+          transcript: toTranscriptData(readData(scope), captured.sessionID),
+          request: repository.getRequestState?.(scope),
+          hydration: repository.getHydrationState?.(scope),
+          error,
+        }))
+        throw error
+      }
       authorityFlights.delete(flightKey)
       // Start min-residency from this ensure so immediate enforce cannot evict.
       cacheBudget.noteScopeObserved(toCacheScope(scope))

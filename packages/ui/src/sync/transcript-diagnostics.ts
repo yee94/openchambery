@@ -48,6 +48,7 @@ export type TranscriptDiagnosticsEvent = {
   readonly purpose?: string
   readonly sseType?: string
   readonly error?: string
+  readonly httpStatus?: number
 }
 
 export type TranscriptDiagnosticsSink = {
@@ -78,6 +79,20 @@ export function diagnosticsExportEventCount(content: string): number {
   } catch {
     return 0
   }
+}
+
+export function diagnosticsHttpStatus(error: unknown): number | undefined {
+  if (error && typeof error === "object" && "status" in error) {
+    const status = (error as { status?: unknown }).status
+    if (typeof status === "number" && Number.isFinite(status) && status >= 100 && status <= 599) {
+      return status
+    }
+  }
+  const text = error instanceof Error ? error.message : typeof error === "string" ? error : ""
+  const match = text.match(/\((\d{3})\)/)
+  if (!match) return undefined
+  const status = Number(match[1])
+  return status >= 100 && status <= 599 ? status : undefined
 }
 
 export function sanitizeDiagnosticsError(value: unknown): string | undefined {
@@ -157,7 +172,12 @@ export function snapshotTranscriptDiagnostics(input: {
     ...(input.command ? { command: input.command } : {}),
     ...(input.purpose ? { purpose: input.purpose } : {}),
     ...(input.sseType ? { sseType: input.sseType } : {}),
-    ...(sanitizeDiagnosticsError(input.error) ? { error: sanitizeDiagnosticsError(input.error) } : {}),
+    ...(sanitizeDiagnosticsError(input.error ?? input.request?.error)
+      ? { error: sanitizeDiagnosticsError(input.error ?? input.request?.error) }
+      : {}),
+    ...(diagnosticsHttpStatus(input.error) !== undefined
+      ? { httpStatus: diagnosticsHttpStatus(input.error) }
+      : {}),
   }
 }
 

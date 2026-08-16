@@ -5,6 +5,7 @@ import {
   createTranscriptDiagnosticsRecorder,
   diagnosticsExportEventCount,
   diagnosticsExportFileName,
+  diagnosticsHttpStatus,
   diagnosticsKindForCommand,
   diagnosticsSourceForCommand,
   isPrereleaseClientVersion,
@@ -29,6 +30,12 @@ describe("transcript diagnostics", () => {
     expect(sanitizeDiagnosticsError("Authorization: token")).toBe("redacted-error")
   })
 
+  test("extracts http status from typed errors and failed(status) messages", () => {
+    expect(diagnosticsHttpStatus(Object.assign(new Error("session.message failed (502): timeout"), { status: 502 }))).toBe(502)
+    expect(diagnosticsHttpStatus("ensureInitial failed (404): missing")).toBe(404)
+    expect(diagnosticsHttpStatus("plain timeout")).toBeUndefined()
+  })
+
   test("snapshots identities and completeness without message bodies", () => {
     const event = snapshotTranscriptDiagnostics({
       kind: "http-page",
@@ -49,6 +56,7 @@ describe("transcript diagnostics", () => {
       hydration: { sessionID: "ses_1", phase: "p0", p0Satisfied: true },
       command: "http-page",
       purpose: "initial",
+      error: Object.assign(new Error("session.message failed (502): timeout"), { status: 502 }),
       now: () => 10,
     })
     const serialized = JSON.stringify(event)
@@ -59,6 +67,8 @@ describe("transcript diagnostics", () => {
     expect(event.p0Satisfied).toBe(true)
     expect(event.source).toBe("network")
     expect(event.durationMs).toBe(42)
+    expect(event.httpStatus).toBe(502)
+    expect(event.error).toBe("session.message failed (502): timeout")
   })
 
   test("skips streaming part.delta and records other transcript commands", () => {
