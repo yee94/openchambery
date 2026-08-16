@@ -10,6 +10,7 @@ The mobile package reuses the web build, then rewrites `mobile.html` to `index.h
 - On first launch in Capacitor, the app shows a connection screen for an existing OpenChamber server.
 - Connections are saved locally in the app and can be managed from Settings under `Switch instance`.
 - About reports the installed native client version separately from the connected instance's OpenChamber and OpenCode versions. Mobile update checks send the native client version to the instance.
+- Capacitor About export of the prerelease diagnostics log calls `OpenChamberMedia.saveFile`, which presents the system save picker (iOS `UIDocumentPickerViewController`, Android `ACTION_CREATE_DOCUMENT`). It does not copy to the clipboard or rely on `navigator.share`.
 - Android update actions pass the APK URL to the configured system default browser, which owns the download and installation handoff.
 - The connection screen and `Switch instance` Settings page are Capacitor-only. Hosted `mobile.html` in a normal browser keeps the regular web behavior.
 - Password-protected OpenChamber servers can be unlocked from the mobile app. The app stores the issued client token with the saved connection.

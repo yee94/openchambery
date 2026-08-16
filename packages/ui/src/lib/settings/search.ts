@@ -1,9 +1,7 @@
 import type { I18nKey } from '@/lib/i18n/store';
-import { isPrereleaseClientVersion } from '@/sync/transcript-diagnostics';
+import { isTranscriptDiagnosticsEnabled } from '@/sync/transcript-diagnostics-runtime';
 import type { SettingsPageSlug, SettingsRuntimeContext } from './metadata';
 import { getSettingsPageMeta } from './metadata';
-
-declare const __APP_VERSION__: string | undefined;
 
 interface SettingsSearchItem {
   id: string;
@@ -185,14 +183,17 @@ const SETTINGS_SEARCH_ITEMS: readonly SettingsSearchItem[] = [
     isAvailable: (ctx) => !ctx.isMobile && !ctx.isDesktop && !ctx.isVSCode,
   },
   {
-    id: 'about.export-diagnostics',
+    id: 'about.diagnostics',
     page: 'about',
     titleKey: 'settings.openchamber.about.diagnostics.label',
-    descriptionKey: 'settings.openchamber.about.diagnostics.description',
+    keywords: ['diagnostics', 'logs', 'feat', 'transcript'],
+  },
+  {
+    id: 'about.export-diagnostics',
+    page: 'about',
+    titleKey: 'settings.openchamber.about.diagnostics.export',
     keywords: ['diagnostics', 'logs', 'export', 'feat', 'transcript'],
-    isAvailable: () => isPrereleaseClientVersion(
-      typeof __APP_VERSION__ !== 'undefined' ? __APP_VERSION__ : '',
-    ),
+    isAvailable: () => isTranscriptDiagnosticsEnabled(),
   },
   {
     id: 'appearance.usage-reports',

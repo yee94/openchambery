@@ -292,7 +292,7 @@ export async function handleSystemBridgeMessage(
         const archRaw = typeof body.arch === 'string' && body.arch.trim().length > 0
           ? body.arch.trim()
           : os.arch();
-        const reportUsage = body.reportUsage !== false;
+        const reportUsage = body.reportUsage === true;
 
         const installId = getOrCreateInstallId('vscode');
         const requestBody = {

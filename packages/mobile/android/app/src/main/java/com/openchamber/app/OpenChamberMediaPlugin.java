@@ -1,28 +1,34 @@
 package com.openchamber.app;
 
+import android.app.Activity;
 import android.content.ContentResolver;
 import android.content.ContentValues;
+import android.content.Intent;
 import android.net.Uri;
 import android.os.Build;
 import android.os.Environment;
 import android.provider.MediaStore;
 import android.util.Base64;
+import androidx.activity.result.ActivityResult;
+import com.getcapacitor.JSObject;
 import com.getcapacitor.Plugin;
 import com.getcapacitor.PluginCall;
 import com.getcapacitor.PluginMethod;
+import com.getcapacitor.annotation.ActivityCallback;
 import com.getcapacitor.annotation.CapacitorPlugin;
 import java.io.OutputStream;
 import java.util.concurrent.ExecutorService;
 import java.util.concurrent.Executors;
 
 /**
- * Writes image bytes into the system gallery (MediaStore). Used by chat image
- * long-press "Save to Photos" so the WebView never depends on navigator.share
- * or a browser download.
+ * Native media/file writes so the WebView never depends on navigator.share
+ * or a browser download: saveImage writes to the gallery; saveFile opens
+ * ACTION_CREATE_DOCUMENT.
  */
 @CapacitorPlugin(name = "OpenChamberMedia")
 public class OpenChamberMediaPlugin extends Plugin {
     private static final int MAX_BYTES = 32 * 1024 * 1024;
+    private byte[] pendingSaveBytes;
 
     private final ExecutorService executor = Executors.newSingleThreadExecutor(runnable -> {
         Thread thread = new Thread(runnable, "openchamber-media");
@@ -77,6 +83,92 @@ public class OpenChamberMediaPlugin extends Plugin {
                 call.reject(error.getMessage() != null ? error.getMessage() : "Save failed", error);
             }
         });
+    }
+
+    @PluginMethod
+    public void saveFile(PluginCall call) {
+        String dataBase64 = call.getString("dataBase64");
+        if (dataBase64 == null || dataBase64.isEmpty()) {
+            call.reject("dataBase64 is required");
+            return;
+        }
+        int comma = dataBase64.indexOf(',');
+        if (dataBase64.regionMatches(true, 0, "data:", 0, 5) && comma >= 0) {
+            dataBase64 = dataBase64.substring(comma + 1);
+        }
+
+        String mimeType = call.getString("mimeType", "application/json");
+        if (mimeType == null || mimeType.isEmpty()) {
+            mimeType = "application/json";
+        }
+        mimeType = mimeType.split(";")[0].trim();
+
+        String filename = sanitizeExportFilename(call.getString("filename", "export.json"));
+
+        byte[] bytes;
+        try {
+            bytes = Base64.decode(dataBase64, Base64.DEFAULT);
+        } catch (Exception error) {
+            call.reject("File data is empty or invalid base64");
+            return;
+        }
+        if (bytes == null || bytes.length == 0) {
+            call.reject("File data is empty");
+            return;
+        }
+        if (bytes.length > MAX_BYTES) {
+            call.reject("File exceeds maximum size");
+            return;
+        }
+
+        pendingSaveBytes = bytes;
+        Intent intent = new Intent(Intent.ACTION_CREATE_DOCUMENT);
+        intent.addCategory(Intent.CATEGORY_OPENABLE);
+        intent.setType(mimeType);
+        intent.putExtra(Intent.EXTRA_TITLE, filename);
+        startActivityForResult(call, intent, "saveFileResult");
+    }
+
+    @ActivityCallback
+    private void saveFileResult(PluginCall call, ActivityResult result) {
+        byte[] bytes = pendingSaveBytes;
+        pendingSaveBytes = null;
+        if (call == null) return;
+        if (result.getResultCode() != Activity.RESULT_OK || result.getData() == null || result.getData().getData() == null) {
+            JSObject cancelled = new JSObject();
+            cancelled.put("cancelled", true);
+            call.resolve(cancelled);
+            return;
+        }
+        if (bytes == null || bytes.length == 0) {
+            call.reject("File data is empty");
+            return;
+        }
+        Uri uri = result.getData().getData();
+        try (OutputStream out = getContext().getContentResolver().openOutputStream(uri)) {
+            if (out == null) {
+                call.reject("Could not open destination");
+                return;
+            }
+            out.write(bytes);
+            out.flush();
+        } catch (Exception error) {
+            call.reject(error.getMessage() != null ? error.getMessage() : "Save failed", error);
+            return;
+        }
+        JSObject saved = new JSObject();
+        saved.put("cancelled", false);
+        call.resolve(saved);
+    }
+
+    private static String sanitizeExportFilename(String raw) {
+        String name = raw == null ? "" : raw.trim();
+        if (name.isEmpty()) name = "export.json";
+        name = name.replaceAll("[\\\\/]+", "_").replaceAll("[^A-Za-z0-9._\\- ()\\[\\]]+", "_");
+        if (!name.matches("(?i).+\\.[a-z0-9]{1,8}$")) {
+            name = name + ".json";
+        }
+        return name;
     }
 
     private Uri insertImage(byte[] bytes, String filename, String mimeType) throws Exception {

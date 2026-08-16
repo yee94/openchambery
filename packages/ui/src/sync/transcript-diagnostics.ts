@@ -76,6 +76,23 @@ export function isPrereleaseClientVersion(version: string | null | undefined): b
   return typeof version === "string" && version.includes("-")
 }
 
+export const TRANSCRIPT_DIAGNOSTICS_PREFERENCE_KEY = "openchamber.client-diagnostics.enabled"
+
+export function parseTranscriptDiagnosticsPreference(raw: string | null | undefined): boolean | null {
+  if (raw === "true") return true
+  if (raw === "false") return false
+  return null
+}
+
+export function resolveTranscriptDiagnosticsEnabled(input: {
+  version?: string | null
+  preference?: boolean | null
+}): boolean {
+  if (input.preference === true) return true
+  if (input.preference === false) return false
+  return isPrereleaseClientVersion(input.version)
+}
+
 export function diagnosticsExportFileName(now = Date.now()): string {
   return `openchamber-diagnostics-${new Date(now).toISOString().replace(/[:.]/g, "-")}.json`
 }
