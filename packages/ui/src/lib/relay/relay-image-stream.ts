@@ -29,6 +29,13 @@ export const RELAY_IMAGE_MAX_BYTES = 32 * 1024 * 1024;
 /** Max concurrent in-flight native (or tracked) image streams for backpressure. */
 export const RELAY_IMAGE_MAX_CONCURRENT = 6;
 
+/**
+ * Aggregated renderer→native IPC payload size. Tunnel wire frames stay at
+ * 64 KiB; this only batches those frames before writeChunk. Each flushed
+ * write is at most this many bytes (a remainder may be smaller).
+ */
+export const RELAY_IMAGE_IPC_CHUNK_BYTES = 512 * 1024;
+
 type TrackedAsset = {
   assetId: string;
   url: string;
@@ -233,14 +240,61 @@ const pumpNativeBodyInBackground = (
   signal.addEventListener('abort', onAbort, { once: true });
 
   return (async () => {
+    const pending: Uint8Array[] = [];
+    let pendingBytes = 0;
+
+    const takePendingBytes = (byteLength: number): Uint8Array => {
+      if (byteLength <= 0) return new Uint8Array(0);
+      if (pending.length === 1 && pending[0]!.byteLength === byteLength) {
+        pendingBytes = 0;
+        return pending.pop()!;
+      }
+      const out = new Uint8Array(byteLength);
+      let offset = 0;
+      while (offset < byteLength && pending.length > 0) {
+        const head = pending[0]!;
+        const need = byteLength - offset;
+        if (head.byteLength <= need) {
+          out.set(head, offset);
+          offset += head.byteLength;
+          pending.shift();
+        } else {
+          out.set(head.subarray(0, need), offset);
+          pending[0] = head.subarray(need);
+          offset += need;
+        }
+      }
+      pendingBytes -= offset;
+      return out;
+    };
+
+    const discardPending = (): void => {
+      pending.length = 0;
+      pendingBytes = 0;
+    };
+
+    const assertStreamActive = (): void => {
+      if (signal.aborted || asset.released) {
+        throw signal.reason instanceof Error ? signal.reason : new Error('aborted');
+      }
+      if (getRuntimeTransportIdentity() !== transportIdentity) {
+        throw new Error('Runtime transport changed during image stream');
+      }
+    };
+
+    const flushPending = async (flushAll: boolean): Promise<void> => {
+      while (pendingBytes > 0 && (flushAll || pendingBytes >= RELAY_IMAGE_IPC_CHUNK_BYTES)) {
+        assertStreamActive();
+        const size = Math.min(pendingBytes, RELAY_IMAGE_IPC_CHUNK_BYTES);
+        const chunk = takePendingBytes(size);
+        // Await writeChunk so a slow native consumer applies backpressure on the tunnel read.
+        await bridge.writeChunk(asset.assetId, chunk);
+      }
+    };
+
     try {
       for (;;) {
-        if (signal.aborted || asset.released) {
-          throw signal.reason instanceof Error ? signal.reason : new Error('aborted');
-        }
-        if (getRuntimeTransportIdentity() !== transportIdentity) {
-          throw new Error('Runtime transport changed during image stream');
-        }
+        assertStreamActive();
 
         const { done, value } = await reader.read();
         if (done) break;
@@ -251,16 +305,20 @@ const pumpNativeBodyInBackground = (
           throw new Error(`Image exceeds maximum size of ${RELAY_IMAGE_MAX_BYTES} bytes`);
         }
 
-        // Await writeChunk so a slow native consumer applies backpressure on the tunnel read.
-        await bridge.writeChunk(asset.assetId, value);
+        pending.push(value);
+        pendingBytes += value.byteLength;
+        if (pendingBytes >= RELAY_IMAGE_IPC_CHUNK_BYTES) {
+          await flushPending(false);
+        }
       }
 
-      if (signal.aborted || asset.released) {
-        throw signal.reason instanceof Error ? signal.reason : new Error('aborted');
-      }
+      assertStreamActive();
+      await flushPending(true);
+      assertStreamActive();
       await bridge.endAsset(asset.assetId);
       inFlight.delete(asset.assetId);
     } catch (error) {
+      discardPending();
       await releaseTrackedAsset(asset, {
         abort: true,
         reason: error instanceof Error ? error.message : 'stream-failed',

@@ -578,7 +578,6 @@ const ComposerAttachmentControls = React.memo(function ComposerAttachmentControl
         footerIconButtonClass,
         iconSizeClass,
         handlePickLocalFiles,
-        handlePickLocalImages,
         openIssuePicker,
         openPrPicker,
         onOpenSettings,
@@ -587,7 +586,10 @@ const ComposerAttachmentControls = React.memo(function ComposerAttachmentControl
 
     const isMobileAttach = Boolean(props.onOpenMobileSheet);
     const attachLabel = t('chat.chatInput.actions.attachFiles');
-    const handlePick = isMobileAttach ? handlePickLocalImages : handlePickLocalFiles;
+    // Route mobile to the all-files picker too: the image-only input hid
+    // documents (.json etc.) on iOS. WKWebView still offers the photo
+    // library from the document picker's action sheet with accept="*/*".
+    const handlePick = handlePickLocalFiles;
 
     const attachButton = (
         <button

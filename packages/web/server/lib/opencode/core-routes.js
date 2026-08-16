@@ -1122,7 +1122,14 @@ export const registerCommonRequestMiddleware = (app, dependencies) => {
         return res.status(413).json({ error: 'Content exceeds maximum size of 1048576 bytes' });
       }
       express.json({ limit: '1mb' })(req, res, next);
-    } else if (!(req.method === 'PUT' && req.path.match(/^\/api\/openchamber\/message-queue\/attachments\/uploads\/[^/]+\/?$/)) && req.path.startsWith('/api/openchamber/message-queue')) {
+    } else if (
+      (req.method === 'PUT' && req.path.match(/^\/api\/openchamber\/message-queue\/attachments\/uploads\/[^/]+\/?$/))
+      || (req.method === 'PUT' && req.path.match(/^\/api\/fs\/prompt-attachments\/[^/]+\/?$/))
+    ) {
+      // Binary attachment uploads stream as the request body. Parsing JSON here
+      // would buffer the entire payload and block the relay tunnel.
+      next();
+    } else if (req.path.startsWith('/api/openchamber/message-queue')) {
       express.json({ limit: req.method === 'POST' && req.path === '/api/openchamber/message-queue/items' ? MESSAGE_QUEUE_ADMISSION_HTTP_MAX_BYTES : '1mb' })(req, res, next);
     } else if (
       req.path.startsWith('/api/openchamber/session-index') ||

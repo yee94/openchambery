@@ -32,6 +32,13 @@ The mobile package reuses the web build, then rewrites `mobile.html` to `index.h
 - **Android:** `MainActivity` registers the plugin; on load it installs a `BridgeWebViewClient` subclass that intercepts `openchamber-asset://` and returns a streaming `WebResourceResponse` backed by a thread-safe blocking `InputStream` (responses include `X-Content-Type-Options: nosniff`). One reader per asset; a second `openStream` is rejected.
 - **Limits (both platforms):** 120s idle TTL, 16 concurrent assets, 32 MiB per asset, 4 MiB unread queue backpressure (append waits up to 15s), cancel/finish/close and expiry free all queues. Native code never receives host paths, relay credentials, or tunnel keys — only opaque ids and bytes.
 
+## Native HEIC Transcode
+
+- `OpenChamberMedia.transcode({ data, mime, quality? })` converts HEIC/HEIF image bytes to JPEG on a background queue. Shared UI discovers the method through `convertHeicToJpegViaNative` (`packages/ui/src/lib/native-image-transcode.ts`) and falls back to JS when native is absent or rejects.
+- Input and output travel as Base64 JSON strings (Capacitor IPC). Default quality is `0.9` to match the existing JS converter. Non-image, non-HEIC, and decode failures reject with a readable message instead of crashing.
+- **iOS:** ImageIO (`CGImageSourceCreateWithData` → `CGImageDestinationAddImage` with `kCGImageDestinationLossyCompressionQuality`) on `com.openchamber.media.transcode`.
+- **Android:** `BitmapFactory.decodeByteArray` → `Bitmap.compress(JPEG)` on the existing media executor. Devices without a HEIF decoder reject so the JS fallback can run.
+
 ## Native Haptics Hot Path
 
 - The `OpenChamberHaptics` Capacitor 8 plugin provides fire-and-forget impact feedback at three strengths: `impactLight`, `impactMedium`, and `impactHeavy`.

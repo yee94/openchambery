@@ -91,9 +91,13 @@ const bytesToBase64 = (bytes: Uint8Array): string => {
   }
   let binary = '';
   const chunkSize = 0x8000;
-  for (let i = 0; i < bytes.byteLength; i += chunkSize) {
-    const slice = bytes.subarray(i, Math.min(i + chunkSize, bytes.byteLength));
-    binary += String.fromCharCode(...slice);
+  for (let offset = 0; offset < bytes.byteLength; offset += chunkSize) {
+    const end = Math.min(offset + chunkSize, bytes.byteLength);
+    let chunk = '';
+    for (let i = offset; i < end; i++) {
+      chunk += String.fromCharCode(bytes[i]!);
+    }
+    binary += chunk;
   }
   return btoa(binary);
 };

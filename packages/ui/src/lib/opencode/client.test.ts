@@ -117,6 +117,24 @@ mock.module('@/lib/startupTrace', () => ({
   markStartupTrace: mock(() => undefined),
 }));
 
+const uploadPromptAttachmentCalls: Array<{ mime: string; filename?: string }> = [];
+const uploadPromptAttachmentBytesMock = mock(async (input: { mime: string; filename?: string }) => {
+  uploadPromptAttachmentCalls.push(input);
+  return {
+    path: '/data/openchamber/prompt-attachments/ab/uploaded.bin',
+    url: 'file:///data/openchamber/prompt-attachments/ab/uploaded.bin',
+    mime: input.mime,
+    size: 4,
+    sha256: 'deadbeef',
+  };
+});
+
+mock.module('../prompt-attachment-upload', () => ({
+  needsPromptAttachmentUpload: (url: string) => url.startsWith('data:') || url.startsWith('blob:'),
+  blobFromDataUrl: (url: string, mime: string) => new Blob(['ok'], { type: mime || 'application/octet-stream' }),
+  uploadPromptAttachmentBytes: uploadPromptAttachmentBytesMock,
+}));
+
 const { opencodeClient } = await import(`./client?cache-test=${Date.now()}`);
 
 beforeEach(() => {
@@ -131,6 +149,7 @@ beforeEach(() => {
   sessionDiffSdkCalls.length = 0;
   sessionDiffResults.length = 0;
   sdkClientConfigs.length = 0;
+  uploadPromptAttachmentCalls.length = 0;
   runtimeKey = 'test-runtime';
   runtimeBase = '/api';
 });
@@ -375,6 +394,28 @@ describe('opencodeClient prompt retry behavior', () => {
 
     expect(promptAsyncCalls.length).toBe(1);
     expect(error instanceof Error ? error.message : String(error)).toContain('Failed to send message (503)');
+  });
+
+  test('uploads inline data URLs before promptAsync so the JSON body stays a file:// reference', async () => {
+    promptAsyncResults.push({ response: new Response(null, { status: 200 }) });
+
+    await opencodeClient.sendMessage({
+      id: 'ses_1',
+      providerID: 'anthropic-upload',
+      modelID: 'claude-sonnet',
+      text: 'see photo',
+      files: [{
+        type: 'file',
+        mime: 'image/png',
+        filename: 'photo.png',
+        url: 'data:image/png;base64,aGVsbA==',
+      }],
+    });
+
+    expect(uploadPromptAttachmentCalls).toHaveLength(1);
+    const parts = (promptAsyncCalls[0]?.[0] as { parts?: Array<{ type: string; url?: string; mime?: string }> })?.parts;
+    expect(parts?.some((part) => part.type === 'file' && part.url === 'file:///data/openchamber/prompt-attachments/ab/uploaded.bin' && part.mime === 'image/png')).toBe(true);
+    expect(parts?.some((part) => part.type === 'file' && part.url?.startsWith('data:'))).toBe(false);
   });
 });
 

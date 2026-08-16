@@ -2,7 +2,13 @@ import { describe, expect, test } from 'bun:test';
 import { readFileSync } from 'node:fs';
 import { dirname, join } from 'node:path';
 import { fileURLToPath } from 'node:url';
-import { isRelayTransport, needsRuntimeImageStream, resolveImageSource } from './imageSource';
+import {
+  RELAY_IMAGE_AUTO_LOAD_MAX_BYTES,
+  imageRequiresManualLoadOverRelay,
+  isRelayTransport,
+  needsRuntimeImageStream,
+  resolveImageSource,
+} from './imageSource';
 
 const sourceDirectory = dirname(fileURLToPath(import.meta.url));
 const helperSource = readFileSync(join(sourceDirectory, 'imageSource.ts'), 'utf8');
@@ -81,6 +87,26 @@ describe('isRelayTransport', () => {
   test('identifies relay transport identities', () => {
     expect(isRelayTransport('direct:url:http://127.0.0.1:4096')).toBe(false);
     expect(isRelayTransport('relay:{"serverId":"srv_123"}')).toBe(true);
+  });
+});
+
+describe('imageRequiresManualLoadOverRelay', () => {
+  test('gates only oversized known sizes on relay transport', () => {
+    const relay = 'relay:{"serverId":"srv_123"}';
+    const direct = 'direct:url:http://127.0.0.1:4096';
+
+    expect(imageRequiresManualLoadOverRelay(relay, RELAY_IMAGE_AUTO_LOAD_MAX_BYTES)).toBe(false);
+    expect(imageRequiresManualLoadOverRelay(relay, RELAY_IMAGE_AUTO_LOAD_MAX_BYTES + 1)).toBe(true);
+    expect(imageRequiresManualLoadOverRelay(direct, RELAY_IMAGE_AUTO_LOAD_MAX_BYTES * 20)).toBe(false);
+  });
+
+  test('never gates unknown or invalid sizes', () => {
+    const relay = 'relay:{"serverId":"srv_123"}';
+    expect(imageRequiresManualLoadOverRelay(relay, undefined)).toBe(false);
+    expect(imageRequiresManualLoadOverRelay(relay, 0)).toBe(false);
+    expect(imageRequiresManualLoadOverRelay(relay, -5)).toBe(false);
+    expect(imageRequiresManualLoadOverRelay(relay, Number.NaN)).toBe(false);
+    expect(imageRequiresManualLoadOverRelay(relay, Number.POSITIVE_INFINITY)).toBe(false);
   });
 });
 
@@ -194,7 +220,7 @@ describe('image source contracts', () => {
   });
 
   test('shares resolved display sources while popup payloads retain original URLs', () => {
-    expect(attachmentSource).toContain("import { useResolvedImageSource } from './imageSource'");
+    expect(attachmentSource).toContain("import { useResolvedImageSource,");
     expect(attachmentSource).toContain('source={file.url}');
     expect(attachmentSource).toContain('url: file.url');
     expect(dialogSource).toContain("import { useResolvedImageSource } from '../imageSource'");

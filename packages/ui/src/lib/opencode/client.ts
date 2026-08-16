@@ -16,6 +16,8 @@ import type {
 } from "@opencode-ai/sdk/v2";
 import type { PermissionRequest } from "@/types/permission";
 import type { QuestionRequest } from "@/types/question";
+import { convertHeicToJpegViaNative } from "../native-image-transcode";
+import { blobFromDataUrl, needsPromptAttachmentUpload, uploadPromptAttachmentBytes } from "../prompt-attachment-upload";
 
 /**
  * Tagged result of `OpencodeService.fetchPermission()`. The caller can
@@ -780,42 +782,32 @@ class OpencodeService {
    */
   private async convertHeicToJpeg(file: { mime: string; filename?: string; url: string }): Promise<{ mime: string; filename?: string; url: string }> {
     try {
-      // Dynamic import to avoid loading heic2any unless needed
-      const heic2any = (await import('heic2any')).default;
-      
-      // Extract base64 data from data URL
-      const commaIndex = file.url.indexOf(',');
-      if (commaIndex === -1) return file;
-      
-      const base64Data = file.url.substring(commaIndex + 1);
-      const binaryString = atob(base64Data);
-      const bytes = new Uint8Array(binaryString.length);
-      for (let i = 0; i < binaryString.length; i++) {
-        bytes[i] = binaryString.charCodeAt(i);
-      }
-      const heicBlob = new Blob([bytes], { type: file.mime });
-      
-      // Convert to JPEG
-      const jpegBlob = await heic2any({
-        blob: heicBlob,
-        toType: 'image/jpeg',
-        quality: 0.9,
-      }) as Blob;
-      
-      // Convert back to data URL
+      const heicBlob = blobFromDataUrl(file.url, file.mime);
+      if (!heicBlob) return file;
+
+      // Native Capacitor transcode (iOS ImageIO / Android) first; null falls
+      // back to the heic2any WASM path below so web/desktop keep working.
+      const nativeJpegBlob = await convertHeicToJpegViaNative(heicBlob);
+      const jpegBlob = nativeJpegBlob
+        // Dynamic import to avoid loading heic2any unless needed
+        ?? (await ((await import('heic2any')).default)({
+          blob: heicBlob,
+          toType: 'image/jpeg',
+          quality: 0.9,
+        }) as Blob);
+
       const jpegDataUrl = await new Promise<string>((resolve, reject) => {
         const reader = new FileReader();
         reader.onload = () => resolve(reader.result as string);
         reader.onerror = reject;
         reader.readAsDataURL(jpegBlob);
       });
-      
-      // Update filename extension
+
       let newFilename = file.filename;
       if (newFilename) {
         newFilename = newFilename.replace(/\.heic$/i, '.jpg').replace(/\.heif$/i, '.jpg');
       }
-      
+
       return {
         mime: 'image/jpeg',
         filename: newFilename,
@@ -868,12 +860,28 @@ class OpencodeService {
 
   private async toNormalizedFilePartInput(file: FileInputLite): Promise<FilePartInput> {
     const normalized = await this.normalizeFilePart(file);
+    let url = normalized.url;
+    // Inline data/blob URLs must leave the prompt JSON before promptAsync /
+    // createWithPrompt. Upload the bytes first and keep only a host file://
+    // reference so the shared relay tunnel is not head-of-line blocked.
+    if (needsPromptAttachmentUpload(url)) {
+      const body = blobFromDataUrl(url, normalized.mime);
+      if (!body) {
+        throw new Error(`Failed to materialize attachment bytes for ${normalized.filename ?? 'file'}`);
+      }
+      const uploaded = await uploadPromptAttachmentBytes({
+        body,
+        mime: normalized.mime,
+        filename: normalized.filename,
+      });
+      url = uploaded.url;
+    }
     return {
       ...(file.id ? { id: file.id } : {}),
       type: 'file',
       mime: normalized.mime,
       filename: normalized.filename,
-      url: normalized.url,
+      url,
     };
   }
 

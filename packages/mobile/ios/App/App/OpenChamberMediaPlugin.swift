@@ -1,10 +1,13 @@
 import Capacitor
+import ImageIO
 import Photos
 import UIKit
+import UniformTypeIdentifiers
 
 /**
  * Native media/file writes so the WebView does not rely on navigator.share:
  * saveImage writes to Photos; saveFile presents the system document picker.
+ * transcode converts HEIC/HEIF bytes to JPEG via ImageIO off the main thread.
  */
 @objc(OpenChamberMediaPlugin)
 class OpenChamberMediaPlugin: CAPPlugin, CAPBridgedPlugin {
@@ -13,9 +16,11 @@ class OpenChamberMediaPlugin: CAPPlugin, CAPBridgedPlugin {
     let pluginMethods: [CAPPluginMethod] = [
         CAPPluginMethod(name: "saveImage", returnType: CAPPluginReturnPromise),
         CAPPluginMethod(name: "saveFile", returnType: CAPPluginReturnPromise),
+        CAPPluginMethod(name: "transcode", returnType: CAPPluginReturnPromise),
     ]
 
     private let maxBytes = 32 * 1024 * 1024
+    private let transcodeQueue = DispatchQueue(label: "com.openchamber.media.transcode", qos: .userInitiated)
     private var saveFileDelegate: SaveFilePickerDelegate?
 
     @objc func saveImage(_ call: CAPPluginCall) {
@@ -67,6 +72,35 @@ class OpenChamberMediaPlugin: CAPPlugin, CAPBridgedPlugin {
             completion(false, "Photo library permission denied")
         @unknown default:
             completion(false, "Photo library permission unavailable")
+        }
+    }
+
+    @objc func transcode(_ call: CAPPluginCall) {
+        guard var dataBase64 = call.getString("data"), !dataBase64.isEmpty else {
+            call.reject("data is required")
+            return
+        }
+        if dataBase64.lowercased().hasPrefix("data:"), let comma = dataBase64.firstIndex(of: ",") {
+            dataBase64 = String(dataBase64[dataBase64.index(after: comma)...])
+        }
+        guard let mime = call.getString("mime")?.trimmingCharacters(in: .whitespacesAndNewlines).lowercased(),
+              !mime.isEmpty else {
+            call.reject("mime is required")
+            return
+        }
+        let quality = Self.clampJpegQuality(call.getDouble("quality"))
+        // ImageIO decode/encode is CPU-bound; keep it off the Capacitor/main thread.
+        transcodeQueue.async { [weak self] in
+            guard let self else {
+                call.reject("Plugin deallocated")
+                return
+            }
+            do {
+                let jpeg = try self.transcodeHeicToJpeg(dataBase64: dataBase64, mime: mime, quality: quality)
+                call.resolve(["data": jpeg.base64EncodedString(), "mime": "image/jpeg"])
+            } catch {
+                call.reject(error.localizedDescription)
+            }
         }
     }
 
@@ -128,6 +162,56 @@ class OpenChamberMediaPlugin: CAPPlugin, CAPBridgedPlugin {
         return cleaned
     }
 
+    private static func clampJpegQuality(_ raw: Double?) -> CGFloat {
+        let value = raw ?? 0.9
+        if value.isNaN || value.isInfinite { return 0.9 }
+        return CGFloat(min(max(value, 0.0), 1.0))
+    }
+
+    private func transcodeHeicToJpeg(dataBase64: String, mime: String, quality: CGFloat) throws -> Data {
+        guard mime == "image/heic" || mime == "image/heif" else {
+            throw ImageTranscodeError.unsupportedMime(mime)
+        }
+        guard let input = Data(base64Encoded: dataBase64, options: [.ignoreUnknownCharacters]), !input.isEmpty else {
+            throw ImageTranscodeError.invalidBase64
+        }
+        guard input.count <= maxBytes else {
+            throw ImageTranscodeError.tooLarge
+        }
+
+        let sourceOptions = [kCGImageSourceShouldCache: false] as CFDictionary
+        guard let source = CGImageSourceCreateWithData(input as CFData, sourceOptions) else {
+            throw ImageTranscodeError.decodeFailed
+        }
+        guard let uti = CGImageSourceGetType(source) as String? else {
+            throw ImageTranscodeError.notAnImage
+        }
+        let isHeif = UTType(uti)?.conforms(to: .heif) == true
+            || uti.caseInsensitiveCompare(UTType.heic.identifier) == .orderedSame
+            || uti.caseInsensitiveCompare("public.heif") == .orderedSame
+            || uti.caseInsensitiveCompare("public.heic") == .orderedSame
+        guard isHeif else {
+            throw ImageTranscodeError.notHeic(uti)
+        }
+        guard let image = CGImageSourceCreateImageAtIndex(source, 0, sourceOptions) else {
+            throw ImageTranscodeError.decodeFailed
+        }
+
+        let output = NSMutableData()
+        guard let destination = CGImageDestinationCreateWithData(output, UTType.jpeg.identifier as CFString, 1, nil) else {
+            throw ImageTranscodeError.encodeFailed
+        }
+        let destOptions = [kCGImageDestinationLossyCompressionQuality: quality] as CFDictionary
+        CGImageDestinationAddImage(destination, image, destOptions)
+        guard CGImageDestinationFinalize(destination) else {
+            throw ImageTranscodeError.encodeFailed
+        }
+        guard output.length > 0 else {
+            throw ImageTranscodeError.encodeFailed
+        }
+        return output as Data
+    }
+
     private func performSave(image: UIImage, call: CAPPluginCall) {
         PHPhotoLibrary.shared().performChanges({
             PHAssetChangeRequest.creationRequestForAsset(from: image)
@@ -140,6 +224,35 @@ class OpenChamberMediaPlugin: CAPPlugin, CAPBridgedPlugin {
                 }
             }
         })
+    }
+}
+
+private enum ImageTranscodeError: LocalizedError {
+    case unsupportedMime(String)
+    case invalidBase64
+    case tooLarge
+    case notAnImage
+    case notHeic(String)
+    case decodeFailed
+    case encodeFailed
+
+    var errorDescription: String? {
+        switch self {
+        case .unsupportedMime(let mime):
+            return "Unsupported image type: \(mime)"
+        case .invalidBase64:
+            return "Image data is empty or invalid base64"
+        case .tooLarge:
+            return "Image exceeds maximum size"
+        case .notAnImage:
+            return "Input is not a decodable image"
+        case .notHeic(let uti):
+            return "Input is not HEIC/HEIF (detected \(uti))"
+        case .decodeFailed:
+            return "Could not decode HEIC/HEIF image"
+        case .encodeFailed:
+            return "Could not encode JPEG"
+        }
     }
 }
 

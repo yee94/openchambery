@@ -4,6 +4,13 @@ All notable changes to this project will be documented in this file.
 
 ## [Unreleased]
 
+## [1.17.0-beta.3] - 2026-08-17
+
+- **Prompt attachment uploads:** inline image/file bytes are uploaded as a binary stream before the prompt is sent, and the prompt JSON only carries a host `file://` reference. Sending large attachments no longer head-of-line blocks the shared relay tunnel with a giant data URL.
+- **Native HEIC transcode:** iPhone photos convert to JPEG through native ImageIO on iOS (and the Android equivalent) instead of the heic2any WASM decoder in the WKWebView main thread; web/desktop keep the JS fallback.
+- **Relay image streaming:** image chunks cross the native asset bridge in 512KB batches (8× fewer bridge round-trips), base64 chunking no longer uses oversized spread calls, and images larger than 1MB over a relay connection load on tap instead of automatically.
+- **Attach documents on mobile:** the mobile attach button now opens the document picker, so JSON and other non-image files can be attached on iOS; photos stay reachable from the same picker's action sheet.
+
 ## [1.17.0-beta.2] - 2026-08-16
 
 - **Mobile composer fade:** the fade above the input now uses a page-background mask instead of a `color-mix` gradient, so it renders on iOS WKWebView the same way it already did on Android.

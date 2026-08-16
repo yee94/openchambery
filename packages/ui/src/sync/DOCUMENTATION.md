@@ -1217,6 +1217,14 @@ transcript (or any residual pure draft surface) as an unscoped full dump.
 
 ### New conversation orchestration
 
+Direct and combined first-prompt file parts go through
+`opencodeClient.buildMessageParts`. Local `data:` / `blob:` attachments upload
+bytes first (`PUT /api/fs/prompt-attachments/:id`) and the prompt JSON keeps
+only a host `file://` path. Upload failure is explicit and never silently
+re-embeds the data URL. Queue admission already uploads local blobs through
+`/api/openchamber/message-queue/attachments/uploads` and delivers
+`attachmentID` / `server-path` locators.
+
 Normal first prompts from an open draft use the optional runtime
 `conversations.createWithPrompt` capability. Web and mobile send one
 OpenChamber-owned request; the server creates the OpenCode session and admits

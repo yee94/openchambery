@@ -1548,6 +1548,7 @@ export const dict: Record<I18nKey, string> = {
   'chat.fileAttachment.image.loading': 'Wczytywanie obrazu…',
   'chat.fileAttachment.image.loadFailed': 'Nie udało się wczytać obrazu.',
   'chat.fileAttachment.image.retry': 'Ponów wczytywanie obrazu',
+  'chat.fileAttachment.image.loadManually': 'Wczytaj obraz',
   'chat.toolPart.awaitingResponse': 'Oczekiwanie na odpowiedź...',
   'chat.toolPart.error': 'Błąd:',
   'chat.toolPart.lspErrors': 'Błędy LSP',

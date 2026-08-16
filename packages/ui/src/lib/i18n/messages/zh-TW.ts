@@ -2237,6 +2237,7 @@ export const dict: Record<I18nKey, string> = {
   'chat.fileAttachment.image.loading': '正在載入圖片…',
   'chat.fileAttachment.image.loadFailed': '無法載入圖片。',
   'chat.fileAttachment.image.retry': '重試載入圖片',
+  'chat.fileAttachment.image.loadManually': '載入圖片',
   'chat.toolPart.lspErrors': 'LSP 錯誤',
   'chat.toolPart.moreErrors': '+{count} 個更多錯誤',
   'chat.toolPart.error': '錯誤：',

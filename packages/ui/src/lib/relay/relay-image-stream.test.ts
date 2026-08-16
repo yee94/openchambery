@@ -7,6 +7,7 @@ import {
   type NativeRelayAssetOpenResult,
 } from './native-asset-bridge';
 import {
+  RELAY_IMAGE_IPC_CHUNK_BYTES,
   RELAY_IMAGE_MAX_BYTES,
   RELAY_IMAGE_MAX_CONCURRENT,
   clearAllRelayImageAssets,
@@ -261,8 +262,8 @@ describe('streamRelayImageDisplayUrl with native bridge', () => {
     expect(record.open[0]?.assetId.startsWith('ria_')).toBe(true);
     expect(JSON.stringify(record)).not.toContain('/secret/host/path.png');
 
-    await waitFor(() => record.ends.length === 1 && record.writes.length === 2);
-    expect(record.writes.map((w) => w.bytes)).toEqual([4, 6]);
+    await waitFor(() => record.ends.length === 1 && record.writes.length === 1);
+    expect(record.writes.map((w) => w.bytes)).toEqual([10]);
     expect(record.ends).toEqual([record.open[0]!.assetId]);
 
     releaseRelayImageDisplayUrl(url);
@@ -325,24 +326,22 @@ describe('streamRelayImageDisplayUrl with native bridge', () => {
     await waitFor(() => record.aborts.length >= 1 && record.releases.length >= 1);
   });
 
-  test('applies write backpressure by awaiting bridge.writeChunk before the next read', async () => {
+  test('applies write backpressure by awaiting bridge.writeChunk before the next flush', async () => {
     let releaseWrite: (() => void) | undefined;
     const writeGate = new Promise<void>((resolve) => {
       releaseWrite = resolve;
     });
     const { record } = installBridge({ writeGate });
 
+    const tunnelChunk = 64 * 1024;
+    const totalChunks = RELAY_IMAGE_IPC_CHUNK_BYTES / tunnelChunk + 1;
     let pulls = 0;
     fetchImpl = async () => {
       const body = new ReadableStream<Uint8Array>({
         pull(controller) {
           pulls += 1;
-          if (pulls === 1) {
-            controller.enqueue(textEncoder.encode('one'));
-            return;
-          }
-          if (pulls === 2) {
-            controller.enqueue(textEncoder.encode('two'));
+          if (pulls <= totalChunks) {
+            controller.enqueue(new Uint8Array(tunnelChunk).fill(pulls));
             return;
           }
           controller.close();
@@ -351,14 +350,17 @@ describe('streamRelayImageDisplayUrl with native bridge', () => {
       return new Response(body, { status: 200, headers: { 'content-type': 'image/png' } });
     };
 
-    // Returns before the gated write completes.
+    // Returns before the gated aggregated write completes.
     const url = await streamRelayImageDisplayUrl('/bp.png', new AbortController().signal);
     expect(url.startsWith('openchamber-asset://stream/')).toBe(true);
     await new Promise<void>((resolve) => setTimeout(resolve, 20));
     expect(record.writes).toHaveLength(0);
     releaseWrite?.();
     await waitFor(() => record.writes.length === 2 && record.ends.length === 1);
-    expect(record.writes.map((w) => w.bytes)).toEqual([3, 3]);
+    expect(record.writes.map((w) => w.bytes)).toEqual([
+      RELAY_IMAGE_IPC_CHUNK_BYTES,
+      tunnelChunk,
+    ]);
     releaseRelayImageDisplayUrl(url);
   });
 
@@ -371,6 +373,8 @@ describe('streamRelayImageDisplayUrl with native bridge', () => {
     const url = await streamRelayImageDisplayUrl('/huge.png', new AbortController().signal);
     expect(url.startsWith('openchamber-asset://stream/')).toBe(true);
     await waitFor(() => record.aborts.length >= 1 && record.releases.length >= 1);
+    expect(record.writes).toHaveLength(0);
+    expect(record.ends).toHaveLength(0);
   });
 
   test('clears in-flight native assets when the runtime transport changes', async () => {
@@ -412,6 +416,64 @@ describe('streamRelayImageDisplayUrl with native bridge', () => {
     await waitFor(() => record.open.length === RELAY_IMAGE_MAX_CONCURRENT + 2);
     await waitFor(() => record.ends.length === RELAY_IMAGE_MAX_CONCURRENT + 2);
     for (const url of urls) releaseRelayImageDisplayUrl(url);
+  });
+
+  test('aggregates 64 KiB tunnel chunks into at most 512 KiB writeChunk calls', async () => {
+    const { record } = installBridge();
+    const tunnelChunk = 64 * 1024;
+    const chunks = Array.from({ length: 10 }, (_, index) => new Uint8Array(tunnelChunk).fill(index + 1));
+    fetchImpl = async () => streamResponse(chunks);
+
+    const url = await streamRelayImageDisplayUrl('/agg.png', new AbortController().signal);
+    await waitFor(() => record.ends.length === 1 && record.writes.length === 2);
+    expect(record.writes.map((w) => w.bytes)).toEqual([
+      RELAY_IMAGE_IPC_CHUNK_BYTES,
+      2 * tunnelChunk,
+    ]);
+    expect(record.writes.every((w) => w.bytes <= RELAY_IMAGE_IPC_CHUNK_BYTES)).toBe(true);
+    releaseRelayImageDisplayUrl(url);
+  });
+
+  test('flushes a trailing remainder before endAsset', async () => {
+    const { record } = installBridge();
+    const chunks = [
+      new Uint8Array(100).fill(1),
+      new Uint8Array(250).fill(2),
+      new Uint8Array(50).fill(3),
+    ];
+    fetchImpl = async () => streamResponse(chunks);
+
+    const url = await streamRelayImageDisplayUrl('/tail.png', new AbortController().signal);
+    await waitFor(() => record.ends.length === 1);
+    expect(record.writes.map((w) => w.bytes)).toEqual([400]);
+    expect(record.ends).toHaveLength(1);
+    releaseRelayImageDisplayUrl(url);
+  });
+
+  test('discards an unflushed IPC buffer when the stream aborts', async () => {
+    const { record } = installBridge();
+    fetchImpl = async () => {
+      const body = new ReadableStream<Uint8Array>({
+        pull(controller) {
+          controller.enqueue(new Uint8Array(64 * 1024).fill(7));
+          return new Promise(() => {});
+        },
+        cancel() {},
+      });
+      return new Response(body, { status: 200, headers: { 'content-type': 'image/png' } });
+    };
+
+    const controller = new AbortController();
+    const url = await streamRelayImageDisplayUrl('/discard.png', controller.signal);
+    expect(url.startsWith('openchamber-asset://stream/')).toBe(true);
+    await waitFor(() => record.open.length === 1);
+    await new Promise<void>((resolve) => setTimeout(resolve, 15));
+    expect(record.writes).toHaveLength(0);
+    controller.abort(new Error('user-cancel'));
+
+    await waitFor(() => record.aborts.length >= 1 && record.releases.length >= 1);
+    expect(record.writes).toHaveLength(0);
+    expect(record.ends).toHaveLength(0);
   });
 });
 

@@ -4,6 +4,8 @@ import android.app.Activity;
 import android.content.ContentResolver;
 import android.content.ContentValues;
 import android.content.Intent;
+import android.graphics.Bitmap;
+import android.graphics.BitmapFactory;
 import android.net.Uri;
 import android.os.Build;
 import android.os.Environment;
@@ -16,14 +18,17 @@ import com.getcapacitor.PluginCall;
 import com.getcapacitor.PluginMethod;
 import com.getcapacitor.annotation.ActivityCallback;
 import com.getcapacitor.annotation.CapacitorPlugin;
+import java.io.ByteArrayOutputStream;
 import java.io.OutputStream;
+import java.util.Locale;
 import java.util.concurrent.ExecutorService;
 import java.util.concurrent.Executors;
 
 /**
  * Native media/file writes so the WebView never depends on navigator.share
  * or a browser download: saveImage writes to the gallery; saveFile opens
- * ACTION_CREATE_DOCUMENT.
+ * ACTION_CREATE_DOCUMENT. transcode converts HEIC/HEIF bytes to JPEG via
+ * BitmapFactory on a background executor.
  */
 @CapacitorPlugin(name = "OpenChamberMedia")
 public class OpenChamberMediaPlugin extends Plugin {
@@ -35,6 +40,63 @@ public class OpenChamberMediaPlugin extends Plugin {
         thread.setDaemon(true);
         return thread;
     });
+
+    @PluginMethod
+    public void transcode(PluginCall call) {
+        String dataBase64 = call.getString("data");
+        if (dataBase64 == null || dataBase64.isEmpty()) {
+            call.reject("data is required");
+            return;
+        }
+        int comma = dataBase64.indexOf(',');
+        if (dataBase64.regionMatches(true, 0, "data:", 0, 5) && comma >= 0) {
+            dataBase64 = dataBase64.substring(comma + 1);
+        }
+        String mime = call.getString("mime");
+        if (mime == null || mime.trim().isEmpty()) {
+            call.reject("mime is required");
+            return;
+        }
+        mime = mime.trim().toLowerCase(Locale.ROOT);
+        if (!"image/heic".equals(mime) && !"image/heif".equals(mime)) {
+            call.reject("Unsupported image type: " + mime);
+            return;
+        }
+        final String finalBase64 = dataBase64;
+        final int quality = clampJpegQuality(call.getDouble("quality"));
+        // Decode/compress is CPU and memory bound; keep it off the Capacitor bridge thread.
+        executor.execute(() -> {
+            try {
+                byte[] bytes = Base64.decode(finalBase64, Base64.DEFAULT);
+                if (bytes == null || bytes.length == 0) {
+                    call.reject("Image data is empty or invalid base64");
+                    return;
+                }
+                if (bytes.length > MAX_BYTES) {
+                    call.reject("Image exceeds maximum size");
+                    return;
+                }
+                Bitmap bitmap = BitmapFactory.decodeByteArray(bytes, 0, bytes.length);
+                if (bitmap == null) {
+                    call.reject("Could not decode HEIC/HEIF image");
+                    return;
+                }
+                ByteArrayOutputStream out = new ByteArrayOutputStream();
+                boolean compressed = bitmap.compress(Bitmap.CompressFormat.JPEG, quality, out);
+                bitmap.recycle();
+                if (!compressed || out.size() == 0) {
+                    call.reject("Could not encode JPEG");
+                    return;
+                }
+                JSObject result = new JSObject();
+                result.put("data", Base64.encodeToString(out.toByteArray(), Base64.NO_WRAP));
+                result.put("mime", "image/jpeg");
+                call.resolve(result);
+            } catch (Exception error) {
+                call.reject(error.getMessage() != null ? error.getMessage() : "Transcode failed", error);
+            }
+        });
+    }
 
     @PluginMethod
     public void saveImage(PluginCall call) {
@@ -207,6 +269,14 @@ public class OpenChamberMediaPlugin extends Plugin {
             resolver.update(uri, done, null, null);
         }
         return uri;
+    }
+
+    private static int clampJpegQuality(Double raw) {
+        double value = raw == null ? 0.9 : raw;
+        if (Double.isNaN(value) || Double.isInfinite(value)) value = 0.9;
+        if (value < 0.0) value = 0.0;
+        if (value > 1.0) value = 1.0;
+        return (int) Math.round(value * 100.0);
     }
 
     private static String sanitizeFilename(String raw, String mimeType) {
