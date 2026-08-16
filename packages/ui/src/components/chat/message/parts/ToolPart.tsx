@@ -2472,20 +2472,20 @@ const ToolPartContent: React.FC<ToolPartProps> = ({
                     <div className="relative size-3.5 flex-shrink-0">
                         <div
                             className="absolute inset-0 flex items-center justify-center"
-                            style={isTaskTool && !effectiveActive ? undefined : iconStyle}
+                            style={isTaskTool ? undefined : iconStyle}
                         >
-                            {effectiveActive ? (
-                                <LatticeOrb
-                                    size={14}
-                                    className="text-[var(--tools-icon)]"
-                                    label={t('chat.assistantStatus.usingTool', { tool: taskTitle })}
-                                />
-                            ) : isTaskTool ? (
+                            {isTaskTool ? (
                                 <AgentAvatar
                                     // 同一 agent 可并发多个 task；identicon/颜色按 task id 区分，label 仍用 agent 展示名
                                     name={part.id || taskAgentName || 'subagent'}
                                     size={14}
                                     label={taskTitle}
+                                />
+                            ) : effectiveActive ? (
+                                <LatticeOrb
+                                    size={14}
+                                    className="text-[var(--tools-icon)]"
+                                    label={t('chat.assistantStatus.usingTool', { tool: taskTitle })}
                                 />
                             ) : (
                                 getToolIcon(normalizedPartTool || part.tool)

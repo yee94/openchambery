@@ -4,6 +4,10 @@ All notable changes to this project will be documented in this file.
 
 ## [Unreleased]
 
+## [1.16.134-beta.6] - 2026-08-16
+
+- **Subagent rows:** delegated task rows keep the agent avatar while work is in progress instead of switching to the shared loading orb.
+
 ## [1.16.134-beta.5] - 2026-08-16
 
 - **Exploration groups:** the grouped Exploring state now lasts from the first search/read/list call until a later non-explore part appears, instead of stopping as soon as those calls settle.
