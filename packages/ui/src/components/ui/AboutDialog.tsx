@@ -1,4 +1,5 @@
 import React from 'react';
+import { useEvent } from '@reactuses/core';
 import {
   Dialog,
   DialogContent,
@@ -7,10 +8,16 @@ import { OpenChamberLogo } from '@/components/ui/OpenChamberLogo';
 import { debugUtils } from '@/lib/debug';
 import { cn } from '@/lib/utils';
 import { toast } from '@/components/ui';
+import { Button } from '@/components/ui/button';
 import { Icon } from "@/components/icon/Icon";
 import { useI18n } from '@/lib/i18n';
+import { copyTextToClipboard } from '@/lib/clipboard';
 import { getDesktopAppVersion } from '@/lib/desktopNative';
 import { runtimeFetch } from '@/lib/runtime-fetch';
+import {
+  exportAndDownloadClientDiagnostics,
+  isTranscriptDiagnosticsEnabled,
+} from '@/sync/transcript-diagnostics-runtime';
 
 interface AboutDialogProps {
   open: boolean;
@@ -29,6 +36,26 @@ export const AboutDialog: React.FC<AboutDialogProps> = ({
   const [copiedDiagnostics, setCopiedDiagnostics] = React.useState(false);
   const [diagnosticsReport, setDiagnosticsReport] = React.useState<string | null>(null);
   const [isPreparingDiagnostics, setIsPreparingDiagnostics] = React.useState(false);
+  const [exportingFeatLog, setExportingFeatLog] = React.useState(false);
+  const diagnosticsEnabled = isTranscriptDiagnosticsEnabled();
+
+  const handleExportFeatLog = useEvent(async () => {
+    if (exportingFeatLog) return;
+    setExportingFeatLog(true);
+    try {
+      const { content, eventCount } = await exportAndDownloadClientDiagnostics();
+      await copyTextToClipboard(content);
+      toast.success(
+        eventCount > 0
+          ? t('settings.openchamber.about.diagnostics.toast.exported')
+          : t('settings.openchamber.about.diagnostics.toast.empty'),
+      );
+    } catch {
+      toast.error(t('settings.openchamber.about.diagnostics.toast.failed'));
+    } finally {
+      setExportingFeatLog(false);
+    }
+  });
 
   const handleCopyDiagnostics = React.useCallback(async () => {
     if (!showDiagnostics) return;
@@ -157,6 +184,25 @@ export const AboutDialog: React.FC<AboutDialogProps> = ({
               )}
             </div>
           </div>
+
+          {diagnosticsEnabled && (
+          <div className="flex w-full flex-col items-center gap-3 pt-2">
+            <Button
+              type="button"
+              variant="outline"
+              size="sm"
+              disabled={exportingFeatLog}
+              onClick={() => void handleExportFeatLog()}
+            >
+              {exportingFeatLog
+                ? t('settings.openchamber.about.diagnostics.exporting')
+                : t('settings.openchamber.about.diagnostics.export')}
+            </Button>
+            <p className="typography-micro text-muted-foreground">
+              {t('settings.openchamber.about.diagnostics.description')}
+            </p>
+          </div>
+          )}
 
           {showDiagnostics && (
             <div className="flex flex-col items-center gap-2 pt-2">

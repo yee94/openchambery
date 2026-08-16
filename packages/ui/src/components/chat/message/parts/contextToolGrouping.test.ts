@@ -60,11 +60,20 @@ describe('context tool grouping', () => {
             { state: { status: 'completed' } },
             { state: { status: 'completed' } },
         ];
+        // Array-only form: active tools only.
+        expect(isContextGroupExploring(settledParts)).toBe(false);
+        expect(isContextGroupExploring([
+            { state: { status: 'completed' } },
+            { state: { status: 'running' } },
+        ])).toBe(true);
+
+        // Full form: stay Exploring until a non-explore successor appears.
         expect(isContextGroupExploring({
             parts: settledParts,
             hasFollowingOtherType: false,
             isTurnLive: true,
         })).toBe(true);
+        // successor text/justification or bash/edit ⇒ Explored
         expect(isContextGroupExploring({
             parts: settledParts,
             hasFollowingOtherType: true,
@@ -75,6 +84,7 @@ describe('context tool grouping', () => {
             hasFollowingOtherType: false,
             isTurnLive: false,
         })).toBe(false);
+        // Active tool always Exploring even after a successor.
         expect(isContextGroupExploring({
             parts: [
                 { state: { status: 'completed' } },
@@ -83,5 +93,32 @@ describe('context tool grouping', () => {
             hasFollowingOtherType: true,
             isTurnLive: false,
         })).toBe(true);
+    });
+
+    test('reasoning is not a successor; text/justification/bash/edit are', () => {
+        const withReasoningOnly = [
+            { kind: 'tool', toolName: 'read' },
+            { kind: 'reasoning' },
+        ];
+        expect(hasContextExploreSuccessor(withReasoningOnly, 1, (item) => item)).toBe(false);
+
+        const withText = [
+            { kind: 'tool', toolName: 'read' },
+            { kind: 'reasoning' },
+            { kind: 'justification' },
+        ];
+        expect(hasContextExploreSuccessor(withText, 1, (item) => item)).toBe(true);
+
+        const withBash = [
+            { kind: 'tool', toolName: 'grep' },
+            { kind: 'tool', toolName: 'bash' },
+        ];
+        expect(hasContextExploreSuccessor(withBash, 1, (item) => item)).toBe(true);
+
+        const withEdit = [
+            { kind: 'tool', toolName: 'list' },
+            { kind: 'tool', toolName: 'edit' },
+        ];
+        expect(hasContextExploreSuccessor(withEdit, 1, (item) => item)).toBe(true);
     });
 });

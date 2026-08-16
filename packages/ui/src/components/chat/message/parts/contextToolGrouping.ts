@@ -61,19 +61,28 @@ export function hasContextExploreSuccessor<T>(
 /**
  * 组内仍有未结算调用，或本轮还在进行且后面还没出现其他类型内容，都保持探索中。
  * 只看组内 tool status 会在批次空档（思考 / 等待下一轮探索工具）误判成「已探索」。
+ *
+ * 兼容旧调用：仅传 parts 数组时，退化为「组内是否有 active 工具」。
  */
-export function isContextGroupExploring(input: {
-    parts: readonly unknown[];
-    hasFollowingOtherType: boolean;
-    isTurnLive: boolean;
-}): boolean {
-    if (input.parts.some((part) => isContextToolActive(part))) {
+export function isContextGroupExploring(
+    partsOrInput:
+        | readonly unknown[]
+        | {
+            parts: readonly unknown[];
+            hasFollowingOtherType: boolean;
+            isTurnLive: boolean;
+        },
+): boolean {
+    if (!('parts' in partsOrInput)) {
+        return partsOrInput.some((part) => isContextToolActive(part));
+    }
+    if (partsOrInput.parts.some((part) => isContextToolActive(part))) {
         return true;
     }
-    if (input.hasFollowingOtherType) {
+    if (partsOrInput.hasFollowingOtherType) {
         return false;
     }
-    return input.isTurnLive;
+    return partsOrInput.isTurnLive;
 }
 
 export function collectConsecutiveContextTools<T>(

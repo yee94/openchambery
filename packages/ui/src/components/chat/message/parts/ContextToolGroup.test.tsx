@@ -103,6 +103,45 @@ describe('ContextToolGroup', () => {
         expect(settledMarkup).not.toContain('oc-lattice-orb-dot');
     });
 
+    test('defaults to settled when every grouped call settles and exploring is omitted', () => {
+        const activities = [
+            contextActivity('grep-1', 'grep', 'completed'),
+            contextActivity('read-1', 'read', 'completed'),
+        ];
+        const markup = renderToStaticMarkup(
+            <I18nProvider>
+                <ContextToolGroup activities={activities} isMobile={false} />
+            </I18nProvider>,
+        );
+
+        expect(markup).toContain('Explored');
+        expect(markup).toContain('#oc-search');
+        expect(markup).not.toContain('oc-lattice-orb-dot');
+    });
+
+    test('keeps exploring when parent passes explicit exploring after tools settle', () => {
+        const activities = [
+            contextActivity('grep-1', 'grep', 'completed'),
+            contextActivity('read-1', 'read', 'completed'),
+        ];
+        const exploringMarkup = renderToStaticMarkup(
+            <I18nProvider>
+                <ContextToolGroup activities={activities} isMobile={false} exploring />
+            </I18nProvider>,
+        );
+        const exploredMarkup = renderToStaticMarkup(
+            <I18nProvider>
+                <ContextToolGroup activities={activities} isMobile={false} exploring={false} />
+            </I18nProvider>,
+        );
+
+        expect(exploringMarkup).toContain('Exploring');
+        expect(exploringMarkup).toContain('oc-lattice-orb-dot');
+        expect(exploredMarkup).toContain('Explored');
+        expect(exploredMarkup).toContain('#oc-search');
+        expect(exploredMarkup).not.toContain('oc-lattice-orb-dot');
+    });
+
     test('keeps the group active while any member lacks settlement evidence', () => {
         const activities = [
             contextActivity('grep-1', 'grep', 'completed'),
