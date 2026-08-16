@@ -1786,6 +1786,12 @@ input[aria-label="Terminal input"] {
   }
 }
 
+.oc-summary-flip-viewport {
+  overflow: hidden;
+  overflow: clip;
+  contain: paint;
+}
+
 .oc-summary-flip-out {
   animation: oc-summary-flip-out 280ms ease-out forwards;
 }

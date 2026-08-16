@@ -105,7 +105,7 @@ export const ContextToolGroup: React.FC<{
                 </span>
                 {summary ? (
                     <span
-                        className={cn('typography-meta min-w-0 truncate', TOOL_ROW_TEXT_CLASS)}
+                        className={cn('typography-meta h-5 min-w-0 flex-1 overflow-hidden sm:h-6', TOOL_ROW_TEXT_CLASS)}
                         style={{ color: 'var(--tools-description)' }}
                     >
                         <FlipUpText text={summary} active={isActive} />

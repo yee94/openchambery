@@ -100,6 +100,14 @@ describe('tool busy title chrome', () => {
         expect(lifecycleBranch.indexOf('<AgentAvatar')).toBeLessThan(lifecycleBranch.indexOf('<LatticeOrb'));
     });
 
+    test('task rows keep the agent name visible beside the avatar', () => {
+        expect(toolPartSource).toContain('const taskTitle = taskAgentName ? formatAgentDisplayName(taskAgentName) : displayName;');
+        expect(toolPartSource).toContain("className={cn(TOOL_ROW_TITLE_CLASS, 'shrink-0 whitespace-nowrap animate-text-shimmer')}");
+        expect(toolPartSource).toContain("className={cn(TOOL_ROW_TITLE_CLASS, 'shrink-0 whitespace-nowrap')}");
+        expect(toolPartSource).toContain('{taskTitle}');
+        expect(toolPartSource).not.toContain('flex items-center gap-2 min-w-0 flex-1');
+    });
+
     test('keeps lifecycle identity in the fixed leading slot and moves disclosure to the trailing edge', () => {
         expect(toolPartSource).toContain('className="relative size-3.5 flex-shrink-0"');
         expect(toolPartSource).toContain('className="ml-auto inline-flex size-3.5 flex-shrink-0 items-center justify-center');

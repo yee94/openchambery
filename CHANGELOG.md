@@ -4,6 +4,11 @@ All notable changes to this project will be documented in this file.
 
 ## [Unreleased]
 
+## [1.16.134-beta.7] - 2026-08-16
+
+- **Subagent rows:** the agent name stays visible beside the avatar instead of collapsing away.
+- **Exploration groups:** the live count flip no longer spills out of the row and creates a scrollbar.
+
 ## [1.16.134-beta.6] - 2026-08-16
 
 - **Subagent rows:** delegated task rows keep the agent avatar while work is in progress instead of switching to the shared loading orb.

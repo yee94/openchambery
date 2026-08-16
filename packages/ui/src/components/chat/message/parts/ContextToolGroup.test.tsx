@@ -1,10 +1,17 @@
 import React from 'react';
 import { describe, expect, test } from 'bun:test';
+import { readFileSync } from 'node:fs';
+import { dirname, join } from 'node:path';
+import { fileURLToPath } from 'node:url';
 import { renderToStaticMarkup } from 'react-dom/server';
 import { I18nProvider } from '@/lib/i18n';
 import type { TurnActivityRecord } from '../../lib/turns/types';
 import { ContextToolGroup } from './ContextToolGroup';
 import { LatticeOrb } from './LatticeOrb';
+
+const __dirname = dirname(fileURLToPath(import.meta.url));
+const flipUpTextSource = readFileSync(join(__dirname, 'FlipUpText.tsx'), 'utf-8');
+const indexCssSource = readFileSync(join(__dirname, '../../../../index.css'), 'utf-8');
 
 const contextActivity = (
     id: string,
@@ -53,6 +60,19 @@ describe('ContextToolGroup', () => {
         expect(markup).toContain('aria-expanded="false"');
         expect(markup).toContain('Exploring');
         expect(markup).toContain('1 search, 3 reads');
+        expect(markup).toContain('typography-meta h-5 min-w-0 flex-1 overflow-hidden sm:h-6');
+        expect(markup).toContain('oc-summary-flip-viewport relative block h-full w-full min-w-0 max-w-full overflow-hidden');
+    });
+
+    test('clips both translated flip layers inside a fixed-height paint viewport', () => {
+        expect(flipUpTextSource).toContain("'oc-summary-flip-viewport relative block h-full w-full min-w-0 max-w-full overflow-hidden'");
+        expect(flipUpTextSource).toContain('oc-summary-flip-out absolute inset-0 block truncate');
+        expect(flipUpTextSource).toContain('oc-summary-flip-in absolute inset-0 block truncate');
+        expect(indexCssSource).toContain('.oc-summary-flip-viewport {');
+        expect(indexCssSource).toContain('overflow: clip;');
+        expect(indexCssSource).toContain('contain: paint;');
+        expect(indexCssSource).toContain('animation: oc-summary-flip-out 280ms ease-out forwards;');
+        expect(indexCssSource).toContain('animation: oc-summary-flip-in 280ms ease-out forwards;');
     });
 
     test('keeps exploring after grouped calls settle until a later non-explore part appears', () => {
