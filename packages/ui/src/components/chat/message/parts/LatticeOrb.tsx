@@ -10,9 +10,11 @@ const DOT_SIZE = 2.5;
 
 export const LatticeOrb: React.FC<{
     size?: number;
+    isMobile?: boolean;
     className?: string;
     label?: string;
-}> = ({ size = 14, className, label = '' }) => {
+}> = ({ size, isMobile = false, className, label = '' }) => {
+    const resolvedSize = size ?? (isMobile ? 16 : 14);
     const cells = Array.from({ length: GRID_SIZE * GRID_SIZE }, (_, index) => {
         const x = index % GRID_SIZE;
         const y = Math.floor(index / GRID_SIZE);
@@ -27,7 +29,7 @@ export const LatticeOrb: React.FC<{
     return (
         <span
             className={cn('relative inline-block flex-none', className)}
-            style={{ width: size, height: size }}
+            style={{ width: resolvedSize, height: resolvedSize }}
             role={label ? 'img' : undefined}
             aria-label={label || undefined}
             aria-hidden={label ? undefined : true}
@@ -37,7 +39,7 @@ export const LatticeOrb: React.FC<{
                 style={{
                     width: STAGE_SIZE,
                     height: STAGE_SIZE,
-                    transform: `scale(${size / STAGE_SIZE})`,
+                    transform: `scale(${resolvedSize / STAGE_SIZE})`,
                     transformOrigin: 'top left',
                 }}
             >

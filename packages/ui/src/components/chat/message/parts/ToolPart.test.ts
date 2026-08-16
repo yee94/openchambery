@@ -105,7 +105,7 @@ describe('tool busy title chrome', () => {
 
     test('assigned task rows keep the agent name visible beside the avatar', () => {
         expect(toolPartSource).toContain('const taskTitle = taskRowChrome.title;');
-        expect(toolPartSource).toContain('workingLabel: (name) => t(\'chat.assistantStatus.taskWorking\', { name })');
+        expect(toolPartSource).not.toContain('chat.assistantStatus.taskWorking');
         expect(toolPartSource).toContain("className={cn(TOOL_ROW_TITLE_CLASS, 'shrink-0 whitespace-nowrap animate-text-shimmer')}");
         expect(toolPartSource).toContain("className={cn(TOOL_ROW_TITLE_CLASS, 'shrink-0 whitespace-nowrap')}");
         expect(toolPartSource).toContain('{taskTitle}');
@@ -113,7 +113,8 @@ describe('tool busy title chrome', () => {
     });
 
     test('keeps lifecycle identity in the fixed leading slot and moves disclosure to the trailing edge', () => {
-        expect(toolPartSource).toContain('className="relative size-3.5 flex-shrink-0"');
+        expect(toolPartSource).toContain("className={cn('relative flex-shrink-0', isMobile ? 'size-4' : 'size-3.5')}");
+        expect(toolPartSource).toContain('isMobile={isMobile}');
         expect(toolPartSource).toContain('className="ml-auto inline-flex size-3.5 flex-shrink-0 items-center justify-center');
         expect(toolPartSource).not.toContain('group-hover/tool:opacity-0');
     });

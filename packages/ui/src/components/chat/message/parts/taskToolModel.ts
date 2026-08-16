@@ -203,10 +203,8 @@ export const resolveTaskRowChrome = (input: {
     isFinalized: boolean;
     taskSessionId?: string;
     taskAgentName?: string;
-    isBusy: boolean;
     displayName: string;
     delegatingLabel: string;
-    workingLabel: (name: string) => string;
     formatName: (name: string) => string;
 }): TaskRowChrome => {
     const agentLabel = input.taskAgentName ? input.formatName(input.taskAgentName) : undefined;
@@ -214,9 +212,6 @@ export const resolveTaskRowChrome = (input: {
     const isDelegating = !input.isFinalized && !isAssigned;
     if (isDelegating) {
         return { isDelegating: true, showAvatar: false, title: input.delegatingLabel };
-    }
-    if (agentLabel && input.isBusy) {
-        return { isDelegating: false, showAvatar: true, title: input.workingLabel(agentLabel) };
     }
     return {
         isDelegating: false,

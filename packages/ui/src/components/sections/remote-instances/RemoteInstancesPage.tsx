@@ -726,10 +726,13 @@ export const RemoteInstancesPage: React.FC = () => {
       clientToken: token,
       ...(relay ? { relay } : {}),
     };
-    // One host per server: match by relay serverId when the link has a relay
-    // leg, else by direct URL — re-importing updates the record in place.
+    // One host per instance: match by relay serverId + relayUrl when the link
+    // has a relay leg, else by direct URL. Same machine / same signing key can
+    // still be distinct instances when the relay endpoint differs.
     const existing = directHosts.find((host) => (
-      relay ? host.relay?.serverId === relay.serverId : (!host.relay && normalizeHostUrl(host.apiUrl || host.url) === url)
+      relay
+        ? host.relay?.serverId === relay.serverId && host.relay?.relayUrl === relay.relayUrl
+        : (!host.relay && normalizeHostUrl(host.apiUrl || host.url) === url)
     ));
     if (existing) {
       const nextHosts = directHosts.map((host) => host.id === existing.id
@@ -737,7 +740,7 @@ export const RemoteInstancesPage: React.FC = () => {
         : host);
       await persistDirectHosts(nextHosts, directDefaultHostId);
     } else {
-      // payload.label is normally the issuing server's hostname.
+      // payload.label is the operator-typed instance name from the pairing QR.
       await persistDirectHosts([{ id: makeId(), label: payload.label || redactSensitiveUrl(url), ...transportFields }, ...directHosts], directDefaultHostId);
     }
     setDirectConnectLink('');
@@ -1035,11 +1038,10 @@ export const RemoteInstancesPage: React.FC = () => {
       const payload = buildPairingConnectionPayload({
         pairingId: pairing.id,
         secret: pairing.secret,
-        // The typed name (`label`) is the per-device label shown in THIS server's
-        // device list; it already went to createPairingSession above. The payload
-        // label is what the paired device names its connection by, which must be
-        // the issuing server's name (hostname), not the device's own name.
-        label: server.label,
+        // The typed name is the instance name: this server's device list AND the
+        // name the paired device stores/displays. Do not substitute hostname —
+        // one machine can run several servers (and several relays).
+        label: label || server.label,
         fingerprint: pairing.fingerprint ?? undefined,
         expiresAt: pairing.expiresAt,
         candidates: server.candidates as unknown as PairingEndpointCandidate[],
@@ -1817,13 +1819,19 @@ export const RemoteInstancesPage: React.FC = () => {
             </DialogHeader>
             {addDevicePhase === 'configure' ? (
               <form className="space-y-4" onSubmit={(event) => { event.preventDefault(); void createPairingLink(); }}>
-                <Input
-                  className="h-8"
-                  value={remoteClientLabel}
-                  onChange={(event) => setRemoteClientLabel(event.target.value)}
-                  placeholder={t('settings.remoteInstances.clientAuth.field.labelPlaceholder')}
-                  autoFocus
-                />
+                <label className="block space-y-1.5">
+                  <Input
+                    className="h-8"
+                    value={remoteClientLabel}
+                    onChange={(event) => setRemoteClientLabel(event.target.value)}
+                    placeholder={t('settings.remoteInstances.clientAuth.field.labelPlaceholder')}
+                    aria-describedby="add-device-instance-name-hint"
+                    autoFocus
+                  />
+                  <span id="add-device-instance-name-hint" className="block typography-meta text-muted-foreground">
+                    {t('settings.remoteInstances.clientAuth.field.labelHint')}
+                  </span>
+                </label>
                 <div className="space-y-1.5">
                   <p className="typography-ui-label text-foreground">{t('settings.remoteInstances.clientAuth.addDevice.transportLabel')}</p>
                   {/* Ordered by how likely a first-time user is to want each option;

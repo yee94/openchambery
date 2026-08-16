@@ -1792,6 +1792,19 @@ input[aria-label="Terminal input"] {
   contain: paint;
 }
 
+.oc-summary-flip-stage {
+  overflow: hidden;
+  overflow: clip;
+  contain: layout paint;
+  -webkit-clip-path: inset(0);
+  clip-path: inset(0);
+}
+
+.oc-summary-flip-out,
+.oc-summary-flip-in {
+  will-change: transform;
+}
+
 .oc-summary-flip-out {
   animation: oc-summary-flip-out 280ms ease-out forwards;
 }
@@ -1987,6 +2000,15 @@ input[aria-label="Terminal input"] {
   .oc-summary-flip-out,
   .oc-summary-flip-in {
     animation: none;
+  }
+
+  .oc-summary-flip-out {
+    display: none;
+  }
+
+  .oc-summary-flip-in {
+    transform: none;
+    opacity: 1;
   }
 
   .oc-lattice-orb-dot[data-center="true"] {

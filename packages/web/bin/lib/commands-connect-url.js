@@ -253,7 +253,7 @@ function createConnectUrlCommand({ serveCommand }) {
       ? { serverUrl: explicitServerUrl, source: 'explicit' }
       : await resolveConnectUrlServerUrl(options);
     const serverUrl = resolvedServerUrl.serverUrl;
-    const label = options.name || os.hostname();
+    const label = options.name || 'OpenChamber';
 
     // Direct candidate for the reachable server URL, plus the relay transport as
     // a fallback candidate — one link that works both on the LAN and off-network.

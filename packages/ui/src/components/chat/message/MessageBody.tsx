@@ -1990,6 +1990,7 @@ const AssistantMessageBody = React.memo(({
                                         key={activity.id}
                                         toolName={activity.part.tool?.toLowerCase() ?? ''}
                                         activities={[activity]}
+                                        isMobile={isMobile}
                                         animateTailText={false}
                                     />
                                 ))}
@@ -2036,6 +2037,7 @@ const AssistantMessageBody = React.memo(({
                                     kind: 'tool' as const,
                                 },
                             ]}
+                            isMobile={isMobile}
                             animateTailText={false}
                         />
                     </div>

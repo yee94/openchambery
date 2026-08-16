@@ -470,7 +470,7 @@ OPTIONS:
                           device prefers the direct connection when reachable;
                           the instance brings the relay up on its own. Set
                           OPENCHAMBER_RELAY_URL to use a self-hosted relay.
-  --name <label>          Label saved with the remote client token
+  --name <label>          Instance name stored on the connecting device
   --ui-password <value>   Protect browser access when UI routes are enabled
   --api-only              Start in headless/API-only mode when starting
   --qr                    Print a QR code for the connection link

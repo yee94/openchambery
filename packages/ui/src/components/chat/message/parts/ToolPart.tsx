@@ -2228,10 +2228,8 @@ const ToolPartContent: React.FC<ToolPartProps> = ({
         isFinalized,
         taskSessionId,
         taskAgentName,
-        isBusy: taskBusy,
         displayName,
         delegatingLabel: t('chat.assistantStatus.delegatingTask'),
-        workingLabel: (name) => t('chat.assistantStatus.taskWorking', { name }),
         formatName: formatAgentDisplayName,
     });
     const isDelegatingTask = isTaskTool && taskRowChrome.isDelegating;
@@ -2517,7 +2515,7 @@ const ToolPartContent: React.FC<ToolPartProps> = ({
             >
                 <div className={cn('flex gap-1.5', isMultiFileApplyPatch ? 'w-full min-w-0 flex-wrap items-center gap-x-2 gap-y-0.5' : 'items-center flex-shrink-0')}>
                     {}
-                    <div className="relative size-3.5 flex-shrink-0">
+                    <div className={cn('relative flex-shrink-0', isMobile ? 'size-4' : 'size-3.5')}>
                         <div
                             className="absolute inset-0 flex items-center justify-center"
                             style={isTaskTool && taskRowChrome.showAvatar ? undefined : iconStyle}
@@ -2531,7 +2529,7 @@ const ToolPartContent: React.FC<ToolPartProps> = ({
                                 />
                             ) : effectiveActive ? (
                                 <LatticeOrb
-                                    size={14}
+                                    isMobile={isMobile}
                                     className="text-[var(--tools-icon)]"
                                     label={t('chat.assistantStatus.usingTool', { tool: taskTitle })}
                                 />

@@ -116,6 +116,7 @@ export const ReasoningTimelineBlock: React.FC<ReasoningTimelineBlockProps> = ({
     defaultExpanded,
 }) => {
     const { t } = useI18n();
+    const isMobile = useUIStore((state) => state.isMobile);
     const hasEnded = typeof time?.end === 'number';
     const canAutoExpand = isStreaming && !hasEnded;
     const [expansion, setExpansion] = React.useState<ExpansionState>(() => {
@@ -364,7 +365,7 @@ export const ReasoningTimelineBlock: React.FC<ReasoningTimelineBlockProps> = ({
                             >
                                 {t(variant === 'justification' ? 'chat.reasoningTrace.justification' : 'chat.reasoningTrace.thinking')}
                             </span>
-                            <LatticeOrb size={14} className="text-[var(--tools-icon)]" />
+                            <LatticeOrb isMobile={isMobile} className="text-[var(--tools-icon)]" />
                         </span>
                     ) : isExpanded ? (
                         <span

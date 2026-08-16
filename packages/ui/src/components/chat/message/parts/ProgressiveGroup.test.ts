@@ -65,7 +65,8 @@ describe('progressive activity presentation', () => {
         expect(progressiveGroupSource).toContain('const isActive = primaryActivity ? isToolPartActive(primaryActivity.part) : true;');
         expect(progressiveGroupSource).toContain("t('chat.assistantStatus.usingTool', { tool: displayName })");
         expect(progressiveGroupSource).toContain(') : icon}');
-        expect(progressiveGroupSource).toContain('inline-flex size-3.5 items-center justify-center flex-shrink-0');
+        expect(progressiveGroupSource).toContain("isMobile ? 'size-4' : 'size-3.5'");
+        expect(progressiveGroupSource).toContain('isMobile={isMobile}');
     });
 
     test('keeps lifecycle-unknown tool parts visible from their first frame', () => {
