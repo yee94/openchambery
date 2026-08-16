@@ -180,7 +180,7 @@
 - `hooks/useProjectSessionSelection.ts`: Resolves active/current project-session selection logic and session-directory context.
 - `hooks/useGroupOrdering.ts`: Applies persisted/custom group order with stable fallback ordering; archived groups are reorderable.
 - `hooks/useArchivedAutoFolders.ts`: Maintains archived auto-folder structure and assignment behavior.
-- `hooks/useSidebarPersistence.ts`: Persists sidebar UI state (expanded/collapsed/pinned/group order/active session) to storage + desktop settings.
+- `hooks/useSidebarPersistence.ts`: Persists sidebar UI state (expanded/collapsed/pinned/group order/active session) to instance-scoped storage (`oc.inst.{runtimeKey}.*`) + desktop settings. Project registry order and `projectSortOrder` are also instance-scoped so two mobile hosts do not share one list.
 - `hooks/useProjectRepoStatus.ts`: Tracks per-project git-repo state and root branch metadata.
 - `hooks/useProjectSessionLists.ts`: Reads live and archived project buckets from the shared ownership index.
 - `hooks/useSessionFolderCleanup.ts`: Cleans stale folder session IDs by reconciling known sessions/archived scopes.

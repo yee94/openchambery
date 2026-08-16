@@ -1,6 +1,8 @@
 import { create } from 'zustand';
 import { devtools } from 'zustand/middleware';
 import { getDeferredSafeStorage } from './utils/safeStorage';
+import { createInstanceScopedStorageAdapter } from '@/lib/instanceScopedStorage';
+import { isRuntimeInstanceChange, subscribeRuntimeEndpointChanged } from '@/lib/runtime-switch';
 import { isVSCodeRuntime } from '@/lib/desktop';
 import { runtimeFetch } from '@/lib/runtime-fetch';
 import { createUuid } from '@/lib/uuid';
@@ -65,10 +67,11 @@ const SESSION_FOLDERS_API_PATH = '/api/session-folders';
 const DISK_WRITE_DEBOUNCE_MS = 250;
 const ARCHIVED_SCOPE_PREFIX = '__archived__:';
 
-const safeStorage = getDeferredSafeStorage();
+const safeStorage = createInstanceScopedStorageAdapter(getDeferredSafeStorage());
 let diskWriteTimer: ReturnType<typeof setTimeout> | null = null;
 let diskHydrated = false;
 let diskHydrationInFlight = false;
+let diskHydrationGeneration = 0;
 let persistFoldersTimer: ReturnType<typeof setTimeout> | undefined;
 let persistCollapsedTimer: ReturnType<typeof setTimeout> | undefined;
 let pendingFoldersMap: SessionFoldersMap | null = null;
@@ -650,9 +653,13 @@ const hydrateSessionFoldersFromDisk = async (): Promise<void> => {
   }
 
   diskHydrationInFlight = true;
+  const generation = diskHydrationGeneration;
 
   try {
     const response = await runtimeFetch(SESSION_FOLDERS_API_PATH).catch(() => null);
+    if (generation !== diskHydrationGeneration) {
+      return;
+    }
     if (!response || !response.ok) {
       return;
     }
@@ -673,6 +680,10 @@ const hydrateSessionFoldersFromDisk = async (): Promise<void> => {
       ? new Set(parsed.collapsedFolderIds.filter((value): value is string => typeof value === 'string'))
       : new Set<string>();
 
+    if (generation !== diskHydrationGeneration) {
+      return;
+    }
+
     const hasDiskData = Object.keys(diskFolders).length > 0 || diskCollapsed.size > 0;
     if (!hasDiskData) {
       return;
@@ -688,8 +699,10 @@ const hydrateSessionFoldersFromDisk = async (): Promise<void> => {
   } catch {
     // ignored
   } finally {
-    diskHydrationInFlight = false;
-    diskHydrated = true;
+    if (generation === diskHydrationGeneration) {
+      diskHydrationInFlight = false;
+      diskHydrated = true;
+    }
   }
 };
 
@@ -700,5 +713,35 @@ const bootstrapSessionFoldersDiskHydration = (): void => {
 
   void hydrateSessionFoldersFromDisk();
 };
+
+const resetSessionFoldersForInstanceSwitch = (): void => {
+  diskHydrationGeneration += 1;
+  diskHydrated = false;
+  diskHydrationInFlight = false;
+  pendingFoldersMap = null;
+  pendingCollapsedIds = null;
+  if (persistFoldersTimer) {
+    clearTimeout(persistFoldersTimer);
+    persistFoldersTimer = undefined;
+  }
+  if (persistCollapsedTimer) {
+    clearTimeout(persistCollapsedTimer);
+    persistCollapsedTimer = undefined;
+  }
+  useSessionFoldersStore.setState({
+    foldersMap: readPersistedFolders(),
+    collapsedFolderIds: readPersistedCollapsed(),
+    sessionOrderByScope: readPersistedSessionOrder(),
+    sessionOrderActivityByScope: readPersistedSessionOrderActivity(),
+  });
+  void hydrateSessionFoldersFromDisk();
+};
+
+if (typeof window !== 'undefined') {
+  subscribeRuntimeEndpointChanged((detail) => {
+    if (!isRuntimeInstanceChange(detail)) return;
+    resetSessionFoldersForInstanceSwitch();
+  });
+}
 
 bootstrapSessionFoldersDiskHydration();

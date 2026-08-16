@@ -17,6 +17,8 @@ import { useProjectsStore } from '@/stores/useProjectsStore';
 import { useUIStore } from '@/stores/useUIStore';
 import { sessionEvents } from '@/lib/sessionEvents';
 import { getDeferredSafeStorage } from '@/stores/utils/safeStorage';
+import { createInstanceScopedStorageAdapter } from '@/lib/instanceScopedStorage';
+import { isRuntimeInstanceChange, subscribeRuntimeEndpointChanged } from '@/lib/runtime-switch';
 import { useGitRepoStatusMap } from '@/stores/useGitStore';
 import { isVSCodeRuntime } from '@/lib/desktop';
 import { forceRefreshProjectWorktreeCatalog } from '@/lib/worktrees/worktreeManager';
@@ -132,6 +134,53 @@ const PROJECT_ACTIVE_SESSION_STORAGE_KEY = "oc.sessions.activeSessionByProject";
 const SESSION_EXPANDED_STORAGE_KEY = "oc.sessions.expandedParents.v2";
 const LEGACY_SESSION_EXPANDED_STORAGE_KEY = "oc.sessions.expandedParents";
 const SESSION_PINNED_STORAGE_KEY = "oc.sessions.pinned";
+
+const instanceSafeStorage = createInstanceScopedStorageAdapter(getDeferredSafeStorage());
+
+const readStoredStringSet = (key: string): Set<string> => {
+  try {
+    const raw = instanceSafeStorage.getItem(key);
+    if (!raw) return new Set();
+    const parsed = JSON.parse(raw) as unknown;
+    return new Set(Array.isArray(parsed) ? parsed.filter((item): item is string => typeof item === "string") : []);
+  } catch {
+    return new Set();
+  }
+};
+
+const readStoredStringMap = (key: string): Map<string, string> => {
+  try {
+    const raw = instanceSafeStorage.getItem(key);
+    if (!raw) return new Map();
+    const parsed = JSON.parse(raw) as Record<string, unknown>;
+    const next = new Map<string, string>();
+    if (!parsed || typeof parsed !== "object" || Array.isArray(parsed)) return next;
+    Object.entries(parsed).forEach(([mapKey, value]) => {
+      if (typeof value === "string" && value.length > 0) next.set(mapKey, value);
+    });
+    return next;
+  } catch {
+    return new Map();
+  }
+};
+
+const readStoredStringArrayMap = (key: string): Map<string, string[]> => {
+  try {
+    const raw = instanceSafeStorage.getItem(key);
+    if (!raw) return new Map();
+    const parsed = JSON.parse(raw) as Record<string, unknown>;
+    const next = new Map<string, string[]>();
+    if (!parsed || typeof parsed !== "object" || Array.isArray(parsed)) return next;
+    Object.entries(parsed).forEach(([mapKey, value]) => {
+      if (Array.isArray(value)) {
+        next.set(mapKey, value.filter((item): item is string => typeof item === "string"));
+      }
+    });
+    return next;
+  } catch {
+    return new Map();
+  }
+};
 
 type PrVisualState = "draft" | "open" | "blocked" | "merged" | "closed";
 
@@ -253,7 +302,7 @@ export const SessionSidebar: React.FC<SessionSidebarProps> = ({
   const [expandedParents, setExpandedParents] = React.useState<Set<string>>(
     new Set(),
   );
-  const safeStorage = React.useMemo(() => getDeferredSafeStorage(), []);
+  const safeStorage = React.useMemo(() => instanceSafeStorage, []);
   const [collapsedProjects, setCollapsedProjects] = React.useState<Set<string>>(
     new Set(),
   );
@@ -286,70 +335,25 @@ export const SessionSidebar: React.FC<SessionSidebarProps> = ({
   const setPinnedSessionIds = useSessionPinnedStore((state) => state.setIds);
   const togglePinnedSession = useSessionPinnedStore((state) => state.toggle);
   const [collapsedGroups, setCollapsedGroups] = React.useState<Set<string>>(
-    () => {
-      try {
-        const raw = getDeferredSafeStorage().getItem(
-          GROUP_COLLAPSE_STORAGE_KEY,
-        );
-        if (!raw) {
-          return new Set();
-        }
-        const parsed = JSON.parse(raw) as string[];
-        return new Set(
-          Array.isArray(parsed)
-            ? parsed.filter((item) => typeof item === "string")
-            : [],
-        );
-      } catch {
-        return new Set();
-      }
-    },
+    () => readStoredStringSet(GROUP_COLLAPSE_STORAGE_KEY),
   );
   const [groupOrderByProject, setGroupOrderByProject] = React.useState<
     Map<string, string[]>
-  >(() => {
-    try {
-      const raw = getDeferredSafeStorage().getItem(GROUP_ORDER_STORAGE_KEY);
-      if (!raw) {
-        return new Map();
-      }
-      const parsed = JSON.parse(raw) as Record<string, string[]>;
-      const next = new Map<string, string[]>();
-      Object.entries(parsed).forEach(([projectId, order]) => {
-        if (Array.isArray(order)) {
-          next.set(
-            projectId,
-            order.filter((item) => typeof item === "string"),
-          );
-        }
-      });
-      return next;
-    } catch {
-      return new Map();
-    }
-  });
+  >(() => readStoredStringArrayMap(GROUP_ORDER_STORAGE_KEY));
   const [activeSessionByProject, setActiveSessionByProject] = React.useState<
     Map<string, string>
-  >(() => {
-    try {
-      const raw = getDeferredSafeStorage().getItem(
-        PROJECT_ACTIVE_SESSION_STORAGE_KEY,
-      );
-      if (!raw) {
-        return new Map();
-      }
-      const parsed = JSON.parse(raw) as Record<string, string>;
-      const next = new Map<string, string>();
-      Object.entries(parsed).forEach(([projectId, sessionId]) => {
-        if (typeof sessionId === "string" && sessionId.length > 0) {
-          next.set(projectId, sessionId);
-        }
-      });
-      return next;
-    } catch {
-      return new Map();
-    }
-  });
+  >(() => readStoredStringMap(PROJECT_ACTIVE_SESSION_STORAGE_KEY));
+
+  React.useEffect(() => {
+    return subscribeRuntimeEndpointChanged((detail) => {
+      if (!isRuntimeInstanceChange(detail)) return;
+      setCollapsedGroups(readStoredStringSet(GROUP_COLLAPSE_STORAGE_KEY));
+      setGroupOrderByProject(readStoredStringArrayMap(GROUP_ORDER_STORAGE_KEY));
+      setActiveSessionByProject(readStoredStringMap(PROJECT_ACTIVE_SESSION_STORAGE_KEY));
+      setCollapsedProjects(readStoredStringSet(PROJECT_COLLAPSE_STORAGE_KEY));
+      setExpandedParents(readStoredStringSet(SESSION_EXPANDED_STORAGE_KEY));
+    });
+  }, []);
 
   const [projectRootBranches, setProjectRootBranches] = React.useState<
     Map<string, string>

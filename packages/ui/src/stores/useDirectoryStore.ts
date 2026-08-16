@@ -3,7 +3,8 @@ import { shouldApplyDirectoryChange } from './directoryChange';
 import { devtools } from 'zustand/middleware';
 import { opencodeClient } from '@/lib/opencode/client';
 import { getDesktopHomeDirectory, isVSCodeRuntime } from '@/lib/desktop';
-import { subscribeRuntimeEndpointChanged } from '@/lib/runtime-switch';
+import { isRuntimeInstanceChange, subscribeRuntimeEndpointChanged } from '@/lib/runtime-switch';
+import { readInstanceScopedItem, writeInstanceScopedItem } from '@/lib/instanceScopedStorage';
 import { updateDesktopSettings } from '@/lib/persistence';
 import { useFileSearchStore } from '@/stores/useFileSearchStore';
 import { streamDebugEnabled } from '@/stores/utils/streamDebug';
@@ -30,7 +31,7 @@ interface DirectoryStore {
 let cachedHomeDirectory: string | null = null;
 let homeResolveGeneration = 0;
 const safeStorage = getDeferredSafeStorage();
-const persistedLastDirectory = safeStorage.getItem('lastDirectory');
+const persistedLastDirectory = readInstanceScopedItem('lastDirectory', { storage: safeStorage });
 const initialHasPersistedDirectory =
   typeof persistedLastDirectory === 'string' && persistedLastDirectory.length > 0;
 
@@ -77,7 +78,7 @@ const resolveDirectoryPath = (path: string, homeDir?: string | null): string => 
 };
 
 const getStoredHomeDirectory = (): string | null => {
-  const raw = safeStorage.getItem('homeDirectory');
+  const raw = readInstanceScopedItem('homeDirectory', { storage: safeStorage });
   if (typeof raw !== 'string' || raw.trim().length === 0) {
     return null;
   }
@@ -86,7 +87,7 @@ const getStoredHomeDirectory = (): string | null => {
 };
 
 const getStoredLastDirectory = (): string | null => {
-  const raw = safeStorage.getItem('lastDirectory');
+  const raw = readInstanceScopedItem('lastDirectory', { storage: safeStorage });
   if (typeof raw !== 'string' || raw.trim().length === 0) {
     return null;
   }
@@ -127,7 +128,7 @@ const getHomeDirectory = () => {
 
     if (desktopHome && desktopHome.length > 0) {
       cachedHomeDirectory = desktopHome;
-      safeStorage.setItem('homeDirectory', desktopHome);
+      writeInstanceScopedItem('homeDirectory', desktopHome, { storage: safeStorage });
       return desktopHome;
     }
 
@@ -173,7 +174,7 @@ const normalizeHomeCandidate = (value?: string | null) => {
 const persistResolvedHome = (resolved: string) => {
   cachedHomeDirectory = resolved;
   if (typeof window !== 'undefined') {
-    safeStorage.setItem('homeDirectory', resolved);
+    writeInstanceScopedItem('homeDirectory', resolved, { storage: safeStorage });
   }
   void updateDesktopSettings({ homeDirectory: resolved });
   return resolved;
@@ -264,7 +265,7 @@ export const useDirectoryStore = create<DirectoryStore>()(
 
       setDirectory: (path: string, options?: { showOverlay?: boolean }) => {
         void options;
-        const homeDir = cachedHomeDirectory || get().homeDirectory || safeStorage.getItem('homeDirectory');
+        const homeDir = cachedHomeDirectory || get().homeDirectory || readInstanceScopedItem('homeDirectory', { storage: safeStorage });
         const resolvedPath = resolveDirectoryPath(path, homeDir);
         if (streamDebugEnabled()) {
           console.log('[DirectoryStore] setDirectory called with path:', resolvedPath);
@@ -280,7 +281,7 @@ export const useDirectoryStore = create<DirectoryStore>()(
         set((state) => {
           const newHistory = [...state.directoryHistory.slice(0, state.historyIndex + 1), resolvedPath];
 
-          safeStorage.setItem('lastDirectory', resolvedPath);
+          writeInstanceScopedItem('lastDirectory', resolvedPath, { storage: safeStorage });
           void updateDesktopSettings({ lastDirectory: resolvedPath });
 
           return {
@@ -303,7 +304,7 @@ export const useDirectoryStore = create<DirectoryStore>()(
           opencodeClient.setDirectory(newDirectory);
           invalidateFileSearchCache();
 
-          safeStorage.setItem('lastDirectory', newDirectory);
+          writeInstanceScopedItem('lastDirectory', newDirectory, { storage: safeStorage });
 
           void updateDesktopSettings({ lastDirectory: newDirectory });
 
@@ -326,7 +327,7 @@ export const useDirectoryStore = create<DirectoryStore>()(
           opencodeClient.setDirectory(newDirectory);
           invalidateFileSearchCache();
 
-          safeStorage.setItem('lastDirectory', newDirectory);
+          writeInstanceScopedItem('lastDirectory', newDirectory, { storage: safeStorage });
 
           void updateDesktopSettings({ lastDirectory: newDirectory });
 
@@ -376,7 +377,7 @@ export const useDirectoryStore = create<DirectoryStore>()(
         const resolvedHome = homePath;
         cachedHomeDirectory = resolvedHome;
         const needsUpdate = state.homeDirectory !== resolvedHome;
-        const savedLastDirectory = safeStorage.getItem('lastDirectory');
+        const savedLastDirectory = readInstanceScopedItem('lastDirectory', { storage: safeStorage });
         const hasSavedLastDirectory = typeof savedLastDirectory === 'string' && savedLastDirectory.length > 0;
         const shouldReplaceCurrent =
           !hasSavedLastDirectory &&
@@ -426,7 +427,7 @@ export const useDirectoryStore = create<DirectoryStore>()(
           const nextDirectory = shouldReplaceCurrent ? resolvedHome : (resolvedCurrent as string);
           opencodeClient.setDirectory(nextDirectory);
           invalidateFileSearchCache();
-          safeStorage.setItem('lastDirectory', nextDirectory);
+          writeInstanceScopedItem('lastDirectory', nextDirectory, { storage: safeStorage });
           void updateDesktopSettings({ lastDirectory: nextDirectory });
 
         }
@@ -448,9 +449,29 @@ if (typeof window !== 'undefined') {
   // Host switches happen in place (no page reload), so the home directory
   // must be re-resolved from the new runtime's authoritative source instead
   // of keeping the previous host's value cached.
-  subscribeRuntimeEndpointChanged(() => {
+  subscribeRuntimeEndpointChanged((detail) => {
     cachedHomeDirectory = null;
     const generation = ++homeResolveGeneration;
+    if (isRuntimeInstanceChange(detail)) {
+      const storedHome = getStoredHomeDirectory();
+      const storedLast = getStoredLastDirectory();
+      const nextHome = storedHome || '/';
+      const nextDirectory = storedLast || nextHome;
+      cachedHomeDirectory = storedHome;
+      useDirectoryStore.setState({
+        currentDirectory: nextDirectory,
+        directoryHistory: [nextDirectory],
+        historyIndex: 0,
+        homeDirectory: nextHome,
+        hasPersistedDirectory: Boolean(storedLast),
+        isHomeReady: Boolean(storedHome && storedHome !== '/'),
+        isSwitchingDirectory: false,
+      });
+      if (nextDirectory) {
+        opencodeClient.setDirectory(nextDirectory);
+        invalidateFileSearchCache();
+      }
+    }
     initializeHomeDirectory().then((home) => {
       if (generation !== homeResolveGeneration) return;
       useDirectoryStore.getState().synchronizeHomeDirectory(home);

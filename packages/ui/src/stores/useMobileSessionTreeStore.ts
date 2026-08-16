@@ -1,5 +1,7 @@
 import { create } from 'zustand';
 import { persist } from 'zustand/middleware';
+import { createInstanceScopedJSONStorage } from '@/lib/instanceScopedStorage';
+import { isRuntimeInstanceChange, subscribeRuntimeEndpointChanged } from '@/lib/runtime-switch';
 
 /**
  * Expand/collapse state for the mobile sessions sheet tree.
@@ -30,6 +32,14 @@ export const useMobileSessionTreeStore = create<MobileSessionTreeStore>()(
     }),
     {
       name: 'mobile-session-tree',
+      storage: createInstanceScopedJSONStorage(),
     },
   ),
 );
+
+if (typeof window !== 'undefined') {
+  subscribeRuntimeEndpointChanged((detail) => {
+    if (!isRuntimeInstanceChange(detail)) return;
+    void useMobileSessionTreeStore.persist.rehydrate();
+  });
+}

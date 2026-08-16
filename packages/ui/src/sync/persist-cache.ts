@@ -2,12 +2,14 @@
  * Persisted child-store metadata caches.
  *
  * VCS info, project metadata, and icons are cached to localStorage
- * per directory so they survive page reloads. Session summaries deliberately
- * do not live here: Electron's SQLite session index is their only durable
- * source of truth.
+ * per instance + directory so they survive page reloads without leaking
+ * across mobile/desktop hosts that share a path. Session summaries
+ * deliberately do not live here: Electron's SQLite session index is their
+ * only durable source of truth.
  */
 
 import type { VcsInfo } from "@opencode-ai/sdk/v2/client"
+import { getRuntimeKey } from "@/lib/runtime-switch"
 import type { ProjectMeta } from "./types"
 
 // ---------------------------------------------------------------------------
@@ -26,7 +28,8 @@ function hashCode(str: string): string {
 
 function storagePrefix(directory: string): string {
   const head = directory.slice(0, 12).replace(/[^a-zA-Z0-9]/g, "_")
-  return `oc.dir.${head}.${hashCode(directory)}`
+  const instance = hashCode(getRuntimeKey().trim() || "default")
+  return `oc.dir.${instance}.${head}.${hashCode(directory)}`
 }
 
 // ---------------------------------------------------------------------------

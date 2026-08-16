@@ -206,6 +206,23 @@ Examples:
 
 These stores coordinate persistent project/session metadata across multiple views.
 
+`useProjectsStore.ts` caches the project registry, active project, and manual
+drag order in instance-scoped localStorage (`oc.inst.{runtimeKey}.*` via
+`instanceScopedStorage.ts`). `runtimeKey` is the stable paired-device /
+OpenChamber-host id, so two mobile relay instances that share the UI origin
+keep independent project lists and order. LAN⇄relay for the same device
+reuses the same bucket. Relay instances never fall back to the old
+API-URL or unscoped `projects` keys. `resetForRuntimeSwitch` reloads the
+new instance's list, active project, and manual order.
+
+`useSessionDisplayStore` (`projectSortOrder`) and `useMobileSessionTreeStore`
+use the same instance-scoped persist helper and rehydrate when `runtimeKey`
+changes. Directory last/home caches, sidebar chrome (`oc.sessions.*`),
+session folders/pins, and settings mirrors in `persistence.ts` follow the
+same instance key. Theme/brand remain transport-scoped
+(`runtimeScopedStorage.ts`) because packaged multi-window shares an origin
+across different API hosts.
+
 `useWorktreeOrderStore.ts` persists worktree display order and pending write
 intent in runtime-scoped partitions. Server revision maps stay transient because
 the sync layer owns runtime reconciliation. Worktree order is shared across
