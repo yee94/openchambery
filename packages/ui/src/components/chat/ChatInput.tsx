@@ -3066,71 +3066,98 @@ const ChatInputRuntime: React.FC<ChatInputProps> = ({ onOpenSettings, scrollToBo
         // activeDirectoryKey is still the parent project — capture returns
         // undefined even when the composer UI already has a model. Surface
         // selection is the user-visible truth and unblocks that silent path.
-        let sendConfig = capturedSendConfig
-            ? { ...capturedSendConfig }
-            : surface.kind === 'primary'
-                ? (() => {
-                    const configState = useConfigStore.getState();
-                    if (!primarySubmitSessionIdAtStart) {
+        const resolveSendConfig = async () => {
+            let sendConfig = capturedSendConfig
+                ? { ...capturedSendConfig }
+                : surface.kind === 'primary'
+                    ? (() => {
+                        const configState = useConfigStore.getState();
+                        if (!primarySubmitSessionIdAtStart) {
+                            return resolvePrimaryComposerSendConfig({
+                                captured: capturePrimaryComposerSendConfig(configState),
+                                surfaceSelection: surface.selection.value,
+                            });
+                        }
+                        const sessionDirectory = useSessionUIStore.getState().getDirectoryForSession(primarySubmitSessionIdAtStart)
+                            ?? currentDirectory
+                            ?? null;
                         return resolvePrimaryComposerSendConfig({
-                            captured: capturePrimaryComposerSendConfig(configState),
+                            captured: capturePrimaryComposerSendConfig(configState, {
+                                expectedConfigKey: getConfigDirectoryKey(sessionDirectory),
+                                activeDirectoryKey: configState.activeDirectoryKey,
+                            }),
                             surfaceSelection: surface.selection.value,
                         });
-                    }
-                    const sessionDirectory = useSessionUIStore.getState().getDirectoryForSession(primarySubmitSessionIdAtStart)
-                        ?? currentDirectory
-                        ?? null;
-                    return resolvePrimaryComposerSendConfig({
+                    })()
+                    : (surface.selection.value.providerID && surface.selection.value.modelID
+                        ? { ...surface.selection.value, providerID: surface.selection.value.providerID, modelID: surface.selection.value.modelID }
+                        : undefined);
+
+            // One more activate+recapture when still incomplete — flush may have
+            // no-op'd activateDirectory for an unresolved worktree path.
+            if (
+                surface.kind === 'primary'
+                && primarySubmitSessionIdAtStart
+                && (!sendConfig?.providerID || !sendConfig?.modelID)
+            ) {
+                const sessionDirectory = useSessionUIStore.getState().getDirectoryForSession(primarySubmitSessionIdAtStart)
+                    ?? currentDirectory
+                    ?? null;
+                const expectedConfigKey = getConfigDirectoryKey(sessionDirectory);
+                if (useConfigStore.getState().activeDirectoryKey !== expectedConfigKey) {
+                    await useConfigStore.getState().activateDirectory(sessionDirectory);
+                }
+                if (
+                    useSessionUIStore.getState().currentSessionId === primarySubmitSessionIdAtStart
+                ) {
+                    const configState = useConfigStore.getState();
+                    sendConfig = resolvePrimaryComposerSendConfig({
                         captured: capturePrimaryComposerSendConfig(configState, {
                             expectedConfigKey: getConfigDirectoryKey(sessionDirectory),
                             activeDirectoryKey: configState.activeDirectoryKey,
                         }),
                         surfaceSelection: surface.selection.value,
                     });
-                })()
-                : (surface.selection.value.providerID && surface.selection.value.modelID
-                    ? { ...surface.selection.value, providerID: surface.selection.value.providerID, modelID: surface.selection.value.modelID }
-                    : undefined);
-
-        // One more activate+recapture when still incomplete — flush may have
-        // no-op'd activateDirectory for an unresolved worktree path.
-        if (
-            surface.kind === 'primary'
-            && primarySubmitSessionIdAtStart
-            && (!sendConfig?.providerID || !sendConfig?.modelID)
-        ) {
-            const sessionDirectory = useSessionUIStore.getState().getDirectoryForSession(primarySubmitSessionIdAtStart)
-                ?? currentDirectory
-                ?? null;
-            const expectedConfigKey = getConfigDirectoryKey(sessionDirectory);
-            if (useConfigStore.getState().activeDirectoryKey !== expectedConfigKey) {
-                await useConfigStore.getState().activateDirectory(sessionDirectory);
+                }
             }
-            if (
-                useSessionUIStore.getState().currentSessionId === primarySubmitSessionIdAtStart
-            ) {
-                const configState = useConfigStore.getState();
-                sendConfig = resolvePrimaryComposerSendConfig({
-                    captured: capturePrimaryComposerSendConfig(configState, {
-                        expectedConfigKey: getConfigDirectoryKey(sessionDirectory),
-                        activeDirectoryKey: configState.activeDirectoryKey,
-                    }),
-                    surfaceSelection: surface.selection.value,
-                });
-            }
-        }
 
-        const providerIdToSend = sendConfig?.providerID;
-        const modelIdToSend = sendConfig?.modelID;
-        const agentNameToSend = sendConfig?.agent;
-        const variantToSend = sendConfig?.variant;
+            return sendConfig;
+        };
+
+        let sendConfig = await resolveSendConfig();
+        let providerRefreshAttempted = false;
+
+        let providerIdToSend = sendConfig?.providerID;
+        let modelIdToSend = sendConfig?.modelID;
+        let agentNameToSend = sendConfig?.agent;
+        let variantToSend = sendConfig?.variant;
 
         if (!providerIdToSend || !modelIdToSend) {
-            console.warn('Cannot send message: provider or model not selected');
-            // Previously only console.warn'd after clearing the composer — draft
-            // recovered in finally with no toast, so Send appeared broken.
-            toast.error(t('chat.chatInput.toast.messageSendFailed'));
-            return;
+            // Recovery: the provider catalog may have failed to load (or was cached
+            // empty), leaving no selectable model. Force a refresh once and re-resolve
+            // before declaring the send a failure — a healthy catalog should not strand
+            // every following message.
+            if (!providerRefreshAttempted) {
+                providerRefreshAttempted = true;
+                try {
+                    await useConfigStore.getState().loadProviders({ forceRefresh: true, source: 'chat-input-send-recovery' });
+                    sendConfig = await resolveSendConfig();
+                    providerIdToSend = sendConfig?.providerID;
+                    modelIdToSend = sendConfig?.modelID;
+                    agentNameToSend = sendConfig?.agent;
+                    variantToSend = sendConfig?.variant;
+                } catch {
+                    // loadProviders swallows errors; an unexpected throw still fails the send.
+                }
+            }
+
+            if (!providerIdToSend || !modelIdToSend) {
+                console.warn('Cannot send message: provider or model not selected');
+                // Previously only console.warn'd after clearing the composer — draft
+                // recovered in finally with no toast, so Send appeared broken.
+                toast.error(t('chat.chatInput.toast.messageSendFailed'));
+                return;
+            }
         }
 
         // Sending is authoritative: if a question prompt is open, dismiss it

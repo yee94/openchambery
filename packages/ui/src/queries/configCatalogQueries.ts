@@ -59,7 +59,12 @@ export const providerCatalogQueryOptions = (
       }
       return catalog;
     },
-    staleTime: Infinity,
+    staleTime: ((query: { state: { data: unknown } }) => {
+      const data = query.state.data as ProviderCatalog | undefined;
+      // 空结果绝不永久 fresh：成功拉回空 provider 列表时，下一次
+      // ensure/fetchQuery 必须重新请求，避免 UI 会话被空 catalog 永久困住。
+      return data && data.providers.length > 0 ? Infinity : 0;
+    }) as () => number,
     gcTime: Infinity,
     retry: 2,
     retryDelay: 100,

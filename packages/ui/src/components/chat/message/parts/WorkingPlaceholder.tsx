@@ -5,6 +5,7 @@ import { BusyDots } from './BusyDots';
 
 interface WorkingPlaceholderProps {
   isWorking: boolean;
+  isMobile: boolean;
   statusText: string | null;
   isGenericStatus?: boolean;
   isWaitingForPermission?: boolean;
@@ -29,6 +30,7 @@ const toRetryTargetTimestamp = (next: number): number => {
 
 export function WorkingPlaceholder({
   isWorking,
+  isMobile,
   statusText,
   isGenericStatus,
   isWaitingForPermission,
@@ -183,7 +185,7 @@ export function WorkingPlaceholder({
         aria-live="polite"
         aria-label={`${retryText}...`}
       >
-        <span className="typography-ui-header">
+        <span className={isMobile ? "typography-meta !text-[length:var(--text-meta)]" : "typography-ui-header"}>
           <span className="animate-text-shimmer">{retryText}</span>
           <BusyDots />
         </span>
@@ -207,7 +209,7 @@ export function WorkingPlaceholder({
       aria-label={label}
       data-waiting={displayedPermission ? 'true' : undefined}
     >
-      <span className="typography-ui-header">
+      <span className={isMobile ? "typography-meta !text-[length:var(--text-meta)]" : "typography-ui-header"}>
         <span className="animate-text-shimmer">{label}</span>
         <BusyDots />
       </span>

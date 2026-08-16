@@ -1263,7 +1263,9 @@ export const MobileSessionStatusBar: React.FC<MobileSessionStatusBarProps> = ({
         )}
 
         {expanded ? (
-          <div className={cn('pb-1', !isRoot && 'pl-4')}>
+          // Worktree sessions share the root list inset so titles align with
+          // surrounding project sessions instead of receiving a nested indent.
+          <div className="pb-1">
             {visibleSessions.map((session) => (
               <SessionItem
                 key={session.id}

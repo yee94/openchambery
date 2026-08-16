@@ -1786,27 +1786,18 @@ input[aria-label="Terminal input"] {
   }
 }
 
-.oc-summary-flip-viewport {
-  overflow: hidden;
-  overflow: clip;
-  isolation: isolate;
-  contain: paint;
-  -webkit-clip-path: inset(0);
-  clip-path: inset(0);
-}
-
+.oc-summary-flip-viewport,
 .oc-summary-flip-stage {
-  overflow: hidden;
+  /* clip does not create a scroll container; hidden does, and Android paints a thumb. */
   overflow: clip;
+  scrollbar-width: none;
   isolation: isolate;
-  contain: layout paint;
+  contain: strict;
+  transform: translateZ(0);
   -webkit-clip-path: inset(0);
   clip-path: inset(0);
-}
-
-.oc-summary-flip-out,
-.oc-summary-flip-in {
-  will-change: transform;
+  -webkit-mask-image: linear-gradient(#000 0 100%);
+  mask-image: linear-gradient(#000 0 100%);
 }
 
 .oc-summary-flip-out {

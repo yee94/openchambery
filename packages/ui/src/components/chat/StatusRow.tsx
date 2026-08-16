@@ -241,6 +241,7 @@ export const StatusRow: React.FC<StatusRowProps> = ({
             <WorkingPlaceholder
               key={currentSessionId ?? "no-session"}
               isWorking={isWorking}
+              isMobile={isMobile}
               statusText={statusText}
               isGenericStatus={isGenericStatus}
               isWaitingForPermission={isWaitingForPermission}
