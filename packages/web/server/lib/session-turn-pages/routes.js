@@ -466,14 +466,14 @@ export const registerSessionTurnPageRoutes = (app, dependencies = {}) => {
         return res.status(mapped.status).json(mapped.body);
       }
 
-      // Projection is first-packet only; prepend and reconcile keep full parts.
-      const isFirstPacket = before === undefined;
+      // Turn-page responses (first packet and prepend) share slim-v1.
+      // Reconcile stays on the other route and keeps full parts.
       return res.status(200).json({
-        records: isFirstPacket ? projectSlimParts(result.records) : result.records,
+        records: projectSlimParts(result.records),
         turnCount: result.turnCount,
         cursor: result.cursor ?? null,
         complete: result.complete === true,
-        partsProjection: isFirstPacket ? SLIM_PARTS_PROJECTION : null,
+        partsProjection: SLIM_PARTS_PROJECTION,
       });
     } catch (error) {
       if (error?.name === 'AbortError') {

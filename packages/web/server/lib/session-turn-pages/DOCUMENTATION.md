@@ -67,11 +67,11 @@ Success `200`:
 - `turnCount`: count of authored user boundaries in `records`.
 - `cursor`: host-owned opaque token for the next `before=` request; `null` when `complete` is true. The token represents the position **just before** the earliest returned authored user (so the client can load older history without overlap).
 - `complete`: `upstreamComplete && selected.length === accumulated.length`. True when upstream history is exhausted **and** `selectTurnRecords` did not trim any older scanned rows (nothing left for the client). When the scan window held more than N turns and older rows were trimmed, `complete` stays `false` with a `cursor` so the client can fetch the trimmed history.
-- `partsProjection`: `"slim-v1"` on a first packet, `null` on prepend. Names the projection applied to `records`; see below.
+- `partsProjection`: `"slim-v1"` on every turn-page response (first packet and prepend). Names the projection applied to `records`; see below. Reconcile responses omit this field and keep full parts.
 
-### First-packet parts projection
+### Turn-page parts projection
 
-A first packet summarizes `tool`, `reasoning`, and `file` parts so it does not have to carry the bodies of a long tool-heavy turn or inline attachment data URLs. Projection runs **after** `selectTurnRecords`, so `turnCount`, `complete`, and cursor encoding are all derived from unprojected records and cannot shift.
+Every turn-page response summarizes `tool`, `reasoning`, and `file` parts so it does not have to carry the bodies of a long tool-heavy turn or inline attachment data URLs. Projection runs **after** `selectTurnRecords`, so `turnCount`, `complete`, and cursor encoding are all derived from unprojected records and cannot shift.
 
 | Kept | Dropped |
 |---|---|
@@ -87,9 +87,9 @@ Rules:
 - `file` projection keeps already-present size/width/height (top-level or `metadata`). `byteSize` is derived from a data URL when present. PNG/GIF/JPEG/WebP headers may fill missing `width`/`height`. Unknown dimensions omit those fields.
 - A slim `file` part is a reference, not renderable content. Clients must hydrate the full message (`session.message` by `messageID`) before painting or editing the attachment. Do not treat slim file metadata as a complete part.
 - Records that gain nothing from projection keep their original object reference, so identity-based change detection downstream still works.
-- Projection is first-packet only (`before === undefined`). Prepend, explicit cursors, and the reconcile routes return full parts, unchanged.
+- Projection applies to every turn-page response, including first packet, prepend, and explicit cursors (`before` present). Reconcile routes return full parts, unchanged.
 
-**Consumer requirement:** because the first-packet predicate is «`before` absent», recovery and materialize tails receive projected parts too. Any consumer merging these records must treat `slim: true` as lower-ranked than content it already holds, or tool output will visibly degrade. `packages/ui/src/sync/displayParts.ts` implements that hold; do not add a second merge path without it.
+**Consumer requirement:** recovery and materialize tails omit `before`, and prepend pages now share the same projection, so all turn-page consumers receive slim parts. Any consumer merging these records must treat `slim: true` as lower-ranked than content it already holds, or tool output will visibly degrade. `packages/ui/src/sync/displayParts.ts` implements that hold; do not add a second merge path without it.
 
 The web client's store layer needs no separate hold: its page reducer merges tool `state` field-wise rather than replacing the part, so a projected page that omits `output` leaves the stored `output` intact. This was verified by neutralizing the render-layer hold and asserting the stored state directly — do not add a redundant guard in `transcript-merge.ts` on the assumption that it degrades.
 

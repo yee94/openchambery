@@ -308,18 +308,17 @@ export async function handleSessionTurnPageBridgeMessage(
       };
     }
 
-    // Projection is first-packet only; prepend keeps full parts.
-    const isFirstPacket = before === undefined;
+    // Turn-page responses (first packet and prepend) share slim-v1.
     return {
       id,
       type,
       success: true,
       data: {
-        records: isFirstPacket ? projectSlimParts(result.records) : result.records,
+        records: projectSlimParts(result.records),
         turnCount: result.turnCount,
         cursor: result.cursor ?? null,
         complete: result.complete === true,
-        partsProjection: isFirstPacket ? SLIM_PARTS_PROJECTION : null,
+        partsProjection: SLIM_PARTS_PROJECTION,
       },
     };
   } catch {

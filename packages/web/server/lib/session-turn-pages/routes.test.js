@@ -310,16 +310,17 @@ describe('registerSessionTurnPageRoutes', () => {
     expect(part.state.output).toBeUndefined();
   });
 
-  it('leaves prepend pages whole and unlabelled', async () => {
+  it('projects tool parts on prepend pages with the same slim-v1 label', async () => {
     const body = await pageBody({ turns: '4', before: 'msg_cursor' });
 
-    expect(body.partsProjection).toBeNull();
+    expect(body.partsProjection).toBe('slim-v1');
     const part = body.records[0].parts[0];
-    expect(part.slim).toBeUndefined();
-    expect(part.state.output).toHaveLength(4000);
+    expect(part.slim).toBe(true);
+    expect(part.state.status).toBe('completed');
+    expect(part.state.output).toBeUndefined();
   });
 
-  it('projects file parts on the first packet only and keeps prepend/explicit-cursor full', async () => {
+  it('projects file parts on first packet and prepend the same way', async () => {
     const png = Buffer.concat([
       Buffer.from([0x89, 0x50, 0x4E, 0x47, 0x0D, 0x0A, 0x1A, 0x0A]),
       Buffer.from([0x00, 0x00, 0x00, 0x0D]),
@@ -369,9 +370,17 @@ describe('registerSessionTurnPageRoutes', () => {
     expect(JSON.stringify(first.records[0].parts[0])).not.toContain('base64');
 
     const prepend = await page({ turns: '3', before: 'oc1.next' });
-    expect(prepend.partsProjection).toBeNull();
-    expect(prepend.records[0].parts[0].url).toBe(url);
-    expect(prepend.records[0].parts[0].slim).toBeUndefined();
+    expect(prepend.partsProjection).toBe('slim-v1');
+    expect(prepend.records[0].parts[0]).toMatchObject({
+      type: 'file',
+      mime: 'image/png',
+      filename: 'shot.png',
+      width: 2,
+      height: 3,
+      slim: true,
+    });
+    expect(prepend.records[0].parts[0].url).toBeUndefined();
+    expect(JSON.stringify(prepend.records[0].parts[0])).not.toContain('base64');
   });
 
   it('does not abort on normal GET request close after a successful response', async () => {

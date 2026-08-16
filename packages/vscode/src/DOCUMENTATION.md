@@ -46,7 +46,7 @@ Keep `bridge.ts` as a thin orchestration layer that delegates message handling t
     `encodeHostCursor` / `decodeHostCursor`, `projectSlimParts`,
     `SLIM_PARTS_PROJECTION`, and
     `createSessionTurnPageService({ fetchPage, maxScanPages?, maxScanMessages? })`.
-  - First-packet `slim-v1` projection is Host-parity: tool / reasoning / file
+  - Turn-page `slim-v1` projection is Host-parity (first packet and prepend): tool / reasoning / file
     summaries after `selectTurnRecords`. Slim tools keep short locator input
     (path / pattern / query / command / `subagent_type` / `description`),
     `metadata.sessionId`, and edit `additions`/`deletions`, and drop result bodies. Slim `file` parts keep identity, mime,
@@ -79,7 +79,7 @@ Keep `bridge.ts` as a thin orchestration layer that delegates message handling t
     reads `x-next-cursor`, and returns unified
     `{ records, cursor, complete, turnCount, partsProjection }` where `cursor`
     is an opaque Host token when history remains. `partsProjection` is
-    `slim-v1` on the first packet (`before` omitted) and `null` on prepend.
+    `slim-v1` on every turn-page response (first packet and prepend).
   - Maps `invalid_cursor` to a safe client error string; never logs message
     contents, tokens, or secrets.
   - Whole aggregation uses a 45s AbortController timeout (signal forwarded; cleared
