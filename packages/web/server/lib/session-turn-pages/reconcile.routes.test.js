@@ -177,6 +177,38 @@ describe('registerSessionTurnPageRoutes — reconcile', () => {
     expect(res.body.records).toHaveLength(2);
   });
 
+  it('keeps full file parts on reconcile — no slim-v1 projection', async () => {
+    const url = 'data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAQAAAC1HAwCAAAAC0lEQVR42mP8/x8AAwMCAO+/p9sAAAAASUVORK5CYII=';
+    const reconcile = vi.fn(async () => successPage({
+      records: [{
+        info: { id: 'msg_u2', role: 'user' },
+        parts: [{ id: 'prt_file', type: 'file', mime: 'image/png', filename: 'shot.png', url }],
+      }],
+    }));
+    const { app, route } = registry();
+    registerSessionTurnPageRoutes(app, {
+      sessionTurnPageService: { loadPage: vi.fn() },
+      sessionReconcileService: { reconcile },
+    });
+    const res = response();
+
+    await route('GET', RECONCILE_ROUTE)({
+      params: { sessionID: 'ses_42' },
+      query: { anchor: 'msg_u2' },
+      headers: {},
+    }, res);
+
+    expect(res.statusCode).toBe(200);
+    expect(res.body.partsProjection).toBeUndefined();
+    expect(res.body.records[0].parts[0]).toEqual({
+      id: 'prt_file',
+      type: 'file',
+      mime: 'image/png',
+      filename: 'shot.png',
+      url,
+    });
+  });
+
   it('returns HTTP 200 for resetRequired (anchor lost / budget rebuild)', async () => {
     const reconcile = vi.fn(async () => successPage({
       records: [],

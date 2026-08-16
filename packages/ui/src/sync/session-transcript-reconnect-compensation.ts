@@ -42,7 +42,6 @@ import {
   createTranscriptQueryCacheBudget,
   normalizeTranscriptCacheScope,
   sessionTranscriptReconcileTaskQueryKey,
-  transcriptCacheScopeKey,
   type TranscriptCacheScope,
   type TranscriptQueryCacheBudget,
 } from "./session-transcript-query-cache"

@@ -14,8 +14,14 @@ import {
   type SessionTranscriptFetcher,
 } from "./session-message-query"
 // sessionMessagePageRetry used in failure-retention test for 4xx no-retry.
+import { createTranscriptActiveScopeRegistry } from "./session-transcript-query-cache"
 import { createQueryTranscriptRepository } from "./transcript-repository-query-adapter"
-import type { TranscriptTransportPage } from "./transcript-repository"
+import { createMemoryTranscriptDurableStore } from "./transcript-durable-store"
+import { createTranscriptDurableQueryQueue } from "./transcript-durable-store-query"
+import {
+  messageNeedsExactMaterialization,
+  type TranscriptTransportPage,
+} from "./transcript-repository"
 
 const DIRECTORY = "/repo"
 const SESSION = "ses_1"
@@ -729,6 +735,450 @@ describe("createQueryTranscriptRepository", () => {
   })
 })
 
+describe("Query repository durable cache wiring", () => {
+  let client: QueryClient
+  const scope = {
+    directory: DIRECTORY,
+    sessionID: SESSION,
+    transport: TRANSPORT,
+    generation: GENERATION,
+  }
+  const durableScope = {
+    transport: TRANSPORT,
+    generation: GENERATION,
+    directory: DIRECTORY,
+    sessionID: SESSION,
+  }
+
+  const waitUntil = async (predicate: () => boolean | Promise<boolean>, timeout = 800) => {
+    const started = Date.now()
+    while (!(await predicate())) {
+      if (Date.now() - started > timeout) throw new Error("timed out waiting for durable side effect")
+      await new Promise((resolve) => setTimeout(resolve, 5))
+    }
+  }
+
+  const settledAssistant = (id: string, text: string, slim = false): { info: Message; parts: Part[] } => ({
+    info: { id, sessionID: SESSION, role: "assistant", time: { created: 2 }, finish: "stop" } as Message,
+    parts: [{
+      id: `${id}-p`,
+      messageID: id,
+      sessionID: SESSION,
+      type: "text",
+      text,
+      ...(slim ? { slim: true } : {}),
+    } as Part],
+  })
+
+  beforeEach(() => {
+    client = new QueryClient({
+      defaultOptions: { queries: { retry: false, retryDelay: 1 } },
+    })
+  })
+
+  test("local durable hit notifies before the authority tail returns, and the tail still fetches once", async () => {
+    const inner = createMemoryTranscriptDurableStore()
+    await inner.upsertSettled(durableScope, userMessage("msg_local"), [textPart("p_local", "msg_local", "cached")])
+    let release!: () => void
+    const gate = new Promise<void>((resolve) => {
+      release = resolve
+    })
+    let fetches = 0
+    const repo = createQueryTranscriptRepository({
+      client,
+      transport: TRANSPORT,
+      generation: GENERATION,
+      durableStore: inner,
+      fetcher: async () => {
+        fetches += 1
+        await gate
+        return transportPage(
+          [{ info: userMessage("msg_server"), parts: [textPart("p_server", "msg_server", "live")] }],
+          { complete: true },
+        )
+      },
+      probe: {
+        getTransport: () => TRANSPORT,
+        getGeneration: () => GENERATION,
+      },
+    })
+    const paints: string[][] = []
+    repo.subscribe(scope, () => {
+      paints.push([...repo.getTranscript(scope).messageOrder])
+    })
+    const pending = repo.ensureInitial(scope)
+    await waitUntil(() => paints.some((order) => order.includes("msg_local")))
+    expect(repo.getTranscript(scope).messageOrder).toContain("msg_local")
+    expect(repo.getPagination(scope).boundary.kind).toBe("unknown")
+    expect(repo.getPagination(scope).isComplete).toBe(false)
+    expect(repo.getRequestState?.(scope)?.status).toBe("loading")
+    release()
+    await pending
+    expect(fetches).toBe(1)
+    expect(repo.getTranscript(scope).messageOrder).toContain("msg_server")
+    repo.destroy()
+  })
+
+  test("identical HTTP content does not produce another durable write", async () => {
+    const inner = createMemoryTranscriptDurableStore()
+    const upserts: Array<"written" | "skipped"> = []
+    const durableStore = {
+      ...inner,
+      upsertSettled: async (...args: Parameters<typeof inner.upsertSettled>) => {
+        const result = await inner.upsertSettled(...args)
+        upserts.push(result.status)
+        return result
+      },
+    }
+    const repo = createQueryTranscriptRepository({
+      client,
+      transport: TRANSPORT,
+      generation: GENERATION,
+      durableStore,
+    })
+    const page = transportPage(
+      [{ info: userMessage("msg_1"), parts: [textPart("p1", "msg_1", "same")] }],
+      { complete: true },
+    )
+    repo.apply(scope, { type: "http-page", purpose: "initial", page })
+    await waitUntil(() => upserts.length >= 1)
+    repo.apply(scope, { type: "http-page", purpose: "initial", page })
+    await new Promise((resolve) => setTimeout(resolve, 20))
+    expect(upserts.filter((status) => status === "written")).toHaveLength(1)
+    repo.destroy()
+  })
+
+  test("HTTP full overlays a local slim record and persists the full snapshot", async () => {
+    const inner = createMemoryTranscriptDurableStore()
+    const slim = settledAssistant("msg_asst", "summary", true)
+    await inner.upsertSettled(durableScope, slim.info, slim.parts)
+    const full = settledAssistant("msg_asst", "full body")
+    const repo = createQueryTranscriptRepository({
+      client,
+      transport: TRANSPORT,
+      generation: GENERATION,
+      durableStore: inner,
+      fetcher: async () => transportPage([full], { complete: true }),
+      probe: {
+        getTransport: () => TRANSPORT,
+        getGeneration: () => GENERATION,
+      },
+    })
+    await repo.ensureInitial(scope)
+    expect((repo.getParts(scope, "msg_asst")[0] as { text?: string })?.text).toBe("full body")
+    await waitUntil(async () => {
+      const stored = await inner.readMessage(durableScope, "msg_asst")
+      return stored?.completeness === "full"
+    })
+    expect((await inner.readMessage(durableScope, "msg_asst"))?.completeness).toBe("full")
+    repo.destroy()
+  })
+
+  test("remove-message and message.removed cascade into the durable store", async () => {
+    const inner = createMemoryTranscriptDurableStore()
+    const removed: string[] = []
+    const durableStore = {
+      ...inner,
+      removeMessage: async (target: typeof durableScope, messageID: string) => {
+        removed.push(messageID)
+        await inner.removeMessage(target, messageID)
+      },
+    }
+    const repo = createQueryTranscriptRepository({
+      client,
+      transport: TRANSPORT,
+      generation: GENERATION,
+      durableStore,
+    })
+    repo.apply(scope, {
+      type: "http-page",
+      purpose: "initial",
+      page: transportPage(
+        [
+          { info: userMessage("msg_1"), parts: [textPart("p1", "msg_1")] },
+          { info: userMessage("msg_2"), parts: [textPart("p2", "msg_2")] },
+        ],
+        { complete: true },
+      ),
+    })
+    repo.apply(scope, { type: "remove-message", messageID: "msg_1" })
+    repo.apply(scope, {
+      type: "sse-event",
+      event: {
+        type: "message.removed",
+        properties: { sessionID: SESSION, messageID: "msg_2" },
+      } as Event,
+    })
+    await waitUntil(() => removed.includes("msg_1") && removed.includes("msg_2"))
+    expect(await inner.readMessage(durableScope, "msg_1")).toBeUndefined()
+    expect(await inner.readMessage(durableScope, "msg_2")).toBeUndefined()
+    repo.destroy()
+  })
+
+  test("destructive reset clears the durable session before the new ensure", async () => {
+    const inner = createMemoryTranscriptDurableStore()
+    let clears = 0
+    const durableStore = {
+      ...inner,
+      clearSession: async (target: typeof durableScope) => {
+        clears += 1
+        await inner.clearSession(target)
+      },
+    }
+    const repo = createQueryTranscriptRepository({
+      client,
+      transport: TRANSPORT,
+      generation: GENERATION,
+      durableStore,
+      fetcher: async () => transportPage([], { complete: true, turnCount: 0 }),
+      probe: {
+        getTransport: () => TRANSPORT,
+        getGeneration: () => GENERATION,
+      },
+    })
+    repo.apply(scope, {
+      type: "http-page",
+      purpose: "initial",
+      page: transportPage([{ info: userMessage("msg_old") }], { complete: true }),
+    })
+    await waitUntil(async () => (await inner.readSession(durableScope)).records.length === 1)
+    await repo.destructiveReset(scope)
+    expect(clears).toBeGreaterThan(0)
+    expect((await inner.readSession(durableScope)).records).toEqual([])
+    expect(repo.getTranscript(scope).messageOrder).toEqual([])
+    repo.destroy()
+  })
+
+  test("a runtime-stale durable read does not seed or persist into the new scope", async () => {
+    const inner = createMemoryTranscriptDurableStore()
+    await inner.upsertSettled(
+      { ...durableScope, generation: 1 },
+      userMessage("msg_local"),
+      [textPart("p_local", "msg_local", "stale-gen")],
+    )
+    let generation = 1
+    let release!: () => void
+    const gate = new Promise<void>((resolve) => {
+      release = resolve
+    })
+    const persistedGens: number[] = []
+    const durableStore = {
+      ...inner,
+      readSession: async (target: typeof durableScope) => {
+        await gate
+        return inner.readSession(target)
+      },
+      upsertSettled: async (target: typeof durableScope, info: Message, parts: readonly Part[]) => {
+        persistedGens.push(target.generation)
+        return inner.upsertSettled(target, info, parts)
+      },
+    }
+    const repo = createQueryTranscriptRepository({
+      client,
+      durableStore,
+      fetcher: async () => transportPage(
+        [{ info: userMessage("msg_server") }],
+        { complete: true },
+      ),
+      probe: {
+        getTransport: () => TRANSPORT,
+        getGeneration: () => generation,
+      },
+    })
+    const pending = repo.ensureInitial({ directory: DIRECTORY, sessionID: SESSION })
+    generation = 2
+    release()
+    await pending
+    const live = repo.getTranscript({ directory: DIRECTORY, sessionID: SESSION })
+    expect(live.messageOrder).not.toContain("msg_local")
+    expect(persistedGens.every((value) => value !== 2 || live.messageOrder.includes("msg_server"))).toBe(true)
+    expect(await inner.readMessage({ ...durableScope, generation: 2 }, "msg_local")).toBeUndefined()
+    repo.destroy()
+  })
+
+  test("durable read failure keeps the network authority path", async () => {
+    const durableStore = {
+      ...createMemoryTranscriptDurableStore(),
+      readSession: async () => {
+        throw new Error("idb down")
+      },
+    }
+    const repo = createQueryTranscriptRepository({
+      client,
+      transport: TRANSPORT,
+      generation: GENERATION,
+      durableStore,
+      fetcher: async () => transportPage(
+        [{ info: userMessage("msg_server") }],
+        { complete: true },
+      ),
+      probe: {
+        getTransport: () => TRANSPORT,
+        getGeneration: () => GENERATION,
+      },
+    })
+    const data = await repo.ensureInitial(scope)
+    expect(data.messageOrder).toEqual(["msg_server"])
+    expect(repo.getRequestState?.(scope)?.status).not.toBe("error")
+    repo.destroy()
+  })
+
+  test("authority fetch failure keeps the durable paint and exposes request error", async () => {
+    const inner = createMemoryTranscriptDurableStore()
+    await inner.upsertSettled(durableScope, userMessage("msg_local"), [textPart("p_local", "msg_local")])
+    const repo = createQueryTranscriptRepository({
+      client,
+      transport: TRANSPORT,
+      generation: GENERATION,
+      durableStore: inner,
+      fetcher: async () => {
+        throw new SessionMessageHttpError(404)
+      },
+      probe: {
+        getTransport: () => TRANSPORT,
+        getGeneration: () => GENERATION,
+      },
+    })
+    await expect(repo.ensureInitial(scope)).rejects.toThrow()
+    expect(repo.getTranscript(scope).messageOrder).toContain("msg_local")
+    expect(repo.getPagination(scope).boundary.kind).toBe("unknown")
+    expect(repo.getPagination(scope).isComplete).toBe(false)
+    expect(repo.hasSession?.(scope)).toBe(true)
+    expect(repo.getRequestState?.(scope)?.status).toBe("error")
+    expect(repo.getRequestState?.(scope)?.error).toBeDefined()
+    repo.destroy()
+  })
+
+  test("empty authority success stays distinct from a request error", async () => {
+    const repo = createQueryTranscriptRepository({
+      client,
+      transport: TRANSPORT,
+      generation: GENERATION,
+      durableStore: createMemoryTranscriptDurableStore(),
+      fetcher: async () => transportPage([], { complete: true, turnCount: 0 }),
+      probe: {
+        getTransport: () => TRANSPORT,
+        getGeneration: () => GENERATION,
+      },
+    })
+    const data = await repo.ensureInitial(scope)
+    expect(data.messageOrder).toEqual([])
+    expect(repo.hasSession?.(scope)).toBe(true)
+    expect(repo.getRequestState?.(scope)?.status).not.toBe("error")
+    repo.destroy()
+  })
+
+  test("durable full survives an authority slim page in Query and the store", async () => {
+    const inner = createMemoryTranscriptDurableStore()
+    const full = settledAssistant("msg_asst", "full body")
+    await inner.upsertSettled(durableScope, full.info, full.parts)
+    const slim = settledAssistant("msg_asst", "summary", true)
+    const repo = createQueryTranscriptRepository({
+      client,
+      transport: TRANSPORT,
+      generation: GENERATION,
+      durableStore: inner,
+      fetcher: async () => transportPage([slim], { complete: true }),
+      probe: {
+        getTransport: () => TRANSPORT,
+        getGeneration: () => GENERATION,
+      },
+    })
+    await repo.ensureInitial(scope)
+    expect((repo.getParts(scope, "msg_asst")[0] as { text?: string })?.text).toBe("full body")
+    expect((repo.getParts(scope, "msg_asst")[0] as { slim?: boolean })?.slim).not.toBe(true)
+    await waitUntil(async () => {
+      const stored = await inner.readMessage(durableScope, "msg_asst")
+      return stored?.completeness === "full"
+        && (stored.parts[0] as { text?: string })?.text === "full body"
+    })
+    expect((await inner.readMessage(durableScope, "msg_asst"))?.completeness).toBe("full")
+    repo.destroy()
+  })
+
+  test("fetchPreviousPage after a durable seed waits for the authority tail first", async () => {
+    const inner = createMemoryTranscriptDurableStore()
+    await inner.upsertSettled(durableScope, userMessage("msg_local"), [textPart("p_local", "msg_local", "cached")])
+    const calls: Array<string | undefined> = []
+    let release!: () => void
+    const gate = new Promise<void>((resolve) => {
+      release = resolve
+    })
+    const repo = createQueryTranscriptRepository({
+      client,
+      transport: TRANSPORT,
+      generation: GENERATION,
+      durableStore: inner,
+      fetcher: async ({ before }) => {
+        calls.push(before)
+        await gate
+        if (!before) {
+          return transportPage(
+            [{ info: userMessage("msg_tail"), parts: [textPart("p_tail", "msg_tail", "live")] }],
+            { cursor: "msg_tail", complete: false },
+          )
+        }
+        return transportPage(
+          [{ info: userMessage("msg_old"), parts: [textPart("p_old", "msg_old", "older")] }],
+          { complete: true },
+        )
+      },
+      probe: {
+        getTransport: () => TRANSPORT,
+        getGeneration: () => GENERATION,
+      },
+    })
+    const paints: string[][] = []
+    repo.subscribe(scope, () => {
+      paints.push([...repo.getTranscript(scope).messageOrder])
+    })
+    const pendingInitial = repo.ensureInitial(scope)
+    await waitUntil(() => paints.some((order) => order.includes("msg_local")))
+    const pendingPrevious = repo.fetchPreviousPage(scope)
+    release()
+    await pendingInitial
+    await pendingPrevious
+    expect(calls[0]).toBeUndefined()
+    expect(calls.filter((value) => value === undefined)).toHaveLength(1)
+    expect(calls).toContain("msg_tail")
+    expect(repo.getTranscript(scope).messageOrder).toContain("msg_tail")
+    expect(repo.getTranscript(scope).messageOrder).toContain("msg_old")
+    repo.destroy()
+  })
+
+  test("unapplied commands do not write the durable store", async () => {
+    const inner = createMemoryTranscriptDurableStore()
+    const upserts: Array<"written" | "skipped"> = []
+    const durableStore = {
+      ...inner,
+      upsertSettled: async (...args: Parameters<typeof inner.upsertSettled>) => {
+        const result = await inner.upsertSettled(...args)
+        upserts.push(result.status)
+        return result
+      },
+    }
+    const repo = createQueryTranscriptRepository({
+      client,
+      transport: TRANSPORT,
+      generation: GENERATION,
+      durableStore,
+    })
+    const result = repo.apply(scope, {
+      type: "http-page",
+      purpose: "initial",
+      page: {
+        records: [{ info: userMessage("msg_1"), parts: [textPart("p1", "msg_1")] }],
+        complete: false,
+      },
+    })
+    expect(result.applied).toBe(false)
+    await new Promise((resolve) => setTimeout(resolve, 20))
+    expect(upserts).toEqual([])
+    expect((await inner.readSession(durableScope)).records).toEqual([])
+    repo.destroy()
+  })
+})
+
 describe("InfiniteQueryObserver is available for model-layer use", () => {
   test("constructs without React", () => {
     const client = new QueryClient()
@@ -741,5 +1191,438 @@ describe("InfiniteQueryObserver is available for model-layer use", () => {
     })
     expect(observer.getCurrentResult().status).toBeTruthy()
     observer.destroy()
+  })
+})
+
+describe("Query repository on-demand message materialization", () => {
+  let client: QueryClient
+  const scope = {
+    directory: DIRECTORY,
+    sessionID: SESSION,
+    transport: TRANSPORT,
+    generation: GENERATION,
+  }
+  const durableScope = {
+    transport: TRANSPORT,
+    generation: GENERATION,
+    directory: DIRECTORY,
+    sessionID: SESSION,
+  }
+
+  const waitUntil = async (predicate: () => boolean | Promise<boolean>, timeout = 800) => {
+    const started = Date.now()
+    while (!(await predicate())) {
+      if (Date.now() - started > timeout) throw new Error("timed out waiting for materialization")
+      await new Promise((resolve) => setTimeout(resolve, 5))
+    }
+  }
+
+  const settledAssistant = (id: string, created = 2): Message =>
+    ({ id, sessionID: SESSION, role: "assistant", time: { created }, finish: "stop" }) as Message
+
+  const slimTool = (id: string, messageID: string): Part =>
+    ({
+      id,
+      messageID,
+      sessionID: SESSION,
+      type: "tool",
+      tool: "bash",
+      callID: id,
+      state: { status: "completed" },
+      slim: true,
+    }) as unknown as Part
+
+  const fullTool = (id: string, messageID: string, output: string): Part =>
+    ({
+      id,
+      messageID,
+      sessionID: SESSION,
+      type: "tool",
+      tool: "bash",
+      callID: id,
+      state: { status: "completed", output },
+    }) as unknown as Part
+
+  const slimText = (id: string, messageID: string, text: string): Part =>
+    ({ id, messageID, sessionID: SESSION, type: "text", text, slim: true }) as Part
+
+  beforeEach(() => {
+    client = new QueryClient({
+      defaultOptions: { queries: { retry: false, retryDelay: 1 } },
+    })
+  })
+
+  test("messageNeedsExactMaterialization is only true for slim tool/reasoning/file", () => {
+    expect(messageNeedsExactMaterialization([slimTool("t1", "msg_a")])).toBe(true)
+    expect(messageNeedsExactMaterialization([
+      { id: "r1", messageID: "msg_a", sessionID: SESSION, type: "reasoning", text: "", time: { start: 1 }, slim: true } as unknown as Part,
+    ])).toBe(true)
+    expect(messageNeedsExactMaterialization([
+      { id: "f1", messageID: "msg_a", sessionID: SESSION, type: "file", mime: "text/plain", url: "file://f1", slim: true } as unknown as Part,
+    ])).toBe(true)
+    expect(messageNeedsExactMaterialization([slimText("p1", "msg_a", "summary")])).toBe(false)
+    expect(messageNeedsExactMaterialization([fullTool("t1", "msg_a", "done")])).toBe(false)
+  })
+
+  test("skips Host fetch when the message has no slim tool/reasoning/file parts", async () => {
+    let fetches = 0
+    const repo = createQueryTranscriptRepository({
+      client,
+      transport: TRANSPORT,
+      generation: GENERATION,
+      fetchMessage: async () => {
+        fetches += 1
+        throw new Error("should not fetch")
+      },
+    })
+    repo.apply(scope, {
+      type: "http-page",
+      purpose: "initial",
+      page: transportPage([
+        { info: settledAssistant("msg_text"), parts: [slimText("p1", "msg_text", "ok")] },
+      ], { complete: true }),
+    })
+    expect(repo.getMessageMaterializationState(scope, "msg_text").status).toBe("ready")
+    await repo.materializeMessage(scope, "msg_text")
+    expect(fetches).toBe(0)
+    expect(repo.getMessageMaterializationState(scope, "msg_text").status).toBe("ready")
+    repo.destroy()
+  })
+
+  test("shares one Host request across concurrent expands", async () => {
+    let fetches = 0
+    let release!: () => void
+    const gate = new Promise<void>((resolve) => {
+      release = resolve
+    })
+    const repo = createQueryTranscriptRepository({
+      client,
+      transport: TRANSPORT,
+      generation: GENERATION,
+      fetchMessage: async () => {
+        fetches += 1
+        await gate
+        return {
+          info: settledAssistant("msg_a"),
+          parts: [fullTool("t1", "msg_a", "body")],
+        }
+      },
+    })
+    repo.apply(scope, {
+      type: "http-page",
+      purpose: "initial",
+      page: transportPage([
+        { info: settledAssistant("msg_a"), parts: [slimTool("t1", "msg_a")] },
+      ], { complete: true }),
+    })
+    const first = repo.materializeMessage(scope, "msg_a")
+    const second = repo.materializeMessage(scope, "msg_a")
+    expect(repo.getMessageMaterializationState(scope, "msg_a").status).toBe("loading")
+    release()
+    await Promise.all([first, second])
+    expect(fetches).toBe(1)
+    expect(repo.getMessageMaterializationState(scope, "msg_a").status).toBe("ready")
+    expect((repo.getParts(scope, "msg_a")[0] as { state?: { output?: string } }).state?.output).toBe("body")
+    repo.destroy()
+  })
+
+  test("subscribe sees loading then ready", async () => {
+    let release!: () => void
+    const gate = new Promise<void>((resolve) => {
+      release = resolve
+    })
+    const repo = createQueryTranscriptRepository({
+      client,
+      transport: TRANSPORT,
+      generation: GENERATION,
+      fetchMessage: async () => {
+        await gate
+        return {
+          info: settledAssistant("msg_a"),
+          parts: [fullTool("t1", "msg_a", "body")],
+        }
+      },
+    })
+    repo.apply(scope, {
+      type: "http-page",
+      purpose: "initial",
+      page: transportPage([
+        { info: settledAssistant("msg_a"), parts: [slimTool("t1", "msg_a")] },
+      ], { complete: true }),
+    })
+    const statuses: string[] = []
+    repo.subscribe(scope, () => {
+      statuses.push(repo.getMessageMaterializationState(scope, "msg_a").status)
+    })
+    const pending = repo.materializeMessage(scope, "msg_a")
+    await waitUntil(() => statuses.includes("loading"))
+    release()
+    await pending
+    expect(statuses).toContain("loading")
+    expect(statuses.at(-1)).toBe("ready")
+    repo.destroy()
+  })
+
+  test("failed fill keeps slim, exposes error, and retries", async () => {
+    let fetches = 0
+    const repo = createQueryTranscriptRepository({
+      client,
+      transport: TRANSPORT,
+      generation: GENERATION,
+      fetchMessage: async () => {
+        fetches += 1
+        if (fetches === 1) throw new Error("unavailable")
+        return {
+          info: settledAssistant("msg_a"),
+          parts: [fullTool("t1", "msg_a", "recovered")],
+        }
+      },
+    })
+    repo.apply(scope, {
+      type: "http-page",
+      purpose: "initial",
+      page: transportPage([
+        { info: settledAssistant("msg_a"), parts: [slimTool("t1", "msg_a")] },
+      ], { complete: true }),
+    })
+    await repo.materializeMessage(scope, "msg_a")
+    expect(repo.getMessageMaterializationState(scope, "msg_a")).toEqual({
+      sessionID: SESSION,
+      messageID: "msg_a",
+      status: "error",
+      error: "unavailable",
+    })
+    expect((repo.getParts(scope, "msg_a")[0] as { slim?: boolean }).slim).toBe(true)
+    await repo.materializeMessage(scope, "msg_a")
+    expect(repo.getMessageMaterializationState(scope, "msg_a").status).toBe("ready")
+    expect((repo.getParts(scope, "msg_a")[0] as { state?: { output?: string } }).state?.output).toBe("recovered")
+    expect(fetches).toBe(2)
+    repo.destroy()
+  })
+
+  test("full Host snapshot overlays the existing slim part", async () => {
+    const repo = createQueryTranscriptRepository({
+      client,
+      transport: TRANSPORT,
+      generation: GENERATION,
+      fetchMessage: async () => ({
+        info: settledAssistant("msg_a"),
+        parts: [fullTool("t1", "msg_a", "full body")],
+      }),
+    })
+    repo.apply(scope, {
+      type: "http-page",
+      purpose: "initial",
+      page: transportPage([
+        { info: settledAssistant("msg_a"), parts: [slimTool("t1", "msg_a")] },
+      ], { complete: true }),
+    })
+    await repo.materializeMessage(scope, "msg_a")
+    const part = repo.getParts(scope, "msg_a")[0] as { slim?: boolean; state?: { output?: string } }
+    expect(part.slim).not.toBe(true)
+    expect(part.state?.output).toBe("full body")
+    repo.destroy()
+  })
+
+  test("a late result from a previous runtime does not write the current Query", async () => {
+    let generation = GENERATION
+    let release!: () => void
+    const gate = new Promise<void>((resolve) => {
+      release = resolve
+    })
+    const repo = createQueryTranscriptRepository({
+      client,
+      probe: {
+        getTransport: () => TRANSPORT,
+        getGeneration: () => generation,
+      },
+      fetchMessage: async () => {
+        await gate
+        return {
+          info: settledAssistant("msg_a"),
+          parts: [fullTool("t1", "msg_a", "stale-full")],
+        }
+      },
+    })
+    const pinned = { ...scope, generation: GENERATION }
+    repo.apply(pinned, {
+      type: "http-page",
+      purpose: "initial",
+      page: transportPage([
+        { info: settledAssistant("msg_a"), parts: [slimTool("t1", "msg_a")] },
+      ], { complete: true }),
+    })
+    const liveScope = { directory: DIRECTORY, sessionID: SESSION }
+    const pending = repo.materializeMessage(liveScope, "msg_a")
+    generation = GENERATION + 1
+    release()
+    await pending
+    expect(repo.getTranscript(liveScope).messageOrder).toEqual([])
+    expect((repo.getParts(pinned, "msg_a")[0] as { slim?: boolean }).slim).toBe(true)
+    expect(repo.getMessageMaterializationState(liveScope, "msg_a").status).toBe("idle")
+    repo.destroy()
+  })
+
+  test("one message failure leaves another already-full message intact", async () => {
+    const repo = createQueryTranscriptRepository({
+      client,
+      transport: TRANSPORT,
+      generation: GENERATION,
+      fetchMessage: async ({ messageID }) => {
+        if (messageID === "msg_fail") throw new Error("only this one")
+        return {
+          info: settledAssistant(messageID),
+          parts: [fullTool(`${messageID}-t`, messageID, "ok")],
+        }
+      },
+    })
+    repo.apply(scope, {
+      type: "http-page",
+      purpose: "initial",
+      page: transportPage([
+        { info: settledAssistant("msg_fail", 2), parts: [slimTool("t-fail", "msg_fail")] },
+        { info: settledAssistant("msg_ok", 3), parts: [fullTool("t-ok", "msg_ok", "already")] },
+      ], { complete: true, turnCount: 2 }),
+    })
+    await repo.materializeMessage(scope, "msg_fail")
+    expect(repo.getMessageMaterializationState(scope, "msg_fail").status).toBe("error")
+    expect((repo.getParts(scope, "msg_fail")[0] as { slim?: boolean }).slim).toBe(true)
+    expect((repo.getParts(scope, "msg_ok")[0] as { state?: { output?: string } }).state?.output).toBe("already")
+    expect(repo.getMessageMaterializationState(scope, "msg_ok").status).toBe("ready")
+    repo.destroy()
+  })
+
+  test("successful full fill enqueues a durable full write", async () => {
+    const inner = createMemoryTranscriptDurableStore()
+    const repo = createQueryTranscriptRepository({
+      client,
+      transport: TRANSPORT,
+      generation: GENERATION,
+      durableStore: inner,
+      fetchMessage: async () => ({
+        info: settledAssistant("msg_a"),
+        parts: [fullTool("t1", "msg_a", "persisted")],
+      }),
+    })
+    repo.apply(scope, {
+      type: "http-page",
+      purpose: "initial",
+      page: transportPage([
+        { info: settledAssistant("msg_a"), parts: [slimTool("t1", "msg_a")] },
+      ], { complete: true }),
+    })
+    await waitUntil(async () => Boolean(await inner.readMessage(durableScope, "msg_a")))
+    await repo.materializeMessage(scope, "msg_a")
+    await waitUntil(async () => {
+      const stored = await inner.readMessage(durableScope, "msg_a")
+      return stored?.completeness === "full"
+    })
+    expect((await inner.readMessage(durableScope, "msg_a"))?.completeness).toBe("full")
+    const storedPart = (await inner.readMessage(durableScope, "msg_a"))?.parts[0] as {
+      slim?: boolean
+      state?: { output?: string }
+    }
+    expect(storedPart.slim).not.toBe(true)
+    expect(storedPart.state?.output).toBe("persisted")
+    repo.destroy()
+  })
+})
+
+describe("Query repository durable byte-budget eviction", () => {
+  const scope = {
+    directory: DIRECTORY,
+    sessionID: SESSION,
+    transport: TRANSPORT,
+    generation: GENERATION,
+  }
+  const durableScope = {
+    transport: TRANSPORT,
+    generation: GENERATION,
+    directory: DIRECTORY,
+    sessionID: SESSION,
+  }
+  const otherDurableScope = { ...durableScope, sessionID: "ses_2" }
+
+  const waitUntil = async (predicate: () => boolean | Promise<boolean>, timeout = 800) => {
+    const started = Date.now()
+    while (!(await predicate())) {
+      if (Date.now() - started > timeout) throw new Error("timed out waiting for durable eviction")
+      await new Promise((resolve) => setTimeout(resolve, 5))
+    }
+  }
+
+  test("a successful persist evicts unprotected LRU rows in the same queue", async () => {
+    const inner = createMemoryTranscriptDurableStore()
+    const evicts: Array<{ maxBytes: number; protect: string[] }> = []
+    const durableStore = {
+      ...inner,
+      evictToBytes: async (maxBytes: number, options?: { protect?: readonly typeof durableScope[] }) => {
+        evicts.push({
+          maxBytes,
+          protect: (options?.protect ?? []).map((item) => item.sessionID),
+        })
+        return inner.evictToBytes(maxBytes, options)
+      },
+    }
+    const activeRegistry = createTranscriptActiveScopeRegistry()
+    const release = activeRegistry.retain({
+      transport: TRANSPORT,
+      generation: GENERATION,
+      directory: DIRECTORY,
+      sessionID: SESSION,
+    })
+    const repo = createQueryTranscriptRepository({
+      client: new QueryClient({ defaultOptions: { queries: { retry: false } } }),
+      transport: TRANSPORT,
+      generation: GENERATION,
+      durableStore,
+      activeRegistry,
+      getDurableByteBudget: () => 0,
+    })
+    repo.apply(scope, {
+      type: "http-page",
+      purpose: "initial",
+      page: transportPage(
+        [{ info: userMessage("msg_keep"), parts: [textPart("p_keep", "msg_keep", "keep")] }],
+        { complete: true },
+      ),
+    })
+    repo.apply({ ...scope, sessionID: "ses_2" }, {
+      type: "http-page",
+      purpose: "initial",
+      page: transportPage(
+        [{ info: { ...userMessage("msg_drop"), sessionID: "ses_2" }, parts: [textPart("p_drop", "msg_drop", "drop")] }],
+        { complete: true },
+      ),
+    })
+    await waitUntil(async () => (await inner.readSession(durableScope)).records.length === 1)
+    await waitUntil(() => evicts.length >= 2)
+    expect((await inner.readSession(durableScope)).records.map((record) => record.messageID)).toEqual(["msg_keep"])
+    expect((await inner.readSession(otherDurableScope)).records).toEqual([])
+    expect(evicts.some((item) => item.maxBytes === 0 && item.protect.includes(SESSION))).toBe(true)
+    release()
+    repo.destroy()
+  })
+
+  test("hash-skipped writes do not run evictToBytes", async () => {
+    const inner = createMemoryTranscriptDurableStore()
+    let evicts = 0
+    const durableStore = {
+      ...inner,
+      evictToBytes: async (maxBytes: number, options?: { protect?: readonly typeof durableScope[] }) => {
+        evicts += 1
+        return inner.evictToBytes(maxBytes, options)
+      },
+    }
+    const queue = createTranscriptDurableQueryQueue(durableStore, {
+      getByteBudget: () => 1024,
+      getProtectScopes: () => [],
+    })
+    const info = userMessage("msg_same")
+    const parts = [textPart("p_same", "msg_same", "same")]
+    await queue.persistSettled(durableScope, info, parts)
+    await queue.persistSettled(durableScope, info, parts)
+    expect(evicts).toBe(1)
+    expect((await inner.readSession(durableScope)).records).toHaveLength(1)
   })
 })

@@ -40,6 +40,8 @@ mock.module("@/lib/runtimeSurface", () => ({
 
 mock.module("@/lib/desktop", () => ({
   isVSCodeRuntime: () => vscodeRuntime,
+  isDesktopShell: () => false,
+  isDesktopLocalOriginActive: () => false,
 }))
 
 const hostTurnPageCalls: Array<Record<string, unknown>> = []
@@ -995,13 +997,8 @@ describe("fetchMessagesForSession startup race", () => {
 
   test("a failed pull preserves the last known boundary without clearing transcript", async () => {
     const sessionID = "session-fail-boundary"
-    const existingUser = {
-      id: "msg_fb_user",
-      role: "user",
-      sessionID,
-      time: { created: 1 },
-    } as Message
-    // Busy + trailing assistant forces a live stale-cache refetch (no cache reuse).
+    // Cache holds an assistant tail with no authored user boundary, so it is not
+    // reusable and a pull is required.
     const existingAssistant = {
       id: "msg_fb_assistant",
       role: "assistant",
@@ -1011,9 +1008,8 @@ describe("fetchMessagesForSession startup race", () => {
     const known = { kind: "has-more", cursor: "msg_fb_user", loadedTurns: 2 } as const
     const store = createStore({}, {
       session: [{ id: sessionID, time: { created: 1 } } as Session],
-      message: { [sessionID]: [existingUser, existingAssistant] },
+      message: { [sessionID]: [existingAssistant] },
       part: {
-        msg_fb_user: [{ id: "prt_fb", type: "text", text: "hi" } as Part],
         msg_fb_assistant: [{ id: "prt_fb_a", type: "text", text: "reply" } as Part],
       },
       session_status: { [sessionID]: { type: "busy" } },
@@ -1031,10 +1027,53 @@ describe("fetchMessagesForSession startup race", () => {
 
     expect(store.getState().session_history_boundary[sessionID]).toEqual(known)
     expect(store.getState().message[sessionID]?.map((m) => m.id)).toEqual([
-      "msg_fb_user",
       "msg_fb_assistant",
     ])
     expect(replyCalls.filter((call) => call.method === "host.session.turnPage")).toHaveLength(1)
+  })
+
+  test("opening a busy session reuses a complete cache instead of refetching the page", async () => {
+    const sessionID = "ses_busy_reuse"
+    // Mid-task shape: cache is complete (authored user boundary + known
+    // boundary) and the tail is an assistant. This used to force the most
+    // expensive request the client makes; SSE and reconnect compensation own
+    // the tail now, so no turn page should be requested.
+    const existingUser = {
+      id: "msg_br_user",
+      role: "user",
+      sessionID,
+      time: { created: 1 },
+    } as Message
+    const existingAssistant = {
+      id: "msg_br_assistant",
+      role: "assistant",
+      sessionID,
+      time: { created: 2 },
+    } as Message
+    const store = createStore({}, {
+      session: [{ id: sessionID, time: { created: 1 } } as Session],
+      message: { [sessionID]: [existingUser, existingAssistant] },
+      part: {
+        msg_br_user: [{ id: "prt_br", type: "text", text: "hi" } as Part],
+        msg_br_assistant: [{ id: "prt_br_a", type: "text", text: "reply" } as Part],
+      },
+      session_status: { [sessionID]: { type: "busy" } },
+      session_history_boundary: {
+        [sessionID]: { kind: "has-more", cursor: "msg_br_user", loadedTurns: 2 },
+      },
+    })
+    const childStores = createChildStores([["/test/project", store]])
+    const { fetchMessagesForSession, setActionRefs } = await import("./session-actions")
+    setActionRefs(mockSdk as unknown as OpencodeClient, childStores, () => "/test/project")
+    uiCurrentSessionId = sessionID
+
+    await fetchMessagesForSession(sessionID, "/test/project")
+
+    expect(replyCalls.filter((call) => call.method === "host.session.turnPage")).toHaveLength(0)
+    expect(store.getState().message[sessionID]?.map((m) => m.id)).toEqual([
+      "msg_br_user",
+      "msg_br_assistant",
+    ])
   })
 })
 
@@ -3647,5 +3686,279 @@ describe("dismissOpenQuestionsForSession", () => {
     expect(rejectCalls[0].params.requestID).toBe("q-stale")
     // The stale entry is cleared from the store even though the server reported not-found.
     expect(store.getState().question["session-a"]).toBe(undefined)
+  })
+})
+
+
+describe("composer restoration file-part materialize", () => {
+  const IMAGE_DATA_URL = "data:image/png;base64,eA=="
+
+  const previousDraft = {
+    pendingInputText: "previous draft",
+    pendingInputMode: "normal" as const,
+    attachedFiles: [{ url: "file:///previous.txt", mimeType: "text/plain", filename: "previous.txt" }],
+  }
+
+  beforeEach(() => {
+    replyCalls.length = 0
+    draftCommits.length = 0
+    draftRevisionByKey = new Map()
+    draftCommitShouldFail = false
+    draftCommitFailAfter = 0
+    draftCommitCount = 0
+    sessionRevertResult = { data: { id: "session-a", time: { created: 1, updated: 2 }, revert: { messageID: "msg_2" } } }
+    Object.assign(inputState, {
+      ...previousDraft,
+      drafts: {},
+    })
+  })
+
+  afterEach(async () => {
+    const { unbindTranscriptRepository } = await import("./transcript-repository-runtime")
+    unbindTranscriptRepository()
+  })
+
+  async function bindMaterializingStoreRepo(
+    store: StoreApi<TestDirectoryStore>,
+    materialize: (messageID: string) => Promise<void> | void,
+  ) {
+    const { createStoreTranscriptRepository } = await import("./transcript-repository-store-adapter")
+    const { bindTranscriptRepositoryInstance } = await import("./transcript-repository-runtime")
+    const inner = createStoreTranscriptRepository({ getStore: () => store as never })
+    const calls: Array<{ directory: string; sessionID: string; messageID: string }> = []
+    bindTranscriptRepositoryInstance({
+      ...inner,
+      async materializeMessage(scope, messageID) {
+        calls.push({ directory: scope.directory, sessionID: scope.sessionID, messageID })
+        await materialize(messageID)
+        return inner.getTranscript(scope)
+      },
+    })
+    return calls
+  }
+
+  function imageSession(parts: Part[]) {
+    const session = { id: "session-a", time: { created: 1 } } as Session
+    const targetMessage = { id: "msg_2", sessionID: "session-a", role: "user", time: { created: 2 } } as Message
+    const store = createStore({}, {
+      session: [session],
+      message: { "session-a": [targetMessage] },
+      part: { msg_2: parts },
+    })
+    return { store, childStores: createChildStores([["/test/project", store]]) }
+  }
+
+  test("materializes a slim data-url image then restores a Blob", async () => {
+    const slim = {
+      id: "file_2",
+      messageID: "msg_2",
+      sessionID: "session-a",
+      type: "file",
+      mime: "image/png",
+      filename: "shot.png",
+      url: "",
+      slim: true,
+    } as unknown as Part
+    const full = {
+      id: "file_2",
+      messageID: "msg_2",
+      type: "file",
+      mime: "image/png",
+      filename: "shot.png",
+      url: IMAGE_DATA_URL,
+    } as Part
+    const { store, childStores } = imageSession([
+      { id: "prt_2", messageID: "msg_2", type: "text", text: "see shot" } as Part,
+      slim,
+    ])
+    const calls = await bindMaterializingStoreRepo(store, (messageID) => {
+      store.setState((state) => ({
+        part: { ...state.part, [messageID]: [state.part[messageID]![0]!, full] },
+      }))
+    })
+    const { stageMessageEdit, setActionRefs } = await import("./session-actions")
+    setActionRefs(mockSdk as unknown as OpencodeClient, childStores, () => "/test/project")
+
+    await stageMessageEdit("session-a", "msg_2")
+
+    expect(calls).toEqual([{ directory: "/test/project", sessionID: "session-a", messageID: "msg_2" }])
+    expect(draftCommits).toHaveLength(1)
+    expect(draftCommits[0]?.snapshot.text).toBe("see shot")
+    expect(draftCommits[0]?.snapshot.attachments[0]?.locator?.kind).toBe("blob")
+    expect(draftCommits[0]?.snapshot.attachments[0]?.filename).toBe("shot.png")
+    const value = [...(draftCommits[0]?.values ?? new Map()).values()][0]
+    expect(value).toBeInstanceOf(Blob)
+  })
+
+  test("does not fetch when the image file part is already full", async () => {
+    const full = {
+      id: "file_2",
+      messageID: "msg_2",
+      type: "file",
+      mime: "image/png",
+      filename: "shot.png",
+      url: IMAGE_DATA_URL,
+    } as Part
+    const { store, childStores } = imageSession([
+      { id: "prt_2", messageID: "msg_2", type: "text", text: "see shot" } as Part,
+      full,
+    ])
+    const calls = await bindMaterializingStoreRepo(store, () => {
+      throw new Error("unexpected materialize")
+    })
+    const { stageMessageEdit, setActionRefs } = await import("./session-actions")
+    setActionRefs(mockSdk as unknown as OpencodeClient, childStores, () => "/test/project")
+
+    await stageMessageEdit("session-a", "msg_2")
+
+    expect(calls).toEqual([])
+    expect(draftCommits).toHaveLength(1)
+    expect(draftCommits[0]?.snapshot.attachments[0]?.locator?.kind).toBe("blob")
+    expect([...(draftCommits[0]?.values ?? new Map()).values()][0]).toBeInstanceOf(Blob)
+  })
+
+  test("fails the edit and keeps composer when materialize throws", async () => {
+    const slim = {
+      id: "file_2",
+      messageID: "msg_2",
+      sessionID: "session-a",
+      type: "file",
+      mime: "image/png",
+      filename: "shot.png",
+      url: "",
+      slim: true,
+    } as unknown as Part
+    const { store, childStores } = imageSession([
+      { id: "prt_2", messageID: "msg_2", type: "text", text: "see shot" } as Part,
+      slim,
+    ])
+    await bindMaterializingStoreRepo(store, () => {
+      throw new Error("host unavailable")
+    })
+    const { stageMessageEdit, setActionRefs } = await import("./session-actions")
+    setActionRefs(mockSdk as unknown as OpencodeClient, childStores, () => "/test/project")
+
+    await expect(stageMessageEdit("session-a", "msg_2")).rejects.toThrow("composer-restoration-materialize-failed")
+    expect(draftCommits).toHaveLength(0)
+    expect(inputState.pendingInputText).toBe("previous draft")
+    expect(inputState.attachedFiles).toEqual(previousDraft.attachedFiles)
+  })
+
+  test("fails the edit when materialize still leaves a body-less file part", async () => {
+    const slim = {
+      id: "file_2",
+      messageID: "msg_2",
+      sessionID: "session-a",
+      type: "file",
+      mime: "image/png",
+      filename: "shot.png",
+      url: "",
+    } as unknown as Part
+    const { store, childStores } = imageSession([
+      { id: "prt_2", messageID: "msg_2", type: "text", text: "see shot" } as Part,
+      slim,
+    ])
+    const calls = await bindMaterializingStoreRepo(store, () => undefined)
+    const { stageMessageEdit, setActionRefs } = await import("./session-actions")
+    setActionRefs(mockSdk as unknown as OpencodeClient, childStores, () => "/test/project")
+
+    await expect(stageMessageEdit("session-a", "msg_2")).rejects.toThrow("composer-restoration-incomplete-attachment")
+    expect(calls).toHaveLength(1)
+    expect(draftCommits).toHaveLength(0)
+    expect(inputState.pendingInputText).toBe("previous draft")
+    expect(inputState.attachedFiles).toEqual(previousDraft.attachedFiles)
+  })
+
+  test("does not restore after a runtime switch during materialize", async () => {
+    const slim = {
+      id: "file_2",
+      messageID: "msg_2",
+      sessionID: "session-a",
+      type: "file",
+      mime: "image/png",
+      filename: "shot.png",
+      url: "",
+      slim: true,
+    } as unknown as Part
+    const full = {
+      id: "file_2",
+      messageID: "msg_2",
+      type: "file",
+      mime: "image/png",
+      filename: "shot.png",
+      url: IMAGE_DATA_URL,
+    } as Part
+    const { store, childStores } = imageSession([
+      { id: "prt_2", messageID: "msg_2", type: "text", text: "see shot" } as Part,
+      slim,
+    ])
+    const {
+      getRuntimeApiBaseUrl,
+      getRuntimeKey,
+      switchRuntimeEndpoint,
+    } = await import("../lib/runtime-switch")
+    const previousUrl = getRuntimeApiBaseUrl()
+    const previousKey = getRuntimeKey()
+    await bindMaterializingStoreRepo(store, (messageID) => {
+      store.setState((state) => ({
+        part: { ...state.part, [messageID]: [state.part[messageID]![0]!, full] },
+      }))
+      switchRuntimeEndpoint({
+        apiBaseUrl: "http://stale-runtime.test",
+        runtimeKey: "stale-runtime",
+      })
+    })
+    const { stageMessageEdit, setActionRefs } = await import("./session-actions")
+    setActionRefs(mockSdk as unknown as OpencodeClient, childStores, () => "/test/project")
+
+    try {
+      await expect(stageMessageEdit("session-a", "msg_2")).rejects.toThrow("runtime changed")
+      expect(draftCommits).toHaveLength(0)
+      expect(inputState.pendingInputText).toBe("previous draft")
+      expect(inputState.attachedFiles).toEqual(previousDraft.attachedFiles)
+    } finally {
+      switchRuntimeEndpoint({
+        apiBaseUrl: previousUrl || "http://127.0.0.1",
+        runtimeKey: previousKey || "local",
+      })
+    }
+  })
+
+  test("revertToMessage materializes slim file parts before restoration", async () => {
+    const slim = {
+      id: "file_2",
+      messageID: "msg_2",
+      sessionID: "session-a",
+      type: "file",
+      mime: "image/png",
+      filename: "shot.png",
+      url: "",
+      slim: true,
+    } as unknown as Part
+    const full = {
+      id: "file_2",
+      messageID: "msg_2",
+      type: "file",
+      mime: "image/png",
+      filename: "shot.png",
+      url: IMAGE_DATA_URL,
+    } as Part
+    const { store, childStores } = imageSession([
+      { id: "prt_2", messageID: "msg_2", type: "text", text: "see shot" } as Part,
+      slim,
+    ])
+    const calls = await bindMaterializingStoreRepo(store, (messageID) => {
+      store.setState((state) => ({
+        part: { ...state.part, [messageID]: [state.part[messageID]![0]!, full] },
+      }))
+    })
+    const { revertToMessage, setActionRefs } = await import("./session-actions")
+    setActionRefs(mockSdk as unknown as OpencodeClient, childStores, () => "/test/project")
+
+    const snapshot = await revertToMessage("session-a", "msg_2")
+    expect(calls).toEqual([{ directory: "/test/project", sessionID: "session-a", messageID: "msg_2" }])
+    expect(snapshot.snapshot.attachments[0]?.locator.kind).toBe("blob")
+    expect([...snapshot.values.values()][0]).toBeInstanceOf(Blob)
+    expect(draftCommits).toHaveLength(1)
   })
 })

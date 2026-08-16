@@ -8,12 +8,15 @@ import {
 } from "./session-message-policy"
 
 describe("product limit is turns — link tiered", () => {
-  test("local / LAN: larger first paint; loadMore is 4 turns", () => {
-    expect(getInitialSessionTurnLimit("local")).toBe(6)
+  test("local / LAN: first paint stays under the prepend page; loadMore is 4 turns", () => {
+    // A first packet is sized by turns, so it is deliberately smaller than a
+    // prepend page: reaching further back is what drags inline attachments and
+    // long tool turns onto the critical path.
+    expect(getInitialSessionTurnLimit("local")).toBe(3)
     expect(getHistorySessionTurnLimit("local")).toBe(4)
-    expect(resolveSessionMessageTurnLimit("initial", "local")).toBe(6)
-    expect(resolveSessionMessageTurnLimit("materialize", "local")).toBe(6)
-    expect(resolveSessionMessageTurnLimit("recovery", "local")).toBe(6)
+    expect(resolveSessionMessageTurnLimit("initial", "local")).toBe(3)
+    expect(resolveSessionMessageTurnLimit("materialize", "local")).toBe(3)
+    expect(resolveSessionMessageTurnLimit("recovery", "local")).toBe(3)
     expect(resolveSessionMessageTurnLimit("prepend", "local")).toBe(4)
   })
 

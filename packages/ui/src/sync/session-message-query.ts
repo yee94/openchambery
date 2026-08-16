@@ -16,7 +16,6 @@
 
 import {
   InfiniteQueryObserver,
-  type InfiniteData,
   type QueryClient,
   type QueryFunctionContext,
   type QueryKey,

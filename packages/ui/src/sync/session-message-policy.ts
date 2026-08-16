@@ -2,7 +2,7 @@
  * Session history window policy — **limit means authored-user turns**.
  *
  * Link tier (product turn budgets):
- * - **local** — 本机 / 局域网 direct：首屏更大，loadMore 与 Relay 同为 **4 轮**
+ * - **local** — 本机 / 局域网 direct：首屏 **3 轮**，loadMore 与 Relay 同为 **4 轮**
  * - **relay** — 经 private Relay 隧道，首屏 **2 轮**，prepend/loadMore **4 轮**
  *
  * Surface (only used for optional legacy helpers; product turns are link-tiered):
@@ -24,8 +24,18 @@ export type SessionMessageLoadSurface = "desktop" | "mobile"
  */
 export type SessionMessageLinkTier = "local" | "relay"
 
-/** First paint turns on 本机 / 局域网. */
-const INITIAL_TURN_LIMIT_LOCAL = 6
+/**
+ * First paint turns on 本机 / 局域网.
+ *
+ * This is the only lever that changes how much a first packet costs: the Host
+ * returns the turn-trimmed window, so its size tracks turns, not upstream page
+ * width (that was measured and rejected — see the turn-pages DOCUMENTATION).
+ * Measured on an 817-message tool-heavy session, first-packet content after the
+ * Host parts projection: 6 turns ≈ 2553 KB (it reaches back far enough to drag
+ * in inline user attachments), 3 turns ≈ 15 KB, 2 turns ≈ 12 KB. Older history
+ * still arrives through the existing prepend window, which is 4 turns per page.
+ */
+const INITIAL_TURN_LIMIT_LOCAL = 3
 /** First paint turns over Relay. */
 const INITIAL_TURN_LIMIT_RELAY = 2
 /** History prepend / loadMore turns on 本机 / 局域网 (same page size as Relay). */
@@ -104,7 +114,6 @@ export function resolveSessionMessageTurnLimit(
  * explicit client overrides; default path does not send scanLimit.
  */
 export function getSessionTurnPageScanLimit(
-  // eslint-disable-next-line @typescript-eslint/no-unused-vars -- surface kept for deprecated API signature
   _surface: SessionMessageLoadSurface = resolveSessionMessageLoadSurface(),
 ): number {
   return 100
@@ -123,7 +132,6 @@ export function getInitialSessionMessageLimit(
  * @deprecated Host scan is server-owned; do not use as product limit.
  */
 export function getSessionHistoryMessageLimit(
-  // eslint-disable-next-line @typescript-eslint/no-unused-vars -- surface kept for deprecated API signature
   _surface: SessionMessageLoadSurface = resolveSessionMessageLoadSurface(),
 ): number {
   return getSessionTurnPageScanLimit()

@@ -1,0 +1,205 @@
+};
+
+type ChatContainerProps = {
+    autoOpenDraft?: boolean;
+    readOnly?: boolean;
+    active?: boolean;
+    host?: ChatContainerHost;
+    /** Binds one phone navigation page to an explicit route and skips the primary retained-view cache. */
+    explicitSession?: {
+        sessionId: string | null;
+        directory: string | null;
+        viewKey: string;
+        active: boolean;
+    };
+};
+
+type ChatContainerContentProps = Omit<ChatContainerProps, 'host'> & {
+    sessionId: string | null;
+    sessionDirectory: string | null;
+    sessionViewKey?: string;
+    onSessionViewEstimateChange?: (key: string, estimatedBytes: number) => void;
+    composerSurface?: ChatInputSurface;
+    hostedFeatures?: Required<ChatContainerHostFeatures>;
+    assistantHistory?: ChatContainerHost['assistantHistory'];
+    onRevertMessage?: (messageId: string) => Promise<void>;
+    warning?: string | null;
+    pendingUserMessages?: readonly PendingUserMessagePresentation[];
+    onPendingUserMessagesMaterialized?: (messageIDs: readonly string[]) => void;
+};
+
+const estimateSessionViewBytes = (messageCount: number): number => {
+    const messageBuckets = Math.ceil(Math.max(0, messageCount) / SESSION_VIEW_MESSAGE_BUCKET_SIZE);
+    return Math.min(
+        MAX_SINGLE_SESSION_VIEW_ESTIMATED_BYTES,
+        DEFAULT_SESSION_VIEW_ESTIMATED_BYTES + messageBuckets * SESSION_VIEW_MESSAGE_BUCKET_BYTES,
+    );
+};
+
+const ChatContainerContent: React.FC<ChatContainerContentProps> = ({
+    autoOpenDraft = true,
+    readOnly = false,
+    active = true,
+    sessionId: currentSessionId,
+    sessionDirectory: currentSessionDirectory,
+    sessionViewKey,
+    onSessionViewEstimateChange,
+    composerSurface,
+    hostedFeatures,
+    assistantHistory,
+    onRevertMessage,
+    warning = null,
+    pendingUserMessages: hostPendingUserMessages = EMPTY_PENDING_USER_MESSAGES,
+    onPendingUserMessagesMaterialized,
+}) => {
+    const hostFeatures = hostedFeatures ?? resolveChatContainerHostFeatures(undefined);
+    const { t } = useI18n();
+    useIsomorphicLayoutEffect(() => {
+        markSessionSwitchContentCommitted();
+    }, []);
+    // Session UI state
+    const openNewSessionDraft = useSessionUIStore((s) => s.openNewSessionDraft);
+    const setCurrentSession = useSessionUIStore((s) => s.setCurrentSession);
+    const newSessionDraft = useSessionUIStore((s) => s.newSessionDraft);
+    const draftSubmitting = useSessionUIStore((s) => s.newSessionDraft.draftSubmitting ?? false);
+    const draftEstablishing = useSessionUIStore((s) => s.newSessionDraft.draftEstablishing ?? false);
+    const forkTransition = useSessionUIStore((s) => s.forkTransition);
+    const projects = useProjectsStore((s) => s.projects);
+    const activeProjectId = useProjectsStore((s) => s.activeProjectId);
+    const providers = useConfigStore((state) => state.providers);
+
+    // Sync actions
+    const sync = useSync();
+    const syncDirectory = useSyncDirectory();
+    const effectiveSessionDirectory = currentSessionDirectory ?? syncDirectory;
+    // Hosted surfaces (Assistant) never call setCurrentSession, so without this
+    // orphaned SSE part events fall back to the primary chat directory and the
+    // assistant store never receives user text parts. Layout-phase so routing is
+    // ready before paint/event delivery (same contract as timeline DOM sync).
+    useIsomorphicLayoutEffect(() => {
+        if (!active || !currentSessionId || !effectiveSessionDirectory) return;
+        setActiveSession(effectiveSessionDirectory, currentSessionId);
+    }, [active, currentSessionId, effectiveSessionDirectory]);
+    const ensureSessionRenderable = useEvent(
+        (sessionId: string) => sync.ensureSessionRenderable(sessionId, { directory: effectiveSessionDirectory }),
+    );
+
+    // UI store
+    const isExpandedInput = useUIStore((state) => state.isExpandedInput);
+    const stickyUserHeader = useUIStore((state) => state.stickyUserHeader);
+    const promptNavigatorEnabled = useUIStore((state) => state.promptNavigatorEnabled);
+    const allowPromptingSubagentSessions = useUIStore((state) => state.allowPromptingSubagentSessions);
+    const isTimelineDialogOpen = useUIStore((s) => s.isTimelineDialogOpen);
+    const setTimelineDialogOpen = useUIStore((s) => s.setTimelineDialogOpen);
+
+    // Streaming state — ordinary selectors (never useCallback; store compares selected values).
+    const streamingMessageId = useStreamingStore(
+        (s) => (active && currentSessionId ? s.streamingMessageIds.get(currentSessionId) ?? null : null),
+    );
+    const activeStreamingPhase = useStreamingStore(
+        (s) => {
+            if (!streamingMessageId) return null;
+            return s.messageStreamStates.get(streamingMessageId)?.phase ?? null;
+        },
+    );
+    const sessionMessageCount = useSessionMessageCount(currentSessionId ?? '', effectiveSessionDirectory);
+    const sessionViewEstimatedBytes = estimateSessionViewBytes(sessionMessageCount);
+    React.useEffect(() => {
+        if (!sessionViewKey || !onSessionViewEstimateChange) {
+            return;
+        }
+        onSessionViewEstimateChange(sessionViewKey, sessionViewEstimatedBytes);
+    }, [onSessionViewEstimateChange, sessionViewEstimatedBytes, sessionViewKey]);
+    const hasRenderableSessionSnapshot = useSessionMaterializationStatus(
+        currentSessionId ?? '',
+        effectiveSessionDirectory,
+    ).renderable;
+    const directorySessionEntity = useSession(currentSessionId, effectiveSessionDirectory);
+    // Global/live fallback covers sessions whose directory list row is lagging
+    // or lives under another selected workspace while messages already load.
+    const liveSessionEntity = useCurrentSessionEntity(currentSessionId);
+    const currentSessionEntity = directorySessionEntity ?? liveSessionEntity;
+    // Primary chat blocks send only while identity is still unproven. A missing
+    // directory list row must not permanently disable the composer once the
+    // session is materializable (or known via live/global entity). Hosted
+    // secondary surfaces never use this gate.
+    const sessionIdentityPending = resolveSessionIdentityPending({
+        sessionId: currentSessionId,
+        hasSessionEntity: Boolean(currentSessionEntity),
+        hasRenderableSessionSnapshot,
+        composerSurfaceKind: composerSurface?.kind,
+    });
+    const sessionIdentityEnsureKey = currentSessionId
+        ? JSON.stringify([effectiveSessionDirectory, currentSessionId])
+        : null;
+    const [sessionIdentityEnsureRetry, setSessionIdentityEnsureRetry] = React.useState<{
+        key: string | null;
+        attempt: number;
+    }>({ key: sessionIdentityEnsureKey, attempt: 0 });
+    // Messages from sync system
+    const sessionMessageRecords = useSessionMessageRecords(currentSessionId ?? '', effectiveSessionDirectory, {
+        enabled: active,
+        suspendPartUpdates: Boolean(streamingMessageId),
+        suspendPartUpdatesForMessageId: streamingMessageId,
+    });
+    const sessionMessages = currentSessionId ? sessionMessageRecords : EMPTY_MESSAGES;
+    const draftPendingMessage = newSessionDraft.pendingUserMessage;
+    // Rows the send path retained for this session until their authoritative
+    // records land. This is what keeps a just-sent message on screen across the
+    // draft → real session handover without any confirmation request.
+    const retainedPendingUserMessages = useSessionUIStore(
+        (state) => (currentSessionId ? state.retainedPendingUserMessages.get(currentSessionId) : undefined),
+    ) ?? EMPTY_PENDING_USER_MESSAGES;
+    const clearRetainedPendingUserMessages = useSessionUIStore((state) => state.clearRetainedPendingUserMessages);
+    const pendingUserMessages = React.useMemo(() => {
+        if (retainedPendingUserMessages.length === 0) return hostPendingUserMessages;
+        if (hostPendingUserMessages.length === 0) return retainedPendingUserMessages;
+        const hosted = new Set(hostPendingUserMessages.map((message) => message.info.id));
+        return [
+            ...hostPendingUserMessages,
+            ...retainedPendingUserMessages.filter((message) => !hosted.has(message.info.id)),
+        ];
+    }, [hostPendingUserMessages, retainedPendingUserMessages]);
+    const sessionExecution = React.useMemo(
+        () => resolveContextPanelSessionExecution(sessionMessages),
+        [sessionMessages],
+    );
+    const sessionExecutionModelName = React.useMemo(() => {
+        if (!sessionExecution.modelId) return t('common.unavailable');
+        const provider = providers.find((entry) => entry.id === sessionExecution.providerId);
+        // Always go through display helper so missing catalog entries humanize
+        // (e.g. deepseek-v4-flash → "DeepSeek V4 Flash") instead of raw ids.
+        return getProviderModelDisplayName(provider, sessionExecution.modelId) || sessionExecution.modelId;
+    }, [providers, sessionExecution.modelId, sessionExecution.providerId, t]);
+    // useMemo callback factories for useSyncExternalStore (stable identity; never useCallback).
+    // Ticket 09: request lifecycle from repository (no session-prefetch).
+    const sessionPrefetchInfo = useSessionMessageLoadState(
+        currentSessionId ?? '',
+        effectiveSessionDirectory,
+    );
+    const [retryingSessionHistoryId, setRetryingSessionHistoryId] = React.useState<string | null>(null);
+    const isRetryingSessionHistory = Boolean(currentSessionId)
+        && retryingSessionHistoryId === currentSessionId;
+    const retrySessionHistory = useEvent(() => {
+        if (!currentSessionId || isRetryingSessionHistory) return;
+        const sessionId = currentSessionId;
+        const directory = effectiveSessionDirectory;
+        setRetryingSessionHistoryId(sessionId);
+        void (async () => {
+            try {
+                await retryTranscriptInitial(directory, sessionId);
+                await sync.ensureSessionRenderable(sessionId, { directory });
+            } catch {
+                // Settled failure returns to the load-error wall after retrying clears.
+            } finally {
+                setRetryingSessionHistoryId((current) => (current === sessionId ? null : current));
+            }
+        })();
+    });
+    // Ticket 02: pagination from TranscriptRepository.getPagination projection.
+    // Boundary-only commits still re-render via repository subscribe.
+    const transcriptPagination = useSessionTranscriptPagination(
+        currentSessionId ?? '',
+        effectiveSessionDirectory,
+    );
+    const historyBoundary = transcriptPagination.boundary;

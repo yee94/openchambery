@@ -1,10 +1,14 @@
 import type { Message, Part } from "@opencode-ai/sdk/v2/client"
-import { isMessageSnapshotOpen } from "./displayParts"
+import { isMessageSnapshotOpen, isSlimPart } from "./displayParts"
 import {
   DEFAULT_SESSION_MERGE_STRATEGY,
   shouldPreserveStreamingParts,
   type SessionMergeStrategy,
 } from "./session-merge-strategy"
+import {
+  compareTranscriptSortKey,
+  transcriptSortKeyOf,
+} from "./transcript-durable-store"
 
 const cmp = (a: string, b: string) => (a < b ? -1 : a > b ? 1 : 0)
 const STREAMING_PART_FIELDS = ["text", "output"] as const
@@ -36,8 +40,11 @@ export type MaterializeSessionSnapshotsOptions = {
    * Where to put snapshot IDs that share no neighbor with the live transcript.
    * Prepend uses `"prepend"` so older history stays in front; idle/queue
    * materialize uses `"append"` so a just-sent user turn stays at the tail.
+   * Reconcile continuation windows use `"by-created"` so older-than-head Host
+   * pages insert by (`time.created`, id) instead of appending past newer gap
+   * records already merged from a previous page.
    */
-  placeUnanchoredNewMessages?: "append" | "prepend"
+  placeUnanchoredNewMessages?: "append" | "prepend" | "by-created"
 }
 
 export type MaterializeSessionSnapshotsResult = {
@@ -263,6 +270,38 @@ function mergeMaterializedPart(existing: Part | undefined, next: Part): Part {
   return merged
 }
 
+/**
+ * Same-id incoming slim never replaces a full part already in the model.
+ *
+ * This is the QueryCache/store rule, not a render hold: initial HTTP,
+ * materialize, recovery, and durable-seed collisions all pass through here.
+ * Full snapshots still overlay slim. Authoritative deletes stay on
+ * `message.part.removed` / `remove-message`.
+ */
+function preferExistingFullOverIncomingSlim(
+  existing: Part[] | undefined,
+  incoming: Part[],
+): Part[] {
+  if (!existing || existing.length === 0) return incoming
+  if (!incoming.some((part) => isSlimPart(part))) return incoming
+
+  const fullById = new Map<string, Part>()
+  for (const part of existing) {
+    if (part.id && !isSlimPart(part)) fullById.set(part.id, part)
+  }
+  if (fullById.size === 0) return incoming
+
+  let upgraded = false
+  const resolved = incoming.map((part) => {
+    if (!isSlimPart(part) || !part.id) return part
+    const full = fullById.get(part.id)
+    if (!full) return part
+    upgraded = true
+    return full
+  })
+  return upgraded ? resolved : incoming
+}
+
 function mergeMaterializedParts(
   existing: Part[] | undefined,
   nextParts: Part[],
@@ -270,23 +309,24 @@ function mergeMaterializedParts(
   preserveLiveStreamingParts: boolean,
   messageStillOpen: boolean,
 ): Part[] {
-  if (!existing || existing.length === 0) return nextParts
-  if (!preserveLiveStreamingParts) return nextParts
+  const incoming = preferExistingFullOverIncomingSlim(existing, nextParts)
+  if (!existing || existing.length === 0) return incoming
+  if (!preserveLiveStreamingParts) return incoming
 
   const existingByID = new Map(existing.map((part) => [part.id, part]))
-  let mergedParts = nextParts
+  let mergedParts = incoming
   let changed = false
 
-  for (let index = 0; index < nextParts.length; index += 1) {
-    const nextPart = nextParts[index]
+  for (let index = 0; index < incoming.length; index += 1) {
+    const nextPart = incoming[index]
     const mergedPart = mergeMaterializedPart(existingByID.get(nextPart.id), nextPart)
     if (mergedPart === nextPart) continue
-    if (!changed) mergedParts = [...nextParts]
+    if (!changed) mergedParts = [...incoming]
     mergedParts[index] = mergedPart
     changed = true
   }
 
-  const snapshotIDs = new Set(nextParts.map((part) => part.id))
+  const snapshotIDs = new Set(incoming.map((part) => part.id))
   const missingLiveParts = existing.filter(
     (part) =>
       !!part?.id
@@ -358,13 +398,14 @@ function fillMissingTerminalMessageFields(live: Message, snapshot: Message): Mes
  * Fold snapshot rows into live conversation order.
  * Known IDs stay where they are. New IDs insert after the previous snapshot
  * neighbor already in the live list. A snapshot that shares no IDs uses
- * `unanchored` (prepend older history, append idle/queue tail).
+ * `unanchored` (prepend older history, append idle/queue tail, or insert by
+ * Host `time.created` for reconcile continuation pages).
  */
 function mergeMessagesInConversationOrder(
   existing: Message[],
   snapshots: Message[],
   resolveExisting: (live: Message, snapshot: Message | undefined) => Message,
-  unanchored: "append" | "prepend",
+  unanchored: "append" | "prepend" | "by-created",
 ): Message[] {
   if (snapshots.length === 0) return existing
   const snapshotByID = new Map(snapshots.map((message) => [message.id, message]))
@@ -381,7 +422,9 @@ function mergeMessagesInConversationOrder(
 
   const anchored = snapshots.some((message) => existingIDs.has(message.id))
   if (!anchored) {
-    return unanchored === "prepend" ? [...newcomers, ...merged] : [...merged, ...newcomers]
+    if (unanchored === "prepend") return [...newcomers, ...merged]
+    if (unanchored === "by-created") return insertMessagesByCreated(merged, newcomers)
+    return [...merged, ...newcomers]
   }
 
   let lastPlacedIndex = -1
@@ -403,10 +446,26 @@ function mergeMessagesInConversationOrder(
  * object unless the snapshot supplies `finish`, `time.completed`, or `error`
  * the live row lacks.
  */
+function insertMessagesByCreated(existing: Message[], newcomers: Message[]): Message[] {
+  const next = existing.slice()
+  for (const snapshot of newcomers) {
+    const key = transcriptSortKeyOf(snapshot)
+    let insertAt = next.length
+    for (let index = 0; index < next.length; index += 1) {
+      if (compareTranscriptSortKey(key, transcriptSortKeyOf(next[index]!)) < 0) {
+        insertAt = index
+        break
+      }
+    }
+    next.splice(insertAt, 0, snapshot)
+  }
+  return next
+}
+
 function mergeInsertOnlyMessages(
   existing: Message[],
   snapshots: Message[],
-  unanchored: "append" | "prepend",
+  unanchored: "append" | "prepend" | "by-created",
 ): Message[] {
   return mergeMessagesInConversationOrder(
     existing,
@@ -425,7 +484,7 @@ function mergeInsertOnlyMessages(
 function upsertMessages(
   existing: Message[],
   snapshots: Message[],
-  unanchored: "append" | "prepend",
+  unanchored: "append" | "prepend" | "by-created",
 ): Message[] {
   return mergeMessagesInConversationOrder(
     existing,

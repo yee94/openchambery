@@ -8,24 +8,25 @@
  * The store-backed adapter remains a pure test / harness implementation only.
  *
  * Ownership:
- * - Reads: transcript data, pagination projection, request lifecycle snapshot.
+ * - Reads: transcript data, pagination projection, request lifecycle snapshot,
+ *   hydration phase (`idle` / `p0` / `p1` / `p2`) and `p0Satisfied`.
  * - Commands: HTTP page apply / reduced-page commit, SSE merge, optimistic
  *   add/confirm/remove, materialize-snapshots, remove-message, reset/clear.
+ *   Query durable first-paint uses merge `durable-seed` (unknown pagination);
+ *   it is not a store-adapter command so existing exhaustiveness stays intact.
  * - Does not own session catalog, status, permission, question, or message queue.
  * - Does not own full-session eviction (`dropSessionCaches`); that remains a
  *   multi-domain cache operation outside this repository.
  */
 
 import type { Event, Message, Part } from "@opencode-ai/sdk/v2/client"
+import { isMessageSnapshotOpen, isSlimPart } from "./displayParts"
 import type { SessionHistoryBoundary } from "./types"
 import type {
   SessionMergeStrategy,
   SessionMessagePagePurpose,
 } from "./session-merge-strategy"
-import type {
-  ReduceSessionMessagePageResult,
-  SessionMessagePageMeta,
-} from "./session-message-reducer"
+import type { SessionMessagePageMeta } from "./session-message-reducer"
 import type { SessionMaterializationReason } from "./event-reducer"
 
 // ---------------------------------------------------------------------------
@@ -93,6 +94,131 @@ export type TranscriptRequestState = {
   readonly status: "idle" | "loading" | "ready" | "error"
   readonly error?: string
   readonly requestedLimit?: number
+}
+
+export type TranscriptMessageMaterializationStatus = "idle" | "loading" | "ready" | "error"
+
+export type TranscriptMessageMaterializationState = {
+  readonly sessionID: string
+  readonly messageID: string
+  readonly status: TranscriptMessageMaterializationStatus
+  readonly error?: string
+}
+
+const EXACT_MATERIALIZATION_PART_TYPES = new Set(["tool", "reasoning", "file"])
+
+/**
+ * Whether a message still has projected tool / reasoning / file parts that
+ * need an exact `session.message` fill. Callers use this plus
+ * `getMessageMaterializationState` to decide whether to request.
+ */
+export function messageNeedsExactMaterialization(parts: readonly Part[]): boolean {
+  return parts.some((part) =>
+    isSlimPart(part) && EXACT_MATERIALIZATION_PART_TYPES.has(part.type),
+  )
+}
+
+export type TranscriptHydrationPhase = "idle" | "p0" | "p1" | "p2"
+
+export type TranscriptHydrationState = {
+  readonly sessionID: string
+  readonly phase: TranscriptHydrationPhase
+  readonly p0Satisfied: boolean
+}
+
+const messageRole = (info: Message | undefined): string => {
+  if (!info) return ""
+  const raw = (info as { clientRole?: unknown; role?: unknown }).clientRole ?? info.role
+  return typeof raw === "string" ? raw : ""
+}
+
+/**
+ * Authored user turn used as the P0 tail boundary. Subtask / compaction rows
+ * are not turns; empty user parts still count so a just-sent prompt can latch.
+ */
+export function isTranscriptHydrationAuthoredUser(
+  info: Message | undefined,
+  parts: readonly Part[] | undefined,
+): boolean {
+  if (!info?.id || messageRole(info) !== "user") return false
+  if (!parts || parts.length === 0) return true
+  return !parts.some((part) => part.type === "subtask" || part.type === "compaction")
+}
+
+export function countTranscriptAuthoredUserTurns(
+  transcript: Pick<TranscriptData, "messageOrder" | "messagesByID" | "partsByMessageID">,
+): number {
+  let count = 0
+  for (const id of transcript.messageOrder) {
+    if (isTranscriptHydrationAuthoredUser(transcript.messagesByID[id], transcript.partsByMessageID[id])) {
+      count += 1
+    }
+  }
+  return count
+}
+
+const sameTurnAssistants = (
+  transcript: Pick<TranscriptData, "messageOrder" | "messagesByID" | "partsByMessageID">,
+  userID: string,
+): Message[] => {
+  const userIndex = transcript.messageOrder.lastIndexOf(userID)
+  if (userIndex < 0) return []
+  const assistants: Message[] = []
+  for (let index = userIndex + 1; index < transcript.messageOrder.length; index += 1) {
+    const id = transcript.messageOrder[index]!
+    const info = transcript.messagesByID[id]
+    if (!info) continue
+    if (isTranscriptHydrationAuthoredUser(info, transcript.partsByMessageID[id])) break
+    if (messageRole(info) !== "assistant") continue
+    const parentID = (info as { parentID?: unknown }).parentID
+    if (typeof parentID === "string" && parentID.length > 0 && parentID !== userID) continue
+    assistants.push(info)
+  }
+  return assistants
+}
+
+const assistantHasDisplayableResult = (
+  info: Message,
+  parts: readonly Part[] | undefined,
+): boolean => {
+  if (isMessageSnapshotOpen(info)) return true
+  return Array.isArray(parts) && parts.length > 0
+}
+
+/**
+ * P0: latest authored user turn is readable and the same-turn assistant has a
+ * displayable result or an in-progress row that can host the Activity shell.
+ * A user-only tail stays unsatisfied so UI can pair live session status.
+ */
+export function evaluateTranscriptP0Satisfied(transcript: TranscriptData): boolean {
+  let latestUserID: string | undefined
+  for (let index = transcript.messageOrder.length - 1; index >= 0; index -= 1) {
+    const id = transcript.messageOrder[index]!
+    if (isTranscriptHydrationAuthoredUser(transcript.messagesByID[id], transcript.partsByMessageID[id])) {
+      latestUserID = id
+      break
+    }
+  }
+  if (!latestUserID) return false
+  return sameTurnAssistants(transcript, latestUserID).some((info) =>
+    assistantHasDisplayableResult(info, transcript.partsByMessageID[info.id]),
+  )
+}
+
+/**
+ * Active work wins (p2 materialize, then p1 prepend). Otherwise the highest
+ * satisfied phase: earlier history → p1, P0 latch → p0, else idle.
+ */
+export function resolveTranscriptHydrationPhase(input: {
+  p0Satisfied: boolean
+  prependActive?: boolean
+  materializeActive?: boolean
+  earlierHistoryLoaded?: boolean
+}): TranscriptHydrationPhase {
+  if (input.materializeActive) return "p2"
+  if (input.prependActive || input.earlierHistoryLoaded) return "p1"
+  if (input.p0Satisfied) return "p0"
+  return "idle"
 }
 
 // ---------------------------------------------------------------------------
@@ -249,6 +375,13 @@ export type TranscriptRepository = {
   /** Snapshot of request lifecycle for a scope (optional; defaults to idle). */
   getRequestState?(scope: TranscriptScope): TranscriptRequestState
 
+  /**
+   * Read-only hydration phase. UI never advances this; HTTP / prepend /
+   * per-message materialize do. Once `p0Satisfied` latches, a later empty
+   * read must not drop it back to skeleton.
+   */
+  getHydrationState?(scope: TranscriptScope): TranscriptHydrationState
+
   /** Message by ID within a scope; undefined when absent. */
   getMessage(scope: TranscriptScope, messageID: string): Message | undefined
 
@@ -261,6 +394,19 @@ export type TranscriptRepository = {
    * False when the session has never been loaded (unknown, no key).
    */
   hasSession?(scope: TranscriptScope): boolean
+
+  /**
+   * Fetch the exact Host snapshot for one message and merge it through
+   * `materialize-snapshots`. Query production implements this; store tests
+   * may omit it. Concurrent calls for the same identity share one flight.
+   */
+  materializeMessage?(scope: TranscriptScope, messageID: string): Promise<TranscriptData>
+
+  /** Read-only exact-message fill status. Defaults to idle when unimplemented. */
+  getMessageMaterializationState?(
+    scope: TranscriptScope,
+    messageID: string,
+  ): TranscriptMessageMaterializationState
 
   /**
    * Apply a transcript command. Store adapter maps to existing reducer /

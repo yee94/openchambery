@@ -23,7 +23,6 @@ import {
   rollbackComposerRestoration,
   type ComposerRestorationPayload,
 } from "./message-composer-restoration"
-import { retry } from "./retry"
 import { getRuntimeGeneration, getRuntimeKey, getRuntimeTransportIdentity } from "@/lib/runtime-switch"
 import { isRelayTransportReady } from "@/lib/relay/runtime-tunnel"
 import {
@@ -33,7 +32,7 @@ import {
 import {
   applyTranscriptCommand,
   getTranscriptRepository,
-  requireTranscriptRepository,
+  materializeTranscriptMessage,
   resolveTranscriptRepositoryForStore,
   transcriptScope,
 } from "./transcript-repository-runtime"
@@ -673,11 +672,72 @@ function restoreFilePartsToInput(fileParts: Array<Record<string, unknown>>): voi
 const sessionTitlesForRestoration = (): ReadonlyMap<string, string> =>
   new Map(Array.from(getAllSyncSessionMap(), ([id, session]) => [id, session.title || id]))
 
+function isAuthoredFilePart(part: Record<string, unknown>): boolean {
+  if (part.type !== "file") return false
+  if (isSyntheticPart(part as never)) return false
+  return true
+}
+
+/** Slim or url-less authored file parts cannot rebuild attachments. */
+function sentMessageFilePartNeedsExactBody(part: Record<string, unknown>): boolean {
+  if (!isAuthoredFilePart(part)) return false
+  if ((part as { slim?: unknown }).slim === true) return true
+  return typeof part.url !== "string" || part.url.length === 0
+}
+
+function sentMessageFilePartsNeedExactBody(parts: readonly Record<string, unknown>[]): boolean {
+  return parts.some(sentMessageFilePartNeedsExactBody)
+}
+
+/**
+ * Fill slim / url-less file parts before Composer restoration so an edit
+ * cannot silently drop attachments. Complete file parts skip the Host fetch.
+ * Captures generation so a stale materialize cannot commit into a new runtime.
+ */
+async function ensureSentMessagePartsForComposerRestoration(input: {
+  directory?: string
+  sessionID: string
+  messageID: string
+  parts: readonly Record<string, unknown>[]
+  isCurrent?: () => boolean
+}): Promise<Array<Record<string, unknown>>> {
+  let parts = [...input.parts]
+  if (!sentMessageFilePartsNeedExactBody(parts)) return parts
+
+  const generation = getRuntimeGeneration()
+  const directory = input.directory ?? ""
+  try {
+    await materializeTranscriptMessage(directory, input.sessionID, input.messageID)
+  } catch (error) {
+    const detail = error instanceof Error ? error.message : String(error)
+    throw new Error(`composer-restoration-materialize-failed: ${detail}`)
+  }
+  if (input.isCurrent && !input.isCurrent()) {
+    throw new Error("Session history mutation aborted because the runtime changed")
+  }
+  if (getRuntimeGeneration() !== generation) {
+    throw new Error("Session history mutation aborted because the runtime changed")
+  }
+
+  const { repository, directory: transcriptDirectory } = transcriptRepositoryForSession(input.sessionID, directory)
+  parts = [...repository.getParts(
+    transcriptScope(transcriptDirectory, input.sessionID),
+    input.messageID,
+  )] as unknown as Array<Record<string, unknown>>
+  if (sentMessageFilePartsNeedExactBody(parts)) {
+    throw new Error("composer-restoration-incomplete-attachment")
+  }
+  return parts
+}
+
 async function commitSentPartsToDraftKey(input: {
   key: DraftKey
   parts: readonly Record<string, unknown>[]
   directory?: string | null
 }): Promise<{ payload: ComposerRestorationPayload; commit: Awaited<ReturnType<typeof commitComposerRestoration>> }> {
+  if (sentMessageFilePartsNeedExactBody(input.parts)) {
+    throw new Error("composer-restoration-incomplete-attachment")
+  }
   const payload = await buildSentMessageComposerRestoration(input.parts, {
     sessionTitles: sessionTitlesForRestoration(),
     directory: input.directory,
@@ -1001,7 +1061,6 @@ async function commitRemovedSessionDelete(sessionId: string, directory?: string)
   }
 }
 
-// eslint-disable-next-line @typescript-eslint/no-unused-vars
 export async function deleteSession(sessionId: string, _options?: Record<string, unknown>): Promise<boolean> {
   const entry = optimisticallyRemoveSessionForDelete(sessionId)
   const ok = await commitRemovedSessionDelete(sessionId, entry.directory)
@@ -2198,7 +2257,7 @@ export async function revertToMessage(
       throw new Error("The selected user message is unavailable")
     }
     const { repository, directory: transcriptDirectory } = transcriptRepositoryForSession(sessionId, directory)
-    const targetParts = [...repository.getParts(
+    let targetParts = [...repository.getParts(
       transcriptScope(transcriptDirectory, sessionId),
       messageId,
     )] as unknown as Array<Record<string, unknown>>
@@ -2218,11 +2277,28 @@ export async function revertToMessage(
 
     if (targetDraftKey) {
       try {
+        targetParts = await ensureSentMessagePartsForComposerRestoration({
+          directory: transcriptDirectory,
+          sessionID: sessionId,
+          messageID: messageId,
+          parts: targetParts,
+          isCurrent,
+        })
         restoration = await buildSentMessageComposerRestoration(targetParts, {
           sessionTitles: sessionTitlesForRestoration(),
           directory,
         })
-      } catch {
+      } catch (error) {
+        if (
+          error instanceof Error
+          && (
+            error.message.startsWith("composer-restoration-materialize-failed")
+            || error.message === "composer-restoration-incomplete-attachment"
+            || error.message.includes("runtime changed")
+          )
+        ) {
+          throw error
+        }
         // Invalid payload must not overwrite the live draft.
         throw new Error("composer-restoration-invalid-payload")
       }
@@ -2461,9 +2537,15 @@ export async function stageMessageEdit(
 
   const key = options?.draftKey
     ?? sessionDraftKey({ transportIdentity: getRuntimeTransportIdentity() }, sessionId)
+  const restoredParts = await ensureSentMessagePartsForComposerRestoration({
+    directory,
+    sessionID: sessionId,
+    messageID: messageId,
+    parts: (targetParts ?? []) as Array<Record<string, unknown>>,
+  })
   const { commit } = await commitSentPartsToDraftKey({
     key,
-    parts: (targetParts ?? []) as Array<Record<string, unknown>>,
+    parts: restoredParts,
     directory,
   })
   if (commit.status !== "committed" || !commit.current) {
@@ -3007,16 +3089,10 @@ async function fetchMessagesForSessionInternal(
     .map((id) => transcript.messagesByID[id])
     .filter((message): message is Message => Boolean(message))
   const hasUserBoundary = cachedMessages.some(isUserRole)
-  const liveStatus = cachedState.session_status?.[sessionID]?.type
-  const sessionIsLive = liveStatus === "busy" || liveStatus === "retry"
-  const lastMessage = cachedMessages[cachedMessages.length - 1]
-  const tailLooksLikeInFlightSend = Boolean(lastMessage && isUserRole(lastMessage))
-  const mustRefetchLiveStaleCache = sessionIsLive && !tailLooksLikeInFlightSend
   const boundary = pagination.boundary
   const hasKnownBoundary = boundary.kind === "has-more" || boundary.kind === "exhausted"
   if (
-    !mustRefetchLiveStaleCache
-    && (repository.hasSession?.(scope) ?? cachedMessages.length > 0)
+    (repository.hasSession?.(scope) ?? cachedMessages.length > 0)
     && (hasUserBoundary || boundary.kind === "exhausted")
     && hasKnownBoundary
     && request?.status !== "error"

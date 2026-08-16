@@ -10,14 +10,15 @@ import {
   isTranscriptMessagesResolved,
   materializationStatusFromTranscriptData,
   messagesFromTranscriptData,
+  readTranscriptCompletionSignature,
   readTranscriptMessages,
   readTranscriptPagination,
   readTranscriptParts,
+  subscribeTranscriptScopes,
 } from "./transcript-repository-observers"
 import type { TranscriptData } from "./transcript-repository"
 import type { SessionHistoryBoundary } from "./types"
 import { UNKNOWN_SESSION_HISTORY_BOUNDARY } from "./types"
-import type { ChildStoreManager } from "./child-store"
 
 const DIRECTORY = "/workspace"
 const SESSION = "ses_1"
@@ -217,14 +218,6 @@ describe("transcript repository readers (Ticket 02)", () => {
       },
     })
 
-    const childStores = {
-      getChild: (directory: string) => {
-        expect(directory).toBe(DIRECTORY)
-        return store
-      },
-      ensureChild: () => store,
-    } as unknown as ChildStoreManager
-
     const repo = createStoreTranscriptRepository({ getStore: () => store })
     bindTranscriptRepositoryInstance(repo)
     try {
@@ -305,11 +298,6 @@ describe("transcript repository readers (Ticket 02)", () => {
     const repo = createStoreTranscriptRepository({ getStore: () => store })
     bindTranscriptRepositoryInstance(repo)
     try {
-      const {
-        readTranscriptCompletionSignature,
-        subscribeTranscriptScopes,
-      } = require("./transcript-repository-observers") as typeof import("./transcript-repository-observers")
-
       const scopes = [
         { directory: DIRECTORY, sessionID: SESSION },
         { directory: DIRECTORY, sessionID: "ses_other" },
@@ -344,10 +332,6 @@ describe("transcript repository readers (Ticket 02)", () => {
       message: { [SESSION]: [userMessage("msg_1")] },
       session_history_boundary: { [SESSION]: { kind: "exhausted", loadedTurns: 1 } },
     })
-    const {
-      subscribeTranscriptScopes,
-    } = require("./transcript-repository-observers") as typeof import("./transcript-repository-observers")
-
     let notifications = 0
     // No bound repository and no resolvable store: attach finds nothing.
     const unsub = subscribeTranscriptScopes(
@@ -385,10 +369,6 @@ describe("transcript repository readers (Ticket 02)", () => {
       message: { [SESSION]: [userMessage("msg_1")] },
       session_history_boundary: { [SESSION]: { kind: "exhausted", loadedTurns: 1 } },
     })
-    const {
-      subscribeTranscriptScopes,
-    } = require("./transcript-repository-observers") as typeof import("./transcript-repository-observers")
-
     let storeReady = false
     const rebuildListeners = new Set<() => void>()
     let notifications = 0

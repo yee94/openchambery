@@ -5,8 +5,10 @@ import { QueryClient } from "@tanstack/react-query"
 import { isTranscriptAuthorityRefreshInFlight } from "./transcript-authority-refresh-flight"
 import {
   bindTranscriptRepositoryInstance,
+  getTranscriptMessageMaterializationState,
   getTranscriptRepository,
   getTranscriptRepositoryBindingRevision,
+  materializeTranscriptMessage,
   refreshTranscriptFromAuthority,
   retryTranscriptInitial,
   subscribeTranscriptRepositoryBinding,
@@ -258,6 +260,91 @@ describe("retryTranscriptInitial", () => {
     fail = false
     await retryTranscriptInitial("/ws", "ses_1")
     expect(repo.getTranscript(scope).messageOrder).toEqual(["msg_retry"])
+    unbindTranscriptRepository()
+    repo.destroy()
+  })
+})
+
+describe("materializeTranscriptMessage facade", () => {
+  test("reports idle when unbound and forwards to the bound Query repository", async () => {
+    unbindTranscriptRepository()
+    expect(getTranscriptMessageMaterializationState("/ws", "ses_1", "msg_a")).toEqual({
+      sessionID: "ses_1",
+      messageID: "msg_a",
+      status: "idle",
+    })
+
+    let fetches = 0
+    const client = new QueryClient({
+      defaultOptions: { queries: { retry: false } },
+    })
+    const repo = createQueryTranscriptRepository({
+      client,
+      transport: "transport-a",
+      generation: 1,
+      fetchMessage: async () => {
+        fetches += 1
+        return {
+          info: {
+            id: "msg_a",
+            sessionID: "ses_1",
+            role: "assistant",
+            time: { created: 2 },
+            finish: "stop",
+          } as Message,
+          parts: [{
+            id: "t1",
+            messageID: "msg_a",
+            sessionID: "ses_1",
+            type: "tool",
+            tool: "bash",
+            state: { status: "completed", output: "via-facade" },
+          } as never],
+        }
+      },
+      probe: {
+        getTransport: () => "transport-a",
+        getGeneration: () => 1,
+      },
+    })
+    bindTranscriptRepositoryInstance(repo)
+    repo.apply(transcriptScope("/ws", "ses_1", {
+      transport: "transport-a",
+      generation: 1,
+    }), {
+      type: "http-page",
+      purpose: "initial",
+      page: {
+        records: [{
+          info: {
+            id: "msg_a",
+            sessionID: "ses_1",
+            role: "assistant",
+            time: { created: 2 },
+            finish: "stop",
+          } as Message,
+          parts: [{
+            id: "t1",
+            messageID: "msg_a",
+            sessionID: "ses_1",
+            type: "tool",
+            tool: "bash",
+            state: { status: "completed" },
+            slim: true,
+          } as never],
+        }],
+        complete: true,
+        turnCount: 1,
+      },
+    })
+    expect(getTranscriptMessageMaterializationState("/ws", "ses_1", "msg_a").status).toBe("idle")
+    await materializeTranscriptMessage("/ws", "ses_1", "msg_a")
+    expect(fetches).toBe(1)
+    expect(getTranscriptMessageMaterializationState("/ws", "ses_1", "msg_a").status).toBe("ready")
+    expect(
+      (repo.getParts(transcriptScope("/ws", "ses_1"), "msg_a")[0] as { state?: { output?: string } })
+        .state?.output,
+    ).toBe("via-facade")
     unbindTranscriptRepository()
     repo.destroy()
   })

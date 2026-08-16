@@ -380,7 +380,6 @@ export const chatTimelineLoadEarlierMutationKey = (input: {
  * multi-thousand-px swaps with no user input). Non-virtual lists never needed
  * the hold (one-shot heightDelta / anchor restore is enough).
  */
-// eslint-disable-next-line @typescript-eslint/no-unused-vars -- input kept for call-site/API stability after policy became always-false
 export const shouldHoldHistoryViewportAnchor = (_input: {
     historyVirtualized: boolean;
     anchorRestored: boolean;
@@ -737,7 +736,7 @@ export const useChatTimelineController = ({
     // does not wait for an unrelated size event after the first paint.
     useIsomorphicLayoutEffect(() => {
         publishViewportMetrics();
-        // eslint-disable-next-line react-hooks/exhaustive-deps -- session/load edges only; publishViewportMetrics is useEvent-stable.
+        // Session/load edges only; publishViewportMetrics is useEvent-stable.
     }, [sessionId, isLoadingOlder]);
 
     // --- Synchronous scroll compensation for load-more / reveal ---

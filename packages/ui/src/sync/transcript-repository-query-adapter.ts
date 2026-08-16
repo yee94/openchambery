@@ -9,12 +9,16 @@
  * Ticket 09: production SyncProvider binds this adapter as the sole transcript
  * authority. Controllers resolve transport/generation through live probes so
  * endpoint switches do not pin creation-time identity.
+ *
+ * Ticket 07: `materializeMessage` fills slim tool/reasoning/file parts through
+ * exact `session.message` (single-flight, captured transport+generation).
  */
 
 import type { Message, Part } from "@opencode-ai/sdk/v2/client"
 import type { QueryClient } from "@tanstack/react-query"
 
 import { queryClient as defaultQueryClient } from "@/lib/queryRuntime"
+import { opencodeClient } from "@/lib/opencode/client"
 import {
   getRuntimeGeneration,
   getRuntimeTransportIdentity,
@@ -23,24 +27,29 @@ import {
 import {
   applySessionTranscriptMerge,
   createSessionTranscriptController,
+  ensureSessionMessagePage,
   readSessionTranscriptData,
+  SessionMessageRuntimeStaleError,
   sessionTranscriptQueryKey,
+  type SessionMessagePageFetcher,
   type SessionMessageRuntimeProbe,
   type SessionTranscriptController,
   type SessionTranscriptFetcher,
   type SessionTranscriptQueryKey,
 } from "./session-message-query"
-import { materializeSessionSnapshots } from "./materialization"
+import type { TranscriptDurableStore } from "./transcript-durable-store"
+import {
+  createTranscriptDurableQueryQueue,
+  toTranscriptDurableScope,
+  transcriptDurableSseAction,
+  transportPageFromHttpPage,
+  type TranscriptDurableQueryQueue,
+} from "./transcript-durable-store-query"
 import {
   boundaryFromTranscriptData,
-  flattenTranscriptData,
-  freezeSessionTranscriptData,
-  mergeSessionTranscript,
   projectFlatFromTranscriptData,
   type SessionTranscriptData,
-  type TranscriptPage,
 } from "./transcript-merge"
-import type { ReduceSessionMessagePageResult } from "./session-message-reducer"
 import {
   createTranscriptActiveScopeRegistry,
   createTranscriptQueryCacheBudget,
@@ -48,16 +57,24 @@ import {
   type TranscriptCacheScope,
   type TranscriptQueryCacheBudget,
 } from "./session-transcript-query-cache"
+import { fetchExactSessionMessageRecord } from "./transcript-parent-recovery"
 import {
+  countTranscriptAuthoredUserTurns,
+  evaluateTranscriptP0Satisfied,
+  messageNeedsExactMaterialization,
   projectPagination,
+  resolveTranscriptHydrationPhase,
   type TranscriptChangeListener,
   type TranscriptCommand,
   type TranscriptCommandResult,
   type TranscriptData,
+  type TranscriptHydrationState,
+  type TranscriptMessageMaterializationState,
   type TranscriptPagination,
   type TranscriptRepository,
   type TranscriptRequestState,
   type TranscriptScope,
+  type TranscriptTransportPage,
 } from "./transcript-repository"
 import { getInitialSessionTurnLimit } from "./session-message-policy"
 import { UNKNOWN_SESSION_HISTORY_BOUNDARY } from "./types"
@@ -100,6 +117,22 @@ export type TranscriptQueryAdapterDeps = {
     message: Message
     parts: readonly Part[]
   }) => void
+  /**
+   * Optional settled-transcript cache. Absence or store failure leaves the
+   * network path unchanged; durable data is only a first-paint continuity source.
+   */
+  durableStore?: TranscriptDurableStore
+  /** Override the platform durable byte budget after a successful persist. */
+  getDurableByteBudget?: () => number
+  /**
+   * Exact `session.message` fetch for on-demand tool/reasoning/file fill.
+   * Tests inject this. Production omits it and uses the scoped Host SDK.
+   */
+  fetchMessage?: (input: {
+    directory: string
+    sessionID: string
+    messageID: string
+  }) => Promise<{ info: Message; parts?: readonly Part[] }>
 }
 
 // ---------------------------------------------------------------------------
@@ -196,6 +229,17 @@ export type QueryTranscriptRepository = TranscriptRepository & {
   purgeSession: (scope: TranscriptScope) => void
   /** Purge all transcript families for a transport generation (runtime switch). */
   purgeGeneration: (transport: string, generation: number) => void
+  /**
+   * Fetch the exact Host snapshot for one message and merge it through
+   * `materialize-snapshots`. Concurrent calls for the same identity share one flight.
+   */
+  materializeMessage: (scope: TranscriptScope, messageID: string) => Promise<TranscriptData>
+  /** Read-only exact-message fill status for one message. */
+  getMessageMaterializationState: (
+    scope: TranscriptScope,
+    messageID: string,
+  ) => TranscriptMessageMaterializationState
+  getHydrationState: (scope: TranscriptScope) => TranscriptHydrationState
   destroy: () => void
 }
 
@@ -225,6 +269,28 @@ export function createQueryTranscriptRepository(
       parts: Map<string, readonly Part[]>
     }
   >()
+  const durableQueue: TranscriptDurableQueryQueue | undefined = deps.durableStore
+    ? createTranscriptDurableQueryQueue(deps.durableStore, {
+      getProtectScopes: () => activeRegistry.listRetained().map(toTranscriptDurableScope),
+      getByteBudget: deps.getDurableByteBudget,
+    })
+    : undefined
+  /**
+   * Authority-tail flight started after a durable first paint. Observer status
+   * does not see `ensureSessionMessagePage`, so request state is tracked here.
+   */
+  const authorityFlights = new Map<string, { status: "loading" | "error"; error?: string }>()
+  /** Coalesce concurrent seed-path authority tails (ensureInitial + fetchPreviousPage). */
+  const authorityTailInflight = new Map<string, Promise<TranscriptData>>()
+  /** Per-message exact-fill status, keyed by scopeKey + messageID. */
+  const messageStates = new Map<string, { status: "idle" | "loading" | "ready" | "error"; error?: string }>()
+  /** In-flight exact-fill promises so repeat expands share one Host request. */
+  const messageFlights = new Map<string, Promise<TranscriptData>>()
+  /** Latched P0 so a later empty/stale read cannot reopen the skeleton. */
+  const p0Latches = new Map<string, true>()
+  /** In-flight older-history prepends (P1). */
+  const prependFlights = new Set<string>()
+  let suppressDurableWrite = 0
 
   const getProjection = (key: string) => {
     let cache = projectionCache.get(key)
@@ -448,6 +514,209 @@ export function createQueryTranscriptRepository(
     return next
   }
 
+  const messageStateKey = (
+    identity: ReturnType<typeof resolveScopeIdentity>,
+    messageID: string,
+  ): string => `${scopeKey(identity)}\n${messageID}`
+
+  const clearMessageMaterialization = (prefix: string) => {
+    for (const key of messageStates.keys()) {
+      if (key.startsWith(prefix)) messageStates.delete(key)
+    }
+    for (const key of messageFlights.keys()) {
+      if (key.startsWith(prefix)) messageFlights.delete(key)
+    }
+  }
+
+  const clearHydration = (prefix: string) => {
+    for (const key of p0Latches.keys()) {
+      if (key === prefix || key.startsWith(prefix)) p0Latches.delete(key)
+    }
+    for (const key of prependFlights) {
+      if (key === prefix || key.startsWith(prefix)) prependFlights.delete(key)
+    }
+  }
+
+  const isMaterializeActive = (identity: ReturnType<typeof resolveScopeIdentity>): boolean => {
+    const prefix = `${scopeKey(identity)}\n`
+    for (const [key, state] of messageStates) {
+      if (key.startsWith(prefix) && state.status === "loading") return true
+    }
+    for (const key of messageFlights.keys()) {
+      if (key.startsWith(prefix)) return true
+    }
+    return false
+  }
+
+  const liveIdentityMatches = (captured: {
+    directory: string
+    sessionID: string
+    transport: string
+    generation: number
+  }): boolean => {
+    const live = resolveScopeIdentity(
+      { directory: captured.directory, sessionID: captured.sessionID },
+      deps,
+    )
+    return live.transport === captured.transport && live.generation === captured.generation
+  }
+
+  const persistSettledRecord = (
+    identity: ReturnType<typeof resolveScopeIdentity>,
+    info: Message,
+    parts: readonly Part[] | undefined,
+  ) => {
+    if (!durableQueue) return
+    void durableQueue.persistSettled(toTranscriptDurableScope(identity), info, parts ?? [])
+  }
+
+  const scheduleDurableAfterApply = (
+    scope: TranscriptScope,
+    identity: ReturnType<typeof resolveScopeIdentity>,
+    command: TranscriptCommand,
+    result: TranscriptCommandResult,
+  ) => {
+    if (!durableQueue || suppressDurableWrite > 0) return
+    if (!result.applied || !result.changed) return
+    const durableScope = toTranscriptDurableScope(identity)
+    if (command.type === "remove-message") {
+      void durableQueue.removeMessage(durableScope, command.messageID)
+      return
+    }
+    if (command.type === "reset") {
+      void durableQueue.clearSession(durableScope)
+      if (command.page) {
+        const transcript = toTranscriptData(readData(scope), identity.sessionID)
+        for (const record of command.page.records) {
+          const info = transcript.messagesByID[record.info.id] ?? record.info
+          persistSettledRecord(
+            identity,
+            info,
+            transcript.partsByMessageID[record.info.id] ?? record.parts,
+          )
+        }
+      }
+      return
+    }
+    if (
+      command.type === "optimistic-add"
+      || command.type === "optimistic-confirm"
+      || command.type === "optimistic-remove"
+    ) {
+      return
+    }
+    if (command.type === "sse-event") {
+      const action = transcriptDurableSseAction(command.event)
+      if (action.action === "remove") {
+        void durableQueue.removeMessage(durableScope, action.messageID)
+        return
+      }
+      if (action.action === "skip") return
+      const transcript = toTranscriptData(readData(scope), identity.sessionID)
+      const info = transcript.messagesByID[action.messageID]
+      if (!info) return
+      persistSettledRecord(identity, info, transcript.partsByMessageID[action.messageID])
+      return
+    }
+    if (command.type === "http-page" || command.type === "materialize-snapshots") {
+      const transcript = toTranscriptData(readData(scope), identity.sessionID)
+      const records = command.type === "http-page" ? command.page.records : command.records
+      for (const record of records) {
+        const info = transcript.messagesByID[record.info.id]
+        if (!info) continue
+        persistSettledRecord(identity, info, transcript.partsByMessageID[record.info.id])
+      }
+    }
+  }
+
+  const fetchAuthorityTail = async (
+    identity: ReturnType<typeof resolveScopeIdentity>,
+  ): Promise<TranscriptTransportPage> => {
+    if (!deps.fetcher) {
+      throw new Error("Query transcript repository requires a fetcher for HTTP loads")
+    }
+    const pageFetcher: SessionMessagePageFetcher = async (args) => {
+      const page = await deps.fetcher!({
+        directory: args.directory,
+        sessionID: args.sessionID,
+        limit: args.limit,
+        before: args.before,
+        signal: args.signal,
+      })
+      return {
+        records: page.records.map((record) => ({
+          info: record.info,
+          parts: record.parts,
+        })),
+        cursor: page.cursor,
+        complete: page.complete,
+        turnCount: page.turnCount,
+        requestedTurnLimit: page.requestedTurnLimit,
+      }
+    }
+    const probe: SessionMessageRuntimeProbe = deps.probe ?? {
+      getTransport: getRuntimeTransportIdentity,
+      getGeneration: getRuntimeGeneration,
+    }
+    const httpPage = await ensureSessionMessagePage(
+      {
+        directory: identity.directory,
+        sessionID: identity.sessionID,
+        limit: deps.initialLimit ?? getInitialSessionTurnLimit(),
+      },
+      pageFetcher,
+      client,
+      identity.transport,
+      probe,
+      identity.generation,
+    )
+    return transportPageFromHttpPage(httpPage)
+  }
+
+  const runAuthorityInitial = (
+    scope: TranscriptScope,
+    captured: ReturnType<typeof resolveScopeIdentity>,
+  ): Promise<TranscriptData> => {
+    const flightKey = scopeKey(captured)
+    const existing = authorityTailInflight.get(flightKey)
+    if (existing) return existing
+    const run = (async () => {
+      authorityFlights.set(flightKey, { status: "loading" })
+      try {
+        const page = await fetchAuthorityTail(captured)
+        if (!liveIdentityMatches(captured)) {
+          authorityFlights.delete(flightKey)
+          return repository.getTranscript(scope)
+        }
+        repository.apply(scope, { type: "http-page", purpose: "initial", page })
+        authorityFlights.delete(flightKey)
+        cacheBudget.noteScopeObserved(toCacheScope(scope))
+        enforceBudgetAfterWrite(scope)
+        return repository.getTranscript(scope)
+      } catch (error) {
+        if (error instanceof SessionMessageRuntimeStaleError || !liveIdentityMatches(captured)) {
+          authorityFlights.delete(flightKey)
+          return repository.getTranscript(scope)
+        }
+        authorityFlights.set(flightKey, {
+          status: "error",
+          error: error instanceof Error ? error.message : String(error),
+        })
+        throw error
+      } finally {
+        authorityTailInflight.delete(flightKey)
+      }
+    })()
+    authorityTailInflight.set(flightKey, run)
+    return run
+  }
+
+  const needsAuthorityTail = (scope: TranscriptScope): boolean => {
+    const data = readData(scope)
+    if (!data || data.pages.length === 0) return true
+    return boundaryFromTranscriptData(data).kind === "unknown"
+  }
+
   const repository: QueryTranscriptRepository = {
     getTranscript(scope) {
       const identity = resolveScopeIdentity(scope, deps)
@@ -465,6 +734,13 @@ export function createQueryTranscriptRepository(
 
     getRequestState(scope): TranscriptRequestState {
       const identity = resolveScopeIdentity(scope, deps)
+      const flight = authorityFlights.get(scopeKey(identity))
+      if (flight?.status === "loading") {
+        return { sessionID: identity.sessionID, status: "loading" }
+      }
+      if (flight?.status === "error") {
+        return { sessionID: identity.sessionID, status: "error", error: flight.error }
+      }
       const controller = controllers.get(scopeKey(identity))
       if (!controller) {
         const data = readData(scope)
@@ -488,6 +764,26 @@ export function createQueryTranscriptRepository(
         return { sessionID: identity.sessionID, status: "ready" }
       }
       return { sessionID: identity.sessionID, status: "idle" }
+    },
+
+    getHydrationState(scope): TranscriptHydrationState {
+      const identity = resolveScopeIdentity(scope, deps)
+      const key = scopeKey(identity)
+      const transcript = repository.getTranscript(scope)
+      if (evaluateTranscriptP0Satisfied(transcript)) {
+        p0Latches.set(key, true)
+      }
+      const p0Satisfied = p0Latches.has(key)
+      return {
+        sessionID: identity.sessionID,
+        p0Satisfied,
+        phase: resolveTranscriptHydrationPhase({
+          p0Satisfied,
+          prependActive: prependFlights.has(key),
+          materializeActive: isMaterializeActive(identity),
+          earlierHistoryLoaded: countTranscriptAuthoredUserTurns(transcript) > 1,
+        }),
+      }
     },
 
     /**
@@ -528,10 +824,103 @@ export function createQueryTranscriptRepository(
       return next
     },
 
+    getMessageMaterializationState(scope, messageID): TranscriptMessageMaterializationState {
+      const identity = resolveScopeIdentity(scope, deps)
+      const stored = messageStates.get(messageStateKey(identity, messageID))
+      if (stored) {
+        return {
+          sessionID: identity.sessionID,
+          messageID,
+          status: stored.status,
+          ...(stored.error !== undefined ? { error: stored.error } : {}),
+        }
+      }
+      if (!repository.getMessage(scope, messageID)) {
+        return { sessionID: identity.sessionID, messageID, status: "idle" }
+      }
+      if (messageNeedsExactMaterialization(repository.getParts(scope, messageID))) {
+        return { sessionID: identity.sessionID, messageID, status: "idle" }
+      }
+      return { sessionID: identity.sessionID, messageID, status: "ready" }
+    },
+
+    async materializeMessage(scope, messageID) {
+      const captured = resolveScopeIdentity(scope, deps)
+      const flightKey = messageStateKey(captured, messageID)
+      const existing = messageFlights.get(flightKey)
+      if (existing) return existing
+
+      const run = (async (): Promise<TranscriptData> => {
+        const info = repository.getMessage(scope, messageID)
+        if (!info) {
+          messageStates.set(flightKey, { status: "idle" })
+          return repository.getTranscript(scope)
+        }
+        if (!messageNeedsExactMaterialization(repository.getParts(scope, messageID))) {
+          messageStates.set(flightKey, { status: "ready" })
+          return repository.getTranscript(scope)
+        }
+
+        messageStates.set(flightKey, { status: "loading" })
+        notify(scope)
+        try {
+          const record = await fetchExactSessionMessageRecord({
+            transport: captured.transport,
+            generation: captured.generation,
+            directory: captured.directory,
+            sessionID: captured.sessionID,
+            messageID,
+            request: async () => {
+              if (deps.fetchMessage) {
+                const next = await deps.fetchMessage({
+                  directory: captured.directory,
+                  sessionID: captured.sessionID,
+                  messageID,
+                })
+                return { data: { info: next.info, parts: [...(next.parts ?? [])] } }
+              }
+              const scoped = opencodeClient.getScopedSdkClient(captured.directory)
+              return scoped.session.message({
+                sessionID: captured.sessionID,
+                messageID,
+                directory: captured.directory,
+              })
+            },
+          })
+          if (!liveIdentityMatches(captured)) {
+            messageStates.delete(flightKey)
+            return repository.getTranscript(scope)
+          }
+          repository.apply(scope, {
+            type: "materialize-snapshots",
+            records: [{ info: record.info, parts: record.parts ?? [] }],
+          })
+          messageStates.set(flightKey, { status: "ready" })
+          notify(scope)
+          return repository.getTranscript(scope)
+        } catch (error) {
+          if (!liveIdentityMatches(captured)) {
+            messageStates.delete(flightKey)
+            return repository.getTranscript(scope)
+          }
+          const message = error instanceof Error ? error.message : "session.message failed"
+          messageStates.set(flightKey, { status: "error", error: message })
+          notify(scope)
+          return repository.getTranscript(scope)
+        }
+      })()
+
+      messageFlights.set(flightKey, run)
+      void run.finally(() => {
+        if (messageFlights.get(flightKey) === run) messageFlights.delete(flightKey)
+      })
+      return run
+    },
+
     apply(scope, command: TranscriptCommand): TranscriptCommandResult {
       const identity = resolveScopeIdentity(scope, deps)
       const queryKey = queryKeyFor(scope)
-
+      const result = ((): TranscriptCommandResult => {
       switch (command.type) {
         case "http-page": {
           const merge = applySessionTranscriptMerge(
@@ -614,6 +1003,7 @@ export function createQueryTranscriptRepository(
           return merge.result
         }
         case "reset": {
+          prependFlights.delete(scopeKey(identity))
           // Clear reserved task/checkpoint/transport families alongside the
           // canonical reset so old cursor chains cannot survive.
           cacheBudget.purgeSession(toCacheScope(scope))
@@ -664,6 +1054,9 @@ export function createQueryTranscriptRepository(
           return { applied: false, changed: false }
         }
       }
+      })()
+      scheduleDurableAfterApply(scope, identity, command, result)
+      return result
     },
 
     subscribe(scope, listener) {
@@ -697,8 +1090,44 @@ export function createQueryTranscriptRepository(
     },
 
     async ensureInitial(scope) {
+      const captured = resolveScopeIdentity(scope, deps)
+      const flightKey = scopeKey(captured)
+      if (durableQueue) await durableQueue.wait(toTranscriptDurableScope(captured))
+
+      const canonicalEmpty = readData(scope) === undefined
+      if (canonicalEmpty && deps.durableStore) {
+        try {
+          const session = await deps.durableStore.readSession(toTranscriptDurableScope(captured))
+          if (liveIdentityMatches(captured) && session.records.length > 0) {
+            suppressDurableWrite += 1
+            try {
+              repository.apply(scope, {
+                type: "materialize-snapshots",
+                records: session.records.map((record) => ({
+                  info: record.info,
+                  parts: [...record.parts],
+                })),
+              })
+            } finally {
+              suppressDurableWrite -= 1
+            }
+          }
+        } catch {
+          // Store failure must not block the network path or wipe authority.
+        }
+      }
+
+      // Seeded (or still-unknown) canonical must not go through the InfiniteQuery
+      // controller — pages.length > 0 would skip the authority tail.
+      if (needsAuthorityTail(scope) && readData(scope) !== undefined) {
+        return runAuthorityInitial(scope, captured)
+      }
+
       const controller = ensureController(scope)
+      // Drop a stale authority error so observer status can become ready.
+      authorityFlights.delete(flightKey)
       await controller.ensureInitial()
+      authorityFlights.delete(flightKey)
       // Start min-residency from this ensure so immediate enforce cannot evict.
       cacheBudget.noteScopeObserved(toCacheScope(scope))
       enforceBudgetAfterWrite(scope)
@@ -706,16 +1135,27 @@ export function createQueryTranscriptRepository(
     },
 
     async fetchPreviousPage(scope) {
-      const controller = ensureController(scope)
-      // Ensure we have a tail first.
-      if (!controller.getData() || controller.getData()!.pages.length === 0) {
-        await controller.ensureInitial()
-        cacheBudget.noteScopeObserved(toCacheScope(scope))
+      if (needsAuthorityTail(scope)) {
+        await repository.ensureInitial(scope)
       }
-      await controller.fetchPreviousPage()
-      // Active transcript retains all pages; enforce only bounds inactive peers.
-      enforceBudgetAfterWrite(scope)
-      return repository.getTranscript(scope)
+      const boundary = boundaryFromTranscriptData(readData(scope))
+      if (boundary.kind !== "has-more") {
+        return repository.getTranscript(scope)
+      }
+      const captured = resolveScopeIdentity(scope, deps)
+      const flightKey = scopeKey(captured)
+      prependFlights.add(flightKey)
+      notify(scope)
+      try {
+        const controller = ensureController(scope)
+        await controller.fetchPreviousPage()
+        // Active transcript retains all pages; enforce only bounds inactive peers.
+        enforceBudgetAfterWrite(scope)
+        return repository.getTranscript(scope)
+      } finally {
+        prependFlights.delete(flightKey)
+        notify(scope)
+      }
     },
 
     getController(scope) {
@@ -760,6 +1200,9 @@ export function createQueryTranscriptRepository(
 
     async destructiveReset(scope) {
       const cacheScope = toCacheScope(scope)
+      if (durableQueue) {
+        await durableQueue.clearSession(toTranscriptDurableScope(resolveScopeIdentity(scope, deps)))
+      }
       return cacheBudget.destructiveReset(cacheScope, async () => {
         // Destroy any stale controller so the next ensure builds a fresh chain.
         const identity = resolveScopeIdentity(scope, deps)
@@ -770,6 +1213,7 @@ export function createQueryTranscriptRepository(
           controllers.delete(key)
         }
         projectionCache.delete(key)
+        clearHydration(key)
         if (!deps.fetcher) {
           throw new Error(
             "Query transcript repository requires a fetcher for destructiveReset ensure",
@@ -788,6 +1232,8 @@ export function createQueryTranscriptRepository(
         controllers.delete(key)
       }
       projectionCache.delete(key)
+      clearMessageMaterialization(`${key}\n`)
+      clearHydration(key)
       cacheBudget.purgeSession(toCacheScope(scope))
       notify(scope)
     },
@@ -814,7 +1260,12 @@ export function createQueryTranscriptRepository(
           listeners.delete(key)
         }
       }
+      clearMessageMaterialization(`${transport}\n${generation}\n`)
+      clearHydration(`${transport}\n${generation}\n`)
       cacheBudget.purgeGeneration(transport, generation)
+      if (durableQueue) {
+        void durableQueue.clearGeneration({ transport, generation })
+      }
     },
 
     destroy() {
@@ -826,6 +1277,12 @@ export function createQueryTranscriptRepository(
       listenerRetainReleases.clear()
       listeners.clear()
       projectionCache.clear()
+      authorityFlights.clear()
+      authorityTailInflight.clear()
+      messageStates.clear()
+      messageFlights.clear()
+      p0Latches.clear()
+      prependFlights.clear()
     },
   }
 
@@ -845,46 +1302,12 @@ function applyMaterializeSnapshots(
     return { applied: false, changed: false }
   }
 
-  let result: TranscriptCommandResult = { applied: true, changed: false }
-  client.setQueryData<SessionTranscriptData>(queryKey, (previous) => {
-    const flat = flattenTranscriptData(previous, sessionID)
-    const materialized = materializeSessionSnapshots(
-      { message: flat.message, part: flat.part },
-      sessionID,
-      command.records.map((record) => ({
-        info: record.info,
-        parts: record.parts ? [...record.parts] : [],
-      })),
-      {
-        skipPartTypes: command.skipPartTypes,
-        merge: command.merge,
-      },
-    )
-    if (!materialized.messagesChanged && !materialized.partsChanged) {
-      return previous
-    }
-    result = { applied: true, changed: true }
-    const previousBoundary = boundaryFromTranscriptData(previous)
-    const merge = mergeSessionTranscript(previous, sessionID, {
-      type: "http-page",
-      purpose: "materialize",
-      page: {
-        records: materialized.messages.map((info) => ({
-          info,
-          parts: materialized.part[info.id] ?? [],
-        })),
-        complete: previousBoundary.kind === "exhausted",
-        cursor:
-          previousBoundary.kind === "has-more"
-            ? previousBoundary.cursor
-            : undefined,
-        turnCount: 0,
-      },
-      liveRevision:
-        previous?.pages[previous.pages.length - 1]?.sync.liveRevision ?? 0,
-    })
-    return merge.data ?? previous
+  const merge = applySessionTranscriptMerge(client, queryKey, sessionID, {
+    type: "durable-seed",
+    records: command.records,
+    skipPartTypes: command.skipPartTypes,
+    merge: command.merge,
   })
-  if (result.changed) onChanged()
-  return result
+  if (merge.result.changed) onChanged()
+  return merge.result
 }

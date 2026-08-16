@@ -153,7 +153,11 @@ describe('apply_patch navigation', () => {
         expect(contextPanelSource).toContain('toolPatches={toolPatches}');
         expect(contextPanelSource).toContain('stackedDefaultCollapsedAll={!toolPatches}');
         expect(diffViewSource).toContain('const activeTurnDiffs = React.useMemo<TurnSnapshotDiff[]>(');
-        expect(diffViewSource).toContain('selectedToolTurnDiffs.length > 0 ? selectedToolTurnDiffs : lastTurnDiffs');
+        expect(diffViewSource).toContain('const usesToolPatches = selectedToolTurnDiffs.length > 0;');
+        expect(diffViewSource).toContain('if (usesToolPatches) return selectedToolTurnDiffs;');
+        expect(diffViewSource).toContain('return mergeTurnDiffSummariesWithFull(lastTurnDiffs, fetchedTurnFullDiffs);');
+        expect(diffViewSource).toContain('return lastTurnDiffs;');
+        expect(diffViewSource).toContain("if (activeDiffScope !== 'turn' || usesToolPatches)");
         expect(diffViewSource).toContain('stackedToolPatchesRef.current !== toolPatches');
     });
 

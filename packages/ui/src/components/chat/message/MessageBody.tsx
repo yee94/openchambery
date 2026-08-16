@@ -628,7 +628,8 @@ interface MessageBodyProps {
     reviewTransferDirection?: ReviewTransferDirection | null;
 }
 
-const UserMessageBody = React.memo(({ messageId, parts, sourceParts, messageCreatedAt, isMobile, alwaysShowActions = isMobile, hasTouchInput, hasTextContent, onCopyMessage, copiedMessage, onShowPopup, agentMention, onEdit, onRevert, onFork, pendingMessageAction, editing, editStaged, onCancelEdit, userActionsMode = 'inline', stickyUserHeaderEnabled = true }: {
+const UserMessageBody = React.memo(({ sessionId, messageId, parts, sourceParts, messageCreatedAt, isMobile, alwaysShowActions = isMobile, hasTouchInput, hasTextContent, onCopyMessage, copiedMessage, onShowPopup, agentMention, onEdit, onRevert, onFork, pendingMessageAction, editing, editStaged, onCancelEdit, userActionsMode = 'inline', stickyUserHeaderEnabled = true }: {
+    sessionId?: string;
     messageId: string;
     parts: Part[];
     sourceParts?: Part[];
@@ -1005,7 +1006,7 @@ const UserMessageBody = React.memo(({ messageId, parts, sourceParts, messageCrea
                     );
                 })}
             </div>
-            <MessageFilesDisplay files={parts} onShowPopup={onShowPopup} compact />
+            <MessageFilesDisplay files={parts} messageID={messageId} sessionID={sessionId} onShowPopup={onShowPopup} compact />
             {actionsBlock}
         </div>
     );
@@ -1826,11 +1827,13 @@ const AssistantMessageBody = React.memo(({
             const pushActivityHeader = (
                 segmentId: string,
                 visibleSegmentParts: typeof activityGroupSegmentsForMessage[number]['parts'],
+                materializationParts: typeof activityGroupSegmentsForMessage[number]['parts'] = visibleSegmentParts,
             ) => {
                 rendered.push(
                     <div key={`progressive-group-${segmentId}`}>
                         <TurnActivity
                             parts={visibleSegmentParts}
+                            materializationParts={materializationParts}
                             isExpanded={turnGroupingContext.isGroupExpanded === true}
                             collapsedPreviewCount={collapsedPreviewCount}
                             completionDisposition={turnGroupingContext.completionDisposition}
@@ -1862,7 +1865,7 @@ const AssistantMessageBody = React.memo(({
                     // (reasoning-only mid-reconcile, lagging tool materialize)
                     // unmounts the whole disclosure and makes tool rows flash
                     // away — including the live last turn vanishing for a beat.
-                    pushActivityHeader(segment.id, visibleSegmentParts);
+                    pushActivityHeader(segment.id, visibleSegmentParts, segment.parts);
                 });
             } else if (isCompactionTurn) {
                 pushActivityHeader(`${messageId}:compaction-status`, []);
@@ -2257,7 +2260,7 @@ const AssistantMessageBody = React.memo(({
                         isMobile={isMobile}
                     />
                 ) : null}
-                <MessageFilesDisplay files={parts} onShowPopup={onShowPopup} />
+                <MessageFilesDisplay files={parts} messageID={messageId} sessionID={sessionId} onShowPopup={onShowPopup} />
                 {shouldRenderStandaloneActionsAfterContent && (
                     <div className={cn(isMobile ? INLINE_MESSAGE_ACTIONS_MOBILE_CLASS_NAME : INLINE_MESSAGE_ACTIONS_CLASS_NAME)} data-message-actions="true">
                         <div className={MESSAGE_ACTION_GROUP_CLASS} data-message-action-group="true">
@@ -2334,6 +2337,7 @@ const MessageBody = React.memo(({ isUser, ...props }: MessageBodyProps) => {
     if (isUser) {
         return (
             <UserMessageBody
+                sessionId={props.sessionId}
                 messageId={props.messageId}
                 parts={props.parts}
                 sourceParts={props.sourceParts}

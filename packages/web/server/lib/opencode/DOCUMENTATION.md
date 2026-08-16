@@ -33,7 +33,8 @@ This module provides OpenCode server integration utilities for the web server ru
 - `packages/web/server/lib/opencode/tunnel-wiring-runtime.js`: tunnel service/routes composition runtime and active-port wiring for main server startup.
 - `packages/web/server/lib/opencode/startup-pipeline-runtime.js`: server startup tail orchestration runtime for terminal/proxy/static/start-listen flow.
 - `packages/web/server/lib/opencode/server-utils-runtime.js`: shared server runtime utilities for OpenCode proxy wiring, OpenCode port/readiness helpers, and snapshot fetchers.
-- `packages/web/server/lib/opencode/openchamber-routes.js`: OpenChamber update and models metadata route registration.
+- `packages/web/server/lib/opencode/openchamber-routes.js`: OpenChamber update, models metadata, session-index, and transcript-cache route registration.
+- `packages/web/server/lib/transcript-cache/`: opt-in Electron/local SQLite transcript cache (`/api/openchamber/transcript-cache`); default path is null so remote Web servers do not persist conversation bodies. See `transcript-cache/DOCUMENTATION.md`.
 - `packages/web/server/lib/opencode/pwa-manifest-routes.js`: PWA manifest route registration with recent-session shortcut resolution and short-lived caching.
 - `packages/web/server/lib/opencode/project-icon-routes.js`: project icon upload/read/discovery route registration and icon storage orchestration.
 - `packages/web/server/lib/opencode/skill-routes.js`: route registration for skill config CRUD, supporting files, and skills catalog scan/install flows.
@@ -281,9 +282,10 @@ When adding or changing Host HTTP APIs that mobile/desktop clients reach over Pr
    - `POST /api/system/probe-url`
    - `app.use('/api', ...)` auth/tunnel guard
 - `registerSettingsUtilityRoutes(app, dependencies)`: registers small settings utility endpoints:
-  - `GET /api/config/themes`
-  - `POST /api/config/reload`
-  - `POST /api/opencode/retry`
+   - `GET /api/config/themes`
+   - `POST /api/config/reload`
+   - `POST /api/opencode/retry`
+   - These handlers do not implement their own auth. Production wiring registers `registerAuthAndAccessRoutes` first, so the `/api` UI/tunnel/client-auth guard still protects retry/reload/themes. Isolated route tests may omit that guard to exercise handler behavior; they must not weaken the production guard.
 - `registerCommonRequestMiddleware(app, dependencies)`: registers shared request middleware stack:
   - conditional JSON body parser behavior for `/api/*` vs non-API requests
   - URL-encoded parser setup
@@ -352,6 +354,8 @@ When adding or changing Host HTTP APIs that mobile/desktop clients reach over Pr
   - `GET /api/openchamber/update-check`
   - `POST /api/openchamber/update-install`
   - `GET /api/zen/models`
+  - session-index routes (see `session-index/DOCUMENTATION.md`)
+  - transcript-cache routes under `/api/openchamber/transcript-cache` (see `transcript-cache/DOCUMENTATION.md`)
 
 ## Public exports (pwa-manifest-routes.js)
 - `registerPwaManifestRoute(app, dependencies)`: registers PWA manifest endpoint with dynamic app-name resolution and recent-session shortcuts:
@@ -400,6 +404,13 @@ When adding or changing Host HTTP APIs that mobile/desktop clients reach over Pr
   updates the index and exposes revision-based long polling; interactive session
   requests preempt its current list request. The renderer must not fan out cold
   start session lists. This code never reads or writes OpenCode's own SQLite.
+- Electron can also inject `transcriptCacheDbPath` (or set
+  `OPENCHAMBER_TRANSCRIPT_CACHE_DB_PATH`) to enable the local transcript-cache
+  SQLite. The default path is null so ordinary remote Web servers do not persist
+  conversation bodies. Routes live under `/api/openchamber/transcript-cache`,
+  reuse the existing UI-password / CORS path, register before the generic proxy,
+  and return 501 when the service is disabled. Logs never include message
+  bodies, parts, or tokens.
 - Provider auth: `~/.local/share/opencode/auth.json`.
 - User config: `~/.config/opencode/opencode.json` or `~/.config/opencode/opencode.jsonc`.
 - Project config: `<workingDirectory>/.opencode/opencode.json` or `opencode.json`.

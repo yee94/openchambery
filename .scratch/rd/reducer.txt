@@ -1,0 +1,66 @@
+      // stay off the live directory list but keep streaming caches while open.
+      // Only temporary SmartFetch secondaries wipe caches when they leave the list.
+      if (!isVisibleGlobalSession(info)) {
+        return removeFromLiveDirectoryList(draft, info, result, callbacks?.onSetSessionTodo)
+      }
+      if (result.found && shouldSkipStaleSessionEvent(sessions[result.index], info)) {
+        return false
+      }
+      if (result.found) {
+        sessions[result.index] = info
+      } else {
+        sessions.splice(result.index, 0, info)
+        trimSessions(draft)
+        if (!info.parentID) draft.sessionTotal += 1
+      }
+      return true
+    }
+
+    case "session.updated": {
+      const info = stripSessionDiffSnapshots((event.properties as { info: Session }).info)
+      const sessions = draft.session
+      const result = Binary.search(sessions, info.id, (s) => s.id)
+      // Keep the freshness check ahead of the archive branch: direct archive
+      // responses handle the store update on their own (optimistic removal +
+      // SDK response), so stale SSE echoes should not win just because they
+      // mark the session archived.
+      if (result.found && shouldSkipStaleSessionEvent(sessions[result.index], info)) {
+        return false
+      }
+
+      // Sidebar/live-list hide only. Do not drop message/part/status for
+      // system-owned, subagent, or archived sessions — scheduled tasks and
+      // assistants archive before/while prompting, and wiping caches is what
+      // made in-progress viewing look nothing like a normal live session.
+      if (!isVisibleGlobalSession(info) || info.time.archived) {
+        return removeFromLiveDirectoryList(draft, info, result, callbacks?.onSetSessionTodo)
+      }
+
+      if (result.found) {
+        sessions[result.index] = info
+      } else {
+        sessions.splice(result.index, 0, info)
+        trimSessions(draft)
+      }
+      return true
+    }
+
+    case "session.deleted": {
+      const info = (event.properties as { info: Session }).info
+      const sessions = draft.session
+      const result = Binary.search(sessions, info.id, (s) => s.id)
+      if (result.found) sessions.splice(result.index, 1)
+      cleanupSessionCaches(draft, info.id, callbacks?.onSetSessionTodo)
+      if (!info.parentID) draft.sessionTotal = Math.max(0, draft.sessionTotal - 1)
+      return true
+    }
+
+    case "session.diff": {
+      const props = event.properties as { sessionID: string; diff: FileDiff[] }
+      draft.session_diff[props.sessionID] = summarizeFileDiffs(props.diff)
+      return true
+    }
+
+    case "todo.updated": {
+      const props = event.properties as { sessionID: string; todos: Todo[] }
+      draft.todo[props.sessionID] = props.todos

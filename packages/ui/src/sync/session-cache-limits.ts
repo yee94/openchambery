@@ -2,8 +2,9 @@
  * Platform session-cache capacity targets.
  *
  * Shared by the child-store eviction path (use-sync) and the QueryCache
- * transcript LRU (session-transcript-query-cache). Values match the existing
- * product budgets: VS Code = 4, mobile = 12, default desktop/web = 40.
+ * transcript LRU (session-transcript-query-cache). Session-count values match
+ * the existing product budgets: VS Code = 4, mobile = 12, default = 40.
+ * Durable transcript bodies use the same platform split in mebibytes.
  */
 
 import { isVSCodeRuntime } from "@/lib/desktop"
@@ -34,4 +35,27 @@ export function getEffectiveSessionCacheLimit(): number {
   if (isVSCodeRuntime()) return VSCODE_SESSION_CACHE_LIMIT
   if (isMobileSurfaceRuntime()) return MOBILE_SESSION_CACHE_LIMIT
   return SESSION_CACHE_LIMIT
+}
+
+const MEBIBYTE = 1024 * 1024
+
+/** Durable transcript body budget on VS Code (4 MiB). */
+export const VSCODE_TRANSCRIPT_DURABLE_BYTE_BUDGET = 4 * MEBIBYTE
+
+/** Durable transcript body budget on mobile surfaces (12 MiB). */
+export const MOBILE_TRANSCRIPT_DURABLE_BYTE_BUDGET = 12 * MEBIBYTE
+
+/** Durable transcript body budget on desktop / web (40 MiB). */
+export const DEFAULT_TRANSCRIPT_DURABLE_BYTE_BUDGET = 40 * MEBIBYTE
+
+/**
+ * Byte budget for the settled-transcript durable cache.
+ *
+ * Same platform split as `getEffectiveSessionCacheLimit`, but in bytes so
+ * eviction ranks `lastAccessedAt` instead of session count.
+ */
+export function getTranscriptDurableByteBudget(): number {
+  if (isVSCodeRuntime()) return VSCODE_TRANSCRIPT_DURABLE_BYTE_BUDGET
+  if (isMobileSurfaceRuntime()) return MOBILE_TRANSCRIPT_DURABLE_BYTE_BUDGET
+  return DEFAULT_TRANSCRIPT_DURABLE_BYTE_BUDGET
 }

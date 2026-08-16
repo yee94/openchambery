@@ -1,6 +1,5 @@
 import { beforeEach, describe, expect, test } from "bun:test"
 import type { Message, SessionStatus } from "@opencode-ai/sdk/v2/client"
-import { create } from "zustand"
 import { INITIAL_STATE } from "./types"
 import { updateStreamingState, useStreamingStore } from "./streaming"
 import { createStoreTranscriptRepository } from "./transcript-repository-store-adapter"

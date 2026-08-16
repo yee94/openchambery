@@ -12,8 +12,10 @@
 import type { BridgeContext, BridgeResponse } from './bridge';
 import {
   createSessionTurnPageService,
+  projectSlimParts,
   type SessionTurnPageFetchInput,
   type SessionTurnPageFetchResult,
+  SLIM_PARTS_PROJECTION,
 } from './session-turn-page-runtime';
 
 const DEFAULT_TURNS = 3;
@@ -23,19 +25,20 @@ const TURNS_MAX = 10;
 const SCAN_LIMIT_MIN = 10;
 const SCAN_LIMIT_MAX = 200;
 /**
- * Host-local OpenCode scan chunk (Extension Host → OpenCode is local).
- * Optional client `scanLimit` may override; when omitted use this inner default.
- * Env: OPENCHAMBER_SESSION_TURN_SCAN_LIMIT (10..200).
+ * Explicit operator override from env, or null when unset/invalid.
+ * Kept separate from the resolved default so per-path policy can tell
+ * "operator chose 100" apart from "nobody chose anything".
  */
-const _inner_scanLimit = (() => {
+const _inner_scanLimitEnv = (() => {
   const raw = typeof process !== 'undefined' ? process.env?.OPENCHAMBER_SESSION_TURN_SCAN_LIMIT : undefined;
-  if (raw === undefined || raw === null || raw === '') return DEFAULT_SCAN_LIMIT;
+  if (raw === undefined || raw === null || raw === '') return null;
   const parsed = Number(String(raw).trim());
   if (!Number.isInteger(parsed) || parsed < SCAN_LIMIT_MIN || parsed > SCAN_LIMIT_MAX) {
-    return DEFAULT_SCAN_LIMIT;
+    return null;
   }
   return parsed;
 })();
+
 /** Whole aggregation timeout — matches web host PAGE_TIMEOUT_MS. */
 const PAGE_TIMEOUT_MS = 45_000;
 
@@ -248,11 +251,18 @@ export async function handleSessionTurnPageBridgeMessage(
     };
   }
 
-  // Optional client override; omit → `_inner_scanLimit` (env/default).
+  const before =
+    typeof body.before === 'string' && body.before.length > 0 ? body.before : undefined;
+  const directory =
+    typeof body.directory === 'string' && body.directory.length > 0
+      ? body.directory
+      : undefined;
+
+  // Width resolves as: explicit client override → env override → default.
   const scanLimitResult = parseBoundedInt(body.scanLimit, {
     min: SCAN_LIMIT_MIN,
     max: SCAN_LIMIT_MAX,
-    fallback: _inner_scanLimit,
+    fallback: _inner_scanLimitEnv ?? DEFAULT_SCAN_LIMIT,
   });
   if (!scanLimitResult.ok) {
     return {
@@ -263,13 +273,6 @@ export async function handleSessionTurnPageBridgeMessage(
     };
   }
   const _inner_scanLimit_resolved = scanLimitResult.value;
-
-  const before =
-    typeof body.before === 'string' && body.before.length > 0 ? body.before : undefined;
-  const directory =
-    typeof body.directory === 'string' && body.directory.length > 0
-      ? body.directory
-      : undefined;
 
   const apiUrl = ctx?.manager?.getApiUrl?.();
   if (typeof apiUrl !== 'string' || apiUrl.length === 0) {
@@ -305,15 +308,18 @@ export async function handleSessionTurnPageBridgeMessage(
       };
     }
 
+    // Projection is first-packet only; prepend keeps full parts.
+    const isFirstPacket = before === undefined;
     return {
       id,
       type,
       success: true,
       data: {
-        records: result.records,
+        records: isFirstPacket ? projectSlimParts(result.records) : result.records,
         turnCount: result.turnCount,
         cursor: result.cursor ?? null,
         complete: result.complete === true,
+        partsProjection: isFirstPacket ? SLIM_PARTS_PROJECTION : null,
       },
     };
   } catch {

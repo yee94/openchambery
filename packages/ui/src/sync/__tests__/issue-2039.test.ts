@@ -55,6 +55,9 @@ const deferredStorage: Storage = {
 mock.module("@/stores/utils/safeStorage", () => ({
   createDeferredSafeJSONStorage: () => undefined,
   getDeferredSafeStorage: () => deferredStorage,
+  getSafeStorage: () => deferredStorage,
+  getSafeSessionStorage: () => deferredStorage,
+  resetSafeStorageForTests: () => undefined,
 }))
 
 mock.module("@/lib/opencode/client", () => ({

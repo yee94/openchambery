@@ -29,13 +29,25 @@ Official OpenCode pagination is message-count based and uses **opaque** cursors 
 | Param | Default | Range | Notes |
 |---|---|---|---|
 | `turns` | `3` | `1..10` | Authored user turn budget (product limit) |
-| `scanLimit` | **omitted** | `10..200` when present | Optional override only. Host→OpenCode local page size; default is server `_inner_scanLimit` (`OPENCHAMBER_SESSION_TURN_SCAN_LIMIT` or `100`). Clients should omit this. |
+| `scanLimit` | **omitted** | `10..200` when present | Optional override only. Host→OpenCode local page size; when omitted it resolves to `_inner_scanLimit`. Clients should omit this. |
 | `before` | omitted | opaque string ≤ 8192 chars | Resume older history: host cursor (`oc1.…`) or raw OpenCode SDK cursor on first page |
 | `directory` | omitted | path string | Forwarded to directory-scoped OpenCode client |
 
 Invalid `turns`, explicit invalid `scanLimit`, or `before` (malformed/stale host token, oversize) → HTTP 400.
 
 **`_inner_scanLimit`**: resolved once at process start from env (clamped 10..200). Host always calls OpenCode on loopback; scan chunk is not a client-network concern. Final response size is still turn-trimmed via `selectTurnRecords`.
+
+### Upstream page width policy
+
+Width resolves in priority order: **explicit client `scanLimit` → env `OPENCHAMBER_SESSION_TURN_SCAN_LIMIT` → `100`**. The same width applies to every path.
+
+**Do not narrow the width per path to speed up a first paint — it was tried and measured, and it does not work.** What the client receives is the turn-trimmed window, whose size is set by `turns`, not by the page width; width only changes how the Host chunks its loopback reads. On a real tool-heavy session (817 messages, assistant:user ≈ 17:1) the 6th authored-user boundary sat at newest-position 56, so a width of 100 satisfied a 6-turn budget in **one** upstream request while a derived width of 24 needed **three** sequential ones for a byte-identical response.
+
+Narrowing only helps when boundary density is high enough that the newest page carries far more boundaries than the budget. Long-running tool-heavy sessions — the case this module exists to serve — are the opposite. Measurements and the reproduction script live in `.scratch/progressive-transcript-hydration/issues/01-validate-first-packet-page-width.md`.
+
+The lever that does shrink a first packet is the **turn budget** (`turns=1` measured 27 KB against `turns=6` at 3728 KB on that session), plus the parts projection below.
+
+All existing guards (`max_scan_pages`, `max_scan_messages`, `duplicate_cursor`, `empty_page_with_cursor`) are untouched.
 
 ## Response contract
 
@@ -46,7 +58,8 @@ Success `200`:
   "records": [{ "info": { "id": "...", "role": "user" }, "parts": [] }],
   "turnCount": 1,
   "cursor": "oc1.…",
-  "complete": false
+  "complete": false,
+  "partsProjection": "slim-v1"
 }
 ```
 
@@ -54,6 +67,32 @@ Success `200`:
 - `turnCount`: count of authored user boundaries in `records`.
 - `cursor`: host-owned opaque token for the next `before=` request; `null` when `complete` is true. The token represents the position **just before** the earliest returned authored user (so the client can load older history without overlap).
 - `complete`: `upstreamComplete && selected.length === accumulated.length`. True when upstream history is exhausted **and** `selectTurnRecords` did not trim any older scanned rows (nothing left for the client). When the scan window held more than N turns and older rows were trimmed, `complete` stays `false` with a `cursor` so the client can fetch the trimmed history.
+- `partsProjection`: `"slim-v1"` on a first packet, `null` on prepend. Names the projection applied to `records`; see below.
+
+### First-packet parts projection
+
+A first packet summarizes `tool`, `reasoning`, and `file` parts so it does not have to carry the bodies of a long tool-heavy turn or inline attachment data URLs. Projection runs **after** `selectTurnRecords`, so `turnCount`, `complete`, and cursor encoding are all derived from unprojected records and cannot shift.
+
+| Kept | Dropped |
+|---|---|
+| `tool`: `id`, `sessionID`, `messageID`, `callID`, `tool`, `state.status`, `state.title`, `state.time` | `state.output`, `state.input`, `state.metadata`, `state.error` |
+| `reasoning`: `id`, `sessionID`, `messageID`, `time` | reasoning `text` body |
+| `file` (user and assistant): `id`, `sessionID`, `messageID`, `type`, `mime`, `filename`, existing stable `size` / `width` / `height`, derived `byteSize` | `url`, base64, attachment body |
+
+Rules:
+
+- Every projected part carries `slim: true`. An unstamped part is full content. The host never lets a projection look full.
+- Assistant `text` stays intact. User rows are no longer wholesale pass-through: their `file` parts are projected; other user parts stay as-is.
+- `file` projection keeps already-present size/width/height (top-level or `metadata`). `byteSize` is derived from a data URL when present. PNG/GIF/JPEG/WebP headers may fill missing `width`/`height`. Unknown dimensions omit those fields.
+- A slim `file` part is a reference, not renderable content. Clients must hydrate the full message (`session.message` by `messageID`) before painting or editing the attachment. Do not treat slim file metadata as a complete part.
+- Records that gain nothing from projection keep their original object reference, so identity-based change detection downstream still works.
+- Projection is first-packet only (`before === undefined`). Prepend, explicit cursors, and the reconcile routes return full parts, unchanged.
+
+**Consumer requirement:** because the first-packet predicate is «`before` absent», recovery and materialize tails receive projected parts too. Any consumer merging these records must treat `slim: true` as lower-ranked than content it already holds, or tool output will visibly degrade. `packages/ui/src/sync/displayParts.ts` implements that hold; do not add a second merge path without it.
+
+The web client's store layer needs no separate hold: its page reducer merges tool `state` field-wise rather than replacing the part, so a projected page that omits `output` leaves the stored `output` intact. This was verified by neutralizing the render-layer hold and asserting the stored state directly — do not add a redundant guard in `transcript-merge.ts` on the assumption that it degrades.
+
+`packages/vscode/src/session-turn-page-runtime.ts` mirrors this projection and must stay in parity.
 
 ## Host cursor format
 

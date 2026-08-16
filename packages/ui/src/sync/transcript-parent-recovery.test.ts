@@ -2,10 +2,12 @@ import { describe, expect, test } from "bun:test"
 import type { Message, Part } from "@opencode-ai/sdk/v2/client"
 
 import {
+  fetchExactSessionMessageRecord,
   findMissingAssistantParentUserIDs,
   loadSessionMessage,
   MAX_ASSISTANT_TAIL_PARENT_LOADS,
   recoverAssistantTailBoundary,
+  transcriptExactMessageRuntimeKey,
 } from "./transcript-parent-recovery"
 
 const record = (id: string, role: "user" | "assistant", parentID?: string) => ({
@@ -111,6 +113,86 @@ describe("assistant-tail parent recovery", () => {
     }
     await expect(loadSessionMessage(input)).rejects.toThrow("not ready")
     expect(await loadSessionMessage(input)).toBe("recovered")
+    expect(calls).toBe(2)
+  })
+})
+
+describe("exact session.message helper", () => {
+  test("shares one request for the same transport + generation", async () => {
+    let calls = 0
+    let release!: () => void
+    const gate = new Promise<void>((resolve) => {
+      release = resolve
+    })
+    const request = () => fetchExactSessionMessageRecord({
+      transport: "runtime-a",
+      generation: 1,
+      directory: "/repo",
+      sessionID: "ses_1",
+      messageID: "msg_1",
+      request: async () => {
+        calls += 1
+        await gate
+        return { data: { info: { id: "msg_1" } as Message, parts: [] } }
+      },
+    })
+    const first = request()
+    const second = request()
+    release()
+    const [a, b] = await Promise.all([first, second])
+    expect(calls).toBe(1)
+    expect(a.info.id).toBe("msg_1")
+    expect(b.info.id).toBe("msg_1")
+  })
+
+  test("does not share flights across generations", async () => {
+    let calls = 0
+    await Promise.all([
+      fetchExactSessionMessageRecord({
+        transport: "runtime-a",
+        generation: 1,
+        directory: "/repo",
+        sessionID: "ses_1",
+        messageID: "msg_1",
+        request: async () => {
+          calls += 1
+          return { data: { info: { id: "msg_1" } as Message, parts: [] } }
+        },
+      }),
+      fetchExactSessionMessageRecord({
+        transport: "runtime-a",
+        generation: 2,
+        directory: "/repo",
+        sessionID: "ses_1",
+        messageID: "msg_1",
+        request: async () => {
+          calls += 1
+          return { data: { info: { id: "msg_1" } as Message, parts: [] } }
+        },
+      }),
+    ])
+    expect(calls).toBe(2)
+    expect(transcriptExactMessageRuntimeKey("runtime-a", 1)).not.toBe(
+      transcriptExactMessageRuntimeKey("runtime-a", 2),
+    )
+  })
+
+  test("rejects an error envelope so the flight can retry", async () => {
+    let calls = 0
+    const input = {
+      transport: "runtime-a",
+      generation: 1,
+      directory: "/repo",
+      sessionID: "ses_1",
+      messageID: "msg_err",
+      request: async () => {
+        calls += 1
+        if (calls === 1) return { error: { message: "unavailable" } }
+        return { data: { info: { id: "msg_err" } as Message, parts: [] } }
+      },
+    }
+    await expect(fetchExactSessionMessageRecord(input)).rejects.toThrow("session.message failed")
+    expect((await fetchExactSessionMessageRecord(input)).info.id).toBe("msg_err")
     expect(calls).toBe(2)
   })
 })

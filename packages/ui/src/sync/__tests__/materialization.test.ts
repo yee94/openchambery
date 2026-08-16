@@ -8,6 +8,7 @@ import {
 import { resolveSessionMergeStrategy } from "../session-merge-strategy"
 
 const RECOVERY_MERGE = resolveSessionMergeStrategy({ purpose: "recovery" })
+const RECONCILE_MERGE = resolveSessionMergeStrategy({ purpose: "reconcile-page" })
 const MATERIALIZE_MERGE = resolveSessionMergeStrategy({ purpose: "materialize" })
 
 function message(id: string, sessionID = "ses_1"): Message {
@@ -510,6 +511,32 @@ describe("materializeSessionSnapshots", () => {
 
     expect(result.message).toBe(state.message)
     expect(result.messagesChanged).toBe(false)
+  })
+
+  test("reconcile by-created inserts an older unanchored window ahead of a newer gap page", () => {
+    const newer = [
+      { ...userMessage("msg_07"), time: { created: 1007 } } as Message,
+      { ...message("msg_08"), time: { created: 1008 } } as Message,
+    ]
+    const older = [
+      { ...userMessage("msg_03"), time: { created: 1003 } } as Message,
+      { ...message("msg_04"), time: { created: 1004 } } as Message,
+    ]
+    const result = materializeSessionSnapshots(
+      { message: { ses_1: newer }, part: {} },
+      "ses_1",
+      older.map((info) => ({ info, parts: [] })),
+      { merge: RECONCILE_MERGE, placeUnanchoredNewMessages: "by-created" },
+    )
+
+    expect(result.message.ses_1.map((item) => item.id)).toEqual([
+      "msg_03",
+      "msg_04",
+      "msg_07",
+      "msg_08",
+    ])
+    expect(result.message.ses_1[2]).toBe(newer[0])
+    expect(result.message.ses_1[3]).toBe(newer[1])
   })
 })
 

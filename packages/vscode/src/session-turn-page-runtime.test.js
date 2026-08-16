@@ -257,7 +257,7 @@ describe('createSessionTurnPageService (VS Code parity with web)', () => {
     const firstDecoded = decodeHostCursor(first.cursor);
     expect(firstDecoded).toMatchObject({
       ok: true,
-      payload: { before: null, boundaryID: 'msg_u3' },
+      value: { before: null, boundaryID: 'msg_u3' },
     });
     // Round-trip shape matches encodeHostCursor
     expect(first.cursor).toBe(encodeHostCursor({ before: null, boundaryID: 'msg_u3' }));
@@ -373,7 +373,7 @@ describe('createSessionTurnPageService (VS Code parity with web)', () => {
     expect(result.cursor.startsWith('oc1.')).toBe(true);
     expect(decodeHostCursor(result.cursor)).toMatchObject({
       ok: true,
-      payload: { before: null, boundaryID: 'msg_u3' },
+      value: { before: null, boundaryID: 'msg_u3' },
     });
     expect(result.records.map((entry) => entry.info.id)).toEqual([
       'msg_u3', 'msg_a3', 'msg_u4', 'msg_a4',
@@ -556,9 +556,9 @@ describe('createSessionTurnPageService (VS Code parity with web)', () => {
     expect(first.cursor.startsWith('oc1.')).toBe(true);
     const decoded = decodeHostCursor(first.cursor);
     expect(decoded.ok).toBe(true);
-    expect(decoded.payload.boundaryID).toBe('msg_u4');
+    expect(decoded.value.boundaryID).toBe('msg_u4');
     // boundary origin is the request-before of the page that held msg_u4
-    expect(typeof decoded.payload.before === 'string' || decoded.payload.before === null).toBe(true);
+    expect(typeof decoded.value.before === 'string' || decoded.value.before === null).toBe(true);
 
     // Host token resume must re-fetch origin page with raw before and slice before boundary.
     fetchPage.mockClear();
@@ -637,11 +637,170 @@ describe('createSessionTurnPageService (VS Code parity with web)', () => {
     const result = await service.loadPage({
       sessionID: 'ses_1',
       turns: 3,
-      before: 'x'.repeat(4097),
+      before: 'x'.repeat(8193),
     });
 
     expect(result.ok).toBe(false);
     expect(result.error).toBe('invalid_cursor');
     expect(fetchPage).not.toHaveBeenCalled();
+  });
+});
+
+describe('projectSlimParts (VS Code parity with web host)', () => {
+  const pngDataUrl = (width, height) => {
+    const ihdr = Buffer.alloc(13);
+    ihdr.writeUInt32BE(width, 0);
+    ihdr.writeUInt32BE(height, 4);
+    ihdr[8] = 8;
+    ihdr[9] = 2;
+    const png = Buffer.concat([
+      Buffer.from([0x89, 0x50, 0x4E, 0x47, 0x0D, 0x0A, 0x1A, 0x0A]),
+      Buffer.from([0x00, 0x00, 0x00, 0x0D]),
+      Buffer.from('IHDR'),
+      ihdr,
+      Buffer.alloc(4),
+    ]);
+    return `data:image/png;base64,${png.toString('base64')}`;
+  };
+
+  const gifDataUrl = (width, height) => {
+    const gif = Buffer.alloc(10);
+    gif.write('GIF89a', 0, 'ascii');
+    gif.writeUInt16LE(width, 6);
+    gif.writeUInt16LE(height, 8);
+    return `data:image/gif;base64,${gif.toString('base64')}`;
+  };
+
+  const jpegDataUrl = (width, height) => {
+    const jpeg = Buffer.from([
+      0xFF, 0xD8, 0xFF, 0xC0, 0x00, 0x0B, 0x08,
+      (height >> 8) & 0xFF, height & 0xFF,
+      (width >> 8) & 0xFF, width & 0xFF,
+      0x01, 0x01, 0x11, 0x00, 0xFF, 0xD9,
+    ]);
+    return `data:image/jpeg;base64,${jpeg.toString('base64')}`;
+  };
+
+  const toolPart = (id, output) => ({
+    id,
+    sessionID: 'ses_1',
+    messageID: 'msg_a1',
+    callID: `call_${id}`,
+    type: 'tool',
+    tool: 'bash',
+    state: {
+      status: 'completed',
+      title: 'ran bash',
+      time: { start: 1, end: 2 },
+      output,
+      metadata: { huge: 'x'.repeat(1000) },
+      input: { command: 'ls' },
+    },
+  });
+
+  const filePart = (overrides = {}) => ({
+    id: 'prt_file',
+    sessionID: 'ses_1',
+    messageID: 'msg_u1',
+    type: 'file',
+    mime: 'image/png',
+    filename: 'shot.png',
+    url: pngDataUrl(12, 8),
+    ...overrides,
+  });
+
+  it('drops tool output and reasoning body with the slim-v1 marker', async () => {
+    const { projectSlimParts, SLIM_PARTS_PROJECTION } = await loadRuntime();
+    const [toolRecord] = projectSlimParts([
+      { info: { id: 'msg_a1', role: 'assistant' }, parts: [toolPart('prt_1', 'x'.repeat(5000))] },
+    ]);
+    expect(toolRecord.parts[0]).toEqual({
+      id: 'prt_1',
+      sessionID: 'ses_1',
+      messageID: 'msg_a1',
+      callID: 'call_prt_1',
+      tool: 'bash',
+      type: 'tool',
+      state: { status: 'completed', title: 'ran bash', time: { start: 1, end: 2 } },
+      slim: true,
+    });
+
+    const [reasoningRecord] = projectSlimParts([
+      {
+        info: { id: 'msg_a1', role: 'assistant' },
+        parts: [{
+          id: 'prt_r',
+          sessionID: 'ses_1',
+          messageID: 'msg_a1',
+          type: 'reasoning',
+          text: 'a long private trace',
+          time: { start: 1 },
+        }],
+      },
+    ]);
+    expect(reasoningRecord.parts[0]).toEqual({
+      id: 'prt_r',
+      sessionID: 'ses_1',
+      messageID: 'msg_a1',
+      type: 'reasoning',
+      time: { start: 1 },
+      slim: true,
+    });
+    expect(SLIM_PARTS_PROJECTION).toBe('slim-v1');
+  });
+
+  it('strips data-URL bodies from user and assistant file parts and keeps metadata', async () => {
+    const { projectSlimParts } = await loadRuntime();
+    const url = pngDataUrl(12, 8);
+    const [userProjected, assistantProjected] = projectSlimParts([
+      user('msg_u1', [filePart({ url, size: 99 })]),
+      assistant('msg_a1', [filePart({
+        id: 'prt_afile',
+        messageID: 'msg_a1',
+        url,
+        metadata: { width: 64, height: 32 },
+      })]),
+    ]);
+    const userFile = userProjected.parts[0];
+    const assistantFile = assistantProjected.parts[0];
+
+    expect(userFile).toEqual({
+      id: 'prt_file',
+      sessionID: 'ses_1',
+      messageID: 'msg_u1',
+      type: 'file',
+      mime: 'image/png',
+      filename: 'shot.png',
+      size: 99,
+      byteSize: Buffer.from(url.slice(url.indexOf(',') + 1), 'base64').length,
+      width: 12,
+      height: 8,
+      slim: true,
+    });
+    expect(JSON.stringify(userFile)).not.toContain('base64');
+    expect(userFile.url).toBeUndefined();
+    expect(assistantFile.width).toBe(64);
+    expect(assistantFile.height).toBe(32);
+    expect(assistantFile.slim).toBe(true);
+  });
+
+  it('derives GIF/JPEG dimensions and omits unknown sizes', async () => {
+    const { projectSlimParts } = await loadRuntime();
+    const [record] = projectSlimParts([
+      user('msg_u1', [
+        filePart({ id: 'prt_gif', mime: 'image/gif', filename: 'a.gif', url: gifDataUrl(7, 5) }),
+        filePart({ id: 'prt_jpeg', mime: 'image/jpeg', filename: 'a.jpg', url: jpegDataUrl(9, 4) }),
+        filePart({ id: 'prt_txt', mime: 'text/plain', filename: 'note.txt', url: 'data:text/plain;base64,eA==' }),
+        filePart({ id: 'prt_remote', mime: 'image/png', filename: 'remote.png', url: 'file:///tmp/remote.png' }),
+      ]),
+    ]);
+
+    expect(record.parts[0]).toMatchObject({ width: 7, height: 5, slim: true });
+    expect(record.parts[1]).toMatchObject({ width: 9, height: 4, slim: true });
+    expect(record.parts[2].width).toBeUndefined();
+    expect(record.parts[2].byteSize).toBe(1);
+    expect(record.parts[3].byteSize).toBeUndefined();
+    expect(JSON.stringify(record.parts)).not.toContain('file:///');
+    expect(JSON.stringify(record.parts)).not.toContain('base64');
   });
 });

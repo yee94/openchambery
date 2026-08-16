@@ -1558,6 +1558,7 @@ const spawnLocalServer = async () => {
     }),
     sessionIndexDbPath: path.join(app.getPath('userData'), 'session-index.sqlite'),
     messageQueueDbPath: path.join(app.getPath('userData'), 'message-queue.sqlite'),
+    transcriptCacheDbPath: path.join(app.getPath('userData'), 'transcript-cache.sqlite'),
   });
 
   const port = handle.getPort();

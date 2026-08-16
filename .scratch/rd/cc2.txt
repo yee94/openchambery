@@ -1,0 +1,161 @@
+        showScrollButton,
+    } = useChatAutoFollow({
+        enabled: active,
+        currentSessionId,
+        viewportKey: sessionViewKey,
+        sessionMessageCount,
+        sessionIsWorking,
+        isMobile,
+        onActiveTurnChange: handleActiveTurnChange,
+        onUpwardUserIntent: handleHistoryUpwardIntentBridge,
+    });
+    const promptSurface = promptAvailability.showReadOnlyBanner
+        ? readOnlyPromptBanner
+        : readOnly
+            ? null
+            : <ChatInput surface={composerSurface} scrollToBottom={scrollToBottomOnSend} submissionBlocked={promptAvailability.blockSubmission} />;
+
+    const historyPrefixCacheRef = React.useRef<ChatMessageEntry[]>([]);
+    const historyPrefix = React.useMemo(() => {
+        const next = stitchHostedSessionHistory(
+            assistantHistory?.entries ?? [],
+            currentSessionId,
+            historyPrefixCacheRef.current,
+        );
+        historyPrefixCacheRef.current = next;
+        return next;
+    }, [assistantHistory?.entries, currentSessionId]);
+    const currentAssistantHistoryCacheRef = React.useRef<ChatMessageEntry[]>([]);
+    const currentSessionMessages = React.useMemo(() => {
+        if (!assistantHistory) return sessionMessages;
+        const next = mergeHostedCurrentSessionHistory(
+            assistantHistory.entries,
+            currentSessionId,
+            sessionMessages,
+            currentAssistantHistoryCacheRef.current,
+        );
+        currentAssistantHistoryCacheRef.current = next;
+        return next;
+    }, [assistantHistory, currentSessionId, sessionMessages]);
+    const viewportMessages = React.useMemo(() => {
+        const authoritativeMessages = historyPrefix.length === 0
+            ? currentSessionMessages
+            : !currentSessionId
+                ? historyPrefix
+                : [
+                    ...historyPrefix,
+                    createAssistantSessionDivider(currentSessionId),
+                    ...currentSessionMessages,
+                ];
+        return mergePendingUserMessagePresentations(authoritativeMessages, pendingUserMessages);
+    }, [currentSessionId, currentSessionMessages, historyPrefix, pendingUserMessages]);
+    // Transcript rows come from the Query cache, which an idle session can lose
+    // to eviction or a transport swap. Replaying the last painted rows through
+    // that empty read keeps the viewport from being torn down and rebuilt.
+    const paintedTranscriptRef = React.useRef<PaintedTranscript<SessionMessageRecord> | null>(null);
+    const retainedTranscript = React.useMemo(
+        () => resolveRetainedTranscript({
+            sessionId: currentSessionId,
+            messages: viewportMessages,
+            retained: paintedTranscriptRef.current,
+        }),
+        [currentSessionId, viewportMessages],
+    );
+    paintedTranscriptRef.current = retainedTranscript.retained;
+    const renderedViewportMessages = retainedTranscript.messages as SessionMessageRecord[];
+    const hasPaintedTranscript = retainedTranscript.retained !== null;
+    const materializedPendingMessageIDs = React.useMemo(() => {
+        if (pendingUserMessages.length === 0) return [];
+        // A row counts as materialized only once it can paint a user bubble —
+        // part-less or synthetic-only shells still render as null.
+        const authoritativeIDs = new Set(
+            [...historyPrefix, ...currentSessionMessages]
+                .filter((message) => hasUserDisplayableParts(message.parts))
+                .map((message) => message.info.id),
+        );
+        return pendingUserMessages.map((message) => message.info.id).filter((id) => authoritativeIDs.has(id));
+    }, [currentSessionMessages, historyPrefix, pendingUserMessages]);
+    React.useEffect(() => {
+        if (materializedPendingMessageIDs.length === 0) return;
+        onPendingUserMessagesMaterialized?.(materializedPendingMessageIDs);
+        if (currentSessionId) {
+            clearRetainedPendingUserMessages(currentSessionId, materializedPendingMessageIDs);
+        }
+    }, [clearRetainedPendingUserMessages, currentSessionId, materializedPendingMessageIDs, onPendingUserMessagesMaterialized]);
+
+    const timelineController = useChatTimelineController({
+        sessionId: currentSessionId,
+        directory: effectiveSessionDirectory,
+        messages: renderedViewportMessages,
+        historyMeta,
+        scrollRef,
+        messageListRef,
+        loadMoreMessages,
+        goToBottom,
+        releaseAutoFollow,
+        beginHistoryViewportPreservation,
+        endHistoryViewportPreservation,
+        isPinned,
+        showScrollButton,
+        // Only the active desktop transcript auto-fills short first paint;
+        // expanded-input and mobile keep explicit load paths only.
+        autoFillEnabled: active && !isDesktopExpandedInput,
+    });
+    const resumeToLatestInstant = useEvent(() => {
+        goToBottom('instant');
+    });
+    // Mobile loads older history via an explicit top button instead of a
+    // scroll-position trigger (see handleHistoryScroll in the controller).
+    // Busy state is mutation-owned (timeline loadEarlierMutation.isPending) —
+    // never background historyLoading/prefetch, which can stick true on Relay.
+    // The Capacitor mobile entrypoint sets isMobile before first render. Do not
+    // use width/pointer surface inference here: native WebView viewport changes
+    // can temporarily classify as desktop and hide this explicit mobile-only
+    // affordance until an unrelated scroll causes another render.
+    // Visibility is authoritative-only: canLoadEarlier from the child-store
+    // boundary, or a real user-initiated loadEarlier mutation in flight (that
+    // mutation keeps the button painted so its spinner has an anchor). An
+    // unresolved boundary (unknown availability) renders nothing — never a
+    // speculative placeholder.
+    const showLoadOlderButton = resolveMobileLoadOlderVisibility({
+        isMobile,
+        canLoadEarlier: timelineController.historySignals.canLoadEarlier,
+        isLoadingOlder: timelineController.isLoadingOlder,
+    });
+    const isLoadOlderBusy = timelineController.isLoadingOlder;
+    const timelineLoadEarlier = timelineController.loadEarlier;
+    const handleLoadOlderClick = useEvent(() => {
+        void timelineLoadEarlier({ userInitiated: true });
+    });
+
+    // Render-phase ref bridge: timeline is created after auto-follow, so handlers
+    // publish into stable useEvent entry points without effect rebinding.
+    activeTurnChangeRef.current = timelineController.handleActiveTurnChange;
+    historyUpwardIntentRef.current = timelineController.handleHistoryUpwardIntent;
+
+    React.useEffect(() => {
+        if (sessionPermissions.length === 0 && sessionQuestions.length === 0) {
+            return;
+        }
+        handleMessageContentChange('permission');
+    }, [handleMessageContentChange, sessionPermissions, sessionQuestions]);
+
+    const navigation = useChatTurnNavigation({
+        sessionId: currentSessionId,
+        turnIds: timelineController.turnIds,
+        activeTurnId: timelineController.activeTurnId,
+        scrollToTurn: timelineController.scrollToTurn,
+        scrollToMessage: timelineController.scrollToMessage,
+        resumeToBottom: timelineController.resumeToBottomInstant,
+    });
+    const handlePromptNavigatorSelect = useEvent((turnId: string) => {
+        void navigation.scrollToTurnId(turnId, { behavior: 'smooth' });
+    });
+    const canLoadEarlierPrompts = timelineController.historySignals.canLoadEarlier;
+    const showPromptNavigator = hostFeatures.promptNavigator
+        && !isMobile
+        && !isVSCode
+        && !isDesktopExpandedInput
+        && promptNavigatorEnabled
+        && timelineController.turnIds.length >= 2;
+

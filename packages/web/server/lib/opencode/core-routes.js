@@ -56,10 +56,9 @@ const getCookieValue = (req, name) => {
   return '';
 };
 
-const hasPreviewProxyCredential = (req) => {
-  if (!getRequestPathname(req).startsWith('/api/preview/proxy/')) return false;
-  return Boolean(getQueryParam(req, 'oc_preview_token') || getCookieValue(req, 'oc_preview_token'));
-};
+export const hasPreviewProxyCredential = (req) => (
+  Boolean(getQueryParam(req, 'oc_preview_token') || getCookieValue(req, 'oc_preview_token'))
+);
 
 export const registerServerStatusRoutes = (app, dependencies) => {
   const {
@@ -637,7 +636,7 @@ export const registerAuthAndAccessRoutes = (app, dependencies) => {
     // preview proxy validates against the registered target id/TTL. Let those
     // requests reach that stricter check instead of failing the global UI auth
     // gate when the short-lived browser URL auth token expires.
-    if (hasPreviewProxyCredential(req)) {
+    if (getRequestPathname(req).startsWith('/api/preview/proxy/') && hasPreviewProxyCredential(req)) {
       return next();
     }
 

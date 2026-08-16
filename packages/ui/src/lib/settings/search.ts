@@ -189,6 +189,13 @@ const SETTINGS_SEARCH_ITEMS: readonly SettingsSearchItem[] = [
     keywords: ['telemetry', 'analytics'],
   },
   {
+    id: 'appearance.transcript-cache',
+    page: 'appearance',
+    titleKey: 'settings.openchamber.visual.transcriptCache.label',
+    descriptionKey: 'settings.openchamber.visual.transcriptCache.description',
+    keywords: ['cache', 'local data', 'conversation history', 'transcript', 'privacy'],
+  },
+  {
     id: 'chat.render-mode',
     page: 'chat',
     titleKey: 'settings.openchamber.visual.section.chatRenderMode',

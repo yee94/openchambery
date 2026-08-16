@@ -96,6 +96,236 @@ const recordId = (record) => {
   return typeof id === 'string' && id.length > 0 ? id : null;
 };
 
+/** Marker stamped on every projected part; clients treat unstamped as full. */
+export const SLIM_PARTS_PROJECTION = 'slim-v1';
+
+/** Identity/status fields kept on a projected tool part — never the output body. */
+const projectToolPart = (part) => {
+  const state = part.state && typeof part.state === 'object' ? part.state : undefined;
+  return {
+    ...(part.id === undefined ? {} : { id: part.id }),
+    ...(part.sessionID === undefined ? {} : { sessionID: part.sessionID }),
+    ...(part.messageID === undefined ? {} : { messageID: part.messageID }),
+    ...(part.callID === undefined ? {} : { callID: part.callID }),
+    ...(part.tool === undefined ? {} : { tool: part.tool }),
+    type: 'tool',
+    ...(state
+      ? {
+        state: {
+          ...(state.status === undefined ? {} : { status: state.status }),
+          ...(state.title === undefined ? {} : { title: state.title }),
+          ...(state.time === undefined ? {} : { time: state.time }),
+        },
+      }
+      : {}),
+    slim: true,
+  };
+};
+
+/** Reasoning keeps identity and timing only; the trace body is dropped. */
+const projectReasoningPart = (part) => ({
+  ...(part.id === undefined ? {} : { id: part.id }),
+  ...(part.sessionID === undefined ? {} : { sessionID: part.sessionID }),
+  ...(part.messageID === undefined ? {} : { messageID: part.messageID }),
+  type: 'reasoning',
+  ...(part.time === undefined ? {} : { time: part.time }),
+  slim: true,
+});
+
+const positiveDimension = (value) => {
+  if (typeof value === 'number' && Number.isInteger(value) && value > 0) return value;
+  if (typeof value === 'string' && /^\d+$/.test(value)) {
+    const parsed = Number(value);
+    if (Number.isInteger(parsed) && parsed > 0) return parsed;
+  }
+  return undefined;
+};
+
+const nonNegativeInt = (value) => {
+  if (typeof value === 'number' && Number.isInteger(value) && value >= 0) return value;
+  if (typeof value === 'string' && /^\d+$/.test(value)) {
+    const parsed = Number(value);
+    if (Number.isInteger(parsed) && parsed >= 0) return parsed;
+  }
+  return undefined;
+};
+
+const metadataNumber = (part, key, parse) => {
+  const top = parse(part[key]);
+  if (top !== undefined) return top;
+  const metadata = part.metadata;
+  if (metadata && typeof metadata === 'object') return parse(metadata[key]);
+  return undefined;
+};
+
+const decodeDataUrlBytes = (url) => {
+  if (typeof url !== 'string' || !url.startsWith('data:')) return null;
+  const comma = url.indexOf(',');
+  if (comma < 5) return null;
+  const meta = url.slice(5, comma);
+  const payload = url.slice(comma + 1);
+  try {
+    if (/(?:^|;)base64$/i.test(meta.trim())) return Buffer.from(payload, 'base64');
+    return Buffer.from(decodeURIComponent(payload), 'utf8');
+  } catch {
+    return null;
+  }
+};
+
+const jpegSize = (bytes) => {
+  let offset = 2;
+  while (offset + 8 < bytes.length) {
+    if (bytes[offset] !== 0xFF) break;
+    const marker = bytes[offset + 1];
+    if (marker === 0xD8 || marker === 0x01 || (marker >= 0xD0 && marker <= 0xD9)) {
+      offset += 2;
+      continue;
+    }
+    const size = bytes.readUInt16BE(offset + 2);
+    if (size < 2) break;
+    const isSof = (marker >= 0xC0 && marker <= 0xC3)
+      || (marker >= 0xC5 && marker <= 0xC7)
+      || (marker >= 0xC9 && marker <= 0xCB)
+      || (marker >= 0xCD && marker <= 0xCF);
+    if (isSof && offset + 8 < bytes.length) {
+      const height = bytes.readUInt16BE(offset + 5);
+      const width = bytes.readUInt16BE(offset + 7);
+      if (width > 0 && height > 0) return { width, height };
+      break;
+    }
+    offset += 2 + size;
+  }
+  return null;
+};
+
+const webpSize = (bytes) => {
+  if (bytes.length < 30) return null;
+  const fourcc = bytes.toString('ascii', 12, 16);
+  if (fourcc === 'VP8X') {
+    const width = 1 + (bytes[24] | (bytes[25] << 8) | (bytes[26] << 16));
+    const height = 1 + (bytes[27] | (bytes[28] << 8) | (bytes[29] << 16));
+    return width > 0 && height > 0 ? { width, height } : null;
+  }
+  if (fourcc === 'VP8 ' && bytes[23] === 0x9D && bytes[24] === 0x01 && bytes[25] === 0x2A) {
+    const width = bytes.readUInt16LE(26) & 0x3FFF;
+    const height = bytes.readUInt16LE(28) & 0x3FFF;
+    return width > 0 && height > 0 ? { width, height } : null;
+  }
+  if (fourcc === 'VP8L' && bytes[20] === 0x2F) {
+    const bits = bytes.readUInt32LE(21);
+    const width = (bits & 0x3FFF) + 1;
+    const height = ((bits >> 14) & 0x3FFF) + 1;
+    return width > 0 && height > 0 ? { width, height } : null;
+  }
+  return null;
+};
+
+/** PNG / GIF / JPEG / WebP headers only — never treat unknown bytes as a size. */
+const imageSizeFromBytes = (bytes) => {
+  if (!Buffer.isBuffer(bytes) || bytes.length < 10) return null;
+  if (bytes[0] === 0x89 && bytes[1] === 0x50 && bytes[2] === 0x4E && bytes[3] === 0x47 && bytes.length >= 24) {
+    const width = bytes.readUInt32BE(16);
+    const height = bytes.readUInt32BE(20);
+    return width > 0 && height > 0 ? { width, height } : null;
+  }
+  if (bytes[0] === 0x47 && bytes[1] === 0x49 && bytes[2] === 0x46) {
+    const width = bytes.readUInt16LE(6);
+    const height = bytes.readUInt16LE(8);
+    return width > 0 && height > 0 ? { width, height } : null;
+  }
+  if (bytes[0] === 0xFF && bytes[1] === 0xD8) return jpegSize(bytes);
+  if (
+    bytes.length >= 16
+    && bytes.toString('ascii', 0, 4) === 'RIFF'
+    && bytes.toString('ascii', 8, 12) === 'WEBP'
+  ) {
+    return webpSize(bytes);
+  }
+  return null;
+};
+
+/**
+ * First-packet file projection: identity + mime/filename + stable size metadata.
+ * Data-URL bodies are measured then dropped; url/base64 never leave this helper.
+ */
+const projectFilePart = (part) => {
+  const bytes = decodeDataUrlBytes(part.url);
+  const derivedSize = bytes ? imageSizeFromBytes(bytes) : null;
+  const size = metadataNumber(part, 'size', nonNegativeInt);
+  const byteSize = bytes ? bytes.length : metadataNumber(part, 'byteSize', nonNegativeInt);
+  const width = metadataNumber(part, 'width', positiveDimension) ?? derivedSize?.width;
+  const height = metadataNumber(part, 'height', positiveDimension) ?? derivedSize?.height;
+  return {
+    ...(part.id === undefined ? {} : { id: part.id }),
+    ...(part.sessionID === undefined ? {} : { sessionID: part.sessionID }),
+    ...(part.messageID === undefined ? {} : { messageID: part.messageID }),
+    type: 'file',
+    ...(typeof part.mime === 'string' ? { mime: part.mime } : {}),
+    ...(typeof part.filename === 'string' ? { filename: part.filename } : {}),
+    ...(size === undefined ? {} : { size }),
+    ...(byteSize === undefined ? {} : { byteSize }),
+    ...(width === undefined ? {} : { width }),
+    ...(height === undefined ? {} : { height }),
+    slim: true,
+  };
+};
+
+const isUserRecord = (record) => {
+  const info = record?.info ?? {};
+  const role = typeof info.clientRole === 'string' ? info.clientRole : info.role;
+  return role === 'user';
+};
+
+/**
+ * Summarize tool/reasoning parts so a first packet does not have to carry the
+ * bodies of a long tool-heavy turn.
+ *
+ * Runs after `selectTurnRecords`, so `turnCount`, `complete`, and cursor
+ * encoding are all derived from unprojected records and cannot shift. User rows
+ * and assistant text pass through untouched, and records that gain nothing from
+ * projection keep their original object reference.
+ *
+ * @param {unknown[]} records
+ * @returns {unknown[]}
+ */
+export const projectSlimParts = (records) => {
+  if (!Array.isArray(records) || records.length === 0) return records;
+
+  let changedAny = false;
+  const projected = records.map((record) => {
+    if (!record || typeof record !== 'object') return record;
+    const userRow = isUserRecord(record);
+
+    const parts = record.parts;
+    if (!Array.isArray(parts) || parts.length === 0) return record;
+
+    let changed = false;
+    const nextParts = parts.map((part) => {
+      if (!part || typeof part !== 'object') return part;
+      if (part.type === 'file') {
+        changed = true;
+        return projectFilePart(part);
+      }
+      if (userRow) return part;
+      if (part.type === 'tool') {
+        changed = true;
+        return projectToolPart(part);
+      }
+      if (part.type === 'reasoning') {
+        changed = true;
+        return projectReasoningPart(part);
+      }
+      return part;
+    });
+
+    if (!changed) return record;
+    changedAny = true;
+    return { ...record, parts: nextParts };
+  });
+
+  return changedAny ? projected : records;
+};
+
 const countAuthoredBoundaries = (records) =>
   records.reduce((count, entry) => (isUserAuthoredTurnBoundary(entry) ? count + 1 : count), 0);
 

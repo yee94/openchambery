@@ -167,7 +167,8 @@ export const resolveDesktopLoadOlderStatusVisibility = (input: {
  *
  * - `hydrating`: stable skeleton — loading, user retry, or cold with no settled failure
  * - `load-error`: settled failure only (error + not loading + not retrying + no shell)
- * - `pass`: enough UI shell (any transcript row / pending / history) or ready empty snapshot
+ * - `pass`: repository P0, a running shell, retained/hosted rows, a previously
+ *   painted transcript, or a ready empty snapshot
  *
  * Retry from the load-error wall sets `userRetrying` so the gate returns to
  * `hydrating` on the click, then `retryTranscriptInitial` purges the failed
@@ -193,8 +194,14 @@ export const hasChatTranscriptShell = (input: {
   || input.historyPrefixCount > 0
 
 export const resolveChatSessionTranscriptGate = (input: {
-  /** User boundary, retained pending rows, or hosted history prefix. */
+  /** Current transcript has at least one row. */
   hasTranscriptShell: boolean
+  /** Repository-owned P0 latch for the latest authored turn. */
+  p0Satisfied?: boolean
+  /** Live status confirms that the current transcript shell is executing. */
+  hasBusyShell?: boolean
+  /** Retained pending presentation or authoritative hosted-history prefix. */
+  hasImmediateShell?: boolean
   hasRenderableSessionSnapshot: boolean
   prefetchStatus?: 'loading' | 'ready' | 'error'
   syncLoading: boolean
@@ -203,7 +210,7 @@ export const resolveChatSessionTranscriptGate = (input: {
   /** This session already painted a transcript under the current mount. */
   hasPaintedTranscript?: boolean
 }): ChatSessionTranscriptGate => {
-  if (input.hasTranscriptShell) return 'pass'
+  if (input.p0Satisfied || input.hasBusyShell || input.hasImmediateShell) return 'pass'
 
   // Retained content outranks both the skeleton and the failure wall: a
   // refetch that errors must not blank a transcript the user is reading.

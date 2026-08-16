@@ -69,10 +69,14 @@ function transportPage(messages: Message[]): TranscriptTransportPage {
 }
 
 function createHarnessStore(messages: Message[] = []): TranscriptStoreSurface {
-  let state = {
+  let state: {
+    message: Record<string, Message[]>
+    part: Record<string, Part[]>
+    session_history_boundary: Record<string, SessionHistoryBoundary>
+  } = {
     message: messages.length > 0 ? { [SESSION]: messages } : {},
-    part: {} as Record<string, Part[]>,
-    session_history_boundary: {} as Record<string, SessionHistoryBoundary>,
+    part: {},
+    session_history_boundary: {},
   }
   return {
     getState: () => state,

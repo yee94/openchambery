@@ -74,9 +74,9 @@ import {
     useSessionMessageLoadState,
     useSessionMessageRecords,
     useSessionMaterializationStatus,
+    useSessionTranscriptHydration,
     useSessionTranscriptPagination,
     useSyncDirectory,
-    useDirectorySync,
     useSessionStatus,
     useSessionStatusObservedAt,
     useSessionStatusSnapshotAt,
@@ -140,7 +140,6 @@ const IDLE_SESSION_STATUS = { type: 'idle' as const };
 const CHAT_FORCE_SCROLL_BOTTOM_EVENT = 'openchamber:chat-force-scroll-bottom';
 /** useEventListener attaches to window when target is null — pass a no-op getter instead. */
 const NO_EVENT_TARGET = () => undefined;
-const EMPTY_PREFETCH_SERVER_SNAPSHOT = () => undefined;
 const DEFAULT_RETRY_MESSAGE = 'Quota limit reached. Retrying automatically.';
 const MEBIBYTE = 1024 * 1024;
 const DEFAULT_SESSION_VIEW_ESTIMATED_BYTES = MEBIBYTE;
@@ -782,6 +781,10 @@ const ChatContainerContent: React.FC<ChatContainerContentProps> = ({
         currentSessionId ?? '',
         effectiveSessionDirectory,
     );
+    const transcriptHydration = useSessionTranscriptHydration(
+        currentSessionId ?? '',
+        effectiveSessionDirectory,
+    );
     const [retryingSessionHistoryId, setRetryingSessionHistoryId] = React.useState<string | null>(null);
     const isRetryingSessionHistory = Boolean(currentSessionId)
         && retryingSessionHistoryId === currentSessionId;
@@ -1172,7 +1175,8 @@ const ChatContainerContent: React.FC<ChatContainerContentProps> = ({
     );
     paintedTranscriptRef.current = retainedTranscript.retained;
     const renderedViewportMessages = retainedTranscript.messages as SessionMessageRecord[];
-    const hasPaintedTranscript = retainedTranscript.retained !== null;
+    const paintedTranscriptSessionRef = React.useRef<string | null>(null);
+    const hasPaintedTranscript = paintedTranscriptSessionRef.current === currentSessionId;
     // The status line and the body are independent subscriptions, so the body
     // can freeze while the session keeps reporting work. Repair that state
     // instead of leaving the user with a transcript that silently drops their
@@ -1424,18 +1428,25 @@ const ChatContainerContent: React.FC<ChatContainerContentProps> = ({
     // Cold transcript gate: prefer a stable skeleton over flashing the
     // "Unable to load this conversation" wall while imperative + reactive
     // pulls race on session switch (stale error or concurrent fail).
-    const sessionTranscriptGate = resolveChatSessionTranscriptGate({
-        hasTranscriptShell: hasChatTranscriptShell({
+    const hasTranscriptShell = hasChatTranscriptShell({
             transcriptMessageCount: sessionMessages.length,
             pendingUserCount: pendingUserMessages.length,
             historyPrefixCount: historyPrefix.length,
-        }),
+        });
+    const sessionTranscriptGate = resolveChatSessionTranscriptGate({
+        hasTranscriptShell,
+        p0Satisfied: transcriptHydration.p0Satisfied,
+        hasBusyShell: sessionIsWorking && hasTranscriptShell,
+        hasImmediateShell: pendingUserMessages.length > 0 || historyPrefix.length > 0,
         hasRenderableSessionSnapshot,
         prefetchStatus: sessionPrefetchInfo?.status,
         syncLoading: Boolean(currentSessionId && sync.isLoading(currentSessionId, { directory: effectiveSessionDirectory })),
         userRetrying: isRetryingSessionHistory,
         hasPaintedTranscript,
     });
+    if (sessionTranscriptGate === 'pass' && renderedViewportMessages.length > 0) {
+        paintedTranscriptSessionRef.current = currentSessionId;
+    }
     const isSessionHydrating = Boolean(currentSessionId) && sessionTranscriptGate === 'hydrating';
     // Assistant-owned history is authoritative for prior bindings. Do not replace
     // a restorable transcript with the live-session load-failure wall.

@@ -25,12 +25,16 @@ import {
 import type { SessionHistoryBoundary } from "./types"
 import { UNKNOWN_SESSION_HISTORY_BOUNDARY } from "./types"
 import {
+  countTranscriptAuthoredUserTurns,
+  evaluateTranscriptP0Satisfied,
   isTranscriptSseEventType,
   projectPagination,
   projectTranscriptData,
+  resolveTranscriptHydrationPhase,
   type TranscriptCommand,
   type TranscriptCommandResult,
   type TranscriptChangeListener,
+  type TranscriptHydrationState,
   type TranscriptRepository,
   type TranscriptRequestState,
   type TranscriptScope,
@@ -631,6 +635,19 @@ export function createStoreTranscriptRepository(
       return deps.getRequestState?.(directory, scope.sessionID) ?? {
         sessionID: scope.sessionID,
         status: "idle",
+      }
+    },
+
+    getHydrationState(scope): TranscriptHydrationState {
+      const transcript = repository.getTranscript(scope)
+      const p0Satisfied = evaluateTranscriptP0Satisfied(transcript)
+      return {
+        sessionID: scope.sessionID,
+        p0Satisfied,
+        phase: resolveTranscriptHydrationPhase({
+          p0Satisfied,
+          earlierHistoryLoaded: countTranscriptAuthoredUserTurns(transcript) > 1,
+        }),
       }
     },
 

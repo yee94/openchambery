@@ -1,0 +1,241 @@
+function shouldRefreshSuspendedParts(previousParts: Part[], liveParts: readonly Part[]): boolean {
+  if (previousParts.length !== liveParts.length) return true
+  for (let index = 0; index < liveParts.length; index += 1) {
+    const previous = previousParts[index]
+    const live = liveParts[index]
+    if (!previous || !live) return true
+    if (previous.id !== live.id || previous.type !== live.type) return true
+    if (live.type === "tool" && previous !== live) return true
+  }
+  return false
+}
+
+const snapshotPartsMatchSource = (
+  snapshot: SessionMessageRecordsSnapshot,
+  source: SessionMessageRecordsSource,
+): boolean => {
+  for (const record of snapshot.list) {
+    const liveParts = (source.parts[record.info.id] as Part[] | undefined) ?? EMPTY_PARTS
+    if (snapshot.suspendPartUpdates) {
+      const suspendedID = snapshot.suspendedPartUpdatesMessageID
+      if (
+        (!suspendedID || record.info.id === suspendedID)
+        && !isSuspendExemptShellBridge(source.parts, record.info, liveParts)
+        && !shouldRefreshSuspendedParts(record.parts, liveParts)
+      ) {
+        // Pure text/reasoning growth on the same part ids — keep frozen.
+        continue
+      }
+    }
+    // Mirror the merge buildSessionMessageRecordsSnapshot would apply. A frame
+    // that only regresses an open assistant resolves back to the same array, so
+    // the cached snapshot stays reusable instead of rebuilding every commit.
+    if (mergePartsForDisplay(record.parts, liveParts, record.info) !== record.parts) {
+      return false
+    }
+  }
+
+  return true
+}
+
+const getReusableSessionMessageRecordsSnapshot = (
+  store: StoreApi<DirectoryStore>,
+  source: SessionMessageRecordsSource,
+  suspendPartUpdates: boolean,
+  suspendedPartUpdatesMessageID?: string,
+): SessionMessageRecordsSnapshot | undefined => {
+  const cached = readCachedSessionMessageRecordsSnapshot(
+    store,
+    source.sessionID,
+    suspendPartUpdates,
+    suspendedPartUpdatesMessageID,
+  )
+  if (!cached) return undefined
+  if (
+    cached.sourceMessages === source.messages
+    && cached.revertMessageID === source.revertMessageID
+    && cached.suspendPartUpdates === suspendPartUpdates
+    && cached.suspendedPartUpdatesMessageID === suspendedPartUpdatesMessageID
+    && snapshotPartsMatchSource(cached, source)
+  ) {
+    return cached
+  }
+  return undefined
+}
+
+function getVisibleMessagesForSource(
+  source: SessionMessageRecordsSource,
+  previous?: SessionMessageRecordsSnapshot,
+): {
+  sourceMessages: readonly Message[]
+  visibleMessages: Message[]
+  revertMessageID?: string
+} {
+  const sourceMessages = source.messages
+  const revertMessageID = source.revertMessageID
+
+  if (
+    previous
+    && previous.sourceMessages === sourceMessages
+    && previous.revertMessageID === revertMessageID
+  ) {
+    return {
+      sourceMessages,
+      visibleMessages: previous.visibleMessages,
+      revertMessageID,
+    }
+  }
+
+  const asArray = sourceMessages as Message[]
+  const visibleMessages = revertMessageID
+    ? messagesVisibleWithRevert(asArray, revertMessageID)
+    : (sourceMessages.length === 0 ? EMPTY_MESSAGES : asArray.slice())
+  return {
+    sourceMessages,
+    visibleMessages,
+    revertMessageID,
+  }
+}
+
+/**
+ * Build display records from a flat transcript projection + session.revert.
+ * Production readers should pass repository messages/parts (Ticket 09 batch 1A).
+ */
+export function buildSessionMessageRecordsSnapshotFromSource(
+  source: SessionMessageRecordsSource,
+  previous?: SessionMessageRecordsSnapshot,
+  suspendPartUpdates = false,
+  suspendedPartUpdatesMessageID?: string,
+): SessionMessageRecordsSnapshot {
+  const sessionID = source.sessionID
+  const { sourceMessages, visibleMessages, revertMessageID } = getVisibleMessagesForSource(source, previous)
+  const nextById = new Map<string, SessionMessageRecord>()
+  const nextList = visibleMessages.map((message) => {
+    const previousRecord = previous?.byId.get(message.id)
+    const liveParts = (source.parts[message.id] as Part[] | undefined) ?? EMPTY_PARTS
+    const shouldSuspendParts = suspendPartUpdates
+      && previousRecord
+      && (!suspendedPartUpdatesMessageID || message.id === suspendedPartUpdatesMessageID)
+      && !isSuspendExemptShellBridge(source.parts, message, liveParts)
+      && !shouldRefreshSuspendedParts(previousRecord.parts, liveParts)
+    // Suspension is only a text-growth optimization. Structural stability is
+    // owned by mergePartsForDisplay: while an assistant turn is open, a store
+    // frame that drops rows the UI already painted is unioned back, and the
+    // hold releases as soon as the message settles.
+    const parts = shouldSuspendParts
+      ? previousRecord.parts
+      : mergePartsForDisplay(previousRecord?.parts, liveParts, message)
+
+    const nextRecord = previousRecord && previousRecord.info === message && previousRecord.parts === parts
+      ? previousRecord
+      : { info: message, parts }
+
+    nextById.set(message.id, nextRecord)
+    return nextRecord
+  })
+
+  const unchanged = Boolean(previous)
+    && previous?.visibleMessages === visibleMessages
+    && previous.suspendPartUpdates === suspendPartUpdates
+    && previous.suspendedPartUpdatesMessageID === suspendedPartUpdatesMessageID
+    && previous.list.length === nextList.length
+    && previous.list.every((record, index) => record === nextList[index])
+
+  if (unchanged && previous) {
+    return previous
+  }
+
+  return {
+    sessionID,
+    sourceMessages: sourceMessages as Message[],
+    visibleMessages,
+    revertMessageID,
+    suspendPartUpdates,
+    suspendedPartUpdatesMessageID,
+    list: nextList,
+    byId: nextById,
+  }
+}
+
+/**
+ * Pure test compatibility surface for callers that still hold MaterializedState.
+ * Not a production read path — production UI uses repository projections via
+ * useSessionMessageRecords / buildSessionMessageRecordsSnapshotFromSource.
+ */
+export function buildSessionMessageRecordsSnapshot(
+  state: {
+    session: State["session"]
+    message: Record<string, Message[]>
+    part: Record<string, Part[]>
+  },
+  sessionID: string,
+  previous?: SessionMessageRecordsSnapshot,
+  suspendPartUpdates = false,
+  suspendedPartUpdatesMessageID?: string,
+): SessionMessageRecordsSnapshot {
+  const session = state.session.find((candidate) => candidate.id === sessionID)
+  const revertMessageID = (session as { revert?: { messageID?: string } } | undefined)?.revert?.messageID
+  return buildSessionMessageRecordsSnapshotFromSource(
+    {
+      sessionID,
+      messages: state.message[sessionID] ?? EMPTY_MESSAGES,
+      parts: state.part,
+      revertMessageID,
+    },
+    previous,
+    suspendPartUpdates,
+    suspendedPartUpdatesMessageID,
+  )
+}
+
+export function useSessionMessageCount(sessionID: string, directory?: string): number {
+  const system = useSyncSystem()
+  const targetDirectory = directory ?? system.directory
+  const store = useDirectoryStore(targetDirectory)
+  return useTranscriptMessageCount(sessionID, targetDirectory, store)
+}
+
+/**
+ * Pagination projection for a session (Ticket 02).
+ * Prefer this over reading `session_history_boundary` from the child store.
+ */
+export function useSessionTranscriptPagination(sessionID: string, directory?: string) {
+  const system = useSyncSystem()
+  const targetDirectory = directory ?? system.directory
+  const store = useDirectoryStore(targetDirectory)
+  return useTranscriptPagination(sessionID, targetDirectory, store)
+}
+
+export function useSessionTextMessages(sessionID: string, directory?: string): SessionTextMessage[] {
+  const records = useSessionMessageRecords(sessionID, directory)
+
+  return useMemo(
+    () => records.map((record) => ({
+      id: record.info.id,
+      role: typeof record.info.role === "string" ? record.info.role : null,
+      text: getConcatenatedTextFromParts(record.parts),
+    })),
+    [records],
+  )
+}
+
+export function useUserMessageHistory(sessionID: string, directory?: string): string[] {
+  const system = useSyncSystem()
+  const targetDirectory = directory ?? system.directory
+  const store = useDirectoryStore(targetDirectory)
+  const snapshotRef = useRef<UserMessageHistorySnapshot>(EMPTY_USER_MESSAGE_HISTORY_SNAPSHOT)
+
+  // Ticket 09 batch 1B: transcript from repository; session.revert from catalog.
+  const getSnapshot = useCallback(() => {
+    void getTranscriptRepositoryBindingRevision()
+    if (!sessionID) {
+      snapshotRef.current = EMPTY_USER_MESSAGE_HISTORY_SNAPSHOT
+      return EMPTY_USER_MESSAGE_HISTORY_SNAPSHOT.history
+    }
+    const repository = getTranscriptRepository()
+      ?? resolveTranscriptRepositoryForStore(targetDirectory, store)
+    const data = repository.getTranscript(transcriptScope(targetDirectory, sessionID))
+    const state = store.getState()
+    const session = state.session.find((candidate) => candidate.id === sessionID)
+    const revertMessageID = (session as { revert?: { messageID?: string } } | undefined)?.revert?.messageID
+    const next = buildUserMessageHistorySnapshotFromSource(

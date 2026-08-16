@@ -57,6 +57,7 @@ import {
   messagesFromTranscriptData,
   resetObserveEnsureGate,
   scheduleEnsureTranscriptOnObserve,
+  useTranscriptHydrationState,
   useTranscriptMaterializationStatus,
   useTranscriptMessageCount,
   useTranscriptMessages,
@@ -64,7 +65,7 @@ import {
   useTranscriptPagination,
   useTranscriptParts,
 } from "./transcript-repository-observers"
-import { stripMessageDiffSnapshots, stripSessionDiffSnapshots } from "./sanitize"
+import { stripSessionDiffSnapshots } from "./sanitize"
 import { messagesVisibleWithRevert } from "./conversation-order"
 import {
   deferIdleTranscriptSettle,
@@ -76,7 +77,6 @@ import { syncDebug } from "./debug"
 import {
   getReconnectCandidateSessionIds,
   getReconnectMaterializationSessionIds,
-  getReconnectTranscriptInvalidationSessionIds,
   getStatusWatchdogCandidateSessionIds,
 } from "./reconnect-recovery"
 import { opencodeClient } from "@/lib/opencode/client"
@@ -97,8 +97,6 @@ import type { PermissionRequest } from "@/types/permission"
 import type { QuestionRequest } from "@/types/question"
 import * as sessionActions from "./session-actions"
 import { mergePartsForDisplay } from "./displayParts"
-import type { ReduceSessionMessagePageResult } from "./session-message-reducer"
-import { fetchHostSessionTurnPageForPurpose } from "./session-turn-page-api"
 import { getInitialSessionTurnLimit } from "./session-message-policy"
 import { openSessionFromToast } from "./session-opener"
 import { getPermissionToastKey, showPermissionNeededToast } from "./permission-toast"
@@ -491,7 +489,7 @@ export async function materializeSessionFromServer(
     const page = await fetchProductionTranscriptTransportPage({
       directory,
       sessionID,
-      limit: getInitialSessionTurnLimit?.() ?? 6,
+      limit: getInitialSessionTurnLimit(),
       signal: AbortSignal.timeout(30_000),
       purpose: "materialize",
     })
@@ -1575,7 +1573,6 @@ export async function resyncDirectoryAfterReconnect(
   })
   if (materializationSessionIds.length > 0) {
     const scopedClient = opencodeClient.getScopedSdkClient(directory)
-    const runtimeKey = getRuntimeKey()
     await Promise.all(materializationSessionIds.map(async (sessionId) => {
       const identityRevision = getLiveRevision(sessionId)
       syncDebug.recovery.materializing({ reason, directory, sessionID: sessionId })
@@ -3483,6 +3480,17 @@ export function useSessionTranscriptPagination(sessionID: string, directory?: st
   const targetDirectory = directory ?? system.directory
   const store = useDirectoryStore(targetDirectory)
   return useTranscriptPagination(sessionID, targetDirectory, store)
+}
+
+/**
+ * Read-only transcript hydration phase (Ticket 05).
+ * UI gates skeleton / input on `p0Satisfied`; it must not advance `phase`.
+ */
+export function useSessionTranscriptHydration(sessionID: string, directory?: string) {
+  const system = useSyncSystem()
+  const targetDirectory = directory ?? system.directory
+  const store = useDirectoryStore(targetDirectory)
+  return useTranscriptHydrationState(sessionID, targetDirectory, store)
 }
 
 export function useSessionTextMessages(sessionID: string, directory?: string): SessionTextMessage[] {

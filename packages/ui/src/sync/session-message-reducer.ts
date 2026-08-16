@@ -275,7 +275,12 @@ export function reduceSessionMessagePage(
     {
       skipPartTypes: options.skipPartTypes,
       merge,
-      placeUnanchoredNewMessages: options.purpose === "prepend" ? "prepend" : "append",
+      placeUnanchoredNewMessages:
+        options.purpose === "prepend"
+          ? "prepend"
+          : options.purpose === "reconcile-page"
+            ? "by-created"
+            : "append",
     },
   )
 

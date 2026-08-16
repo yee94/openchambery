@@ -80,6 +80,8 @@ import { createSessionIndexService } from './lib/session-index/service.js';
 import { createSessionIndexSyncRuntime } from './lib/session-index/sync-runtime.js';
 import { resolveSessionIndexDbPath } from './lib/session-index/resolve-db-path.js';
 import { applySessionIndexEvent } from './lib/session-index/event-ingest.js';
+import { createTranscriptCacheService } from './lib/transcript-cache/service.js';
+import { resolveTranscriptCacheDbPath } from './lib/transcript-cache/resolve-db-path.js';
 import { createMessageQueueRuntime } from './lib/message-queue/runtime.js';
 import { resolveMessageQueueDbPath } from './lib/message-queue/resolve-db-path.js';
 import { createOpenChamberEventBroadcaster } from './lib/opencode/feature-routes-runtime.js';
@@ -1378,6 +1380,9 @@ async function main(options = {}) {
     dbPath: resolveSessionIndexDbPath({ sessionIndexDbPath }, OPENCHAMBER_DATA_DIR),
     getRuntimeConfig: () => getDesktopRuntimeConfig?.() ?? null,
   });
+  const transcriptCacheService = createTranscriptCacheService({
+    dbPath: resolveTranscriptCacheDbPath({ transcriptCacheDbPath: options.transcriptCacheDbPath }),
+  });
   const messageQueueDbPath = options.messageQueueDbPath !== undefined
     ? options.messageQueueDbPath
     : process.env.OPENCHAMBER_MESSAGE_QUEUE_DB_PATH;
@@ -1598,6 +1603,7 @@ async function main(options = {}) {
     setAutoAcceptSession,
     sessionIndexService,
     sessionIndexSyncRuntime,
+    transcriptCacheService,
   });
   uiAuthController = bootstrapResult.uiAuthController;
   realtimeProxyRuntime = attachRealtimeProxy({
@@ -1818,6 +1824,11 @@ async function main(options = {}) {
         sessionIndexService?.close();
       } catch {
         // The index is a local cache; a failed close must not block shutdown.
+      }
+      try {
+        transcriptCacheService?.close();
+      } catch {
+        // The transcript cache is a local acceleration store; a failed close must not block shutdown.
       }
       try {
         await messageQueueRuntime?.stop();

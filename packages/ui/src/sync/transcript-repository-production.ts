@@ -38,17 +38,17 @@ import {
   type SessionTurnPage,
 } from "./session-turn-page-api"
 import {
+  fetchExactSessionMessageRecord,
   findMissingAssistantParentUserIDs,
-  loadSessionMessage,
   recoverAssistantTailBoundary,
-  type SessionMessageQueryRecord,
 } from "./transcript-parent-recovery"
 import { stripMessageDiffSnapshots } from "./sanitize"
 import type { SessionMessagePagePurpose } from "./session-merge-strategy"
 import type { TranscriptTransportPage } from "./transcript-repository"
 import { getInitialSessionTurnLimit, getHistorySessionTurnLimit } from "./session-message-policy"
 import type { ChildStoreManager } from "./child-store"
-import { getRuntimeKey } from "@/lib/runtime-switch"
+import type { TranscriptDurableStore } from "./transcript-durable-store"
+import { createRuntimeTranscriptDurableStore } from "./transcript-durable-store-runtime"
 
 const cmp = (a: string, b: string) => (a < b ? -1 : a > b ? 1 : 0)
 
@@ -100,31 +100,21 @@ export async function fetchProductionTranscriptTransportPage(input: {
         records,
         complete: page.complete,
         requestMessage: async (messageID) => {
-          const record = await loadSessionMessage({
-            runtimeKey: getRuntimeKey(),
+          const record = await fetchExactSessionMessageRecord({
+            transport: getRuntimeTransportIdentity(),
+            generation: getRuntimeGeneration(),
             directory: input.directory,
             sessionID: input.sessionID,
             messageID,
-            request: async () => {
-              const response = await scopedClient.session.message({
-                sessionID: input.sessionID,
-                messageID,
-                directory: input.directory,
-              })
-              if (response.error) {
-                throw new Error("session.message failed")
-              }
-              const data = response.data as SessionMessageQueryRecord | undefined
-              if (!data?.info?.id) throw new Error("session.message failed: empty response")
-              return {
-                info: stripMessageDiffSnapshots(data.info),
-                parts: sortParts(data.parts ?? []),
-              }
-            },
+            request: () => scopedClient.session.message({
+              sessionID: input.sessionID,
+              messageID,
+              directory: input.directory,
+            }),
           })
           return {
             info: record.info,
-            parts: record.parts ?? [],
+            parts: sortParts(record.parts ?? []),
           }
         },
       })
@@ -154,6 +144,12 @@ export type MountProductionTranscriptStackInput = {
   childStores: ChildStoreManager
   getViewedSession?: () => { directory: string; sessionID: string } | null
   getViewedSessions?: () => readonly { directory: string; sessionID: string }[]
+  /**
+   * Optional settled-transcript cache. Omitted mounts the production runtime
+   * adapter (Electron local HTTP/SQLite, otherwise IndexedDB). Injected stores
+   * win so tests can stay in-memory.
+   */
+  durableStore?: TranscriptDurableStore
 }
 
 /**
@@ -189,6 +185,7 @@ export function mountProductionTranscriptStack(
       }),
     initialLimit: getInitialSessionTurnLimit(),
     historyLimit: getHistorySessionTurnLimit(),
+    durableStore: input.durableStore ?? createRuntimeTranscriptDurableStore(),
   })
 
   const compensation = createTranscriptReconnectCompensationController({
@@ -224,6 +221,8 @@ export function mountProductionTranscriptStack(
   return {
     repository,
     destroy: () => {
+      // Drop Query observers and compensation only. The durable cache is the
+      // user's continuity store and must survive SyncProvider remounts.
       compensation.cancelAll("dispose")
       registerTranscriptReconnectCompensationController(null)
       repository.destroy()

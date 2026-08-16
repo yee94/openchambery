@@ -38,6 +38,16 @@ import {
     SettingsGroup,
     SettingsRow,
 } from '@/components/sections/shared/SettingsGroup';
+import {
+    Dialog,
+    DialogContent,
+    DialogDescription,
+    DialogFooter,
+    DialogHeader,
+    DialogTitle,
+} from '@/components/ui/dialog';
+import { toast } from '@/components/ui';
+import { clearCurrentRuntimeTranscriptCache } from '@/sync/transcript-durable-store-runtime';
 
 interface Option<T extends string> {
     id: T;
@@ -495,6 +505,8 @@ export const OpenChamberVisualSettings: React.FC<OpenChamberVisualSettingsProps>
     } = useThemeSystem();
 
     const [themesReloading, setThemesReloading] = React.useState(false);
+    const [clearTranscriptCacheDialogOpen, setClearTranscriptCacheDialogOpen] = React.useState(false);
+    const [clearingTranscriptCache, setClearingTranscriptCache] = React.useState(false);
 
     // macOS-desktop-only vibrancy toggle. Changing it needs a full relaunch
     // (vibrancy is a window-creation option), so we persist + restart on save.
@@ -707,6 +719,20 @@ export const OpenChamberVisualSettings: React.FC<OpenChamberVisualSettingsProps>
         return visibleSettings.includes(setting);
     };
 
+    const handleClearTranscriptCache = async () => {
+        if (clearingTranscriptCache) return;
+        setClearingTranscriptCache(true);
+        try {
+            await clearCurrentRuntimeTranscriptCache();
+            setClearTranscriptCacheDialogOpen(false);
+            toast.success(t('settings.openchamber.visual.transcriptCache.toast.cleared'));
+        } catch {
+            toast.error(t('settings.openchamber.visual.transcriptCache.toast.failed'));
+        } finally {
+            setClearingTranscriptCache(false);
+        }
+    };
+
     const isVSCode = isVSCodeRuntime();
     const hasThemeSettings = shouldShow('theme') && !isVSCode;
     const hasLocalizationSettings = shouldShow('theme') || shouldShow('timeFormat') || shouldShow('weekStart');
@@ -864,6 +890,7 @@ export const OpenChamberVisualSettings: React.FC<OpenChamberVisualSettingsProps>
     }, [setMobileKeyboardMode, showMobileKeyboardModeSetting, showPwaInstallNameSetting, showPwaOrientationSetting]);
 
     return (
+        <>
         <div className="oc-settings-section-stack">
 
                 {/* --- Appearance & Themes --- */}
@@ -2504,22 +2531,75 @@ export const OpenChamberVisualSettings: React.FC<OpenChamberVisualSettingsProps>
                     <ResponsiveSettingsGroup
                         isMobile={isMobile}
                         label={t('settings.openchamber.visual.section.privacy')}
-                        description={t('settings.openchamber.visual.field.sendAnonymousUsageReportsHint')}
                     >
-                        <ResponsiveSettingsRow
+                        {shouldShow('reportUsage') && <ResponsiveSettingsRow
                             isMobile={isMobile}
                             itemId="appearance.usage-reports"
                             label={t('settings.openchamber.visual.field.sendAnonymousUsageReports')}
+                            description={t('settings.openchamber.visual.field.sendAnonymousUsageReportsHint')}
                         >
                             <Checkbox
                                 checked={reportUsage}
                                 onChange={handleReportUsageChange}
                                 ariaLabel={t('settings.openchamber.visual.field.sendAnonymousUsageReportsAria')}
                             />
-                        </ResponsiveSettingsRow>
+                        </ResponsiveSettingsRow>}
+                        {shouldShow('reportUsage') && (
+                            <ResponsiveSettingsRow
+                                isMobile={isMobile}
+                                itemId="appearance.transcript-cache"
+                                label={t('settings.openchamber.visual.transcriptCache.label')}
+                                description={t('settings.openchamber.visual.transcriptCache.description')}
+                            >
+                                <Button
+                                    type="button"
+                                    variant="destructive"
+                                    size="sm"
+                                    disabled={clearingTranscriptCache}
+                                    onClick={() => setClearTranscriptCacheDialogOpen(true)}
+                                >
+                                    {t('settings.openchamber.visual.transcriptCache.action')}
+                                </Button>
+                            </ResponsiveSettingsRow>
+                        )}
                     </ResponsiveSettingsGroup>
                 )}
 
             </div>
+            <Dialog
+                open={clearTranscriptCacheDialogOpen}
+                onOpenChange={(open) => {
+                    if (!clearingTranscriptCache) setClearTranscriptCacheDialogOpen(open);
+                }}
+            >
+                <DialogContent className="max-w-[min(480px,100vw-2rem)]">
+                    <DialogHeader>
+                        <DialogTitle>{t('settings.openchamber.visual.transcriptCache.dialog.title')}</DialogTitle>
+                        <DialogDescription>{t('settings.openchamber.visual.transcriptCache.dialog.description')}</DialogDescription>
+                    </DialogHeader>
+                    <DialogFooter>
+                        <Button
+                            type="button"
+                            variant="ghost"
+                            disabled={clearingTranscriptCache}
+                            onClick={() => setClearTranscriptCacheDialogOpen(false)}
+                        >
+                            {t('settings.common.actions.cancel')}
+                        </Button>
+                        <Button
+                            type="button"
+                            variant="destructive"
+                            disabled={clearingTranscriptCache}
+                            aria-busy={clearingTranscriptCache || undefined}
+                            onClick={() => void handleClearTranscriptCache()}
+                        >
+                            {clearingTranscriptCache
+                                ? t('settings.openchamber.visual.transcriptCache.dialog.clearing')
+                                : t('settings.openchamber.visual.transcriptCache.action')}
+                        </Button>
+                    </DialogFooter>
+                </DialogContent>
+            </Dialog>
+        </>
     );
 };

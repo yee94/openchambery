@@ -667,4 +667,12 @@ describe('virtualized armed-snapshot compensation ownership', () => {
         const source = readFileSync(join(here, 'useChatTimelineController.ts'), 'utf8');
         expect(source).toContain('if (isPinnedRef.current && !snap)');
     });
+
+    test('prepends preserve bottom pin or the reader anchor through their existing owners', () => {
+        const source = readFileSync(join(here, 'useChatTimelineController.ts'), 'utf8');
+        expect(source).toContain('if (isPinnedRef.current && !snap)');
+        expect(source).toContain("if (prependCompensation.owner === 'tanstack-core')");
+        expect(source).toContain('restoreViewportAnchor(anchor)');
+        expect(source).toContain("goToBottom('instant');");
+    });
 });

@@ -1,0 +1,141 @@
+
+  return React.useSyncExternalStore(subscribe, getSnapshot, getSnapshot)
+}
+
+/**
+ * Get messages for a session in the old {info, parts}[] format.
+ * Uses visible messages (filtered by revert state).
+ *
+ * Ticket 09 batch 1A: message/part data comes from TranscriptRepository;
+ * session.revert still comes from the directory session catalog.
+ */
+export function useSessionMessageRecords(
+  sessionID: string,
+  directory?: string,
+  options?: { enabled?: boolean; suspendPartUpdates?: boolean; suspendPartUpdatesForMessageId?: string | null },
+) {
+  const system = useSyncSystem()
+  const targetDirectory = directory ?? system.directory
+  const store = useDirectoryStore(targetDirectory)
+  const snapshotRef = useRef<SessionMessageRecordsSnapshot>({
+    sessionID,
+    sourceMessages: EMPTY_MESSAGES,
+    visibleMessages: EMPTY_MESSAGES,
+    revertMessageID: undefined,
+    suspendPartUpdates: Boolean(options?.suspendPartUpdates),
+    suspendedPartUpdatesMessageID: options?.suspendPartUpdatesForMessageId ?? undefined,
+    list: [],
+    byId: new Map(),
+  })
+
+  const getSnapshot = useCallback(() => {
+    // Include binding revision so React re-reads after store→Query swap.
+    void getTranscriptRepositoryBindingRevision()
+    if (!sessionID) {
+      return EMPTY_SESSION_MESSAGE_RECORDS
+    }
+
+    const repository = getTranscriptRepository()
+      ?? resolveTranscriptRepositoryForStore(targetDirectory, store)
+    const data = repository.getTranscript(transcriptScope(targetDirectory, sessionID))
+    const suspendPartUpdates = Boolean(options?.suspendPartUpdates)
+    const suspendedPartUpdatesMessageID = options?.suspendPartUpdatesForMessageId ?? undefined
+    // Prefer current-session snapshot sourceMessages so consecutive getSnapshot
+    // reads (React tearing check) reuse the same Message[] when transcript refs
+    // are unchanged — avoids Maximum update depth from list identity churn.
+    const previousForMessages = snapshotRef.current.sessionID === sessionID
+      ? snapshotRef.current.sourceMessages
+      : readCachedSessionMessageRecordsSnapshot(
+        store,
+        sessionID,
+        suspendPartUpdates,
+        suspendedPartUpdatesMessageID,
+      )?.sourceMessages
+    const messages = messagesFromTranscriptData(data, previousForMessages)
+    const state = store.getState()
+    const session = state.session.find((candidate) => candidate.id === sessionID)
+    const revertMessageID = (session as { revert?: { messageID?: string } } | undefined)?.revert?.messageID
+    const source: SessionMessageRecordsSource = {
+      sessionID,
+      messages,
+      parts: data.partsByMessageID,
+      revertMessageID,
+    }
+
+    const reusableSnapshot = getReusableSessionMessageRecordsSnapshot(
+      store,
+      source,
+      suspendPartUpdates,
+      suspendedPartUpdatesMessageID,
+    )
+    if (reusableSnapshot) {
+      snapshotRef.current = reusableSnapshot
+      return reusableSnapshot.list
+    }
+
+    const previousSnapshot = snapshotRef.current.sessionID === sessionID
+      ? snapshotRef.current
+      : readCachedSessionMessageRecordsSnapshot(store, sessionID, suspendPartUpdates, suspendedPartUpdatesMessageID)
+
+    const nextSnapshot = buildSessionMessageRecordsSnapshotFromSource(
+      source,
+      previousSnapshot,
+      suspendPartUpdates,
+      suspendedPartUpdatesMessageID,
+    )
+    snapshotRef.current = nextSnapshot
+    rememberSessionMessageRecordsSnapshot(store, nextSnapshot)
+    return nextSnapshot.list
+  }, [
+    options?.suspendPartUpdates,
+    options?.suspendPartUpdatesForMessageId,
+    sessionID,
+    store,
+    targetDirectory,
+  ])
+
+  const subscribe = useCallback((notify: () => void) => {
+    if (!sessionID || options?.enabled === false) return () => undefined
+    // Observe-path ensure for reconnect-stale inactive sessions (batch 1A).
+    scheduleEnsureTranscriptOnObserve(targetDirectory, sessionID)
+    let repoUnsub = (() => {
+      const repository = getTranscriptRepository()
+        ?? resolveTranscriptRepositoryForStore(targetDirectory, store)
+      return repository.subscribe(transcriptScope(targetDirectory, sessionID), () => {
+        notify()
+      })
+    })()
+    const unsubBinding = subscribeTranscriptRepositoryBinding(() => {
+      repoUnsub()
+      const repository = getTranscriptRepository()
+        ?? resolveTranscriptRepositoryForStore(targetDirectory, store)
+      repoUnsub = repository.subscribe(transcriptScope(targetDirectory, sessionID), () => {
+        notify()
+      })
+      resetObserveEnsureGate(targetDirectory, sessionID)
+      scheduleEnsureTranscriptOnObserve(targetDirectory, sessionID)
+      notify()
+    })
+    // Store subscription covers session.revert metadata (catalog, not transcript).
+    const unsubStore = store.subscribe(() => {
+      notify()
+    })
+    return () => {
+      unsubBinding()
+      repoUnsub()
+      unsubStore()
+    }
+  }, [options?.enabled, sessionID, store, targetDirectory])
+
+  return React.useSyncExternalStore(subscribe, getSnapshot, getSnapshot)
+}
+
+/**
+ * Ensures a session's transcript is loaded via Query repository.
+ * If the session exists in the catalog but is not yet renderable in the
+ * repository projection, triggers ensureInitial / materialize.
+ *
+ * This covers the case where a user navigates to an old parent session
+ * whose child session messages were never loaded — bootstrap only loads
+ * session metadata, not messages.
+ */

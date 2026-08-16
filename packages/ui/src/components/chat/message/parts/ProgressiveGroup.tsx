@@ -2,7 +2,7 @@ import React from 'react';
 import { useEvent } from '@reactuses/core';
 import { cn } from '@/lib/utils';
 import type { TurnActivityPresentationKind, TurnActivityRecord as TurnActivityPart, TurnCompletionDisposition } from '../../lib/turns/types';
-import type { ToolPart as ToolPartType } from '@opencode-ai/sdk/v2';
+import type { Part, ToolPart as ToolPartType } from '@opencode-ai/sdk/v2';
 import type { StreamPhase } from '../types';
 import type { ContentChangeReason } from '@/hooks/useChatAutoFollow';
 import type { ToolPopupContent } from '../types';
@@ -29,6 +29,12 @@ import { useMobileAppActions } from '@/apps/mobileAppContext';
 import { useI18n } from '@/lib/i18n';
 import { AgentAvatar } from '../../AgentAvatar';
 import { useDurationTickerNow } from './useDurationTicker';
+import { Button } from '@/components/ui/button';
+import { useEffectiveDirectory } from '@/hooks/useEffectiveDirectory';
+import {
+    getTranscriptMessageMaterializationState,
+    materializeTranscriptMessage,
+} from '@/sync/transcript-repository-runtime';
 
 const TOOL_ROW_TEXT_CLASS = '!text-[length:var(--text-meta)] !leading-5 sm:!leading-6 tracking-normal';
 const TOOL_ROW_TITLE_CLASS = cn('typography-meta font-medium', TOOL_ROW_TEXT_CLASS);
@@ -38,6 +44,7 @@ const EMPTY_ACTIVITY_PARTS: TurnActivityPart[] = [];
 
 interface ProgressiveGroupProps {
     parts: TurnActivityPart[];
+    materializationParts?: TurnActivityPart[];
     isExpanded: boolean;
     collapsedPreviewCount?: number;
     completionDisposition?: TurnCompletionDisposition;
@@ -54,6 +61,46 @@ interface ProgressiveGroupProps {
     showHeader: boolean;
     renderJustificationActions?: (activity: TurnActivityPart) => React.ReactNode;
 }
+
+type MaterializationStatus = 'idle' | 'loading' | 'ready' | 'error';
+
+const isSlimMaterializablePart = (activity: TurnActivityPart): boolean => {
+    const part = activity.part as Part & { slim?: unknown };
+    return part.slim === true && (part.type === 'tool' || part.type === 'reasoning' || part.type === 'file');
+};
+
+const getSlimActivityMessageIds = (parts: TurnActivityPart[]): string[] => {
+    const ids = new Set<string>();
+    for (const activity of parts) {
+        if (isSlimMaterializablePart(activity) && activity.messageId) {
+            ids.add(activity.messageId);
+        }
+    }
+    return [...ids];
+};
+
+const hasMaterializedActivityOutput = (
+    parts: TurnActivityPart[],
+    messageIds: ReadonlySet<string>,
+): boolean => parts.some((activity) => {
+    if (!messageIds.has(activity.messageId)) return false;
+    const part = activity.part as Part & {
+        slim?: unknown;
+        text?: unknown;
+        url?: unknown;
+        state?: { output?: unknown; error?: unknown };
+    };
+    if (part.slim === true) return false;
+    if (part.type === 'reasoning') return typeof part.text === 'string' && part.text.trim().length > 0;
+    if (part.type === 'file') return typeof part.url === 'string' && part.url.trim().length > 0;
+    if (part.type === 'tool') {
+        const output = part.state?.output;
+        const error = part.state?.error;
+        return (typeof output === 'string' ? output.trim().length > 0 : output != null)
+            || (typeof error === 'string' ? error.trim().length > 0 : error != null);
+    }
+    return false;
+});
 
 const ExternalLinkFavicon: React.FC<{ href: string }> = ({ href }) => {
     const [failed, setFailed] = React.useState(false);
@@ -875,6 +922,7 @@ const InlineJustificationBlock = React.memo(({ activity, onContentChange, onShow
 
 const ProgressiveGroup: React.FC<ProgressiveGroupProps> = ({
     parts,
+    materializationParts = parts,
     isExpanded,
     collapsedPreviewCount = 0,
     completionDisposition,
@@ -892,6 +940,15 @@ const ProgressiveGroup: React.FC<ProgressiveGroupProps> = ({
     renderJustificationActions,
 }) => {
     const { t } = useI18n();
+    const effectiveDirectory = useEffectiveDirectory() ?? '';
+    const materializationMessageIds = React.useMemo(
+        () => getSlimActivityMessageIds(materializationParts),
+        [materializationParts],
+    );
+    const requestedMaterializationIdsRef = React.useRef(new Set<string>());
+    const materializationFlightsRef = React.useRef(new Map<string, Promise<void>>());
+    const materializationErrorsRef = React.useRef(new Set<string>());
+    const [, setMaterializationRevision] = React.useState(0);
     const activityHeaderRef = React.useRef<HTMLButtonElement | null>(null);
     const pendingToggleAnchorRef = React.useRef<{
         top: number;
@@ -927,6 +984,38 @@ const ProgressiveGroup: React.FC<ProgressiveGroupProps> = ({
     const displayedTaskAvatarSeeds = isActive ? taskAvatarSeeds.active : taskAvatarSeeds.all;
     // Cap avatars so the collapsed header stays one line (text is already short).
     const visibleTaskAvatarSeeds = displayedTaskAvatarSeeds.slice(0, isMobile ? 2 : 3);
+    const requestMaterialization = useEvent((retryErrorsOnly = false) => {
+        if (!effectiveDirectory || !materializationMessageIds.length) return;
+        for (const targetMessageId of materializationMessageIds) {
+            const targetSessionId = materializationParts.find((activity) => activity.messageId === targetMessageId)?.part.sessionID;
+            if (!targetSessionId) continue;
+            const current = getTranscriptMessageMaterializationState(
+                effectiveDirectory,
+                targetSessionId,
+                targetMessageId,
+            );
+            if (current.status === 'ready') continue;
+            if (retryErrorsOnly && current.status !== 'error' && !materializationErrorsRef.current.has(targetMessageId)) continue;
+            requestedMaterializationIdsRef.current.add(targetMessageId);
+            materializationErrorsRef.current.delete(targetMessageId);
+            if (materializationFlightsRef.current.has(targetMessageId)) continue;
+
+            const flight = materializeTranscriptMessage(effectiveDirectory, targetSessionId, targetMessageId)
+                .catch(() => {
+                    materializationErrorsRef.current.add(targetMessageId);
+                })
+                .finally(() => {
+                    materializationFlightsRef.current.delete(targetMessageId);
+                    setMaterializationRevision((revision) => revision + 1);
+                });
+            materializationFlightsRef.current.set(targetMessageId, flight);
+        }
+        setMaterializationRevision((revision) => revision + 1);
+    });
+    const handleRetryMaterialization = useEvent((event: React.MouseEvent<HTMLButtonElement>) => {
+        event.stopPropagation();
+        requestMaterialization(true);
+    });
     const handleToggle = useEvent(() => {
         const header = activityHeaderRef.current;
         pendingToggleAnchorRef.current = header
@@ -935,6 +1024,9 @@ const ProgressiveGroup: React.FC<ProgressiveGroupProps> = ({
                 scrollContainer: header.closest<HTMLElement>('[data-scrollbar="chat"]'),
             }
             : null;
+        if (!isExpanded) {
+            requestMaterialization();
+        }
         onToggle();
     });
     React.useLayoutEffect(() => {
@@ -974,6 +1066,23 @@ const ProgressiveGroup: React.FC<ProgressiveGroupProps> = ({
         ? Math.max(0, Math.floor(collapsedPreviewCount))
         : 0;
     const shouldRenderRows = !showHeader || isExpanded || previewCount > 0;
+    const requestedMessageIds = requestedMaterializationIdsRef.current;
+    const requestedStatuses = [...requestedMessageIds]
+        .map((targetMessageId): MaterializationStatus => {
+            if (materializationFlightsRef.current.has(targetMessageId)) return 'loading';
+            if (materializationErrorsRef.current.has(targetMessageId)) return 'error';
+            const targetSessionId = materializationParts.find((activity) => activity.messageId === targetMessageId)?.part.sessionID ?? '';
+            return getTranscriptMessageMaterializationState(effectiveDirectory, targetSessionId, targetMessageId).status;
+        });
+    const isMaterializationLoading = requestedStatuses.includes('loading');
+    const hasMaterializationError = requestedStatuses.includes('error');
+    const materializationReady = requestedStatuses.length > 0 && requestedStatuses.every((status) => status === 'ready');
+    const requestedPartsStillSlim = materializationParts.some((activity) => (
+        requestedMessageIds.has(activity.messageId) && isSlimMaterializablePart(activity)
+    ));
+    const showEmptyMaterialization = materializationReady
+        && !requestedPartsStillSlim
+        && !hasMaterializedActivityOutput(materializationParts, requestedMessageIds);
 
     const sortedParts = React.useMemo(() => {
         if (!shouldRenderRows) {
@@ -1201,6 +1310,32 @@ const ProgressiveGroup: React.FC<ProgressiveGroupProps> = ({
                             </button>
                         ) : null}
                         <div className="flow-root">{renderedRows}</div>
+                    </div>
+                ) : null}
+                {isExpanded && (isMaterializationLoading || hasMaterializationError || showEmptyMaterialization) ? (
+                    <div
+                        className={cn(
+                            'typography-meta ml-5 flex min-h-9 items-center gap-2 px-2 text-muted-foreground',
+                            hasMaterializationError && 'text-[var(--status-error)]',
+                        )}
+                        role={hasMaterializationError ? 'alert' : 'status'}
+                    >
+                        {isMaterializationLoading ? (
+                            <>
+                                <Icon name="loader-4" className="size-3.5 shrink-0 animate-spin" />
+                                <span>{t('chat.activity.outputLoading')}</span>
+                            </>
+                        ) : hasMaterializationError ? (
+                            <>
+                                <Icon name="error-warning" className="size-3.5 shrink-0" />
+                                <span className="min-w-0 flex-1">{t('chat.activity.outputLoadFailed')}</span>
+                                <Button type="button" variant="ghost" size="xs" onClick={handleRetryMaterialization}>
+                                    {t('chat.activity.outputRetry')}
+                                </Button>
+                            </>
+                        ) : (
+                            <span>{t('chat.toolOutputDialog.noOutputProduced')}</span>
+                        )}
                     </div>
                 ) : null}
         </div>

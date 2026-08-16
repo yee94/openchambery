@@ -1,0 +1,55 @@
+packages/ui/src/mobile/MobilePhoneShell.tsx-207-          />
+packages/ui/src/mobile/MobilePhoneShell.tsx-208-        ),
+packages/ui/src/mobile/MobilePhoneShell.tsx-209-      }];
+packages/ui/src/mobile/MobilePhoneShell.tsx-210-    }
+packages/ui/src/mobile/MobilePhoneShell.tsx-211-    // Project the render target from the authoritative session store: once a
+packages/ui/src/mobile/MobilePhoneShell.tsx-212-    // draft's first prompt materializes the real session, the header/status
+packages/ui/src/mobile/MobilePhoneShell.tsx:213:    // switch to the live entity while the stable host key keeps the ChatView
+packages/ui/src/mobile/MobilePhoneShell.tsx-214-    // (and composer focus / IME state) mounted.
+packages/ui/src/mobile/MobilePhoneShell.tsx-215-    if (navigation.secondary?.kind === 'draft') {
+packages/ui/src/mobile/MobilePhoneShell.tsx-216-      return [{
+packages/ui/src/mobile/MobilePhoneShell.tsx-217-        key: 'chat-primary',
+packages/ui/src/mobile/MobilePhoneShell.tsx-218-        depth: 1,
+packages/ui/src/mobile/MobilePhoneShell.tsx-219-        ariaLabel: t('mobile.nav.secondaryPageAria'),
+--
+packages/ui/src/apps/MobileApp.tsx-11-import { OpenCodeUpdateToast } from '@/components/update/OpenCodeUpdateToast';
+packages/ui/src/apps/MobileApp.tsx-12-import { MobileAppUpdateToast } from '@/components/update/MobileAppUpdateToast';
+packages/ui/src/apps/MobileApp.tsx-13-import { ConfigUpdateOverlay } from '@/components/ui/ConfigUpdateOverlay';
+packages/ui/src/apps/MobileApp.tsx-14-import { Button } from '@/components/ui/button';
+packages/ui/src/apps/MobileApp.tsx-15-import { OpenChamberLogo } from '@/components/ui/OpenChamberLogo';
+packages/ui/src/apps/MobileApp.tsx-16-import { ProviderLogo } from '@/components/ui/ProviderLogo';
+packages/ui/src/apps/MobileApp.tsx:17:import { ChatView } from '@/components/views/ChatView';
+packages/ui/src/apps/MobileApp.tsx-18-import { AssistantView } from '@/components/assistants/AssistantView';
+packages/ui/src/apps/MobileApp.tsx-19-import { AssistantShareWelcome } from '@/components/assistants/AssistantShareWelcome';
+packages/ui/src/apps/MobileApp.tsx-20-import { useAssistantCapabilityQuery } from '@/queries/assistantQueries';
+packages/ui/src/apps/MobileApp.tsx-21-import { DiffView } from '@/components/views/DiffView';
+packages/ui/src/apps/MobileApp.tsx-22-import { SettingsView } from '@/components/views/SettingsView';
+packages/ui/src/apps/MobileApp.tsx-23-import { ErrorBoundary } from '@/components/ui/ErrorBoundary';
+--
+packages/ui/src/apps/MobileApp.tsx-3115-                  <span className="typography-micro font-medium tracking-wide text-muted-foreground/60">
+packages/ui/src/apps/MobileApp.tsx-3116-                    {t('helpDialog.item.nextSession')}
+packages/ui/src/apps/MobileApp.tsx-3117-                  </span>
+packages/ui/src/apps/MobileApp.tsx-3118-                </div>
+packages/ui/src/apps/MobileApp.tsx-3119-                <div ref={chatAnimRef} className="relative h-full w-full bg-background">
+packages/ui/src/apps/MobileApp.tsx-3120-                  <ErrorBoundary>
+packages/ui/src/apps/MobileApp.tsx:3121:                    {activeMainTab === 'assistant' ? <AssistantView /> : <ChatView />}
+packages/ui/src/apps/MobileApp.tsx-3122-                  </ErrorBoundary>
+packages/ui/src/apps/MobileApp.tsx-3123-                </div>
+packages/ui/src/apps/MobileApp.tsx-3124-              </main>
+packages/ui/src/apps/MobileApp.tsx-3125-            </>
+packages/ui/src/apps/MobileApp.tsx-3126-          ) : (
+packages/ui/src/apps/MobileApp.tsx-3127-            <MobilePhoneShell
+--
+packages/ui/src/apps/MobileApp.tsx-3190-                          </span>
+packages/ui/src/apps/MobileApp.tsx-3191-                        </div>
+packages/ui/src/apps/MobileApp.tsx-3192-                      </>
+packages/ui/src/apps/MobileApp.tsx-3193-                    ) : null}
+packages/ui/src/apps/MobileApp.tsx-3194-                    <div ref={target.active ? chatAnimRef : undefined} className="relative h-full w-full bg-background">
+packages/ui/src/apps/MobileApp.tsx-3195-                      <ErrorBoundary>
+packages/ui/src/apps/MobileApp.tsx:3196:                        <ChatView
+packages/ui/src/apps/MobileApp.tsx-3197-                          readOnly={!target.active}
+packages/ui/src/apps/MobileApp.tsx-3198-                          active={target.active}
+packages/ui/src/apps/MobileApp.tsx-3199-                          selectionOverride={{
+packages/ui/src/apps/MobileApp.tsx-3200-                            sessionId: target.sessionId || null,
+packages/ui/src/apps/MobileApp.tsx-3201-                            directory: target.directory,
+packages/ui/src/apps/MobileApp.tsx-3202-                            viewKey: target.viewKey,

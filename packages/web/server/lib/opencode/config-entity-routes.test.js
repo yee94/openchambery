@@ -1,4 +1,4 @@
-import { describe, expect, it, vi } from 'vitest';
+import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import express from 'express';
 import request from 'supertest';
 import fs from 'node:fs/promises';
@@ -9,6 +9,14 @@ vi.mock('@opencode-ai/sdk/v2', () => ({ createOpencodeClient: vi.fn() }));
 
 const { createOpencodeClient } = await import('@opencode-ai/sdk/v2');
 const { registerConfigEntityRoutes } = await import('./config-entity-routes.js');
+
+beforeEach(() => {
+  createOpencodeClient.mockReset();
+});
+
+afterEach(() => {
+  createOpencodeClient.mockReset();
+});
 
 const createDependencies = (getCommandSources, configDirectory, getAgentSources = vi.fn()) => ({
   resolveProjectDirectory: async () => ({ directory: '/repo' }),
@@ -218,18 +226,25 @@ describe('agent and command mutation logging', () => {
     const error = vi.spyOn(console, 'error').mockImplementation(() => {});
     registerConfigEntityRoutes(app, dependencies);
 
-    const agentCreate = await request(app).post('/api/config/agents/safe-agent').send({ prompt: bodySentinel }).expect(200);
-    const commandCreate = await request(app).post('/api/config/commands/safe-command').send({ template: bodySentinel }).expect(200);
-    const agentUpdate = await request(app).patch('/api/config/agents/safe-agent').send({ prompt: bodySentinel }).expect(500);
-    const commandUpdate = await request(app).patch('/api/config/commands/safe-command').send({ template: bodySentinel }).expect(500);
-    const output = JSON.stringify([agentCreate.body, commandCreate.body, agentUpdate.body, commandUpdate.body]);
-    const logs = `${log.mock.calls.flat().join(' ')} ${error.mock.calls.flat().join(' ')}`;
+    try {
+      const agentCreate = await request(app).post('/api/config/agents/safe-agent').send({ prompt: bodySentinel }).expect(200);
+      const commandCreate = await request(app).post('/api/config/commands/safe-command').send({ template: bodySentinel }).expect(200);
+      const agentUpdate = await request(app).patch('/api/config/agents/safe-agent').send({ prompt: bodySentinel }).expect(500);
+      const commandUpdate = await request(app).patch('/api/config/commands/safe-command').send({ template: bodySentinel }).expect(500);
+      const output = JSON.stringify([agentCreate.body, commandCreate.body, agentUpdate.body, commandUpdate.body]);
+      const logs = `${log.mock.calls.flat().join(' ')} ${error.mock.calls.flat().join(' ')}`;
 
-    expect(output).not.toContain('sentinel');
-    expect(logs).not.toContain(bodySentinel);
-    expect(logs).not.toContain(stackSentinel);
-    log.mockRestore();
-    error.mockRestore();
+      expect(dependencies.createAgent).toHaveBeenCalledTimes(1);
+      expect(dependencies.createCommand).toHaveBeenCalledTimes(1);
+      expect(dependencies.updateAgent).toHaveBeenCalledTimes(1);
+      expect(dependencies.updateCommand).toHaveBeenCalledTimes(1);
+      expect(output).not.toContain('sentinel');
+      expect(logs).not.toContain(bodySentinel);
+      expect(logs).not.toContain(stackSentinel);
+    } finally {
+      log.mockRestore();
+      error.mockRestore();
+    }
   });
 });
 

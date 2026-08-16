@@ -13,7 +13,6 @@ import {
   getTranscriptRepository,
   purgeTranscriptSession,
   refreshTranscriptFromAuthority,
-  requireTranscriptRepository,
   transcriptScope,
 } from "./transcript-repository-runtime"
 import { stripSessionDiffSnapshots } from "./sanitize"
@@ -36,7 +35,6 @@ import { reconcileActiveSessionStatusAfterMessagePull } from "./session-status-r
 import { seedSessionTodosFromHydratedTranscript } from "./session-todo-projection"
 
 const MAX_SEEN_DIRS = 30
-const cmp = (a: string, b: string) => (a < b ? -1 : a > b ? 1 : 0)
 
 /** User refresh must not fight an in-flight SSE turn. */
 export function isUserTranscriptRefreshBlocked(
@@ -128,10 +126,6 @@ export function resolveSessionHistoryLoadPlan(
   return { kind: "prepend", before: meta.cursor }
 }
 
-function sortParts(parts: Part[]) {
-  return parts.filter((p) => !!p?.id).sort((a, b) => cmp(a.id, b.id))
-}
-
 function isHeavyConstrainedSessionCache(directory: string, sessionID: string): boolean {
   const repository = getTranscriptRepository()
   if (!repository) return false
@@ -216,15 +210,6 @@ export function useSync() {
   const keyFor = useCallback(
     (sessionID: string, targetDirectory = directory) => `${targetDirectory}\n${sessionID}`,
     [directory],
-  )
-
-  const getStoreForDirectory = useCallback(
-    (targetDirectory = directory) => (
-      targetDirectory === directory
-        ? store
-        : childStores.getChild(targetDirectory)
-    ),
-    [childStores, directory, store],
   )
 
   // Thin compatibility adapter from repository pagination + request state.

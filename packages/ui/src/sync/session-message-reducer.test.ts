@@ -234,6 +234,42 @@ describe("reduceSessionMessagePage — history boundary", () => {
     expect(result.applied).toBe(true)
     expect(result.messages.map((item) => item.id)).toEqual(["msg_1"])
   })
+
+  test("reconcile-page inserts an unanchored older window by time.created without rewriting the boundary", () => {
+    const olderUser = { ...userMessage("msg_03"), time: { created: 1003 } } as Message
+    const olderAssistant = { ...message("msg_04"), time: { created: 1004 } } as Message
+    const newerUser = { ...userMessage("msg_07"), time: { created: 1007 } } as Message
+    const newerAssistant = { ...message("msg_08"), time: { created: 1008 } } as Message
+    const previous = { kind: "has-more", cursor: "cur_authoritative_older", loadedTurns: 1 } as const
+    const state: SessionMessageReducerState = {
+      message: { ses_1: [newerUser, newerAssistant] },
+      part: {},
+      session_history_boundary: boundaryState("ses_1", previous),
+    }
+
+    const result = reduceSessionMessagePage(
+      state,
+      "ses_1",
+      page(
+        [
+          { info: olderUser, parts: [part("p_03", "msg_03")] },
+          { info: olderAssistant, parts: [part("p_04", "msg_04")] },
+        ],
+        { complete: true, turnCount: 1 },
+      ),
+      { purpose: "reconcile-page", skipPartTypes: SKIP_PARTS },
+    )
+
+    expect(result.applied).toBe(true)
+    expect(result.messages.map((item) => item.id)).toEqual([
+      "msg_03",
+      "msg_04",
+      "msg_07",
+      "msg_08",
+    ])
+    expect(result.boundary).toEqual(previous)
+    expect(result.boundaryChanged).toBe(false)
+  })
 })
 
 describe("reduceSessionMessagePage — cursor progress invariant", () => {
@@ -805,5 +841,34 @@ describe("reduceSessionMessagePage — race and error semantics", () => {
     )
 
     expect(result.part.msg_1?.map((item) => item.id)).toEqual(["prt_text"])
+  })
+
+  test("incoming slim keeps an existing full part across initial, materialize, and recovery", () => {
+    const info = {
+      id: "msg_1",
+      sessionID: "ses_1",
+      role: "assistant",
+      time: { created: 1 },
+      finish: "stop",
+    } as Message
+    const full = { id: "prt_1", messageID: "msg_1", sessionID: "ses_1", type: "text", text: "full body" } as Part
+    const slim = { id: "prt_1", messageID: "msg_1", sessionID: "ses_1", type: "text", text: "summary", slim: true } as Part
+    const state: SessionMessageReducerState = {
+      message: { ses_1: [info] },
+      part: { msg_1: [full] },
+      session_history_boundary: boundaryState("ses_1", { kind: "exhausted", loadedTurns: 1 }),
+    }
+
+    for (const purpose of ["initial", "materialize", "recovery"] as const) {
+      const result = reduceSessionMessagePage(
+        state,
+        "ses_1",
+        page([{ info, parts: [slim] }], { complete: true, turnCount: 1 }),
+        { purpose, skipPartTypes: SKIP_PARTS },
+      )
+      expect(result.applied).toBe(true)
+      expect((result.part.msg_1?.[0] as { text?: string })?.text).toBe("full body")
+      expect((result.part.msg_1?.[0] as { slim?: boolean })?.slim).not.toBe(true)
+    }
   })
 })

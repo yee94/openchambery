@@ -1,0 +1,25 @@
+     1	import React from 'react';
+     2	import { ChatContainer } from '@/components/chat/ChatContainer';
+     3	import { ChatErrorBoundary } from '@/components/chat/ChatErrorBoundary';
+     4	import { useSessionUIStore } from '@/sync/session-ui-store';
+     5	
+     6	type ChatViewProps = {
+     7	    readOnly?: boolean;
+     8	    active?: boolean;
+     9	    selectionOverride?: {
+    10	        sessionId: string | null;
+    11	        directory: string | null;
+    12	        viewKey: string;
+    13	    };
+    14	};
+    15	
+    16	export const ChatView: React.FC<ChatViewProps> = ({ readOnly = false, active = true, selectionOverride }) => {
+    17	    const currentSessionId = useSessionUIStore((state) => state.currentSessionId);
+    18	    const errorSessionId = selectionOverride?.sessionId ?? currentSessionId;
+    19	
+    20	    return (
+    21	        <ChatErrorBoundary sessionId={errorSessionId || undefined}>
+    22	            <ChatContainer readOnly={readOnly} active={active} explicitSession={selectionOverride ? { ...selectionOverride, active } : undefined} />
+    23	        </ChatErrorBoundary>
+    24	    );
+    25	};

@@ -67,6 +67,27 @@ export {
 };
 /* eslint-enable react-refresh/only-export-components */
 
+// eslint-disable-next-line react-refresh/only-export-components
+export const resolveTurnActivityExpandedByDefault = (input: {
+    expansionDisposition: TurnRecord['completionDisposition'] | undefined;
+    activityRenderMode: 'collapsed' | 'summary';
+    isLastTurn: boolean;
+    isActivelyProcessing: boolean;
+    hasConfirmedFinalBody: boolean;
+}): boolean => {
+    if (input.isActivelyProcessing || input.expansionDisposition === 'active') {
+        return false;
+    }
+    return resolveDefaultActivityExpanded(
+        input.expansionDisposition,
+        input.activityRenderMode,
+        {
+            isLastTurn: input.isLastTurn,
+            hasConfirmedFinalBody: input.hasConfirmedFinalBody,
+        },
+    );
+};
+
 const MESSAGE_LIST_VIRTUALIZE_THRESHOLD = 5;
 const EMPTY_STATIC_ENTRY_MESSAGES: ChatMessageEntry[] = [];
 const EMPTY_UNGROUPED_MESSAGE_IDS = new Set<string>();
@@ -788,13 +809,16 @@ const TurnBlock = React.memo(({
         turnCompletionDisposition: turn.completionDisposition,
         headerPresentationDisposition: activityPresentationForDefault.completionDisposition,
     });
-    const defaultExpandedForTurn = resolveDefaultActivityExpanded(
+    const defaultExpandedForTurn = resolveTurnActivityExpandedByDefault({
         expansionDisposition,
         activityRenderMode,
-        { isLastTurn, hasConfirmedFinalBody: turn.hasConfirmedFinalBody },
-    );
-    // Explicit per-turn toggle wins; otherwise live-active forces open and
-    // settled turns follow activityRenderMode (auto-collapses when processing ends).
+        isLastTurn,
+        isActivelyProcessing: isLastTurn && sessionIsWorking,
+        hasConfirmedFinalBody: turn.hasConfirmedFinalBody,
+    });
+    // Explicit per-turn toggle wins; untouched in-progress Activity stays
+    // collapsed while its Working header remains live. Settled turns follow
+    // activityRenderMode.
     const isGroupExpandedByDefault = storedTurnUiState
         ? storedTurnUiState.isExpanded
         : defaultExpandedForTurn;

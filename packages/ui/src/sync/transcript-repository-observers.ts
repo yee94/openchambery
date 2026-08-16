@@ -24,6 +24,7 @@ import {
 } from "./transcript-repository-runtime"
 import type {
   TranscriptData,
+  TranscriptHydrationState,
   TranscriptPagination,
   TranscriptRepository,
 } from "./transcript-repository"
@@ -48,6 +49,12 @@ const EMPTY_TRANSCRIPT_DATA: TranscriptData = {
 }
 
 const EMPTY_PAGINATION: TranscriptPagination = projectPagination("", UNKNOWN_SESSION_HISTORY_BOUNDARY)
+
+const EMPTY_HYDRATION: TranscriptHydrationState = {
+  sessionID: "",
+  phase: "idle",
+  p0Satisfied: false,
+}
 
 function resolveReaderRepository(
   directory: string,
@@ -562,6 +569,70 @@ export function useTranscriptParts(
   return React.useSyncExternalStore(subscribe, getSnapshot, getSnapshot)
 }
 
+/** Read-only hydration phase. Driven by repository HTTP / prepend / materialize. */
+export function useTranscriptHydrationState(
+  sessionID: string,
+  directory: string,
+  store: StoreApi<DirectoryStore>,
+): TranscriptHydrationState {
+  const valueRef = useRef<TranscriptHydrationState>(EMPTY_HYDRATION)
+
+  const getSnapshot = useCallback(() => {
+    void getTranscriptRepositoryBindingRevision()
+    if (!sessionID) {
+      if (valueRef.current !== EMPTY_HYDRATION) valueRef.current = EMPTY_HYDRATION
+      return valueRef.current
+    }
+    const repository = resolveReaderRepository(directory, store)
+    const next = repository.getHydrationState?.(transcriptScope(directory, sessionID))
+      ?? {
+        sessionID,
+        phase: "idle" as const,
+        p0Satisfied: false,
+      }
+    const prev = valueRef.current
+    if (
+      prev.sessionID === next.sessionID
+      && prev.phase === next.phase
+      && prev.p0Satisfied === next.p0Satisfied
+    ) {
+      return prev
+    }
+    valueRef.current = next
+    return next
+  }, [directory, sessionID, store])
+
+  const subscribe = useCallback((notify: () => void) => {
+    if (!sessionID) return () => undefined
+    scheduleEnsureTranscriptOnObserve(directory, sessionID)
+    let repoUnsub = resolveReaderRepository(directory, store).subscribe(
+      transcriptScope(directory, sessionID),
+      () => {
+        notify()
+      },
+    )
+    const unsubBinding = subscribeTranscriptRepositoryBinding(() => {
+      repoUnsub()
+      valueRef.current = EMPTY_HYDRATION
+      resetObserveEnsureGate(directory, sessionID)
+      scheduleEnsureTranscriptOnObserve(directory, sessionID)
+      repoUnsub = resolveReaderRepository(directory, store).subscribe(
+        transcriptScope(directory, sessionID),
+        () => {
+          notify()
+        },
+      )
+      notify()
+    })
+    return () => {
+      unsubBinding()
+      repoUnsub()
+    }
+  }, [directory, sessionID, store])
+
+  return React.useSyncExternalStore(subscribe, getSnapshot, getSnapshot)
+}
+
 /** Pagination projection for a session. */
 export function useTranscriptPagination(
   sessionID: string,
@@ -625,6 +696,19 @@ export function readTranscriptParts(
   if (!store) return EMPTY_TRANSCRIPT_PARTS
   const repository = resolveTranscriptRepositoryForStore(directory, store)
   return repository.getParts(transcriptScope(directory, scopeSession), messageID)
+}
+
+export function readTranscriptHydrationState(
+  directory: string,
+  sessionID: string,
+  store?: StoreApi<DirectoryStore>,
+): TranscriptHydrationState {
+  if (!sessionID) return EMPTY_HYDRATION
+  const bound = getTranscriptRepository()
+  const repository = bound ?? (store ? resolveTranscriptRepositoryForStore(directory, store) : null)
+  if (!repository) return { sessionID, phase: "idle", p0Satisfied: false }
+  return repository.getHydrationState?.(transcriptScope(directory, sessionID))
+    ?? { sessionID, phase: "idle", p0Satisfied: false }
 }
 
 export function readTranscriptPagination(

@@ -187,7 +187,7 @@ describe('progressive activity presentation', () => {
         expect(messageBodySource).toContain('pushActivityHeader(`${messageId}:compaction-status`, [])');
         // Empty filtered segment parts still push the Activity chrome (no early
         // return) so mid-reconcile cannot unmount the live disclosure.
-        expect(messageBodySource).toContain('pushActivityHeader(segment.id, visibleSegmentParts)');
+        expect(messageBodySource).toContain('pushActivityHeader(segment.id, visibleSegmentParts, segment.parts)');
         expect(progressiveGroupSource).toContain('// Header-only turns (e.g. completed compaction with foldable body text outside');
         expect(progressiveGroupSource).toContain('if (!showHeader && rows.length === 0)');
         expect(progressiveGroupSource).not.toContain('statusOnly');
@@ -239,6 +239,41 @@ describe('progressive activity presentation', () => {
         expect(progressiveGroupSource).toContain('anchor.scrollContainer.scrollTop += delta');
         expect(progressiveGroupSource).toContain('window.requestAnimationFrame(() => {');
         expect(progressiveGroupSource.match(/onClick=\{handleToggle\}/g)).toHaveLength(2);
+    });
+
+    test('materializes slim activity messages once when the user expands the disclosure', () => {
+        expect(progressiveGroupSource).toContain("part.slim === true && (part.type === 'tool' || part.type === 'reasoning' || part.type === 'file')");
+        expect(progressiveGroupSource).toContain('const materializationFlightsRef = React.useRef(new Map<string, Promise<void>>())');
+        expect(progressiveGroupSource).toContain('if (materializationFlightsRef.current.has(targetMessageId)) continue;');
+        expect(progressiveGroupSource).toContain('const flight = materializeTranscriptMessage(effectiveDirectory, targetSessionId, targetMessageId)');
+        expect(progressiveGroupSource).toContain('if (!isExpanded) {\n            requestMaterialization();\n        }');
+        expect(progressiveGroupSource).toContain("if (current.status === 'ready') continue;");
+        expect(messageBodySource).toContain('materializationParts={materializationParts}');
+        expect(messageBodySource).toContain('pushActivityHeader(segment.id, visibleSegmentParts, segment.parts)');
+    });
+
+    test('shows localized loading, error, retry, and empty-output states only while expanded', () => {
+        expect(progressiveGroupSource).toContain("requestedStatuses.includes('loading')");
+        expect(progressiveGroupSource).toContain("requestedStatuses.includes('error')");
+        expect(progressiveGroupSource).toContain("t('chat.activity.outputLoading')");
+        expect(progressiveGroupSource).toContain("t('chat.activity.outputLoadFailed')");
+        expect(progressiveGroupSource).toContain("t('chat.activity.outputRetry')");
+        expect(progressiveGroupSource).toContain("t('chat.toolOutputDialog.noOutputProduced')");
+        expect(progressiveGroupSource).toContain('isExpanded && (isMaterializationLoading || hasMaterializationError || showEmptyMaterialization)');
+        expect(progressiveGroupSource).toContain('requestMaterialization(true)');
+
+        for (const fileName of messageDictionaryFiles) {
+            const dictionarySource = readFileSync(join(messageDictionaryDirectory, fileName), 'utf-8');
+            expect(dictionarySource).toContain('chat.activity.outputLoading');
+            expect(dictionarySource).toContain('chat.activity.outputLoadFailed');
+            expect(dictionarySource).toContain('chat.activity.outputRetry');
+        }
+    });
+
+    test('keeps non-slim activity messages on the existing render path', () => {
+        expect(progressiveGroupSource).toContain('if (isSlimMaterializablePart(activity) && activity.messageId)');
+        expect(progressiveGroupSource).toContain("part.slim === true");
+        expect(progressiveGroupSource).not.toContain("part.type === 'text' || part.type === 'tool'");
     });
 
     test('keeps standalone task tools in chronological activity rows', () => {

@@ -7,6 +7,8 @@
 
 import type { Message, Part } from "@opencode-ai/sdk/v2/client"
 
+import { stripMessageDiffSnapshots } from "./sanitize"
+
 export type SessionMessageRecord<
   TInfo extends { id: string; parentID?: string | null } = { id: string; parentID?: string | null },
 > = {
@@ -47,6 +49,42 @@ const messageKey = (input: Pick<LoadSessionMessageInput<unknown>, "runtimeKey" |
 /** Shares exact parent-message requests across concurrent recoveries. */
 export function loadSessionMessage<T>(input: LoadSessionMessageInput<T>): Promise<T> {
   return singleFlight(messageKey(input), input.request)
+}
+
+/** Flight key for exact `session.message` fills captured at request start. */
+export function transcriptExactMessageRuntimeKey(transport: string, generation: number): string {
+  return `${transport}\n${generation}`
+}
+
+/**
+ * Load one Host message through `loadSessionMessage`, keyed by the captured
+ * transport + generation. Callers must drop the result when live identity
+ * no longer matches — this helper only dedupes the HTTP request.
+ */
+export async function fetchExactSessionMessageRecord(input: {
+  transport: string
+  generation: number
+  directory: string
+  sessionID: string
+  messageID: string
+  request: () => Promise<{ error?: unknown; data?: SessionMessageQueryRecord | undefined }>
+}): Promise<SessionMessageQueryRecord> {
+  return loadSessionMessage({
+    runtimeKey: transcriptExactMessageRuntimeKey(input.transport, input.generation),
+    directory: input.directory,
+    sessionID: input.sessionID,
+    messageID: input.messageID,
+    request: async () => {
+      const response = await input.request()
+      if (response.error) throw new Error("session.message failed")
+      const data = response.data
+      if (!data?.info?.id) throw new Error("session.message failed: empty response")
+      return {
+        info: stripMessageDiffSnapshots(data.info),
+        parts: data.parts ?? [],
+      }
+    },
+  })
 }
 
 function isRole(record: SessionMessageRecord, role: string): boolean {

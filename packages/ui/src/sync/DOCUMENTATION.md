@@ -90,6 +90,8 @@ Committed draft snapshot, durable delete (`deleteDraftSnapshot`), and ownership 
 
 `snapshotViews` always resolves URL locators from `locator.url` (or an explicit same-value entry in `values`); existing attachment views never override a URL locator with a placeholder File/Blob. Blob locators may reuse `values`, existing view files, or durable data URLs. `replaceDraftRootAttachments` re-supplies every preserved synthetic URL locator into `values` so a root-only clear/replace keeps hydrated synthetic durable URLs.
 
+Before `revertToMessage` / `stageMessageEdit` call `buildSentMessageComposerRestoration`, they read transcript file parts. A slim or url-less authored file part awaits `materializeTranscriptMessage` under the existing directory/session/message identity (repository single-flight), then re-reads parts. Complete file parts make no extra request. Materialize failure or a still-incomplete file body fails the edit explicitly and leaves the live composer/attachments untouched — attachments are never silently dropped. The action captures runtime generation; a stale materialize cannot commit into a new runtime. `buildSentMessageComposerRestoration` skips `slim === true` file parts before url/type parsing so a preview/stub url cannot be written into Composer; full data/file/http URLs restore as before.
+
 Cross-runtime restoration rollback (`message-composer-restoration-cas.ts`) writes only through a capture matching the draft key transport. A missing matching capture or stale write returns `failed` and ends the best-effort attempt. Revision conflicts preserve the user's newer draft, and no retry queue or runtime subscription participates in restoration.
 
 Root attachment send consumption (`draft-attachment-resource-adapter.ts`) serializes clear/restore/replace on the same per-`draftKeyString` lane across factory instances. `clearRootAttachments` clears root metadata in memory first through `setDraftAttachments`, so sent chips disappear immediately while store persistence continues. `restoreRootAttachments` merges failed-send attachments with live root metadata through one CAS.
@@ -297,7 +299,10 @@ It covers:
 - **Reads**: flat transcript data (`messageOrder`, `messagesByID`,
   `partsByMessageID`, `boundary`, `liveRevision`), pagination projection
   (`hasPreviousPage`, `isComplete`, `cursor`, `loadedTurns`, `boundary`),
-  request lifecycle (`getRequestState`), and single-message / parts selectors.
+  request lifecycle (`getRequestState`), per-message exact-fill status
+  (`getMessageMaterializationState`), hydration phase
+  (`getHydrationState`: `idle` / `p0` / `p1` / `p2` + `p0Satisfied`),
+  and single-message / parts selectors.
 - **Commands**: `http-page` (purpose =
   `initial` / `prepend` / `recovery` / `materialize`), `sse-event` (message /
   part events only), `optimistic-add` / `optimistic-confirm` /
@@ -308,18 +313,18 @@ Modules:
 
 | Module | Role |
 |---|---|
-| `transcript-repository.ts` | Contract types, pure pagination/transcript projections, SSE event-type guard, command union (`http-page`, `sse-event`, optimistic, `materialize-snapshots`, `remove-message`, `reset`) |
-| `transcript-repository-query-adapter.ts` | **Production** Query-backed implementation: canonical InfiniteData in QueryCache; active-scope retain on `subscribe`; cache budget enforce; `fetchPreviousPage` / `ensureInitial`; destructive reset / purgeSession / purgeGeneration |
+| `transcript-repository.ts` | Contract types, pure pagination/transcript projections, SSE event-type guard, command union (`http-page`, `sse-event`, optimistic, `materialize-snapshots`, `remove-message`, `reset`); `messageNeedsExactMaterialization`; optional `materializeMessage` / `getMessageMaterializationState` / `getHydrationState`; P0/P1/P2 helpers |
+| `transcript-repository-query-adapter.ts` | **Production** Query-backed implementation: canonical InfiniteData in QueryCache; active-scope retain on `subscribe`; cache budget enforce; `fetchPreviousPage` / `ensureInitial`; on-demand `materializeMessage` (single-flight, idle/loading/ready/error); optional injected `durableStore` first-paint + persist queue; post-write durable byte evict with retained-scope protect; destructive reset / purgeSession / purgeGeneration |
 | `transcript-repository-store-adapter.ts` | **Test-only / pure-merge** child-store-backed adapter: maps commands onto pure reducers for unit tests and residual pure-merge helpers — not production SyncProvider binding |
 | `session-transcript-query-cache.ts` | Key-family shapes (canonical / transport-page / tail·reconcile·checkpoint), active-scope registry, QueryCache LRU enforce, purgeSession, purgeGeneration, destructiveReset |
-| `session-cache-limits.ts` | Shared platform capacity targets (VS Code 4 / mobile 12 / default 40) for QueryCache transcript LRU (and residual non-transcript eviction budgets) |
+| `session-cache-limits.ts` | Shared platform capacity targets (VS Code 4 / mobile 12 / default 40 sessions) plus durable body budgets (`getTranscriptDurableByteBudget`: 4 / 12 / 40 MiB) |
 | `session-transcript-reconcile-api.ts` | Host anchor-reconcile HTTP client (`fetchSessionTranscriptReconcile`) — runtimeFetch, timeout race, strict contract, classified retry |
 | `session-transcript-recovery-checkpoint.ts` | Stable authored-user turn anchor selection + recovery checkpoint model / QueryCache read-write |
 | `session-transcript-reconnect-compensation.ts` | Query reconnect compensation controller — checkpoint-before-replay, immediate set (main + Context Panel viewed), directory concurrency, serial continuation, multi-round head chase; null-anchor → non-destructive `ensureInitial`; Host `resetRequired` → `destructiveReset` |
 | `transcript-reconnect-compensation-runtime.ts` | Registration seam; production `mountProductionTranscriptStack` registers the Query controller so SyncProvider `onRecoveryContextCaptured` / `onCompensation` reach it |
-| `transcript-repository-runtime.ts` | Production binding revision + `bindTranscriptRepositoryInstance` (Query) / test-only store bind; `fetchTranscriptPreviousPage` / `ensureTranscriptInitial` / `retryTranscriptInitial` / `purgeTranscriptSession` |
-| `transcript-repository-production.ts` | `mountProductionTranscriptStack` (registry + budget + Query repo + compensation) and Host turn-page production fetcher (`fetchProductionTranscriptTransportPage` → Query `http-page`) |
-| `transcript-parent-recovery.ts` | Production assistant-parent recovery helpers for the Query transport fetcher (no nested store commit) |
+| `transcript-repository-runtime.ts` | Production binding revision + `bindTranscriptRepositoryInstance` (Query) / test-only store bind; `fetchTranscriptPreviousPage` / `ensureTranscriptInitial` / `retryTranscriptInitial` / `materializeTranscriptMessage` / `getTranscriptHydrationState` / `getTranscriptMessageMaterializationState` / `purgeTranscriptSession` |
+| `transcript-repository-production.ts` | `mountProductionTranscriptStack` (registry + budget + Query repo + compensation; default runtime durable store, optional injected `durableStore`) and Host turn-page production fetcher (`fetchProductionTranscriptTransportPage` → Query `http-page`) |
+| `transcript-parent-recovery.ts` | Production assistant-parent recovery helpers plus shared exact `session.message` fetch (`fetchExactSessionMessageRecord`, transport+generation flight key; no nested store commit) |
 | `session-todo-projection.ts` | Hydrate-path todo seed: project the latest loaded `todowrite`/`todoread` list into `store.todo` + persist when live `todo.updated` never arrived. No extra HTTP. |
 | `transcript-repository.test.ts` | Focused seam tests (reads, all purposes, SSE, optimistic, reset, materialize/remove, subscribe) |
 | `session-transcript-query-cache.test.ts` | Capacity constants, key families, active retain, LRU order, purge families, long growth, destructive reset, generation isolation, adapter integration |
@@ -341,9 +346,13 @@ Modules:
   `sync.loadMore` facade.
 - Initial / recovery / materialize / selection: production transport fetcher
   (`fetchProductionTranscriptTransportPage`) enters Query as `http-page`
-  directly, or via `ensureTranscriptInitial` / `ensureInitial`. SSE,
-  optimistic, and recovery reconcile apply through the repository command path.
-  Store adapter / pure reducer paths are **tests or pure merge only**.
+  directly, or via `ensureTranscriptInitial` / `ensureInitial`. On-demand
+  exact fills use `materializeTranscriptMessage` → Query `materializeMessage`
+  (`session.message`, captured transport+generation, `materialize-snapshots`).
+  A late result after a runtime switch is discarded and does not write the
+  current Query. SSE, optimistic, and recovery reconcile apply through the
+  repository command path. Store adapter / pure reducer paths are **tests or
+  pure merge only**. Activity-lane loading UI is not wired here.
 - Production transcript **reads** go through repository observers in
   `transcript-repository-observers.ts`, exposed as
   `useSessionMessages` / `useSessionParts` / `useSessionMessageCount` /
@@ -410,6 +419,26 @@ Modules:
     restoring old authoritative data. Delete/evict only purge.
   - Runtime switch: `cancelTranscriptReconnectCompensation` then
     `purgeGeneration` for the previous transport/generation identity.
+- Transcript hydration phases (ticket 05): repository `getHydrationState`
+  is the only writer of `phase` (`idle` / `p0` / `p1` / `p2`) and
+  `p0Satisfied`. UI reads via `useSessionTranscriptHydration` /
+  `getTranscriptHydrationState` and must not push phases. P0 latches when
+  the latest authored user turn is readable and the same-turn assistant has
+  displayable parts or an in-progress Activity-shell row. A user-only tail
+  stays unsatisfied. Initial HTTP / durable seed that meets P0 enters `p0`
+  immediately. In-flight prepend or more than one authored turn is `p1`.
+  In-flight per-message materialize is `p2`. After work settles, phase
+  returns to the highest satisfied stage. A later empty read cannot drop a
+  latched P0 back to skeleton. Runtime `purgeGeneration` resets the latch.
+  ChatContainer / Activity wiring is not in this slice.
+- Durable transcript cache (ticket 11): each successful `upsertSettled` on the
+  per-scope persist queue runs `evictToBytes` with
+  `getTranscriptDurableByteBudget()` (VS Code 4 MiB / mobile 12 MiB / default
+  40 MiB). `activeRegistry.listRetained()` scopes stay protected. Hash-skipped
+  writes do not scan. `clearAll` / `clearCurrentRuntimeTranscriptCache` wipe
+  the current runtime backend only (Electron local → HTTP/SQLite; otherwise
+  IndexedDB). `clearGeneration` still hits both backends. `destroy` stays
+  lifecycle-only. Settings UI is not wired here.
 - Query reconnect compensation is production-registered. Ready +
   `isReconnect:true` triggers Query gap compensation after replay flush; first
   ready (`isReconnect:false`) skips gap compensation. Immediate set prioritizes
@@ -417,11 +446,13 @@ Modules:
   session. Sessions without a stable authored-user anchor (typical subagent /
   subtask transcripts) refresh via non-destructive `ensureInitial` so a failed
   or focus-time recovery cannot blank an open panel; Host `resetRequired` and
-  reconcile budget exhaustion still use `destructiveReset`. Merge purpose
+  reconcile budget exhaustion still use `destructiveReset`.   Merge purpose
   `reconcile-page` upserts records with recovery/liveRevision rules but
   **never** rewrites the canonical history boundary / cursor / loadedTurns
-  (`complete` ends a compensation round only). Checkpoint is fixed on
-  disconnect / recovery-context capture before replay.
+  (`complete` ends a compensation round only). Unanchored continuation pages
+  insert by (`time.created`, id) so a later older Host window cannot append
+  past a newer gap page already merged in the same round. Checkpoint is
+  fixed on disconnect / recovery-context capture before replay.
 
 Pagination projection is derived solely from repository `SessionHistoryBoundary`
 (`unknown` / `has-more` / `exhausted`). Request lifecycle is
@@ -513,8 +544,10 @@ Rules that keep this single-sourced:
 
 - Production HTTP transcript pages enter Query only through the production
   transport fetcher → repository `http-page` (or `ensureInitial` /
-  `fetchPreviousPage`). No production callsite fetches `session.messages` and
-  writes a child-store transcript map.
+  `fetchPreviousPage`). Exact one-message fills use `session.message` through
+  `materializeMessage` / parent recovery (same single-flight helper). No
+  production callsite fetches `session.messages` and writes a child-store
+  transcript map.
 - `session-message-policy.ts` is the only place a page-size number appears.
   Purpose (`initial` / `prepend` / `recovery` / `materialize`) determines the
   limit; no `RECONNECT_MESSAGE_LIMIT`-style constants exist elsewhere.
@@ -1117,7 +1150,7 @@ Session actions live in `session-actions.ts` and are the canonical place for SDK
 
 ### Session history mutation serialization (revert / unrevert)
 
-Revert visibility, the revert dock, user-message history, and slash undo/redo use transcript `messageOrder` (conversation position), not id lexicographic comparison. A missing revert target fails visible (show the loaded conversation) rather than hiding by id. `revertToMessage` / slash redo do not materialize a refetch into the live timeline. `revertToMessage` and `unrevertSession` share a serial flight owned by `session-history-mutation-coordinator.ts`, keyed by `[transportIdentity, generation, directory, sessionId]`. Same-session revert and unrevert run in call order so concurrent HTTP cannot invert the server’s final marker; different sessions stay parallel. Each queued operation re-reads store state after the queue wait, re-validates runtime capture after every await, and must not publish marker/session/draft when the runtime is stale. A failed operation never blocks the next queued operation (tail releases in `finally`). Draft revision CAS rollback on remote failure is unchanged. `session-actions.ts` keeps domain operations only. `stageMessageEdit` accepts optional `{ directory, draftKey }` (defaults to primary `sessionDraftKey`) and returns an opaque `StageMessageEditHandle` whose `rollback()` CAS-restores the pre-stage draft or true absence (conflict keeps newer user edits); primary callers may ignore the handle. Primary composer edit commits keep `messageEditCommitting` painted while they abort any still-busy turn, wait for the session to report idle (OpenCode rejects `deleteMessage` with HTTP 409 while busy), call `commitMessageEdit` to delete the edited target and its old forward tail, then dispatch the replacement. Waiting during abort→idle is expected. A failed abort/wait/delete keeps the staged edit and old tail for retry; a failed replacement send after a successful delete leaves the draft text for an ordinary resend. `commitMessageEdit` accepts an optional directory override so Assistant continuous edit deletes against the correct child store, and an optional `preserveMessageId` so an already-echoed in-flight replacement (and anything after it in conversation order) is never a delete candidate. Its delete range is the live transcript `messageOrder` tail from the target — conversation position, not id lexicographic order — intersected with server-known ids from a membership-only snapshot. That snapshot is not materialized into the live timeline. Nothing is hidden up front: a row leaves the local store only after its own remote delete succeeds, so a failed abort / refetch / delete cannot leave the transcript out of sync with the server.
+Revert visibility, the revert dock, user-message history, and slash undo/redo use transcript `messageOrder` (conversation position), not id lexicographic comparison. A missing revert target fails visible (show the loaded conversation) rather than hiding by id. `revertToMessage` / slash redo do not materialize a refetch into the live timeline. Editing a sent message may await per-message `materializeTranscriptMessage` only when an authored file part is slim or missing `url`, then restore from the re-read parts. `revertToMessage` and `unrevertSession` share a serial flight owned by `session-history-mutation-coordinator.ts`, keyed by `[transportIdentity, generation, directory, sessionId]`. Same-session revert and unrevert run in call order so concurrent HTTP cannot invert the server’s final marker; different sessions stay parallel. Each queued operation re-reads store state after the queue wait, re-validates runtime capture after every await, and must not publish marker/session/draft when the runtime is stale. A failed operation never blocks the next queued operation (tail releases in `finally`). Draft revision CAS rollback on remote failure is unchanged. `session-actions.ts` keeps domain operations only. `stageMessageEdit` accepts optional `{ directory, draftKey }` (defaults to primary `sessionDraftKey`) and returns an opaque `StageMessageEditHandle` whose `rollback()` CAS-restores the pre-stage draft or true absence (conflict keeps newer user edits); primary callers may ignore the handle. Primary composer edit commits keep `messageEditCommitting` painted while they abort any still-busy turn, wait for the session to report idle (OpenCode rejects `deleteMessage` with HTTP 409 while busy), call `commitMessageEdit` to delete the edited target and its old forward tail, then dispatch the replacement. Waiting during abort→idle is expected. A failed abort/wait/delete keeps the staged edit and old tail for retry; a failed replacement send after a successful delete leaves the draft text for an ordinary resend. `commitMessageEdit` accepts an optional directory override so Assistant continuous edit deletes against the correct child store, and an optional `preserveMessageId` so an already-echoed in-flight replacement (and anything after it in conversation order) is never a delete candidate. Its delete range is the live transcript `messageOrder` tail from the target — conversation position, not id lexicographic order — intersected with server-known ids from a membership-only snapshot. That snapshot is not materialized into the live timeline. Nothing is hidden up front: a row leaves the local store only after its own remote delete succeeds, so a failed abort / refetch / delete cannot leave the transcript out of sync with the server.
 
 Rules:
 

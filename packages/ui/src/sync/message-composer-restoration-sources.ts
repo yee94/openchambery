@@ -166,6 +166,8 @@ const agentTokenFromPart = (part: Record<string, unknown>): AgentToken | null =>
  * Restores a complete Composer payload from authored message parts.
  * Filters synthetic parts; materializes skill/command/session tokens;
  * recovers agent/file/directory mentions; promotes remaining files to root attachments.
+ * Slim file parts are skipped before url/type parsing so a preview/stub url
+ * cannot be restored as the attachment body.
  */
 export const buildSentMessageComposerRestoration = async (
   parts: readonly Record<string, unknown>[],
@@ -207,6 +209,8 @@ export const buildSentMessageComposerRestoration = async (
   const values = new Map<string, Blob | string>()
 
   for (const part of fileParts) {
+    // Slim projections may keep a preview/stub url; never restore that as the body.
+    if (part.slim === true) continue
     const url = typeof part.url === 'string' ? part.url : ''
     if (!url) continue
     const mimeType = typeof part.mime === 'string' ? part.mime : 'application/octet-stream'

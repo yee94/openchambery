@@ -487,4 +487,56 @@ describe('bridge session turn-page runtime', () => {
       expect(result.data.records).toBeUndefined();
     }
   });
+
+  it('projects file parts on the first packet and keeps prepend pages full', async () => {
+    const png = Buffer.concat([
+      Buffer.from([0x89, 0x50, 0x4E, 0x47, 0x0D, 0x0A, 0x1A, 0x0A]),
+      Buffer.from([0x00, 0x00, 0x00, 0x0D]),
+      Buffer.from('IHDR'),
+      Buffer.from([0x00, 0x00, 0x00, 0x02, 0x00, 0x00, 0x00, 0x03, 0x08, 0x02, 0x00, 0x00, 0x00]),
+      Buffer.alloc(4),
+    ]);
+    const url = `data:image/png;base64,${png.toString('base64')}`;
+    responseImpl = async () => new Response(
+      JSON.stringify([
+        {
+          info: { id: 'msg_u1', role: 'user', time: { created: 1 } },
+          parts: [{ id: 'prt_file', type: 'file', mime: 'image/png', filename: 'shot.png', url }],
+        },
+      ]),
+      { status: 200, headers: { 'content-type': 'application/json', 'x-next-cursor': '' } },
+    );
+
+    const { handleSessionTurnPageBridgeMessage } = await loadRuntime();
+    const first = await handleSessionTurnPageBridgeMessage(
+      { id: 'req_file_1', type: 'api:session-turn-page', payload: { sessionID: 'ses_1', turns: 3 } },
+      defaultCtx,
+    );
+    expect(first.success).toBe(true);
+    expect(first.data.partsProjection).toBe('slim-v1');
+    expect(first.data.turnCount).toBe(1);
+    expect(first.data.records[0].parts[0]).toMatchObject({
+      type: 'file',
+      mime: 'image/png',
+      filename: 'shot.png',
+      width: 2,
+      height: 3,
+      slim: true,
+    });
+    expect(first.data.records[0].parts[0].url).toBeUndefined();
+    expect(JSON.stringify(first.data.records[0].parts[0])).not.toContain('base64');
+
+    const prepend = await handleSessionTurnPageBridgeMessage(
+      {
+        id: 'req_file_2',
+        type: 'api:session-turn-page',
+        payload: { sessionID: 'ses_1', turns: 3, before: 'msg_cursor' },
+      },
+      defaultCtx,
+    );
+    expect(prepend.success).toBe(true);
+    expect(prepend.data.partsProjection).toBeNull();
+    expect(prepend.data.records[0].parts[0].url).toBe(url);
+    expect(prepend.data.records[0].parts[0].slim).toBeUndefined();
+  });
 });

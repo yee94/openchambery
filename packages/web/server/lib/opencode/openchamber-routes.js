@@ -1,4 +1,5 @@
 import { registerSessionIndexRoutes } from '../session-index/routes.js';
+import { registerTranscriptCacheRoutes } from '../transcript-cache/routes.js';
 
 export const registerOpenChamberRoutes = (app, dependencies) => {
   const {
@@ -13,9 +14,11 @@ export const registerOpenChamberRoutes = (app, dependencies) => {
     getCachedZenModels,
     sessionIndexService,
     sessionIndexSyncRuntime,
+    transcriptCacheService,
   } = dependencies;
 
   registerSessionIndexRoutes(app, { sessionIndexService, sessionIndexSyncRuntime });
+  registerTranscriptCacheRoutes(app, { transcriptCacheService });
 
   app.get('/api/openchamber/update-check', async (req, res) => {
     try {

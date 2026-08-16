@@ -20,6 +20,8 @@ import {
 import type {
   TranscriptCommand,
   TranscriptCommandResult,
+  TranscriptHydrationState,
+  TranscriptMessageMaterializationState,
   TranscriptRepository,
   TranscriptScope,
 } from "./transcript-repository"
@@ -244,11 +246,60 @@ export async function refreshTranscriptFromAuthority(
  * Purge one session's transcript families (delete / eviction).
  * No-op when the bound repository lacks purgeSession.
  */
+/**
+ * Fetch the exact Host snapshot for one message and merge it into Query.
+ * UI Activity lanes call this; the repository no-ops when the message has
+ * no slim tool / reasoning / file parts.
+ */
+export async function materializeTranscriptMessage(
+  directory: string,
+  sessionID: string,
+  messageID: string,
+): Promise<void> {
+  const repository = requireTranscriptRepository()
+  if (typeof repository.materializeMessage !== "function") {
+    throw new Error("TranscriptRepository does not support materializeMessage")
+  }
+  await repository.materializeMessage(transcriptScope(directory, sessionID), messageID)
+}
+
+/**
+ * Read-only hydration phase for the bound Query repository.
+ * Unbound / store-test repositories without the method report idle.
+ */
+export function getTranscriptHydrationState(
+  directory: string,
+  sessionID: string,
+): TranscriptHydrationState {
+  const repository = getTranscriptRepository()
+  if (!repository || typeof repository.getHydrationState !== "function") {
+    return { sessionID, phase: "idle", p0Satisfied: false }
+  }
+  return repository.getHydrationState(transcriptScope(directory, sessionID))
+}
+
+/**
+ * Read-only exact-message fill status. Unbound / store-test repositories
+ * report idle so later UI can subscribe without throwing.
+ */
+export function getTranscriptMessageMaterializationState(
+  directory: string,
+  sessionID: string,
+  messageID: string,
+): TranscriptMessageMaterializationState {
+  const repository = getTranscriptRepository()
+  if (!repository || typeof repository.getMessageMaterializationState !== "function") {
+    return { sessionID, messageID, status: "idle" }
+  }
+  return repository.getMessageMaterializationState(
+    transcriptScope(directory, sessionID),
+    messageID,
+  )
+}
+
 export function purgeTranscriptSession(directory: string, sessionID: string): void {
   const repository = getTranscriptRepository() as
     | (TranscriptRepository & { purgeSession?: (scope: TranscriptScope) => void })
     | null
   repository?.purgeSession?.(transcriptScope(directory, sessionID))
 }
-
-

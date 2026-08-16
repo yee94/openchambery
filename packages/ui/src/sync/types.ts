@@ -4,8 +4,6 @@ import type {
   Config,
   LspStatus,
   McpStatus,
-  Message,
-  Part,
   Path,
   PermissionRequest,
   Project,

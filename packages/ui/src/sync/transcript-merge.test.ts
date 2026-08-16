@@ -562,6 +562,57 @@ describe("mergeSessionTranscript", () => {
     expect((flat.partsByMessageID["msg_4"]?.[0] as { text?: string })?.text).toBe("just finished")
   })
 
+  test("shareSessionTranscriptData keeps reconcile created-time order on a same-length superset", () => {
+    const dated = (id: string, created: number, role: "user" | "assistant") => ({
+      ...(role === "user" ? userMessage(id) : assistantMessage(id)),
+      time: { created },
+    } as Message)
+    const initial = mergeSessionTranscript(undefined, SESSION, {
+      type: "http-page",
+      purpose: "initial",
+      page: page(
+        [
+          { info: dated("msg_01", 1001, "user"), parts: [textPart("p01", "msg_01")] },
+          { info: dated("msg_02", 1002, "assistant"), parts: [textPart("p02", "msg_02")] },
+        ],
+        { cursor: "cur_older", complete: false, turnCount: 1 },
+      ),
+    }).data!
+    const newer = mergeSessionTranscript(initial, SESSION, {
+      type: "http-page",
+      purpose: "reconcile-page",
+      page: page(
+        [
+          { info: dated("msg_07", 1007, "user"), parts: [textPart("p07", "msg_07")] },
+          { info: dated("msg_08", 1008, "assistant"), parts: [textPart("p08", "msg_08")] },
+        ],
+        { complete: false, turnCount: 0 },
+      ),
+    }).data!
+    const ordered = mergeSessionTranscript(newer, SESSION, {
+      type: "http-page",
+      purpose: "reconcile-page",
+      page: page(
+        [
+          { info: dated("msg_03", 1003, "user"), parts: [textPart("p03", "msg_03")] },
+          { info: dated("msg_04", 1004, "assistant"), parts: [textPart("p04", "msg_04")] },
+        ],
+        { complete: false, turnCount: 0 },
+      ),
+    }).data!
+
+    const shared = shareSessionTranscriptData(newer, ordered, SESSION)
+    expect(projectFlatFromTranscriptData(shared, SESSION).messageOrder).toEqual([
+      "msg_01",
+      "msg_02",
+      "msg_03",
+      "msg_04",
+      "msg_07",
+      "msg_08",
+    ])
+    expect(shared?.pages[0]?.cursor).toBe("cur_older")
+  })
+
   test("shareSessionTranscriptData keeps a live last turn when Query collapses to one tail", () => {
     const tail = mergeSessionTranscript(undefined, SESSION, {
       type: "http-page",
@@ -605,5 +656,43 @@ describe("mergeSessionTranscript", () => {
     expect(flat.messageOrder).toContain("msg_13")
     expect((flat.partsByMessageID["msg_12"]?.[0] as { text?: string })?.text).toBe("just sent")
     expect((flat.partsByMessageID["msg_13"]?.[0] as { text?: string })?.text).toBe("just finished")
+  })
+
+  test("durable-seed writes messages and parts with an unknown pagination boundary", () => {
+    const { data, result } = mergeSessionTranscript(undefined, SESSION, {
+      type: "durable-seed",
+      records: [{ info: userMessage("msg_1"), parts: [textPart("p1", "msg_1", "cached")] }],
+    })
+    expect(result.applied).toBe(true)
+    expect(result.changed).toBe(true)
+    expect(data?.pages[0]?.messageOrder).toEqual(["msg_1"])
+    expect((data?.pages[0]?.partsByMessageID.msg_1?.[0] as { text?: string })?.text).toBe("cached")
+    expect(data?.pages[0]?.complete).toBe(false)
+    expect(data?.pages[0]?.cursor).toBe(null)
+    expect(boundaryFromTranscriptData(data)).toEqual({ kind: "unknown", loadedTurns: 0 })
+  })
+
+  test("authority slim does not replace a durable-seeded full part", () => {
+    const info = {
+      id: "msg_a",
+      sessionID: SESSION,
+      role: "assistant",
+      time: { created: 2 },
+      finish: "stop",
+    } as Message
+    const full = { id: "p_a", messageID: "msg_a", sessionID: SESSION, type: "text", text: "full body" } as Part
+    const slim = { id: "p_a", messageID: "msg_a", sessionID: SESSION, type: "text", text: "summary", slim: true } as Part
+    const seeded = mergeSessionTranscript(undefined, SESSION, {
+      type: "durable-seed",
+      records: [{ info, parts: [full] }],
+    })
+    const { data } = mergeSessionTranscript(seeded.data, SESSION, {
+      type: "http-page",
+      purpose: "initial",
+      page: page([{ info, parts: [slim] }], { complete: true, turnCount: 1 }),
+    })
+    const part = data?.pages[0]?.partsByMessageID.msg_a?.[0] as { text?: string; slim?: boolean } | undefined
+    expect(part?.text).toBe("full body")
+    expect(part?.slim).not.toBe(true)
   })
 })

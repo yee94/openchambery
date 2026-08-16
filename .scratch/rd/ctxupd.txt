@@ -1,0 +1,46 @@
+  directory: string,
+  payload: Event,
+) => {
+  if (!directory || directory === "global") {
+    return
+  }
+
+  const sessionID = getSessionIdFromPayload(payload)
+  if (sessionID) {
+    setIndexedSessionDirectory(routingIndex, sessionID, directory)
+  }
+
+  switch (payload.type) {
+    case "session.created":
+    case "session.updated": {
+      const info = (payload.properties as { info?: Session }).info
+      if (info?.id) {
+        setIndexedSessionDirectory(routingIndex, info.id, directory)
+      }
+      return
+    }
+
+    case "session.deleted": {
+      const deletedSessionID = (payload.properties as { sessionID?: string }).sessionID
+      if (deletedSessionID) {
+        removeIndexedSession(routingIndex, deletedSessionID)
+      }
+      return
+    }
+
+    case "message.updated": {
+      const info = (payload.properties as { info?: Message }).info
+      if (info?.id && info.sessionID) {
+        setIndexedMessage(routingIndex, info.sessionID, info.id, directory)
+      }
+      return
+    }
+
+    case "message.removed": {
+      const props = payload.properties as { sessionID?: string; messageID?: string }
+      if (props.messageID) {
+        removeIndexedMessage(routingIndex, props.messageID, props.sessionID)
+      }
+      return
+    }
+

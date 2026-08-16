@@ -95,3 +95,63 @@ describe("mergePartsForDisplay", () => {
     expect(current.map((part) => part.id)).toEqual(["t1", "t2"])
   })
 })
+
+describe("mergePartsForDisplay with projected parts", () => {
+  const slimTool = (id: string, status = "completed"): Part => ({
+    ...(tool(id, status) as Record<string, unknown>),
+    slim: true,
+  }) as unknown as Part
+
+  const withOutput = (id: string, output: string): Part => ({
+    id,
+    type: "tool",
+    tool: "bash",
+    state: { status: "completed", output, time: { start: 1, end: 2 } },
+  }) as Part
+
+  test("a projected part never replaces the full part already painted", () => {
+    // The dangerous case: a settled assistant takes incoming verbatim, so
+    // without the completeness hold the summary would erase tool output.
+    const full = withOutput("t1", "a very long tool output")
+    const previous = [full]
+    const merged = mergePartsForDisplay(previous, [slimTool("t1")], info({ finish: "stop" }))
+    expect(merged[0]).toBe(full)
+  })
+
+  test("a projected part is accepted when nothing fuller is held", () => {
+    const slim = slimTool("t1")
+    const merged = mergePartsForDisplay([text("p1", "a")], [text("p1", "a"), slim], info({ finish: "stop" }))
+    expect(merged.map((part) => part.id)).toEqual(["p1", "t1"])
+    expect(merged[1]).toBe(slim)
+  })
+
+  test("a full part arriving after a projected one is adopted", () => {
+    // Live SSE outranks a projected page whatever the arrival order.
+    const full = withOutput("t1", "output")
+    const merged = mergePartsForDisplay([slimTool("t1")], [full], info({ finish: "stop" }))
+    expect(merged[0]).toBe(full)
+  })
+
+  test("an open turn holds both presence and completeness", () => {
+    const full = withOutput("t1", "output")
+    const previous = [full, tool("t2")]
+    const merged = mergePartsForDisplay(previous, [slimTool("t1")], info())
+    expect(merged[0]).toBe(full)
+    expect(merged.map((part) => part.id)).toEqual(["t1", "t2"])
+  })
+
+  test("a fully upgraded frame reuses the previous array reference", () => {
+    const previous = [withOutput("t1", "output"), withOutput("t2", "output")]
+    const merged = mergePartsForDisplay(previous, [slimTool("t1"), slimTool("t2")], info({ finish: "stop" }))
+    expect(merged).toBe(previous)
+  })
+
+  test("repeated projected frames never downgrade what is held", () => {
+    const full = withOutput("t1", "output")
+    let current: Part[] = [full]
+    for (let round = 0; round < 5; round += 1) {
+      current = mergePartsForDisplay(current, [slimTool("t1")], info({ finish: "stop" }))
+    }
+    expect(current[0]).toBe(full)
+  })
+})

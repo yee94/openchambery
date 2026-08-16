@@ -1,0 +1,144 @@
+                    DEFAULT_SESSION_VIEW_ESTIMATED_BYTES,
+                );
+            });
+        }, { priority: 'user-blocking' });
+    }, [activeSessionViewKey, cacheLimits, selectionIntent, selectionKey]);
+
+    const handleSessionViewEstimateChange = useEvent((key: string, estimatedBytes: number) => {
+        const scheduledIntent = committedSelectionIntentRef.current;
+        const scheduledSelectionKey = committedSelectionKeyRef.current;
+        setSessionViewRenderState((current) => {
+            if (
+                committedSelectionIntentRef.current !== scheduledIntent
+                || committedSelectionKeyRef.current !== scheduledSelectionKey
+                || current.activeIntent !== scheduledIntent
+                || key !== scheduledSelectionKey
+            ) {
+                return current;
+            }
+            const cachedViews = recordSessionViewEstimate(
+                current.cachedSessionViews,
+                key,
+                estimatedBytes,
+            );
+            return cachedViews === current.cachedSessionViews
+                ? current
+                : { ...current, cacheNeedsTrim: true, cachedSessionViews: cachedViews };
+        });
+    });
+
+    return (
+        <div className="h-full bg-background" aria-busy={isMaterializingSessionView || undefined}>
+            {isMaterializingSessionView ? <SessionViewLoadingPlaceholder key={selectionKey} /> : null}
+            {renderedSessionViews.map((view) => (
+                <React.Activity
+                    key={view.key}
+                    name={`chat-session-${view.sessionId}`}
+                    mode={activeSessionViewKey === view.key ? 'visible' : 'hidden'}
+                >
+                    <MemoizedChatContainerContent
+                        {...props}
+                        sessionId={view.sessionId}
+                        sessionDirectory={view.directory}
+                        sessionViewKey={view.key}
+                        onSessionViewEstimateChange={handleSessionViewEstimateChange}
+                    />
+                </React.Activity>
+            ))}
+            {!selectionKey ? (
+                <MemoizedChatContainerContent
+                    {...props}
+                    sessionId={null}
+                    sessionDirectory={selectedSession.directory}
+                />
+            ) : null}
+        </div>
+    );
+};
+
+const HostedChatContainer: React.FC<ChatContainerProps & { host: ChatContainerHost; runtimeKey: string }> = ({
+    host,
+    runtimeKey,
+    readOnly = false,
+}) => {
+    const hostedFeatures = React.useMemo(() => resolveChatContainerHostFeatures(host), [host]);
+    const sessionSurface = React.useMemo(() => ({
+        ...host.sessionSurface,
+        sessionId: host.sessionId,
+        directory: host.directory,
+        ...(host.onRevertMessage ? { onRevertMessage: host.onRevertMessage } : {}),
+    }), [host]);
+    const sessionViewKey = `host:${runtimeKey}:${sessionSurface.surfaceId}:${host.sessionId}`;
+    return (
+        <SessionSurfaceContext.Provider value={sessionSurface}>
+            <div className="h-full bg-background">
+                <MemoizedChatContainerContent
+                    autoOpenDraft={false}
+                    readOnly={readOnly}
+                    sessionId={host.sessionId}
+                    sessionDirectory={host.directory}
+                    sessionViewKey={sessionViewKey}
+                    composerSurface={host.composerSurface}
+                    hostedFeatures={hostedFeatures}
+                    assistantHistory={host.assistantHistory}
+                    pendingUserMessages={host.pendingUserMessages}
+                    onPendingUserMessagesMaterialized={host.onPendingUserMessagesMaterialized}
+                    onRevertMessage={host.onRevertMessage}
+                    warning={host.warning}
+                />
+            </div>
+        </SessionSurfaceContext.Provider>
+    );
+};
+
+const ExplicitChatContainer: React.FC<Omit<ChatContainerProps, 'host'> & {
+    explicitSession: NonNullable<ChatContainerProps['explicitSession']>;
+    runtimeKey: string;
+}> = ({ explicitSession, runtimeKey, ...props }) => {
+    const syncDirectory = useSyncDirectory();
+    const directory = explicitSession.directory ?? syncDirectory;
+    const sessionSurface = React.useMemo(() => createExplicitSessionSurface({
+        ...explicitSession,
+        directory,
+    }), [directory, explicitSession]);
+    return (
+        <SessionSurfaceContext.Provider value={sessionSurface}>
+            <div className="h-full bg-background">
+                <MemoizedChatContainerContent
+                    {...props}
+                    active={explicitSession.active}
+                    sessionId={explicitSession.sessionId}
+                    sessionDirectory={directory}
+                    sessionViewKey={`explicit:${runtimeKey}:${explicitSession.viewKey}`}
+                />
+            </div>
+        </SessionSurfaceContext.Provider>
+    );
+};
+
+export const ChatContainer: React.FC<ChatContainerProps> = (props) => {
+    const runtimeKey = React.useSyncExternalStore(
+        subscribeRuntimeKey,
+        getRuntimeKey,
+        getRuntimeKey,
+    );
+
+    if (props.host) {
+        return <HostedChatContainer key={`${runtimeKey}:${props.host.sessionSurface.surfaceId}`} {...props} host={props.host} runtimeKey={runtimeKey} />;
+    }
+
+    if (props.explicitSession) {
+        return (
+            <ExplicitChatContainer
+                key={`${runtimeKey}:${props.explicitSession.viewKey}`}
+                autoOpenDraft={props.autoOpenDraft}
+                readOnly={props.readOnly}
+                active={props.active}
+                explicitSession={props.explicitSession}
+                runtimeKey={runtimeKey}
+            />
+        );
+    }
+
+    return <RuntimeScopedChatContainer key={runtimeKey} {...props} runtimeKey={runtimeKey} />;
+};

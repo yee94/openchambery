@@ -491,10 +491,6 @@ describe("createTranscriptReconnectCompensationController", () => {
     const user = msg("u1", "user")
     const a1 = msg("a1", "assistant")
     const tailUser = msg("u_tail", "user")
-    const fetcher = createFetcher([
-      { info: user, parts: [part("p1", "u1")] },
-      { info: a1, parts: [part("p2", "a1")] },
-    ])
     const clientLocal = new QueryClient({ defaultOptions: { queries: { retry: false } } })
     let ensureCalls = 0
     const repo = createQueryTranscriptRepository({

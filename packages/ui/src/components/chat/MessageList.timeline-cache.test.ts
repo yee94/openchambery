@@ -60,6 +60,7 @@ const {
     resolveTanstackEstimateMinSamples,
     resolveTimelineVirtualizerCacheKey,
     resolveToggledActivityExpanded,
+    resolveTurnActivityExpandedByDefault,
     resolveTurnActivityPresentation,
     shouldShowCompactionStatus,
     syncCurrentHistoryVirtualization,
@@ -78,9 +79,16 @@ describe('history virtualization transition anchor source contract', () => {
 });
 
 describe('turn activity expansion state', () => {
-    test('live active always defaults expanded regardless of activity render mode', () => {
-        expect(resolveDefaultActivityExpanded('active', 'collapsed')).toBe(true);
-        expect(resolveDefaultActivityExpanded('active', 'summary')).toBe(true);
+    test('active Activity defaults collapsed while its Working header remains live', () => {
+        for (const activityRenderMode of ['collapsed', 'summary'] as const) {
+            expect(resolveTurnActivityExpandedByDefault({
+                expansionDisposition: 'active',
+                activityRenderMode,
+                isLastTurn: true,
+                isActivelyProcessing: true,
+                hasConfirmedFinalBody: false,
+            })).toBe(false);
+        }
     });
 
     test('collapsed mode defaults settled dispositions to collapsed', () => {
@@ -114,7 +122,13 @@ describe('turn activity expansion state', () => {
             sessionIsWorking: true,
         });
         expect(live.completionDisposition).toBe('active');
-        expect(resolveDefaultActivityExpanded(live.completionDisposition, 'collapsed')).toBe(true);
+        expect(resolveTurnActivityExpandedByDefault({
+            expansionDisposition: live.completionDisposition,
+            activityRenderMode: 'collapsed',
+            isLastTurn: true,
+            isActivelyProcessing: true,
+            hasConfirmedFinalBody: false,
+        })).toBe(false);
     });
 
     test('last open turn stays expanded even when sessionIsWorking flaps idle between tools', () => {
@@ -132,7 +146,13 @@ describe('turn activity expansion state', () => {
             headerPresentationDisposition: demoted.completionDisposition,
         });
         expect(expansion).toBe('active');
-        expect(resolveDefaultActivityExpanded(expansion, 'collapsed')).toBe(true);
+        expect(resolveTurnActivityExpandedByDefault({
+            expansionDisposition: expansion,
+            activityRenderMode: 'collapsed',
+            isLastTurn: true,
+            isActivelyProcessing: false,
+            hasConfirmedFinalBody: false,
+        })).toBe(false);
         expect(resolveDefaultActivityExpanded(demoted.completionDisposition, 'collapsed')).toBe(false);
     });
 
@@ -162,15 +182,16 @@ describe('turn activity expansion state', () => {
         ).toBe(true);
     });
 
-    test('last active turn stays expanded even with a confirmed final body', () => {
-        // Active always wins: a flapping busy/idle status must not collapse a
-        // turn the projection still reports as open.
+    test('last active turn stays collapsed through busy-status flaps', () => {
         expect(
-            resolveDefaultActivityExpanded('active', 'collapsed', {
+            resolveTurnActivityExpandedByDefault({
+                expansionDisposition: 'active',
+                activityRenderMode: 'collapsed',
                 isLastTurn: true,
+                isActivelyProcessing: false,
                 hasConfirmedFinalBody: true,
             }),
-        ).toBe(true);
+        ).toBe(false);
     });
 
     test('a toggle flips the current expansion state in both directions', () => {

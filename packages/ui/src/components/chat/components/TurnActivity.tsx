@@ -14,6 +14,7 @@ interface DiffStats {
 
 interface TurnActivityProps {
     parts: TurnActivityRecord[];
+    materializationParts?: TurnActivityRecord[];
     isExpanded: boolean;
     collapsedPreviewCount?: number;
     completionDisposition?: TurnCompletionDisposition;

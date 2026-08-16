@@ -9,7 +9,7 @@ declare const self: ServiceWorkerGlobalScope & {
   __WB_MANIFEST: Array<string | { url: string; revision?: string }>;
 };
 
-// eslint-disable-next-line @typescript-eslint/no-unused-vars
+// The reference must exist for the build to inject the precache manifest.
 const __precacheManifest = self.__WB_MANIFEST;
 
 type PushPayload = {

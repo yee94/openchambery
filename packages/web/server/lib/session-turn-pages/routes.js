@@ -4,7 +4,11 @@ import {
   MAX_ANCHOR_LENGTH,
   MAX_CONTINUATION_LENGTH,
 } from './reconcile.service.js';
-import { createSessionTurnPageService } from './service.js';
+import {
+  createSessionTurnPageService,
+  projectSlimParts,
+  SLIM_PARTS_PROJECTION,
+} from './service.js';
 
 const TURNS_MIN = 1;
 const TURNS_MAX = 10;
@@ -15,23 +19,30 @@ const SCAN_LIMIT_MAX = 200;
 const SCAN_LIMIT_DEFAULT = 100;
 
 /**
+ * Explicit operator override from env, or null when unset/invalid.
+ * Kept separate from the resolved default so per-path policy can tell
+ * "operator chose 100" apart from "nobody chose anything".
+ */
+const _inner_scanLimitEnv = (() => {
+  const raw = process.env.OPENCHAMBER_SESSION_TURN_SCAN_LIMIT;
+  if (raw === undefined || raw === null || raw === '') {
+    return null;
+  }
+  const parsed = Number(String(raw).trim());
+  if (!Number.isInteger(parsed) || parsed < SCAN_LIMIT_MIN || parsed > SCAN_LIMIT_MAX) {
+    return null;
+  }
+  return parsed;
+})();
+
+/**
  * Server-owned upstream OpenCode scan chunk (messages per page).
  * Host always calls OpenCode locally; this is not a client-network concern.
  * Override via env `OPENCHAMBER_SESSION_TURN_SCAN_LIMIT` (10..200).
  * Clients may still pass `scanLimit` as an optional override; when omitted,
  * this inner default is used.
  */
-const _inner_scanLimit = (() => {
-  const raw = process.env.OPENCHAMBER_SESSION_TURN_SCAN_LIMIT;
-  if (raw === undefined || raw === null || raw === '') {
-    return SCAN_LIMIT_DEFAULT;
-  }
-  const parsed = Number(String(raw).trim());
-  if (!Number.isInteger(parsed) || parsed < SCAN_LIMIT_MIN || parsed > SCAN_LIMIT_MAX) {
-    return SCAN_LIMIT_DEFAULT;
-  }
-  return parsed;
-})();
+const _inner_scanLimit = _inner_scanLimitEnv ?? SCAN_LIMIT_DEFAULT;
 
 const PAGE_TIMEOUT_MS = 45_000;
 const RECONCILE_TIMEOUT_MS = 45_000;
@@ -416,7 +427,14 @@ export const registerSessionTurnPageRoutes = (app, dependencies = {}) => {
       return res.status(400).json({ error: SAFE_ERRORS.invalid_turns });
     }
 
-    // Optional client override. Omitted → host-local `_inner_scanLimit` (env/default).
+    const before = typeof req.query?.before === 'string' && req.query.before.length > 0
+      ? req.query.before
+      : undefined;
+    const directory = typeof req.query?.directory === 'string' && req.query.directory.length > 0
+      ? req.query.directory
+      : undefined;
+
+    // Width resolves as: explicit client override → env override → default.
     // Invalid explicit value → 400; empty string is invalid (not "missing").
     const scanLimitRaw = req.query?.scanLimit;
     const scanLimitResult = parseBoundedInt(scanLimitRaw, {
@@ -429,13 +447,6 @@ export const registerSessionTurnPageRoutes = (app, dependencies = {}) => {
       return res.status(400).json({ error: SAFE_ERRORS.invalid_scan_limit });
     }
     const _inner_scanLimit_resolved = scanLimitResult.value;
-
-    const before = typeof req.query?.before === 'string' && req.query.before.length > 0
-      ? req.query.before
-      : undefined;
-    const directory = typeof req.query?.directory === 'string' && req.query.directory.length > 0
-      ? req.query.directory
-      : undefined;
 
     const parentSignal = requestSignal(req, res);
     const timed = timeoutSignal(PAGE_TIMEOUT_MS, parentSignal);
@@ -455,11 +466,14 @@ export const registerSessionTurnPageRoutes = (app, dependencies = {}) => {
         return res.status(mapped.status).json(mapped.body);
       }
 
+      // Projection is first-packet only; prepend and reconcile keep full parts.
+      const isFirstPacket = before === undefined;
       return res.status(200).json({
-        records: result.records,
+        records: isFirstPacket ? projectSlimParts(result.records) : result.records,
         turnCount: result.turnCount,
         cursor: result.cursor ?? null,
         complete: result.complete === true,
+        partsProjection: isFirstPacket ? SLIM_PARTS_PROJECTION : null,
       });
     } catch (error) {
       if (error?.name === 'AbortError') {

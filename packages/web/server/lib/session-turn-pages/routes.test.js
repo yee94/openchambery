@@ -214,14 +214,33 @@ describe('registerSessionTurnPageRoutes', () => {
     expect(res.statusCode).toBe(200);
   });
 
-  it('defaults turns=3 and uses host _inner_scanLimit when scanLimit is omitted', async () => {
-    const loadPage = vi.fn(async () => ({
-      ok: true,
-      records: [],
-      turnCount: 0,
-      cursor: null,
-      complete: true,
-    }));
+  const okPage = () => ({
+    ok: true,
+    records: [],
+    turnCount: 0,
+    cursor: null,
+    complete: true,
+  });
+
+  /** Resolve the scanLimit the route handed the service for one request. */
+  const resolvedScanLimit = async (query) => {
+    const loadPage = vi.fn(async () => okPage());
+    const { app, route } = registry();
+    registerSessionTurnPageRoutes(app, { sessionTurnPageService: { loadPage } });
+    const res = response();
+
+    await route('GET', ROUTE)({
+      params: { sessionID: 'ses_1' },
+      query,
+      headers: {},
+    }, res);
+
+    expect(res.statusCode).toBe(200);
+    return loadPage.mock.calls[0][0].scanLimit;
+  };
+
+  it('defaults turns=3 and applies the host-owned scan width', async () => {
+    const loadPage = vi.fn(async () => okPage());
     const { app, route } = registry();
     registerSessionTurnPageRoutes(app, { sessionTurnPageService: { loadPage } });
     const res = response();
@@ -233,12 +252,126 @@ describe('registerSessionTurnPageRoutes', () => {
     }, res);
 
     expect(res.statusCode).toBe(200);
-    // Client omits scanLimit → server `_inner_scanLimit` (default 100 without env).
     expect(loadPage).toHaveBeenCalledWith(expect.objectContaining({
       sessionID: 'ses_1',
       turns: 3,
       scanLimit: 100,
     }));
+  });
+
+  it('applies the same width to prepend, which always carries before', async () => {
+    expect(await resolvedScanLimit({ turns: '4', before: 'msg_cursor' })).toBe(100);
+  });
+
+  it('lets an explicit client scanLimit override the host default', async () => {
+    expect(await resolvedScanLimit({ turns: '3', scanLimit: '80' })).toBe(80);
+  });
+
+  const toolRecord = () => ({
+    info: { id: 'msg_a1', role: 'assistant' },
+    parts: [{
+      id: 'prt_1',
+      type: 'tool',
+      tool: 'bash',
+      state: { status: 'completed', title: 'ran bash', output: 'x'.repeat(4000) },
+    }],
+  });
+
+  /** Send one request and return the JSON body the route produced. */
+  const pageBody = async (query) => {
+    const loadPage = vi.fn(async () => ({
+      ok: true,
+      records: [toolRecord()],
+      turnCount: 1,
+      cursor: null,
+      complete: true,
+    }));
+    const { app, route } = registry();
+    registerSessionTurnPageRoutes(app, { sessionTurnPageService: { loadPage } });
+    const res = response();
+
+    await route('GET', ROUTE)({
+      params: { sessionID: 'ses_1' },
+      query,
+      headers: {},
+    }, res);
+
+    expect(res.statusCode).toBe(200);
+    return res.body;
+  };
+
+  it('projects tool parts on a first packet and labels the response', async () => {
+    const body = await pageBody({ turns: '3' });
+
+    expect(body.partsProjection).toBe('slim-v1');
+    const part = body.records[0].parts[0];
+    expect(part.slim).toBe(true);
+    expect(part.state.status).toBe('completed');
+    expect(part.state.output).toBeUndefined();
+  });
+
+  it('leaves prepend pages whole and unlabelled', async () => {
+    const body = await pageBody({ turns: '4', before: 'msg_cursor' });
+
+    expect(body.partsProjection).toBeNull();
+    const part = body.records[0].parts[0];
+    expect(part.slim).toBeUndefined();
+    expect(part.state.output).toHaveLength(4000);
+  });
+
+  it('projects file parts on the first packet only and keeps prepend/explicit-cursor full', async () => {
+    const png = Buffer.concat([
+      Buffer.from([0x89, 0x50, 0x4E, 0x47, 0x0D, 0x0A, 0x1A, 0x0A]),
+      Buffer.from([0x00, 0x00, 0x00, 0x0D]),
+      Buffer.from('IHDR'),
+      Buffer.from([0x00, 0x00, 0x00, 0x02, 0x00, 0x00, 0x00, 0x03, 0x08, 0x02, 0x00, 0x00, 0x00]),
+      Buffer.alloc(4),
+    ]);
+    const url = `data:image/png;base64,${png.toString('base64')}`;
+    const fileRecord = () => ({
+      info: { id: 'msg_u1', role: 'user' },
+      parts: [{
+        id: 'prt_file',
+        type: 'file',
+        mime: 'image/png',
+        filename: 'shot.png',
+        url,
+      }],
+    });
+    const loadPage = vi.fn(async () => ({
+      ok: true,
+      records: [fileRecord()],
+      turnCount: 1,
+      cursor: 'oc1.next',
+      complete: false,
+    }));
+    const page = async (query) => {
+      const { app, route } = registry();
+      registerSessionTurnPageRoutes(app, { sessionTurnPageService: { loadPage } });
+      const res = response();
+      await route('GET', ROUTE)({ params: { sessionID: 'ses_1' }, query, headers: {} }, res);
+      expect(res.statusCode).toBe(200);
+      return res.body;
+    };
+
+    const first = await page({ turns: '3' });
+    expect(first.partsProjection).toBe('slim-v1');
+    expect(first.turnCount).toBe(1);
+    expect(first.records[0].parts[0]).toMatchObject({
+      type: 'file',
+      mime: 'image/png',
+      filename: 'shot.png',
+      width: 2,
+      height: 3,
+      slim: true,
+    });
+    expect(first.records[0].parts[0].url).toBeUndefined();
+    expect(JSON.stringify(first.records[0].parts[0])).not.toContain('base64');
+
+    const prepend = await page({ turns: '3', before: 'oc1.next' });
+    expect(prepend.partsProjection).toBeNull();
+    expect(prepend.records[0].parts[0].url).toBe(url);
+    expect(prepend.records[0].parts[0].slim).toBeUndefined();
   });
 
   it('does not abort on normal GET request close after a successful response', async () => {
