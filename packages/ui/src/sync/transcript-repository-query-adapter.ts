@@ -77,6 +77,7 @@ import {
   type TranscriptTransportPage,
 } from "./transcript-repository"
 import { getInitialSessionTurnLimit } from "./session-message-policy"
+import { recordTranscriptCommandDiagnostics, recordTranscriptDiagnostics, snapshotTranscriptDiagnostics } from "./transcript-diagnostics-runtime"
 import { UNKNOWN_SESSION_HISTORY_BOUNDARY } from "./types"
 
 // ---------------------------------------------------------------------------
@@ -288,8 +289,34 @@ export function createQueryTranscriptRepository(
   const messageFlights = new Map<string, Promise<TranscriptData>>()
   /** Latched P0 so a later empty/stale read cannot reopen the skeleton. */
   const p0Latches = new Map<string, true>()
+  /** First on-screen paint for a scope; one hydration event per latch. */
+  const p0Painted = new Set<string>()
   /** In-flight older-history prepends (P1). */
   const prependFlights = new Set<string>()
+
+  const recordHydrationPaint = (
+    scope: TranscriptScope,
+    identity: ReturnType<typeof resolveScopeIdentity>,
+  ) => {
+    const key = scopeKey(identity)
+    if (p0Painted.has(key)) return
+    const transcript = toTranscriptData(readData(scope), identity.sessionID)
+    if (!evaluateTranscriptP0Satisfied(transcript) && !p0Latches.has(key)) return
+    p0Painted.add(key)
+    recordTranscriptDiagnostics(snapshotTranscriptDiagnostics({
+      kind: "hydration",
+      sessionID: identity.sessionID,
+      directory: identity.directory,
+      transport: identity.transport,
+      generation: identity.generation,
+      transcript,
+      hydration: {
+        sessionID: identity.sessionID,
+        p0Satisfied: true,
+        phase: "p0",
+      },
+    }))
+  }
   let suppressDurableWrite = 0
 
   const getProjection = (key: string) => {
@@ -532,6 +559,9 @@ export function createQueryTranscriptRepository(
     for (const key of p0Latches.keys()) {
       if (key === prefix || key.startsWith(prefix)) p0Latches.delete(key)
     }
+    for (const key of [...p0Painted]) {
+      if (key === prefix || key.startsWith(prefix)) p0Painted.delete(key)
+    }
     for (const key of prependFlights) {
       if (key === prefix || key.startsWith(prefix)) prependFlights.delete(key)
     }
@@ -702,6 +732,14 @@ export function createQueryTranscriptRepository(
           status: "error",
           error: error instanceof Error ? error.message : String(error),
         })
+        recordTranscriptDiagnostics(snapshotTranscriptDiagnostics({
+          kind: "request-error",
+          sessionID: captured.sessionID,
+          directory: captured.directory,
+          transport: captured.transport,
+          generation: captured.generation,
+          error,
+        }))
         throw error
       } finally {
         authorityTailInflight.delete(flightKey)
@@ -1056,6 +1094,20 @@ export function createQueryTranscriptRepository(
       }
       })()
       scheduleDurableAfterApply(scope, identity, command, result)
+      if (result.applied) {
+        recordTranscriptCommandDiagnostics({
+          directory: identity.directory,
+          sessionID: identity.sessionID,
+          transport: identity.transport,
+          generation: identity.generation,
+          command,
+          transcript: toTranscriptData(readData(scope), identity.sessionID),
+          request: repository.getRequestState?.(scope),
+          hydration: repository.getHydrationState?.(scope),
+          error: result.error,
+        })
+        recordHydrationPaint(scope, identity)
+      }
       return result
     },
 
@@ -1120,10 +1172,27 @@ export function createQueryTranscriptRepository(
       // Seeded (or still-unknown) canonical must not go through the InfiniteQuery
       // controller — pages.length > 0 would skip the authority tail.
       if (needsAuthorityTail(scope) && readData(scope) !== undefined) {
-        return runAuthorityInitial(scope, captured)
+        const startedAt = Date.now()
+        const transcript = await runAuthorityInitial(scope, captured)
+        recordTranscriptDiagnostics(snapshotTranscriptDiagnostics({
+          kind: "ensure-initial",
+          sessionID: captured.sessionID,
+          directory: captured.directory,
+          transport: captured.transport,
+          generation: captured.generation,
+          source: "network",
+          durationMs: Date.now() - startedAt,
+          transcript,
+          request: repository.getRequestState?.(scope),
+          hydration: repository.getHydrationState?.(scope),
+        }))
+        recordHydrationPaint(scope, captured)
+        return transcript
       }
 
       const controller = ensureController(scope)
+      const startedAt = Date.now()
+      const hadCanonical = readData(scope) !== undefined
       // Drop a stale authority error so observer status can become ready.
       authorityFlights.delete(flightKey)
       await controller.ensureInitial()
@@ -1131,7 +1200,21 @@ export function createQueryTranscriptRepository(
       // Start min-residency from this ensure so immediate enforce cannot evict.
       cacheBudget.noteScopeObserved(toCacheScope(scope))
       enforceBudgetAfterWrite(scope)
-      return repository.getTranscript(scope)
+      const transcript = repository.getTranscript(scope)
+      recordTranscriptDiagnostics(snapshotTranscriptDiagnostics({
+        kind: "ensure-initial",
+        sessionID: captured.sessionID,
+        directory: captured.directory,
+        transport: captured.transport,
+        generation: captured.generation,
+        source: hadCanonical ? "query-cache" : "network",
+        durationMs: Date.now() - startedAt,
+        transcript,
+        request: repository.getRequestState?.(scope),
+        hydration: repository.getHydrationState?.(scope),
+      }))
+      recordHydrationPaint(scope, captured)
+      return transcript
     },
 
     async fetchPreviousPage(scope) {
@@ -1146,12 +1229,41 @@ export function createQueryTranscriptRepository(
       const flightKey = scopeKey(captured)
       prependFlights.add(flightKey)
       notify(scope)
+      const startedAt = Date.now()
       try {
         const controller = ensureController(scope)
         await controller.fetchPreviousPage()
         // Active transcript retains all pages; enforce only bounds inactive peers.
         enforceBudgetAfterWrite(scope)
-        return repository.getTranscript(scope)
+        const transcript = repository.getTranscript(scope)
+        recordTranscriptDiagnostics(snapshotTranscriptDiagnostics({
+          kind: "http-page",
+          sessionID: captured.sessionID,
+          directory: captured.directory,
+          transport: captured.transport,
+          generation: captured.generation,
+          source: "network",
+          durationMs: Date.now() - startedAt,
+          purpose: "prepend",
+          command: "http-page",
+          transcript,
+          request: repository.getRequestState?.(scope),
+          hydration: repository.getHydrationState?.(scope),
+        }))
+        return transcript
+      } catch (error) {
+        recordTranscriptDiagnostics(snapshotTranscriptDiagnostics({
+          kind: "request-error",
+          sessionID: captured.sessionID,
+          directory: captured.directory,
+          transport: captured.transport,
+          generation: captured.generation,
+          source: "network",
+          durationMs: Date.now() - startedAt,
+          purpose: "prepend",
+          error,
+        }))
+        throw error
       } finally {
         prependFlights.delete(flightKey)
         notify(scope)
@@ -1282,6 +1394,7 @@ export function createQueryTranscriptRepository(
       messageStates.clear()
       messageFlights.clear()
       p0Latches.clear()
+      p0Painted.clear()
       prependFlights.clear()
     },
   }

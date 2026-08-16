@@ -326,9 +326,14 @@ Modules:
 | `transcript-repository-production.ts` | `mountProductionTranscriptStack` (registry + budget + Query repo + compensation; default runtime durable store, optional injected `durableStore`) and Host turn-page production fetcher (`fetchProductionTranscriptTransportPage` → Query `http-page`) |
 | `transcript-parent-recovery.ts` | Production assistant-parent recovery helpers plus shared exact `session.message` fetch (`fetchExactSessionMessageRecord`, transport+generation flight key; no nested store commit) |
 | `session-todo-projection.ts` | Hydrate-path todo seed: project the latest loaded `todowrite`/`todoread` list into `store.todo` + persist when live `todo.updated` never arrived. No extra HTTP. |
+| `transcript-diagnostics.ts` | Client diagnostics hub: named `feat` events (`transcript` today), redacted snapshots (no bodies/tokens/URLs), bounded recorder, export schema `openchamber.client-diagnostics.v1` |
+| `transcript-diagnostics-runtime.ts` | Production selector: prerelease + user opt-in gate, IndexedDB/memory sink, About-page export/download |
+| `transcript-diagnostics-indexeddb.ts` | IndexedDB ring buffer for local feat events |
 | `transcript-repository.test.ts` | Focused seam tests (reads, all purposes, SSE, optimistic, reset, materialize/remove, subscribe) |
 | `session-transcript-query-cache.test.ts` | Capacity constants, key families, active retain, LRU order, purge families, long growth, destructive reset, generation isolation, adapter integration |
 | `session-transcript-reconcile-api.test.ts` / `session-transcript-reconnect-compensation.test.ts` | Client contract, checkpoint/anchor, first-ready skip, priority set, concurrency, continuation, multi-round, reset, generation cancel |
+
+**Client diagnostics hub:** Query adapter and About export share one local recorder. Each event names a `feat` (`transcript` today). Recording is off on stable builds and on by default for prerelease versions (`-` in the version). About shows only the export button, and only while recording is on. Events never include message bodies, part text, URLs, tokens, or attachments. Each event records `source` (`network` / `query-cache` / `durable-cache` / `sse`), optional `durationMs`, request status, hydration/paint order (`lastMessageIDs`), and command/SSE type so GET vs cache vs on-screen order is reconstructable. Export writes `openchamber.client-diagnostics.v1` JSON from the local ring buffer; native `diagnostics.downloadLogs` is optional and never replaces an empty local report with a failed fetch.
 
 **Ownership boundary (QueryCache sole production authority):**
 

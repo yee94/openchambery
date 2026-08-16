@@ -23,13 +23,18 @@ export const ContextToolGroup: React.FC<{
     isTurnLive?: boolean;
     /** 本组之后是否已出现正文 / 非 context 工具。 */
     hasFollowingOtherType?: boolean;
+    /**
+     * 可选：由完整 parts 时间线计算的明确 exploring 状态。
+     * 传入时优先使用；未传入时按 isTurnLive + hasFollowingOtherType 计算。
+     */
+    exploring?: boolean;
     children?: React.ReactNode;
-}> = ({ activities, isMobile, isTurnLive = false, hasFollowingOtherType = false, children }) => {
+}> = ({ activities, isMobile, isTurnLive = false, hasFollowingOtherType = false, exploring, children }) => {
     const { t } = useI18n();
     const [isExpanded, setIsExpanded] = React.useState(false);
     const contentId = React.useId();
     const toolParts = activities.map((activity) => activity.part as ToolPartType);
-    const isActive = isContextGroupExploring({
+    const isActive = exploring ?? isContextGroupExploring({
         parts: toolParts,
         hasFollowingOtherType,
         isTurnLive,

@@ -79,7 +79,7 @@ describe('history virtualization transition anchor source contract', () => {
 });
 
 describe('turn activity expansion state', () => {
-    test('active Activity defaults collapsed while its Working header remains live', () => {
+    test('active Activity defaults expanded while its Working header remains live', () => {
         for (const activityRenderMode of ['collapsed', 'summary'] as const) {
             expect(resolveTurnActivityExpandedByDefault({
                 expansionDisposition: 'active',
@@ -87,7 +87,7 @@ describe('turn activity expansion state', () => {
                 isLastTurn: true,
                 isActivelyProcessing: true,
                 hasConfirmedFinalBody: false,
-            })).toBe(false);
+            })).toBe(true);
         }
     });
 
@@ -128,7 +128,7 @@ describe('turn activity expansion state', () => {
             isLastTurn: true,
             isActivelyProcessing: true,
             hasConfirmedFinalBody: false,
-        })).toBe(false);
+        })).toBe(true);
     });
 
     test('last open turn stays expanded even when sessionIsWorking flaps idle between tools', () => {
@@ -152,7 +152,7 @@ describe('turn activity expansion state', () => {
             isLastTurn: true,
             isActivelyProcessing: false,
             hasConfirmedFinalBody: false,
-        })).toBe(false);
+        })).toBe(true);
         expect(resolveDefaultActivityExpanded(demoted.completionDisposition, 'collapsed')).toBe(false);
     });
 
@@ -182,7 +182,7 @@ describe('turn activity expansion state', () => {
         ).toBe(true);
     });
 
-    test('last active turn stays collapsed through busy-status flaps', () => {
+    test('last active turn stays expanded through busy-status flaps', () => {
         expect(
             resolveTurnActivityExpandedByDefault({
                 expansionDisposition: 'active',
@@ -191,7 +191,7 @@ describe('turn activity expansion state', () => {
                 isActivelyProcessing: false,
                 hasConfirmedFinalBody: true,
             }),
-        ).toBe(false);
+        ).toBe(true);
     });
 
     test('a toggle flips the current expansion state in both directions', () => {

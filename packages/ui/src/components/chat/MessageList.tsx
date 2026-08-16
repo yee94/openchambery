@@ -75,8 +75,10 @@ export const resolveTurnActivityExpandedByDefault = (input: {
     isActivelyProcessing: boolean;
     hasConfirmedFinalBody: boolean;
 }): boolean => {
+    // Live processing / last-turn active always starts expanded so the user can
+    // watch in-progress work. Settled turns follow activityRenderMode.
     if (input.isActivelyProcessing || input.expansionDisposition === 'active') {
-        return false;
+        return true;
     }
     return resolveDefaultActivityExpanded(
         input.expansionDisposition,
@@ -816,9 +818,8 @@ const TurnBlock = React.memo(({
         isActivelyProcessing: isLastTurn && sessionIsWorking,
         hasConfirmedFinalBody: turn.hasConfirmedFinalBody,
     });
-    // Explicit per-turn toggle wins; untouched in-progress Activity stays
-    // collapsed while its Working header remains live. Settled turns follow
-    // activityRenderMode.
+    // Explicit per-turn toggle wins; otherwise live-active forces open and
+    // settled turns follow activityRenderMode (auto-collapses when processing ends).
     const isGroupExpandedByDefault = storedTurnUiState
         ? storedTurnUiState.isExpanded
         : defaultExpandedForTurn;
