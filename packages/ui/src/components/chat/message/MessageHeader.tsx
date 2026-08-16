@@ -25,7 +25,7 @@ const resolveVariantSuffix = (variant?: string) => {
     return formatEffortLabel(trimmed);
 };
 
-const MessageHeader: React.FC<MessageHeaderProps> = ({ isUser, providerID, modelID, agentName, modelName, variant }) => {
+const MessageHeader: React.FC<MessageHeaderProps> = ({ isUser, isMobile, providerID, modelID, agentName, modelName, variant }) => {
     const variantSuffix = !isUser ? resolveVariantSuffix(variant) : null;
     const displayModelName = modelName || 'Assistant';
 
@@ -69,8 +69,8 @@ const MessageHeader: React.FC<MessageHeaderProps> = ({ isUser, providerID, model
                         {!isUser && agentName && (
                             <div
                                 className={cn(
-                                    'agent-badge inline-flex items-center gap-1 cursor-default rounded px-1.5 py-0.5',
-                                    'typography-micro font-normal leading-none',
+                                    'agent-badge inline-flex items-center gap-1 cursor-default rounded font-normal leading-none',
+                                    isMobile ? 'px-1 py-px text-[10px]' : 'px-1.5 py-0.5 typography-micro',
                                     getAgentColor(agentName).class
                                 )}
                             >

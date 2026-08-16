@@ -4,6 +4,10 @@ All notable changes to this project will be documented in this file.
 
 ## [Unreleased]
 
+## [1.16.134-beta.8] - 2026-08-16
+
+- **Agent badge:** the message-header agent chip is smaller, regular weight, and fill-only (no border). On mobile the name matches the 10px avatar.
+
 ## [1.16.134-beta.7] - 2026-08-16
 
 - **Subagent rows:** the agent name stays visible beside the avatar instead of collapsing away.
